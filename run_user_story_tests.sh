@@ -241,7 +241,7 @@ print_banner() {
 
     # ── Story 03 ──────────────────────────────────────────────────────────
     story_row "  ${G}03${R} ${BOLD}The Dead Internet Filter${R}" "${s03:-8 tests}"
-    row "     ${BOLD}\"Is this video AI?\"${R}${D} -> Dina resolves creator DID via AT Protocol Trust Network${R}"
+    row "     ${BOLD}\"Is this video AI?\"${R}${D} -> Dina resolves creator DID via AT Protocol PeerLens${R}"
     row "${D}     Elena (Ring 3): 200 attestations, 15 peer vouches, 2yr history -> \"authentic, trusted creator\"${R}"
     row "${D}     BotFarm (Ring 1): 0 attestations, 3-day-old account -> \"unverified, check other sources\"${R}"
     row ""

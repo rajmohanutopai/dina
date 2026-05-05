@@ -113,7 +113,7 @@ Includes:
 - product research
 - vendor management
 - comparison shopping
-- trust network peer reviews
+- PeerLens peer reviews
 - logistics and deliveries
 - loyalty programs
 
@@ -122,7 +122,7 @@ Examples:
 - "Compare three office chairs with real reviews."
 - "Which option is best given my budget and back pain?"
 
-Covers: Shopping & Product Research, Vendor Management, Trust Network & Peer Reviews, Logistics & Deliveries, Loyalty Programs & Rewards
+Covers: Shopping & Product Research, Vendor Management, PeerLens & Peer Reviews, Logistics & Deliveries, Loyalty Programs & Rewards
 
 ### 6. Finance and Assets
 

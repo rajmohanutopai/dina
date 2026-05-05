@@ -222,7 +222,7 @@ See v3. AI SDK / anthropic SDK already handle it; only custom providers need imp
 
 **Multi-provider cache matrix** — see v3.
 
-**Dina layers above the boundary:** Dina identity, PII boundary rules, trust network ethics, untrusted-content handling directive.
+**Dina layers above the boundary:** Dina identity, PII boundary rules, PeerLens ethics, untrusted-content handling directive.
 
 **Dina layers below:** active personas, user DID, vault snapshot, recent reminders, anti-Her classification of last user message, session age, **structured state summary** (new — see point 11), **budget remaining**.
 

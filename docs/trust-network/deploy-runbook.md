@@ -1,4 +1,4 @@
-# Trust Network V1 — Production Deploy Runbook
+# PeerLens V1 — Production Deploy Runbook
 
 > **Audience**: operators rolling out a fresh AppView install or
 > upgrading an existing one to V1.

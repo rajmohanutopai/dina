@@ -47,7 +47,7 @@ These are the decisions I recommend locking before any rewrite:
 3. Browser admin uses a session cookie to `dina-admin`, and `dina-admin` authenticates to core with Ed25519.
 4. Ingestion scheduling belongs to brain, not core.
 5. The canonical Phase 1 value proposition is private memory + quiet-first nudges + safe delegation.
-6. The trust network is strategically important but not required for initial product coherence.
+6. PeerLens is strategically important but not required for initial product coherence.
 7. `ARCHITECTURE.md` must distinguish current architecture from future protocol work.
 
 ### Should Lock Now
@@ -271,7 +271,7 @@ That is already enough for a coherent product.
 
 ### What this decision implies
 
-- trust network is important but not required for first-order value
+- PeerLens is important but not required for first-order value
 - PDS/AppView should not dominate the opening architecture narrative
 - "tool first, network second" becomes the explicit product architecture principle
 
@@ -281,13 +281,13 @@ That is already enough for a coherent product.
 
 ---
 
-## 6. Trust Network Positioning
+## 6. PeerLens Positioning
 
 | Field | Decision |
 |---|---|
-| Topic | How central the trust network is to the current system description |
+| Topic | How central PeerLens is to the current system description |
 | Priority | Must Lock Now |
-| Recommended choice | The trust network is a major subsystem, but not the minimum private core of Dina |
+| Recommended choice | PeerLens is a major subsystem, but not the minimum private core of Dina |
 | Do not choose | Describing Dina as inseparable from the full trust public stack in the opening architecture story |
 
 ### Why this should be locked
@@ -316,7 +316,7 @@ Public extension:
 ### What this decision implies
 
 - the document should explain the Home Node first
-- the trust network should appear as the public layer
+- PeerLens should appear as the public layer
 - the two systems should be shown as interoperating, not merged conceptually
 
 ---
@@ -695,7 +695,7 @@ If you want the architecture rewrite to materially improve the project, lock the
 - browser admin authentication model
 - core vs brain responsibility split
 - canonical Phase 1 product core
-- trust network positioning
+- PeerLens positioning
 - status labeling model
 
 Then use the rewrite to make Dina's most original claims explicit as architecture:

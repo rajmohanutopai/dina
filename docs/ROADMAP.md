@@ -128,13 +128,13 @@ The roadmap below changes the target admin shape:
 | 2.1 | Embedding generation (EmbeddingGemma) | L1 Storage | 308M param model generates embeddings. Stored in Tier 2 Index via sqlite-vec. Enables semantic search across all vault data. | 1.7, 1.1 | DONE |
 | 2.2 | Tier 2 Index (embeddings) | L1 Storage | sqlite-vec vector store alongside SQLite FTS5. Hybrid search: keyword + semantic. | 2.1 | DONE |
 | 2.3 | Trust AppView (monolith) | L3 Trust | Phase 1 monolith: single Go binary + PostgreSQL 16 (`pg_trgm`). Firehose consumer (`indigo` library) → filter (`com.dina.trust.*` only) → signature verifier → PostgreSQL indexer → JSON query API (`GET /v1/trust?did=...`, `GET /v1/product?id=...`, `GET /v1/bot?did=...`). Computes aggregate scores (product ratings, seller trust composites, bot accuracy). **API includes signed record payloads from day one** (cheap, locks in API contract for future verification). Deployed on 1x VPS (4 vCPU, 8GB RAM). Blue/green deploys, WAL archiving + PITR. Handles 0–1M users. | 1.28 | DONE |
-| 2.4 | Outcome data collection | L3 Trust | Dina tracks purchases via Cart Handover. Months later, gently asks "How's that chair?" Anonymized outcome → Trust Network. | 1.26, 2.3 | NOT STARTED |
+| 2.4 | Outcome data collection | L3 Trust | Dina tracks purchases via Cart Handover. Months later, gently asks "How's that chair?" Anonymized outcome → PeerLens. | 1.26, 2.3 | NOT STARTED |
 | 2.5 | Trust Rings (Ring 1-2) | L0 Identity | Ring 1 (unverified) = anyone. Ring 2 (verified unique person) = ZKP or external verification. Phase 1 compromise for India: Aadhaar e-KYC XML with offline verification, only yes/no attestation stored. True ZKP (Semaphore V4) in Phase 2+. | 1.24, 2.3 | NOT STARTED |
 | 2.6 | Fine-tuned PII model | L6 Intelligence | Gemma 3n E4B fine-tuned for PII detection. Replaces generic NER prompting. Higher accuracy, fewer leaks. | 1.9, 1.1 | NOT STARTED |
 | 2.7 | Multi-agent orchestration | L6 Intelligence | Google ADK Sequential, Parallel, Loop agents. Complex multi-step reasoning (e.g., research laptop → check trust → compare prices → assemble recommendation). | 1.2 | NOT STARTED |
 | 2.8 | Emotional state awareness | L7 Action | Lightweight classifier flags "user may be upset/impulsive" before large purchases or high-stakes communications. Signals: time of day, communication tone, spending pattern deviation. Cooling-off suggestion. | 1.15, 2.1 | NOT STARTED |
 | 2.9 | Anti-Her safeguard | L7 Action | Track interaction patterns. If user treats Dina as emotional replacement, redirect: "You haven't talked to Sancho in a while." Nudge toward human connection, never fill the void. | 1.19, 1.15 | DONE |
-| 2.10 | Bot discovery (decentralized) | L5 Bot Interface | Bots self-register on Trust Network. Trust score determines visibility. Bot-to-bot referrals. | 2.3 | NOT STARTED |
+| 2.10 | Bot discovery (decentralized) | L5 Bot Interface | Bots self-register on PeerLens. Trust score determines visibility. Bot-to-bot referrals. | 2.3 | NOT STARTED |
 | 2.11 | Dina-to-Dina sharing rules | L4 Dina-to-Dina | Fine-grained per-connection control over what each contact can see. "Sancho's Dina can see my location, but not my calendar." Rules stored in Tier 0, enforced in dina-core (not brain). Persona compartments provide cryptographic backstop. | 1.19, 1.24 | NOT STARTED |
 | 2.12 | Desktop client (Wails/Tauri) | Client | Cross-platform desktop app via Wails (Go + WebView) or Tauri 2. Connects to Home Node same as Android. | 1.29 | NOT STARTED |
 | 2.13 | Tier 5 Deep Archive | L1 Storage | Weekly encrypted snapshots to S3 Glacier Deep Archive with **Compliance Mode Object Lock** (even root cannot delete during retention period). Immutable. Survives ransomware. Optional: LTO tape / physical USB HDD for sovereign cold storage. | 1.22 | NOT STARTED |
@@ -154,7 +154,7 @@ The roadmap below changes the target admin shape:
 | # | Item | Layer | What It Is | Depends On | Status |
 |---|------|-------|-----------|-----------|--------|
 | 3.1 | Trust Rings (Ring 3+) | L0 Identity | Credential anchors: LinkedIn, GitHub, business registration. Transaction history + time + peer attestation → composite trust score. | 2.5 | NOT STARTED |
-| 3.2 | Content verification (C2PA) | L7 Action | Media provenance via Content Credentials. Cross-reference claims against Trust Network. "This video appears AI-generated." | 2.3 | NOT STARTED |
+| 3.2 | Content verification (C2PA) | L7 Action | Media provenance via Content Credentials. Cross-reference claims against PeerLens. "This video appears AI-generated." | 2.3 | NOT STARTED |
 | 3.3 | Social Radar (real-time co-pilot) | L6 Intelligence | "You've interrupted him twice." Context Injection from camera/microphone (glasses, phone). Requires on-device processing. | 2.7, 1.32 | NOT STARTED |
 | 3.4 | Open Economy (ONDC + UPI) | L7 Action | Dina negotiates directly with manufacturer's Dina via ONDC. UPI/crypto for payment. Marketplace middlemen become optional. | 2.3, 1.26, 1.19 | NOT STARTED |
 | 3.5 | Expert Bridge | L3 Trust | Verified experts opt in to having their knowledge structured. Attribution + economic value when their knowledge drives decisions. | 2.3, 1.27 | NOT STARTED |
@@ -163,7 +163,7 @@ The roadmap below changes the target admin shape:
 | 3.8 | Thin clients (glasses, watch, browser) | Client | Web-based via authenticated WebSocket. No local processing. Streams from Home Node. | 1.29, 1.16 | NOT STARTED |
 | 3.9 | Foundation formation | Org | Nonprofit foundation takes over managed hosting operations. Multiple certified hosting partners across jurisdictions. Regulatory compliance (GDPR, DPDP Act), security operations, incident response. | 1.33, 2.16 | NOT STARTED |
 | 3.10 | Full Dina-to-Dina commerce protocol | L4 Dina-to-Dina | Buyer Dina ↔ Seller Dina negotiation, trust check, payment intent, delivery tracking — all sovereign. | 3.4, 2.11, 3.1 | NOT STARTED |
-| 3.11 | Timestamp anchoring (L2) | L3 Trust | Weekly Merkle root hash of all Trust Network entries anchored to L2 chain (Base or Polygon). Provable "this existed before this date" for dispute resolution, anti-gaming, and Expert Bridge economics. | 2.3, 3.5 | NOT STARTED |
+| 3.11 | Timestamp anchoring (L2) | L3 Trust | Weekly Merkle root hash of all PeerLens entries anchored to L2 chain (Base or Polygon). Provable "this existed before this date" for dispute resolution, anti-gaming, and Expert Bridge economics. | 2.3, 3.5 | NOT STARTED |
 | 3.12 | Noise XX sessions | L4 Dina-to-Dina | Noise XX handshake between always-on Home Nodes for full forward secrecy (both sender and receiver). DIDComm plaintext flows over the Noise channel. Optional mesh routing through other Dinas. | 2.19 | NOT STARTED |
 | 3.13 | AppView sharded cluster | L3 Trust | When monolith (2.3) hits scaling limits (10M+ users): Kafka/NATS JetStream event buffer, stateless Go ingestion workers, ScyllaDB (sharded by DID) for high-velocity tables, PostgreSQL read replicas for metadata, independent API cluster with Kubernetes HPA autoscaling. Janitor process for index drift detection. | 2.3 | NOT STARTED |
 | 3.14 | AppView verification (trust-but-verify) | L3 Trust | Three-layer verification in Dina agents: (1) Cryptographic proof — every AppView response includes raw signed payload + author signature, agent verifies against DID public key. (2) Consensus check — for high-value transactions, query primary + secondary AppViews, detect censorship by comparing result counts. (3) Direct PDS spot-check — randomly (1 in 100) or when suspicious, bypass AppView and fetch records directly from source PDS. Meaningful only when multiple AppViews exist. | 3.13 | NOT STARTED |
@@ -179,7 +179,7 @@ The roadmap below changes the target admin shape:
 | **1b** | Sancho Moment | **IN PROGRESS** — D2D encryption + dead drop working, nudge assembly done, WebSocket delivery done; signature verification + inbox persistence remaining |
 | **1c** | Safety & bots | **PARTIALLY DONE** — Persona system (4-tier), device pairing, export/import, BIP-39 recovery done; off-site backup, supply chain security not started |
 | **1.5** | Real product | Android app, managed hosting, Telegram ingestion, daily briefing |
-| **2** | Intelligence | Semantic search, Trust Network live, trust rings, Local LLM profile, digital estate, desktop client |
+| **2** | Intelligence | Semantic search, PeerLens live, trust rings, Local LLM profile, digital estate, desktop client |
 | **3** | Economy | Direct commerce via ONDC, expert marketplace, iOS, thin clients, foundation |
 
 ---
@@ -218,7 +218,7 @@ The following items were **missing from the original roadmap** but are described
 | (architectural decision) Kernel model | All | Dina has no plugins. Child agents (OpenClaw etc.) are external processes via MCP. NaCl over HTTPS for peers. Browser admin uses session cookie → `dina-admin` → Ed25519 → core. All non-browser service/device auth is Ed25519. |
 | (architectural decision) Attachment storage | 1b | Issue #17 — never store binary blobs in SQLite. Metadata + reference + LLM summary only. Voice memos: transcript in vault, optional `media/` directory on disk. |
 | (architectural decision) Three-tier scheduling | 1b | No general-purpose scheduler. Go tickers for periodic tasks, reminder loop on vault for one-shots, delegate complex scheduling to calendar via OpenClaw. |
-| (architectural decision) Cold start: tool first, network second | All | Issue #20 — no "Review Bot" to build. Phase 1 is single-player: Brain + OpenClaw web search with user context. Trust Network activates gradually in Phase 2+ as network grows. |
+| (architectural decision) Cold start: tool first, network second | All | Issue #20 — no "Review Bot" to build. Phase 1 is single-player: Brain + OpenClaw web search with user context. PeerLens activates gradually in Phase 2+ as network grows. |
 | (architectural decision) Calendar is a Sense, not a Tool | 1b | Issue #18 — Calendar data fetched by OpenClaw via MCP, stored in vault (read-only cache). Google Calendar API Phase 1 (via OpenClaw), CalDAV Phase 2. Complex scheduling (multi-person) delegated to OpenClaw. |
 | 1.10b Admin UI (Python) | 1a | Issue #21 — dedicated FastAPI `dina-admin` backend at `/admin/*`. Browser session lives in `dina-admin`; `dina-admin` calls core with Ed25519 service auth. Dashboard, settings, onboarding flow. Python for speed of development, not Go templates. Moved to Phase 1a — a dev UI accelerates everything that follows. |
 | 1.33 (updated) Progressive onboarding | 1.5 | Issue #21 — Signal-level simplicity: email → connect Gmail (via OpenClaw) → done. One default persona (`personal.sqlite`). Mnemonic backup deferred to day 7. Features unlock progressively over weeks. |
@@ -317,7 +317,7 @@ The decision engine is the trust ring + sharing policy + intent risk level. All 
 ### Security Considerations
 
 - Ring 1 contacts: late binding references are opaque tokens — meaningless outside Dina's vault. Even if intercepted, they reveal nothing.
-- Ring assignment is user-controlled (via admin CLI) but also informed by the AppView trust network scores. The user has final say.
+- Ring assignment is user-controlled (via admin CLI) but also informed by the AppView PeerLens scores. The user has final say.
 - Intent risk level affects the resolution mode: even a Ring 2 contact gets late binding for `send_money` but plaintext for `schedule_meeting`.
 - All entity resolution events are audited in identity.sqlite.
 

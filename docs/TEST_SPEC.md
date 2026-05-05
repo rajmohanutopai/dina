@@ -152,7 +152,7 @@ It groups by `section` + `sectionName`, counts by `suite`, and links to `case` f
 | 08 | Digital Estate |
 | 09 | Ingestion-to-Vault Pipeline |
 | 10 | Data Flow Patterns |
-| 11 | Trust Network Integration |
+| 11 | PeerLens Integration |
 | 12 | Upgrade & Migration |
 | 14 | Chaos Engineering |
 | 15 | Compliance & Privacy |

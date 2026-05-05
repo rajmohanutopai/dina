@@ -103,7 +103,7 @@ Possible mistakes to guard against:
 | D2D / MsgBox | Signed/sealed D2D through MsgBox with clear relay contract. | Partial/strong. Mobile wires MsgBox and `sendD2D`; current TS uses `/forward` for D2D and WS for RPC/inbox. | Partial. Core server connects to MsgBox and reports that state in readiness; full D2D/service delivery parity and the relay contract decision remain open. |
 | Trust publish | Test injection for dev; release publishes signed records to PDS and reconciles through AppView. | Partial. Mobile UI/test injection and record helpers are good, but durable outbox and default PDS publish path are missing. | Missing. No full trust publish runtime. |
 | Service discovery/query | Provider publishes profile to PDS; requester discovers through AppView and queries over D2D service windows. | Partial. Service workflow, D2D windows, and the requester-side hosted AppView client exist by default; provider PDS publisher is not release-ready. | Partial. Shared `@dina/home-node/service-runtime` composes discovery, handler, D2D dispatcher, workflow event delivery, and approval reconciliation with signed Core/AppView; Brain server consumes it when dependencies are supplied. MsgBox delivery, provider PDS publish, and parity tests remain. |
-| Pairing / trust network | Pair through MsgBox; persist device/contact trust; enforce gates. | Partial. Contact hydration and D2D gates exist, but full pairing flow and durable trust integration need parity review. | Missing. No shared pairing runtime. |
+| Pairing / PeerLens | Pair through MsgBox; persist device/contact trust; enforce gates. | Partial. Contact hydration and D2D gates exist, but full pairing flow and durable trust integration need parity review. | Missing. No shared pairing runtime. |
 
 Overall assessment: the simplified architecture is correct. The drift is in the
 TS implementation, especially the incomplete shared runtime and the much larger
@@ -458,7 +458,7 @@ sequenceDiagram
 
 MsgBox sees routing metadata and ciphertext. It does not see the message body.
 
-## Trust Network: Mobile Test Publish
+## PeerLens: Mobile Test Publish
 
 Mobile is the best current reference for trust publish. In test builds, mobile
 can publish directly to the test AppView injection endpoint when the test token
@@ -489,7 +489,7 @@ sequenceDiagram
 This test path is for development and preview. It bypasses PDS so mobile can
 validate compose, review, and AppView indexing quickly.
 
-## Trust Network: Release Publish
+## PeerLens: Release Publish
 
 Release publish should use signed records through the user's PDS, then AppView
 indexes from the public repo stream.
@@ -523,7 +523,7 @@ The current mobile outbox model already names the important states:
 and `stuck-pending`. Durable mobile persistence is the remaining implementation
 detail to keep aligned with this flow.
 
-## Trust Network: Query Review Evidence
+## PeerLens: Query Review Evidence
 
 AppView is the read path. PDS is the durable publication path.
 

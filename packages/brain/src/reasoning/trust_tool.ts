@@ -1,6 +1,6 @@
 /**
  * `search_trust_network` agentic tool — verified peer reviews and
- * vendor/product reputation via the Trust Network AppView.
+ * vendor/product reputation via PeerLens AppView.
  *
  * The `VAULT_CONTEXT` system prompt points the agent here whenever
  * the user asks about buying, comparing, or evaluating a product or
@@ -63,7 +63,7 @@ export function createSearchTrustNetworkTool(
   return {
     name: 'search_trust_network',
     description:
-      "Search verified peer reviews and vendor/product reputation in the Trust Network. Pass `subject` (a JSON string like `{\"type\":\"product\",\"domain\":\"amazon.com\",\"productId\":\"B0...\"}` or `{\"type\":\"did\",\"did\":\"did:plc:...\"}` or `{\"type\":\"organization\",\"domain\":\"nytimes.com\"}`) for an aggregate trust score + recommendation. Pass `query` (free text like 'standing desk reviews') + optional `subjectType` / `domain` / `sentiment` / `minConfidence` for raw attestation rows. At least one of subject or query is required.",
+      "Search verified peer reviews and vendor/product reputation in PeerLens. Pass `subject` (a JSON string like `{\"type\":\"product\",\"domain\":\"amazon.com\",\"productId\":\"B0...\"}` or `{\"type\":\"did\",\"did\":\"did:plc:...\"}` or `{\"type\":\"organization\",\"domain\":\"nytimes.com\"}`) for an aggregate credibility signal + recommendation. Pass `query` (free text like 'standing desk reviews') + optional `subjectType` / `domain` / `sentiment` / `minConfidence` for raw attestation rows. At least one of subject or query is required.",
     parameters: {
       type: 'object',
       properties: {
@@ -138,7 +138,7 @@ export function createSearchTrustNetworkTool(
             error: err instanceof Error ? err.message : String(err),
             subject,
           });
-          out.note = 'Trust Network lookup failed — no verified peer data available for that subject.';
+          out.note = 'PeerLens lookup failed — no verified peer data available for that subject.';
         }
       }
 
@@ -168,7 +168,7 @@ export function createSearchTrustNetworkTool(
           });
           // Only override `note` if nothing else already set it.
           if (out.note === undefined) {
-            out.note = 'Trust Network search failed — no verified peer data for that query.';
+            out.note = 'PeerLens search failed — no verified peer data for that query.';
           }
         }
       }

@@ -1,10 +1,10 @@
 /**
- * Settings → "About Trust Network" disclosure content (TN-MOB-028).
+ * Settings → "About PeerLens" disclosure content (TN-MOB-028).
  *
  * Plan §8.8:
  *
- *   > Dismissed once → flag in keystore. Settings → "About Trust
- *   > Network" repeats the same text.
+ *   > Dismissed once → flag in keystore. Settings → "About PeerLens"
+ *   > repeats the same text.
  *
  * Plus plan §1 row 11 + §13.10 — the V1-pseudonymity caveat lives in
  * BOTH the first-run modal (one-shot, dismissible) AND the Settings
@@ -20,10 +20,10 @@
  * fork the two surfaces.
  *
  * What's settings-screen-specific (vs. first-run modal):
- *   - `screenTitle` — "About Trust Network" (the screen header)
- *   - `headerLabel` — "How Trust Network works" (the section heading
+ *   - `screenTitle` — "About PeerLens" (the screen header)
+ *   - `headerLabel` — "How PeerLens works" (the section heading
  *     above the body)
- *   - `versionLabel` — pinned to "Trust Network V1" so users
+ *   - `versionLabel` — pinned to "PeerLens V1" so users
  *     recognising the screen know which lifecycle stage they're in
  *   - No dismiss CTA (the settings surface is always-available, not
  *     a one-shot modal)
@@ -48,20 +48,20 @@ export interface AboutScreenContent {
    * forking.
    */
   readonly body: readonly string[];
-  /** Version label — "Trust Network V1" — anchors the disclosure to a release. */
+  /** Version label — "PeerLens V1" — anchors the disclosure to a release. */
   readonly versionLabel: string;
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────
 
 /**
- * The exact content bundle the Settings → "About Trust Network"
+ * The exact content bundle the Settings → "About PeerLens"
  * screen renders. Frozen at every level so any mutation crashes
  * loudly instead of silently editing the source of truth.
  */
 export const ABOUT_SCREEN_CONTENT: AboutScreenContent = Object.freeze({
-  screenTitle: 'About Trust Network',
-  headerLabel: 'How Trust Network works',
+  screenTitle: 'About PeerLens',
+  headerLabel: 'How PeerLens works',
   body: FIRST_RUN_MODAL_COPY.body,
-  versionLabel: 'Trust Network V1',
+  versionLabel: 'PeerLens V1',
 });

@@ -28,10 +28,10 @@ var ValidVaultItemTypes = map[string]bool{
 	"medical_note":   true,
 	// Relationship context (stored by nudge assembler / user notes)
 	"relationship_note": true,
-	// Decision records (Dina used Trust Network + vault context to recommend)
+	// Decision records (Dina used PeerLens + vault context to recommend)
 	"purchase_decision": true,
 	"trust_review":      true,
-	// Trust Network attestation records (stored by AppView sync / trust queries)
+	// PeerLens attestation records (stored by AppView sync / trust queries)
 	"trust_attestation": true,
 }
 

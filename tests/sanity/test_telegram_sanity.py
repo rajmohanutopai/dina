@@ -381,7 +381,7 @@ class TestPurchaseJourney:
         print(f"\n  {r[:120]}")
 
     def test_alonso_publishes_review(self, tg: SanityTelegramClient) -> None:
-        """Alonso publishes a chair review to the Trust Network."""
+        """Alonso publishes a chair review to PeerLens."""
         r = tg.send_and_click(
             ALONSO_BOT,
             "/review Steelcase Leap V2: Worth every penny. Fixed my back pain "
@@ -400,7 +400,7 @@ class TestPurchaseJourney:
         """Sancho asks for a chair — should get contextual recommendation.
 
         Expected: Dina searches health vault (back pain), finance vault ($500
-        budget), and Trust Network (Alonso's review), then recommends the
+        budget), and PeerLens (Alonso's review), then recommends the
         Steelcase Leap V2 because it's good for lumbar support and under budget.
         """
         # Give AppView pipeline a moment to ingest Alonso's review

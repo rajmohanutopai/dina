@@ -121,9 +121,9 @@ const NETWORK_CARDS: CapabilityCard[] = [
   },
   {
     icon: '❖',
-    title: 'Trust signals from the network',
+    title: 'PeerLens reviews',
     description:
-      'All reviews, including yours, live on a decentralized trust graph the Dina network maintains. Each review is signed by the reviewer’s identity (DID), weighted by whether they actually transacted, vouched for by their peers, and time-decayed.\n\nBecause every reviewer carries a verified reputation, and every review inherits that weight, signals in the graph are believable. Fake reviews or sponsored reviews do not move the trust score.\n\nWhen you ask Dina something, Dina goes through the Trust Network to decide for you — whether you’re picking a chair to buy, or checking whether a YouTube creator typically posts AI-generated videos.',
+      'All reviews, including yours, live in PeerLens. Each review is signed by the reviewer’s identity (DID), weighted by whether they actually transacted, vouched for by peers, and time-decayed.\n\nBecause every review carries signed provenance, signals in the graph are harder to fake. Sponsored reviews and synthetic reviews should not move the recommendation.\n\nWhen you ask Dina something, Dina checks PeerLens — whether you’re picking a chair to buy, or checking whether a YouTube creator typically posts AI-generated videos.',
     example: '“Is the Calmly mattress any good?”',
   },
   {

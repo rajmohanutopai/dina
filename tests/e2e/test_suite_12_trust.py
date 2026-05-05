@@ -1,6 +1,6 @@
-"""E2E Test Suite 12: Trust Network Lifecycle.
+"""E2E Test Suite 12: PeerLens Lifecycle.
 
-Tests the full trust network lifecycle: expert attestation publishing via
+Tests the full PeerLens lifecycle: expert attestation publishing via
 AT Protocol (PDS -> Relay -> AppView), bot trust degradation with
 auto-routing, signed tombstone deletion, composite trust score computation,
 AT Protocol discovery, and AppView determinism / censorship detection.
@@ -32,13 +32,13 @@ from tests.e2e.mocks import (
 
 
 # ---------------------------------------------------------------------------
-# Suite 12: Trust Network Lifecycle
+# Suite 12: PeerLens Lifecycle
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.mock_heavy
 class TestTrustNetworkLifecycle:
-    """E2E-12.x -- Trust Network: attestations, bot trust,
+    """E2E-12.x -- PeerLens: attestations, bot trust,
     tombstone deletion, trust scores, AT Protocol discovery, and
     AppView determinism.
 

@@ -84,7 +84,7 @@ describe('runConformance — end-to-end runner (task 10.14)', () => {
   });
 
   it('every result has a task id in either N.NN or TN-XXX-NNN form', () => {
-    // Phase 1b vectors used dotted task ids ("10.7"); Trust Network vectors
+    // Phase 1b vectors used dotted task ids ("10.7"); PeerLens vectors
     // use the TN-PROTO-004 / TN-MOB-002 backlog id format. Both are valid.
     const taskIdPattern = /^(\d+\.\d+|TN-[A-Z]+-\d+)$/;
     for (const r of report.results) {

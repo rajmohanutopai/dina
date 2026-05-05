@@ -1,7 +1,7 @@
 /**
  * DID document `assertionMethod` resolution (TN-AUTH-001).
  *
- * Per Trust Network V1 plan §3.5.2, namespace keys register as
+ * Per PeerLens V1 plan §3.5.2, namespace keys register as
  * `assertionMethod` verification methods on the user's published DID
  * document. AppView's signature gate (TN-AUTH-002) and the mobile
  * verifier both need to translate a record's `namespace` field into

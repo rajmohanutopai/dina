@@ -303,15 +303,15 @@ def video_1_sancho_moment(tg: SanityTelegramClient):
 
 
 def video_2_purchase_journey(tg: SanityTelegramClient):
-    """Persona Vaults + Cross-Vault Reasoning + Trust Network.
+    """Persona Vaults + Cross-Vault Reasoning + PeerLens.
 
     Story: Sancho has back pain (health vault) and a budget (finance vault).
-    Alonso publishes a chair review to the Trust Network. When Sancho asks
+    Alonso publishes a chair review to PeerLens. When Sancho asks
     for a chair, Dina combines health + budget + peer review.
 
     Telegram windows needed: BOTH (Alonso left, Sancho right)
     """
-    narrate("VIDEO 2: The Chair Purchase — Vaults + Trust Network")
+    narrate("VIDEO 2: The Chair Purchase — Vaults + PeerLens")
 
     # Scene 1: Sancho stores health context
     switch_to("Sancho")
@@ -333,7 +333,7 @@ def video_2_purchase_journey(tg: SanityTelegramClient):
     # Scene 3: Alonso publishes a review
     switch_to("Alonso")
     narrate("Scene 3: A DIFFERENT person — Alonso — publishes a chair review")
-    print("  (This review is signed and published to the Trust Network)")
+    print("  (This review is signed and published to PeerLens)")
     r = tg.send_and_click(
         ALONSO_BOT,
         "/review Steelcase Leap V2: Completely fixed my back pain in 2 weeks. "
@@ -344,12 +344,12 @@ def video_2_purchase_journey(tg: SanityTelegramClient):
     )
     if r:
         print(f"  ← [Alonso] {r[:200]}")
-    pause(LONG, "Review published to Trust Network — signed attestation on AT Protocol")
+    pause(LONG, "Review published to PeerLens — signed attestation on AT Protocol")
 
     # Scene 4: Sancho asks — the cross-vault magic
     switch_to("Sancho")
     narrate("Scene 4: Sancho asks for a chair — watch what happens")
-    print("  Dina will combine: health vault + finance vault + Trust Network peer reviews")
+    print("  Dina will combine: health vault + finance vault + PeerLens peer reviews")
     pause(MEDIUM)
 
     # Give AppView a moment to ingest
@@ -362,7 +362,7 @@ def video_2_purchase_journey(tg: SanityTelegramClient):
 
     narrate("END of Video 2")
     print("  The key insight: Three separate encrypted sources — health vault,")
-    print("  finance vault, Trust Network — merged into one recommendation.")
+    print("  finance vault, PeerLens — merged into one recommendation.")
     print("  No ads. No sponsored results. Verified peer outcomes.\n")
 
 
@@ -629,7 +629,7 @@ SCRIPTS = {
         ],
     },
     "2": {
-        "title": "The Chair Purchase — Persona Vaults + Trust Network",
+        "title": "The Chair Purchase — Persona Vaults + PeerLens",
         "setup": [
             f"Open Telegram Desktop with BOTH bot chats visible:",
             f"  - @{ALONSO_BOT}  (Alonso's Dina)",
@@ -662,7 +662,7 @@ SCRIPTS = {
                     ("Switch to", "Alonso's chat"),
                     ("Type and send", "/review Steelcase Leap V2: Completely fixed my back pain in 2 weeks. Best lumbar support under $400. Every penny worth it. Highly recommend for anyone with lower back issues."),
                     ("Click", "the [Publish] button when it appears"),
-                    ("Wait", "for confirmation — this is a signed attestation on the Trust Network"),
+                    ("Wait", "for confirmation — this is a signed attestation on PeerLens"),
                 ],
             },
             {
@@ -670,9 +670,9 @@ SCRIPTS = {
                 "chat": f"@{SANCHO_BOT}",
                 "actions": [
                     ("Switch to", "Sancho's chat"),
-                    ("Wait", "5 seconds for Trust Network to ingest the review"),
+                    ("Wait", "5 seconds for PeerLens to ingest the review"),
                     ("Type and send", "/ask What office chair should I buy for my home office?"),
-                    ("Key moment", "Watch the response — Dina combines: health vault (back pain), finance vault ($500 budget), Trust Network (Alonso's peer review)"),
+                    ("Key moment", "Watch the response — Dina combines: health vault (back pain), finance vault ($500 budget), PeerLens (Alonso's peer review)"),
                     ("Wait", "for the full response (may take 15-30 seconds)"),
                 ],
             },
@@ -681,7 +681,7 @@ SCRIPTS = {
             "KEY INSIGHT: Three separate encrypted sources combined:",
             "  1. Health vault — back pain + lumbar support need",
             "  2. Finance vault — $500 budget",
-            "  3. Trust Network — Alonso's verified peer review",
+            "  3. PeerLens — Alonso's verified peer review",
             "No ads. No sponsored results. Verified peer outcomes.",
         ],
     },

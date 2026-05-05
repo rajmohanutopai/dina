@@ -1,7 +1,7 @@
 /**
  * Task 6.15 — `com.dina.review.list` xRPC client.
  *
- * Reviews are signed claims in the Trust Network — one actor
+ * Reviews are signed claims in PeerLens — one actor
  * attesting to another actor's reliability, behaviour, or
  * capability. Brain fetches them when:
  *

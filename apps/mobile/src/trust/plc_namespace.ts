@@ -4,7 +4,7 @@
  * The implementation lives in `@dina/core/identity/plc_namespace_update`
  * — pure, runtime-agnostic, zero mobile-specific concerns. This file
  * re-exports the public surface so mobile callers (compose flows, the
- * Trust Network namespace screen) have a single, mobile-scoped import
+ * PeerLens namespace screen) have a single, mobile-scoped import
  * path:
  *
  *     import { composeAndSignNamespaceUpdate } from '@/trust/plc_namespace';

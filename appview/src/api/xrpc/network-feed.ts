@@ -80,7 +80,7 @@ export async function networkFeed(
   db: DrizzleDB,
   params: NetworkFeedParamsType,
 ): Promise<NetworkFeedResponse> {
-  // Phase 1 — compute the viewer's 1-hop trust graph. Depth=1 only;
+  // Phase 1 — compute the viewer's 1-hop PeerLens graph. Depth=1 only;
   // we don't need the full graph for the feed surface and a deeper
   // traversal would inflate latency for highly-connected viewers.
   const graph = await getCachedGraphContext(db, params.viewerDid, 1)

@@ -1,6 +1,6 @@
 {
   "__notes_preface": [
-    "Trust Network V1 — Overview Dashboard (TN-OBS-004 / Plan §13.8).",
+    "PeerLens V1 — Overview Dashboard (TN-OBS-004 / Plan §13.8).",
     "",
     "This is the starter dashboard that every V1 deployment should fork.",
     "Wire it against your Prometheus datasource, then customise per",
@@ -41,7 +41,7 @@
       }
     ]
   },
-  "description": "Dina Trust Network V1 — operator-facing health and SLO overview. See docs/trust-network/observability.md for the metric definitions and alert thresholds.",
+  "description": "Dina PeerLens V1 — operator-facing health and SLO overview. See docs/trust-network/observability.md for the metric definitions and alert thresholds.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -364,7 +364,7 @@
   "time": { "from": "now-3h", "to": "now" },
   "timepicker": {},
   "timezone": "",
-  "title": "Dina Trust Network V1 — Overview",
+  "title": "Dina PeerLens V1 — Overview",
   "uid": null,
   "version": 1,
   "weekStart": ""

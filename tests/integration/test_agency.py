@@ -306,7 +306,7 @@ class TestManipulationDetection:
 # TST-INT-267
     # TRACE: {"suite": "INT", "case": "0267", "section": "07", "sectionName": "Security Boundary Tests", "subsection": "02", "scenario": "04", "title": "dead_internet_filter"}
     def test_dead_internet_filter(self, mock_dina: MockDinaCore):
-        """Dina filters out bot-generated reviews from the trust network,
+        """Dina filters out bot-generated reviews from PeerLens,
         keeping only verified human sources."""
         sources = [
             {

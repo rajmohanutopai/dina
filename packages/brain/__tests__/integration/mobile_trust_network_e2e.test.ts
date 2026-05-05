@@ -1,5 +1,5 @@
 /**
- * Mobile Scenario 4 — Trust Network query end-to-end.
+ * Mobile Scenario 4 — PeerLens query end-to-end.
  *
  * The flow mobile drives for "how trusted is ChairMaker?":
  *   1. `searchTrustNetwork({ query, type })` is called — e.g. from
@@ -36,7 +36,7 @@ import {
   resetContactDirectory,
 } from '@dina/core';
 
-describe('mobile Scenario 4 — Trust Network query', () => {
+describe('mobile Scenario 4 — PeerLens query', () => {
   beforeEach(() => {
     resetContactDirectory();
     resetTrustQueryClient();

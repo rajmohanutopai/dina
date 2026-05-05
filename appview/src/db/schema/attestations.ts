@@ -44,7 +44,7 @@ export const attestations = pgTable('attestations', {
   // `verificationMethod` id under which this attestation was signed,
   // e.g. `'#namespace_2'`. NULL = signed under the root identity.
   // Reviewer-trust scoring is per-(authorDid, namespace), so namespace
-  // partitions the trust graph by pseudonymous compartment without
+  // partitions PeerLens graph by pseudonymous compartment without
   // exposing them as separate DIDs.
   namespace: text('namespace'),
   // TN-V2-REV-001 — per-category use-case tags declared by the

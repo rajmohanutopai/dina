@@ -6,7 +6,7 @@ import { deletionHandler } from '../deletion-handler.js'
 /**
  * Handler for com.dina.trust.trustPolicy records.
  *
- * Trust policies define per-user trust graph parameters: how deep to
+ * Trust policies define per-user PeerLens graph parameters: how deep to
  * traverse the graph, which domains to trust, which DIDs to block,
  * and whether a vouch is required before trusting attestations.
  * Each user has at most one trust policy (authorDid is unique).

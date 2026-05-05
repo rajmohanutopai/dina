@@ -674,7 +674,7 @@ $ADMIN --version
 | OpenClaw Integration | No OpenClaw Gateway running | DINA_OPENCLAW_URL + token |
 | Telegram Bot | Configured on Default instance | Phases 1–7 via Telegram chat (manual) |
 | D2D Messaging | No second Dina for Dina-to-Dina | Two Home Nodes with DID exchange |
-| Trust Network / AppView | No trust data seeded | AppView + Postgres + PDS with records |
+| PeerLens / AppView | No trust data seeded | AppView + Postgres + PDS with records |
 | Daily Briefing | Guardian briefing cycle not triggered | Scheduled event or manual trigger |
 | Reminders | No reminders stored/fired | Store reminder + wait for trigger time |
 | Connectors (Gmail, Calendar) | No OAuth tokens | Gmail/Calendar OAuth + MCP config |

@@ -1,11 +1,11 @@
 /**
- * Trust Network feature-flag reader (TN-FLAG-005 + TN-MOB-051).
+ * PeerLens feature-flag reader (TN-FLAG-005 + TN-MOB-051).
  *
  * Per plan §13.9, AppView's `appview_config.trust_v1_enabled` boolean
  * gates the V1 rollout. When `false`:
  *   - All `com.dina.*` xRPC endpoints return 503.
  *   - The firehose ingester skips trust-network records.
- *   - Mobile UI hides the Trust tab.
+ *   - Mobile UI hides the PeerLens tab.
  *
  * This module owns the mobile side: pull the flag from AppView at
  * boot, cache it, expose a synchronous getter the tab-bar can read
@@ -134,7 +134,7 @@ export function getCachedTrustV1Enabled(now?: number): boolean | null {
 }
 
 /**
- * Should the layout HIDE the Trust tab right now? `true` ONLY when
+ * Should the layout HIDE the PeerLens tab right now? `true` ONLY when
  * the cached flag is explicitly `false`. `null` (unloaded / expired)
  * and `true` both leave the tab visible.
  *

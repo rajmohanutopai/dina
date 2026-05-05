@@ -1,5 +1,5 @@
 /**
- * Trust Network Search — decentralized peer review queries.
+ * PeerLens Search — decentralized peer review queries.
  *
  * Source: ARCHITECTURE.md Task 9.3
  */
@@ -18,7 +18,7 @@ import {
   type QueryResult,
 } from '../../src/trust/query_client';
 
-describe('Trust Network Search', () => {
+describe('PeerLens Search', () => {
   beforeEach(() => {
     resetContactDirectory();
     resetTrustQueryClient();

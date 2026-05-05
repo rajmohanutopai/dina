@@ -168,7 +168,7 @@ The container runs:
 | 12 | TestPurchaseJourney | test_sancho_health_context | Health data auto-classified to health vault |
 | 13 | TestPurchaseJourney | test_sancho_budget_context | Budget auto-classified to finance vault |
 | 14 | TestPurchaseJourney | test_alonso_publishes_review | /review + Publish button → PDS record |
-| 15 | TestPurchaseJourney | test_sancho_asks_for_chair | /ask finds health + budget + Trust Network review |
+| 15 | TestPurchaseJourney | test_sancho_asks_for_chair | /ask finds health + budget + PeerLens review |
 | 16 | TestAgentGateway | test_validate_safe_action | CLI `dina validate` search → approved |
 | 17 | TestAgentGateway | test_validate_risky_action | CLI `dina validate` send_email → pending_approval |
 | 18 | TestOpenClaw | test_openclaw_validate_safe | MCP `dina_validate` search → approved |

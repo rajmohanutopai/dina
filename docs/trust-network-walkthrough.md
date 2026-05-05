@@ -1,13 +1,13 @@
-# Trust Network V1 — Walkthrough
+# PeerLens V1 — Walkthrough
 
 > **Audience**: developers, integrators, and curators who want a single
-> entry point into what Dina's Trust Network V1 is, how it's wired,
+> entry point into what Dina's PeerLens V1 is, how it's wired,
 > and where to look for deeper context.
 >
 > **Scope**: V1 (the `com.dina.trust.*` × 19 lexicons +
 > `com.dina.service.profile`, the AppView's three daemons, the 12
 > scheduled jobs, the 11 xRPC endpoints, the `appview_config`
-> operator surface, the mobile Trust tab). V2 work is referenced
+> operator surface, the mobile the PeerLens tab). V2 work is referenced
 > inline where it closes a documented V1 gap.
 >
 > **Companion docs**:
@@ -31,15 +31,15 @@
 
 ---
 
-## 1. Why a Trust Network
+## 1. Why PeerLens
 
 Every time you transact online, you trust strangers. The signals
 you have (star ratings, reviews, a platform's algorithmic ranking)
 are the things the platform monetises — they're for sale. **The
-Trust Network is the first layer of the internet that ranks by
+PeerLens is the first layer of the internet that ranks by
 *verified truth* instead of *ad spend***.
 
-Trust Network V1 is built on the AT Protocol. Every trust record
+PeerLens V1 is built on the AT Protocol. Every trust record
 is a signed, portable, user-owned object in a Personal Data
 Server. The AppView is one possible *view* of this data — anyone
 can build their own AppView that reads the same firehose and
@@ -108,7 +108,7 @@ Postgres; restart is safe.
 
 ## 3. Records — what gets attested
 
-The Trust Network exposes 20 record types, all under
+PeerLens exposes 20 record types, all under
 `com.dina.*` AT Protocol NSIDs. Schemas live in
 `appview/src/ingester/record-validator.ts` (TN-TEST-005 covers
 every schema with happy-path + rejection tests).
@@ -297,10 +297,10 @@ log parsing.
 ## 9. Mobile surface
 
 The mobile client (Expo / React Native, in `apps/mobile/`)
-exposes Trust Network V1 behind the `trust_v1_enabled` flag
+exposes PeerLens V1 behind the `trust_v1_enabled` flag
 (TN-FLAG-005). When enabled, the user sees:
 
-- **Trust tab** — feed + search + facet bar (TN-MOB-011 — backlog).
+- **the PeerLens tab** — feed + search + facet bar (TN-MOB-011 — backlog).
 - **Subject detail** (`[subjectId].tsx`) — header card + reviewer
   groups by graph distance (TN-MOB-012 — backlog).
 - **Compose** (`write.tsx`) — attestation flow, optional

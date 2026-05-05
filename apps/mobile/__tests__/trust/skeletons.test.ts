@@ -1,7 +1,7 @@
 /**
  * Loading skeletons data-layer tests (TN-MOB-029).
  *
- * Pins the contract that the Trust tab feed, subject-detail rail,
+ * Pins the contract that the PeerLens tab feed, subject-detail rail,
  * and search-results screen all share:
  *
  *   - First-viewport row counts (4 subjects, 6 reviewers — plan §8.4).

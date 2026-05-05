@@ -1,5 +1,5 @@
 /**
- * Trust Network first-run modal tests (TN-MOB-027).
+ * PeerLens first-run modal tests (TN-MOB-027).
  *
  * Covers the dismissal gate that screens use to decide whether to
  * surface the modal:

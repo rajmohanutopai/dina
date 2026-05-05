@@ -20,7 +20,7 @@ budget-conscious), and his family persona (kids who'll use the chair
 too). All of this is in Alonso's encrypted vault, spread across persona
 compartments.
 
-Meanwhile, on the AT Protocol trust network:
+Meanwhile, on the AT Protocol PeerLens:
 
   Verified (Ring 2) — mutual trust edges via vouches:
     - **Alice** — vouched for by Bob
@@ -51,7 +51,7 @@ This is what makes Dina unique:
   - Amazon knows your purchase history but not your back pain.
   - ChatGPT knows nothing about you.
   - Perplexity can search but can't verify reviews are real.
-  - Only Dina has the vault AND the Trust Network AND the persona
+  - Only Dina has the vault AND PeerLens AND the persona
     context to connect them.
 
 Architecture
@@ -73,7 +73,7 @@ results. The Home Node never stores millions of raw reviews.
   Alonso's Dina queries AppView → gets structured summaries
                                     ↓
   Brain combines: vault context (health, work, finance, family)
-                + trust network data (from AppView)
+                + PeerLens data (from AppView)
                                     ↓
   Brain → Gemini Flash → personalized advice
 """
@@ -471,7 +471,7 @@ class TestPurchaseJourney:
         """Alice ↔ Bob and Alice → Diana have trust edges (Ring 2).
         Charlie and Eve have zero edges (Ring 1, unverified).
 
-        This is the Trust Network's core value — not all reviewers are equal.
+        This is PeerLens core value — not all reviewers are equal.
         """
         try:
             import psycopg2
@@ -541,7 +541,7 @@ class TestPurchaseJourney:
         print(f"  [journey] Unverified: Charlie={charlie_edges}, Eve={eve_edges}")
 
     # -----------------------------------------------------------------
-    # 07 — Trust network: 3 verified negatives for CheapChair
+    # 07 — PeerLens: 3 verified negatives for CheapChair
     # -----------------------------------------------------------------
 
     # TST-USR-008
@@ -579,7 +579,7 @@ class TestPurchaseJourney:
         )
 
     # -----------------------------------------------------------------
-    # 08 — Trust network: 3 verified positives for ErgoMax
+    # 08 — PeerLens: 3 verified positives for ErgoMax
     # -----------------------------------------------------------------
 
     # TST-USR-009
@@ -754,17 +754,17 @@ class TestPurchaseJourney:
 
     # TST-USR-011
     def test_10_store_purchase_decision_in_vault(self, alonso_core, brain_headers):
-        """Store a purchase decision record — not raw Trust Network data.
+        """Store a purchase decision record — not raw PeerLens data.
 
         The vault stores *decisions*, not caches. Raw reviews live in
         AppView (Postgres, firehose-ingested, trust-weighted). The vault
-        only stores a record when Dina combined Trust Network data + vault
+        only stores a record when Dina combined PeerLens data + vault
         context into a personalized recommendation.
 
         The rule:
-            Trust Network queried + vault context combined + recommendation given
+            PeerLens queried + vault context combined + recommendation given
                 → store decision record (encrypted, with reasoning)
-            Simple chat / factual question / no Trust Network involved
+            Simple chat / factual question / no PeerLens involved
                 → don't store
 
         This decision record is what Dina references later when the user
@@ -796,7 +796,7 @@ class TestPurchaseJourney:
                         "- Finance: single income, budget 10-20K INR\n"
                         "- Family: kids (13, 10) share home office chair\n"
                         "\n"
-                        "Trust Network data (queried from AppView):\n"
+                        "PeerLens data (queried from AppView):\n"
                         "- CheapChair Pro 3000: trust-weighted 2.1/10 — "
                         "3 verified NEGATIVE (Alice 0.87, Bob 0.82, Diana 0.79), "
                         "2 unverified POSITIVE (Charlie 0.15, Eve 0.12). "
@@ -883,7 +883,7 @@ class TestPurchaseJourney:
            - Amazon knows purchase history but not back pain.
            - ChatGPT knows nothing about you.
            - Perplexity can search but can't verify reviews are real.
-           - Only Dina has the vault AND the Trust Network.
+           - Only Dina has the vault AND PeerLens.
 
         Assertions verify the response is PERSONALIZED — not just
         "avoid CheapChair" (generic) but references the user's specific
@@ -916,7 +916,7 @@ class TestPurchaseJourney:
             "- Kids (13 and 10 years old) use home office for online classes\n"
             "- Chair needs to handle family use, not just the user\n"
             "\n"
-            "== TRUST NETWORK DATA (from AppView — trust-weighted) ==\n"
+            "== PEERLENS DATA (from AppView — trust-weighted) ==\n"
             "\n"
             "CheapChair Pro 3000 (~8,000 INR):\n"
             "  Trust-weighted score: 2.1/10\n"
@@ -1086,7 +1086,7 @@ class TestPurchaseJourney:
           - Amazon knows purchase history but not the back pain.
           - ChatGPT knows nothing about the user.
           - Perplexity can search but can't verify reviews are real.
-          - Only Dina has the vault AND the Trust Network AND persona context.
+          - Only Dina has the vault AND PeerLens AND persona context.
 
         This test has HARD assertions on personalization — if Brain
         returns generic "here are some chairs" advice, the test fails.

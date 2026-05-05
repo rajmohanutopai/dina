@@ -1,4 +1,4 @@
-# Trust Network V1 — Soak-Cohort Onboarding
+# PeerLens V1 — Soak-Cohort Onboarding
 
 > **Audience**: operators running the V1 ramp — bringing the first
 > wave of users onto a deployed AppView before opening the gates
@@ -47,7 +47,7 @@ Before naming the soak cohort:
 | AppView deployed + green | Ops | `/health` reports ok; `/metrics` returns; smoke checks per `deploy-runbook.md` §5 pass |
 | Trust-V1 flag is **disabled** | Ops | `dina-admin trust status` returns `false` |
 | Threat model reviewed | Product / Security | `threat-model.md` skim done; the 7 "what V1 doesn't promise" items are acceptable for the cohort's use case |
-| Mobile build deployed | Mobile | Trust tab gated by `loadTrustV1Enabled` returning `false` (default-hidden until flag flips) |
+| Mobile build deployed | Mobile | the PeerLens tab gated by `loadTrustV1Enabled` returning `false` (default-hidden until flag flips) |
 | Observability dashboards live | Ops | The 8 alert-grade metrics from `observability.md` show in the dashboard; alert rules wired |
 | On-call rotation staffed | Ops | Soak window has a primary + secondary on-call, rotation calendar published |
 | Rollback path tested | Ops | Test environment has been rolled back from V1-enabled to V1-disabled at least once; flip-time measured (< 60s) |
@@ -96,7 +96,7 @@ Once the cohort is selected:
    TTL).
 
 2. **Notify the cohort**. They open the mobile app within the next
-   hour and confirm the Trust tab appears. The first-run modal
+   hour and confirm the PeerLens tab appears. The first-run modal
    (TN-MOB-051) walks them through the V1 caveats (pseudonymity,
    what gets stored where).
 

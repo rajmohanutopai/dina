@@ -1,7 +1,7 @@
 /**
- * Trust Network — landing screen (TN-MOB-011 / Plan §8.1).
+ * PeerLens — landing screen (TN-MOB-011 / Plan §8.1).
  *
- * The Trust tab's home — a search bar across the top, a facet bar
+ * the PeerLens tab's home — a search bar across the top, a facet bar
  * for quick category filtering, and the network feed below (recent
  * attestations from the user's 1-hop reviewers, Plan §7's "feed.network"
  * surface).
@@ -303,7 +303,7 @@ export default function TrustFeedScreen(
   return (
     <View style={styles.container} testID="trust-feed-screen">
       {/* ─── Self-profile card ───────────────────────────────────────
-          Tappable card at the top of the trust tab showing the
+          Tappable card at the top of the PeerLens tab showing the
           viewer's own neutral counts (Reddit-style: "90 Karma · 33
           Contributions" framing). Deliberately NO band badge or
           colour-coded score — a fresh account naturally falls in
@@ -340,7 +340,7 @@ export default function TrustFeedScreen(
           <View style={styles.selfCardStats} testID="trust-feed-self-stats">
             <SelfStat
               value={selfDisplay.scoreDisplay !== null ? String(selfDisplay.scoreDisplay) : '—'}
-              label="Trust score"
+              label="PeerLens signal"
               testKey="score"
             />
             <SelfStat
@@ -384,7 +384,7 @@ export default function TrustFeedScreen(
             autoCorrect={false}
             autoCapitalize="none"
             testID="trust-search-input"
-            accessibilityLabel="Search the trust network"
+            accessibilityLabel="Search PeerLens"
           />
           {q.length > 0 ? (
             <Pressable

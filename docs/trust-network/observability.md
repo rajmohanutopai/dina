@@ -1,4 +1,4 @@
-# Trust Network V1 — Observability
+# PeerLens V1 — Observability
 
 > **Audience**: operators wiring AppView metrics into Prometheus +
 > Grafana (or equivalent) and authoring alert rules.

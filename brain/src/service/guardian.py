@@ -3688,7 +3688,7 @@ class GuardianLoop:
                     "fabricated_flagged": guard_result.get("fabricated_sentences", []),
                 })
                 if trust_tool_used:
-                    # Trust Network tool returned verified data — only strip
+                    # PeerLens tool returned verified data — only strip
                     # Anti-Her (Law 4, non-negotiable). Skip fabricated/consensus/
                     # unsolicited since the data came from verified sources.
                     strip_keys = ["anti_her_sentences"]
@@ -4455,11 +4455,11 @@ class GuardianLoop:
         AND fabrication/consensus regex stripping tied to density tier:
 
         - Zero trust data: strip fabricated trust claims, inject honest
-          disclosure ("no verified data in Trust Network").
+          disclosure ("no verified data in PeerLens").
         - Single review: inject "limited data" caveat, strip consensus
           language and fabricated ratings if source has none.
         - Locked persona: correct "no data" to "data inaccessible".
-        - Personal notes != Trust Network reviews: correct conflation.
+        - Personal notes != PeerLens reviews: correct conflation.
 
         The guard scan LLM provides richer NLU for these categories,
         but these regex patterns catch obvious cases even when the
@@ -4478,7 +4478,7 @@ class GuardianLoop:
         if tier == "zero":
             # Strip fabricated trust claims when no trust data exists.
             fabricated = re.compile(
-                r"(?:trust network data|verified review|trust score|"
+                r"(?:PeerLens data|verified review|trust score|"
                 r"attestation|verified rating)",
                 re.IGNORECASE,
             )
@@ -4522,7 +4522,7 @@ class GuardianLoop:
             # Handle web vs trust distinction.
             if density_meta.get("personal_count", 0) > 0:
                 trust_claim = re.compile(
-                    r"verified.*trust.*review|trust network.*review",
+                    r"verified.*trust.*review|PeerLens.*review",
                     re.IGNORECASE,
                 )
                 if trust_claim.search(content):

@@ -133,7 +133,7 @@ class AgentIntent:
 
 @dataclass
 class ExpertAttestation:
-    """Signed expert review in the Trust Network."""
+    """Signed expert review in PeerLens."""
     expert_did: str
     expert_trust_ring: TrustRing
     product_category: str
@@ -150,7 +150,7 @@ class ExpertAttestation:
 
 @dataclass
 class OutcomeReport:
-    """Anonymized purchase outcome for the Trust Network."""
+    """Anonymized purchase outcome for PeerLens."""
     reporter_trust_ring: TrustRing
     reporter_age_days: int
     product_category: str
@@ -1007,7 +1007,7 @@ class MockLegalBot:
 
 
 # ---------------------------------------------------------------------------
-# Mock: Trust Network
+# Mock: PeerLens
 # ---------------------------------------------------------------------------
 
 class MockTrustNetwork:

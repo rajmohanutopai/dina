@@ -118,7 +118,7 @@ export type {
   VerifyMessageSignatureInput,
 } from './validators';
 
-// Trust Network wire types (TN-PROTO-001). Pure type declarations
+// PeerLens wire types (TN-PROTO-001). Pure type declarations
 // for the `com.dina.trust.*` AT Protocol record family — Lite, Brain
 // and mobile all consume from here so the workspace has one
 // definition. AppView's parallel `lexicon-types.ts` mirrors this
@@ -246,7 +246,7 @@ export type {
   MultikeyDecodeFn,
 } from './identity/verify_record';
 
-// Trust Network V1 score formula (TN-PROTO-004 / TN-PROTO-005).
+// PeerLens V1 score formula (TN-PROTO-004 / TN-PROTO-005).
 // Pure, zero-dep, deterministic reference. AppView's wall-clock
 // scorer is the call-site behaviour; this is the formula every
 // implementation pins to via `conformance/vectors/trust_score_v1.json`.

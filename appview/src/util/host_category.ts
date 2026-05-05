@@ -1,7 +1,7 @@
 /**
  * Curated host → category map for content subject enrichment (TN-ENRICH-001).
  *
- * Per Trust Network V1 plan §3.6.3:
+ * Per PeerLens V1 plan §3.6.3:
  *
  *   > **Type=content:** `SubjectRef.uri` host present →
  *   > `metadata.host = <host>`, `category = 'content'`. Host map:

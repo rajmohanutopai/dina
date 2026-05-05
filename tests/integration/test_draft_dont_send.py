@@ -392,7 +392,7 @@ class TestPaymentIntentProtocol:
         self, mock_dina: MockDinaCore,
     ) -> None:
         """After a purchase is completed (by the user, not Dina), the
-        outcome is recorded in the trust network."""
+        outcome is recorded in PeerLens."""
         trust_network = mock_dina.trust_network
 
         # User completes purchase and reports outcome
@@ -2059,7 +2059,7 @@ def create_cart_handover(
         merchant=merchant,
         amount=amount,
         currency=currency,
-        recommendation=f"Best option from {merchant} per trust network.",
+        recommendation=f"Best option from {merchant} per PeerLens.",
         created_at=base,
         expires_at=base + ttl_hours * 3600,
         executed=False,
@@ -2583,7 +2583,7 @@ class TestCartHandoverLifecycle:
         assert "upi://pay" in stored.intent_uri
         assert stored.executed is False
         assert stored.recommendation == (
-            "Best option from Artisan Furniture Co. per trust network."
+            "Best option from Artisan Furniture Co. per PeerLens."
         )
 
         # At 6h — details still intact

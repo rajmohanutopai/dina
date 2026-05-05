@@ -1,5 +1,5 @@
 /**
- * Settings → "About Trust Network" content tests (TN-MOB-028).
+ * Settings → "About PeerLens" content tests (TN-MOB-028).
  *
  * Pins:
  *   - Body paragraphs are IDENTITY-EQUAL to FIRST_RUN_MODAL_COPY.body
@@ -48,18 +48,18 @@ describe('ABOUT_SCREEN_CONTENT — disclosure caveat', () => {
 });
 
 describe('ABOUT_SCREEN_CONTENT — settings-screen framing', () => {
-  it('screenTitle is "About Trust Network" (the navigation header)', () => {
-    expect(ABOUT_SCREEN_CONTENT.screenTitle).toBe('About Trust Network');
+  it('screenTitle is "About PeerLens" (the navigation header)', () => {
+    expect(ABOUT_SCREEN_CONTENT.screenTitle).toBe('About PeerLens');
   });
 
   it('headerLabel differs from the modal framing (settings screen has its own context)', () => {
-    expect(ABOUT_SCREEN_CONTENT.headerLabel).toBe('How Trust Network works');
+    expect(ABOUT_SCREEN_CONTENT.headerLabel).toBe('How PeerLens works');
     // Sanity check: the headerLabel is NOT the same as the modal title.
     expect(ABOUT_SCREEN_CONTENT.headerLabel).not.toBe(FIRST_RUN_MODAL_COPY.title);
   });
 
   it('versionLabel anchors the disclosure to a release', () => {
-    expect(ABOUT_SCREEN_CONTENT.versionLabel).toBe('Trust Network V1');
+    expect(ABOUT_SCREEN_CONTENT.versionLabel).toBe('PeerLens V1');
   });
 });
 

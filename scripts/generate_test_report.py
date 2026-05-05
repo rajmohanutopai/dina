@@ -76,7 +76,7 @@ USER_STORY_META = {
     3: {
         "name": "The Dead Internet Filter",
         "desc": [
-            ('\u201cIs this video AI?\u201d', '\u2192 Dina resolves creator DID via AT Protocol Trust Network'),
+            ('\u201cIs this video AI?\u201d', '\u2192 Dina resolves creator DID via AT Protocol PeerLens'),
             (None, 'Elena (Ring 3): 200 attestations, 15 peer vouches, 2yr history \u2192 \u201cauthentic, trusted creator\u201d'),
             (None, 'BotFarm (Ring 1): 0 attestations, 3\u2011day\u2011old account \u2192 \u201cunverified, check other sources\u201d'),
         ],

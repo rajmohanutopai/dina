@@ -29,7 +29,7 @@ markers = [
     "compat: backward compatibility tests — verifies migration paths and legacy format support",
     "d2d: scenarios that test Dina-to-Dina encrypted messaging",
     "agent: scenarios that test agent safety / delegated tasks",
-    "trust: scenarios that test Trust Network (publish/query)",
+    "trust: scenarios that test PeerLens (publish/query)",
     "pii: scenarios that test PII scrubbing / privacy",
     "export: scenarios that test export / recovery / device management",
     "multinode: scenarios that require two running Dina Home Nodes",

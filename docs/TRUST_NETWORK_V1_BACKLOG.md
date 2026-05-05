@@ -1,4 +1,4 @@
-# Trust Network V1 — Backlog
+# PeerLens V1 — Backlog
 
 Nothing to do. All V1 work closed; deferred items (TN-IDENT-001, TN-IDENT-003) gated on the TS-consolidation plan.
 

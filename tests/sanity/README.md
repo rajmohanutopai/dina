@@ -45,7 +45,7 @@ End-to-end regression tests that exercise Dina through real Telegram bots.
 | 3 | TestRemember | Vault storage + timed reminder fires |
 | 4 | TestContacts | Mutual contact registration |
 | 5 | TestSanchoMoment | D2D arrival + vault recall + contextual nudge |
-| 6 | TestTrust | Trust Network query |
+| 6 | TestTrust | PeerLens query |
 | 7 | TestAgentGateway | Safe/risky action validation via Core API |
 | 8 | TestWS2ServiceQuery | `/service_query` command grammar + routing (`test_ws2_telegram.py`) |
 | 9 | TestTransitEndToEnd | Full BusDriver transit scenario — real OpenClaw + transit MCP, Telegram user sees real ETA + map URL (`test_transit_e2e.py`) |

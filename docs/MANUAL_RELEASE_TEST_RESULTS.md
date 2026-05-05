@@ -212,7 +212,7 @@ Status legend: ✅ pass · ⚠ pass with findings · ❌ fail · ⏭ skipped (ou
 - Settings → AI Provider section lists OpenAI + Google Gemini.
 - Tapped "Add key" on OpenAI, pasted a deliberately fake key `sk-invalid-test-key-12345`, tapped Save.
 - Behaviour: key was saved + OpenAI auto-marked ACTIVE + Gemini's "Use this provider" button rendered. Masked display reads `sk-i...2345`.
-- /ask "What can you do?" returned a real LLM-generated Dina capabilities description (markdown-formatted, mentions Search Your Memory + Check the Trust Network), implying the active-provider wiring fell through to Gemini despite OpenAI being marked ACTIVE — OR the keychain still contained the prior Gemini active flag and the persistence is read-after-write inconsistent.
+- /ask "What can you do?" returned a real LLM-generated Dina capabilities description (markdown-formatted, mentions Search Your Memory + Check PeerLens), implying the active-provider wiring fell through to Gemini despite OpenAI being marked ACTIVE — OR the keychain still contained the prior Gemini active flag and the persistence is read-after-write inconsistent.
 - Either way: **the user sees no signal that their saved OpenAI key isn't being used**. From the user's perspective, OpenAI is ACTIVE and their query is answered — they have no way to discover their key is broken until they revoke Gemini.
 
 ### Issues filed
@@ -235,7 +235,7 @@ Status legend: ✅ pass · ⚠ pass with findings · ❌ fail · ⏭ skipped (ou
 ## MT-09: Basic /ask — ✅ pass
 
 - Verified during MT-08 testing. Asked "What can you do?" via Ask mode in the chat composer, send button on the Chat tab.
-- Response: structured Markdown listing Dina-specific capabilities ("I am Dina, your sovereign personal AI assistant... Search Your Memory (Vaults), Check the Trust Network..."), formatted with bold headers and bullets.
+- Response: structured Markdown listing Dina-specific capabilities ("I am Dina, your sovereign personal AI assistant... Search Your Memory (Vaults), Check PeerLens..."), formatted with bold headers and bullets.
 - Pass criteria met: Dina-specific answer (not a generic broken fallback like "I'm an AI language model" or a stack trace).
 
 
@@ -373,7 +373,7 @@ Same dependency on a second peer. The reconnect / pending-state handling lives i
 
 ## MT-20: Trust feed/profile — ⏭ skipped (no published profile on this DID)
 
-The Trust tab on People requires the user's own DID (`did:plc:sgmag3x3njlkkrepjfgssfo4`) to have a published service profile or attestations on the AppView. The MT-04 recovery brought the identity back but did not republish a profile (that's a separate MT-22 / MT-23 step). Trust tab will render an empty state. Marking skipped; comes back into scope after MT-22.
+the PeerLens tab on People requires the user's own DID (`did:plc:sgmag3x3njlkkrepjfgssfo4`) to have a published service profile or attestations on the AppView. The MT-04 recovery brought the identity back but did not republish a profile (that's a separate MT-22 / MT-23 step). the PeerLens tab will render an empty state. Marking skipped; comes back into scope after MT-22.
 
 ---
 

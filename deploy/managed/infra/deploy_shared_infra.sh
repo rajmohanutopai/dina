@@ -4,7 +4,7 @@
 # This deploys the provider services that multiple Home Nodes connect to:
 #   - Community PDS  (AT Protocol, hosts user trust repos)
 #   - MsgBox         (D2D encrypted mailbox, WebSocket + HTTP)
-#   - AppView        (Trust Network, 5 xRPC endpoints)
+#   - AppView        (PeerLens, 5 xRPC endpoints)
 #   - Jetstream      (PDS firehose consumer)
 #   - PostgreSQL     (AppView database)
 #

@@ -1,7 +1,7 @@
 /**
  * Local outbox store — in-memory pub/sub wrapper around `enqueueDraft`.
  *
- * The Trust Network's outbox state machine (in `outbox.ts`) is purely
+ * PeerLens outbox state machine (in `outbox.ts`) is purely
  * functional: it consumes a row list + an event and produces a new row
  * list. This module owns the live `rows` array, exposes
  * `subscribe(listener)` so screens can re-render when the outbox

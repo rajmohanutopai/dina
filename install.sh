@@ -910,7 +910,7 @@ fi
 verbose_ok "Infrastructure: MsgBox + AppView + PLC (${INFRA_PDS_HOST})"
 
 # ---------------------------------------------------------------------------
-# Step 8b: Community PDS credentials (for Trust Network + DID identity)
+# Step 8b: Community PDS credentials (for PeerLens + DID identity)
 # ---------------------------------------------------------------------------
 # Prepares PDS credentials. Core creates the account on first boot so that
 # Core's K256 rotation key is included in the PLC genesis operation.
@@ -921,7 +921,7 @@ _COMMUNITY_PDS="${DINA_COMMUNITY_PDS_URL:-${INFRA_PDS_URL}}"
 _PDS_HANDLE_FILE="${SECRETS_DIR}/pds_community_handle"
 
 if [ ! -f "${_PDS_HANDLE_FILE}" ]; then
-    echo -e "  ${BOLD}Trust Network Setup${RESET}"
+    echo -e "  ${BOLD}PeerLens Setup${RESET}"
     echo ""
 
     # Derive PDS handle from owner name (asked in Step 4b)
@@ -945,13 +945,13 @@ if [ ! -f "${_PDS_HANDLE_FILE}" ]; then
     chmod 600 "${SECRETS_DIR}/pds_community_password"
 
     echo "" >> "${ENV_FILE}"
-    echo "# Community PDS (Trust Network)" >> "${ENV_FILE}"
+    echo "# Community PDS (PeerLens)" >> "${ENV_FILE}"
     echo "DINA_COMMUNITY_PDS_URL=${_COMMUNITY_PDS}" >> "${ENV_FILE}"
     echo "DINA_COMMUNITY_PDS_HANDLE=${_PDS_FULL_HANDLE}" >> "${ENV_FILE}"
     echo "DINA_COMMUNITY_PDS_PASSWORD=${_PDS_PW}" >> "${ENV_FILE}"
     echo "DINA_PDS_EMAIL=${_PDS_EMAIL}" >> "${ENV_FILE}"
 
-    echo -e "  ${GREEN}✓${RESET} Trust Network credentials prepared: ${CYAN}${_PDS_FULL_HANDLE}${RESET}"
+    echo -e "  ${GREEN}✓${RESET} PeerLens credentials prepared: ${CYAN}${_PDS_FULL_HANDLE}${RESET}"
     echo -e "      Account will be created when Core starts (includes DID rotation key)."
 
     # Restart Core so it picks up the new PDS credentials and creates the account.

@@ -93,7 +93,7 @@ export interface IsDiscoverableResult {
 }
 
 // ---------------------------------------------------------------------------
-// Trust Network types (mirrors `appview/src/shared/types/api-types.ts`)
+// PeerLens types (mirrors `appview/src/shared/types/api-types.ts`)
 // ---------------------------------------------------------------------------
 
 /** Aggregate attestation counts for a trust subject. */
@@ -117,7 +117,7 @@ export interface TrustAuthenticity {
   confidence: number | null;
 }
 
-/** How the requester relates to the target in the trust graph. */
+/** How the requester relates to the target in PeerLens graph. */
 export interface TrustGraphContext {
   shortestPath: number | null;
   mutualConnections: number | null;
@@ -315,7 +315,7 @@ export class AppViewClient {
   }
 
   // -------------------------------------------------------------------------
-  // Trust Network — `com.dina.trust.*`
+  // PeerLens — `com.dina.trust.*`
   // -------------------------------------------------------------------------
 
   /**

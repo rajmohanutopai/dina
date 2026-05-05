@@ -1,5 +1,5 @@
 /**
- * Trust Network empty-state copy + classifier (TN-MOB-031).
+ * PeerLens empty-state copy + classifier (TN-MOB-031).
  *
  * Three states are in scope per the plan:
  *
@@ -67,8 +67,8 @@ export const EMPTY_STATE_CONTENT: Readonly<Record<EmptyState, EmptyStateContent>
     action: null,
   }),
   no_contacts: Object.freeze({
-    title: 'No contacts in your trust ring',
-    body: 'Trust scores are weighted by people you know. Add contacts to see what they trust.',
+    title: 'No contacts yet',
+    body: 'PeerLens works best with people you know. Add contacts to see what they trust.',
     action: 'Add a contact',
   }),
 });

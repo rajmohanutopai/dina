@@ -142,7 +142,7 @@ func (r *Resolver) ResolveFullProfile(did string) (json.RawMessage, error) {
 	return json.RawMessage(body), nil
 }
 
-// ResolveNeighborhood fetches the trust graph around a center DID.
+// ResolveNeighborhood fetches PeerLens graph around a center DID.
 func (r *Resolver) ResolveNeighborhood(centerDID string, hops int, limit int) ([]domain.TrustEntry, error) {
 	if r.baseURL == "" {
 		return nil, nil

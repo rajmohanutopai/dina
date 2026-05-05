@@ -387,7 +387,7 @@ class UserCommandService:
         )
 
     async def publish_vouch(self, name: str, reason: str) -> CommandResult:
-        """Publish a vouch to the Trust Network. Resolves name → DID first."""
+        """Publish a vouch to PeerLens. Resolves name → DID first."""
         err = validate_name(name)
         if err:
             return CommandResult(ok=False, message=err)
@@ -415,7 +415,7 @@ class UserCommandService:
             return CommandResult(ok=False, message=f"Publish failed: {exc}")
 
     async def publish_review(self, product: str, review_text: str) -> CommandResult:
-        """Publish a product review to the Trust Network."""
+        """Publish a product review to PeerLens."""
         err = validate_name(product)
         if err:
             return CommandResult(ok=False, message=err)
@@ -439,7 +439,7 @@ class UserCommandService:
             return CommandResult(ok=False, message=f"Publish failed: {exc}")
 
     async def publish_flag(self, target: str, reason: str) -> CommandResult:
-        """Publish a flag against a name or DID on the Trust Network."""
+        """Publish a flag against a name or DID on PeerLens."""
         if not reason.strip():
             return CommandResult(ok=False, message="Reason cannot be empty.")
 

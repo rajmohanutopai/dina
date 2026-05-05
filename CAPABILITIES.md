@@ -319,9 +319,9 @@ Sancho is arriving at home in 5 minutes. He enjoys cardamom tea and his mother h
 
 ---
 
-## Trust Network
+## PeerLens
 
-Every Dina is part of a decentralised trust network. Trust is earned via multiple reviews. The idea is that every Dina updates reviews and thus what we get is real trusted systems. Trust rings tries to defeat sybil attacks
+Every Dina is part of a decentralised PeerLens. Trust is earned via multiple reviews. The idea is that every Dina updates reviews and thus what we get is real trusted systems. Trust rings tries to defeat sybil attacks
 
 ```
 # In telegram
@@ -329,7 +329,7 @@ You:
 /review ErgoMax 205: This is the best chair for back pain I have seen
 
 Dina:
-Publish to Trust Network?
+Publish to PeerLens?
 [Publish] [Cancel]
 Published review of ErgoMax 205.
 URI: at://did:plc:pmsxrxnraasohaqr3euwy6j/com.dina.trust.attestation/3mhsfgdcwqc2r
@@ -341,7 +341,7 @@ Sancho:
 /ask I want to buy a chair
 Dina:
 Based on your personal notes, I see that you work from home 3 days a week, spend long hours at your desk, and suffer from chronic lower back pain as a result. I also note that you have an office furniture budget of $1,000 to $1,500.
-I checked the verified Trust Network for recommendations from real peers. Here are the top highly-rated options:
+I checked the verified PeerLens for recommendations from real peers. Here are the top highly-rated options:
 **ErgoMax 205**: This also has high-confidence positive reviews specifically highlighting it as an excellent chair for back pain.
 ```
 
@@ -349,7 +349,7 @@ You also have /vouch, /trust and /
 
 ### The Purchase Journey
 
-Dina combines your personal context with the Trust Network to give you advice that's actually relevant to you.
+Dina combines your personal context with PeerLens to give you advice that's actually relevant to you.
 
 ```
 You:
@@ -361,14 +361,14 @@ and have mentioned concerns about chronic lower back pain,
 investing in an ergonomic office chair is a great idea.
 
 Given your budget of $1,000–1,500, you have access to some
-excellent options. Would you like me to check the Trust Network
+excellent options. Would you like me to check PeerLens
 for what verified reviewers say?
 
 You:
-/ask Yes, check the trust network for ergonomic chairs
+/ask Yes, check PeerLens for ergonomic chairs
 
 Dina:
-The Trust Network contains high-confidence positive reviews
+PeerLens contains high-confidence positive reviews
 for ergonomic chairs in your budget range.
 
 Peers who purchased this chair highlight that it provides
@@ -378,7 +378,7 @@ alleviate chronic back pain within two weeks, which aligns
 with your health concerns.
 ```
 
-You said "chair." You never said "ergonomic." Dina figured that out because she knows you have back pain (health vault), work from home (work vault), and your spending patterns (finance vault). Then she checked the Trust Network — reviews from real people with real experience, not anonymous star ratings.
+You said "chair." You never said "ergonomic." Dina figured that out because she knows you have back pain (health vault), work from home (work vault), and your spending patterns (finance vault). Then she checked PeerLens — reviews from real people with real experience, not anonymous star ratings.
 
 ---
 

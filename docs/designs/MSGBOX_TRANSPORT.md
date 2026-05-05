@@ -35,7 +35,7 @@ Route CLI requests through MsgBox — the same WebSocket relay already used for 
 | Brain | Direct HTTP to Core | No change (same Docker network) |
 | dina-admin | Admin socket / docker exec | No change (local) |
 | D2D | Already via MsgBox | No change |
-| Trust Network | All outbound | No change |
+| PeerLens | All outbound | No change |
 | Telegram | Brain polls outbound | No change |
 
 ## What Does NOT Change
@@ -43,7 +43,7 @@ Route CLI requests through MsgBox — the same WebSocket relay already used for 
 - **Brain ↔ Core**: direct HTTP on Docker network. Co-located.
 - **dina-admin ↔ Core**: admin socket via docker exec. Local only.
 - **D2D messaging**: already uses MsgBox. No protocol change to D2D message flow. **Note:** the existing `/forward` HTTP endpoint (handler.go:162-204) verifies that the Ed25519 signature matches the provided `X-Sender-Pub` key, but does not verify that `X-Sender-DID` is bound to that key. This means MsgBox-side rate limiting and abuse logs use a self-asserted DID. End-to-end D2D authenticity is still intact (recipient verifies sender's DID against PLC doc in transport.go), so this is not a plaintext/authenticity break — but MsgBox-level attribution is spoofable. Fixing `/forward` DID-binding is orthogonal to this design and deferred to a separate change.
-- **Trust Network**: all outbound (publish to PDS, query AppView). PDS never calls back.
+- **PeerLens**: all outbound (publish to PDS, query AppView). PDS never calls back.
 - **Telegram**: Brain polls Telegram API. No inbound.
 - **Port 8100**: still exists for internal Brain ↔ Core. Just not exposed externally.
 

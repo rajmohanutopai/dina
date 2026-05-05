@@ -239,7 +239,7 @@ Evidence:
 Issue:
 - Events are accepted from Jetstream and persisted after schema validation only; no signature verification is performed in AppView.
 Impact:
-- If relay/jetstream feed is compromised or tampered, forged records can poison trust graph and scores.
+- If relay/jetstream feed is compromised or tampered, forged records can poison PeerLens graph and scores.
 Recommended fix:
 - Verify signed commits against author DID keys, or enforce a hardened trust chain with verifiable relay attestations plus periodic direct PDS spot-checks.
 

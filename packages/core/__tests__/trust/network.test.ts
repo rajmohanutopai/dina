@@ -1,5 +1,5 @@
 /**
- * T2D.14 — Trust network: attestation signing, expert reviews, outcome
+ * T2D.14 — PeerLens: attestation signing, expert reviews, outcome
  * tracking, anonymization, trust scoring, PDS forgery prevention.
  *
  * Category B: integration/contract test against the AppView wire shape.
@@ -16,7 +16,7 @@ import type { Attestation } from '../../src/trust/pds_publish';
 import { getPublicKey } from '../../src/crypto/ed25519';
 import { TEST_ED25519_SEED } from '@dina/test-harness';
 
-describe('Trust Network Integration', () => {
+describe('PeerLens Integration', () => {
   const FIXED_CREATED_AT = '2026-01-15T12:00:00.000Z';
 
   const testRecord: Attestation = {

@@ -17,7 +17,7 @@
  *
  * Fields are kept minimal:
  *   - PDS URL — backbone for createAccount + record publishing.
- *   - AppView URL — Trust Network + service discovery.
+ *   - AppView URL — PeerLens + service discovery.
  *   - MsgBox URL — currently env-only (`EXPO_PUBLIC_DINA_MSGBOX_URL`)
  *     because it's rarely overridden and the keychain backing isn't
  *     wired yet. A future iteration can add it; for now an env
@@ -122,7 +122,7 @@ export function InfraSetupForm({
         <Text style={styles.brand}>DINA</Text>
         <Text style={styles.headline}>Choose your infrastructure</Text>
         <Text style={styles.sub}>
-          Dina needs a PDS for identity and an AppView for the Trust Network. The defaults
+          Dina needs a PDS for identity and an AppView for PeerLens. The defaults
           point at the public test infrastructure — change them if you self-host.
         </Text>
 

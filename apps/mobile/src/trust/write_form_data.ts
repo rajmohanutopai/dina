@@ -93,7 +93,7 @@ export interface WriteFormState {
    * Subject describe-fields (TN-MOB-021). When the screen receives a
    * `subjectId` URL param, `subject` is `null` — the subject already
    * exists in AppView and the form publishes against the existing row.
-   * When the user reaches the form via "Add to trust network" (no
+   * When the user reaches the form via "Add to PeerLens" (no
    * existing subject), the screen prompts them to fill these fields,
    * and the publish payload carries them as `record.subject`.
    */
@@ -225,7 +225,7 @@ export interface WriteFormState {
  * category. Closed enum so RANK-008 can weight reviewers by tier
  * without string-matching free-form values. Self-declared because
  * external verification doesn't scale; the social cost of
- * misrepresenting yourself within your trust network is the gate.
+ * misrepresenting yourself within your PeerLens is the gate.
  */
 export type ReviewerExperience = 'novice' | 'intermediate' | 'expert';
 

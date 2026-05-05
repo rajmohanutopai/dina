@@ -1,9 +1,9 @@
 /**
- * Trust tab — per-tab Stack navigator.
+ * the PeerLens tab — per-tab Stack navigator.
  *
  * Why this layout exists at all: the root `app/_layout.tsx` uses
  * `<Tabs>` with no nested Stacks. Without a Stack scoped to the
- * Trust tab, every drill-down (`/trust/search`, `/trust/[subjectId]`,
+ * the PeerLens tab, every drill-down (`/trust/search`, `/trust/[subjectId]`,
  * `/trust/reviewer/[did]`, …) became a global tab transition under
  * the hood, which meant `router.back()` popped to the previously-
  * focused tab rather than the previously-pushed screen. So
@@ -21,7 +21,7 @@
  *     Approvals).
  *   - **Drill-downs** — Stack default header with the automatic back
  *     chevron and the per-route title.
- *   - The root Tabs header is hidden for the trust tab via
+ *   - The root Tabs header is hidden for the PeerLens tab via
  *     `headerShown: false` on the Tabs.Screen — letting both render
  *     would produce a duplicate header band.
  */

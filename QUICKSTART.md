@@ -8,7 +8,7 @@ cd dina
 ./install.sh # --quick  to avoid repeating the backup phrases
 ```
 
-The installer asks your name, picks a messaging channel (Telegram or Bluesky), and sets up your AI provider (Gemini, OpenAI, or Claude). Everything else is automatic — keys, containers, identity, Trust Network account.
+The installer asks your name, picks a messaging channel (Telegram or Bluesky), and sets up your AI provider (Gemini, OpenAI, or Claude). Everything else is automatic — keys, containers, identity, PeerLens account.
 
 ## See Dina in Action
 

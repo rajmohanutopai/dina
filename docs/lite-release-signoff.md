@@ -72,7 +72,7 @@ schemas, cart handover, deep links.
 
 - [ ] Phase 8c: tasks 8.20–8.26 green + task 8.27 M3 gate
 - [ ] Phase 9b: Stories 01, 03, 06, 09 (partial — M3 scope of 09)
-- [ ] Trust Network query from Lite → AppView → response visible
+- [ ] PeerLens query from Lite → AppView → response visible
 - [ ] Service discovery + query/response round-trip via D2D
 - [ ] BusDriver scenario runs (the README demo)
 - [ ] Phase 8g: cross-stack compat — **8.60** (Lite Core + Python

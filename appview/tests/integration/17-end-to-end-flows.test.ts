@@ -192,7 +192,7 @@ describe('17.1 Ingest to Page', () => {
       confidence: 'high',
     })
 
-    // Query the trust graph around the voucher
+    // Query PeerLens graph around the voucher
     const graph = await getGraph(db, { did: voucher })
 
     // The graph should contain the vouch edge

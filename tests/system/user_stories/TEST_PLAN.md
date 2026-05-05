@@ -178,7 +178,7 @@
 
 > Don Alonso asks his Home Node when the next #42 bus arrives at Castro
 > Station. His Brain doesn't know — it reaches out to **BusDriver**, a
-> public transit provider already configured on the Trust Network. The
+> public transit provider already configured on PeerLens. The
 > full WS2 schema-driven arc runs end-to-end: requester validates params
 > and forwards schema_hash, provider validates and delegates to its
 > local agent, completion bridges back as service.response, and Alonso

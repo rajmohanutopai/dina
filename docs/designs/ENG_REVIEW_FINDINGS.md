@@ -1485,4 +1485,4 @@ The test suite validates **cryptographic correctness** extremely well but comple
 - Managed multi-tenant hosting
 - ZKP verification
 - Protocol spec extraction (CEO review expansion — separate effort)
-- Trust network bootstrap (CEO review expansion — separate effort)
+- PeerLens bootstrap (CEO review expansion — separate effort)

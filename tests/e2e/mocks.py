@@ -600,7 +600,7 @@ class MockRelay:
 
 
 class MockAppView:
-    """Trust Network query service."""
+    """PeerLens query service."""
 
     def __init__(self) -> None:
         self.product_scores: dict[str, dict] = {}
@@ -637,7 +637,7 @@ class MockAppView:
 
         Each review dict has: reviewer_did, reviewer_name, ring, sentiment,
         text, source_url, created_at.  Used by test suites 22/23 to populate
-        the Trust Network with known review data.
+        PeerLens with known review data.
         """
         if product_did not in self.product_scores:
             self.product_scores[product_did] = {

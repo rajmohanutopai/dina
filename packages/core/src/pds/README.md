@@ -35,7 +35,7 @@ imports don't move.
 - **PLC resolver** — DIDs are resolved through
   `packages/core/src/identity/directory.ts`. Separate namespace from
   PDS record CRUD; don't entangle.
-- **AppView queries** — the Trust Network's reader side
+- **AppView queries** — PeerLens reader side
   (`com.dina.trust.resolve`, `com.dina.service.search`, …) lives in
   `packages/core/src/trust/`. PDS is the writer side; AppView is the
   cross-indexed reader side.

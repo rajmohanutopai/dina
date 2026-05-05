@@ -1,6 +1,6 @@
 /**
  * Network feed runner — wraps `com.dina.trust.networkFeed` for the
- * Trust tab landing screen. Returns `{ feed, isLoading, error }`
+ * the PeerLens tab landing screen. Returns `{ feed, isLoading, error }`
  * for the screen to consume; tests pass `enabled: false` to keep the
  * screen presentational.
  *

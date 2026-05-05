@@ -233,7 +233,7 @@ describe('Recovery → namespaces present (TN-TEST-042)', () => {
 
     // The user's namespace identities (DID URL form) survive recovery.
     // This is what every prior attestation's `signedBy` reference
-    // points at — if it changes, the trust graph breaks.
+    // points at — if it changes, PeerLens graph breaks.
     expect(recoveredList[0]?.verificationMethodId).toBe(`${a.did}#namespace_0`);
   });
 

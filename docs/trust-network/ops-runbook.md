@@ -1,4 +1,4 @@
-# Trust Network V1 — Operations Runbook
+# PeerLens V1 — Operations Runbook
 
 > **Audience**: on-call operators responding to incidents in a
 > running AppView deployment.

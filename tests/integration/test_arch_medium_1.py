@@ -1027,7 +1027,7 @@ def test_attestation_lexicon_field_validation():
             errors.append("source_url is required")
         return errors
 
-    # --- Valid attestation: accepted by validator and trust network ---
+    # --- Valid attestation: accepted by validator and PeerLens ---
     valid = ExpertAttestation(
         expert_did="did:plc:Expert123",
         expert_trust_ring=TrustRing.RING_3_SKIN_IN_GAME,

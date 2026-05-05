@@ -150,10 +150,10 @@ VAULT_TOOLS: list[dict[str, Any]] = [
     {
         "name": "search_trust_network",
         "description": (
-            "Search the Dina Trust Network for product reviews, merchant ratings, "
+            "Search the Dina PeerLens for product reviews, merchant ratings, "
             "and trust evidence from verified peers. Use this when the user asks about "
             "buying a product, evaluating a vendor, or checking if something is trustworthy. "
-            "Returns attestations from the decentralised trust network — real reviews "
+            "Returns attestations from the decentralised PeerLens — real reviews "
             "from verified identities, not anonymous ratings. "
             "Results include sentiment (positive/neutral/negative), confidence level, "
             "and the reviewer's identity."
@@ -620,7 +620,7 @@ class ToolExecutor:
         }
 
     async def _search_trust_network(self, args: dict) -> dict:
-        """Search the Trust Network for product/merchant trust attestations."""
+        """Search PeerLens for product/merchant trust attestations."""
         query = args.get("query", "")
         category = args.get("category", "")
         if not query:
@@ -657,7 +657,7 @@ class ToolExecutor:
 
         if result is None:
             log.info("trust_search.no_result", extra={"query": query})
-            return {"items": [], "message": f"Trust Network not available or no data for '{query}'."}
+            return {"items": [], "message": f"PeerLens not available or no data for '{query}'."}
 
         results = result.get("results", [])
         if not results:
@@ -1062,12 +1062,12 @@ items without requiring a specific search term.
 4. If the user mentions buying, purchasing, shopping, or evaluating any product \
 or vendor, ALWAYS call search_trust_network immediately — do not ask the user \
 for permission or clarification first. Search using the product category or name \
-you infer from their vault context. The Trust Network contains verified peer \
+you infer from their vault context. PeerLens contains verified peer \
 reviews from real people. Each conversation is stateless (no follow-ups), so you \
 must gather all information and answer in a single response.
 
 5. Synthesize all gathered context with the user's query into a personalized answer. \
-Never ask "would you like me to check the Trust Network?" — just check it.
+Never ask "would you like me to check PeerLens?" — just check it.
 
 Rules:
 - Explore personas whose previews suggest relevant context.
@@ -1077,7 +1077,7 @@ Rules:
 or mention approval commands unless they specifically ask about locked data.
 - Never fabricate vault data — only use what the tools return.
 - Never recommend products, brands, or vendors from your training data. Only \
-recommend what the Trust Network or vault tools actually returned. If the Trust \
+recommend what PeerLens or vault tools actually returned. If the Trust \
 Network has no data for a query, say so honestly — do not fill the gap with \
 your own knowledge. The user trusts Dina because she only cites verified sources.
 - You can search and retrieve data but not store or update. If the user asks you to \
@@ -1376,7 +1376,7 @@ class ReasoningAgent:
                 # This is safe ONLY for local LLMs. Log a warning as
                 # defense-in-depth signal for future callers.
                 if entity_vault is not None and tc["name"] != "search_trust_network":
-                    # Skip PII scrubbing for Trust Network results — they are
+                    # Skip PII scrubbing for PeerLens results — they are
                     # public data (product names, review text), not personal info.
                     # Scrubbing them causes false positives (e.g. "X200" → [US_DRIVER_LICENSE_1]).
                     tool_result, accumulated_vault = await _scrub_tool_result(

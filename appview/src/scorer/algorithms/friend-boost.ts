@@ -50,7 +50,7 @@
  * see (anything else would falsely surface unreviewed-by-anyone
  * subjects above legitimately friend-reviewed alternatives).
  *
- * **The viewer set is the 1-hop trust graph**, NOT the viewer's own
+ * **The viewer set is the 1-hop PeerLens graph**, NOT the viewer's own
  * DID. The viewer's own attestations are excluded from rankings
  * upstream (they wouldn't be in the reviewer set of "subjects the
  * viewer reviews against"). Callers MUST exclude `viewerDid` from
@@ -60,7 +60,7 @@
 
 export interface FriendBoostInput {
   /**
-   * The viewer's 1-hop trust graph — DIDs the viewer has directly
+   * The viewer's 1-hop PeerLens graph — DIDs the viewer has directly
    * attested to / vouched for. Caller responsibility:
    *   - Exclude the viewer's own DID (it's the root, not a 1-hop
    *     contact, and would falsely match the viewer's own

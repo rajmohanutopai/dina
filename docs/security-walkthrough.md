@@ -375,7 +375,7 @@ Second, the things that matter most on mobile are actually the things that still
 - Sensitive-persona gatekeeper — unchanged. A persona that requires a passphrase still requires one, regardless of whether Brain asked via HTTP or via in-process dispatch.
 - Audit log — unchanged. Every read and every write gets a row.
 - Key derivation — unchanged. Master seed never hits disk unencrypted; DEKs derive via HKDF from the in-memory seed; seed is wiped after derivation.
-- Trust Network rules, service-query validation, Dina-to-Dina envelope signing — unchanged.
+- PeerLens rules, service-query validation, Dina-to-Dina envelope signing — unchanged.
 
 What changes is the address-space barrier between two halves of Dina's own code. That barrier is the one we give up to make the mobile story viable. We think that's the right call, and we'd rather tell you clearly than paper over it.
 

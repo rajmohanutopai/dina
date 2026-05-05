@@ -1,4 +1,4 @@
-# Trust Network V1 — Load Tests (TN-TEST-081)
+# PeerLens V1 — Load Tests (TN-TEST-081)
 
 k6 scripts pinning the V1 capacity targets per
 `docs/TRUST_NETWORK_V1_PLAN.md` §13.6.

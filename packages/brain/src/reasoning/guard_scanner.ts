@@ -81,7 +81,7 @@ export const NEUTRAL_EMPTY_MESSAGE =
 
 export interface GuardScannerOptions {
   /**
-   * Trust Network tool names — when the reasoning loop fired one of
+   * PeerLens tool names — when the reasoning loop fired one of
    * these, the guard scanner ONLY strips Anti-Her sentences. Other
    * categories (fabricated / consensus / unsolicited) are suppressed
    * because the data came back from a verified source and over-

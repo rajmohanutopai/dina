@@ -203,7 +203,7 @@ are at the edges.
 | `/v1/notify` | Notification hub | M2 (silence-first + WS push) |
 | `/v1/did`, `/v1/did/sign` | Identity signing | M2 (DID subsystem) |
 | `/v1/audit/append`, `/v1/audit/query` | Audit log | M2 |
-| `/v1/contacts`, `/v1/contacts/{did}` | Contact graph | M3 (trust network) |
+| `/v1/contacts`, `/v1/contacts/{did}` | Contact graph | M3 (PeerLens) |
 | `/v1/approvals`, `/v1/approvals/{id}/{approve,deny}` | Approval workflow | M5 (safety layer) |
 | `/v1/reminder`, `/v1/reminder/fire`, `/v1/reminders/pending` | Reminder engine | M4 |
 | `/v1/service/agents` | Service agent registry | M3 |

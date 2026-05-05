@@ -361,7 +361,7 @@ Dead drop remains as transport durability — it handles encrypted envelope deli
 | d2d | remote_dina (unknown) | unknown | low | quarantine |
 | appview | service | verified (if AT Protocol signed) | medium | caveated |
 
-D2D trust depends on the sender's position in the contact directory and trust network:
+D2D trust depends on the sender's position in the contact directory and PeerLens:
 - Ring 1 (verified + actioned): trust the content, caveat the source
 - Ring 2 (verified): lower confidence, caveat
 - Unknown sender: quarantine until verified
@@ -384,7 +384,7 @@ D2D trust depends on the sender's position in the contact directory and trust ne
 - Known contact → `sender_trust=contact_ring{N}`, `confidence=medium`, `retrieval_policy=caveated`
 
 **`brain/src/service/staging_processor.py`**
-- Handle D2D-origin items: include remote DID in provenance, cross-reference with trust network
+- Handle D2D-origin items: include remote DID in provenance, cross-reference with PeerLens
 - For AT Protocol attestations: verify signature chain before promoting to vault
 
 **`core/internal/adapter/sqlite/pool.go`**

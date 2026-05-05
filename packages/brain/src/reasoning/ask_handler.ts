@@ -267,7 +267,7 @@ export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCom
     // Guard-scan post-process (Laws 1 + 4). Strips Anti-Her sentences
     // unconditionally; strips fabricated/consensus/unsolicited only
     // when the reasoning loop didn't call a verified-trust tool
-    // (Trust Network data has already been vetted — over-redacting
+    // (PeerLens data has already been vetted — over-redacting
     // paints legit attestations as hallucinated). If every sentence
     // gets stripped because of Anti-Her, the scanner substitutes the
     // human-redirect message. Fail-open — any exception returns the

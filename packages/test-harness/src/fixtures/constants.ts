@@ -42,7 +42,7 @@ export const NON_HARDENED_PATH = 'm/9999/0';
 export const FIRST_CUSTOM_PERSONA_INDEX = 6;
 
 /**
- * Pseudonymous-namespace branch — Trust Network V1 (TN-IDENT-002).
+ * Pseudonymous-namespace branch — PeerLens V1 (TN-IDENT-002).
  *
  * Each namespace is a separate cryptographic identity (e.g. one for
  * health reviews, one for product reviews) deterministically derived

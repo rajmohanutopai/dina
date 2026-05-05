@@ -94,7 +94,7 @@ export interface Attestation {
    * expert-weighted ranking in technical categories ("show me what
    * developers say about this IDE"). Self-declared because external
    * verification doesn't scale — the social cost of misrepresenting
-   * yourself to your trust network is the gate.
+   * yourself to your PeerLens is the gate.
    */
   reviewerExperience?: 'novice' | 'intermediate' | 'expert'
   /**

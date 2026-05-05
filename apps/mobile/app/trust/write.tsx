@@ -1,5 +1,5 @@
 /**
- * Trust Network — compose / edit attestation flow (TN-MOB-013 / Plan §8.6).
+ * PeerLens — compose / edit attestation flow (TN-MOB-013 / Plan §8.6).
  *
  * Captures the fields needed to publish a `com.dina.trust.attestation`:
  *   - subject (already known — passed in by the caller)
@@ -597,7 +597,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
           setLocalError(
             err instanceof Error
               ? err.message
-              : "Couldn't publish to the trust network.",
+              : "Couldn't publish to PeerLens.",
           );
           return;
         } finally {

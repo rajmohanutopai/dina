@@ -279,7 +279,7 @@ describe('TrustFeedScreen — accessibility (TN-TEST-061 surface)', () => {
     const { getByLabelText } = render(
       <TrustFeedScreen feed={[]} facets={EMPTY_FACETS} />,
     );
-    expect(getByLabelText('Search the trust network')).toBeTruthy();
+    expect(getByLabelText('Search PeerLens')).toBeTruthy();
   });
 
   it('Search CTA in empty state has descriptive label', () => {

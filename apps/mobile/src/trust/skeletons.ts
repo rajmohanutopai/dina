@@ -29,7 +29,7 @@
  *
  * Why a separate module rather than a per-screen `SubjectCardSkeleton`
  * component:
- *   - The same skeleton row is used by the Trust tab feed, the
+ *   - The same skeleton row is used by the PeerLens tab feed, the
  *     subject-detail "related items" rail, and the search results
  *     screen. One canonical shape avoids drift.
  *   - Tests pin the row-count + shape so a future "let's bump

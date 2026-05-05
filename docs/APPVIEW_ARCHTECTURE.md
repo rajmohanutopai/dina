@@ -70,7 +70,7 @@ Pros: Zero relay infrastructure. Works immediately. Cons: Dependency on Bluesky'
 
 **v2 (post-validation): Sovereign Dina relay.**
 
-Deploy Bluesky's open-source `indigo` BGS as `relay.dina.foundation`. Dina Core nodes `requestCrawl` to the Dina relay instead of Bluesky's. Full sovereignty — the trust network operates independently of Bluesky.
+Deploy Bluesky's open-source `indigo` BGS as `relay.dina.foundation`. Dina Core nodes `requestCrawl` to the Dina relay instead of Bluesky's. Full sovereignty — PeerLens operates independently of Bluesky.
 
 The swap is a single env var change (`RELAY_URL` in the Jetstream container). Zero code changes to the AppView, the Ingester, or the PDS.
 
@@ -188,7 +188,7 @@ dina-appview/
 │   │       ├── profiles.ts          # DID profile lookups
 │   │       ├── subjects.ts          # Subject resolution + dedup
 │   │       ├── dirty-flags.ts       # Fix 9: Mark entities for incremental recalculation
-│   │       ├── graph.ts             # Trust graph: 1-hop, 2-hop, mutual connections
+│   │       ├── graph.ts             # PeerLens graph: 1-hop, 2-hop, mutual connections
 │   │       ├── search.ts            # Full-text search
 │   │       ├── reactions.ts         # Reaction counts
 │   │       ├── threads.ts           # Reply thread reconstruction
@@ -276,7 +276,7 @@ dina-appview/
 │   │   │       ├── reviews/
 │   │   │       │   └── page.tsx          # Reviews BY this DID
 │   │   │       ├── graph/
-│   │   │       │   └── page.tsx          # Trust graph visualization
+│   │   │       │   └── page.tsx          # PeerLens graph visualization
 │   │   │       └── endorsements/
 │   │   │           └── page.tsx
 │   │   │
@@ -1881,7 +1881,7 @@ async function resolveCanonicalChain(
 
 ### Why Dina Agents Must Populate Tier 1
 
-The 3-tier strategy is correct, but the *default experience* should be Tier 1 — not Tier 2. If most attestations arrive as name-only, the trust network becomes a forest of disconnected author-scoped islands. That's safe but useless.
+The 3-tier strategy is correct, but the *default experience* should be Tier 1 — not Tier 2. If most attestations arrive as name-only, PeerLens becomes a forest of disconnected author-scoped islands. That's safe but useless.
 
 The fix isn't to weaken Tier 2 isolation — it's to make Tier 1 the overwhelmingly common path. **Dina agents should be doing the resolution work:**
 
@@ -2648,7 +2648,7 @@ async function computeTrustedAttestors(
 }
 
 /**
- * Get trust graph for visualization (getGraph query).
+ * Get PeerLens graph for visualization (getGraph query).
  * Returns nodes and edges within N hops of center DID.
  * Capped at 2 hops for Postgres. Fan-out capped per hop.
  */

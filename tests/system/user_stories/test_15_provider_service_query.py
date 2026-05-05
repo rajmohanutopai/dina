@@ -7,7 +7,7 @@ Story
 -----
 Don Alonso needs to know when the next #42 bus arrives at Castro Station.
 His Home Node sends a service.query to BusDriver (a public transit provider
-already published on the Trust Network), BusDriver's Home Node validates
+already published on PeerLens), BusDriver's Home Node validates
 the query against the capability schema, delegates execution to its local
 agent, the agent computes a schedule-based ETA, BusDriver bridges the
 result back as a service.response, and Alonso's Home Node delivers a
@@ -24,7 +24,7 @@ Why Dina is unique
 ------------------
 Conventional service discovery means a centralized registry that
 gatekeepers ranking and availability. Dina's requesters search a
-decentralized Trust Network (AppView indexing AT Protocol records),
+decentralized PeerLens (AppView indexing AT Protocol records),
 validate the provider's published schema client-side, and send typed
 D2D queries directly to the provider's Home Node. No middleman owns
 the contract, and the requester proves schema agreement via the

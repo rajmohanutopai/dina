@@ -202,7 +202,7 @@ describe('16.1 Docker Compose Smoke Tests', () => {
       'tombstones',        // process-tombstones
       'attestations',      // source data for scoring (most jobs read this)
       'vouches',           // source data for trust edge computation
-      'trust_edges',       // output of trust graph computation
+      'trust_edges',       // output of PeerLens graph computation
       'subjects',          // subject entity tracking
     ]
 

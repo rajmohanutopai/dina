@@ -408,7 +408,7 @@ class TestDinaToDinaProtocol:
 
 
 @pytest.mark.skip_in_lite(
-    reason="Buyer-seller negotiation depends on Trust Network (task 8.20+ M3) "
+    reason="Buyer-seller negotiation depends on PeerLens (task 8.20+ M3) "
     "+ persona-gating (task 8.13+ M2). M1 smoke covers the wire only. "
     "LITE_SKIPS.md category `pending-feature`."
 )

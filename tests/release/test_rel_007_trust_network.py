@@ -1,4 +1,4 @@
-"""REL-007 PDS and Trust Network — trust resolve through AppView.
+"""REL-007 PDS and PeerLens — trust resolve through AppView.
 
 Verify the Core → AppView trust resolution pipeline works using the
 real AT Protocol tier (PLC + PDS + Jetstream + AppView) running in
@@ -14,10 +14,10 @@ import pytest
 
 
 class TestTrustNetwork:
-    """Real API tests for REL-007: trust network via AppView."""
+    """Real API tests for REL-007: PeerLens via AppView."""
 
     # REL-007
-    # TRACE: {"suite": "REL", "case": "0007", "section": "07", "sectionName": "Trust Network", "subsection": "01", "scenario": "01", "title": "rel_007_trust_resolve_endpoint_exists"}
+    # TRACE: {"suite": "REL", "case": "0007", "section": "07", "sectionName": "PeerLens", "subsection": "01", "scenario": "01", "title": "rel_007_trust_resolve_endpoint_exists"}
     def test_rel_007_trust_resolve_endpoint_exists(
         self, core_url, auth_headers,
     ) -> None:
@@ -36,7 +36,7 @@ class TestTrustNetwork:
         )
 
     # REL-007
-    # TRACE: {"suite": "REL", "case": "0007", "section": "07", "sectionName": "Trust Network", "subsection": "01", "scenario": "02", "title": "rel_007_trust_resolve_requires_did_param"}
+    # TRACE: {"suite": "REL", "case": "0007", "section": "07", "sectionName": "PeerLens", "subsection": "01", "scenario": "02", "title": "rel_007_trust_resolve_requires_did_param"}
     def test_rel_007_trust_resolve_requires_did_param(
         self, core_url, auth_headers,
     ) -> None:
@@ -49,7 +49,7 @@ class TestTrustNetwork:
         assert resp.status_code == 400
 
     # REL-007
-    # TRACE: {"suite": "REL", "case": "0007", "section": "07", "sectionName": "Trust Network", "subsection": "01", "scenario": "03", "title": "rel_007_trust_cache_endpoint"}
+    # TRACE: {"suite": "REL", "case": "0007", "section": "07", "sectionName": "PeerLens", "subsection": "01", "scenario": "03", "title": "rel_007_trust_cache_endpoint"}
     def test_rel_007_trust_cache_endpoint(
         self, core_url, auth_headers,
     ) -> None:
@@ -64,7 +64,7 @@ class TestTrustNetwork:
         assert "entries" in data
 
     # REL-007
-    # TRACE: {"suite": "REL", "case": "0007", "section": "07", "sectionName": "Trust Network", "subsection": "01", "scenario": "04", "title": "rel_007_trust_stats_endpoint"}
+    # TRACE: {"suite": "REL", "case": "0007", "section": "07", "sectionName": "PeerLens", "subsection": "01", "scenario": "04", "title": "rel_007_trust_stats_endpoint"}
     def test_rel_007_trust_stats_endpoint(
         self, core_url, auth_headers,
     ) -> None:
@@ -77,7 +77,7 @@ class TestTrustNetwork:
         assert resp.status_code == 200
 
     # REL-007
-    # TRACE: {"suite": "REL", "case": "0007", "section": "07", "sectionName": "Trust Network", "subsection": "01", "scenario": "05", "title": "rel_007_trust_sync_endpoint"}
+    # TRACE: {"suite": "REL", "case": "0007", "section": "07", "sectionName": "PeerLens", "subsection": "01", "scenario": "05", "title": "rel_007_trust_sync_endpoint"}
     def test_rel_007_trust_sync_endpoint(
         self, core_url, auth_headers,
     ) -> None:
@@ -95,7 +95,7 @@ class TestTrustNetwork:
         )
 
     # REL-007
-    # TRACE: {"suite": "REL", "case": "0007", "section": "07", "sectionName": "Trust Network", "subsection": "01", "scenario": "06", "title": "rel_007_appview_accessible_from_core"}
+    # TRACE: {"suite": "REL", "case": "0007", "section": "07", "sectionName": "PeerLens", "subsection": "01", "scenario": "06", "title": "rel_007_appview_accessible_from_core"}
     def test_rel_007_appview_accessible_from_core(
         self, core_url, auth_headers,
     ) -> None:

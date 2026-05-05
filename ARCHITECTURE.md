@@ -25,7 +25,7 @@ The private core stores memory, holds identity, enforces privacy and action boun
 - quiet-first nudges with human-connection enforcement
 - initial data ingestion and classification into persona vaults
 - safe delegation to external agents
-- working trust network with sparse-graph tolerance
+- working PeerLens with sparse-graph tolerance
 - user-owned identity and vault
 
 ### Canonical Phase 1 Architecture
@@ -38,7 +38,7 @@ The private core stores memory, holds identity, enforces privacy and action boun
 | **Public trust layer** | Community PDS (`pds.dinakernel.com`) + Trust AppView ecosystem | Yes | Publish and query public trust records, attestations, outcomes, bot reputation |
 | **Local inference** | `llama` | Optional | Higher-privacy local LLM routing, local embeddings. V2: local NER via GLiNER. |
 
-**Canonical Phase 1 rule:** Dina v1 ships both the private core and a working public trust layer. The private core comes first, and user value must still hold even when the Trust Network is small. The trust layer is part of the release, but its usefulness compounds with network adoption.
+**Canonical Phase 1 rule:** Dina v1 ships both the private core and a working public trust layer. The private core comes first, and user value must still hold even when PeerLens is small. The trust layer is part of the release, but its usefulness compounds with network adoption.
 
 ### Phase Shape
 
@@ -46,7 +46,7 @@ The private core stores memory, holds identity, enforces privacy and action boun
 
 | Phase | Expected Shape | Not Required Yet |
 |---|---|---|
-| **Phase 1** | Home Node private core first: `dina-core` + `dina-brain` + multi-persona encrypted vaults, initial customer-data ingestion into persona vaults, quiet-first nudges, active human-connection enforcement, MCP delegation to external agents, safe Dina-to-Dina messaging, approval-gated action handoff, intent-economy defaults, and a working Trust Network via PDS/AppView. Core value must still stand even when the trust graph is sparse. | Trust-network scale, Shamir recovery, local LLM by default, full settlement/commercial protocols, estate execution |
+| **Phase 1** | Home Node private core first: `dina-core` + `dina-brain` + multi-persona encrypted vaults, initial customer-data ingestion into persona vaults, quiet-first nudges, active human-connection enforcement, MCP delegation to external agents, safe Dina-to-Dina messaging, approval-gated action handoff, intent-economy defaults, and a working PeerLens via PDS/AppView. Core value must still stand even when PeerLens graph is sparse. | Trust-network scale, Shamir recovery, local LLM by default, full settlement/commercial protocols, estate execution |
 | **Phase 2** | Denser and more resilient Dina: stronger Trust AppView usage, bot discovery/routing, Shamir recovery, local/hybrid inference profiles, richer verification, and broader source ingestion around the same core shape. | Full open market infrastructure, timestamp anchoring, estate automation at scale |
 | **Phase 2+** | Mature public trust and open-economy layer: advanced verification, deeper commerce/settlement flows, estate workflows, and richer network/device capabilities. | None beyond long-horizon implementation detail; this is the expansion frontier |
 
@@ -1402,7 +1402,7 @@ No NER on log lines — wrong layer, expensive, unreliable. PII scrubbing belong
 
 ### Eight Layers
 
-The layers are numbered 0-7 but the diagram reads **top-down** (7 → 0), like the OSI model — Layer 7 is closest to the user, Layer 0 is the cryptographic foundation. Layer 3 (Trust Network) sits to the side because it's a shared data layer that multiple upper layers query, not a step in the linear flow.
+The layers are numbered 0-7 but the diagram reads **top-down** (7 → 0), like the OSI model — Layer 7 is closest to the user, Layer 0 is the cryptographic foundation. Layer 3 (PeerLens) sits to the side because it's a shared data layer that multiple upper layers query, not a step in the linear flow.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -1434,7 +1434,7 @@ The layers are numbered 0-7 but the diagram reads **top-down** (7 → 0), like t
 │  Recipe)   │
 └────────────┘
 ┌─────────────────────────────────────────────────────────────┐
-│  Layer 3: TRUST NETWORK                                     │
+│  Layer 3: PEERLENS                                     │
 │  Expert attestations, Outcome data, Bot scores, Trust Rings │
 └─────────────────────────────────────────────────────────────┘
 
@@ -1568,7 +1568,7 @@ BIP-39 Mnemonic (24 words = 256-bit entropy)
             └── m/9999'/3'/1'    → Brain signing key
 ```
 
-Each persona's Ed25519 keypair is used for **signing** — the persona's private key signs DIDComm messages and Trust Network entries.
+Each persona's Ed25519 keypair is used for **signing** — the persona's private key signs DIDComm messages and PeerLens entries.
 
 **Vault encryption** uses per-persona DEKs — each persona file has its own 256-bit SQLCipher key:
 
@@ -1904,7 +1904,7 @@ Trust Score = f(
     ring_level,           // 1, 2, or 3
     time_alive,           // age of this Dina in days
     transaction_anchors,  // verified money moved (count, volume, span)
-    outcome_data,         // purchase outcomes fed to Trust Network
+    outcome_data,         // purchase outcomes fed to PeerLens
     peer_attestations,    // other verified Dinas who vouch
     credential_count      // Ring 3 credentials linked
 )
@@ -1913,7 +1913,7 @@ Trust Score = f(
 ### Open Questions — Identity
 - **Key rotation:** If root key is compromised, how does the user rotate while preserving trust? Possible: pre-signed rotation certificate stored in recovery.
 - **Multi-device root:** ~~Does each device get a copy of the root key, or do devices get delegated sub-keys?~~ **Resolved:** Devices never hold the root key. Client devices generate Ed25519 device keypairs during pairing and register only their public keys with the Home Node. The root key stays on the Home Node. Compromised device = revoke one device entry, not lose root identity.
-- **Seed recovery:** ~~Single point of failure — BIP-39 mnemonic on paper is the only backup. Non-technical users will lose it.~~ **Resolved (Phase 2):** Shamir's Secret Sharing (3-of-5) splits the seed across trusted contacts and physical backups. Day 1 still uses paper mnemonic; SSS activates once the user has a sufficient trust graph.
+- **Seed recovery:** ~~Single point of failure — BIP-39 mnemonic on paper is the only backup. Non-technical users will lose it.~~ **Resolved (Phase 2):** Shamir's Secret Sharing (3-of-5) splits the seed across trusted contacts and physical backups. Day 1 still uses paper mnemonic; SSS activates once the user has a sufficient PeerLens graph.
 - **Death detection:** ~~How does the Digital Estate know the user has died? Timer-based dead man's switch?~~ **Resolved:** Human-initiated via SSS custodian coordination. Same Shamir shares used for identity recovery. No timer — avoids false activations. Aligns with real-world probate.
 
 ---
@@ -2113,7 +2113,7 @@ Anonymized outcome record created:
     dina_age_days: 730
 }
         ↓
-Signed with persona key, submitted to Trust Network
+Signed with persona key, submitted to PeerLens
 (No user identity. No product name. Just category + outcome.)
 ```
 
@@ -3726,7 +3726,7 @@ What Dina does NOT send:
 
 ### Bot Communication Protocol
 
-Bots register with the Trust Network and expose a standard API:
+Bots register with PeerLens and expose a standard API:
 
 ```
 POST /query
@@ -3760,7 +3760,7 @@ Response:
         }
     ],
     "bot_signature": "...",           // cryptographic signature for verification
-    "bot_did": "did:plc:..."           // bot's identity in Trust Network
+    "bot_did": "did:plc:..."           // bot's identity in PeerLens
 }
 ```
 
@@ -3792,7 +3792,7 @@ Dina tracks bot scores locally. If a bot's accuracy drops below a threshold, Din
 How does Dina find bots in the first place?
 
 - **Phase 1:** No bot registry needed. Brain delegates research to OpenClaw (web search). Users can configure preferred specialist bots manually.
-- **Phase 2:** Decentralized bot registry on the Trust Network. Bots self-register, and their trust score determines visibility.
+- **Phase 2:** Decentralized bot registry on PeerLens. Bots self-register, and their trust score determines visibility.
 - **Phase 3:** Bot-to-bot recommendations. "This query is outside my domain. Try the Medical Bot at did:plc:..."
 
 ---
@@ -4254,17 +4254,17 @@ Senders POST directly — no MsgBox needed. Same crypto, same message format. Th
 
 ---
 
-## Layer 3: Trust Network
+## Layer 3: PeerLens
 
 Distributed system for verified product reviews, expert attestations, and outcome data. **Built on AT Protocol** — trust data is inherently public and benefits from federation, Merkle tree integrity, and ecosystem discoverability.
 
 ### Architecture
 
-The Trust Network is NOT a single database. It's a distributed system built on AT Protocol's federated infrastructure:
+PeerLens is NOT a single database. It's a distributed system built on AT Protocol's federated infrastructure:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│               TRUST NETWORK (AT Protocol)                     │
+│               PEERLENS (AT Protocol)                     │
 │                                                               │
 │  ┌─────────────────┐  ┌──────────────┐  ┌───────────┐       │
 │  │ Expert           │  │ Outcome      │  │ Bot       │       │
@@ -4308,7 +4308,7 @@ The Trust Network is NOT a single database. It's a distributed system built on A
 | **Custom schemas** | Lexicons let us define `com.dina.trust.attestation`, `com.dina.trust.outcome`, etc. |
 | **Identity** | `did:plc` is native to AT Protocol — zero integration work |
 | **Deletion** | Users can delete records from their repo. Signed tombstones prevent unauthorized deletion. |
-| **Ecosystem** | Any AT Protocol AppView can index Dina's Trust Network. Handles (`alice.dina.host`) provide human-readable discovery. |
+| **Ecosystem** | Any AT Protocol AppView can index Dina's PeerLens. Handles (`alice.dina.host`) provide human-readable discovery. |
 | **Implementations** | Go (`bluesky-social/indigo`), Python (`MarshalX/atproto`), Rust (`atrium-rs`), TypeScript (official reference) |
 
 ### Custom Lexicons
@@ -4669,16 +4669,16 @@ The hash reveals nothing about the content. Privacy is preserved. When you delet
 
 ### Cold Start Strategy: Tool First, Network Second
 
-The Trust Network ships in Phase 1, including PDS and AppView, but it still needs scale to become deeply useful. With 10 users, there is not yet statistically meaningful outcome data. **Phase 1 value must not depend on the Trust Network being large.**
+PeerLens ships in Phase 1, including PDS and AppView, but it still needs scale to become deeply useful. With 10 users, there is not yet statistically meaningful outcome data. **Phase 1 value must not depend on PeerLens being large.**
 
 | Phase | How Dina answers "What's the best office chair?" |
 |-------|--------------------------------------------------|
 | **Phase 1 (Early Network)** | Brain can query the Trust AppView when trust data exists, but always falls back to web research plus user context. OpenClaw returns results. Brain synthesizes, applies vault context ("You had back pain last month. You sit 10+ hours. Budget was ₹50-80K based on previous purchases.") and uses trust data opportunistically when available. |
 | **Phase 2 (Multiplayer)** | Brain queries the Trust AppView alongside web search. Nudge now includes: "34 people in the network bought the Aeron, but 5 returned it complaining about the mesh. Your friend Alice recommends the Steelcase Leap instead." |
 
-The transition is gradual and invisible to the user. One day the nudge includes network data alongside web results. No flag day, no "activate trust network" moment.
+The transition is gradual and invisible to the user. One day the nudge includes network data alongside web results. No flag day, no "activate PeerLens" moment.
 
-**There is no "Review Bot" to build.** No scraping infrastructure, no crawlers, no YouTube/Reddit/RTINGS ingestion pipeline. In Phase 1, Dina researches the public web for you using her Brain + OpenClaw — the same way a human would Google things, but with your personal context applied. The Trust Network is already present in v1, but its practical weight in recommendations grows gradually as the network fills in.
+**There is no "Review Bot" to build.** No scraping infrastructure, no crawlers, no YouTube/Reddit/RTINGS ingestion pipeline. In Phase 1, Dina researches the public web for you using her Brain + OpenClaw — the same way a human would Google things, but with your personal context applied. PeerLens is already present in v1, but its practical weight in recommendations grows gradually as the network fills in.
 
 ---
 
@@ -4760,7 +4760,7 @@ User enters PIN / biometric
         ↓
 Payment app sends confirmation (SMS or callback)
         ↓
-Dina records outcome in Tier 3 for future Trust Network contribution
+Dina records outcome in Tier 3 for future PeerLens contribution
 ```
 
 **Dina never sees:** Bank balance, UPI PIN, card numbers, payment credentials. She generates the link. The OS handles the rest.
@@ -4879,11 +4879,11 @@ The reminder loop outlined above is implemented in `core/internal/reminder/Loop`
 
 **Emotional state awareness (Phase 2+).** Before approving large purchases or high-stakes communications, a lightweight classifier assesses user state (time of day, communication tone, spending pattern deviation). Flags "user may be impulsive" and adds cooling-off suggestion.
 
-**Content verification (Phase 2+).** C2PA/Content Credentials for media provenance. Cross-reference claims against Trust Network. Requires significant ML infrastructure.
+**Content verification (Phase 2+).** C2PA/Content Credentials for media provenance. Cross-reference claims against PeerLens. Requires significant ML infrastructure.
 
 **Anti-Her safeguard (Phase 2+).** This is one future enforcement mechanism of the `Human Connection Invariants` defined near the top of this document. If interaction patterns suggest user is treating Dina as emotional replacement for human relationships, Dina redirects: "You haven't talked to Sancho in a while." Heuristic-based, tracks frequency/content/time-of-day. Architectural enforcement of the Four Laws.
 
-**Open Economy (Phase 3+).** Dina-to-Dina negotiation via ONDC, UPI/crypto payments. Cart Handover extends to discovery and direct commerce. Requires mature Trust Network and commerce protocol.
+**Open Economy (Phase 3+).** Dina-to-Dina negotiation via ONDC, UPI/crypto payments. Cart Handover extends to discovery and direct commerce. Requires mature PeerLens and commerce protocol.
 
 ---
 
@@ -5433,7 +5433,7 @@ Blockchain has exactly one role: **timestamp anchoring.** Federated servers repo
 
 ## Architectural Decision: AT Protocol — Where It Fits and Where It Doesn't
 
-**Decision: AT Protocol for the Trust Network (public layer). Independent protocol for messaging and vault (private layer).**
+**Decision: AT Protocol for PeerLens (public layer). Independent protocol for messaging and vault (private layer).**
 
 Dina uses `did:plc` (Bluesky's DID method) for identity. The question was whether to adopt the full AT Protocol stack (PDS, Relay, AppView, Lexicons) for more than just identity.
 
@@ -5441,16 +5441,16 @@ Dina uses `did:plc` (Bluesky's DID method) for identity. The question was whethe
 
 AT Protocol is a federated protocol for public, signed, replicated data. Each user's data lives in a Personal Data Server (PDS) as a signed Merkle tree of records. Relays aggregate data from many PDSes into a unified firehose. AppViews consume the firehose and build application-specific indexes.
 
-### Where it fits: Trust Network
+### Where it fits: PeerLens
 
-The Trust Network is inherently public data — expert attestations, anonymized outcome reports, bot scores. AT Protocol is a natural fit:
+PeerLens is inherently public data — expert attestations, anonymized outcome reports, bot scores. AT Protocol is a natural fit:
 
 - **Public data → public protocol.** Trust records should be visible, discoverable, and verifiable. AT Protocol repos are all of these.
 - **Signed Merkle repos.** Every record is part of a cryptographically signed tree. Operators can censor but not forge. Replication defeats censorship.
 - **Federation for free.** Relays replicate data across the network. No need to build custom federation, sync, or discovery.
 - **`did:plc` native.** Dina's identity method is AT Protocol's identity method. Zero integration work.
 - **Custom Lexicons.** Schema-enforced records: `com.dina.trust.attestation`, `com.dina.trust.outcome`, `com.dina.trust.bot`.
-- **Ecosystem.** Any AT Protocol AppView can index Dina's Trust Network. Handles (`alice.dina.host`) provide human-readable discovery.
+- **Ecosystem.** Any AT Protocol AppView can index Dina's PeerLens. Handles (`alice.dina.host`) provide human-readable discovery.
 
 ### Where it doesn't fit: Messaging and Vault
 
@@ -5629,9 +5629,9 @@ Long-term, one of the two may retire. Phase 13.5 of the Lite task plan is an exp
 | DID resolution | PLC Directory (`did:plc`), `did:web` escape hatch | `did:plc`: proven at 30M+ scale, key rotation, Go implementation (`bluesky-social/indigo`). `did:web`: sovereignty escape if PLC Directory becomes adversarial — rotation op transitions transparently. |
 | Push to clients | FCM/APNs (Phase 1), UnifiedPush (Phase 2) | Wake clients when Home Node has updates |
 | Backup | Any blob storage (S3, Backblaze, NAS) | Encrypted snapshots of Home Node vault |
-| Trust Network (PDS) | Community PDS (`pds.dinakernel.com`) — Split Sovereignty. Custom Lexicons (`com.dina.trust.*`). Signed tombstones for deletion. | Core creates PDS account on first boot (K256 recovery key in PLC genesis). Trust records pushed via outbound HTTPS. No sidecar PDS container. See Layer 3 "PDS Hosting: Split Sovereignty". |
-| Trust Network (AppView) | Go + PostgreSQL 16 (`pg_trgm`). `indigo` firehose consumer. Phase 1: single monolith (0–1M users). Phase 3: sharded cluster (ScyllaDB + Kafka + K8s). | Read-only indexer. Signature verification on every record. Three-layer trust-but-verify: cryptographic proof, consensus check, direct PDS spot-check. AppView is a commodity — anyone can run one. See Layer 3 "Trust AppView". |
-| Trust Network (timestamps) | L2 Merkle root anchoring (Phase 3). Base or Polygon. | Provable "this existed before this date" for dispute resolution. Not needed until real money flows through the system. |
+| PeerLens (PDS) | Community PDS (`pds.dinakernel.com`) — Split Sovereignty. Custom Lexicons (`com.dina.trust.*`). Signed tombstones for deletion. | Core creates PDS account on first boot (K256 recovery key in PLC genesis). Trust records pushed via outbound HTTPS. No sidecar PDS container. See Layer 3 "PDS Hosting: Split Sovereignty". |
+| PeerLens (AppView) | Go + PostgreSQL 16 (`pg_trgm`). `indigo` firehose consumer. Phase 1: single monolith (0–1M users). Phase 3: sharded cluster (ScyllaDB + Kafka + K8s). | Read-only indexer. Signature verification on every record. Three-layer trust-but-verify: cryptographic proof, consensus check, direct PDS spot-check. AppView is a commodity — anyone can run one. See Layer 3 "Trust AppView". |
+| PeerLens (timestamps) | L2 Merkle root anchoring (Phase 3). Base or Polygon. | Provable "this existed before this date" for dispute resolution. Not needed until real money flows through the system. |
 | ZKP | Semaphore V4 (PSE/Ethereum Foundation) | Production-proven (World ID), off-chain proof generation |
 | Serialization | JSON (Phase 1), MessagePack or Protobuf (Phase 2) | JSON is debuggable and sufficient for core↔brain traffic volume. Binary serialization deferred until profiling shows it matters. |
 | Containerization | Docker + docker-compose | Single-command Home Node deployment: `docker compose up -d` |
@@ -6418,7 +6418,7 @@ When the Home Node has new data (ingested email, incoming Dina-to-Dina message, 
 | **Kubernetes** | Container orchestration for distributed services. Dina's Home Node is 2-3 containers on one machine. `docker compose up` is the entire deployment. |
 | **GraphQL** | API layer for complex multi-consumer APIs. Dina has one consumer: you. Direct SQLite queries from the agent loop. |
 | **Elasticsearch** | Distributed search cluster. SQLite FTS5 + in-memory HNSW handles search for a single user's data. |
-| **Blockchain (L1)** | Gas costs, latency, complexity. Immutability violates sovereignty (right to delete). Federated servers + signed tombstones handle the Trust Network. Only use case is L2 Merkle root hash anchoring for timestamp proofs (Phase 3). |
+| **Blockchain (L1)** | Gas costs, latency, complexity. Immutability violates sovereignty (right to delete). Federated servers + signed tombstones handle PeerLens. Only use case is L2 Merkle root hash anchoring for timestamp proofs (Phase 3). |
 | **CRDTs / Automerge** | Designed for peer-to-peer conflict resolution. With a Home Node as source of truth, client-server sync is simpler and sufficient. May reconsider for Phase 3 if we add collaborative features. |
 
 Guiding principle: **one user, a handful of containers, one machine, per-persona encrypted vaults, one always-on endpoint.**
@@ -6435,7 +6435,7 @@ Guiding principle: **one user, a handful of containers, one machine, per-persona
 
 **4. ZKP for government ID.** No government currently offers ZKP-native verification. The first implementation will be a compromise (local verification, attestation stored).
 
-**5. Trust Network cold start.** Phase 1 doesn't depend on it — Brain uses web search via OpenClaw. Outcome data needs scale. The Graph activates gradually as the network grows. This is a years-long build.
+**5. PeerLens cold start.** Phase 1 doesn't depend on it — Brain uses web search via OpenClaw. Outcome data needs scale. The Graph activates gradually as the network grows. This is a years-long build.
 
 **6. iOS restrictions.** iOS client will always be more limited for device-local ingestion (no background services equivalent). But with Home Node running server-side API connectors (Gmail, Calendar, Contacts, Telegram), iOS users get full functionality for all API-based data sources.
 

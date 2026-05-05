@@ -1,5 +1,5 @@
 /**
- * Trust Network — search results screen (TN-MOB-016 / Plan §8.3).
+ * PeerLens — search results screen (TN-MOB-016 / Plan §8.3).
  *
  * Renders a list of `SubjectCardDisplay` results (from
  * `com.dina.trust.search`) with a horizontal facet bar above (from

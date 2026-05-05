@@ -1373,7 +1373,7 @@ def classify_with_sender_trust(
 
     Logic:
     1. Run the raw classifier to get the base tier.
-    2. Look up the sender's trust score in the trust network.
+    2. Look up the sender's trust score in PeerLens.
     3. If sender is untrusted (score < threshold) AND the base tier is
        TIER_1_FIDUCIARY: demote to TIER_3_ENGAGEMENT.
     4. Trusted senders get the raw classification unchanged.
@@ -2327,7 +2327,7 @@ class TestClassificationEdgeCases:
     def test_unknown_sender_not_in_trust_network(
         self, mock_dina: MockDinaCore
     ) -> None:
-        """Edge case: sender DID has never been seen by the trust network.
+        """Edge case: sender DID has never been seen by PeerLens.
 
         A completely unknown DID (never registered, never interacted) must
         default to trust score 0.0 and be treated as untrusted.  This is
@@ -2337,7 +2337,7 @@ class TestClassificationEdgeCases:
         classifier = mock_dina.classifier
         trust_network = mock_dina.trust_network
 
-        # This DID has never been set in the trust network
+        # This DID has never been set in PeerLens
         never_seen_did = "did:plc:completely_unknown_never_seen_abc123"
 
         # Verify it is truly absent — get_trust_score returns default 0.0
@@ -2368,9 +2368,9 @@ class TestClassificationEdgeCases:
         assert result["original_tier"] == SilenceTier.TIER_1_FIDUCIARY
         assert "untrusted" in result["reason"] or "demotion" in result["reason"]
 
-        # Verify the DID was NOT added to the trust network as a side effect
+        # Verify the DID was NOT added to PeerLens as a side effect
         assert trust_network.get_trust_score(never_seen_did) == 0.0, (
-            "Classification must not modify the trust network as a side "
+            "Classification must not modify PeerLens as a side "
             "effect — the sender's trust score must remain unchanged"
         )
 

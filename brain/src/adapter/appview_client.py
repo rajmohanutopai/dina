@@ -1,6 +1,6 @@
 """AppView HTTP client for service discovery.
 
-Implements the requester-side lookups against the Trust Network's
+Implements the requester-side lookups against PeerLens
 service registry:
 
     GET /xrpc/com.dina.service.search   — find services by capability + geo

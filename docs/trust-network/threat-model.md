@@ -1,7 +1,7 @@
-# Trust Network V1 — Threat Model & Known Limitations
+# PeerLens V1 — Threat Model & Known Limitations
 
 > **Audience**: implementers, integrators, operators, and researchers
-> evaluating Dina's Trust Network for production use.
+> evaluating Dina's PeerLens for production use.
 >
 > **Scope**: V1 (Plan §0–§17, lexicons `com.dina.trust.*` × 19 + `com.dina.service.profile`).
 > V2 work that closes specific gaps is referenced inline.
@@ -326,7 +326,7 @@ back-classifies existing subjects.
 
 **Residual risk.** First-week-after-publication subjects fall
 through to `'claim'`. Search filters by `category` will miss
-them until the weekly recompute. Acceptable — V1 trust network
+them until the weekly recompute. Acceptable — V1 PeerLens
 is not optimised for first-week-of-publication freshness.
 
 ---
@@ -356,7 +356,7 @@ is trusted.
 
 **The mechanism.** TN-FLAG-001/002/003 ship a master
 `trust_v1_enabled` kill switch. AppView gates trust namespace
-xRPC calls behind it; mobile gates the trust tab visibility.
+xRPC calls behind it; mobile gates the PeerLens tab visibility.
 
 **Default stance**: V1 ships **enabled** (Plan §13.10
 cutover). Operator must explicitly disable for incident

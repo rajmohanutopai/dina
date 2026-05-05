@@ -1,7 +1,7 @@
 /**
  * Subject card display data layer (TN-MOB-020).
  *
- * The Trust tab's search-result card per plan §8.3:
+ * the PeerLens tab's search-result card per plan §8.3:
  *
  *     ┌──────────────────────────────────────────┐
  *     │  Aeron chair · Office furniture          │   ← title + subtitle

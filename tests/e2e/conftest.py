@@ -239,7 +239,7 @@ def d2d_network(docker_services) -> MockD2DNetwork:
 
 @pytest.fixture(scope="session")
 def appview() -> MockAppView:
-    """Mock Trust Network AppView."""
+    """Mock PeerLens AppView."""
     av = MockAppView()
     # Pre-populate bot trusts
     av.update_bot_trust("did:plc:reviewbot", 94)

@@ -2,7 +2,7 @@
  * TN-TEST-080 — User-story 11: trust-network friend-boost.
  *
  * The user-story-11 promise from the V1 backlog: "Don Alonso publishes,
- * Sancho searches, friend boost." Sancho's 1-hop trust graph (via
+ * Sancho searches, friend boost." Sancho's 1-hop PeerLens graph (via
  * vouch) includes Alonso. When Sancho searches, attestations authored
  * by Alonso rank ABOVE attestations from strangers — even when the
  * stranger's attestation is more recent or otherwise more relevant by

@@ -12,7 +12,7 @@ It is based on the architecture document itself and on the strongest reading of 
 
 ## Core Reading
 
-- **Phase 1** should stand on its own as a sovereign private core with a working Trust Network, multi-persona security, and active data ingestion.
+- **Phase 1** should stand on its own as a sovereign private core with a working PeerLens, multi-persona security, and active data ingestion.
 - **Phase 2** should deepen density, recovery, verification, and routing.
 - **Phase 2+** should expand Dina into a mature trust and open-economy layer.
 
@@ -20,7 +20,7 @@ The cleanest version of Dina remains:
 
 - Home Node private core: Go core + Python brain + encrypted multi-persona SQLite vaults
 - External work: delegated to agents via MCP
-- Public trust layer in v1: Trust Network via PDS/AppView
+- Public trust layer in v1: PeerLens via PDS/AppView
 - Active ingestion: customer data is classified and fed into persona vaults
 - Optional profiles: local LLM, recovery, future economy
 
@@ -28,7 +28,7 @@ The cleanest version of Dina remains:
 
 ## Phase 1
 
-Phase 1 should be the smallest version of Dina that already feels complete and valuable without requiring large network effects. It should still ship with a working Trust Network and AppView, multi-persona security, active human-connection enforcement, and initial customer-data hydration into persona vaults.
+Phase 1 should be the smallest version of Dina that already feels complete and valuable without requiring large network effects. It should still ship with a working PeerLens and AppView, multi-persona security, active human-connection enforcement, and initial customer-data hydration into persona vaults.
 
 | Area | Expected In Phase 1 | Why It Matters |
 |---|---|---|
@@ -43,7 +43,7 @@ Phase 1 should be the smallest version of Dina that already feels complete and v
 | **Cross-cutting invariants** | Loyalty, human connection, and pull economy are active architectural constraints, not future aspirations | These are what make Dina more than a secure assistant |
 | **Dina-to-Dina messaging** | Secure direct sharing and messaging already exist as part of the core shape | Private coordination should not depend on the public trust stack |
 | **Action layer** | Draft-don't-send, approval gates, and cart handover are present; autonomous money movement is out of scope | Dina helps act, but does not take over |
-| **Trust Network** | Ships in v1 via PDS/AppView and should already work, but Phase 1 value must not depend on the trust graph being large | Trust is part of the release, but not the only source of value |
+| **PeerLens** | Ships in v1 via PDS/AppView and should already work, but Phase 1 value must not depend on PeerLens graph being large | Trust is part of the release, but not the only source of value |
 | **Inference profile** | Cloud-first is acceptable; local inference stays optional | Inference choice is a deployment profile, not the thesis |
 | **Deployment** | One Home Node, one compose stack, minimal moving parts | The default system should stay boring and understandable |
 
@@ -98,7 +98,7 @@ Phase 2+ is the expansion frontier: the place where Dina becomes a mature trust 
 | Rule | Why It Matters |
 |---|---|
 | Keep Phase 1 centered on the private core | That is the simplest and strongest version of Dina |
-| Treat the Trust Network as part of the v1 release, but not the only source of Phase 1 value | This preserves the cold-start story without understating your intended release scope |
+| Treat PeerLens as part of the v1 release, but not the only source of Phase 1 value | This preserves the cold-start story without understating your intended release scope |
 | Treat multi-persona as Phase 1 security, not a future organizational feature | This keeps the document aligned with the real protection model |
 | Make initial data ingestion explicit | Dina is empty until real customer context flows into the persona vaults |
 | Keep identity and auth canonical in one place | These are foundational and should never drift |
@@ -111,6 +111,6 @@ Phase 2+ is the expansion frontier: the place where Dina becomes a mature trust 
 
 | Phase | Summary |
 |---|---|
-| **Phase 1** | Private core, trust network, multi-persona security, and active ingestion |
+| **Phase 1** | Private core, PeerLens, multi-persona security, and active ingestion |
 | **Phase 2** | Density, recovery, and richer routing/verification |
 | **Phase 2+** | Open trust and open-economy expansion |

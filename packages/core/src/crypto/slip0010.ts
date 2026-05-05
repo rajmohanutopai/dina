@@ -273,7 +273,7 @@ export function deriveServiceKey(seed: Uint8Array, serviceIndex: number): Derive
  * Derive a pseudonymous-namespace Ed25519 signing key at
  * `m/9999'/4'/{namespaceIndex}'`.
  *
- * Trust Network V1 lets a user publish attestations under separate
+ * PeerLens V1 lets a user publish attestations under separate
  * cryptographic identities ("namespaces") — health reviews under one,
  * product reviews under another, anonymous restaurant reviews under a
  * third. Each namespace's signing key is appended to the master DID's

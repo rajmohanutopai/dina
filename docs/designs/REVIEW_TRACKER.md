@@ -197,7 +197,7 @@ DOCUMENTATION (~20 files)
 |----------|-----------|-------|-----------|
 | **P0** | Go adapters — crypto (6) | 6 | Key derivation correctness is existential |
 | **P1** | Brain admin routes (11) | 11 | Codex found FC1 here; more may be hiding |
-| **P2** | AppView trust score + ingester (43) | 43 | Entire trust network unreviewed |
+| **P2** | AppView trust score + ingester (43) | 43 | Entire PeerLens unreviewed |
 | **P3** | Go adapters — sqlite/vault (8) | 8 | Data storage correctness |
 | **P4** | Brain services — remaining (10) | 10 | Enrichment, sync, nudge, domain classifier |
 | **P5** | Go domain types + ports (47) | 47 | Contract correctness |

@@ -1,7 +1,7 @@
 /**
- * Trust Network error-state copy + classifier (TN-MOB-030).
+ * PeerLens error-state copy + classifier (TN-MOB-030).
  *
- * Five failure modes any Trust Network screen can hit when calling
+ * Five failure modes any PeerLens screen can hit when calling
  * AppView's xRPC endpoints:
  *
  *   - `offline`        — device has no network connection (NetInfo
@@ -72,30 +72,30 @@ export interface ErrorStateContent {
 export const ERROR_STATE_CONTENT: Readonly<Record<ErrorState, ErrorStateContent>> = Object.freeze({
   offline: Object.freeze({
     title: "You're offline",
-    body: 'Connect to the internet to load Trust Network data.',
+    body: 'Connect to the internet to load PeerLens data.',
     action: 'Try again',
   }),
   network_error: Object.freeze({
     title: "Couldn't reach the server",
-    body: "Your device seems online, but we couldn't reach Trust Network. Check again in a moment.",
+    body: "Your device seems online, but we couldn't reach PeerLens. Check again in a moment.",
     action: 'Try again',
   }),
   rate_limited: Object.freeze({
     title: 'Too many requests',
-    body: "You've hit the request limit. Trust Network will be available again shortly.",
+    body: "You've hit the request limit. PeerLens will be available again shortly.",
     // No retry CTA: hammering this exact button is exactly what the
     // rate limit exists to prevent. Caller may schedule a delayed
     // retry on its own; the user-facing surface stays "wait".
     action: null,
   }),
   server_error: Object.freeze({
-    title: 'Trust Network is having trouble',
+    title: 'PeerLens is having trouble',
     body: 'The service is unavailable right now. Try again in a few minutes.',
     action: 'Try again',
   }),
   not_found: Object.freeze({
     title: 'Not found',
-    body: "This doesn't exist on Trust Network — it may have been removed by its author.",
+    body: "This doesn't exist on PeerLens — it may have been removed by its author.",
     // No retry CTA: 404 is terminal for this resource. The screen
     // typically offers "go back" as a navigation action; that's a
     // navigation concern, not an error-recovery one.

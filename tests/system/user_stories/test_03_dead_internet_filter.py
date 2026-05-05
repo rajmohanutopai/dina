@@ -8,7 +8,7 @@ Story
 Alonso asks: "Is this video real?"
 
 Dina does NOT run a forensic bot first. She looks up the creator's
-identity in the Trust Network:
+identity in PeerLens:
 
   **Elena Vasquez (did:plc:elena) — Ring 3 (Verified + Actioned):**
     200 verified videos over 2 years, 197/200 positive attestations,
@@ -27,7 +27,7 @@ Why Dina is unique
 No other system can do this because it requires three things
 simultaneously:
   1. Persistent creator identity (DID)
-  2. Accumulated trust history (Trust Network)
+  2. Accumulated trust history (PeerLens)
   3. Decentralized verification (AT Protocol)
 
 YouTube has no cryptographic identities. Perplexity has no trust
@@ -399,11 +399,11 @@ class TestDeadInternetFilter:
 
         prompt = (
             "You are Dina, a personal AI assistant with access to the "
-            "Trust Network. Your user asks: 'Is this video about climate "
+            "PeerLens. Your user asks: 'Is this video about climate "
             "change real?'\n\n"
             "The video was posted by Elena Vasquez (did:plc:elena).\n"
-            f"Her Trust Network profile:\n{profile_str}\n\n"
-            "Based on this Trust Network profile, assess the content's "
+            f"Her PeerLens profile:\n{profile_str}\n\n"
+            "Based on this PeerLens profile, assess the content's "
             "authenticity. Focus on the creator's identity and track "
             "record, not on the content itself. Respond in 2-4 sentences."
         )
@@ -491,11 +491,11 @@ class TestDeadInternetFilter:
 
         prompt = (
             "You are Dina, a personal AI assistant with access to the "
-            "Trust Network. Your user asks: 'Is this video about climate "
+            "PeerLens. Your user asks: 'Is this video about climate "
             "change real?'\n\n"
             "The video was posted by TruthSeeker2026 (did:plc:botfarm).\n"
-            f"Their Trust Network profile:\n{profile_str}\n\n"
-            "Based on this Trust Network profile, assess the content's "
+            f"Their PeerLens profile:\n{profile_str}\n\n"
+            "Based on this PeerLens profile, assess the content's "
             "authenticity. Focus on the creator's identity and track "
             "record, not on the content itself. Respond in 2-4 sentences."
         )
@@ -578,12 +578,12 @@ class TestDeadInternetFilter:
 
         prompt = (
             "You are Dina, a personal AI assistant with access to the "
-            "Trust Network. Your user asks: 'Two people posted videos "
+            "PeerLens. Your user asks: 'Two people posted videos "
             "about the same breaking news event. Which should I trust?'\n\n"
             "Creator A: Elena Vasquez (did:plc:elena)\n"
-            f"Trust Network profile:\n{elena_str}\n\n"
+            f"PeerLens profile:\n{elena_str}\n\n"
             "Creator B: TruthSeeker2026 (did:plc:botfarm)\n"
-            f"Trust Network profile:\n{botfarm_str}\n\n"
+            f"PeerLens profile:\n{botfarm_str}\n\n"
             "Compare these two creators. Explain which one to trust and "
             "WHY. Emphasize that the deciding factor is the creator's "
             "identity and track record — not forensic analysis of the "
@@ -594,7 +594,7 @@ class TestDeadInternetFilter:
         identity_signals = [
             "identity", "history", "track record", "reputation",
             "attestation", "vouch", "verified", "established",
-            "trust score", "trust network", "record", "credib",
+            "trust score", "PeerLens", "record", "credib",
             "proven", "demonstrat", "consistent",
         ]
 

@@ -81,7 +81,7 @@ Existing test stubs that need stronger assertions to match architecture specs.
 
 | ID | TST-BRAIN | File | Enhancement Needed |
 |----|-----------|------|--------------------|
-| C1 | TST-BRAIN-228 | test_mcp.py | Add explicit verification that brain **maintains per-bot scores locally** and **recalculates after each interaction outcome**. Current test only says "Highest Trust Network score selected" without verifying the tracking mechanism. |
+| C1 | TST-BRAIN-228 | test_mcp.py | Add explicit verification that brain **maintains per-bot scores locally** and **recalculates after each interaction outcome**. Current test only says "Highest PeerLens score selected" without verifying the tracking mechanism. |
 | C2 | TST-BRAIN-035 | test_guardian.py | Add explicit DIDComm message type parsing test case: brain receives `{type: "dina/social/arrival", from: "did:plc:...", body: {...}}` → correctly routes to nudge assembly handler (not just generic "process incoming event"). |
 | C3 | TST-BRAIN-109 | test_pii.py | Strengthen circular dependency assertion: verify that brain's PII scrubbing code path **never** routes data to any external API (cloud LLM, OpenClaw, etc.) for PII detection. Currently tests pipeline but not the invariant. |
 | C4 | TST-BRAIN-032/033 | test_guardian.py | Add persona locked → user notification → unlock → retry flow. Current tests cover "Brain starts in degraded mode" and "Brain checkpoints to scratchpad" but not the complete unlock-retry cycle. |

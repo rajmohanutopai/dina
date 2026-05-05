@@ -1090,7 +1090,7 @@ class CoreHTTPClient:
         resp = await self._request("GET", "/v1/did")
         return resp.json()
 
-    # -- Trust Network -------------------------------------------------------
+    # -- PeerLens -------------------------------------------------------
 
     async def query_trust_profile(self, did: str) -> dict | None:
         """GET /v1/trust/resolve?did={did} — fetch full trust profile from AppView via Core."""
@@ -1109,7 +1109,7 @@ class CoreHTTPClient:
     async def search_trust_network(
         self, query: str = "", category: str = "", subject_type: str = "", limit: int = 10
     ) -> dict | None:
-        """GET /v1/trust/search — search AppView Trust Network for attestations.
+        """GET /v1/trust/search — search AppView PeerLens for attestations.
 
         Used by the reasoning agent to find product reviews, merchant ratings,
         and trust evidence when the user asks about purchases or trust.

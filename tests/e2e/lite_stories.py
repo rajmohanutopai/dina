@@ -56,15 +56,15 @@ def run_story_01_purchase(
 
     Flow per `run_user_story_tests.sh` user-story 01:
       1. User says "I need a good office chair" to Alonso's Dina
-      2. Alonso's Brain resolves to Trust Network lookup
-      3. Trust Network ranks verified vendors; ChairMaker matches
+      2. Alonso's Brain resolves to PeerLens lookup
+      3. PeerLens ranks verified vendors; ChairMaker matches
       4. ChairMaker's Dina receives service.query for product listings
       5. ChairMaker returns verified listing with deep-link source
       6. Alonso presents: "3 options, top-ranked by trust score"
       7. User approves → cart handover URL (Dina never touches money)
 
     Dependencies (all M3):
-      - Trust Network (tasks 8.20-8.22, file-level skipped)
+      - PeerLens (tasks 8.20-8.22, file-level skipped)
       - Service query / WS2 (task 8.23)
       - Cart handover (task 8.25)
       - Deep-link attribution (task 8.26)
@@ -88,7 +88,7 @@ def run_story_01_purchase(
     # we still skip pending.
     return _skip_pending(
         "01_purchase",
-        "containers healthy but M3 features (trust network, service.query, "
+        "containers healthy but M3 features (PeerLens, service.query, "
         "cart handover, deep-link attribution) not yet wired in Lite. "
         "See LITE_SKIPS.md entries for tasks 8.20-8.26.",
     )
@@ -272,7 +272,7 @@ def run_story_03_dead_internet(
 ) -> StoryResult:
     """Story 03 — Dead Internet Filter (task 9.9, M3).
 
-    The Trust Network's anti-slop guarantee: the user never sees
+    PeerLens anti-slop guarantee: the user never sees
     AI-generated content when asking Dina questions. When the open
     web is increasingly bot-authored, Dina's answers come from
     verified human-authored sources (expert attestations + outcome
@@ -290,7 +290,7 @@ def run_story_03_dead_internet(
       6. Audit trail records the trust-filter decision
 
     Dependencies (M3):
-      - Trust Network AppView integration (task 8.20)
+      - PeerLens AppView integration (task 8.20)
       - Trust rings composite function (task 8.21)
       - Bot-trust degradation tracking (task 8.20 TestBotTrust)
       - Deep-link source attribution (task 8.26)
@@ -305,7 +305,7 @@ def run_story_03_dead_internet(
         )
     return _skip_pending(
         "03_dead_internet",
-        "containers healthy but M3 Trust Network (AppView integration, "
+        "containers healthy but M3 PeerLens (AppView integration, "
         "trust rings, bot-trust, deep-link attribution) not yet wired "
         "in Lite. See LITE_SKIPS.md entries for tasks 8.17, 8.20, 8.21, 8.26.",
     )
@@ -317,7 +317,7 @@ def run_story_06_license_renewal(
     """Story 06 — License Renewal (task 9.12, M3).
 
     Dina detects an expiring license (driver's license, professional
-    cert, passport), consults the Trust Network for a verified
+    cert, passport), consults PeerLens for a verified
     specialist agent (e.g., LegalBot), delegates the renewal task
     under Dina's oversight per the safety layer — Dina never holds
     money, never submits final forms — and surfaces the handover URL
@@ -326,7 +326,7 @@ def run_story_06_license_renewal(
     Story flow (from `run_user_story_tests.sh` user-story 06):
       1. Dina reads a calendar event "DL expires in 30 days"
       2. Dina's ingestion classifies this as LICENSE-EXPIRING
-      3. Dina searches Trust Network for specialist agents
+      3. Dina searches PeerLens for specialist agents
          (LegalBot with matching jurisdiction + high trust score)
       4. Dina proposes delegation to the user; user approves
       5. LegalBot drafts the renewal form; Dina reviews + approves
@@ -336,7 +336,7 @@ def run_story_06_license_renewal(
       7. Dina's audit logs the delegation + completion
 
     Dependencies (M3):
-      - Trust Network (task 8.20) — specialist agent discovery
+      - PeerLens (task 8.20) — specialist agent discovery
       - Task delegation (task 8.43) — delegation-with-oversight
       - Safety layer (task 8.47) — read-only auto-approve, write-
         approves, financial HIGH-flagged
@@ -353,7 +353,7 @@ def run_story_06_license_renewal(
         )
     return _skip_pending(
         "06_license_renewal",
-        "containers healthy but M3 features (Trust Network for specialist "
+        "containers healthy but M3 features (PeerLens for specialist "
         "discovery, delegation-with-oversight, cart handover) not yet "
         "wired in Lite. See LITE_SKIPS.md entries for tasks 8.17, 8.20, "
         "8.25, 8.43, 8.47.",
@@ -490,7 +490,7 @@ def run_story_10_operator_journey(
         file-level skipped)
       - `./install.sh --stack` flag (task 13.3 done iter 58)
       - Export/import (task 8.30 — also covered by Story 08 task 9.14)
-      - Trust network peer attestation (M3 task 8.20)
+      - PeerLens peer attestation (M3 task 8.20)
       - Audit per-instance (task 8.17)
 
     Single-actor fixture simulates one instance; multi-tenant runs

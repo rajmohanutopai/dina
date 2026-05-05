@@ -1,7 +1,7 @@
 /**
  * Viewer profile preferences (TN-V2-CTX-001 / V2 actionability layer).
  *
- * The Trust Network's V1 ranking is "what do my contacts think of X".
+ * PeerLens V1 ranking is "what do my contacts think of X".
  * V2 adds a *viewer lens*: even within trusted reviews, push results
  * that match the viewer's region, languages, budget, accessibility
  * needs, and dietary constraints to the top — and demote ones that

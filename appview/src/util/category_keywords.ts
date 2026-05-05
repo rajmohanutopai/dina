@@ -2,7 +2,7 @@
  * Curated keyword → category-segment map for subject enrichment
  * (TN-ENRICH-002).
  *
- * Per Trust Network V1 plan §3.6.3:
+ * Per PeerLens V1 plan §3.6.3:
  *
  *   > **Type=product:** ... `SubjectRef.name` matched against a
  *   > curated keyword map (`furniture`, `book`, `phone`, ...) →

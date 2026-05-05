@@ -3,7 +3,7 @@
 # Services:
 #   pds.dinakernel.com      — Community PDS (AT Protocol, hosts user repos)
 #   mailbox.dinakernel.com   — D2D encrypted mailbox (WebSocket + HTTP)
-#   appview.dinakernel.com  — Trust Network (5 xRPC endpoints)
+#   appview.dinakernel.com  — PeerLens (5 xRPC endpoints)
 #
 # Internal (not exposed):
 #   jetstream               — PDS firehose → JSON WebSocket

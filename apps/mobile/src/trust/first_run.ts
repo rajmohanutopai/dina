@@ -1,16 +1,16 @@
 /**
- * Trust Network first-run modal — copy + dismissal flag (TN-MOB-027).
+ * PeerLens first-run modal — copy + dismissal flag (TN-MOB-027).
  *
- * The first time a user opens the Trust tab, we surface a one-shot
+ * The first time a user opens the PeerLens tab, we surface a one-shot
  * modal that:
- *   1. Names what the Trust Network is in one breath.
+ *   1. Names what PeerLens is in one breath.
  *   2. Discloses the V1 pseudonymity caveat — namespaces share a DID
  *      document, so a network observer correlating signature-key ids
  *      across records can tell which namespace a record came from.
  *      The modal copy reflects this honestly per plan §2 row 11 + §13.10.
  *   3. Carries a single dismissal CTA. After dismissal the modal
  *      doesn't fire again — the persistent banner in
- *      Settings → "About Trust Network" stays the long-term home for
+ *      Settings → "About PeerLens" stays the long-term home for
  *      the same disclosure (per plan §2 row 46 — banner lives in BOTH
  *      Settings (always) AND first-run modal (once)).
  *
@@ -70,9 +70,9 @@ export interface FirstRunModalCopy {
  * silently editing the source of truth for every other render site.
  */
 export const FIRST_RUN_MODAL_COPY: FirstRunModalCopy = Object.freeze({
-  title: 'Trust Network',
+  title: 'PeerLens',
   body: Object.freeze([
-    'Trust scores are built from reviews by people you know — and reviews by people they know.',
+    'PeerLens shows reviews from people you know — and reviews from people they know.',
     "You can publish reviews under separate namespaces (e.g. one for products, one for places). They keep your reviews compartmentalised at first glance.",
     "But these namespaces aren't anonymous: anyone reading your DID document can see how many you have, and a sophisticated observer correlating signatures over time can tell them apart. We'll close that gap in a future version.",
   ]),

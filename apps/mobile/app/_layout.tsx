@@ -6,7 +6,7 @@
  *
  * Reminders + Notifications moved off the bottom bar — both are
  * secondary surfaces (reminders fan out into the unified inbox
- * already), so they live in the menu sheet instead. Trust Network
+ * already), so they live in the menu sheet instead. PeerLens
  * takes the freed-up bottom-bar slot.
  */
 

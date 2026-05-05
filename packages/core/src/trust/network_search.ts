@@ -1,7 +1,7 @@
 /**
- * Trust Network Search — query decentralized peer reviews about entities.
+ * PeerLens Search — query decentralized peer reviews about entities.
  *
- * Searches the AT Protocol trust network for peer reviews, attestations,
+ * Searches the AT Protocol PeerLens for peer reviews, attestations,
  * and reputation data about a specific entity (person, product, vendor).
  *
  * Search types:
@@ -165,7 +165,7 @@ export function dropSearchCache(query: TrustSearchQuery): void {
 // ---------------------------------------------------------------
 
 /**
- * Search the trust network for reviews/attestations about an entity.
+ * Search PeerLens for reviews/attestations about an entity.
  *
  * Aggregates trust data from:
  * 1. Local contacts (immediate trust ring — highest weight)

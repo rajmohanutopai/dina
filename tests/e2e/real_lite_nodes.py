@@ -132,7 +132,7 @@ class RealLiteHomeNode:
         """Construct ChairMaker-over-Lite — M3 scaffold (task 9.5).
 
         ChairMaker is the vendor/seller actor in Dina's open-economy
-        scenarios — exercises Trust Network lookups, expert
+        scenarios — exercises PeerLens lookups, expert
         attestations, cart handover. Full role requires M3 (trust
         rings + service query + D2D transactions). File-level skips
         applied at `test_trust_network.py` (task 8.20), `test_open_economy.py`

@@ -1304,7 +1304,7 @@ func TestBIP39_2_1_4_InvalidMnemonicWrongWordCount(t *testing.T) {
 // from a corrupt mnemonic. If a user mis-types one word during paper-backup
 // recovery, the system MUST alert them immediately rather than silently
 // deriving wrong keys (which would create an identity with no connection
-// to their original data, contacts, or trust network).
+// to their original data, contacts, or PeerLens).
 // TRACE: {"suite": "CORE", "case": "1474", "section": "30", "sectionName": "Test System Quality", "subsection": "11", "scenario": "01", "title": "BIP39_29_8_1_RecoveryRejectsInvalidChecksum"}
 func TestBIP39_29_8_1_RecoveryRejectsInvalidChecksum(t *testing.T) {
 	root := findProjectRoot(t)

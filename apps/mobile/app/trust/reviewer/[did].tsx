@@ -1,5 +1,5 @@
 /**
- * Trust Network — reviewer profile screen (TN-MOB-015 / Plan §8.5).
+ * PeerLens — reviewer profile screen (TN-MOB-015 / Plan §8.5).
  *
  * Drilled into from any reviewer entry on the subject card spotlight,
  * the subject-detail reviewer list, the cosig inbox sender line, or
@@ -39,7 +39,7 @@ import { getBootedNode } from '../../../src/hooks/useNodeBootstrap';
 
 /**
  * How long the screen waits for `profile` before surfacing a friendly
- * "couldn't reach trust network" error. See same constant in
+ * "couldn't reach PeerLens" error. See same constant in
  * `[subjectId].tsx` for the rationale.
  */
 const LOAD_BUDGET_MS = 5000;
@@ -237,7 +237,7 @@ export default function ReviewerProfileScreen(
     if (props.profile !== undefined || props.error !== undefined) return;
     if (paramDid) return;
     const id = setTimeout(() => {
-      setAutoError("Couldn't reach the trust network. Check your connection and try again.");
+      setAutoError("Couldn't reach PeerLens. Check your connection and try again.");
     }, LOAD_BUDGET_MS);
     return () => clearTimeout(id);
   }, [paramDid, retryNonce, props.profile, props.error]);

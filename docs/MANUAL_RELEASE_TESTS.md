@@ -19,7 +19,7 @@
   | 17 | Contacts/DID add | Add a peer DID/contact; contact persists across app restart. |
   | 18 | D2D live message | Two real nodes/devices send encrypted messages through MsgBox both directions. |
   | 19 | D2D offline/reconnect | Peer offline gives clear pending/failure state; delivery recovers after reconnect. |
-  | 20 | Trust feed/profile | Trust tab loads self profile/feed or shows clear AppView/network error. |
+  | 20 | Trust feed/profile | the PeerLens tab loads self profile/feed or shows clear AppView/network error. |
   | 21 | Trust search/detail | Search a subject, open detail, reviewer profile, alternatives; navigation/back works. |
   | 22 | Trust write/outbox | Write a review; online publish reaches PDS/AppView or offline enters durable outbox. |
   | 23 | Provider service config | Enable provider mode and capability config; profile publish/degradation is visible. |

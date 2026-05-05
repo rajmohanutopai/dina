@@ -1,5 +1,5 @@
 /**
- * Trust Network — manage pseudonymous namespaces (TN-MOB-014 / Plan §3.5.2).
+ * PeerLens — manage pseudonymous namespaces (TN-MOB-014 / Plan §3.5.2).
  *
  * Lists the user's existing namespaces (read from their current PLC
  * operation) and exposes an "+ Add namespace" CTA. The actual
@@ -88,7 +88,7 @@ export default function NamespaceScreen(props: NamespaceScreenProps = {}): React
   const canAdd = canAddNamespace(prior) && !isAdding;
 
   // Auto-timeout: when no `prior` op is supplied within the load
-  // budget, surface a graceful "couldn't reach trust network" message
+  // budget, surface a graceful "couldn't reach PeerLens" message
   // instead of spinning forever. Skipped in controlled mode (when the
   // caller passes `prior` explicitly — tests + a future runner).
   const [timedOut, setTimedOut] = React.useState(false);
@@ -120,7 +120,7 @@ export default function NamespaceScreen(props: NamespaceScreenProps = {}): React
           <Ionicons name="cloud-offline-outline" size={36} color={colors.textMuted} />
           <Text style={styles.emptyTitle}>DID document unavailable</Text>
           <Text style={styles.emptyBody}>
-            Couldn&apos;t reach the trust network to read your namespaces. Check your
+            Couldn&apos;t reach PeerLens to read your namespaces. Check your
             connection and try again.
           </Text>
           <Pressable

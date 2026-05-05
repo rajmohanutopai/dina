@@ -108,7 +108,7 @@ export const SearchParams = z
     // can already serialise the param without breaking.
     reviewersInNetwork: z.enum(['any', 'one_plus', 'majority']).optional(),
     // TN-TEST-080 / Plan §7 friend-boost — when set, attestations
-    // authored by DIDs in the viewer's 1-hop trust graph (vouches +
+    // authored by DIDs in the viewer's 1-hop PeerLens graph (vouches +
     // direct attestations) sort above attestations from strangers.
     // Boost is a flag, not a per-overlap multiplier (the helper in
     // `scorer/algorithms/friend-boost.ts` documents why). The
@@ -485,7 +485,7 @@ export async function search(
 
   // TN-TEST-080 / Plan §7 line 885 — friend-boost. When `viewerDid`
   // is set, attestations authored by DIDs in the viewer's 1-hop
-  // trust graph (vouches + direct attestations) sort above
+  // PeerLens graph (vouches + direct attestations) sort above
   // attestations from strangers. Same primary-key sort-bump shape
   // as the viewerRegion boost, applied as an OUTER bucket so the
   // friend signal dominates region match (a friend's review

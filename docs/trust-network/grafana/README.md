@@ -1,4 +1,4 @@
-# Trust Network V1 — Grafana dashboards (TN-OBS-004)
+# PeerLens V1 — Grafana dashboards (TN-OBS-004)
 
 ## What's here
 

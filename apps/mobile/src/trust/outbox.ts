@@ -1,7 +1,7 @@
 /**
  * Mobile attestation outbox — pure data layer (TN-MOB-004 + TN-MOB-007).
  *
- * Per Trust Network V1 plan §3.5.1:
+ * Per PeerLens V1 plan §3.5.1:
  *
  *   > Mobile-side polling: `apps/mobile/src/trust/outbox.ts` keeps a
  *   > small in-memory + persisted set of `{at_uri, draft_body,

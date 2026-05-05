@@ -39,7 +39,7 @@
 | | — The Three-Tier Priority System | COMPLETE |
 | | — Reminders: Deterministic Triggers, LLM-Free | COMPLETE |
 | | — Telegram Bot as Admin Channel | COMPLETE |
-| X | [The Trust Network — Verified Truth at the Ingress Gate](#act-x-the-trust-network--verified-truth-at-the-ingress-gate) | COMPLETE |
+| X | [PeerLens — Verified Truth at the Ingress Gate](#act-x-the-trust-network--verified-truth-at-the-ingress-gate) | COMPLETE |
 | | — The Trust Cache | COMPLETE |
 | | — The Trust Resolver | COMPLETE |
 | | — The Ingress Decision | COMPLETE |
@@ -74,7 +74,7 @@ Core orchestrates every actor in the system.
 <summary><strong>Design Decision — Why Go for the Core?</strong></summary>
 <br>
 
-Dina's core is a long-running, always-on process that manages cryptographic keys, encrypted storage, and real-time WebSocket connections. Written in Go (due to its support of Crypto). The other component in the Home Node is the brain sidecar, which handles LLM reasoning (Python is the defacto language in AI). AppView (Trust Network, built on AT Proto) is a separate TypeScript service that runs independently.
+Dina's core is a long-running, always-on process that manages cryptographic keys, encrypted storage, and real-time WebSocket connections. Written in Go (due to its support of Crypto). The other component in the Home Node is the brain sidecar, which handles LLM reasoning (Python is the defacto language in AI). AppView (PeerLens, built on AT Proto) is a separate TypeScript service that runs independently.
 
 </details>
 
@@ -807,7 +807,7 @@ DID methods differ in where the DID document lives:
 - **`did:key`** — DID document is *derived* from the public key itself. Zero infrastructure, instant resolution, self-certifying. But no key rotation — the DID *is* the key, so rotating the key means changing the DID, which means changing your identity.
 - **`did:plc`** — AT Protocol's DID method. The DID is a hash of a signed "genesis operation." The DID document lives on `plc.directory` (a distributed operation log). Key rotation is a signed operation that updates the document without changing the DID.
 
-`did:plc` was chosen because Dina uses the AT Protocol ecosystem (PDS, AppView, Jetstream) for the Trust Network. Alignment on DID method means: (1) Dina's identity is a first-class AT Protocol identity — it can publish and receive AT Protocol records natively, (2) key rotation is supported — if a signing key is compromised, the recovery key (secp256k1, derived at `m/9999'/2'/0'`) can rotate to a new signing key without changing the DID, and (3) the PLC operation log provides an auditable history of key changes.
+`did:plc` was chosen because Dina uses the AT Protocol ecosystem (PDS, AppView, Jetstream) for PeerLens. Alignment on DID method means: (1) Dina's identity is a first-class AT Protocol identity — it can publish and receive AT Protocol records natively, (2) key rotation is supported — if a signing key is compromised, the recovery key (secp256k1, derived at `m/9999'/2'/0'`) can rotate to a new signing key without changing the DID, and (3) the PLC operation log provides an auditable history of key changes.
 
 Core uses a community PDS (e.g., `bsky.social`) for DID creation. `install.sh` prepares PDS credentials, and Core creates the account on first boot via `CreateAccountAndDID`, passing the K256 key as `recoveryKey`. This registers the DID on the real PLC directory and gives Dina sovereign key rotation capability — the recovery key is derived deterministically from the master seed, so even if the PDS operator is uncooperative, Dina can rotate keys directly on `plc.directory`. In local-only mode (no PDS configured), Core derives a `did:plc:`-formatted identifier locally from a SHA-256 hash of the public key (`core/internal/adapter/identity/identity.go:260-264`) — same format, same validation rules, but no PLC directory registration.
 
@@ -1090,7 +1090,7 @@ Telegram is not just a data connector — it is a full admin channel. Brain's Te
 
 ---
 
-## Act X: The Trust Network — Verified Truth at the Ingress Gate
+## Act X: PeerLens — Verified Truth at the Ingress Gate
 
 Law 2 says: *Rank by trust, not by ad spend.* Core implements this through a local trust cache that feeds into the ingress gatekeeper.
 
@@ -1103,7 +1103,7 @@ The TrustCache (`core/internal/adapter/trust/cache.go`) is a dual-layer store: a
 - **TrustScore** — a float between 0.0 and 1.0, derived from identity anchors, transaction history, outcome data, peer attestations, and time
 - **TrustRing** — 1 (Unverified), 2 (Verified via ZKP), or 3 (Verified + Actioned — proven history)
 - **Relationship** — `"contact"`, `"frequent"`, `"1-hop"`, `"2-hop"`, or `"unknown"` (graph distance from the user)
-- **Source** — `"manual"` (user-managed) or `"appview_sync"` (pulled from the Trust Network)
+- **Source** — `"manual"` (user-managed) or `"appview_sync"` (pulled from PeerLens)
 - **LastVerifiedAt** / **UpdatedAt** — Unix timestamps for freshness tracking
 
 Lookups return a *copy* of the entry (not a pointer) to prevent data races on the hot path. If the SQLite migration fails on startup, the cache degrades gracefully to in-memory only — no crash, just a log warning. The `Stats()` method reads `trust_sync_last` from the `kv_store` table to report the most recent AppView sync timestamp.
@@ -1113,7 +1113,7 @@ Lookups return a *copy* of the entry (not a pointer) to prevent data races on th
 The TrustResolver (`core/internal/adapter/trust/resolver.go`) fetches profiles and neighborhood graphs from AppView's XRPC endpoints:
 
 - `GET /xrpc/com.dina.trust.getProfile?did={did}` — single entity profile (used by two methods: `ResolveProfile` returns a structured `TrustEntry`, `ResolveFullProfile` returns raw JSON for Brain reasoning)
-- `GET /xrpc/com.dina.trust.getGraph?did={did}&depth={hops}&limit={limit}` — trust graph neighborhood
+- `GET /xrpc/com.dina.trust.getGraph?did={did}&depth={hops}&limit={limit}` — PeerLens graph neighborhood
 
 Response size is capped (64KB per profile, 512KB for graphs) to prevent OOM attacks. The two profile methods have deliberately different error semantics: `ResolveProfile` and `ResolveNeighborhood` return nil (not an error) when AppView is unreachable — the trust cache and sync cycle degrade gracefully. `ResolveFullProfile` returns distinct errors (`ErrAppViewNotConfigured`, upstream failure, or nil for 404) so the TrustHandler can map them to proper HTTP status codes (503, 502, 404 respectively). When `baseURL` is empty (AppView not configured), all methods short-circuit immediately.
 

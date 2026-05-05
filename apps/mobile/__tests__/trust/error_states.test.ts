@@ -1,5 +1,5 @@
 /**
- * Trust Network error-state classifier + copy tests (TN-MOB-030).
+ * PeerLens error-state classifier + copy tests (TN-MOB-030).
  *
  * Pins the classification rules + the copy contract:
  *

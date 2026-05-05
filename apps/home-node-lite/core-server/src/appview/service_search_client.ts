@@ -84,7 +84,7 @@ export interface ServiceMatch {
   schema_hash: string;
   /** Kilometres from the requesting user's location. -1 when unknown. */
   distance_km: number;
-  /** 0..1 trust score from the Trust Network. null when no trust data. */
+  /** 0..1 trust score from PeerLens. null when no trust data. */
   trust_score: number | null;
 }
 

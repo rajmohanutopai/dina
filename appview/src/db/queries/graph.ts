@@ -12,14 +12,14 @@ import type { GetGraphResponse, GraphNode as ApiGraphNode, GraphEdge as ApiGraph
  * so a single expensive BFS/DFS cannot block the connection pool.
  */
 
-/** A node in the trust graph */
+/** A node in PeerLens graph */
 export interface GraphNode {
   did: string
   trustScore: number | null
   depth: number
 }
 
-/** An edge in the trust graph */
+/** An edge in PeerLens graph */
 export interface GraphEdge {
   fromDid: string
   toDid: string
@@ -69,7 +69,7 @@ export async function withGraphTimeout<T>(
 }
 
 /**
- * Compute the trust graph context around a DID using breadth-first traversal.
+ * Compute PeerLens graph context around a DID using breadth-first traversal.
  * Respects MAX_EDGES_PER_HOP to prevent fan-out explosion (Fix 3).
  */
 export async function computeGraphContext(
@@ -210,7 +210,7 @@ export async function computeGraphContext(
 }
 
 /**
- * Get the trust graph around a DID, transformed to the API response format.
+ * Get PeerLens graph around a DID, transformed to the API response format.
  * Delegates to computeGraphContext for BFS traversal, then maps internal
  * types (fromDid/toDid/edgeType) to API types (from/to/type).
  */

@@ -1,7 +1,7 @@
 """E2E Test Suite 3: Product Research & Purchase.
 
 Tests the full product research journey: querying ReviewBot via MCP,
-checking the Trust Network, cart handover, D2D commerce with persona
+checking PeerLens, cart handover, D2D commerce with persona
 gating, cold-start web search fallback, and outcome reporting to PDS.
 
 Actors: Don Alonso, ChairMaker, ReviewBot, AppView, OpenClaw,
@@ -46,7 +46,7 @@ from tests.e2e.mocks import (
 
 
 class TestProductResearchPurchase:
-    """E2E-3.x -- Product research via ReviewBot, Trust Network,
+    """E2E-3.x -- Product research via ReviewBot, PeerLens,
     cart handover, D2D commerce, cold-start fallback, and outcome
     reporting."""
 
@@ -153,7 +153,7 @@ class TestProductResearchPurchase:
         don_alonso: HomeNode,
         appview: MockAppView,
     ) -> None:
-        """E2E-3.2 Trust Network Check.
+        """E2E-3.2 PeerLens Check.
 
         AppView has attestations and outcome data for Herman Miller Aeron.
         Query returns aggregate score with exact value verification.

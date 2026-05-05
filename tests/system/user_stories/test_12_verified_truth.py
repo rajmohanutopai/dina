@@ -5,7 +5,7 @@ Each test builds on state from the previous one.
 
 Thesis Invariant
 ----------------
-Law 2: Verified Truth.  The Trust Network replaces marketing.  Dina
+Law 2: Verified Truth.  PeerLens replaces marketing.  Dina
 credits sources — not just extracts.  Creators get traffic, users get
 truth.
 

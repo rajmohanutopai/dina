@@ -1,7 +1,7 @@
 /**
  * Subject enrichment heuristic (TN-ENRICH-005).
  *
- * Per Trust Network V1 plan §3.6 — the lexicon `SubjectRef` is
+ * Per PeerLens V1 plan §3.6 — the lexicon `SubjectRef` is
  * intentionally sparse; AppView enriches each subject row at ingest
  * with category + metadata so search filters work. **Enrichment is
  * server-side; publishers don't need to know the taxonomy.**

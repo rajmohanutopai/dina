@@ -1,7 +1,7 @@
 /**
  * Curated allow-list of well-known organizations (TN-ENRICH-003).
  *
- * Per Trust Network V1 plan §3.6.3:
+ * Per PeerLens V1 plan §3.6.3:
  *
  *   > **Type=organization:** `SubjectRef.uri` host TLD heuristic:
  *   > `.edu → org_type='university'`, `.gov →

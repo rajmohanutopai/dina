@@ -125,7 +125,7 @@ ensure_env() {
 
   # PDS credentials (task 7.22) — optional; blank skips PDS publish.
   echo "Step 1/2 — AT Protocol PDS (optional)"
-  echo "  Leave blank if you just want Dina to run locally; Trust Network"
+  echo "  Leave blank if you just want Dina to run locally; PeerLens"
   echo "  participation needs a PDS account on a community PDS."
   echo
   ask "PDS URL [${PDS_URL_DEFAULT}]:"; read -r pds_url

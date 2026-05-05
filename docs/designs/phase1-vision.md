@@ -13,7 +13,7 @@ Repo: rajmohanutopai/dina
 Dina becomes the identity layer of the agentic internet. Not just a personal AI — the protocol that every agent, device, and AI system uses to prove identity, verify trust, and gate actions. The Home Node is the reference implementation; the protocol is the standard.
 
 ### Platonic Ideal
-You install Dina in 3 commands. Within 5 minutes, OpenClaw is ingesting your email. Within an hour, Dina knows your world. The first nudge makes you feel something — not because the AI is smart, but because it made you more human. Developers `pip install dina-agent` and get identity + safety in 3 lines of code. The trust network shows real, verified outcomes — not ad-funded rankings.
+You install Dina in 3 commands. Within 5 minutes, OpenClaw is ingesting your email. Within an hour, Dina knows your world. The first nudge makes you feel something — not because the AI is smart, but because it made you more human. Developers `pip install dina-agent` and get identity + safety in 3 lines of code. PeerLens shows real, verified outcomes — not ad-funded rankings.
 
 ## Strategic Approach
 **Platform-First (Approach C):** Ship all three pillars (identity + safety + trust) together targeting developers. Open source community strategy. Critical constraint: Dina never touches external APIs directly — all data fetching delegated to child agents via MCP.
@@ -25,7 +25,7 @@ You install Dina in 3 commands. Within 5 minutes, OpenClaw is ingesting your ema
 | 1 | Protocol-First Positioning — extract formal spec from architecture | M | ACCEPTED | Protocols win. Implementations are replaceable. Enables non-Docker implementations. |
 | 2 | Developer Onboarding — standalone dina-agent as front door | M | ACCEPTED | Time-to-first-value is #1 adoption driver. 30 seconds > 30 minutes. |
 | 3 | Documentation-Reality Gap — audit ROADMAP, update README | S | ACCEPTED | Stale docs actively harm the project. Documentation is the UI of OSS. |
-| 4 | Trust Network Bootstrap — genesis set, bot pre-seeding, vouch ceremony | M | ACCEPTED | Cold-start problem must be solved. Empty trust network = no trust network. |
+| 4 | PeerLens Bootstrap — genesis set, bot pre-seeding, vouch ceremony | M | ACCEPTED | Cold-start problem must be solved. Empty PeerLens = no PeerLens. |
 | 5 | Delight Package — dina hello, trust badge SVG, audit report | S | ACCEPTED | Small touches compound. "Oh nice, they thought of that." |
 | 6 | Multi-Agent Orchestration Demo — Purchase Journey showcase | M | ACCEPTED | Show don't tell. Working demo > 1000 pages of docs. |
 
@@ -33,7 +33,7 @@ You install Dina in 3 commands. Within 5 minutes, OpenClaw is ingesting your ema
 - Protocol spec extraction (wire formats, auth flows, trust schemas)
 - Standalone dina-agent SDK onboarding (works without Docker/Home Node)
 - Full ROADMAP audit + README "What Works Today" section + TODO.md cleanup
-- Trust network bootstrap: foundation node, bot pre-seeding, vouch ceremony
+- PeerLens bootstrap: foundation node, bot pre-seeding, vouch ceremony
 - dina hello + trust badge SVG + dina audit me
 - Purchase Journey runnable demo with mock agents
 

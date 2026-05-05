@@ -34,7 +34,7 @@ export interface Language {
 /**
  * Curated BCP-47 list. Inclusion criteria: ≥ 50M native speakers OR
  * ≥ 1M Wikipedia articles (a digital-content-availability proxy that
- * matters for the trust network's filtering use). Regional variants
+ * matters for PeerLens filtering use). Regional variants
  * only when the variant has substantially different written content
  * (zh-Hans vs zh-Hant: different scripts; pt-BR vs pt-PT: different
  * orthography post-1990 reform; en-US vs en-GB: ignored — same script

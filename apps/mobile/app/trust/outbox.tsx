@@ -1,5 +1,5 @@
 /**
- * Trust Network — outbox / stuck-publish recovery (TN-MOB-017 / Plan §3.5.1).
+ * PeerLens — outbox / stuck-publish recovery (TN-MOB-017 / Plan §3.5.1).
  *
  * Lists the user's stuck or rejected publish attempts and exposes a
  * "Try again" affordance per row. The state machine + selectors live
@@ -99,7 +99,7 @@ const REJECT_REASON_LABEL: Record<string, string> = {
   signature_invalid: 'Signature invalid — recompose required',
   schema_invalid: 'Record format rejected — recompose required',
   namespace_disabled: 'Namespace not declared in your DID document',
-  feature_off: 'Trust Network temporarily unavailable',
+  feature_off: 'PeerLens temporarily unavailable',
   pds_suspended: 'Your PDS host is suspended by the operator',
 };
 

@@ -1,5 +1,5 @@
 /**
- * Trust Network wire types — the canonical TS shape for the
+ * PeerLens wire types — the canonical TS shape for the
  * `com.dina.trust.*` AT Protocol record family.
  *
  * AppView's Zod validators (in `appview/src/ingester/record-validator.ts`)

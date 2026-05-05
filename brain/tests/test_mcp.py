@@ -797,7 +797,7 @@ async def test_mcp_6_2_14_silence_protocol_checked_before_delegation(
 @pytest.mark.asyncio
 # TRACE: {"suite": "BRAIN", "case": "0245", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "02", "scenario": "15", "title": "agent_outcome_recorded_in_tier3"}
 async def test_mcp_6_2_15_agent_outcome_recorded_in_tier3(agent_router) -> None:
-    """SS6.2.15: Agent execution outcome is recorded in Tier 3 of the Trust Network."""
+    """SS6.2.15: Agent execution outcome is recorded in Tier 3 of PeerLens."""
     outcome = agent_router.record_outcome(
         "did:key:z6MkWeatherBot", {"satisfaction": "positive"}
     )

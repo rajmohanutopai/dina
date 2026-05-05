@@ -16,7 +16,7 @@
  *     subscribers with the freshly-fetched value.
  *   - `invalidateTrustSearch(query)` — same for searches.
  *   - `invalidateAll()` — bulk invalidate (e.g. on persona switch or
- *     "pull to refresh" on the Trust tab).
+ *     "pull to refresh" on the PeerLens tab).
  *
  * Design notes:
  *

@@ -7,7 +7,7 @@
  *
  *   - `#dina_signing`  — root signing key (task 4.54's `root`).
  *                        Used for request signatures, DID-doc
- *                        self-attestation, Trust Network entry
+ *                        self-attestation, PeerLens entry
  *                        signing.
  *   - `#dina_messaging`— messaging key. Today mapped to the same
  *                        root pubkey for brand-new installs; the

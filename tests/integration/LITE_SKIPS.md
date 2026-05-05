@@ -81,7 +81,7 @@ fix path is category-specific (see task 8.53's classification step):
 | `test_home_node.py::TestBrainLocalLLM::*` | Go uses llama-server subprocess; Lite uses node-llama-cpp peer-dep (task 5.29) | `pending-feature` | task 5.29 integration tests | Different integration layer |
 | `test_home_node.py::TestCloudLLMRateLimited::*` | Go's rate-limit logic is Python-router-specific; Lite uses `TokenLedger` (task 5.28) | `pending-feature` | Phase 5d router | Not direct 1:1 mapping |
 | `test_dina_to_dina.py::TestSanchoArrival::*` | Whisper-assembly + silence-tiers land with M2 persona model (tasks 8.13-8.18) | `pending-feature` | M2 | Task 8.9's M1 scope is D2D wire smoke only |
-| `test_dina_to_dina.py::TestSellerNegotiation::*` | Depends on Trust Network (M3, task 8.20+) + persona-gating (M2, task 8.13+) | `pending-feature` | M3 | M1 covers wire only |
+| `test_dina_to_dina.py::TestSellerNegotiation::*` | Depends on PeerLens (M3, task 8.20+) + persona-gating (M2, task 8.13+) | `pending-feature` | M3 | M1 covers wire only |
 | `test_dina_to_dina.py::TestSharingPolicyAndEgress::*` | Sharing-tier enforcement needs Lite's `SharingPolicyManager` (M2) + audit WAL (M2) | `pending-feature` | M2 | PII egress works wire-level; the sharing-policy GATE needs M2 |
 | `test_ingestion.py::TestFullIngestionPipelines::*` | Requires Brain's `/api/v1/process` + LLM classification (Phase 5c) | `pending-route` | Phase 5c brain-server | M1 smoke doesn't need full pipeline |
 | `test_ingestion.py::TestOAuthTokenLifecycle::*` | Go's connector-service OAuth refresh heuristics; Lite uses different model | `pending-feature` | Phase 5 connector work | Different refresh semantics; not a Lite bug |
@@ -97,7 +97,7 @@ fix path is category-specific (see task 8.53's classification step):
 | `test_audit.py::*` (file-level) | Persistent audit trail (append-only WAL, hash chain, per-persona partitioning) is M2 scope | `pending-feature` | M2 | Lite's audit subsystem lands with Phase 5+ |
 | `test_security.py::TestPersonaIsolation::*` | Cryptographic persona-DEK isolation is the M2 gate | `pending-feature` | M2 | HKDF per-compartment derivation lands with Phase 5+ |
 | `test_security.py::TestMultiUserIsolation::*` | Multi-user per-database is Go's `--instance` mode; Lite is single-tenant | `pending-feature` | Phase 13 operator journey (task 9.16) | Not a Lite M1-M5 concern |
-| `test_trust_network.py::*` (file-level) | Trust Network (attestations, outcomes, bot trust, AT Protocol publishing) is the M3 gate | `pending-feature` | M3 | Lite trust-scorer + AppView integration land with Phase 5+ |
+| `test_trust_network.py::*` (file-level) | PeerLens (attestations, outcomes, bot trust, AT Protocol publishing) is the M3 gate | `pending-feature` | M3 | Lite trust-scorer + AppView integration land with Phase 5+ |
 | `test_trust_rings.py::*` (file-level) | Trust rings + composite trust function — M3 scope | `pending-feature` | M3 | Entire file exercises the ring model |
 | `test_ws2_service_query.py::*` (file-level) | WS2 service-query workflow (M3 hero scenario per README BusDriver demo) | `pending-feature` | M3 | Requires Lite's WS2 brain-side routes (Phase 5+) |
 | `test_source_trust.py::*` (file-level) | Source trust + provenance + retrieval-policy filtering — M3 scope | `pending-feature` | M3 | Lite's provenance subsystem lands with Phase 5+ |

@@ -1,5 +1,5 @@
 /**
- * Trust Network V1 score formula — reference implementation
+ * PeerLens V1 score formula — reference implementation
  * (TN-PROTO-004 / TN-PROTO-005).
  *
  * This is the canonical, zero-dep, deterministic port of the AppView

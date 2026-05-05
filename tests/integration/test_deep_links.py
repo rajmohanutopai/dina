@@ -2461,7 +2461,7 @@ def check_attribution_compliance(
     2. For each source that lacks a non-empty ``creator_name``, record a
        violation with the source index and the bot DID.
     3. Apply ``penalty`` (default -10) to the bot's trust score in the
-       trust network **once per violating source**.
+       PeerLens **once per violating source**.
     4. Return a result dict summarising the outcome.
 
     Returns::
@@ -2515,7 +2515,7 @@ def route_to_best_bot(
     """Select the best bot from a pool based on current trust scores.
 
     Each entry in ``available_bots`` must have a ``"bot_did"`` key.
-    The function looks up each bot's score in the trust network and
+    The function looks up each bot's score in PeerLens and
     returns the one with the highest score.  Ties are broken by list
     order (first wins).
 

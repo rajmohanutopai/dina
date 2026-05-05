@@ -214,7 +214,7 @@
 | 170 | `TST-CORE-158` | Locked persona: file is opaque bytes | §3.2 Persona Management | Yes | `core/test/identity_test.go:979` |
 | 171 | `TST-CORE-159` | Selective unlock with TTL | §3.2 Persona Management | Yes | `core/test/identity_test.go:1010` |
 | 172 | `TST-CORE-160` | Persona Ed25519 key signs DIDComm (NOT root key) | §3.2 Persona Management | Yes | `core/test/identity_test.go:1016` |
-| 173 | `TST-CORE-161` | Persona Ed25519 key signs Trust Network entries (NOT root key) | §3.2 Persona Management | Yes | `core/test/identity_test.go:1049` |
+| 173 | `TST-CORE-161` | Persona Ed25519 key signs PeerLens entries (NOT root key) | §3.2 Persona Management | Yes | `core/test/identity_test.go:1049` |
 | 174 | `TST-CORE-162` | Even Dina's code cannot cross compartments | §3.2 Persona Management | Yes | `core/test/identity_test.go:1088` |
 | 175 | `TST-CORE-163` | Access Open-tier persona | §3.3 Persona Gatekeeper (Tier Enforcement) | Yes | `core/test/identity_test.go:1104` |
 | 176 | `TST-CORE-164` | Access Restricted-tier persona | §3.3 Persona Gatekeeper (Tier Enforcement) | Yes | `core/test/identity_test.go:1130` |
@@ -2270,11 +2270,11 @@
 | 477 | `TST-INT-627` | Cold archive pass-through: no vault writes | §18.9 Ingestion Layer (§7) | Yes | `tests/integration/test_arch_medium_1.py:860` |
 | 478 | `TST-INT-628` | OpenClaw recovery resumes exact cursor position | §18.9 Ingestion Layer (§7) | Yes | `tests/integration/test_arch_medium_1.py:883` |
 | 479 | `TST-INT-629` | Phone connector requires CLIENT_TOKEN auth | §18.9 Ingestion Layer (§7) | Yes | `tests/integration/test_arch_medium_1.py:924` |
-| 480 | `TST-INT-630` | Attestation lexicon: missing fields + out-of-range rating rejected | §18.10 Trust Network (§8) | Yes | `tests/integration/test_arch_medium_1.py:960` |
-| 481 | `TST-INT-631` | AppView censorship detection by count mismatch | §18.10 Trust Network (§8) | Yes | `tests/integration/test_arch_medium_1.py:1062` |
-| 482 | `TST-INT-632` | PDS spot-check discrepancy downgrades AppView trust | §18.10 Trust Network (§8) | Yes | `tests/integration/test_arch_medium_1.py:1115` |
-| 483 | `TST-INT-633` | Tombstone: correct DID + invalid signature rejected | §18.10 Trust Network (§8) | Yes | `tests/integration/test_arch_medium_1.py:1150` |
-| 484 | `TST-INT-634` | Merkle root deterministic + inclusion proof valid | §18.10 Trust Network (§8) | Yes | `tests/integration/test_arch_medium_1.py:1206` |
+| 480 | `TST-INT-630` | Attestation lexicon: missing fields + out-of-range rating rejected | §18.10 PeerLens (§8) | Yes | `tests/integration/test_arch_medium_1.py:960` |
+| 481 | `TST-INT-631` | AppView censorship detection by count mismatch | §18.10 PeerLens (§8) | Yes | `tests/integration/test_arch_medium_1.py:1062` |
+| 482 | `TST-INT-632` | PDS spot-check discrepancy downgrades AppView trust | §18.10 PeerLens (§8) | Yes | `tests/integration/test_arch_medium_1.py:1115` |
+| 483 | `TST-INT-633` | Tombstone: correct DID + invalid signature rejected | §18.10 PeerLens (§8) | Yes | `tests/integration/test_arch_medium_1.py:1150` |
+| 484 | `TST-INT-634` | Merkle root deterministic + inclusion proof valid | §18.10 PeerLens (§8) | Yes | `tests/integration/test_arch_medium_1.py:1206` |
 | 485 | `TST-INT-635` | Malformed tiered payload category dropped silently | §18.11 D2D Sharing Policy (§9) | Yes | `tests/integration/test_arch_medium_2.py:45` |
 | 486 | `TST-INT-636` | Trusted contact + empty policy = no data | §18.11 D2D Sharing Policy (§9) | Yes | `tests/integration/test_arch_medium_2.py:69` |
 | 487 | `TST-INT-637` | Egress audit log: 90-day rolling retention | §18.11 D2D Sharing Policy (§9) | Yes | `tests/integration/test_arch_medium_2.py:90` |
@@ -2394,11 +2394,11 @@
 | 11 | `TST-E2E-011` | Bidirectional D2D Exchange | Suite 2: The Sancho Moment (Flagship D2D) | Yes | `tests/e2e/test_suite_02_sancho_moment.py:440` |
 | 12 | `TST-E2E-012` | Egress Audit Trail Completeness | Suite 2: The Sancho Moment (Flagship D2D) | Yes | `tests/e2e/test_suite_02_sancho_moment.py:570` |
 | 13 | `TST-E2E-013` | Product Research via ReviewBot | Suite 3: Product Research & Purchase | Yes | `tests/e2e/test_suite_03_product_research.py:54` |
-| 14 | `TST-E2E-014` | Trust Network Check | Suite 3: Product Research & Purchase | Yes | `tests/e2e/test_suite_03_product_research.py:149` |
+| 14 | `TST-E2E-014` | PeerLens Check | Suite 3: Product Research & Purchase | Yes | `tests/e2e/test_suite_03_product_research.py:149` |
 | 15 | `TST-E2E-015` | Cart Handover — Dina Never Touches Money | Suite 3: Product Research & Purchase | Yes | `tests/e2e/test_suite_03_product_research.py:247` |
 | 16 | `TST-E2E-016` | D2D Commerce with ChairMaker | Suite 3: Product Research & Purchase | Yes | `tests/e2e/test_suite_03_product_research.py:395` |
 | 17 | `TST-E2E-017` | Cold Start — Web Search Fallback (Phase 1) | Suite 3: Product Research & Purchase | Yes | `tests/e2e/test_suite_03_product_research.py:489` |
-| 18 | `TST-E2E-018` | Outcome Reporting to Trust Network | Suite 3: Product Research & Purchase | Yes | `tests/e2e/test_suite_03_product_research.py:546` |
+| 18 | `TST-E2E-018` | Outcome Reporting to PeerLens | Suite 3: Product Research & Purchase | Yes | `tests/e2e/test_suite_03_product_research.py:546` |
 | 19 | `TST-E2E-019` | Hybrid Search (FTS5 + Vector) | Suite 4: Memory & Recall | Yes | `tests/e2e/test_suite_04_memory_recall.py:27` |
 | 20 | `TST-E2E-020` | Emotional Recall | Suite 4: Memory & Recall | Yes | `tests/e2e/test_suite_04_memory_recall.py:105` |
 | 21 | `TST-E2E-021` | Offline Recall (Rich Client Cache) | Suite 4: Memory & Recall | Yes | `tests/e2e/test_suite_04_memory_recall.py:169` |
@@ -2439,12 +2439,12 @@
 | 56 | `TST-E2E-056` | Rich Client Offline Operations | Suite 11: Multi-Device & Sync | Yes | `tests/e2e/test_suite_11_multi_device.py:328` |
 | 57 | `TST-E2E-057` | Cache Corruption Recovery | Suite 11: Multi-Device & Sync | Yes | `tests/e2e/test_suite_11_multi_device.py:408` |
 | 58 | `TST-E2E-058` | Heartbeat and Stale Connection Cleanup | Suite 11: Multi-Device & Sync | Yes | `tests/e2e/test_suite_11_multi_device.py:489` |
-| 59 | `TST-E2E-059` | Expert Attestation Publish → Relay → Query | Suite 12: Trust Network Lifecycle | Yes | `tests/e2e/test_suite_12_trust.py:52` |
-| 60 | `TST-E2E-060` | Bot Trust Degradation | Suite 12: Trust Network Lifecycle | Yes | `tests/e2e/test_suite_12_trust.py:198` |
-| 61 | `TST-E2E-061` | Signed Tombstone Deletion | Suite 12: Trust Network Lifecycle | Yes | `tests/e2e/test_suite_12_trust.py:326` |
-| 62 | `TST-E2E-062` | Trust Score Computation | Suite 12: Trust Network Lifecycle | Yes | `tests/e2e/test_suite_12_trust.py:456` |
-| 63 | `TST-E2E-063` | AT Protocol Discovery | Suite 12: Trust Network Lifecycle | Yes | `tests/e2e/test_suite_12_trust.py:581` |
-| 64 | `TST-E2E-064` | AppView Determinism | Suite 12: Trust Network Lifecycle | Yes | `tests/e2e/test_suite_12_trust.py:673` |
+| 59 | `TST-E2E-059` | Expert Attestation Publish → Relay → Query | Suite 12: PeerLens Lifecycle | Yes | `tests/e2e/test_suite_12_trust.py:52` |
+| 60 | `TST-E2E-060` | Bot Trust Degradation | Suite 12: PeerLens Lifecycle | Yes | `tests/e2e/test_suite_12_trust.py:198` |
+| 61 | `TST-E2E-061` | Signed Tombstone Deletion | Suite 12: PeerLens Lifecycle | Yes | `tests/e2e/test_suite_12_trust.py:326` |
+| 62 | `TST-E2E-062` | Trust Score Computation | Suite 12: PeerLens Lifecycle | Yes | `tests/e2e/test_suite_12_trust.py:456` |
+| 63 | `TST-E2E-063` | AT Protocol Discovery | Suite 12: PeerLens Lifecycle | Yes | `tests/e2e/test_suite_12_trust.py:581` |
+| 64 | `TST-E2E-064` | AppView Determinism | Suite 12: PeerLens Lifecycle | Yes | `tests/e2e/test_suite_12_trust.py:673` |
 | 65 | `TST-E2E-065` | DDoS + Rate Limiting | Suite 13: Security Adversarial | Yes | `tests/e2e/test_suite_13_security.py:52` |
 | 66 | `TST-E2E-066` | Dead Drop Abuse Prevention | Suite 13: Security Adversarial | Yes | `tests/e2e/test_suite_13_security.py:99` |
 | 67 | `TST-E2E-067` | Replay Attack Prevention | Suite 13: Security Adversarial | Yes | `tests/e2e/test_suite_13_security.py:168` |
@@ -2520,7 +2520,7 @@
 | 4 | `REL-004` | Locked-State and Seal Verification | Release Scenarios | Yes | `tests/release/test_rel_004_locked_state.py:18` (+3) |
 | 5 | `REL-005` | Recovery Phrase, Disaster Recovery, and Identity Continuity | Release Scenarios | Yes | `tests/release/test_rel_005_recovery.py:18` (+3) |
 | 6 | `REL-006` | Two Dinas Talk to Each Other | Release Scenarios | Yes | `tests/release/test_rel_006_two_dinas.py:26` (+3) |
-| 7 | `REL-007` | PDS and Trust Network End-to-End | Release Scenarios | Yes | `tests/release/test_rel_007_trust_network.py:20` (+5) |
+| 7 | `REL-007` | PDS and PeerLens End-to-End | Release Scenarios | Yes | `tests/release/test_rel_007_trust_network.py:20` (+5) |
 | 8 | `REL-008` | Agent Gateway with a Real or Rogue Client | Release Scenarios | Yes | `tests/release/test_rel_008_agent_gateway.py:19` (+3) |
 | 9 | `REL-009` | Persona Wall and PII Leakage | Release Scenarios | Yes | `tests/release/test_rel_009_persona_wall.py:18` (+3) |
 | 10 | `REL-010` | Hostile-Network D2D and Sancho Moment Under Fault | Release Scenarios | Yes | `tests/release/test_rel_010_hostile_network.py:22` (+4) |

@@ -92,7 +92,7 @@
       "task": "TN-PROTO-004",
       "status": "frozen",
       "frozen_at": "2026-04-29",
-      "summary": "Trust Network V1 score formula — 14 cases pinning every component (sentiment / vouch / reviewer / network), every flag severity, the tombstone coordination penalty, and confidence tiers. Re-derivable via packages/protocol/src/trust/score_v1.ts :: computeScoreV1(input, nowMs) with nowMs fixed to 2026-04-22T12:00:00Z. AppView's scorer mirrors the same formula with `now = Date.now()`."
+      "summary": "PeerLens V1 score formula — 14 cases pinning every component (sentiment / vouch / reviewer / network), every flag severity, the tombstone coordination penalty, and confidence tiers. Re-derivable via packages/protocol/src/trust/score_v1.ts :: computeScoreV1(input, nowMs) with nowMs fixed to 2026-04-22T12:00:00Z. AppView's scorer mirrors the same formula with `now = Date.now()`."
     }
   ]
 }

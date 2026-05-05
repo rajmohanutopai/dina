@@ -17,7 +17,7 @@ Dina also solves a critical safety gap: autonomous agents today operate without 
 Every design decision must honour these:
 
 1. **Silence First** — Never push content. Only speak when the human asked, or when silence would cause harm. Three priority levels: Fiduciary (interrupt — silence causes harm), Solicited (notify — user asked), Engagement (save for briefing — silence merely misses an opportunity).
-2. **Verified Truth** — Rank by trust, not by ad spend. The Trust Network replaces marketing.
+2. **Verified Truth** — Rank by trust, not by ad spend. PeerLens replaces marketing.
 3. **Absolute Loyalty** — The human holds the encryption keys. The agent cannot access the data without them. Loyalty is enforced by math, not by a privacy policy.
 4. **Never Replace a Human** — Dina never simulates emotional intimacy. When the human needs connection, Dina connects them to other humans — never to herself.
 
@@ -47,7 +47,7 @@ brain/              Python Brain (sidecar) — intelligence & orchestration
                     agent orchestration (MCP → OpenClaw), admin UI, PII scrubber (Presidio patterns)
                     Port 8200 (internal: /api/* brain API, /admin/* admin UI)
 
-appview/            TypeScript AppView — decentralized Trust Network
+appview/            TypeScript AppView — decentralized PeerLens
                     Ingester (Jetstream firehose), Scorer (9 background jobs), Web (5 xRPC endpoints)
                     PostgreSQL backend, 19 AT Protocol record types
                     Port 3000 (xRPC API)
@@ -90,12 +90,12 @@ Core uses a community PDS (e.g., `bsky.social`) for `did:plc` creation — no si
 |-------|-----------|---------|
 | Core | Go + net/http | Sovereign cryptographic kernel |
 | Brain | Python + Google ADK + FastAPI | LLM reasoning, agent orchestration, admin UI |
-| AppView | TypeScript + Node.js | Trust Network (AT Protocol) |
+| AppView | TypeScript + Node.js | PeerLens (AT Protocol) |
 | Storage | SQLite + SQLCipher (AES-256-CBC per page) | Encrypted per-persona vault files |
 | Search | FTS5 (keyword) + HNSW in-memory (semantic) | Hybrid search: `0.4 × FTS5 + 0.6 × cosine` |
 | Identity | `did:plc` (AT Protocol) + Ed25519 (SLIP-0010) | Self-sovereign identity, key derivation |
 | Key Mgmt | BIP-39 mnemonic → SLIP-0010 (signing) + HKDF (vault DEKs) | Hierarchical deterministic keys under purpose `m/9999'` |
-| Trust | AT Protocol community PDS + AppView | Decentralized trust network (19 record types) |
+| Trust | AT Protocol community PDS + AppView | Decentralized PeerLens (19 record types) |
 | Messaging | NaCl `crypto_box_seal` over HTTPS | Dina-to-Dina encrypted P2P |
 | PII | 2-tier (V1): regex (Go) + Presidio patterns (Python). NER disabled in V1, allow-list filters false positives. V2: GLiNER local model. | Raw data never leaves Home Node |
 | Agents | MCP (Model Context Protocol) | External agent communication (OpenClaw, etc.) |
@@ -348,7 +348,7 @@ Includes MockOpenClaw (50 emails, calendar events, web search results), MockRevi
 |---|-------|-----------|
 | 01 | Purchase Journey | Product research → trust scoring → cart handover |
 | 02 | Sancho Moment | Anti-Her: detects loneliness, nudges toward humans |
-| 03 | Dead Internet Filter | Trust Network filters AI-generated content |
+| 03 | Dead Internet Filter | PeerLens filters AI-generated content |
 | 04 | Persona Wall | Cryptographic persona isolation |
 | 05 | Agent Gateway | Autonomous agent intent → Dina approval/block |
 | 06 | License Renewal | Subscription/license management |
@@ -410,7 +410,7 @@ brain/                  Python Brain (sidecar)
     service/               Business logic
     infra/                 Infrastructure (LLM routing, embedding)
 
-appview/                TypeScript AppView (Trust Network)
+appview/                TypeScript AppView (PeerLens)
   src/
     ingester/              Jetstream firehose consumer
     scorer/                9 background scoring jobs
@@ -429,7 +429,7 @@ docs/                   Architecture docs, walkthroughs
   core-walkthrough.md     Detailed Go Core walkthrough
   brain-walkthrough.md    Detailed Python Brain walkthrough
   security-walkthrough.md Security model explained
-  appview-walkthrough.md  Trust Network walkthrough
+  appview-walkthrough.md  PeerLens walkthrough
 ```
 
 ## Storage Architecture

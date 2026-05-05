@@ -61,7 +61,7 @@ const (
 )
 
 // ValidContactRelationships is the set of accepted contact relationship values.
-// Named differently from ValidRelationships in trust.go (trust network graph relationships).
+// Named differently from ValidRelationships in trust.go (PeerLens graph relationships).
 var ValidContactRelationships = map[string]bool{
 	RelationshipSpouse: true, RelationshipChild: true,
 	RelationshipParent: true, RelationshipSibling: true,

@@ -1,8 +1,8 @@
 # Dina Interaction Areas
 
-99 conceptual areas where users interact with Dina. These represent the full surface of how a sovereign personal AI serves daily life — from memory and health to agent delegation and trust networks.
+99 conceptual areas where users interact with Dina. These represent the full surface of how a sovereign personal AI serves daily life — from memory and health to agent delegation and PeerLenss.
 
-This is not a feature list. It is the problem space. Each area may involve multiple Dina capabilities (vault storage, reminders, D2D messaging, agent delegation, trust network, approval gating, MCP tools).
+This is not a feature list. It is the problem space. Each area may involve multiple Dina capabilities (vault storage, reminders, D2D messaging, agent delegation, PeerLens, approval gating, MCP tools).
 
 ---
 
@@ -165,9 +165,9 @@ Examples:
 - "Show who approved the task that contacted the courier."
 - "Why was this message sent to the restaurant yesterday?"
 
-## Trust Network
+## PeerLens
 
-**22. Trust Network & Peer Reviews**
+**22. PeerLens & Peer Reviews**
 Publishing reviews, vouching for people, querying trust scores, flagging bad actors.
 
 Examples:
@@ -753,4 +753,4 @@ These areas cut across multiple domains:
 
 ---
 
-*Each area exercises different Dina capabilities. Most involve vault storage (auto-classified into health/finance/general/work). Many trigger reminders. Some require approval gating. Some use D2D messaging. Some delegate to agents. The Trust Network connects purchase and vendor areas. The goal is for Dina to be the single place where a person's entire life context lives — sovereign, encrypted, and under their control.*
+*Each area exercises different Dina capabilities. Most involve vault storage (auto-classified into health/finance/general/work). Many trigger reminders. Some require approval gating. Some use D2D messaging. Some delegate to agents. PeerLens connects purchase and vendor areas. The goal is for Dina to be the single place where a person's entire life context lives — sovereign, encrypted, and under their control.*

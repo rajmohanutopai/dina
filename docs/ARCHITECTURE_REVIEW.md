@@ -97,14 +97,14 @@ Those ideas are present in `ARCHITECTURE.md`, but not yet treated as first-class
 | Quiet-first / fiduciary interruption | Strong | Well handled |
 | Dina-to-Dina messaging | Strong | Well handled |
 | Cart handover / Dina never touches money | Strong | Well handled |
-| Trust Network and trust rings | Strong | Well handled |
+| PeerLens and trust rings | Strong | Well handled |
 | Bot trust and routing | Medium-strong | Present, but more protocol than operating policy |
 | Loyalty framework | Weak-medium | Implied, not architecturally explicit |
 | Human connection | Weak | Mostly future-note level |
 | Anti-Her | Weak | Present as a future note, not a current invariant |
 | Pull economy / intent economy | Weak | Implied through trust and deep links, not explicitly designed |
 | Creator value return | Medium | Deep-link rule exists, but system-level framing is thin |
-| Merit economy | Medium | Trust network supports it, but architecture does not present it as a formal design outcome |
+| Merit economy | Medium | PeerLens supports it, but architecture does not present it as a formal design outcome |
 | Open economy | Medium | Present as future commerce path, but correctly deferred |
 
 ### Strong Alignment Areas
@@ -143,7 +143,7 @@ The README's three-tier logic:
 
 is captured cleanly in the interrupt classification model.
 
-#### 4. Trust Network architecture
+#### 4. PeerLens architecture
 
 The README's trust thesis translates well into:
 
@@ -180,7 +180,7 @@ The current architecture supports loyalty indirectly through:
 
 - local vault ownership
 - PII protection
-- trust network
+- PeerLens
 - action gating
 
 That is necessary, but not sufficient.
@@ -455,7 +455,7 @@ They reduce risk while preserving value.
 
 The document correctly says:
 
-- Phase 1 value must not depend on the trust network
+- Phase 1 value must not depend on PeerLens
 
 But it still mentally centers:
 
@@ -875,14 +875,14 @@ Suggested contents:
 4. expert/value sources should receive attribution and traffic
 5. ranking should be trust-based and evidence-based, not attention-based
 
-### G. Add a "Current vs Future Trust Network" Clarifier
+### G. Add a "Current vs Future PeerLens" Clarifier
 
 This should make explicit:
 
-- what trust network capabilities are operationally required for Phase 1
+- what PeerLens capabilities are operationally required for Phase 1
 - what are later ecosystem-level capabilities
 
-This matters because right now the trust network section is good, but too easy to read as immediately central to everything.
+This matters because right now PeerLens section is good, but too easy to read as immediately central to everything.
 
 ### H. Add a "Public vs Private Subsystems" Clarifier
 
@@ -953,7 +953,7 @@ This is the heart of the current system.
 
 This should include:
 
-- trust network
+- PeerLens
 - PDS/AppView shape
 - what is current vs deferred
 - current cold-start strategy

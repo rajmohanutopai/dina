@@ -600,7 +600,7 @@ class TelegramService:
             "/send Name: message — message another Dina\n"
             "/contact list — show your contacts\n"
             "/contact add Name: did:plc:... — add a contact\n\n"
-            "*Trust Network*\n"
+            "*PeerLens*\n"
             "/review Product: your review — publish a review\n"
             "/vouch Name: reason — vouch for someone\n"
             "/flag Name: reason — flag a bad actor\n"
@@ -937,7 +937,7 @@ class TelegramService:
                 extra={"error": str(exc)},
             )
 
-    # ── Trust Network Commands (/vouch, /review, /flag, /trust) ──────────
+    # ── PeerLens Commands (/vouch, /review, /flag, /trust) ──────────
 
     async def handle_status(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE,
@@ -969,7 +969,7 @@ class TelegramService:
     async def handle_vouch(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE,
     ) -> None:
-        """/vouch Name: reason — vouch for a contact on the Trust Network."""
+        """/vouch Name: reason — vouch for a contact on PeerLens."""
         if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
             return
         ch = self._ch(context)
@@ -999,7 +999,7 @@ class TelegramService:
 
         self._pending_trust = {"cmd": "vouch", "name": name, "text": reason}
         await ch.send(ConfirmResponse(
-            text=f"Vouch for *{_escape_markdown(name)}*:\n_{_escape_markdown(reason)}_\n\nPublish to Trust Network?",
+            text=f"Vouch for *{_escape_markdown(name)}*:\n_{_escape_markdown(reason)}_\n\nPublish to PeerLens?",
             options=[
                 ConfirmOption(label="Publish", action="confirm", data={"callback_data": f"trust_yes:{did[:20]}"}),
                 ConfirmOption(label="Cancel", action="cancel", data={"callback_data": "trust_no"}),
@@ -1009,7 +1009,7 @@ class TelegramService:
     async def handle_review(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE,
     ) -> None:
-        """/review Product: review text — publish a product review to the Trust Network."""
+        """/review Product: review text — publish a product review to PeerLens."""
         if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
             return
         ch = self._ch(context)
@@ -1033,7 +1033,7 @@ class TelegramService:
 
         self._pending_trust = {"cmd": "review", "product": product, "text": review}
         await ch.send(ConfirmResponse(
-            text=f"Review of *{_escape_markdown(product)}*:\n_{_escape_markdown(review)}_\n\nPublish to Trust Network?",
+            text=f"Review of *{_escape_markdown(product)}*:\n_{_escape_markdown(review)}_\n\nPublish to PeerLens?",
             options=[
                 ConfirmOption(label="Publish", action="confirm", data={"callback_data": "trust_yes:review"}),
                 ConfirmOption(label="Cancel", action="cancel", data={"callback_data": "trust_no"}),
@@ -1043,7 +1043,7 @@ class TelegramService:
     async def handle_flag(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE,
     ) -> None:
-        """/flag DID_or_name: reason — flag a bad actor on the Trust Network."""
+        """/flag DID_or_name: reason — flag a bad actor on PeerLens."""
         if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
             return
         ch = self._ch(context)
@@ -1079,7 +1079,7 @@ class TelegramService:
 
         self._pending_trust = {"cmd": "flag", "target": target, "text": reason}
         await ch.send(ConfirmResponse(
-            text=f"Flag *{_escape_markdown(target)}*:\n_{_escape_markdown(reason)}_\n\nPublish to Trust Network?",
+            text=f"Flag *{_escape_markdown(target)}*:\n_{_escape_markdown(reason)}_\n\nPublish to PeerLens?",
             options=[
                 ConfirmOption(label="Publish", action="confirm", data={"callback_data": "trust_yes:flag"}),
                 ConfirmOption(label="Cancel", action="cancel", data={"callback_data": "trust_no"}),

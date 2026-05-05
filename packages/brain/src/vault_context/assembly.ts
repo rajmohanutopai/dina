@@ -133,7 +133,7 @@ const TOOL_DECLARATIONS: Array<{
   {
     name: 'search_trust_network',
     description:
-      'Search the decentralized trust network for peer reviews about a person, product, or vendor. Returns aggregated trust scores and individual reviews.',
+      'Search PeerLens for signed peer reviews about a person, product, or vendor. Returns aggregated credibility signals and individual reviews.',
     parameters: { query: 'string', type: 'string' },
   },
 ];
@@ -507,7 +507,7 @@ function formatContext(context: AssembledContext): string {
 }
 
 /**
- * Search the trust network for peer reviews about an entity.
+ * Search PeerLens for peer reviews about an entity.
  */
 async function executeTrustSearch(
   query: string,
@@ -529,7 +529,7 @@ async function executeTrustSearch(
       })),
     };
   } catch {
-    return { error: 'Trust network search failed', query };
+    return { error: 'PeerLens search failed', query };
   }
 }
 

@@ -153,7 +153,7 @@ file at `docker/docker-compose.lite.yml`.
 |-----------|-----------------------------------------------------------------|--------|
 | **M1**    | Pair + ask + remember + D2D delivery, basic PII, default persona | 4-5 weeks |
 | **M2**    | 4-tier persona gating, passphrase, audit, storage tiers          | 6-7 weeks |
-| **M3**    | Trust Network, service query/response, cart handover             | 8-9 weeks |
+| **M3**    | PeerLens, service query/response, cart handover             | 8-9 weeks |
 | **M4**    | Chaos, crash recovery, perf targets                              | 9-10 weeks |
 | **M5**    | Full Home Node scenario parity with mobile/shared TS runtime     | 10-12 weeks |
 

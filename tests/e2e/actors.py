@@ -938,10 +938,10 @@ class HomeNode:
         if count == 0:
             ctx_str = ", ".join(sorted(set(context_keywords)))[:200] or "general use"
             content = (
-                f"No verified reviews found in the Trust Network for "
+                f"No verified reviews found in PeerLens for "
                 f"{product_name}. No trust data available — no attestations, "
                 f"no rating. Cannot verify this product through the Trust "
-                f"Network. Not found in trust network. Unknown trust network "
+                f"Network. Not found in PeerLens. Unknown PeerLens "
                 f"status. Based on your preferences ({ctx_str}), consider "
                 f"researching independently — check ergonomic durability "
                 f"and value for your budget before purchasing."

@@ -1,6 +1,6 @@
 /**
  * Identifier parser — detects + validates the external identifier
- * formats the Trust Network indexes against (TN-PROTO-003).
+ * formats PeerLens indexes against (TN-PROTO-003).
  *
  * Used by:
  *   - Mobile compose flows (auto-detect a pasted ASIN / ISBN / DOI

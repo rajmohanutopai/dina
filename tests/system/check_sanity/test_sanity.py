@@ -615,7 +615,7 @@ class TestAuthEnforcement:
 
 
 class TestAppViewTrustQueries:
-    """Trust network queries against real AppView + Postgres."""
+    """PeerLens queries against real AppView + Postgres."""
 
     def test_resolve_did(self, appview, alonso_did):
         r = httpx.get(

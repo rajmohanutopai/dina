@@ -1,8 +1,8 @@
 /**
- * First-run modal — Trust Network landing dialog (TN-MOB-022 / Plan §13.5).
+ * First-run modal — PeerLens landing dialog (TN-MOB-022 / Plan §13.5).
  *
  * Renders the one-shot orientation modal that surfaces on the user's
- * first visit to the Trust tab. Per Plan §13.5 the modal explains:
+ * first visit to the PeerLens tab. Per Plan §13.5 the modal explains:
  *
  *   1. What the trust scores mean (network-derived, not opaque).
  *   2. What pseudonymous namespaces give the user (compartmentalisation).

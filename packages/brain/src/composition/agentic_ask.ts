@@ -162,7 +162,7 @@ export interface AgenticAskPipeline {
    * Builds a fresh `ToolRegistry` on each call with the three
    * content-reading vault tools wired to a `personaGuard` bound to
    * `(askContext.askId, askContext.requesterDid)`. The non-vault
-   * tools (geocode, trust network, query service, find preferred
+   * tools (geocode, PeerLens, query service, find preferred
    * provider, list personas) share the static factories — they
    * don't need ask context.
    *

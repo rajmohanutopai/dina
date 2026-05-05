@@ -50,7 +50,7 @@ class TestVerifiedTruth:
         """E2E-22.1 Product Research — Zero Trust Data.
 
         Query Brain: "Should I buy the XYZ Widget?"  AppView returns
-        empty (product unknown to Trust Network).  Brain must respond
+        empty (product unknown to PeerLens).  Brain must respond
         honestly: "no verified reviews" — no hallucinated scores.
         Response still useful (personal context from vault applied).
 
@@ -115,12 +115,12 @@ class TestVerifiedTruth:
         honest_absence = re.compile(
             r"no (?:verified )?review|no trust (?:data|network)|"
             r"not found in.{0,20}trust|no attestation|"
-            r"unknown.{0,20}trust network|no rating",
+            r"unknown.{0,20}PeerLens|no rating",
             re.IGNORECASE,
         )
         assert honest_absence.search(content), (
             f"Brain must honestly acknowledge absence of trust data: "
-            f"'no verified reviews in the Trust Network' or equivalent. "
+            f"'no verified reviews in PeerLens' or equivalent. "
             f"Law 2: never hallucinate trust scores. Got: {content!r}"
         )
 

@@ -242,7 +242,7 @@ The two axes form a matrix:
 |  | **Static fact** | **Live state** |
 |---|---|---|
 | **Vault context needed** | Vault only | Vault (for context) + provider_service (for state), compose |
-| **Vault context not needed** | Trust network or general knowledge | Public_service only |
+| **Vault context not needed** | PeerLens or general knowledge | Public_service only |
 
 Four worked examples:
 
@@ -454,7 +454,7 @@ A natural build order for fitting the pieces together:
 4. **Do we care about the Hetzner / AppView side of memory?** Public
    services advertise capabilities; a user's trusted contacts advertise
    reputation. Should the ToC include "Sancho has a drone-delivery
-   service" type facts from Trust Network? Probably yes, as a fourth
+   service" type facts from PeerLens? Probably yes, as a fourth
    kind — `kind='external_capability'`. Design TBD; defer to after
    vault ToC ships.
 5. **Privacy surface of the ToC itself.** The ToC is a concentrated
@@ -480,7 +480,7 @@ assertion on the final answer.
 | 3 | self + static | "when's Sancho's birthday?" | Social: "Sancho's birthday is June 12" | vault(social) | `June 12` or `Jun 12` |
 | 4 | self + static | "what books am I reading?" | General: "reading Sapiens by Harari", "started The Three-Body Problem last week" | vault(general) | `Sapiens` or `Three-Body` |
 | 5 | not-self + live | "when does bus 42 reach Van Ness?" | None — BusDriver publishes `eta_query` on AppView | provider_services | `min` + map URL |
-| 6 | not-self + static | "is the Herman Miller Aeron chair worth buying?" | None — trust network has reviews | trust_network | sourced language ("reviews say…", "peers rate…") |
+| 6 | not-self + static | "is the Herman Miller Aeron chair worth buying?" | None — PeerLens has reviews | trust_network | sourced language ("reviews say…", "peers rate…") |
 | 7 | self + live (service available) | "is my dentist appointment still confirmed?" | Health: "dentist Dr Carl Apr 19 at 3pm"; contact `Dr Carl` → `did:plc:drcarl`; drcarl publishes `appointment_status` | vault(health) + provider_service | `confirmed` or explicit status + appointment details |
 | 8 | self + live (no service) | "is my flight AI 123 on time tomorrow?" | Travel: "AI 123 Tokyo Oct 20 2pm"; no flight-status provider registered | vault(travel) → attempt provider_service → fallback | flight details + "no live status available" |
 | 9 | self + comparative | "should I switch my FD from HDFC to ICICI?" | Finance: "HDFC FD 7.8%" + "ICICI savings account open" | vault(finance) + trust_network | current rate cited + comparative note |

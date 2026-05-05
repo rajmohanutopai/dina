@@ -1082,7 +1082,7 @@ func TestIdentity_3_2_11_PersonaKeySignsDIDComm(t *testing.T) {
 // TST-CORE-161
 // TRACE: {"suite": "CORE", "case": "0852", "section": "03", "sectionName": "Identity (DID)", "subsection": "02", "scenario": "12", "title": "PersonaKeySignsTrustNetwork"}
 func TestIdentity_3_2_12_PersonaKeySignsTrustNetwork(t *testing.T) {
-	// Architecture test: verify persona key is used for trust network entries.
+	// Architecture test: verify persona key is used for PeerLens entries.
 	src, err := os.ReadFile("../internal/adapter/identity/identity.go")
 	if err != nil {
 		t.Fatalf("cannot read identity source: %v", err)
@@ -1109,7 +1109,7 @@ func TestIdentity_3_2_12_PersonaKeySignsTrustNetwork(t *testing.T) {
 
 	// Positive: DIDManager must have signing key management.
 	if !strings.Contains(content, "SetSigningKeyPath") {
-		t.Fatal("DIDManager must support signing key configuration for trust network ops")
+		t.Fatal("DIDManager must support signing key configuration for PeerLens ops")
 	}
 
 	// Negative: no hard-coded signing bypass or skip flags.

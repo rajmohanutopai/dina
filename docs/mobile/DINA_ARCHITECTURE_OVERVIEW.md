@@ -311,7 +311,7 @@ Explicitly out of scope across all four documents. Handle separately or accept a
 1. **UI / UX design** — how approvals surface, how notifications are styled, how persona unlock is confirmed
 2. **Vault schema and cryptography** — covered elsewhere in Dina core docs
 3. **Onboarding and identity setup** — covered in core onboarding spec
-4. **Trust network construction and attestation authoring** — covered in trust network docs
+4. **PeerLens construction and attestation authoring** — covered in PeerLens docs
 5. **Multi-user collaboration** — Dina is single-user
 6. **Federation between Dina instances** — speculative, not yet speced
 7. **Payment integration specifics** — referenced abstractly (`make_purchase` as action class), details elsewhere

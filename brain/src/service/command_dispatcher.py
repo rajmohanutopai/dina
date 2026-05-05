@@ -113,7 +113,7 @@ class CommandDispatcher:
             return ErrorResponse(text=f"Contact '{name}' not found.")
         self._pending_trust = {"cmd": "vouch", "name": name, "text": reason}
         return ConfirmResponse(
-            text=f"Vouch for {name}:\n{reason}\n\nPublish to Trust Network?",
+            text=f"Vouch for {name}:\n{reason}\n\nPublish to PeerLens?",
             options=[
                 ConfirmOption(label="Publish", action="confirm",
                               data={"callback_data": f"trust_yes:{did[:20]}"}),
@@ -129,7 +129,7 @@ class CommandDispatcher:
             return ErrorResponse(text=err)
         self._pending_trust = {"cmd": "review", "product": product, "text": review_text}
         return ConfirmResponse(
-            text=f"Review of {product}:\n{review_text}\n\nPublish to Trust Network?",
+            text=f"Review of {product}:\n{review_text}\n\nPublish to PeerLens?",
             options=[
                 ConfirmOption(label="Publish", action="confirm",
                               data={"callback_data": "trust_yes:review"}),
@@ -153,7 +153,7 @@ class CommandDispatcher:
             return ErrorResponse(text=f"Could not resolve '{target}'.")
         self._pending_trust = {"cmd": "flag", "target": target, "text": reason}
         return ConfirmResponse(
-            text=f"Flag {target}:\n{reason}\n\nPublish to Trust Network?",
+            text=f"Flag {target}:\n{reason}\n\nPublish to PeerLens?",
             options=[
                 ConfirmOption(label="Publish", action="confirm",
                               data={"callback_data": "trust_yes:flag"}),
@@ -391,7 +391,7 @@ class CommandDispatcher:
                  "  send Name: message — message another Dina\n"
                  "  contact list — show your contacts\n"
                  "  contact add Name: did:plc:... — add a contact\n\n"
-                 "Trust Network\n"
+                 "PeerLens\n"
                  "  review Product: your review — publish a review\n"
                  "  vouch Name: reason — vouch for someone\n"
                  "  flag Name: reason — flag a bad actor\n"

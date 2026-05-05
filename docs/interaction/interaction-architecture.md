@@ -1080,7 +1080,7 @@ These are clearer externally than collapsing them into one generic `/manage`.
 
 ## Trust Commands
 
-The trust network is a first-class product capability, so these stay separate:
+PeerLens is a first-class product capability, so these stay separate:
 
 ### `/trust`
 

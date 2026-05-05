@@ -9,7 +9,7 @@
  *     with reciprocal signal). Strongest trust signal.
  *   **Ring 2**: friend-of-friend. A Ring-1 contact has vouched for /
  *     attested to the subject. Mild trust boost.
- *   **Ring 3**: stranger. No path through the trust graph — the
+ *   **Ring 3**: stranger. No path through PeerLens graph — the
  *     subject is only known via public AppView data.
  *
  * **Why a separate module?**  The resolver composes three inputs:

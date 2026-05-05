@@ -1,8 +1,8 @@
-# The Dina AppView: A Walk Through the Trust Network
+# The Dina AppView: A Walk Through PeerLens
 
 ## Act I: What This Is — The Missing Layer of the Internet
 
-Every time you buy something online, you're trusting a stranger. The only signal you have is a star rating that can be bought, a review that can be faked, and a platform that profits from both. Dina's AppView is the antidote: a **decentralized trust network** where trust is earned through cryptographic attestations, not purchased through ad spend.
+Every time you buy something online, you're trusting a stranger. The only signal you have is a star rating that can be bought, a review that can be faked, and a platform that profits from both. Dina's AppView is the antidote: a **decentralized PeerLens** where trust is earned through cryptographic attestations, not purchased through ad spend.
 
 <details>
 <summary><strong>Design Decision — Why build trust on the AT Protocol instead of a custom network?</strong></summary>
@@ -157,7 +157,7 @@ The most complex handler (137 lines). When a user publishes an attestation (a st
 <summary><strong>Design Decision — Why only create trust edges for positive attestations?</strong></summary>
 <br>
 
-Trust edges represent "I trust this person" — they're the building blocks of the trust graph used for path computation (shortest path between two DIDs). A negative review doesn't mean "I trust this person negatively" — it means "I had a bad experience." Including negative reviews as negative-weight edges would create complex signed-graph problems (negative cycles, path ambiguity) that make trust computation NP-hard. Instead, negative attestations affect the *subject's score* through the sentiment component (40% weight), not the *graph structure*. Positive attestations create edges because they represent genuine trust signals: "I interacted with this person and it was good."
+Trust edges represent "I trust this person" — they're the building blocks of PeerLens graph used for path computation (shortest path between two DIDs). A negative review doesn't mean "I trust this person negatively" — it means "I had a bad experience." Including negative reviews as negative-weight edges would create complex signed-graph problems (negative cycles, path ambiguity) that make trust computation NP-hard. Instead, negative attestations affect the *subject's score* through the sentiment component (40% weight), not the *graph structure*. Positive attestations create edges because they represent genuine trust signals: "I interacted with this person and it was good."
 
 </details>
 
@@ -221,7 +221,7 @@ Without this gate, a Sybil attacker creates 1000 accounts, each reviews the same
 - **Evidence rate** (line 117): What fraction of their reviews include evidence?
 - **Deletion rate** (line 116): Tombstone count / total attestations. Reviewers who repeatedly delete disputed reviews are penalized (×2.0 penalty).
 
-**Network** (lines 129-133, weight 0.15) — Logarithmic scaling of inbound trust edge count plus a delegation bonus. Measures how embedded the DID is in the trust graph.
+**Network** (lines 129-133, weight 0.15) — Logarithmic scaling of inbound trust edge count plus a delegation bonus. Measures how embedded the DID is in PeerLens graph.
 
 ### Flag Penalties (lines 52-60)
 
@@ -294,7 +294,7 @@ Fuzzy matching ("Dr. Sharma" ≈ "Dr. R. Sharma" at 85% similarity) produces fal
 
 ## Act VII: The Trust Graph — BFS with Safety Rails
 
-The `db/queries/graph.ts` module computes the trust graph around a DID using breadth-first traversal with three safety mechanisms.
+The `db/queries/graph.ts` module computes PeerLens graph around a DID using breadth-first traversal with three safety mechanisms.
 
 ### Statement Timeout (lines 44-64)
 
@@ -373,7 +373,7 @@ The AppView serves 7 read-only endpoints (5 trust + 2 service discovery). Expres
 
 2. **com.dina.trust.getProfile** — DID trust profile with trust scores, vouch count, flag count, and component breakdown.
 
-3. **com.dina.trust.getGraph** — Trust graph visualization data (nodes and edges) around a DID.
+3. **com.dina.trust.getGraph** — PeerLens graph visualization data (nodes and edges) around a DID.
 
 4. **com.dina.trust.search** — Full-text search across attestations with filters for sentiment, domain, tags, and confidence.
 
@@ -517,7 +517,7 @@ The ingester, scorer, and web server have fundamentally different scaling charac
 
 ---
 
-## Epilogue: The Trust Network in Context
+## Epilogue: PeerLens in Context
 
 The AppView is part of Dina's four-layer architecture:
 
@@ -526,7 +526,7 @@ The AppView is part of Dina's four-layer architecture:
 | **Core** | Sovereign identity + encrypted storage | Go | Home Node (local) |
 | **Brain** | LLM reasoning + PII protection | Python | Home Node (local) |
 | **MsgBox** | D2D encrypted mailbox | Go | Shared infrastructure |
-| **AppView** | Decentralized trust network | TypeScript | Shared infrastructure |
+| **AppView** | Decentralized PeerLens | TypeScript | Shared infrastructure |
 
 Core gives Dina her identity. Brain gives her judgment. MsgBox lets Dinas talk to each other. AppView gives her memory of who to trust.
 
@@ -534,6 +534,6 @@ Home Nodes make only outbound connections — no public IP required. The shared 
 
 When a user says "I want to buy a chair," the Brain searches the vault (finds back pain, WFH, budget), infers the user needs an ergonomic chair, calls `search_trust_network` to query the AppView, and synthesizes a recommendation from verified peer reviews. The user never asked for "ergonomic" — Dina figured that out from context. The trust data comes from real identities on the AT Protocol, not anonymous star ratings.
 
-The trust network replaces ad-funded ranking with trust-funded ranking. A product with 10 genuine reviews from trusted reviewers outranks a product with 1000 fake reviews from anonymous accounts. An expert's attestation (high reviewer quality, evidence included, co-signed) carries more weight than a drive-by rating. And because the data lives on the AT Protocol, no single company can suppress, manipulate, or delete it.
+PeerLens replaces ad-funded ranking with trust-funded ranking. A product with 10 genuine reviews from trusted reviewers outranks a product with 1000 fake reviews from anonymous accounts. An expert's attestation (high reviewer quality, evidence included, co-signed) carries more weight than a drive-by rating. And because the data lives on the AT Protocol, no single company can suppress, manipulate, or delete it.
 
 This is Verified Truth — the second of Dina's Four Laws — implemented as arithmetic.

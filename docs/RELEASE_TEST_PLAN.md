@@ -182,7 +182,7 @@ This plan consolidates the previously discussed scenarios into one release check
 | Vault Actually Persists | `REL-003` |
 | Recovery Phrase Actually Works | `REL-005` |
 | Two Dinas Talk to Each Other | `REL-006` |
-| PDS and Trust Network End to End | `REL-007` |
+| PDS and PeerLens End to End | `REL-007` |
 | Persona Wall is Real | `REL-009` |
 | What Happens When Things Break | `REL-011` |
 | README Claims Checklist | `REL-012` |
@@ -514,7 +514,7 @@ Verify real Dina-to-Dina communication across separate machines, not just one Do
 - harness for same-flow validation locally with two stacks
 - manual for real cross-machine validation
 
-## REL-007 PDS and Trust Network End-to-End
+## REL-007 PDS and PeerLens End-to-End
 
 ### Execution Class
 
@@ -534,7 +534,7 @@ Verify the full attestation path from write to PDS through AppView ingestion and
 6. Verify Dina B receives the trust data.
 7. Verify Dina B stores the summary in vault.
 8. Ask Dina B about the subject.
-9. Verify the final answer materially uses Trust Network data.
+9. Verify the final answer materially uses PeerLens data.
 
 ### Assertions
 
@@ -844,7 +844,7 @@ Verify that provider-facing documentation is materially true as written.
 1. No materially false claim remains in public docs.
 2. No broken link remains in public docs.
 3. No stale count, stale architecture statement, or stale security statement remains.
-4. Public docs do not over-promise recovery or Trust Network behavior.
+4. Public docs do not over-promise recovery or PeerLens behavior.
 
 ### Evidence
 
@@ -1347,8 +1347,8 @@ Verify that Dina's recommendation pipeline never ranks by ad spend, always attri
 
 ### Steps
 
-1. Ask Dina to research a product with dense Trust Network data (50+ reviews).
-2. Ask Dina to research a product with zero Trust Network data.
+1. Ask Dina to research a product with dense PeerLens data (50+ reviews).
+2. Ask Dina to research a product with zero PeerLens data.
 3. Ask Dina to research a product with sparse, conflicting reviews (3 reviews, mixed).
 4. For the dense-data product, ask "Why was this ranked above the alternative?"
 5. Verify every recommendation includes source attribution (creator name + deep link).

@@ -2288,12 +2288,12 @@ async def test_guardian_2_10_4_vault_query_error_returns_disclosure_error(guardi
 async def test_guardian_19_1_no_hallucinated_trust_scores(guardian) -> None:
     """SS19.1: No hallucinated trust scores — Verified Truth principle.
 
-    Requirement: When the Trust Network has no data for a product,
+    Requirement: When PeerLens has no data for a product,
     the brain must NOT fabricate a trust score (e.g. "Trust score: 7/10").
     Instead it must honestly disclose the absence of data.
 
     This validates the Verified Truth principle: "Rank by trust, not by
-    ad spend. The Trust Network replaces marketing." If no trust data
+    ad spend. PeerLens replaces marketing." If no trust data
     exists, the system must say so — never invent confidence.
 
     Scenarios tested:
@@ -2816,7 +2816,7 @@ async def test_guardian_19_2_reviews_exist_no_outcome_data(guardian) -> None:
     llm_response_no_caveat = (
         "The Aeron chair has excellent reviews from 2 verified experts. "
         "It scores 85/100 for ergonomics and 78/100 overall. "
-        "Highly recommended based on the trust network data."
+        "Highly recommended based on PeerLens data."
     )
     guardian._test_core.pii_scrub.return_value = ScrubResult(
         scrubbed=llm_response_no_caveat,
@@ -2881,7 +2881,7 @@ async def test_guardian_19_2_reviews_exist_no_outcome_data(guardian) -> None:
     # be referenced in the response.
     assert any(term in content.lower() for term in [
         "expert", "review", "attestation", "rating", "ergonomic",
-        "lumbar", "trust network",
+        "lumbar", "PeerLens",
     ]), (
         f"Response must reference attestation data even when outcomes "
         f"are absent. Expert reviews should not be discarded. "
@@ -3276,7 +3276,7 @@ async def test_guardian_19_3_bot_trust_penalty_stripped_attribution(
     From the Four Laws, Law 2 (Verified Truth):
         "Rank by trust, not by ad spend."
     Corollary: bots that strip attribution are extracting creator value
-    without crediting the source — this degrades the Trust Network.
+    without crediting the source — this degrades PeerLens.
 
     Scenarios:
     1. Bot response with proper attribution → no penalty, trust maintained
@@ -4368,7 +4368,7 @@ async def test_guardian_19_1_attribution_mandatory_in_recommendations(guardian) 
       that hosted the analysis.
     - Unattributed recommendations extract creator value without credit,
       violating the Deep Link Default principle.
-    - Silent inclusion of unattributed items degrades the Trust Network:
+    - Silent inclusion of unattributed items degrades PeerLens:
       users can't verify claims, creators lose traffic.
     - The user must SEE which items lack attribution so they can decide
       whether to trust them.
@@ -6321,7 +6321,7 @@ async def test_tst_brain_550_sparse_but_conflicting_reviews(guardian):
 async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
     """AppView returns empty for product query → Brain uses web search
     (OpenClaw) + vault context. Response says 'I found web reviews but
-    no verified data in the Trust Network'.
+    no verified data in PeerLens'.
 
     Requirement: TEST_PLAN §19.2 scenario 1.
     """
@@ -6333,12 +6333,12 @@ async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
     # Guard scan: entity extracted, trust-relevant, fabricated claims flagged.
     guardian._guard_scan = AsyncMock(return_value=_make_guard_result(
         entity_name="Aeron Chair", trust_relevant=True,
-        fabricated=[1],  # "Based on the Trust Network data..." is fabricated
+        fabricated=[1],  # "Based on PeerLens data..." is fabricated
     ))
 
     guardian._test_llm.route.return_value = {
         "content": (
-            "Based on the Trust Network data, this product has "
+            "Based on PeerLens data, this product has "
             "excellent reviews with an average of 4.2/5."
         ),
         "model": "test",
@@ -6352,15 +6352,15 @@ async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
     result1 = await guardian.process_event(event1)
     content1 = result1.get("content", "")
 
-    # Must NOT claim to have Trust Network data when none exists.
+    # Must NOT claim to have PeerLens data when none exists.
     fabricated_trust = re.compile(
-        r"trust network data|verified review|trust score|"
+        r"PeerLens data|verified review|trust score|"
         r"attestation|verified rating",
         re.IGNORECASE,
     )
     assert not fabricated_trust.search(content1), (
         f"With zero attestations and zero vault items, Brain must NOT "
-        f"claim Trust Network data exists. Verified Truth: never "
+        f"claim PeerLens data exists. Verified Truth: never "
         f"fabricate data. Got: {content1!r}"
     )
 
@@ -6372,7 +6372,7 @@ async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
     )
     assert no_data_disclosure.search(content1), (
         f"Brain must explicitly disclose that no verified data exists "
-        f"in the Trust Network. Got: {content1!r}"
+        f"in PeerLens. Got: {content1!r}"
     )
 
     # --- Scenario 2: Zero attestations but web search has results ---
@@ -6399,16 +6399,16 @@ async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
     result2 = await guardian.process_event(event2)
     content2 = result2.get("content", "")
 
-    # Must distinguish web results from Trust Network data.
+    # Must distinguish web results from PeerLens data.
     web_vs_trust = re.compile(
         r"web review|online|not verified|no verified.*trust|"
         r"found.*web.*no.*trust|unverified",
         re.IGNORECASE,
     )
     assert web_vs_trust.search(content2), (
-        f"When Trust Network is empty but web results exist, Brain "
+        f"When PeerLens is empty but web results exist, Brain "
         f"must clearly distinguish: 'web reviews found but no verified "
-        f"Trust Network data'. Got: {content2!r}"
+        f"PeerLens data'. Got: {content2!r}"
     )
 
     # --- Scenario 3: Zero attestations, personal vault has user's own notes ---
@@ -6422,15 +6422,15 @@ async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
         ),
     ]
 
-    # Guard scan flags "Based on verified Trust Network reviews" as fabricated.
+    # Guard scan flags "Based on verified PeerLens reviews" as fabricated.
     guardian._guard_scan = AsyncMock(return_value=_make_guard_result(
         entity_name="Aeron Chair", trust_relevant=True,
-        fabricated=[1],  # "Based on verified Trust Network reviews, ..."
+        fabricated=[1],  # "Based on verified PeerLens reviews, ..."
     ))
 
     guardian._test_llm.route.return_value = {
         "content": (
-            "Based on verified Trust Network reviews, the Aeron Chair "
+            "Based on verified PeerLens reviews, the Aeron Chair "
             "is highly rated. You also noted it was comfortable."
         ),
         "model": "test",
@@ -6444,14 +6444,14 @@ async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
     result3 = await guardian.process_event(event3)
     content3 = result3.get("content", "")
 
-    # Must separate personal data from Trust Network claims.
-    # Personal note exists, but Trust Network does NOT have data.
+    # Must separate personal data from PeerLens claims.
+    # Personal note exists, but PeerLens does NOT have data.
     assert not re.search(
-        r"verified.*trust.*review|trust network.*review",
+        r"verified.*trust.*review|PeerLens.*review",
         content3,
         re.IGNORECASE,
     ), (
-        f"Personal vault note ≠ Trust Network review. Brain must NOT "
+        f"Personal vault note ≠ PeerLens review. Brain must NOT "
         f"conflate the two. Got: {content3!r}"
     )
 
@@ -6486,7 +6486,7 @@ async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
         f"honest admission. Got: {content4!r}"
     )
 
-    # --- Scenario 5: Zero Trust Network but locked persona (access denied) ---
+    # --- Scenario 5: Zero PeerLens but locked persona (access denied) ---
     # Different from "no data exists" — the user may have data but it's locked.
     guardian._test_core.search_vault.return_value = []
 
@@ -6525,7 +6525,7 @@ async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
         f"access denial from data absence. Got: {content5!r}"
     )
 
-    # --- Scenario 6: Contrast — when Trust Network HAS data ---
+    # --- Scenario 6: Contrast — when PeerLens HAS data ---
     # Guard scan: no fabrication flagged (data is legitimate).
     guardian._guard_scan = AsyncMock(return_value=_make_guard_result(
         trust_relevant=True,
@@ -6551,7 +6551,7 @@ async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
     guardian._test_llm.route.return_value = {
         "content": (
             "2 verified reviewers rate this chair positively. "
-            "Average 4.5/5 from the Trust Network."
+            "Average 4.5/5 from PeerLens."
         ),
         "model": "test",
     }
@@ -6566,11 +6566,11 @@ async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
 
     # When data EXISTS, response should reference it — contrast with Scenario 1.
     verified_ref = re.compile(
-        r"verified|trust network|2 review|attestation",
+        r"verified|PeerLens|2 review|attestation",
         re.IGNORECASE,
     )
     assert verified_ref.search(content6), (
-        f"When Trust Network data EXISTS (2 reviews), the response "
+        f"When PeerLens data EXISTS (2 reviews), the response "
         f"should reference verified sources. This contrasts with "
         f"Scenario 1 where no data should be fabricated. "
         f"Got: {content6!r}"
@@ -9300,12 +9300,12 @@ def test_density_enforcement_zero_passes_through_clean():
     )
 
     # Fabricated trust claims ARE still stripped even without disclosure.
-    fabricated_content = "The trust network data shows a verified rating of 4.5/5."
+    fabricated_content = "PeerLens data shows a verified rating of 4.5/5."
     result_fab = GuardianLoop._apply_density_enforcement(
         fabricated_content, density_meta, [],
         inject_disclosure=True,
     )
-    assert "trust network data" not in result_fab.lower(), (
+    assert "PeerLens data" not in result_fab.lower(), (
         f"Fabricated trust claims must still be stripped. Got: {result_fab!r}"
     )
 
@@ -9516,7 +9516,7 @@ async def test_guardian_density_miss_path_vague_prompt_trust_rich_vault(
     import json as _json
 
     fabricated_content = (
-        "Based on verified reviews in the Trust Network, that vendor "
+        "Based on verified reviews in PeerLens, that vendor "
         "has a trust score of 87 and multiple attestations confirm "
         "reliable service."
     )
@@ -9599,7 +9599,7 @@ async def test_guardian_density_miss_path_lowercase_entity(
 
     fabricated_content = (
         "vendorx has excellent verified reviews and a strong "
-        "trust score in the Trust Network."
+        "trust score in PeerLens."
     )
     guard_json = {
         "entities": {"did": None, "name": "vendorx"},

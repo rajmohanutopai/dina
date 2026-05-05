@@ -206,7 +206,7 @@ for the spec.
 ### `@dina/core`
 
 Vault (SQLCipher via `DatabaseAdapter` port), identity + DID
-resolution, audit log, gatekeeper, trust network, ingestion
+resolution, audit log, gatekeeper, PeerLens, ingestion
 staging. This is the heavy package — most domain logic lives here.
 Tests run against `InMemoryDatabaseAdapter`; real-SQLite behaviour
 is cross-checked by `@dina/storage-node`'s integration test

@@ -7,7 +7,7 @@
  * journal, no wrapped-key file — is needed to re-derive the full
  * namespace lineage.
  *
- * This is what makes the Trust Network V1 namespace recovery flow
+ * This is what makes PeerLens V1 namespace recovery flow
  * (plan §3.5.5) work: a wiped device + the user's BIP-39 backup
  * → re-derived namespace keys → unchanged identity → all prior
  * attestations remain verifiable under the recovered namespace

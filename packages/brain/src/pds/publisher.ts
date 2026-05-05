@@ -23,7 +23,7 @@
  * Source: brain/src/adapter/pds_publisher.py
  *
  * Out of scope (will be added by later tasks): publish_vouch, publish_review,
- * publish_flag — those are Trust Network features, not Bus Driver.
+ * publish_flag — those are PeerLens features, not Bus Driver.
  */
 
 /** Result of a successful `putRecord`. */

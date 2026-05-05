@@ -39,7 +39,7 @@ export interface DIDDocument {
    *
    * Per W3C DID Core §5.3.2, entries are either string references into
    * `verificationMethod` (fragment-only or fully-qualified DID URLs) or
-   * inline `VerificationMethod` objects. Trust Network V1 namespace keys
+   * inline `VerificationMethod` objects. PeerLens V1 namespace keys
    * register here (plan §3.5.2) — `did:plc:xxxx#namespace_<N>`.
    */
   assertionMethod?: (string | VerificationMethod)[];

@@ -106,7 +106,7 @@ export async function injectAttestation(
  * Run the revocation handler — emits a `com.dina.trust.revocation`
  * record and the existing handler chain marks the original
  * attestation as revoked. Mirrors the production flow: a delete via
- * the trust network is a SOFT delete (revocation), not a tombstone.
+ * PeerLens is a SOFT delete (revocation), not a tombstone.
  */
 export async function deleteAttestation(
   db: DrizzleDB,

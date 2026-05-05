@@ -370,9 +370,9 @@ Core directly first.
 
 ---
 
-## Trust Network
+## PeerLens
 
-Dina uses the AT Protocol to build a decentralized trust network:
+Dina uses the AT Protocol to build a decentralized PeerLens:
 
 - **Trust rings:** Unverified → Verified (ZKP) → Verified + Actioned (transactions, time, peer attestation)
 - **Trust score:** composite function of identity anchors, transaction history, outcome data, peer attestations, and time

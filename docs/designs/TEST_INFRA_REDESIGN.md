@@ -378,7 +378,7 @@ Single Compose file. Fixed ports. All actors.
 | `plc` | Fake PLC directory | 2582 | 2582 |
 | `pds` | AT Protocol PDS | 2583 | 3000 |
 | `postgres` | AppView PostgreSQL | 5433 | 5432 |
-| `appview` | Trust Network API | 3001 | 3000 |
+| `appview` | PeerLens API | 3001 | 3000 |
 | `alonso-core` | Don Alonso Core | 19100 | 8100 |
 | `alonso-brain` | Don Alonso Brain | 19200 | 8200 |
 | `sancho-core` | Sancho Core | 19300 | 8100 |

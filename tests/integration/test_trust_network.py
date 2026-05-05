@@ -1,4 +1,4 @@
-"""Integration tests for the Trust Network.
+"""Integration tests for PeerLens.
 
 Tests expert attestations (signed reviews from verified creators),
 outcome data (anonymized purchase outcomes), and bot trust
@@ -33,14 +33,14 @@ from tests.integration.mocks import (
     TrustRing,
 )
 
-# Task 8.20 migration prep. File-level skip_in_lite — Trust Network is
+# Task 8.20 migration prep. File-level skip_in_lite — PeerLens is
 # the M3 gate's defining capability (tasks 8.20-8.26 scope). Expert
 # attestations, outcome data, bot trust, AT Protocol PDS integration
 # on the trust-data side, and trust-data-density all depend on Lite's
 # AppView + trust scorer subsystem, which lands with M3 features.
 # LITE_SKIPS.md category `pending-feature`.
 pytestmark = pytest.mark.skip_in_lite(
-    reason="Trust Network (expert attestations, outcome data, bot trust, "
+    reason="PeerLens (expert attestations, outcome data, bot trust, "
     "AT Protocol PDS publishing to trust-facing lexicons) is the M3 gate "
     "(tasks 8.20-8.26). Lite's trust-scorer subsystem lands with Phase 5+ "
     "+ AppView integration. LITE_SKIPS.md category `pending-feature`."
@@ -56,14 +56,14 @@ class TestExpertAttestations:
     """YouTube reviews and expert verdicts become signed attestations."""
 
 # TST-INT-297
-    # TRACE: {"suite": "INT", "case": "0297", "section": "11", "sectionName": "Trust Network Integration", "subsection": "01", "scenario": "01", "title": "review_becomes_attestation"}
+    # TRACE: {"suite": "INT", "case": "0297", "section": "11", "sectionName": "PeerLens Integration", "subsection": "01", "scenario": "01", "title": "review_becomes_attestation"}
     def test_review_becomes_attestation(
         self,
         mock_trust_network: MockTrustNetwork,
         mock_identity: MockIdentity,
     ) -> None:
         """A YouTube product review is transformed into a signed attestation
-        in the trust network."""
+        in PeerLens."""
         attestation = ExpertAttestation(
             expert_did="did:plc:MKBHD12345678901234567890123456",
             expert_trust_ring=TrustRing.RING_3_SKIN_IN_GAME,
@@ -91,7 +91,7 @@ class TestExpertAttestations:
         assert "keyboard" in stored.verdict["pros"]
 
 # TST-INT-299
-    # TRACE: {"suite": "INT", "case": "0299", "section": "11", "sectionName": "Trust Network Integration", "subsection": "01", "scenario": "02", "title": "attestation_is_signed"}
+    # TRACE: {"suite": "INT", "case": "0299", "section": "11", "sectionName": "PeerLens Integration", "subsection": "01", "scenario": "02", "title": "attestation_is_signed"}
     def test_attestation_is_signed(
         self,
         mock_trust_network: MockTrustNetwork,
@@ -128,7 +128,7 @@ class TestExpertAttestations:
         assert stored.signature == signature
 
 # TST-INT-535
-    # TRACE: {"suite": "INT", "case": "0535", "section": "11", "sectionName": "Trust Network Integration", "subsection": "01", "scenario": "03", "title": "multiple_experts_same_product"}
+    # TRACE: {"suite": "INT", "case": "0535", "section": "11", "sectionName": "PeerLens Integration", "subsection": "01", "scenario": "03", "title": "multiple_experts_same_product"}
     def test_multiple_experts_same_product(
         self, mock_trust_network: MockTrustNetwork
     ) -> None:
@@ -179,7 +179,7 @@ class TestOutcomeData:
     """Anonymized purchase outcomes — the pull-economy feedback loop."""
 
 # TST-INT-298
-    # TRACE: {"suite": "INT", "case": "0298", "section": "11", "sectionName": "Trust Network Integration", "subsection": "02", "scenario": "01", "title": "purchase_outcome_tracked"}
+    # TRACE: {"suite": "INT", "case": "0298", "section": "11", "sectionName": "PeerLens Integration", "subsection": "02", "scenario": "01", "title": "purchase_outcome_tracked"}
     def test_purchase_outcome_tracked(
         self, mock_trust_network: MockTrustNetwork
     ) -> None:
@@ -204,7 +204,7 @@ class TestOutcomeData:
         assert stored.purchase_verified is True
 
 # TST-INT-307
-    # TRACE: {"suite": "INT", "case": "0307", "section": "11", "sectionName": "Trust Network Integration", "subsection": "02", "scenario": "02", "title": "outcome_anonymized"}
+    # TRACE: {"suite": "INT", "case": "0307", "section": "11", "sectionName": "PeerLens Integration", "subsection": "02", "scenario": "02", "title": "outcome_anonymized"}
     def test_outcome_anonymized(
         self, mock_trust_network: MockTrustNetwork
     ) -> None:
@@ -232,7 +232,7 @@ class TestOutcomeData:
         assert stored.reporter_age_days == 400
 
 # TST-INT-312
-    # TRACE: {"suite": "INT", "case": "0312", "section": "11", "sectionName": "Trust Network Integration", "subsection": "02", "scenario": "03", "title": "gentle_outcome_query"}
+    # TRACE: {"suite": "INT", "case": "0312", "section": "11", "sectionName": "PeerLens Integration", "subsection": "02", "scenario": "03", "title": "gentle_outcome_query"}
     def test_gentle_outcome_query(
         self,
         mock_dina: MockDinaCore,
@@ -248,7 +248,7 @@ class TestOutcomeData:
         assert tier == SilenceTier.TIER_3_ENGAGEMENT
 
 # TST-INT-309
-    # TRACE: {"suite": "INT", "case": "0309", "section": "11", "sectionName": "Trust Network Integration", "subsection": "02", "scenario": "04", "title": "high_participation_rate_from_verified_users"}
+    # TRACE: {"suite": "INT", "case": "0309", "section": "11", "sectionName": "PeerLens Integration", "subsection": "02", "scenario": "04", "title": "high_participation_rate_from_verified_users"}
     def test_high_participation_rate_from_verified_users(
         self, mock_trust_network: MockTrustNetwork
     ) -> None:
@@ -280,7 +280,7 @@ class TestOutcomeData:
         )
 
         # Verified reporters must score meaningfully higher — their
-        # outcomes are more reliable for the trust network
+        # outcomes are more reliable for PeerLens
         assert verified_score > unverified_score, (
             f"Verified reporter ({verified_score}) must outscore "
             f"unverified ({unverified_score})"
@@ -332,7 +332,7 @@ class TestOutcomeData:
         assert mock_trust_network.outcomes[1].reporter_trust_ring == TrustRing.RING_1_UNVERIFIED
 
 # TST-INT-310
-    # TRACE: {"suite": "INT", "case": "0310", "section": "11", "sectionName": "Trust Network Integration", "subsection": "02", "scenario": "05", "title": "factual_not_opinion"}
+    # TRACE: {"suite": "INT", "case": "0310", "section": "11", "sectionName": "PeerLens Integration", "subsection": "02", "scenario": "05", "title": "factual_not_opinion"}
     def test_factual_not_opinion(
         self, mock_trust_network: MockTrustNetwork
     ) -> None:
@@ -370,7 +370,7 @@ class TestBotTrust:
     """Review bots and task agents have tracked, visible trust scores."""
 
 # TST-INT-314
-    # TRACE: {"suite": "INT", "case": "0314", "section": "11", "sectionName": "Trust Network Integration", "subsection": "03", "scenario": "01", "title": "trust_tracked"}
+    # TRACE: {"suite": "INT", "case": "0314", "section": "11", "sectionName": "PeerLens Integration", "subsection": "03", "scenario": "01", "title": "trust_tracked"}
     def test_trust_tracked(
         self,
         mock_trust_network: MockTrustNetwork,
@@ -388,7 +388,7 @@ class TestBotTrust:
         assert score == 60.0
 
 # TST-INT-536
-    # TRACE: {"suite": "INT", "case": "0536", "section": "11", "sectionName": "Trust Network Integration", "subsection": "03", "scenario": "02", "title": "compromised_bot_drops_score"}
+    # TRACE: {"suite": "INT", "case": "0536", "section": "11", "sectionName": "PeerLens Integration", "subsection": "03", "scenario": "02", "title": "compromised_bot_drops_score"}
     def test_compromised_bot_drops_score(
         self,
         mock_trust_network: MockTrustNetwork,
@@ -412,7 +412,7 @@ class TestBotTrust:
         assert floor == 0.0
 
 # TST-INT-537
-    # TRACE: {"suite": "INT", "case": "0537", "section": "11", "sectionName": "Trust Network Integration", "subsection": "03", "scenario": "03", "title": "auto_routes_to_better_bot"}
+    # TRACE: {"suite": "INT", "case": "0537", "section": "11", "sectionName": "PeerLens Integration", "subsection": "03", "scenario": "03", "title": "auto_routes_to_better_bot"}
     def test_auto_routes_to_better_bot(
         self,
         mock_trust_network: MockTrustNetwork,
@@ -445,7 +445,7 @@ class TestBotTrust:
         assert new_best == "did:plc:BotC"
 
 # TST-INT-311
-    # TRACE: {"suite": "INT", "case": "0311", "section": "11", "sectionName": "Trust Network Integration", "subsection": "03", "scenario": "04", "title": "trust_visible_to_user"}
+    # TRACE: {"suite": "INT", "case": "0311", "section": "11", "sectionName": "PeerLens Integration", "subsection": "03", "scenario": "04", "title": "trust_visible_to_user"}
     def test_trust_visible_to_user(
         self,
         mock_trust_network: MockTrustNetwork,
@@ -472,7 +472,7 @@ class TestBotTrust:
         assert mock_trust_network.get_bot_score(other_did) == 50.0
 
 # TST-INT-304
-    # TRACE: {"suite": "INT", "case": "0304", "section": "11", "sectionName": "Trust Network Integration", "subsection": "03", "scenario": "05", "title": "trust_score_capped_at_100"}
+    # TRACE: {"suite": "INT", "case": "0304", "section": "11", "sectionName": "PeerLens Integration", "subsection": "03", "scenario": "05", "title": "trust_score_capped_at_100"}
     def test_trust_score_capped_at_100(
         self, mock_trust_network: MockTrustNetwork
     ) -> None:
@@ -493,7 +493,7 @@ class TestATProtocolPDS:
     federation, and discovery."""
 
 # TST-INT-300
-    # TRACE: {"suite": "INT", "case": "0300", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "01", "title": "pds_cannot_forge_records"}
+    # TRACE: {"suite": "INT", "case": "0300", "section": "11", "sectionName": "PeerLens Integration", "subsection": "04", "scenario": "01", "title": "pds_cannot_forge_records"}
     def test_pds_cannot_forge_records(
         self,
         mock_trust_network: MockTrustNetwork,
@@ -561,7 +561,7 @@ class TestATProtocolPDS:
         )
 
 # TST-INT-301
-    # TRACE: {"suite": "INT", "case": "0301", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "02", "title": "bundled_pds_in_docker_compose"}
+    # TRACE: {"suite": "INT", "case": "0301", "section": "11", "sectionName": "PeerLens Integration", "subsection": "04", "scenario": "02", "title": "bundled_pds_in_docker_compose"}
     def test_bundled_pds_in_docker_compose(
         self,
         mock_compose: MockDockerCompose,
@@ -600,7 +600,7 @@ class TestATProtocolPDS:
         assert mock_compose.is_all_healthy()
 
 # TST-INT-302
-    # TRACE: {"suite": "INT", "case": "0302", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "03", "title": "external_pds_push"}
+    # TRACE: {"suite": "INT", "case": "0302", "section": "11", "sectionName": "PeerLens Integration", "subsection": "04", "scenario": "03", "title": "external_pds_push"}
     def test_external_pds_push(
         self,
         mock_identity: MockIdentity,
@@ -623,7 +623,7 @@ class TestATProtocolPDS:
         assert "external-provider" in resolved.service_endpoint
 
 # TST-INT-303
-    # TRACE: {"suite": "INT", "case": "0303", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "04", "title": "custom_lexicon_validation"}
+    # TRACE: {"suite": "INT", "case": "0303", "section": "11", "sectionName": "PeerLens Integration", "subsection": "04", "scenario": "04", "title": "custom_lexicon_validation"}
     def test_custom_lexicon_validation(
         self,
         mock_app_view: MockAppView,
@@ -663,7 +663,7 @@ class TestATProtocolPDS:
         assert all(lex.startswith("com.dina.trust.") for lex in lexicons)
 
 # TST-INT-305
-    # TRACE: {"suite": "INT", "case": "0305", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "05", "title": "author_deletes_own_review_signed_tombstone"}
+    # TRACE: {"suite": "INT", "case": "0305", "section": "11", "sectionName": "PeerLens Integration", "subsection": "04", "scenario": "05", "title": "author_deletes_own_review_signed_tombstone"}
     def test_author_deletes_own_review_signed_tombstone(
         self,
         mock_trust_network: MockTrustNetwork,
@@ -695,7 +695,7 @@ class TestATProtocolPDS:
         assert mock_trust_network.tombstones[0]["author"] == author_did
 
 # TST-INT-306
-    # TRACE: {"suite": "INT", "case": "0306", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "06", "title": "non_author_cannot_delete_review"}
+    # TRACE: {"suite": "INT", "case": "0306", "section": "11", "sectionName": "PeerLens Integration", "subsection": "04", "scenario": "06", "title": "non_author_cannot_delete_review"}
     def test_non_author_cannot_delete_review(
         self,
         mock_trust_network: MockTrustNetwork,
@@ -728,7 +728,7 @@ class TestATProtocolPDS:
         assert len(mock_trust_network.attestations) == 1
 
 # TST-INT-308
-    # TRACE: {"suite": "INT", "case": "0308", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "07", "title": "aggregate_scores_computed_not_stored"}
+    # TRACE: {"suite": "INT", "case": "0308", "section": "11", "sectionName": "PeerLens Integration", "subsection": "04", "scenario": "07", "title": "aggregate_scores_computed_not_stored"}
     def test_aggregate_scores_computed_not_stored(
         self,
         mock_app_view: MockAppView,
@@ -761,7 +761,7 @@ class TestATProtocolPDS:
         assert len(mock_app_view.indexed_records) == 3
 
 # TST-INT-316
-    # TRACE: {"suite": "INT", "case": "0316", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "08", "title": "pds_down_records_still_available_via_relay"}
+    # TRACE: {"suite": "INT", "case": "0316", "section": "11", "sectionName": "PeerLens Integration", "subsection": "04", "scenario": "08", "title": "pds_down_records_still_available_via_relay"}
     def test_pds_down_records_still_available_via_relay(
         self,
         mock_app_view: MockAppView,
@@ -810,7 +810,7 @@ class TestATProtocolPDS:
         assert score == 88.0
 
 # TST-INT-317
-    # TRACE: {"suite": "INT", "case": "0317", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "09", "title": "pds_migration_account_portability"}
+    # TRACE: {"suite": "INT", "case": "0317", "section": "11", "sectionName": "PeerLens Integration", "subsection": "04", "scenario": "09", "title": "pds_migration_account_portability"}
     def test_pds_migration_account_portability(
         self,
         mock_identity: MockIdentity,
@@ -845,7 +845,7 @@ class TestATProtocolPDS:
         assert resolved.did == mock_identity.root_did
 
 # TST-INT-318
-    # TRACE: {"suite": "INT", "case": "0318", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "10", "title": "foundation_pds_stores_only_trust_data"}
+    # TRACE: {"suite": "INT", "case": "0318", "section": "11", "sectionName": "PeerLens Integration", "subsection": "04", "scenario": "10", "title": "foundation_pds_stores_only_trust_data"}
     def test_foundation_pds_stores_only_trust_data(
         self,
         mock_app_view: MockAppView,
@@ -882,7 +882,7 @@ class TestATProtocolPDS:
         assert mock_app_view.indexed_records[0]["lexicon"] == "com.dina.trust.review"
 
 # TST-INT-319
-    # TRACE: {"suite": "INT", "case": "0319", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "11", "title": "relay_crawls_pds_via_delta_sync"}
+    # TRACE: {"suite": "INT", "case": "0319", "section": "11", "sectionName": "PeerLens Integration", "subsection": "04", "scenario": "11", "title": "relay_crawls_pds_via_delta_sync"}
     def test_relay_crawls_pds_via_delta_sync(
         self,
         mock_app_view: MockAppView,
@@ -931,7 +931,7 @@ class TestATProtocolPDS:
         assert len(mock_app_view.indexed_records) == 3
 
 # TST-INT-320
-    # TRACE: {"suite": "INT", "case": "0320", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "12", "title": "discovery_to_pds_federation"}
+    # TRACE: {"suite": "INT", "case": "0320", "section": "11", "sectionName": "PeerLens Integration", "subsection": "04", "scenario": "12", "title": "discovery_to_pds_federation"}
     def test_discovery_to_pds_federation(
         self,
         mock_identity: MockIdentity,
@@ -955,7 +955,7 @@ class TestATProtocolPDS:
         assert resolved.service_endpoint.startswith("https://")
 
 # TST-INT-321
-    # TRACE: {"suite": "INT", "case": "0321", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "13", "title": "discovery_endpoint_available_unauthenticated"}
+    # TRACE: {"suite": "INT", "case": "0321", "section": "11", "sectionName": "PeerLens Integration", "subsection": "04", "scenario": "13", "title": "discovery_endpoint_available_unauthenticated"}
     def test_discovery_endpoint_available_unauthenticated(
         self,
         mock_plc_resolver: MockPLCResolver,
@@ -981,7 +981,7 @@ class TestATProtocolPDS:
         assert param_names == ["did"]  # only DID, no auth
 
 # TST-INT-322
-    # TRACE: {"suite": "INT", "case": "0322", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "14", "title": "discovery_returns_plain_text_did"}
+    # TRACE: {"suite": "INT", "case": "0322", "section": "11", "sectionName": "PeerLens Integration", "subsection": "04", "scenario": "14", "title": "discovery_returns_plain_text_did"}
     def test_discovery_returns_plain_text_did(
         self,
         mock_plc_resolver: MockPLCResolver,
@@ -1005,7 +1005,7 @@ class TestATProtocolPDS:
         assert resolved.did.startswith("did:plc:")
 
 # TST-INT-323
-    # TRACE: {"suite": "INT", "case": "0323", "section": "11", "sectionName": "Trust Network Integration", "subsection": "04", "scenario": "15", "title": "missing_discovery_pds_federation_fails"}
+    # TRACE: {"suite": "INT", "case": "0323", "section": "11", "sectionName": "PeerLens Integration", "subsection": "04", "scenario": "15", "title": "missing_discovery_pds_federation_fails"}
     def test_missing_discovery_pds_federation_fails(
         self,
         mock_plc_resolver: MockPLCResolver,
@@ -1444,7 +1444,7 @@ class TestTrustDataDensity:
     responses across the entire data spectrum without fabricating confidence."""
 
     # TST-INT-718
-    # TRACE: {"suite": "INT", "case": "0718", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "01", "title": "sparse_conflicting_transparent_split"}
+    # TRACE: {"suite": "INT", "case": "0718", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "01", "title": "sparse_conflicting_transparent_split"}
     def test_sparse_conflicting_transparent_split(self) -> None:
         """Sparse conflicting: 3 reviews (2 positive, 1 negative) from
         verified sources.  The response must report the split honestly
@@ -1549,7 +1549,7 @@ class TestTrustDataDensity:
 
     # --- Counter-proofs ---
 
-    # TRACE: {"suite": "INT", "case": "0222", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "02", "title": "all_positive_no_conflict"}
+    # TRACE: {"suite": "INT", "case": "0222", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "02", "title": "all_positive_no_conflict"}
     def test_all_positive_no_conflict(self) -> None:
         """Counter-proof: 3 positive reviews produce no conflict flag,
         and summary mentions agreement."""
@@ -1584,7 +1584,7 @@ class TestTrustDataDensity:
             "All-positive must NOT say 'mixed'"
         )
 
-    # TRACE: {"suite": "INT", "case": "0223", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "03", "title": "all_negative_no_conflict"}
+    # TRACE: {"suite": "INT", "case": "0223", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "03", "title": "all_negative_no_conflict"}
     def test_all_negative_no_conflict(self) -> None:
         """Counter-proof: 3 negative reviews produce no conflict flag,
         and summary mentions consensus against."""
@@ -1615,7 +1615,7 @@ class TestTrustDataDensity:
         assert "consensus" in summary or "all" in summary
         assert "caution" in summary or "against" in summary
 
-    # TRACE: {"suite": "INT", "case": "0224", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "04", "title": "single_review_low_confidence"}
+    # TRACE: {"suite": "INT", "case": "0224", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "04", "title": "single_review_low_confidence"}
     def test_single_review_low_confidence(self) -> None:
         """Counter-proof: a single review yields low confidence and
         mentions limited evidence."""
@@ -1644,7 +1644,7 @@ class TestTrustDataDensity:
             "Single review must mention limited evidence"
         )
 
-    # TRACE: {"suite": "INT", "case": "0225", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "05", "title": "zero_reviews_no_confidence"}
+    # TRACE: {"suite": "INT", "case": "0225", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "05", "title": "zero_reviews_no_confidence"}
     def test_zero_reviews_no_confidence(self) -> None:
         """Counter-proof: zero reviews yield 'none' confidence and
         a clear 'no reviews' message."""
@@ -1661,7 +1661,7 @@ class TestTrustDataDensity:
 
     # --- Edge cases ---
 
-    # TRACE: {"suite": "INT", "case": "0226", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "06", "title": "two_positive_one_neutral_no_conflict"}
+    # TRACE: {"suite": "INT", "case": "0226", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "06", "title": "two_positive_one_neutral_no_conflict"}
     def test_two_positive_one_neutral_no_conflict(self) -> None:
         """Edge case: 2 positive + 1 neutral does NOT trigger conflict —
         neutral reviews do not count as negative."""
@@ -1719,7 +1719,7 @@ class TestTrustDataDensity:
         assert result["neutral_count"] == 1
         assert result["negative_count"] == 0
 
-    # TRACE: {"suite": "INT", "case": "0227", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "07", "title": "equal_split_one_positive_one_negative"}
+    # TRACE: {"suite": "INT", "case": "0227", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "07", "title": "equal_split_one_positive_one_negative"}
     def test_equal_split_one_positive_one_negative(self) -> None:
         """Edge case: 1 positive + 1 negative is a 50/50 split,
         has_conflict must be True."""
@@ -1762,7 +1762,7 @@ class TestTrustDataDensity:
         summary = result["summary_text"].lower()
         assert "split" in summary or "mixed" in summary
 
-    # TRACE: {"suite": "INT", "case": "0228", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "08", "title": "all_unverified_mentions_unverified"}
+    # TRACE: {"suite": "INT", "case": "0228", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "08", "title": "all_unverified_mentions_unverified"}
     def test_all_unverified_mentions_unverified(self) -> None:
         """Edge case: all reviewers from Ring 1 (unverified).
         verified_count == 0, summary mentions unverified."""
@@ -1796,7 +1796,7 @@ class TestTrustDataDensity:
     # TST-INT-717  Single review: honest uncertainty
     # ------------------------------------------------------------------
 
-    # TRACE: {"suite": "INT", "case": "0717", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "09", "title": "single_review_honest_uncertainty"}
+    # TRACE: {"suite": "INT", "case": "0717", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "09", "title": "single_review_honest_uncertainty"}
     def test_single_review_honest_uncertainty(self) -> None:
         """TST-INT-717: 1 attestation in AppView -> Brain assembles response.
         Response includes the review but notes limited data:
@@ -1891,7 +1891,7 @@ class TestTrustDataDensity:
 
     # --- TST-INT-717 Counter-proofs ---
 
-    # TRACE: {"suite": "INT", "case": "0717", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "10", "title": "single_negative_review_reports_caution"}
+    # TRACE: {"suite": "INT", "case": "0717", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "10", "title": "single_negative_review_reports_caution"}
     def test_single_negative_review_reports_caution(self) -> None:
         """TST-INT-717 counter-proof: a single negative review (rating=15)
         must report caution — never 'recommends'."""
@@ -1927,7 +1927,7 @@ class TestTrustDataDensity:
             "Negative single review must NOT say 'recommends'"
         )
 
-    # TRACE: {"suite": "INT", "case": "0229", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "11", "title": "single_neutral_review_neither_recommends_nor_cautions"}
+    # TRACE: {"suite": "INT", "case": "0229", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "11", "title": "single_neutral_review_neither_recommends_nor_cautions"}
     def test_single_neutral_review_neither_recommends_nor_cautions(self) -> None:
         """TST-INT-717 counter-proof: a single neutral review (rating=50)
         must not claim positive or negative stance."""
@@ -1969,7 +1969,7 @@ class TestTrustDataDensity:
             f"got: '{result['summary_text']}'"
         )
 
-    # TRACE: {"suite": "INT", "case": "0230", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "12", "title": "single_unverified_review_disclosed"}
+    # TRACE: {"suite": "INT", "case": "0230", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "12", "title": "single_unverified_review_disclosed"}
     def test_single_unverified_review_disclosed(self) -> None:
         """TST-INT-717 counter-proof: a single unverified review (Ring 1)
         must disclose 'unverified' status — never claim verified source."""
@@ -2006,7 +2006,7 @@ class TestTrustDataDensity:
             "Must not claim 'verified source' for a Ring 1 reviewer"
         )
 
-    # TRACE: {"suite": "INT", "case": "0231", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "13", "title": "single_review_never_says_consensus"}
+    # TRACE: {"suite": "INT", "case": "0231", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "13", "title": "single_review_never_says_consensus"}
     def test_single_review_never_says_consensus(self) -> None:
         """TST-INT-717 counter-proof: no single-review summary may
         use any consensus / confidence-fabricating language, regardless
@@ -2057,7 +2057,7 @@ class TestTrustDataDensity:
 
     # --- TST-INT-717 Edge cases: boundary ratings ---
 
-    # TRACE: {"suite": "INT", "case": "0717", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "14", "title": "single_review_boundary_rating_70"}
+    # TRACE: {"suite": "INT", "case": "0717", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "14", "title": "single_review_boundary_rating_70"}
     def test_single_review_boundary_rating_70(self) -> None:
         """TST-INT-717 edge case: rating=70 is the threshold for positive
         (>= 70 is positive).  Must count as positive, not neutral."""
@@ -2097,7 +2097,7 @@ class TestTrustDataDensity:
             "Boundary-positive review (70) must NOT be classified as neutral"
         )
 
-    # TRACE: {"suite": "INT", "case": "0232", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "15", "title": "single_review_boundary_rating_30"}
+    # TRACE: {"suite": "INT", "case": "0232", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "15", "title": "single_review_boundary_rating_30"}
     def test_single_review_boundary_rating_30(self) -> None:
         """TST-INT-717 edge case: rating=30 must NOT be negative (threshold
         is < 30 for negative).  Rating 30 should count as neutral."""
@@ -2144,14 +2144,14 @@ class TestTrustDataDensity:
     # ------------------------------------------------------------------
 
     # TST-INT-716
-    # TRACE: {"suite": "INT", "case": "0716", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "16", "title": "zero_trust_data_graceful_absence"}
+    # TRACE: {"suite": "INT", "case": "0716", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "16", "title": "zero_trust_data_graceful_absence"}
     def test_zero_trust_data_graceful_absence(self) -> None:
         """TST-INT-716: AppView returns empty for product query -> Brain
         assembles response.  Response uses web search + vault context.
-        No 'Trust Network error.'  No hallucinated score.  Brain says
-        'No verified reviews in the Trust Network.'
+        No 'PeerLens error.'  No hallucinated score.  Brain says
+        'No verified reviews in PeerLens.'
 
-        When the Trust Network has zero attestations the system must
+        When PeerLens has zero attestations the system must
         degrade gracefully: acknowledge the data absence, report no
         confidence, and avoid any error language or fabricated numbers.
         """
@@ -2211,7 +2211,7 @@ class TestTrustDataDensity:
 
     # --- TST-INT-716 Counter-proofs ---
 
-    # TRACE: {"suite": "INT", "case": "0716", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "17", "title": "zero_data_does_not_hallucinate_score"}
+    # TRACE: {"suite": "INT", "case": "0716", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "17", "title": "zero_data_does_not_hallucinate_score"}
     def test_zero_data_does_not_hallucinate_score(self) -> None:
         """TST-INT-716 counter-proof: the zero-data summary must not
         contain any pattern that looks like a score — no 'X/Y', no
@@ -2251,7 +2251,7 @@ class TestTrustDataDensity:
             f"Cannot claim 'recommended' with zero data, got: '{summary}'"
         )
 
-    # TRACE: {"suite": "INT", "case": "0233", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "18", "title": "zero_data_does_not_claim_consensus"}
+    # TRACE: {"suite": "INT", "case": "0233", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "18", "title": "zero_data_does_not_claim_consensus"}
     def test_zero_data_does_not_claim_consensus(self) -> None:
         """TST-INT-716 counter-proof: with zero reviews, the summary
         must not claim any form of agreement or community sentiment."""
@@ -2265,7 +2265,7 @@ class TestTrustDataDensity:
                 f"got: '{result['summary_text']}'"
             )
 
-    # TRACE: {"suite": "INT", "case": "0234", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "19", "title": "zero_data_with_outcomes_still_no_reviews"}
+    # TRACE: {"suite": "INT", "case": "0234", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "19", "title": "zero_data_with_outcomes_still_no_reviews"}
     def test_zero_data_with_outcomes_still_no_reviews(self) -> None:
         """TST-INT-716 counter-proof: passing outcome reports alongside
         empty attestations must still yield total_reviews == 0.
@@ -2312,7 +2312,7 @@ class TestTrustDataDensity:
 
     # --- TST-INT-716 Edge cases ---
 
-    # TRACE: {"suite": "INT", "case": "0716", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "20", "title": "zero_data_result_is_complete_dict"}
+    # TRACE: {"suite": "INT", "case": "0716", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "20", "title": "zero_data_result_is_complete_dict"}
     def test_zero_data_result_is_complete_dict(self) -> None:
         """TST-INT-716 edge case: the result dictionary from zero
         attestations must contain every expected key — no KeyError
@@ -2352,7 +2352,7 @@ class TestTrustDataDensity:
             "summary_text must not be empty even with zero data"
         )
 
-    # TRACE: {"suite": "INT", "case": "0235", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "21", "title": "none_attestations_handled_or_empty_equivalent"}
+    # TRACE: {"suite": "INT", "case": "0235", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "21", "title": "none_attestations_handled_or_empty_equivalent"}
     def test_none_attestations_handled_or_empty_equivalent(self) -> None:
         """TST-INT-716 edge case: verify that the function either
         handles None attestations gracefully (treating as empty) or
@@ -2420,7 +2420,7 @@ class TestTrustDataDensity:
 
     # --- Primary test (TST-INT-722) ---
 
-    # TRACE: {"suite": "INT", "case": "0722", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "22", "title": "reviews_with_no_outcomes_discloses_gap"}
+    # TRACE: {"suite": "INT", "case": "0722", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "22", "title": "reviews_with_no_outcomes_discloses_gap"}
     def test_reviews_with_no_outcomes_discloses_gap(self) -> None:
         """TST-INT-722: Attestations present, zero outcome records.
         Brain must note: 'Reviews available but no verified purchase
@@ -2487,7 +2487,7 @@ class TestTrustDataDensity:
 
     # --- Counter-proofs ---
 
-    # TRACE: {"suite": "INT", "case": "0236", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "23", "title": "reviews_with_outcomes_no_gap"}
+    # TRACE: {"suite": "INT", "case": "0236", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "23", "title": "reviews_with_outcomes_no_gap"}
     def test_reviews_with_outcomes_no_gap(self) -> None:
         """TST-INT-722 counter-proof: when both attestations and outcomes
         are present, has_outcome_gap must be False — no spurious
@@ -2510,7 +2510,7 @@ class TestTrustDataDensity:
             "Gap language must not appear when outcomes are present"
         )
 
-    # TRACE: {"suite": "INT", "case": "0237", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "24", "title": "no_reviews_no_outcomes_no_gap"}
+    # TRACE: {"suite": "INT", "case": "0237", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "24", "title": "no_reviews_no_outcomes_no_gap"}
     def test_no_reviews_no_outcomes_no_gap(self) -> None:
         """TST-INT-722 counter-proof: zero attestations AND zero outcomes
         means there is no outcome gap — the concept only applies when
@@ -2530,7 +2530,7 @@ class TestTrustDataDensity:
             "Zero data must yield 'none' confidence"
         )
 
-    # TRACE: {"suite": "INT", "case": "0238", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "25", "title": "outcome_presence_does_not_inflate_review_count"}
+    # TRACE: {"suite": "INT", "case": "0238", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "25", "title": "outcome_presence_does_not_inflate_review_count"}
     def test_outcome_presence_does_not_inflate_review_count(self) -> None:
         """TST-INT-722 counter-proof: outcome reports are purchase data,
         not expert reviews.  Adding outcomes must never inflate
@@ -2557,7 +2557,7 @@ class TestTrustDataDensity:
 
     # --- Edge cases ---
 
-    # TRACE: {"suite": "INT", "case": "0239", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "26", "title": "single_review_no_outcomes"}
+    # TRACE: {"suite": "INT", "case": "0239", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "26", "title": "single_review_no_outcomes"}
     def test_single_review_no_outcomes(self) -> None:
         """TST-INT-722 edge case: a single attestation with zero outcomes
         must still flag the outcome gap and maintain 'low' confidence."""
@@ -2581,7 +2581,7 @@ class TestTrustDataDensity:
             "Single-review outcome gap must still produce a disclosure"
         )
 
-    # TRACE: {"suite": "INT", "case": "0240", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "27", "title": "reviews_with_none_outcomes_parameter"}
+    # TRACE: {"suite": "INT", "case": "0240", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "27", "title": "reviews_with_none_outcomes_parameter"}
     def test_reviews_with_none_outcomes_parameter(self) -> None:
         """TST-INT-722 edge case: outcomes=None and outcomes=[] must
         both indicate an outcome gap when reviews exist.  The function
@@ -2614,7 +2614,7 @@ class TestTrustDataDensity:
         assert result_none["outcome_count"] == 0
         assert result_empty["outcome_count"] == 0
 
-    # TRACE: {"suite": "INT", "case": "0241", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "28", "title": "many_reviews_no_outcomes_still_discloses"}
+    # TRACE: {"suite": "INT", "case": "0241", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "28", "title": "many_reviews_no_outcomes_still_discloses"}
     def test_many_reviews_no_outcomes_still_discloses(self) -> None:
         """TST-INT-722 edge case: 20 reviews with 0 outcomes must still
         disclose the gap.  A large review volume does not compensate for
@@ -2647,7 +2647,7 @@ class TestTrustDataDensity:
     # ------------------------------------------------------------------
 
     # TST-INT-721
-    # TRACE: {"suite": "INT", "case": "0721", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "29", "title": "mixed_ring_levels_weighting_visible"}
+    # TRACE: {"suite": "INT", "case": "0721", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "29", "title": "mixed_ring_levels_weighting_visible"}
     def test_mixed_ring_levels_weighting_visible(self) -> None:
         """TST-INT-721: 5 Ring 1 (unverified) positive + 3 Ring 2 (verified)
         negative.  Response clearly weights verified higher:
@@ -2863,7 +2863,7 @@ class TestTrustDataDensity:
 
     # --- TST-INT-721 Counter-proofs ---
 
-    # TRACE: {"suite": "INT", "case": "0721", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "30", "title": "all_same_ring_no_weighting_distinction"}
+    # TRACE: {"suite": "INT", "case": "0721", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "30", "title": "all_same_ring_no_weighting_distinction"}
     def test_all_same_ring_no_weighting_distinction(self) -> None:
         """TST-INT-721 counter-proof: when all reviews come from the same
         ring (Ring 2), there is no ring conflict and weighting distinction
@@ -2901,7 +2901,7 @@ class TestTrustDataDensity:
             "weighting_visible must be False when all reviews are same ring"
         )
 
-    # TRACE: {"suite": "INT", "case": "0242", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "31", "title": "both_rings_agree_positive"}
+    # TRACE: {"suite": "INT", "case": "0242", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "31", "title": "both_rings_agree_positive"}
     def test_both_rings_agree_positive(self) -> None:
         """TST-INT-721 counter-proof: 3 Ring 1 positive + 3 Ring 2 positive
         means both groups agree — no ring conflict."""
@@ -2951,7 +2951,7 @@ class TestTrustDataDensity:
         assert result["verified_count"] == 3
         assert result["unverified_count"] == 3
 
-    # TRACE: {"suite": "INT", "case": "0243", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "32", "title": "verified_positive_unverified_negative"}
+    # TRACE: {"suite": "INT", "case": "0243", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "32", "title": "verified_positive_unverified_negative"}
     def test_verified_positive_unverified_negative(self) -> None:
         """TST-INT-721 counter-proof: reverse scenario — verified positive,
         unverified negative.  Summary must still weight verified higher,
@@ -3010,7 +3010,7 @@ class TestTrustDataDensity:
         )
         assert result["weighting_visible"] is True
 
-    # TRACE: {"suite": "INT", "case": "0244", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "33", "title": "summary_never_treats_unverified_equal_to_verified"}
+    # TRACE: {"suite": "INT", "case": "0244", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "33", "title": "summary_never_treats_unverified_equal_to_verified"}
     def test_summary_never_treats_unverified_equal_to_verified(self) -> None:
         """TST-INT-721 counter-proof: even when unverified outnumber verified
         5-to-1, the narrative must not give them equal weight.  The summary
@@ -3072,7 +3072,7 @@ class TestTrustDataDensity:
 
     # --- TST-INT-721 Edge cases ---
 
-    # TRACE: {"suite": "INT", "case": "0721", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "34", "title": "single_verified_vs_many_unverified"}
+    # TRACE: {"suite": "INT", "case": "0721", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "34", "title": "single_verified_vs_many_unverified"}
     def test_single_verified_vs_many_unverified(self) -> None:
         """TST-INT-721 edge case: 1 Ring 2 negative vs 10 Ring 1 positive.
         Even a single verified reviewer must be prominently mentioned when
@@ -3142,7 +3142,7 @@ class TestTrustDataDensity:
             f"got: '{result['summary_text']}'"
         )
 
-    # TRACE: {"suite": "INT", "case": "0245", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "35", "title": "all_unverified_no_verified_section"}
+    # TRACE: {"suite": "INT", "case": "0245", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "35", "title": "all_unverified_no_verified_section"}
     def test_all_unverified_no_verified_section(self) -> None:
         """TST-INT-721 edge case: only Ring 1 attestations.  Summary notes
         all are unverified.  Must NOT falsely claim any 'verified' reviewers."""
@@ -3238,7 +3238,7 @@ class TestTrustDataDensity:
     # --- Primary test (TST-INT-720) ---
 
     # TST-INT-720
-    # TRACE: {"suite": "INT", "case": "0720", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "36", "title": "stale_reviews_recency_disclosure"}
+    # TRACE: {"suite": "INT", "case": "0720", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "36", "title": "stale_reviews_recency_disclosure"}
     def test_stale_reviews_recency_disclosure(self) -> None:
         """TST-INT-720: 20 reviews, all >365 days old.
         Response includes but flags: 'Reviews are over a year old —
@@ -3322,7 +3322,7 @@ class TestTrustDataDensity:
 
     # --- TST-INT-720 Counter-proofs ---
 
-    # TRACE: {"suite": "INT", "case": "0720", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "37", "title": "fresh_reviews_no_staleness_disclosure"}
+    # TRACE: {"suite": "INT", "case": "0720", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "37", "title": "fresh_reviews_no_staleness_disclosure"}
     def test_fresh_reviews_no_staleness_disclosure(self) -> None:
         """TST-INT-720 counter-proof: 20 reviews from 30 days ago
         produce no staleness warning.  all_stale must be False and
@@ -3358,7 +3358,7 @@ class TestTrustDataDensity:
             f"got {result['newest_review_days']} days"
         )
 
-    # TRACE: {"suite": "INT", "case": "0246", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "38", "title": "mixed_fresh_and_stale_reviews"}
+    # TRACE: {"suite": "INT", "case": "0246", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "38", "title": "mixed_fresh_and_stale_reviews"}
     def test_mixed_fresh_and_stale_reviews(self) -> None:
         """TST-INT-720 counter-proof: 10 fresh (30 days) + 10 stale
         (400 days).  all_stale must be False, but recency_disclosure
@@ -3430,7 +3430,7 @@ class TestTrustDataDensity:
             f"got: '{disclosure}'"
         )
 
-    # TRACE: {"suite": "INT", "case": "0247", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "39", "title": "stale_reviews_still_counted"}
+    # TRACE: {"suite": "INT", "case": "0247", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "39", "title": "stale_reviews_still_counted"}
     def test_stale_reviews_still_counted(self) -> None:
         """TST-INT-720 counter-proof: stale reviews contribute to
         total_reviews — they are never silently dropped from the count."""
@@ -3454,7 +3454,7 @@ class TestTrustDataDensity:
 
     # --- TST-INT-720 Edge cases ---
 
-    # TRACE: {"suite": "INT", "case": "0720", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "40", "title": "exactly_365_days_old_not_stale"}
+    # TRACE: {"suite": "INT", "case": "0720", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "40", "title": "exactly_365_days_old_not_stale"}
     def test_exactly_365_days_old_not_stale(self) -> None:
         """TST-INT-720 edge case: reviews exactly 365 days old must NOT
         be flagged as stale.  The threshold is strictly > 365 days."""
@@ -3490,7 +3490,7 @@ class TestTrustDataDensity:
             f"got: '{result['recency_disclosure']}'"
         )
 
-    # TRACE: {"suite": "INT", "case": "0248", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "41", "title": "366_days_old_is_stale"}
+    # TRACE: {"suite": "INT", "case": "0248", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "41", "title": "366_days_old_is_stale"}
     def test_366_days_old_is_stale(self) -> None:
         """TST-INT-720 edge case: reviews 366 days old are just past the
         threshold — they must be flagged as stale."""
@@ -3531,7 +3531,7 @@ class TestTrustDataDensity:
             f"got: '{result['recency_disclosure']}'"
         )
 
-    # TRACE: {"suite": "INT", "case": "0249", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "42", "title": "single_stale_review"}
+    # TRACE: {"suite": "INT", "case": "0249", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "42", "title": "single_stale_review"}
     def test_single_stale_review(self) -> None:
         """TST-INT-720 edge case: only 1 review, 400 days old.
         Must be flagged as stale with low confidence AND the staleness
@@ -3581,7 +3581,7 @@ class TestTrustDataDensity:
             f"Single-stale disclosure must mention age, got: '{disclosure}'"
         )
 
-    # TRACE: {"suite": "INT", "case": "0250", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "43", "title": "very_old_reviews_extreme"}
+    # TRACE: {"suite": "INT", "case": "0250", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "43", "title": "very_old_reviews_extreme"}
     def test_very_old_reviews_extreme(self) -> None:
         """TST-INT-720 edge case: reviews 1000+ days old must still be
         flagged with appropriate staleness disclosure — age extremity
@@ -3627,7 +3627,7 @@ class TestTrustDataDensity:
     # TST-INT-719  Dense consensus: earned confidence
     # ------------------------------------------------------------------
 
-    # TRACE: {"suite": "INT", "case": "0719", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "44", "title": "dense_consensus_earned_confidence"}
+    # TRACE: {"suite": "INT", "case": "0719", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "44", "title": "dense_consensus_earned_confidence"}
     def test_dense_consensus_earned_confidence(self) -> None:
         """TST-INT-719: 50+ reviews with 90%+ agreement.
         Response communicates confidence: 'Strong consensus from 50+
@@ -3753,7 +3753,7 @@ class TestTrustDataDensity:
 
     # --- TST-INT-719 Counter-proofs ---
 
-    # TRACE: {"suite": "INT", "case": "0719", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "45", "title": "dense_but_split_no_consensus_language"}
+    # TRACE: {"suite": "INT", "case": "0719", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "45", "title": "dense_but_split_no_consensus_language"}
     def test_dense_but_split_no_consensus_language(self) -> None:
         """TST-INT-719 counter-proof: 50 reviews evenly split (26 positive,
         24 negative) must NOT use consensus language.  Confidence is 'high'
@@ -3818,7 +3818,7 @@ class TestTrustDataDensity:
             f"got: '{result['summary_text']}'"
         )
 
-    # TRACE: {"suite": "INT", "case": "0251", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "46", "title": "few_reviews_cannot_earn_high_confidence"}
+    # TRACE: {"suite": "INT", "case": "0251", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "46", "title": "few_reviews_cannot_earn_high_confidence"}
     def test_few_reviews_cannot_earn_high_confidence(self) -> None:
         """TST-INT-719 counter-proof: 5 reviews all positive yield
         'moderate' confidence — not enough volume for 'high'.
@@ -3857,7 +3857,7 @@ class TestTrustDataDensity:
             "insufficient data volume"
         )
 
-    # TRACE: {"suite": "INT", "case": "0252", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "47", "title": "dense_all_unverified_mentions_unverified"}
+    # TRACE: {"suite": "INT", "case": "0252", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "47", "title": "dense_all_unverified_mentions_unverified"}
     def test_dense_all_unverified_mentions_unverified(self) -> None:
         """TST-INT-719 counter-proof: 50 Ring 1 (unverified) reviews that
         are all positive.  Confidence is 'high' for volume but summary
@@ -3907,7 +3907,7 @@ class TestTrustDataDensity:
 
     # --- TST-INT-719 Edge cases ---
 
-    # TRACE: {"suite": "INT", "case": "0719", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "48", "title": "exactly_50_reviews_90_percent_agreement"}
+    # TRACE: {"suite": "INT", "case": "0719", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "48", "title": "exactly_50_reviews_90_percent_agreement"}
     def test_exactly_50_reviews_90_percent_agreement(self) -> None:
         """TST-INT-719 edge case: exactly 50 reviews with exactly 90%
         agreement (45 positive, 5 negative).  Validates the 50+
@@ -3975,7 +3975,7 @@ class TestTrustDataDensity:
             f"got: '{result['summary_text']}'"
         )
 
-    # TRACE: {"suite": "INT", "case": "0253", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "49", "title": "dense_unanimous_positive"}
+    # TRACE: {"suite": "INT", "case": "0253", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "49", "title": "dense_unanimous_positive"}
     def test_dense_unanimous_positive(self) -> None:
         """TST-INT-719 edge case: 60 reviews ALL positive.
         No conflict, summary can say 'consensus' or 'all recommend'."""
@@ -4034,7 +4034,7 @@ class TestTrustDataDensity:
             f"got: '{summary}'"
         )
 
-    # TRACE: {"suite": "INT", "case": "0254", "section": "11", "sectionName": "Trust Network Integration", "subsection": "05", "scenario": "50", "title": "dense_with_neutral_reviews"}
+    # TRACE: {"suite": "INT", "case": "0254", "section": "11", "sectionName": "PeerLens Integration", "subsection": "05", "scenario": "50", "title": "dense_with_neutral_reviews"}
     def test_dense_with_neutral_reviews(self) -> None:
         """TST-INT-719 edge case: 55 reviews — 48 positive, 2 negative,
         5 neutral.  Majority positive, has_conflict True (positive +

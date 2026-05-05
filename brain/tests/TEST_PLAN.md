@@ -122,7 +122,7 @@
 | 2 | **[TST-BRAIN-054]** Crypto payment intent | Brain recommends purchase, crypto option | Intent: `ethereum:0x1234...?value=0.05&data=0x...` — stored in Tier 4 |
 | 3 | **[TST-BRAIN-055]** Web checkout intent | Brain recommends purchase, web cart | Intent: `https://chairmaker.com/checkout?cart=DINA-CART-12345` — stored in Tier 4 |
 | 4 | **[TST-BRAIN-056]** Dina never sees credentials | Inspect all data flows during cart handover | Brain never receives or stores: bank balance, UPI PIN, card numbers, payment credentials |
-| 5 | **[TST-BRAIN-057]** Outcome recording | User completes purchase → confirmation SMS/callback | Brain records outcome in Tier 3 vault for future Trust Network contribution |
+| 5 | **[TST-BRAIN-057]** Outcome recording | User completes purchase → confirmation SMS/callback | Brain records outcome in Tier 3 vault for future PeerLens contribution |
 | 6 | **[TST-BRAIN-058]** Cart handover expires | Payment intent not acted on within 12 hours | Staging item auto-expires (shorter TTL than drafts) |
 | 7 | **[TST-BRAIN-059]** Outcome follow-up question timing | 4 weeks after cart handover purchase | Brain asks: "How's that chair?" — follow-up timing configurable, triggers outcome data collection flow |
 | 8 | **[TST-BRAIN-060]** Outcome inference without explicit response | User continues using product, no explicit feedback | Brain infers outcome from usage signals (e.g. no return, product still mentioned) → outcome: `"still_using_6_months"` — doesn't require explicit user confirmation |
@@ -552,7 +552,7 @@
 |---|----------|-------|----------|
 | 1 | **[TST-BRAIN-226]** Route to specialist agent | "Review this contract" | Routed to legal review MCP agent |
 | 2 | **[TST-BRAIN-227]** Route by capability | Task requires image analysis | Routed to vision-capable agent |
-| 3 | **[TST-BRAIN-228]** Route by trust | Multiple agents available | Highest Trust Network score selected |
+| 3 | **[TST-BRAIN-228]** Route by trust | Multiple agents available | Highest PeerLens score selected |
 | 4 | **[TST-BRAIN-229]** No suitable agent | Task requiring unavailable capability | Fallback to local LLM or inform user |
 | 5 | **[TST-BRAIN-230]** Agent timeout | MCP agent doesn't respond in 30s | Timeout, try next agent or fail gracefully |
 | 6 | **[TST-BRAIN-408]** Trust AppView query | Brain needs product recommendation | Brain queries `GET /v1/trust?did=...` from Trust AppView API — returns product scores, expert attestations |
@@ -984,7 +984,7 @@
 | 1 | **[TST-BRAIN-542]** Attribution mandatory in recommendations | Brain assembles product recommendation | Every recommendation includes `source_url` and `creator_name` — unattributed items flagged, not silently included |
 | 2 | **[TST-BRAIN-543]** Deep link default: creators get traffic | Brain formats recommendation for user | Response includes clickable deep link to original review/article — not extracted summary |
 | 3 | **[TST-BRAIN-544]** Sponsored content disclosed | Brain includes recommendation with `sponsored: true` metadata | User sees "[Sponsored]" tag — sponsorship never hidden |
-| 4 | **[TST-BRAIN-545]** No hallucinated trust scores | Trust Network has no data for product X | Brain does NOT say "Trust score: 7/10" — says "No verified reviews available" or equivalent honest disclosure |
+| 4 | **[TST-BRAIN-545]** No hallucinated trust scores | PeerLens has no data for product X | Brain does NOT say "Trust score: 7/10" — says "No verified reviews available" or equivalent honest disclosure |
 | 5 | **[TST-BRAIN-546]** Sparse trust data: honest uncertainty | 2 reviews for product, 1 positive 1 negative | Brain communicates uncertainty: "Only 2 verified reviews, opinions split" — does not fabricate consensus |
 | 6 | **[TST-BRAIN-547]** Dense trust data: confidence proportional | 50+ reviews with strong consensus | Brain communicates confidence: "Strong consensus from verified reviewers" — confidence earned, not assumed |
 | 7 | **[TST-BRAIN-566]** Ranking explainability | User asks "why was product A ranked above product B?" | Brain explains ranking factors (trust ring level, review count, consensus strength, recency) — not opaque score |
@@ -997,9 +997,9 @@
 > spectrum. Same code path, different data — the quality of the response must
 > degrade gracefully, never nonsensically.
 
-| # | Scenario | Trust Network Data | Expected Brain Behavior |
+| # | Scenario | PeerLens Data | Expected Brain Behavior |
 |---|----------|-------------------|------------------------|
-| 1 | **[TST-BRAIN-548]** Zero reviews, zero attestations | AppView returns empty for product query | Brain uses web search (OpenClaw) + vault context. Response says "I found web reviews but no verified data in the Trust Network" |
+| 1 | **[TST-BRAIN-548]** Zero reviews, zero attestations | AppView returns empty for product query | Brain uses web search (OpenClaw) + vault context. Response says "I found web reviews but no verified data in PeerLens" |
 | 2 | **[TST-BRAIN-549]** Single review, no consensus possible | 1 attestation from Ring 2 reviewer | Brain includes the review but notes: "Only one verified review — limited data" |
 | 3 | **[TST-BRAIN-550]** Sparse but conflicting (2 positive, 1 negative) | 3 reviews, mixed | Brain reports the split honestly: "Mixed reviews — 2 positive, 1 negative from verified reviewers" |
 | 4 | **[TST-BRAIN-551]** Sparse but unanimous (3 positive) | 3 reviews, all positive | Brain reports consensus but notes sample size: "3 verified reviewers all positive, but limited sample" |

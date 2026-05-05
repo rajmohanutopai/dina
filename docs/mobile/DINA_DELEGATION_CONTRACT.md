@@ -327,7 +327,7 @@ if received.signature.signer_did != expected_did:  # outbound.to.expected_did
 
 **External plane trusts Dina per its own policy.** Typically based on `from.user_did` being a known account or a provisioned API key tied to a user. API-key-based auth can complement signature auth (both required for sensitive capabilities).
 
-**Trust attestations from third parties can short-circuit direct trust.** If the user's trust network contains signed attestations about the external plane's DID (e.g., "verified_execution_environment"), the control plane can auto-add to trusted endpoints after user confirmation.
+**Trust attestations from third parties can short-circuit direct trust.** If the user's PeerLens contains signed attestations about the external plane's DID (e.g., "verified_execution_environment"), the control plane can auto-add to trusted endpoints after user confirmation.
 
 ## Callback Correlation — Cryptographic Binding
 

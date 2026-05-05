@@ -1,8 +1,8 @@
-# docker-compose.pipeline.yml — D2D MsgBox + Trust Network Pipeline
+# docker-compose.pipeline.yml — D2D MsgBox + PeerLens Pipeline
 #
 # Brings up the shared infrastructure for multiple Dina Home Nodes:
 #   - D2D msgbox (encrypted message forwarding, durable offline buffer)
-#   - Community PDS firehose → Jetstream → AppView (trust network)
+#   - Community PDS firehose → Jetstream → AppView (PeerLens)
 #
 # Usage:
 #   docker compose -f docker-compose.pipeline.yml up -d

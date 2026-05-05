@@ -1311,7 +1311,7 @@ def msgbox_show(ctx: click.Context) -> None:
 
 @cli.group()
 def appview() -> None:
-    """Configure the Trust Network AppView endpoint."""
+    """Configure PeerLens AppView endpoint."""
 
 
 @appview.command("set")

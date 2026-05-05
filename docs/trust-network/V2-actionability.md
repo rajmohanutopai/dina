@@ -1,7 +1,7 @@
-# Trust Network V2 — The Actionability Layer
+# PeerLens V2 — The Actionability Layer
 
 > **Audience**: implementers, integrators, operators, and researchers
-> evaluating Dina's Trust Network for the V2 expansion.
+> evaluating Dina's PeerLens for the V2 expansion.
 >
 > **Scope**: V2 closes the actionability gaps in V1. The V1 ranking —
 > "what do my contacts think of X" — is necessary but not sufficient

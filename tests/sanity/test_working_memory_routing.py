@@ -109,7 +109,7 @@ def seeded_vault(tg):
       travel:    AI 123 Tokyo flight Oct 20 (scenario 8)
       long-tail: a Harari book reference from 14 months ago (scenario 12)
 
-    Does NOT seed Trust Network reviews or provider-service providers —
+    Does NOT seed PeerLens reviews or provider-service providers —
     those come from outside (AppView / Hetzner test stack) and are
     assumed to be available when running these tests.
     """
@@ -228,7 +228,7 @@ class TestLivePublic:
 
 
 # ---------------------------------------------------------------------------
-# Group C — not-self + static (trust network)
+# Group C — not-self + static (PeerLens)
 # ---------------------------------------------------------------------------
 
 class TestTrustNetwork:

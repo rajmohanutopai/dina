@@ -1,4 +1,4 @@
-# Trust Network — V1 Plan
+# PeerLens — V1 Plan
 
 **Goal:** Ship a social review system where attestations are tagged against reviewer DIDs whose individual trust scores are computed from observable signals. Subjects (a chair, a YouTuber, a restaurant, a service) inherit a trust-weighted aggregate score so the user can answer "which one should I pick?". Bilateral cosignature is an optional enhancement, not foundational. Adversarial mitigations (sybil resistance, mutual-praise detection, statistics-aware aggregation) are explicit V2 work — the V1 wire format and DB schema are designed so V2 mitigations re-weight existing records without invalidating them.
 
@@ -24,13 +24,13 @@
 | 8 | **`flag` record exists in V1 lexicon, ignored by V1 scorer** | Lets the wire format land before the moderation UX is designed |
 | 9 | **Trust score function is named + versioned (`trust_score_v1`)** | V2 introduces `trust_score_v2` alongside; UI reads whichever is freshest |
 | 10 | **Cold-start fallback: option (1)** — when viewer has no contacts, drop the network-position term and rank by `account_age × sqrt(review_count) × consistency` | Degrades gracefully; no global reviewer reputation that contradicts the social framing |
-| 11 | **V1 limitation banner** lives in Settings → "About Trust Network" + first-run modal | Disclosure without permanent screen-real-estate cost |
+| 11 | **V1 limitation banner** lives in Settings → "About PeerLens" + first-run modal | Disclosure without permanent screen-real-estate cost |
 | 12 | **Trust bands**: low (0–33), medium (34–66), high (67–100); naked numeric score only when n ≥ 3 reviews | Bands soften noise at low N; numbers earn their place at higher N |
 | 13 | **Mobile writes to PDS directly via `com.atproto.repo.createRecord`; AppView indexes from Jetstream firehose** | Standard atproto. AppView never proxies writes nor holds PDS credentials. Rate limit + signature gate at ingester (§3.5) |
 | 14 | **V1 namespace identity = one PDS account with multiple verification methods** | Lowest-friction V1; namespace pseudonymity is "first impression" only — DID document is correlatable. V2 adds per-namespace PDS accounts for true pseudonymity |
 | 15 | **Namespace key registered as `assertionMethod` in DID document**, id pattern `did:plc:xxxx#namespace_<index>` | AppView verifies records by resolving DID doc and matching the verification method id used in the commit |
 | 16 | **Cosig requests get their own table (`cosig_requests`)**, not `dina_tasks` | Different lifecycle (cross-network, multi-day expiry); expiry-swept hourly |
-| 17 | **Trust tab default landing = friends' recent reviews (1-hop, 14-day window)**, served by `com.dina.trust.networkFeed` xRPC | Teaches social-review framing on first open; doesn't require typing a query |
+| 17 | **the PeerLens tab default landing = friends' recent reviews (1-hop, 14-day window)**, served by `com.dina.trust.networkFeed` xRPC | Teaches social-review framing on first open; doesn't require typing a query |
 | 18 | **Compose flow calls `com.dina.trust.resolve` before publish** | Server returns canonical `subject_id` (or null + conflicts list for disambiguation); UI shows the canonical subject before the user commits |
 | 19 | **Author edit = atproto-standard delete + republish**; no in-place edit | atproto records are immutable; AppView's incremental rescoring handles the recompute transparently |
 | 20 | **Namespace deletion is "disable", not delete, in V1** | Hard delete requires PLC verification-method removal + bulk record tombstone. V1 ships disable (read-only marker on `namespace.profile`); V2 ships hard delete |
@@ -43,7 +43,7 @@
 | Question | Answer | Notes |
 |---|---|---|
 | What does empty-graph scoring use? | Account age × sqrt(review_count) × consistency | Degrades to "popularity, weighted by tenure" — adequate until contacts exist |
-| Where does the V1-limitation banner live? | Settings → About Trust Network (always) + first-run modal (once) | First-run modal stores `trust_first_run_dismissed_at` in keystore |
+| Where does the V1-limitation banner live? | Settings → About PeerLens (always) + first-run modal (once) | First-run modal stores `trust_first_run_dismissed_at` in keystore |
 | Pseudonymous DID derivation path? | `m/9999'/4'/N'` where `N` is the namespace index (0=default, 1+=user-named) | Pinned in `core/internal/identity/keygen.go`; Lite mirrors |
 | Recovery flow per namespace? | Master seed regenerates all namespace keys deterministically; namespace metadata recovers from PDS records; PLC document re-resolves from the PLC directory | No additional recovery primitives in V1 |
 | Naked score vs band threshold? | Numeric for n ≥ 3 reviews; band only below | Subject card shows "82 · 14 reviews" or "high · 2 reviews" |
@@ -61,7 +61,7 @@
 | Namespace identity in V1? | One PDS account, multiple namespace keys registered as `assertionMethod` verification methods in the user's DID document | First-impression pseudonymity. V2 = per-namespace PDS accounts for full segregation |
 | Namespace key registration? | New namespace = mobile derives key + appends `assertionMethod` to DID document via PLC operation signed by recovery key + publishes `com.dina.trust.namespaceProfile` | See §3.5 for sequence |
 | Search query semantics? | Postgres FTS (`english` config, no stop words, no stemmer) over `subjects.name` ⊕ `attestations.headline` ⊕ `attestations.body`; weighted A/B/C respectively | Tunable in `trust_v1_params` table |
-| Empty `q` parameter behaviour? | Returns the network feed via `com.dina.trust.networkFeed` (1-hop reviewers, 14d window, sorted by reviewer trust × recency) | Same data the Trust tab landing renders |
+| Empty `q` parameter behaviour? | Returns the network feed via `com.dina.trust.networkFeed` (1-hop reviewers, 14d window, sorted by reviewer trust × recency) | Same data the PeerLens tab landing renders |
 | Subject type picker UX? | Auto-detect from input shape: `did:` prefix → did; URL → product OR content (heuristic on host); ISBN-13 / ASIN format → product; else show 3-row chooser (product / place / content) with "more types" expand for org / dataset / claim | Implemented in `apps/mobile/src/trust/identifier_parser.ts` |
 | What is the `claim` subject type for? | Free-text claim ("Drinking 3L of water daily is healthy"). `name` carries the claim text. `subject.resolve` returns a per-author canonical subject so different framings of the same claim don't collide | Discovery via FTS over the claim text |
 | Author edit flow? | Delete + republish. Mobile UI labels it "Edit"; under the hood it's two atproto operations | atproto record bodies are immutable; standard pattern |
@@ -796,7 +796,7 @@ Returns the canonical `subject_id` for a SubjectRef, or `null` if the subject do
 
 ### 6.4 `com.dina.trust.networkFeed` (query)
 
-Returns the viewer's network-feed: recent attestations from the viewer's 1-hop contact set within a configurable window. Backs the Trust tab landing screen.
+Returns the viewer's network-feed: recent attestations from the viewer's 1-hop contact set within a configurable window. Backs the PeerLens tab landing screen.
 
 **Params:**
 ```ts
@@ -900,7 +900,7 @@ When `subject_score_v1` is null (n < 3), substitute `0.5` (neutral) so cold subj
 ### 8.1 New screens
 
 ```
-app/trust/index.tsx              — Trust tab landing: network feed + search bar
+app/trust/index.tsx              — the PeerLens tab landing: network feed + search bar
 app/trust/[subjectId].tsx        — Subject detail (reviewer list + write own)
 app/trust/write.tsx              — Compose attestation (subject picker + form)
 app/trust/namespace.tsx          — Manage pseudonymous namespaces
@@ -912,7 +912,7 @@ The landing screen is `app/trust/index.tsx`; it renders the `com.dina.trust.netw
 
 ### 8.2 Bottom-tab entry
 
-The Reminders + Notifications tabs move to the hamburger menu (this PR). The Trust Network claims their bottom-bar slot (see §13).
+The Reminders + Notifications tabs move to the hamburger menu (this PR). PeerLens claims their bottom-bar slot (see §13).
 
 ### 8.3 Subject card (search result)
 
@@ -978,10 +978,10 @@ Long-press own row in subject detail → "Delete this review". Confirmation moda
 
 ### 8.8 First-run modal
 
-Triggers when user opens Trust tab the first time. Single screen:
-> Trust Network is a social review system. Reviews are tagged to identities — yours and people who reviewed before you. Right now, scoring relies on simple signals (review count, network position, history). It can be gamed by motivated actors, and your namespace identities are pseudonymous to first-impression observers but not to dedicated investigators. Use it as one input among many.
+Triggers when user opens the PeerLens tab the first time. Single screen:
+> PeerLens is a social review system. Reviews are tagged to identities — yours and people who reviewed before you. Right now, scoring relies on simple signals (review count, network position, history). It can be gamed by motivated actors, and your namespace identities are pseudonymous to first-impression observers but not to dedicated investigators. Use it as one input among many.
 
-Dismissed once → flag in keystore. Settings → "About Trust Network" repeats the same text.
+Dismissed once → flag in keystore. Settings → "About PeerLens" repeats the same text.
 
 ### 8.9 Reviewer profile screen
 
@@ -1021,7 +1021,7 @@ The mobile client buffers attestations / endorsements / cosig actions when offli
 - Outgoing records persist in keystore as `trust.outbox` (FIFO, max 50 items)
 - `NetInfo` reachability change → flush queue, attempting publish in order
 - Each retry's failure increments a per-row `attempt_count`. After 5 attempts or 24 h since first attempt, the row is moved to a "stuck" subset and surfaced as a `system_message` in the inbox: "3 reviews didn't post — tap to review and retry."
-- The user can manually edit / delete stuck items from a Settings → Trust Network → Outbox screen (drilled to from the system message)
+- The user can manually edit / delete stuck items from a Settings → PeerLens → Outbox screen (drilled to from the system message)
 
 Offline-aware composer: while NetInfo reports unreachable, the publish button reads "Queue for later" and the confirmation toast is "Saved — will post when online."
 
@@ -1185,7 +1185,7 @@ Both thresholds are stored in `trust_v1_params` and live-tunable.
 
 - All `com.dina.*` xRPC endpoints return HTTP 503 with body `{error: 'trust_v1_disabled'}`
 - Firehose ingester skips trust-network lexicon records (`com.dina.trust.attestation`, `endorsement`, `flag`, `namespaceProfile`)
-- Mobile UI hides the Trust tab (the Trust tab entry in `_layout.tsx` becomes `href: null` when the bootstrap detects the flag is `false`)
+- Mobile UI hides the PeerLens tab (the PeerLens tab entry in `_layout.tsx` becomes `href: null` when the bootstrap detects the flag is `false`)
 - Scorer jobs no-op (return success without computing)
 
 Flips on/off via `dina-admin trust enable|disable`. Default: `false` until Phase 0 parity gate passes; flipped to `true` for soak.
@@ -1198,7 +1198,7 @@ Documented limitation:
 - A network observer correlating signature key ids across the firehose can tell which namespace each record came from. Same-device, same-time publishes from two namespaces are linkable.
 - **V1 namespaces are pseudonymous to first-impression observers, NOT to dedicated investigators.**
 
-Disclosed in §8.8 first-run modal and the Settings → About Trust Network screen. V2 (per-namespace PDS accounts) closes this gap.
+Disclosed in §8.8 first-run modal and the Settings → About PeerLens screen. V2 (per-namespace PDS accounts) closes this gap.
 
 ### 13.11 Per-IP / per-PDS rate limiting
 
@@ -1228,7 +1228,7 @@ Mitigation in V1: `trust_v1.ingester.reject_total{reason: 'rate_limit'}` is moni
 |------|-------------|------------|
 | 14-15 | Ingester gates (rate limit, signature, schema) + `ingest_rejections` table + outbox-watcher contract | Bad records dropped with logged reason; mobile can correlate AT-URI to rejection within 60 s |
 | 16-17 | XRPC: `subject.search` (with type/category/location/language/metadata filters), `subject.get`, `subject.resolve`, `feed.network`, `attestation.status`, `cosig.list` | Read endpoints serve seeded data; ranking deterministic; filter combinations correct; resolve handles conflicts; feed honours 1-hop scope |
-| 18-20 | Mobile: Trust tab landing (network feed) + search results screen + facet bar + reviewer profile | Empty-graph state shows "Add contacts" prompt; FTS works; facets refine within type scope |
+| 18-20 | Mobile: the PeerLens tab landing (network feed) + search results screen + facet bar + reviewer profile | Empty-graph state shows "Add contacts" prompt; FTS works; facets refine within type scope |
 | 21-23 | Mobile: subject detail + reviewer list + cosig sender list | Full read path live; tapping reviewer drills to profile |
 | 24-26 | Mobile: write/edit/delete flow + subject resolve + place lat/lng capture + namespace selector + outbox watcher | Round-trips through scorer; place reviews carry coordinates; offline queue flushes on reconnect; outbox surfaces stuck items |
 | 27-28 | Mobile: namespace creation + disable flow + recovery test | New namespace publishes PLC op + namespace.profile; disable flag respected by ingester |
@@ -1355,7 +1355,7 @@ Conformance: trust-score formula vectors pinned in `packages/protocol/conformanc
 - `packages/keystore-node/src/derivation.ts`
 - `packages/keystore-expo/src/derivation.ts`
 - `appview/src/ingester/handlers/` (handlers for new lexicons; flag rate-limit; `subjects.last_attested_at` upsert trigger)
-- `apps/mobile/app/_layout.tsx` (tab bar + hamburger menu changes — done in this PR; Trust tab `href: null` when `trust_v1_enabled = false`)
+- `apps/mobile/app/_layout.tsx` (tab bar + hamburger menu changes — done in this PR; the PeerLens tab `href: null` when `trust_v1_enabled = false`)
 - `apps/mobile/app/notifications.tsx` (new `subKind: 'trust_cosig'` row renderer)
 - `apps/mobile/src/services/bootstrap.ts` (read `trust_v1_enabled` flag from AppView config endpoint at boot)
 - `admin-cli/src/commands/trust.ts` (new commands: `trust enable`, `trust disable`, `trust suspend-pds`)

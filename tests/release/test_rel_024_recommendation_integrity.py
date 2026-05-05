@@ -6,7 +6,7 @@ rationale is explainable.  This is a release gate for the Pull Economy thesis.
 
 Execution class: Hybrid.
 
-Second Law: "Rank by trust, not by ad spend.  The Trust Network replaces
+Second Law: "Rank by trust, not by ad spend.  PeerLens replaces
 marketing."
 """
 
@@ -105,7 +105,7 @@ class TestRecommendationIntegrity:
         # Future: assert data explicitly states absence (not fabricated score)
 
     # ------------------------------------------------------------------
-    # Assertion 3–7: Trust Network recommendation features (not yet wired)
+    # Assertion 3–7: PeerLens recommendation features (not yet wired)
     # These test the Pull Economy thesis via /api/v1/process context JSON
     # that Brain doesn't consume yet. Marked skip to avoid false green.
     # ------------------------------------------------------------------

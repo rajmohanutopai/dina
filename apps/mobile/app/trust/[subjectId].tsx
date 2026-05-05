@@ -1,5 +1,5 @@
 /**
- * Trust Network — subject detail screen (TN-MOB-012 / Plan §8.5).
+ * PeerLens — subject detail screen (TN-MOB-012 / Plan §8.5).
  *
  * Drilled into from a search-result card or the trust-feed landing.
  * The screen renders:
@@ -56,7 +56,7 @@ import type { SubjectReview } from '../../src/trust/subject_card';
 
 /**
  * How long the screen waits for `data` before surfacing a
- * "couldn't reach the trust network" error. 5s is generous for the
+ * "couldn't reach PeerLens" error. 5s is generous for the
  * AppView round-trip + slow networks, short enough that a stuck UI
  * doesn't feel stuck. The runner that subscribes to AppView resets
  * this implicitly — supplying `data` or `error` props skips the
@@ -133,7 +133,7 @@ export default function SubjectDetailScreen(
     : params.subjectId;
   const router = useRouter();
   // Local state lets the screen surface a graceful "couldn't reach the
-  // trust network" error after the load-budget elapses, rather than
+  // PeerLens" error after the load-budget elapses, rather than
   // spinning forever. When the caller supplies `data` or `error`
   // explicitly (controlled mode — tests + a future runner), the timeout
   // is skipped because `props.data !== undefined` short-circuits the
@@ -246,7 +246,7 @@ export default function SubjectDetailScreen(
     if (subjectId === '') return;
     if (runnerEngaged) return;
     const id = setTimeout(() => {
-      setAutoError("Couldn't reach the trust network. Check your connection and try again.");
+      setAutoError("Couldn't reach PeerLens. Check your connection and try again.");
     }, LOAD_BUDGET_MS);
     return () => clearTimeout(id);
   }, [subjectId, retryNonce, props.data, props.error, runnerEngaged]);
