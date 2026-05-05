@@ -94,7 +94,7 @@
     },
     {
       "datasource": "${DS_PROMETHEUS}",
-      "description": "Trust V1 master flag state. 1 = enabled (ramp ON); 0 = disabled (operator killed). See docs/trust-network/ops-runbook.md.",
+      "description": "PeerLens V1 master flag state. 1 = enabled (ramp ON); 0 = disabled (operator killed). See docs/trust-network/ops-runbook.md.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -132,7 +132,7 @@
           "refId": "A"
         }
       ],
-      "title": "Trust V1 Flag",
+      "title": "PeerLens V1 Flag",
       "type": "stat"
     },
     {

@@ -232,7 +232,7 @@ describe('Vault Hybrid Search (2.38)', () => {
     });
   });
 
-  describe('trust-weighted reranking', () => {
+  describe('PeerLens-weighted reranking', () => {
     it('self-authored items rank higher than unknown', () => {
       // Both items have identical FTS and semantic scores
       storeItem('general', {

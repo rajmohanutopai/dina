@@ -114,9 +114,9 @@ describe('Guard Scan', () => {
     });
   });
 
-  describe('hallucinated trust scores', () => {
-    it('made-up trust score → warning', async () => {
-      const result = await scanResponse('This sender has a trust score: 8/10.');
+  describe('hallucinated PeerLens ratings', () => {
+    it('made-up PeerLens rating → warning', async () => {
+      const result = await scanResponse('This sender has a PeerLens rating: 8/10.');
       expect(result.violations.some((v) => v.category === 'hallucinated_trust')).toBe(true);
       expect(result.violations.find((v) => v.category === 'hallucinated_trust')?.severity).toBe(
         'warning',
@@ -134,7 +134,7 @@ describe('Guard Scan', () => {
     });
 
     it('hallucinated trust with zero density → block severity', async () => {
-      const result = await scanResponse('This sender has a trust score: 8/10.', {
+      const result = await scanResponse('This sender has a PeerLens rating: 8/10.', {
         densityTier: 'zero',
       });
       const v = result.violations.find((v) => v.category === 'hallucinated_trust');
@@ -150,7 +150,7 @@ describe('Guard Scan', () => {
     });
 
     it('hallucinated trust with dense density → warning severity (unchanged)', async () => {
-      const result = await scanResponse('This sender has a trust score: 8/10.', {
+      const result = await scanResponse('This sender has a PeerLens rating: 8/10.', {
         densityTier: 'dense',
       });
       const v = result.violations.find((v) => v.category === 'hallucinated_trust');

@@ -425,19 +425,19 @@ type BrainClient interface {
 
 // Config holds all typed configuration for dina-core (§14).
 type Config struct {
-	ListenAddr    string
-	AdminAddr     string
-	VaultPath     string
-	BrainURL      string
-	ServiceKeyDir string
-	ClientToken   string
-	SecurityMode  string // "security" or "convenience"
-	SessionTTL    int    // seconds
-	RateLimit     int    // requests per minute per IP
-	SpoolMax       int    // max buffered messages when locked
-	BackupInterval int    // hours
-	PDSURL         string // PDS XRPC endpoint
-	PLCURL         string // PLC directory URL
+	ListenAddr       string
+	AdminAddr        string
+	VaultPath        string
+	BrainURL         string
+	ServiceKeyDir    string
+	ClientToken      string
+	SecurityMode     string // "security" or "convenience"
+	SessionTTL       int    // seconds
+	RateLimit        int    // requests per minute per IP
+	SpoolMax         int    // max buffered messages when locked
+	BackupInterval   int    // hours
+	PDSURL           string // PDS XRPC endpoint
+	PLCURL           string // PLC directory URL
 	PDSAdminPassword string // PDS admin password
 	PDSHandle        string // AT Protocol handle
 	AdminSocketPath  string // Unix socket path for local admin CLI
@@ -766,7 +766,7 @@ type ZKProof struct {
 	Ring        int // 1=unverified, 2=verified, 3=skin-in-game
 }
 
-// TrustScore holds a computed trust score.
+// TrustScore holds a computed PeerLens rating.
 type TrustScore struct {
 	RingLevel          int
 	TimeAlive          int64 // seconds
@@ -781,7 +781,7 @@ type TrustScore struct {
 type ZKPVerifier interface {
 	// VerifyProof verifies a zero-knowledge proof.
 	VerifyProof(proof ZKProof) (bool, error)
-	// ComputeTrustScore computes the composite trust score.
+	// ComputeTrustScore computes the composite PeerLens rating.
 	ComputeTrustScore(did string) (*TrustScore, error)
 	// GetRingLevel returns the current trust ring for a DID.
 	GetRingLevel(did string) (int, error)
@@ -921,9 +921,9 @@ type BotQueryHandler interface {
 	SanitizeQuery(query string, userDID string) (string, error)
 	// SendQuery sends a sanitized query to a bot and returns the response.
 	SendQuery(botDID string, query BotQuery) (*BotResponse, error)
-	// ScoreBot records an outcome and updates the bot's local trust score.
+	// ScoreBot records an outcome and updates the bot's local PeerLens rating.
 	ScoreBot(botDID string, outcome BotOutcome) error
-	// GetScore returns the current trust score for a bot.
+	// GetScore returns the current PeerLens rating for a bot.
 	GetScore(botDID string) (float64, error)
 	// ValidateAttribution checks that the bot response includes valid attribution.
 	ValidateAttribution(resp BotResponse) (bool, error)

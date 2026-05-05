@@ -51,7 +51,7 @@ Phase 1 should be the smallest version of Dina that already feels complete and v
 
 | Not Required In Phase 1 | Reason |
 |---|---|
-| Large trust-network scale | Core value must stand even when trust data is sparse |
+| Large trust-network scale | Core value must stand even when PeerLens data is sparse |
 | Shamir recovery | Important next step, but not part of the minimum viable shape |
 | Local LLM by default | Optional profile, not a baseline requirement |
 | Full settlement and commerce protocols | Intent economy can exist before the full market/settlement layer exists |
@@ -67,7 +67,7 @@ Phase 2 should make Dina denser, more resilient, and more powerful without chang
 | Area | Expected In Phase 2 | Why It Matters |
 |---|---|---|
 | **Vault and personas** | Persona policy, unlock behavior, and cross-persona handling become more refined and configurable | The security model gets deeper without changing the core idea |
-| **Trust-aware recommendations** | Trust AppView data becomes materially more useful as graph density grows, instead of merely being present | The public layer starts adding more value without becoming the center |
+| **Trust-aware recommendations** | PeerLens AppView data becomes materially more useful as graph density grows, instead of merely being present | The public layer starts adding more value without becoming the center |
 | **Bot routing** | Dina can discover, compare, and route to more trusted specialist bots | Loyalty becomes operational, not just conceptual |
 | **Recovery** | Shamir social recovery becomes the right next-step default beyond paper mnemonic | This improves survivability without changing sovereignty |
 | **Inference profiles** | Local and hybrid inference profiles become stronger and more practical | Privacy-sensitive use gets a better default |

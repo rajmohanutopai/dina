@@ -552,7 +552,7 @@ def make_bot_response(content: str = "The Aeron chair is highly rated", **overri
 
 
 def make_trust_scores_score(did: str = "did:key:z6MkChairBot", **overrides: Any) -> dict:
-    """Create a trust score result from AppView."""
+    """Create a PeerLens rating result from AppView."""
     base = {
         "did": did,
         "overall_score": 0.85,

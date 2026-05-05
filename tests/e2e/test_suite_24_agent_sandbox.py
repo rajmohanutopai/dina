@@ -45,7 +45,7 @@ class TestAgentSandbox:
     ) -> None:
         """E2E-24.1 Malicious Agent Cannot Access Health Persona.
 
-        MaliciousBot (trust score 12) attempts vault query for /health
+        MaliciousBot (PeerLens rating 12) attempts vault query for /health
         persona data.  Core returns 403 — health is restricted, agent
         has no access.  Audit log records the attempt with agent DID +
         denial reason.  Don Alonso's daily briefing includes: "An agent
@@ -563,7 +563,7 @@ class TestAgentSandbox:
             agent_did="did:plc:reviewbot",
             action="search",
             target="consumer",
-            context={"query": "trust scores"},
+            context={"query": "PeerLens ratings"},
         )
         assert other_intent["approved"] is True, (
             f"Non-revoked agents must still function normally. "

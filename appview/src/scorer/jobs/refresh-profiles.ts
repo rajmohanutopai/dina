@@ -248,7 +248,7 @@ async function gatherTrustScoreInputs(db: DrizzleDB, did: string): Promise<Trust
         )
       )
 
-    // Gather author trust scores for weighting
+    // Gather author PeerLens ratings for weighting
     const authorDids = [...new Set(rawAtts.map(a => a.authorDid))]
     const authorProfiles = authorDids.length > 0
       ? await db

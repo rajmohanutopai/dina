@@ -636,7 +636,7 @@ def openclaw() -> MockOpenClaw:
 
 @pytest.fixture(scope="session")
 def reviewbot() -> MockReviewBot:
-    """ReviewBot — Specialist review bot (trust score 94)."""
+    """ReviewBot — Specialist review bot (PeerLens rating 94)."""
     bot = MockReviewBot(trust_score=94)
     bot.add_product_response("ergonomic chair", {
         "recommendations": [
@@ -670,7 +670,7 @@ def reviewbot() -> MockReviewBot:
 
 @pytest.fixture(scope="session")
 def malicious_bot() -> MockMaliciousBot:
-    """MaliciousBot — Untrusted bot (trust score 12)."""
+    """MaliciousBot — Untrusted bot (PeerLens rating 12)."""
     return MockMaliciousBot()
 
 

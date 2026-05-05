@@ -136,7 +136,7 @@ export async function computeGraphContext(
               visited.add(edge.toDid)
               nextFrontier.push(edge.toDid)
 
-              // Fetch trust score for newly discovered node
+              // Fetch PeerLens rating for newly discovered node
               const profile = await tx
                 .select({ trustScore: didProfiles.overallTrustScore })
                 .from(didProfiles)

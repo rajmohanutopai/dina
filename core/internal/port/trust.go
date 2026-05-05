@@ -28,9 +28,9 @@ type TrustCache interface {
 	SetLastSync(ts int64) error
 }
 
-// TrustResolver fetches trust profiles from an external source (AppView).
+// TrustResolver fetches PeerLens profiles from an external source (AppView).
 type TrustResolver interface {
-	// ResolveProfile fetches the trust profile for a single DID.
+	// ResolveProfile fetches the PeerLens profile for a single DID.
 	ResolveProfile(did string) (*domain.TrustEntry, error)
 
 	// ResolveNeighborhood fetches the trust neighborhood around a center DID.

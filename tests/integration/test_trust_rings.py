@@ -167,7 +167,7 @@ class TestRing1Unverified:
         )
         mock_trust_network.add_attestation(attestation)
 
-        # The attestation is recorded but the expert's trust score is 0
+        # The attestation is recorded but the expert's PeerLens rating is 0
         assert mock_trust_network.get_trust_score(
             attestation.expert_did
         ) == 0.0
@@ -279,7 +279,7 @@ class TestRing3AndBeyond:
     def test_linkedin_anchor(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
-        """A LinkedIn credential adds to the trust score."""
+        """A LinkedIn credential adds to the PeerLens rating."""
         without_cred = mock_trust_evaluator.compute_composite(
             ring=TrustRing.RING_3_SKIN_IN_GAME,
             time_alive_days=365,
@@ -606,7 +606,7 @@ class TestTrustComposite:
     def test_trust_degrades_with_bad_behavior(
         self, mock_trust_network: MockTrustNetwork
     ) -> None:
-        """Bad outcomes reduce a bot's trust score over time."""
+        """Bad outcomes reduce a bot's PeerLens rating over time."""
         bot_did = "did:plc:BadBot12345678901234567890ab"
 
         # Pre-condition: unknown bot starts at default 50.0

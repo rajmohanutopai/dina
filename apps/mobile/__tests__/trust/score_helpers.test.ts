@@ -1,5 +1,5 @@
 /**
- * Mobile trust score-helper tests (TN-MOB-002 + TN-MOB-003).
+ * Mobile PeerLens rating-helper tests (TN-MOB-002 + TN-MOB-003).
  *
  * The protocol-side primitives are exhaustively tested in
  * `@dina/protocol/__tests__/score_bands.test.ts` and
@@ -72,7 +72,7 @@ describe('bandColorToken (theme-token mapping)', () => {
 });
 
 describe('trustDisplayFor — one-shot helper for card render sites', () => {
-  it('packages a high-trust score', () => {
+  it('packages a high-PeerLens rating', () => {
     const d = trustDisplayFor(0.92);
     expect(d.score).toBe(92);
     expect(d.label).toBe('92');
@@ -81,14 +81,14 @@ describe('trustDisplayFor — one-shot helper for card render sites', () => {
     expect(d.colorToken).toBe('success');
   });
 
-  it('packages a moderate-trust score', () => {
+  it('packages a moderate-PeerLens rating', () => {
     const d = trustDisplayFor(0.6);
     expect(d.band).toBe('moderate');
     expect(d.colorToken).toBe('neutral');
     expect(d.score).toBe(60);
   });
 
-  it('packages a very-low-trust score with danger token', () => {
+  it('packages a very-low-PeerLens rating with danger token', () => {
     const d = trustDisplayFor(0.05);
     expect(d.band).toBe('very-low');
     expect(d.colorToken).toBe('danger');

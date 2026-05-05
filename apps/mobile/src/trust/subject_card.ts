@@ -64,7 +64,7 @@ export interface SubjectReview {
    * profile sat on the loading spinner forever instead of fetching.
    */
   readonly reviewerDid: string | null;
-  /** Reviewer trust score on the AppView [0, 1] scale, or null. */
+  /** Reviewer PeerLens rating on the AppView [0, 1] scale, or null. */
   readonly reviewerTrustScore: number | null;
   /** Reviewer display name — the card uses it in the top-reviewer line. */
   readonly reviewerName: string;
@@ -111,7 +111,7 @@ export interface SubjectCardInput {
    * plan §8.3 ("Office furniture"). Omit / null → no subtitle.
    */
   readonly category?: string | null;
-  /** Subject-level aggregate trust score on [0, 1], or null. */
+  /** Subject-level aggregate PeerLens rating on [0, 1], or null. */
   readonly subjectTrustScore: number | null;
   /** Total review count surfaced on the card ("14 reviews"). */
   readonly reviewCount: number;
@@ -408,7 +408,7 @@ export function deriveSubjectCard(
  *      Spotlighting a stranger over a contact would inverted-promote
  *      strangers' opinions on the very surface that's supposed to
  *      privilege the user's network.
- *   2. Higher reviewer trust score wins. `null` (unrated) is treated
+ *   2. Higher reviewer PeerLens rating wins. `null` (unrated) is treated
  *      as `-Infinity` so an unrated reviewer never displaces a rated
  *      one — pinned by test.
  *   3. More recent wins.
@@ -680,7 +680,7 @@ const MS_PER_YEAR = 365 * MS_PER_DAY;
  * category path (`'tech/laptops'` → `'tech'`). Categories not in the
  * map fall back to `DEFAULT_RECENCY_THRESHOLD_MS`.
  *
- * Tuned for the *signal-to-noise* of the badge, not for trust-score
+ * Tuned for the *signal-to-noise* of the badge, not for PeerLens rating
  * decay (which is RANK-006, scorer-side, separate concern). A badge
  * that fires on every tech review older than 6 months is too chatty;
  * one that never fires on book reviews older than a decade is
@@ -689,7 +689,7 @@ const MS_PER_YEAR = 365 * MS_PER_DAY;
  *
  * **Drift risk**: RANK-006 ships its own per-category half-life
  * table (server-side, in `appview/src/scorer/algorithms/`) for the
- * trust-score decay. These two tables answer DIFFERENT questions
+ * PeerLens rating decay. These two tables answer DIFFERENT questions
  * ("when does the score start decaying?" vs "when is the badge
  * worth showing the user?") so they legitimately diverge — but if
  * future maintainers want them coupled, the right move is to serve

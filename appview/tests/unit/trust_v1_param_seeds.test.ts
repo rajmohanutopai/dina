@@ -31,7 +31,7 @@ describe('TRUST_V1_PARAM_SEEDS — TN-DB-004 canonical seed list', () => {
   it('reviewer-trust WEIGHT_* coefficients sum to 1.0 (Plan §7 ranking formula contract)', () => {
     // Reviewer trust = WEIGHT_VOLUME × volume_signal + WEIGHT_AGE × age_signal
     //                + WEIGHT_COSIG × cosig_signal + WEIGHT_CONSISTENCY × consistency_signal
-    // The sum must be 1.0 so the trust score's range stays [0, 1] regardless of signal values.
+    // The sum must be 1.0 so the PeerLens rating's range stays [0, 1] regardless of signal values.
     // If a future PR rebalances the weights, this test forces the rebalancing to keep summing to 1.
     const weightKeys = ['WEIGHT_VOLUME', 'WEIGHT_AGE', 'WEIGHT_COSIG', 'WEIGHT_CONSISTENCY']
     const sum = TRUST_V1_PARAM_SEEDS

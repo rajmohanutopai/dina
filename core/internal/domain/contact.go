@@ -21,20 +21,20 @@ const (
 
 // Contact holds contact directory data stored in identity.sqlite.
 type Contact struct {
-	DID                   string `json:"did"`
-	Name                  string `json:"name"`
-	Alias                 string   `json:"alias"`                   // compatibility: aliases[0] at serialization boundary
-	Aliases               []string `json:"aliases,omitempty"`        // canonical multi-alias list (populated from alias store)
-	TrustLevel            string `json:"trust_level"`            // blocked, unknown, trusted, verified
-	TrustRing             int    `json:"trust_ring"`              // 0=unverified, 1=inner circle, 2=verified, 3=transactional
-	Relationship          string `json:"relationship"`            // spouse, child, parent, sibling, friend, colleague, acquaintance, unknown
-	DataResponsibility    string `json:"data_responsibility"`     // household, care, financial, external
-	ResponsibilityExplicit bool  `json:"responsibility_explicit"` // true if user explicitly set data_responsibility (read-only in API)
-	SharingPolicy         string `json:"sharing_policy"`          // JSON blob
-	ResolutionPolicy      string `json:"resolution_policy"`       // late_binding (ring 1), plaintext (ring 2-3), blocked (ring 0)
-	Source                string `json:"source"`                   // who provided this contact data
-	SourceConfidence      string `json:"source_confidence"`        // high, medium, low
-	LastContact           int64  `json:"last_contact"`             // unix timestamp of last interaction
+	DID                    string   `json:"did"`
+	Name                   string   `json:"name"`
+	Alias                  string   `json:"alias"`                   // compatibility: aliases[0] at serialization boundary
+	Aliases                []string `json:"aliases,omitempty"`       // canonical multi-alias list (populated from alias store)
+	TrustLevel             string   `json:"trust_level"`             // blocked, unknown, trusted, verified
+	TrustRing              int      `json:"trust_ring"`              // 0=unverified, 1=inner circle, 2=verified, 3=transactional
+	Relationship           string   `json:"relationship"`            // spouse, child, parent, sibling, friend, colleague, acquaintance, unknown
+	DataResponsibility     string   `json:"data_responsibility"`     // household, care, financial, external
+	ResponsibilityExplicit bool     `json:"responsibility_explicit"` // true if user explicitly set data_responsibility (read-only in API)
+	SharingPolicy          string   `json:"sharing_policy"`          // JSON blob
+	ResolutionPolicy       string   `json:"resolution_policy"`       // late_binding (ring 1), plaintext (ring 2-3), blocked (ring 0)
+	Source                 string   `json:"source"`                  // who provided this contact data
+	SourceConfidence       string   `json:"source_confidence"`       // high, medium, low
+	LastContact            int64    `json:"last_contact"`            // unix timestamp of last interaction
 	// PreferredFor records user-asserted "this is my go-to contact for X"
 	// category bindings (e.g. ["dental"], ["tax", "accounting"]). Used by
 	// the provider-service resolver: when the user asks a live-state
@@ -45,7 +45,7 @@ type Contact struct {
 	// User-curated — set explicitly or extracted from memory statements
 	// like "my dentist Dr Xyz". AppView remains the source of truth for
 	// what that DID actually publishes right now.
-	PreferredFor          []string `json:"preferred_for,omitempty"`
+	PreferredFor []string `json:"preferred_for,omitempty"`
 }
 
 // Relationship values.
@@ -127,12 +127,13 @@ func NormalizeAlias(alias string) string {
 
 // Trust ring constants.
 // Rings determine how agents receive contact data:
-//   Ring 0 (Unverified): agents get nothing — blocked by default
-//   Ring 1 (Inner Circle): late binding only — agents never see raw PII
-//   Ring 2 (Verified): plaintext for approved intents, late binding for risky ones
-//   Ring 3 (Transactional): plaintext — public/business contacts
+//
+//	Ring 0 (Unverified): agents get nothing — blocked by default
+//	Ring 1 (Inner Circle): late binding only — agents never see raw PII
+//	Ring 2 (Verified): plaintext for approved intents, late binding for risky ones
+//	Ring 3 (Transactional): plaintext — public/business contacts
 const (
-	TrustRingUnverified    = 0 // no trust data — default for new contacts
+	TrustRingUnverified    = 0 // no PeerLens data — default for new contacts
 	TrustRingInnerCircle   = 1 // family, close friends — maximum privacy
 	TrustRingVerified      = 2 // verified contacts — standard privacy
 	TrustRingTransactional = 3 // business/utility — minimal privacy
@@ -168,13 +169,13 @@ type EntityResolutionRequest struct {
 // EntityResolutionResponse is Dina's response with contact data.
 // The resolution_mode tells the agent how to use the data.
 type EntityResolutionResponse struct {
-	Status            string                 `json:"status"`             // success, denied, approval_required
-	ResolutionMode    EntityResolutionMode   `json:"resolution_mode"`
-	EntityID          string                 `json:"entity_id"`
-	Data              map[string]string      `json:"data,omitempty"`               // plaintext fields (ring 2-3)
-	BindingReferences map[string]string      `json:"binding_references,omitempty"` // late-bound refs (ring 1)
-	Instruction       string                 `json:"instruction,omitempty"`        // guidance for the agent
-	TrustRing         int                    `json:"trust_ring"`
+	Status            string               `json:"status"` // success, denied, approval_required
+	ResolutionMode    EntityResolutionMode `json:"resolution_mode"`
+	EntityID          string               `json:"entity_id"`
+	Data              map[string]string    `json:"data,omitempty"`               // plaintext fields (ring 2-3)
+	BindingReferences map[string]string    `json:"binding_references,omitempty"` // late-bound refs (ring 1)
+	Instruction       string               `json:"instruction,omitempty"`        // guidance for the agent
+	TrustRing         int                  `json:"trust_ring"`
 }
 
 // SharingTier controls how much data is shared for a given category.

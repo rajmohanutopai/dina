@@ -474,7 +474,7 @@ def create_app() -> FastAPI:
         trust_scorer=trust_scorer, enrichment=enrichment_svc,
     )
 
-    # Load contacts into trust scorer so contact-ring scoring works.
+    # Load contacts into PeerLens ratingr so contact-ring scoring works.
     # Best-effort — if Core isn't ready yet, contacts will be loaded
     # on the first sync cycle via refresh_contacts().
     async def _load_contacts_into_scorer() -> None:
@@ -699,7 +699,7 @@ def create_app() -> FastAPI:
     async def _sync_loop(engine: SyncEngine) -> None:
         """Background loop — runs sync cycles every 5 minutes."""
         while True:
-            # Refresh contacts for trust scoring (best-effort).
+            # Refresh contacts for PeerLens rating (best-effort).
             try:
                 contacts = await brain_core_client.list_contacts()
                 trust_scorer.update_contacts(contacts)

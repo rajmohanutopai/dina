@@ -505,7 +505,7 @@ class TestSellerNegotiation:
         mock_dina: MockDinaCore,
         seller_identity: MockIdentity,
     ) -> None:
-        """Before negotiating, buyer's Dina checks seller's trust score.
+        """Before negotiating, buyer's Dina checks seller's PeerLens rating.
         Unknown sellers default to 0.0 (untrusted). Trusted sellers
         have positive scores. The check must happen before engagement."""
         # Pre-condition: unknown seller has zero trust (default)
@@ -606,7 +606,7 @@ class TestSellerNegotiation:
         notification = Notification(
             tier=SilenceTier.TIER_1_FIDUCIARY,
             title="Low trust seller",
-            body=f"Seller {low_rep_seller[:30]}... has trust score {score}. "
+            body=f"Seller {low_rep_seller[:30]}... has PeerLens rating {score}. "
                  "Proceed with caution.",
             actions=["proceed", "block", "report"],
             source="trust_check",

@@ -1373,7 +1373,7 @@ def classify_with_sender_trust(
 
     Logic:
     1. Run the raw classifier to get the base tier.
-    2. Look up the sender's trust score in PeerLens.
+    2. Look up the sender's PeerLens rating in PeerLens.
     3. If sender is untrusted (score < threshold) AND the base tier is
        TIER_1_FIDUCIARY: demote to TIER_3_ENGAGEMENT.
     4. Trusted senders get the raw classification unchanged.
@@ -1989,9 +1989,9 @@ class TestClassificationEdgeCases:
 
         unknown_did = "did:plc:unknown_sender_9f8e7d6c5b4a3210"
 
-        # Precondition: this DID has no trust score (defaults to 0.0)
+        # Precondition: this DID has no PeerLens rating (defaults to 0.0)
         assert trust_network.get_trust_score(unknown_did) == 0.0, (
-            "Unknown DID must have default trust score of 0.0"
+            "Unknown DID must have default PeerLens rating of 0.0"
         )
 
         phishing_content = (
@@ -2220,7 +2220,7 @@ class TestClassificationEdgeCases:
     def test_borderline_trust_score_threshold(
         self, mock_dina: MockDinaCore
     ) -> None:
-        """Edge case: sender trust score exactly at the threshold boundary.
+        """Edge case: sender PeerLens rating exactly at the threshold boundary.
 
         A sender at exactly _UNTRUSTED_SENDER_THRESHOLD (0.3) should NOT
         be considered untrusted — the threshold is a strict less-than check.
@@ -2330,7 +2330,7 @@ class TestClassificationEdgeCases:
         """Edge case: sender DID has never been seen by PeerLens.
 
         A completely unknown DID (never registered, never interacted) must
-        default to trust score 0.0 and be treated as untrusted.  This is
+        default to PeerLens rating 0.0 and be treated as untrusted.  This is
         the most common phishing scenario — a brand-new DID sending
         alarming messages.
         """
@@ -2343,7 +2343,7 @@ class TestClassificationEdgeCases:
         # Verify it is truly absent — get_trust_score returns default 0.0
         score = trust_network.get_trust_score(never_seen_did)
         assert score == 0.0, (
-            f"Never-seen DID must have default trust score 0.0, got {score}"
+            f"Never-seen DID must have default PeerLens rating 0.0, got {score}"
         )
 
         compromised_content = (
@@ -2361,7 +2361,7 @@ class TestClassificationEdgeCases:
 
         assert result["tier"] == SilenceTier.TIER_3_ENGAGEMENT, (
             "Never-seen DID sending fiduciary content must be demoted to "
-            "engagement — default trust score 0.0 is below the untrusted "
+            "engagement — default PeerLens rating 0.0 is below the untrusted "
             "threshold"
         )
         assert result["demoted"] is True
@@ -2371,7 +2371,7 @@ class TestClassificationEdgeCases:
         # Verify the DID was NOT added to PeerLens as a side effect
         assert trust_network.get_trust_score(never_seen_did) == 0.0, (
             "Classification must not modify PeerLens as a side "
-            "effect — the sender's trust score must remain unchanged"
+            "effect — the sender's PeerLens rating must remain unchanged"
         )
 
 # TST-INT-715

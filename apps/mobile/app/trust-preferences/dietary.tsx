@@ -3,7 +3,7 @@
  *
  * Multi-select dietary preferences. Drives V2 filtering on
  * food / restaurant / recipe subjects — a vegan user shouldn't see
- * a steakhouse promoted as "great trust score" without a clear
+ * a steakhouse promoted as "great PeerLens rating" without a clear
  * "this isn't compatible" signal.
  *
  * Empty selection = no filtering. Loyalty Law: never sent to

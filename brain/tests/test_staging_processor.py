@@ -65,7 +65,7 @@ def enrichment():
 
 @pytest.fixture
 def processor(core, trust_scorer, enrichment):
-    """StagingProcessor with mock core, enrichment, and real trust scorer."""
+    """StagingProcessor with mock core, enrichment, and real PeerLens ratingr."""
     return StagingProcessor(
         core=core, enrichment=enrichment, trust_scorer=trust_scorer,
     )
@@ -161,7 +161,7 @@ async def test_classification_highest_sensitivity_wins(core, enrichment):
 @pytest.mark.asyncio
 # TRACE: {"suite": "BRAIN", "case": "0114", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "05", "title": "trust_scoring_applied"}
 async def test_trust_scoring_applied(core, trust_scorer, enrichment):
-    """Trust scoring is applied to classified items."""
+    """PeerLens rating is applied to classified items."""
     processor = StagingProcessor(
         core=core, enrichment=enrichment, trust_scorer=trust_scorer,
     )
@@ -519,7 +519,7 @@ async def test_no_timestamp_in_metadata_omits_field(core, enrichment):
 
 
 # ---------------------------------------------------------------------------
-# D2D staging — contact_did propagation + trust scoring end-to-end
+# D2D staging — contact_did propagation + PeerLens rating end-to-end
 # ---------------------------------------------------------------------------
 
 
@@ -527,7 +527,7 @@ async def test_no_timestamp_in_metadata_omits_field(core, enrichment):
 # TST-BRAIN-810
 # TRACE: {"suite": "BRAIN", "case": "0810", "section": "05", "sectionName": "Sync Engine (Ingestion Pipeline)", "subsection": "01", "scenario": "22", "title": "d2d_origin_did_sets_contact_did"}
 async def test_d2d_origin_did_sets_contact_did(core, enrichment):
-    """D2D items: origin_did is copied to contact_did for trust scorer lookup."""
+    """D2D items: origin_did is copied to contact_did for PeerLens ratingr lookup."""
     from src.service.trust_scorer import TrustScorer
     scorer = TrustScorer(contacts=[
         Contact(did="did:plc:sancho", trust_level="trusted", name="Sancho"),
@@ -552,7 +552,7 @@ async def test_d2d_origin_did_sets_contact_did(core, enrichment):
 
     core.staging_resolve.assert_awaited_once()
     classified = core.staging_resolve.call_args.args[2]
-    # Trust scorer should find Sancho via contact_did (set from origin_did)
+    # PeerLens ratingr should find Sancho via contact_did (set from origin_did)
     assert classified["sender_trust"] == "contact_ring1"
     assert classified["contact_did"] == "did:plc:sancho"
     assert classified["confidence"] == "medium"

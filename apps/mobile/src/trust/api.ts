@@ -2,7 +2,7 @@
  * Mobile trust API facade (TN-MOB-001).
  *
  * A thin pub/sub layer on top of `@dina/core/trust` that mobile screens
- * use to read trust scores + search results without each screen
+ * use to read PeerLens ratings + search results without each screen
  * re-implementing cache lookup + fetch + cache-key derivation.
  *
  * Surface:
@@ -99,10 +99,10 @@ export function resetTrustApiSubscribers(): void {
   searchSubscribers.clear();
 }
 
-// ─── Trust score subscriptions ────────────────────────────────────────────
+// ─── PeerLens rating subscriptions ────────────────────────────────────────────
 
 /**
- * Subscribe to trust-score updates for a single DID.
+ * Subscribe to PeerLens rating updates for a single DID.
  *
  * Behaviour:
  *   1. The listener is added to the per-DID subscriber set.
@@ -271,7 +271,7 @@ async function safeSearch(query: TrustSearchQuery): Promise<TrustSearchResult | 
 // ─── Bulk invalidate ──────────────────────────────────────────────────────
 
 /**
- * Invalidate every active subscription — both trust scores and
+ * Invalidate every active subscription — both PeerLens ratings and
  * searches. Used on persona switch, "pull to refresh" on the Trust
  * tab, or when the user manually requests a full reload.
  *

@@ -957,11 +957,11 @@ No revocation, auth scope, or invalid ID tests.
 - **All 27 schema upsert targets match unique constraints** — no silent ON CONFLICT failures
 - **Mention edges prevent duplicates** — UNIQUE (source_uri, target_did)
 
-### DB1. [VALID] MEDIUM — N+1 in graph.ts trust score fetching
+### DB1. [VALID] MEDIUM — N+1 in graph.ts PeerLens rating fetching
 **Status:** Open
 **File:** `appview/src/db/queries/graph.ts:127-148`
-**Problem:** BFS fetches trust score for each newly discovered node separately (1 query per node). Bounded by query budget (100) but inefficient.
-**Fix:** Batch-fetch trust scores for all nodes in nextFrontier before next BFS level.
+**Problem:** BFS fetches PeerLens rating for each newly discovered node separately (1 query per node). Bounded by query budget (100) but inefficient.
+**Fix:** Batch-fetch PeerLens ratings for all nodes in nextFrontier before next BFS level.
 
 ### DB2. [VALID] LOW — N+1 in dirty-flags.ts DID marking
 **Status:** Fixed
@@ -1048,7 +1048,7 @@ No revocation, auth scope, or invalid ID tests.
 - Graph query safeguards: 100ms statement_timeout, 500 node cap, 100 query budget, maxDepth≤2
 - Timeout gracefully returns partial graph (root node only), not error
 - Generic 500 errors — no stack traces or table names leaked
-- Public endpoints by design (trust data is public per AT Protocol)
+- Public endpoints by design (PeerLens data is public per AT Protocol)
 
 ### XR1. [VALID - HARDENING] MEDIUM — graph.ts string interpolation in sql.raw statement_timeout
 **Status:** Fixed
@@ -1451,7 +1451,7 @@ The test suite validates **cryptographic correctness** extremely well but comple
 
 | ID | Summary | Effort | Files |
 |----|---------|--------|-------|
-| DB1 | N+1 in graph.ts trust score fetching — batch-fetch per BFS level | M | `graph.ts` |
+| DB1 | N+1 in graph.ts PeerLens rating fetching — batch-fetch per BFS level | M | `graph.ts` |
 | DB2 | ~~N+1 in dirty-flags.ts~~ — **Fixed**: batch upsert | S | `dirty-flags.ts` |
 | DB3 | ~~Missing indexes~~ — **Fixed**: `author_did` indexes added | S | Schema files |
 | XR1 | ~~graph.ts sql.raw interpolation~~ — **Fixed**: numeric validation before interpolation | S | `graph.ts` |

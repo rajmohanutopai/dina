@@ -2,7 +2,7 @@
  * §1 — Scorer Algorithms (src/scorer/algorithms/)
  *
  * 77 tests total:
- *   §1.1 Trust Score:           UT-TS-001  through UT-TS-039  (39 tests)
+ *   §1.1 PeerLens Rating:           UT-TS-001  through UT-TS-039  (39 tests)
  *   §1.2 Reviewer Quality:      UT-RQ-001  through UT-RQ-010  (10 tests)
  *   §1.3 Sentiment Aggregation: UT-SA-001  through UT-SA-010  (10 tests)
  *   §1.4 Anomaly Detection:     UT-AD-001  through UT-AD-006  ( 6 tests)
@@ -82,10 +82,10 @@ function makeAttestation(overrides: Partial<TrustScoreInput['attestationsAbout']
 }
 
 // ---------------------------------------------------------------------------
-// §1.1 Trust Score
-// Traces to: Architecture §"Trust Score Algorithm", Fix 12 (convergence + zero-trust)
+// §1.1 PeerLens Rating
+// Traces to: Architecture §"PeerLens Rating Algorithm", Fix 12 (convergence + zero-trust)
 // ---------------------------------------------------------------------------
-describe('§1.1 Trust Score', () => {
+describe('§1.1 PeerLens Rating', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0001", "section": "01", "sectionName": "General", "title": "UT-TS-001: all-positive attestations -> high score"}
   it('UT-TS-001: all-positive attestations -> high score', () => {
     // Input: 10 positive attestations from vouched, scored authors
@@ -1558,7 +1558,7 @@ describe('§1.5 Recommendation', () => {
     const result = computeRecommendation(input)
     expect(result.trustLevel).toBe('unknown')
     expect(result.action).toBe('verify')
-    expect(result.reasoning).toContain('No trust data')
+    expect(result.reasoning).toContain('No PeerLens data')
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0074", "section": "01", "sectionName": "General", "title": "UT-RC-009: reasoning includes flag types"}

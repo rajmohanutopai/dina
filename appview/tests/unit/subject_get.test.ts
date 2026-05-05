@@ -9,7 +9,7 @@
  *     depth=3+ / unknown → strangers
  *   - Viewer's own attestations excluded from any group
  *   - Revoked attestations excluded by the SQL WHERE clause
- *   - Each group sorted by trust score desc, createdAt desc tiebreak,
+ *   - Each group sorted by PeerLens rating desc, createdAt desc tiebreak,
  *     NULL scores last
  *   - Each group capped at 100 entries
  *   - band derived from score via 0.8/0.5/0.3 thresholds
@@ -391,7 +391,7 @@ describe('subjectGet handler — TN-API-002', () => {
     expect(r.reviewCount).toBe(1)
   })
 
-  it('sorts each group by trust score desc, NULL last, createdAt as tiebreak', async () => {
+  it('sorts each group by PeerLens rating desc, NULL last, createdAt as tiebreak', async () => {
     computeGraphContextMock.mockResolvedValueOnce({
       nodes: [],
       edges: [],

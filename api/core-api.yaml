@@ -1523,7 +1523,7 @@ paths:
 
   /v1/trust/resolve:
     get:
-      summary: Resolve trust profile for a DID (passthrough to AppView)
+      summary: Resolve PeerLens profile for a DID (passthrough to AppView)
       parameters:
         - name: did
           in: query
@@ -1532,7 +1532,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Trust profile (raw AppView JSON passthrough).
+          description: PeerLens profile (raw AppView JSON passthrough).
         "404":
           description: DID not found in AppView.
         "503":

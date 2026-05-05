@@ -5397,7 +5397,7 @@
     "TST-CORE-756": {
       "path": "24.1",
       "row": 6,
-      "scenario": "Trust Score formula",
+      "scenario": "PeerLens Rating formula",
       "line": 1529
     },
     "TST-CORE-757": {
@@ -5535,7 +5535,7 @@
     "TST-CORE-860": {
       "path": "25",
       "row": 3,
-      "scenario": "Bot trust scoring: local score tracking, threshold-based routing",
+      "scenario": "Bot PeerLens rating: local score tracking, threshold-based routing",
       "line": 1582
     },
     "TST-CORE-861": {

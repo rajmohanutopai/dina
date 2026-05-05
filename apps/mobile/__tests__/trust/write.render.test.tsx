@@ -101,7 +101,7 @@ describe('WriteScreen — confidence (no longer surfaced)', () => {
   // The Confidence pill row was dropped from the form: casual
   // reviewers don't think in speculative/high/certain ladders, and
   // the field was only consumed by the AppView search filter
-  // `minConfidence` (no trust-score weight). The form now seeds
+  // `minConfidence` (no PeerLens rating weight). The form now seeds
   // `confidence: 'moderate'` silently. Pin both that the UI is gone
   // AND that the seeded value still flows through to the wire so an
   // empty form's publish payload carries `confidence: 'moderate'`.

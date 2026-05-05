@@ -628,7 +628,7 @@ Wires the three-surface notification model end-to-end on the Expo app:
 - [x] 6.19 Publish to `com.dina.service.profile`
 - [x] 6.20 Re-publish on config change
 
-### 6f. Trust scoring integration
+### 6f. PeerLens rating integration
 
 - [x] 6.21 `getTrustScore(did)` + cache
 - [x] 6.22 Trust ring resolution

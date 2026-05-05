@@ -70,7 +70,7 @@ class TestProductResearchPurchase:
         bot_rep = appview.query_bot(reviewbot.did)
         assert bot_rep is not None
         assert bot_rep.score == 94, (
-            f"ReviewBot trust score should be 94, got {bot_rep.score}"
+            f"ReviewBot PeerLens rating should be 94, got {bot_rep.score}"
         )
 
         # ------------------------------------------------------------------
@@ -501,12 +501,12 @@ class TestProductResearchPurchase:
     ) -> None:
         """E2E-3.5 Cold Start Web Search.
 
-        No trust data exists for a product. Fall back to web search
+        No PeerLens data exists for a product. Fall back to web search
         via OpenClaw. Verify vault context enriches the search results.
         """
         unknown_product = "steelcase_gesture"
 
-        # Confirm no trust data exists
+        # Confirm no PeerLens data exists
         product_data = appview.query_product(unknown_product)
         assert product_data is None
 

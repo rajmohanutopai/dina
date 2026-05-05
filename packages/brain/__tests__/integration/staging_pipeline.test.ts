@@ -74,7 +74,7 @@ describe('Staging Pipeline End-to-End Integration', () => {
       const classification = await classifyItem(claimed[0].data as Record<string, unknown>);
       expect(classification.persona).toBeTruthy();
 
-      // 5. Trust scoring
+      // 5. PeerLens rating
       const scored = applyTrustScoring(claimed[0].data as Record<string, unknown>);
       expect(scored.sender_trust).toBeTruthy();
 
@@ -274,7 +274,7 @@ describe('Staging Pipeline End-to-End Integration', () => {
       expect(enriched.enrichment_status).toBe('l0_complete');
     });
 
-    it('trust scoring adds sender_trust field', () => {
+    it('PeerLens rating adds sender_trust field', () => {
       const scored = applyTrustScoring({
         sender: 'noreply@promo.com',
         source: 'gmail',

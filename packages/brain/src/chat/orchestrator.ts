@@ -46,7 +46,7 @@ export interface ChatResponse {
   messageId: string;
   /**
    * Structured envelope carrying the `kind` discriminator + per-kind
-   * payload (trust score, contact list, confirmation dialog, etc.).
+   * payload (PeerLens rating, contact list, confirmation dialog, etc.).
    * Mobile UI reads this to render native card components; text-only
    * readers can use the plain string above.
    *

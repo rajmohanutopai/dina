@@ -82,7 +82,7 @@ Core uses a community PDS (e.g., `bsky.social`) for `did:plc` creation — no si
 
 **Nudge (Sancho Moment):** DIDComm message arrives → Core → `POST brain:8200/api/v1/process` → Brain queries vault (relationship, messages, calendar) → LLM assembles nudge → `POST core:8100/v1/notify` → Core pushes to client via WebSocket
 
-**Trust query:** Brain → AppView xRPC `com.dina.trust.resolve` → Trust score + recommendation (proceed/caution/verify/avoid)
+**Trust query:** Brain → AppView xRPC `com.dina.trust.resolve` → PeerLens rating + recommendation (proceed/caution/verify/avoid)
 
 ## Technology Stack
 
@@ -346,7 +346,7 @@ Includes MockOpenClaw (50 emails, calendar events, web search results), MockRevi
 
 | # | Story | Validates |
 |---|-------|-----------|
-| 01 | Purchase Journey | Product research → trust scoring → cart handover |
+| 01 | Purchase Journey | Product research → PeerLens rating → cart handover |
 | 02 | Sancho Moment | Anti-Her: detects loneliness, nudges toward humans |
 | 03 | Dead Internet Filter | PeerLens filters AI-generated content |
 | 04 | Persona Wall | Cryptographic persona isolation |
@@ -361,7 +361,7 @@ Docker isolation via `COMPOSE_PROJECT_NAME="dina-system-${SESSION_ID}"`. Port au
 
 #### System Tests (`tests/system/conftest.py`)
 
-Full stack: 2× Core+Brain + PLC + Jetstream + AppView + Postgres via `docker-compose-system.yml`. `SystemServices` class manages lifecycle. `BrainSigner` extracts Core's Ed25519 private key from running container to sign requests. `seed_appview()` inserts test trust data directly into Postgres.
+Full stack: 2× Core+Brain + PLC + Jetstream + AppView + Postgres via `docker-compose-system.yml`. `SystemServices` class manages lifecycle. `BrainSigner` extracts Core's Ed25519 private key from running container to sign requests. `seed_appview()` inserts test PeerLens data directly into Postgres.
 
 #### Release Tests (`tests/release/conftest.py`)
 

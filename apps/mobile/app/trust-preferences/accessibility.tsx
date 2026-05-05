@@ -4,7 +4,7 @@
  * Multi-select accessibility requirements. Drives V2 filtering /
  * boosting on subjects that carry accessibility metadata — a
  * wheelchair user shouldn't see a no-elevator-no-ramp restaurant
- * promoted as "great trust score" without an explicit "this isn't
+ * promoted as "great PeerLens rating" without an explicit "this isn't
  * compatible" signal; a hearing-impaired user wants captioned
  * content boosted on video subjects.
  *

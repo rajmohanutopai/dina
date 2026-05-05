@@ -555,9 +555,9 @@
 | 3 | **[TST-BRAIN-228]** Route by trust | Multiple agents available | Highest PeerLens score selected |
 | 4 | **[TST-BRAIN-229]** No suitable agent | Task requiring unavailable capability | Fallback to local LLM or inform user |
 | 5 | **[TST-BRAIN-230]** Agent timeout | MCP agent doesn't respond in 30s | Timeout, try next agent or fail gracefully |
-| 6 | **[TST-BRAIN-408]** Trust AppView query | Brain needs product recommendation | Brain queries `GET /v1/trust?did=...` from Trust AppView API — returns product scores, expert attestations |
-| 7 | **[TST-BRAIN-409]** Trust AppView unavailable → web search fallback | Trust AppView unreachable | Brain degrades gracefully to web search via OpenClaw — no disruption to user |
-| 8 | **[TST-BRAIN-410]** Bot trust tracking and recalculation | Bot completes task, outcome recorded | Brain recalculates per-bot trust score locally after each interaction outcome — next query routes to updated best bot |
+| 6 | **[TST-BRAIN-408]** PeerLens AppView query | Brain needs product recommendation | Brain queries `GET /v1/trust?did=...` from PeerLens AppView API — returns product scores, expert attestations |
+| 7 | **[TST-BRAIN-409]** PeerLens AppView unavailable → web search fallback | PeerLens AppView unreachable | Brain degrades gracefully to web search via OpenClaw — no disruption to user |
+| 8 | **[TST-BRAIN-410]** Bot trust tracking and recalculation | Bot completes task, outcome recorded | Brain recalculates per-bot PeerLens rating locally after each interaction outcome — next query routes to updated best bot |
 
 ### 6.2 Agent Safety (Intent Verification)
 
@@ -577,7 +577,7 @@
 | 12 | **[TST-BRAIN-242]** Constraint: `draft_only: true` enforced | Agent receives `constraints: {draft_only: true}` | Agent cannot call `messages.send` — MCP tool enforces draft-only mode |
 | 13 | **[TST-BRAIN-243]** Constraint: `no_payment: true` enforced | Agent receives `constraints: {no_payment: true}` | Agent cannot initiate payment — only form-fill and research |
 | 14 | **[TST-BRAIN-244]** Silence protocol checked before delegation | Brain detects "license expires in 7 days" | Silence protocol classifies FIRST (fiduciary? solicited?), THEN decides whether to delegate |
-| 15 | **[TST-BRAIN-245]** Agent outcome recorded in Tier 3 | Agent completes task | Outcome stored in vault for agent trust scoring — if quality drops, Brain routes to better agent |
+| 15 | **[TST-BRAIN-245]** Agent outcome recorded in Tier 3 | Agent completes task | Outcome stored in vault for agent PeerLens rating — if quality drops, Brain routes to better agent |
 | 16 | **[TST-BRAIN-246]** No raw vault data to agents | Brain delegates task with context | Agent receives minimal scrubbed context: `{task: "license_renewal", identity_persona: "/legal"}` — no vault items |
 | 17 | **[TST-BRAIN-395]** Bot response PII validation | Bot/agent returns response containing leaked PII | Brain runs spaCy NER on bot response, detects leaked PII (email, name), scrubs before showing to user |
 
@@ -984,16 +984,16 @@
 | 1 | **[TST-BRAIN-542]** Attribution mandatory in recommendations | Brain assembles product recommendation | Every recommendation includes `source_url` and `creator_name` — unattributed items flagged, not silently included |
 | 2 | **[TST-BRAIN-543]** Deep link default: creators get traffic | Brain formats recommendation for user | Response includes clickable deep link to original review/article — not extracted summary |
 | 3 | **[TST-BRAIN-544]** Sponsored content disclosed | Brain includes recommendation with `sponsored: true` metadata | User sees "[Sponsored]" tag — sponsorship never hidden |
-| 4 | **[TST-BRAIN-545]** No hallucinated trust scores | PeerLens has no data for product X | Brain does NOT say "Trust score: 7/10" — says "No verified reviews available" or equivalent honest disclosure |
-| 5 | **[TST-BRAIN-546]** Sparse trust data: honest uncertainty | 2 reviews for product, 1 positive 1 negative | Brain communicates uncertainty: "Only 2 verified reviews, opinions split" — does not fabricate consensus |
-| 6 | **[TST-BRAIN-547]** Dense trust data: confidence proportional | 50+ reviews with strong consensus | Brain communicates confidence: "Strong consensus from verified reviewers" — confidence earned, not assumed |
+| 4 | **[TST-BRAIN-545]** No hallucinated PeerLens ratings | PeerLens has no data for product X | Brain does NOT say "PeerLens rating: 7/10" — says "No verified reviews available" or equivalent honest disclosure |
+| 5 | **[TST-BRAIN-546]** Sparse PeerLens data: honest uncertainty | 2 reviews for product, 1 positive 1 negative | Brain communicates uncertainty: "Only 2 verified reviews, opinions split" — does not fabricate consensus |
+| 6 | **[TST-BRAIN-547]** Dense PeerLens data: confidence proportional | 50+ reviews with strong consensus | Brain communicates confidence: "Strong consensus from verified reviewers" — confidence earned, not assumed |
 | 7 | **[TST-BRAIN-566]** Ranking explainability | User asks "why was product A ranked above product B?" | Brain explains ranking factors (trust ring level, review count, consensus strength, recency) — not opaque score |
 | 8 | **[TST-BRAIN-567]** No unsolicited discovery | User asks about topic X, Brain finds related product Y during reasoning | Brain does NOT proactively surface product Y — only responds to what was asked. Pull, not push |
 | 9 | **[TST-BRAIN-571]** Sponsorship cannot distort ranking order | Product A: `sponsored: true`, 10 reviews avg 3/5. Product B: unsponsored, 30 reviews avg 4.5/5 | Product B ranks above Product A — stronger trust evidence wins. Sponsorship adds "[Sponsored]" tag but NEVER boosts rank position |
 
 ### 19.2 Trust Data Density Spectrum
 
-> The Brain must produce useful responses across the full trust data density
+> The Brain must produce useful responses across the full PeerLens data density
 > spectrum. Same code path, different data — the quality of the response must
 > degrade gracefully, never nonsensically.
 
@@ -1014,7 +1014,7 @@
 |---|----------|-------|----------|
 | 1 | **[TST-BRAIN-556]** Expert review deep-linked, not extracted | Brain processes expert attestation with linked article | Response links to expert's original article — does NOT reproduce the full text inline |
 | 2 | **[TST-BRAIN-557]** Multiple sources attributed individually | Brain aggregates 3 expert reviews | Each expert individually credited with name + link — not "experts say" |
-| 3 | **[TST-BRAIN-558]** Bot trust penalty for stripped attribution | Bot response missing `creator_name` on recommendation items | Brain logs attribution violation → feeds into bot trust score degradation |
+| 3 | **[TST-BRAIN-558]** Bot trust penalty for stripped attribution | Bot response missing `creator_name` on recommendation items | Brain logs attribution violation → feeds into bot PeerLens rating degradation |
 
 ---
 

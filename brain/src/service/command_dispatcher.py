@@ -395,7 +395,7 @@ class CommandDispatcher:
                  "  review Product: your review — publish a review\n"
                  "  vouch Name: reason — vouch for someone\n"
                  "  flag Name: reason — flag a bad actor\n"
-                 "  trust Name — check trust score\n\n"
+                 "  trust Name — check PeerLens rating\n\n"
                  "Info\n"
                  "  status — your DID and node health",
         )

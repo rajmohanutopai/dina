@@ -1367,7 +1367,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
           the surface — casual reviewers don't think in
           speculative/moderate/high/certain ladders and the field was
           only consumed by the AppView search filter `minConfidence`
-          (not by any trust-score weight). The form now seeds
+          (not by any PeerLens rating weight). The form now seeds
           `confidence: 'moderate'` so the wire record still carries
           a value; edit mode keeps the original confidence via the
           `editingConfidence` URL param, so amending an old review

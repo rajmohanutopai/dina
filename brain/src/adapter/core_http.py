@@ -1093,7 +1093,7 @@ class CoreHTTPClient:
     # -- PeerLens -------------------------------------------------------
 
     async def query_trust_profile(self, did: str) -> dict | None:
-        """GET /v1/trust/resolve?did={did} — fetch full trust profile from AppView via Core."""
+        """GET /v1/trust/resolve?did={did} — fetch full PeerLens profile from AppView via Core."""
         import urllib.parse
 
         try:

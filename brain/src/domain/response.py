@@ -69,7 +69,7 @@ class ContactListResponse(BotResponse):
 
 @dataclass
 class TrustScoreResponse(BotResponse):
-    """Trust score query result."""
+    """PeerLens rating query result."""
     display_name: str = ""
     did: str = ""
     score: Any = None

@@ -18,7 +18,7 @@ Its core shape is strong:
 - thin sovereign kernel
 - external agents via MCP
 - strong containment and prompt-injection defense
-- public trust data separated from private life data
+- public PeerLens data separated from private life data
 
 Those are the right foundations for Dina.
 
@@ -70,7 +70,7 @@ Many systems can claim:
 - encrypted storage
 - agent orchestration
 - external connectors
-- trust scoring
+- PeerLens rating
 - cryptographic identity
 
 What makes Dina special in the README is not just the security architecture. It is the combination of:
@@ -151,7 +151,7 @@ The README's trust thesis translates well into:
 - trust rings
 - outcome data
 - AppView aggregation
-- bot trust scoring
+- bot PeerLens rating
 - tombstones
 
 This part is conceptually consistent.
@@ -603,7 +603,7 @@ This is much better than accidental dependence on an opaque managed backend.
 
 #### 4. Good cold-start strategy
 
-The architecture correctly avoids making initial value depend on network-scale trust data.
+The architecture correctly avoids making initial value depend on network-scale PeerLens data.
 
 That is strategically sound.
 
@@ -1023,9 +1023,9 @@ These are the "one-sentence truths" the architecture doc should make impossible 
 
 `External agents are tools and contractors, never trusted peers inside the kernel boundary.`
 
-### 6. What trust data is
+### 6. What PeerLens data is
 
-`Trust data is public, signed, and federated; private life data is local, encrypted, and portable.`
+`PeerLens data is public, signed, and federated; private life data is local, encrypted, and portable.`
 
 ### 7. What the economy model is
 

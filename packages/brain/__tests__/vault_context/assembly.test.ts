@@ -484,7 +484,7 @@ describe('Vault Context Assembly', () => {
       expect((toolResult as any[]).length).toBe(0); // health not accessible
     });
 
-    it('search_trust_network returns trust data for known contacts', async () => {
+    it('search_trust_network returns PeerLens data for known contacts', async () => {
       addContact('did:plc:vendor', 'Acme Corp', 'trusted', 'full', 'colleague');
 
       let toolResult: unknown = null;
@@ -492,7 +492,7 @@ describe('Vault Context Assembly', () => {
         const toolMsg = messages.find((m) => m.role === 'tool');
         if (toolMsg) {
           toolResult = JSON.parse(toolMsg.content);
-          return { role: 'assistant' as const, content: 'Found trust data.' };
+          return { role: 'assistant' as const, content: 'Found PeerLens data.' };
         }
         return {
           role: 'assistant' as const,

@@ -460,7 +460,7 @@ function queryHybrid(persona: string, query: SearchQuery): VaultItem[] {
     const normalizedSem = maxSemantic > 0 ? (semanticScores.get(id) ?? 0) / maxSemantic : 0;
     let score = FTS_WEIGHT * normalizedFts + SEMANTIC_WEIGHT * normalizedSem;
 
-    // Trust-weighted reranking (matching Go vault.go)
+    // PeerLens-weighted reranking (matching Go vault.go)
     // Compounding multipliers adjust score based on item trust metadata.
     const item = repo.getItemIncludeDeletedSync(id);
     if (item) {

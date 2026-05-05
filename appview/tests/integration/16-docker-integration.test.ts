@@ -178,13 +178,13 @@ describe('16.1 Docker Compose Smoke Tests', () => {
     // "Scorer job registered" for each job. The 9 jobs are:
     //
     //   1. refresh-profiles     (*/5 * * * *)   — Update DID profile aggregates
-    //   2. refresh-subject-scores (*/5 * * * *) — Recompute trust scores per subject
+    //   2. refresh-subject-scores (*/5 * * * *) — Recompute PeerLens ratings per subject
     //   3. refresh-reviewer-stats (*/15 * * * *) — Update reviewer credibility stats
     //   4. refresh-domain-scores (0 * * * *)    — Domain-level trust aggregation
     //   5. detect-coordination  (*/30 * * * *)  — Ring/coordination attack detection
     //   6. detect-sybil         (0 */6 * * *)   — Sybil/fake-account detection
     //   7. process-tombstones   (*/10 * * * *)  — Handle record deletions
-    //   8. decay-scores         (0 3 * * *)     — Time-based trust score decay
+    //   8. decay-scores         (0 3 * * *)     — Time-based PeerLens rating decay
     //   9. cleanup-expired      (0 4 * * *)     — Purge expired records
     //
     // This test validates that all scorer-dependent database tables exist

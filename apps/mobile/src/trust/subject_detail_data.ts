@@ -4,7 +4,7 @@
  * Plan §8.5 specifies the subject detail screen as the drill-down
  * from a search-result card. It shows:
  *
- *   1. Header: title, subtitle, aggregate trust score, total review
+ *   1. Header: title, subtitle, aggregate PeerLens rating, total review
  *      count, friends-pill summary.
  *   2. Reviews grouped by ring:
  *      - Friends (self + contacts) — most-trusted voices, top section
@@ -259,7 +259,7 @@ export interface AlternativeInput {
   readonly subjectId: string;
   readonly title: string;
   readonly category?: string | null;
-  /** Subject-level trust score in [0, 1] for band derivation, or null. */
+  /** Subject-level PeerLens rating in [0, 1] for band derivation, or null. */
   readonly subjectTrustScore?: number | null;
 }
 
@@ -366,7 +366,7 @@ export function deriveSubjectDetail(
 
   // Sort each group by the spotlight comparator (closer ring first
   // already partitioned us into groups, so within-group we order by
-  // trust score desc, recency desc, name asc).
+  // PeerLens rating desc, recency desc, name asc).
   friends.sort(byDetailOrder);
   fof.sort(byDetailOrder);
   strangers.sort(byDetailOrder);
@@ -421,8 +421,8 @@ function currentSubjectId(input: SubjectDetailInput): string {
 // ─── Internal ─────────────────────────────────────────────────────────────
 
 /**
- * Within-group ordering: highest trust score first, most recent next,
- * stable tiebreak on reviewerName ascending. `null` trust score is
+ * Within-group ordering: highest PeerLens rating first, most recent next,
+ * stable tiebreak on reviewerName ascending. `null` PeerLens rating is
  * treated as `-Infinity` (unrated reviewers don't displace rated
  * ones) — same convention as `subject_card.ts:beats`.
  */
@@ -554,7 +554,7 @@ export function deriveAlternatives(
 }
 
 /**
- * Map a [0, 1] trust score to its band token via the shared
+ * Map a [0, 1] PeerLens rating to its band token via the shared
  * `trustBandFor` so the alternatives strip can't drift from the
  * card's banding. Defensive null/non-finite handling lives here so
  * the helper itself stays honest about its accepted inputs.

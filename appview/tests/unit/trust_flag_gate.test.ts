@@ -69,7 +69,7 @@ describe('gateTrustNamespace — TN-FLAG-003', () => {
     if (!result.ok) {
       expect(result.status).toBe(503)
       expect(result.body.error).toBe('ServiceUnavailable')
-      expect(result.body.message).toBe('Trust V1 is currently disabled')
+      expect(result.body.message).toBe('PeerLens V1 is currently disabled')
     }
   })
 
@@ -83,12 +83,12 @@ describe('gateTrustNamespace — TN-FLAG-003', () => {
     if (!result.ok) {
       expect(result.status).toBe(503)
       expect(result.body.error).toBe('ServiceUnavailable')
-      expect(result.body.message).toBe('Trust V1 status unavailable')
+      expect(result.body.message).toBe('PeerLens V1 status unavailable')
     }
   })
 
   it('service method passes regardless of flag value (false)', async () => {
-    // Service registry is a separate surface. Trust V1 disable must
+    // Service registry is a separate surface. PeerLens V1 disable must
     // NOT affect provider discovery / capability schemas — those
     // are independent and operators rely on them during incident
     // response.
@@ -140,7 +140,7 @@ describe('gateTrustNamespace — TN-FLAG-003', () => {
     // incidents: "is the kill-switch flipped, or is pg flapping?"
     // The two 503 branches MUST emit distinct messages, neither one
     // a substring of the other. A future copy edit like
-    //   "Trust V1 disabled — DB unavailable"
+    //   "PeerLens V1 disabled — DB unavailable"
     // would silently match both `/disabled/i` and `/unavailable/i`
     // regexes — pinning the exact strings + a substring-disjointness
     // check closes that bug class.
@@ -173,8 +173,8 @@ describe('gateTrustNamespace — TN-FLAG-003', () => {
     it('messages are exactly the documented strings', async () => {
       const disabled = await fetchDisabled()
       const dbError = await fetchDbError()
-      expect(disabled.message).toBe('Trust V1 is currently disabled')
-      expect(dbError.message).toBe('Trust V1 status unavailable')
+      expect(disabled.message).toBe('PeerLens V1 is currently disabled')
+      expect(dbError.message).toBe('PeerLens V1 status unavailable')
     })
 
     it('messages are not equal to each other', async () => {
@@ -184,7 +184,7 @@ describe('gateTrustNamespace — TN-FLAG-003', () => {
     })
 
     it('neither message is a substring of the other (substring-disjoint)', async () => {
-      // The bug we're guarding against: "Trust V1 disabled — DB
+      // The bug we're guarding against: "PeerLens V1 disabled — DB
       // unavailable" would pass both /disabled/i and /unavailable/i
       // matchers and make the two states indistinguishable.
       // Substring-disjointness is the strongest grep-friendly invariant.

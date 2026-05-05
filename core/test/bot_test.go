@@ -10,7 +10,7 @@ import (
 // ==========================================================================
 // TEST_PLAN §25 — Bot Interface
 // ==========================================================================
-// Covers bot query sanitization, communication protocol, trust scoring,
+// Covers bot query sanitization, communication protocol, PeerLens rating,
 // and deep link attribution validation.
 // ==========================================================================
 
@@ -103,7 +103,7 @@ func TestBotInterface_25_2_QueryProtocolSchema(t *testing.T) {
 // TST-CORE-860
 // TRACE: {"suite": "CORE", "case": "0168", "section": "25", "sectionName": "Bot Interface", "subsection": "03", "scenario": "01", "title": "LocalBotScoreTracking"}
 func TestBotInterface_25_3_LocalBotScoreTracking(t *testing.T) {
-	// Bot trust scoring: local score tracking with read-back verification.
+	// Bot PeerLens rating: local score tracking with read-back verification.
 	impl := realBotQueryHandler
 	testutil.RequireImplementation(t, impl, "BotQueryHandler")
 

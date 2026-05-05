@@ -70,7 +70,7 @@
   ─────────────────────────────    ─────────────────────────────    ─────────────────────────────
   Working crypto kernel            Ship installable product          Dina is the default personal
   Working brain sidecar            Real data ingestion (Gmail/Cal)   AI for privacy-conscious users
-  Working trust AppView            The Sancho Moment works E2E       Agent safety is a standard
+  Working PeerLens AppView            The Sancho Moment works E2E       Agent safety is a standard
   Working agent gateway            CLI agents use Dina for safety    PeerLens has 10K+ nodes
   Working 10 user stories          Admin UI is usable                Managed hosting operational
   Developer-only install           install.sh → 3 commands           Android + iOS clients
@@ -210,7 +210,7 @@
   3. Delight Opportunities (30-minute improvements)
 
   1. dina hello — A first-run command that creates your identity, shows your DID, and sends a test message to a demo Dina. Proves the system works in 30 seconds.
-  2. Trust score badge — A simple embeddable SVG badge (https://trust.dina.host/badge/did:plc:xyz) that developers can put in their agent's README: "Trust Score: 0.87 | Verified"
+  2. PeerLens rating badge — A simple embeddable SVG badge (https://trust.dina.host/badge/did:plc:xyz) that developers can put in their agent's README: "PeerLens Rating: 0.87 | Verified"
   3. Agent README generator — dina agent-readme generates a Markdown README section explaining what Dina permissions your agent uses, with trust badge.
   4. Persona wizard — During install, ask "What aspects of your life should Dina protect separately?" with friendly presets (Personal/Work/Health/Financial) instead of making users understand persona tiers.
   5. "What Dina knows" dashboard — A single admin page that shows: vault item count per persona, last sync time, trust cache size, connected devices, last nudge delivered. The "am I set up correctly?" page.
@@ -300,15 +300,15 @@
 ⏺ User answered Claude's questions:
   ⎿  · EXPANSION PROPOSAL 4: PeerLens Bootstrap Strategy
 
-     PeerLens requires other Dinas to be valuable. Zero nodes = zero trust data = no reason to query. This is the classic cold-start problem.
+     PeerLens requires other Dinas to be valuable. Zero nodes = zero PeerLens data = no reason to query. This is the classic cold-start problem.
 
      Proposal: Create a 'Genesis Trust Set' — seed the network with:
      1. **Dina Foundation node** — a well-known DID that vouches for the first 100 legitimate nodes
-     2. **Bot reputation bootstrap** — pre-seed trust scores for known-good bots (OpenClaw, etc.) so PeerLens has useful data on day 1
+     2. **Bot reputation bootstrap** — pre-seed PeerLens ratings for known-good bots (OpenClaw, etc.) so PeerLens has useful data on day 1
      3. **Mutual vouch ceremony** — `dina trust vouch <did>` as a simple CLI command, plus a 'vouch-for-vouch' onboarding flow where new users vouch for each other during setup
      4. **Import existing trust signals** — optional import from GitHub stars, LinkedIn connections, or other social graphs as Ring 1 (unverified) trust anchors
 
-     Without this, the first 100 users see an empty PeerLens and leave. With it, they see 'OpenClaw trust score: 0.94, 47 attestations' on day 1.
+     Without this, the first 100 users see an empty PeerLens and leave. With it, they see 'OpenClaw PeerLens rating: 0.94, 47 attestations' on day 1.
 
      Effort: M (human: ~2 weeks / CC: ~3 days)
      Risk: Medium — genesis trust is philosophically tricky (who vouches first?)
@@ -323,7 +323,7 @@
 
      1. **`dina hello`** — First-run command: creates identity, shows DID as ASCII art, sends test message to demo node, gets response. 'It works!' in 30 seconds. (~50 LOC)
 
-     2. **Trust badge SVG** — Embeddable badge for agent READMEs showing trust score. Like GitHub CI badges but for trust. Simple HTTP endpoint on AppView. (~100 LOC)
+     2. **Trust badge SVG** — Embeddable badge for agent READMEs showing PeerLens rating. Like GitHub CI badges but for trust. Simple HTTP endpoint on AppView. (~100 LOC)
 
      3. **`dina audit me`** — Plain-English privacy report: 'Brain accessed your health data 3 times today for nudge assembly. No data left the Home Node. 2 agent intents were blocked.' Not raw audit logs — a
      human story. (~200 LOC)
@@ -581,7 +581,7 @@
   ├───────────────┼───────────────────────────────────────────┼────────────────────────────────────┼───────────────────────────────────┤
   │ Genesis vouch │ Creates trust edge                        │ Self-vouch blocked                 │ Vouch for non-existent DID        │
   ├───────────────┼───────────────────────────────────────────┼────────────────────────────────────┼───────────────────────────────────┤
-  │ Purchase demo │ Full 7-step flow completes                │ Any agent fails → graceful degrade │ Empty trust data, empty vault     │
+  │ Purchase demo │ Full 7-step flow completes                │ Any agent fails → graceful degrade │ Empty PeerLens data, empty vault     │
   └───────────────┴───────────────────────────────────────────┴────────────────────────────────────┴───────────────────────────────────┘
 
   Existing test suite is excellent (5-tier, 4500+ tests, dual-mode fixtures). The accepted expansions should follow the same patterns.
@@ -701,7 +701,7 @@
   LLM malformed JSON    | Garbled 200 response   | N ← GAP  | N     | 500 error      | Y
   D2D signature verify  | Stub implementation    | Partial  | Y     | Silent drop    | Y
   OpenClaw health       | MCP connection lost    | Y        | Y     | Degraded sync  | Y
-  Trust AppView down    | xRPC unreachable       | Y        | Y     | Graceful degrade| Y
+  PeerLens AppView down    | xRPC unreachable       | Y        | Y     | Graceful degrade| Y
 
   1 CRITICAL GAP (LLM malformed JSON).
 

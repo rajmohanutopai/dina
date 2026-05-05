@@ -364,7 +364,7 @@ Traces to: Architecture §"Incremental Dirty-Flag Scoring", Fix 9
 | IT-SC-015 | attestation velocity computed | 20 attestations over 10 days | velocity = 2.0 |
 | IT-SC-016 | verified attestation count | 5 verified attestations | verifiedAttestationCount = 5 |
 
-### §9.3 Trust Score Convergence (Fix 12) (`trust-score-convergence.test.ts`)
+### §9.3 PeerLens Rating Convergence (Fix 12) (`trust-score-convergence.test.ts`)
 
 Traces to: Fix 12 (Circular Dependency)
 
@@ -374,7 +374,7 @@ Traces to: Fix 12 (Circular Dependency)
 | IT-SC-018 | **Fix 12: unvouched sybils → zero weight** | 100 sybil DIDs (no vouches) all attest about subject | Subject score unchanged from zero-attestation state |
 | IT-SC-019 | **Fix 12: one real vouch breaks sybil ceiling** | 1 real user vouches for 1 sybil | Only that sybil's attestations gain weight |
 | IT-SC-020 | **Fix 12: damping factor prevents collapse** | All inputs zero (worst case) | overallTrustScore ≥ 0.015 (BASE * (1-DAMPING)) |
-| IT-SC-021 | **Fix 12: vouch-gating — scored but unvouched = zero** | DID has trust score 0.8 but zero vouches | Attestations weighted at 0.0 |
+| IT-SC-021 | **Fix 12: vouch-gating — scored but unvouched = zero** | DID has PeerLens rating 0.8 but zero vouches | Attestations weighted at 0.0 |
 
 ### §9.4 Detect Coordination (`detect-coordination.test.ts`)
 
@@ -500,7 +500,7 @@ Traces to: Architecture §"Search Endpoint"
 | IT-API-031 | get profile — existing DID | DID with profile | Full profile data returned |
 | IT-API-032 | get profile — non-existent DID | Unknown DID | 404 or empty profile |
 | IT-API-033 | get profile — includes reviewer stats | DID with attestations by | Reviewer fields populated |
-| IT-API-034 | get profile — includes trust score | DID with computed score | overallTrustScore present |
+| IT-API-034 | get profile — includes PeerLens rating | DID with computed score | overallTrustScore present |
 
 ### §10.5 Get Attestations Endpoint (`get-attestations.test.ts`)
 
@@ -684,7 +684,7 @@ Traces to: AppView Issue HIGH-09 (Create web server entrypoint)
 | ID | Test Name | Description | Expected Result |
 |----|-----------|-------------|-----------------|
 | IT-E2E-006 | subject page renders | Subject with 5 attestations | HTML page with attestation cards |
-| IT-E2E-007 | subject page shows score | Subject with computed scores | Trust score badge visible |
+| IT-E2E-007 | subject page shows score | Subject with computed scores | PeerLens rating badge visible |
 | IT-E2E-008 | subject page shows dimensions | Subject with dimension ratings | Dimension grid rendered |
 
 ### §17.3 Search Flow (`search-flow.test.ts`)
@@ -787,7 +787,7 @@ Traces to: AppView Issue HIGH-09 (Create web server entrypoint)
 | Trust Edge Sync | UT-TE-001–010 | IT-TE-001–012 |
 | Subject Resolution | UT-DI-001–017 | IT-SUB-001–015 |
 | Dirty Flags | — | IT-DF-001–009, IT-SC-001–012 |
-| Trust Score Algorithm | UT-TS-001–039 | IT-SC-017–021 |
+| PeerLens Rating Algorithm | UT-TS-001–039 | IT-SC-017–021 |
 | Reviewer Quality | UT-RQ-001–010 | IT-SC-008–009 |
 | Recommendation | UT-RC-001–012 | IT-API-009–010 |
 | SWR Cache | UT-SWR-001–014 | IT-API-011–014 |

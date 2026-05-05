@@ -10,7 +10,7 @@
  *     cache lookup resolving) is NOT called when the lookup completes
  *   - searchKey canonicalisation: identical queries with different
  *     property orders coalesce into one subscriber set
- *   - invalidateAll re-runs every active search AND trust-score
+ *   - invalidateAll re-runs every active search AND PeerLens rating
  *     subscription (this is the regression for the original
  *     "invalidateAll silently no-ops searches" smell)
  *
@@ -112,7 +112,7 @@ beforeEach(() => {
   resetKVStore();
 });
 
-// ─── Trust score subscriptions ────────────────────────────────────────────
+// ─── PeerLens rating subscriptions ────────────────────────────────────────
 
 describe('subscribeTrust', () => {
   it('rejects empty / non-string DID arguments', () => {
@@ -323,7 +323,7 @@ describe('invalidateTrustSearch', () => {
 // ─── Bulk invalidate ──────────────────────────────────────────────────────
 
 describe('invalidateAll', () => {
-  it('re-runs both trust-score and search subscriptions', async () => {
+  it('re-runs both PeerLens rating and search subscriptions', async () => {
     registerTrustFetcher(async (d) => score(d, 0.5));
 
     let searchHits = 0;

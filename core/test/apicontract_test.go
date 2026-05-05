@@ -266,7 +266,7 @@ func TestAPIContract_18_10_TrustQueryExposed(t *testing.T) {
 	impl := realAPIContract
 	testutil.RequireImplementation(t, impl, "APIContract")
 
-	// BRAIN_TOKEN + query (entity, category) must return 200 with trust score.
+	// BRAIN_TOKEN + query (entity, category) must return 200 with PeerLens rating.
 	testutil.RequireTrue(t, impl.IsBrainCallable("/v1/trust/query"),
 		"/v1/trust/query must accept BRAIN_TOKEN")
 

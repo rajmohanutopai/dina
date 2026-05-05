@@ -646,19 +646,19 @@
 
 | # | Scenario | Setup | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-INT-311]** Trust affects agent routing | Two MCP agents available, different trust scores | Higher-trust agent selected |
+| 1 | **[TST-INT-311]** Trust affects agent routing | Two MCP agents available, different PeerLens ratings | Higher-trust agent selected |
 | 2 | **[TST-INT-312]** Trust affects trust tier | Contact accumulates positive outcome data | Trust level can be upgraded (Unverified → Verified) |
-| 3 | **[TST-INT-313]** Cold start: web search fallback (Phase 1) | No trust data available | Brain→MCP→OpenClaw: web search for reviews + user context from vault → nudge with personal context applied |
-| 4 | **[TST-INT-314]** Gradual trust activation | First trust data appears in network | Brain includes trust data alongside web search — transition invisible to user |
+| 3 | **[TST-INT-313]** Cold start: web search fallback (Phase 1) | No PeerLens data available | Brain→MCP→OpenClaw: web search for reviews + user context from vault → nudge with personal context applied |
+| 4 | **[TST-INT-314]** Gradual trust activation | First PeerLens data appears in network | Brain includes PeerLens data alongside web search — transition invisible to user |
 | 5 | **[TST-INT-315]** Cold start: personal context enrichment | Brain searches web for "best office chair" — user vault has back pain history, 10+ hour sitting, ₹50-80K budget | Brain synthesizes web results with personal vault context: "Based on web reviews and your back issues, the Steelcase Leap or Herman Miller Aeron. The Aeron is within your budget at ₹72,000." — vault data applied, not just raw web results |
 
 ### 11.4 PDS Topology & Availability
 
 | # | Scenario | Setup | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-INT-316]** PDS down: records already replicated | Bundled PDS container stops | Records already crawled by relay — trust data still queryable via AppView |
+| 1 | **[TST-INT-316]** PDS down: records already replicated | Bundled PDS container stops | Records already crawled by relay — PeerLens data still queryable via AppView |
 | 2 | **[TST-INT-317]** PDS migration (account portability) | User migrates from pds.dina.host to self-hosted PDS | `did:plc` rotation points to new PDS — all records transferred, identity preserved |
-| 3 | **[TST-INT-318]** Foundation PDS stores only trust data | Inspect `pds.dina.host` content | Only `com.dina.trust.*` records — no private vault data ever touches it |
+| 3 | **[TST-INT-318]** Foundation PDS stores only PeerLens data | Inspect `pds.dina.host` content | Only `com.dina.trust.*` records — no private vault data ever touches it |
 | 4 | **[TST-INT-319]** Relay crawls PDS via delta sync | PDS publishes new record → relay crawls | Merkle Search Tree diff — only new records transferred (few KB), not entire repo |
 
 ### 11.5 AT Protocol Discovery (E2E)
@@ -831,7 +831,7 @@
 | 2 | **[TST-INT-402]** Key compromise doesn't expose past messages | Current session key leaked | Previously captured ciphertexts remain confidential |
 | 3 | **[TST-INT-403]** Session ratchet | Long-lived session | Keys rotate periodically, limiting exposure window |
 
-### 16.7 Trust AppView (Phase 2+)
+### 16.7 PeerLens AppView (Phase 2+)
 
 > The AppView is a read-only indexer that consumes the AT Protocol firehose,
 > filters for `com.dina.trust.*` records, and serves a query API.
@@ -842,7 +842,7 @@
 | 2 | **[TST-INT-405]** Cryptographic verification on every record | Signed record arrives in firehose | AppView verifies Ed25519 signature against author's DID Document — unsigned/invalid records rejected |
 | 3 | **[TST-INT-406]** Query API: trust by DID | `GET /v1/trust?did=did:plc:abc` | Returns aggregate score + individual signed records |
 | 4 | **[TST-INT-407]** Query API: product trust | `GET /v1/product?id=herman_miller_aeron_2025` | Returns product score, review count, individual signed reviews |
-| 5 | **[TST-INT-408]** Query API: bot scores | `GET /v1/bot?did=did:plc:xyz` | Returns bot trust score, accuracy history |
+| 5 | **[TST-INT-408]** Query API: bot scores | `GET /v1/bot?did=did:plc:xyz` | Returns bot PeerLens rating, accuracy history |
 | 6 | **[TST-INT-409]** Signed payloads in API responses | Any query response | Includes raw signed record payloads alongside computed scores — enables client-side verification |
 | 7 | **[TST-INT-410]** Aggregate scores deterministic | Two AppViews process same firehose | Both compute identical product ratings and trust composites |
 | 8 | **[TST-INT-411]** Cursor tracking: crash recovery | AppView crashes mid-firehose consumption | Worker persists `seq` number (cursor) — on restart, resumes from last committed seq, zero data loss. No duplicate indexing, no gaps |
@@ -881,7 +881,7 @@
 | 3 | **[TST-INT-422]** Attribution mandatory | Bot response includes recommendations | Every source has `creator_name`, `source_url` — missing attribution → trust penalty |
 | 4 | **[TST-INT-423]** Deep Link pattern default | Bot response with `deep_link` + `deep_link_context` | Brain presents source links to user — drives traffic to original creator, not extraction |
 | 5 | **[TST-INT-424]** Bot trust: auto-route on low score | Bot accuracy drops below threshold | Brain automatically routes next query to next-best bot — no manual intervention |
-| 6 | **[TST-INT-425]** Bot trust scoring factors | Inspect bot score computation | `f(response_accuracy, response_time, uptime, user_ratings, consistency, age, peer_endorsements)` — all factors weighted |
+| 6 | **[TST-INT-425]** Bot PeerLens rating factors | Inspect bot score computation | `f(response_accuracy, response_time, uptime, user_ratings, consistency, age, peer_endorsements)` — all factors weighted |
 | 7 | **[TST-INT-426]** Bot discovery: decentralized registry | Brain needs specialist bot | Queries PeerLens for bots in relevant domain, selects highest-trust |
 | 8 | **[TST-INT-427]** Bot-to-bot recommendation | Bot says "This is outside my domain" | Redirects to specialist bot DID — Brain follows chain if trust is sufficient |
 | 9 | **[TST-INT-428]** Requester anonymity: trust ring only, no identity | Inspect `POST bot/query` request payload | Request contains `requester_trust_ring: 2` (integer) but NO user DID, no name, no Home Node URL, no persona path, no session ID — zero identifying information. Architecture §10: "anonymous — just the ring level." The bot knows the requester is trust ring 2 but cannot determine WHO is asking. If the request accidentally includes the DID alongside the trust ring, the bot can cross-reference queries and build a profile — breaking the anonymity guarantee |
@@ -1059,7 +1059,7 @@
 |---|----------|-------|----------|
 | 1 | **[TST-INT-630]** Attestation lexicon: missing fields + out-of-range rating rejected | Invalid attestation | Missing expertDid → rejected; rating=101 → rejected; valid → accepted |
 | 2 | **[TST-INT-631]** AppView censorship detection by count mismatch | Two AppViews disagree | 5 vs 50 records → censorship alert triggered |
-| 3 | **[TST-INT-632]** PDS spot-check discrepancy downgrades AppView trust | Missing records | AppView trust score decremented on discrepancy |
+| 3 | **[TST-INT-632]** PDS spot-check discrepancy downgrades AppView trust | Missing records | AppView PeerLens rating decremented on discrepancy |
 | 4 | **[TST-INT-633]** Tombstone: correct DID + invalid signature rejected | Forged tombstone | Matching DID but wrong Ed25519 signature → rejection |
 | 5 | **[TST-INT-634]** Merkle root deterministic + inclusion proof valid | Same record set | Two computations → identical root; proof verifiable |
 
@@ -1203,7 +1203,7 @@
 | 2 | **[TST-INT-692]** Sponsored metadata preserved through pipeline | Brain stores item with `{sponsored: true}` → retrieve via query | `sponsored` flag intact — Core cannot strip sponsorship disclosure |
 | 3 | **[TST-INT-693]** Unattributed item rejected at Core boundary | Brain stores recommendation missing `source_url` | Core accepts storage (metadata is freeform) BUT Brain must pre-validate attribution before storing — integration test verifies Brain-side enforcement |
 | 4 | **[TST-INT-694]** Provenance immutable after storage | Store item → attempt update with different `creator_name` | Provenance fields write-once — update rejected or ignored |
-| 5 | **[TST-INT-733]** Sponsorship cannot distort ranking order | Brain stores: Product A (`sponsored: true`, trust score 0.6) and Product B (unsponsored, trust score 0.9) → Brain assembles ranked recommendation → Core delivers | Product B ranks above Product A — sponsorship flag preserved for disclosure but has zero weight in ranking. Trust evidence alone determines order |
+| 5 | **[TST-INT-733]** Sponsorship cannot distort ranking order | Brain stores: Product A (`sponsored: true`, PeerLens rating 0.6) and Product B (unsponsored, PeerLens rating 0.9) → Brain assembles ranked recommendation → Core delivers | Product B ranks above Product A — sponsorship flag preserved for disclosure but has zero weight in ranking. Trust evidence alone determines order |
 
 ### 19.2 Agent Sandbox (Core↔Brain Integration)
 
@@ -1276,7 +1276,7 @@
 ## 22. Thesis Invariants — Pull Economy & Verified Truth (Integration)
 
 > **"Discovery is trust-ranked, attributable, user-directed."**
-> These tests validate the full trust data flow: AppView → Brain → Core → User.
+> These tests validate the full PeerLens data flow: AppView → Brain → Core → User.
 
 ### 22.1 Trust Data Density Spectrum (Full Pipeline)
 
@@ -1286,7 +1286,7 @@
 
 | # | Scenario | Setup | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-INT-716]** Zero trust data: graceful absence | AppView returns empty for product query → Brain assembles response | Response uses web search + vault context. No "PeerLens error." No hallucinated score. Brain says "No verified reviews in PeerLens" |
+| 1 | **[TST-INT-716]** Zero PeerLens data: graceful absence | AppView returns empty for product query → Brain assembles response | Response uses web search + vault context. No "PeerLens error." No hallucinated score. Brain says "No verified reviews in PeerLens" |
 | 2 | **[TST-INT-717]** Single review: honest uncertainty | 1 attestation in AppView → Brain assembles response | Response includes the review but notes limited data: "One verified review — limited evidence" |
 | 3 | **[TST-INT-718]** Sparse conflicting: transparent split | 3 reviews (2 positive, 1 negative) in AppView | Response reports split honestly: "Mixed reviews from verified sources — 2 recommend, 1 cautions" |
 | 4 | **[TST-INT-719]** Dense consensus: earned confidence | 50+ reviews with 90%+ agreement | Response communicates confidence: "Strong consensus from 50+ verified reviewers" |
@@ -1300,7 +1300,7 @@
 |---|----------|-------|----------|
 | 1 | **[TST-INT-723]** Deep link preserved: AppView → Brain → User | AppView returns attestation with `source_url` → Brain assembles → delivers to user | User-facing response includes clickable link to original creator content |
 | 2 | **[TST-INT-724]** Expert credited individually | 3 expert attestations from different DIDs → Brain assembles | Each expert named and linked individually — not "experts say" |
-| 3 | **[TST-INT-725]** Attribution violation feeds bot trust degradation | Bot returns recommendation with no `creator_name` | Brain logs violation → bot trust score decreased → next routing prefers other bots |
+| 3 | **[TST-INT-725]** Attribution violation feeds bot trust degradation | Bot returns recommendation with no `creator_name` | Brain logs violation → bot PeerLens rating decreased → next routing prefers other bots |
 
 ---
 

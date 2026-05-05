@@ -12,7 +12,7 @@ This repository is already on the 3+1 container architecture:
 
 1. `dina-core` (Go) for vault/identity/security/kernel concerns.
 2. `dina-brain` (Python) for orchestration/reasoning.
-3. `dina-pds` for AT Protocol trust data storage/federation.
+3. `dina-pds` for AT Protocol PeerLens data storage/federation.
 4. Optional `llama` container via `--profile local-llm`.
 
 The v0.4 monolithic Python app is legacy context, not the active runtime model.
@@ -42,7 +42,7 @@ The roadmap below changes the target admin shape:
 
 ## Phase 1a — Sidecar Foundation
 
-**Goal:** Get the canonical Cloud LLM profile running (core, brain, admin, pds). Brain thinks (via Gemini Flash Lite + Deepgram), core stores, `dina-admin` handles browser/admin traffic, and PDS hosts trust data. Phase 1 uses cloud LLMs only — Local LLM profile ships in Phase 2 once end-to-end flow works.
+**Goal:** Get the canonical Cloud LLM profile running (core, brain, admin, pds). Brain thinks (via Gemini Flash Lite + Deepgram), core stores, `dina-admin` handles browser/admin traffic, and PDS hosts PeerLens data. Phase 1 uses cloud LLMs only — Local LLM profile ships in Phase 2 once end-to-end flow works.
 
 | # | Item | Layer | What It Is | Depends On | Container | Status |
 |---|------|-------|-----------|-----------|-----------|--------|
@@ -127,14 +127,14 @@ The roadmap below changes the target admin shape:
 |---|------|-------|-----------|-----------|--------|
 | 2.1 | Embedding generation (EmbeddingGemma) | L1 Storage | 308M param model generates embeddings. Stored in Tier 2 Index via sqlite-vec. Enables semantic search across all vault data. | 1.7, 1.1 | DONE |
 | 2.2 | Tier 2 Index (embeddings) | L1 Storage | sqlite-vec vector store alongside SQLite FTS5. Hybrid search: keyword + semantic. | 2.1 | DONE |
-| 2.3 | Trust AppView (monolith) | L3 Trust | Phase 1 monolith: single Go binary + PostgreSQL 16 (`pg_trgm`). Firehose consumer (`indigo` library) → filter (`com.dina.trust.*` only) → signature verifier → PostgreSQL indexer → JSON query API (`GET /v1/trust?did=...`, `GET /v1/product?id=...`, `GET /v1/bot?did=...`). Computes aggregate scores (product ratings, seller trust composites, bot accuracy). **API includes signed record payloads from day one** (cheap, locks in API contract for future verification). Deployed on 1x VPS (4 vCPU, 8GB RAM). Blue/green deploys, WAL archiving + PITR. Handles 0–1M users. | 1.28 | DONE |
+| 2.3 | PeerLens AppView (monolith) | L3 Trust | Phase 1 monolith: single Go binary + PostgreSQL 16 (`pg_trgm`). Firehose consumer (`indigo` library) → filter (`com.dina.trust.*` only) → signature verifier → PostgreSQL indexer → JSON query API (`GET /v1/trust?did=...`, `GET /v1/product?id=...`, `GET /v1/bot?did=...`). Computes aggregate scores (product ratings, seller trust composites, bot accuracy). **API includes signed record payloads from day one** (cheap, locks in API contract for future verification). Deployed on 1x VPS (4 vCPU, 8GB RAM). Blue/green deploys, WAL archiving + PITR. Handles 0–1M users. | 1.28 | DONE |
 | 2.4 | Outcome data collection | L3 Trust | Dina tracks purchases via Cart Handover. Months later, gently asks "How's that chair?" Anonymized outcome → PeerLens. | 1.26, 2.3 | NOT STARTED |
 | 2.5 | Trust Rings (Ring 1-2) | L0 Identity | Ring 1 (unverified) = anyone. Ring 2 (verified unique person) = ZKP or external verification. Phase 1 compromise for India: Aadhaar e-KYC XML with offline verification, only yes/no attestation stored. True ZKP (Semaphore V4) in Phase 2+. | 1.24, 2.3 | NOT STARTED |
 | 2.6 | Fine-tuned PII model | L6 Intelligence | Gemma 3n E4B fine-tuned for PII detection. Replaces generic NER prompting. Higher accuracy, fewer leaks. | 1.9, 1.1 | NOT STARTED |
 | 2.7 | Multi-agent orchestration | L6 Intelligence | Google ADK Sequential, Parallel, Loop agents. Complex multi-step reasoning (e.g., research laptop → check trust → compare prices → assemble recommendation). | 1.2 | NOT STARTED |
 | 2.8 | Emotional state awareness | L7 Action | Lightweight classifier flags "user may be upset/impulsive" before large purchases or high-stakes communications. Signals: time of day, communication tone, spending pattern deviation. Cooling-off suggestion. | 1.15, 2.1 | NOT STARTED |
 | 2.9 | Anti-Her safeguard | L7 Action | Track interaction patterns. If user treats Dina as emotional replacement, redirect: "You haven't talked to Sancho in a while." Nudge toward human connection, never fill the void. | 1.19, 1.15 | DONE |
-| 2.10 | Bot discovery (decentralized) | L5 Bot Interface | Bots self-register on PeerLens. Trust score determines visibility. Bot-to-bot referrals. | 2.3 | NOT STARTED |
+| 2.10 | Bot discovery (decentralized) | L5 Bot Interface | Bots self-register on PeerLens. PeerLens rating determines visibility. Bot-to-bot referrals. | 2.3 | NOT STARTED |
 | 2.11 | Dina-to-Dina sharing rules | L4 Dina-to-Dina | Fine-grained per-connection control over what each contact can see. "Sancho's Dina can see my location, but not my calendar." Rules stored in Tier 0, enforced in dina-core (not brain). Persona compartments provide cryptographic backstop. | 1.19, 1.24 | NOT STARTED |
 | 2.12 | Desktop client (Wails/Tauri) | Client | Cross-platform desktop app via Wails (Go + WebView) or Tauri 2. Connects to Home Node same as Android. | 1.29 | NOT STARTED |
 | 2.13 | Tier 5 Deep Archive | L1 Storage | Weekly encrypted snapshots to S3 Glacier Deep Archive with **Compliance Mode Object Lock** (even root cannot delete during retention period). Immutable. Survives ransomware. Optional: LTO tape / physical USB HDD for sovereign cold storage. | 1.22 | NOT STARTED |
@@ -153,7 +153,7 @@ The roadmap below changes the target admin shape:
 
 | # | Item | Layer | What It Is | Depends On | Status |
 |---|------|-------|-----------|-----------|--------|
-| 3.1 | Trust Rings (Ring 3+) | L0 Identity | Credential anchors: LinkedIn, GitHub, business registration. Transaction history + time + peer attestation → composite trust score. | 2.5 | NOT STARTED |
+| 3.1 | Trust Rings (Ring 3+) | L0 Identity | Credential anchors: LinkedIn, GitHub, business registration. Transaction history + time + peer attestation → composite PeerLens rating. | 2.5 | NOT STARTED |
 | 3.2 | Content verification (C2PA) | L7 Action | Media provenance via Content Credentials. Cross-reference claims against PeerLens. "This video appears AI-generated." | 2.3 | NOT STARTED |
 | 3.3 | Social Radar (real-time co-pilot) | L6 Intelligence | "You've interrupted him twice." Context Injection from camera/microphone (glasses, phone). Requires on-device processing. | 2.7, 1.32 | NOT STARTED |
 | 3.4 | Open Economy (ONDC + UPI) | L7 Action | Dina negotiates directly with manufacturer's Dina via ONDC. UPI/crypto for payment. Marketplace middlemen become optional. | 2.3, 1.26, 1.19 | NOT STARTED |
@@ -209,7 +209,7 @@ The following items were **missing from the original roadmap** but are described
 | 2.21 Key management UX | 2 | Architecture "What's Hard" #7, no roadmap item |
 | 3.12 Noise XX sessions | 3 | Described in transport layer Phase 3, no roadmap item |
 | 1.10 (updated) 4+1 container target | 1a | Canonical Phase 1 target adds `dina-admin` to the private stack: core, brain, admin, and pds by default. llama remains optional via `--profile local-llm`. Three deployment profiles: Cloud LLM (default, 4 containers), Local LLM (5 containers), Hybrid (5 containers). |
-| 2.3 (expanded) Trust AppView monolith | 2 | Was a one-liner. Now specifies full stack: Go + PostgreSQL + `indigo` firehose consumer, signature verification, query API, aggregate score computation. |
+| 2.3 (expanded) PeerLens AppView monolith | 2 | Was a one-liner. Now specifies full stack: Go + PostgreSQL + `indigo` firehose consumer, signature verification, query API, aggregate score computation. |
 | 3.13 AppView sharded cluster | 3 | Migration path for 10M+ users: Kafka, ScyllaDB, Kubernetes HPA. Explicitly deferred. |
 | 3.14 AppView verification (trust-but-verify) | 3 | Three-layer verification: cryptographic proof, consensus check across AppViews, direct PDS spot-check. Meaningful only when multiple AppViews exist. |
 | 1.10a (updated) Inter-service + device auth | 1a | Issue #12 — Ed25519 service keys (seed-derived at install time via SLIP-0010, load-only at runtime) for `dina-brain`, `dina-admin`, and connectors; Ed25519 device signatures for all paired devices. No JWTs. No `CLIENT_TOKEN` in the canonical browser path. Static allowlist in `gatekeeper.go`. Brain never calls `/v1/did/sign` — triggers high-level ops, core handles crypto. Permanent design (no plugins). |
@@ -309,7 +309,7 @@ The decision engine is the trust ring + sharing policy + intent risk level. All 
 | Entity resolution types (request/response) | `DONE` (domain/contact.go) |
 | `POST /v1/gateway/resolve-entity` handler | `NOT STARTED` |
 | Late binding hydration at execution layer | `NOT STARTED` |
-| Ring assignment from AppView trust scores | `NOT STARTED` |
+| Ring assignment from AppView PeerLens ratings | `NOT STARTED` |
 | Ring-based resolution policy engine | `NOT STARTED` |
 | OpenClaw integration contract (MCP) | `NOT STARTED` |
 | Admin UI for ring assignment | `NOT STARTED` |

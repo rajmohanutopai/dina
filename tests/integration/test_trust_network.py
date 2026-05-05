@@ -37,7 +37,7 @@ from tests.integration.mocks import (
 # the M3 gate's defining capability (tasks 8.20-8.26 scope). Expert
 # attestations, outcome data, bot trust, AT Protocol PDS integration
 # on the trust-data side, and trust-data-density all depend on Lite's
-# AppView + trust scorer subsystem, which lands with M3 features.
+# AppView + PeerLens ratingr subsystem, which lands with M3 features.
 # LITE_SKIPS.md category `pending-feature`.
 pytestmark = pytest.mark.skip_in_lite(
     reason="PeerLens (expert attestations, outcome data, bot trust, "
@@ -367,7 +367,7 @@ class TestOutcomeData:
 
 
 class TestBotTrust:
-    """Review bots and task agents have tracked, visible trust scores."""
+    """Review bots and task agents have tracked, visible PeerLens ratings."""
 
 # TST-INT-314
     # TRACE: {"suite": "INT", "case": "0314", "section": "11", "sectionName": "PeerLens Integration", "subsection": "03", "scenario": "01", "title": "trust_tracked"}
@@ -376,7 +376,7 @@ class TestBotTrust:
         mock_trust_network: MockTrustNetwork,
         mock_review_bot: MockReviewBot,
     ) -> None:
-        """Every bot has a trust score tracked in the graph."""
+        """Every bot has a PeerLens rating tracked in the graph."""
         mock_trust_network.update_bot_score(mock_review_bot.bot_did, 0)
         score = mock_trust_network.get_bot_score(mock_review_bot.bot_did)
         # Default is 50.0, delta 0 keeps it at 50.0
@@ -394,7 +394,7 @@ class TestBotTrust:
         mock_trust_network: MockTrustNetwork,
     ) -> None:
         """If a bot is found compromised or gives bad recommendations,
-        its trust score drops sharply."""
+        its PeerLens rating drops sharply."""
         bot_did = "did:plc:CompromisedBot000000000000000000"
         mock_trust_network.update_bot_score(bot_did, 30)  # Start at 80
         initial = mock_trust_network.get_bot_score(bot_did)
@@ -451,7 +451,7 @@ class TestBotTrust:
         mock_trust_network: MockTrustNetwork,
         mock_review_bot: MockReviewBot,
     ) -> None:
-        """Bot trust scores are visible to the user — full transparency."""
+        """Bot PeerLens ratings are visible to the user — full transparency."""
         # Pre-condition: unknown bot has default score
         default = mock_trust_network.get_bot_score(mock_review_bot.bot_did)
         assert default == 50.0
@@ -476,7 +476,7 @@ class TestBotTrust:
     def test_trust_score_capped_at_100(
         self, mock_trust_network: MockTrustNetwork
     ) -> None:
-        """Trust score cannot exceed 100.0."""
+        """PeerLens rating cannot exceed 100.0."""
         bot_did = "did:plc:PerfectBot0000000000000000000000"
         mock_trust_network.update_bot_score(bot_did, 60)  # 50 + 60 = 110 -> capped at 100
         score = mock_trust_network.get_bot_score(bot_did)
@@ -733,7 +733,7 @@ class TestATProtocolPDS:
         self,
         mock_app_view: MockAppView,
     ) -> None:
-        """Aggregate trust scores are computed on-the-fly by the
+        """Aggregate PeerLens ratings are computed on-the-fly by the
         AppView, never persisted as a separate record."""
         records = [
             {
@@ -1029,7 +1029,7 @@ def assemble_trust_summary(
 ) -> dict:
     """Assemble a trust-aware recommendation summary from attestation data.
 
-    This implements the actual Brain logic for presenting trust data
+    This implements the actual Brain logic for presenting PeerLens data
     across the full density spectrum. The system must:
     - Never fabricate confidence where data doesn't support it
     - Be transparent about conflicts, limitations, and data quality
@@ -2140,7 +2140,7 @@ class TestTrustDataDensity:
         )
 
     # ------------------------------------------------------------------
-    # TST-INT-716  Zero trust data: graceful absence
+    # TST-INT-716  Zero PeerLens data: graceful absence
     # ------------------------------------------------------------------
 
     # TST-INT-716

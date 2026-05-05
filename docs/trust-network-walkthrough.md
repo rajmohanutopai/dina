@@ -49,7 +49,7 @@ A user reviews a restaurant. The review is signed by their
 namespace key, published to their PDS, picked up by Jetstream,
 indexed by the AppView, and cross-referenced against:
 
-- Their own trust score (have they been a credible reviewer
+- Their own PeerLens rating (have they been a credible reviewer
   historically?)
 - The viewer's social graph (is this reviewer 1-hop in my
   network — friend boost ×1.5)
@@ -331,7 +331,7 @@ is done.
 | Respond to an incident | `docs/trust-network/ops-runbook.md` |
 | Track open work | `docs/TRUST_NETWORK_V1_BACKLOG.md` |
 | Cross-reference Plan v3 sections | `docs/TRUST_NETWORK_V1_TASKS.md` |
-| Review the trust-score formula | `appview/src/scorer/algorithms/trust-score.ts` + `appview/tests/unit/trust_score_conformance.test.ts` |
+| Review the PeerLens rating formula | `appview/src/scorer/algorithms/trust-score.ts` + `appview/tests/unit/trust_score_conformance.test.ts` |
 | Add a new record type | `appview/src/ingester/record-validator.ts` (Zod schema), `appview/src/ingester/handlers/<name>.ts` (handler), `appview/src/db/schema/<name>.ts` (table), then update the totals in BACKLOG.md |
 | Add a new xRPC endpoint | `appview/src/api/xrpc/<name>.ts`, wire in `appview/src/web/server.ts`, add to TN-API-007's `PER_METHOD_LIMITS_RPM` table |
 | Add a new operator CLI | match the `appview/src/admin/trust-flag-cli.ts` pattern (positional args, exit 0/1/2 semantics, fresh DB per invocation, pure `run<X>Command` for testability) |
@@ -347,8 +347,8 @@ filter for the **opinion** layer, but it's not enough for the
 in San Francisco; a Portuguese-language manual doesn't help an English
 reader; a "highly recommended" steakhouse doesn't help a vegan.
 
-V2 closes those gaps without touching V1's trust math. The trust
-score still flows out of `appview/src/scorer/algorithms/trust-score.ts`
+V2 closes those gaps without touching V1's PeerLens math. The rating
+still flows out of `appview/src/scorer/algorithms/trust-score.ts`
 unchanged. V2 is a **lens** that sits over V1 — it filters, sorts,
 and surfaces *applicability* alongside trust.
 

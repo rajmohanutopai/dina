@@ -26,7 +26,7 @@ describe('PeerLens Search', () => {
   });
 
   describe('local contact search', () => {
-    it('finds trust data for known contact by name', async () => {
+    it('finds PeerLens data for known contact by name', async () => {
       addContact('did:plc:alice', 'Alice', 'trusted', 'full', 'friend');
 
       const result = await searchTrustNetwork({

@@ -122,7 +122,7 @@ export interface TrustFeedScreenProps {
    */
   onDismissFirstRun?: () => void;
   /**
-   * Pre-derived self-profile bundle for the "My trust profile" card
+   * Pre-derived self-profile bundle for the "My PeerLens profile" card
    * at the top of the screen. When omitted, the screen runs its own
    * `useReviewerProfile` against the booted DID. Tests pass an
    * explicit value (or `null` for the unbooted state) to keep the
@@ -165,7 +165,7 @@ export interface TrustFeedScreenProps {
 export interface SelfProfileCardData {
   readonly handle: string | null;
   /**
-   * Numeric trust score on `[0, 100]`, or `null` when unrated
+   * Numeric PeerLens rating on `[0, 100]`, or `null` when unrated
    * (fewer than the cold-start threshold of attestations). Rendered
    * as "—" when null. NOT colour-coded — see component header.
    */
@@ -205,7 +205,7 @@ export default function TrustFeedScreen(
     enabled: !isFeedControlled && viewerDid !== '',
     retryNonce: feedNonce,
   });
-  // Self-profile fetch — fuels the "your trust profile" card at the
+  // Self-profile fetch — fuels the "your PeerLens profile" card at the
   // top of the screen. Same xRPC call the reviewer-profile screen
   // uses, just pointed at the viewer's own DID. Disabled when
   // controlled (tests inject their own header) or pre-boot.
@@ -321,7 +321,7 @@ export default function TrustFeedScreen(
           testID="trust-feed-self-card"
           accessibilityRole="button"
           accessibilityLabel={
-            `Your trust profile — ${selfDisplay.reviewsWritten} reviews written, ` +
+            `Your PeerLens profile — ${selfDisplay.reviewsWritten} reviews written, ` +
             `${selfDisplay.vouchCount} vouches, ${selfDisplay.endorsementCount} endorsements`
           }
         >
@@ -329,7 +329,7 @@ export default function TrustFeedScreen(
             <Text style={styles.selfCardHeading}>
               {selfDisplay.handle !== null
                 ? shortHandle(selfDisplay.handle)
-                : 'Your trust profile'}
+                : 'Your PeerLens profile'}
             </Text>
             <Ionicons
               name="chevron-forward"
@@ -471,12 +471,12 @@ export default function TrustFeedScreen(
       )}
 
       {/* ─── Footer links — Outbox + Namespaces ────────────────────────
-          Trust-specific routes that aren't reachable from anywhere
+          PeerLens-specific routes that aren't reachable from anywhere
           else in the app. The global hamburger menu carries cross-
           surface destinations (Vault / Reminders / Settings / Help)
           and shouldn't be polluted with per-tab affordances; instead
           we surface them as a small footer row pinned to the bottom
-          of the Trust home so the user always has a path in.
+          of the PeerLens home so the user always has a path in.
           Light visual weight: muted text, no chrome. */}
       <View style={styles.footerRow} testID="trust-feed-footer">
         <Pressable

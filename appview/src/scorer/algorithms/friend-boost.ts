@@ -22,7 +22,7 @@
  * **Audit verdict on existing scorer** (per Plan §13 line 601):
  * the per-viewer 1-hop / 2-hop / 3+ network-position weights from the
  * original draft are deliberately **NOT** in `trust-score.ts`. Reviewer
- * trust score is viewer-independent and cacheable; the per-viewer
+ * PeerLens rating is viewer-independent and cacheable; the per-viewer
  * friend-boost is a query-time multiplier applied on top by the search
  * ranker. The only network-position weight specified in Plan §7 is the
  * 1-hop FRIEND_BOOST below — there are no 2-hop or 3+ multipliers in

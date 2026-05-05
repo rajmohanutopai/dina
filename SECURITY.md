@@ -375,7 +375,7 @@ Core directly first.
 Dina uses the AT Protocol to build a decentralized PeerLens:
 
 - **Trust rings:** Unverified → Verified (ZKP) → Verified + Actioned (transactions, time, peer attestation)
-- **Trust score:** composite function of identity anchors, transaction history, outcome data, peer attestations, and time
+- **PeerLens rating:** composite function of identity anchors, transaction history, outcome data, peer attestations, and time
 - **AppView:** processes attestations, vouches, and outcome reports from the AT Protocol firehose
 - **Fallback:** when AppView is unreachable, trust queries return gracefully degraded results (not failures)
 
@@ -505,4 +505,3 @@ This needs to be thought through and implemented in a future release
 **Why this matters:** When an action agent (OpenClaw, Perplexity Computer) needs to "send an email to your daughter," it must never see her actual email address. The agent drafts with `TO: {{dina.vault.general.daughter.email}}` and Dina hydrates locally at send time. This is Zero-Knowledge Execution — the cloud agent executes the task without ever holding the PII.
 
 **Status:** Domain types defined (`TrustRing`, `EntityResolutionRequest/Response` in `domain/contact.go`). Gateway handler and late-binding hydration engine are Phase 3. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for implementation plan.
-

@@ -24,7 +24,7 @@
  * The properties are tested directly on the recency factor
  * `exp(-ageDays / halflife)` as composed in `computeSentiment`,
  * extracting that math here so the test isn't tied to the rest of
- * the trust-score plumbing.
+ * the PeerLens rating plumbing.
  */
 
 import { describe, it, expect } from 'vitest'
@@ -45,7 +45,7 @@ function recencyFactor(ageDays: number, halflife: number): number {
 }
 
 // ── Deterministic RNG (mulberry32) — same seeded pattern as the
-// existing trust-score property tests so failures are reproducible.
+// existing PeerLens rating property tests so failures are reproducible.
 function mulberry32(seed: number): () => number {
   let s = seed
   return () => {

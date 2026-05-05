@@ -96,7 +96,7 @@ Possible mistakes to guard against:
 |---|---|---|---|
 | Shared runtime | One TS Home Node runtime with platform adapters. | Partial. Mobile has the real composition in `boot_service.ts`, `boot_capabilities.ts`, and `bootstrap.ts`; those files now depend on public `@dina/core/runtime` and `@dina/brain/runtime` subpaths, but the composition is still mobile-owned. | Partial. Core binds the shared CoreRouter, and Brain consumes shared `@dina/home-node/ask-runtime` and `@dina/home-node/service-runtime`; the full server Home Node runtime is still not assembled. |
 | Install / onboarding | Seed, DID, PDS account/session, DID doc with MsgBox endpoint, local vault, AppView visibility check. | Partial/strong. Mobile provisions did:plc and MsgBox endpoint and seeds personas, but PDS session/publisher lifecycle is not fully booted. | Missing. Server install/account flow is not yet a full Home Node install. |
-| Endpoint defaults | Test fleet by default; release fleet only by release config. | Done for endpoint policy. Mobile MsgBox, onboarding PDS host/PLC URL, HandlePicker, OwnerName, trust AppView, and node-runtime AppView resolve through `@dina/home-node`; PDS publisher/session runtime is still incomplete. | Done for config policy. Core and Brain server config resolve hosted endpoints through `@dina/home-node`; Core uses the hosted MsgBox endpoint at boot; Brain boot constructs the hosted AppView client; PDS runtime clients and AppView route composition still need wiring. |
+| Endpoint defaults | Test fleet by default; release fleet only by release config. | Done for endpoint policy. Mobile MsgBox, onboarding PDS host/PLC URL, HandlePicker, OwnerName, PeerLens AppView, and node-runtime AppView resolve through `@dina/home-node`; PDS publisher/session runtime is still incomplete. | Done for config policy. Core and Brain server config resolve hosted endpoints through `@dina/home-node`; Core uses the hosted MsgBox endpoint at boot; Brain boot constructs the hosted AppView client; PDS runtime clients and AppView route composition still need wiring. |
 | Boot / reconnect | Local vault first, then MsgBox, AppView, PDS publisher, schedulers. | Partial/strong. Mobile boots Core router, in-process transport, MsgBox, D2D, a real hosted AppView client, staging drain, ask coordinator, and service loops. PDS publisher/session still degrades unless injected. | Partial. Core binds the shared CoreRouter and connects/authenticates to MsgBox by default, with `/readyz` failing instead of killing local boot when the relay is offline; storage/adapters remain pending. Brain boots health, returns `503 not_ready`, configures AppView and signed CoreClient when keyed, starts the staging drain scheduler, composes/registers ask routes when Gemini is explicitly configured, and consumes shared `@dina/home-node/service-runtime` when explicit dependencies are supplied; PDS and full runtime ownership remain unwired. |
 | `/remember` | Core ingest, Brain drain, enrichment, persona gates, durable pending approvals, vault store. | Partial/strong. Mobile has one production path through Brain -> `CoreClient.stagingIngest`; staging is repository-authoritative, resolve gates are explicit, approvals are durable, enrichment runs before store, and shared transport parity tests pass. | Partial. Core has signed staging ingest, repository authority, explicit resolve gates, approval-backed locked staging rows, and the same HTTP transport contract; Brain server now starts the shared staging scheduler against a signed Core client when service-key material is provisioned. |
 | `/ask` | Same coordinator/tool semantics on mobile and server. | Partial/strong. Agentic pipeline and approvals exist when prerequisites are configured. | Partial/strong. Boot now consumes shared `@dina/home-node/ask-runtime` to build the same agentic ask coordinator from signed Core, hosted AppView, approval manager, service orchestrator, and config-driven Gemini provider; remaining gap is full Home Node runtime ownership and service-response delivery parity. |
@@ -139,7 +139,7 @@ flowchart TB
     SCore --> MsgBox
     MCore --> PDS["System PDS"]
     SCore --> PDS
-    MBrain --> AppView["Trust AppView"]
+    MBrain --> AppView["PeerLens AppView"]
     SBrain --> AppView
 ```
 
@@ -374,7 +374,7 @@ resumes after approval.
 
 ## `/ask`: Trust Context
 
-When a question needs public trust data, the node combines local memory with
+When a question needs public PeerLens data, the node combines local memory with
 AppView results. Private memory stays local.
 
 ```mermaid

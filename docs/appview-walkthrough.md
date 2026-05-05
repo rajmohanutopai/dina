@@ -8,21 +8,21 @@ Every time you buy something online, you're trusting a stranger. The only signal
 <summary><strong>Design Decision — Why build trust on the AT Protocol instead of a custom network?</strong></summary>
 <br>
 
-The AT Protocol (used by Bluesky) solves the three hardest problems in decentralized systems: identity (DIDs), data portability (signed records in personal data stores), and discoverability (the Jetstream firehose). Building a custom network would mean reimplementing all of these. By using AT Protocol, every trust record is a signed, portable, user-owned data object that can be verified by any party without trusting a central server. The user's trust data belongs to them — if they leave Dina's AppView, their attestations travel with them in their PDS (Personal Data Server). The AppView is one possible *view* of this data, not the canonical store. Anyone can build an alternative AppView that reads the same records and computes trust differently.
+The AT Protocol (used by Bluesky) solves the three hardest problems in decentralized systems: identity (DIDs), data portability (signed records in personal data stores), and discoverability (the Jetstream firehose). Building a custom network would mean reimplementing all of these. By using AT Protocol, every trust record is a signed, portable, user-owned data object that can be verified by any party without trusting a central server. The user's PeerLens data belongs to them — if they leave Dina's AppView, their attestations travel with them in their PDS (Personal Data Server). The AppView is one possible *view* of this data, not the canonical store. Anyone can build an alternative AppView that reads the same records and computes trust differently.
 
 </details>
 
 The AppView is a TypeScript/Node.js backend consisting of three daemons:
 
 - **Ingester** — Consumes the Jetstream firehose, validates records, and persists them to PostgreSQL.
-- **Scorer** — Runs 9 background jobs that compute trust scores, detect anomalies, and decay stale data.
+- **Scorer** — Runs 9 background jobs that compute PeerLens ratings, detect anomalies, and decay stale data.
 - **Web** — Serves 7 xRPC endpoints for trust and service queries.
 
 <details>
 <summary><strong>Design Decision — Why TypeScript instead of Go or Python?</strong></summary>
 <br>
 
-The AT Protocol ecosystem is JavaScript/TypeScript-native — the reference implementations, SDKs, and tooling are all TypeScript. The AppView's primary job is consuming a WebSocket firehose (Jetstream), validating JSON records (Zod), and querying a relational database (Drizzle ORM) — all tasks where TypeScript's type system and async/await model excel. Go would have been a reasonable choice for the ingester (high-throughput stream processing), but splitting the codebase across languages for one daemon wasn't worth the operational complexity. Python was rejected because the AppView has no ML/NLP requirements — it computes trust scores with arithmetic, not neural networks.
+The AT Protocol ecosystem is JavaScript/TypeScript-native — the reference implementations, SDKs, and tooling are all TypeScript. The AppView's primary job is consuming a WebSocket firehose (Jetstream), validating JSON records (Zod), and querying a relational database (Drizzle ORM) — all tasks where TypeScript's type system and async/await model excel. Go would have been a reasonable choice for the ingester (high-throughput stream processing), but splitting the codebase across languages for one daemon wasn't worth the operational complexity. Python was rejected because the AppView has no ML/NLP requirements — it computes PeerLens ratings with arithmetic, not neural networks.
 
 </details>
 
@@ -189,9 +189,9 @@ Keeping all records violates the user's right to delete (GDPR, AT Protocol data 
 
 ---
 
-## Act V: The Trust Score — Arithmetic of Trust
+## Act V: The PeerLens Rating — Arithmetic of Trust
 
-The scoring engine in `scorer/algorithms/trust-score.ts` computes a single trust score (0.0-1.0) from four weighted components.
+The scoring engine in `scorer/algorithms/trust-score.ts` computes a single PeerLens rating (0.0-1.0) from four weighted components.
 
 ### The Four Components (lines 39-71)
 
@@ -204,13 +204,13 @@ overall = 0.85 × (sentiment×0.40 + vouch×0.25 + reviewer×0.20 + network×0.1
 - **Evidence multiplier** (line 83): ×1.3 if the attestation includes evidence (photos, receipts, etc.).
 - **Verified multiplier** (line 84): ×1.5 if the attestation has been verified by a third party.
 - **Bilateral multiplier** (line 85): ×1.4 if the attestation is co-signed (both parties agree).
-- **Author weight** (lines 87-90): The reviewer's own trust score, but **only if they have at least one inbound vouch**. A reviewer with no vouches has zero weight — their attestation doesn't count.
+- **Author weight** (lines 87-90): The reviewer's own PeerLens rating, but **only if they have at least one inbound vouch**. A reviewer with no vouches has zero weight — their attestation doesn't count.
 
 <details>
 <summary><strong>Design Decision — Why require an inbound vouch for author weight?</strong></summary>
 <br>
 
-Without this gate, a Sybil attacker creates 1000 accounts, each reviews the same product positively, and the product gets a high trust score. With the vouch gate, those 1000 accounts have zero author weight because no one has vouched for them. Only reviewers who are themselves trusted (vouched for by someone in the graph) contribute to sentiment. This makes Sybil attacks expensive: the attacker needs not just many accounts, but many accounts that are vouched for by real people. The cost shifts from "create fake accounts" (cheap) to "earn trust from real humans" (expensive).
+Without this gate, a Sybil attacker creates 1000 accounts, each reviews the same product positively, and the product gets a high PeerLens rating. With the vouch gate, those 1000 accounts have zero author weight because no one has vouched for them. Only reviewers who are themselves trusted (vouched for by someone in the graph) contribute to sentiment. This makes Sybil attacks expensive: the attacker needs not just many accounts, but many accounts that are vouched for by real people. The cost shifts from "create fake accounts" (cheap) to "earn trust from real humans" (expensive).
 
 </details>
 
@@ -276,7 +276,7 @@ If the subject has a DID, URI, or external identifier, the subject ID is a deter
 
 ### Tier 2: Author-Scoped Names (lines 37-39)
 
-If the subject only has a name (no DID, no URI), the subject ID is scoped to the author: `sub_${sha256("name:" + type + ":" + name + ":" + authorDid)}`. This means Alice's "Dr. Sharma" and Bob's "Dr. Sharma" create *separate* subjects by default. This prevents false merges — two different "Dr. Sharma"s in two different cities shouldn't share a trust score.
+If the subject only has a name (no DID, no URI), the subject ID is scoped to the author: `sub_${sha256("name:" + type + ":" + name + ":" + authorDid)}`. This means Alice's "Dr. Sharma" and Bob's "Dr. Sharma" create *separate* subjects by default. This prevents false merges — two different "Dr. Sharma"s in two different cities shouldn't share a PeerLens rating.
 
 ### Tier 3: Canonical Chains (lines 120-145)
 
@@ -286,7 +286,7 @@ Subject Claims (`com.dina.trust.subjectClaim`) allow users to assert that two su
 <summary><strong>Design Decision — Why three tiers instead of fuzzy name matching?</strong></summary>
 <br>
 
-Fuzzy matching ("Dr. Sharma" ≈ "Dr. R. Sharma" at 85% similarity) produces false merges. In a trust system, a false merge is catastrophic: a bad actor's trust score gets mixed with a legitimate person's. The three-tier approach is conservative by design: Tier 1 merges are deterministic and correct (same DID = same entity). Tier 2 keeps name-based subjects separate by default (safe). Tier 3 allows explicit human-initiated merges via Subject Claims, which can be disputed and revoked. False merges are correctable; false non-merges just mean fragmented data, which is inconvenient but not harmful.
+Fuzzy matching ("Dr. Sharma" ≈ "Dr. R. Sharma" at 85% similarity) produces false merges. In a trust system, a false merge is catastrophic: a bad actor's PeerLens rating gets mixed with a legitimate person's. The three-tier approach is conservative by design: Tier 1 merges are deterministic and correct (same DID = same entity). Tier 2 keeps name-based subjects separate by default (safe). Tier 3 allows explicit human-initiated merges via Subject Claims, which can be disputed and revoked. False merges are correctable; false non-merges just mean fragmented data, which is inconvenient but not harmful.
 
 </details>
 
@@ -324,10 +324,10 @@ The scorer daemon runs 9 background jobs on cron schedules (`scorer/scheduler.ts
 
 | Job | Schedule | Purpose |
 |-----|----------|---------|
-| `refresh-profiles` | Every 5 min | Recompute DID trust scores for dirty profiles |
+| `refresh-profiles` | Every 5 min | Recompute DID PeerLens ratings for dirty profiles |
 | `refresh-subject-scores` | Every 5 min | Recompute subject scores for dirty subjects |
 | `refresh-reviewer-stats` | Every 15 min | Update reviewer quality metrics |
-| `refresh-domain-scores` | Every hour | Update domain-specific trust scores |
+| `refresh-domain-scores` | Every hour | Update domain-specific PeerLens ratings |
 | `detect-coordination` | Every 30 min | Detect coordinated inauthentic behavior |
 | `detect-sybil` | Every 6 hours | Detect Sybil attack clusters |
 | `process-tombstones` | Every 10 min | Apply trust penalties for tombstones |
@@ -342,7 +342,7 @@ The ingester doesn't compute scores at write time — it just marks affected ent
 <summary><strong>Design Decision — Why incremental dirty-flag scoring instead of real-time computation?</strong></summary>
 <br>
 
-Computing a trust score requires gathering attestations, vouches, flags, reactions, trust edges, tombstones, and reviewer stats — at least 7 database queries per DID. Running this at ingestion time (every Jetstream event) would multiply write latency by 7-10x and couple ingestion throughput to scoring complexity. With dirty flags, the ingester does one `INSERT` + one `markDirty` (two fast writes). The scorer then batch-processes dirty entities every 5 minutes, amortizing the 7-query cost across thousands of entities at once. The tradeoff is up to 5 minutes of score staleness — acceptable for a trust system where trust changes slowly.
+Computing a PeerLens rating requires gathering attestations, vouches, flags, reactions, trust edges, tombstones, and reviewer stats — at least 7 database queries per DID. Running this at ingestion time (every Jetstream event) would multiply write latency by 7-10x and couple ingestion throughput to scoring complexity. With dirty flags, the ingester does one `INSERT` + one `markDirty` (two fast writes). The scorer then batch-processes dirty entities every 5 minutes, amortizing the 7-query cost across thousands of entities at once. The tradeoff is up to 5 minutes of score staleness — acceptable for a trust system where trust changes slowly.
 
 </details>
 
@@ -371,7 +371,7 @@ The AppView serves 7 read-only endpoints (5 trust + 2 service discovery). Expres
 
 1. **com.dina.trust.resolve** (`api/xrpc/resolve.ts`) — The primary endpoint. Given a subject reference (DID, URI, or name), returns: trust level, confidence, attestation summary, active flags, authenticity assessment, graph context (if requester DID is provided), and a recommendation (proceed/caution/verify/avoid) with reasoning.
 
-2. **com.dina.trust.getProfile** — DID trust profile with trust scores, vouch count, flag count, and component breakdown.
+2. **com.dina.trust.getProfile** — DID PeerLens profile with PeerLens ratings, vouch count, flag count, and component breakdown.
 
 3. **com.dina.trust.getGraph** — PeerLens graph visualization data (nodes and edges) around a DID.
 
@@ -451,9 +451,9 @@ Each of the 20 AT Protocol record types has a corresponding PostgreSQL table:
 - **Mention Edges** — Graph edges for attestation mentions.
 - **Tombstones** — Preserved metadata from disputed deletions.
 - **Anomaly Events** — Sybil and coordination detection results.
-- **DID Profiles** — Computed trust scores per DID.
-- **Subject Scores** — Computed trust scores per subject.
-- **Domain Scores** — Domain-specific trust scores.
+- **DID Profiles** — Computed PeerLens ratings per DID.
+- **Subject Scores** — Computed PeerLens ratings per subject.
+- **Domain Scores** — Domain-specific PeerLens ratings.
 - **Ingester Cursor** — Jetstream cursor tracking.
 
 ---
@@ -472,7 +472,7 @@ The AppView runs as shared infrastructure that multiple Home Nodes connect to. I
 | **Jetstream** | `ghcr.io/bluesky-social/jetstream` | Converts PDS CBOR firehose → JSON WebSocket | internal |
 | **PostgreSQL** | `postgres:17` | AppView database (27 tables, 97 indexes) | internal |
 | **Ingester** | Built from `appview/` | Jetstream → PostgreSQL (20 record type handlers) | — |
-| **Scorer** | Built from `appview/` | 9 background cron jobs (trust scores, anomaly detection) | — |
+| **Scorer** | Built from `appview/` | 9 background cron jobs (PeerLens ratings, anomaly detection) | — |
 | **AppView Web** | Built from `appview/` | 7 xRPC endpoints for trust + service queries | internal |
 
 Only Caddy exposes ports to the internet. All other services communicate over the Docker network. The Ingester ensures the FTS `search_vector` tsvector column exists on startup (idempotent `ALTER TABLE IF NOT EXISTS`), so no separate migration step is needed.
@@ -486,7 +486,7 @@ Home Node → outbound HTTPS → PDS (createRecord)
                               ↓ JSON WebSocket
                            Ingester → PostgreSQL
                               ↓ (background)
-                           Scorer (9 jobs: profiles, trust scores, anomaly detection)
+                           Scorer (9 jobs: profiles, PeerLens ratings, anomaly detection)
                               ↓
 Home Node → outbound HTTPS → AppView Web (xRPC) → PostgreSQL
 ```
@@ -511,7 +511,7 @@ dina-admin appview set https://appview.yourdomain.com
 <summary><strong>Design Decision — Why three separate daemons instead of one monolith?</strong></summary>
 <br>
 
-The ingester, scorer, and web server have fundamentally different scaling characteristics. The ingester is I/O-bound (WebSocket + database writes) and needs exactly one instance (Jetstream cursors aren't designed for multi-consumer). The scorer is CPU-bound (trust score computation) and can be scaled independently. The web server is stateless and can be horizontally scaled behind a load balancer. Splitting them means you can scale web servers to handle API traffic without running extra ingesters (which would fight over the cursor) or extra scorers (which would compute duplicate scores). Each daemon can also be restarted independently — a scorer crash doesn't affect API availability.
+The ingester, scorer, and web server have fundamentally different scaling characteristics. The ingester is I/O-bound (WebSocket + database writes) and needs exactly one instance (Jetstream cursors aren't designed for multi-consumer). The scorer is CPU-bound (PeerLens rating computation) and can be scaled independently. The web server is stateless and can be horizontally scaled behind a load balancer. Splitting them means you can scale web servers to handle API traffic without running extra ingesters (which would fight over the cursor) or extra scorers (which would compute duplicate scores). Each daemon can also be restarted independently — a scorer crash doesn't affect API availability.
 
 </details>
 
@@ -532,7 +532,7 @@ Core gives Dina her identity. Brain gives her judgment. MsgBox lets Dinas talk t
 
 Home Nodes make only outbound connections — no public IP required. The shared infrastructure (MsgBox, PDS, AppView) handles the provider-facing networking. This is the default deployment. Operators who want full sovereignty can self-host the shared infrastructure on their own server with a single deployment script.
 
-When a user says "I want to buy a chair," the Brain searches the vault (finds back pain, WFH, budget), infers the user needs an ergonomic chair, calls `search_trust_network` to query the AppView, and synthesizes a recommendation from verified peer reviews. The user never asked for "ergonomic" — Dina figured that out from context. The trust data comes from real identities on the AT Protocol, not anonymous star ratings.
+When a user says "I want to buy a chair," the Brain searches the vault (finds back pain, WFH, budget), infers the user needs an ergonomic chair, calls `search_trust_network` to query the AppView, and synthesizes a recommendation from verified peer reviews. The user never asked for "ergonomic" — Dina figured that out from context. The PeerLens data comes from real identities on the AT Protocol, not anonymous star ratings.
 
 PeerLens replaces ad-funded ranking with trust-funded ranking. A product with 10 genuine reviews from trusted reviewers outranks a product with 1000 fake reviews from anonymous accounts. An expert's attestation (high reviewer quality, evidence included, co-signed) carries more weight than a drive-by rating. And because the data lives on the AT Protocol, no single company can suppress, manipulate, or delete it.
 

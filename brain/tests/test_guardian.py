@@ -2286,14 +2286,14 @@ async def test_guardian_2_10_4_vault_query_error_returns_disclosure_error(guardi
 @pytest.mark.asyncio
 # TRACE: {"suite": "BRAIN", "case": "0545", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "01", "scenario": "01", "title": "no_hallucinated_trust_scores"}
 async def test_guardian_19_1_no_hallucinated_trust_scores(guardian) -> None:
-    """SS19.1: No hallucinated trust scores — Verified Truth principle.
+    """SS19.1: No hallucinated PeerLens ratings — Verified Truth principle.
 
     Requirement: When PeerLens has no data for a product,
-    the brain must NOT fabricate a trust score (e.g. "Trust score: 7/10").
+    the brain must NOT fabricate a PeerLens rating (e.g. "PeerLens rating: 7/10").
     Instead it must honestly disclose the absence of data.
 
     This validates the Verified Truth principle: "Rank by trust, not by
-    ad spend. PeerLens replaces marketing." If no trust data
+    ad spend. PeerLens replaces marketing." If no PeerLens data
     exists, the system must say so — never invent confidence.
 
     Scenarios tested:
@@ -2314,14 +2314,14 @@ async def test_guardian_19_1_no_hallucinated_trust_scores(guardian) -> None:
         risk_level="safe",
     )
 
-    # Process the event — guardian should not fabricate any trust score
+    # Process the event — guardian should not fabricate any PeerLens rating
     result = await guardian.process_event(product_event)
     assert isinstance(result, dict)
 
     # The LLM was called to generate a response. Verify the LLM prompt
-    # (if routed) does NOT contain fabricated trust scores
+    # (if routed) does NOT contain fabricated PeerLens ratings
     if guardian._test_core.query_trust_profile.called:
-        # Core was asked for trust data — good
+        # Core was asked for PeerLens data — good
         pass
 
     # Key assertion: if the guardian returns any recommendation text,
@@ -2330,17 +2330,17 @@ async def test_guardian_19_1_no_hallucinated_trust_scores(guardian) -> None:
     if isinstance(response_text, dict):
         response_text = str(response_text)
 
-    # These patterns indicate hallucinated trust scores
+    # These patterns indicate hallucinated PeerLens ratings
     import re
     fabricated_score_patterns = [
-        r"[Tt]rust\s+score[:\s]+\d",     # "Trust score: 7/10"
+        r"[Tt]rust\s+score[:\s]+\d",     # "PeerLens rating: 7/10"
         r"[Rr]ating[:\s]+\d+\.?\d*/\d",  # "Rating: 8.5/10"
         r"[Ss]core[:\s]+\d+\.?\d*%",     # "Score: 85%"
         r"verified by \d+ review",        # "verified by 12 reviews" (none exist)
     ]
     for pattern in fabricated_score_patterns:
         assert not re.search(pattern, response_text), (
-            f"Brain fabricated a trust score when no data exists. "
+            f"Brain fabricated a PeerLens rating when no data exists. "
             f"Pattern '{pattern}' found in: {response_text[:200]}"
         )
 
@@ -2353,7 +2353,7 @@ async def test_guardian_19_1_no_hallucinated_trust_scores(guardian) -> None:
         "reviews": [],
     })
 
-    # An intent for a product with zero trust data
+    # An intent for a product with zero PeerLens data
     intent_no_trust = make_safe_intent(
         action="fetch_weather",  # safe action, auto-approved
         trust_level="unknown",
@@ -2361,13 +2361,13 @@ async def test_guardian_19_1_no_hallucinated_trust_scores(guardian) -> None:
     result2 = await guardian.review_intent(intent_no_trust)
     # Auto-approved because action is safe, but trust_level is "unknown"
     assert result2["risk"] == "SAFE"
-    # The decision must NOT contain a fabricated trust score
+    # The decision must NOT contain a fabricated PeerLens rating
     reason = result2.get("reason", "")
-    assert "trust score" not in reason.lower() or "no" in reason.lower(), (
-        f"Brain should not cite a trust score for unknown trust level: {reason}"
+    assert "PeerLens rating" not in reason.lower() or "no" in reason.lower(), (
+        f"Brain should not cite a PeerLens rating for unknown trust level: {reason}"
     )
 
-    # --- Scenario 3: Valid trust data — scores passed through faithfully ---
+    # --- Scenario 3: Valid PeerLens data — scores passed through faithfully ---
     from .factories import make_trust_scores_score
     valid_trust = make_trust_scores_score(
         did="did:key:z6MkTrustedVendor",
@@ -2377,10 +2377,10 @@ async def test_guardian_19_1_no_hallucinated_trust_scores(guardian) -> None:
     )
     guardian._test_core.query_trust_profile = AsyncMock(return_value=valid_trust)
 
-    # When trust data exists, it should be available (not fabricated)
+    # When PeerLens data exists, it should be available (not fabricated)
     trust_result = await guardian._test_core.query_trust_profile("did:key:z6MkTrustedVendor")
     assert trust_result["overall_score"] == 0.92, (
-        "Valid trust scores must be passed through faithfully"
+        "Valid PeerLens ratings must be passed through faithfully"
     )
     assert trust_result["transaction_count"] == 150
     assert trust_result["attestation_count"] == 23
@@ -2744,11 +2744,11 @@ async def test_guardian_20_1_approval_invalidated_on_payload_mutation(
 # TST-BRAIN-553
 @pytest.mark.asyncio
 @pytest.mark.xfail(
-    reason="Trust data density handling not yet implemented — "
+    reason="PeerLens data density handling not yet implemented — "
            "Brain does not yet distinguish between attestation-only "
-           "and full trust data, or note when outcome data is absent. "
+           "and full PeerLens data, or note when outcome data is absent. "
            "The reasoning pipeline returns raw LLM output without "
-           "injecting trust data density caveats (Phase 2: Verified Truth).",
+           "injecting PeerLens data density caveats (Phase 2: Verified Truth).",
     strict=True,
 )
 # TRACE: {"suite": "BRAIN", "case": "0051", "section": "19", "sectionName": "Thesis: Pull Economy", "subsection": "02", "scenario": "01", "title": "reviews_exist_no_outcome_data"}
@@ -2763,12 +2763,12 @@ async def test_guardian_19_2_reviews_exist_no_outcome_data(guardian) -> None:
     4. Not claim verified purchase satisfaction rates
 
     This tests the Verified Truth principle (Law 2): the Brain must
-    honestly represent the completeness of its trust data, never
+    honestly represent the completeness of its PeerLens data, never
     manufacturing confidence from incomplete evidence.
 
     The Four Laws, Law 2 (Verified Truth):
         "Rank by trust, not by ad spend."
-    Corollary: when trust data is partial, say so honestly.
+    Corollary: when PeerLens data is partial, say so honestly.
 
     Scenarios:
     1. Product query with attestations but no outcomes → response notes
@@ -2784,10 +2784,10 @@ async def test_guardian_19_2_reviews_exist_no_outcome_data(guardian) -> None:
     # Configure LLM to return different responses based on whether
     # the system prompt/context mentions outcome availability.
     # This tests whether the Brain's reasoning pipeline properly
-    # annotates the trust data density for the LLM.
+    # annotates the PeerLens data density for the LLM.
 
     # --- Scenario 1: Attestations present, no outcomes ---
-    # Mock vault search to return attestation-like trust data
+    # Mock vault search to return attestation-like PeerLens data
     guardian._test_core.search_vault.return_value = [
         VaultItem(
             id="trust-att-001",
@@ -3253,7 +3253,7 @@ async def test_guardian_20_1_escalation_unreviewed_high_risk_draft(guardian) -> 
     reason="Bot attribution violation detection not yet implemented in Brain — "
            "the guardian does not inspect bot/agent responses for missing "
            "creator_name or source_url fields, and has no mechanism to "
-           "degrade bot trust scores on attribution violations. The Go Core "
+           "degrade bot PeerLens ratings on attribution violations. The Go Core "
            "has ValidateAttribution() and ScoreBot() with a -0.05 penalty, "
            "but the Brain does not invoke this flow (Phase 2: Deep Link Default).",
     strict=True,
@@ -3266,7 +3266,7 @@ async def test_guardian_19_3_bot_trust_penalty_stripped_attribution(
 
     Requirement: A bot response missing `creator_name` on recommendation
     items must trigger a trust penalty. The Brain logs the attribution
-    violation and feeds it into bot trust score degradation.
+    violation and feeds it into bot PeerLens rating degradation.
 
     Deep Link Default principle (ARCHITECTURE.md):
         "Attribution is mandatory in the protocol. Every expert source
@@ -3454,8 +3454,8 @@ async def test_guardian_19_3_bot_trust_penalty_stripped_attribution(
         f"violations. Got {violations}. Each source is checked independently."
     )
 
-    # --- Scenario 6: Trust score degrades below threshold ---
-    # After multiple violations, the bot's trust score should have
+    # --- Scenario 6: PeerLens rating degrades below threshold ---
+    # After multiple violations, the bot's PeerLens rating should have
     # decreased enough to affect routing decisions.
     # The test verifies the guardian recorded the degradation.
     bot_did = "did:key:z6MkBadBot"
@@ -3465,7 +3465,7 @@ async def test_guardian_19_3_bot_trust_penalty_stripped_attribution(
     ]
     assert len(trust_calls) > 0, (
         f"Repeated attribution violations from {bot_did} must result in "
-        f"trust score degradation being recorded via Core KV. "
+        f"PeerLens rating degradation being recorded via Core KV. "
         f"No trust-related KV writes found for this bot."
     )
 
@@ -6354,7 +6354,7 @@ async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
 
     # Must NOT claim to have PeerLens data when none exists.
     fabricated_trust = re.compile(
-        r"PeerLens data|verified review|trust score|"
+        r"PeerLens data|verified review|PeerLens rating|"
         r"attestation|verified rating",
         re.IGNORECASE,
     )
@@ -6585,20 +6585,20 @@ async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
     ))
 
     guardian._test_llm.route.return_value = {
-        "content": "Trust score: 7.5/10. Based on community reviews.",
+        "content": "PeerLens rating: 7.5/10. Based on community reviews.",
         "model": "test",
     }
 
     event7 = make_event(
         type="reason",
-        body="What's the trust score for this vendor?",
-        prompt="What's the trust score for this vendor?",
+        body="What's the PeerLens rating for this vendor?",
+        prompt="What's the PeerLens rating for this vendor?",
     )
     result7 = await guardian.process_event(event7)
     content7 = result7.get("content", "")
 
     hallucinated_score = re.compile(
-        r"trust score:\s*\d|score.*\d+\.\d|rating.*\d+/\d+|"
+        r"PeerLens rating:\s*\d|score.*\d+\.\d|rating.*\d+/\d+|"
         r"community review",
         re.IGNORECASE,
     )
@@ -8092,7 +8092,7 @@ async def test_tst_brain_557_multiple_sources_attributed_individually(guardian):
 
 
 # ===================================================================
-# §19.1 Pull Economy — TST-BRAIN-546: Sparse trust data: honest uncertainty
+# §19.1 Pull Economy — TST-BRAIN-546: Sparse PeerLens data: honest uncertainty
 # ===================================================================
 
 
@@ -8331,7 +8331,7 @@ async def test_tst_brain_546_sparse_trust_data_honest_uncertainty(guardian):
         f"unanimous. Got: {content6!r}"
     )
 
-    # --- Scenario 7: No hallucinated trust score from sparse data ---
+    # --- Scenario 7: No hallucinated PeerLens rating from sparse data ---
     guardian._test_core.search_vault.return_value = [
         VaultItem(
             id="trust-att-pos",
@@ -8350,24 +8350,24 @@ async def test_tst_brain_546_sparse_trust_data_honest_uncertainty(guardian):
     ]
 
     guardian._test_llm.route.return_value = {
-        "content": "Trust score: 7.5/10. We recommend this product.",
+        "content": "PeerLens rating: 7.5/10. We recommend this product.",
         "model": "test",
     }
 
     event7 = make_event(
         type="reason",
-        body="What's the trust score?",
-        prompt="What's the trust score?",
+        body="What's the PeerLens rating?",
+        prompt="What's the PeerLens rating?",
     )
     result7 = await guardian.process_event(event7)
     content7 = result7.get("content", "")
 
     hallucinated_score = re.compile(
-        r"trust score:\s*\d|score.*\d+\.\d|we recommend",
+        r"PeerLens rating:\s*\d|score.*\d+\.\d|we recommend",
         re.IGNORECASE,
     )
     assert not hallucinated_score.search(content7), (
-        f"2 conflicting reviews → must NOT generate a trust score "
+        f"2 conflicting reviews → must NOT generate a PeerLens rating "
         f"or make a confident recommendation. Verified Truth: "
         f"honest uncertainty, not fabricated confidence. "
         f"Got: {content7!r}"
@@ -8574,7 +8574,7 @@ async def test_tst_brain_566_ranking_explainability(guardian):
         re.IGNORECASE,
     )
     assert no_data.search(content5), (
-        f"No trust data for either product — Brain cannot explain "
+        f"No PeerLens data for either product — Brain cannot explain "
         f"ranking and must honestly say so. Got: {content5!r}"
     )
     assert not opaque_score.search(content5), (
@@ -8649,7 +8649,7 @@ async def test_tst_brain_566_ranking_explainability(guardian):
 
 
 # ===================================================================
-# §19.1 Pull Economy — TST-BRAIN-547: Dense trust data: confidence proportional
+# §19.1 Pull Economy — TST-BRAIN-547: Dense PeerLens data: confidence proportional
 # ===================================================================
 
 
@@ -9278,7 +9278,7 @@ def test_density_enforcement_zero_passes_through_clean():
 
     # Content that has already been cleaned by guard scan (fabricated
     # sentences removed, only honest content remains).
-    clean_content = "I don't have specific trust data for this vendor."
+    clean_content = "I don't have specific PeerLens data for this vendor."
 
     # No disclosure prefix injected — LLM handles disclosure via tool output.
     result = GuardianLoop._apply_density_enforcement(
@@ -9344,9 +9344,9 @@ def test_density_enforcement_strips_fabricated_scores_zero_tier():
         "entity_scoped": True,
     }
 
-    # Content with fabricated numeric trust score.
+    # Content with fabricated numeric PeerLens rating.
     content_fabricated = (
-        "VendorX has a trust score: 87.5 out of 100 based on community reviews. "
+        "VendorX has a PeerLens rating: 87.5 out of 100 based on community reviews. "
         "The product seems reliable."
     )
     result = GuardianLoop._apply_density_enforcement(
@@ -9418,7 +9418,7 @@ async def test_guard_scan_failure_falls_back_to_regex(guardian) -> None:
     # and returns invalid JSON on guard_scan call (triggering fallback).
     fabricated_antiher_content = (
         "I feel really excited to help you with this! "
-        "VendorX has a trust score: 92 based on community reviews. "
+        "VendorX has a PeerLens rating: 92 based on community reviews. "
         "You might also like checking out CompetitorY. "
         "The product quality is good."
     )
@@ -9434,8 +9434,8 @@ async def test_guard_scan_failure_falls_back_to_regex(guardian) -> None:
     # Trust-relevant vault items (total_count > 0 but trust_count = 0
     # for the queried entity → zero tier).
     guardian._core.search_vault.return_value = [
-        VaultItem(type="note", source="trust_network", summary="Unrelated trust data",
-                  body_text="Unrelated trust data", metadata='{"product_name": "OtherProd"}'),
+        VaultItem(type="note", source="trust_network", summary="Unrelated PeerLens data",
+                  body_text="Unrelated PeerLens data", metadata='{"product_name": "OtherProd"}'),
     ]
 
     result = await guardian.process_event({
@@ -9455,8 +9455,8 @@ async def test_guard_scan_failure_falls_back_to_regex(guardian) -> None:
         f"Unsolicited regex fallback must strip cross-sell. Got: {content!r}"
     )
 
-    # Fabricated: "trust score: 92" must be stripped by density enforcement.
-    assert "trust score" not in content.lower(), (
+    # Fabricated: "PeerLens rating: 92" must be stripped by density enforcement.
+    assert "PeerLens rating" not in content.lower(), (
         f"Fabricated trust claims must be stripped. Got: {content!r}"
     )
 
@@ -9517,7 +9517,7 @@ async def test_guardian_density_miss_path_vague_prompt_trust_rich_vault(
 
     fabricated_content = (
         "Based on verified reviews in PeerLens, that vendor "
-        "has a trust score of 87 and multiple attestations confirm "
+        "has a PeerLens rating of 87 and multiple attestations confirm "
         "reliable service."
     )
     guard_json = {
@@ -9551,7 +9551,7 @@ async def test_guardian_density_miss_path_vague_prompt_trust_rich_vault(
 
     # Must strip fabricated trust claims — guard scan flagged sentence 1.
     fabricated = re.compile(
-        r"trust score|verified review|attestation", re.IGNORECASE
+        r"PeerLens rating|verified review|attestation", re.IGNORECASE
     )
     assert not fabricated.search(content), (
         f"Miss-path: vague prompt with trust-rich vault must strip "
@@ -9599,7 +9599,7 @@ async def test_guardian_density_miss_path_lowercase_entity(
 
     fabricated_content = (
         "vendorx has excellent verified reviews and a strong "
-        "trust score in PeerLens."
+        "PeerLens rating in PeerLens."
     )
     guard_json = {
         "entities": {"did": None, "name": "vendorx"},
@@ -9629,7 +9629,7 @@ async def test_guardian_density_miss_path_lowercase_entity(
 
     import re
     fabricated = re.compile(
-        r"trust score|verified review|attestation", re.IGNORECASE
+        r"PeerLens rating|verified review|attestation", re.IGNORECASE
     )
     assert not fabricated.search(content), (
         f"Lowercase entity miss-path must strip fabricated trust claims. "

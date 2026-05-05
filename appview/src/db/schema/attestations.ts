@@ -43,7 +43,7 @@ export const attestations = pgTable('attestations', {
   // Pseudonymous namespace fragment (TN-DB-012 / Plan §3.5). The
   // `verificationMethod` id under which this attestation was signed,
   // e.g. `'#namespace_2'`. NULL = signed under the root identity.
-  // Reviewer-trust scoring is per-(authorDid, namespace), so namespace
+  // Reviewer-PeerLens rating is per-(authorDid, namespace), so namespace
   // partitions PeerLens graph by pseudonymous compartment without
   // exposing them as separate DIDs.
   namespace: text('namespace'),

@@ -475,7 +475,7 @@ Evidence:
 - Mobile composition lives in `apps/mobile/src/services/bootstrap.ts`, `boot_service.ts`, and `boot_capabilities.ts`.
 - Home-node-lite boot files do not call into this composition.
 - Fixed in `packages/home-node`: runtime lifecycle/status contracts, hosted endpoint resolver, mobile/server env keys, feature handler contracts, explicit feature-unavailable errors, and `createHomeNodeRuntime`.
-- Fixed in app/config consumers: mobile MsgBox/onboarding/trust AppView, mobile node-runtime AppView, home-node-lite Core/Brain server config, home-node-lite Core MsgBox boot/readiness, home-node-lite Brain AppView boot, and home-node-lite Brain signed Core client config now use shared endpoint/config surfaces.
+- Fixed in app/config consumers: mobile MsgBox/onboarding/PeerLens AppView, mobile node-runtime AppView, home-node-lite Core/Brain server config, home-node-lite Core MsgBox boot/readiness, home-node-lite Brain AppView boot, and home-node-lite Brain signed Core client config now use shared endpoint/config surfaces.
 - Mobile `DinaNode` now extends the shared lifecycle type.
 - Home-node-lite Brain boot references the shared runtime type.
 

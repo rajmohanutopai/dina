@@ -92,7 +92,7 @@ export const VAULT_BATCH_MAX = 100;
 export const HYBRID_FTS_WEIGHT = 0.4;
 export const HYBRID_SEMANTIC_WEIGHT = 0.6;
 
-// Trust-weighted reranking multipliers (matching Go vault.go)
+// PeerLens-weighted reranking multipliers (matching Go vault.go)
 // Applied as compounding modifiers after FTS+semantic score fusion.
 export const TRUST_RERANK_CAVEATED = 0.7; // caveated retrieval_policy → 0.7x
 export const TRUST_RERANK_TRUSTED = 1.2; // self/contact_ring1 sender_trust → 1.2x

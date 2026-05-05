@@ -168,7 +168,7 @@ Examples:
 ## PeerLens
 
 **22. PeerLens & Peer Reviews**
-Publishing reviews, vouching for people, querying trust scores, flagging bad actors.
+Publishing reviews, vouching for people, querying PeerLens ratings, flagging bad actors.
 
 Examples:
 - "Show me verified long-term reviews for this laptop from buyers like me."

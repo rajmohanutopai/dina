@@ -9,7 +9,7 @@
 #   jetstream               — PDS firehose → JSON WebSocket
 #   postgres                — AppView database
 #   ingester                — Jetstream → Postgres
-#   scorer                  — Background trust scoring (9 jobs)
+#   scorer                  — Background PeerLens rating (9 jobs)
 #
 # TLS: Caddy reverse proxy with automatic Let's Encrypt.
 #
@@ -123,7 +123,7 @@ services:
       postgres: { condition: service_healthy }
       jetstream: { condition: service_started }
 
-  # ── AppView Scorer (background trust scoring) ──
+  # ── AppView Scorer (background PeerLens rating) ──
   appview-scorer:
     build:
       context: ../../appview

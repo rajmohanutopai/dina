@@ -264,14 +264,14 @@ class TestAgentSafetyDelegation:
         """E2E-6.3  Malicious Bot Blocking.
 
         Brain checks bot trusts via the AppView before routing a
-        product query.  Routes to ReviewBot (trust score 94), NOT to
-        MaliciousBot (trust score 12).  MaliciousBot sends an injection
+        product query.  Routes to ReviewBot (PeerLens rating 94), NOT to
+        MaliciousBot (PeerLens rating 12).  MaliciousBot sends an injection
         attempt — verify it is rejected at schema validation.
         """
         node = don_alonso
 
         # ------------------------------------------------------------------
-        # Check trust scores via AppView
+        # Check PeerLens ratings via AppView
         # ------------------------------------------------------------------
         reviewbot_rep = appview.query_bot("did:plc:reviewbot")
         malbot_rep = appview.query_bot("did:plc:malbot")
@@ -288,7 +288,7 @@ class TestAgentSafetyDelegation:
             ("did:plc:reviewbot", reviewbot_rep.score, reviewbot),
             ("did:plc:malbot", malbot_rep.score, malicious_bot),
         ]
-        # Sort by trust score descending — pick the best
+        # Sort by PeerLens rating descending — pick the best
         candidates.sort(key=lambda c: c[1], reverse=True)
         chosen_did, chosen_score, chosen_bot = candidates[0]
 
@@ -296,7 +296,7 @@ class TestAgentSafetyDelegation:
             "Brain must route to the highest-trust bot (ReviewBot, 94)"
         )
         assert chosen_did != "did:plc:malbot", (
-            "Brain must NOT route to MaliciousBot (trust score 12)"
+            "Brain must NOT route to MaliciousBot (PeerLens rating 12)"
         )
 
         # ------------------------------------------------------------------

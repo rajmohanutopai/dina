@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install_appview.sh — One-command Trust AppView setup
+# install_appview.sh — One-command PeerLens AppView setup
 #
 # Usage:
 #   ./install_appview.sh              # first-time setup
@@ -58,7 +58,7 @@ info() { echo -e "  ${DIM}[....]${RESET} $1"; }
 
 echo ""
 echo -e "${BOLD}╔══════════════════════════════════════╗${RESET}"
-echo -e "${BOLD}║     Dina Trust AppView Setup    ║${RESET}"
+echo -e "${BOLD}║     Dina PeerLens AppView Setup    ║${RESET}"
 echo -e "${BOLD}╚══════════════════════════════════════╝${RESET}"
 echo ""
 echo -e "  Directory: ${CYAN}${APPVIEW_DIR}${RESET}"
@@ -228,7 +228,7 @@ TABLE_COUNT=$(docker compose exec -T postgres psql -U dina -d dina_trust -t -c \
     "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'" 2>/dev/null | tr -d ' ' || echo "?")
 
 echo -e "${BOLD}╔══════════════════════════════════════════════════════════════╗${RESET}"
-echo -e "${BOLD}║            Trust AppView is Live!                      ║${RESET}"
+echo -e "${BOLD}║            PeerLens AppView is Live!                      ║${RESET}"
 echo -e "${BOLD}╚══════════════════════════════════════════════════════════════╝${RESET}"
 echo ""
 echo -e "  ${BOLD}Database:${RESET}  ${TABLE_COUNT} tables in dina_trust"

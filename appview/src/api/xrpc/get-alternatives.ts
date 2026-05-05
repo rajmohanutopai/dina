@@ -55,7 +55,7 @@ export interface AlternativeEntry {
   name: string
   subjectType: string
   category: string
-  /** Trust score in `[0, 1]` or `null` when the scorer hasn't run yet. */
+  /** PeerLens rating in `[0, 1]` or `null` when the scorer hasn't run yet. */
   trustScore: number | null
 }
 
@@ -90,7 +90,7 @@ export async function getAlternatives(
   }
 
   // Phase 2 — join subjects ⨝ subject_scores in the same category,
-  // exclude self, order by trust score desc with NULLs last and
+  // exclude self, order by PeerLens rating desc with NULLs last and
   // subjectId as a deterministic tiebreaker. Limit at fetch time so
   // we don't pull more rows than the caller asked for.
   //

@@ -766,7 +766,7 @@ Legacy tiers are auto-migrated: `open` → `default`/`standard`, `restricted` �
 | 24 | **[TST-CORE-890]** Contact `updated_at` refreshed on sharing policy mutation | Update sharing policy for contact | `updated_at` timestamp refreshed in contacts table |
 | 25 | **[TST-CORE-891]** Draft confidence score: low → flagged for review | Draft with low confidence score | Flagged for human review, not auto-approved |
 | 26 | **[TST-CORE-892]** Agent `draft_only: true` constraint enforced | Agent with draft_only=true attempts direct action | Blocked — agent can only create drafts, not execute |
-| 27 | **[TST-CORE-893]** Agent outcomes recorded in Tier 3 for trust scoring | Agent completes action | Outcome recorded in Tier 3 vault for trust scoring |
+| 27 | **[TST-CORE-893]** Agent outcomes recorded in Tier 3 for PeerLens rating | Agent completes action | Outcome recorded in Tier 3 vault for PeerLens rating |
 
 ---
 
@@ -1320,7 +1320,7 @@ Legacy tiers are auto-migrated: `open` → `default`/`standard`, `restricted` �
 | 7 | **[TST-CORE-645]** All brain-callable endpoints accept Service Signature Auth | Iterate all non-admin endpoints with Service Signature Auth | All return 200 (not 403) |
 | 8 | **[TST-CORE-646]** No other endpoints exist beyond documented set | Enumerate all routes | Exact match with documented API surface — 8 brain-callable families (vault/query, vault/store, did/verify, pii/scrub, notify, msg/send, trust/query, process+reason) plus admin-only endpoints (did/sign, did/rotate, vault/backup, persona/unlock, admin/*) |
 | 9 | **[TST-CORE-647]** Core exposes `/v1/msg/send` to brain | Service Signature Auth + encrypted message payload (recipient DID, ciphertext) | 200 — message queued in outbox for Dina-to-Dina delivery. Architecture §03 line 135 lists `msg/send` in Service Signature Auth scope. Brain triggers outbound messages (e.g., sharing a verdict with a contact); core handles encryption envelope and transport |
-| 10 | **[TST-CORE-648]** Core exposes `/v1/trust/query` to brain | Service Signature Auth + query (entity, category) | 200 with trust score from local cache or PDS federation. Architecture §03 line 135 lists `trust/query` in Service Signature Auth scope. Brain needs trust data for LLM routing decisions (e.g., which bot to delegate to) and trust ring evaluation |
+| 10 | **[TST-CORE-648]** Core exposes `/v1/trust/query` to brain | Service Signature Auth + query (entity, category) | 200 with PeerLens rating from local cache or PDS federation. Architecture §03 line 135 lists `trust/query` in Service Signature Auth scope. Brain needs PeerLens data for LLM routing decisions (e.g., which bot to delegate to) and trust ring evaluation |
 | 11 | **[TST-CORE-906]** `/v1/vault/crash` rejects requests missing required fields | POST /v1/vault/crash without error/traceback | 400 Bad Request — error and traceback fields required |
 | 12 | **[TST-CORE-907]** Vault query full response schema validated | POST /v1/vault/query | Response contains id, type, persona, summary, relevance, pagination |
 | 13 | **[TST-CORE-908]** Vault store response ID format (`vault_` prefix) | POST /v1/vault/store | Returned ID starts with `vault_` prefix |
@@ -1554,7 +1554,7 @@ Legacy tiers are auto-migrated: `open` → `default`/`standard`, `restricted` �
 | 3 | **[TST-CORE-753]** Ring 2 — Phase 1 compromise | Aadhaar e-KYC XML with offline verification | Processed locally on-device, only yes/no attestation stored — not full ZKP (UIDAI doesn't offer ZKP-native API) |
 | 4 | **[TST-CORE-754]** Ring 2 — one ID = one verified Dina | Attempt second verification with same government ID | Rejected — prevents Sybil attacks |
 | 5 | **[TST-CORE-755]** Ring 3 — Skin in the Game | W3C Verifiable Credentials from LinkedIn, GitHub, business registration | Each credential adds trust weight, reveals only what user chooses |
-| 6 | **[TST-CORE-756]** Trust Score formula | Compute trust score | `f(ring_level, time_alive, transaction_anchors, outcome_data, peer_attestations, credential_count)` — composite function |
+| 6 | **[TST-CORE-756]** PeerLens Rating formula | Compute PeerLens rating | `f(ring_level, time_alive, transaction_anchors, outcome_data, peer_attestations, credential_count)` — composite function |
 | 7 | **[TST-CORE-757]** Trust level affects sharing/routing | Unverified contact vs Verified contact | Different default sharing policies applied |
 
 ### 24.2 HSM / Secure Enclave Key Generation
@@ -1607,7 +1607,7 @@ Legacy tiers are auto-migrated: `open` → `default`/`standard`, `restricted` �
 |---|----------|-------|----------|
 | 1 | **[TST-CORE-858]** Bot query sanitization: no DID, no medical, no financial in outbound queries | Query containing user DID + medical terms | Sanitized query strips DID and sensitive categories before sending to bot |
 | 2 | **[TST-CORE-859]** Bot communication protocol: POST /query schema with bot_signature and attribution | Structured BotQuery payload | Response includes bot_signature and attribution fields per protocol spec |
-| 3 | **[TST-CORE-860]** Bot trust scoring: local score tracking, threshold-based routing | Bot with low score | Score tracked locally, queries routed only to bots above threshold |
+| 3 | **[TST-CORE-860]** Bot PeerLens rating: local score tracking, threshold-based routing | Bot with low score | Score tracked locally, queries routed only to bots above threshold |
 | 4 | **[TST-CORE-861]** Deep Link attribution validation + penalty for stripping attribution | Bot response with stripped attribution | Attribution validated, penalty applied to bot score for stripping |
 
 ---

@@ -25,9 +25,9 @@ type VaultService struct {
 	writer     port.VaultWriter
 	gatekeeper port.Gatekeeper
 	clock      port.Clock
-	personaMgr port.PersonaManager       // optional — tier enforcement
-	autoUnlock AutoUnlockFunc            // optional — auto-opens sensitive vaults for user requests
-	Tracer     middleware.TraceEmitter   // optional — emit authz traces
+	personaMgr port.PersonaManager     // optional — tier enforcement
+	autoUnlock AutoUnlockFunc          // optional — auto-opens sensitive vaults for user requests
+	Tracer     middleware.TraceEmitter // optional — emit authz traces
 }
 
 // SetPersonaManager enables persona tier enforcement on vault operations.
@@ -284,7 +284,7 @@ func (s *VaultService) HybridSearch(ctx context.Context, agentDID string, person
 		}
 	}
 
-	// Trust-weighted modifiers: demote low-trust, boost high-trust sources.
+	// PeerLens-weighted modifiers: demote low-trust, boost high-trust sources.
 	// Multipliers compound: caveated + low confidence = 0.42x; self-sourced = 1.2x.
 	const (
 		caveatedMultiplier      = 0.7 // retrieval_policy=caveated → demoted

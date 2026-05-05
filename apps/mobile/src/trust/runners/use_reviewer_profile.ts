@@ -48,7 +48,7 @@ export function useReviewerProfile(
           setState({
             profile: null,
             error:
-              "We don't have a trust profile for this person yet. Once they make or receive attestations, their profile will fill in.",
+              "We don't have a PeerLens profile for this person yet. Once they make or receive attestations, their profile will fill in.",
             isLoading: false,
           });
           return;

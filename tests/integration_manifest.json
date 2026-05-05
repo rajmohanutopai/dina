@@ -2220,7 +2220,7 @@
       "line": 660
     },
     "TST-INT-318": {
-      "scenario": "Foundation PDS stores only trust data",
+      "scenario": "Foundation PDS stores only PeerLens data",
       "path": "11.4",
       "row": 3,
       "section": "PeerLens Integration",
@@ -2969,7 +2969,7 @@
       "line": 883
     },
     "TST-INT-425": {
-      "scenario": "Bot trust scoring factors",
+      "scenario": "Bot PeerLens rating factors",
       "path": "16.10",
       "row": 6,
       "section": "Deferred (Phase 2+)",

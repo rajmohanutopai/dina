@@ -181,7 +181,7 @@ describe('deriveSubjectCard — top reviewer ordering', () => {
     expect(r.topReviewer).toBeNull();
   });
 
-  it('closer ring beats farther ring regardless of trust score', () => {
+  it('closer ring beats farther ring regardless of PeerLens rating', () => {
     const r = deriveSubjectCard(
       input({
         reviews: [
@@ -200,7 +200,7 @@ describe('deriveSubjectCard — top reviewer ordering', () => {
   // assertion. Each test uses the strongest-trust reviewer on the
   // weaker ring side so the ring rule is the SOLE deciding factor.
 
-  it('self beats contact regardless of trust score (ring rank: self > contact)', () => {
+  it('self beats contact regardless of PeerLens rating (ring rank: self > contact)', () => {
     const r = deriveSubjectCard(
       input({
         reviews: [
@@ -213,7 +213,7 @@ describe('deriveSubjectCard — top reviewer ordering', () => {
     expect(r.topReviewer?.ring).toBe('self');
   });
 
-  it('contact beats fof regardless of trust score (ring rank: contact > fof)', () => {
+  it('contact beats fof regardless of PeerLens rating (ring rank: contact > fof)', () => {
     const r = deriveSubjectCard(
       input({
         reviews: [
@@ -226,7 +226,7 @@ describe('deriveSubjectCard — top reviewer ordering', () => {
     expect(r.topReviewer?.ring).toBe('contact');
   });
 
-  it('fof beats stranger regardless of trust score (ring rank: fof > stranger)', () => {
+  it('fof beats stranger regardless of PeerLens rating (ring rank: fof > stranger)', () => {
     const r = deriveSubjectCard(
       input({
         reviews: [

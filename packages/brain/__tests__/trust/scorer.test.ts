@@ -1,5 +1,5 @@
 /**
- * T1J.3 — Trust scorer: sender identity → trust metadata.
+ * T1J.3 — PeerLens ratingr: sender identity → trust metadata.
  *
  * Category A: fixture-based. Verifies scoring rules match server for
  * self, contact, service, unknown, marketing senders.
@@ -10,7 +10,7 @@
 
 import { scoreSender, matchSenderToContact, matchByAlias } from '../../src/trust/scorer';
 
-describe('Trust Scorer', () => {
+describe('PeerLens Ratingr', () => {
   const contacts = [
     { name: 'Alice', email: 'alice@example.com', aliases: ['Ali'] },
     { name: 'Bob', email: 'bob@work.com' },

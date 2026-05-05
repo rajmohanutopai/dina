@@ -40,7 +40,7 @@ Alice, Bob, Diana also reviewed the ErgoMax Elite 500:
 
 Dina's Brain assembles a prompt combining:
   1. Personal context from vault (health, work, finance, family)
-  2. Trust-weighted review data from AppView
+  2. PeerLens-weighted review data from AppView
 
 The LLM must produce advice that is PERSONALIZED — not just "avoid
 CheapChair" (any search engine could say that), but "avoid CheapChair
@@ -59,7 +59,7 @@ Architecture
 AppView is the aggregation layer — a provider service (like a Bluesky
 AppView) that ingests the firehose of attestations from all PDS repos
 via Jetstream, stores them in Postgres, and runs scorer jobs. Your Dina
-queries AppView XRPC endpoints to get pre-computed, trust-weighted
+queries AppView XRPC endpoints to get pre-computed, PeerLens-weighted
 results. The Home Node never stores millions of raw reviews.
 
 ::
@@ -68,7 +68,7 @@ results. The Home Node never stores millions of raw reviews.
                                     ↓
   AppView Jetstream consumer → ingests into Postgres
                                     ↓
-  Scorer jobs → aggregate trust-weighted results
+  Scorer jobs → aggregate PeerLens-weighted results
                                     ↓
   Alonso's Dina queries AppView → gets structured summaries
                                     ↓
@@ -152,14 +152,14 @@ EVE_CHEAPCHAIR = (
 
 @pytest.mark.usefixtures("setup_personas", "seed_appview")
 class TestPurchaseJourney:
-    """User Story 01: Personalized purchase advice with trust-weighted reviews.
+    """User Story 01: Personalized purchase advice with PeerLens-weighted reviews.
 
     IMPORTANT: Tests are numbered 00–11 and MUST run sequentially.
     Each test depends on state from previous tests. This is a user
     journey test, not a collection of independent assertions.
 
     5 Dinas (3 verified, 2 unverified) + personal vault context →
-    personalized, trust-weighted purchase advice via real LLM.
+    personalized, PeerLens-weighted purchase advice via real LLM.
     """
 
     # -----------------------------------------------------------------
@@ -630,7 +630,7 @@ class TestPurchaseJourney:
         available when reasoning.
 
         This is the data that makes Dina's advice PERSONALIZED — no other
-        system has both verified trust data AND deep personal context.
+        system has both verified PeerLens data AND deep personal context.
         """
         base = alonso_core
 
@@ -757,7 +757,7 @@ class TestPurchaseJourney:
         """Store a purchase decision record — not raw PeerLens data.
 
         The vault stores *decisions*, not caches. Raw reviews live in
-        AppView (Postgres, firehose-ingested, trust-weighted). The vault
+        AppView (Postgres, firehose-ingested, PeerLens-weighted). The vault
         only stores a record when Dina combined PeerLens data + vault
         context into a personalized recommendation.
 
@@ -783,7 +783,7 @@ class TestPurchaseJourney:
                     "Summary": (
                         "Office chair decision: Recommended ErgoMax Elite 500 "
                         "(~18,000 INR) over CheapChair Pro 3000 (~8,000 INR). "
-                        "Trust-weighted reviews + personal health context drove "
+                        "PeerLens-weighted reviews + personal health context drove "
                         "the recommendation."
                     ),
                     "BodyText": (
@@ -797,11 +797,11 @@ class TestPurchaseJourney:
                         "- Family: kids (13, 10) share home office chair\n"
                         "\n"
                         "PeerLens data (queried from AppView):\n"
-                        "- CheapChair Pro 3000: trust-weighted 2.1/10 — "
+                        "- CheapChair Pro 3000: PeerLens-weighted 2.1/10 — "
                         "3 verified NEGATIVE (Alice 0.87, Bob 0.82, Diana 0.79), "
                         "2 unverified POSITIVE (Charlie 0.15, Eve 0.12). "
                         "Issues: armrest durability, build quality, wobbling.\n"
-                        "- ErgoMax Elite 500: trust-weighted 9.2/10 — "
+                        "- ErgoMax Elite 500: PeerLens-weighted 9.2/10 — "
                         "3 verified POSITIVE (Alice 0.87, Bob 0.82, Diana 0.79). "
                         "Praise: lumbar support, build quality, durability.\n"
                         "\n"
@@ -855,7 +855,7 @@ class TestPurchaseJourney:
         ), f"Decision record not found in vault query. Items: {items[:3]}"
 
     # -----------------------------------------------------------------
-    # 11 — Dina gives personalized, trust-weighted purchase advice
+    # 11 — Dina gives personalized, PeerLens-weighted purchase advice
     # -----------------------------------------------------------------
 
     # TST-USR-012
@@ -866,7 +866,7 @@ class TestPurchaseJourney:
     def test_11_dina_gives_personalized_purchase_advice(
         self, alonso_brain, brain_signer
     ):
-        """Brain assembles vault context + trust data → personalized advice.
+        """Brain assembles vault context + PeerLens data → personalized advice.
 
         This is the full Dina value proposition in one test:
 
@@ -874,7 +874,7 @@ class TestPurchaseJourney:
            10hr days), finance (single income, budget), family (kids
            who use the chair).
 
-        2. Trust-weighted review data from AppView — 3 verified negatives
+        2. PeerLens-weighted review data from AppView — 3 verified negatives
            vs 2 unverified positives for CheapChair, 3 verified positives
            for ErgoMax.
 
@@ -890,7 +890,7 @@ class TestPurchaseJourney:
         health condition, budget, or usage pattern.
         """
         # This prompt simulates what Brain would assemble from vault
-        # queries across personas + AppView trust data.
+        # queries across personas + AppView PeerLens data.
         prompt = (
             'The user said: "I need a new office chair."\n'
             "\n"
@@ -916,10 +916,10 @@ class TestPurchaseJourney:
             "- Kids (13 and 10 years old) use home office for online classes\n"
             "- Chair needs to handle family use, not just the user\n"
             "\n"
-            "== PEERLENS DATA (from AppView — trust-weighted) ==\n"
+            "== PEERLENS DATA (from AppView — PeerLens-weighted) ==\n"
             "\n"
             "CheapChair Pro 3000 (~8,000 INR):\n"
-            "  Trust-weighted score: 2.1/10\n"
+            "  PeerLens-weighted score: 2.1/10\n"
             "  Verified reviewers (Ring 2, high trust):\n"
             f'  - Alice (trust 0.87): NEGATIVE — "{ALICE_CHEAPCHAIR}"\n'
             f'  - Bob (trust 0.82): NEGATIVE — "{BOB_CHEAPCHAIR}"\n'
@@ -930,7 +930,7 @@ class TestPurchaseJourney:
             "  Top issues: armrest durability, build quality, wobbling\n"
             "\n"
             "ErgoMax Elite 500 (~18,000 INR):\n"
-            "  Trust-weighted score: 9.2/10\n"
+            "  PeerLens-weighted score: 9.2/10\n"
             "  Verified reviewers (Ring 2, high trust):\n"
             f'  - Alice (trust 0.87): POSITIVE — "{ALICE_ERGOMAX}"\n'
             f'  - Bob (trust 0.82): POSITIVE — "{BOB_ERGOMAX}"\n'
@@ -940,7 +940,7 @@ class TestPurchaseJourney:
             "== TASK ==\n"
             "\n"
             "Based on this user's specific health needs, work pattern, budget, "
-            "and family situation — combined with the trust-weighted review "
+            "and family situation — combined with the PeerLens-weighted review "
             "data — advise the user on which office chair to buy. Explain "
             "your reasoning in terms of how each option matches or fails "
             "their specific needs."
@@ -1079,7 +1079,7 @@ class TestPurchaseJourney:
           3. Searches vault -> finds WFH 2 days/week, 10hr days (work persona)
           4. Searches vault -> finds single income, 10-20K budget (finance persona)
           5. Searches vault -> finds kids share the chair (family persona)
-          6. Finds prior purchase decision with trust-weighted review data
+          6. Finds prior purchase decision with PeerLens-weighted review data
           7. Synthesizes PERSONALIZED advice
 
         The response is impossible for any other system to produce:
@@ -1192,9 +1192,9 @@ class TestPurchaseJourney:
             "- Work: computer engineer, WFH 2 days/week, 10+ hours at desk\n"
             "- Finance: single income household, budget 10-20K INR\n"
             "- Family: two school-age kids who share the chair\n"
-            "- Purchase decision: ErgoMax Elite 500 recommended (trust-weighted "
+            "- Purchase decision: ErgoMax Elite 500 recommended (PeerLens-weighted "
             "9.2/10 from 3 verified reviewers), CheapChair Pro 3000 rejected "
-            "(trust-weighted 2.1/10, 3 verified negatives, 2 unverified positives)\n"
+            "(PeerLens-weighted 2.1/10, 3 verified negatives, 2 unverified positives)\n"
             "\n"
             "== RESPONSE TO EVALUATE ==\n"
             f"{data.get('content', '')}\n"

@@ -151,7 +151,7 @@ def check_xrpc_resolve(base: str) -> bool:
     url = f"{base}/xrpc/com.dina.trust.resolve?{params}"
     status, body = _request(url)
 
-    # Valid responses: 200 with trust data, or 200 with low confidence (no data yet)
+    # Valid responses: 200 with PeerLens data, or 200 with low confidence (no data yet)
     # A 400 "InvalidRequest" means the endpoint exists but params were wrong
     # A 404 is a routing error
     if status == 200:

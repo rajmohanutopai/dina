@@ -62,7 +62,7 @@ export interface Attestation {
    * published under the author's third pseudonymous compartment.
    * Absent or empty = signed under the root identity.
    * The ingester verifies the commit signature against this key
-   * (TN-ING-003). Reviewer-trust scoring is per-(did, namespace).
+   * (TN-ING-003). Reviewer-PeerLens rating is per-(did, namespace).
    */
   namespace?: string
   /**

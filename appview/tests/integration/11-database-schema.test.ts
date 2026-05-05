@@ -509,7 +509,7 @@ describe('11.1 Schema Correctness', () => {
   it('IT-DB-046: attestations.namespace -- nullable + round-trip (TN-DB-012)', async () => {
     // Description: TN-DB-012 — pseudonymous namespace fragment. Nullable for root-identity records
     // (the V1-launch majority); populated value (e.g. `'#namespace_2'`) for records signed under
-    // a non-root verificationMethod. Reviewer-trust scoring is per-(authorDid, namespace).
+    // a non-root verificationMethod. Reviewer-PeerLens rating is per-(authorDid, namespace).
     const testUriRoot = `at://did:plc:db046/com.dina.trust.attestation/db046-root-${Date.now()}`
     const testUriNs = `at://did:plc:db046/com.dina.trust.attestation/db046-ns-${Date.now()}`
     await db.execute(sql.raw(`

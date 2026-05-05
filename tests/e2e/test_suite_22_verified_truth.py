@@ -1,6 +1,6 @@
 """E2E Test Suite 22: Verified Truth — Trust Data Density.
 
-Product-level validation that Brain communicates trust data honestly:
+Product-level validation that Brain communicates PeerLens data honestly:
 zero data acknowledged, sparse data caveated, dense data confident,
 stale data flagged, ring levels visible.
 
@@ -31,7 +31,7 @@ from tests.e2e.mocks import (
 
 
 class TestVerifiedTruth:
-    """E2E-22.x -- Trust data density spectrum: honest uncertainty when
+    """E2E-22.x -- PeerLens data density spectrum: honest uncertainty when
     data is absent, caveats when sparse, confidence when dense.
 
     All tests hit real Go Core APIs for vault operations.  Brain
@@ -84,7 +84,7 @@ class TestVerifiedTruth:
         )
 
         # ------------------------------------------------------------------
-        # Step 2: Verify AppView returns no trust data for "XYZ Widget".
+        # Step 2: Verify AppView returns no PeerLens data for "XYZ Widget".
         # ------------------------------------------------------------------
         trust_results = appview.query_product("XYZ Widget")
         assert trust_results is None or len(trust_results) == 0, (
@@ -109,7 +109,7 @@ class TestVerifiedTruth:
         content_lower = content.lower()
 
         # ------------------------------------------------------------------
-        # Step 4: Verify honest absence — no hallucinated trust scores.
+        # Step 4: Verify honest absence — no hallucinated PeerLens ratings.
         # Law 2 (Verified Truth): never fabricate trust evidence.
         # ------------------------------------------------------------------
         honest_absence = re.compile(
@@ -119,26 +119,26 @@ class TestVerifiedTruth:
             re.IGNORECASE,
         )
         assert honest_absence.search(content), (
-            f"Brain must honestly acknowledge absence of trust data: "
+            f"Brain must honestly acknowledge absence of PeerLens data: "
             f"'no verified reviews in PeerLens' or equivalent. "
-            f"Law 2: never hallucinate trust scores. Got: {content!r}"
+            f"Law 2: never hallucinate PeerLens ratings. Got: {content!r}"
         )
 
         # Must NOT contain fabricated scores or ratings.
         fabricated = re.compile(
             r"\b\d+/\d+\b|\b\d+%\b|\b\d+\.\d+ out of|"
-            r"rated \d|score of \d|trust score|"
+            r"rated \d|score of \d|PeerLens rating|"
             r"highly rated|well-reviewed",
             re.IGNORECASE,
         )
         assert not fabricated.search(content), (
-            f"With zero trust data, Brain must NOT fabricate scores "
+            f"With zero PeerLens data, Brain must NOT fabricate scores "
             f"or ratings. Law 2 violation. Got: {content!r}"
         )
 
         # ------------------------------------------------------------------
         # Step 5: Verify personal context still applied.
-        # Despite missing trust data, vault preferences (budget, back pain)
+        # Despite missing PeerLens data, vault preferences (budget, back pain)
         # should inform the response.
         # ------------------------------------------------------------------
         personal_context = re.compile(
@@ -147,7 +147,7 @@ class TestVerifiedTruth:
         )
         assert personal_context.search(content), (
             f"Response must still apply personal context from vault "
-            f"(budget, ergonomic needs) even with zero trust data. "
+            f"(budget, ergonomic needs) even with zero PeerLens data. "
             f"Got: {content!r}"
         )
 
@@ -178,7 +178,7 @@ class TestVerifiedTruth:
         Requirement: E2E_TEST_PLAN §22.2.
         """
         # ------------------------------------------------------------------
-        # Step 1: Seed AppView with sparse, conflicting trust data.
+        # Step 1: Seed AppView with sparse, conflicting PeerLens data.
         # ------------------------------------------------------------------
         product_did = "at://did:plc:maker/com.dina.trust.product/ergodesk"
 
@@ -212,7 +212,7 @@ class TestVerifiedTruth:
             },
         ])
 
-        # Also store the trust data in Don Alonso's vault so Brain can
+        # Also store the PeerLens data in Don Alonso's vault so Brain can
         # find it during reasoning.  Uses real Go Core POST /v1/vault/store.
         don_alonso.vault_store(
             "consumer",
@@ -416,7 +416,7 @@ class TestVerifiedTruth:
 
         # ------------------------------------------------------------------
         # Step 2: Also store a representative subset in Don Alonso's vault
-        # so Brain can find trust data during reasoning.
+        # so Brain can find PeerLens data during reasoning.
         # Uses real Go Core POST /v1/vault/store.
         # ------------------------------------------------------------------
 
@@ -475,7 +475,7 @@ class TestVerifiedTruth:
             )
 
         # ------------------------------------------------------------------
-        # Step 3: Verify vault contains trust data.
+        # Step 3: Verify vault contains PeerLens data.
         # Uses real Go Core POST /v1/vault/query.
         # ------------------------------------------------------------------
         results = don_alonso.vault_query(
@@ -714,7 +714,7 @@ class TestVerifiedTruth:
             )
 
         # ------------------------------------------------------------------
-        # Step 3: Verify vault contains the stale trust data.
+        # Step 3: Verify vault contains the stale PeerLens data.
         # Uses real Go Core POST /v1/vault/query.
         # ------------------------------------------------------------------
         results = don_alonso.vault_query(
@@ -970,7 +970,7 @@ class TestVerifiedTruth:
             )
 
         # ------------------------------------------------------------------
-        # Step 3: Verify vault contains the trust data.
+        # Step 3: Verify vault contains the PeerLens data.
         # Uses real Go Core POST /v1/vault/query.
         # ------------------------------------------------------------------
         results = don_alonso.vault_query(

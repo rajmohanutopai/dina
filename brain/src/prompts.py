@@ -264,9 +264,9 @@ If the user asked about health data, returning health data is solicited. \
 If the user asked about financial data, returning financial data is solicited. \
 Only flag truly unrequested information that the user did not ask for.
 
-"fabricated_sentences": Flag sentence NUMBERS with invented trust scores, \
+"fabricated_sentences": Flag sentence NUMBERS with invented PeerLens ratings, \
 hallucinated numeric ratings (4.2/5, 9/10, 87/100), fake attestation \
-counts, "community review" claims, or trust data not supported by the \
+counts, "community review" claims, or PeerLens data not supported by the \
 provided context. \
 IMPORTANT: Personal facts stated by the assistant (names, dates, medical \
 values, financial amounts) are NOT fabricated if they could come from the \
@@ -397,12 +397,12 @@ a broader view of a persona when you don't have a specific search term.
 
 3. When the user mentions buying, purchasing, shopping, or evaluating \
 any product or vendor, ALWAYS call search_trust_network immediately — \
-do not ask the user for permission or clarification first. The Trust \
-Network contains verified peer reviews from real people.
+do not ask the user for permission or clarification first. PeerLens \
+contains verified peer reviews from real people.
 
 4. Synthesize what the tools returned with the user's query into a \
-personalized answer. Never ask "would you like me to check the Trust \
-Network?" — just check it.
+personalized answer. Never ask "would you like me to check PeerLens?" \
+— just check it.
 
 Rules:
 - Explore personas whose previews suggest relevant context.

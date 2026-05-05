@@ -21,8 +21,8 @@
 | 8 | **[TST-USR-008]** Verified negatives for CheapChair | Query attestations with trust weighting | Verified (Ring 2+) reviewers negative on CheapChair |
 | 9 | **[TST-USR-009]** Verified positives for ErgoMax | Query attestations with trust weighting | Verified reviewers positive on ErgoMax |
 | 10 | **[TST-USR-010]** Store personal context in vault | Store health, work, finance, family items | Vault items stored across persona compartments |
-| 11 | **[TST-USR-011]** Store purchase decision in vault | Store chair comparison + trust-weighted reviews | Decision context with trust scores persisted |
-| 12 | **[TST-USR-012]** Dina gives personalized purchase advice (LLM) | Brain reasons with vault context + trust data | Recommends ErgoMax over CheapChair, references back pain, budget, trust data |
+| 11 | **[TST-USR-011]** Store purchase decision in vault | Store chair comparison + PeerLens-weighted reviews | Decision context with PeerLens ratings persisted |
+| 12 | **[TST-USR-012]** Dina gives personalized purchase advice (LLM) | Brain reasons with vault context + PeerLens data | Recommends ErgoMax over CheapChair, references back pain, budget, PeerLens data |
 | 13 | **[TST-USR-013]** Five words to personalized advice (LLM) | "I need a new office chair" | Full pipeline: vault enrichment → trust query → personalized recommendation |
 
 ---
@@ -49,9 +49,9 @@
 
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-USR-021]** Seed creator profiles | Insert Elena (Ring 3) + BotFarm (Ring 1) into Postgres | Profiles with correct trust scores + attestation counts |
-| 2 | **[TST-USR-022]** AppView returns trusted creator | XRPC getProfile for Elena | Trust score ≥0.9, 200+ attestations, 15+ vouches |
-| 3 | **[TST-USR-023]** AppView returns untrusted creator | XRPC getProfile for BotFarm | Trust score <0.1, 0 attestations about, 0 vouches |
+| 1 | **[TST-USR-021]** Seed creator profiles | Insert Elena (Ring 3) + BotFarm (Ring 1) into Postgres | Profiles with correct PeerLens ratings + attestation counts |
+| 2 | **[TST-USR-022]** AppView returns trusted creator | XRPC getProfile for Elena | PeerLens rating ≥0.9, 200+ attestations, 15+ vouches |
+| 3 | **[TST-USR-023]** AppView returns untrusted creator | XRPC getProfile for BotFarm | PeerLens rating <0.1, 0 attestations about, 0 vouches |
 | 4 | **[TST-USR-024]** Core resolves trusted creator via AppView | GET /v1/trust/resolve?did=elena | Full profile passed through Core from AppView |
 | 5 | **[TST-USR-025]** Core resolves untrusted creator via AppView | GET /v1/trust/resolve?did=botfarm | Low/zero profile passed through Core |
 | 6 | **[TST-USR-026]** Brain confirms trusted creator (LLM) | Send Elena profile to LLM | LLM recognizes strong trust signals, references specific data |

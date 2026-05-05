@@ -1,4 +1,4 @@
-# Dina Trust AppView — Code Architecture v5 Final
+# Dina PeerLens AppView — Code Architecture v5 Final
 
 > **Revision history:**
 > - v1: Initial architecture (raw relay, precomputed graph, unified Next.js)
@@ -17,7 +17,7 @@ The AppView is a TypeScript monorepo containing three runtime processes:
 
 1. **Ingester** — Long-running worker that consumes Jetstream (pre-decoded JSON stream from the AT Proto relay), validates records, and writes to PostgreSQL.
 2. **API + Web Server** — Next.js app serving XRPC query endpoints (for Dina agents) and server-rendered public pages (for humans). Unified in v1, splittable to Fastify + Next.js when agent volume demands it.
-3. **Scorer** — Periodic background worker that refreshes materialized aggregations, computes trust scores, detects anomalies, and manages tombstones.
+3. **Scorer** — Periodic background worker that refreshes materialized aggregations, computes PeerLens ratings, detects anomalies, and manages tombstones.
 
 All three share the same codebase, database connection library, and TypeScript types. They differ only in entry point.
 
@@ -177,7 +177,7 @@ dina-appview/
 │   │   │   │  # ── Materialized tables (refreshed by Scorer) ──
 │   │   │   ├── did-profiles.ts      # Aggregated DID trust + reviewer stats
 │   │   │   ├── subject-scores.ts    # Aggregated subject trust
-│   │   │   └── domain-scores.ts     # Per-DID per-domain trust scores
+│   │   │   └── domain-scores.ts     # Per-DID per-domain PeerLens ratings
 │   │   │
 │   │   ├── migrations/
 │   │   │   ├── 0000_initial.sql
@@ -241,7 +241,7 @@ dina-appview/
 │   │   │   └── cleanup-expired.ts        # Clean expired delegations, review requests
 │   │   │
 │   │   └── algorithms/
-│   │       ├── trust-score.ts            # Core trust scoring algorithm
+│   │       ├── trust-score.ts            # Core PeerLens rating algorithm
 │   │       ├── reviewer-quality.ts       # Corroboration, deletion rate, evidence rate
 │   │       ├── sentiment-aggregation.ts  # Weighted sentiment from raw attestations
 │   │       ├── anomaly-detection.ts      # Statistical outlier detection
@@ -934,7 +934,7 @@ export class JetstreamConsumer {
     if (event.account.status === 'takendown' || event.account.status === 'deleted') {
       logger.info({ did: event.did, status: event.account.status }, 'Account status change')
       // Mark all records by this DID as inactive (soft flag, not deletion)
-      // The Scorer can factor this into trust scores
+      // The Scorer can factor this into PeerLens ratings
     }
     metrics.incr('ingester.events.account', { status: event.account.status ?? 'active' })
   }
@@ -1632,7 +1632,7 @@ export const deletionHandler = {
 
 The original design generated a slug from `name + type` (e.g., `business--darshini-tiffin-center`) and used `ON CONFLICT (slug)` for deduplication. This has two fatal flaws:
 
-1. **False merges (data corruption):** Two different restaurants named "Darshini Tiffin Center" — one in Bangalore, one in Hubli — produce identical slugs. Their reviews merge silently. Once trust scores are computed across the merged entity, the data is corrupted and nearly impossible to untangle.
+1. **False merges (data corruption):** Two different restaurants named "Darshini Tiffin Center" — one in Bangalore, one in Hubli — produce identical slugs. Their reviews merge silently. Once PeerLens ratings are computed across the merged entity, the data is corrupted and nearly impossible to untangle.
 
 2. **False splits (fragmentation):** "Darshini Tiffin" and "Darshini Tiffin Center" produce different slugs. Reviews for the same place are split across two subjects. The `ON CONFLICT` merge never fires.
 
@@ -2165,7 +2165,7 @@ export async function refreshProfiles(db: DrizzleDB): Promise<void> {
 }
 
 /**
- * Gather raw data for trust score computation.
+ * Gather raw data for PeerLens rating computation.
  * Queries attestations, vouches, endorsements, flags, etc. for a single DID.
  */
 async function gatherTrustScoreInputs(db: DrizzleDB, did: string) {
@@ -2801,7 +2801,7 @@ export function startScheduler(db: DrizzleDB): void {
 }
 ```
 
-### Trust Score Algorithm
+### PeerLens Rating Algorithm
 
 ```typescript
 // src/scorer/algorithms/trust-score.ts
@@ -2816,7 +2816,7 @@ export interface TrustScoreInput {
     evidenceJson: unknown[] | null
     hasCosignature: boolean
     isVerified: boolean              // Has a verification record
-    authorTrustScore: number | null  // Author's own trust score (for weighting)
+    authorTrustScore: number | null  // Author's own PeerLens rating (for weighting)
     authorHasInboundVouch: boolean   // Fix 12: Does the author have ≥1 vouch from scored DID?
   }[]
   vouchCount: number
@@ -2852,7 +2852,7 @@ export interface TrustScoreOutput {
 /**
  * DAMPING FACTOR (Fix 12): Guarantees convergence of iterative scoring.
  *
- * Trust scores have a circular dependency: computeSentiment() weights
+ * PeerLens ratings have a circular dependency: computeSentiment() weights
  * attestations by authorTrustScore, which is itself computed by
  * computeTrustScore(). With the dirty-flag pattern (Fix 9), this forms
  * an asynchronous relaxation algorithm:
@@ -2918,13 +2918,13 @@ export function computeTrustScore(input: TrustScoreInput): TrustScoreOutput {
  * The old code used `authorTrustScore ?? 0.5` — giving unscored authors
  * the same weight as moderately trusted ones. An attacker could spin up
  * 1,000 sybils, each with default 0.5 weight, and instantly shift a
- * subject's trust score.
+ * subject's PeerLens rating.
  *
  * The fix has two layers:
  *
  * 1. ZERO-TRUST DEFAULT: Unscored authors get weight 0.0, not 0.5.
  *    Their attestations contribute nothing until the Scorer computes
- *    their trust score.
+ *    their PeerLens rating.
  *
  * 2. VOUCH-GATING: Even if a DID has been scored, their attestations
  *    carry zero weight unless they have at least one inbound vouch from
@@ -3153,7 +3153,7 @@ export function resolveKey(
 
 /**
  * Cache TTLs by endpoint.
- * Short TTLs — trust data should never be more than a few seconds stale.
+ * Short TTLs — PeerLens data should never be more than a few seconds stale.
  */
 export const CACHE_TTLS = {
   RESOLVE: 5_000,           // 5 seconds — most critical, most queried
@@ -3811,13 +3811,13 @@ The atomic upsert (Fix 2) is preserved — `ON CONFLICT (id)` on the determinist
 
 **Fix:** In-memory LRU-based sliding window rate limiter (`src/ingester/rate-limiter.ts`), checked BEFORE any database I/O in `processEvent()`. If a DID exceeds 50 records per hour, subsequent records are dropped at the memory layer. The DID is flagged as `quarantined` — the Sybil detection job can call `getQuarantinedDids()` to accelerate investigation. Cost: zero Postgres I/O per dropped record. An attacker flooding millions of events is stopped in nanoseconds.
 
-### Fix 12: Trust Score — Untrusted-by-Default + Convergence (Circular Dependency)
+### Fix 12: PeerLens Rating — Untrusted-by-Default + Convergence (Circular Dependency)
 
 **Problem:** `computeSentiment()` weights attestations by `authorTrustScore`, which is computed by `computeTrustScore()`, which calls `computeSentiment()` on the author's attestations — a circular dependency. The original code defaulted unscored authors to `0.5`, giving new accounts (including Sybils) the same weight as moderately trusted DIDs. An attacker could spin up 1,000 Sybils with default 0.5 weight and shift global scores. Additionally, the incremental dirty-flag pattern processes each DID independently without guaranteeing convergence.
 
 **Fix:** Three changes:
 
-1. **Zero-trust default:** Unscored authors get weight `0.0` (not `0.5`). Their attestations contribute nothing until the Scorer computes their trust score.
+1. **Zero-trust default:** Unscored authors get weight `0.0` (not `0.5`). Their attestations contribute nothing until the Scorer computes their PeerLens rating.
 
 2. **Vouch-gating:** Even if a DID has been scored, their attestations carry zero weight unless they have at least one inbound vouch from a DID with score > 0.5. Sybils can't bootstrap each other — at least one real human in the chain must vouch.
 

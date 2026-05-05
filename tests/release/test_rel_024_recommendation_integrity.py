@@ -74,7 +74,7 @@ class TestRecommendationIntegrity:
     def test_rel_024_zero_data_honest_absence(
         self, brain_url, brain_signer,
     ) -> None:
-        """Product with zero trust data must NOT fabricate a trust score.
+        """Product with zero PeerLens data must NOT fabricate a PeerLens rating.
 
         Requirement: When no reviews, attestations, or outcome data exist,
         the system must disclose the absence honestly rather than inventing
@@ -238,10 +238,10 @@ class TestRecommendationIntegrity:
     def test_rel_024_sponsorship_cannot_distort_ranking(
         self, brain_url, brain_signer,
     ) -> None:
-        """Sponsored product with weaker trust data must rank BELOW
-        unsponsored product with stronger trust data.
+        """Sponsored product with weaker PeerLens data must rank BELOW
+        unsponsored product with stronger PeerLens data.
 
-        Requirement: Sponsorship has zero ranking weight.  Trust data
+        Requirement: Sponsorship has zero ranking weight.  PeerLens data
         density and consensus determine ranking.  Ad spend never
         influences position.
         """

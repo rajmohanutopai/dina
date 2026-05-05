@@ -1,7 +1,7 @@
 /**
  * Root layout — Expo Router file-based routing.
  *
- * Tab navigator: Chat, People, Trust, Approvals (provider-only)
+ * Tab navigator: Chat, People, PeerLens, Approvals (provider-only)
  * Hamburger: Vault, Reminders, Notifications, Settings, Help
  *
  * Reminders + Notifications moved off the bottom bar — both are
@@ -134,15 +134,15 @@ function HeaderMenuButton({ onPress }: { onPress: () => void }) {
  * Why route-aware navigation instead of `router.back()`:
  *   With bare `<Tabs>` (no per-tab `<Stack>`), `router.back()` pops
  *   the previously-focused tab — not the previously-pushed screen.
- *   So Trust → Search → Back lands on the Chat tab if Chat was
- *   focused before the user switched to Trust. We compute the
+ *   So PeerLens → Search → Back lands on the Chat tab if Chat was
+ *   focused before the user switched to PeerLens. We compute the
  *   logical parent from the pathname and navigate there directly.
  *   Detailed rationale + the section-parent map live in
  *   `src/navigation/parent_route.ts`.
  *
  * Source-aware override: when the incoming route carries `?from=<path>`,
  * the back button honours that over the static parent-route map. Used
- * by the per-section help launcher (Trust's `(?)` button pushes
+ * by the per-section help launcher (PeerLens's `(?)` button pushes
  * `/help?from=/trust`) so back from Help returns to the section the
  * user opened it from rather than the Chat default. The parent-route
  * map remains the fallback when no `from` is present.
@@ -346,7 +346,7 @@ const PROVIDER_BLOCKERS: ReadonlySet<string> = new Set([
 type TabName =
   | 'Chat'
   | 'People'
-  | 'Trust'
+  | 'PeerLens'
   | 'Notifications'
   | 'Approvals';
 
@@ -357,7 +357,7 @@ type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 const TAB_GLYPHS: Record<TabName, { outline: IoniconName; filled: IoniconName }> = {
   Chat:          { outline: 'chatbubble-outline',         filled: 'chatbubble' },
   People:        { outline: 'people-outline',             filled: 'people' },
-  Trust:         { outline: 'shield-checkmark-outline',   filled: 'shield-checkmark' },
+  PeerLens:      { outline: 'shield-checkmark-outline',   filled: 'shield-checkmark' },
   Notifications: { outline: 'notifications-outline',      filled: 'notifications' },
   Approvals:     { outline: 'checkmark-circle-outline',   filled: 'checkmark-circle' },
 };
@@ -690,7 +690,7 @@ export default function RootLayout() {
             <Tabs.Screen
               name="trust"
               options={({ route }) => {
-                // Hide the bottom tab bar on focused-flow Trust screens
+                // Hide the bottom tab bar on focused-flow PeerLens screens
                 // (compose / edit / outbox). Two reasons:
                 //   1. The fixed-bottom Publish CTA on `/trust/write`
                 //      sits in the same vertical band as the tab bar
@@ -709,9 +709,9 @@ export default function RootLayout() {
                 const focused = getFocusedRouteNameFromRoute(route);
                 const hideTabBar = focused === 'write' || focused === 'outbox';
                 return {
-                  title: 'Trust',
+                  title: 'PeerLens',
                   tabBarIcon: ({ focused: f }: { focused: boolean }) => (
-                    <TabIcon name="Trust" focused={f} />
+                    <TabIcon name="PeerLens" focused={f} />
                   ),
                   // The trust folder has its own Stack layout
                   // (`app/trust/_layout.tsx`) that scopes back-navigation
@@ -740,7 +740,7 @@ export default function RootLayout() {
                 };
               }}
             />
-            {/* Trust preferences sub-screens — reached from Settings,
+            {/* PeerLens preferences sub-screens — reached from Settings,
               * never their own tab. Without `href: null` Expo Router
               * file-based routing auto-registers each as a bottom-bar
               * entry, blowing out the tab bar with `Bud…`, `Diet…`,

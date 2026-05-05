@@ -1043,7 +1043,7 @@ class TestAppViewIndexer:
         self,
         mock_trust_network: MockTrustNetwork,
     ) -> None:
-        """Query returns bot trust scores."""
+        """Query returns bot PeerLens ratings."""
         bot_did = "did:plc:ReviewBot001"
 
         # Default score

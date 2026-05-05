@@ -60,7 +60,7 @@ def run_story_01_purchase(
       3. PeerLens ranks verified vendors; ChairMaker matches
       4. ChairMaker's Dina receives service.query for product listings
       5. ChairMaker returns verified listing with deep-link source
-      6. Alonso presents: "3 options, top-ranked by trust score"
+      6. Alonso presents: "3 options, top-ranked by PeerLens rating"
       7. User approves → cart handover URL (Dina never touches money)
 
     Dependencies (all M3):
@@ -327,7 +327,7 @@ def run_story_06_license_renewal(
       1. Dina reads a calendar event "DL expires in 30 days"
       2. Dina's ingestion classifies this as LICENSE-EXPIRING
       3. Dina searches PeerLens for specialist agents
-         (LegalBot with matching jurisdiction + high trust score)
+         (LegalBot with matching jurisdiction + high PeerLens rating)
       4. Dina proposes delegation to the user; user approves
       5. LegalBot drafts the renewal form; Dina reviews + approves
          the read-only scope

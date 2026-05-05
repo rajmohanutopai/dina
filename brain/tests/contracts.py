@@ -242,7 +242,7 @@ class AgentRouter(Protocol):
         ...
 
     async def check_trust(self, agent_did: str) -> float:
-        """Check an agent's trust score."""
+        """Check an agent's PeerLens rating."""
         ...
 
 
@@ -290,14 +290,14 @@ class SilenceClassifier(Protocol):
 
 @runtime_checkable
 class TrustClient(Protocol):
-    """Contract for Trust AppView queries (§6.1, arch §08)."""
+    """Contract for PeerLens AppView queries (§6.1, arch §08)."""
 
     async def query_trust_scores(self, did: str) -> dict:
-        """Query trust scores for a DID from AppView API."""
+        """Query PeerLens ratings for a DID from AppView API."""
         ...
 
     async def submit_outcome(self, bot_did: str, outcome: dict) -> None:
-        """Submit an interaction outcome for bot trust scoring."""
+        """Submit an interaction outcome for bot PeerLens rating."""
         ...
 
 

@@ -198,7 +198,7 @@ After receiving `requires_approval` + `proposal_id`, CLI polls `GET /v1/intent/p
 
 ### 3. CLI as Agent Channel
 
-The CLI used for OpenClaw is paired with `--role agent` (`cli/src/dina_cli/main.py:598`). This means ALL writes from this CLI identity land as `(cli, agent)` → `unknown / service / medium / caveated` in the trust scorer (`brain/src/service/trust_scorer.py:109`). No identity separation problem — the CLI IS the agent.
+The CLI used for OpenClaw is paired with `--role agent` (`cli/src/dina_cli/main.py:598`). This means ALL writes from this CLI identity land as `(cli, agent)` → `unknown / service / medium / caveated` in the PeerLens ratingr (`brain/src/service/trust_scorer.py:109`). No identity separation problem — the CLI IS the agent.
 
 This also means `dina task` can store the final result via `staging_ingest()` and it will automatically get caveated provenance. No need to rely on OpenClaw storing results during its run.
 

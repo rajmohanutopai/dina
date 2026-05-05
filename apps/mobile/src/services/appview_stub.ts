@@ -111,7 +111,7 @@ export class AppViewStub {
   }
 
   /**
-   * PeerLens stubs — no local trust data in dev mode, so these
+   * PeerLens stubs — no local PeerLens data in dev mode, so these
    * return the shape the real AppView would return for an unknown
    * subject. The `search_trust_network` tool surfaces this as a
    * graceful "no verified peer data" note instead of throwing.
@@ -138,7 +138,7 @@ export class AppViewStub {
       authenticity: null,
       graphContext: null,
       recommendation: 'no_data',
-      reasoning: 'AppView not wired in this build — no verified trust data.',
+      reasoning: 'AppView not wired in this build — no verified PeerLens data.',
     };
   }
 

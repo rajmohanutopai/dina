@@ -85,9 +85,9 @@ automatic provisional suspension based on anomaly thresholds.
 
 ---
 
-## 2. Trust score & ranking
+## 2. PeerLens rating & ranking
 
-### 2.1 The trust-score formula is public
+### 2.1 The PeerLens rating formula is public
 
 **Why it's public.** Plan §7 defines the v1 formula in canonical
 form, with frozen test vectors at
@@ -118,12 +118,12 @@ diverse-looking attestation patterns can probably evade the V1
 detector. V2 considers reputation-staked attestations
 (slashing-on-misbehaviour) but the design is open.
 
-### 2.2 Reviewer trust score is reviewer-independent + cacheable
+### 2.2 Reviewer PeerLens rating is reviewer-independent + cacheable
 
 **Trade-off.** The v1 formula computes reviewer trust *per
 reviewer*, not *per (reviewer, viewer)*. This makes scores
 cacheable + comparable across viewers — the same reviewer has
-the same trust score regardless of who's looking.
+the same PeerLens rating regardless of who's looking.
 
 **Attack consequence.** A reviewer who builds a high score in one
 network context (e.g. by attesting accurately to one community)
@@ -185,7 +185,7 @@ themselves; bad-faith agents will not. V1 trusts the flag.
 **The architecture.** Per Plan §1, AppView is a centralised
 service that consumes the Jetstream firehose, builds the trust
 graph, and serves xRPC queries. Every Dina client + Home Node
-that wants to query trust scores hits the same AppView (or one
+that wants to query PeerLens ratings hits the same AppView (or one
 in a small federation).
 
 **Attack surface**:
@@ -202,7 +202,7 @@ in a small federation).
   scraping + DoS.
 - The full record set is public on the firehose. A determined
   client can run their own AppView and cross-check.
-- Trust scores cache for 1 hour client-side (`network_search`'s
+- PeerLens ratings cache for 1 hour client-side (`network_search`'s
   cache layer) — short AppView outages are absorbed.
 
 **Residual risk.** No client-side independent verification
@@ -352,7 +352,7 @@ regains network.
 enclave) is the user's responsibility. Dina assumes the device
 is trusted.
 
-### 5.2 Trust-V1 feature flag — closed-default
+### 5.2 PeerLens-V1 feature flag — closed-default
 
 **The mechanism.** TN-FLAG-001/002/003 ship a master
 `trust_v1_enabled` kill switch. AppView gates trust namespace
@@ -427,7 +427,7 @@ Do not deploy V1 if any of these matter to your use case:
    window (§3.3).
 5. **AI-generated content detection** beyond the self-disclosure
    flag (§4.3).
-6. **Multi-operator federation** of trust scoring (§6.1).
+6. **Multi-operator federation** of PeerLens rating (§6.1).
 7. **Coercion-resistant publishing** — the user is the trust
    anchor, and Dina assumes the user's device is trusted
    (§5.1).

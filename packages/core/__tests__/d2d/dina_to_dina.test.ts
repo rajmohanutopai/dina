@@ -145,7 +145,7 @@ describe('Dina-to-Dina Integration', () => {
   });
 
   describe('trust consultation', () => {
-    it('buyer Dina checks seller trust score before negotiating', () => {
+    it('buyer Dina checks seller PeerLens rating before negotiating', () => {
       expect(true).toBe(true);
     });
   });

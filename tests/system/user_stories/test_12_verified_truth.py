@@ -11,9 +11,9 @@ truth.
 
 What this story validates:
 
-  1. **Zero trust data → honest uncertainty** — when there is no trust
+  1. **Zero PeerLens data → honest uncertainty** — when there is no trust
      data, Dina says "I have no verified information" — never
-     hallucinates a trust score.  The density enforcement code path
+     hallucinates a PeerLens rating.  The density enforcement code path
      (guardian.py _apply_density_enforcement) strips fabricated claims
      and injects an honest disclosure.
 
@@ -67,17 +67,17 @@ class TestVerifiedTruth:
     """Verified Truth: honest uncertainty at every density level."""
 
     # ==================================================================
-    # test_00: AppView trust data is seeded and queryable
+    # test_00: AppView PeerLens data is seeded and queryable
     # ==================================================================
 
     # TST-USR-085
     def test_00_trust_data_seeded(
         self, alonso_core, admin_headers, seed_appview,
     ):
-        """Verify the AppView Postgres was seeded with test trust data.
+        """Verify the AppView Postgres was seeded with test PeerLens data.
 
         The seed_appview fixture inserts:
-          - DID profiles for Alonso and Sancho with trust scores
+          - DID profiles for Alonso and Sancho with PeerLens ratings
           - Mutual attestations between them
           - Trust edges
 
@@ -100,12 +100,12 @@ class TestVerifiedTruth:
     def test_01_trust_resolve_via_appview(
         self, alonso_core, admin_headers, appview, sancho_did,
     ):
-        """Query trust data for a known DID via the AppView xRPC endpoint.
+        """Query PeerLens data for a known DID via the AppView xRPC endpoint.
 
         Core proxies trust queries to AppView's xRPC API. The AppView
-        returns attestation counts, trust scores, and edge data.
+        returns attestation counts, PeerLens ratings, and edge data.
 
-        We query for Sancho (seeded with trust data) and verify a
+        We query for Sancho (seeded with PeerLens data) and verify a
         non-empty response.
         """
         # Query AppView directly for trust resolution.
@@ -116,11 +116,11 @@ class TestVerifiedTruth:
         )
         # AppView may return the data or a 400/404 if the endpoint
         # requires different parameters. We check for a successful
-        # response with trust data.
+        # response with PeerLens data.
         if r.status_code == 200:
             data = r.json()
             _state["trust_data"] = data
-            # Verify we got meaningful trust data back.
+            # Verify we got meaningful PeerLens data back.
             has_score = (
                 data.get("trust_score") is not None
                 or data.get("overall_trust_score") is not None
@@ -128,7 +128,7 @@ class TestVerifiedTruth:
                 or data.get("total_attestations") is not None
             )
             assert has_score, (
-                f"Trust resolve returned 200 but no trust data: "
+                f"Trust resolve returned 200 but no PeerLens data: "
                 f"{list(data.keys())}"
             )
         else:
@@ -152,7 +152,7 @@ class TestVerifiedTruth:
                 )
 
     # ==================================================================
-    # test_02: Zero trust data → honest uncertainty
+    # test_02: Zero PeerLens data → honest uncertainty
     # ==================================================================
 
     # TST-USR-087
@@ -163,11 +163,11 @@ class TestVerifiedTruth:
     def test_02_zero_trust_data_honest_uncertainty(
         self, alonso_brain, brain_signer,
     ):
-        """No trust data for an unknown DID → Dina does NOT hallucinate.
+        """No PeerLens data for an unknown DID → Dina does NOT hallucinate.
 
         When asked about an entity with zero reviews, zero attestations,
         zero trust edges — Dina must say "I have no verified information"
-        or equivalent.  She must NEVER invent a trust score.
+        or equivalent.  She must NEVER invent a PeerLens rating.
 
         Vault enrichment is enabled — the LLM searches the vault but
         finds nothing for this unknown entity.  The density enforcement
@@ -193,11 +193,11 @@ class TestVerifiedTruth:
         content = r.json().get("content", "")
         content_lower = content.lower()
 
-        # Must NOT contain fabricated trust scores.
+        # Must NOT contain fabricated PeerLens ratings.
         # Only flag affirmative claims — negations ("is NOT a trusted
         # seller") are correct behavior, not hallucination.
         hallucination_patterns = [
-            r"trust score:\s*\d",          # fabricated numeric score
+            r"PeerLens rating:\s*\d",          # fabricated numeric score
             r"rating:\s*\d",               # fabricated rating
             r"\b4\.5\s*/\s*5\b",           # specific fabricated rating
             r"\b4\s*/\s*5\b",              # specific fabricated rating
@@ -211,9 +211,9 @@ class TestVerifiedTruth:
             if _re.search(p, content_lower)
         ]
         assert not found, (
-            f"Dina hallucinated trust data for unknown entity: {found}\n"
+            f"Dina hallucinated PeerLens data for unknown entity: {found}\n"
             f"Response: {content[:500]}\n"
-            f"Law 2: Verified Truth — never fabricate trust scores."
+            f"Law 2: Verified Truth — never fabricate PeerLens ratings."
         )
 
         # Should indicate uncertainty or lack of data.
@@ -247,7 +247,7 @@ class TestVerifiedTruth:
         them correctly.  2 items → sparse tier.
 
         Stored in the "personal" persona because the density analysis
-        searches "personal" for trust data.
+        searches "personal" for PeerLens data.
         """
         attestations = [
             {

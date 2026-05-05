@@ -265,7 +265,7 @@ Hybrid search merges both: `score = 0.4 × FTS5_rank + 0.6 × cosine_similarity`
 - **Persona state persistence** (lines 282-293) — persona state is persisted to `persona_state.json`. In production, a corrupted state file is fatal; in dev/test or with `DINA_RECOVER_PERSONAS=1`, degraded startup is allowed.
 - **Auto-open at boot** (lines 330-353) — default and standard tier personas are automatically opened at startup, so vault queries work immediately for non-sensitive compartments. No passphrase needed — these tiers are designed for convenience.
 
-**Trust** (lines 359-362) — the trust cache, resolver, and service. An in-memory trust cache provides microsecond DID lookups for ingress gatekeeper decisions. The resolver fetches trust profiles from the AppView XRPC endpoints. Together with the contact directory, they form a 3-tier authority hierarchy for incoming messages: contacts (manual, highest authority) → cache (AppView synced) → unknown (quarantine). More in Act X.
+**Trust** (lines 359-362) — the trust cache, resolver, and service. An in-memory trust cache provides microsecond DID lookups for ingress gatekeeper decisions. The resolver fetches PeerLens profiles from the AppView XRPC endpoints. Together with the contact directory, they form a 3-tier authority hierarchy for incoming messages: contacts (manual, highest authority) → cache (AppView synced) → unknown (quarantine). More in Act X.
 
 **PLC/PDS** (lines 364-384) — AT Protocol integration. Core connects to a community PDS (e.g., `bsky.social`) for `did:plc` identity creation and trust record publishing. `install.sh` prepares PDS credentials; Core creates the account on first boot via `createAccount`. K256 key management (secp256k1) provides the PLC recovery key at `m/9999'/2'/0'`, passed as `recoveryKey` during account creation to give Dina sovereign key rotation capability.
 
@@ -1131,7 +1131,7 @@ The TrustHandler (`core/internal/handler/trust.go`, routes at lines 967-971) exp
 
 - `GET /v1/trust/cache` — list all cached entries (admin dashboard)
 - `GET /v1/trust/stats` — cache statistics (entry count, last sync time)
-- `GET /v1/trust/resolve?did={did}` — fetch full trust profile from AppView (for Brain reasoning)
+- `GET /v1/trust/resolve?did={did}` — fetch full PeerLens profile from AppView (for Brain reasoning)
 - `POST /v1/trust/sync` — trigger immediate neighborhood sync
 
 ---
@@ -1270,16 +1270,16 @@ The user story tests (`tests/system/user_stories/`) run against a real multi-nod
 
 ### Story 01: The Purchase Journey (13 tests)
 
-**What it proves:** Trust-weighted purchase advice where verified reviewers outrank unverified ones — no ad spend involved.
+**What it proves:** PeerLens-weighted purchase advice where verified reviewers outrank unverified ones — no ad spend involved.
 
 Five Dinas are created with cryptographic DIDs. Three (Alice, Bob, Diana) are Ring 2 — verified via mutual DID attestations published as AT Protocol records (`com.atproto.repo.createRecord`): Alice ↔ Bob mutual vouch, Alice → Diana vouch. Two (Charlie, Eve) remain Ring 1 — unverified, no trust edges. All five publish product reviews as AT Protocol records, which flow through Jetstream into AppView's Postgres.
 
 **Core's role:**
 - **Vault** stores Alonso's personal context across 4 personas (health, work, finance, family) — each an encrypted SQLCipher compartment.
-- **Trust resolver** (`/v1/trust/resolve`) proxies to AppView, returning trust profiles that brain uses for weighted ranking.
+- **Trust resolver** (`/v1/trust/resolve`) proxies to AppView, returning PeerLens profiles that brain uses for weighted ranking.
 - **Identity** provides the Ed25519 DIDs that anchor every vouch and attestation.
 
-The brain combines vault context (back pain → needs lumbar support, ₹10-20K budget, WFH schedule) with trust-weighted reviews (3 verified negatives for CheapChair, 3 verified positives for ErgoMax) to produce personalized advice. Core doesn't reason — it provides the trusted data.
+The brain combines vault context (back pain → needs lumbar support, ₹10-20K budget, WFH schedule) with PeerLens-weighted reviews (3 verified negatives for CheapChair, 3 verified positives for ErgoMax) to produce personalized advice. Core doesn't reason — it provides the trusted data.
 
 ### Story 02: The Sancho Moment (7 tests)
 
@@ -1309,7 +1309,7 @@ AppView's Postgres is seeded with two creator profiles:
 
 Core's trust resolver (`/v1/trust/resolve?did={did}`) fetches these profiles from AppView's XRPC endpoint (`com.dina.trust.getProfile`) and passes them through unchanged — core doesn't editorialize. Brain's LLM receives the raw trust signals and recognizes the pattern: Elena's 2-year track record with 200 attestations means "authentic, trusted creator." BotFarm's empty history means "unverified, check other sources."
 
-**Core's role:** Identity resolution and trust data passthrough. The AppView integration uses the same XRPC pattern as AT Protocol — `com.dina.trust.getProfile` returns a standardised trust profile that any client can consume.
+**Core's role:** Identity resolution and PeerLens data passthrough. The AppView integration uses the same XRPC pattern as AT Protocol — `com.dina.trust.getProfile` returns a standardised PeerLens profile that any client can consume.
 
 ### Story 04: The Persona Wall (11 tests)
 
@@ -1429,9 +1429,9 @@ Brain's LLM responses are filtered for anthropomorphic language ("I feel", "I ca
 
 **What it proves:** Law 2 — *Rank by trust, not by ad spend.* Core's trust system produces honest uncertainty, not hallucinated confidence.
 
-Three scenarios: (1) **Zero trust data** — Brain must express uncertainty ("I don't have enough information"), never hallucinate reviews. (2) **Sparse data** (2 conflicting attestations) — Brain reports "opinions are split." (3) **Dense data** (12 consistent attestations) — Brain makes a confident recommendation with source attribution.
+Three scenarios: (1) **Zero PeerLens data** — Brain must express uncertainty ("I don't have enough information"), never hallucinate reviews. (2) **Sparse data** (2 conflicting attestations) — Brain reports "opinions are split." (3) **Dense data** (12 consistent attestations) — Brain makes a confident recommendation with source attribution.
 
-**Core's role:** Trust resolver returns raw trust profiles. The test verifies source attribution survives the vault round-trip: store with `source_url` → query → the same URL appears in the response. Core preserves provenance; Brain reasons with it.
+**Core's role:** Trust resolver returns raw PeerLens profiles. The test verifies source attribution survives the vault round-trip: store with `source_url` → query → the same URL appears in the response. Core preserves provenance; Brain reasons with it.
 
 ### Story 13: Silence Under Stress
 

@@ -312,7 +312,7 @@ def _clear_appview(dsn: str) -> None:
 
 @pytest.fixture(scope="session", autouse=True)
 def seed_appview(system_services, alonso_did, sancho_did):
-    """Seed AppView Postgres with test trust data."""
+    """Seed AppView Postgres with test PeerLens data."""
     dsn = system_services.postgres_dsn
     _clear_appview(dsn)
     ids = _seed_appview(dsn, alonso_did, sancho_did)

@@ -2,7 +2,7 @@
  * T2D.10 — Trust rings: transaction limits for unverified/verified entities.
  *
  * Category B: integration/contract test. Only the gatekeeper-portable
- * parts — NOT trust scoring internals (which are AppView-side).
+ * parts — NOT PeerLens rating internals (which are AppView-side).
  *
  * Source: tests/integration/test_trust_rings.py (portable parts)
  */

@@ -62,7 +62,7 @@ USER_STORY_META = {
         "desc": [
             ('\u201cI need a chair\u201d', '\u2192 5 reviewers created (3 verified Ring 2, 2 unverified Ring 1)'),
             (None, 'Dina checks health vault (back pain, needs lumbar), finance vault (budget 10\u201320K INR)'),
-            (None, 'Trust-weighted reviews: skip CheapChair (low trust score), recommends ErgoMax Elite'),
+            (None, 'PeerLens-weighted reviews: skip CheapChair (low PeerLens rating), recommends ErgoMax Elite'),
         ],
     },
     2: {

@@ -238,7 +238,7 @@ Currently, this is just a SKILL added to other agents. So, as of now, it can be 
 
 Dina runs on a **Home Node** — a small, always-on server that is yours. For the privacy minded, it might be a cheap VPS or a Raspberry Pi. For others, it could be a managed service you sign up for (like ProtonMail or Signal). The data vault are encrypted files which can be moved between any of these options anytime.
 
-When one asks opinion about a laptop, Dina doesn't scrape YouTube herself. She asks a trusted review bot with a high trust score and delivers the answer. If that bot's quality drops over time, Dina routes to someone better automatically.
+When one asks opinion about a laptop, Dina doesn't scrape YouTube herself. She asks a trusted review bot with a high PeerLens rating and delivers the answer. If that bot's quality drops over time, Dina routes to someone better automatically.
 
 ### Security
 
@@ -293,13 +293,13 @@ Millions of Dinas → Anonymized outcome data (still using it?
                                     Honest answer
 ```
 
-PeerLens extends to the bots, other Dinas, everywhere. If a review bot starts giving compromised recommendations, its trust score drops and Dina routes elsewhere. The same trust system that helps you find good products helps you find good bots.
+PeerLens extends to the bots, other Dinas, everywhere. If a review bot starts giving compromised recommendations, its PeerLens rating drops and Dina routes elsewhere. The same trust system that helps you find good products helps you find good bots.
 
 ---
 
 ## Trust Has Layers
 
-If anyone can create a Dina, what stops someone from spinning up a thousand fake ones, building perfect trust scores, and then rug pulling?
+If anyone can create a Dina, what stops someone from spinning up a thousand fake ones, building perfect PeerLens ratings, and then rug pulling?
 
 One possible solution that we will implement is identity based trust layers. Dina will not *demand* your real identity. But she decides on the trust based on what she knows and doesn't know. Consider it as multiple rings of trust:
 
@@ -311,7 +311,7 @@ One possible solution that we will implement is identity based trust layers. Din
 
 The principle: **if you don't want to verify, don't. But unverified trust is worth less than verified trust.** This is not a big brother rule - this is a societal behaviour which we will try to implement in Dina.
 
-So the real trust score is a composite:
+So the real PeerLens rating is a composite:
 
 ```
 Trust = f(
@@ -491,7 +491,7 @@ Security is fundamental for Dina. She stores your most important data, so she ha
 - **Admin:** `dina-admin` CLI (Unix socket), web UI at `/admin/*` (dashboard, settings, contacts, devices, chat, history)
 - **PeerLens V1:** First social-review system on AT Protocol with pseudonymous identities and bilateral cosignature
   - **Records (19 lexicons under `com.dina.trust.*`):** attestation, vouch, endorsement, flag, reply, reaction, report, revocation, delegation, collection, media, subject, amendment, verification, reviewRequest, comparison, subjectClaim, trustPolicy, namespaceProfile
-  - **Scoring:** v1 trust-score formula (sentiment / vouch / reviewer / network components) with frozen conformance vectors that every Dina implementation pins to byte-for-byte
+  - **Scoring:** v1 PeerLens rating formula (sentiment / vouch / reviewer / network components) with frozen conformance vectors that every Dina implementation pins to byte-for-byte
   - **Pseudonymous namespaces:** users derive per-context identity keys from their master seed (`m/9999'/4'/N'`) and register them as `assertionMethod` verification methods on their published DID document. One PDS account, multiple namespaces, single-mnemonic recovery
   - **Cosignature handshake:** D2D request/accept/reject with state-machine-driven expiry, sender footer ("Co-signed by X · Y"), recipient inbox row, push notification dispatch
   - **AppView indexer:** AT Protocol Jetstream ingester + 9 scorer jobs + 5 xRPC endpoints, with curated subject-enrichment lookups (host → media-type, well-known orgs, product/place keywords)

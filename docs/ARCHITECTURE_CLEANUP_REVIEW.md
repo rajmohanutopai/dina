@@ -82,7 +82,7 @@ Code architecture verdict: not pristine yet. The module-level implementation qua
 | --- | --- | --- | --- |
 | Runtime composition | One shared TS Home Node runtime, adapters per platform. | Partial. Real runtime exists but lives under `apps/mobile`. | Major/partial. Core and Brain servers now bind real shared Core/Brain package surfaces, but they do not compose the full shared Home Node runtime yet. |
 | Install | Seed, DID, PDS account/session, MsgBox endpoint, local vault, AppView check. | Partial/strong. DID PLC and MsgBox endpoint are provisioned; PDS session/publisher is incomplete. | Major. No full install/PDS/AppView/MsgBox composition. |
-| Endpoint defaults | Test fleet by default; release fleet as one mode switch. | Done for endpoint policy. Mobile MsgBox, onboarding handle/PLC defaults, HandlePicker/OwnerName, trust AppView, node-runtime AppView, and `@dina/net-expo` now resolve through `@dina/home-node`. PDS publisher/session runtime still needs composition. | Done for config policy. Core/Brain server config now resolves hosted endpoints through `@dina/home-node`; Brain boot constructs AppView; runtime MsgBox/PDS clients and AppView route composition still need wiring. |
+| Endpoint defaults | Test fleet by default; release fleet as one mode switch. | Done for endpoint policy. Mobile MsgBox, onboarding handle/PLC defaults, HandlePicker/OwnerName, PeerLens AppView, node-runtime AppView, and `@dina/net-expo` now resolve through `@dina/home-node`. PDS publisher/session runtime still needs composition. | Done for config policy. Core/Brain server config now resolves hosted endpoints through `@dina/home-node`; Brain boot constructs AppView; runtime MsgBox/PDS clients and AppView route composition still need wiring. |
 | `/remember` | Core ingest, Brain drain, enrichment, gates, durable pending approval, vault store. | Partial/strong. Canonical CoreClient ingest, repository-authoritative staging, explicit per-persona resolve gates, approval-backed locked staging rows, and pre-store L0/L1/embedding enrichment are in place. | Partial. Core ingest transport, staging repository authority, explicit resolve gates, approval-backed locked staging rows, enrichment-capable resolve data, Brain signed Core client construction, and Brain staging scheduler boot wiring exist. |
 | `/ask` | Same coordinator/tool semantics on mobile and server. | Partial/strong. Agentic coordinator exists when provider/tools are configured. | Partial/strong. Brain boot composes/registers the same agentic coordinator shape when Gemini is explicitly configured. |
 | D2D / MsgBox | Signed/sealed D2D through MsgBox with one documented relay contract. | Partial/strong. MsgBox and D2D are wired; current D2D uses `/forward` with WS for session/RPC. | Partial. Core server connects/authenticates to MsgBox and reports readiness; full D2D/service delivery parity and the relay contract decision remain open. |
@@ -681,7 +681,7 @@ Evidence:
   `node-trace-storage`, `notifications`, and `runtime`.
 - Home Node now declares root plus `ask-runtime` and `service-runtime`.
 - Removed remaining production Brain `@dina/core/src` package-specifier imports
-  from ask composition and trust scoring code so mobile typecheck works under
+  from ask composition and PeerLens rating code so mobile typecheck works under
   the new export map.
 - Added package export guard tests in Core, Brain, and Home Node.
 

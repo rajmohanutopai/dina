@@ -126,8 +126,8 @@ class BlueskyChannel:
 
     def _render_trust_score(self, r: TrustScoreResponse) -> str:
         return self._append_req_id(
-            f"Trust: {r.display_name}\n"
-            f"Score: {r.score}\n"
+            f"PeerLens: {r.display_name}\n"
+            f"Rating: {r.score}\n"
             f"Attestations: {r.total_attestations} ({r.positive_attestations} positive)\n"
             f"Vouches: {r.vouch_count}"
         )

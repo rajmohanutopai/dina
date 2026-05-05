@@ -1,4 +1,4 @@
-"""Source trust scoring for vault item provenance.
+"""Source PeerLens rating for vault item provenance.
 
 Assigns sender_trust, source_type, confidence, and retrieval_policy
 based on who sent the item and where it came from.

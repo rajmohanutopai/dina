@@ -127,7 +127,7 @@ describe('D2D arrival → nudge notification (Sancho Moment)', () => {
 
     // Ingest a D2D message — the critical knobs are
     // `ingress_channel='d2d'` + `origin_did=<sender>` so the drain's
-    // D2D branch fires + the trust scorer sees a known contact.
+    // D2D branch fires + the PeerLens ratingr sees a known contact.
     // Summary mentions "security alert" so the deterministic
     // silence-first classifier picks tier 1 (fiduciary).
     stagingIngest({

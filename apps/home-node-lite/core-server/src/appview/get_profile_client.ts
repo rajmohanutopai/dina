@@ -66,7 +66,7 @@ export interface GetProfileResponse {
   profile: ServiceProfileView;
   /** UTC ms the AppView indexed this profile. */
   indexedAtMs: number;
-  /** Trust score from the network — null when unknown. */
+  /** PeerLens rating from the network — null when unknown. */
   trustScore: number | null;
   /** Caller's ring distance to this operator (1/2/3) — null when unknown. */
   trustRing: 1 | 2 | 3 | null;

@@ -175,7 +175,7 @@ psql -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='publ
 # (look in ingester logs for "Jetstream connection established",
 #  followed by per-event processing logs at LOG_LEVEL=debug)
 
-# 6. Trust V1 flag is in the desired state
+# 6. PeerLens V1 flag is in the desired state
 psql -c "SELECT key, bool_value, text_value, updated_at FROM appview_config WHERE key='trust_v1_enabled';"
 # expect: bool_value = t (default V1 ramp ON), or empty row (defaults to true)
 ```
@@ -227,7 +227,7 @@ recoverable. Side-effects already pushed downstream (cosig
 notifications sent to mobile clients, scorer counters surfaced
 on dashboards) are not.
 
-### 6.3 Trust V1 disable as runtime kill switch
+### 6.3 PeerLens V1 disable as runtime kill switch
 
 For incidents that don't need a full rollback (one bad ingester
 path, sybil cluster mid-detection), prefer the flag flip:

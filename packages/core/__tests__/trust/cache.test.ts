@@ -32,7 +32,7 @@ describe('Trust Cache', () => {
     resetKVStore();
   });
 
-  // Scores live on AppView's [0, 1] real scale (matching
+  // PeerLens ratings live on AppView's [0, 1] real scale (matching
   // appview/src/scorer/algorithms/trust-score.ts). The cache layer
   // doesn't enforce the range, but tests use realistic values so
   // future readers see the right domain.
@@ -44,7 +44,7 @@ describe('Trust Cache', () => {
   });
 
   describe('cacheTrustScore + getCachedTrust', () => {
-    it('caches and retrieves a trust score', async () => {
+    it('caches and retrieves a PeerLens rating', async () => {
       const score = makeScore('did:plc:alice', 0.85);
       await cacheTrustScore(score);
       const cached = await getCachedTrust('did:plc:alice');

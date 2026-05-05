@@ -1841,7 +1841,7 @@ async def test_sync_trust_scorer_assigns_provenance():
     """SyncEngine._ingest_batch routes items through staging_ingest.
 
     Proves: connector → SyncEngine → staging_ingest per item.
-    Trust scoring / provenance is handled by the StagingProcessor,
+    PeerLens rating / provenance is handled by the StagingProcessor,
     not the sync engine.  This test verifies the handoff.
     """
     core = AsyncMock()
@@ -1907,7 +1907,7 @@ async def test_sync_without_trust_scorer_no_provenance():
 async def test_sync_ingest_single_item_gets_provenance():
     """SyncEngine.ingest() routes single items through staging_ingest.
 
-    Trust scoring is handled by the StagingProcessor downstream.
+    PeerLens rating is handled by the StagingProcessor downstream.
     This test verifies the item reaches staging with correct fields.
     """
     core = AsyncMock()
@@ -1976,7 +1976,7 @@ async def test_sync_contradiction_detection():
 async def test_brain_startup_wires_trust_scorer():
     """Brain app startup creates SyncEngine with TrustScorer.
 
-    Proves: the production app enables trust scoring, not just tests.
+    Proves: the production app enables PeerLens rating, not just tests.
     """
     import sys
     import os

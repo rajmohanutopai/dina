@@ -2239,7 +2239,7 @@ Someone not in your contacts sends your Dina a message? It's quarantined — fla
 
   AppView Read Side
 
-  1. Dina can resolve a trust profile for a DID, seller, creator, bot, or subject.
+  1. Dina can resolve a PeerLens profile for a DID, seller, creator, bot, or subject.
   2. Dina can search trust evidence by category or need.
   3. Dina gets both aggregate scores and the underlying supporting records.
   4. Dina can tell the difference between:
@@ -2285,18 +2285,18 @@ Someone not in your contacts sends your Dina a message? It's quarantined — fla
   1. “Should I buy this chair?”
      Dina combines local context + web research + trust-network evidence, ranks options, explains tradeoffs, and hands off checkout.
   2. “Is this creator authentic?”
-     Dina resolves the creator’s trust profile and distinguishes trusted creator vs bot farm / unknown entity.
+     Dina resolves the creator’s PeerLens profile and distinguishes trusted creator vs bot farm / unknown entity.
   3. “Find me a reliable plumber/lawyer/dentist.”
      Dina ranks providers using trust signals and user constraints, then hands off booking/contact to another agent.
   4. “Which bot should do this task?”
      Dina chooses among external agents based on trust/outcomes, not static config.
   5. “My last purchase was bad.”
-     The user records the outcome, it affects future trust-weighted ranking, and optionally contributes to the network.
+     The user records the outcome, it affects future PeerLens-weighted ranking, and optionally contributes to the network.
   6. “Delete my old review/attestation.”
      The signed tombstone propagates and AppView stops surfacing it.
   7. “There’s very little data on this item.”
      Dina says so explicitly and falls back to ordinary web research instead of pretending PeerLens knows more than it does.
-  8. “Trust data is conflicting.”
+  8. “PeerLens data is conflicting.”
      Dina surfaces the disagreement, not just a flattened score.
   9. “AppView is down.”
      Dina still works, but says trust-network data is unavailable right now.
@@ -2306,8 +2306,8 @@ Someone not in your contacts sends your Dina a message? It's quarantined — fla
   Minimum v1 bar
   If these 5 work, you can credibly say the capability exists:
 
-  1. Trust profile resolution for a creator/seller/bot.
-  2. Trust-weighted product/provider recommendation with explanation.
+  1. PeerLens profile resolution for a creator/seller/bot.
+  2. PeerLens-weighted product/provider recommendation with explanation.
   3. Sparse/conflicting/no-data handling.
   4. External handoff instead of internal payment/execution.
   5. Outcome recording that changes future recommendations.
@@ -2344,11 +2344,11 @@ Someone not in your contacts sends your Dina a message? It's quarantined — fla
 
   Scenarios:
 
-  1. “What is the trust profile of this seller?”
+  1. “What is the PeerLens profile of this seller?”
   2. “Is this creator authentic?”
   3. “What does the network know about this bot?”
   4. “Show me evidence, not just a score.”
-  5. “How old is this trust data?”
+  5. “How old is this PeerLens data?”
   6. “Is the network confident, sparse, or conflicted?”
 
   3. Dina Can Support Purchase Discovery
@@ -2385,14 +2385,14 @@ Someone not in your contacts sends your Dina a message? It's quarantined — fla
   5. “What is uncertain here?”
 
   6. Sparse And Conflicting Data Are Handled Honestly
-  The system must work under real-world incomplete trust data.
+  The system must work under real-world incomplete PeerLens data.
 
   Scenarios:
 
-  1. No trust data exists.
-  2. Very little trust data exists.
-  3. Trust data conflicts strongly.
-  4. Trust data is stale.
+  1. No PeerLens data exists.
+  2. Very little PeerLens data exists.
+  3. PeerLens data conflicts strongly.
+  4. PeerLens data is stale.
   5. Network data looks manipulated or low-quality.
 
   In all of these, Dina should still help, but should say what it knows and what it does not know.
@@ -2533,10 +2533,10 @@ Missing scenario:
 - "This plumber is fast but expensive"
 
 Trust should be category-scoped, not just one number.
-A seller's trust score for chairs ≠ trust score for laptops.
+A seller's PeerLens rating for chairs ≠ PeerLens rating for laptops.
 ```
 
-**3. Trust Decay Over Time**
+**3. PeerLens Rating Decay Over Time**
 
 ```
 Missing scenario:
@@ -2555,7 +2555,7 @@ Missing scenario:
 - "This seller scammed 3 people in my PeerLens graph"
 - "This DID was flagged by 12 Dinas in the last week"
 - Active fraud propagation through the network
-- Distinguishing "no trust data" from "actively distrusted"
+- Distinguishing "no PeerLens data" from "actively distrusted"
 
 Zero trust ≠ negative trust. The system needs both.
 ```
@@ -2566,7 +2566,7 @@ Zero trust ≠ negative trust. The system needs both.
 Missing scenario:
 - When I query "is this seller trustworthy?" does the
   seller know I asked?
-- When I query a medical provider's trust profile, does
+- When I query a medical provider's PeerLens profile, does
   that reveal I have a health need?
 - AppView knows what everyone is searching for
 
@@ -2593,7 +2593,7 @@ External trust signals as Ring 1 (unverified) anchors.
 Missing scenario:
 - "Show me the 3 most trusted sellers for this product"
 - "How does seller A compare to seller B?"
-- "Rank these 5 options by trust-weighted value"
+- "Rank these 5 options by PeerLens-weighted value"
 
 Not just "is this trustworthy" but "which is MOST
 trustworthy among alternatives"
@@ -2606,7 +2606,7 @@ Missing scenario:
 - "This attestation is fraudulent"
 - "This outcome report is fabricated"
 - "This vouch was coerced"
-- Community-driven content moderation of trust data
+- Community-driven content moderation of PeerLens data
 
 Who polices the trust layer itself?
 ```

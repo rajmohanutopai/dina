@@ -503,7 +503,7 @@ class MockOpenClaw(MockMCPAgent):
 
 
 class MockReviewBot(MockMCPAgent):
-    """Specialist review bot with trust score 94."""
+    """Specialist review bot with PeerLens rating 94."""
 
     def __init__(self, trust_score: int = 94) -> None:
         super().__init__("ReviewBot", "did:plc:reviewbot")
@@ -526,7 +526,7 @@ class MockReviewBot(MockMCPAgent):
 
 
 class MockMaliciousBot(MockMCPAgent):
-    """Untrusted bot with trust score 12. Sends malformed/injection payloads."""
+    """Untrusted bot with PeerLens rating 12. Sends malformed/injection payloads."""
 
     def __init__(self) -> None:
         super().__init__("MaliciousBot", "did:plc:malbot")

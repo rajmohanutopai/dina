@@ -1,3 +1,3 @@
 # Trust Protocol
 
-PeerLens construction from expert verdicts and passive outcome data. Trust scoring: f(identity anchors, transaction history, outcome data, peer attestations, time).
+PeerLens construction from expert verdicts and passive outcome data. PeerLens rating: f(identity anchors, transaction history, outcome data, peer attestations, time).

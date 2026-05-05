@@ -1779,13 +1779,13 @@
     "TST-BRAIN-408": {
       "path": "6.1",
       "row": 6,
-      "scenario": "Trust AppView query",
+      "scenario": "PeerLens AppView query",
       "line": 558
     },
     "TST-BRAIN-409": {
       "path": "6.1",
       "row": 7,
-      "scenario": "Trust AppView unavailable \u2192 web search fallback",
+      "scenario": "PeerLens AppView unavailable \u2192 web search fallback",
       "line": 559
     },
     "TST-BRAIN-410": {

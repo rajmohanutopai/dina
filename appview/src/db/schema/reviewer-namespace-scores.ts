@@ -13,7 +13,7 @@ import {
 /**
  * `reviewer_namespace_scores` (TN-DB-002 / Plan §3.5 + §7).
  *
- * Per-namespace reviewer trust scoring. The base `did_profiles` table
+ * Per-namespace reviewer PeerLens rating. The base `did_profiles` table
  * stores ROOT-DID-aggregated stats; this table stores per-(did,
  * namespace) statistics for users who publish under one or more
  * pseudonymous namespaces (`m/9999'/4'/N'` derivation per
@@ -99,7 +99,7 @@ export const reviewerNamespaceScores = pgTable(
     corroborationRate: real('corroboration_rate').default(0),
     evidenceRate: real('evidence_rate').default(0),
     /**
-     * Composite per-namespace trust score in [0, 1]. Computed by
+     * Composite per-namespace PeerLens rating in [0, 1]. Computed by
      * TN-SCORE-001 (deferred). NULL means "never scored" (a
      * namespace that has only just been observed but not yet
      * processed by the scorer); the search ranker treats NULL as

@@ -393,7 +393,7 @@ describe('TrustFeedScreen — self-profile card', () => {
     // (`alice.pds.dinakernel.com` → `alice`) — same `shortHandle`
     // convention used on every other reviewer surface so the trust
     // tab doesn't read like an email-address page. Falls back to
-    // "Your trust profile" when the handle is null.
+    // "Your PeerLens profile" when the handle is null.
     expect(getByText('alice')).toBeTruthy();
     // Each stat value renders as a plain string in its own cell.
     expect(getByTestId('trust-feed-self-stat-score')).toBeTruthy();
@@ -429,7 +429,7 @@ describe('TrustFeedScreen — self-profile card', () => {
     expect(getByText('Endorsement')).toBeTruthy();
   });
 
-  it('renders em-dash for trust score when scoreDisplay is null (no band shaming)', () => {
+  it('renders em-dash for PeerLens rating when scoreDisplay is null (no band shaming)', () => {
     // The pre-N=3 cold-start state must NOT label the user "VERY
     // LOW" / red. Em-dash is the agreed neutral placeholder.
     const { getByText, queryByText } = render(
@@ -450,7 +450,7 @@ describe('TrustFeedScreen — self-profile card', () => {
     expect(queryByText('LOW')).toBeNull();
   });
 
-  it('falls back to "Your trust profile" header when handle is null', () => {
+  it('falls back to "Your PeerLens profile" header when handle is null', () => {
     const { getByText } = render(
       <TrustFeedScreen
         feed={[]}
@@ -464,7 +464,7 @@ describe('TrustFeedScreen — self-profile card', () => {
         }}
       />,
     );
-    expect(getByText('Your trust profile')).toBeTruthy();
+    expect(getByText('Your PeerLens profile')).toBeTruthy();
   });
 
   it('tap on the self card fires onOpenMyProfile', () => {
@@ -493,7 +493,7 @@ describe('TrustFeedScreen — footer links (F7 fix)', () => {
   // anywhere in the app — the global hamburger menu lists Vault /
   // Reminders / Settings / Help (none of which would be the right
   // home for a trust-specific affordance), and no other drill-down
-  // exposed them. The Trust home now renders a small footer with
+  // exposed them. The PeerLens home now renders a small footer with
   // muted-text links so the routes are reachable without polluting
   // the global menu.
   it('renders the footer row with Outbox + Namespaces links', () => {

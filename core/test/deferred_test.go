@@ -115,7 +115,7 @@ func TestDeferred_24_1_5_Ring3SkinInTheGame(t *testing.T) {
 // TST-CORE-756
 // TRACE: {"suite": "CORE", "case": "0474", "section": "24", "sectionName": "Deferred (Phase 2+)", "subsection": "01", "scenario": "06", "title": "TrustScoreFormula"}
 func TestDeferred_24_1_6_TrustScoreFormula(t *testing.T) {
-	// Trust score: f(ring_level, time_alive, transaction_anchors, outcome_data,
+	// PeerLens rating: f(ring_level, time_alive, transaction_anchors, outcome_data,
 	// peer_attestations, credential_count) — composite function.
 	var impl testutil.ZKPVerifier
 	testutil.RequireImplementation(t, impl, "ZKPVerifier")
@@ -124,7 +124,7 @@ func TestDeferred_24_1_6_TrustScoreFormula(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, score)
 	testutil.RequireTrue(t, score.RingLevel >= 1 && score.RingLevel <= 3, "ring level must be 1-3")
-	testutil.RequireTrue(t, score.Score >= 0, "trust score must be non-negative")
+	testutil.RequireTrue(t, score.Score >= 0, "PeerLens rating must be non-negative")
 }
 
 // TST-CORE-757

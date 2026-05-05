@@ -1797,7 +1797,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Resolve trust profile for a DID (passthrough to AppView) */
+        /** Resolve PeerLens profile for a DID (passthrough to AppView) */
         get: {
             parameters: {
                 query: {
@@ -1809,7 +1809,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Trust profile (raw AppView JSON passthrough). */
+                /** @description PeerLens profile (raw AppView JSON passthrough). */
                 200: {
                     headers: {
                         [name: string]: unknown;

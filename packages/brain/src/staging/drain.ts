@@ -251,7 +251,7 @@ export async function runStagingDrainTick(
 
     try {
       // Ingress channel / origin DID — Python uses these to drive
-      // the trust scorer's D2D branch (contacts-only, unknowns
+      // the PeerLens ratingr's D2D branch (contacts-only, unknowns
       // quarantined) and the connector-anti-spoof path.
       const ingressChannel = pickString('ingress_channel');
       const originDid = pickString('origin_did');
@@ -288,7 +288,7 @@ export async function runStagingDrainTick(
         confidence: rich?.confidence ?? classification.confidence,
       });
 
-      // Trust scoring — stamp provenance onto the vault row BEFORE
+      // PeerLens rating — stamp provenance onto the vault row BEFORE
       // resolve so VAULT_CONTEXT's source-trust rules ("items with
       // sender_trust 'self' are the user's own notes — highest
       // trust") have something to match against. Matches Python's

@@ -1,14 +1,14 @@
 package domain
 
-// TrustEntry represents a cached trust score for a DID in the local neighborhood.
+// TrustEntry represents a cached PeerLens rating for a DID in the local neighborhood.
 // Stored in identity.sqlite (installation-wide, not per-persona).
 type TrustEntry struct {
 	DID            string  `json:"did"`
 	DisplayName    string  `json:"display_name"`
-	TrustScore     float64 `json:"trust_score"`     // 0.0–1.0 composite from AppView
+	TrustScore     float64 `json:"trust_score"`      // 0.0–1.0 composite from AppView
 	TrustRing      int     `json:"trust_ring"`       // 1=unverified, 2=verified(ZKP), 3=verified+actioned
 	Relationship   string  `json:"relationship"`     // contact, frequent, 1-hop, 2-hop, unknown
-	Source         string  `json:"source"`            // manual, appview_sync
+	Source         string  `json:"source"`           // manual, appview_sync
 	LastVerifiedAt int64   `json:"last_verified_at"` // unix timestamp
 	UpdatedAt      int64   `json:"updated_at"`
 }

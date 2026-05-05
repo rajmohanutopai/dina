@@ -5353,7 +5353,7 @@ Status: TAGGED (has plan ID), PENDING (needs migration)
 | 522 | PENDING | -- | IT-API-031: get profile -- existing DID | appview/tests/integration/10-api-endpoints.test.ts |
 | 523 | PENDING | -- | IT-API-032: get profile -- non-existent DID | appview/tests/integration/10-api-endpoints.test.ts |
 | 524 | PENDING | -- | IT-API-033: get profile -- includes reviewer stats | appview/tests/integration/10-api-endpoints.test.ts |
-| 525 | PENDING | -- | IT-API-034: get profile -- includes trust score | appview/tests/integration/10-api-endpoints.test.ts |
+| 525 | PENDING | -- | IT-API-034: get profile -- includes PeerLens rating | appview/tests/integration/10-api-endpoints.test.ts |
 | 526 | PENDING | -- | IT-API-035: get attestations -- by subject | appview/tests/integration/10-api-endpoints.test.ts |
 | 527 | PENDING | -- | IT-API-036: get attestations -- by author | appview/tests/integration/10-api-endpoints.test.ts |
 | 528 | PENDING | -- | IT-API-037: get attestations -- pagination | appview/tests/integration/10-api-endpoints.test.ts |

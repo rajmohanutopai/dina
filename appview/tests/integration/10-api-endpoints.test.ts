@@ -1393,8 +1393,8 @@ describe('10.4 Get Profile Endpoint', () => {
     expect(result!.reviewerStats.helpfulRatio).toBeCloseTo(0.85)
   })
 
-  // TRACE: {"suite": "APPVIEW", "case": "0525", "section": "01", "sectionName": "General", "title": "IT-API-034: get profile -- includes trust score"}
-  it('IT-API-034: get profile -- includes trust score', async () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0525", "section": "01", "sectionName": "General", "title": "IT-API-034: get profile -- includes PeerLens rating"}
+  it('IT-API-034: get profile -- includes PeerLens rating', async () => {
     await insertProfile('did:plc:trusted', { overallTrustScore: 0.92 })
 
     const result = await getProfile(db, { did: 'did:plc:trusted' })
@@ -1620,15 +1620,15 @@ describe('§10.X getAlternatives Endpoint (TN-V2-RANK-009)', () => {
 
     const result3 = await getAlternatives(db, { subjectId: sFocus, count: 3 })
     expect(result3.alternatives.length).toBe(3)
-    // Top 3 by trust score = highest-three of the inserted set.
+    // Top 3 by PeerLens rating = highest-three of the inserted set.
     expect(result3.alternatives.map((a) => a.trustScore)).toEqual([0.9, 0.85, 0.8])
 
     const result5 = await getAlternatives(db, { subjectId: sFocus, count: 5 })
     expect(result5.alternatives.length).toBe(5)
   })
 
-  // TRACE: {"suite": "APPVIEW", "case": "ALT-005", "section": "10X", "sectionName": "GetAlternatives", "title": "IT-ALT-005: NULL trust scores sort below scored subjects"}
-  it('IT-ALT-005: NULL trust scores sort below scored subjects (NULLS LAST)', async () => {
+  // TRACE: {"suite": "APPVIEW", "case": "ALT-005", "section": "10X", "sectionName": "GetAlternatives", "title": "IT-ALT-005: NULL PeerLens ratings sort below scored subjects"}
+  it('IT-ALT-005: NULL PeerLens ratings sort below scored subjects (NULLS LAST)', async () => {
     const sFocus = makeSubjectId('alt-nulls-focus')
     const sScored = makeSubjectId('alt-nulls-scored')
     const sUnscored = makeSubjectId('alt-nulls-unscored')

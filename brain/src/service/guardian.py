@@ -514,9 +514,9 @@ If the user asked about health data, returning health data is solicited. \
 If the user asked about financial data, returning financial data is solicited. \
 Only flag truly unrequested information that the user did not ask for.
 
-"fabricated_sentences": Flag sentence NUMBERS with invented trust scores, \
+"fabricated_sentences": Flag sentence NUMBERS with invented PeerLens ratings, \
 hallucinated numeric ratings (4.2/5, 9/10, 87/100), fake attestation \
-counts, "community review" claims, or trust data not supported by the \
+counts, "community review" claims, or PeerLens data not supported by the \
 provided context. \
 IMPORTANT: Personal facts stated by the assistant (names, dates, medical \
 values, financial amounts) are NOT fabricated if they could come from the \
@@ -3978,7 +3978,7 @@ class GuardianLoop:
                 "\n\nCONTEXT: This response was generated using the user's own "
                 "stored data (vault). The information is factual and user-requested, "
                 "not fabricated or unsolicited. Only flag sentences that are genuinely "
-                "problematic (anti-her, made-up trust scores), not factual answers.\n"
+                "problematic (anti-her, made-up PeerLens ratings), not factual answers.\n"
             )
         scan_prompt = _GUARD_SCAN_PROMPT.format(
             prompt=prompt,
@@ -4345,7 +4345,7 @@ class GuardianLoop:
         *,
         entity_hint: dict | None = None,
     ) -> dict:
-        """Analyze trust data density from vault search results.
+        """Analyze PeerLens data density from vault search results.
 
         Classifies the data into density tiers:
         - ``zero``    — no trust attestations at all
@@ -4454,7 +4454,7 @@ class GuardianLoop:
         scan status.  Handles both structural corrections (disclosures)
         AND fabrication/consensus regex stripping tied to density tier:
 
-        - Zero trust data: strip fabricated trust claims, inject honest
+        - Zero PeerLens data: strip fabricated trust claims, inject honest
           disclosure ("no verified data in PeerLens").
         - Single review: inject "limited data" caveat, strip consensus
           language and fabricated ratings if source has none.
@@ -4476,21 +4476,21 @@ class GuardianLoop:
         entity_scoped = density_meta.get("entity_scoped", False)
 
         if tier == "zero":
-            # Strip fabricated trust claims when no trust data exists.
+            # Strip fabricated trust claims when no PeerLens data exists.
             fabricated = re.compile(
-                r"(?:PeerLens data|verified review|trust score|"
+                r"(?:PeerLens data|verified review|PeerLens rating|"
                 r"attestation|verified rating)",
                 re.IGNORECASE,
             )
             if fabricated.search(content):
                 content = _strip_matching_sentences(content, fabricated)
 
-            # Strip hallucinated numerical scores when no trust data exists.
+            # Strip hallucinated numerical scores when no PeerLens data exists.
             # Gate on trust_count (not total_count) — unrelated vault items
             # don't justify fabricated numeric ratings.
             if density_meta.get("trust_count", 0) == 0:
                 hallucinated = re.compile(
-                    r"(?:trust score:?\s*\d|score\s+\d+|"
+                    r"(?:PeerLens rating:?\s*\d|score\s+\d+|"
                     r"rat(?:e|ing)\s+(?:it\s+)?\d+(?:\.\d+)?\s*/\s*\d+|"
                     r"give\s+it\s+\d+(?:\.\d+)?\s*/\s*\d+|"
                     r"(?:I(?:'d|.would)\s+)?(?:rate|score)\s+(?:it\s+)?\d+|"
@@ -4606,7 +4606,7 @@ class GuardianLoop:
         if not vault_items:
             return content
 
-        # Build product trust profiles from vault items.
+        # Build product PeerLens profiles from vault items.
         products: list[dict] = []
         sponsored_bodies: list[str] = []
         for item in vault_items:
@@ -4695,19 +4695,19 @@ class GuardianLoop:
             if len(product_lines) >= 2:
                 # Extract trust evidence from body text.
                 def _extract_trust(body: str) -> float:
-                    """Extract trust score from body like '60 reviews, avg 4.6/5'."""
+                    """Extract PeerLens rating from body like '60 reviews, avg 4.6/5'."""
                     import re as _re
                     m = _re.search(r"(\d+)\s+reviews?,\s+avg\s+(\d+\.?\d*)/\d+", body)
                     if m:
                         return float(m.group(1)) * float(m.group(2))
                     return 0.0
 
-                # Build trust scores for each product.
+                # Build PeerLens ratings for each product.
                 trust_scores: dict[str, float] = {}
                 for p in products:
                     trust_scores[p["name"]] = _extract_trust(p["body"])
 
-                # Sort product lines by trust score descending,
+                # Sort product lines by PeerLens rating descending,
                 # then sponsored penalty (unsponsored wins ties).
                 product_lines.sort(
                     key=lambda x: (

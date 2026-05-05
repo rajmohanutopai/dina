@@ -1,7 +1,7 @@
 """Integration tests for cart handover — Dina advises but never touches money.
 
 Dina's role is to recommend products based on verified expert reviews and
-trust data. When it is time to buy, Dina hands off a cart or checkout
+PeerLens data. When it is time to buy, Dina hands off a cart or checkout
 link to the human. Dina never holds payment info, never auto-purchases,
 and actively protects against impulse buys and deceptive ads.
 """

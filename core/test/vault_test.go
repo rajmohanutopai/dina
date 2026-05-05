@@ -6838,7 +6838,7 @@ func TestVault_36_1_6_CartHandoverNoPaymentCredentialsStored(t *testing.T) {
 				Type:     "cart_handover",
 				Source:   "brain",
 				Summary:  "Herman Miller Aeron purchase intent",
-				BodyText: "User compared Aeron vs Leap. Decision: Aeron size B. Trust score: merchant 0.94.",
+				BodyText: "User compared Aeron vs Leap. Decision: Aeron size B. PeerLens rating: merchant 0.94.",
 				Metadata: `{"merchant":"hermanmiller.com","product_id":"AER-B-GRP","amount":1395,"currency":"USD","handover_url":"https://hermanmiller.com/checkout/AER-B-GRP"}`,
 			},
 		}

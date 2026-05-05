@@ -67,7 +67,7 @@ for i in "$@"; do
             echo ""
             echo "  Available stories:"
             echo ""
-            echo "    1  The Purchase Journey     (13 tests)  — trust-weighted product search"
+            echo "    1  The Purchase Journey     (13 tests)  — PeerLens-weighted product search"
             echo "    2  The Sancho Moment          (7 tests)  — D2D messaging + contextual nudge"
             echo "    3  The Dead Internet Filter    (8 tests)  — AT Protocol trust verification"
             echo "    4  The Persona Wall           (11 tests)  — cross-persona access control"
@@ -81,7 +81,7 @@ for i in "$@"; do
             echo "  Thesis invariant stories:"
             echo ""
             echo "   11  The Anti-Her                 (5 tests)  — proactive relationship maintenance"
-            echo "   12  Verified Truth                (9 tests)  — trust data density spectrum"
+            echo "   12  Verified Truth                (9 tests)  — PeerLens data density spectrum"
             echo "   13  Silence Under Stress          (3 tests)  — notification storms & ambiguity"
             echo "   14  Agent Sandbox                 (4 tests)  — agent perimeter + sandbox policy"
             echo ""
@@ -229,7 +229,7 @@ print_banner() {
     #                                                                                             100 cols
     row "     ${BOLD}\"I need a chair\"${R}${D} -> 5 reviewers created (3 verified Ring 2, 2 unverified Ring 1)${R}"
     row "${D}     Dina checks health vault (back pain, needs lumbar), finance vault (budget 10-20K INR)${R}"
-    row "${D}     Trust-weighted reviews: skip CheapChair (low trust score), recommends ErgoMax Elite${R}"
+    row "${D}     PeerLens-weighted reviews: skip CheapChair (low PeerLens rating), recommends ErgoMax Elite${R}"
     row ""
 
     # ── Story 02 ──────────────────────────────────────────────────────────

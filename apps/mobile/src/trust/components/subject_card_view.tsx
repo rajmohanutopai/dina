@@ -48,7 +48,7 @@ import type { SubjectCardDisplay } from '../subject_card';
  * stays out of the way.
  */
 // Maturity labels use title case ("Some", "Established") rather than
-// the ALL-CAPS used by canonical trust bands ("HIGH", "MODERATE",
+// the ALL-CAPS used by canonical PeerLens rating bands ("HIGH", "MODERATE",
 // "LOW"). This visually separates "we don't have enough signal yet"
 // from "we have a real trust verdict" — without the case difference,
 // a search-result card showing "SOME" looks like a band tier (it

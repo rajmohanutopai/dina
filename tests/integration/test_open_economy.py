@@ -231,7 +231,7 @@ class TestPluginEconomy:
         mock_trust_network: MockTrustNetwork,
         mock_trust_evaluator: MockTrustEvaluator,
     ):
-        """A product maker's trust score increases with positive outcomes
+        """A product maker's PeerLens rating increases with positive outcomes
         and verified transactions."""
         seller_did = "did:plc:ChairMaker"
         score = mock_trust_evaluator.compute_composite(
@@ -263,7 +263,7 @@ class TestPluginEconomy:
     def test_bot_operator_earns_by_accuracy(
         self, mock_trust_network: MockTrustNetwork
     ):
-        """A review bot's trust score increases when its recommendations
+        """A review bot's PeerLens rating increases when its recommendations
         lead to good outcomes, and decreases for bad ones."""
         bot_did = "did:plc:ReviewBot"
         mock_trust_network.bot_scores[bot_did] = 50.0
@@ -466,7 +466,7 @@ class TestMultiPartyCoordination:
         mock_p2p: MockP2PChannel,
     ):
         """When a buyer disputes an order, the dispute is logged and both
-        parties' trust scores are evaluated."""
+        parties' PeerLens ratings are evaluated."""
         setup_p2p_pair(mock_dina, mock_seller_dina, mock_p2p)
 
         # Buyer raises dispute

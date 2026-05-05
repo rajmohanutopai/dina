@@ -1,6 +1,6 @@
 /**
  * T2D.14 — PeerLens: attestation signing, expert reviews, outcome
- * tracking, anonymization, trust scoring, PDS forgery prevention.
+ * tracking, anonymization, PeerLens rating, PDS forgery prevention.
  *
  * Category B: integration/contract test against the AppView wire shape.
  *

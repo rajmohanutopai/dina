@@ -111,7 +111,7 @@ func (m *mockGatekeeper) CheckEgress(_ context.Context, _ string, _ []byte) (boo
 type mockClock struct{}
 
 func (m *mockClock) Now() time.Time                         { return time.Unix(1000000, 0) }
-func (m *mockClock) After(d time.Duration) <-chan time.Time  { return time.After(d) }
+func (m *mockClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
 func (m *mockClock) NewTicker(d time.Duration) *time.Ticker { return time.NewTicker(d) }
 
 // ---------------------------------------------------------------------------
@@ -354,7 +354,7 @@ func (g *recordingGatekeeper) CheckEgress(_ context.Context, _ string, _ []byte)
 }
 
 // ---------------------------------------------------------------------------
-// HybridSearch trust-weighted scoring
+// HybridSearch PeerLens-weighted scoring
 // ---------------------------------------------------------------------------
 
 // hybridMockReader returns configurable FTS5 and vector results for testing.

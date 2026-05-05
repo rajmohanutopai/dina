@@ -33,7 +33,7 @@ import { normalizeHandle } from '@/util/handle_normalize.js'
  * optional; V1 returns all groups in one page (capped per group).
  * V2 can add cursor-per-group pagination when subject sizes warrant.
  *
- * **Sorting**: each group sorted by reviewer trust score descending,
+ * **Sorting**: each group sorted by reviewer PeerLens rating descending,
  * NULLs last. Two reviewers with the same score break ties by
  * attestation `recordCreatedAt` desc — recency as a tiebreaker keeps
  * the surface fresh.
@@ -64,7 +64,7 @@ export type SubjectGetParamsType = z.infer<typeof SubjectGetParams>
 export type TrustBand = 'high' | 'moderate' | 'low' | 'very-low' | 'unrated'
 
 /**
- * Map a `[0, 1]` trust score to its public band label. Mirrors
+ * Map a `[0, 1]` PeerLens rating to its public band label. Mirrors
  * `packages/protocol/src/trust/score_bands.ts` so the AppView surface
  * agrees with the rest of the workspace.
  */
@@ -172,7 +172,7 @@ function reviewerEntryOf(
   }
 }
 
-/** Sort reviewers by trust score desc with createdAt desc tiebreak. */
+/** Sort reviewers by PeerLens rating desc with createdAt desc tiebreak. */
 function sortReviewers(rows: ReviewerEntry[]): ReviewerEntry[] {
   return rows.sort((a, b) => {
     // NULL scores last (treat as -Infinity).
@@ -277,7 +277,7 @@ export async function subjectGet(
     depthByDid.set(node.did, node.depth)
   }
 
-  // Phase 4 — author trust scores + display handles (single batched
+  // Phase 4 — author PeerLens ratings + display handles (single batched
   // lookup against `did_profiles`). The handle comes from the same
   // join we already do for scores; no extra round-trip.
   const authorDids = [...new Set(attRows.map((a) => a.authorDid))]

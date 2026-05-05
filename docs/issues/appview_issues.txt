@@ -156,7 +156,7 @@ Issue:
 - Scoring jobs only recompute rows where `needsRecalc = true`.
 - Deletions remove rows/edges but do not flag affected DIDs/subjects for recomputation.
 Impact:
-- Trust scores can remain stale after deletion/revocation/removal events.
+- PeerLens ratings can remain stale after deletion/revocation/removal events.
 - Abuse path: inflate score with positive records, delete records, keep stale elevated score until unrelated recalculation.
 Recommended fix:
 - In delete flow, fetch affected subject/DID metadata before delete, then call `markDirty`.

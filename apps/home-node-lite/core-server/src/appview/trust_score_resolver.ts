@@ -2,12 +2,12 @@
  * Task 6.21 — `getTrustScore(did)` + cache.
  *
  * Brain calls AppView's `com.dina.trust.resolve` to get a subject's
- * trust score before:
+ * PeerLens rating before:
  *   - Sending a `service.query` to a newly-discovered provider.
  *   - Ranking candidate contacts for a nudge.
  *   - Surfacing a review in the admin UI.
  *
- * Hitting AppView on every call is wasteful — trust scores move on
+ * Hitting AppView on every call is wasteful — PeerLens ratings move on
  * the scale of hours, not milliseconds. This resolver wraps the
  * `SwrCache` (task 6.16) with a purpose-built API: `getTrustScore(did)`
  * returns a `{score, confidence, ring, flagCount, source}` tuple
@@ -139,7 +139,7 @@ export class TrustScoreResolver {
   }
 
   /**
-   * Fetch-or-return-cached trust score for `did`. Always resolves —
+   * Fetch-or-return-cached PeerLens rating for `did`. Always resolves —
    * network errors with no stale entry throw, but callers typically
    * wrap this in a `decideTrust()` call that treats throws as
    * "unknown". Passing `{mustRevalidate: true}` forces a blocking

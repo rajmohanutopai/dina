@@ -1,5 +1,5 @@
 /**
- * T9.1 — Trust score query client: fetch from AppView xRPC.
+ * T9.1 — PeerLens rating query client: fetch from AppView xRPC.
  *
  * Tests use mock fetch — no real AppView calls. The mock body matches
  * AppView's `GetProfileResponse` shape from
@@ -52,7 +52,7 @@ const SAMPLE_PROFILE = {
 
 describe('TrustQueryClient (9.1)', () => {
   describe('queryProfile', () => {
-    it('fetches trust profile from AppView xRPC', async () => {
+    it('fetches PeerLens profile from AppView xRPC', async () => {
       const { mockFetch, calls } = createMockFetch(SAMPLE_PROFILE);
       const client = new TrustQueryClient({ fetch: mockFetch });
 

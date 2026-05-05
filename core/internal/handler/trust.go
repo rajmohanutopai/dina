@@ -54,7 +54,7 @@ func (h *TrustHandler) HandleStats(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(stats)
 }
 
-// HandleResolve looks up a DID's trust profile from AppView.
+// HandleResolve looks up a DID's PeerLens profile from AppView.
 // GET /v1/trust/resolve?did={did}
 func (h *TrustHandler) HandleResolve(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {

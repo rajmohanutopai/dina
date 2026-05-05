@@ -110,7 +110,7 @@ export interface ContactListResponse extends BotResponseBase {
   contacts: ContactListEntry[];
 }
 
-/** Trust-score response — rendered as a trust card. Matches Python's
+/** PeerLens rating response — rendered as a trust card. Matches Python's
  *  `TrustScoreResponse`. */
 export interface TrustScoreResponse extends BotResponseBase {
   kind: 'trust_score';

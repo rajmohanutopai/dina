@@ -2460,7 +2460,7 @@ def check_attribution_compliance(
     1. Iterate over every source in every recommendation entry.
     2. For each source that lacks a non-empty ``creator_name``, record a
        violation with the source index and the bot DID.
-    3. Apply ``penalty`` (default -10) to the bot's trust score in the
+    3. Apply ``penalty`` (default -10) to the bot's PeerLens rating in the
        PeerLens **once per violating source**.
     4. Return a result dict summarising the outcome.
 
@@ -2512,7 +2512,7 @@ def route_to_best_bot(
     available_bots: list[dict],
     trust_network: MockTrustNetwork,
 ) -> dict | None:
-    """Select the best bot from a pool based on current trust scores.
+    """Select the best bot from a pool based on current PeerLens ratings.
 
     Each entry in ``available_bots`` must have a ``"bot_did"`` key.
     The function looks up each bot's score in PeerLens and
@@ -2542,7 +2542,7 @@ class TestAttributionViolation:
 
     Spec requirement (section 22.2 — Creator Value Return):
         "Bot returns recommendation with no creator_name | Brain logs
-         violation -> bot trust score decreased -> next routing prefers
+         violation -> bot PeerLens rating decreased -> next routing prefers
          other bots."
     """
 
@@ -2556,7 +2556,7 @@ class TestAttributionViolation:
     ):
         """A bot returns a recommendation with NO creator_name field.
         Brain detects the attribution violation, logs it, decreases the
-        bot's trust score, and subsequent routing prefers a different bot."""
+        bot's PeerLens rating, and subsequent routing prefers a different bot."""
 
         violating_bot_did = "did:plc:BotViolator001"
         compliant_bot_did = "did:plc:BotCompliant001"
@@ -2606,7 +2606,7 @@ class TestAttributionViolation:
             "Logged violation must capture the actual missing value (None)"
         )
 
-        # --- 4. Trust score decreased ---
+        # --- 4. PeerLens rating decreased ---
         assert result["score_before"] == 50.0
         assert result["score_after"] == 40.0, (
             "One violation must decrease score by 10 (penalty default)"
@@ -2643,7 +2643,7 @@ class TestAttributionViolation:
         )
         assert good_result["violations"] == []
         assert good_result["score_after"] == 50.0, (
-            "Compliant bot's trust score must remain unchanged"
+            "Compliant bot's PeerLens rating must remain unchanged"
         )
 
         # --- 6. Routing now prefers the compliant bot ---
@@ -2810,7 +2810,7 @@ class TestAttributionViolation:
         self, mock_trust_network: MockTrustNetwork
     ):
         """Counter-proof: a fully compliant response with creator_name on
-        every source does NOT change the bot's trust score."""
+        every source does NOT change the bot's PeerLens rating."""
 
         bot_did = "did:plc:BotFullyCompliant001"
         # Set an explicit starting score to verify no change
@@ -2888,7 +2888,7 @@ class TestAttributionViolation:
             assert result["compliant"] is False
 
         assert mock_trust_network.get_bot_score(bot_did) == 0.0, (
-            "Trust score must floor at 0.0, not go negative"
+            "PeerLens rating must floor at 0.0, not go negative"
         )
 
         # One more violation: still 0.0
@@ -3008,13 +3008,13 @@ class TestAttributionViolation:
 
 
 # =========================================================================
-# Helper: rank recommendations by trust score (Verified Truth principle)
+# Helper: rank recommendations by PeerLens rating (Verified Truth principle)
 # =========================================================================
 
 def rank_recommendations_by_trust(
     recommendations: list[dict],
 ) -> dict:
-    """Rank product recommendations by trust score alone.
+    """Rank product recommendations by PeerLens rating alone.
 
     This implements Dina's Verified Truth principle: "Rank by trust, not by
     ad spend."  The ``sponsored`` flag on each recommendation is PRESERVED
@@ -3150,14 +3150,14 @@ class TestSponsorshipCannotDistortRanking:
     """TST-INT-733: Sponsorship cannot distort ranking order.
 
     Spec requirement (Verified Truth — Law 2):
-        "Brain stores: Product A (sponsored: true, trust score 0.6) and
-         Product B (unsponsored, trust score 0.9) -> Brain assembles ranked
+        "Brain stores: Product A (sponsored: true, PeerLens rating 0.6) and
+         Product B (unsponsored, PeerLens rating 0.9) -> Brain assembles ranked
          recommendation -> Core delivers | Product B ranks above Product A
          -- sponsorship flag preserved for disclosure but has zero weight
          in ranking.  Trust evidence alone determines order."
 
     This is the core of Dina's Verified Truth principle: ad money cannot
-    buy higher ranking.  Trust score is the SOLE ranking signal.
+    buy higher ranking.  PeerLens rating is the SOLE ranking signal.
     """
 
     # ------------------------------------------------------------------
@@ -3230,7 +3230,7 @@ class TestSponsorshipCannotDistortRanking:
         # 6. Verify ranking integrity via independent checker
         integrity = verify_ranking_integrity(ranked)
         assert integrity["valid"] is True, (
-            "Ranking integrity check must pass — trust scores are monotonically "
+            "Ranking integrity check must pass — PeerLens ratings are monotonically "
             f"descending. Violations: {integrity['violations']}"
         )
         assert integrity["violations"] == []
@@ -3288,7 +3288,7 @@ class TestSponsorshipCannotDistortRanking:
         )
 
     # ------------------------------------------------------------------
-    # Counter-proof 2: equal trust scores — sponsored does not break tie
+    # Counter-proof 2: equal PeerLens ratings — sponsored does not break tie
     # ------------------------------------------------------------------
 
     # TRACE: {"suite": "INT", "case": "0076", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "10", "scenario": "03", "title": "equal_trust_scores_sponsored_does_not_break_tie"}
@@ -3319,7 +3319,7 @@ class TestSponsorshipCannotDistortRanking:
 
         # Both have same trust_score so order must match input (stable sort)
         assert ranked_1[0]["product_id"] == "equal-trust-sponsored", (
-            "Stable sort: when trust scores are equal, input order is preserved "
+            "Stable sort: when PeerLens ratings are equal, input order is preserved "
             "(sponsored was first in input)"
         )
         assert ranked_1[1]["product_id"] == "equal-trust-organic"
@@ -3329,7 +3329,7 @@ class TestSponsorshipCannotDistortRanking:
         ranked_2 = result_2["ranked"]
 
         assert ranked_2[0]["product_id"] == "equal-trust-organic", (
-            "Stable sort: when trust scores are equal, input order is preserved "
+            "Stable sort: when PeerLens ratings are equal, input order is preserved "
             "(organic was first in input)"
         )
         assert ranked_2[1]["product_id"] == "equal-trust-sponsored"
@@ -3414,7 +3414,7 @@ class TestSponsorshipCannotDistortRanking:
 
     # TRACE: {"suite": "INT", "case": "0078", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "10", "scenario": "05", "title": "five_products_mixed_sponsorship_ranked_by_trust"}
     def test_five_products_mixed_sponsorship_ranked_by_trust(self):
-        """Edge case: 5 products with various trust scores and mixed
+        """Edge case: 5 products with various PeerLens ratings and mixed
         sponsorship flags.  The entire list must be sorted strictly by
         trust_score descending.  Sponsorship has zero influence."""
 
@@ -3468,12 +3468,12 @@ class TestSponsorshipCannotDistortRanking:
             f"Actual:   {actual_order}"
         )
 
-        # Trust scores must be monotonically descending
+        # PeerLens ratings must be monotonically descending
         trust_scores = [r["trust_score"] for r in ranked]
         for i in range(len(trust_scores) - 1):
             assert trust_scores[i] >= trust_scores[i + 1], (
-                f"Trust score at position {i} ({trust_scores[i]}) must be >= "
-                f"trust score at position {i+1} ({trust_scores[i+1]})"
+                f"PeerLens rating at position {i} ({trust_scores[i]}) must be >= "
+                f"PeerLens rating at position {i+1} ({trust_scores[i+1]})"
             )
 
         # Integrity check
@@ -3552,7 +3552,7 @@ class TestSponsorshipCannotDistortRanking:
             )
 
     # ------------------------------------------------------------------
-    # Edge case 3: zero trust score products ranked last
+    # Edge case 3: zero PeerLens rating products ranked last
     # ------------------------------------------------------------------
 
     # TRACE: {"suite": "INT", "case": "0080", "section": "22", "sectionName": "Thesis: Pull Economy", "subsection": "10", "scenario": "07", "title": "zero_trust_score_products_ranked_last"}

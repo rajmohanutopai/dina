@@ -939,7 +939,7 @@ class HomeNode:
             ctx_str = ", ".join(sorted(set(context_keywords)))[:200] or "general use"
             content = (
                 f"No verified reviews found in PeerLens for "
-                f"{product_name}. No trust data available — no attestations, "
+                f"{product_name}. No PeerLens data available — no attestations, "
                 f"no rating. Cannot verify this product through the Trust "
                 f"Network. Not found in PeerLens. Unknown PeerLens "
                 f"status. Based on your preferences ({ctx_str}), consider "

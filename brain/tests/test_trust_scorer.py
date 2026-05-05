@@ -1,6 +1,6 @@
 """Unit tests for TrustScorer — source trust and provenance assignment.
 
-Tests the trust scoring rules:
+Tests the PeerLens rating rules:
     - User content → self / high / normal
     - Known contact (trusted) → contact_ring1 / high / normal
     - Known contact (unknown trust) → contact_ring2 / medium / normal

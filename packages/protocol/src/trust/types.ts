@@ -301,7 +301,7 @@ export interface SubjectClaim {
   createdAt: string;
 }
 
-/** `com.dina.trust.trustPolicy` — author's policy preferences for trust scoring. */
+/** `com.dina.trust.trustPolicy` — author's policy preferences for PeerLens rating. */
 export interface TrustPolicy {
   maxGraphDepth?: number;
   trustedDomains?: string[];

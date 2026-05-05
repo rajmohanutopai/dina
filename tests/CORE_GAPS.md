@@ -93,7 +93,7 @@
 | M15 | §8 | Attestation optional fields URI format (sourceUrl, deepLink) | `TestPDS_AttestationOptionalFieldsURIFormat` | CLOSED |
 | M16 | §8 | Trust query response includes signed payloads | `TestTrust_QueryResponseIncludesSignedPayloads` | CLOSED |
 | M17 | §9 | Outbox retry backoff includes jitter (not just exponential) | `TestTransport_OutboxRetryBackoffIncludesJitter` | CLOSED |
-| M18 | §10 | Bot trust scoring: local score tracking, threshold-based routing | `TestBotInterface_LocalBotScoreTracking` | CLOSED |
+| M18 | §10 | Bot PeerLens rating: local score tracking, threshold-based routing | `TestBotInterface_LocalBotScoreTracking` | CLOSED |
 | M19 | §10 | Deep Link attribution validation + penalty for stripping attribution | `TestBotInterface_DeepLinkAttributionValidation` | CLOSED |
 | M20 | §8 | DID Document contains DIDComm service endpoint for D2D communication | `TestIdentity_DIDDocContainsDIDCommServiceEndpoint` | CLOSED |
 
@@ -125,7 +125,7 @@
 | M37 | §14 | Estate recovery: non-assigned data destroyed per default_action | `TestEstate_Recovery_NonAssignedDataDestroyed` | CLOSED |
 | M38 | §12 | Cart handover: structured fields (method, intent_uri, merchant, amount) | `TestStaging_CartHandover_StructuredFields` | CLOSED |
 | M39 | §12 | Cart handover: no payment credentials stored in staging | `TestStaging_CartHandover_NoPaymentCredentials` | CLOSED |
-| M40 | §12 | Agent outcomes recorded in Tier 3 for trust scoring | `TestGatekeeper_AgentOutcome_RecordedForTrust` | CLOSED |
+| M40 | §12 | Agent outcomes recorded in Tier 3 for PeerLens rating | `TestGatekeeper_AgentOutcome_RecordedForTrust` | CLOSED |
 
 ---
 

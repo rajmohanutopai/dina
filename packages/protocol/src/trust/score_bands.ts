@@ -1,6 +1,6 @@
 /**
- * Trust-score bands — canonical thresholds for the public `[0, 1]`
- * trust score (TN-MOB-002 + TN-LITE-006 contract).
+ * PeerLens rating bands — canonical thresholds for the public `[0, 1]`
+ * PeerLens rating (TN-MOB-002 + TN-LITE-006 contract).
  *
  * The thresholds slice the score range into four labelled bands plus
  * an "unrated" sentinel for the `null` (no profile yet) case. UI

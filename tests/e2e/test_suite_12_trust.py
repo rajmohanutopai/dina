@@ -2,7 +2,7 @@
 
 Tests the full PeerLens lifecycle: expert attestation publishing via
 AT Protocol (PDS -> Relay -> AppView), bot trust degradation with
-auto-routing, signed tombstone deletion, composite trust score computation,
+auto-routing, signed tombstone deletion, composite PeerLens rating computation,
 AT Protocol discovery, and AppView determinism / censorship detection.
 
 Actors: Don Alonso, Sancho, ChairMaker, ReviewBot, AppView, Relay,
@@ -39,7 +39,7 @@ from tests.e2e.mocks import (
 @pytest.mark.mock_heavy
 class TestTrustNetworkLifecycle:
     """E2E-12.x -- PeerLens: attestations, bot trust,
-    tombstone deletion, trust scores, AT Protocol discovery, and
+    tombstone deletion, PeerLens ratings, AT Protocol discovery, and
     AppView determinism.
 
     NOTE: ~98% mock-only — exercises MockPDS, MockRelay, MockAppView
@@ -311,7 +311,7 @@ class TestTrustNetworkLifecycle:
         # Verify record persists in PDS with correct VALUES
         records = don_alonso.pds.list_records("dina.trust.bot_score")
         assert len(records) >= 1, (
-            "PDS must contain the trust score record"
+            "PDS must contain the PeerLens rating record"
         )
         last_record = records[-1]
         assert last_record["bot_did"] == bot_did, (
@@ -462,10 +462,10 @@ class TestTrustNetworkLifecycle:
         chairmaker: HomeNode,
         appview: MockAppView,
     ) -> None:
-        """E2E-12.4 Trust Score Computation.
+        """E2E-12.4 PeerLens Rating Computation.
 
         ChairMaker has Ring 3, 50 transactions, 2 years of history,
-        and expert attestations. AppView computes a composite trust score.
+        and expert attestations. AppView computes a composite PeerLens rating.
         Verify exact score, component breakdown, and determinism.
         """
         product_id = "chairmaker-trust-product"
@@ -527,7 +527,7 @@ class TestTrustNetworkLifecycle:
             appview.index_outcome(report)
 
         # ------------------------------------------------------------------
-        # 4. Query composite trust score with exact VALUE assertions
+        # 4. Query composite PeerLens rating with exact VALUE assertions
         # ------------------------------------------------------------------
         result = appview.query_product(product_id)
         assert result is not None
@@ -572,7 +572,7 @@ class TestTrustNetworkLifecycle:
         # ------------------------------------------------------------------
         result_2 = appview.query_product(product_id)
         assert result_2["score"] == result["score"], (
-            "Trust score must be deterministic"
+            "PeerLens rating must be deterministic"
         )
         assert result_2["sample_size"] == result["sample_size"]
 

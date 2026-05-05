@@ -39,7 +39,7 @@ func NewTrustService(cache port.TrustCache, resolver port.TrustResolver, contact
 // The trust cache (AppView sync) is no longer used for the accept/quarantine
 // decision in v1. Only explicit contacts (user-managed) pass. This prevents
 // unknown senders from being accepted solely because they have a high
-// AppView trust score.
+// AppView PeerLens rating.
 func (s *TrustService) EvaluateIngress(senderDID string) domain.IngressDecision {
 	if senderDID == "" {
 		return domain.IngressQuarantine
@@ -123,7 +123,7 @@ func (s *TrustService) SyncNeighborhood(ownDID string) error {
 	return nil
 }
 
-// ResolveProfile fetches the full trust profile for a DID from AppView.
+// ResolveProfile fetches the full PeerLens profile for a DID from AppView.
 // Returns the raw JSON so Brain can use all trust signals.
 func (s *TrustService) ResolveProfile(did string) (json.RawMessage, error) {
 	return s.resolver.ResolveFullProfile(did)

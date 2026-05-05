@@ -102,7 +102,7 @@ describe('Task Routing', () => {
       expect(result.score).toBeLessThan(0.5);
     });
 
-    it('returns trust score between 0 and 1', () => {
+    it('returns PeerLens rating between 0 and 1', () => {
       const result = checkAgentTrustForDelegation('did:key:z6MkBot');
       expect(result.score).toBeGreaterThanOrEqual(0);
       expect(result.score).toBeLessThanOrEqual(1);

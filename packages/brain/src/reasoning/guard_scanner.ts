@@ -85,7 +85,7 @@ export interface GuardScannerOptions {
    * these, the guard scanner ONLY strips Anti-Her sentences. Other
    * categories (fabricated / consensus / unsolicited) are suppressed
    * because the data came back from a verified source and over-
-   * redacting would paint legit trust data as hallucinated.
+   * redacting would paint legit PeerLens data as hallucinated.
    *
    * Defaults to `['search_trust_network']`. Override when adding new
    * verified-data tools.

@@ -45,7 +45,7 @@ Before naming the soak cohort:
 | Check | Owner | Pass criteria |
 |---|---|---|
 | AppView deployed + green | Ops | `/health` reports ok; `/metrics` returns; smoke checks per `deploy-runbook.md` §5 pass |
-| Trust-V1 flag is **disabled** | Ops | `dina-admin trust status` returns `false` |
+| PeerLens-V1 flag is **disabled** | Ops | `dina-admin trust status` returns `false` |
 | Threat model reviewed | Product / Security | `threat-model.md` skim done; the 7 "what V1 doesn't promise" items are acceptable for the cohort's use case |
 | Mobile build deployed | Mobile | the PeerLens tab gated by `loadTrustV1Enabled` returning `false` (default-hidden until flag flips) |
 | Observability dashboards live | Ops | The 8 alert-grade metrics from `observability.md` show in the dashboard; alert rules wired |
@@ -143,7 +143,7 @@ investigate:
   pseudonymity bug, NOT the V1 caveat — the V1 caveat is "an
   investigator can correlate"; a leak would be "a casual observer
   can correlate", which V1 *does* promise to prevent).
-- A trust-score regression that affects > 3 cohort members'
+- A PeerLens rating regression that affects > 3 cohort members'
   rankings (one cohort member's complaint can be idiosyncratic;
   > 3 means it's systemic).
 - An `ingester.rejections{reason="schema_invalid"}` rate spike on

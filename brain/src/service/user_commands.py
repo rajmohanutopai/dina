@@ -347,7 +347,7 @@ class UserCommandService:
     # ── Trust Operations ────────────────────────────────────────────────
 
     async def query_trust(self, name_or_did: str) -> CommandResult:
-        """Query trust profile for a name or DID (read-only)."""
+        """Query PeerLens profile for a name or DID (read-only)."""
         did = name_or_did.strip()
         display_name = did
 
@@ -371,7 +371,7 @@ class UserCommandService:
             profile = None
 
         if not profile:
-            return CommandResult(ok=False, message=f"No trust data found for {display_name}.")
+            return CommandResult(ok=False, message=f"No PeerLens data found for {display_name}.")
 
         return CommandResult(
             ok=True,
@@ -399,7 +399,7 @@ class UserCommandService:
             return CommandResult(ok=False, message=f"Contact '{name}' not found.")
 
         if not self._pds_publisher:
-            return CommandResult(ok=False, message="Trust publishing not configured (no PDS connection).")
+            return CommandResult(ok=False, message="PeerLens publishing not configured (no PDS connection).")
 
         try:
             result = await self._pds_publisher.publish_vouch(
@@ -423,7 +423,7 @@ class UserCommandService:
             return CommandResult(ok=False, message="Review text cannot be empty.")
 
         if not self._pds_publisher:
-            return CommandResult(ok=False, message="Trust publishing not configured (no PDS connection).")
+            return CommandResult(ok=False, message="PeerLens publishing not configured (no PDS connection).")
 
         try:
             result = await self._pds_publisher.publish_review(
@@ -454,7 +454,7 @@ class UserCommandService:
             return CommandResult(ok=False, message=f"Could not resolve '{target}'. Use a contact name or DID.")
 
         if not self._pds_publisher:
-            return CommandResult(ok=False, message="Trust publishing not configured (no PDS connection).")
+            return CommandResult(ok=False, message="PeerLens publishing not configured (no PDS connection).")
 
         try:
             result = await self._pds_publisher.publish_flag(
@@ -559,7 +559,7 @@ class UserCommandService:
                 "coordination.response": "Response",
                 "social.update": "Social update",
                 "safety.alert": "Safety alert",
-                "trust.vouch.request": "Trust request",
+                "trust.vouch.request": "PeerLens request",
             }.get(msg_type, msg_type)
             return CommandResult(
                 ok=True,

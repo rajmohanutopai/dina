@@ -87,7 +87,7 @@ export function shouldDelegateToAgent(taskType: string): boolean {
 }
 
 /**
- * Check agent trust score before delegation.
+ * Check agent PeerLens rating before delegation.
  * Returns { trusted, score } where score is 0.0-1.0.
  */
 export function checkAgentTrustForDelegation(agentDID: string): {
@@ -97,6 +97,6 @@ export function checkAgentTrustForDelegation(agentDID: string): {
   if (trustedAgents.has(agentDID)) {
     return { trusted: true, score: 0.9 };
   }
-  // Unknown agents get a low trust score
+  // Unknown agents get a low PeerLens rating
   return { trusted: false, score: 0.1 };
 }

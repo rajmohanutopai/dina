@@ -365,7 +365,7 @@ class TestGenericDelegation:
         mock_external_agent: MockExternalAgent,
     ) -> None:
         """Financial actions (transfer_money) are always HIGH risk,
-        regardless of the agent's trust score."""
+        regardless of the agent's PeerLens rating."""
         # Even with default_approve=True, the risk level is HIGH
         mock_human.default_approve = True
 

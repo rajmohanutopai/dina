@@ -106,7 +106,7 @@ export interface ScoreV1AttestationAbout {
   evidenceCount: number;
   hasCosignature: boolean;
   isVerified: boolean;
-  /** Author's own trust score in `[0, 1]`, or null if unscored. */
+  /** Author's own PeerLens rating in `[0, 1]`, or null if unscored. */
   authorTrustScore: number | null;
   /** Whether the author has at least one inbound vouch. */
   authorHasInboundVouch: boolean;
@@ -143,7 +143,7 @@ export interface ScoreV1Output {
 }
 
 /**
- * Compute the V1 trust score for a subject, given a snapshot of the
+ * Compute the V1 PeerLens rating for a subject, given a snapshot of the
  * inputs and an explicit `nowMs` timestamp.
  *
  * `nowMs` controls only the recency-decay term in the sentiment
@@ -202,7 +202,7 @@ export function computeSentimentV1(input: ScoreV1Input, nowMs: number): number {
     const bilateral = a.hasCosignature ? C.BILATERAL_MULTIPLIER : 1.0;
 
     // AppView contract: an unvouched author contributes zero weight,
-    // even if they have a non-null trust score. Catches cold-start
+    // even if they have a non-null PeerLens rating. Catches cold-start
     // self-promotion attempts.
     const authorWeight = a.authorHasInboundVouch ? a.authorTrustScore ?? 0.0 : 0.0;
 

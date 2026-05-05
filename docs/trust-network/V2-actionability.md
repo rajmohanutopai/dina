@@ -28,7 +28,7 @@ filter but still leave the user stuck:
 
 - A "trusted" pen sold only in Uganda — but the viewer is in SF.
 - A 5-star Portuguese-language manual — viewer reads English.
-- A "great trust score" steakhouse — viewer is vegan.
+- A "great PeerLens rating" steakhouse — viewer is vegan.
 - An iOS-only app — viewer is on Android.
 - A "highly recommended" restaurant that's permanently closed.
 - A 5-year-old laptop review still ranking high — tech moves fast.
@@ -287,7 +287,7 @@ those platforms build user fingerprints over time.
 
 V2 deliberately does not do this. Instead:
 
-1. AppView returns un-personalised data (V1 trust scores +
+1. AppView returns un-personalised data (V1 PeerLens ratings +
    subject metadata).
 2. The mobile client fetches that data.
 3. The mobile client applies the viewer's lens *locally* — filters

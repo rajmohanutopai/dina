@@ -1,8 +1,8 @@
 /**
- * Trust score query client — fetch trust profiles from AppView xRPC.
+ * PeerLens rating query client — fetch PeerLens profiles from AppView xRPC.
  *
  * The Dina community trust system uses AT Protocol AppView as the
- * source of truth for trust scores. The xRPC endpoint
+ * source of truth for PeerLens ratings. The xRPC endpoint
  * `com.dina.trust.getProfile` returns the shape defined by
  * `appview/src/shared/types/api-types.ts.GetProfileResponse`:
  *
@@ -61,7 +61,7 @@ export interface ReviewerStats {
 }
 
 /**
- * Trust profile of a DID, as returned by AppView's
+ * PeerLens profile of a DID, as returned by AppView's
  * `com.dina.trust.getProfile`. Mirrors `GetProfileResponse` from
  * `appview/src/shared/types/api-types.ts` byte-for-byte except for
  * `lastActive`, which is normalised from ISO string → ms timestamp.
@@ -172,7 +172,7 @@ export class TrustQueryClient {
   }
 
   /**
-   * Query trust profile for a single DID.
+   * Query PeerLens profile for a single DID.
    */
   async queryProfile(did: string): Promise<QueryResult> {
     if (!did) {
@@ -191,7 +191,7 @@ export class TrustQueryClient {
         return {
           success: false,
           error: 'not_found',
-          errorMessage: `DID "${did}" has no trust profile`,
+          errorMessage: `DID "${did}" has no PeerLens profile`,
         };
       }
 
@@ -215,7 +215,7 @@ export class TrustQueryClient {
   }
 
   /**
-   * Query trust profiles for multiple DIDs.
+   * Query PeerLens profiles for multiple DIDs.
    *
    * Uses the batch xRPC endpoint for efficiency.
    * Falls back to individual queries if batch endpoint fails.
@@ -333,7 +333,7 @@ export class TrustQueryClient {
   }
 
   /**
-   * Project a trust profile to the slim shape the cache layer stores.
+   * Project a PeerLens profile to the slim shape the cache layer stores.
    *
    * The cache only needs the score, an attestation count for "based
    * on N reviews" UX, and a server-side timestamp for staleness

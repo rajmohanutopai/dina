@@ -477,9 +477,9 @@ describe('§9.2 Refresh Subject Scores — Incremental (Fix 9)', () => {
 })
 
 // ---------------------------------------------------------------------------
-// §9.3 Trust Score Convergence / Fix 12 (IT-SC-017..021) — 5 tests
+// §9.3 PeerLens Rating Convergence / Fix 12 (IT-SC-017..021) — 5 tests
 // ---------------------------------------------------------------------------
-describe('§9.3 Trust Score Convergence (Fix 12)', () => {
+describe('§9.3 PeerLens Rating Convergence (Fix 12)', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0462", "section": "01", "sectionName": "General", "title": "IT-SC-017: Fix 12: iterative scoring converges within 5 ticks"}
   it('IT-SC-017: Fix 12: iterative scoring converges within 5 ticks', async () => {
     // Network of 10 DIDs, run refreshProfiles repeatedly
@@ -540,7 +540,7 @@ describe('§9.3 Trust Score Convergence (Fix 12)', () => {
     // So the sentiment component should be neutral (0.5), the overall score should be near base
     expect(p.overallTrustScore).toBeDefined()
     // The vouch-gating means unvouched attestors contribute zero weight
-    // So the trust score should be dominated by the base score
+    // So the PeerLens rating should be dominated by the base score
     expect(p.overallTrustScore!).toBeLessThan(0.3)
   })
 
@@ -595,7 +595,7 @@ describe('§9.3 Trust Score Convergence (Fix 12)', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0466", "section": "01", "sectionName": "General", "title": "IT-SC-021: Fix 12: vouch-gating \u2014 scored but unvouched = zero"}
   it('IT-SC-021: Fix 12: vouch-gating — scored but unvouched = zero', async () => {
-    // DID has trust score 0.8 but zero vouches
+    // DID has PeerLens rating 0.8 but zero vouches
     const subId = 'sub_vouchgate'
     await insertSubject(subId, { did: 'did:plc:vgtest' })
     await insertProfile('did:plc:vgtest', { needsRecalc: true, computedAt: new Date(0) })

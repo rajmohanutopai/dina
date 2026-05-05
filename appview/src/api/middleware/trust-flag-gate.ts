@@ -31,7 +31,7 @@ import { readBoolFlag } from '@/db/queries/appview-config.js'
  *
  * **Closed-default on DB error**. If the flag read throws (transient
  * pg error, connection blip), we return 503 — same posture as the
- * scorer (TN-SCORE-010). Failing open would risk serving trust data
+ * scorer (TN-SCORE-010). Failing open would risk serving PeerLens data
  * the operator just disabled. Failing closed costs us a few seconds
  * of unnecessary 503s during a blip; failing open could leak data
  * during a deliberate disable. Asymmetric — pick the safer side.
@@ -76,7 +76,7 @@ export async function gateTrustNamespace(
       status: 503,
       body: {
         error: 'ServiceUnavailable',
-        message: 'Trust V1 status unavailable',
+        message: 'PeerLens V1 status unavailable',
       },
     }
   }
@@ -86,7 +86,7 @@ export async function gateTrustNamespace(
       status: 503,
       body: {
         error: 'ServiceUnavailable',
-        message: 'Trust V1 is currently disabled',
+        message: 'PeerLens V1 is currently disabled',
       },
     }
   }

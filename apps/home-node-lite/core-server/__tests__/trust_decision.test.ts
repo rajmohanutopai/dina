@@ -79,7 +79,7 @@ describe('decideTrust — unknown input', () => {
     expect(d.level).toBe('unknown');
     expect(d.score).toBe(0);
     expect(d.confidence).toBe(0);
-    expect(d.reasons[0]).toMatch(/no trust data/);
+    expect(d.reasons[0]).toMatch(/no PeerLens data/);
   });
 
   it('score present but confidence null → treated as confidence=0', () => {

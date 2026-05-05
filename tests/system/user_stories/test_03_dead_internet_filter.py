@@ -48,7 +48,7 @@ Pipeline
     → Returns raw JSON to Brain
                     ↓
   Brain (Python)
-    → Includes trust profile in LLM prompt
+    → Includes PeerLens profile in LLM prompt
     → LLM reasons about authenticity using identity signals
 """
 
@@ -157,7 +157,7 @@ class TestDeadInternetFilter:
                 0.94, 0.88, 0.91,   # rates
                 ["technology", "science"],  # active domains
                 two_years_ago, now,  # account age
-                0.95,               # overall trust score
+                0.95,               # overall PeerLens rating
                 now,                # computed_at
             ),
         )
@@ -216,7 +216,7 @@ class TestDeadInternetFilter:
                 14,                # 14 attestations by (suspicious volume)
                 0.0, 0.0, 0.0,    # zero rates
                 three_days_ago, now,  # 3-day-old account
-                0.0,               # zero trust score
+                0.0,               # zero PeerLens rating
                 now,               # computed_at
             ),
         )
@@ -239,8 +239,8 @@ class TestDeadInternetFilter:
     def test_01_appview_returns_trusted_creator(self, appview):
         """Direct XRPC call to AppView for trusted Elena.
 
-        Verifies the getProfile endpoint returns the full trust profile
-        with high trust score, 200+ attestations, and vouch data.
+        Verifies the getProfile endpoint returns the full PeerLens profile
+        with high PeerLens rating, 200+ attestations, and vouch data.
         """
         r = httpx.get(
             f"{appview}/xrpc/com.dina.trust.getProfile?did=did:plc:elena",
@@ -253,7 +253,7 @@ class TestDeadInternetFilter:
         _state["elena_profile_appview"] = profile
 
         assert profile["overallTrustScore"] >= 0.9, (
-            f"Elena's trust score too low: {profile['overallTrustScore']}"
+            f"Elena's PeerLens rating too low: {profile['overallTrustScore']}"
         )
         assert profile["attestationSummary"]["total"] >= 200, (
             f"Elena's attestations too low: {profile['attestationSummary']['total']}"
@@ -263,7 +263,7 @@ class TestDeadInternetFilter:
         )
 
         print(f"\n  [trust] AppView → Elena profile:")
-        print(f"    Trust score:   {profile['overallTrustScore']}")
+        print(f"    PeerLens rating:   {profile['overallTrustScore']}")
         print(f"    Attestations:  {profile['attestationSummary']['total']} total "
               f"({profile['attestationSummary']['positive']} positive)")
         print(f"    Vouches:       {profile['vouchCount']}")
@@ -278,7 +278,7 @@ class TestDeadInternetFilter:
         """Direct XRPC call to AppView for untrusted BotFarm.
 
         Verifies the getProfile endpoint returns a profile with zero
-        trust score, zero attestations about, and no vouch history.
+        PeerLens rating, zero attestations about, and no vouch history.
         """
         r = httpx.get(
             f"{appview}/xrpc/com.dina.trust.getProfile?did=did:plc:botfarm",
@@ -290,10 +290,10 @@ class TestDeadInternetFilter:
         profile = r.json()
         _state["botfarm_profile_appview"] = profile
 
-        # Trust score should be zero or null
+        # PeerLens rating should be zero or null
         score = profile.get("overallTrustScore") or 0
         assert score < 0.1, (
-            f"BotFarm trust score too high: {score}"
+            f"BotFarm PeerLens rating too high: {score}"
         )
         assert profile["attestationSummary"]["total"] == 0, (
             f"BotFarm should have 0 attestations about, got {profile['attestationSummary']['total']}"
@@ -303,7 +303,7 @@ class TestDeadInternetFilter:
         )
 
         print(f"\n  [trust] AppView → BotFarm profile:")
-        print(f"    Trust score:   {score}")
+        print(f"    PeerLens rating:   {score}")
         print(f"    Attestations:  {profile['attestationSummary']['total']} total")
         print(f"    Vouches:       {profile['vouchCount']}")
         print(f"    Account age:   3 days")
@@ -332,12 +332,12 @@ class TestDeadInternetFilter:
         _state["elena_profile_core"] = profile
 
         assert profile["overallTrustScore"] >= 0.9, (
-            f"Trust score not passed through Core: {profile['overallTrustScore']}"
+            f"PeerLens rating not passed through Core: {profile['overallTrustScore']}"
         )
         assert profile["attestationSummary"]["total"] >= 200
 
         print(f"\n  [trust] Core → Elena profile (via AppView):")
-        print(f"    Trust score:   {profile['overallTrustScore']}")
+        print(f"    PeerLens rating:   {profile['overallTrustScore']}")
         print(f"    Attestations:  {profile['attestationSummary']['total']}")
         print(f"    Pipeline:      Core → AppView → raw JSON ✓")
 
@@ -370,7 +370,7 @@ class TestDeadInternetFilter:
         )
 
         print(f"\n  [trust] Core → BotFarm profile (via AppView):")
-        print(f"    Trust score:   {score}")
+        print(f"    PeerLens rating:   {score}")
         print(f"    Attestations:  {profile['attestationSummary']['total']}")
         print(f"    Pipeline:      Core → AppView → raw JSON ✓")
 
@@ -386,9 +386,9 @@ class TestDeadInternetFilter:
     def test_05_brain_confirms_trusted_creator(
         self, alonso_brain, brain_signer
     ):
-        """Brain reasons about trusted creator using trust profile.
+        """Brain reasons about trusted creator using PeerLens profile.
 
-        Sends the trust profile to the LLM with a question about
+        Sends the PeerLens profile to the LLM with a question about
         content authenticity. The LLM should recognize the strong
         trust signals and confirm authenticity.
 
@@ -460,7 +460,7 @@ class TestDeadInternetFilter:
         )
         assert has_data, (
             f"LLM should reference specific profile data (attestation counts, "
-            f"trust score, account age) — not just generic positive words. "
+            f"PeerLens rating, account age) — not just generic positive words. "
             f"Expected one of {data_signals}. Got: {content[:300]}"
         )
 
@@ -479,7 +479,7 @@ class TestDeadInternetFilter:
     def test_06_brain_flags_untrusted_creator(
         self, alonso_brain, brain_signer
     ):
-        """Brain reasons about untrusted creator using trust profile.
+        """Brain reasons about untrusted creator using PeerLens profile.
 
         The same question, different creator. The LLM should recognize
         the lack of trust history and flag the content as unverified.
@@ -594,7 +594,7 @@ class TestDeadInternetFilter:
         identity_signals = [
             "identity", "history", "track record", "reputation",
             "attestation", "vouch", "verified", "established",
-            "trust score", "PeerLens", "record", "credib",
+            "PeerLens rating", "PeerLens", "record", "credib",
             "proven", "demonstrat", "consistent",
         ]
 

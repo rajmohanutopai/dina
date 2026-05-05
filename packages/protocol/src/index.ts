@@ -194,7 +194,7 @@ export {
   validateCosigReject,
 } from './d2d/cosig';
 
-// Trust-score bands (TN-MOB-002). Canonical thresholds + display
+// PeerLens rating bands (TN-MOB-002). Canonical thresholds + display
 // formatters for the `[0, 1]` real score. Mobile + home-node-lite
 // trust decision both import from here so band semantics stay
 // consistent across the UI surface.

@@ -1091,7 +1091,6 @@ func TestGatekeeper_6_1_SP17_ExtensibleCategoryEnforcedAtEgress(t *testing.T) {
 	testutil.RequireTrue(t, !inFiltered, "denied category must not appear in Filtered map")
 }
 
-
 // --------------------------------------------------------------------------
 // §6.1 Uncovered Sharing Policy Scenarios
 // --------------------------------------------------------------------------
@@ -1943,7 +1942,7 @@ func TestGatekeeper_6_6_26_AgentConstraint_DraftOnlyEnforced(t *testing.T) {
 // TST-CORE-893
 // TRACE: {"suite": "CORE", "case": "0764", "section": "06", "sectionName": "Gatekeeper (Egress / Sharing Policy)", "subsection": "06", "scenario": "27", "title": "AgentOutcome_RecordedForTrust"}
 func TestGatekeeper_6_6_27_AgentOutcome_RecordedForTrust(t *testing.T) {
-	// §6.6.27: Agent outcomes must be recorded in audit log for trust scoring.
+	// §6.6.27: Agent outcomes must be recorded in audit log for PeerLens rating.
 	// Fresh AuditLogger to avoid shared state.
 	logger := vault.NewAuditLogger()
 	testutil.RequireImplementation(t, logger, "VaultAuditLogger")

@@ -9,13 +9,13 @@
  *
  *   1. **Pre-flight gating.** Before sending a `service.query` to a
  *      provider we just discovered, Brain takes the
- *      AppView-published trust score + confidence + ring + flag
+ *      AppView-published PeerLens rating + confidence + ring + flag
  *      count and turns them into a single action: `proceed` /
  *      `caution` / `verify` / `avoid`. The AppView doesn't know the
  *      *context* the caller will use the provider in (read vs.
  *      transaction vs. autonomous action), so the final gate is
  *      here, not there.
- *   2. **Cache-locality.** The Brain caches trust scores (task
+ *   2. **Cache-locality.** The Brain caches PeerLens ratings (task
  *      6.21) so repeated queries don't re-hit AppView. The decision
  *      helper is what the cache feeds into.
  *   3. **Graceful degradation.** When AppView is unreachable, we
@@ -44,7 +44,7 @@
  *   autonomous-action    ×0.80  — agent acts without user in the loop
  *
  * **Unknown data** → action = `verify`, level = `unknown`. This
- * matches AppView's "No trust data available" branch.
+ * matches AppView's "No PeerLens data available" branch.
  *
  * **Flag penalty**: each open flag multiplies the score by 0.6
  * (so two flags → ×0.36). Critical/serious/warning severities
@@ -72,7 +72,7 @@ export type TrustContext =
   | 'autonomous-action';
 
 export interface TrustInput {
-  /** Weighted trust score from AppView. `null` = no data. Valid range 0..1. */
+  /** Weighted PeerLens rating from AppView. `null` = no data. Valid range 0..1. */
   score: number | null;
   /** Confidence from AppView. `null` = no data. Valid range 0..1. */
   confidence: number | null;
@@ -149,7 +149,7 @@ export function decideTrust(input: TrustInput): TrustDecision {
       level: 'unknown',
       score: 0,
       confidence: 0,
-      reasons: ['no trust data available for this subject'],
+      reasons: ['no PeerLens data available for this subject'],
     };
   }
 

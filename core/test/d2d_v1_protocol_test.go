@@ -43,7 +43,7 @@ func TestD2D_V1_IngressContactsOnly_ExplicitContactAccepted(t *testing.T) {
 // TRACE: {"suite": "CORE", "case": "0453", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "01", "title": "D2D_V1_IngressContactsOnly_NonContactQuarantined"}
 func TestD2D_V1_IngressContactsOnly_NonContactQuarantined(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
-	// Add high trust score in cache but NOT as contact.
+	// Add high PeerLens rating in cache but NOT as contact.
 	cache.Upsert(domain.TrustEntry{
 		DID: "did:plc:stranger", TrustScore: 0.95, TrustRing: 3,
 		Relationship: "1-hop", Source: "appview_sync",
@@ -480,10 +480,10 @@ func (m *mockTestOutboxManager) Enqueue(_ context.Context, msg domain.OutboxMess
 	m.messages = append(m.messages, msg)
 	return msg.ID, nil
 }
-func (m *mockTestOutboxManager) MarkDelivered(_ context.Context, _ string) error  { return nil }
-func (m *mockTestOutboxManager) MarkFailed(_ context.Context, _ string) error     { return nil }
-func (m *mockTestOutboxManager) Requeue(_ context.Context, _ string) error        { return nil }
-func (m *mockTestOutboxManager) PendingCount(_ context.Context) (int, error)      { return 0, nil }
+func (m *mockTestOutboxManager) MarkDelivered(_ context.Context, _ string) error { return nil }
+func (m *mockTestOutboxManager) MarkFailed(_ context.Context, _ string) error    { return nil }
+func (m *mockTestOutboxManager) Requeue(_ context.Context, _ string) error       { return nil }
+func (m *mockTestOutboxManager) PendingCount(_ context.Context) (int, error)     { return 0, nil }
 func (m *mockTestOutboxManager) ListPending(_ context.Context) ([]domain.OutboxMessage, error) {
 	return nil, nil
 }
@@ -492,13 +492,13 @@ func (m *mockTestOutboxManager) ResumeAfterApproval(_ context.Context, _ string)
 
 type mockTestInboxManager struct{}
 
-func (m *mockTestInboxManager) CheckIPRate(_ string) bool                       { return true }
-func (m *mockTestInboxManager) CheckGlobalRate() bool                           { return true }
-func (m *mockTestInboxManager) CheckPayloadSize(_ []byte) bool                  { return true }
+func (m *mockTestInboxManager) CheckIPRate(_ string) bool                         { return true }
+func (m *mockTestInboxManager) CheckGlobalRate() bool                             { return true }
+func (m *mockTestInboxManager) CheckPayloadSize(_ []byte) bool                    { return true }
 func (m *mockTestInboxManager) Spool(_ context.Context, _ []byte) (string, error) { return "s-1", nil }
-func (m *mockTestInboxManager) SpoolSize() (int64, error)                       { return 0, nil }
-func (m *mockTestInboxManager) ProcessSpool(_ context.Context) (int, error)     { return 0, nil }
-func (m *mockTestInboxManager) DrainSpool(_ context.Context) ([][]byte, error)  { return nil, nil }
+func (m *mockTestInboxManager) SpoolSize() (int64, error)                         { return 0, nil }
+func (m *mockTestInboxManager) ProcessSpool(_ context.Context) (int, error)       { return 0, nil }
+func (m *mockTestInboxManager) DrainSpool(_ context.Context) ([][]byte, error)    { return nil, nil }
 
 type mockTestClock struct{}
 
@@ -515,7 +515,7 @@ type mockTestSigner struct{}
 func (m *mockTestSigner) GenerateFromSeed(_ []byte) ([]byte, []byte, error) {
 	return make([]byte, 32), make([]byte, 64), nil
 }
-func (m *mockTestSigner) Sign(_ []byte, _ []byte) ([]byte, error) { return []byte("sig"), nil }
+func (m *mockTestSigner) Sign(_ []byte, _ []byte) ([]byte, error)           { return []byte("sig"), nil }
 func (m *mockTestSigner) Verify(_ []byte, _ []byte, _ []byte) (bool, error) { return true, nil }
 
 func errMsg(err error) string {

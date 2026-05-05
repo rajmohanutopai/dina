@@ -60,7 +60,7 @@ export async function refreshSubjectScores(db: DrizzleDB): Promise<void> {
           )
         )
 
-      // Gather author trust scores and vouch status
+      // Gather author PeerLens ratings and vouch status
       const authorDids = [...new Set(rawAtts.map(a => a.authorDid))]
 
       const authorProfiles = authorDids.length > 0

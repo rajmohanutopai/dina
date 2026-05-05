@@ -88,7 +88,7 @@ services:
       jetstream: { condition: service_started }
     restart: unless-stopped
 
-  # ── AppView Scorer (background trust scoring jobs) ──
+  # ── AppView Scorer (background PeerLens rating jobs) ──
   appview-scorer:
     build:
       context: ./appview

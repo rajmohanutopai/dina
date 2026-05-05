@@ -6,7 +6,7 @@
  * directly; this file pins:
  *   - empty / single / many reviews edge cases
  *   - ring-grouping correctness (self+contact → friends; fof; rest → strangers)
- *   - within-group sort: trust score desc, recency desc, name asc
+ *   - within-group sort: PeerLens rating desc, recency desc, name asc
  *   - null-trust handling (`-Infinity` rank — never displaces rated)
  *   - subtitle derivation (matches subject_card behaviour)
  *   - showNumericScore N≥3 + non-null score discipline
@@ -847,7 +847,7 @@ describe('deriveSubjectDetail — ring grouping', () => {
     const detail = deriveSubjectDetail(
       makeInput({
         reviews: [
-          // Distinct trust scores so the within-group sort is
+          // Distinct PeerLens ratings so the within-group sort is
           // deterministic by score (Self > Sancho here).
           makeReview({ ring: 'self', reviewerName: 'Self', reviewerTrustScore: 0.9 }),
           makeReview({ ring: 'contact', reviewerName: 'Sancho', reviewerTrustScore: 0.7 }),
@@ -904,7 +904,7 @@ describe('deriveSubjectDetail — ring grouping', () => {
 });
 
 describe('deriveSubjectDetail — within-group ordering', () => {
-  it('sorts by trust score descending', () => {
+  it('sorts by PeerLens rating descending', () => {
     const detail = deriveSubjectDetail(
       makeInput({
         reviews: [
@@ -917,7 +917,7 @@ describe('deriveSubjectDetail — within-group ordering', () => {
     expect(detail.friendsReviews.map((r) => r.reviewerName)).toEqual(['High', 'Mid', 'Low']);
   });
 
-  it('null trust score sinks to the bottom (treated as -Infinity)', () => {
+  it('null PeerLens rating sinks to the bottom (treated as -Infinity)', () => {
     const detail = deriveSubjectDetail(
       makeInput({
         reviews: [
@@ -929,7 +929,7 @@ describe('deriveSubjectDetail — within-group ordering', () => {
     expect(detail.friendsReviews.map((r) => r.reviewerName)).toEqual(['Rated', 'Unrated']);
   });
 
-  it('breaks ties on trust score by recency (more recent first)', () => {
+  it('breaks ties on PeerLens rating by recency (more recent first)', () => {
     const detail = deriveSubjectDetail(
       makeInput({
         reviews: [

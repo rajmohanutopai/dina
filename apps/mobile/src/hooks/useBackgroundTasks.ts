@@ -2,7 +2,7 @@
  * Background tasks hook — iOS BackgroundFetch + Android WorkManager.
  *
  * Registers background tasks that run when the app is backgrounded:
- *   - Trust cache sync (refresh stale trust scores)
+ *   - Trust cache sync (refresh stale PeerLens ratings)
  *   - Staging sweep (expire old items, revert stale leases)
  *   - Outbox retry (retry failed D2D message deliveries)
  *

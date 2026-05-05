@@ -111,7 +111,7 @@ export default function NamespaceScreen(props: NamespaceScreenProps = {}): React
         <Text style={styles.subtitle}>
           Compartments of your identity. Each namespace publishes under its own key —
           attestations made under one are kept separate from your root identity in
-          reviewer trust scoring.
+          reviewer PeerLens rating.
         </Text>
       </View>
 

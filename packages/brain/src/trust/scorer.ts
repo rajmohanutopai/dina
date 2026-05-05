@@ -1,5 +1,5 @@
 /**
- * Trust scoring — assigns sender_trust, confidence, retrieval_policy,
+ * PeerLens rating — assigns sender_trust, confidence, retrieval_policy,
  * and source_type to vault items based on sender identity, source,
  * ingress channel, and contact status.
  *
@@ -55,7 +55,7 @@ const SELF_SOURCES = new Set([
   'dina-cli',
   // /remember from chat: the user is dictating a fact directly into
   // their own vault, so the item is first-party. Without this the
-  // trust scorer falls through to "unknown" and the LLM caveats the
+  // PeerLens ratingr falls through to "unknown" and the LLM caveats the
   // user's own note as "an unverified source claims…" — which reads
   // as Dina distrusting facts the operator just told her to keep.
   'user_remember',

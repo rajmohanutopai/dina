@@ -108,7 +108,7 @@ What it generates:
   RANK-001 viewer-region predicate.
 - Languages spread across 5 BCP-47 codes (`en` / `es` / `fr` /
   `pt-BR` / `ja`) for the language-filter predicate.
-- DID profiles seeded with deterministic trust scores and zero
+- DID profiles seeded with deterministic PeerLens ratings and zero
   attestation counts (the scorer batch fills `total_attestations_*`
   columns; the seeder leaves them at 0 so the `refresh-profiles`
   job has work to do — that's intentional, since refresh-profiles

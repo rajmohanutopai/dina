@@ -457,7 +457,7 @@ class TelegramService:
                 "coordination.response": "Response",
                 "social.update": "Social update",
                 "safety.alert": "Safety alert",
-                "trust.vouch.request": "Trust request",
+                "trust.vouch.request": "PeerLens request",
             }.get(result.data.get("type", ""), result.data.get("type", ""))
             await ch.send(BotResponse(
                 text=f"Sent to {contact_name}: {type_label}\n{message_text}"
@@ -604,7 +604,7 @@ class TelegramService:
             "/review Product: your review — publish a review\n"
             "/vouch Name: reason — vouch for someone\n"
             "/flag Name: reason — flag a bad actor\n"
-            "/trust Name — check trust score\n\n"
+            "/trust Name — check PeerLens rating\n\n"
             "*Info*\n"
             "/status — your DID and node health",
         ))
@@ -751,7 +751,7 @@ class TelegramService:
             await self._handle_intent_callback(update, ch, data)
             return
 
-        # Trust publish buttons (Publish / Cancel).
+        # PeerLens publish buttons (Publish / Cancel).
         if data.startswith("trust_yes:") or data == "trust_no":
             await self._handle_trust_callback(update, ch)
             return
@@ -1089,7 +1089,7 @@ class TelegramService:
     async def handle_trust(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE,
     ) -> None:
-        """/trust Name_or_DID — query trust score (read-only, no publish)."""
+        """/trust Name_or_DID — query PeerLens rating (read-only, no publish)."""
         if not update.effective_user or not self._is_allowed_user(update.effective_user.id):
             return
         ch = self._ch(context)
@@ -1108,8 +1108,8 @@ class TelegramService:
 
         d = result.data
         await ch.send(BotResponse(
-            text=f"Trust: *{_escape_markdown(d['display_name'])}*\n"
-            f"Score: {d['score']}\n"
+            text=f"PeerLens: *{_escape_markdown(d['display_name'])}*\n"
+            f"Rating: {d['score']}\n"
             f"Attestations: {d['total_attestations']} ({d['positive_attestations']} positive)\n"
             f"Vouches: {d['vouch_count']}",
         ))

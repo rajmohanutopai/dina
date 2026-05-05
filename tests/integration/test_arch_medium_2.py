@@ -306,7 +306,7 @@ def test_missing_attribution_trust_penalty(
 def test_bot_routing_threshold_boundary(
     mock_trust_network: MockTrustNetwork,
 ):
-    """Bot at threshold=90 with trust score=90 is used; trust score=89 is not."""
+    """Bot at threshold=90 with PeerLens rating=90 is used; PeerLens rating=89 is not."""
     threshold = 90
     bot_a_did = "did:plc:BotA"
     bot_b_did = "did:plc:BotB"

@@ -43,7 +43,7 @@ export function computeRecommendation(input: RecommendationInput): Recommendatio
       trustLevel: 'unknown',
       confidence: 0,
       action: 'verify',
-      reasoning: 'No trust data available for this subject.',
+      reasoning: 'No PeerLens data available for this subject.',
     }
   }
 

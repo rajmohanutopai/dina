@@ -7,7 +7,7 @@
  *   1. Anti-Her: therapy-style, engagement hooks, intimacy simulation
  *   2. PII leakage: tokens like [EMAIL_1] not rehydrated, or raw PII in
  *      a context where it should have been scrubbed
- *   3. Hallucinated trust: made-up trust scores or relationship claims
+ *   3. Hallucinated trust: made-up PeerLens ratings or relationship claims
  *   4. Unsolicited recommendations: pushing products/services/actions
  *      the user didn't ask for
  *
@@ -58,7 +58,7 @@ export interface ScanResult {
 /** Unrehydrated PII token left in output. */
 const PII_TOKEN_RE = /\[[A-Z_]+_\d+\]/g;
 
-/** Hallucinated trust score pattern — LLM invents trust/safety/confidence numbers. */
+/** Hallucinated PeerLens rating pattern — LLM invents trust/safety/confidence numbers. */
 const HALLUCINATED_TRUST_PATTERNS = [
   /\btrust\s+(score|level|rating)\s*[:=]?\s*\d/i,
   /\bsafety\s+(score|rating)\s*[:=]?\s*\d/i,
@@ -215,8 +215,8 @@ export async function scanResponse(
     }
   }
 
-  // 3. Hallucinated trust scores (sentence-level)
-  // Density-tier aware: when data is zero/single, fabricated trust scores are
+  // 3. Hallucinated PeerLens ratings (sentence-level)
+  // Density-tier aware: when data is zero/single, fabricated PeerLens ratings are
   // especially dangerous (no data to back them), so severity escalates to 'block'.
   const lowDensity = context?.densityTier === 'zero' || context?.densityTier === 'single';
   for (let i = 0; i < sentences.length; i++) {
@@ -226,7 +226,7 @@ export async function scanResponse(
           category: 'hallucinated_trust',
           severity: lowDensity ? 'block' : 'warning',
           detail: lowDensity
-            ? 'LLM hallucinated a trust score with zero/single data backing — blocked'
+            ? 'LLM hallucinated a PeerLens rating with zero/single data backing — blocked'
             : 'LLM hallucinated a trust/safety/reliability score',
           sentenceIndices: [i],
         });

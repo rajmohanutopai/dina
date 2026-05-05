@@ -122,8 +122,8 @@ class TelegramChannel:
 
     async def _send_trust_score(self, r: TrustScoreResponse) -> None:
         text = (
-            f"Trust: *{_esc(r.display_name)}*\n"
-            f"Score: {r.score}\n"
+            f"PeerLens: *{_esc(r.display_name)}*\n"
+            f"Rating: {r.score}\n"
             f"Attestations: {r.total_attestations} ({r.positive_attestations} positive)\n"
             f"Vouches: {r.vouch_count}"
         )

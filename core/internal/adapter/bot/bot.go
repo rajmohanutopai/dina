@@ -12,7 +12,7 @@ import (
 var _ testutil.BotQueryHandler = (*QueryHandler)(nil)
 
 // QueryHandler implements testutil.BotQueryHandler — bot query sanitization,
-// trust scoring, and attribution validation.
+// PeerLens rating, and attribution validation.
 type QueryHandler struct {
 	mu     sync.Mutex
 	scores map[string]float64 // botDID -> score
@@ -77,7 +77,7 @@ func (h *QueryHandler) SendQuery(_ string, query testutil.BotQuery) (*testutil.B
 	}, nil
 }
 
-// ScoreBot records an outcome and updates the bot's local trust score.
+// ScoreBot records an outcome and updates the bot's local PeerLens rating.
 func (h *QueryHandler) ScoreBot(botDID string, outcome testutil.BotOutcome) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -94,7 +94,7 @@ func (h *QueryHandler) ScoreBot(botDID string, outcome testutil.BotOutcome) erro
 	return nil
 }
 
-// GetScore returns the current trust score for a bot.
+// GetScore returns the current PeerLens rating for a bot.
 func (h *QueryHandler) GetScore(botDID string) (float64, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

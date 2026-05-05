@@ -1,7 +1,7 @@
 /**
- * Trust cache — trust score caching with 1-hour TTL + LRU eviction.
+ * Trust cache — PeerLens rating caching with 1-hour TTL + LRU eviction.
  *
- * Caches trust profiles fetched from the AppView xRPC endpoint.
+ * Caches PeerLens profiles fetched from the AppView xRPC endpoint.
  * Each entry has a 1-hour TTL. Background refresh updates stale entries
  * without blocking the caller (serve stale + refresh async).
  *
@@ -26,7 +26,7 @@ const DEFAULT_TTL_MS = TRUST_CACHE_TTL_MS;
 
 /**
  * Max entries the in-memory tracker keeps. Picked to fit a realistic
- * mobile working set (≈ 200 trust profiles ≪ 50KB at JSON encoding).
+ * mobile working set (≈ 200 PeerLens profiles ≪ 50KB at JSON encoding).
  */
 export const MAX_TRUST_CACHE_ENTRIES = 200;
 
@@ -42,7 +42,7 @@ export const MEMORY_WARNING_TARGET = 50;
  * Slim cache projection of `TrustProfile`.
  *
  * `score` is on AppView's `[0, 1]` real scale (matching
- * `appview/src/scorer/algorithms/trust-score.ts`). `null` means the
+ * PeerLens rating from `appview/src/scorer/algorithms/trust-score.ts`). `null` means the
  * DID is known but unscored — UI layers render this as "unrated"
  * rather than coercing to zero.
  *
@@ -64,16 +64,16 @@ export interface TrustScore {
 /** In-memory TTL tracking: DID → timestamp when cached. */
 const cacheTimestamps = new Map<string, number>();
 
-/** Injectable trust score fetcher (for background refresh). */
+/** Injectable PeerLens rating fetcher (for background refresh). */
 let fetchTrustScore: ((did: string) => Promise<TrustScore | null>) | null = null;
 
-/** Register a trust score fetcher. */
+/** Register a PeerLens rating fetcher. */
 export function registerTrustFetcher(fetcher: (did: string) => Promise<TrustScore | null>): void {
   fetchTrustScore = fetcher;
 }
 
 /**
- * Get a cached trust score for a DID.
+ * Get a cached PeerLens rating for a DID.
  *
  * Returns the cached score if fresh (< 1 hour old).
  * Returns null on cache miss or expired entry.
@@ -114,7 +114,7 @@ export async function getCachedTrust(did: string, now?: number): Promise<TrustSc
 }
 
 /**
- * Cache a trust score.
+ * Cache a PeerLens rating.
  *
  * On insert, if the in-memory tracker exceeds `MAX_TRUST_CACHE_ENTRIES`,
  * the oldest entry is evicted from both memory AND the KV backing
@@ -195,7 +195,7 @@ export function isStale(did: string, now?: number): boolean {
 }
 
 /**
- * Refresh a trust score in the background.
+ * Refresh a PeerLens rating in the background.
  *
  * If a fetcher is registered, calls it and updates the cache.
  * Returns the refreshed score, or null if no fetcher or fetch failed.
@@ -215,7 +215,7 @@ export async function refreshTrust(did: string): Promise<TrustScore | null> {
 }
 
 /**
- * Get trust score with auto-refresh: return cached if fresh,
+ * Get PeerLens rating with auto-refresh: return cached if fresh,
  * otherwise fetch and cache.
  */
 export async function getTrustWithRefresh(did: string): Promise<TrustScore | null> {

@@ -1,7 +1,7 @@
 /**
  * Per-category recency-decay tuning (TN-V2-RANK-006).
  *
- * The trust scorer's sentiment component weights each attestation
+ * The PeerLens ratingr's sentiment component weights each attestation
  * by an exponential recency factor — `exp(-ageDays / halflife)`.
  * V1 used a single 180-day half-life for everything, which is too
  * aggressive for slow-moving categories (a great novel from 2010

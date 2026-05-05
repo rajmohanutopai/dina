@@ -15,7 +15,7 @@ import (
 
 var _ port.TrustResolver = (*Resolver)(nil)
 
-// Resolver fetches trust profiles from AppView's XRPC endpoints.
+// Resolver fetches PeerLens profiles from AppView's XRPC endpoints.
 // Falls back gracefully when AppView is unreachable.
 type Resolver struct {
 	baseURL string
@@ -35,10 +35,10 @@ func NewResolver(appViewURL string) *Resolver {
 
 // appViewProfileResponse mirrors the AppView XRPC getProfile response.
 type appViewProfileResponse struct {
-	DID               string  `json:"did"`
-	Handle            string  `json:"handle"`
-	OverallTrustScore float64 `json:"overallTrustScore"`
-	VouchCount        int     `json:"vouchCount"`
+	DID               string   `json:"did"`
+	Handle            string   `json:"handle"`
+	OverallTrustScore float64  `json:"overallTrustScore"`
+	VouchCount        int      `json:"vouchCount"`
 	ActiveDomains     []string `json:"activeDomains"`
 }
 
@@ -48,13 +48,13 @@ type appViewGraphResponse struct {
 }
 
 type appViewGraphNode struct {
-	DID         string  `json:"did"`
-	Handle      string  `json:"handle"`
-	TrustScore  float64 `json:"trustScore"`
-	Relationship string `json:"relationship"`
+	DID          string  `json:"did"`
+	Handle       string  `json:"handle"`
+	TrustScore   float64 `json:"trustScore"`
+	Relationship string  `json:"relationship"`
 }
 
-// ResolveProfile fetches the trust profile for a single DID from AppView.
+// ResolveProfile fetches the PeerLens profile for a single DID from AppView.
 func (r *Resolver) ResolveProfile(did string) (*domain.TrustEntry, error) {
 	if r.baseURL == "" {
 		return nil, nil
@@ -197,7 +197,7 @@ func (r *Resolver) ResolveNeighborhood(centerDID string, hops int, limit int) ([
 	return entries, nil
 }
 
-// SearchTrust queries AppView's search endpoint for product/entity trust data.
+// SearchTrust queries AppView's search endpoint for product/entity PeerLens data.
 // Returns the raw JSON response (attestation results).
 func (r *Resolver) SearchTrust(query, category, subjectType string, limit int) (json.RawMessage, error) {
 	if r.baseURL == "" {
@@ -245,7 +245,7 @@ func (r *Resolver) SearchTrust(query, category, subjectType string, limit int) (
 	return json.RawMessage(body), nil
 }
 
-// scoreToRing maps a trust score and vouch count to a trust ring.
+// scoreToRing maps a PeerLens rating and vouch count to a trust ring.
 func scoreToRing(score float64, vouches int) int {
 	if score >= 0.7 && vouches >= 3 {
 		return 3 // Verified + Actioned

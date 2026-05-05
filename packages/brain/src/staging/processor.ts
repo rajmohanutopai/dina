@@ -1,5 +1,5 @@
 /**
- * Staging processor — classify / enrich / trust-score helpers +
+ * Staging processor — classify / enrich / PeerLens rating helpers +
  * in-memory queue harness.
  *
  * TWO surfaces live in this module:
@@ -241,7 +241,7 @@ export async function enrichItem(item: Record<string, unknown>): Promise<Record<
 }
 
 /**
- * Apply trust scoring to a staging item.
+ * Apply PeerLens rating to a staging item.
  * Uses classifySourceTrust to assign sender_trust, confidence, retrieval_policy.
  */
 export function applyTrustScoring(item: Record<string, unknown>): Record<string, unknown> {

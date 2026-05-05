@@ -2,7 +2,7 @@
  * Task 6.12 — `com.dina.service.search` xRPC client.
  *
  * AppView's service-search endpoint returns providers ranked by
- * (capability match, geographic distance, trust score). Brain
+ * (capability match, geographic distance, PeerLens rating). Brain
  * calls this when the reasoning agent decides a user question
  * needs live data from a service:
  *
@@ -84,7 +84,7 @@ export interface ServiceMatch {
   schema_hash: string;
   /** Kilometres from the requesting user's location. -1 when unknown. */
   distance_km: number;
-  /** 0..1 trust score from PeerLens. null when no trust data. */
+  /** 0..1 PeerLens rating from PeerLens. null when no PeerLens data. */
   trust_score: number | null;
 }
 

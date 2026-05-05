@@ -490,7 +490,7 @@ describe('SubjectCardView — band colour', () => {
     expect(queryByTestId('subject-card-band-sub-1')).toBeNull();
     expect(getByTestId('subject-card-maturity-sub-1')).toBeTruthy();
     // Title-case labels distinguish maturity ("Some") from canonical
-    // ALL-CAPS trust bands ("MODERATE") so a search-result card and a
+    // ALL-CAPS PeerLens rating bands ("MODERATE") so a search-result card and a
     // subject-detail card can't be misread as the same kind of badge.
     expect(getByText('Some')).toBeTruthy();
   });

@@ -52,7 +52,7 @@ export interface ContactMatch {
   handle: string;
   /** Human-readable name the user chose (from profile record). */
   displayName: string;
-  /** 0..1 trust score, null when unknown. */
+  /** 0..1 PeerLens rating, null when unknown. */
   trustScore: number | null;
   /** Ring distance 1/2/3, null when unknown. */
   ring: 1 | 2 | 3 | null;

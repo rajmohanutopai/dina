@@ -272,11 +272,11 @@ async def test_mcp_6_1_2_route_by_capability(agent_router) -> None:
 @pytest.mark.asyncio
 # TRACE: {"suite": "BRAIN", "case": "0228", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "03", "title": "route_by_trust_scores"}
 async def test_mcp_6_1_3_route_by_trust_scores(agent_router) -> None:
-    """SS6.1.3: When multiple agents can handle a task, highest trust score wins.
+    """SS6.1.3: When multiple agents can handle a task, highest PeerLens rating wins.
 
     NOTE: AgentRouter is a test-local class — production routing lives
     in GuardianLoop/LLMRouter.  This test validates the *contract*:
-    trust scores are tracked, outcomes update them, and boundaries hold.
+    PeerLens ratings are tracked, outcomes update them, and boundaries hold.
     """
     # Pre-populated scores from fixture.
     score_a = agent_router.check_trust("did:key:z6MkAgentA")
@@ -1026,7 +1026,7 @@ async def test_mcp_6_4_8_bot_response_without_attribution(query_sanitizer) -> No
 
 
 # ---------------------------------------------------------------------------
-# SS6.1 Trust AppView (3 scenarios) -- arch SS08
+# SS6.1 PeerLens AppView (3 scenarios) -- arch SS08
 # ---------------------------------------------------------------------------
 
 
@@ -1034,7 +1034,7 @@ async def test_mcp_6_4_8_bot_response_without_attribution(query_sanitizer) -> No
 @pytest.mark.asyncio
 # TRACE: {"suite": "BRAIN", "case": "0408", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "06", "title": "trust_scores_appview_query"}
 async def test_mcp_6_1_6_trust_scores_appview_query() -> None:
-    """SS6.1.6: Brain queries Trust AppView API for product scores."""
+    """SS6.1.6: Brain queries PeerLens AppView API for product scores."""
     mcp = AsyncMock()
     score_data = make_trust_scores_score("did:plc:chair_expert")
     mcp.call_tool.return_value = score_data
@@ -1053,7 +1053,7 @@ async def test_mcp_6_1_6_trust_scores_appview_query() -> None:
 @pytest.mark.asyncio
 # TRACE: {"suite": "BRAIN", "case": "0409", "section": "06", "sectionName": "MCP Client (Agent Delegation)", "subsection": "01", "scenario": "07", "title": "trust_scores_appview_fallback"}
 async def test_mcp_6_1_7_trust_scores_appview_fallback() -> None:
-    """SS6.1.7: Trust AppView unavailable -> graceful fallback (returns None).
+    """SS6.1.7: PeerLens AppView unavailable -> graceful fallback (returns None).
 
     Production CoreHTTPClient.query_trust_profile (core_http.py:529)
     catches all exceptions from the /v1/trust/resolve endpoint and

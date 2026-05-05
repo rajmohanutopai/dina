@@ -319,7 +319,7 @@ async def test_routing_8_3_2_check_untrusted_agent_trust_scores() -> None:
 @pytest.mark.asyncio
 # TRACE: {"suite": "BRAIN", "case": "0280", "section": "08", "sectionName": "Admin UI", "subsection": "03", "scenario": "03", "title": "unknown_agent_default_trust_scores"}
 async def test_routing_8_3_3_unknown_agent_default_trust_scores() -> None:
-    """SS8.3.3: Unknown agent gets a default trust score (unverified tier)."""
+    """SS8.3.3: Unknown agent gets a default PeerLens rating (unverified tier)."""
     trust_db = {
         "did:key:z6MkTrustedBot": 0.85,
     }

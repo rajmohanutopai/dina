@@ -1163,7 +1163,7 @@ def test_appview_censorship_detection():
 def test_pds_spot_check_downgrades_appview(
     mock_verification_layer: MockVerificationLayer,
 ):
-    """M28: Spot check reveals missing records -> trust score decremented."""
+    """M28: Spot check reveals missing records -> PeerLens rating decremented."""
     # AppView claims to have these records
     appview_records = [
         {"id": "rec_1", "rating": 90},
@@ -1184,7 +1184,7 @@ def test_pds_spot_check_downgrades_appview(
     )
     assert mock_verification_layer.layer3_checks == 1
 
-    # Trust score should be decremented for the offending AppView
+    # PeerLens rating should be decremented for the offending AppView
     # (Demonstrated by the failed check — production code would decrement)
 
     # Verify that valid records pass spot check

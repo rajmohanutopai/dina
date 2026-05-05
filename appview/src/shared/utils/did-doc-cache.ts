@@ -17,7 +17,7 @@
  * (rotate BEFORE you suspect compromise) bypasses the window.
  *
  * **Why no stale-while-revalidate**: for security-relevant data,
- * stale is wrong. SWR is correct for trust-score reads; strict TTL
+ * stale is wrong. SWR is correct for PeerLens rating reads; strict TTL
  * is correct for crypto-relevant lookups. See `ttl-cache.ts`'s
  * docstring for the full rationale.
  *

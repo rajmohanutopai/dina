@@ -7,10 +7,10 @@
  * `/trust/reviewer/[did]`, …) became a global tab transition under
  * the hood, which meant `router.back()` popped to the previously-
  * focused tab rather than the previously-pushed screen. So
- * Trust → Search → Back ended up on Chat.
+ * PeerLens → Search → Back ended up on Chat.
  *
  * With a Stack here, each push within `/trust/...` adds to a
- * Trust-scoped history, and the Stack's automatic back chevron pops
+ * PeerLens-scoped history, and the Stack's automatic back chevron pops
  * cleanly: search → subject → reviewer → back goes to subject, not
  * to /trust.
  *
@@ -44,19 +44,19 @@ import { StackIndexHeader } from '../../src/navigation/stack_index_header';
 // a11y traits propagate to VoiceOver correctly (same render path as
 // the global Tabs root header which already works). The shared
 // implementation lives at `src/navigation/stack_index_header.tsx`
-// so Vault + Trust both use it.
+// so Vault + PeerLens both use it.
 
 function TrustIndexHeader(): React.ReactElement {
   const router = useRouter();
   // `?from=/trust` makes the help screen's back chevron return here
   // rather than the Chat tab. /help is registered at the global Tabs
-  // root (not inside this Stack), so a bare push escapes the Trust
+  // root (not inside this Stack), so a bare push escapes the PeerLens
   // navigation history; the `from` query param is how
   // `HeaderBackButton` (in `app/_layout.tsx`) recovers the source
   // section.
   return (
     <StackIndexHeader
-      title="Trust"
+      title="PeerLens"
       onMenuPress={openMenu}
       onHelpPress={() => router.push({ pathname: '/help', params: { from: '/trust' } })}
     />
@@ -72,7 +72,7 @@ function TrustIndexHeader(): React.ReactElement {
  * a deep route (e.g. `/trust/search`) WITHOUT pushing the index
  * underneath — which leaves the user trapped on a screen with no
  * back affordance, no way to reach the Stack root. (Reproduced via
- * idb on 2026-05-01: tap Trust → Search → switch tabs → switch
+ * idb on 2026-05-01: tap PeerLens → Search → switch tabs → switch
  * back = Search restored, no chevron, tab-tap doesn't pop-to-top.)
  *
  * `canGoBack` is taken from the Stack's `headerLeft` callback prop
@@ -144,7 +144,7 @@ export default function TrustStackLayout(): React.ReactElement {
       <Stack.Screen
         name="index"
         options={{
-          title: 'Trust',
+          title: 'PeerLens',
           // CR-3: replace the native UINavigationBar entirely with the
           // JS-rendered StackIndexHeader so the hamburger + help
           // Pressables propagate a11y traits to VoiceOver. See the

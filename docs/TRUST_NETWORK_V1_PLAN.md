@@ -1,6 +1,6 @@
 # PeerLens — V1 Plan
 
-**Goal:** Ship a social review system where attestations are tagged against reviewer DIDs whose individual trust scores are computed from observable signals. Subjects (a chair, a YouTuber, a restaurant, a service) inherit a trust-weighted aggregate score so the user can answer "which one should I pick?". Bilateral cosignature is an optional enhancement, not foundational. Adversarial mitigations (sybil resistance, mutual-praise detection, statistics-aware aggregation) are explicit V2 work — the V1 wire format and DB schema are designed so V2 mitigations re-weight existing records without invalidating them.
+**Goal:** Ship a social review system where attestations are tagged against reviewer DIDs whose individual PeerLens ratings are computed from observable signals. Subjects (a chair, a YouTuber, a restaurant, a service) inherit a PeerLens-weighted aggregate score so the user can answer "which one should I pick?". Bilateral cosignature is an optional enhancement, not foundational. Adversarial mitigations (sybil resistance, mutual-praise detection, statistics-aware aggregation) are explicit V2 work — the V1 wire format and DB schema are designed so V2 mitigations re-weight existing records without invalidating them.
 
 **Non-goals (deferred to V2+):**
 - Sybil farm detection
@@ -15,17 +15,17 @@
 | # | Decision | Why |
 |---|----------|-----|
 | 1 | **Reviewer-identity trust, not subject-side opaque score** | The credibility comes from the reviewer's identity + network position; the subject score is a transparent aggregate |
-| 2 | **Trust score is computed in V1**, not deferred | User cannot pick from a list of subjects without ranked output |
-| 3 | **Trust-weighted ranking in search + browse** | Same reasoning as #2 |
+| 2 | **PeerLens rating is computed in V1**, not deferred | User cannot pick from a list of subjects without ranked output |
+| 3 | **PeerLens-weighted ranking in search + browse** | Same reasoning as #2 |
 | 4 | **Bilateral cosignature is optional**, surfaced as "co-signed by N reviewers" | Promotes a review without being load-bearing |
 | 5 | **Pseudonymous DIDs per namespace**, derived `m/9999'/4'/N'` | Reviewer privacy across topics; `N` is the namespace index |
 | 6 | **Forward-compat lexicons** — V2 adds optional fields; lexicon ID + atproto's native lexicon versioning carry the schema version | V2 mitigations re-weight existing records, never wipe them |
 | 7 | **Three-tier subject resolution** (global identifier → name+author-scoped → canonical chain) | Already present in AppView; V1 builds on it without extending |
 | 8 | **`flag` record exists in V1 lexicon, ignored by V1 scorer** | Lets the wire format land before the moderation UX is designed |
-| 9 | **Trust score function is named + versioned (`trust_score_v1`)** | V2 introduces `trust_score_v2` alongside; UI reads whichever is freshest |
+| 9 | **PeerLens rating function is named + versioned (`trust_score_v1`)** | V2 introduces `trust_score_v2` alongside; UI reads whichever is freshest |
 | 10 | **Cold-start fallback: option (1)** — when viewer has no contacts, drop the network-position term and rank by `account_age × sqrt(review_count) × consistency` | Degrades gracefully; no global reviewer reputation that contradicts the social framing |
 | 11 | **V1 limitation banner** lives in Settings → "About PeerLens" + first-run modal | Disclosure without permanent screen-real-estate cost |
-| 12 | **Trust bands**: low (0–33), medium (34–66), high (67–100); naked numeric score only when n ≥ 3 reviews | Bands soften noise at low N; numbers earn their place at higher N |
+| 12 | **PeerLens rating bands**: low (0–33), medium (34–66), high (67–100); naked numeric score only when n ≥ 3 reviews | Bands soften noise at low N; numbers earn their place at higher N |
 | 13 | **Mobile writes to PDS directly via `com.atproto.repo.createRecord`; AppView indexes from Jetstream firehose** | Standard atproto. AppView never proxies writes nor holds PDS credentials. Rate limit + signature gate at ingester (§3.5) |
 | 14 | **V1 namespace identity = one PDS account with multiple verification methods** | Lowest-friction V1; namespace pseudonymity is "first impression" only — DID document is correlatable. V2 adds per-namespace PDS accounts for true pseudonymity |
 | 15 | **Namespace key registered as `assertionMethod` in DID document**, id pattern `did:plc:xxxx#namespace_<index>` | AppView verifies records by resolving DID doc and matching the verification method id used in the commit |
@@ -47,7 +47,7 @@
 | Pseudonymous DID derivation path? | `m/9999'/4'/N'` where `N` is the namespace index (0=default, 1+=user-named) | Pinned in `core/internal/identity/keygen.go`; Lite mirrors |
 | Recovery flow per namespace? | Master seed regenerates all namespace keys deterministically; namespace metadata recovers from PDS records; PLC document re-resolves from the PLC directory | No additional recovery primitives in V1 |
 | Naked score vs band threshold? | Numeric for n ≥ 3 reviews; band only below | Subject card shows "82 · 14 reviews" or "high · 2 reviews" |
-| Trust score computation cadence? | Nightly batch + on-write incremental + cascade (capped at 1000) | See §5.4. Hot subjects (review_count > 10k) skip incremental and rely on nightly only |
+| PeerLens rating computation cadence? | Nightly batch + on-write incremental + cascade (capped at 1000) | See §5.4. Hot subjects (review_count > 10k) skip incremental and rely on nightly only |
 | When does `flag` UI ship? | V2 — record exists, scorer ignores. V1 ingester rate-limits flags (10/author/day) to bound the defamation surface | Lets future moderators backfill flags against historical attestations |
 | Network-position graph computation tier? | Compute per-request from PostgreSQL contact graph; cache result in Redis 60 s, key=`(viewer_did, graph_version)` | Latency budget ≤ 80 ms p95 |
 | Public handle binding for namespaces? | Removed from V1 lexicon. V2 introduces verified-handle binding via DID-document service entry | V1 namespaces are pseudonymous-by-default |
@@ -404,7 +404,7 @@ Updates to category-keyword and host-category maps land in the AppView codebase 
 ### 4.1 New tables
 
 ```sql
--- Per-reviewer trust score (one row per (did, namespace) pair).
+-- Per-reviewer PeerLens rating (one row per (did, namespace) pair).
 CREATE TABLE reviewer_trust_scores (
   id              BIGSERIAL PRIMARY KEY,
   did             TEXT      NOT NULL,
@@ -482,7 +482,7 @@ CREATE TABLE cosig_requests (
 CREATE INDEX idx_cosig_requests_recipient ON cosig_requests (recipient_did, status);
 CREATE INDEX idx_cosig_requests_expiry    ON cosig_requests (expires_at) WHERE status = 'pending';
 
--- Trust scoring runtime parameters. Hot-reloadable; the scorer reads on each run.
+-- PeerLens rating runtime parameters. Hot-reloadable; the scorer reads on each run.
 CREATE TABLE trust_v1_params (
   key             TEXT      PRIMARY KEY,
   value           NUMERIC   NOT NULL,
@@ -536,7 +536,7 @@ Single forward migration `<YYYYMMDDHHMM>_trust_scores.sql` (timestamp set at PR-
 
 ### 5.2 Reviewer score formula (`trust_score_v1`) — adopt existing AppView implementation
 
-**Decision (TN-DEC-002):** V1 adopts the existing AppView scoring algorithm (`appview/src/scorer/algorithms/trust-score.ts`) as `trust_score_v1`, rather than implementing the simpler four-factor formula originally drafted in this section. The earlier draft is preserved in git history; this section now describes the actual implementation we'll use.
+**Decision (TN-DEC-002):** V1 adopts the existing AppView PeerLens rating algorithm (`appview/src/scorer/algorithms/trust-score.ts`) as `trust_score_v1`, rather than implementing the simpler four-factor formula originally drafted in this section. The earlier draft is preserved in git history; this section now describes the actual implementation we'll use.
 
 #### 5.2.1 Existing scorer (what V1 ships)
 
@@ -596,7 +596,7 @@ All weights, multipliers, and thresholds live in `appview/src/config/constants.t
 
 #### 5.2.3 Score scale + viewer awareness
 
-The existing scorer outputs `[0, 1]`. Mobile UI displays as `score × 100` rounded to integer (band thresholds at 33/66 stay the same). The plan's §5.3 subject-score formula stays unchanged conceptually but uses `overallScore × 100` per attestation when computing the trust-weighted aggregate.
+The existing scorer outputs `[0, 1]`. Mobile UI displays as `score × 100` rounded to integer (band thresholds at 33/66 stay the same). The plan's §5.3 subject-score formula stays unchanged conceptually but uses `overallScore × 100` per attestation when computing the PeerLens-weighted aggregate.
 
 Network-term-per-viewer (the 1-hop / 2-hop / 3+/unknown weights from the original draft) is **not** in `trust-score.ts` — that's a query-time addition. The `inboundEdgeCount` signal already carries network reach, but the per-viewer 1-hop boost lives in the search ranker (§7) instead of the reviewer score itself. This is cleaner: reviewer score is viewer-independent and cacheable; the friend-boost is applied at query time on top.
 
@@ -869,7 +869,7 @@ Returns the cosig requests addressed to a given recipient (used by the unified-i
 }
 ```
 
-## 7. Trust-weighted ranking
+## 7. PeerLens-weighted ranking
 
 Search ranking formula:
 
@@ -1220,7 +1220,7 @@ Mitigation in V1: `trust_v1.ingester.reject_total{reason: 'rate_limit'}` is moni
 | 9-10 | `trust_score_v1` + `subject_score_v1` math | Score rows populate from fixture data; unit tests cover edge cases (n=0, n=2, n=100, all-failed, all-exceeded, bimodal) |
 | 11 | Cascade enqueue path + `subject_orphan_gc` job + `cosig_expiry_sweep` job + Redis network-position cache + observability metrics | Reviewer-score change cascades to N≤1000 subjects; orphan GC deletes correctly; cosig expiry flips status; cache hit rate ≥ 80% in load test; metrics emit |
 | 12 | Subject enrichment (`subject_enrich` job) + host/keyword maps + language detection on attestations + FTS tsvector triggers | Enrichment populates `category`/`metadata`/`language` for all SubjectRef shapes in fixture; FTS tsvector updates on insert/update; manual re-enrich CLI works |
-| 13 | Phase 0 parity gate | Compare V1 score outputs against a fixture truth table; trust-score formula vectors pinned in `packages/protocol/conformance/vectors/trust_score_v1.json`; load test hits capacity targets §13.6; enrichment fixture truth table |
+| 13 | Phase 0 parity gate | Compare V1 score outputs against a fixture truth table; PeerLens rating formula vectors pinned in `packages/protocol/conformance/vectors/trust_score_v1.json`; load test hits capacity targets §13.6; enrichment fixture truth table |
 
 ### Phase 1 — Publishing + reading (19 weeks)
 
@@ -1268,14 +1268,14 @@ Per phase:
 | Property | `appview/__tests__/scorer/properties.test.ts` (`fast-check`) | Score always in `[0, 100]`; cascade fan-out always ≤ 1000; jobs idempotent under repeated invocation; subject_score increases monotonically as positive reviewers are added |
 | Load | `tests/load/trust_network/` (k6) | Phase 0 capacity targets: 1M attestations indexed in ≤ 30 min; search 50 RPS p95 ≤ 250 ms; nightly batch ≤ 30 min wall-clock |
 | Security | `appview/__tests__/security/` | Signature forgery rejected (wrong namespace key); rate-limit-bypass via fast DID rotation logged + counted; flag-spam at 11/day correctly drops; cosig request to non-existent attestation rejected; bearer-token from wrong DID rejected |
-| Accessibility | `apps/mobile/__tests__/trust/a11y.test.tsx` | VoiceOver labels for trust bands ("trust score 82, high"); colour-contrast on score badges meets WCAG AA; tap targets ≥ 44pt |
+| Accessibility | `apps/mobile/__tests__/trust/a11y.test.tsx` | VoiceOver labels for PeerLens rating bands ("PeerLens rating 82, high"); colour-contrast on score badges meets WCAG AA; tap targets ≥ 44pt |
 | Recovery | `tests/e2e/trust-network/recovery.test.ts` | Wipe device → restore from master seed → namespaces present with same names → previously published attestations visible |
 | Unit | `appview/__tests__/util/subject_enrichment.test.ts` | Heuristics produce expected `category`/`metadata` for: ASIN, ISBN-13, place_id URI, lat/lng URI, youtube.com URI, medium.com URI, arxiv.org URI, did:plc, did:key, .edu host, free-text claim |
 | Unit | `appview/__tests__/util/host_category.test.ts` | Each entry in the host map produces the documented `category` + `media_type`; unknown hosts default to `category='content'` with `host` populated |
 | Integration | `appview/__tests__/api/search-filters.test.ts` | `type=product` excludes places; `category='product:chair'` excludes phones; `location` filter excludes out-of-radius places; `language` filter respected; multiple filters AND together; `categoryPrefix` matches sub-categories |
 | Integration | `appview/__tests__/api/search-facets.test.ts` | Facet bar derivation: result set with mixed categories yields ranked facet list; tapping a facet narrows correctly |
 
-Conformance: trust-score formula vectors pinned in `packages/protocol/conformance/vectors/trust_score_v1.json`. Lite implementations must reproduce. Vectors cover the same edge cases as the scorer unit tests so a fresh implementation can verify byte-for-byte.
+Conformance: PeerLens rating formula vectors pinned in `packages/protocol/conformance/vectors/trust_score_v1.json`. Lite implementations must reproduce. Vectors cover the same edge cases as the scorer unit tests so a fresh implementation can verify byte-for-byte.
 
 ## 16. Files to touch
 
@@ -1377,8 +1377,8 @@ Weekly batches log `trust_v1.enrich.changed_total{field}` so we can see how many
 - **Network position** — viewer-relative graph distance (1-hop contact, 2-hop, 3+/unknown)
 - **Trust band** — discretised score (low / medium / high)
 - **Score version** — `v1` or `v2`; V1 records remain valid under V2 scorer
-- **Reviewer base** — context-free portion of a reviewer's trust score, range `[0, 60]`, stored in `reviewer_trust_scores.score`
-- **Network term** — viewer-specific portion of a reviewer's trust score, range `[0, 40]`, computed at query time
+- **Reviewer base** — context-free portion of a reviewer's PeerLens rating, range `[0, 60]`, stored in `reviewer_trust_scores.score`
+- **Network term** — viewer-specific portion of a reviewer's PeerLens rating, range `[0, 40]`, computed at query time
 - **Reviewer trust for viewer** — `reviewer_base + network_term`, range `[0, 100]`
 - **Trust mass** — `Σ reviewer_trust_for_viewer` across attestations on a subject; the denominator in subject-score normalisation
 - **Cascade enqueue** — when a reviewer's score changes, the queue gains one `subject_score_incremental` job per subject that reviewer has attested to (capped at 1000)

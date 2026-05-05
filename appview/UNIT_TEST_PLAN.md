@@ -12,9 +12,9 @@
 
 ## §1 — Scorer Algorithms (`src/scorer/algorithms/`)
 
-### §1.1 Trust Score (`trust-score.test.ts`)
+### §1.1 PeerLens Rating (`trust-score.test.ts`)
 
-Traces to: Architecture §"Trust Score Algorithm", Fix 12 (convergence + zero-trust)
+Traces to: Architecture §"PeerLens Rating Algorithm", Fix 12 (convergence + zero-trust)
 
 | ID | Test Name | Description | Expected Result |
 |----|-----------|-------------|-----------------|
@@ -500,7 +500,7 @@ Traces to: Architecture §"Consumer Implementation"
 
 | Section | Subsection | Test Count |
 |---------|-----------|------------|
-| §1 Scorer Algorithms | §1.1 Trust Score | 39 |
+| §1 Scorer Algorithms | §1.1 PeerLens Rating | 39 |
 | §1 Scorer Algorithms | §1.2 Reviewer Quality | 10 |
 | §1 Scorer Algorithms | §1.3 Sentiment Aggregation | 10 |
 | §1 Scorer Algorithms | §1.4 Anomaly Detection | 6 |

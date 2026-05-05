@@ -72,7 +72,7 @@ export interface TrustSearchFilters {
 export interface TrustSearchQuery extends TrustSearchFilters {
   /** What to search for: entity name, DID, or topic. */
   query: string;
-  /** Type of trust data to search for. */
+  /** Type of PeerLens data to search for. */
   type: SearchType;
   /** Maximum results to return. */
   limit?: number;
@@ -167,7 +167,7 @@ export function dropSearchCache(query: TrustSearchQuery): void {
 /**
  * Search PeerLens for reviews/attestations about an entity.
  *
- * Aggregates trust data from:
+ * Aggregates PeerLens data from:
  * 1. Local contacts (immediate trust ring — highest weight)
  * 2. AppView network (extended peer reviews — lower weight)
  *
@@ -189,7 +189,7 @@ export async function searchTrustNetwork(query: TrustSearchQuery): Promise<Trust
   let fromLocalContacts = 0;
   let fromNetwork = 0;
 
-  // 1. Search local contacts for trust data
+  // 1. Search local contacts for PeerLens data
   const localReviews = searchLocalContacts(query);
   reviews.push(...localReviews);
   fromLocalContacts = localReviews.length;
@@ -282,7 +282,7 @@ export async function searchTrustNetwork(query: TrustSearchQuery): Promise<Trust
 /**
  * Search local contacts for trust signals relevant to the query.
  *
- * If the query matches a contact name/alias, returns trust data
+ * If the query matches a contact name/alias, returns PeerLens data
  * about that contact from the user's immediate trust ring.
  */
 function searchLocalContacts(query: TrustSearchQuery): TrustReview[] {
@@ -314,13 +314,13 @@ function searchLocalContacts(query: TrustSearchQuery): TrustReview[] {
 }
 
 /**
- * Convert a trust profile from AppView into a synthetic review entry
+ * Convert a PeerLens profile from AppView into a synthetic review entry
  * for the local aggregator.
  *
  * AppView returns one aggregate score + summary per DID — not a list
  * of individual reviews. We fold that aggregate into a single
  * "network attestation" review so it can flow through the same
- * trust-weighted aggregator that handles local contacts. Domain and
+ * PeerLens-weighted aggregator that handles local contacts. Domain and
  * sentiment breakdown surface as metadata in the comment for UX.
  *
  * Returns `[]` when the profile is unscored or has no attestations
@@ -465,7 +465,7 @@ function resolveQueryToDid(query: string): string | null {
  *
  * `reviewerTrust` defaults to 50 here (network attestation tier).
  * The aggregator weights ALL search-derived rows equally for now;
- * proper per-author trust scoring would require fetching each
+ * proper per-author PeerLens rating would require fetching each
  * author's profile and is deferred to TN-API-001.
  */
 function searchHitToReview(hit: AttestationSearchHit): TrustReview {

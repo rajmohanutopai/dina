@@ -531,7 +531,7 @@ Verify the full attestation path from write to PDS through AppView ingestion and
 3. Verify Jetstream/AppView ingests the attestation.
 4. Verify the attestation or derived summary lands in AppView storage.
 5. Dina B queries AppView for the same subject.
-6. Verify Dina B receives the trust data.
+6. Verify Dina B receives the PeerLens data.
 7. Verify Dina B stores the summary in vault.
 8. Ask Dina B about the subject.
 9. Verify the final answer materially uses PeerLens data.
@@ -543,7 +543,7 @@ Verify the full attestation path from write to PDS through AppView ingestion and
 3. Jetstream ingestion occurs within acceptable delay.
 4. AppView query returns the expected structured result.
 5. Dina B stores the returned summary or trust signal in vault.
-6. The final answer uses trust data, not a generic answer disconnected from AppView.
+6. The final answer uses PeerLens data, not a generic answer disconnected from AppView.
 7. Signatures and provenance are inspectable where the architecture claims they are.
 
 ### Evidence
@@ -1342,7 +1342,7 @@ Verify that Dina's recommendation pipeline never ranks by ad spend, always attri
 ### Preconditions
 
 - release Docker stack running (Core + Brain)
-- AppView reachable with seeded trust data (mix of Ring 1 and Ring 2 attestations)
+- AppView reachable with seeded PeerLens data (mix of Ring 1 and Ring 2 attestations)
 - At least one product with dense reviews and one with zero reviews
 
 ### Steps
@@ -1352,9 +1352,9 @@ Verify that Dina's recommendation pipeline never ranks by ad spend, always attri
 3. Ask Dina to research a product with sparse, conflicting reviews (3 reviews, mixed).
 4. For the dense-data product, ask "Why was this ranked above the alternative?"
 5. Verify every recommendation includes source attribution (creator name + deep link).
-6. Verify no recommendation fabricates a trust score when data is absent.
+6. Verify no recommendation fabricates a PeerLens rating when data is absent.
 7. Ask Dina about a topic and verify she does NOT proactively surface unasked-for products.
-8. Seed two competing products: Product A (sponsored, weaker trust data — 10 reviews, avg 3/5) and Product B (unsponsored, stronger trust data — 30 reviews, avg 4.5/5).
+8. Seed two competing products: Product A (sponsored, weaker PeerLens data — 10 reviews, avg 3/5) and Product B (unsponsored, stronger PeerLens data — 30 reviews, avg 4.5/5).
 9. Ask Dina to compare both products. Verify Product B ranks above Product A.
 
 ### Assertions

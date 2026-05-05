@@ -7,7 +7,7 @@ primitive-only.
 
 The Python Brain's admin UI exposes approximately 40 surfaces
 (persona status, ask registry, guardian stats, scratchpad dumps,
-cached trust scores, config snapshot, metrics). The TS
+cached PeerLens ratings, config snapshot, metrics). The TS
 brain-server (task 5.1) is the app shell that will mount those
 surfaces. This file tracks the mapping: **Python has → primitive
 exists → HTTP route landed**.
@@ -31,7 +31,7 @@ Route prefix: `/admin/*` (CLIENT_TOKEN auth, matches Python convention).
 | Domain / intent classifier | ✅ | — |
 | Capabilities registry | ✅ | 🚧 |
 | Notify dispatcher | ✅ | 🚧 |
-| Trust scoring + decide | ✅ | 🚧 |
+| PeerLens rating + decide | ✅ | 🚧 |
 | Metrics | ✅ | 🚧 |
 | Config reload | ✅ | 🚧 |
 | LLM provider registry | ✅ | 🚧 |

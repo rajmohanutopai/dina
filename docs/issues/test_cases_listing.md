@@ -489,7 +489,7 @@
 | 445 | `TST-CORE-890` | Contact `updated_at` refreshed on sharing policy mutation | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:1804` |
 | 446 | `TST-CORE-891` | Draft confidence score: low → flagged for review | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:1817` |
 | 447 | `TST-CORE-892` | Agent `draft_only: true` constraint enforced | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:1865` |
-| 448 | `TST-CORE-893` | Agent outcomes recorded in Tier 3 for trust scoring | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:1884` |
+| 448 | `TST-CORE-893` | Agent outcomes recorded in Tier 3 for PeerLens rating | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:1884` |
 | 449 | `TST-CORE-394` | Enqueue message | §7.1 Outbox (Reliable Delivery) | Yes | `core/test/transport_test.go:29` |
 | 450 | `TST-CORE-395` | Outbox schema | §7.1 Outbox (Reliable Delivery) | Yes | `core/test/transport_test.go:114` |
 | 451 | `TST-CORE-396` | Successful delivery | §7.1 Outbox (Reliable Delivery) | Yes | `core/test/transport_test.go:787` |
@@ -941,7 +941,7 @@
 | 897 | `TST-CORE-753` | Ring 2 — Phase 1 compromise | §24.1 ZKP Trust Rings (Identity Verification) | Yes | `core/test/deferred_test.go:58` |
 | 898 | `TST-CORE-754` | Ring 2 — one ID = one verified Dina | §24.1 ZKP Trust Rings (Identity Verification) | Yes | `core/test/deferred_test.go:76` |
 | 899 | `TST-CORE-755` | Ring 3 — Skin in the Game | §24.1 ZKP Trust Rings (Identity Verification) | Yes | `core/test/deferred_test.go:93` |
-| 900 | `TST-CORE-756` | Trust Score formula | §24.1 ZKP Trust Rings (Identity Verification) | Yes | `core/test/deferred_test.go:111` |
+| 900 | `TST-CORE-756` | PeerLens Rating formula | §24.1 ZKP Trust Rings (Identity Verification) | Yes | `core/test/deferred_test.go:111` |
 | 901 | `TST-CORE-757` | Trust level affects sharing/routing | §24.1 ZKP Trust Rings (Identity Verification) | Yes | `core/test/deferred_test.go:125` |
 | 902 | `TST-CORE-758` | Key generation uses Secure Enclave (iOS) | §24.2 HSM / Secure Enclave Key Generation | Yes | `core/test/deferred_test.go:145` |
 | 903 | `TST-CORE-759` | Key generation uses StrongBox (Android) | §24.2 HSM / Secure Enclave Key Generation | Yes | `core/test/deferred_test.go:161` |
@@ -964,7 +964,7 @@
 | 920 | `TST-CORE-931` | Tier 5 Deep Archive: encrypted snapshot to cold storage with compliance lock | §24.5 Client Cache Sync | Yes | `core/test/deferred_test.go:505` |
 | 921 | `TST-CORE-858` | Bot query sanitization: no DID, no medical, no financial in outbound queries | §25. Bot Interface | Yes | `core/test/bot_test.go:18` |
 | 922 | `TST-CORE-859` | Bot communication protocol: POST /query schema with bot_signature and attributio… | §25. Bot Interface | Yes | `core/test/bot_test.go:53` |
-| 923 | `TST-CORE-860` | Bot trust scoring: local score tracking, threshold-based routing | §25. Bot Interface | Yes | `core/test/bot_test.go:102` |
+| 923 | `TST-CORE-860` | Bot PeerLens rating: local score tracking, threshold-based routing | §25. Bot Interface | Yes | `core/test/bot_test.go:102` |
 | 924 | `TST-CORE-861` | Deep Link attribution validation + penalty for stripping attribution | §25. Bot Interface | Yes | `core/test/bot_test.go:163` |
 | 925 | `TST-CORE-862` | Client sends checkpoint, core returns changed items since checkpoint | §26. Client Sync Protocol | Yes | `core/test/sync_test.go:23` |
 | 926 | `TST-CORE-863` | Real-time vault item push to connected clients via WebSocket | §26. Client Sync Protocol | Yes | `core/test/sync_test.go:58` |
@@ -1509,8 +1509,8 @@
 | 294 | `TST-BRAIN-228` | Route by trust | §6.1 Agent Routing | Yes | `brain/tests/test_mcp.py:271` |
 | 295 | `TST-BRAIN-229` | No suitable agent | §6.1 Agent Routing | Yes | `brain/tests/test_mcp.py:330` |
 | 296 | `TST-BRAIN-230` | Agent timeout | §6.1 Agent Routing | Yes | `brain/tests/test_mcp.py:339` |
-| 297 | `TST-BRAIN-408` | Trust AppView query | §6.1 Agent Routing | Yes | `brain/tests/test_mcp.py:1001` |
-| 298 | `TST-BRAIN-409` | Trust AppView unavailable → web search fallback | §6.1 Agent Routing | Yes | `brain/tests/test_mcp.py:1019` |
+| 297 | `TST-BRAIN-408` | PeerLens AppView query | §6.1 Agent Routing | Yes | `brain/tests/test_mcp.py:1001` |
+| 298 | `TST-BRAIN-409` | PeerLens AppView unavailable → web search fallback | §6.1 Agent Routing | Yes | `brain/tests/test_mcp.py:1019` |
 | 299 | `TST-BRAIN-410` | Bot trust tracking and recalculation | §6.1 Agent Routing | Yes | `brain/tests/test_mcp.py:1050` |
 | 300 | `TST-BRAIN-231` | Agent submits safe intent | §6.2 Agent Safety (Intent Verification) | Yes | `brain/tests/test_mcp.py:358` |
 | 301 | `TST-BRAIN-232` | Agent submits risky intent | §6.2 Agent Safety (Intent Verification) | Yes | `brain/tests/test_mcp.py:396` |
@@ -1692,9 +1692,9 @@
 | 477 | `TST-BRAIN-542` | Attribution mandatory in recommendations | §19.1 Recommendation Integrity (Brain-Side) | Yes | `brain/tests/test_guardian.py:4010` |
 | 478 | `TST-BRAIN-543` | Deep link default: creators get traffic | §19.1 Recommendation Integrity (Brain-Side) | Yes | `brain/tests/test_guardian.py:4515` |
 | 479 | `TST-BRAIN-544` | Sponsored content disclosed | §19.1 Recommendation Integrity (Brain-Side) | Yes | `brain/tests/test_guardian.py:5027` |
-| 480 | `TST-BRAIN-545` | No hallucinated trust scores | §19.1 Recommendation Integrity (Brain-Side) | Yes | `brain/tests/test_guardian.py:1925` |
-| 481 | `TST-BRAIN-546` | Sparse trust data: honest uncertainty | §19.1 Recommendation Integrity (Brain-Side) | Yes | `brain/tests/test_guardian.py:7763` |
-| 482 | `TST-BRAIN-547` | Dense trust data: confidence proportional | §19.1 Recommendation Integrity (Brain-Side) | Yes | `brain/tests/test_guardian.py:8317` |
+| 480 | `TST-BRAIN-545` | No hallucinated PeerLens ratings | §19.1 Recommendation Integrity (Brain-Side) | Yes | `brain/tests/test_guardian.py:1925` |
+| 481 | `TST-BRAIN-546` | Sparse PeerLens data: honest uncertainty | §19.1 Recommendation Integrity (Brain-Side) | Yes | `brain/tests/test_guardian.py:7763` |
+| 482 | `TST-BRAIN-547` | Dense PeerLens data: confidence proportional | §19.1 Recommendation Integrity (Brain-Side) | Yes | `brain/tests/test_guardian.py:8317` |
 | 483 | `TST-BRAIN-566` | Ranking explainability | §19.1 Recommendation Integrity (Brain-Side) | Yes | `brain/tests/test_guardian.py:8045` |
 | 484 | `TST-BRAIN-567` | No unsolicited discovery | §19.1 Recommendation Integrity (Brain-Side) | Yes | `brain/tests/test_guardian.py:6584` |
 | 485 | `TST-BRAIN-571` | Sponsorship cannot distort ranking order | §19.1 Recommendation Integrity (Brain-Side) | Yes | `brain/tests/test_guardian.py:5450` |
@@ -2108,7 +2108,7 @@
 | 315 | `TST-INT-315` | Cold start: personal context enrichment | §11.3 Trust in Agent Decisions | Yes | `tests/integration/test_trust_rings.py:207` |
 | 316 | `TST-INT-316` | PDS down: records already replicated | §11.4 PDS Topology & Availability | Yes | `tests/integration/test_trust_network.py:731` |
 | 317 | `TST-INT-317` | PDS migration (account portability) | §11.4 PDS Topology & Availability | Yes | `tests/integration/test_trust_network.py:779` |
-| 318 | `TST-INT-318` | Foundation PDS stores only trust data | §11.4 PDS Topology & Availability | Yes | `tests/integration/test_trust_network.py:813` |
+| 318 | `TST-INT-318` | Foundation PDS stores only PeerLens data | §11.4 PDS Topology & Availability | Yes | `tests/integration/test_trust_network.py:813` |
 | 319 | `TST-INT-319` | Relay crawls PDS via delta sync | §11.4 PDS Topology & Availability | Yes | `tests/integration/test_trust_network.py:849` |
 | 320 | `TST-INT-320` | Discovery → PDS federation | §11.5 AT Protocol Discovery (E2E) | Yes | `tests/integration/test_trust_network.py:897` |
 | 321 | `TST-INT-321` | Discovery endpoint available unauthenticated | §11.5 AT Protocol Discovery (E2E) | Yes | `tests/integration/test_trust_network.py:920` |
@@ -2194,14 +2194,14 @@
 | 401 | `TST-INT-401` | Noise XX handshake | §16.6 Forward Secrecy (Noise XX) | Yes | `tests/integration/test_phase2.py:822` |
 | 402 | `TST-INT-402` | Key compromise doesn't expose past messages | §16.6 Forward Secrecy (Noise XX) | Yes | `tests/integration/test_phase2.py:839` |
 | 403 | `TST-INT-403` | Session ratchet | §16.6 Forward Secrecy (Noise XX) | Yes | `tests/integration/test_phase2.py:865` |
-| 404 | `TST-INT-404` | Firehose consumer filters correctly | §16.7 Trust AppView (Phase 2+) | Deferred | `tests/integration/test_phase2.py:898` |
-| 405 | `TST-INT-405` | Cryptographic verification on every record | §16.7 Trust AppView (Phase 2+) | Deferred | `tests/integration/test_phase2.py:922` |
-| 406 | `TST-INT-406` | Query API: trust by DID | §16.7 Trust AppView (Phase 2+) | Deferred | `tests/integration/test_phase2.py:940` |
-| 407 | `TST-INT-407` | Query API: product trust | §16.7 Trust AppView (Phase 2+) | Deferred | `tests/integration/test_phase2.py:962` |
-| 408 | `TST-INT-408` | Query API: bot scores | §16.7 Trust AppView (Phase 2+) | Deferred | `tests/integration/test_phase2.py:987` |
-| 409 | `TST-INT-409` | Signed payloads in API responses | §16.7 Trust AppView (Phase 2+) | Deferred | `tests/integration/test_phase2.py:1009` |
-| 410 | `TST-INT-410` | Aggregate scores deterministic | §16.7 Trust AppView (Phase 2+) | Deferred | `tests/integration/test_phase2.py:1046` |
-| 411 | `TST-INT-411` | Cursor tracking: crash recovery | §16.7 Trust AppView (Phase 2+) | Deferred | `tests/integration/test_phase2.py:1072` |
+| 404 | `TST-INT-404` | Firehose consumer filters correctly | §16.7 PeerLens AppView (Phase 2+) | Deferred | `tests/integration/test_phase2.py:898` |
+| 405 | `TST-INT-405` | Cryptographic verification on every record | §16.7 PeerLens AppView (Phase 2+) | Deferred | `tests/integration/test_phase2.py:922` |
+| 406 | `TST-INT-406` | Query API: trust by DID | §16.7 PeerLens AppView (Phase 2+) | Deferred | `tests/integration/test_phase2.py:940` |
+| 407 | `TST-INT-407` | Query API: product trust | §16.7 PeerLens AppView (Phase 2+) | Deferred | `tests/integration/test_phase2.py:962` |
+| 408 | `TST-INT-408` | Query API: bot scores | §16.7 PeerLens AppView (Phase 2+) | Deferred | `tests/integration/test_phase2.py:987` |
+| 409 | `TST-INT-409` | Signed payloads in API responses | §16.7 PeerLens AppView (Phase 2+) | Deferred | `tests/integration/test_phase2.py:1009` |
+| 410 | `TST-INT-410` | Aggregate scores deterministic | §16.7 PeerLens AppView (Phase 2+) | Deferred | `tests/integration/test_phase2.py:1046` |
+| 411 | `TST-INT-411` | Cursor tracking: crash recovery | §16.7 PeerLens AppView (Phase 2+) | Deferred | `tests/integration/test_phase2.py:1072` |
 | 412 | `TST-INT-412` | Layer 1: Cryptographic proof | §16.8 Three-Layer Verification (Phase 3) | Yes | `tests/integration/test_phase2.py:1111` |
 | 413 | `TST-INT-413` | Layer 2: Consensus check (anti-censorship) | §16.8 Three-Layer Verification (Phase 3) | Yes | `tests/integration/test_phase2.py:1123` |
 | 414 | `TST-INT-414` | Layer 3: Direct PDS spot-check | §16.8 Three-Layer Verification (Phase 3) | Yes | `tests/integration/test_phase2.py:1144` |
@@ -2215,7 +2215,7 @@
 | 422 | `TST-INT-422` | Attribution mandatory | §16.10 Bot Interface Protocol (Phase 2+) | Deferred | `tests/integration/test_phase2.py:1437` |
 | 423 | `TST-INT-423` | Deep Link pattern default | §16.10 Bot Interface Protocol (Phase 2+) | Deferred | `tests/integration/test_phase2.py:1475` |
 | 424 | `TST-INT-424` | Bot trust: auto-route on low score | §16.10 Bot Interface Protocol (Phase 2+) | Deferred | `tests/integration/test_phase2.py:1499` |
-| 425 | `TST-INT-425` | Bot trust scoring factors | §16.10 Bot Interface Protocol (Phase 2+) | Deferred | `tests/integration/test_phase2.py:1526` |
+| 425 | `TST-INT-425` | Bot PeerLens rating factors | §16.10 Bot Interface Protocol (Phase 2+) | Deferred | `tests/integration/test_phase2.py:1526` |
 | 426 | `TST-INT-426` | Bot discovery: decentralized registry | §16.10 Bot Interface Protocol (Phase 2+) | Deferred | `tests/integration/test_phase2.py:1547` |
 | 427 | `TST-INT-427` | Bot-to-bot recommendation | §16.10 Bot Interface Protocol (Phase 2+) | Deferred | `tests/integration/test_phase2.py:1584` |
 | 428 | `TST-INT-428` | Requester anonymity: trust ring only, no identity | §16.10 Bot Interface Protocol (Phase 2+) | Deferred | `tests/integration/test_phase2.py:1626` |
@@ -2358,7 +2358,7 @@
 | 565 | `TST-INT-714` | Health context elevates classification | §21.2 Classification Edge Cases (Integration) | Yes | `tests/integration/test_silence_tiers.py:2728` |
 | 566 | `TST-INT-715` | Stale event demotion | §21.2 Classification Edge Cases (Integration) | Yes | `tests/integration/test_silence_tiers.py:2327` |
 | 567 | `TST-INT-731` | Reclassification on later corroboration | §21.2 Classification Edge Cases (Integration) | Yes | `tests/integration/test_silence_tiers.py:1629` |
-| 568 | `TST-INT-716` | Zero trust data: graceful absence | §22.1 Trust Data Density Spectrum (Full Pipeline) | Yes | `tests/integration/test_trust_network.py:2091` (+2) |
+| 568 | `TST-INT-716` | Zero PeerLens data: graceful absence | §22.1 Trust Data Density Spectrum (Full Pipeline) | Yes | `tests/integration/test_trust_network.py:2091` (+2) |
 | 569 | `TST-INT-717` | Single review: honest uncertainty | §22.1 Trust Data Density Spectrum (Full Pipeline) | Yes | `tests/integration/test_trust_network.py:1750` (+2) |
 | 570 | `TST-INT-718` | Sparse conflicting: transparent split | §22.1 Trust Data Density Spectrum (Full Pipeline) | Yes | `tests/integration/test_trust_network.py:1406` |
 | 571 | `TST-INT-719` | Dense consensus: earned confidence | §22.1 Trust Data Density Spectrum (Full Pipeline) | Yes | `tests/integration/test_trust_network.py:3546` (+2) |
@@ -2442,7 +2442,7 @@
 | 59 | `TST-E2E-059` | Expert Attestation Publish → Relay → Query | Suite 12: PeerLens Lifecycle | Yes | `tests/e2e/test_suite_12_trust.py:52` |
 | 60 | `TST-E2E-060` | Bot Trust Degradation | Suite 12: PeerLens Lifecycle | Yes | `tests/e2e/test_suite_12_trust.py:198` |
 | 61 | `TST-E2E-061` | Signed Tombstone Deletion | Suite 12: PeerLens Lifecycle | Yes | `tests/e2e/test_suite_12_trust.py:326` |
-| 62 | `TST-E2E-062` | Trust Score Computation | Suite 12: PeerLens Lifecycle | Yes | `tests/e2e/test_suite_12_trust.py:456` |
+| 62 | `TST-E2E-062` | PeerLens Rating Computation | Suite 12: PeerLens Lifecycle | Yes | `tests/e2e/test_suite_12_trust.py:456` |
 | 63 | `TST-E2E-063` | AT Protocol Discovery | Suite 12: PeerLens Lifecycle | Yes | `tests/e2e/test_suite_12_trust.py:581` |
 | 64 | `TST-E2E-064` | AppView Determinism | Suite 12: PeerLens Lifecycle | Yes | `tests/e2e/test_suite_12_trust.py:673` |
 | 65 | `TST-E2E-065` | DDoS + Rate Limiting | Suite 13: Security Adversarial | Yes | `tests/e2e/test_suite_13_security.py:52` |
@@ -2693,45 +2693,45 @@
 
 | # | Test ID | Scenario | Section | Impl | Code Location |
 |---|---------|----------|---------|------|---------------|
-| 1 | `UT-TS-001` | all-positive attestations → high score | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:89` |
-| 2 | `UT-TS-002` | all-negative attestations → low score | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:109` |
-| 3 | `UT-TS-003` | mixed sentiment → mid-range score | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:127` |
-| 4 | `UT-TS-004` | zero attestations → neutral default | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:145` |
-| 5 | `UT-TS-005` | no vouches → low vouch component | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:154` |
-| 6 | `UT-TS-006` | 10 vouches → near-maximum vouch signal | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:164` |
-| 7 | `UT-TS-007` | logarithmic vouch diminishing returns | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:174` |
-| 8 | `UT-TS-008` | high-confidence vouch bonus | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:187` |
-| 9 | `UT-TS-009` | no review history → zero reviewer score | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:203` |
-| 10 | `UT-TS-010` | high deletion rate → harsh penalty | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:213` |
-| 11 | `UT-TS-011` | high evidence rate → bonus | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:224` |
-| 12 | `UT-TS-012` | helpful ratio → positive signal | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:242` |
-| 13 | `UT-TS-013` | network component logarithmic | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:256` |
-| 14 | `UT-TS-014` | delegation inbound bonus | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:267` |
-| 15 | `UT-TS-015` | critical flag → 70% reduction | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:283` |
-| 16 | `UT-TS-016` | serious flag → 40% reduction | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:305` |
-| 17 | `UT-TS-017` | warning flag → 15% reduction | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:324` |
-| 18 | `UT-TS-018` | multiple flags compound | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:343` |
-| 19 | `UT-TS-019` | tombstone threshold → 60% penalty | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:362` |
-| 20 | `UT-TS-020` | damping factor applied (Fix 12) | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:385` |
-| 21 | `UT-TS-021` | damping guarantees minimum floor | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:408` |
-| 22 | `UT-TS-022` | score clamped to [0, 1] | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:420` |
-| 23 | `UT-TS-023` | score clamped to [0, 1] (low end) | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:445` |
-| 24 | `UT-TS-024` | recency decay — fresh attestation weighted more | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:457` |
-| 25 | `UT-TS-025` | evidence multiplier (1.3×) | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:492` |
-| 26 | `UT-TS-026` | verified multiplier (1.5×) | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:522` |
-| 27 | `UT-TS-027` | bilateral/cosignature multiplier (1.4×) | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:547` |
-| 28 | `UT-TS-028` | **Fix 12: zero-trust default** | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:572` |
-| 29 | `UT-TS-029` | **Fix 12: vouch-gating** | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:585` |
-| 30 | `UT-TS-030` | **Fix 12: vouch-gating passes** | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:598` |
-| 31 | `UT-TS-031` | **Fix 12: sybil resistance** | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:611` |
-| 32 | `UT-TS-032` | confidence — zero signals | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:626` |
-| 33 | `UT-TS-033` | confidence — few signals | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:635` |
-| 34 | `UT-TS-034` | confidence — some signals | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:645` |
-| 35 | `UT-TS-035` | confidence — moderate signals | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:655` |
-| 36 | `UT-TS-036` | confidence — many signals | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:665` |
-| 37 | `UT-TS-037` | confidence — high signals | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:675` |
-| 38 | `UT-TS-038` | component weights sum to 1.0 | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:685` |
-| 39 | `UT-TS-039` | neutral sentiment counted as half positive | §1.1 Trust Score (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:692` |
+| 1 | `UT-TS-001` | all-positive attestations → high score | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:89` |
+| 2 | `UT-TS-002` | all-negative attestations → low score | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:109` |
+| 3 | `UT-TS-003` | mixed sentiment → mid-range score | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:127` |
+| 4 | `UT-TS-004` | zero attestations → neutral default | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:145` |
+| 5 | `UT-TS-005` | no vouches → low vouch component | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:154` |
+| 6 | `UT-TS-006` | 10 vouches → near-maximum vouch signal | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:164` |
+| 7 | `UT-TS-007` | logarithmic vouch diminishing returns | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:174` |
+| 8 | `UT-TS-008` | high-confidence vouch bonus | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:187` |
+| 9 | `UT-TS-009` | no review history → zero reviewer score | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:203` |
+| 10 | `UT-TS-010` | high deletion rate → harsh penalty | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:213` |
+| 11 | `UT-TS-011` | high evidence rate → bonus | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:224` |
+| 12 | `UT-TS-012` | helpful ratio → positive signal | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:242` |
+| 13 | `UT-TS-013` | network component logarithmic | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:256` |
+| 14 | `UT-TS-014` | delegation inbound bonus | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:267` |
+| 15 | `UT-TS-015` | critical flag → 70% reduction | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:283` |
+| 16 | `UT-TS-016` | serious flag → 40% reduction | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:305` |
+| 17 | `UT-TS-017` | warning flag → 15% reduction | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:324` |
+| 18 | `UT-TS-018` | multiple flags compound | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:343` |
+| 19 | `UT-TS-019` | tombstone threshold → 60% penalty | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:362` |
+| 20 | `UT-TS-020` | damping factor applied (Fix 12) | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:385` |
+| 21 | `UT-TS-021` | damping guarantees minimum floor | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:408` |
+| 22 | `UT-TS-022` | score clamped to [0, 1] | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:420` |
+| 23 | `UT-TS-023` | score clamped to [0, 1] (low end) | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:445` |
+| 24 | `UT-TS-024` | recency decay — fresh attestation weighted more | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:457` |
+| 25 | `UT-TS-025` | evidence multiplier (1.3×) | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:492` |
+| 26 | `UT-TS-026` | verified multiplier (1.5×) | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:522` |
+| 27 | `UT-TS-027` | bilateral/cosignature multiplier (1.4×) | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:547` |
+| 28 | `UT-TS-028` | **Fix 12: zero-trust default** | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:572` |
+| 29 | `UT-TS-029` | **Fix 12: vouch-gating** | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:585` |
+| 30 | `UT-TS-030` | **Fix 12: vouch-gating passes** | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:598` |
+| 31 | `UT-TS-031` | **Fix 12: sybil resistance** | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:611` |
+| 32 | `UT-TS-032` | confidence — zero signals | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:626` |
+| 33 | `UT-TS-033` | confidence — few signals | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:635` |
+| 34 | `UT-TS-034` | confidence — some signals | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:645` |
+| 35 | `UT-TS-035` | confidence — moderate signals | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:655` |
+| 36 | `UT-TS-036` | confidence — many signals | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:665` |
+| 37 | `UT-TS-037` | confidence — high signals | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:675` |
+| 38 | `UT-TS-038` | component weights sum to 1.0 | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:685` |
+| 39 | `UT-TS-039` | neutral sentiment counted as half positive | §1.1 PeerLens Rating (`trust-score.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:692` |
 | 40 | `UT-RQ-001` | corroboration rate calculation | §1.2 Reviewer Quality (`reviewer-quality.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:710` |
 | 41 | `UT-RQ-002` | deletion rate calculation | §1.2 Reviewer Quality (`reviewer-quality.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:728` |
 | 42 | `UT-RQ-003` | evidence rate calculation | §1.2 Reviewer Quality (`reviewer-quality.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:746` |
@@ -3161,11 +3161,11 @@
 | 164 | `IT-SC-014` | dimension summary aggregation | §9.2 Refresh Subject Scores — Incremental (Fix 9) (`ref… | Yes | `appview/tests/integration/09-scorer-jobs.test.ts:381` |
 | 165 | `IT-SC-015` | attestation velocity computed | §9.2 Refresh Subject Scores — Incremental (Fix 9) (`ref… | Yes | `appview/tests/integration/09-scorer-jobs.test.ts:409` |
 | 166 | `IT-SC-016` | verified attestation count | §9.2 Refresh Subject Scores — Incremental (Fix 9) (`ref… | Yes | `appview/tests/integration/09-scorer-jobs.test.ts:437` |
-| 167 | `IT-SC-017` | **Fix 12: iterative scoring converges within 5 ticks** | §9.3 Trust Score Convergence (Fix 12) (`trust-score-con… | Yes | `appview/tests/integration/09-scorer-jobs.test.ts:467` |
-| 168 | `IT-SC-018` | **Fix 12: unvouched sybils → zero weight** | §9.3 Trust Score Convergence (Fix 12) (`trust-score-con… | Yes | `appview/tests/integration/09-scorer-jobs.test.ts:502` |
-| 169 | `IT-SC-019` | **Fix 12: one real vouch breaks sybil ceiling** | §9.3 Trust Score Convergence (Fix 12) (`trust-score-con… | Yes | `appview/tests/integration/09-scorer-jobs.test.ts:529` |
-| 170 | `IT-SC-020` | **Fix 12: damping factor prevents collapse** | §9.3 Trust Score Convergence (Fix 12) (`trust-score-con… | Yes | `appview/tests/integration/09-scorer-jobs.test.ts:563` |
-| 171 | `IT-SC-021` | **Fix 12: vouch-gating — scored but unvouched = zero** | §9.3 Trust Score Convergence (Fix 12) (`trust-score-con… | Yes | `appview/tests/integration/09-scorer-jobs.test.ts:576` |
+| 167 | `IT-SC-017` | **Fix 12: iterative scoring converges within 5 ticks** | §9.3 PeerLens Rating Convergence (Fix 12) (`trust-score-con… | Yes | `appview/tests/integration/09-scorer-jobs.test.ts:467` |
+| 168 | `IT-SC-018` | **Fix 12: unvouched sybils → zero weight** | §9.3 PeerLens Rating Convergence (Fix 12) (`trust-score-con… | Yes | `appview/tests/integration/09-scorer-jobs.test.ts:502` |
+| 169 | `IT-SC-019` | **Fix 12: one real vouch breaks sybil ceiling** | §9.3 PeerLens Rating Convergence (Fix 12) (`trust-score-con… | Yes | `appview/tests/integration/09-scorer-jobs.test.ts:529` |
+| 170 | `IT-SC-020` | **Fix 12: damping factor prevents collapse** | §9.3 PeerLens Rating Convergence (Fix 12) (`trust-score-con… | Yes | `appview/tests/integration/09-scorer-jobs.test.ts:563` |
+| 171 | `IT-SC-021` | **Fix 12: vouch-gating — scored but unvouched = zero** | §9.3 PeerLens Rating Convergence (Fix 12) (`trust-score-con… | Yes | `appview/tests/integration/09-scorer-jobs.test.ts:576` |
 | 172 | `IT-SC-022` | temporal burst detected | §9.4 Detect Coordination (`detect-coordination.test.ts`… | Yes | `appview/tests/integration/09-scorer-jobs.test.ts:607` |
 | 173 | `IT-SC-023` | normal traffic not flagged | §9.4 Detect Coordination (`detect-coordination.test.ts`… | Yes | `appview/tests/integration/09-scorer-jobs.test.ts:631` |
 | 174 | `IT-SC-024` | coordination window — 48 hours | §9.4 Detect Coordination (`detect-coordination.test.ts`… | Yes | `appview/tests/integration/09-scorer-jobs.test.ts:653` |
@@ -3224,7 +3224,7 @@
 | 227 | `IT-API-031` | get profile — existing DID | §10.4 Get Profile Endpoint (`get-profile.test.ts`) | Yes | `appview/tests/integration/10-api-endpoints.test.ts:741` |
 | 228 | `IT-API-032` | get profile — non-existent DID | §10.4 Get Profile Endpoint (`get-profile.test.ts`) | Yes | `appview/tests/integration/10-api-endpoints.test.ts:770` |
 | 229 | `IT-API-033` | get profile — includes reviewer stats | §10.4 Get Profile Endpoint (`get-profile.test.ts`) | Yes | `appview/tests/integration/10-api-endpoints.test.ts:775` |
-| 230 | `IT-API-034` | get profile — includes trust score | §10.4 Get Profile Endpoint (`get-profile.test.ts`) | Yes | `appview/tests/integration/10-api-endpoints.test.ts:791` |
+| 230 | `IT-API-034` | get profile — includes PeerLens rating | §10.4 Get Profile Endpoint (`get-profile.test.ts`) | Yes | `appview/tests/integration/10-api-endpoints.test.ts:791` |
 | 231 | `IT-API-035` | get attestations — by subject | §10.5 Get Attestations Endpoint (`get-attestations.test… | Yes | `appview/tests/integration/10-api-endpoints.test.ts:804` |
 | 232 | `IT-API-036` | get attestations — by author | §10.5 Get Attestations Endpoint (`get-attestations.test… | Yes | `appview/tests/integration/10-api-endpoints.test.ts:818` |
 | 233 | `IT-API-037` | get attestations — pagination | §10.5 Get Attestations Endpoint (`get-attestations.test… | Yes | `appview/tests/integration/10-api-endpoints.test.ts:827` |

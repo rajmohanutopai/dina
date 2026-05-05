@@ -159,7 +159,7 @@ prefixes.
 | Property | Value |
 |----------|-------|
 | DID | `did:plc:reviewbot` |
-| Trust Score | 94 |
+| PeerLens Rating | 94 |
 | Implementation | Mock MCP server |
 | Capabilities | Structured product reviews with attribution and deep links |
 
@@ -168,7 +168,7 @@ prefixes.
 | Property | Value |
 |----------|-------|
 | DID | `did:plc:malbot` |
-| Trust Score | 12 |
+| PeerLens Rating | 12 |
 | Implementation | Mock MCP server |
 | Behavior | Sends oversized payloads, injection attempts, forged signatures |
 
@@ -403,10 +403,10 @@ prefixes.
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
-| 1 | — | Brain queries Trust AppView for Herman Miller Aeron | Don Alonso's Brain → AppView API | `GET /v1/product?id=herman_miller_aeron_2025` |
+| 1 | — | Brain queries PeerLens AppView for Herman Miller Aeron | Don Alonso's Brain → AppView API | `GET /v1/product?id=herman_miller_aeron_2025` |
 | 2 | — | AppView returns aggregate score + individual signed records | AppView → Don Alonso's Brain | Score: 91, sample: 4200 outcomes, still_using_1yr: 89% |
 | 3 | — | Brain verifies Ed25519 signatures on returned records | Don Alonso's Brain (crypto) | All signatures valid against authors' DID Document public keys |
-| 4 | — | Brain enriches response to Don Alonso | Don Alonso's Brain → Don Alonso's Phone WS | "4200 Dina users bought this chair. 89% still use it after a year. Trust score: 91." |
+| 4 | — | Brain enriches response to Don Alonso | Don Alonso's Brain → Don Alonso's Phone WS | "4200 Dina users bought this chair. 89% still use it after a year. PeerLens rating: 91." |
 
 **Verification:**
 - Brain performs cryptographic verification (Layer 1 of 3-layer verification)
@@ -446,7 +446,7 @@ prefixes.
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
 | 1 | Don Alonso | "Find me a good office chair" | Don Alonso's Phone WS → Don Alonso's Brain | Query received |
-| 2 | — | Brain checks PeerLens | Don Alonso's Brain → AppView | No trust data available (cold start) |
+| 2 | — | Brain checks PeerLens | Don Alonso's Brain → AppView | No PeerLens data available (cold start) |
 | 3 | — | Brain falls back to web search via OpenClaw | Don Alonso's Brain → MCP → OpenClaw | Web search for "best office chair" |
 | 4 | — | Brain enriches with vault context (back pain, budget, sitting hours) | Don Alonso's Brain | Vault data applied to raw web results |
 | 5 | — | Brain assembles personalized response | Don Alonso's Brain → Don Alonso's Phone WS | "Based on web reviews and your back issues, the Steelcase Leap or Herman Miller Aeron. The Aeron is within your budget at 72,000 INR." |
@@ -678,8 +678,8 @@ prefixes.
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
-| 1 | — | Brain needs product review, finds MaliciousBot and ReviewBot | Don Alonso's Brain | Two bots available with different trust scores |
-| 2 | — | Brain checks trust scores | Don Alonso's Brain → AppView | MaliciousBot: 12, ReviewBot: 94 |
+| 1 | — | Brain needs product review, finds MaliciousBot and ReviewBot | Don Alonso's Brain | Two bots available with different PeerLens ratings |
+| 2 | — | Brain checks PeerLens ratings | Don Alonso's Brain → AppView | MaliciousBot: 12, ReviewBot: 94 |
 | 3 | — | Brain routes to ReviewBot (higher trust) | Don Alonso's Brain → ReviewBot (MCP) | Query sent to trusted bot |
 | 4 | — | MaliciousBot sends unsolicited response with injection payload | MaliciousBot → Don Alonso's Brain | `{query:"'; DROP TABLE vault_items;--", recommendations:[...]}` |
 | 5 | — | Brain validates response schema, rejects malformed data | Don Alonso's Brain | Strict typing: malformed = denied; prompt injection irrelevant (Go code, not LLM interprets) |
@@ -1145,7 +1145,7 @@ prefixes.
 ### Suite 12: PeerLens Lifecycle
 
 > Full lifecycle: publish attestation, relay propagation, query, bot trust degradation,
-> signed tombstone deletion, trust score computation.
+> signed tombstone deletion, PeerLens rating computation.
 
 #### E2E-12.1: **[TST-E2E-059]** Expert Attestation Publish → Relay → Query
 
@@ -1156,7 +1156,7 @@ prefixes.
 | 3 | — | Core publishes to PDS | ReviewBot's Core → PDS | `com.dina.trust.attestation` record in AT Protocol repo |
 | 4 | — | Relay crawls PDS via Merkle Search Tree diff | PDS → Relay | Only new records transferred (delta sync) |
 | 5 | — | AppView indexes record after verifying signature | Relay → AppView | Record verified, indexed |
-| 6 | Don Alonso | "What's the trust score of the Herman Miller Aeron?" | Don Alonso's Brain → AppView | `GET /v1/product?id=herman_miller_aeron_2025` returns aggregate score |
+| 6 | Don Alonso | "What's the PeerLens rating of the Herman Miller Aeron?" | Don Alonso's Brain → AppView | `GET /v1/product?id=herman_miller_aeron_2025` returns aggregate score |
 
 **Verification:**
 - Signature valid against author's DID Document public key
@@ -1167,7 +1167,7 @@ prefixes.
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
-| 1 | ReviewBot | Provides accurate recommendations for 10 queries | Don Alonso's Brain → ReviewBot | Trust Score: 94 |
+| 1 | ReviewBot | Provides accurate recommendations for 10 queries | Don Alonso's Brain → ReviewBot | PeerLens Rating: 94 |
 | 2 | ReviewBot | Next 5 queries return inaccurate/low-quality responses | Don Alonso's Brain → ReviewBot | User rates poorly, accuracy drops |
 | 3 | — | Brain recalculates bot trust | Don Alonso's Brain | Score drops below threshold |
 | 4 | — | Brain auto-routes next query to alternative bot | Don Alonso's Brain | Query goes to next-best bot — no manual intervention |
@@ -1193,13 +1193,13 @@ prefixes.
 - Tombstone requires valid Ed25519 signature from author's key
 - Non-author deletions rejected at every level
 
-#### E2E-12.4: **[TST-E2E-062]** Trust Score Computation
+#### E2E-12.4: **[TST-E2E-062]** PeerLens Rating Computation
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
 | 1 | — | ChairMaker has: Ring 3, 50 transactions, 2 years, 3 peer attestations | Various | Trust inputs gathered |
-| 2 | — | AppView computes trust score | AppView | `Trust = f(identity_anchors:3, transaction_history:50, outcome_data:positive_85%, peer_attestations:3, time:730_days)` |
-| 3 | — | Query ChairMaker's trust | Don Alonso's Brain → AppView | "ChairMaker: Ring 3, trust score 91, 50 transactions, 85% positive outcomes" |
+| 2 | — | AppView computes PeerLens rating | AppView | `Trust = f(identity_anchors:3, transaction_history:50, outcome_data:positive_85%, peer_attestations:3, time:730_days)` |
+| 3 | — | Query ChairMaker's trust | Don Alonso's Brain → AppView | "ChairMaker: Ring 3, PeerLens rating 91, 50 transactions, 85% positive outcomes" |
 
 **Verification:**
 - Trust is a composite function, not a simple star rating
@@ -1310,7 +1310,7 @@ prefixes.
 **Verification:**
 - Both brain (MCP) and core (DIDComm) enforce maximum payload sizes
 - Oversized payloads rejected before parsing (no memory exhaustion)
-- Attacker's trust score degraded
+- Attacker's PeerLens rating degraded
 
 #### E2E-13.6: **[TST-E2E-070]** Log Exfiltration Prevention
 
@@ -1862,7 +1862,7 @@ prefixes.
 ### Suite 22: Verified Truth — Trust Data Density
 
 > Product-level validation that Dina gives useful, honest responses across
-> the full trust data density spectrum. No hallucinated confidence, no
+> the full PeerLens data density spectrum. No hallucinated confidence, no
 > fabricated scores, no "PeerLens error" when data is simply absent.
 
 #### E2E-22.1: **[TST-E2E-116]** Product Research — Zero Trust Data
@@ -1872,13 +1872,13 @@ prefixes.
 | 1 | Don Alonso | Query: "Should I buy the XYZ Widget?" | Brain → AppView → Brain | AppView returns empty (product unknown) |
 | 2 | — | Brain assembles response | Brain → OpenClaw → Brain → Core | Uses web search + vault context (budget, preferences) |
 | 3 | — | Inspect response | Brain output | Response mentions "no verified reviews in PeerLens" — honest absence, no hallucinated score |
-| 4 | — | Verify response still useful | Content quality | Personal context (budget, back pain) still applied — response is personalized despite missing trust data |
+| 4 | — | Verify response still useful | Content quality | Personal context (budget, back pain) still applied — response is personalized despite missing PeerLens data |
 
 #### E2E-22.2: **[TST-E2E-117]** Product Research — Sparse Conflicting Data
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
-| 1 | — | Seed AppView with 3 reviews: 2 positive (Ring 2), 1 negative (Ring 2) | AppView DB | Trust data available but conflicting |
+| 1 | — | Seed AppView with 3 reviews: 2 positive (Ring 2), 1 negative (Ring 2) | AppView DB | PeerLens data available but conflicting |
 | 2 | Don Alonso | Query: "Should I buy this product?" | Brain → AppView → Brain | Brain retrieves sparse, conflicting reviews |
 | 3 | — | Inspect response | Brain output | Reports split honestly: "Mixed reviews from verified sources" — does NOT pick a side with only 3 reviews |
 | 4 | — | Verify attribution | Response content | Each reviewer credited individually with source link |
@@ -1887,7 +1887,7 @@ prefixes.
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
-| 1 | — | Seed AppView with 50+ reviews, 90% positive, Ring 2 majority | AppView DB | Dense, high-consensus trust data |
+| 1 | — | Seed AppView with 50+ reviews, 90% positive, Ring 2 majority | AppView DB | Dense, high-consensus PeerLens data |
 | 2 | Don Alonso | Query: "Should I buy this product?" | Brain → AppView → Brain | Brain retrieves strong consensus data |
 | 3 | — | Inspect response | Brain output | Communicates confidence proportional to data: "Strong consensus from 50+ verified reviewers" |
 | 4 | — | Verify deep links to top reviewers | Response content | Expert reviews deep-linked, not extracted — creators get traffic |
@@ -2043,7 +2043,7 @@ These are the natural user-story files to add after the current `test_01` throug
 | `tests/system/user_stories/test_09_connector_expiry.py` | Suite 19 — connector outage, expiry, and recovery |
 | `tests/system/user_stories/test_10_operator_journey.py` | Suite 20 — rerun, locked admin, and upgrade operator path |
 | `tests/system/user_stories/test_11_anti_her.py` | Suite 21 — relationship maintenance, dependency detection, promise accountability |
-| `tests/system/user_stories/test_12_verified_truth.py` | Suite 22 — trust data density spectrum, honest uncertainty, creator attribution |
+| `tests/system/user_stories/test_12_verified_truth.py` | Suite 22 — PeerLens data density spectrum, honest uncertainty, creator attribution |
 | `tests/system/user_stories/test_13_silence_under_stress.py` | Suite 23 — notification storms, ambiguous urgency, DND hierarchy |
 | `tests/system/user_stories/test_14_agent_sandbox.py` | Suite 24 — agent escape attempts, revocation, impersonation prevention |
 
@@ -2075,7 +2075,7 @@ Suite 18 (Move to New Machine) ──→ Requires Suite 1 + export/import suppor
 Suite 19 (Connector Failure) ──→ Requires Suite 1 + OpenClaw and Telegram paths
 Suite 20 (Operator Journeys) ──→ Requires Suite 1 + deploy/upgrade harness
 Suite 21 (Anti-Her) ──→ Requires Suite 1 + Suite 2 (Sancho node) + populated contacts
-Suite 22 (Verified Truth) ──→ Requires Suite 1 + AppView + seeded trust data
+Suite 22 (Verified Truth) ──→ Requires Suite 1 + AppView + seeded PeerLens data
 Suite 23 (Silence Under Stress) ──→ Requires Suite 1 + event injection + DND support
 Suite 24 (Agent Sandbox) ──→ Requires Suite 1 + MaliciousBot + OpenClaw
 ```
@@ -2205,7 +2205,7 @@ jobs:
 | AT Protocol .well-known/atproto-did | Suite 16 | E2E-16.4 |
 | Anti-Her: proactive relationship nudges | Suite 21 | E2E-21.1, E2E-21.2, E2E-21.3 |
 | Anti-Her: emotional dependency escalation | Suite 21 | E2E-21.4, E2E-21.5 |
-| Trust data density: zero → sparse → dense | Suite 22 | E2E-22.1 through E2E-22.5 |
+| PeerLens data density: zero → sparse → dense | Suite 22 | E2E-22.1 through E2E-22.5 |
 | Creator attribution and deep-link return | Suite 22 | E2E-22.3, E2E-22.5 |
 | Silence under notification storm | Suite 23 | E2E-23.1 |
 | Classification: sender trust as input | Suite 23 | E2E-23.2 |

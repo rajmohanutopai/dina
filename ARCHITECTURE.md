@@ -35,7 +35,7 @@ The private core stores memory, holds identity, enforces privacy and action boun
 | Subsystem | Components | Phase 1 release scope | Purpose |
 |---|---|---|---|
 | **Private core** | `dina-core` + `dina-brain` + encrypted vault | Yes | Identity, multi-persona vaults, safety, ingestion/classification, messaging, nudges, action gating, delegation |
-| **Public trust layer** | Community PDS (`pds.dinakernel.com`) + Trust AppView ecosystem | Yes | Publish and query public trust records, attestations, outcomes, bot reputation |
+| **Public trust layer** | Community PDS (`pds.dinakernel.com`) + PeerLens AppView ecosystem | Yes | Publish and query public trust records, attestations, outcomes, bot reputation |
 | **Local inference** | `llama` | Optional | Higher-privacy local LLM routing, local embeddings. V2: local NER via GLiNER. |
 
 **Canonical Phase 1 rule:** Dina v1 ships both the private core and a working public trust layer. The private core comes first, and user value must still hold even when PeerLens is small. The trust layer is part of the release, but its usefulness compounds with network adoption.
@@ -47,7 +47,7 @@ The private core stores memory, holds identity, enforces privacy and action boun
 | Phase | Expected Shape | Not Required Yet |
 |---|---|---|
 | **Phase 1** | Home Node private core first: `dina-core` + `dina-brain` + multi-persona encrypted vaults, initial customer-data ingestion into persona vaults, quiet-first nudges, active human-connection enforcement, MCP delegation to external agents, safe Dina-to-Dina messaging, approval-gated action handoff, intent-economy defaults, and a working PeerLens via PDS/AppView. Core value must still stand even when PeerLens graph is sparse. | Trust-network scale, Shamir recovery, local LLM by default, full settlement/commercial protocols, estate execution |
-| **Phase 2** | Denser and more resilient Dina: stronger Trust AppView usage, bot discovery/routing, Shamir recovery, local/hybrid inference profiles, richer verification, and broader source ingestion around the same core shape. | Full open market infrastructure, timestamp anchoring, estate automation at scale |
+| **Phase 2** | Denser and more resilient Dina: stronger PeerLens AppView usage, bot discovery/routing, Shamir recovery, local/hybrid inference profiles, richer verification, and broader source ingestion around the same core shape. | Full open market infrastructure, timestamp anchoring, estate automation at scale |
 | **Phase 2+** | Mature public trust and open-economy layer: advanced verification, deeper commerce/settlement flows, estate workflows, and richer network/device capabilities. | None beyond long-horizon implementation detail; this is the expansion frontier |
 
 ### Responsibility Split: Core, Brain, Devices, Public Trust
@@ -1900,7 +1900,7 @@ The `/v1/approvals/` routes (`core/internal/handler/approval.go`) are the canoni
 - Each credential adds trust weight but reveals only what the user chooses.
 
 ```
-Trust Score = f(
+PeerLens Rating = f(
     ring_level,           // 1, 2, or 3
     time_alive,           // age of this Dina in days
     transaction_anchors,  // verified money moved (count, volume, span)
@@ -3691,7 +3691,7 @@ Connector/MCP ──► Core staging_ingest() ──► Core fires goroutine:
 
 The event-driven path ensures items are classified immediately after ingestion — the user does not wait for the next 5-minute sync cycle. The periodic path is a safety net that catches any items missed due to transient failures, race conditions, or Brain restarts. Both paths call the same `staging_processor.process_pending()` method.
 
-**Sync loop integration.** The background `_sync_loop` in `brain/src/main.py` runs every 300 seconds and performs, in order: (1) refresh contacts for trust scoring, (2) refresh PersonaRegistry, (3) run MCP sync cycles per registered source, (4) legacy enrichment sweep, (5) `staging_processor.process_pending(limit=20)`. The staging drain at step 5 is the safety net — most items will already have been processed by the event-driven path.
+**Sync loop integration.** The background `_sync_loop` in `brain/src/main.py` runs every 300 seconds and performs, in order: (1) refresh contacts for PeerLens rating, (2) refresh PersonaRegistry, (3) run MCP sync cycles per registered source, (4) legacy enrichment sweep, (5) `staging_processor.process_pending(limit=20)`. The staging drain at step 5 is the safety net — most items will already have been processed by the event-driven path.
 
 **Failure isolation.** If `_staging_processor` is `None` (no enrichment service configured), the handler returns `{"action": "staging_drain", "skipped": true}` — a no-op, not an error. If `process_pending()` raises, the handler catches and logs the error without propagating it — one failed drain does not crash the Guardian loop or block other event processing.
 
@@ -3792,7 +3792,7 @@ Dina tracks bot scores locally. If a bot's accuracy drops below a threshold, Din
 How does Dina find bots in the first place?
 
 - **Phase 1:** No bot registry needed. Brain delegates research to OpenClaw (web search). Users can configure preferred specialist bots manually.
-- **Phase 2:** Decentralized bot registry on PeerLens. Bots self-register, and their trust score determines visibility.
+- **Phase 2:** Decentralized bot registry on PeerLens. Bots self-register, and their PeerLens rating determines visibility.
 - **Phase 3:** Bot-to-bot recommendations. "This query is outside my domain. Try the Medical Bot at did:plc:..."
 
 ---
@@ -4256,7 +4256,7 @@ Senders POST directly — no MsgBox needed. Same crypto, same message format. Th
 
 ## Layer 3: PeerLens
 
-Distributed system for verified product reviews, expert attestations, and outcome data. **Built on AT Protocol** — trust data is inherently public and benefits from federation, Merkle tree integrity, and ecosystem discoverability.
+Distributed system for verified product reviews, expert attestations, and outcome data. **Built on AT Protocol** — PeerLens data is inherently public and benefits from federation, Merkle tree integrity, and ecosystem discoverability.
 
 ### Architecture
 
@@ -4289,7 +4289,7 @@ PeerLens is NOT a single database. It's a distributed system built on AT Protoco
 │         ↓                                                     │
 │    AT Protocol Relay (aggregates firehose from all PDSes)     │
 │         ↓                                                     │
-│    Trust AppView (indexes attestations, outcomes, bots)       │
+│    PeerLens AppView (indexes attestations, outcomes, bots)       │
 │                                                               │
 │  Rule: Only the keyholder can delete their own data.          │
 │        Repo is cryptographically signed — operators            │
@@ -4302,7 +4302,7 @@ PeerLens is NOT a single database. It's a distributed system built on AT Protoco
 
 | Property | AT Protocol Fit |
 |----------|----------------|
-| **Public data** | Trust data is inherently public — AT Protocol repos are public by design |
+| **Public data** | PeerLens data is inherently public — AT Protocol repos are public by design |
 | **Signed records** | AT Protocol repos are Merkle trees of signed CBOR records — tamper-evident by default |
 | **Federation** | Relays aggregate data from all PDSes — no single point of failure or censorship |
 | **Custom schemas** | Lexicons let us define `com.dina.trust.attestation`, `com.dina.trust.outcome`, etc. |
@@ -4400,7 +4400,7 @@ We evaluated five options:
 | **B: DHT (Kademlia)** | No central server, good for key lookup | Can't do complex queries ("all chairs rated > 80") | ❌ Rejected |
 | **C: L2 blockchain** | Tamper-proof, auditable timestamps | **Cannot delete.** Immutability violates sovereignty. | ❌ Rejected for data storage |
 | **D: Custom federated servers** | Fast queries, simple to build, deletable | Must build federation, sync, discovery from scratch | ❌ Rejected — AT Protocol does this better |
-| **E: AT Protocol** | Federation built-in, signed Merkle repos, `did:plc` native, Lexicon schemas, relay infrastructure exists, Go/Python/Rust/TS SDKs | Public by design (fine — trust data IS public) | ✅ Chosen |
+| **E: AT Protocol** | Federation built-in, signed Merkle repos, `did:plc` native, Lexicon schemas, relay infrastructure exists, Go/Python/Rust/TS SDKs | Public by design (fine — PeerLens data IS public) | ✅ Chosen |
 
 **Why AT Protocol wins over custom federation:** AT Protocol provides signed repos (Merkle tree integrity), relay-based federation (replication defeats censorship), custom Lexicons (schema-enforced records), `did:plc` identity (already our DID method), and an existing ecosystem of SDKs and infrastructure. Building custom federation would duplicate what AT Protocol already provides.
 
@@ -4408,7 +4408,7 @@ We evaluated five options:
 
 ### PDS Hosting: Split Sovereignty
 
-**Problem:** Trust data must be queryable 24/7 — even when the seller's Home Node is a Raspberry Pi behind CGNAT that's currently offline. If your PDS goes down, your reviews, attestations, and trust score become invisible to the network. AT Protocol relays only crawl live PDSes.
+**Problem:** PeerLens data must be queryable 24/7 — even when the seller's Home Node is a Raspberry Pi behind CGNAT that's currently offline. If your PDS goes down, your reviews, attestations, and PeerLens rating become invisible to the network. AT Protocol relays only crawl live PDSes.
 
 **Principle: Split Sovereignty.** Separate *cryptographic authority* (who signs records) from *infrastructure availability* (who hosts the PDS). You always hold the signing keys. The PDS is a dumb host — it stores your signed Merkle repo and serves it to relays. It cannot forge records because it doesn't have your keys. It can censor (refuse to serve) but cannot fabricate. And if it censors, you move to another PDS — AT Protocol's account portability guarantees this.
 
@@ -4430,7 +4430,7 @@ All Home Nodes use a community PDS (`pds.dinakernel.com` for production, `test-p
 | **docker-compose** | `docker compose up -d` (2 containers: core, brain) |
 | **Best for** | All deployments — simplifies Home Node, no local PDS maintenance |
 
-**Trust publishing flow:**
+**PeerLens publishing flow:**
 ```
 Home Node (any hardware — VPS, Raspberry Pi, Mac Mini)
     │
@@ -4446,7 +4446,7 @@ Community PDS (pds.dinakernel.com or any AT Protocol PDS)
 AT Protocol Relay (firehose aggregation)
     │
     ▼
-Trust AppView (indexes com.dina.trust.* records)
+PeerLens AppView (indexes com.dina.trust.* records)
 ```
 
 The Home Node never receives inbound trust traffic. The community PDS absorbs all read load. The Home Node only makes outbound pushes when it has new records to publish — a few requests per day for a typical user.
@@ -4467,7 +4467,7 @@ review                  │                │
                                             │
                                             ▼
                                     Other Dinas query
-                                    trust data here
+                                    PeerLens data here
 ```
 
 | Layer | Role | Traffic pattern |
@@ -4476,7 +4476,7 @@ review                  │                │
 | **Relay** | Aggregates firehose from all PDSes | High: crawls thousands of PDSes, streams unified firehose to AppViews. Not your problem — relay operators handle this. |
 | **AppView** | Builds application-specific query indexes | High: serves all end-user queries ("show me all chairs rated > 80"). Not your problem — AppView operators handle this. |
 
-**Key insight: your PDS only talks to the relay.** It never serves end-user queries. When another Dina asks "what's the trust score of this seller?", that query hits the Trust AppView — not your PDS. Your PDS's only job is to store your signed records and let the relay crawl them.
+**Key insight: your PDS only talks to the relay.** It never serves end-user queries. When another Dina asks "what's the PeerLens rating of this seller?", that query hits the PeerLens AppView — not your PDS. Your PDS's only job is to store your signed records and let the relay crawl them.
 
 **Merkle Search Trees make crawling cheap.** The relay doesn't download your entire repo on every crawl. AT Protocol repos use Merkle Search Trees (MSTs) — a self-balancing tree where the structure is determined by record key hashes. The relay stores the last root hash it saw. On the next crawl, it walks only the diff — new records since the last sync. For a typical user publishing a few attestations per week, delta sync transfers a few kilobytes.
 
@@ -4494,7 +4494,7 @@ The Dina project operates community PDS instances at `pds.dinakernel.com` (produ
 
 All Home Nodes use the community PDS — there is no sidecar PDS container. Core creates the account on first boot and pushes trust records via outbound HTTPS. This simplifies the Home Node deployment (2 containers instead of 4) and eliminates the need for users to maintain PDS infrastructure.
 
-### Trust AppView (Aggregation & Query Layer)
+### PeerLens AppView (Aggregation & Query Layer)
 
 Personal data lives on user PDSes, but global queries ("who are the top-rated sellers?", "what's the best laptop under ₹80K?") require an aggregation layer. This is the AppView.
 
@@ -4522,7 +4522,7 @@ AT Protocol Relay (bsky.network)
         │ WebSocket firehose
         ▼
 ┌─────────────────────────────────────────┐
-│  Trust AppView (Single Go Binary)       │
+│  PeerLens AppView (Single Go Binary)       │
 │                                         │
 │  1. Firehose Consumer                   │
 │     └─ Connects to Relay WebSocket      │
@@ -4614,7 +4614,7 @@ The AppView provides speed, but it is **not the ultimate source of truth**. Sign
 
 **Layer 2: Consensus Check (anti-censorship).** An AppView cannot fake data, but it *can* hide it (e.g., censoring bad reviews for a paying seller). For high-value transactions, the agent queries multiple AppViews. If Provider A returns 5 reviews and Provider B returns 50, the agent detects censorship and alerts the user.
 
-**Layer 3: Direct PDS Spot-Check (the audit).** Randomly (e.g., 1 in 100 queries), or when a score seems suspicious, the agent bypasses the AppView entirely — resolves the target's DID to their PDS URL and fetches records directly via `com.atproto.repo.listRecords`. Discrepancies downgrade the AppView's trust score.
+**Layer 3: Direct PDS Spot-Check (the audit).** Randomly (e.g., 1 in 100 queries), or when a score seems suspicious, the agent bypasses the AppView entirely — resolves the target's DID to their PDS URL and fetches records directly via `com.atproto.repo.listRecords`. Discrepancies downgrade the AppView's PeerLens rating.
 
 **Why this makes the AppView a commodity:** The AppView has no power to manipulate the market — it only has the power to serve data fast. Agents verify its work, so a dishonest AppView gets caught and abandoned. The network switches to a competitor. **The AppView is infrastructure, not a gatekeeper.** Anyone can run one. Competition is on speed and uptime, not on data access.
 
@@ -4636,7 +4636,7 @@ Tombstone { target: "review_id_555", author: "did:plc:abc...", sig: "xyz..." }
 
 **Anti-censorship through replication:** When you post a review, it replicates to servers A, B, and C. If the Chair Company operates Server A and wipes your review from their disk (censorship, not deletion), Servers B and C still have it. Other Dinas see the review on B and C, and may flag Server A as "censoring." When *you* delete via signed tombstone, the tombstone propagates to all servers and the review disappears from the entire network.
 
-**Aggregate scores are computed, not stored.** Bot trust scores and seller trust scores are derived values — any server independently recalculates them from the signed individual entries it holds. You can delete your review (removing your contribution from the aggregate), but you can't delete someone else's contribution or manipulate the aggregate directly.
+**Aggregate scores are computed, not stored.** Bot PeerLens ratings and seller PeerLens ratings are derived values — any server independently recalculates them from the signed individual entries it holds. You can delete your review (removing your contribution from the aggregate), but you can't delete someone else's contribution or manipulate the aggregate directly.
 
 ### Timestamp Anchoring (The One Blockchain Use Case)
 
@@ -4673,8 +4673,8 @@ PeerLens ships in Phase 1, including PDS and AppView, but it still needs scale t
 
 | Phase | How Dina answers "What's the best office chair?" |
 |-------|--------------------------------------------------|
-| **Phase 1 (Early Network)** | Brain can query the Trust AppView when trust data exists, but always falls back to web research plus user context. OpenClaw returns results. Brain synthesizes, applies vault context ("You had back pain last month. You sit 10+ hours. Budget was ₹50-80K based on previous purchases.") and uses trust data opportunistically when available. |
-| **Phase 2 (Multiplayer)** | Brain queries the Trust AppView alongside web search. Nudge now includes: "34 people in the network bought the Aeron, but 5 returned it complaining about the mesh. Your friend Alice recommends the Steelcase Leap instead." |
+| **Phase 1 (Early Network)** | Brain can query the PeerLens AppView when PeerLens data exists, but always falls back to web research plus user context. OpenClaw returns results. Brain synthesizes, applies vault context ("You had back pain last month. You sit 10+ hours. Budget was ₹50-80K based on previous purchases.") and uses PeerLens data opportunistically when available. |
+| **Phase 2 (Multiplayer)** | Brain queries the PeerLens AppView alongside web search. Nudge now includes: "34 people in the network bought the Aeron, but 5 returned it complaining about the mesh. Your friend Alice recommends the Steelcase Leap instead." |
 
 The transition is gradual and invisible to the user. One day the nudge includes network data alongside web results. No flag day, no "activate PeerLens" moment.
 
@@ -4799,7 +4799,7 @@ Option B — Delegate (if user has pre-authorized):
 1. Dina never gives an action agent raw vault data. She provides only the minimal context needed for the task, scrubbed through the PII layer.
 2. Every delegated action passes through the Silence Protocol first — Dina decides IF to act, not just HOW.
 3. Action agents operate under Dina's constraints. If Dina says `draft_only: true`, the agent cannot send.
-4. Outcomes are recorded in Tier 3 for the agent's trust score. If OpenClaw's form-fill quality drops, Dina routes to a better agent.
+4. Outcomes are recorded in Tier 3 for the agent's PeerLens rating. If OpenClaw's form-fill quality drops, Dina routes to a better agent.
 
 ### Scheduling: Three Tiers, No Scheduler
 
@@ -5413,7 +5413,7 @@ The implementation is complete at the service layer. Exposing it requires:
 | Data Type | Requirements | Tech |
 |-----------|-------------|------|
 | Emails, chats, contacts, health, financials | Private, fast, deletable | SQLite (Home Node) |
-| Product reviews, outcome data, bot scores | Public, deletable by author, censorship-resistant | AT Protocol PDS + Trust AppView |
+| Product reviews, outcome data, bot scores | Public, deletable by author, censorship-resistant | AT Protocol PDS + PeerLens AppView |
 
 ### Why Not IPFS/Ceramic
 
@@ -5630,7 +5630,7 @@ Long-term, one of the two may retire. Phase 13.5 of the Lite task plan is an exp
 | Push to clients | FCM/APNs (Phase 1), UnifiedPush (Phase 2) | Wake clients when Home Node has updates |
 | Backup | Any blob storage (S3, Backblaze, NAS) | Encrypted snapshots of Home Node vault |
 | PeerLens (PDS) | Community PDS (`pds.dinakernel.com`) — Split Sovereignty. Custom Lexicons (`com.dina.trust.*`). Signed tombstones for deletion. | Core creates PDS account on first boot (K256 recovery key in PLC genesis). Trust records pushed via outbound HTTPS. No sidecar PDS container. See Layer 3 "PDS Hosting: Split Sovereignty". |
-| PeerLens (AppView) | Go + PostgreSQL 16 (`pg_trgm`). `indigo` firehose consumer. Phase 1: single monolith (0–1M users). Phase 3: sharded cluster (ScyllaDB + Kafka + K8s). | Read-only indexer. Signature verification on every record. Three-layer trust-but-verify: cryptographic proof, consensus check, direct PDS spot-check. AppView is a commodity — anyone can run one. See Layer 3 "Trust AppView". |
+| PeerLens (AppView) | Go + PostgreSQL 16 (`pg_trgm`). `indigo` firehose consumer. Phase 1: single monolith (0–1M users). Phase 3: sharded cluster (ScyllaDB + Kafka + K8s). | Read-only indexer. Signature verification on every record. Three-layer trust-but-verify: cryptographic proof, consensus check, direct PDS spot-check. AppView is a commodity — anyone can run one. See Layer 3 "PeerLens AppView". |
 | PeerLens (timestamps) | L2 Merkle root anchoring (Phase 3). Base or Polygon. | Provable "this existed before this date" for dispute resolution. Not needed until real money flows through the system. |
 | ZKP | Semaphore V4 (PSE/Ethereum Foundation) | Production-proven (World ID), off-chain proof generation |
 | Serialization | JSON (Phase 1), MessagePack or Protobuf (Phase 2) | JSON is debuggable and sufficient for core↔brain traffic volume. Binary serialization deferred until profiling shows it matters. |
@@ -6457,7 +6457,7 @@ The architecture described above is now the active implementation in this reposi
 |-----------|------|------|
 | dina-core | `core/` | Go sovereign kernel: vault, keys, auth, gatekeeper, transport. Creates PDS account on community PDS at first boot. |
 | dina-brain | `brain/` | Python intelligence/orchestration: reasoning, sync, admin API/UI |
-| appview | `appview/` | Trust AppView implementation |
+| appview | `appview/` | PeerLens AppView implementation |
 | cli | `cli/` | Client interface for interacting with running services |
 
 ### Legacy Note (v0.4)

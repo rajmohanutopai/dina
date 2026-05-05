@@ -230,7 +230,7 @@ groups:
 TN-OBS-004 is file-tracked but the dashboards themselves are
 operator-specific. The recommended starting set:
 
-- **Trust V1 Overview** — top of the dashboard:
+- **PeerLens V1 Overview** — top of the dashboard:
   - `ingester.connected` as a single-stat gauge
   - `rate(ingester.events.received[5m])` time series
   - `ingester.queue.depth` time series

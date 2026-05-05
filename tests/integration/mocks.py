@@ -945,7 +945,7 @@ class MockExternalAgent:
 # ---------------------------------------------------------------------------
 
 class MockReviewBot:
-    """Specialist review bot with trust score and source attribution."""
+    """Specialist review bot with PeerLens rating and source attribution."""
 
     def __init__(self, bot_did: str = "", trust_score: int = 90) -> None:
         self.bot_did = bot_did or f"did:plc:Bot{uuid.uuid4().hex[:34]}"
@@ -1066,7 +1066,7 @@ class MockTrustNetwork:
 # ---------------------------------------------------------------------------
 
 class MockTrustEvaluator:
-    """Computes the composite trust score."""
+    """Computes the composite PeerLens rating."""
 
     def compute_composite(
         self,
@@ -2785,7 +2785,7 @@ class MockNoiseSession:
 
 
 # ---------------------------------------------------------------------------
-# Mock: Trust AppView (§16.7)
+# Mock: PeerLens AppView (§16.7)
 # ---------------------------------------------------------------------------
 
 class MockAppView:

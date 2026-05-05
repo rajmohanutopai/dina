@@ -679,9 +679,9 @@ The user story tests (`tests/system/user_stories/`) run against a real multi-nod
 
 ### Story 01: The Purchase Journey (12 tests)
 
-**Brain capability:** Vault-enriched, trust-weighted LLM reasoning.
+**Brain capability:** Vault-enriched, PeerLens-weighted LLM reasoning.
 
-The brain receives a reasoning request via `/api/v1/reason` with a query ("I need a chair") and trust-weighted review summaries from AppView. Before calling the LLM, it enriches the context by querying core's vault across multiple personas:
+The brain receives a reasoning request via `/api/v1/reason` with a query ("I need a chair") and PeerLens-weighted review summaries from AppView. Before calling the LLM, it enriches the context by querying core's vault across multiple personas:
 
 1. **Health persona** → "chronic back pain, L4-L5 issues" → needs lumbar support.
 2. **Finance persona** → "budget ₹10-20K" → price filter.
@@ -709,7 +709,7 @@ The nudge is returned to core, which delivers it via WebSocket to the user's dev
 
 **Brain capability:** Trust-signal reasoning — identity-based content verification.
 
-The brain receives two trust profiles from core's resolver and must reason about content authenticity. This is pure LLM reasoning with no vault enrichment (the query is about a creator, not about the user).
+The brain receives two PeerLens profiles from core's resolver and must reason about content authenticity. This is pure LLM reasoning with no vault enrichment (the query is about a creator, not about the user).
 
 For Elena (Ring 3): the LLM sees `trust_score: 0.95, attestations: 200, vouches: 15, account_age: 2yr` and produces "authentic, trusted creator — 200 attestations from verified peers over 2 years."
 
@@ -717,7 +717,7 @@ For BotFarm (Ring 1): the LLM sees `trust_score: 0.0, attestations: 0, vouches: 
 
 The side-by-side comparison test verifies that the LLM identifies **identity and history** as the deciding factor, not pixel forensics or metadata analysis. This is the Dead Internet thesis: in a world of perfect deepfakes, trust comes from who you are (attestation history), not what the content looks like.
 
-**Key brain components:** LLM router (reasoning mode), trust profile formatting, schema-validated output.
+**Key brain components:** LLM router (reasoning mode), PeerLens profile formatting, schema-validated output.
 
 ### Story 04: The Persona Wall (11 tests)
 

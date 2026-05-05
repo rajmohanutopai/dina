@@ -3,7 +3,7 @@
  *
  * For each claimed item:
  *   1. Classify via persona selector (keyword → optional LLM)
- *   2. Trust scoring (sender trust level)
+ *   2. PeerLens rating (sender trust level)
  *   3. Enrich L0 (deterministic headline)
  *   4. Resolve (store in vault or pending_unlock)
  *   5. Post-publish (extract reminders, update contact)
@@ -100,7 +100,7 @@ async function processOneItem(item: StagingItem): Promise<BatchItemResult> {
 
     const persona = classification.persona;
 
-    // 2. Trust scoring
+    // 2. PeerLens rating
     const scored = applyTrustScoring(data);
 
     // 3. Enrich L0

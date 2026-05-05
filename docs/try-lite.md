@@ -144,7 +144,7 @@ The two servers can't *yet*:
   returns a reasoned answer. The route surface lands in Phase 5c.
 - Pair a device. Pairing lives in Phase 4h and needs the MsgBox
   relay wired up in Phase 4f.
-- Publish to AT Protocol. Trust publishing is in Phase 6 (mostly
+- Publish to AT Protocol. PeerLens publishing is in Phase 6 (mostly
   done at the library level; Brain wiring lands in Phase 5e).
 
 This is the pre-M1 state. Milestone M1 ("pair + ask + remember +

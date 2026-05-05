@@ -1,5 +1,5 @@
 /**
- * Trust-score band tests (TN-MOB-002).
+ * PeerLens rating band tests (TN-MOB-002).
  *
  * Boundary cases: every band threshold is `>=` so the threshold value
  * itself maps to the higher band. Tests pin those boundaries so a

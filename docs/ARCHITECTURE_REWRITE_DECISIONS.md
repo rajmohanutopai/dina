@@ -277,7 +277,7 @@ That is already enough for a coherent product.
 
 ### Recommended canonical statement
 
-`Phase 1 Dina is valuable as a sovereign memory-and-guardian layer even without network-scale trust data.`
+`Phase 1 Dina is valuable as a sovereign memory-and-guardian layer even without network-scale PeerLens data.`
 
 ---
 

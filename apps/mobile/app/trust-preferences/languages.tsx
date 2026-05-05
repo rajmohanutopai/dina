@@ -3,7 +3,7 @@
  *
  * Multi-select BCP-47 language tags. Drives V2 actionability filtering:
  * a user who reads only English shouldn't see a Portuguese-only review
- * promoted as "great trust score" without a clear language signal.
+ * promoted as "great PeerLens rating" without a clear language signal.
  *
  * The list is curated to ~80 widely-spoken languages with substantial
  * digital content (see `language_list.ts`). With ~80 entries, search

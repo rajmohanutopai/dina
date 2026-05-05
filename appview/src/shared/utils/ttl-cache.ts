@@ -17,7 +17,7 @@ import { LRUCache } from 'lru-cache'
  * whose `assertionMethod` controls who can sign trust records —
  * "stale" is wrong. A user who rotates their key needs the OLD
  * doc invalidated, not served-stale-while-we-fetch-fresh. The SWR
- * pattern is appropriate for trust-score reads (where stale-by-a-few-
+ * pattern is appropriate for PeerLens rating reads (where stale-by-a-few-
  * seconds is fine); the strict-TTL pattern here is appropriate for
  * crypto-relevant lookups where staleness has security consequences.
  *
