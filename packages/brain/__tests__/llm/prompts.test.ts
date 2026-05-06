@@ -105,17 +105,18 @@ describe('Prompt Registry', () => {
       expect(PERSONA_CLASSIFY).toMatch(/primary purpose/i);
     });
 
-    it('describes the five-persona mapping (general/work/health/financial/general)', () => {
+    it('describes the five-persona mapping (general/work/health/finance/general)', () => {
       expect(PERSONA_CLASSIFY).toContain('→ general');
       expect(PERSONA_CLASSIFY).toContain('→ work');
       expect(PERSONA_CLASSIFY).toContain('→ health');
-      // The prompt teaches the canonical persona name (`financial`,
-      // not the synonym `finance`). The classifier's alias resolver
-      // still maps a `finance` response to `financial` for backwards
-      // compatibility, but the prompt itself should not encourage the
-      // synonym — it cost a roundtrip when an installed-persona check
-      // dropped Gemini's `finance` answer to a 'general' fallback.
-      expect(PERSONA_CLASSIFY).toContain('→ financial');
+      // The prompt teaches `finance` because the production install
+      // names the persona `Finance` (not `Financial`). The alias
+      // resolver maps `finance → financial` for installs that DO
+      // ship under the alternative name (the brain integration tests
+      // use `financial`). MT-12-I1 (live, 2026-05-06) confirmed:
+      // teaching `→ financial` while production installs `Finance`
+      // dropped the classifier's answer to a 'general' fallback.
+      expect(PERSONA_CLASSIFY).toContain('→ finance');
     });
 
     it('documents data_responsibility overrides', () => {
