@@ -36,6 +36,11 @@ cd dina
 
 ---
 
+# Part I: The Vision
+
+> *In 2017, I wrote a novel called UTOPAI - about AI Utopia. The novel is open source and is available [HERE](https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf) and in [Amazon](https://www.amazon.com/UTOPAI-Rajmohan-Harindranath-ebook/dp/B076CTJ85F). The novel envisaged a world where every person had a personal AI named Dina. She wasn't a search engine or a chatbot. She was your personal AI. She knew your friends, knew your preferences, remembered your promises, knew which is the best solution for you, and  talked to other Dinas so life just... worked better. This repository is an attempt to build her.*
+
+
 ## What is Dina?
 
 Let me give few scenarios to explain what Dina is. All these are currently available capability.
@@ -56,7 +61,7 @@ Your Dina asks the common Dina Service Manager to find the buses in that route, 
 
 Your Dina then contacts the bus drivers Dina *"What time will you reach my location (xyz loc)?"*
 
-Bus Drivers Dina checks their internal database and Google Maps Traffic and tells *"Will reach in 45 minutes."* 
+Bus Drivers Dina uses OpenClaw to check her internal database and Google Maps Traffic and tells *"Will reach in 45 minutes."* 
 
 ### Scenario 3
 
@@ -64,12 +69,14 @@ You want to buy an office chair. Your Dina checks PeerLens for chairs below 500$
 
 Dina then looks at PeerLens, which contains authenticated reviews from real people, and finds reviews from people whose work style is closest to yours. *"Looks like Aeon Chair 2E is a good fit for you."*
 
-Now imagine the same thing, everywhere in your life:
+### What else?
+
+These scenarios are three ways Dina helps you. Now imagine the same thing, everywhere in your life:
 
 - Your openclaw agent wants to send a mail about your blood test results. Since the data is health related, your Dina intervenes, and asks for your approval. You check the email, finds that it is to your family doctor, and you approves. Your openclaw agent sends the mail.
 - You promised your daughter you'd read her a book next sunday. Dina reminds you Sunday morning. *"Read 'The Little Prince' to Emma. She said it is her favourite book."*
 - Dead internet theory becomes real. You can't differentiate between what is made by AI and what is real. You can ask Dina then to filter out and show you only verifiably true items. Your Dina checks against PeerLens, and only items with verified provenance are shown to you.
-- Your license needs renewal. You didn't even know it was due. Dina did. She flags it, and if you approve, she informs your openclaw agent with the details to complete the process.
+- Your license needs renewal. You didn't even know it was due. Dina did. She flags it, and if you approve, she sends a task request to your openclaw agent with the details to complete the process.
 
 Dina is the agent that does what you *need*. She is there for you, and only for you. She's quiet most of the time. And there when it matters.
 
