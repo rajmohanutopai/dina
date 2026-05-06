@@ -64,6 +64,11 @@ const HALLUCINATED_TRUST_PATTERNS = [
   /\bsafety\s+(score|rating)\s*[:=]?\s*\d/i,
   /\breliability\s+(score|rating)\s*[:=]?\s*\d/i,
   /\b(?:this|the)\s+(?:sender|contact|source)\s+(?:is|has)\s+(?:a\s+)?(?:\d+%?|high|low|medium)\s+trust/i,
+  // PeerLens (the renamed product brand) — same hallucination class.
+  // Catches "PeerLens rating: 8/10", "PeerLens score = 7", etc. The
+  // earlier patterns predated the "Trust" → "PeerLens" rename and only
+  // matched the legacy "trust score" phrasing.
+  /\bpeer.?lens\s+(score|level|rating)\s*[:=]?\s*\d/i,
 ];
 
 /** Unsolicited recommendation patterns — pushing products or actions. */

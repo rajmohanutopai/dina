@@ -27,7 +27,7 @@ import {
   setStagingRepository,
 } from '@dina/core';
 import {
-  getItem as getStagingItem,
+  stagingGetItem as getStagingItem,
   listByStatus,
   resetStagingState,
 } from '@dina/core';

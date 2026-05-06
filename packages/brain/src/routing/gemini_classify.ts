@@ -24,6 +24,7 @@ import {
   PERSONA_CLASSIFY,
   PERSONA_CLASSIFY_RESPONSE_SCHEMA,
 } from '../llm/prompts';
+import { resolveAlias } from '../persona/registry';
 import type { ChatOptions, LLMProvider } from '../llm/adapters/provider';
 import { getProviderTiers, type ProviderName } from '../llm/provider_config';
 import type {
@@ -297,8 +298,22 @@ export function parseClassificationResponseRich(
 
   const available = new Set(availablePersonas.map((p) => p.toLowerCase()));
 
+  // Resolve common aliases (e.g. "finance" → "financial",
+  // "medical" → "health") before the installed-set check. Without
+  // this the classifier wastes a routing decision when Gemini emits
+  // a synonym that isn't the literal persona name installed on the
+  // node — observed live for the docs-example "Barclays bank
+  // account" case where Gemini correctly identified the topic but
+  // returned `finance`, was filtered out, and the row fell back to
+  // 'general'. Aliases come from `persona/registry`'s ALIAS_TABLE.
   const primaryRaw = typeof parsed.primary === 'string' ? parsed.primary : '';
-  const primary = primaryRaw.toLowerCase().trim();
+  let primary = primaryRaw.toLowerCase().trim();
+  if (primary !== '' && !available.has(primary)) {
+    const aliased = resolveAlias(primary);
+    if (aliased !== null && available.has(aliased.toLowerCase())) {
+      primary = aliased.toLowerCase();
+    }
+  }
   if (primary === '' || !available.has(primary)) {
     // Python returns `None` here; we synthesise a low-confidence 'general'
     // so the caller still has a routable persona.
@@ -325,8 +340,15 @@ export function parseClassificationResponseRich(
   const seen = new Set<string>([primary]);
   for (const s of secondaryRaw) {
     if (typeof s !== 'string') continue;
-    const name = s.toLowerCase().trim();
-    if (name === '' || seen.has(name) || !available.has(name)) continue;
+    let name = s.toLowerCase().trim();
+    if (name === '') continue;
+    if (!available.has(name)) {
+      const aliased = resolveAlias(name);
+      if (aliased !== null && available.has(aliased.toLowerCase())) {
+        name = aliased.toLowerCase();
+      }
+    }
+    if (seen.has(name) || !available.has(name)) continue;
     secondary.push(name);
     seen.add(name);
   }

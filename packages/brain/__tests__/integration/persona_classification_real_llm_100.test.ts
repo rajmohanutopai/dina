@@ -36,7 +36,15 @@ import {
 } from '../../src/routing/gemini_classify';
 import type { ClassificationInput, MentionedContact } from '../../src/routing/domain';
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? '';
+// Real-LLM gate: only run when a developer has explicitly opted in via
+// `DINA_RUN_REAL_LLM=1`. Without this, a stray `GOOGLE_API_KEY` in the
+// shell env (common — picked up by other tools) silently triggers
+// real-network classifier runs that depend on Gemini's behaviour and
+// can drift between model upgrades.
+const GEMINI_API_KEY =
+  process.env.DINA_RUN_REAL_LLM === '1'
+    ? (process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? '')
+    : '';
 // No hardcoded classification model here. The production
 // `createGeminiClassifier` auto-picks the `lite` tier via
 // `getProviderTiers('gemini').lite` (currently

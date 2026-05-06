@@ -105,11 +105,17 @@ describe('Prompt Registry', () => {
       expect(PERSONA_CLASSIFY).toMatch(/primary purpose/i);
     });
 
-    it('describes the five-persona mapping (general/work/health/finance/general)', () => {
+    it('describes the five-persona mapping (general/work/health/financial/general)', () => {
       expect(PERSONA_CLASSIFY).toContain('→ general');
       expect(PERSONA_CLASSIFY).toContain('→ work');
       expect(PERSONA_CLASSIFY).toContain('→ health');
-      expect(PERSONA_CLASSIFY).toContain('→ finance');
+      // The prompt teaches the canonical persona name (`financial`,
+      // not the synonym `finance`). The classifier's alias resolver
+      // still maps a `finance` response to `financial` for backwards
+      // compatibility, but the prompt itself should not encourage the
+      // synonym — it cost a roundtrip when an installed-persona check
+      // dropped Gemini's `finance` answer to a 'general' fallback.
+      expect(PERSONA_CLASSIFY).toContain('→ financial');
     });
 
     it('documents data_responsibility overrides', () => {

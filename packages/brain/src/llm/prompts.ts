@@ -65,16 +65,16 @@ You have TWO jobs:
    - Food and drink preferences, favorite restaurants, recipes → general
    - Workplace tasks, deadlines, meetings, projects, colleagues → work
    - Medical conditions, prescriptions, doctor visits, diagnoses, symptoms → health
-   - Bank accounts, investments, salaries, taxes, bills, insurance → finance
+   - Bank accounts, investments, salaries, taxes, bills, insurance → financial
    - A friend's coffee preference is a social fact (general), not health data
    - "My doctor said I should exercise more" is health, not general
    - "Meeting with Dr. Smith for lunch" is general (social), not health
    - "Meeting with Dr. Smith about my blood test results" is health
 
    **Relationship-aware routing** — if "mentioned_contacts" is provided, the data_responsibility field OVERRIDES content-based classification:
-   - data_responsibility=household: their medical → health, their financial → finance
+   - data_responsibility=household: their medical → health, their financial → financial
    - data_responsibility=care: their medical → health, their financial → general
-   - data_responsibility=financial: their medical → general, their financial → finance
+   - data_responsibility=financial: their medical → general, their financial → financial
    - data_responsibility=external: ALL their sensitive data → general. This is mandatory. Even if the content mentions blood pressure, diagnosis, salary, or bank accounts — if the person is external, classify as general. Their data is social context about someone else, not the user's own data.
    - Non-sensitive facts about anyone always go to general regardless
    - If no mentioned_contacts is provided, classify based on content as usual

@@ -65,7 +65,7 @@ import {
 import { clearVaults } from '@dina/core';
 import {
   resetStagingState,
-  getItem as getStagingItem,
+  stagingGetItem as getStagingItem,
 } from '@dina/core';
 import {
   createPersona,
@@ -82,7 +82,12 @@ import {
   type SQLiteVaultHandle,
 } from './helpers/sqlite_vault_harness';
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? '';
+// Real-LLM gate: only run when explicitly opted in via
+// `DINA_RUN_REAL_LLM=1`. See sibling real-LLM tests for the rationale.
+const GEMINI_API_KEY =
+  process.env.DINA_RUN_REAL_LLM === '1'
+    ? (process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? '')
+    : '';
 
 // ─────────────────────────────────────────────────────────────────────
 // Part 1 — `dina validate` scenarios (pure intent eval, no LLM)

@@ -6,12 +6,12 @@
  * and the user's pick silently reverts.
  */
 
+import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 import {
   clearBackgroundTimeoutPreference,
   loadBackgroundTimeoutPreference,
   saveBackgroundTimeoutPreference,
 } from '../../src/services/security_preferences';
-import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 
 beforeEach(() => {
   resetKeychainMock();

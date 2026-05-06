@@ -57,7 +57,7 @@ import {
 } from '@dina/core';
 import {
   resetStagingState,
-  getItem as getStagingItem,
+  stagingGetItem as getStagingItem,
 } from '@dina/core';
 import {
   createPersona,
@@ -74,7 +74,14 @@ import {
   type SQLiteVaultHandle,
 } from './helpers/sqlite_vault_harness';
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? '';
+// Real-LLM gate: only run when explicitly opted in via
+// `DINA_RUN_REAL_LLM=1`. Avoids a stray `GOOGLE_API_KEY` in the shell
+// triggering Gemini-dependent runs that can drift between model
+// upgrades. CI runs without the flag and stays deterministic.
+const GEMINI_API_KEY =
+  process.env.DINA_RUN_REAL_LLM === '1'
+    ? (process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? '')
+    : '';
 
 interface Scenario {
   label: string;

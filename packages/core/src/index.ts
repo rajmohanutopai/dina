@@ -10,6 +10,22 @@ export { PerDIDRateLimiter } from './auth/ratelimit';
 export type { RateLimitConfig } from './auth/ratelimit';
 export * from './identity/did';
 export * from './identity/did_document';
+// Key-rotation lifecycle helpers — gen-aware signing keys + history
+// for verification of older messages. Exposed so integration tests
+// (and future operator UI) can drive a rotation cycle and inspect
+// the generation counter.
+export {
+  initializeRotation,
+  rotateKey,
+  getCurrentGeneration,
+  getCurrentPublicKey,
+  getAllVerificationKeys,
+  getKeyHistory,
+  signWithCurrentKey,
+  verifyWithAnyKey,
+  resetRotationState,
+} from './identity/rotation';
+export type { KeyGeneration } from './identity/rotation';
 export {
   buildCreationOperation,
   signOperation,

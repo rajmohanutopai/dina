@@ -8,6 +8,9 @@
  * Styled with Dina warm design system (FAF8F5 palette).
  */
 
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
@@ -22,22 +25,22 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { colors, fonts, spacing, radius, shadows } from '../src/theme';
-import { useLiveThread } from '../src/hooks/useChatThread';
-import type { ChatMessage } from '@dina/brain/chat';
+
+
 import { InlineApprovalCard } from '../src/components/InlineApprovalCard';
-import { InlineServiceApprovalCard } from '../src/components/InlineServiceApprovalCard';
+import { InlineBriefingCard } from '../src/components/InlineBriefingCard';
 import { InlineNudgeCard } from '../src/components/InlineNudgeCard';
 import { InlineReminderCard } from '../src/components/InlineReminderCard';
-import { InlineBriefingCard } from '../src/components/InlineBriefingCard';
-import { InlineServiceQueryCard } from '../src/components/InlineServiceQueryCard';
 import { InlineReviewDraftCard } from '../src/components/InlineReviewDraftCard';
+import { InlineServiceApprovalCard } from '../src/components/InlineServiceApprovalCard';
+import { InlineServiceQueryCard } from '../src/components/InlineServiceQueryCard';
+import { useLiveThread } from '../src/hooks/useChatThread';
+import { useHasActiveAgent } from '../src/hooks/useHasActiveAgent';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
 import { loadVerificationStatus } from '../src/services/verification_status';
-import { useHasActiveAgent } from '../src/hooks/useHasActiveAgent';
+import { colors, fonts, spacing, radius, shadows } from '../src/theme';
+
+import type { ChatMessage } from '@dina/brain/chat';
 
 // Render message shape used by the screen's bubble logic. The chat UI
 // treats Brain's MessageType union as eight display buckets: user

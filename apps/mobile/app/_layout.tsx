@@ -11,61 +11,63 @@
  */
 
 import '../src/polyfills';
-import React, { useEffect, useSyncExternalStore } from 'react';
-import { Tabs, useRouter, usePathname, useLocalSearchParams } from 'expo-router';
-import { getFocusedRouteNameFromRoute } from '@react-navigation/native';
-import { Image, Modal, Platform, Pressable, TouchableOpacity, View, Text, StyleSheet } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useFonts } from 'expo-font';
+import { CormorantGaramond_600SemiBold_Italic } from '@expo-google-fonts/cormorant-garamond';
 import {
   Figtree_400Regular,
   Figtree_500Medium,
   Figtree_600SemiBold,
 } from '@expo-google-fonts/figtree';
 import {
+  JetBrainsMono_400Regular,
+  JetBrainsMono_500Medium,
+} from '@expo-google-fonts/jetbrains-mono';
+import {
   PlusJakartaSans_500Medium,
   PlusJakartaSans_600SemiBold,
   PlusJakartaSans_700Bold,
   PlusJakartaSans_800ExtraBold,
 } from '@expo-google-fonts/plus-jakarta-sans';
-import { CormorantGaramond_600SemiBold_Italic } from '@expo-google-fonts/cormorant-garamond';
-import {
-  JetBrainsMono_400Regular,
-  JetBrainsMono_500Medium,
-} from '@expo-google-fonts/jetbrains-mono';
+import { getFocusedRouteNameFromRoute } from '@react-navigation/native';
+import { useFonts } from 'expo-font';
 import * as Notifications from 'expo-notifications';
-import { colors, fonts } from '../src/theme';
-import { useNodeBootstrap } from '../src/hooks/useNodeBootstrap';
-import { sealVault, useIsUnlocked } from '../src/hooks/useUnlock';
+import { Tabs, useRouter, usePathname, useLocalSearchParams } from 'expo-router';
+import React, { useEffect, useSyncExternalStore } from 'react';
+import { Image, Modal, Platform, Pressable, TouchableOpacity, View, Text, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { markNotificationRead } from '@dina/brain/notifications';
+import { UnlockGate } from '../src/components/unlock_gate';
 import { useAutoLock } from '../src/hooks/useAutoLock';
 import { useHasActiveAgent } from '../src/hooks/useHasActiveAgent';
-import type { BootDegradation } from '../src/services/boot_service';
-import {
-  subscribeRuntimeWarnings,
-  getRuntimeWarnings,
-  type RuntimeWarning,
-} from '../src/services/runtime_warnings';
-import { UnlockGate } from '../src/components/unlock_gate';
+import { useNodeBootstrap } from '../src/hooks/useNodeBootstrap';
 import { useUnreadBadge } from '../src/hooks/useNotificationsBadge';
-import {
-  ensureChannels,
-  rescheduleAllReminders,
-  requestPushPermission,
-} from '../src/notifications/local';
-import { markNotificationRead } from '@dina/brain/notifications';
-import { handleNotificationTap } from '../src/notifications/deep_link';
-import { installReminderPushBridge } from '../src/notifications/reminder_push_bridge';
 import { useReminderFireWatcher } from '../src/hooks/useReminderFireWatcher';
-import { bootstrapInferredPreferences } from '../src/services/preferences_bootstrap';
-import { isTrustTabHidden } from '../src/trust/flags';
-import { parentRouteFor } from '../src/navigation/parent_route';
+import { sealVault, useIsUnlocked } from '../src/hooks/useUnlock';
 import {
   closeMenu,
   getMenuOpen,
   openMenu,
   subscribeMenuOpen,
 } from '../src/navigation/menu_state';
+import { parentRouteFor } from '../src/navigation/parent_route';
+import { handleNotificationTap } from '../src/notifications/deep_link';
+import {
+  ensureChannels,
+  rescheduleAllReminders,
+  requestPushPermission,
+} from '../src/notifications/local';
+import { installReminderPushBridge } from '../src/notifications/reminder_push_bridge';
+import { bootstrapInferredPreferences } from '../src/services/preferences_bootstrap';
+import {
+  subscribeRuntimeWarnings,
+  getRuntimeWarnings,
+  type RuntimeWarning,
+} from '../src/services/runtime_warnings';
+import { colors, fonts } from '../src/theme';
+import { isTrustTabHidden } from '../src/trust/flags';
+
+import type { BootDegradation } from '../src/services/boot_service';
 
 // Horizontal Dina mark used in the Chat tab's header. Other tabs
 // keep their text title — using the wordmark on every screen would
@@ -539,7 +541,7 @@ export default function RootLayout() {
         if (cancelled) return;
         await rescheduleAllReminders();
       } catch (err) {
-        // eslint-disable-next-line no-console
+         
         console.warn('[notifications] boot failed:', err);
       }
     })();
@@ -560,7 +562,7 @@ export default function RootLayout() {
   useEffect(() => {
     if (!unlocked) return;
     void bootstrapInferredPreferences().catch((err: unknown) => {
-      // eslint-disable-next-line no-console
+       
       console.warn('[preferences] inference failed:', err);
     });
   }, [unlocked]);

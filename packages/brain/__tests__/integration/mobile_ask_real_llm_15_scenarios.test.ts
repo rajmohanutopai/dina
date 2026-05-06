@@ -70,7 +70,12 @@ import {
   type SQLiteVaultHandle,
 } from './helpers/sqlite_vault_harness';
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? '';
+// Real-LLM gate: only run when explicitly opted in via
+// `DINA_RUN_REAL_LLM=1`. See sibling real-LLM tests for the rationale.
+const GEMINI_API_KEY =
+  process.env.DINA_RUN_REAL_LLM === '1'
+    ? (process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? '')
+    : '';
 // Production target — `gemini-3.1-pro-preview`. The `GeminiGenaiAdapter`
 // round-trips `thoughtSignature` natively (it rides on the `Part`
 // alongside the `functionCall`), so the second agentic turn no longer
