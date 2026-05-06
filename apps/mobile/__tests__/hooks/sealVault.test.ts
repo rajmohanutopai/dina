@@ -1,14 +1,18 @@
 /**
  * Tests for the manual seal action. Covers the MT-06-I1 fix: the
- * Lock vault menu item ends up calling `sealVault`, which must
- * deterministically flip `isUnlocked()` → false and notify any
- * subscribers (so UnlockGate re-renders on the next React tick).
+ * Sign out menu item ends up calling `sealVault`, which must
+ * deterministically flip `isUnlocked()` → false, notify any subscribers
+ * (so UnlockGate re-renders on the next React tick), and arm the
+ * one-shot force-prompt flag so the gate's auto-unlock effect skips
+ * the keychain re-read on the next vault access.
  */
 
 import {
   isUnlocked,
   resetUnlockState,
   sealVault,
+  shouldForcePromptOnUnlock,
+  clearForcePromptOnUnlock,
   subscribeToUnlockState,
 } from '../../src/hooks/useUnlock';
 
@@ -57,5 +61,40 @@ describe('sealVault', () => {
     // we should see at least one entry.
     expect(seen.length).toBeGreaterThanOrEqual(1);
     expect(seen.every((v) => v === false)).toBe(true);
+  });
+
+  it('arms the one-shot force-prompt flag so the next unlock skips auto-unlock', async () => {
+    // The user has tapped Sign out. Even with `startupMode === 'auto'`
+    // (passphrase cached in keychain), the very next vault access
+    // must require a typed passphrase — otherwise Sign out would be
+    // a 200ms no-op as the gate silently re-unlocks. The flag is
+    // process-local and one-shot.
+    expect(shouldForcePromptOnUnlock()).toBe(false);
+    await sealVault();
+    expect(shouldForcePromptOnUnlock()).toBe(true);
+  });
+
+  it('clearForcePromptOnUnlock drops the signal (gate consumes it after honouring once)', async () => {
+    await sealVault();
+    expect(shouldForcePromptOnUnlock()).toBe(true);
+    clearForcePromptOnUnlock();
+    expect(shouldForcePromptOnUnlock()).toBe(false);
+  });
+
+  it('arms the flag even when the vault was never unlocked', async () => {
+    // Idempotency: the user might tap Sign out from a screen that
+    // briefly mounted before unlock completed. The flag arms so the
+    // gate doesn't auto-unlock, even though sealVault has nothing to
+    // tear down.
+    expect(isUnlocked()).toBe(false);
+    await sealVault();
+    expect(shouldForcePromptOnUnlock()).toBe(true);
+  });
+
+  it('resetUnlockState clears the force-prompt flag (test isolation)', async () => {
+    await sealVault();
+    expect(shouldForcePromptOnUnlock()).toBe(true);
+    resetUnlockState();
+    expect(shouldForcePromptOnUnlock()).toBe(false);
   });
 });

@@ -48,6 +48,33 @@ const keyIndex = new Map<string, string>();
 const didIndex = new Map<string, string>();
 
 /**
+ * Listeners notified whenever the registry mutates (register, revoke,
+ * hydrate, reset). Mirrors the unlock-state subscription pattern used
+ * elsewhere on mobile so screens that gate UI on "is at least one
+ * agent paired?" (the chat /task action, the Approvals tab) re-render
+ * the moment the answer changes — without polling.
+ */
+const listeners = new Set<() => void>();
+
+function notifyListeners(): void {
+  for (const l of listeners) {
+    try {
+      l();
+    } catch {
+      /* swallow — subscribers must not block notify */
+    }
+  }
+}
+
+/** Subscribe to registry mutations. Returns an unsubscribe function. */
+export function subscribeToDeviceRegistry(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+/**
  * Register a new paired device.
  *
  * Called after pairing ceremony completes. Stores the device's Ed25519
@@ -112,6 +139,7 @@ export function registerDevice(
       /* fail-safe — transient SQL write loss is acceptable */
     });
   }
+  notifyListeners();
   return device;
 }
 
@@ -182,6 +210,7 @@ export function revokeDevice(deviceId: string): boolean {
 
   // Step 2: Mark revoked in device registry
   device.revoked = true;
+  notifyListeners();
   return true;
 }
 
@@ -219,6 +248,7 @@ export function resetDeviceRegistry(): void {
   devices.clear();
   keyIndex.clear();
   didIndex.clear();
+  notifyListeners();
 }
 
 /**
@@ -255,5 +285,6 @@ export async function hydrateDeviceRegistry(): Promise<number> {
       registerDeviceAuth(d.did, d.deviceName);
     }
   }
+  if (added > 0) notifyListeners();
   return added;
 }

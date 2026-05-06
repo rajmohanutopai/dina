@@ -41,6 +41,7 @@ import {
   PDSAccountClient,
   PDSPublisher,
   computeSchemaHash,
+  getCapability,
 } from '@dina/brain';
 import { loadInfraPreferences } from './infra_preferences';
 import type { ServiceConfig } from '@dina/protocol';
@@ -193,20 +194,31 @@ function buildEnvServiceConfig(): ServiceConfig | undefined {
   const policy: 'auto' | 'review' =
     process.env.EXPO_PUBLIC_DINA_PROVIDER_REVIEW === '1' ? 'review' : 'auto';
   const name = process.env.EXPO_PUBLIC_DINA_PROVIDER_NAME ?? 'BusDriver';
-  const description =
+  // Service-level description shown in AppView listings — the operator
+  // gets to set this freely (e.g. "SF Transit Authority Live"). It is
+  // NOT the per-capability description that goes into the canonical
+  // schema_hash (see below).
+  const serviceDescription =
     process.env.EXPO_PUBLIC_DINA_PROVIDER_DESCRIPTION ??
     'Demo transit-ETA provider — answers `eta_query` via paired dina-agent.';
 
   if (cap === 'eta_query') {
+    // Per-capability description MUST be the canonical text from the
+    // registry — anything else changes the schema_hash and breaks
+    // cross-stack interop with main-dina + the Go core
+    // (`core/test/canonical_hash_test.go`). MT-24-I2.
+    const capabilityDef = getCapability('eta_query');
+    const capabilityDescription =
+      capabilityDef?.description ?? 'Query estimated time of arrival for a transit service.';
     const schemaHash = computeSchemaHash({
       params: EtaQueryParamsSchema,
       result: EtaQueryResultSchema,
-      description,
+      description: capabilityDescription,
     });
     return {
       isDiscoverable: true,
       name,
-      description,
+      description: serviceDescription,
       capabilities: {
         eta_query: {
           mcpServer: 'transit',
@@ -220,7 +232,7 @@ function buildEnvServiceConfig(): ServiceConfig | undefined {
           params: EtaQueryParamsSchema,
           result: EtaQueryResultSchema,
           schemaHash,
-          description,
+          description: capabilityDescription,
           defaultTtlSeconds: 60,
         },
       },

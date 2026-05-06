@@ -136,9 +136,56 @@ def dina_validate_status(proposal_id: str, session: str) -> dict:
 @mcp.tool()
 def dina_ask(query: str, session: str) -> dict:
     """Ask Dina a question. She reasons over the encrypted vault.
-    May require approval if the query touches sensitive personas."""
+
+    The response can come back in three shapes — handle ALL THREE:
+
+      1. SYNCHRONOUS COMPLETE — status: 'complete', content: '<answer>'.
+         Done. Use the answer.
+
+      2. STILL REASONING — status: 'in_flight', request_id: '<id>'.
+         Brain hasn't finished within the fast-path window (typically a
+         few seconds). Poll dina_ask_status(request_id) until you see a
+         terminal status: complete | failed | expired | denied.
+
+      3. PENDING APPROVAL — status: 'pending_approval', request_id:
+         '<id>', persona: '<name>'. The query touched a closed/sensitive
+         vault and needs human approval. CRITICAL: do NOT proceed with
+         downstream work that depends on the answer. Poll
+         dina_ask_status(request_id) until status becomes 'complete' (the
+         operator approved AND Brain finished) OR 'denied' / 'expired'
+         (treat as no-data).
+
+    Polling cadence: 1–5 seconds for in_flight, 5–15 seconds for
+    pending_approval (humans take longer than reasoning). Time out and
+    surface the wait to the user after a few minutes — never assume
+    approval, never silently treat 'denied' as 'complete'.
+
+    The reasoning answer (when status is eventually 'complete') is in
+    the 'content' field of the dina_ask_status response.
+    """
     c = _get_client()
     return c.ask(query, session=session)
+
+
+@mcp.tool()
+def dina_ask_status(request_id: str) -> dict:
+    """Poll a previously-issued dina_ask. Returns one of:
+
+      - status: 'complete', content: '<answer>'  → use the answer
+      - status: 'in_flight'                       → keep polling
+      - status: 'pending_approval'                → user hasn't decided yet
+      - status: 'denied'                          → user said no — abort
+      - status: 'failed', error: '<msg>'          → reasoning hit an error
+      - status: 'expired'                         → request timed out — abort
+
+    Pair with dina_ask. Use the request_id from the original
+    dina_ask response. NEVER short-circuit a pending decision: 'denied'
+    and 'expired' both mean "no data" — never substitute heuristics or
+    cached values when the user has explicitly declined or let the
+    request lapse.
+    """
+    c = _get_client()
+    return c.ask_status(request_id)
 
 
 @mcp.tool()

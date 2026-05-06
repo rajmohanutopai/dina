@@ -224,7 +224,9 @@ export default function ApprovalsScreen() {
             />
             <Text style={styles.emptyTitle}>All caught up</Text>
             <Text style={styles.emptySubtitle}>
-              No service queries are waiting for your approval right now.
+              Nothing waiting for your approval right now — service queries,
+              memory writes into closed vaults, and agent intents will appear
+              here when they need a review.
             </Text>
           </View>
         </View>

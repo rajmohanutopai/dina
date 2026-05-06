@@ -60,6 +60,15 @@ export interface ReceivePipelineResult {
    * against async persistence.
    */
   stagedBody?: string;
+  /**
+   * The sender's `created_time` from the verified DinaMessage envelope
+   * (Unix milliseconds). Receivers use this for chronological ordering
+   * in the chat thread instead of receive-time, so a multi-message
+   * burst that arrives via MsgBox replay-on-reconnect renders in the
+   * order the sender intended. Receive-time still sorts within the
+   * same sender-clock millisecond. MT-19-I2.
+   */
+  senderCreatedTime?: number;
   reason: string;
 }
 
@@ -270,6 +279,13 @@ export function receiveD2D(
     stagedBody:
       stageResult.action === 'staged' || stageResult.action === 'ephemeral'
         ? message.body
+        : undefined,
+    // Forward the verified sender's wire timestamp so chat-side
+    // surfaces can order messages chronologically instead of by
+    // receive-time. Only meaningful when the action carried a body.
+    senderCreatedTime:
+      stageResult.action === 'staged' || stageResult.action === 'ephemeral'
+        ? message.created_time
         : undefined,
   };
 }

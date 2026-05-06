@@ -1149,7 +1149,12 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
             {SUBJECT_KIND_HINT[state.subject.kind]}
           </Text>
 
-          {/* Name — required for every kind */}
+          {/* Name — required for every kind. The native iOS clearButton
+              + the explicit "From your search" hint when the field was
+              pre-seeded from `?initialName=` together close MT-22-I1:
+              the user can see at a glance that the value came from
+              their search query (which may have had a typo) and clear
+              it in one tap rather than backspace-by-backspace. */}
           <Text style={[styles.fieldLabel, { marginTop: spacing.md }]}>Name</Text>
           <TextInput
             value={state.subject.name}
@@ -1159,7 +1164,15 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
             placeholderTextColor={colors.textMuted}
             style={styles.input}
             testID="write-subject-name-input"
+            clearButtonMode="while-editing"
           />
+          {paramInitialName !== undefined &&
+          paramInitialName.length > 0 &&
+          state.subject.name === paramInitialName ? (
+            <Text style={styles.kindHint} testID="write-subject-name-prefill-hint">
+              Pre-filled from your search — tap to edit if the spelling is off.
+            </Text>
+          ) : null}
           {fieldError(
             validation.errors,
             ['subject_name_required', 'subject_name_too_long'],

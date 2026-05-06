@@ -376,10 +376,15 @@ Related vault context (supplementary — use to enrich reminders, NEVER to inven
 How to compute due_at (let NOW_MS be the value above with underscores stripped):
 - "in N minutes" → due_at = NOW_MS + N * 60000  (this IS a valid future time — emit it, do not return [])
 - "in N hours"   → due_at = NOW_MS + N * 3600000
-- "today at HH:MM" / "at HH:MM" without a date → use today's date in {{timezone}}
-- "tomorrow at HH:MM" → tomorrow's date in {{timezone}}
+- "today at HH:MM" / "at HH:MM" without a date → use today's date in {{timezone}}, preserve HH:MM verbatim
+- "tomorrow at HH:MM" → tomorrow's date in {{timezone}}, preserve HH:MM verbatim
 - A specific date+time → resolve to {{timezone}}, then to Unix milliseconds
 - For a moment that's already past in {{timezone}}, only roll forward when the event is RECURRING (birthday / anniversary) — see rule below.
+
+⚠️ TIME-OF-DAY RULE: when the user states an explicit time of day ("at 6pm", "at 9:30", "tonight at 8"), the reminder's due_at MUST use THAT time. Never silently shift it to a default morning hour (9am) just because the event is more than a few hours away. Defaulting to a morning heads-up is only appropriate when the user gave a date but NO time of day (e.g. "tomorrow", "next Tuesday", "March 15" with no clock time). For events with explicit clock times, the user-stated time is the source of truth.
+
+  Good: Body "Pick up dry cleaning tomorrow at 6pm" → due_at is tomorrow 18:00 in {{timezone}}.
+  Bad:  Body "Pick up dry cleaning tomorrow at 6pm" → due_at is tomorrow 09:00 with message "Your pickup is scheduled for 6pm". The user asked for 6pm, give them 6pm.
 
 Worked example — short-horizon arrival from a peer:
   Body: "I am coming in 15 minutes"

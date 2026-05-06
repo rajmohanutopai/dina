@@ -56,6 +56,7 @@ import { IntentClassifier } from '../reasoning/intent_classifier';
 import { createClassifyIntentTool } from '../reasoning/classify_intent_tool';
 import { createDraftReviewTool } from '../reasoning/draft_review_tool';
 import { createDelegateToAgentTool } from '../reasoning/delegate_agent_tool';
+import { createScheduleReminderTool } from '../reasoning/schedule_reminder_tool';
 import { ToolRegistry } from '../reasoning/tool_registry';
 import { createSearchTrustNetworkTool } from '../reasoning/trust_tool';
 import {
@@ -297,6 +298,12 @@ export function buildAgenticAskPipeline(
     // `setReviewDraftStarter` at boot); without a registered starter
     // this tool fails soft.
     reg.register(createDraftReviewTool());
+    // `schedule_reminder` — first-class /ask path for "remind me to X
+    // at/in Y". Closes MT-15-I2 (the same phrasing through /ask used
+    // to fall through to vault_search and return "no relevant
+    // information"). The LLM resolves natural-language times to a
+    // concrete due_at before calling.
+    reg.register(createScheduleReminderTool());
     // `delegate_to_agent` — hand a self-contained task to a paired
     // agent (a separate device running `dina-agent`; the agent's
     // runtime owns execution choice, Brain stays unaware). Closes the

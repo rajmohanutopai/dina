@@ -31,6 +31,7 @@ import { colors, fonts, spacing, radius, shadows } from '../src/theme';
 import {
   generatePairingCode,
   listDevices,
+  revokeDevice,
   type DeviceRole,
   type PairedDevice,
 } from '@dina/core/devices';
@@ -75,6 +76,41 @@ export default function PairedDevicesScreen() {
       setDevices([]);
     }
   }, []);
+
+  // Revoke a paired device. Cascades through the registry to
+  // unregister the DID from auth/caller_type so subsequent signed
+  // requests fail with caller-type 'unknown' (auth middleware
+  // rejects). Confirmation dialog is mandatory — revocation breaks
+  // any agent-daemon currently polling against this DID and the user
+  // would have to re-pair to recover.
+  const handleRevoke = useCallback(
+    (device: PairedDevice) => {
+      if (device.revoked) return;
+      Alert.alert(
+        `Revoke "${device.deviceName}"?`,
+        'The agent will lose access immediately. Any in-flight signed requests will fail and the agent must be re-paired with a new code to regain access.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Revoke',
+            style: 'destructive',
+            onPress: () => {
+              try {
+                revokeDevice(device.deviceId);
+                refreshDevices();
+              } catch (err) {
+                Alert.alert(
+                  'Revoke failed',
+                  err instanceof Error ? err.message : String(err),
+                );
+              }
+            },
+          },
+        ],
+      );
+    },
+    [refreshDevices],
+  );
 
   useEffect(() => {
     refreshDevices();
@@ -148,6 +184,19 @@ export default function PairedDevicesScreen() {
                   {d.lastSeen > 0 ? ` • active ${new Date(d.lastSeen).toLocaleDateString()}` : ''}
                   {d.revoked ? ' • revoked' : ''}
                 </Text>
+                {!d.revoked && (
+                  <Pressable
+                    onPress={() => handleRevoke(d)}
+                    style={({ pressed }) => [
+                      styles.revokeButton,
+                      pressed && styles.revokeButtonPressed,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Revoke ${d.deviceName}`}
+                  >
+                    <Text style={styles.revokeText}>Revoke access</Text>
+                  </Pressable>
+                )}
               </View>
             ))
           )}
@@ -400,6 +449,21 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sansMedium,
     fontSize: 13,
     color: colors.accent,
+  },
+  revokeButton: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.sm,
+    paddingVertical: 6,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.error,
+  },
+  revokeButtonPressed: { opacity: 0.6 },
+  revokeText: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 12,
+    color: colors.error,
   },
   mono: { fontFamily: fonts.mono, fontSize: 12 },
 });

@@ -172,6 +172,13 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
 export function busDriverDemoProfile(overrides: Partial<ServiceProfile> = {}): ServiceProfile {
   const paramsSchema = EtaQueryParamsSchema as unknown as Record<string, unknown>;
   const resultSchema = EtaQueryResultSchema as unknown as Record<string, unknown>;
+  // Per-capability description MUST match the canonical text from main-dina
+  // — `core/test/canonical_hash_test.go` pins
+  // 2886d1f8…107117a71 against this exact `{description, params, result}`
+  // triple. Anything else changes the schema_hash and breaks cross-stack
+  // interop with seeded test fixtures (`tests/release/test_rel_029_…`,
+  // `tests/sanity/test_transit_e2e.py`). MT-24-I2.
+  const capabilityDescription = 'Query estimated time of arrival for a transit service.';
   return {
     did: 'did:plc:bus42demo',
     name: 'Bus 42',
@@ -183,8 +190,12 @@ export function busDriverDemoProfile(overrides: Partial<ServiceProfile> = {}): S
       eta_query: {
         params: paramsSchema,
         result: resultSchema,
-        schemaHash: computeSchemaHash({ params: paramsSchema, result: resultSchema }),
-        description: 'ETA to next stop on a given bus route',
+        schemaHash: computeSchemaHash({
+          description: capabilityDescription,
+          params: paramsSchema,
+          result: resultSchema,
+        }),
+        description: capabilityDescription,
         defaultTtlSeconds: 60,
       },
     },

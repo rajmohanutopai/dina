@@ -129,6 +129,29 @@ export function installMarkerExists(): boolean {
 }
 
 /**
+ * Delete the marker. Called by the user-facing "Erase everything"
+ * wipe path so the next boot is treated as a true fresh install
+ * rather than a returning user with a missing wrapped seed (which
+ * `unlock_gate`'s orphan-detect interprets as "wipe orphan keychain
+ * defensively"). Idempotent — silent no-op when the marker is
+ * already absent.
+ */
+export function deleteInstallMarker(): void {
+  try {
+    const f = markerFile();
+    if (f.exists) {
+      f.delete();
+    }
+  } catch {
+    // Best-effort. The downstream orphan-detect path is the safety
+    // net — if we couldn't delete the marker, the next boot will
+    // still see the missing wrapped seed and re-run cleanup. The
+    // marker just disambiguates "true fresh install" from "orphan
+    // recovery"; a stale marker after wipe is harmless.
+  }
+}
+
+/**
  * Write the marker. Idempotent — safe to call when the file already
  * exists. Called from the boot path after the orphan check completes.
  */

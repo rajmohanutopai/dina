@@ -227,7 +227,11 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
   //     documented in the scenario-1+2 E2E test's docstring.
   setAccessiblePersonas(opened);
 
-  // 6. Complete
+  // 6. Complete. Consume any pending force-prompt signal — a
+  //    successful manual unlock is the user re-asserting access, so
+  //    later re-seal/re-unlock cycles within the same launch can
+  //    use auto-unlock again until the next Sign out.
+  forcePromptOnNextUnlock = false;
   state.step = 'complete';
   state.completedAt = Date.now();
   notify();
@@ -308,22 +312,63 @@ export function getUnlockDuration(): number | null {
  * Reset unlock state (for testing or re-lock).
  */
 export function resetUnlockState(): void {
+  forcePromptOnNextUnlock = false;
   state = createInitialState();
   notify();
 }
 
 /**
- * Seal the vault: tear down all open SQLCipher handles, drop the
- * in-memory persona registry, and flip `isUnlocked()` back to false.
+ * One-shot, in-memory flag that suppresses the *next* keychain
+ * auto-unlock. Set by `sealVault()`; consumed (and cleared) by the
+ * unlock-gate's auto-unlock effect. Cleared automatically on a
+ * successful manual `unlock()` so the auto-unlock path resumes for
+ * subsequent re-locks within the same launch.
+ *
+ * Why this exists: the user's `startupMode === 'auto'` preference
+ * caches the passphrase in keychain so cold boots don't prompt. But
+ * "Sign out" must still force a passphrase prompt — otherwise the
+ * gate would silently re-unlock from keychain and the button would be
+ * a no-op. This flag lets Sign out keep the user's auto-unlock
+ * preference intact across launches while still making *this* relock
+ * meaningful. The flag is process-local (no keychain write), so a
+ * cold restart correctly returns to the user's chosen startup mode.
+ */
+let forcePromptOnNextUnlock = false;
+
+/**
+ * @returns true when the next unlock attempt MUST come from a
+ * user-typed passphrase rather than the keychain auto-unlock cache.
+ */
+export function shouldForcePromptOnUnlock(): boolean {
+  return forcePromptOnNextUnlock;
+}
+
+/**
+ * Reset the force-prompt flag — called by tests and by the unlock
+ * gate after it has consumed the signal.
+ */
+export function clearForcePromptOnUnlock(): void {
+  forcePromptOnNextUnlock = false;
+}
+
+/**
+ * Seal the vault ("Sign out" UX): tear down all open SQLCipher
+ * handles, drop the in-memory persona registry, flip `isUnlocked()`
+ * back to false, AND set the force-prompt flag so the gate doesn't
+ * silently re-unlock from the keychain on the next vault access.
  *
  * After this returns the next vault access requires a fresh `unlock()`
- * call (which re-runs Argon2id KDF + SQLCipher open). Subscribers to
- * `subscribeToUnlockState` see the transition synchronously, so the
- * UnlockGate re-renders to its locked screen on the next React tick.
+ * call from a user-typed passphrase (Argon2id KDF + SQLCipher open).
+ * Subscribers to `subscribeToUnlockState` see the transition
+ * synchronously, so the UnlockGate re-renders to its locked screen on
+ * the next React tick.
  *
- * Idempotent — calling on an already-sealed vault is a no-op.
+ * Idempotent — calling on an already-sealed vault is a no-op for the
+ * teardown side-effects, but still arms the force-prompt flag so the
+ * UX matches the user's intent ("from now until I re-enter, prompt").
  */
 export async function sealVault(): Promise<void> {
+  forcePromptOnNextUnlock = true;
   if (state.step !== 'complete') {
     // Already sealed (or mid-unlock); nothing to tear down. Still
     // reset state so a partial-unlock leftover (`failed` / mid-step)

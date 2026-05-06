@@ -31,7 +31,7 @@
 
 import { randomBytes } from '@noble/hashes/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import type { CoreClient, WorkflowTask } from '@dina/core';
+import { scrubPII, type CoreClient, type WorkflowTask } from '@dina/core';
 import type { AgentTool } from './tool_registry';
 
 export interface DelegateToAgentToolOptions {
@@ -96,15 +96,44 @@ export function createDelegateToAgentTool(
       const ttlSec = Math.max(1, Math.ceil(timeoutMs / 1000));
       const startMs = nowMsFn();
 
+      // MT-46 — PII scrub before the description crosses the Home
+      // Node trust boundary. The agent (paired CLI agent / OpenClaw
+      // container) reads `description` (and `payload.description`)
+      // when it claims this task; raw PII in either field would leak
+      // values like email addresses, phone numbers, IBAN/SSN strings
+      // outside the Home Node. Scrub replaces those with stable
+      // placeholder tokens (`[EMAIL_1]`, `[PHONE_2]`, …).
+      //
+      // The original entities are stored on the workflow task payload
+      // under `_pii_entities` so a future rehydrate-on-validate flow
+      // can restore the value at the user-approval boundary (`dina
+      // validate` showing the rehydrated text to the user). Until
+      // that flow ships, agents that need to ACT on a PII value
+      // (e.g. send_email) must call `dina validate` and surface the
+      // approval to the user; the rehydrate side is filed as future
+      // work — see docs/MANUAL_RELEASE_TESTS.md MT-46.
+      const { scrubbed: scrubbedDescription, entities } = scrubPII(description);
+
       await opts.core.createWorkflowTask({
         id: taskId,
         kind: 'delegation',
-        description,
+        description: scrubbedDescription,
         // Deliberately NOT `service_query_execution` — that type is the
         // cross-Home-Node bridge contract. Free-form local-agent tasks
         // use their own type so the response bridge ignores them (no
         // D2D requester to send a service.response back to).
-        payload: JSON.stringify({ type: 'free_form_task', description }),
+        //
+        // `_pii_entities` is the rehydration table: never read by the
+        // agent (the agent only reads `description`). Brain consumes
+        // it at the `dina validate` approval boundary to show the
+        // user the actual value, and on approval returns the value
+        // through the validate response so the agent can use it
+        // exactly once for the approved action.
+        payload: JSON.stringify({
+          type: 'free_form_task',
+          description: scrubbedDescription,
+          _pii_entities: entities,
+        }),
         initialState: 'queued',
         expiresAtSec: Math.floor(startMs / 1000) + ttlSec,
         // Origins are allow-listed in `core/workflow/domain.ts` —

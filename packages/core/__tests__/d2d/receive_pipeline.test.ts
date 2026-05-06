@@ -54,6 +54,30 @@ describe('D2D Receive Pipeline', () => {
       expect(result.stagingId).toMatch(/^stg-/);
     });
 
+    it('forwards sender created_time as senderCreatedTime (MT-19-I2)', () => {
+      // The receive pipeline must surface the sender's wire timestamp
+      // alongside the staged body so chat-side fan-out can render
+      // multiple replayed messages chronologically. Without this,
+      // every inbound got Date.now() at receive-time and a back-to-
+      // back replay-on-reconnect rendered out of order.
+      addContact('did:plc:sender');
+      const sentAt = 1_700_000_123_456;
+      const payload = buildSealed({ created_time: sentAt });
+      const result = receiveD2D(payload, recipientPub, recipientPriv, [senderPub], 'trusted');
+      expect(result.action).toBe('staged');
+      expect(result.senderCreatedTime).toBe(sentAt);
+    });
+
+    it('omits senderCreatedTime on dropped messages (no body to render)', () => {
+      // Quarantined / dropped paths must not leak a sender timestamp
+      // — there's no body to associate it with on a UI surface, and
+      // surfacing it would invite consumers to render the message.
+      const payload = buildSealed();
+      const result = receiveD2D(payload, recipientPub, recipientPriv, [senderPub], 'blocked');
+      expect(result.action).toBe('dropped');
+      expect(result.senderCreatedTime).toBeUndefined();
+    });
+
     it('audit logs the receive', () => {
       addContact('did:plc:sender');
       receiveD2D(buildSealed(), recipientPub, recipientPriv, [senderPub], 'trusted');

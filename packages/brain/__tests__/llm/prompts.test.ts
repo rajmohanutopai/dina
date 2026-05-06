@@ -294,6 +294,18 @@ describe('Prompt Registry', () => {
       // honest with what the deterministic extractor produces.
       expect(REMINDER_PLAN).toContain('arrival');
     });
+
+    it('locks in the explicit-time-of-day rule (MT-16-I1)', () => {
+      // MT-16-I1 was the case where "Pick up dry cleaning tomorrow at
+      // 6pm" landed as a 9am reminder — the planner inferred a
+      // morning heads-up instead of honoring the explicit clock
+      // time. The TIME-OF-DAY RULE in the prompt blocks that
+      // regression: when the user names an explicit time, the
+      // reminder MUST use it.
+      expect(REMINDER_PLAN).toMatch(/preserve HH:MM verbatim/);
+      expect(REMINDER_PLAN).toMatch(/TIME-OF-DAY RULE/);
+      expect(REMINDER_PLAN).toMatch(/dry cleaning tomorrow at 6pm/);
+    });
   });
 
   describe('NUDGE_ASSEMBLE', () => {

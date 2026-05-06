@@ -182,6 +182,11 @@ export type {
   DelegateOutcome,
   DelegateToAgentToolOptions,
 } from './reasoning/delegate_agent_tool';
+export { createScheduleReminderTool } from './reasoning/schedule_reminder_tool';
+export type {
+  ScheduleReminderOutcome,
+  ScheduleReminderToolOptions,
+} from './reasoning/schedule_reminder_tool';
 export { makeAgenticAskHandler, DEFAULT_ASK_SYSTEM_PROMPT } from './reasoning/ask_handler';
 export type { AgenticAskHandlerOptions } from './reasoning/ask_handler';
 export { buildAgenticAskPipeline } from './composition/agentic_ask';

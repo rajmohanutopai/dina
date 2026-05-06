@@ -14,6 +14,7 @@ import json
 import os
 import secrets
 import sys
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -211,6 +212,31 @@ class MsgBoxTransport:
         self._timeout = timeout
         self._pending: dict[str, dict] = {}  # request_id → response envelope
 
+        # MT-24-I1 reliability fixes — the agent-daemon's main loop and
+        # reconciler thread share one `MsgBoxTransport` instance and call
+        # into it concurrently:
+        #
+        #   1. Serialise every `request()` call. Two threads opening WS
+        #      handshakes from the same DID at once confused the relay's
+        #      session tracking and produced spurious "auth_success
+        #      timeout" errors that cascaded into a `mark_running`
+        #      failure on the just-submitted task. RLock so re-entrant
+        #      calls from the SAME thread (drain → request) are safe.
+        #
+        #   2. Bookkeeping for an implicit exponential backoff between
+        #      attempts: after a failed connect/auth, the next call into
+        #      `_connect_and_auth` waits `min(2**(n-1), 30)` seconds
+        #      before opening a new socket. Resets on first success. Lets
+        #      a transient relay flake recover without the daemon's
+        #      poll loop tight-looping the relay during a brownout.
+        self._lock = threading.RLock()
+        self._consecutive_auth_failures = 0
+        self._next_attempt_at = 0.0
+        # Cap the backoff so a long-running daemon eventually retries on
+        # a sane cadence even after extended outage. 30s aligns with
+        # typical relay heartbeat windows.
+        self._max_backoff_seconds = 30.0
+
         # Home Node's X25519 public key for NaCl sealed-box encryption.
         if homenode_x25519_pub is not None:
             self._homenode_x25519_pub = homenode_x25519_pub
@@ -235,6 +261,19 @@ class MsgBoxTransport:
             self._cli_x25519_pub = None
 
     def request(
+        self, method: str, path: str, headers: dict[str, str],
+        body: str | None = None, request_id: str | None = None,
+    ) -> TransportResponse:
+        # MT-24-I1: serialise concurrent callers (the daemon's main loop
+        # vs. the reconciler thread). Without this, two threads opening
+        # WS handshakes from the same DID race each other on the relay
+        # and the auth_success ack times out on at least one of them.
+        # RLock so a re-entrant call from inside the same thread (e.g.
+        # drain calling back into request mid-call) doesn't self-deadlock.
+        with self._lock:
+            return self._do_request(method, path, headers, body, request_id)
+
+    def _do_request(
         self, method: str, path: str, headers: dict[str, str],
         body: str | None = None, request_id: str | None = None,
     ) -> TransportResponse:
@@ -430,7 +469,25 @@ class MsgBoxTransport:
             ws.close()
 
     def _connect_and_auth(self, rid: str = "") -> websockets.sync.client.ClientConnection:
-        """Connect to MsgBox and perform Ed25519 challenge-response auth."""
+        """Connect to MsgBox and perform Ed25519 challenge-response auth.
+
+        MT-24-I1: implicit exponential backoff. After a failed connect or
+        auth, the NEXT call here sleeps `min(2**(n-1), 30)` seconds before
+        opening a fresh socket — caps tight-loop retries against a flaky
+        relay. The counter resets on the first success.
+        """
+        # Implicit backoff window before retrying. We sleep here (not
+        # before raising on the failing call) so a fresh transport never
+        # introduces a phantom delay; the cost only kicks in on the
+        # call AFTER a known-bad attempt.
+        now = time.monotonic()
+        if now < self._next_attempt_at:
+            wait_s = self._next_attempt_at - now
+            _trace(rid, "auth_backoff_wait",
+                   wait_ms=int(wait_s * 1000),
+                   consecutive_failures=self._consecutive_auth_failures)
+            time.sleep(wait_s)
+
         t_connect = time.monotonic()
         try:
             # compression=None disables permessage-deflate. The MsgBox server
@@ -445,6 +502,7 @@ class MsgBoxTransport:
         except Exception as e:
             ms = int((time.monotonic() - t_connect) * 1000)
             _trace(rid, "ws_connect_failed", err_type=type(e).__name__, ms=ms)
+            self._note_auth_failure()
             raise TransportError(
                 f"MsgBox unreachable at {self._msgbox_url} (after {ms}ms): "
                 f"{type(e).__name__}: {e}"
@@ -459,6 +517,7 @@ class MsgBoxTransport:
             ws.close()
             ms = int((time.monotonic() - t_chal) * 1000)
             _trace(rid, "auth_challenge_failed", err_type=type(e).__name__, ms=ms)
+            self._note_auth_failure()
             raise TransportError(
                 f"MsgBox auth challenge timeout after {ms}ms: "
                 f"{type(e).__name__}: {e}"
@@ -467,6 +526,7 @@ class MsgBoxTransport:
         chal = json.loads(chal_raw)
         if chal.get("type") != "auth_challenge":
             ws.close()
+            self._note_auth_failure()
             raise TransportError(f"unexpected auth frame: {chal.get('type')}")
 
         # Sign challenge.
@@ -497,6 +557,7 @@ class MsgBoxTransport:
             ws.close()
             ms = int((time.monotonic() - t_ack) * 1000)
             _trace(rid, "auth_success_timeout", err_type=type(e).__name__, ms=ms)
+            self._note_auth_failure()
             raise TransportError(
                 f"MsgBox auth_success timeout after {ms}ms: "
                 f"{type(e).__name__}: {e}"
@@ -505,14 +566,35 @@ class MsgBoxTransport:
             ack = json.loads(ack_raw)
         except (json.JSONDecodeError, TypeError) as e:
             ws.close()
+            self._note_auth_failure()
             raise TransportError(f"MsgBox auth_success parse error: {e}") from e
         if ack.get("type") != "auth_success":
             ws.close()
+            self._note_auth_failure()
             raise TransportError(f"MsgBox auth rejected (got frame {ack.get('type')!r})")
 
+        # Successful auth — reset the backoff window so the next call
+        # connects immediately. Holding the failure counter past one
+        # success would punish the daemon for transient flakes earlier
+        # in its lifetime.
+        self._consecutive_auth_failures = 0
+        self._next_attempt_at = 0.0
         _trace(rid, "auth_done",
                total_ms=int((time.monotonic() - t_connect) * 1000))
         return ws
+
+    def _note_auth_failure(self) -> None:
+        """Record a connect/auth failure and arm the next-attempt backoff.
+
+        Sequence is `1, 2, 4, 8, 16, 30, 30, …` seconds (capped). The
+        wait is consumed at the *start* of the next `_connect_and_auth`
+        call, so a fresh transport never sleeps and a stable relay
+        never sees added latency.
+        """
+        self._consecutive_auth_failures += 1
+        n = self._consecutive_auth_failures
+        backoff = min(float(2 ** (n - 1)), self._max_backoff_seconds)
+        self._next_attempt_at = time.monotonic() + backoff
 
     def _send_cancel(self, ws, request_id: str, from_did: str) -> None:
         """Send best-effort cancel envelope. Don't block on failure."""

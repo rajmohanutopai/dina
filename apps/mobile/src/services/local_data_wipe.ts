@@ -20,10 +20,14 @@
  */
 
 import { Paths, type Directory, type File } from 'expo-file-system';
+import * as Notifications from 'expo-notifications';
+
 import { clearWrappedSeed } from './wrapped_seed_store';
 import { clearIdentitySeeds } from './identity_store';
 import { clearPersistedDid } from './identity_record';
 import { clearDisplayNameOverride } from './display_name_override';
+import { clearAutoPassphrase } from './startup_preferences';
+import { clearOrphanKeychainState, deleteInstallMarker } from './install_marker';
 import { resetUnlockState } from '../hooks/useUnlock';
 import { shutdownAllPersistence } from '../storage/init';
 
@@ -43,6 +47,14 @@ export async function signOutLocal(): Promise<void> {
   await clearIdentitySeeds();
   await clearPersistedDid();
   await clearDisplayNameOverride();
+  // Clear the cached auto-unlock passphrase too — without this, a
+  // post-sign-out boot would still find the cached passphrase but no
+  // wrapped seed, log a confusing "no wrapped seed" diagnostic, and
+  // leave a phantom row in the keychain. The startup mode preference
+  // (`dina.startup.mode` — auto vs manual) is left intact so a
+  // re-onboard with the same recovery phrase resumes the user's
+  // chosen behaviour.
+  await clearAutoPassphrase();
   resetUnlockState();
 }
 
@@ -92,6 +104,44 @@ export async function eraseEverythingLocal(): Promise<void> {
   } catch {
     // Directory listing failed — proceed to identity clear so the
     // app can at least re-onboard, even if old DB files linger.
+  }
+
+  // Cancel every scheduled local notification (reminders, briefings)
+  // so a freshly-erased device doesn't ping the user about reminders
+  // that no longer exist in any vault. Push registration with the OS
+  // is not unregistered explicitly here — the next install / OS
+  // re-grant flow re-registers, and stale device tokens drop off the
+  // server's send queue naturally.
+  try {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+  } catch {
+    // Best-effort — a misconfigured Notifications module shouldn't
+    // block the wipe path.
+  }
+
+  // Sweep every keychain entry the app owns — startup mode + auto-
+  // passphrase, infra preferences (PDS / AppView URLs), LLM provider
+  // keys, role + verification flags. The narrow `signOutLocal()` only
+  // clears identity + wrapped seed + display-name override. For Tier 2
+  // ("Erase everything"), the user's expectation is that NOTHING
+  // survives, so call the broad sweep to match the label.
+  try {
+    await clearOrphanKeychainState();
+  } catch {
+    // Best-effort — `clearOrphanKeychainState` already swallows per-
+    // service failures internally; this catch handles a host that
+    // can't reach Keychain at all (extremely rare).
+  }
+
+  // Delete the install marker so the next boot is treated as a true
+  // fresh install rather than a returning user with a missing
+  // wrapped seed (which `unlock_gate` interprets as "orphan keychain
+  // — wipe everything"). Without this the next boot would still work
+  // but would re-run the orphan-detect path defensively.
+  try {
+    deleteInstallMarker();
+  } catch {
+    // Best-effort.
   }
 
   await signOutLocal();

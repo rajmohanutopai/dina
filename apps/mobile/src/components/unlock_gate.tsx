@@ -33,7 +33,14 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { unlock, useIsUnlocked, useUnlockState, getStepLabel } from '../hooks/useUnlock';
+import {
+  unlock,
+  useIsUnlocked,
+  useUnlockState,
+  getStepLabel,
+  shouldForcePromptOnUnlock,
+  clearForcePromptOnUnlock,
+} from '../hooks/useUnlock';
 import { loadWrappedSeed } from '../services/wrapped_seed_store';
 import { loadInfraPreferences } from '../services/infra_preferences';
 import { loadAutoPassphrase, loadStartupMode } from '../services/startup_preferences';
@@ -140,11 +147,12 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
     // unlocked → false transition. The user just sealed the vault
     // (or boot has not yet unwrapped the seed). Reset autoRanRef so a
     // subsequent boot can auto-unlock again, but ONLY when there's no
-    // wrapped seed (i.e. fresh state) — for the "Lock vault" case we
-    // want to stay locked until the user types the passphrase. The
-    // distinction: if mode was 'unlocked' before, this is a manual
-    // seal; if mode was 'loading' it's first-render. We only flip to
-    // 'locked' for the manual-seal case.
+    // wrapped seed (i.e. fresh state) — for the Sign out case the
+    // force-prompt flag (set by `sealVault`) suppresses auto-unlock so
+    // the user must re-type the passphrase. The distinction: if mode
+    // was 'unlocked' before, this is a manual seal; if mode was
+    // 'loading' it's first-render. We only flip to 'locked' for the
+    // manual-seal case.
     setMode((prev) => (prev === 'unlocked' ? 'locked' : prev));
   }, [unlocked]);
 
@@ -204,6 +212,16 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
         void runUnlock(DEV_PASSPHRASE);
       }, 50);
       return () => clearTimeout(t);
+    }
+    // Sign-out short-circuit: when the user has just tapped Sign out,
+    // suppress this re-entry's keychain auto-unlock so the chooser
+    // sees a passphrase prompt instead. The flag is consumed (cleared)
+    // here so the user's auto-unlock preference resumes after the next
+    // successful manual unlock — Sign out is a one-shot event, not a
+    // mode flip.
+    if (shouldForcePromptOnUnlock()) {
+      clearForcePromptOnUnlock();
+      return;
     }
     let cancelled = false;
     (async () => {

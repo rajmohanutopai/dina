@@ -223,6 +223,13 @@ export interface RememberDrainResult {
    *  didn't process the item (no scheduler wired) or it ended in
    *  pending_unlock / failed. */
   persona: string | null;
+  /** Persona the classifier routed to but couldn't write into because
+   *  the persona is closed and gated by an approval. Set on
+   *  `pending_unlock` only — distinct from `persona`, which is
+   *  reserved for "stored". MT-13-I1: lets the chat reply tell the
+   *  user the row is parked behind an Approvals-tab review instead of
+   *  the misleading "Got it — I'll remember that". */
+  pendingPersona?: string;
 }
 
 export type RememberDrainHook = (stagingId: string) => Promise<RememberDrainResult>;
@@ -354,6 +361,17 @@ async function handleRemember(text: string): Promise<BotResponse> {
 
   const { persona } = drainResult;
   if (persona === null) {
+    // MT-13-I1: pending_unlock is the "classifier picked a closed
+    // persona, write parked behind an approval" case. Telling the
+    // user "Got it — I'll remember that" is a lie — the row is in
+    // staging, not in the vault. Surface the persona + the
+    // approval-tab redirect so the user knows where to act.
+    if (drainResult.pendingPersona !== undefined) {
+      const personaName = formatPersonaDisplayName(drainResult.pendingPersona);
+      return plainResponse(
+        `Stashed for your ${personaName} vault — that vault needs your approval before I can write to it. Open Approvals to review.`,
+      );
+    }
     return plainResponse(`Got it — I'll remember that.`);
   }
 

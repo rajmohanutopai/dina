@@ -207,4 +207,106 @@ describe('delegate_to_agent', () => {
     });
     expect(tool.description).toMatch(/paired agent/i);
   });
+
+  // ---------------------------------------------------------------------
+  // MT-46 — PII scrub before crossing the Home Node trust boundary.
+  // The agent (paired CLI agent / OpenClaw container) reads the task
+  // `description` and `payload.description` when claiming. Raw PII in
+  // either would leak values like email addresses, phone numbers, or
+  // SSN strings outside the Home Node. Scrub replaces them with
+  // placeholder tokens (`<EMAIL_1>`, `<PHONE_2>`, …); the original
+  // entities are stashed under `_pii_entities` for a future
+  // rehydrate-on-validate-approval flow.
+  // ---------------------------------------------------------------------
+  describe('PII scrubbing (MT-46)', () => {
+    it('scrubs the description before the workflow task is created', async () => {
+      const fake = makeFake();
+      fake.pollResponses.set('fixed-id', [stubTask('fixed-id', 'completed')]);
+      const tool = buildTool(fake);
+
+      await tool.execute({
+        task_description: 'Send an email to alice@example.com about the budget',
+      });
+
+      expect(fake.created).toHaveLength(1);
+      const stored = fake.created[0];
+      // Top-level description (what most agent runners log + read).
+      expect(stored.description as string).not.toContain('alice@example.com');
+      expect(stored.description as string).toMatch(/\[EMAIL_/);
+      // Payload-side description (what the agent claim handler reads).
+      const payload = JSON.parse(stored.payload as string);
+      expect(payload.description).not.toContain('alice@example.com');
+      expect(payload.description).toMatch(/\[EMAIL_/);
+    });
+
+    it('stores the original entities under `_pii_entities` for rehydrate-on-approval', async () => {
+      // The agent NEVER reads `_pii_entities` — that field is private
+      // to Brain. It exists so a future `dina validate` approval flow
+      // can show the user the original (rehydrated) value at the
+      // user-decision boundary, and on approval surface the value
+      // back to the agent for the single approved action.
+      const fake = makeFake();
+      fake.pollResponses.set('fixed-id', [stubTask('fixed-id', 'completed')]);
+      const tool = buildTool(fake);
+
+      await tool.execute({
+        task_description: 'Email alice@example.com and call (555) 123-4567',
+      });
+
+      const payload = JSON.parse(fake.created[0].payload as string);
+      expect(Array.isArray(payload._pii_entities)).toBe(true);
+      // Entity table must contain the actual values so a rehydrate
+      // pass can substitute them back in.
+      const values: string[] = payload._pii_entities.map(
+        (e: { value: string }) => e.value,
+      );
+      expect(values).toContain('alice@example.com');
+      expect(values.some((v) => v.includes('555'))).toBe(true);
+    });
+
+    it('passes through descriptions that have no PII (no entities, identical text)', async () => {
+      const fake = makeFake();
+      fake.pollResponses.set('fixed-id', [stubTask('fixed-id', 'completed')]);
+      const tool = buildTool(fake);
+
+      const plain = 'List my unread emails from the last week';
+      await tool.execute({ task_description: plain });
+
+      const stored = fake.created[0];
+      expect(stored.description).toBe(plain);
+      const payload = JSON.parse(stored.payload as string);
+      expect(payload.description).toBe(plain);
+      expect(payload._pii_entities).toEqual([]);
+    });
+
+    it('the agent-visible fields contain ONLY scrubbed text — never raw PII', async () => {
+      // Belt-and-braces: even if a future caller adds a new field
+      // that the agent reads, the contract is "no raw PII anywhere
+      // the agent touches". This test scans the entire serialised
+      // create-task input for the original sensitive value and
+      // asserts it appears nowhere except inside `_pii_entities`.
+      const fake = makeFake();
+      fake.pollResponses.set('fixed-id', [stubTask('fixed-id', 'completed')]);
+      const tool = buildTool(fake);
+
+      const secret = 'alice@example.com';
+      await tool.execute({
+        task_description: `Send ${secret} an email`,
+      });
+
+      const stored = fake.created[0];
+      // Strip out the entities sub-tree, then assert the secret is
+      // gone everywhere else.
+      const payload = JSON.parse(stored.payload as string);
+      const entities = payload._pii_entities;
+      delete payload._pii_entities;
+      const visibleToAgent = JSON.stringify({
+        description: stored.description,
+        payload,
+      });
+      expect(visibleToAgent).not.toContain(secret);
+      // Sanity — entities still has it (private to Brain).
+      expect(JSON.stringify(entities)).toContain(secret);
+    });
+  });
 });

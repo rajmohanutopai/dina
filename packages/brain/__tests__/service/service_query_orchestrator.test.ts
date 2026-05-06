@@ -224,7 +224,8 @@ describe('ServiceQueryOrchestrator.issueQuery — validation', () => {
     await orch.issueQueryToDID({
       toDID: 'did:plc:bus42',
       capability: 'eta_query',
-      params: { location: { lat: 0, lng: 0 } }, // valid — passes our validator
+      // Canonical eta_query: route_id required, location optional.
+      params: { route_id: '42', location: { lat: 0, lng: 0 } },
       schemaHash: 'hash-provider-v2',
     });
     expect(coreSeen).toHaveLength(1);
@@ -353,7 +354,8 @@ describe('ServiceQueryOrchestrator.issueQuery — dispatch', () => {
     });
     await orch.issueQuery({
       capability: 'eta_query',
-      params: { location: { lat: 0, lng: 0 } },
+      // Canonical eta_query: route_id required, location optional.
+      params: { route_id: '42', location: { lat: 0, lng: 0 } },
     });
     expect(coreSeen[0].schemaHash).toBeUndefined();
   });

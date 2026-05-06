@@ -187,12 +187,58 @@ function indent(text: string, spaces: number): string {
     .join('\n');
 }
 
+/**
+ * Render the "Current context" block prepended to every agentic-loop
+ * system prompt (MT-15-I3).
+ *
+ * Why this exists: tools like `schedule_reminder` push date/time
+ * resolution onto the LLM ("convert 'in 3 minutes' to a concrete
+ * `due_at` BEFORE calling"). Without an injected reference time, the
+ * LLM has no anchor — it correctly responds with "I don't know what
+ * time it is right now" and forces the user into a clarification
+ * round-trip. Surfacing `now` at the system-prompt level fixes that
+ * for every tool that needs temporal grounding (reminders, geocode-
+ * with-time-of-day, "is it past business hours" judgements, etc.).
+ *
+ * Format mirrors the rest of the system prompt: short, scannable,
+ * key/value pairs the LLM can quote when justifying a time choice.
+ *
+ * Pure for testability — accepts an injected clock (defaults to
+ * `Date.now`) so tests can assert deterministic output.
+ */
+export function formatCurrentTimeBlock(nowMsFn: () => number = Date.now): string {
+  const now = new Date(nowMsFn());
+  let timezone = 'UTC';
+  try {
+    timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    // Some hosts (older Hermes) don't expose `resolvedOptions().timeZone` —
+    // fall back to UTC. The `now_iso` value still uses the host's offset
+    // so all three lines stay self-consistent.
+  }
+  const weekday = now.toLocaleDateString('en-US', { weekday: 'long' });
+  return [
+    'Current context (use these when the user mentions a relative time):',
+    `- now_iso: ${now.toISOString()}`,
+    `- timezone: ${timezone}`,
+    `- weekday: ${weekday}`,
+  ].join('\n');
+}
+
 export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCommandHandler {
   const baseSystemPrompt = options.systemPrompt ?? DEFAULT_ASK_SYSTEM_PROMPT;
   return async (query) => {
+    // MT-15-I3: prepend the current time so tools like
+    // `schedule_reminder` can resolve relative phrases ("in 3 minutes",
+    // "tomorrow at 9am") without forcing the user into a clarification
+    // round-trip. Recomputed per turn so a long-running session stays
+    // synced with wall-clock — the LLM should never anchor against a
+    // stale "now". Pure helper, easy to mock in tests.
+    const timeBlock = formatCurrentTimeBlock();
+    let systemPrompt = `${timeBlock}\n\n${baseSystemPrompt}`;
+
     // WM-BRAIN-05: run the classifier first (fail-open) so the
     // reasoning agent gets a routing nudge. No classifier → skip.
-    let systemPrompt = baseSystemPrompt;
     if (options.intentClassifier !== undefined) {
       let hint: IntentClassification;
       try {
@@ -202,7 +248,7 @@ export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCom
       }
       const block = formatIntentHintBlock(hint);
       if (block !== '') {
-        systemPrompt = `${baseSystemPrompt}\n\n${block}`;
+        systemPrompt = `${systemPrompt}\n\n${block}`;
       }
     }
 

@@ -9,6 +9,7 @@ export {
   registerDevice,
   resetDeviceRegistry,
   revokeDevice,
+  subscribeToDeviceRegistry,
   touchDevice,
 } from './src/devices/registry';
 export type { AuthType, DeviceRole, PairedDevice } from './src/devices/registry';

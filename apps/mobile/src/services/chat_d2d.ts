@@ -21,8 +21,16 @@
  * inbound filter in `bootstrap.ts` accepts both.
  */
 
-import { addMessage, type ChatMessage } from '@dina/brain/chat';
+import { addMessage, updateMessageMetadataById, type ChatMessage } from '@dina/brain/chat';
 import { getD2DSender, MsgTypeCoordinationRequest } from '@dina/core/d2d';
+
+/**
+ * Outbound delivery state for the peer-side chat bubble. Drives the
+ * tick / spinner / exclamation icon next to the user's message and
+ * lets the renderer pick a tooltip ("Sending…", "Delivered to relay",
+ * "Couldn't deliver"). MT-19-I1.
+ */
+export type D2DDeliveryStatus = 'sending' | 'delivered' | 'failed';
 
 export class ChatSendError extends Error {
   constructor(
@@ -60,19 +68,30 @@ export async function sendChatMessage(peerDID: string, text: string): Promise<Ch
     throw new ChatSendError('D2D sender not wired — bring the node up before sending');
   }
 
-  // Optimistic local echo.
+  // Optimistic local echo. `deliveryStatus: 'sending'` drives the
+  // pending spinner on the chat bubble; we patch it to 'delivered'
+  // or 'failed' once the wire round-trip resolves. MT-19-I1.
+  const status: D2DDeliveryStatus = 'sending';
   const msg = addMessage(peerDID, 'user', trimmed, {
-    metadata: { source: 'd2d', peerDID },
+    metadata: { source: 'd2d', peerDID, deliveryStatus: status },
   });
 
   try {
     await sender(peerDID, MsgTypeCoordinationRequest, { text: trimmed });
+    updateMessageMetadataById(peerDID, msg.id, {
+      deliveryStatus: 'delivered' satisfies D2DDeliveryStatus,
+    });
     return msg;
   } catch (err) {
     // Leave the user bubble in place (it was optimistic but the user
-    // DID type these words) and append a separate error line next to
-    // it so the failure is visible.
+    // DID type these words) and flip its status to 'failed' so the
+    // bubble itself reflects the outcome — a separate error line
+    // also appends so the failure is visible standalone.
     const reason = err instanceof Error ? err.message : String(err);
+    updateMessageMetadataById(peerDID, msg.id, {
+      deliveryStatus: 'failed' satisfies D2DDeliveryStatus,
+      deliveryError: reason,
+    });
     addMessage(peerDID, 'error', `Couldn't deliver: ${reason}`, {
       metadata: { source: 'd2d', peerDID, failedMessageId: msg.id },
     });

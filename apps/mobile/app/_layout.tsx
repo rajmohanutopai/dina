@@ -38,6 +38,8 @@ import * as Notifications from 'expo-notifications';
 import { colors, fonts } from '../src/theme';
 import { useNodeBootstrap } from '../src/hooks/useNodeBootstrap';
 import { sealVault, useIsUnlocked } from '../src/hooks/useUnlock';
+import { useAutoLock } from '../src/hooks/useAutoLock';
+import { useHasActiveAgent } from '../src/hooks/useHasActiveAgent';
 import type { BootDegradation } from '../src/services/boot_service';
 import {
   subscribeRuntimeWarnings,
@@ -100,10 +102,14 @@ const NAV_MENU_ITEMS: NavMenuItem[] = [
   // entry would just be a duplicate. Reachable via the bell-icon tab.
   { label: 'Settings',      icon: 'settings-outline',        href: '/settings'      },
   { label: 'Help',          icon: 'help-circle-outline',     href: '/help'          },
-  // Action item — flips `isUnlocked()` → false, tearing down all
-  // open SQLCipher handles. UnlockGate's subscriber re-renders to the
-  // "Welcome back" passphrase prompt on the next tick.
-  { label: 'Lock vault',    icon: 'log-out-outline',         action: 'lock'         },
+  // Action item — drops in-memory DEKs, closes SQLCipher handles, and
+  // arms the one-shot force-prompt flag so the next vault access
+  // prompts for a passphrase even when `startupMode === 'auto'` has
+  // cached one in the keychain. UnlockGate's subscriber re-renders to
+  // the "Welcome back" passphrase prompt on the next tick.
+  // Named "Sign out" because the underlying SQLCipher files are always
+  // encrypted at rest — this button locks the SESSION, not the vault.
+  { label: 'Sign out',      icon: 'log-out-outline',         action: 'lock'         },
 ];
 
 function HeaderMenuButton({ onPress }: { onPress: () => void }) {
@@ -407,6 +413,17 @@ export default function RootLayout() {
   // no longer gated on a navigation remount (issue #12). `enabled:
   // false` cleanly skips the effect while we wait.
   const unlocked = useIsUnlocked();
+
+  // Auto-lock on app background (MT-40). Subscribes to React Native's
+  // AppState while the vault is unlocked; on `background` transition
+  // (durable — `inactive` is ignored as a transient overlay state)
+  // schedules a `sealVault()` after the user-configured background
+  // timeout (default 5 minutes, settable via Settings → Security).
+  // The seal arms the same force-prompt flag that explicit Sign out
+  // uses, so the next foreground re-entry prompts for a passphrase
+  // even when `startupMode === 'auto'`.
+  useAutoLock(unlocked);
+
   // Explicit demo-mode toggle: reads the Expo public env var and
   // passes it through to the composer. Default off so a production
   // build never picks up Bus 42 demo state by accident (findings
@@ -431,6 +448,16 @@ export default function RootLayout() {
     (bootState.node.role === 'provider' || bootState.node.role === 'both');
   const providerBlocked = bootState.degradations.some((d) => PROVIDER_BLOCKERS.has(d.code));
   const showProviderTabs = runningAsProvider && !providerBlocked;
+
+  // The Approvals tab serves three approval kinds — provider-mode
+  // service queries, paired-agent intent validations (`dina validate`
+  // from OpenClaw / dina-cli-agent), and locked-vault staging access.
+  // The latter two fire from any paired `agent`-role device, not just
+  // when this node publishes services. Without an OR'd agent gate, a
+  // user with OpenClaw paired but no provider profile can never see
+  // their pending intent-validation approvals.
+  const hasActiveAgent = useHasActiveAgent();
+  const showApprovalsTab = showProviderTabs || hasActiveAgent;
 
   // Two badge-bearing bottom tabs:
   //   - Approvals: provider-only inbound service queries that need a
@@ -801,8 +828,10 @@ export default function RootLayout() {
                 tabBarIcon: ({ focused }) => <TabIcon name="Approvals" focused={focused} />,
                 // Hide when the node can't actually handle inbound provider
                 // traffic yet (finding #12). `href: null` removes it from the
-                // tab bar without unmounting the route.
-                href: showProviderTabs ? undefined : null,
+                // tab bar without unmounting the route. Also visible whenever
+                // a delegation-claiming agent is paired so intent-validation
+                // approvals from OpenClaw / dina-cli-agent have a surface.
+                href: showApprovalsTab ? undefined : null,
                 tabBarBadge: approvalBadge,
               }}
             />

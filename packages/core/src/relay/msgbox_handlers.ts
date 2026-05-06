@@ -92,6 +92,12 @@ export interface D2DInboundResult {
    * reading the message back from the vault.
    */
   stagedBody?: string;
+  /**
+   * The sender's `created_time` from the verified DinaMessage (Unix
+   * milliseconds). Forwarded so chat-side fan-out can sort by sender
+   * time instead of receive-time. MT-19-I2.
+   */
+  senderCreatedTime?: number;
 }
 
 /**
@@ -175,6 +181,7 @@ export async function handleInboundD2D(
       bypassedBody: result.action === 'bypassed' ? result.bypassedBody : undefined,
       stagedBody:
         result.action === 'staged' || result.action === 'ephemeral' ? result.stagedBody : undefined,
+      senderCreatedTime: result.senderCreatedTime,
     };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : 'D2D processing failed' };

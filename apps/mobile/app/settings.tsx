@@ -37,6 +37,10 @@ import {
 import { wireBrainChatProvider } from '../src/ai/brain_wiring';
 import { getBootedNode, getBootDegradations } from '../src/hooks/useNodeBootstrap';
 import type { ProviderType } from '../src/ai/provider';
+import {
+  getBackgroundTimeout,
+  setBackgroundTimeout,
+} from '@dina/core';
 
 /**
  * Mirror of the provider-blocker set in `_layout.tsx`. Kept local to
@@ -72,6 +76,19 @@ export default function SettingsScreen() {
   // Refreshed on focus so the row disappears as soon as the user
   // completes the deferred Confirm flow and navigates back.
   const [verificationPending, setVerificationPending] = useState(false);
+
+  // Auto-lock background timeout (MT-40-I1). Lives in core's
+  // `sleep_wake.ts` module-level state; the Settings row mirrors it
+  // here for display + lets the user pick from the same preset list
+  // the security hook publishes. Re-read on focus so external changes
+  // (admin reset, future imperative APIs) refresh the label.
+  const [autoLockSeconds, setAutoLockSeconds] = useState<number>(() => {
+    try {
+      return getBackgroundTimeout();
+    } catch {
+      return 300;
+    }
+  });
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
@@ -475,6 +492,51 @@ export default function SettingsScreen() {
           <Text style={styles.rowLabel}>View recovery phrase</Text>
           <Text style={styles.rowValue}>{'›'}</Text>
         </TouchableOpacity>
+        {/* MT-40-I1: pick how long the app waits in the background
+            before sealing the vault. The auto-lock listener
+            (`useAutoLock`) reads `getBackgroundTimeout()` afresh on
+            every transition, so a change here takes effect on the
+            next foreground→background. Default is 5 minutes. */}
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => {
+            const presets: ReadonlyArray<{ s: number; label: string }> = [
+              { s: 60, label: '1 minute' },
+              { s: 300, label: '5 minutes' },
+              { s: 600, label: '10 minutes' },
+              { s: 1800, label: '30 minutes' },
+              { s: 3600, label: '1 hour' },
+            ];
+            Alert.alert(
+              'Auto-lock when backgrounded',
+              'Seal the vault after this much time in the background. The app prompts for your passphrase the next time you bring it foreground.',
+              [
+                ...presets.map((p) => ({
+                  text: p.label + (p.s === autoLockSeconds ? '  ✓' : ''),
+                  onPress: () => {
+                    try {
+                      setBackgroundTimeout(p.s);
+                      setAutoLockSeconds(p.s);
+                    } catch (err) {
+                      Alert.alert(
+                        'Could not change timeout',
+                        err instanceof Error ? err.message : String(err),
+                      );
+                    }
+                  },
+                })),
+                { text: 'Cancel', style: 'cancel' },
+              ],
+              { cancelable: true },
+            );
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Auto-lock timeout"
+          testID="settings-row-autolock"
+        >
+          <Text style={styles.rowLabel}>Auto-lock when backgrounded</Text>
+          <Text style={styles.rowValue}>{formatTimeoutLabel(autoLockSeconds)} {'›'}</Text>
+        </TouchableOpacity>
         <SettingsRow label="Encryption" value="AES-256-GCM" />
         <SettingsRow label="Key derivation" value="SLIP-0010 + HKDF" />
         <SettingsRow label="Key storage" value="Device Keychain" />
@@ -487,6 +549,25 @@ export default function SettingsScreen() {
       </View>
     </ScrollView>
   );
+}
+
+/**
+ * Pretty-print the auto-lock timeout for the Settings row's right-side
+ * value. The presets are 60s/300s/600s/1800s/3600s; non-preset values
+ * (set via direct API call) fall through to a generic "Ns" rendering
+ * so the row never goes blank.
+ */
+function formatTimeoutLabel(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds === 60) return '1 minute';
+  if (seconds % 3600 === 0) {
+    const h = seconds / 3600;
+    return `${h} hour${h === 1 ? '' : 's'}`;
+  }
+  if (seconds % 60 === 0) {
+    return `${seconds / 60} minutes`;
+  }
+  return `${seconds}s`;
 }
 
 function SettingsRow({ label, value }: { label: string; value: string }) {

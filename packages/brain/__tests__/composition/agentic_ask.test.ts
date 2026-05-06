@@ -133,11 +133,12 @@ describe('buildAgenticAskPipeline', () => {
     expect(pipeline.provider.name).toContain('reason');
   });
 
-  it('registers all 11 agentic tools on the tool registry', () => {
+  it('registers all 12 agentic tools on the tool registry', () => {
     // 9 substrate / discovery tools + classify_intent (re-routing
     // mid-loop) + draft_review (LLM-decided trigger for the inline
-    // review-draft card flow). The full set is documented in
-    // composition/agentic_ask.ts.
+    // review-draft card flow) + schedule_reminder (first-class /ask
+    // path for "remind me to X" — closes MT-15-I2). The full set is
+    // documented in composition/agentic_ask.ts.
     const pipeline = buildAgenticAskPipeline(makeBuilderInput());
     const names = pipeline.tools.toDefinitions().map((t) => t.name).sort();
     expect(names).toEqual(
@@ -150,12 +151,13 @@ describe('buildAgenticAskPipeline', () => {
         'get_full_content',
         'list_personas',
         'query_service',
+        'schedule_reminder',
         'search_provider_services',
         'search_trust_network',
         'vault_search',
       ].sort(),
     );
-    expect(pipeline.tools.size()).toBe(11);
+    expect(pipeline.tools.size()).toBe(12);
   });
 
   it('defaults sensitivePersonas to [health, financial] when omitted', () => {
@@ -202,7 +204,7 @@ describe('buildAgenticAskPipeline', () => {
       expect(typeof pipeline.buildToolsForAsk).toBe('function');
     });
 
-    it('per-ask registry has the same 11 tools as the static one', () => {
+    it('per-ask registry has the same 12 tools as the static one', () => {
       const { ApprovalManager } = require('../../../core/src/approval/manager');
       const pipeline = buildAgenticAskPipeline({
         ...makeBuilderInput(),

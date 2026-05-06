@@ -18,6 +18,7 @@ import {
   hydrateThread,
   resetThreads,
   getThread,
+  subscribeToThread,
 } from '../../src/chat/thread';
 import {
   InMemoryChatMessageRepository,
@@ -95,6 +96,90 @@ describe('thread persistence dual-write (#14)', () => {
       {},
     );
     expect(typeCounts).toEqual({ user: 1, dina: 1, system: 1 });
+  });
+
+  it('honours an explicit timestamp override for sender-time ordering (MT-19-I2)', () => {
+    // Inbound D2D fan-out passes the sender's verified `created_time`
+    // through `addMessage(..., { timestamp })`. Without that override
+    // the message gets Date.now() at receive-time and a back-to-back
+    // MsgBox replay can land out of order. The merge sort in the
+    // chat thread store keys on this timestamp, so honouring the
+    // override is what makes the chronological-replay guarantee real.
+    const senderSentAt = 1_700_000_000_000;
+    const m = addMessage('peer-x', 'dina', 'hello', { timestamp: senderSentAt });
+    expect(m.timestamp).toBe(senderSentAt);
+
+    // The default path (no override) still uses receive-time so
+    // outbound + locally-authored messages don't regress.
+    const before = Date.now();
+    const local = addMessage('peer-x', 'user', 'reply');
+    const after = Date.now();
+    expect(local.timestamp).toBeGreaterThanOrEqual(before);
+    expect(local.timestamp).toBeLessThanOrEqual(after);
+  });
+
+  it('hydrateThread fires subscribers so React-driven UIs re-render (MT-18-I2)', async () => {
+    // Without this notification, `useSyncExternalStore`-backed chat
+    // hooks see the stale empty snapshot — the in-memory map gets
+    // populated but no subscriber wakeup means React never knows to
+    // re-render. Live-tested on iOS sim 2026-05-06: post-fix the
+    // `/chat/[did]` screen showed all four exchanged messages after
+    // an app restart that previously rendered "No messages yet".
+    addUserMessage('main', 'persisted before restart');
+    setChatMessageRepository(null);
+    resetThreads();
+    setChatMessageRepository(repo);
+
+    let firedCount = 0;
+    subscribeToThread('main', () => {
+      firedCount += 1;
+    });
+    const count = await hydrateThread('main');
+    expect(count).toBe(1);
+    expect(firedCount).toBe(1);
+  });
+
+  it('hydrateThread merges disk into a non-empty in-memory thread without dropping live entries', async () => {
+    // The MsgBox replay race (MT-19): an inbound message arrives
+    // BEFORE the chat screen mounts. The receive pipeline writes it
+    // into the in-memory thread via `addMessage`. Then the screen
+    // mounts and hydrates. Without the merge, the disk read would
+    // either short-circuit (and miss historical rows) or replace
+    // (and drop the just-arrived live message). The merge handles
+    // both: union by id, sorted by timestamp.
+    //
+    // Setup: seed disk with two historical messages, simulate a
+    // restart that wipes the in-memory cache, then add ONE live
+    // inbound. The hydrate has to land all three in chronological
+    // order.
+    addUserMessage('main', 'history A');
+    addUserMessage('main', 'history B');
+    setChatMessageRepository(null);
+    resetThreads();
+    setChatMessageRepository(repo);
+    addUserMessage('main', 'live inbound after restart');
+
+    const added = await hydrateThread('main');
+    // Two of the three IDs were already in memory, hydrate added two
+    // disk-only ones (history A + B). The live inbound stays.
+    expect(added).toBe(2);
+    const contents = getThread('main').map((m) => m.content);
+    expect(contents).toContain('history A');
+    expect(contents).toContain('history B');
+    expect(contents).toContain('live inbound after restart');
+  });
+
+  it('hydrateThread does NOT fire subscribers when nothing was loaded', async () => {
+    // No persisted rows → hydrate returns 0. Firing on an empty
+    // hydrate would be a misleading "thread changed" signal that
+    // forces a needless re-render across every mounted chat surface.
+    let firedCount = 0;
+    subscribeToThread('does-not-exist', () => {
+      firedCount += 1;
+    });
+    const count = await hydrateThread('does-not-exist');
+    expect(count).toBe(0);
+    expect(firedCount).toBe(0);
   });
 
   it('hydrateThread is a no-op when the thread is already populated', async () => {

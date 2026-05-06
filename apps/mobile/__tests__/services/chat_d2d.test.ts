@@ -98,4 +98,39 @@ describe('sendChatMessage', () => {
     expect(fn).toHaveBeenCalledTimes(2);
     expect(getD2DSender()).toBe(fn);
   });
+
+  it('flips deliveryStatus from sending → delivered on a successful send (MT-19-I1)', async () => {
+    // Hold the wire-send until we explicitly let it through. While it
+    // hangs, the user bubble must already carry deliveryStatus:'sending'
+    // so the chat row can render the spinner immediately. Once the
+    // wire send resolves, it must transition to 'delivered'.
+    let release!: () => void;
+    setD2DSender(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const sendPromise = sendChatMessage(PEER, 'in flight');
+    // Microtask flush so the optimistic addMessage runs.
+    await Promise.resolve();
+    const inFlight = getThread(PEER)[0];
+    expect(inFlight.metadata?.deliveryStatus).toBe('sending');
+    release();
+    await sendPromise;
+    const settled = getThread(PEER)[0];
+    expect(settled.id).toBe(inFlight.id); // same bubble, just patched
+    expect(settled.metadata?.deliveryStatus).toBe('delivered');
+  });
+
+  it('flips deliveryStatus to failed and records the reason on send failure (MT-19-I1)', async () => {
+    setD2DSender(async () => {
+      throw new Error('msgbox unreachable');
+    });
+    await expect(sendChatMessage(PEER, 'oh no')).rejects.toThrow(/msgbox unreachable/);
+    const userBubble = getThread(PEER)[0];
+    expect(userBubble.type).toBe('user');
+    expect(userBubble.metadata?.deliveryStatus).toBe('failed');
+    expect(userBubble.metadata?.deliveryError).toMatch(/msgbox unreachable/);
+  });
 });

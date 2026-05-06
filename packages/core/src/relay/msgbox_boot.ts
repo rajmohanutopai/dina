@@ -65,6 +65,14 @@ export interface MsgBoxBootConfig {
     senderDID: string;
     messageType: string;
     body: string;
+    /**
+     * Sender's `created_time` from the verified DinaMessage envelope
+     * (Unix milliseconds). Use this for chronological ordering in the
+     * UI fan-out instead of receive-time so a multi-message MsgBox
+     * replay-on-reconnect renders in the order the sender intended.
+     * MT-19-I2.
+     */
+    senderCreatedTime?: number;
   }) => Promise<void> | void;
   /**
    * Timeout for the initial WS handshake. Forwarded to
@@ -119,6 +127,7 @@ export async function bootstrapMsgBox(config: MsgBoxBootConfig): Promise<void> {
               senderDID: result.senderDID,
               messageType: result.messageType,
               body: result.stagedBody,
+              senderCreatedTime: result.senderCreatedTime,
             });
           } catch {
             // UI fan-out errors are caller-owned; the vault copy is authoritative.

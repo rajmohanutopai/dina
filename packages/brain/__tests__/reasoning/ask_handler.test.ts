@@ -5,6 +5,7 @@
 import {
   makeAgenticAskHandler,
   DEFAULT_ASK_SYSTEM_PROMPT,
+  formatCurrentTimeBlock,
   formatIntentHintBlock,
 } from '../../src/reasoning/ask_handler';
 import { ToolRegistry, type AgentTool } from '../../src/reasoning/tool_registry';
@@ -220,7 +221,10 @@ describe('makeAgenticAskHandler', () => {
     const { provider, captured } = captureSystem();
     const handler = makeAgenticAskHandler({ provider, tools: new ToolRegistry() });
     await handler('hello');
-    expect(captured.systemPrompt).toBe(DEFAULT_ASK_SYSTEM_PROMPT);
+    // MT-15-I3: handler now prepends a Current-context block (now_iso /
+    // timezone / weekday) for relative-time grounding. The base prompt
+    // is preserved verbatim BELOW the block, so contains-check it.
+    expect(captured.systemPrompt).toContain(DEFAULT_ASK_SYSTEM_PROMPT);
     // The prompt body itself REFERENCES the "Routing hint" block
     // (Python-parity instruction: read the hint first). The dynamic
     // hint suffix `formatIntentHintBlock` appends uses bullet lines
@@ -264,7 +268,10 @@ describe('makeAgenticAskHandler', () => {
       intentClassifier: makeClassifier(IntentClassifier.default()),
     });
     await handler('hello');
-    expect(captured.systemPrompt).toBe(DEFAULT_ASK_SYSTEM_PROMPT);
+    // MT-15-I3: handler now prepends a Current-context block (now_iso /
+    // timezone / weekday) for relative-time grounding. The base prompt
+    // is preserved verbatim BELOW the block, so contains-check it.
+    expect(captured.systemPrompt).toContain(DEFAULT_ASK_SYSTEM_PROMPT);
   });
 
   it('appends the Path 1 / Path 2 routing block when sources includes provider_services', async () => {
@@ -352,7 +359,10 @@ describe('makeAgenticAskHandler', () => {
     // The handler catches the classifier exception and falls back to
     // IntentClassifier.default() — the formatter collapses the default
     // to an empty block, so the base prompt is used unchanged.
-    expect(captured.systemPrompt).toBe(DEFAULT_ASK_SYSTEM_PROMPT);
+    // MT-15-I3: handler now prepends a Current-context block (now_iso /
+    // timezone / weekday) for relative-time grounding. The base prompt
+    // is preserved verbatim BELOW the block, so contains-check it.
+    expect(captured.systemPrompt).toContain(DEFAULT_ASK_SYSTEM_PROMPT);
   });
 
   it('returns a fallback when the loop ends with empty answer (max_iterations)', async () => {
@@ -463,5 +473,79 @@ describe('formatIntentHintBlock', () => {
       reasoning_hint: '',
     };
     expect(formatIntentHintBlock(hint)).toMatch(/advisory/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// formatCurrentTimeBlock — MT-15-I3 lock-in
+//
+// The agentic loop MUST inject the current time so tools that need
+// temporal grounding (`schedule_reminder`, "is it past business hours",
+// etc.) can resolve relative phrases without a clarification round-trip.
+// These tests pin the block's structure so a future refactor doesn't
+// silently drop the time injection.
+// ---------------------------------------------------------------------------
+
+describe('formatCurrentTimeBlock (MT-15-I3)', () => {
+  // Pinned UTC instant: 2026-05-06T17:34:00.000Z (a Wednesday).
+  const FIXED_NOW_MS = Date.UTC(2026, 4, 6, 17, 34, 0);
+
+  it('emits an ISO-8601 now plus a timezone and weekday line', () => {
+    const block = formatCurrentTimeBlock(() => FIXED_NOW_MS);
+    // Header must explicitly steer the LLM toward using these for
+    // relative-time resolution — otherwise it can ignore them.
+    expect(block).toMatch(/Current context/);
+    expect(block).toMatch(/relative time/i);
+    expect(block).toMatch(/now_iso: 2026-05-06T17:34:00\.000Z/);
+    expect(block).toMatch(/timezone: /);
+    expect(block).toMatch(/weekday: Wednesday/);
+  });
+
+  it('uses Date.now when no clock injected (smoke check, no value pin)', () => {
+    // Default-clock path. Verifies the function works without an
+    // injected nowMsFn. We don't assert the exact ISO since "now"
+    // moves; just that the output looks like the expected shape.
+    const block = formatCurrentTimeBlock();
+    expect(block).toMatch(/now_iso: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/);
+    expect(block).toMatch(/timezone: /);
+  });
+
+  it('handler prepends the time block to the system prompt on every turn', async () => {
+    // Capture the system prompt the LLM saw — proves the block
+    // landed in the wire request, not just in a helper that's never
+    // called. This is the regression-protection assertion.
+    let seenSystemPrompt = '';
+    const provider: LLMProvider = {
+      name: 'test',
+      supportsStreaming: false,
+      supportsToolCalling: true,
+      supportsEmbedding: false,
+      async chat(_msgs, opts) {
+        seenSystemPrompt = (opts as { systemPrompt?: string } | undefined)?.systemPrompt ?? '';
+        return {
+          content: 'ok',
+          toolCalls: [],
+          model: 'test',
+          usage: { inputTokens: 1, outputTokens: 1 },
+          finishReason: 'end',
+        };
+      },
+      async *stream() {
+        throw new Error('nope');
+      },
+      async embed() {
+        throw new Error('nope');
+      },
+    };
+    const handler = makeAgenticAskHandler({
+      provider,
+      tools: new ToolRegistry(),
+    });
+    await handler('what time is it');
+    expect(seenSystemPrompt).toMatch(/Current context/);
+    expect(seenSystemPrompt).toMatch(/now_iso: \d{4}-\d{2}-\d{2}T/);
+    // The base system prompt must still be there underneath — we're
+    // PREPENDING, not replacing.
+    expect(seenSystemPrompt).toContain(DEFAULT_ASK_SYSTEM_PROMPT.slice(0, 80));
   });
 });

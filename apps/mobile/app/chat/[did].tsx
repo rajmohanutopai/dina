@@ -215,6 +215,15 @@ function Bubble({ message, peerDID }: { message: ChatMessage; peerDID: string })
     );
   }
 
+  // Outbound delivery status — drives the tick / spinner / exclamation
+  // glyph next to the user's own bubble. Peer-side bubbles never carry
+  // a deliveryStatus (those messages came from the relay, the sender's
+  // node is what tracks delivery to us). MT-19-I1.
+  const deliveryStatus =
+    !fromPeer && typeof message.metadata?.deliveryStatus === 'string'
+      ? (message.metadata.deliveryStatus as 'sending' | 'delivered' | 'failed')
+      : null;
+
   return (
     <View style={[styles.bubbleRow, fromPeer ? styles.bubbleRowLeft : styles.bubbleRowRight]}>
       <View style={[styles.bubble, fromPeer ? styles.bubblePeer : styles.bubbleMe]}>
@@ -222,7 +231,32 @@ function Bubble({ message, peerDID }: { message: ChatMessage; peerDID: string })
           {message.content}
         </Text>
       </View>
+      {deliveryStatus !== null ? <DeliveryIndicator status={deliveryStatus} /> : null}
     </View>
+  );
+}
+
+function DeliveryIndicator({ status }: { status: 'sending' | 'delivered' | 'failed' }) {
+  // The glyphs are intentionally low-contrast — they confirm state on
+  // demand without taking visual weight away from the message itself.
+  // Single character so each bubble row stays visually compact.
+  const glyph = status === 'sending' ? '···' : status === 'delivered' ? '✓' : '!';
+  const label =
+    status === 'sending' ? 'Sending' : status === 'delivered' ? 'Delivered to relay' : 'Failed to send';
+  const color =
+    status === 'failed'
+      ? colors.error
+      : status === 'delivered'
+      ? colors.textMuted
+      : colors.textMuted;
+  return (
+    <Text
+      style={[styles.deliveryIndicator, { color }]}
+      accessibilityLabel={label}
+      accessibilityRole="text"
+    >
+      {glyph}
+    </Text>
   );
 }
 
@@ -299,6 +333,18 @@ const styles = StyleSheet.create({
     color: colors.userBubbleText,
     fontSize: 15,
     lineHeight: 20,
+  },
+  deliveryIndicator: {
+    // Sits to the right of the outgoing bubble, vertically centered
+    // against the bubble's bottom edge. Tiny font keeps the row
+    // height stable — without `alignSelf` the FlexRow would baseline
+    // the indicator against the bubble's text and look misaligned.
+    fontFamily: fonts.sans,
+    fontSize: 11,
+    marginLeft: 6,
+    marginRight: 2,
+    alignSelf: 'flex-end',
+    paddingBottom: 4,
   },
   errorRow: {
     alignItems: 'center',

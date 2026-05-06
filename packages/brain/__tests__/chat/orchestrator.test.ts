@@ -118,6 +118,22 @@ describe('Chat Orchestrator', () => {
       expect(result.response).toContain("Got it — I'll remember that");
       expect(result.response).not.toContain('Stored in');
     });
+
+    it('pending_unlock: tells the user the row is parked behind approval (MT-13-I1)', async () => {
+      // The drain ran, classifier picked /health, but the persona is
+      // closed — staging parked the row + opened an approval task. The
+      // reply must surface the persona + the Approvals redirect rather
+      // than lying with "Got it — I'll remember that".
+      setRememberDrainHook(async () => ({ persona: null, pendingPersona: 'health' }));
+
+      const result = await handleChat('/remember Doctor visit on Tuesday at 9am');
+      expect(result.intent).toBe('remember');
+      expect(result.response).toContain('Health vault');
+      expect(result.response).toMatch(/needs your approval/i);
+      expect(result.response).toMatch(/approvals/i);
+      expect(result.response).not.toContain("Got it — I'll remember that");
+      expect(result.response).not.toContain('Stored in');
+    });
   });
 
   describe('/ask', () => {

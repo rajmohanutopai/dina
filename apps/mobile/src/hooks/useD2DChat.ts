@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
-import { getThread, subscribeToThread, type ChatMessage } from '@dina/brain/chat';
+import { getThread, hydrateThread, subscribeToThread, type ChatMessage } from '@dina/brain/chat';
 import { getContact, getTrustLevel, type TrustLevel } from '@dina/core';
 import { sendChatMessage, ChatSendError } from '../services/chat_d2d';
 
@@ -51,11 +51,21 @@ function invalidateSnapshot(threadId: string): void {
 }
 
 /**
- * Test-only: drop every cached snapshot so a fresh read rebuilds
- * from the live thread. Ordinary app code never needs this.
+ * Per-session record of which peer DIDs we've already pulled from
+ * the persistence layer. Module-level so it survives screen
+ * unmount/remount; reset only when the hook is re-imported (e.g.
+ * fast-refresh) or when tests call the helper below.
+ */
+const hydratedPeers = new Set<string>();
+
+/**
+ * Test-only: drop every cached snapshot + hydrate flag so a fresh
+ * read rebuilds from the live thread. Ordinary app code never
+ * needs this.
  */
 export function resetD2DChatSnapshotsForTest(): void {
   snapshotByThread.clear();
+  hydratedPeers.clear();
 }
 
 export function useD2DChat(peerDID: string): UseD2DChatResult {
@@ -101,14 +111,29 @@ export function useD2DChat(peerDID: string): UseD2DChatResult {
     }
   }, []);
 
-  // Make sure a brand-new thread surfaces as the empty snapshot
-  // consistently — without this, the first render sees whatever
-  // addMessage races have cached. Harmless when the thread already
-  // has entries.
+  // Lazy-hydrate the persisted thread for this peer once per session
+  // — the boot path only hydrates the default session thread
+  // (`bootstrap.ts`), so without this the per-peer chat history is
+  // missing after every app restart even though it's saved to disk.
+  //
+  // We hydrate even when the in-memory thread is non-empty, because
+  // an inbound message that arrived before the screen mounted will
+  // have already populated it via `addMessage`. The merge inside
+  // `hydrateThread` deduplicates by id, so the disk history loads
+  // without dropping the live messages.
+  //
+  // The `hydratedPeers` set guards against re-hydrating on every
+  // remount of the chat screen — once-per-session per peer is
+  // enough; subsequent activity flows through the live subscription.
   useEffect(() => {
-    if (getThread(peerDID).length === 0) {
-      invalidateSnapshot(peerDID);
-    }
+    if (peerDID === '') return;
+    if (hydratedPeers.has(peerDID)) return;
+    hydratedPeers.add(peerDID);
+    invalidateSnapshot(peerDID);
+    void hydrateThread(peerDID).catch((err: unknown) => {
+      console.warn('[useD2DChat] hydrateThread failed:', err);
+      hydratedPeers.delete(peerDID);
+    });
   }, [peerDID]);
 
   return { messages, peerContact, peerTrust, isKnownContact, send };

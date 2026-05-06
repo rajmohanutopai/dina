@@ -221,7 +221,18 @@ export function addMessage(
   threadId: string,
   type: MessageType,
   content: string,
-  options?: { metadata?: Record<string, unknown>; sources?: string[] },
+  options?: {
+    metadata?: Record<string, unknown>;
+    sources?: string[];
+    /**
+     * Override the default receive-time timestamp. The receive
+     * pipeline forwards the sender's `created_time` from the
+     * verified DinaMessage envelope so a burst of D2D messages
+     * sorts in the order the sender meant, not the order the
+     * relay happened to deliver them. MT-19-I2.
+     */
+    timestamp?: number;
+  },
 ): ChatMessage {
   let thread = threads.get(threadId);
   if (!thread) {
@@ -236,7 +247,7 @@ export function addMessage(
     content,
     metadata: options?.metadata,
     sources: options?.sources,
-    timestamp: Date.now(),
+    timestamp: options?.timestamp ?? Date.now(),
   };
 
   thread.push(msg);
@@ -258,9 +269,16 @@ export async function hydrateThread(
 ): Promise<number> {
   const repo = getChatMessageRepository();
   if (repo === null) return 0;
-  if (!opts.force && (threads.get(threadId)?.length ?? 0) > 0) return 0;
+  // Default behaviour is a MERGE: pull disk rows in and union them
+  // with whatever the in-memory cache already holds. Mobile chat
+  // hooks call this on first per-peer mount; if an inbound message
+  // arrived before the screen mounted, the in-memory thread already
+  // has it (via `addMessage` from the receive pipeline) and would
+  // be clobbered if we replaced. The merge keeps everything.
+  // `force: true` is used by tests that seed the repo directly
+  // behind the cache's back and want to assert the disk state.
   const rows = await repo.listByThread(threadId);
-  const thread: ChatMessage[] = rows.map((r) => ({
+  const fromDisk: ChatMessage[] = rows.map((r) => ({
     id: r.id,
     threadId: r.threadId,
     type: r.type as MessageType,
@@ -269,8 +287,44 @@ export async function hydrateThread(
     sources: r.sources.length > 0 ? r.sources : undefined,
     timestamp: r.timestamp,
   }));
-  threads.set(threadId, thread);
-  return thread.length;
+  let added = 0;
+  if (opts.force) {
+    threads.set(threadId, fromDisk);
+    added = fromDisk.length;
+  } else {
+    const inMemory = threads.get(threadId) ?? [];
+    const seen = new Set(inMemory.map((m) => m.id));
+    const additions: ChatMessage[] = [];
+    for (const m of fromDisk) {
+      if (!seen.has(m.id)) {
+        additions.push(m);
+        seen.add(m.id);
+      }
+    }
+    if (additions.length > 0) {
+      // Merge + sort chronologically (timestamp, then id as
+      // tiebreaker for sub-ms ties) so the chat renders in order.
+      const merged = [...inMemory, ...additions].sort((a, b) => {
+        if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
+        return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+      });
+      threads.set(threadId, merged);
+    }
+    added = additions.length;
+  }
+  // Wake subscribers so any mounted chat hook re-reads the populated
+  // thread. Without this, `useSyncExternalStore`-backed views see the
+  // stale snapshot — the hydrate populated the map but no notification
+  // fires, so React never knows to re-render. Firing once for the
+  // last loaded message is sufficient: subscribers don't use the
+  // message argument and just invalidate-and-refetch.
+  if (added > 0) {
+    const final = threads.get(threadId);
+    if (final && final.length > 0) {
+      fireSubscribers(final[final.length - 1]);
+    }
+  }
+  return added;
 }
 
 /** Write-through helper — fire-and-forget since Phase 2.3 (task 2.3).
@@ -654,6 +708,39 @@ export function updateReviewDraftLifecycle(
       ...(old.metadata ?? {}),
       lifecycle: newLc as unknown as Record<string, unknown>,
     },
+  };
+  thread[idx] = newMsg;
+  persistMessage(newMsg);
+  fireSubscribers(newMsg);
+  return newMsg;
+}
+
+/**
+ * Patch a single message's metadata by id. The merge is shallow —
+ * keys in `patch` override the existing metadata, other keys are
+ * preserved. Persists + fires subscribers like the lifecycle helpers.
+ *
+ * Used for D2D outbound delivery status (MT-19-I1): the chat-side
+ * sender writes `metadata.deliveryStatus = 'sending'` on enqueue,
+ * then patches to `'delivered'` once the wire send resolves, or
+ * `'failed'` on error. The chat bubble renders a tick / spinner /
+ * exclamation accordingly.
+ *
+ * Returns the updated message, or `null` if no message matched.
+ */
+export function updateMessageMetadataById(
+  threadId: string,
+  messageId: string,
+  patch: Record<string, unknown>,
+): ChatMessage | null {
+  const thread = threads.get(threadId);
+  if (!thread) return null;
+  const idx = thread.findIndex((m) => m.id === messageId);
+  if (idx === -1) return null;
+  const old = thread[idx];
+  const newMsg: ChatMessage = {
+    ...old,
+    metadata: { ...(old.metadata ?? {}), ...patch },
   };
   thread[idx] = newMsg;
   persistMessage(newMsg);

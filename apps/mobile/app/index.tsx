@@ -37,6 +37,7 @@ import { InlineServiceQueryCard } from '../src/components/InlineServiceQueryCard
 import { InlineReviewDraftCard } from '../src/components/InlineReviewDraftCard';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
 import { loadVerificationStatus } from '../src/services/verification_status';
+import { useHasActiveAgent } from '../src/hooks/useHasActiveAgent';
 
 // Render message shape used by the screen's bubble logic. The chat UI
 // treats Brain's MessageType union as eight display buckets: user
@@ -146,6 +147,15 @@ export default function ChatScreen() {
   // - `messages` re-renders on every thread write, including async
   //   arrivals from `WorkflowEventConsumer.deliver` (Bus 42 replies).
   const { messages: threadMessages, send, sending } = useLiveThread('main');
+  // Gate the /task chip on having a paired delegation-capable agent.
+  // Without one, `delegate_to_agent` would dispatch a workflow task no
+  // one claims and the user would wait 60 s for "agent did not complete"
+  // — a dead-end UX. Hide the chip + popover row instead so the
+  // requirement is discovered up-front (Settings → Agents).
+  const hasActiveAgent = useHasActiveAgent();
+  const availableActions = hasActiveAgent
+    ? ACTIONS
+    : ACTIONS.filter((a) => a.key !== 'task');
   // The reminder fire watcher used to mount here, but it now lives in
   // `app/_layout.tsx` so it ticks across every tab. Keeping it Chat-only
   // meant a reminder firing while the user was on Notifications /
@@ -435,7 +445,7 @@ export default function ChatScreen() {
           {activeAction === null ? (
             <>
               <View style={styles.modeChips}>
-                {ACTIONS.map((action) => (
+                {availableActions.map((action) => (
                   <TouchableOpacity
                     key={action.key}
                     style={styles.modeChip}
@@ -535,7 +545,7 @@ export default function ChatScreen() {
         >
           <Pressable style={styles.popoverSheet} onPress={() => undefined}>
             <Text style={styles.popoverHint}>Switch mode</Text>
-            {ACTIONS.map((action) => {
+            {availableActions.map((action) => {
               const isActive = activeAction?.key === action.key;
               return (
                 <TouchableOpacity

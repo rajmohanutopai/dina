@@ -136,14 +136,19 @@ describe('computeSchemaHash', () => {
 
 describe('eta_query capability', () => {
   describe('validateEtaQueryParams', () => {
-    const valid = { location: { lat: 37.77, lng: -122.41 } };
+    // Canonical contract (MT-24-I2): route_id is the discriminator, location
+    // is optional. Mirrors brain/src/service/capabilities/eta_query.py and
+    // the seeded test fixtures (test_rel_029_service_query.py et al).
+    const valid = { route_id: '42' };
 
-    it('accepts a minimal valid body', () => {
+    it('accepts a minimal valid body (route_id only)', () => {
       expect(validateEtaQueryParams(valid)).toBeNull();
     });
 
-    it('accepts an optional route_id', () => {
-      expect(validateEtaQueryParams({ ...valid, route_id: '42' })).toBeNull();
+    it('accepts a body with optional location', () => {
+      expect(
+        validateEtaQueryParams({ ...valid, location: { lat: 37.77, lng: -122.41 } }),
+      ).toBeNull();
     });
 
     it('rejects non-object', () => {
@@ -151,47 +156,38 @@ describe('eta_query capability', () => {
       expect(validateEtaQueryParams('x')).toContain('must be a JSON object');
     });
 
-    it('rejects missing location', () => {
-      expect(validateEtaQueryParams({})).toContain('location');
+    it('rejects missing route_id', () => {
+      expect(validateEtaQueryParams({})).toContain('route_id');
     });
 
-    it('rejects out-of-range lat/lng', () => {
-      expect(validateEtaQueryParams({ location: { lat: 91, lng: 0 } })).toContain('lat');
-      expect(validateEtaQueryParams({ location: { lat: -91, lng: 0 } })).toContain('lat');
-      expect(validateEtaQueryParams({ location: { lat: 0, lng: 181 } })).toContain('lng');
-      expect(validateEtaQueryParams({ location: { lat: 0, lng: -181 } })).toContain('lng');
-    });
-
-    it('rejects non-finite lat/lng', () => {
-      expect(validateEtaQueryParams({ location: { lat: Number.NaN, lng: 0 } })).toContain('lat');
-      expect(
-        validateEtaQueryParams({ location: { lat: 0, lng: Number.POSITIVE_INFINITY } }),
-      ).toContain('lng');
-    });
-
-    it('rejects extra properties in location', () => {
-      expect(validateEtaQueryParams({ location: { lat: 0, lng: 0, alt: 100 } })).toContain(
-        'unexpected property',
-      );
-    });
-
-    it('rejects extra top-level properties', () => {
-      expect(validateEtaQueryParams({ ...valid, extra: true })).toContain('unexpected property');
+    it('rejects empty-string route_id', () => {
+      expect(validateEtaQueryParams({ route_id: '' })).toContain('route_id');
     });
 
     it('rejects non-string route_id', () => {
-      expect(validateEtaQueryParams({ ...valid, route_id: 42 })).toContain('route_id');
+      expect(validateEtaQueryParams({ route_id: 42 })).toContain('route_id');
+    });
+
+    it('rejects malformed location.lat / lng (non-finite)', () => {
+      expect(
+        validateEtaQueryParams({ ...valid, location: { lat: Number.NaN, lng: 0 } }),
+      ).toContain('lat');
+      expect(
+        validateEtaQueryParams({
+          ...valid,
+          location: { lat: 0, lng: Number.POSITIVE_INFINITY },
+        }),
+      ).toContain('lng');
     });
   });
 
   describe('validateEtaQueryResult', () => {
-    const valid = {
-      eta_minutes: 45,
-      vehicle_type: 'bus',
-      route_name: 'Route 42',
-    };
+    // Canonical contract: status is the only required field. Other fields
+    // are optional because terminal statuses (out_of_service, not_found)
+    // legitimately omit eta_minutes / route_name / vehicle_type.
+    const valid = { status: 'on_route' as const };
 
-    it('accepts a minimal valid result', () => {
+    it('accepts a minimal valid result (status only)', () => {
       expect(validateEtaQueryResult(valid)).toBeNull();
     });
 
@@ -199,18 +195,19 @@ describe('eta_query capability', () => {
       expect(
         validateEtaQueryResult({
           ...valid,
-          current_location: { lat: 37.77, lng: -122.41 },
+          eta_minutes: 12,
+          vehicle_type: 'bus',
+          route_name: 'Route 42',
           stop_name: 'Market & Powell',
           stop_distance_m: 120,
           map_url: 'https://maps.google.com/?q=37.77,-122.41',
-          status: 'on_route',
           message: 'traffic is light',
         }),
       ).toBeNull();
     });
 
-    it('rejects negative eta_minutes', () => {
-      expect(validateEtaQueryResult({ ...valid, eta_minutes: -1 })).toContain('eta_minutes');
+    it('rejects non-integer eta_minutes', () => {
+      expect(validateEtaQueryResult({ ...valid, eta_minutes: 12.5 })).toContain('eta_minutes');
     });
 
     it('rejects non-finite eta_minutes', () => {
@@ -220,17 +217,17 @@ describe('eta_query capability', () => {
     });
 
     it('rejects unknown status', () => {
-      expect(validateEtaQueryResult({ ...valid, status: 'teleporting' })).toContain('status');
+      expect(validateEtaQueryResult({ status: 'teleporting' })).toContain('status');
+    });
+
+    it('rejects missing status', () => {
+      expect(validateEtaQueryResult({})).toContain('status');
     });
 
     it('accepts each allowed status', () => {
       for (const s of ['on_route', 'not_on_route', 'out_of_service', 'not_found']) {
-        expect(validateEtaQueryResult({ ...valid, status: s })).toBeNull();
+        expect(validateEtaQueryResult({ status: s })).toBeNull();
       }
-    });
-
-    it('rejects extra top-level properties', () => {
-      expect(validateEtaQueryResult({ ...valid, hidden: true })).toContain('unexpected property');
     });
 
     it('rejects negative stop_distance_m', () => {
@@ -241,12 +238,17 @@ describe('eta_query capability', () => {
   });
 
   describe('JSON Schema exports', () => {
-    it('params schema declares additionalProperties:false', () => {
-      expect(EtaQueryParamsSchema.additionalProperties).toBe(false);
+    // The published schemas stay byte-identical to the Python and Go
+    // canonical references (cross-stack interop — see MT-24-I2). Anything
+    // beyond the minimal {type, required, properties} keys would land in
+    // the canonical hash and break interop with main-dina + the Go core.
+    // The cross-stack hash is locked in by `canonical_hash_parity.test.ts`.
+    it('params schema requires route_id', () => {
+      expect(EtaQueryParamsSchema.required).toEqual(['route_id']);
     });
 
-    it('result schema declares additionalProperties:false', () => {
-      expect(EtaQueryResultSchema.additionalProperties).toBe(false);
+    it('result schema requires status', () => {
+      expect(EtaQueryResultSchema.required).toEqual(['status']);
     });
 
     it('schema_hash for params is stable', () => {

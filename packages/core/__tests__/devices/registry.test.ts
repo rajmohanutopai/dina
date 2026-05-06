@@ -17,6 +17,7 @@ import {
   getDeviceByDID,
   hydrateDeviceRegistry,
   resetDeviceRegistry,
+  subscribeToDeviceRegistry,
   type PairedDevice,
 } from '../../src/devices/registry';
 import { setDeviceRepository, type DeviceRepository } from '../../src/devices/repository';
@@ -279,6 +280,93 @@ describe('Device Registry', () => {
     it('returns 0 with no repository wired', async () => {
       setDeviceRepository(null);
       expect(await hydrateDeviceRegistry()).toBe(0);
+    });
+  });
+
+  describe('subscribeToDeviceRegistry', () => {
+    it('notifies on register', () => {
+      const listener = jest.fn();
+      const unsub = subscribeToDeviceRegistry(listener);
+      registerDevice('Phone', 'z6MkSubKey1', 'agent');
+      expect(listener).toHaveBeenCalledTimes(1);
+      unsub();
+    });
+
+    it('notifies on revoke', () => {
+      const d = registerDevice('Phone', 'z6MkSubKey2', 'agent');
+      const listener = jest.fn();
+      const unsub = subscribeToDeviceRegistry(listener);
+      revokeDevice(d.deviceId);
+      expect(listener).toHaveBeenCalledTimes(1);
+      unsub();
+    });
+
+    it('notifies on hydrate when entries are added', async () => {
+      // Stub repo with one persisted device that is NOT yet in the
+      // in-memory map. hydrate() should fire one notification after
+      // adding it.
+      const persisted: PairedDevice = {
+        deviceId: 'dev-hydrate-listener',
+        did: 'did:key:zHydrateListenerKey',
+        publicKeyMultibase: 'zHydrateListenerKey',
+        deviceName: 'Persisted Agent',
+        role: 'agent',
+        authType: 'ed25519',
+        lastSeen: 1,
+        createdAt: 1,
+        revoked: false,
+      };
+      const stubRepo: DeviceRepository = {
+        register: async () => undefined,
+        get: async () => null,
+        getByPublicKey: async () => null,
+        getByDID: async () => null,
+        list: async () => [persisted],
+        revoke: async () => true,
+        touch: async () => undefined,
+      };
+      setDeviceRepository(stubRepo);
+
+      const listener = jest.fn();
+      const unsub = subscribeToDeviceRegistry(listener);
+      await hydrateDeviceRegistry();
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      // Idempotent re-hydrate adds nothing → no second notification.
+      await hydrateDeviceRegistry();
+      expect(listener).toHaveBeenCalledTimes(1);
+      unsub();
+      setDeviceRepository(null);
+    });
+
+    it('notifies on resetDeviceRegistry', () => {
+      const listener = jest.fn();
+      const unsub = subscribeToDeviceRegistry(listener);
+      resetDeviceRegistry();
+      expect(listener).toHaveBeenCalledTimes(1);
+      unsub();
+    });
+
+    it('unsubscribe stops further notifications', () => {
+      const listener = jest.fn();
+      const unsub = subscribeToDeviceRegistry(listener);
+      unsub();
+      registerDevice('Phone', 'z6MkSubKey3', 'agent');
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('isolates one listener throwing from the others', () => {
+      const noisy = jest.fn(() => {
+        throw new Error('boom');
+      });
+      const quiet = jest.fn();
+      const unsubNoisy = subscribeToDeviceRegistry(noisy);
+      const unsubQuiet = subscribeToDeviceRegistry(quiet);
+      registerDevice('Phone', 'z6MkSubKey4', 'agent');
+      expect(noisy).toHaveBeenCalledTimes(1);
+      expect(quiet).toHaveBeenCalledTimes(1);
+      unsubNoisy();
+      unsubQuiet();
     });
   });
 });

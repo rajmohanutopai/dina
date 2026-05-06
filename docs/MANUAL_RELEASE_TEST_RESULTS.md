@@ -282,19 +282,18 @@ Status legend: ✅ pass · ⚠ pass with findings · ❌ fail · ⏭ skipped (ou
 
 ---
 
-## MT-13: Locked persona approval — ⚠ partial pass with finding
+## MT-13: Locked persona approval — ✅ pass with both findings fixed
 
-- The doctor-appointment Remember from MT-12 routed to the Health (sensitive) persona but did NOT trigger a blocking inline approval card with Approve/Deny buttons. Dina replied "Got it — I'll remember that." and the fact appears to have been stored — no Pattern A bail.
-- A "Remember access for health" notification was created and surfaces in the inbox, but the Approvals page reports "All caught up · No service queries are waiting for your approval right now" — the persona-write approval doesn't surface there.
+- The doctor-appointment Remember from MT-12 routes to the Health (sensitive) persona; staging parks the row in `pending_unlock` and opens a workflow approval task, which is the correct gating behaviour. The user-facing chat now reflects this state honestly: "Stashed for your Health vault — that vault needs your approval before I can write to it. Open Approvals to review." (was: "Got it — I'll remember that.").
+- The Approvals page lists the staging approval and accepts the operator's review. Empty-state copy now acknowledges the three kinds the page renders (service queries, memory writes, agent intents) instead of mentioning service queries only.
 
 ### Issues filed
 
-- **MT-13-I1** [MEDIUM — UX gap, possibly a regression] — locked-persona approval is not surfacing as a blocking inline card. Source: `apps/mobile/app/index.tsx:201-205` shows that the renderer DOES handle `displayType === 'ask-approval'` (the Pattern A bail surface), and `useChatApprovals` exists — but the doctor-appointment Remember flowed through to a successful storage without the bail card showing. Possible causes:
-  1. The Health persona is configured at "sensitive" tier (auto-open after first session grant) rather than "locked" (closed by default) — so the LLM had access without re-prompting.
-  2. The Pattern A bail logic only fires when the agentic loop hits a tool call that needs sensitive vault access; the /remember path may write directly without going through that gate.
-  3. The current persona policy is "warn but don't block" for Health by default, and the only locked persona is /financial.
-  *Recommended investigation:* check the persona tier configuration (`config.json` gatekeeper.json) and confirm whether Health is truly Locked vs Sensitive vs Standard. If it's Sensitive (auto-grant for session), the test scenario needs to use a Locked persona explicitly. The MT-13 "Locked persona approval" name implies the test should use a content type that maps to /financial.
-- **MT-13-I2** [feature — currently aspirational per reading of the test spec] — the Approvals page is wired for service-query approvals (D2D peer requests), not persona-write approvals. The notification deep link from MT-12-I1 fix lands the user on a page that doesn't show what they came to action. A unified approvals UI (or kind-aware deep linking — `dina://approvals/persona-write/<id>` vs `dina://approvals/service-query/<id>`) would close the gap.
+- **MT-13-I1** [FIXED — verified by orchestrator test 2026-05-05] — `/remember` against a closed-tier persona acknowledged "Got it — I'll remember that" even though the row was actually parked in `pending_unlock` behind a workflow approval task. Two-bug compound: (a) the bootstrap drain hook in `apps/mobile/src/services/bootstrap.ts` only forwarded persona on `status === 'stored'`, swallowing pending_unlock as `{persona: null}`; (b) the orchestrator's `handleRemember` treated `persona: null` as the no-drain-yet case.
+  *Fix:* extended `RememberDrainResult` with an optional `pendingPersona` field (`packages/brain/src/chat/orchestrator.ts`). The bootstrap drain hook now forwards the classified persona on `pending_unlock`. `handleRemember` produces "Stashed for your <Persona> vault — that vault needs your approval before I can write to it. Open Approvals to review." when `pendingPersona` is set.
+  *Tests:* `packages/brain/__tests__/chat/orchestrator.test.ts` — new "pending_unlock" case asserts the pending-persona reply shape and verifies the misleading "Got it" string is gone (22/22 pass).
+  *Future work:* an inline-in-chat approval card for staging_persona_access (parallel to the Pattern A `'ask-approval'` card) would let users approve/deny without leaving the thread. Out of scope for this fix; the Approvals tab is the primary surface today.
+- **MT-13-I2** [FIXED — empty-state copy] — the Approvals page empty state read "No service queries are waiting for your approval right now." That language hid two other approval kinds the page already renders (and has rendered for a while): `staging_persona_access` (memory writes into closed vaults — MT-13-I1) and `intent_validation` (agent-action approvals from `dina validate`). Updated `apps/mobile/app/approvals.tsx` empty subtitle to: "Nothing waiting for your approval right now — service queries, memory writes into closed vaults, and agent intents will appear here when they need a review." The deeper unification (kind-aware deep linking, inline chat cards for staging approvals) is the future work noted in MT-13-I1.
 
 
 ---
@@ -314,7 +313,7 @@ Status legend: ✅ pass · ⚠ pass with findings · ❌ fail · ⏭ skipped (ou
 
 ---
 
-## MT-15: Reminder creation — ✓ pass with finding
+## MT-15: Reminder creation — ✅ pass with all findings fixed
 
 - Sent Remember "Pick up dry cleaning tomorrow at 6pm" → Dina replied "Stored in General vault. Reminders set: [64cf] 🔔 May 06 at 9:00 AM — Your dry cleaning pickup is scheduled for today at 6pm."
 - Reminder is created automatically — Remember mode + a date inside the text triggers the reminder pipeline as documented in the Reminders empty state ("pick Remember and any dates inside will turn into reminders").
@@ -326,7 +325,9 @@ Status legend: ✅ pass · ⚠ pass with findings · ❌ fail · ⏭ skipped (ou
   *Fix:* `handleRemember` now polls for the client to land, 100ms ticks, 3-second cap. The user-facing path: the first send after a relaunch waits a moment instead of failing with a confusing manual-retry message. A genuinely-broken bootstrap still fails fast at the 3s ceiling.
   *Tests:* existing 49 orchestrator tests still pass.
 
-- **MT-15-I2** [low — agentic loop should know about reminders too] — sending the same text via Ask mode ("Remind me in 2 minutes to test reminders") returns "I don't have any relevant information about that in my memory." The agentic loop has no `create_reminder` tool, so reminder-shaped natural-language prompts route to vault-search and fail informatively. The /remember path handles dates as a side-effect; there is no "ask for a reminder" first-class affordance. Acceptable for now but a future enhancement could add a `schedule_reminder` tool to the agentic toolkit so Ask mode can also drive reminder creation.
+- **MT-15-I2** [FIXED] — sending "Remind me in 2 minutes to test reminders" via Ask used to fall through to vault_search and reply "I don't have any relevant information about that in my memory." The agentic toolkit had no first-class reminder path; /remember handled dates as a side-effect of staging.
+  *Fix:* added `schedule_reminder` to the agentic-loop tool registry (`packages/brain/src/reasoning/schedule_reminder_tool.ts`). The LLM resolves natural-language times ("in 2 minutes", "tomorrow at 9am") into a concrete `due_at` (ISO-8601 or epoch ms) before calling, and the tool drops the reminder straight into Core's reminder service. Past-due requests are rejected; persona defaults to `general` but can be overridden.
+  *Tests:* `packages/brain/__tests__/reasoning/schedule_reminder_tool.test.ts` — 9 cases covering happy path, ISO + epoch ms inputs, message + due_at validation, past-due rejection, clock-skew acceptance, persona override, and the LLM-facing schema. `packages/brain/__tests__/composition/agentic_ask.test.ts` updated to reflect the 12-tool registry (was 11). All 229 reasoning + composition + chat tests pass.
 
 
 ---
@@ -340,7 +341,7 @@ Status legend: ✅ pass · ⚠ pass with findings · ❌ fail · ⏭ skipped (ou
 
 ### Issues filed
 
-- **MT-16-I1** [low — reminder time-of-day interpretation drift] — the dry-cleaning Remember from MT-15 was sent as "tomorrow at 6pm" but Dina's confirmation said "May 06 at 9:00 AM". The 6pm → 9am drift suggests the natural-language date parser is collapsing the time-of-day to a default working-hour. Worth a deeper trace next pass; not a blocker.
+- **MT-16-I1** [FIXED] — the dry-cleaning Remember from MT-15 was sent as "tomorrow at 6pm" but Dina's confirmation rendered "May 06 at 9:00 AM". Root cause: the `REMINDER_PLAN` prompt (`packages/brain/src/llm/prompts.ts`) leaned on morning-heads-up precedents (birthday, payment) without an explicit rule for "user named a clock time → use it". The LLM, looking at examples, assumed a morning heads-up was the right answer for an evening errand. Fix: added an explicit "⚠️ TIME-OF-DAY RULE" section to the prompt: "when the user states an explicit time of day ('at 6pm', 'at 9:30', 'tonight at 8'), the reminder's due_at MUST use THAT time" with the dry-cleaning example as a Good/Bad pair so the rule is unambiguous. Lock-in test in `packages/brain/__tests__/llm/prompts.test.ts` asserts the rule + example survive future edits.
 
 
 ---
@@ -359,37 +360,199 @@ Status legend: ✅ pass · ⚠ pass with findings · ❌ fail · ⏭ skipped (ou
 
 ---
 
-## MT-18: D2D live message — ⏭ skipped (requires second peer node)
+## MT-18: D2D live message — ✓ pass after fix (was ⏭ before second sim was available)
 
-Pass criterion needs two real Dina nodes (or one node + a peer test fixture) handshaking via MsgBox. The current setup is a single iOS sim with one identity; without a paired peer there is no way to send a real encrypted D2D message both ways. The transport layer is exercised in `packages/protocol/conformance` and brain-side bridge tests cover the wire format. Marking as out-of-scope for the single-device manual pass; revisit when running the dual-node sanity stack from `tests/sanity`.
+Re-run on 2026-05-06 with two paired sims:
 
----
+- **iOS sim** (iPhone 17, `F9F52FCE-3E1C-4130-9066-D5860CD2527D`) — Sancho identity, handle `sancho63.test-pds.dinakernel.com`.
+- **Android emulator** (Pixel 10) — fresh-onboarded as Alonso, handle `alonso32.test-pds.dinakernel.com`.
 
-## MT-19: D2D offline/reconnect — ⏭ skipped (same as MT-18)
+Both sims share the hosted MsgBox relay (`wss://test-mailbox.dinakernel.com/ws`) by default — no local infra needed.
 
-Same dependency on a second peer. The reconnect / pending-state handling lives in `cli/src/dina_cli/transport.py` (CLI side) and the `MsgBoxClient` retry loop on mobile, both well-covered by integration tests; manual UI verification needs the peer.
+### What worked
+- iOS → Android: 4/4 messages delivered, rendered live, persisted across Android app restart.
+- Android → iOS: 4/4 messages delivered through MsgBox.
+- Add-contact-by-handle worked both ways via PDS handle resolution.
 
----
+### Issues filed
 
-## MT-20: Trust feed/profile — ⏭ skipped (no published profile on this DID)
+- **MT-18-I2** [FIXED, HIGH] — per-peer chat thread did not hydrate from local persistence on app restart. After every restart, `/chat/[did]` showed "No messages yet" even though the conversation was on disk. Root cause: `apps/mobile/src/services/bootstrap.ts:888` only hydrates the default session thread; per-peer threads (keyed by `peerDID`) were never loaded. Fix has two parts:
+  - `apps/mobile/src/hooks/useD2DChat.ts` — once-per-session lazy hydrate per peer, gated by a module-level `hydratedPeers` set so re-mounts don't re-fetch. Hydrates even when the in-memory thread is non-empty, because an inbound message that arrived before the screen mounted will already have populated it via `addMessage` (the receive pipeline doesn't wait for the chat hook to subscribe).
+  - `packages/brain/src/chat/thread.ts:hydrateThread` — default behaviour switched from REPLACE-or-skip to MERGE (union by id, sorted by timestamp). Fixes the MT-19 race where MsgBox replays a queued inbound during boot, populating the in-memory thread; the prior REPLACE path would have dropped that live message. `force: true` retains the replace semantics for tests that seed the repo behind the cache. Hydrate also fires subscribers when something was actually added so `useSyncExternalStore`-backed views re-render.
 
-the PeerLens tab on People requires the user's own DID (`did:plc:sgmag3x3njlkkrepjfgssfo4`) to have a published service profile or attestations on the AppView. The MT-04 recovery brought the identity back but did not republish a profile (that's a separate MT-22 / MT-23 step). the PeerLens tab will render an empty state. Marking skipped; comes back into scope after MT-22.
+  Live-verified on both sims post-fix: all 7 prior messages (5 MT-18 + 2 MT-19) reappeared after a cold restart on Android AND iOS. Tests: `apps/mobile/__tests__/hooks/useD2DChat.hydrate.test.tsx` (4 cases incl. merge-with-live-inbound + once-per-session) + 3 new cases in `packages/brain/__tests__/chat/thread_persistence.test.ts` (subscriber-fire contract, merge contract, no-fire-on-empty-load).
 
----
-
-## MT-21: Trust search/detail — ⏭ skipped (depends on MT-20)
-
----
-
-## MT-22: Trust write/outbox — ⏭ skipped (publishing a review needs an attestation target — needs MT-23 provider profile or an existing trustable subject)
-
----
-
-## MT-23: Provider service config — ⏭ skipped (operator-mode setup; not the consumer-mode user under test)
+- **MT-18-I1** [observed once, not reproduced post-fix, LOW] — first inbound message after a fresh install + first-mount of `/chat/[did]` did not render live; manifested only on the very first peer message of the session. Did not reproduce after the MT-18-I2 fix took effect; the MERGE path now picks up any message that landed in-memory before the screen subscribed. Leaving open as a watch item.
 
 ---
 
-## MT-24: BusDriver scenario — ⏭ skipped (full E2E demo — needs both Alonso requester + BusDriver provider + AppView + Jetstream + OpenClaw — out of single-sim scope)
+## MT-19: D2D offline/reconnect — ✓ pass after fix (covered by the MT-18-I2 merge work)
+
+Re-run on 2026-05-06 with the same two sims as MT-18.
+
+### What worked
+- **Forward direction (Android offline, iOS sends)**: terminated Android Dina, sent 2 messages from iOS to Alonso, restarted Android. Both messages were replayed via MsgBox queue and rendered in `/chat/[Sancho]` on Android.
+- **Reverse direction (iOS offline, Android sends)**: terminated iOS Dina, sent 2 messages from Android to Sancho, restarted iOS. Both messages were replayed and rendered in `/chat/[Alonso]` on iOS.
+- Hydrate-merge correctly preserved the historical thread alongside the replayed-during-boot messages.
+
+### Issues filed
+
+- **MT-19-I1** [LOW] — outbound chat bubbles have no visible delivery status. While the peer was offline, the iOS-sent bubbles rendered identically to fully-delivered bubbles (no spinner, no greyed-out state, no "sending"/"queued" badge, no checkmark). Spec calls for "clear pending/failure state". Semantically the messages were "delivered to relay" but not "delivered to peer"; whether to surface that distinction is a UX decision. Not regressing existing behavior — the message data flow is sound. Filed as a follow-up; would be a small addition to the bubble component metadata.
+
+- **MT-19-I2** [LOW, cosmetic] — when MsgBox replays multiple queued messages in a single batch on reconnect, their on-screen order can swap because the `timestamp` on the receiver side is set at receive-time (sub-millisecond ordering varies) and the secondary sort uses random message id. Observed: `MT-19 rev2 queued` appeared above `MT-19 rev1 iOS offline` even though Android sent rev1 first. Not a delivery failure. Fix would be to use the wire-frame's sender-timestamp when present, falling back to receive-time only for legacy frames.
+
+- **MT-19-I3** [related to fixed MT-18-I2] — without the MT-18-I2 hydrate-merge fix, an inbound replay that arrived BEFORE `/chat/[did]` first mounted in the new session would race with the boot-time hydrate and either drop the historical thread (REPLACE) or skip the disk read (short-circuit). The new merge logic resolves this; the test `useD2DChat.hydrate.test.tsx::merges disk history with in-memory live messages on first mount` locks the contract.
+
+---
+
+## MT-20: Trust feed/profile — ✅ pass
+
+Re-run on 2026-05-06 with the same two sims as MT-18.
+
+The PeerLens tab on both iOS and Android renders a clean empty state:
+- Title: "PeerLens"
+- Search bar with placeholder "Search subjects, reviewers, places…"
+- Icon + heading "Your network is quiet"
+- Helper text: "Search above for what you want to review. If nothing matches, you can create the first review for it from there."
+- Footer: "Outbox · Namespaces"
+
+A test search for "alons" hit the AppView (`https://test-appview.dinakernel.com`), returned 0 results, and rendered "No results — Nothing found for 'alons'" with a "Write the first review for alons" CTA. No silent failures, no spinners stuck running, no opaque error toasts. AppView reachability confirmed.
+
+The pass criterion ("PeerLens tab loads self profile/feed or shows clear AppView/network error") is met by the clear empty-state UX even without a published profile on this DID.
+
+---
+
+## MT-21: Trust search/detail — ✅ pass (full coverage post MT-22)
+
+Re-run on 2026-05-06 with the same two sims as MT-18/19/20.
+
+### What worked
+- Search input dispatches to AppView. Empty result renders "Nothing found for '<query>'" with a "Write the first review for <query>" CTA — no spinners stuck running, no opaque error toast.
+- "Outbox" link on the PeerLens footer navigates to a clean "Nothing in your outbox" empty state.
+- "Namespaces" link navigates to the Namespaces screen — "Pseudonymous namespaces" header + empty list + "Add namespace" CTA.
+- Back navigation from search → home, Namespaces → home, Outbox → home all work without crashes.
+
+### Drill-downs validated post MT-22
+After publishing a review (see MT-22), navigated via `dina://trust/<subjectId>` deep link to the subject detail page:
+- Title "Subject", subject name "tMT-22 test subject", aggregate score "—" (single review can't compute), "1 review · 1 from your network · 0 from friends-of-friends · 0 from strangers" breakdown.
+- "Write a review" CTA.
+- "Your network" section with the user's own review listed under "Reviews from contacts and yourself" with "tap to edit" affordance.
+- Reviewer profile (the "MT-22" search route) shows the user's own profile with "1 Reviews written / 0 Vouches / 0 Endorsements" and the recent review entry.
+- Back navigation from subject detail / reviewer profile returns cleanly to PeerLens home.
+
+Alternatives sheet not exercised (single subject in the test AppView; no comparable products exist for the algorithm to surface). Listing as covered by `appview/src/api/xrpc/get-alternatives.ts` unit tests.
+
+### Issues filed
+
+- **MT-21-I1** [LOW, ergonomic] — `idb ui text` repeatedly drops trailing characters from typed input on the simulator (`"alonso"` → `"alons"`, `"transit"` → `"t"`). Not a Dina issue — a sim-tooling quirk we should compensate for in future automated runs (use `xcrun simctl spawn ... pasteboard` then paste, or split the input into single-char taps). No mitigation needed in app code; record-keeping for future runs.
+
+---
+
+## MT-22: Trust write/outbox — ✅ pass
+
+Re-run on 2026-05-06. The "Write the first review" CTA from the empty-search result opens the review form (`apps/mobile/app/trust/write.tsx`). Filled in:
+- Type: Product (default)
+- Name: "tMT-22 test subject" (the leading "t" is a stray from a prior search input that the form pre-seeded as the subject name — minor finding, see MT-22-I1).
+- Sentiment: Positive
+- Headline: "MT-22 review headline"
+
+Tapped Publish → form dismissed → Outbox screen showed "Nothing in your outbox" (record went straight to publish, did not get queued). Reviewer profile now shows "1 reviews written / 0 vouches / 0 endorsements" with the new entry timestamped "just now".
+
+Verified end-to-end on AppView via direct xRPC:
+
+```
+curl https://test-appview.dinakernel.com/xrpc/com.dina.trust.search?q=tMT
+→ results[0]: authorDid=did:plc:bipda2…gmfq (Sancho), subjectRefRaw={name: "tMT-22 test subject", type: "product"},
+   text="MT-22 review headline", category="commerce/product", sentiment="positive"
+```
+
+The PeerLens home screen also now renders "Your PeerLens profile — 1 reviews written, 0 vouches, 0 endorsements" instead of the empty network state, confirming the self-profile feed flow works once any review exists (this is the post-MT-22 view that completes MT-20's pass criterion).
+
+### Issues filed
+
+- **MT-22-I1** [LOW, ergonomic] — when the user opens the write-a-review form via "Write the first review for <query>", the subject Name field is pre-seeded with `<query>` verbatim. If `<query>` had a typo or single-character prefix from a prior search (as happened in this run — the field came up as "tMT-22 test subject" instead of "MT-22 test subject"), the user has to remember to clear it. The pre-seed is a thoughtful default, but a "Use this name" placeholder pattern (or letting the user re-enter freely) would avoid the trailing-typo trap. File: `apps/mobile/app/trust/write.tsx`.
+
+---
+
+## MT-23: Provider service config — ✅ pass
+
+Re-run on 2026-05-06 on iOS sim. Reachable via Settings → Service Sharing or `dina://service-settings` deep link. The screen exposes the full provider-mode surface:
+
+- **ROLE** (radio): Requester only / Provider / Both. Tapping "Provider" produced an immediate "Role updated — Saved as provider. Force-quit and reopen Dina to apply" modal — confirms the boot-time wiring is documented in-UX, not a hidden side-effect.
+- **INFRASTRUCTURE**: AppView URL, PDS URL, PDS handle, PDS password, PDS email — all editable, "Save infrastructure URLs" CTA below.
+- **PUBLIC**: "Make this node discoverable" switch with helper text "When on, your service profile is published to AppView so others on the network can query you." A "Not actually discoverable yet" caveat surfaces when MsgBox/PDS aren't fully wired (degradation visible per the spec).
+- **IDENTITY**: Display name + description (set "Sancho-MT23" successfully).
+- **CAPABILITIES**: empty state on this consumer-mode user — "No capabilities configured yet. Add them via onboarding or CLI first." Source-side validation also blocks saving a discoverable profile with no capabilities ("A discoverable profile must advertise at least one capability"), keeping the wire format honest.
+- "Save changes" → "Saved — Service config updated" confirmation modal.
+
+The pass criterion ("provider mode + capability config; profile publish/degradation visible") is satisfied. Capability registration via onboarding or CLI is out of scope for this manual pass; covered in `cli/` integration tests.
+
+---
+
+## MT-24: BusDriver scenario — ✅ full pass with both findings fixed (live ETA delivered to mobile chat)
+
+Re-run on 2026-05-06 with the **architecturally correct setup**: only mobile home nodes + cloud MsgBox + a single OpenClaw container holding the transit MCP. No Go-Core, no Python Brain in the loop — Sancho's mobile IS the BusDriver provider, OpenClaw is its paired agent.
+
+### Stack wiring
+
+- **Android Alonso** (`alonso32.test-pds`, did:plc:zn5zsorcb3hdp2wnww7lu4) — TS-Lite mobile requester.
+- **iOS Sancho** (`sancho63.test-pds`, did:plc:bipda2dak7vygxlr3bzggmfq) — TS-Lite mobile BusDriver provider. Role flipped to Provider (MT-23). `.env` set `EXPO_PUBLIC_DINA_PROVIDER_NAME=SF Transit Authority Live` so the LLM picks Sancho over the stale demo profiles still registered on AppView.
+- **OpenClaw provider container** (`openclaw-openclaw-provider-1` from `docker/openclaw/docker-compose.yml`) — paired to iOS Sancho via `dina://paired-devices` (pairing code `F2WXMN7N`), `DINA_TRANSPORT=msgbox`, `DINA_HOMENODE_DID=did:plc:bipda2dak7vygxlr3bzggmfq`, transit MCP mounted at `/app/demo/transit`.
+- **Cloud relays**: `wss://test-mailbox.dinakernel.com/ws` (MsgBox), `https://test-appview.dinakernel.com` (AppView discovery), `https://test-pds.dinakernel.com` (PDS).
+
+### What worked end-to-end
+
+1. iOS Sancho boot read the provider env vars, computed the canonical `eta_query` schema_hash, and published `SF Transit Authority Live` to AppView with `serviceArea: {37.77,-122.43,25}`.
+2. OpenClaw paired with Sancho through MsgBox — `Paired! Device ID: dev-c721d3bcf79dca38, Dina: did:plc:bipda2dak7vygxlr3bzggmfq`. Sancho's Agents page flipped to **CONNECTED (1)** with the agent's `did:key:z6MkfRX1awhHbJdCnGSzFd6fMGnefKhLuyhpb5cyfYg2fW2a` listed as `openclaw-provider`.
+3. Alonso asked "When does bus 42 reach Castro" via the Ask composer.
+4. Alonso's agentic loop ran: `search_provider_services` → AppView (3 candidates) → `geocode('Castro, SF')` → `query_service` chose Sancho's DID. Local outbox returned `task_id=sq-22a94894…`, `status=pending`.
+5. **The query reached Sancho's mobile** (only way the next step could happen).
+6. **Sancho's brain created a delegation task** `svc-exec-b572d45c5fe1a07652aba1fae7c5ab37` with kind `delegation`, payload `{type: 'service_query_execution', capability: 'eta_query', params: {...}}`.
+7. **OpenClaw's agent-daemon claimed it through the MsgBox tunnel**:
+    ```
+    [agent-daemon] Claimed: svc-exec-b572d45c5fe1a07652aba1fae7c5ab37 — Execute service query: eta_query
+    ```
+8. OpenClaw submitted the task to its runner (transit MCP).
+
+### Live ETA delivered
+
+Final live test on Android Alonso, 12:01 PM IST 2026-05-06:
+
+```
+ASK: When does bus 42 reach Castro
+Dina: I've dispatched a query to **SF Transit Authority Live** for the ETA of
+      bus 42 at the Castro. The transit service will deliver the arrival
+      time directly to this chat thread as soon as it replies.
+Card: 🚌 Market St Express
+      4 min to Castro Station
+```
+
+OpenClaw daemon log corroborates the success path:
+
+```
+[agent-daemon] Claimed: svc-exec-9c22bb07429bceee5a4c254494e85ae9 — Execute service query: eta_query
+[agent-daemon] Submitted: svc-exec-9c22bb07429bceee5a4c254494e85ae9 (run_id=7f0254d1-…)
+```
+
+Every layer end-to-end: AppView discovery → mobile agentic loop → D2D over hosted MsgBox → Sancho mobile delegation task → OpenClaw `claim` via MsgBox tunnel → `mark_running` via MsgBox tunnel → transit MCP `get_eta` → result validation → service.response back to Alonso → formatted ETA card in chat.
+
+### Issues filed
+
+- **MT-24-I1 [FIXED — verified by 6 new transport tests]** — the OpenClaw `dina-agent`'s WS handshake to `wss://test-mailbox.dinakernel.com/ws` was flaky on rapid sequential reconnects, causing the first delegation task to be marked failed by the daemon's `mark_running` fallback. Two root causes confirmed in the post-mortem: (a) the CLI opens a fresh WS per RPC, so each claim/mark_running/complete creates a new auth round-trip; (b) the daemon's main thread + reconciler thread shared one `DinaClient` and could open overlapping WS handshakes from the same DID, confusing the relay's session tracking.
+  *Fix:* two surgical changes in `cli/src/dina_cli/transport.py` (no architectural rewrite of the WS-per-RPC model):
+  1. **`threading.RLock` around `request()`** — serialises concurrent callers. The daemon's main loop and the reconciler thread can no longer race on `_pending` or open overlapping WS handshakes from the same DID. RLock so a re-entrant call from inside the same thread can't self-deadlock.
+  2. **Implicit exponential backoff after consecutive auth/connect failures** — `_note_auth_failure()` arms a `_next_attempt_at` timestamp; the next entry to `_connect_and_auth` waits the remaining window before opening a fresh socket. Sequence is 1s, 2s, 4s, 8s, 16s, 30s (capped at `_max_backoff_seconds`). Resets to zero on first success. The wait is consumed at the *start* of the next call so a stable relay never sees added latency.
+  *Tests:* 6 new cases in `cli/tests/test_transport.py` — backoff arm sequence, cap, reset on success, connect-failure records bookkeeping, RLock serialises concurrent callers (4 threads, asserts max-concurrent ≤ 1), RLock is re-entrant. Plus a stale-assertion fix in `test_send_wraps_connection_loss` (test had been broken pre-existing — expected old "MsgBox connection lost" wording, now correctly asserts "MsgBox send failed"). All 164 CLI tests pass.
+
+- **MT-24-I2 [FIXED — verified by canonical_hash_parity test]** — Sancho's mobile-published `eta_query` schema_hash drifted from canonical `2886d1f8…` because the TS rewrite (`packages/brain/src/service/capabilities/eta_query.ts`) tightened the JSON Schemas with `additionalProperties: false`, `$schema`, `title`, range constraints, and a different `required` set than main-dina. Mobile also passed the env-overridden service description through to the per-capability schema, so even with identical schemas the hash would have differed.
+  *Fix:* relaxed TS schemas back to the canonical Python form (`required: ["route_id"]` for params, `required: ["status"]` for result, no extras). Aligned hand-written runtime validators to the same contract. Mobile boot now pulls the per-capability description from the canonical capability registry (`getCapability('eta_query').description`) rather than the env service description; the env service description still drives the AppView listing. Same canonical alignment applied to `busDriverDemoProfile()` in `appview_stub.ts`.
+  *Tests:* new `__tests__/service/capabilities/canonical_hash_parity.test.ts` — pins the canonical hash `2886d1f82453b418f4e620219681b897cdfa536c2d9ee9b0f524605107117a71` and asserts it survives across re-evaluations; documents that re-introducing `additionalProperties: false` would rotate the hash. Existing `registry.test.ts` and `service_query_orchestrator.test.ts` updated to reflect the canonical-required fields. All 277 service tests + 706 service/composition/reasoning/chat tests pass.
+
+### Cleanup
+- The test stack from `docker-compose-test-stack.yml` (Go-Core BusDriver) was brought up first as a debugging detour, then torn down once the mobile-only architecture was identified as the right setup. `docker compose -f docker-compose-test-stack.yml down` ran clean.
+- The OpenClaw provider container stays running, paired to iOS Sancho — re-runs of MT-24 should work as-is.
+- `apps/mobile/.env` sets `EXPO_PUBLIC_DINA_PROVIDER_NAME=SF Transit Authority Live` so the LLM consistently picks Sancho over the stale BusDriver fixtures still on AppView. Revert before shipping.
+- `docker/openclaw/.env` updated to point at iOS Sancho's DID (`did:plc:bipda2dak7vygxlr3bzggmfq`) with the new pairing code generated from `dina://paired-devices`.
 
 ---
 
@@ -505,13 +668,12 @@ if (!installMarkerExists()) {
 | Push notifications | `expo-notifications` plugin | `src/notifications/local.ts` (boot + schedule path) | ✅ graceful — `requestPushPermission` persists `denied` to kv_store; `scheduleNotification` still saves a mirror entry to kv_store so the in-app Notifications inbox shows the row. OS-level alerts silently fail; the app does not. |
 | Contacts (NSContactsUsageDescription) | iOS Info.plist | `src/hooks/usePhoneContacts.ts` — `requestPermission()` returns `'denied'` if the native fetcher isn't configured. **Module is never wired in** — no screen calls `configurePhoneContacts` or `fetchPhoneContacts`. | Defensive default is `'denied'`. |
 
-### MT-28-I1 (LOW) — orphan `NSContactsUsageDescription` declaration
+### MT-28-I1 [FIXED] — orphan `NSContactsUsageDescription` declaration
 
-`apps/mobile/ios/Dina/Info.plist` declares `NSContactsUsageDescription` ("Allow Dina to access your contacts"), but `grep` across `apps/mobile/app/` and `apps/mobile/src/components/` finds zero call sites for `usePhoneContacts` / `fetchPhoneContacts` / `configurePhoneContacts`. The hook exists with native injection points, but no UI installs the `expo-contacts` adapter, so the permission is never requested.
+Resolved 2026-05-06 (jointly with MT-35-I2). The orphan key lived in `apps/mobile/ios/Dina/Info.plist`, which is gitignored — `apps/mobile/ios/` is a generated `expo prebuild` artifact, so the *committed* fix is in `app.json`, not the generated file. The fix has two parts:
 
-Risk: App Store review may flag the declaration as not honored ("Your app declares an NSContactsUsageDescription but does not appear to use the contacts API"). Either remove the declaration until the phone-book matcher ships, or wire the matcher into Add Contact / People before release.
-
-**Severity:** low — not a runtime failure. Cosmetic / store-review hygiene. Filed for tracking; not fixing in this pass.
+1. `app.json` does NOT declare `NSContactsUsageDescription` under `ios.infoPlist`, so the next `expo prebuild` will not re-emit the key. The local Info.plist was also stripped to match the prebuild target state, so any debug build run on this machine right now also stops claiming the permission.
+2. The `expo-contacts` package dep + `usePhoneContacts` hook stay in place (ARCHITECTURE.md Task 6.18 / `__tests__/setup/native_modules.test.ts` pin them). When the phone-book matcher gets wired into Add Contact / People, the right place to re-add the description is `app.json` `ios.infoPlist`, NOT a manual edit of the regenerated Info.plist.
 
 **Live deny-permission test deferred:** the sim was just reset (post-MT-27 fix verification) and I'd have to walk through a full onboarding to re-enter a state where I could exercise the notification deny path. Code-traced behavior is unambiguous.
 
@@ -644,7 +806,7 @@ Risk: App Store review may flag the declaration as not honored ("Your app declar
 
 ---
 
-## MT-35: Store build sanity — ⚠️ pass with action items
+## MT-35: Store build sanity — ✅ pass after fixes (one operator follow-up)
 
 **Configured correctly:**
 
@@ -663,15 +825,23 @@ Risk: App Store review may flag the declaration as not honored ("Your app declar
 | `expo-notifications` plugin | declared with default channel | matches push wiring |
 | `expo-router` plugin | declared | matches `app/` directory routing |
 
-### MT-35-I1 (LOW) — no `eas.json`; no documented store-build pipeline
+### MT-35-I1 [FIXED] — no `eas.json`; no documented store-build pipeline
 
-`apps/mobile/eas.json` does not exist. Without an EAS Build configuration (or fastlane equivalent), there's no committed pipeline for producing the actual TestFlight / Play Console artifact. The only build verified in this MT pass was the local `Debug-iphonesimulator` build, which is not what ships.
+Resolved 2026-05-06:
 
-**Recommendation:** add `eas.json` with at minimum a `production` profile, then run `eas build -p ios` once and verify the resulting IPA installs cleanly on a physical device (TestFlight) before the next release. Track separately.
+- Added `apps/mobile/eas.json` with three profiles: `development` (sim/device dev-client builds), `preview` (internal-distribution APK / TestFlight-style IPA), `production` (store-ready AAB / App Store IPA with `autoIncrement` for build numbers and `appVersionSource: "remote"` for centralised version tracking).
+- Added `submit` config for both stores with placeholder Apple/Play credentials documented for one-time setup.
+- Added `apps/mobile/STORE_BUILD.md` — committed pipeline doc covering one-time setup, build commands per profile, submit commands, the versioning model (marketing version manual, build number auto), and the planned CI integration sketch.
 
-### MT-35-I2 (LOW) — `NSContactsUsageDescription` declared but unused (duplicate of MT-28-I1)
+A real EAS build run + TestFlight install is still required before the first store submission (cloud-build needs an Expo org login + Apple/Play credentials provisioned via `eas credentials`); that's a one-time operator setup separate from the CI pipeline. Tracking under MT-35-I3 below.
 
-Already filed under MT-28. Will surface here too in App Store review since `Info.plist` is part of the bundle reviewers inspect.
+### MT-35-I2 [FIXED] — `NSContactsUsageDescription` declared but unused
+
+Resolved 2026-05-06 jointly with MT-28-I1. See that entry — `apps/mobile/ios/` is a gitignored prebuild artifact, so the committed fix is "no `NSContactsUsageDescription` under `ios.infoPlist` in `app.json`" plus a local strip of the regenerated Info.plist for the in-progress debug build. The next `expo prebuild` for a store build will not emit the key.
+
+### MT-35-I3 [LOW, follow-up] — first real EAS build + TestFlight smoke not yet run
+
+The pipeline is committed but not exercised. Before the first store submission, do once: `eas login` → `eas init` → fill the Apple/Play placeholders in `eas.json` → `eas credentials` to provision sign-in cookies + service-account → `eas build --profile preview --platform ios` → install the resulting IPA on a physical device via TestFlight to confirm crypto/keychain/MsgBox actually work outside the sim. Track separately.
 
 ### Production-mode behavior
 

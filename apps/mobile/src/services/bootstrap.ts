@@ -833,6 +833,14 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
           if (item?.status === 'stored' && item.persona) {
             return { persona: item.persona };
           }
+          // MT-13-I1: when the classifier routes to a closed persona,
+          // staging parks the row in pending_unlock + opens a
+          // workflow approval task. Forward the classified persona so
+          // the chat reply can tell the user what's parked and why
+          // (instead of the misleading "Got it — I'll remember that").
+          if (item?.status === 'pending_unlock' && item.persona) {
+            return { persona: null, pendingPersona: item.persona };
+          }
           if (item?.status === 'failed') break;
         }
         return { persona: null };
@@ -944,15 +952,24 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
           // copy is authoritative; this is a UI fan-out only. Only
           // conversational types land here — trust/safety/social come
           // through as free-form text too.
-          onStagedD2D: ({ senderDID, messageType, body }) => {
+          onStagedD2D: ({ senderDID, messageType, body, senderCreatedTime }) => {
             if (!isChatRenderableType(messageType)) return;
             const text = extractChatText(body);
             if (text === null) return;
             // `type: 'dina'` renders left-aligned; the renderer checks
             // metadata.source === 'd2d' to label with the peer's name
             // instead of "Dina".
+            //
+            // `senderCreatedTime` (Unix ms) carries the sender's wire
+            // timestamp from the verified DinaMessage envelope. When
+            // present we use it as the message's `timestamp` so a
+            // burst of messages that arrives out-of-order (MsgBox
+            // replay-on-reconnect, network jitter) still renders
+            // chronologically. Falls back to receive-time only when
+            // the sender didn't provide one. MT-19-I2.
             addMessage(senderDID, 'dina', text, {
               metadata: { source: 'd2d', senderDID, messageType },
+              ...(senderCreatedTime !== undefined ? { timestamp: senderCreatedTime } : {}),
             });
           },
         };
