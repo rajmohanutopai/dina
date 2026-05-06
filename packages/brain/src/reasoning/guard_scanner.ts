@@ -29,6 +29,7 @@
 
 import { GUARD_SCAN } from '../llm/prompts';
 import type { LLMProvider } from '../llm/adapters/provider';
+import { isTrustTool } from '../guardian/trust_tools';
 
 export interface GuardScanViolations {
   anti_her_sentences: number[];
@@ -81,19 +82,16 @@ export const NEUTRAL_EMPTY_MESSAGE =
 
 export interface GuardScannerOptions {
   /**
-   * PeerLens tool names — when the reasoning loop fired one of
-   * these, the guard scanner ONLY strips Anti-Her sentences. Other
-   * categories (fabricated / consensus / unsolicited) are suppressed
-   * because the data came back from a verified source and over-
-   * redacting would paint legit PeerLens data as hallucinated.
-   *
-   * Defaults to `['search_trust_network']`. Override when adding new
-   * verified-data tools.
+   * Override the trust-tool registry. Useful for tests that want to
+   * pin a custom set; production callers should leave this undefined
+   * and rely on the canonical registry in
+   * `guardian/trust_tools.ts`. When provided, the override REPLACES
+   * the canonical registry entirely (no merge) — a deliberate choice
+   * so tests can exercise the "no trust tool used" branch by passing
+   * `[]`.
    */
-  trustToolNames?: string[];
+  trustToolNames?: readonly string[];
 }
-
-const DEFAULT_TRUST_TOOL_NAMES = ['search_trust_network'];
 
 export type GuardScanner = (args: {
   userPrompt: string;
@@ -113,7 +111,12 @@ export function createGuardScanner(
   provider: LLMProvider,
   options: GuardScannerOptions = {},
 ): GuardScanner {
-  const trustToolNames = new Set(options.trustToolNames ?? DEFAULT_TRUST_TOOL_NAMES);
+  // When the caller supplies an override, use it verbatim (Set lookup
+  // only). Otherwise delegate to the canonical registry in
+  // `guardian/trust_tools.ts`, which also handles prefix families.
+  const overrideSet = options.trustToolNames ? new Set(options.trustToolNames) : null;
+  const isTrustToolName = (name: string): boolean =>
+    overrideSet ? overrideSet.has(name) : isTrustTool(name);
 
   return async ({ userPrompt, response, toolsCalled = [] }) => {
     if (!response || response.trim() === '') {
@@ -172,7 +175,7 @@ export function createGuardScanner(
     // Decide which categories to strip. Anti-Her is ALWAYS enforced
     // (Law 4, non-negotiable). The rest only fires when the reasoning
     // agent didn't cite a verified-trust tool.
-    const trustToolUsed = toolsCalled.some((name) => trustToolNames.has(name));
+    const trustToolUsed = toolsCalled.some(isTrustToolName);
     const removeIndices = new Set<number>();
     const flagged: GuardScanDecision['flagged'] = {};
 

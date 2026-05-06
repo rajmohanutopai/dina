@@ -181,11 +181,17 @@ export async function reason(req: ReasoningRequest): Promise<ReasoningResult> {
   const density = analyzeDensity(context);
   trace.step('density_analysis', { tier: density.tier, itemCount: density.itemCount });
 
-  // 6. Guard scan — density-tier aware: hallucinated trust in zero/single data is 'block'
+  // 6. Guard scan — density-tier aware: hallucinated trust in zero/single data is 'block'.
+  //    `chat_reasoning` is single-shot (no tool-using agent), so `toolsCalled`
+  //    stays empty — the trust audit will conservatively flag any rating
+  //    claim. `userPrompt` lets the recommendation audit honour solicited
+  //    prompts ("what should I buy" → don't flag a recommendation reply).
   const scanResult = await scanResponse(rawAnswer, {
     persona: req.persona,
     piiScrubbed: gate.scrubbed,
     densityTier: density.tier,
+    userPrompt: req.query,
+    toolsCalled: [],
   });
   let finalAnswer = rawAnswer;
   let stripped = false;
