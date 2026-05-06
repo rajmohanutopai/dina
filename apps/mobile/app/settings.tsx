@@ -41,6 +41,7 @@ import {
   getBackgroundTimeout,
   setBackgroundTimeout,
 } from '@dina/core';
+import { saveBackgroundTimeoutPreference } from '../src/services/security_preferences';
 
 /**
  * Mirror of the provider-blocker set in `_layout.tsx`. Kept local to
@@ -517,6 +518,19 @@ export default function SettingsScreen() {
                     try {
                       setBackgroundTimeout(p.s);
                       setAutoLockSeconds(p.s);
+                      // MT-40-I3 — write through to durable storage so
+                      // the choice survives a cold launch. Fire-and-
+                      // forget; the in-memory `setBackgroundTimeout`
+                      // call above already armed the new value for the
+                      // current session.
+                      void saveBackgroundTimeoutPreference(p.s).catch(
+                        (err) => {
+                          console.warn(
+                            '[settings] saveBackgroundTimeoutPreference failed',
+                            err,
+                          );
+                        },
+                      );
                     } catch (err) {
                       Alert.alert(
                         'Could not change timeout',

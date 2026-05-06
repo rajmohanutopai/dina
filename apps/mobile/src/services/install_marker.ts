@@ -73,6 +73,7 @@ function buildMarkerBody(now: number): string {
  *   - dina.display_name_override      services/display_name_override.ts
  *   - dina.node_role                  services/role_preference.ts
  *   - dina.infra.*                    services/infra_preferences.ts (5 keys)
+ *   - dina.security.background_timeout_s services/security_preferences.ts
  *   - dina.llm.<provider>             ai/provider.ts (per-provider LLM keys)
  */
 const KEYCHAIN_SERVICES: readonly string[] = [
@@ -92,6 +93,7 @@ const KEYCHAIN_SERVICES: readonly string[] = [
   'dina.infra.pds_password',
   'dina.infra.pds_email',
   'dina.infra.appview_url',
+  'dina.security.background_timeout_s',
 ];
 
 /**

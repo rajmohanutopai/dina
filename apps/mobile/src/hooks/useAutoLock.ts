@@ -8,16 +8,23 @@
  *
  * Behaviour:
  *
- *   - On `background` state transition → start a configurable timer
- *     (default `DEFAULT_BACKGROUND_TIMEOUT_S`, settable via
- *     `setBackgroundTimeout`). When the timer fires, call `sealVault()`
- *     and arm the force-prompt flag so the next foreground re-entry
- *     prompts for the passphrase even when `startupMode === 'auto'`
- *     (mirrors the explicit Sign out path).
+ *   - On `background` state transition → record a `backgroundedAt`
+ *     wall-clock stamp AND start a configurable timer (default
+ *     `DEFAULT_BACKGROUND_TIMEOUT_S`, settable via `setBackgroundTimeout`).
+ *     When the timer fires, call `sealVault()` and arm the
+ *     force-prompt flag so the next foreground re-entry prompts for
+ *     the passphrase even when `startupMode === 'auto'` (mirrors the
+ *     explicit Sign out path).
  *
- *   - On `active` (foreground) → cancel the pending timer. If the
- *     timer already fired we land on the locked screen on next render
- *     (UnlockGate's `useIsUnlocked` subscriber re-renders).
+ *   - On `active` (foreground) → cancel any pending timer AND
+ *     reconcile against wall clock: if `now - backgroundedAt` already
+ *     exceeded the timeout, seal NOW. This is load-bearing on iOS:
+ *     when the app is suspended in the background, JS is paused —
+ *     `setTimeout` callbacks DO NOT fire. Without this reconcile a
+ *     90-second background after a 60-second timeout would resume the
+ *     foreground without ever sealing (MT-40-I2). The reconcile fires
+ *     synchronously before the next render so UnlockGate renders the
+ *     locked screen on the same frame as resume.
  *
  *   - `inactive` is treated as a transient overlay state and IGNORED.
  *     iOS emits `inactive` for Control Center, the notification pull,
@@ -85,11 +92,23 @@ export interface InstallAutoLockOptions {
 export function installAutoLock(opts: InstallAutoLockOptions = {}): AutoLockSubscription {
   const sealFn = opts.sealFn ?? sealVault;
   const getTimeoutS = opts.getTimeoutS ?? getBackgroundTimeout;
+  const now = opts.now ?? (() => Date.now());
   const scheduleTimer = opts.scheduleTimer ?? ((cb, ms) => setTimeout(cb, ms));
   const cancelTimer = opts.cancelTimer ?? ((id) => clearTimeout(id as ReturnType<typeof setTimeout>));
 
   let pendingTimer: unknown = null;
   let lastState: AppStateStatus | 'unknown' = 'unknown';
+  // Wall-clock stamp of the last `background` transition. `null` while
+  // foregrounded. Used by the `active` reconcile to detect a timeout
+  // that elapsed while iOS had JS suspended (`setTimeout` does NOT
+  // fire while backgrounded — MT-40-I2).
+  let backgroundedAt: number | null = null;
+  // Snapshot of the timeout in ms that was armed on the most recent
+  // `background` transition. We could re-read `getTimeoutS()` on
+  // resume, but pinning here means a Settings change made WHILE
+  // backgrounded doesn't retroactively seal a session that the user
+  // had already armed under a longer timeout.
+  let armedTimeoutMs: number = 0;
 
   const cancelPending = (): void => {
     if (pendingTimer !== null) {
@@ -109,6 +128,8 @@ export function installAutoLock(opts: InstallAutoLockOptions = {}): AutoLockSubs
       // Cancel any leftover timer (defensive — shouldn't be one).
       cancelPending();
       const timeoutS = Math.max(0, getTimeoutS());
+      backgroundedAt = now();
+      armedTimeoutMs = timeoutS * 1000;
       // A zero timeout means "lock immediately on background". Run the
       // seal synchronously so the vault is locked by the time the OS
       // pauses the JS engine — without this, a user who task-switches
@@ -121,12 +142,27 @@ export function installAutoLock(opts: InstallAutoLockOptions = {}): AutoLockSubs
       pendingTimer = scheduleTimer(() => {
         pendingTimer = null;
         void sealFn();
-      }, timeoutS * 1000);
+      }, armedTimeoutMs);
       return;
     }
 
     if (next === 'active') {
       cancelPending();
+      // Reconcile against wall clock — covers the iOS-suspended case
+      // where setTimeout never fired because JS was paused. If the
+      // timeout already elapsed, seal NOW so the next render lands on
+      // the locked screen on the same frame as resume. The `armedTimeoutMs > 0`
+      // guard handles the zero-timeout case (already sealed in the
+      // background branch) and the never-armed case (active→active
+      // and inactive→active without a prior background).
+      if (backgroundedAt !== null && armedTimeoutMs > 0) {
+        const elapsed = now() - backgroundedAt;
+        if (elapsed >= armedTimeoutMs) {
+          void sealFn();
+        }
+      }
+      backgroundedAt = null;
+      armedTimeoutMs = 0;
       return;
     }
 
@@ -141,6 +177,8 @@ export function installAutoLock(opts: InstallAutoLockOptions = {}): AutoLockSubs
     dispose: () => {
       cancelPending();
       lastState = 'unknown';
+      backgroundedAt = null;
+      armedTimeoutMs = 0;
     },
     isPending: () => pendingTimer !== null,
   };

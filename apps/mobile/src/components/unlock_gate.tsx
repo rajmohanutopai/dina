@@ -44,6 +44,8 @@ import {
 import { loadWrappedSeed } from '../services/wrapped_seed_store';
 import { loadInfraPreferences } from '../services/infra_preferences';
 import { loadAutoPassphrase, loadStartupMode } from '../services/startup_preferences';
+import { loadBackgroundTimeoutPreference } from '../services/security_preferences';
+import { setBackgroundTimeout } from '@dina/core';
 import {
   clearOrphanKeychainState,
   installMarkerExists,
@@ -116,11 +118,20 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
           }
           writeInstallMarker();
         }
-        const [existing, infra] = await Promise.all([
+        const [existing, infra, bgTimeout] = await Promise.all([
           loadWrappedSeed(),
           loadInfraPreferences(),
+          loadBackgroundTimeoutPreference(),
         ]);
         if (cancelled) return;
+        // MT-40-I3 — restore the user's chosen auto-lock timeout
+        // before any AppState change can be observed. Without this
+        // every cold launch reverts to the 5-minute default, so a
+        // user who picked "1 minute" loses their setting on each
+        // restart.
+        if (bgTimeout !== null) {
+          setBackgroundTimeout(bgTimeout);
+        }
         if (existing !== null) {
           setMode('locked');
         } else if (infra.pdsUrl === null) {

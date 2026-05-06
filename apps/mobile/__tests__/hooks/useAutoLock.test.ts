@@ -205,6 +205,91 @@ describe('installAutoLock', () => {
     expect(sealFn).not.toHaveBeenCalled();
   });
 
+  it('seals on `active` resume when wall clock shows the timeout already elapsed (MT-40-I2)', () => {
+    // iOS suspends JS while the app is in the background; setTimeout
+    // does NOT fire while suspended. Without a wall-clock reconcile
+    // on resume, a 90-second background under a 60-second policy
+    // would foreground without ever sealing — the bug found during
+    // live MT-40 verification on 2026-05-06.
+    const timer = makeFakeTimer();
+    const sealFn = jest.fn(async () => {});
+    let nowMs = 1_000_000;
+    const sub = installAutoLock({
+      sealFn,
+      getTimeoutS: () => 60,
+      now: () => nowMs,
+      scheduleTimer: timer.schedule,
+      cancelTimer: timer.cancel,
+    });
+
+    sub.notify('background');
+    expect(timer.isPending()).toBe(true);
+    expect(sealFn).not.toHaveBeenCalled();
+
+    // Simulate iOS suspending JS for 90 seconds (timer never fires).
+    nowMs += 90_000;
+    sub.notify('active');
+
+    // Reconcile must seal even though the in-JS timer didn't fire.
+    expect(sealFn).toHaveBeenCalledTimes(1);
+    // And it must cancel the pending in-JS timer so a late wake of
+    // the suspended event loop doesn't double-seal.
+    expect(timer.isPending()).toBe(false);
+  });
+
+  it('does NOT reconcile-seal on `active` when wall clock is still under the timeout', () => {
+    // Quick task-switch (e.g. glance at Settings, return to Dina
+    // within 5s) must not seal. The reconcile only fires when the
+    // background interval already exceeded the policy.
+    const timer = makeFakeTimer();
+    const sealFn = jest.fn(async () => {});
+    let nowMs = 1_000_000;
+    const sub = installAutoLock({
+      sealFn,
+      getTimeoutS: () => 60,
+      now: () => nowMs,
+      scheduleTimer: timer.schedule,
+      cancelTimer: timer.cancel,
+    });
+
+    sub.notify('background');
+    nowMs += 5_000; // 5s in background — well under 60s policy
+    sub.notify('active');
+
+    expect(sealFn).not.toHaveBeenCalled();
+    expect(timer.isPending()).toBe(false);
+  });
+
+  it('clears the reconcile state after `active` so the next foreground→active no-op stays idle', () => {
+    // After a successful reconcile-seal, the next `active`
+    // transition (e.g. user unlocks and uses the app, then later
+    // ignores Settings) must not seal again on its own.
+    const timer = makeFakeTimer();
+    const sealFn = jest.fn(async () => {});
+    let nowMs = 1_000_000;
+    const sub = installAutoLock({
+      sealFn,
+      getTimeoutS: () => 60,
+      now: () => nowMs,
+      scheduleTimer: timer.schedule,
+      cancelTimer: timer.cancel,
+    });
+
+    sub.notify('background');
+    nowMs += 90_000;
+    sub.notify('active');
+    expect(sealFn).toHaveBeenCalledTimes(1);
+
+    // No further state transitions of consequence: simulate the user
+    // staying in the app for a while. Another `active` (which RN
+    // shouldn't emit, but defensive) must not re-seal.
+    sub.notify('background');
+    sub.notify('active');
+    nowMs += 1_000;
+    sub.notify('active');
+    expect(sealFn).toHaveBeenCalledTimes(1);
+  });
+
   it('dispose() resets state so a fresh background→active cycle works after re-mount', () => {
     // Hook unmount/remount (e.g. the user signs out and back in
     // within the same launch) must reset the dedup so the next

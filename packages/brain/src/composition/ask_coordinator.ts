@@ -62,6 +62,7 @@ import {
   runAgenticTurn,
   type AgenticLoopResult,
 } from '../reasoning/agentic_loop';
+import { formatCurrentTimeBlock } from '../reasoning/ask_handler';
 import type { AgenticAskPipeline } from './agentic_ask';
 
 export interface CreateAskCoordinatorOptions {
@@ -187,10 +188,15 @@ export function createAskCoordinator(opts: CreateAskCoordinatorOptions): AskCoor
         askId: ctx.askId,
         requesterDid: ctx.requesterDid,
       });
+      // MT-15-I3 — same time-block prepend as the initial-turn path.
+      // The resume goes back to the LLM with the previously-completed
+      // tool result already in transcript, so a stale `now_iso` here
+      // would mislead any follow-up tool call (e.g. a second
+      // `schedule_reminder` after the user re-confirms).
       return resumeAgenticTurn({
         provider,
         tools,
-        systemPrompt,
+        systemPrompt: `${formatCurrentTimeBlock()}\n\n${systemPrompt}`,
         pausedState,
       });
     },
@@ -251,12 +257,20 @@ export function buildAgenticExecuteFn(args: {
   const { pipeline, systemPrompt } = args;
   return async (input) => {
     const tools = buildToolsForAsk({ askId: input.id, requesterDid: input.requesterDid });
+    // MT-15-I3 — prepend the current-time block per turn so tools like
+    // `schedule_reminder` can resolve relative phrases ("in 3 minutes",
+    // "tomorrow at 9am") without forcing an LLM clarification round-
+    // trip. Mirrors the same prepend in `makeAgenticAskHandler`. Done
+    // here (rather than once at builder time) because a long-running
+    // session must stay synced with wall-clock — `now_iso` baked in at
+    // `buildAgenticExecuteFn` time would silently age across turns.
+    const promptForTurn = `${formatCurrentTimeBlock()}\n\n${systemPrompt}`;
     let result: AgenticLoopResult;
     try {
       const turnArgs: Parameters<typeof runAgenticTurn>[0] = {
         provider: pipeline.provider,
         tools,
-        systemPrompt,
+        systemPrompt: promptForTurn,
         userMessage: input.question,
       };
       if (input.signal !== undefined) {
