@@ -149,6 +149,14 @@ export interface StagingDrainOptions {
   setInterval?: (fn: () => void, ms: number) => unknown;
   /** [deps] Clears handles minted by `setInterval`. */
   clearInterval?: (handle: unknown) => void;
+  /**
+   * [pipeline hook] Called for each target persona BEFORE resolve when
+   * the item source is owner-direct (`user_remember`). Should open the
+   * persona vault so the resolve can write immediately instead of parking
+   * as pending_unlock. Mobile bootstrap injects `openPersonaDB`; server
+   * and test harnesses leave this undefined (vaults are always open there).
+   */
+  ownerPersonaOpener?: (persona: string) => Promise<void>;
 }
 
 export interface StagingDrainTickResult {
@@ -422,9 +430,29 @@ export async function runStagingDrainTick(
       // classifier flagged, with explicit access for each target.
       // Core must never infer "open" for a secondary persona just
       // because Brain routed to it.
+      //
+      // Owner-direct writes (user_remember): open each target persona
+      // before resolve so the item stores immediately. The owner has
+      // unconditional write access to their own vaults — no approval,
+      // no unlock prompt. CAPABILITIES.md §vault-compartments.
+      const isOwnerDirect = classifyInput.source === 'user_remember';
+      if (isOwnerDirect && options.ownerPersonaOpener !== undefined) {
+        for (const persona of personas) {
+          try {
+            await options.ownerPersonaOpener(persona);
+          } catch {
+            // Already open or opener failed — proceed; if the vault
+            // still isn't registered, stagingResolve will surface the
+            // real error and the item will be marked failed/retried.
+          }
+        }
+      }
       const accessiblePersonas = new Set(getAccessiblePersonas());
       const personaAccess = Object.fromEntries(
-        personas.map((persona) => [persona, accessiblePersonas.has(persona)]),
+        personas.map((persona) => [
+          persona,
+          isOwnerDirect ? true : accessiblePersonas.has(persona),
+        ]),
       );
       const resolveResult = await core.stagingResolve({
         itemId,

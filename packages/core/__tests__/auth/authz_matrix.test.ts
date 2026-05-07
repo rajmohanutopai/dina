@@ -44,6 +44,12 @@ describe('Authorization Matrix', () => {
       label: 'Brain → memory/topic/touch',
     },
     { caller: 'brain', method: 'GET', path: '/v1/memory/toc', label: 'Brain → memory/toc' },
+    {
+      caller: 'agent',
+      method: 'POST',
+      path: '/api/v1/ask',
+      label: 'Agent → api/ask (MT-38: session-scoped vault query via Brain)',
+    },
   ];
 
   for (const { caller, method, path, label } of allowedCases) {

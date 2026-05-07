@@ -52,9 +52,17 @@ export function useUnreadCount(kind?: NotificationKind): number {
     setCount(getUnreadCount(kind));
 
     const off = subscribeNotifications((event) => {
-      // Both append + markRead can shift the unread count; recompute
-      // on every event. Walk is O(n) over an N typically <100, cheap.
-      if (event.type === 'appended' || event.type === 'marked_read') {
+      // append + markRead + hydrated all shift the unread count;
+      // recompute on each. `hydrated` is what lets the badge reflect
+      // SQL-restored items after a cold launch (MT-43-I1) — without
+      // it, the count stayed at the mount-time `getUnreadCount(kind)`
+      // (which ran before boot hydration) and the badge stayed empty.
+      // Walk is O(n) over an N typically <100, cheap.
+      if (
+        event.type === 'appended' ||
+        event.type === 'marked_read' ||
+        event.type === 'hydrated'
+      ) {
         setCount(getUnreadCount(kind));
       }
     });

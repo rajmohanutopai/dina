@@ -125,6 +125,7 @@ import {
 import { buildHomeNodeServiceRuntime } from '@dina/home-node/service-runtime';
 import type { AppViewClient } from '@dina/brain';
 import type { IdentityKeypair } from '@dina/core';
+import { stagingGetItem } from '@dina/core';
 import {
   setServiceApproveCommandHandler,
   resetServiceApproveCommandHandler,
@@ -155,6 +156,7 @@ import {
   resetServiceConfigCoreClient,
 } from '../hooks/useServiceConfigForm';
 import { setInboxCoreClient, resetInboxCoreClient } from '../hooks/useServiceInbox';
+import { openPersonaDB, isPersistenceReady } from '../storage/init';
 
 export type NodeRole = 'requester' | 'provider' | 'both';
 
@@ -718,6 +720,15 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
   const stagingDrainEnabled = drainCfg !== false;
   const drainOptions: StagingDrainOptions =
     drainCfg === undefined || drainCfg === true || drainCfg === false ? {} : drainCfg;
+  // Owner-direct writes (/remember) must store immediately — owner has
+  // unconditional write access to their own vaults (CAPABILITIES.md).
+  // Inject openPersonaDB so the drain can open closed sensitive vaults
+  // before resolve. Only wired when persistence is ready (mobile context).
+  if (!('ownerPersonaOpener' in drainOptions)) {
+    drainOptions.ownerPersonaOpener = async (persona: string) => {
+      if (isPersistenceReady()) await openPersonaDB(persona);
+    };
+  }
   // Drain consumes the transport-agnostic `CoreClient` surface directly.
   // `options.coreClient` is an `InProcessTransport` on mobile and an
   // `HttpCoreTransport` on the server — same interface, different wire.
@@ -839,7 +850,9 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
           // the chat reply can tell the user what's parked and why
           // (instead of the misleading "Got it — I'll remember that").
           if (item?.status === 'pending_unlock' && item.persona) {
-            return { persona: null, pendingPersona: item.persona };
+            const stagingRow = stagingGetItem(stagingId);
+            const pendingNeedsApproval = stagingRow?.approval_id !== undefined;
+            return { persona: null, pendingPersona: item.persona, pendingNeedsApproval };
           }
           if (item?.status === 'failed') break;
         }

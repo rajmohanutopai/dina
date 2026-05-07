@@ -6,7 +6,7 @@
 
 import { processClaimedBatch } from '../../src/staging/batch_processor';
 import { ingest, claim, getItem, resetStagingState } from '@dina/core';
-import { createPersona, openPersona, resetPersonaState } from '@dina/core';
+import { closePersona, createPersona, openPersona, resetPersonaState } from '@dina/core';
 import { clearVaults } from '@dina/core';
 import { resetReminderState } from '@dina/core/reminders';
 import { resetContactDirectory } from '@dina/core';
@@ -59,6 +59,35 @@ describe('Staging Batch Processor', () => {
       expect(result.pendingUnlock).toBe(1);
     });
 
+    it('explicitly-closed default-tier persona produces pending_unlock (MT-12-I2 regression guard)', async () => {
+      // Root cause of MT-12-I2 was fixed in useUnlock.ts:
+      //   - sealVault() now closes all open personas in the registry
+      //   - unlock() uses listPersonas().filter(isOpen) for setAccessiblePersonas
+      //     instead of openBootPersonas() return value (which returned [] on
+      //     re-unlock because personas were still isOpen:true from the
+      //     previous unlock).
+      //
+      // The production drain (drain.ts) uses getAccessiblePersonas() not
+      // isPersonaOpen(), so the batch_processor path is test-only. But we
+      // keep this test to verify that explicitly closing a persona and then
+      // running the batch_processor correctly parks the item as pending_unlock
+      // — the workaround that suppressed this behavior was removed along with
+      // the root cause fix.
+      closePersona('general');
+      ingest({
+        source: 'gmail',
+        source_id: 'mt12-i2',
+        data: { summary: 'Hello from a friend', body: 'Just checking in', type: 'email' },
+      });
+      const claimed = claim(10);
+      const result = await processClaimedBatch(claimed);
+
+      expect(result.results[0].persona).toBe('general');
+      expect(result.results[0].status).toBe('pending_unlock');
+      expect(result.pendingUnlock).toBe(1);
+      expect(result.stored).toBe(0);
+    });
+
     it('processes multiple items in batch', async () => {
       ingest({
         source: 'gmail',
@@ -98,7 +127,7 @@ describe('Staging Batch Processor', () => {
       const claimed = claim(10);
 
       // Manually break the item to cause failure
-      (claimed[0] as any).data = null;
+      Object.assign(claimed[0], { data: null });
       const result = await processClaimedBatch(claimed);
 
       expect(result.failed).toBe(1);
@@ -122,7 +151,7 @@ describe('Staging Batch Processor', () => {
       const claimed = claim(10);
 
       // Corrupt the first item
-      (claimed[0] as any).data = null;
+      Object.assign(claimed[0], { data: null });
       const result = await processClaimedBatch(claimed);
 
       expect(result.processed).toBe(2);

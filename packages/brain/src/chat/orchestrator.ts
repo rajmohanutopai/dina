@@ -224,12 +224,13 @@ export interface RememberDrainResult {
    *  pending_unlock / failed. */
   persona: string | null;
   /** Persona the classifier routed to but couldn't write into because
-   *  the persona is closed and gated by an approval. Set on
-   *  `pending_unlock` only — distinct from `persona`, which is
-   *  reserved for "stored". MT-13-I1: lets the chat reply tell the
-   *  user the row is parked behind an Approvals-tab review instead of
-   *  the misleading "Got it — I'll remember that". */
+   *  the vault is closed. Set on `pending_unlock` only — distinct from
+   *  `persona`, which is reserved for "stored". MT-13-I1. */
   pendingPersona?: string;
+  /** When `pendingPersona` is set: `true` means an operator approval task
+   *  was created (external/agent source); `false` means the item just needs
+   *  the vault to be unlocked (owner-direct source — no approval gate). */
+  pendingNeedsApproval?: boolean;
 }
 
 export type RememberDrainHook = (stagingId: string) => Promise<RememberDrainResult>;
@@ -368,6 +369,14 @@ async function handleRemember(text: string): Promise<BotResponse> {
     // approval-tab redirect so the user knows where to act.
     if (drainResult.pendingPersona !== undefined) {
       const personaName = formatPersonaDisplayName(drainResult.pendingPersona);
+      if (drainResult.pendingNeedsApproval === false) {
+        // Owner-direct source (e.g. /remember): no approval needed, just
+        // waiting for the vault to be unlocked. The item will drain
+        // automatically when the user next opens that persona.
+        return plainResponse(
+          `Stashed for your ${personaName} vault — I'll write it there when you next open that vault.`,
+        );
+      }
       return plainResponse(
         `Stashed for your ${personaName} vault — that vault needs your approval before I can write to it. Open Approvals to review.`,
       );

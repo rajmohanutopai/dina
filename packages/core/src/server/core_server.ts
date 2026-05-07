@@ -30,6 +30,8 @@ import { registerPairRoutes } from './routes/pair';
 import { registerScratchpadRoutes } from './routes/scratchpad';
 import { registerIntentRoutes } from './routes/intent';
 import { registerSessionRoutes } from './routes/session';
+import { registerAskRoutes, setAskRouteHandler, type AskRouteHandler, type AskRouteOptions } from './routes/ask';
+export { setAskRouteHandler, type AskRouteHandler };
 import { setDeviceRoleResolver } from '../auth/caller_type';
 import { getDeviceByDID } from '../devices/registry';
 
@@ -40,6 +42,8 @@ export const HEALTHZ_PATH = '/healthz';
 export interface CoreRouterOptions {
   serviceQuery?: ServiceQueryRouteOptions;
   serviceRespond?: ServiceRespondRouteOptions;
+  /** Injectable ask handler (Brain's AskCoordinator). When absent, /api/v1/ask returns 503. */
+  ask?: AskRouteOptions;
 }
 
 /**
@@ -115,6 +119,13 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   // "Access denied: device not authorized for POST /v1/workflow/tasks/
   // claim". The registry lookup is O(1) via the DID index.
   setDeviceRoleResolver((did) => getDeviceByDID(did)?.role ?? null);
+
+  // Agent ask — MT-38: agent calls POST /api/v1/ask with session to query
+  // Brain. When the question touches a locked persona, Brain suspends and
+  // Core creates a pending_approval record; user approves on mobile, Brain
+  // resumes and returns the answer. Always registered; returns 503 until
+  // `setAskRouteHandler` installs the Brain coordinator at boot.
+  registerAskRoutes(router, options.ask ?? {});
 
   return router;
 }

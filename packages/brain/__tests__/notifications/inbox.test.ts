@@ -259,6 +259,47 @@ describe('Notifications inbox (5.66)', () => {
       expect(listNotifications().map((i) => i.id)).toEqual(['x']);
     });
 
+    it('hydrateNotifications fires a "hydrated" event so live badges recompute (MT-43-I1)', async () => {
+      const repo = new InMemoryNotificationLogRepository();
+      await repo.append({
+        id: 'a',
+        kind: 'approval',
+        title: 'pending',
+        body: '',
+        firedAt: Date.now(),
+        readAt: null,
+        sourceId: 's-1',
+        deepLink: null,
+        expiresAt: null,
+      });
+      await repo.append({
+        id: 'b',
+        kind: 'approval',
+        title: 'pending too',
+        body: '',
+        firedAt: Date.now(),
+        readAt: null,
+        sourceId: 's-2',
+        deepLink: null,
+        expiresAt: null,
+      });
+      setNotificationLogRepository(repo);
+
+      const events: Array<{ type: string; loaded?: number }> = [];
+      const off = subscribeNotifications((event) => {
+        if (event.type === 'hydrated') events.push({ type: event.type, loaded: event.loaded });
+      });
+
+      await hydrateNotifications();
+      off();
+
+      // Without this event, the Approvals tab badge mounted before
+      // boot hydration would stay at 0 forever (MT-43-I1, live
+      // 2026-05-07: 5 pending approval rows visible inside the
+      // screen, badge stayed empty across the full session).
+      expect(events).toEqual([{ type: 'hydrated', loaded: 2 }]);
+    });
+
     it('hydrateNotifications is idempotent unless force', async () => {
       // firedAt close to "now" so the auto-purge trigger from the
       // `appendNotification` below doesn't sweep the hydrated row.

@@ -29,6 +29,7 @@ import {
   InboxNotConfiguredError,
   type InboxEntry,
 } from '../src/hooks/useServiceInbox';
+import { openPersonaDB, isPersistenceReady } from '../src/storage/init';
 
 export default function ApprovalsScreen() {
   const [entries, setEntries] = useState<InboxEntry[]>([]);
@@ -183,7 +184,24 @@ export default function ApprovalsScreen() {
                 busy && styles.disabled,
               ]}
               disabled={busy}
-              onPress={() => confirmAndRun(item, 'Approve', () => approvePending(item.id))}
+              onPress={() =>
+              confirmAndRun(item, 'Approve', async () => {
+                // For staging_persona_access, open the persona vault before
+                // approving — Core's drain writes directly to the vault repo
+                // and fails if the repo isn't registered yet (sensitive-tier
+                // personas are not auto-opened at boot).
+                if (item.kind === 'staging_persona_access' && isPersistenceReady()) {
+                  try {
+                    await openPersonaDB(item.capability);
+                  } catch {
+                    // Already open or init failed — let Core attempt the drain
+                    // anyway; it will surface a real error if the vault is
+                    // truly inaccessible.
+                  }
+                }
+                return approvePending(item.id);
+              })
+            }
             >
               {busy ? (
                 <ActivityIndicator size="small" color={colors.white} />

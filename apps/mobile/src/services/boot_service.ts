@@ -39,6 +39,7 @@ import {
   getTopicRepository,
   listTopicRepositoryPersonas,
   setMemoryService,
+  setAskRouteHandler,
   type CoreRouter,
   type DatabaseAdapter,
   type LocalCapabilityRunner,
@@ -490,6 +491,14 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     stagingDrainOption = undefined; // scheduler runs, but no topicTouch
   }
 
+  // Wire the ask coordinator into the CoreRouter's /api/v1/ask surface so
+  // external agents (via MsgBox) can call `dina ask` against this node.
+  // The singleton is cleared on dispose so a re-boot with a different
+  // coordinator doesn't bleed the old one. MT-38.
+  if (inputs.askCoordinator !== undefined) {
+    setAskRouteHandler(inputs.askCoordinator.coordinator);
+  }
+
   const node = await createNode({
     did: inputs.did,
     signingKeypair: inputs.signingKeypair,
@@ -553,6 +562,7 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     // Clean up Core globals that installCoreGlobals may have written
     // before the failure, so a subsequent retry is not hostile.
     // Issue #13.
+    setAskRouteHandler(null);
     try {
       await node.dispose();
     } catch {

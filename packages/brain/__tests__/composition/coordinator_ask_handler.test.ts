@@ -205,9 +205,9 @@ describe('createCoordinatorAskHandler — synchronous outcomes', () => {
 
     try {
       const r = await handler('this will crash');
-      // executeFn catches the LLM throw, returns a failure outcome →
-      // handler responds with fast_path/failed → bridge formats it.
-      expect(r.response).toMatch(/\/ask failed/);
+      // executeFn catches the LLM throw → provider_error finish reason →
+      // default formatFailure maps it to the user-friendly message (MT-45-I1).
+      expect(r.response).toMatch(/AI provider/i);
       expect(r.sources).toEqual([]);
     } finally {
       dispose();

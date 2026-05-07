@@ -9,7 +9,7 @@
  *   admin:     persona/unlock, persona/lock, devices, export, pair, approvals
  *   connector: staging/ingest only
  *   device:    all read endpoints (query, list), approvals
- *   agent:     vault/query (via session grant), staging/ingest
+ *   agent:     vault/query (via session grant), staging/ingest, api/ask (with session)
  *
  * Paths are matched by prefix: "/v1/staging" matches "/v1/staging/ingest",
  * "/v1/staging/claim", etc.
@@ -118,8 +118,8 @@ const AUTHZ_RULES: Array<{ prefix: string; allowed: Set<CallerType> }> = [
   { prefix: '/v1/agent/', allowed: new Set(['brain', 'admin', 'device', 'agent']) },
   { prefix: '/v1/intent/', allowed: new Set(['brain', 'admin', 'device', 'agent']) },
 
-  // User-facing API — Device (app UI) + Admin
-  { prefix: '/api/v1/ask', allowed: new Set(['device', 'admin', 'brain']) },
+  // User-facing API — Device (app UI) + Admin + Agent (with session for MT-38)
+  { prefix: '/api/v1/ask', allowed: new Set(['device', 'admin', 'brain', 'agent']) },
   { prefix: '/api/v1/remember', allowed: new Set(['device', 'admin', 'brain']) },
 
   // Health check — everyone

@@ -17,6 +17,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { loadVerificationStatus } from '../src/services/verification_status';
 import { colors, fonts, spacing, radius, shadows } from '../src/theme';
 import {
@@ -66,6 +67,11 @@ interface ProviderState {
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  // Tab bar is 88pt on iOS (49 visual + ~34 safe area + 5 padding) as
+  // defined in _layout.tsx. Settings is rendered on top of the tab
+  // navigator so the ScrollView must add this height explicitly.
+  const bottomPad = insets.bottom + 49 + spacing.md;
   const [providerStates, setProviderStates] = useState<Record<ProviderType, ProviderState>>({
     openai: { configured: false, keyPreview: null, loading: true },
     gemini: { configured: false, keyPreview: null, loading: true },
@@ -216,7 +222,7 @@ export default function SettingsScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}>
       {/* LLM Providers */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>AI PROVIDER</Text>
@@ -607,7 +613,6 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: spacing.md,
     paddingTop: spacing.lg,
-    paddingBottom: spacing.xxl,
   },
   section: { marginBottom: spacing.lg },
   sectionTitle: {

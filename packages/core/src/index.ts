@@ -527,6 +527,7 @@ export {
 } from './contacts/directory';
 export type { Relationship, DataResponsibility } from './contacts/directory';
 export {
+  closePersona,
   createPersona,
   getPersona,
   getPersonaTier,

@@ -27,6 +27,7 @@ import {
   Alert,
 } from 'react-native';
 import { Stack } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, fonts, spacing, radius, shadows } from '../src/theme';
 import {
   generatePairingCode,
@@ -55,6 +56,8 @@ interface LiveCode {
 }
 
 export default function PairedDevicesScreen() {
+  const insets = useSafeAreaInsets();
+  const bottomPad = insets.bottom + 49 + spacing.md;
   const [devices, setDevices] = useState<PairedDevice[]>([]);
   // Empty default; the placeholder below shows `openclaw-user` as a
   // hint. Pre-filling forced anyone pairing dina-cli or a phone to
@@ -165,7 +168,7 @@ export default function PairedDevicesScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Agents' }} />
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}>
         <Section title={`CONNECTED (${devices.length})`}>
           {devices.length === 0 ? (
             <Text style={styles.empty}>No agents connected yet.</Text>
@@ -316,7 +319,7 @@ function formatDuration(seconds: number): string {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgPrimary },
-  content: { padding: spacing.md, paddingBottom: spacing.xl },
+  content: { padding: spacing.md },
   section: { marginBottom: spacing.lg },
   sectionTitle: {
     fontFamily: fonts.sansSemibold,

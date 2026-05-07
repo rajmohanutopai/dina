@@ -439,6 +439,51 @@ describe('Staging Service', () => {
       expect(sweep().requeued).toBe(0);
       expect(getVaultItem('health', 'approval-v3')).toBeNull();
     });
+
+    it('user_remember source skips approval gate for closed persona (owner writes own vault)', () => {
+      // The owner types /remember on mobile — no approval needed.
+      // The item should park as pending_unlock without an approval task.
+      const { id } = ingest({
+        source: 'user_remember',
+        source_id: 'remember-health-1',
+        data: { body: 'my blood pressure is 120/80' },
+      });
+      claim(10);
+      resolve(id, 'health', false, {
+        id: 'remember-v1',
+        type: 'note',
+        summary: 'Blood pressure reading',
+      });
+
+      const item = getItem(id)!;
+      expect(item.status).toBe('pending_unlock');
+      // No approval task — owner does not need to approve their own vault writes.
+      expect(item.approval_id).toBeUndefined();
+
+      // Verify no task was created by constructing the expected approval ID and
+      // confirming it doesn't exist in the workflow store.
+      const expectedApprovalId = `approval-staging-${id}-health`;
+      expect(getWorkflowService()!.store().getById(expectedApprovalId)).toBeNull();
+    });
+
+    it('external source still creates approval gate for closed persona', () => {
+      // An agent or connector writing to a closed persona must go through approval.
+      const { id } = ingest({
+        source: 'gmail',
+        source_id: 'external-health-1',
+        data: { body: 'lab results from clinic' },
+      });
+      claim(10);
+      resolve(id, 'health', false, {
+        id: 'external-v1',
+        type: 'note',
+        summary: 'Lab results',
+      });
+
+      const item = getItem(id)!;
+      expect(item.status).toBe('pending_unlock');
+      expect(item.approval_id).toMatch(/^approval-staging-/);
+    });
   });
 
   describe('source_hash integrity', () => {

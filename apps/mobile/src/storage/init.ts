@@ -43,6 +43,7 @@ import {
   type DatabaseAdapter,
 } from '@dina/core/storage';
 import { hydrateContactDirectory } from '@dina/core';
+import { hydrateNotifications } from '@dina/brain/notifications';
 // Expo 55 exposes the document-directory constant through `Paths.document` (a
 // `Directory` object exposing `.uri`). op-sqlite's `location` parameter takes a
 // raw string directory URI, so we read the path from that object directly.
@@ -128,6 +129,16 @@ export async function initializePersistence(
   // immediately, but switching to the Reminders tab after the JS
   // engine reloaded showed "No reminders yet".
   await hydrateRemindersFromRepo();
+
+  // Same gap, applied to the unified notifications inbox. Without
+  // boot hydration, `hydrateNotifications` only ran lazily when the
+  // user opened the Notifications tab — until then the in-memory
+  // store was empty and the Approvals tab badge read 0 even when SQL
+  // held N pending rows (MT-43-I1, live 2026-05-07: 5 pending
+  // approvals visible inside the screen, badge stayed empty). The
+  // hydrate fires a `'hydrated'` event so live badge subscribers
+  // recompute against the freshly restocked store.
+  await hydrateNotifications();
 }
 
 /**

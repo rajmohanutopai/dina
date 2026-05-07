@@ -38,10 +38,10 @@ import { appendNotification } from './inbox';
  *     pending approval).
  *   - `title`: the action being requested (e.g. `"vault_search"`).
  *   - `body`: the human-readable reason from the request.
- *   - `sourceId`: the approval id (so the screen can deep-link back).
- *   - `deepLink`: `dina://approvals/<id>` — the Approvals tab handles
- *     this scheme. Resolution is the deep-link layer's responsibility
- *     (5.68); this bridge just shapes the URL.
+ *   - `sourceId`: the approval id (idempotent dedup key for the inbox).
+ *   - `deepLink`: `dina://approvals` — opens the Approvals list screen.
+ *     The screen shows all pending approvals; no per-item detail route
+ *     exists, so the ID is not part of the path.
  *
  * Returns a disposer that detaches the listener.
  */
@@ -60,7 +60,7 @@ export function installApprovalInboxBridge(approvalManager: ApprovalManager): ()
       title,
       body,
       sourceId: req.id,
-      deepLink: `dina://approvals/${req.id}`,
+      deepLink: 'dina://approvals',
       now: req.created_at !== 0 ? req.created_at : undefined,
     });
   });
@@ -91,9 +91,8 @@ export function installApprovalInboxBridge(approvalManager: ApprovalManager): ()
  *   - `body`: empty — the title carries the salient info; payload
  *     details (target, agent_did) live on the `/approvals` screen so
  *     we don't double-render. Brain bridges are deliberately terse.
- *   - `deepLink`: `dina://approvals/<id>` — same scheme as the
- *     ApprovalManager bridge so the inbox row and the dedicated
- *     screen converge.
+ *   - `deepLink`: `dina://approvals` — same as the ApprovalManager
+ *     bridge; opens the Approvals list screen (no per-item route).
  *   - `expiresAt`: the task's expiry (seconds → ms) — lets the inbox
  *     auto-purge cards whose underlying approval has timed out.
  *
@@ -111,7 +110,7 @@ export function installWorkflowApprovalInboxBridge(
       title,
       body: '',
       sourceId: task.id,
-      deepLink: `dina://approvals/${task.id}`,
+      deepLink: 'dina://approvals',
       // `expires_at` on workflow_tasks is unix seconds; the inbox uses ms.
       expiresAt:
         task.expires_at !== undefined && task.expires_at > 0

@@ -557,4 +557,142 @@ describe('Reminder Service', () => {
       expect(await hydrateRemindersFromRepo()).toBe(0);
     });
   });
+
+  describe('SQL write-through on status mutation (MT-29-I1 / MT-43-I2)', () => {
+    /**
+     * Fake repository that records every `update(id, partial)` call
+     * AND mutates its in-memory rows so a follow-up `listAll` reflects
+     * the writes. Mirrors the read-after-write contract a real
+     * SQLite-backed repo provides: hydration after a status flip MUST
+     * see the new status, otherwise cold launches re-fire stale rows.
+     */
+    function recordingRepo(rows: Reminder[]): {
+      repo: ReminderRepository;
+      updates: Array<{ id: string; updates: Partial<Reminder> }>;
+    } {
+      const updates: Array<{ id: string; updates: Partial<Reminder> }> = [];
+      const repo: ReminderRepository = {
+        async create(r) {
+          rows.push({ ...r });
+        },
+        async get(id) {
+          return rows.find((r) => r.id === id) ?? null;
+        },
+        async listPending(now) {
+          return rows.filter(
+            (r) => r.completed === 0 && r.status === 'pending' && r.due_at <= now,
+          );
+        },
+        async listByPersona(p) {
+          return rows.filter((r) => r.persona === p);
+        },
+        async listAll() {
+          return rows.map((r) => ({ ...r }));
+        },
+        async update(id, partial) {
+          updates.push({ id, updates: partial });
+          const row = rows.find((r) => r.id === id);
+          if (row) Object.assign(row, partial);
+        },
+        async remove() {
+          return false;
+        },
+      };
+      return { repo, updates };
+    }
+
+    afterEach(() => setReminderRepository(null));
+
+    it('fireMissedReminders writes status=fired through to SQL', async () => {
+      const rows: Reminder[] = [];
+      const { repo, updates } = recordingRepo(rows);
+      setReminderRepository(repo);
+
+      const r = createReminder({
+        message: 'Past-due',
+        due_at: Date.now() - 60_000,
+        persona: 'general',
+      });
+      // Let the create's fire-and-forget write resolve.
+      await Promise.resolve();
+
+      const fired = fireMissedReminders();
+      expect(fired).toHaveLength(1);
+      expect(fired[0].status).toBe('fired');
+      // Drain the fire-and-forget update Promise.
+      await Promise.resolve();
+
+      const fireUpdate = updates.find((u) => u.id === r.id && u.updates.status === 'fired');
+      expect(fireUpdate).toBeDefined();
+    });
+
+    it('a fired reminder does not re-fire after cold-launch hydration (MT-29-I1)', async () => {
+      const rows: Reminder[] = [];
+      const { repo } = recordingRepo(rows);
+      setReminderRepository(repo);
+
+      // Session 1: create + fire.
+      createReminder({
+        message: 'Verify MT-29-I1',
+        due_at: Date.now() - 60_000,
+        persona: 'general',
+      });
+      await Promise.resolve();
+      expect(fireMissedReminders()).toHaveLength(1);
+      await Promise.resolve();
+
+      // Session 2: simulate a cold launch — clear the in-memory Map,
+      // re-hydrate from SQL. Without the write-through the SQL row
+      // still says status='pending' and the row would re-fire. With
+      // the write-through it's 'fired' and the next tick is a no-op.
+      resetReminderState();
+      setReminderRepository(repo);
+      await hydrateRemindersFromRepo();
+
+      expect(fireMissedReminders()).toHaveLength(0);
+    });
+
+    it('completeReminder writes status=completed and completed=1 to SQL', async () => {
+      const rows: Reminder[] = [];
+      const { repo, updates } = recordingRepo(rows);
+      setReminderRepository(repo);
+
+      const r = createReminder({
+        message: 'Buy milk',
+        due_at: Date.now() + 60_000,
+        persona: 'general',
+      });
+      await Promise.resolve();
+
+      completeReminder(r.id);
+      await Promise.resolve();
+
+      const completeUpdate = updates.find(
+        (u) => u.id === r.id && u.updates.status === 'completed' && u.updates.completed === 1,
+      );
+      expect(completeUpdate).toBeDefined();
+    });
+
+    it('snoozeReminder writes status=snoozed and the new due_at to SQL', async () => {
+      const rows: Reminder[] = [];
+      const { repo, updates } = recordingRepo(rows);
+      setReminderRepository(repo);
+
+      const dueAt = Date.now() - 60_000;
+      const r = createReminder({
+        message: 'Snooze me',
+        due_at: dueAt,
+        persona: 'general',
+      });
+      await Promise.resolve();
+
+      const NOW = Date.now();
+      snoozeReminder(r.id, 60 * 60 * 1000, NOW);
+      await Promise.resolve();
+
+      const snoozeUpdate = updates.find((u) => u.id === r.id && u.updates.status === 'snoozed');
+      expect(snoozeUpdate).toBeDefined();
+      expect(snoozeUpdate!.updates.due_at).toBe(NOW + 60 * 60 * 1000);
+    });
+  });
 });

@@ -106,8 +106,7 @@ async function processOneItem(item: StagingItem): Promise<BatchItemResult> {
     // 3. Enrich L0
     const enriched = await enrichItem({ ...data, ...scored });
 
-    // 4. Resolve — store or pending_unlock
-    // Pass enriched data so stagingResolve() writes it to the vault (Fix: Codex #1)
+    // 4. Resolve — store or pending_unlock.
     const personaOpen = isPersonaOpen(persona);
     stagingResolve(item.id, persona, personaOpen, enriched as Record<string, unknown>);
 

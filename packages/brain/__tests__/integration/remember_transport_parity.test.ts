@@ -249,7 +249,10 @@ describe.each<TransportCase>([
     );
   });
 
-  it('parks locked persona targets behind a durable approval task', async () => {
+  it('writes to closed persona vault immediately for user_remember (owner has unconditional access)', async () => {
+    // CAPABILITIES.md §vault-compartments: "You are able to access these
+    // vaults without authorisation because you are the owner."
+    // user_remember must store immediately — no pending_unlock, no approval.
     const core = buildClient();
     const itemId = await ingestRemember(core, 'locked-health', {
       type: 'note',
@@ -258,18 +261,16 @@ describe.each<TransportCase>([
       sender: 'user',
     });
 
+    // Only 'general' is in accessiblePersonas — but user_remember bypasses
+    // this and treats all target personas as accessible.
     const tick = await drainOnce(core, ['general']);
 
-    expect(tick).toMatchObject({ claimed: 1, stored: 0, failed: 0 });
-    expect(tick.results[0]).toMatchObject({ itemId, status: 'pending_unlock' });
-    expect(queryVault('health', { mode: 'fts5', text: 'a1c diagnosis', limit: 10 })).toHaveLength(
-      0,
-    );
-    const pending = listByStatus('pending_unlock');
-    expect(pending).toHaveLength(1);
-    expect(pending[0]?.approval_id).toMatch(/^approval-staging-/);
-    expect(getStagingItem(itemId)?.approval_id).toBe(pending[0]?.approval_id);
-    expect(workflowRepo.getById(pending[0]!.approval_id!)).not.toBeNull();
+    expect(tick).toMatchObject({ claimed: 1, stored: 1, failed: 0 });
+    expect(tick.results[0]).toMatchObject({ itemId, status: 'stored' });
+    expect(queryVault('health', { mode: 'fts5', text: 'a1c', limit: 10 })).toHaveLength(1);
+    expect(listByStatus('pending_unlock')).toHaveLength(0);
+    expect(getStagingItem(itemId)?.status).toBe('stored');
+    expect(getStagingItem(itemId)?.approval_id).toBeUndefined();
   });
 
   it('claims and stores after a cache reset when staging repository rows remain', async () => {

@@ -37,7 +37,8 @@ export {
   isAuthenticated as isMsgBoxAuthenticated,
 } from './src/relay/msgbox_ws';
 export type { WSFactory } from './src/relay/msgbox_ws';
-export { createCoreRouter } from './src/server/core_server';
+export { createCoreRouter, setAskRouteHandler } from './src/server/core_server';
+export type { AskRouteHandler } from './src/server/core_server';
 export { createInProcessDispatch } from './src/server/in_process_dispatch';
 export { setD2DSender } from './src/server/routes/d2d_msg';
 export { setServiceQuerySender } from './src/server/routes/service_query';

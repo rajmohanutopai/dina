@@ -167,6 +167,15 @@ function stagingApprovalId(stagingId: string, persona: string): string {
   return `approval-staging-${stagingId}-${safePersona}`;
 }
 
+/**
+ * Sources that originate directly from the device owner via the mobile app.
+ * These bypass the persona access approval gate — the owner IS the approval
+ * authority, so asking them to approve their own vault writes is meaningless.
+ * External agents, connectors, and third-party pipelines are not in this set
+ * and still require approval when the target persona vault is closed.
+ */
+const OWNER_DIRECT_SOURCES = new Set(['user_remember']);
+
 function previewForApproval(
   item: StagingItem,
   classifiedItem?: Record<string, unknown>,
@@ -376,9 +385,10 @@ export function resolve(
     throw new Error(`staging: cannot resolve item in status "${item.status}"`);
   }
 
-  const approvalId = personaOpen
-    ? undefined
-    : createPersonaAccessApproval(item, persona, classifiedItem);
+  const needsApproval = !personaOpen && !OWNER_DIRECT_SOURCES.has(item.source);
+  const approvalId = needsApproval
+    ? createPersonaAccessApproval(item, persona, classifiedItem)
+    : undefined;
 
   item.persona = persona;
   item.status = personaOpen ? 'stored' : 'pending_unlock';
@@ -459,26 +469,30 @@ export function resolveMulti(
   // Create durable approvals before any open-persona writes. If Core
   // cannot persist the approval record, the resolve fails without
   // partially storing the open side of a multi-persona item.
+  // Owner-direct sources skip the approval gate — the owner IS the
+  // approval authority and does not need to approve their own writes.
   const lockedTargets = targets
     .filter((target) => !target.personaOpen)
     .map((target) => target.persona);
   const approvalIds = new Map<string, string>();
-  for (const lockedPersona of lockedTargets) {
-    const approvalItem =
-      lockedPersona === primary.persona
-        ? item
-        : ({
-            ...item,
-            id: `${id}-${lockedPersona}`,
-            source_id: `${item.source_id}:${lockedPersona}`,
-            persona: lockedPersona,
-            status: 'pending_unlock',
-            classified_item: classifiedItem,
-          } satisfies StagingItem);
-    approvalIds.set(
-      lockedPersona,
-      createPersonaAccessApproval(approvalItem, lockedPersona, classifiedItem),
-    );
+  if (!OWNER_DIRECT_SOURCES.has(item.source)) {
+    for (const lockedPersona of lockedTargets) {
+      const approvalItem =
+        lockedPersona === primary.persona
+          ? item
+          : ({
+              ...item,
+              id: `${id}-${lockedPersona}`,
+              source_id: `${item.source_id}:${lockedPersona}`,
+              persona: lockedPersona,
+              status: 'pending_unlock',
+              classified_item: classifiedItem,
+            } satisfies StagingItem);
+      approvalIds.set(
+        lockedPersona,
+        createPersonaAccessApproval(approvalItem, lockedPersona, classifiedItem),
+      );
+    }
   }
 
   // Track which personas actually got a vault row. A persona that

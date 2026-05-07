@@ -50,7 +50,8 @@ export interface NotificationItem {
 
 export type NotificationEvent =
   | { type: 'appended'; item: NotificationItem }
-  | { type: 'marked_read'; id: string };
+  | { type: 'marked_read'; id: string }
+  | { type: 'hydrated'; loaded: number };
 
 export type NotificationListener = (event: NotificationEvent) => void;
 
@@ -198,6 +199,15 @@ export async function hydrateNotifications(opts: { force?: boolean } = {}): Prom
     items.push(storedToItem(row));
   }
   // listAll already returns newest-first — preserve.
+  //
+  // Fire `'hydrated'` so live subscribers (`useUnreadCount`,
+  // notification-list views) recompute against the freshly restocked
+  // store. Without this, the Approvals tab badge stays at 0 across the
+  // entire cold launch even when SQL holds N pending rows — surfaced
+  // live as MT-43-I1 on 2026-05-07: 5 pending approval rows visible on
+  // the Approvals screen, but the tab-bar badge stayed empty until a
+  // new notification arrived.
+  fire({ type: 'hydrated', loaded: items.length });
   return items.length;
 }
 

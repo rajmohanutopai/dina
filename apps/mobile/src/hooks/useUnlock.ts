@@ -16,6 +16,7 @@
  */
 
 import {
+  closePersona,
   deriveDIDKey,
   deriveRootSigningKey,
   getPublicKey,
@@ -225,7 +226,15 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
   //     invisible to `/ask`. Keeping this in lockstep with the
   //     unlocked-persona set is the critical wiring — latent bug
   //     documented in the scenario-1+2 E2E test's docstring.
-  setAccessiblePersonas(opened);
+  //
+  //     Use the full set of currently-open personas rather than the
+  //     return value of openBootPersonas() (which only returns NEWLY-
+  //     opened personas). After a sealVault → re-unlock cycle, personas
+  //     remain isOpen:true from the previous unlock, so openBootPersonas()
+  //     returns [] — causing setAccessiblePersonas([]) → drain sees no
+  //     accessible personas → all items land in pending_unlock even for
+  //     the general persona (MT-12-I2 root cause).
+  setAccessiblePersonas(listPersonas().filter((p) => p.isOpen).map((p) => p.name));
 
   // 6. Complete. Consume any pending force-prompt signal — a
   //    successful manual unlock is the user re-asserting access, so
@@ -378,6 +387,15 @@ export async function sealVault(): Promise<void> {
     return;
   }
   setAccessiblePersonas([]);
+  // Close all open personas in the in-memory registry so the next unlock()
+  // starts from the correct initial state. openBootPersonas() checks
+  // !isOpen before re-opening — without this reset it finds them already
+  // open, returns [], and setAccessiblePersonas([]) is set with an empty
+  // list (MT-12-I2 root cause: the secondary symptom was in the drain, but
+  // the root cause is that isOpen flags survive sealVault).
+  for (const p of listPersonas()) {
+    if (p.isOpen) closePersona(p.name);
+  }
   await shutdownAllPersistence();
   state = createInitialState();
   notify();

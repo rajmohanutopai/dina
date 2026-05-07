@@ -128,21 +128,6 @@ function stageMessage(
     /* opaque non-JSON body — leave summary empty */
   }
 
-  // TEMP DIAGNOSTIC LOG — confirms stageMessage runs on-device with the
-  // new D2D-routing keys (ingress_channel/origin_did/summary). Remove
-  // once Bug #1 is validated end-to-end on the simulator.
-  console.log(
-    '[d2d:stageMessage]',
-    JSON.stringify({
-      messageType,
-      vaultItemType,
-      senderDID,
-      messageId,
-      bodyPreview: body.slice(0, 80),
-      summary,
-    }),
-  );
-
   const { id } = ingest({
     source: 'd2d',
     source_id: messageId,

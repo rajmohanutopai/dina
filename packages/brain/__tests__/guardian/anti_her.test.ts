@@ -107,6 +107,36 @@ describe('Anti-Her Safeguard', () => {
     it('does NOT flag informational response', () => {
       expect(isEngagementHook('Here are your search results.')).toBe(false);
     });
+
+    it('flags "How can I help you today?" (MT-9-I1)', () => {
+      // Live finding 2026-05-06: Gemini closed an /ask response with
+      // this phrase and the original pattern set let it through. Pin
+      // the pattern so a future prompt change doesn't silently
+      // re-introduce the leak.
+      expect(isEngagementHook('How can I help you today?')).toBe(true);
+    });
+
+    it('flags variant "How can I assist you?"', () => {
+      expect(isEngagementHook('How can I assist you?')).toBe(true);
+    });
+
+    it('flags "What can I help you with?"', () => {
+      expect(isEngagementHook('What can I help you with?')).toBe(true);
+    });
+
+    it('flags "Let me know if you need anything else"', () => {
+      expect(isEngagementHook('Let me know if you need anything else.')).toBe(true);
+    });
+
+    it('does NOT flag the user asking Dina the same shape', () => {
+      // The detector runs on Dina's OUTPUT, but the patterns shouldn't
+      // be so loose that a quoted user question round-trips to a flag.
+      // "I asked Dina, 'how can I help you'" should still match (the
+      // sentence reads as Dina-style); but a clean user request like
+      // "Help me find my keys" must not.
+      expect(isEngagementHook('Help me find my keys.')).toBe(false);
+      expect(isEngagementHook('I want to know how I can help.')).toBe(false);
+    });
   });
 
   describe('Suite 5: intimacy simulation (Dina response output)', () => {

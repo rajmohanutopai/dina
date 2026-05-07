@@ -131,14 +131,25 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
   const formatHeader = opts.formatResumeHeader ?? null;
   const formatFailure =
     opts.formatFailureMessage ??
-    (({ failureKind, raw }): string => {
-      const detail =
-        typeof raw === 'object' && raw !== null && 'message' in raw
-          ? String(raw.message)
-          : typeof raw === 'string'
-            ? raw
-            : failureKind;
-      return `/ask failed: ${detail}`;
+    (({ failureKind, raw }: { failureKind: string; raw: AskFailure | string }): string => {
+      switch (failureKind) {
+        case 'provider_error':
+          return "I ran into a problem reaching the AI provider. Please try again in a moment.";
+        case 'max_iterations':
+        case 'max_tool_calls':
+          return "I wasn't able to complete this in the available steps. Try a simpler query.";
+        case 'cancelled':
+          return "Your request was cancelled.";
+        default: {
+          const detail =
+            typeof raw === 'object' && raw !== null && 'message' in raw
+              ? String((raw as { message: unknown }).message)
+              : typeof raw === 'string'
+                ? raw
+                : failureKind;
+          return `/ask failed: ${detail}`;
+        }
+      }
     });
 
   // askId → tracked metadata. Populated when handleAsk returns

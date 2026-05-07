@@ -240,6 +240,14 @@ export function nextPending(now?: number): Reminder | null {
  * Matches Go's startup recovery: fires past-due reminders on startup.
  * Returns the list of fired reminders. Each is marked status='fired'.
  *
+ * The status flip is also written through to SQL so the next cold
+ * launch sees `'fired'` and `listPending`/`hydrateRemindersFromRepo`
+ * skip them. Without the write-through, every cold launch re-fires
+ * every past-due reminder ever created, because hydration restores
+ * them as `'pending'` — surfaced live as MT-29-I1 / MT-43-I2 on
+ * 2026-05-07: the same MT-15 reminders re-emitted at 6:35 → 6:38 →
+ * 6:43 across three cold launches.
+ *
  * @param onFire — optional callback invoked for each fired reminder
  */
 export function fireMissedReminders(
@@ -251,6 +259,7 @@ export function fireMissedReminders(
 
   for (const r of pending) {
     r.status = 'fired';
+    persistStatus(r.id, { status: 'fired' });
     fired.push(r);
     if (onFire) onFire(r);
   }
@@ -276,6 +285,7 @@ export function completeReminder(id: string): Reminder | null {
 
   reminder.completed = 1;
   reminder.status = 'completed';
+  persistStatus(reminder.id, { status: 'completed', completed: 1 });
 
   // Create next occurrence for recurring reminders
   if (reminder.recurring) {
@@ -312,6 +322,30 @@ export function snoozeReminder(id: string, snoozeMs: number, now?: number): void
   const base = Math.max(reminder.due_at, now ?? Date.now());
   reminder.due_at = base + snoozeMs;
   reminder.status = 'snoozed';
+  persistStatus(reminder.id, { status: 'snoozed', due_at: reminder.due_at });
+}
+
+/**
+ * Fire-and-forget write-through for status/due_at mutations.
+ *
+ * Same shape as the inline `void sqlRepo.create(reminder).catch(...)`
+ * inside `createReminder`: any sync-throw or async-rejection is
+ * swallowed because reminder UX must not break on a transient SQL
+ * write loss. The in-memory `reminders` Map is the authoritative
+ * read surface within the process; the SQL write only matters for
+ * the *next* cold start's hydration, where it prevents stale state
+ * from re-firing.
+ */
+function persistStatus(id: string, updates: Partial<Reminder>): void {
+  const sqlRepo = getReminderRepository();
+  if (!sqlRepo) return;
+  try {
+    void sqlRepo.update(id, updates).catch(() => {
+      /* fail-safe — transient SQL write loss is acceptable */
+    });
+  } catch {
+    /* fail-safe — sync-throw variant */
+  }
 }
 
 /** Delete a reminder. Returns true if found. */

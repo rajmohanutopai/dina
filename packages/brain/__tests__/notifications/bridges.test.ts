@@ -74,7 +74,7 @@ describe('Notifications inbox bridges (5.66)', () => {
         title: 'vault_search',
         body: 'Search for "rent"',
         sourceId: 'appr-1',
-        deepLink: 'dina://approvals/appr-1',
+        deepLink: 'dina://approvals',
         firedAt: 1234,
       });
     });
@@ -156,7 +156,7 @@ describe('Notifications inbox bridges (5.66)', () => {
         title: 'send_email: Send Q4 report',
         body: '',
         sourceId: 'prop-intent-abc',
-        deepLink: 'dina://approvals/prop-intent-abc',
+        deepLink: 'dina://approvals',
         firedAt: 1_700_000_000_000,
       });
     });
