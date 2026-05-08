@@ -18,7 +18,7 @@
  *     thread.
  */
 
-import { ApprovalManager } from '@dina/core';
+import type { CreateWorkflowTaskInput, WorkflowTask } from '@dina/core';
 import {
   createPersona,
   resetPersonaState,
@@ -35,6 +35,7 @@ import {
 import {
   buildAgenticExecuteFn,
   createAskCoordinator,
+  type AskCoordinatorCoreClient,
 } from '../../src/composition/ask_coordinator';
 import { createCoordinatorAskHandler } from '../../src/composition/coordinator_ask_handler';
 import { getAskApprovalGateway } from '../../src/composition/ask_gateway_registry';
@@ -128,27 +129,47 @@ function fakeOrchestrator(): BuildAgenticAskPipelineInput['orchestratorHandle'] 
   };
 }
 
-function fakeCoreClient(): BuildAgenticAskPipelineInput['coreClient'] {
-  return {
-    async findContactsByPreference() {
-      return [];
+// ---------------------------------------------------------------------------
+// Fake AskCoordinatorCoreClient — in-memory workflow task store.
+// ---------------------------------------------------------------------------
+
+interface FakeTask { id: string; status: string; payload: string }
+
+function makeFakeCoreClient(): {
+  client: AskCoordinatorCoreClient & BuildAgenticAskPipelineInput['coreClient'];
+  tasks: Map<string, FakeTask>;
+} {
+  const tasks = new Map<string, FakeTask>();
+  const setStatus = (id: string, s: string) => { const t = tasks.get(id); if (t) t.status = s; };
+  const client = {
+    async findContactsByPreference() { return []; },
+    async createWorkflowTask(input: CreateWorkflowTaskInput) {
+      if (tasks.has(input.id)) throw new Error(`duplicate: ${input.id}`);
+      const t: FakeTask = { id: input.id, status: input.initialState ?? 'pending_approval', payload: input.payload };
+      tasks.set(input.id, t);
+      return { task: t as unknown as WorkflowTask, deduped: false };
     },
+    async getWorkflowTask(id: string) { return (tasks.get(id) as unknown as WorkflowTask) ?? null; },
+    async completeWorkflowTask(id: string) { setStatus(id, 'completed'); return tasks.get(id) as unknown as WorkflowTask; },
+    async approveWorkflowTask(id: string) { setStatus(id, 'queued'); return tasks.get(id) as unknown as WorkflowTask; },
+    async cancelWorkflowTask(id: string) { setStatus(id, 'cancelled'); return tasks.get(id) as unknown as WorkflowTask; },
   };
+  return { client, tasks };
 }
 
-function buildCoord(llm: LLMProvider, am: ApprovalManager, fastPathMs: number) {
+function buildCoord(llm: LLMProvider, fastPathMs: number) {
+  const { client } = makeFakeCoreClient();
   const pipeline = buildAgenticAskPipeline({
     llm,
     providerName: 'gemini',
     appViewClient: fakeAppView(),
     orchestratorHandle: fakeOrchestrator(),
-    coreClient: fakeCoreClient(),
+    coreClient: client,
     cloudConsentGranted: true,
-    approvalManager: am,
   });
   return createAskCoordinator({
     pipeline,
-    approvalManager: am,
+    coreClient: client,
     executeFn: buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT }),
     systemPrompt: SYSTEM_PROMPT,
     fastPathMs,
@@ -173,8 +194,7 @@ describe('createCoordinatorAskHandler — synchronous outcomes', () => {
     const llm = makeScripted();
     llm.push(answerResp('forty two'));
 
-    const am = new ApprovalManager();
-    const coord = buildCoord(llm.provider, am, 5_000);
+    const coord = buildCoord(llm.provider, 5_000);
     const { handler, dispose } = createCoordinatorAskHandler({
       coordinator: coord,
       requesterDid: REQUESTER,
@@ -196,8 +216,7 @@ describe('createCoordinatorAskHandler — synchronous outcomes', () => {
     const llm = makeScripted();
     // No responses queued — first chat call will throw.
 
-    const am = new ApprovalManager();
-    const coord = buildCoord(llm.provider, am, 5_000);
+    const coord = buildCoord(llm.provider, 5_000);
     const { handler, dispose } = createCoordinatorAskHandler({
       coordinator: coord,
       requesterDid: REQUESTER,
@@ -231,8 +250,7 @@ describe('createCoordinatorAskHandler — pending_approval deferred delivery', (
       answerResp('Your BP was 120/80.'),
     );
 
-    const am = new ApprovalManager();
-    const coord = buildCoord(llm.provider, am, 1_000);
+    const coord = buildCoord(llm.provider, 1_000);
     const { handler, dispose } = createCoordinatorAskHandler({
       coordinator: coord,
       requesterDid: REQUESTER,
@@ -261,10 +279,9 @@ describe('createCoordinatorAskHandler — pending_approval deferred delivery', (
       expect(typeof card.metadata?.askId).toBe('string');
       expect(typeof card.metadata?.approvalId).toBe('string');
 
-      // Operator approves → registry resumes → bridge fires.
-      const pending = am.listPending();
-      expect(pending).toHaveLength(1);
-      const approval = await coord.gateway.approve(pending[0]!.id);
+      // Operator approves via gateway → registry resumes → bridge fires.
+      const approvalId = card.metadata?.approvalId as string;
+      const approval = await coord.gateway.approve(approvalId);
       expect(approval.ok).toBe(true);
 
       // Flush microtasks so the resumer + bridge settle.
@@ -295,8 +312,7 @@ describe('createCoordinatorAskHandler — pending_approval deferred delivery', (
       answerResp('Your BP was 120/80.'),
     );
 
-    const am = new ApprovalManager();
-    const coord = buildCoord(llm.provider, am, 1_000);
+    const coord = buildCoord(llm.provider, 1_000);
     const { handler, dispose } = createCoordinatorAskHandler({
       coordinator: coord,
       requesterDid: REQUESTER,
@@ -306,8 +322,8 @@ describe('createCoordinatorAskHandler — pending_approval deferred delivery', (
 
     try {
       await handler('what was my BP?', { threadId: THREAD });
-      const pending = am.listPending();
-      await coord.gateway.approve(pending[0]!.id);
+      const approvalId = getThread(THREAD)[0]?.metadata?.approvalId as string;
+      await coord.gateway.approve(approvalId);
       await new Promise<void>((resolve) => setImmediate(resolve));
       await new Promise<void>((resolve) => setImmediate(resolve));
 
@@ -334,8 +350,7 @@ describe('createCoordinatorAskHandler — pending_approval deferred delivery', (
       }),
     );
 
-    const am = new ApprovalManager();
-    const coord = buildCoord(llm.provider, am, 1_000);
+    const coord = buildCoord(llm.provider, 1_000);
     const { handler, dispose } = createCoordinatorAskHandler({
       coordinator: coord,
       requesterDid: REQUESTER,
@@ -343,8 +358,8 @@ describe('createCoordinatorAskHandler — pending_approval deferred delivery', (
 
     try {
       await handler('what was my BP?', { threadId: THREAD });
-      const pending = am.listPending();
-      await coord.gateway.deny(pending[0]!.id, 'no thanks');
+      const approvalId = getThread(THREAD)[0]?.metadata?.approvalId as string;
+      await coord.gateway.deny(approvalId, 'no thanks');
 
       await new Promise<void>((resolve) => setImmediate(resolve));
       await new Promise<void>((resolve) => setImmediate(resolve));
@@ -375,9 +390,8 @@ describe('createCoordinatorAskHandler — async window deferral', () => {
       },
     };
 
-    const am = new ApprovalManager();
     // fastPathMs=1 → effectively forces async path.
-    const coord = buildCoord(slowProvider, am, 1);
+    const coord = buildCoord(slowProvider, 1);
     const { handler, dispose } = createCoordinatorAskHandler({
       coordinator: coord,
       requesterDid: REQUESTER,
@@ -437,8 +451,7 @@ describe('createCoordinatorAskHandler — multi-thread routing', () => {
       answerResp('Your BP was 120/80.'),
     );
 
-    const am = new ApprovalManager();
-    const coord = buildCoord(llm.provider, am, 1_000);
+    const coord = buildCoord(llm.provider, 1_000);
     // Default thread is 'main'; the user is asking from a per-persona
     // thread '/health'. Late delivery must hit '/health', not 'main'.
     const { handler, dispose } = createCoordinatorAskHandler({
@@ -449,8 +462,8 @@ describe('createCoordinatorAskHandler — multi-thread routing', () => {
 
     try {
       await handler('what was my BP?', { threadId: '/health' });
-      const pending = am.listPending();
-      await coord.gateway.approve(pending[0]!.id);
+      const approvalId = getThread('/health')[0]?.metadata?.approvalId as string;
+      await coord.gateway.approve(approvalId);
       await new Promise<void>((resolve) => setImmediate(resolve));
       await new Promise<void>((resolve) => setImmediate(resolve));
 
@@ -469,8 +482,7 @@ describe('createCoordinatorAskHandler — multi-thread routing', () => {
     const llm = makeScripted();
     llm.push(answerResp('forty two'));
 
-    const am = new ApprovalManager();
-    const coord = buildCoord(llm.provider, am, 5_000);
+    const coord = buildCoord(llm.provider, 5_000);
     const { handler, dispose } = createCoordinatorAskHandler({
       coordinator: coord,
       requesterDid: REQUESTER,
@@ -491,8 +503,7 @@ describe('createCoordinatorAskHandler — multi-thread routing', () => {
 describe('createCoordinatorAskHandler — gateway singleton', () => {
   it('installs the coordinator.gateway as the module-level singleton on construction; clears on dispose', () => {
     const llm = makeScripted();
-    const am = new ApprovalManager();
-    const coord = buildCoord(llm.provider, am, 5_000);
+    const coord = buildCoord(llm.provider, 5_000);
 
     expect(getAskApprovalGateway()).toBeNull();
     const { dispose } = createCoordinatorAskHandler({
@@ -518,8 +529,7 @@ describe('createCoordinatorAskHandler — lifecycle', () => {
 
   it('rejects empty requesterDid', () => {
     const llm = makeScripted();
-    const am = new ApprovalManager();
-    const coord = buildCoord(llm.provider, am, 1_000);
+    const coord = buildCoord(llm.provider, 1_000);
     expect(() =>
       createCoordinatorAskHandler({
         coordinator: coord,
@@ -543,8 +553,7 @@ describe('createCoordinatorAskHandler — lifecycle', () => {
       answerResp('Your BP was 120/80.'),
     );
 
-    const am = new ApprovalManager();
-    const coord = buildCoord(llm.provider, am, 1_000);
+    const coord = buildCoord(llm.provider, 1_000);
     const { handler, dispose } = createCoordinatorAskHandler({
       coordinator: coord,
       requesterDid: REQUESTER,
@@ -556,10 +565,10 @@ describe('createCoordinatorAskHandler — lifecycle', () => {
     // approves, but the bridge no longer listens — no late `dina`
     // bubble should appear.
     expect(getThread(THREAD).map((m) => m.type)).toEqual(['approval']);
+    const approvalId = getThread(THREAD)[0]?.metadata?.approvalId as string;
     dispose();
 
-    const pending = am.listPending();
-    await coord.gateway.approve(pending[0]!.id);
+    await coord.gateway.approve(approvalId);
     await new Promise<void>((resolve) => setImmediate(resolve));
     await new Promise<void>((resolve) => setImmediate(resolve));
 

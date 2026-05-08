@@ -104,11 +104,17 @@ def test_status_unreachable(tmp_path):
             mock_ident = MagicMock()
             mock_ident.did.return_value = "did:key:z6MkTestDevice"
             MockIdent.return_value = mock_ident
-            result = runner.invoke(cli, ["--json", "status"])
+            # Force direct transport so the test is env-independent.
+            # Without this, DINA_TRANSPORT=msgbox in the developer's
+            # environment would take the msgbox branch and never hit the
+            # mocked httpx.get that drives the "unreachable" assertion.
+            result = runner.invoke(cli, ["--json", "status"],
+                                   env={"DINA_TRANSPORT": "direct"})
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["core_reachable"] is False
     assert data["paired"] is False
+    assert data["transport"] == "direct"
 
 
 # ── remember ──────────────────────────────────────────────────────────────

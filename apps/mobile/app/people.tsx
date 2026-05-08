@@ -67,7 +67,7 @@ export default function PeopleScreen() {
     (contact: Contact) => {
       Alert.alert(
         `Remove ${contact.displayName || 'contact'}?`,
-        'You’ll need to add them again to send or receive D2D messages. Their DID stays on PLC; this only removes them from your local contact list.',
+        "You’ll need to add them again to talk with them. Their DID stays on PLC; this only removes them from your local contact list.",
         [
           { text: 'Cancel', style: 'cancel' },
           {

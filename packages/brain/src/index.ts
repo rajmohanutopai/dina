@@ -201,6 +201,7 @@ export {
 } from './composition/ask_coordinator';
 export type {
   AskCoordinator,
+  AskCoordinatorCoreClient,
   CreateAskCoordinatorOptions,
 } from './composition/ask_coordinator';
 export { getAskApprovalGateway } from './composition/ask_gateway_registry';

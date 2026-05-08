@@ -4,8 +4,8 @@
  * Wires every piece built in 5.21-A through 5.21-E into one closed
  * loop and pins the full bail/approve/resume cycle:
  *
- *   1. `buildAgenticAskPipeline({approvalManager, ...})` → pipeline
- *      with `buildToolsForAsk`.
+ *   1. `buildAgenticAskPipeline({coreClient, ...})` → pipeline with
+ *      `buildToolsForAsk` (always wired via coreClient).
  *   2. `AskRegistry` + `AskApprovalGateway` + `AskApprovalResumer`
  *      wired with both `executeFn` (Pattern B fallback) and
  *      `resumeFromPausedFn` (Pattern A primary).
@@ -22,7 +22,7 @@
  * No HTTP, no real LLM, no real vault file. Pure in-memory wiring.
  */
 
-import { ApprovalManager } from '@dina/core';
+import type { CreateWorkflowTaskInput, WorkflowTask } from '@dina/core';
 import {
   createPersona,
   resetPersonaState,
@@ -173,16 +173,35 @@ function fakeOrchestrator(): BuildAgenticAskPipelineInput['orchestratorHandle'] 
   };
 }
 
-function fakeCoreClient(): BuildAgenticAskPipelineInput['coreClient'] {
-  return {
-    async findContactsByPreference() {
-      return [];
+// ---------------------------------------------------------------------------
+// Fake workflow-task-backed coreClient — in-memory store.
+// ---------------------------------------------------------------------------
+
+interface FakeTask { id: string; status: string; payload: string }
+
+function makeFakeWorkflowCoreClient(): {
+  client: BuildAgenticAskPipelineInput['coreClient'];
+  tasks: Map<string, FakeTask>;
+  setStatus: (id: string, s: string) => void;
+} {
+  const tasks = new Map<string, FakeTask>();
+  const setStatus = (id: string, s: string) => { const t = tasks.get(id); if (t) t.status = s; };
+  const client = {
+    async findContactsByPreference() { return []; },
+    async createWorkflowTask(input: CreateWorkflowTaskInput) {
+      if (tasks.has(input.id)) throw new Error(`duplicate: ${input.id}`);
+      const t: FakeTask = { id: input.id, status: input.initialState ?? 'pending_approval', payload: input.payload };
+      tasks.set(input.id, t);
+      return { task: t as unknown as WorkflowTask, deduped: false };
     },
+    async getWorkflowTask(id: string) { return (tasks.get(id) as unknown as WorkflowTask) ?? null; },
+    async completeWorkflowTask(id: string) { setStatus(id, 'completed'); return tasks.get(id) as unknown as WorkflowTask; },
   };
+  return { client, tasks, setStatus };
 }
 
-function builderInputWithApprovalManager(
-  approvalManager: ApprovalManager,
+function builderInput(
+  coreClient: BuildAgenticAskPipelineInput['coreClient'],
   llm: LLMProvider,
 ): BuildAgenticAskPipelineInput {
   return {
@@ -190,27 +209,26 @@ function builderInputWithApprovalManager(
     providerName: 'gemini',
     appViewClient: fakeAppView(),
     orchestratorHandle: fakeOrchestrator(),
-    coreClient: fakeCoreClient(),
+    coreClient,
     cloudConsentGranted: true,
-    approvalManager,
   };
 }
 
-function approvalManagerSource(am: ApprovalManager): ApprovalSource {
+function workflowTaskSource(
+  tasks: Map<string, FakeTask>,
+  setStatus: (id: string, s: string) => void,
+): ApprovalSource {
   return {
-    getStatus(id) {
-      const r = am.getRequest(id);
-      if (!r) return 'unknown';
-      if (r.status === 'pending') return 'pending';
-      if (r.status === 'approved') return 'approved';
-      return 'denied';
+    getStatus(id: string) {
+      const t = tasks.get(id);
+      if (!t) return 'expired';
+      if (t.status === 'pending_approval') return 'pending';
+      if (t.status === 'queued' || t.status === 'running') return 'approved';
+      if (t.status === 'cancelled' || t.status === 'failed') return 'denied';
+      return 'expired';
     },
-    approve(id) {
-      am.approveRequest(id, 'single', 'test-operator');
-    },
-    deny(id) {
-      am.denyRequest(id);
-    },
+    approve(id: string) { setStatus(id, 'queued'); },
+    deny(id: string) { setStatus(id, 'cancelled'); },
   };
 }
 
@@ -250,9 +268,9 @@ describe('Pattern A end-to-end (5.21-E capstone)', () => {
       answerResp('Your blood pressure was 120/80.'),
     );
 
-    const approvalManager = new ApprovalManager();
+    const { client, tasks, setStatus } = makeFakeWorkflowCoreClient();
     const pipeline: AgenticAskPipeline = buildAgenticAskPipeline(
-      builderInputWithApprovalManager(approvalManager, llm.provider),
+      builderInput(client, llm.provider),
     );
     expect(pipeline.buildToolsForAsk).toBeDefined();
 
@@ -325,7 +343,7 @@ describe('Pattern A end-to-end (5.21-E capstone)', () => {
     // its final answer, and applyAgenticResult marks complete.
     const gateway = new AskApprovalGateway({
       askRegistry: registry,
-      approvalSource: approvalManagerSource(approvalManager),
+      approvalSource: workflowTaskSource(tasks, setStatus),
     });
     await gateway.approve('appr-ask-1-health');
 
@@ -338,8 +356,8 @@ describe('Pattern A end-to-end (5.21-E capstone)', () => {
       text: 'Your blood pressure was 120/80.',
     });
 
-    // Approval was consumed.
-    expect(approvalManager.getRequest('appr-ask-1-health')).toBeUndefined();
+    // Approval workflow task was consumed (completed) after vault read.
+    expect(tasks.get('appr-ask-1-health')?.status).toBe('completed');
 
     // Resumer emitted resumed_completed.
     expect(resumerEvents).toContainEqual({ kind: 'resumed_completed', askId });
@@ -364,9 +382,9 @@ describe('Pattern A end-to-end (5.21-E capstone)', () => {
       answerResp('Health: 120/80. Balance: $42.'),
     );
 
-    const approvalManager = new ApprovalManager();
+    const { client, tasks, setStatus } = makeFakeWorkflowCoreClient();
     const pipeline = buildAgenticAskPipeline(
-      builderInputWithApprovalManager(approvalManager, llm.provider),
+      builderInput(client, llm.provider),
     );
 
     const resumerEvents: AskApprovalResumerEvent[] = [];
@@ -414,7 +432,7 @@ describe('Pattern A end-to-end (5.21-E capstone)', () => {
     // First approval → triggers resume. LLM pivots to financial → re-parks.
     const gateway = new AskApprovalGateway({
       askRegistry: registry,
-      approvalSource: approvalManagerSource(approvalManager),
+      approvalSource: workflowTaskSource(tasks, setStatus),
     });
     await gateway.approve('appr-ask-1-health');
     await new Promise<void>((resolve) => setImmediate(resolve));

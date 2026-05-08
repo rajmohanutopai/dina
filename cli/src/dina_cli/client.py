@@ -182,7 +182,8 @@ class DinaClient:
 
         if self._verbose:
             import sys
-            print(f"  >> {method} {path}", file=sys.stderr)
+            via = getattr(self._transport, "transport_name", "?")
+            print(f"  >> {method} {path} [via {via}]", file=sys.stderr)
             print(f"     DID: {did}", file=sys.stderr)
             if body_bytes:
                 preview = body_bytes[:200].decode("utf-8", errors="replace")

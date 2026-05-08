@@ -49,7 +49,11 @@
       },
       "channel": "production",
       "env": {
-        "EXPO_PUBLIC_DINA_ENV": "production"
+        "EXPO_PUBLIC_DINA_ENV": "production",
+        "EXPO_PUBLIC_DINA_ENDPOINT_MODE": "release",
+        "EXPO_PUBLIC_DINA_APPVIEW_URL": "",
+        "EXPO_PUBLIC_DINA_MSGBOX_URL": "",
+        "EXPO_PUBLIC_DINA_PDS_URL": ""
       }
     }
   },

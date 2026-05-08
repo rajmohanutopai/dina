@@ -113,25 +113,50 @@ def status(ctx: click.Context) -> None:
         result["did"] = ""
 
     # Connectivity + auth
+    transport_mode = os.environ.get("DINA_TRANSPORT") or saved.get("transport_mode") or "auto"
     result["core_reachable"] = False
     result["authenticated"] = False
-    try:
-        health = httpx.get(f"{core_url}/healthz", timeout=5)
-        result["core_reachable"] = health.status_code == 200
-    except Exception:
-        pass
-
     result["home_did"] = ""
-    if has_keypair and result["core_reachable"]:
+
+    if transport_mode == "msgbox":
+        # For msgbox mode the Core has no direct HTTP port — skip the raw health
+        # check and instead probe connectivity through the signed transport.
+        # Use /healthz (allowed for all caller types) then fetch homenode DID
+        # from /v1/did (admin/brain only) via a best-effort request.
+        if has_keypair:
+            try:
+                client = _make_client(ctx)
+                client._request(client._core, "GET", "/healthz")
+                result["core_reachable"] = True
+                result["authenticated"] = True
+                # Try to read the homenode DID (best-effort; agents may not have access).
+                try:
+                    did_doc = client.did_get()
+                    result["home_did"] = did_doc.get("did", did_doc.get("id", ""))
+                except Exception:
+                    result["home_did"] = (
+                        os.environ.get("DINA_HOMENODE_DID") or saved.get("homenode_did") or ""
+                    )
+            except Exception:
+                pass
+    else:
         try:
-            client = _make_client(ctx)
-            did_doc = client.did_get()
-            result["authenticated"] = True
-            result["home_did"] = did_doc.get("did", did_doc.get("id", ""))
+            health = httpx.get(f"{core_url}/healthz", timeout=5)
+            result["core_reachable"] = health.status_code == 200
         except Exception:
             pass
 
+        if has_keypair and result["core_reachable"]:
+            try:
+                client = _make_client(ctx)
+                did_doc = client.did_get()
+                result["authenticated"] = True
+                result["home_did"] = did_doc.get("did", did_doc.get("id", ""))
+            except Exception:
+                pass
+
     result["paired"] = result["authenticated"]
+    result["transport"] = transport_mode
 
     if json_mode:
         print_result(result, json_mode)
@@ -149,6 +174,7 @@ def status(ctx: click.Context) -> None:
         if result["device_name"]:
             click.echo(f"  Name:      {result['device_name']}")
         click.echo(f"  Core:      {result['core_url']}")
+        click.echo(f"  Transport: {transport_mode}")
 
         if result["core_reachable"]:
             click.echo("  Reachable: yes")
@@ -290,7 +316,14 @@ def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
 
                 st = status.get("status", "")
                 if st == "complete":
-                    answer = status.get("content", "")
+                    # Response uses `answer: {text: "..."}` (Brain pipeline)
+                    # or flat `content: "..."` (legacy paths).
+                    raw_answer = status.get("answer") or {}
+                    answer = (
+                        raw_answer.get("text", "")
+                        if isinstance(raw_answer, dict)
+                        else str(raw_answer)
+                    ) or status.get("content", "")
                     if answer:
                         click.echo(answer)
                     else:
@@ -1674,7 +1707,8 @@ def session_start(ctx: click.Context, name: str) -> None:
         if json_mode:
             print_result_with_trace(data, json_mode, client.req_id)
         else:
-            click.echo(f"  Session: {data.get('id', '?')} ({data.get('name', name)}) active")
+            session_id = data.get('session_id') or data.get('id') or '?'
+            click.echo(f"  Session: {session_id} ({data.get('name', name)}) active")
     except DinaClientError as exc:
         print_error_with_trace(str(exc), json_mode, client.req_id)
         ctx.exit(1)

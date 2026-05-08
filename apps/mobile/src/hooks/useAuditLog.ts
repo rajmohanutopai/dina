@@ -50,10 +50,10 @@ export interface ChainVerification {
 
 /** Human-readable action labels. */
 const ACTION_LABELS: Record<string, string> = {
-  d2d_send: 'Sent D2D message',
-  d2d_recv_staged: 'Received D2D message',
-  d2d_recv_quarantined: 'Quarantined D2D message',
-  d2d_recv_dropped: 'Dropped D2D message',
+  d2d_send: 'Sent Talk message',
+  d2d_recv_staged: 'Received Talk message',
+  d2d_recv_quarantined: 'Quarantined Talk message',
+  d2d_recv_dropped: 'Dropped Talk message',
   d2d_recv_bad_sig: 'Rejected (bad signature)',
   d2d_recv_scenario_denied: 'Rejected (policy denied)',
   vault_store: 'Stored vault item',

@@ -76,6 +76,8 @@ class Transport(Protocol):
 class DirectTransport:
     """Direct HTTPS to Core. For local/Docker/LAN use."""
 
+    transport_name: str = "direct"
+
     def __init__(self, core_url: str, timeout: float = 30.0) -> None:
         self._core_url = core_url.rstrip("/")
         self._timeout = timeout
@@ -189,6 +191,9 @@ def _expiry_for_path(path: str) -> int:
 class MsgBoxTransport:
     """Request via MsgBox WebSocket relay. For remote/NAT use.
 
+    transport_name = "msgbox"  — readable in --verbose output so you can
+    confirm every request is going through the relay, not direct HTTP.
+
     Each request():
     1. Connects to MsgBox WebSocket + Ed25519 challenge-response auth
     2. Drains any buffered responses
@@ -198,6 +203,8 @@ class MsgBoxTransport:
     6. Waits for response with matching id
     7. Decrypts and returns TransportResponse
     """
+
+    transport_name: str = "msgbox"
 
     def __init__(
         self, msgbox_url: str, homenode_did: str,

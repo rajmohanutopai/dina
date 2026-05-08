@@ -75,7 +75,11 @@ export function registerAskRoutes(router: CoreRouter, options: AskRouteOptions =
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       return { status: 400, body: { error: 'body must be a JSON object' } };
     }
-    if (typeof body.question !== 'string' || body.question.trim() === '') {
+    // Accept either 'question' (canonical) or 'prompt' (dina-agent CLI compat).
+    const question =
+      (typeof body.question === 'string' ? body.question.trim() : '') ||
+      (typeof body.prompt === 'string' ? body.prompt.trim() : '');
+    if (!question) {
       return { status: 400, body: { error: 'question must be a non-empty string' } };
     }
     // requesterDid is optional from the agent — fall back to the agent's DID
@@ -98,7 +102,7 @@ export function registerAskRoutes(router: CoreRouter, options: AskRouteOptions =
     const requestIdHeader =
       typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
     const input: AskSubmitInput = {
-      question: body.question,
+      question,
       requesterDid,
       requestIdHeader,
     };

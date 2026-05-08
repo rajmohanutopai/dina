@@ -59,6 +59,7 @@ import type { ProviderType } from '../ai/provider';
 import {
   type AgenticAskHandlerOptions,
   type AskCoordinator,
+  type AskCoordinatorCoreClient,
   type createDelegateToAgentTool,
   type createFindPreferredProviderTool,
   type createQueryServiceTool,
@@ -193,7 +194,7 @@ function buildEnvServiceConfig(): ServiceConfig | undefined {
   if (cap === '') return undefined;
   const policy: 'auto' | 'review' =
     process.env.EXPO_PUBLIC_DINA_PROVIDER_REVIEW === '1' ? 'review' : 'auto';
-  const name = process.env.EXPO_PUBLIC_DINA_PROVIDER_NAME ?? 'BusDriver';
+  const name = process.env.EXPO_PUBLIC_DINA_PROVIDER_NAME ?? 'Service Provider';
   // Service-level description shown in AppView listings — the operator
   // gets to set this freely (e.g. "SF Transit Authority Live"). It is
   // NOT the per-capability description that goes into the canonical
@@ -373,8 +374,8 @@ export async function buildBootInputs(
   });
 
   // Pattern A wins over the simpler agenticAsk path when we have a
-  // pipeline in hand: the pipeline already has `approvalManager` wired
-  // (via `tryBuildAgenticAsk` below), so we can construct an
+  // pipeline in hand: the pipeline exposes `buildToolsForAsk` (wired
+  // via `tryBuildAgenticAsk` below), so we can construct an
   // `AskCoordinator` and ride the full suspend/resume chain.
   // `agenticAsk` is left undefined when `askCoordinator` is set —
   // bootstrap.ts routes coordinator-first.
@@ -656,8 +657,8 @@ interface AgenticAskBundle {
   >;
   /**
    * Pattern A coordinator — produced when the pipeline was built with
-   * an `approvalManager` (which it always is in production today).
-   * Bootstrap routes through this when set, falling back to the
+   * a `coreClient` (which it always is in production today). Bootstrap
+   * routes through this when set, falling back to the
    * `provider`+`tools` agenticAsk path only when undefined
    * (e.g. degraded boot where pipeline construction failed).
    */
@@ -755,7 +756,6 @@ async function tryBuildAgenticAsk(opts: {
     core: lazyCoreClient(),
     orchestratorHandle: lazyOrchestratorHandle(),
     workflowClient: lazyWorkflowClient(),
-    approvalManager,
     ...(opts.logger !== undefined ? { logger: opts.logger } : {}),
   });
 
@@ -838,20 +838,44 @@ function lazyOrchestratorHandle(): Parameters<typeof createQueryServiceTool>[0][
  * `find_preferred_provider` tool only needs
  * `findContactsByPreference`, so we expose a minimal surface.
  */
-function lazyCoreClient(): Parameters<typeof createFindPreferredProviderTool>[0]['core'] {
+function lazyCoreClient(): Parameters<typeof createFindPreferredProviderTool>[0]['core'] &
+  AskCoordinatorCoreClient {
+  // All methods proxy through the booted node's coreClient. The node is
+  // always available by the time these are called (the pipeline is only
+  // invoked mid-ask, well after boot). Returning [] / null on the cold
+  // path keeps tool calls on fail-soft rails rather than throwing.
+  function node() {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getBootedNode } =
+      require('../hooks/useNodeBootstrap') as typeof import('../hooks/useNodeBootstrap');
+    return getBootedNode();
+  }
   return {
-    async findContactsByPreference(category) {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { getBootedNode } =
-        require('../hooks/useNodeBootstrap') as typeof import('../hooks/useNodeBootstrap');
-      const node = getBootedNode();
-      if (node === null) {
-        // Returning [] here keeps the tool on its fail-soft rails —
-        // the LLM will fall back to search_provider_services. A
-        // throw would force a defensive branch for a cold path.
-        return [];
-      }
-      return node.coreClient.findContactsByPreference(category);
+    async findContactsByPreference(category: string) {
+      return node()?.coreClient.findContactsByPreference(category) ?? [];
+    },
+    async createWorkflowTask(input: import('@dina/core').CreateWorkflowTaskInput) {
+      const n = node();
+      if (n === null) throw new Error('lazyCoreClient.createWorkflowTask: DinaNode not booted');
+      return n.coreClient.createWorkflowTask(input);
+    },
+    async getWorkflowTask(id: string) {
+      return node()?.coreClient.getWorkflowTask(id) ?? null;
+    },
+    async completeWorkflowTask(id: string, result: string, resultSummary: string) {
+      const n = node();
+      if (n === null) throw new Error('lazyCoreClient.completeWorkflowTask: DinaNode not booted');
+      return n.coreClient.completeWorkflowTask(id, result, resultSummary);
+    },
+    async approveWorkflowTask(id: string) {
+      const n = node();
+      if (n === null) throw new Error('lazyCoreClient.approveWorkflowTask: DinaNode not booted');
+      return n.coreClient.approveWorkflowTask(id);
+    },
+    async cancelWorkflowTask(id: string, reason?: string) {
+      const n = node();
+      if (n === null) throw new Error('lazyCoreClient.cancelWorkflowTask: DinaNode not booted');
+      return n.coreClient.cancelWorkflowTask(id, reason);
     },
   };
 }

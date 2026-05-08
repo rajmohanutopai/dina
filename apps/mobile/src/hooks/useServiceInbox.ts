@@ -25,6 +25,10 @@ import type { CoreClient, WorkflowTask } from '@dina/core';
  *   workflow cancel — there is no service.query requester to notify.
  * - `staging_persona_access` — `/remember` wants to store into a locked
  *   persona; approve drains the staged memory, deny drops it.
+ * - `vault_read` — `ask` request that touches a sensitive/locked persona;
+ *   approve allows the vault read for this request, deny cancels it. Backed
+ *   by a workflow task (`kind=approval`, `payload.type=vault_read_request`)
+ *   created by `persona_guard.ts` — same store as every other approval kind.
  * - `unknown` — payload doesn't match a known shape; render with what
  *   we can read and surface a generic deny.
  */
@@ -32,6 +36,7 @@ export type InboxEntryKind =
   | 'service_query'
   | 'intent_validation'
   | 'staging_persona_access'
+  | 'vault_read'
   | 'unknown';
 
 export interface InboxEntry {
@@ -91,25 +96,32 @@ export class InboxNotConfiguredError extends Error {
 }
 
 /**
- * Fetch pending approvals ordered oldest-first. Empty array when nothing
- * is waiting. Never throws on "no tasks" — that case returns `[]`.
+ * Fetch pending approvals ordered oldest-first. Single source of truth:
+ * workflow tasks (`kind=approval, state=pending_approval`). Covers all
+ * approval kinds — service_query, intent_validation, staging_persona_access,
+ * and vault_read_request (the latter via workflow tasks created by the
+ * persona guard when an ask touches a locked persona).
+ *
+ * Empty array when nothing is waiting. Never throws on "no items".
  */
 export async function listPendingApprovals(limit = 50): Promise<InboxEntry[]> {
   const c = requireClient();
-  const tasks = await c.listWorkflowTasks({
-    kind: 'approval',
-    state: 'pending_approval',
-    limit,
-  });
+  const tasks = await c.listWorkflowTasks({ kind: 'approval', state: 'pending_approval', limit });
   return tasks.map(toEntry).sort((a, b) => a.createdAt - b.createdAt);
 }
 
 /**
- * Approve a pending task. Returns the updated task so the UI can remove
- * it from the inbox without a refetch.
+ * Approve a pending workflow task. All approval kinds — including
+ * `vault_read` — are backed by workflow tasks, so this always calls
+ * `approveWorkflowTask`.
  */
-export async function approvePending(taskId: string): Promise<WorkflowTask> {
-  return requireClient().approveWorkflowTask(taskId);
+export async function approvePending(
+  taskId: string,
+  kind: InboxEntryKind = 'service_query',
+): Promise<WorkflowTask> {
+  const c = requireClient();
+  void kind; // all kinds are workflow tasks; kept for UI discriminator use only
+  return c.approveWorkflowTask(taskId);
 }
 
 /**
@@ -148,7 +160,11 @@ export async function denyPending(
   const core = requireClient();
   const denyReason = reason.trim() === '' ? 'denied_by_operator' : reason.trim();
 
-  if (kind === 'intent_validation' || kind === 'staging_persona_access') {
+  if (
+    kind === 'vault_read' ||
+    kind === 'intent_validation' ||
+    kind === 'staging_persona_access'
+  ) {
     // Plain cancel — no service.respond peer to notify. The agent
     // observes intent_validation through polling; staging approvals are
     // local and Core handles the pending_unlock denial.
@@ -206,6 +222,25 @@ function toEntry(task: WorkflowTask): InboxEntry {
       requesterDID: agentDID,
       paramsPreview: target,
       ...(riskLevel !== undefined ? { riskLevel } : {}),
+      createdAt: task.created_at,
+      ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
+    };
+  }
+
+  if (payloadType === 'vault_read_request') {
+    const persona = typeof parsed.persona === 'string' ? parsed.persona : '';
+    const requesterDID =
+      typeof parsed.requester_did === 'string' ? parsed.requester_did : '';
+    const reason = typeof parsed.reason === 'string' ? parsed.reason : '';
+    const preview = typeof parsed.preview === 'string' ? parsed.preview : '';
+    return {
+      id: task.id,
+      kind: 'vault_read',
+      capability: persona,
+      serviceName: 'Vault access',
+      description: reason,
+      requesterDID,
+      paramsPreview: preview,
       createdAt: task.created_at,
       ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
     };

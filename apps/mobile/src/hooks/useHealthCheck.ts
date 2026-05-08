@@ -192,7 +192,7 @@ function checkMsgBoxConnected(): HealthCheck {
     status: connected ? 'pass' : 'warn',
     message: connected
       ? 'MsgBox WebSocket connected'
-      : 'MsgBox disconnected — D2D messaging unavailable',
+      : 'MsgBox disconnected — Talk messaging unavailable',
     critical: false,
   };
 }

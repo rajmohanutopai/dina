@@ -7,19 +7,18 @@ import {
   type AgenticAskPipeline,
   type AppViewClient,
   type AskCoordinator,
+  type AskCoordinatorCoreClient,
   type BuildAgenticAskPipelineInput,
   type LLMProvider,
   type ProviderName,
 } from '@dina/brain';
 import {
-  ApprovalManager,
   type CoreClient,
 } from '@dina/core';
 
 export interface HomeNodeAskRuntimeOptions {
   llm: LLMProvider;
   providerName: ProviderName;
-  approvalManager?: ApprovalManager;
   systemPrompt?: string;
   cloudConsentGranted?: boolean;
   sensitivePersonas?: readonly string[];
@@ -55,7 +54,7 @@ export interface BuildHomeNodeAskRuntimeServerOptions extends BuildHomeNodeAskRu
  * pipeline tool-surfaces — orchestrator construction is skipped.
  */
 export interface BuildHomeNodeAskRuntimeWithHandleOptions extends BuildHomeNodeAskRuntimeCommon {
-  core: BuildAgenticAskPipelineInput['coreClient'];
+  core: BuildAgenticAskPipelineInput['coreClient'] & AskCoordinatorCoreClient;
   appView: BuildAgenticAskPipelineInput['appViewClient'];
   orchestratorHandle: BuildAgenticAskPipelineInput['orchestratorHandle'];
 }
@@ -66,7 +65,6 @@ export type BuildHomeNodeAskRuntimeOptions =
 
 export interface HomeNodeAskRuntime {
   coordinator: AskCoordinator;
-  approvalManager: ApprovalManager;
   /** The constructed orchestrator. `null` when the caller injected an
    * `orchestratorHandle`; otherwise the freshly-built instance the
    * pipeline is using internally. */
@@ -80,7 +78,6 @@ export function buildHomeNodeAskRuntime(
   options: BuildHomeNodeAskRuntimeOptions,
 ): HomeNodeAskRuntime {
   validateAskRuntimeOptions(options);
-  const approvalManager = options.approvalManager ?? new ApprovalManager();
 
   // When the caller injects a handle (mobile's lazy proxy to a
   // node-owned orchestrator), use it directly and skip constructing
@@ -105,7 +102,6 @@ export function buildHomeNodeAskRuntime(
     appViewClient: options.appView,
     orchestratorHandle,
     coreClient: options.core,
-    approvalManager,
     cloudConsentGranted: options.cloudConsentGranted ?? true,
     ...(options.workflowClient !== undefined
       ? { workflowClient: options.workflowClient }
@@ -118,11 +114,11 @@ export function buildHomeNodeAskRuntime(
   const systemPrompt = options.systemPrompt ?? DEFAULT_ASK_SYSTEM_PROMPT;
   const coordinator = createAskCoordinator({
     pipeline,
-    approvalManager,
+    coreClient: options.core,
     executeFn: buildAgenticExecuteFn({ pipeline, systemPrompt }),
     systemPrompt,
   });
-  return { coordinator, approvalManager, orchestrator, pipeline };
+  return { coordinator, orchestrator, pipeline };
 }
 
 function validateAskRuntimeOptions(options: BuildHomeNodeAskRuntimeOptions): void {

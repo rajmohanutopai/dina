@@ -35,12 +35,13 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md task 5.21-F.
  */
 
-import type { ApprovalManager } from '@dina/core';
+import type { WorkflowTask } from '@dina/core';
 import {
   AskApprovalGateway,
   type ApprovalSource,
   type ApprovalSourceStatus,
 } from '../ask/ask_approval_gateway';
+import type { VaultApprovalWorkflowClient } from './persona_guard';
 import { AskApprovalResumer } from '../ask/ask_approval_resumer';
 import {
   createAskHandler,
@@ -65,18 +66,26 @@ import {
 import { formatCurrentTimeBlock } from '../reasoning/ask_handler';
 import type { AgenticAskPipeline } from './agentic_ask';
 
+/** CoreClient surface `createAskCoordinator` needs for the approval gateway. */
+export interface AskCoordinatorCoreClient extends VaultApprovalWorkflowClient {
+  /** Drive a workflow task from `pending_approval` → `queued`. */
+  approveWorkflowTask(id: string): Promise<WorkflowTask>;
+  /** Cancel a workflow task from any active state → `cancelled`. */
+  cancelWorkflowTask(id: string, reason?: string): Promise<WorkflowTask>;
+}
+
 export interface CreateAskCoordinatorOptions {
   /**
-   * Pipeline produced by `buildAgenticAskPipeline({approvalManager, ...})`.
-   * MUST have `buildToolsForAsk` populated (i.e. an `approvalManager`
-   * was passed). The coordinator throws if not.
+   * Pipeline produced by `buildAgenticAskPipeline({coreClient, ...})`.
+   * MUST have `buildToolsForAsk` populated. The coordinator throws if not.
    */
   pipeline: AgenticAskPipeline;
   /**
-   * Same `ApprovalManager` instance the pipeline was built with.
-   * Coordinator wraps it as the `ApprovalSource` the gateway needs.
+   * CoreClient subset used as the `ApprovalSource` backing the gateway.
+   * Vault-read approvals are workflow tasks — this replaces the old
+   * in-memory `ApprovalManager`.
    */
-  approvalManager: ApprovalManager;
+  coreClient: AskCoordinatorCoreClient;
   /**
    * The Pattern B re-run path. Called when a record has no paused
    * state (e.g. an HTTP-path persona-resolver bail, or a record
@@ -131,11 +140,11 @@ export function createAskCoordinator(opts: CreateAskCoordinatorOptions): AskCoor
   }
   if (!opts.pipeline.buildToolsForAsk) {
     throw new TypeError(
-      'createAskCoordinator: pipeline.buildToolsForAsk is missing — pass approvalManager to buildAgenticAskPipeline',
+      'createAskCoordinator: pipeline.buildToolsForAsk is missing — ensure buildAgenticAskPipeline received a coreClient',
     );
   }
-  if (!opts.approvalManager) {
-    throw new TypeError('createAskCoordinator: approvalManager is required');
+  if (!opts.coreClient) {
+    throw new TypeError('createAskCoordinator: coreClient is required');
   }
   if (typeof opts.executeFn !== 'function') {
     throw new TypeError('createAskCoordinator: executeFn must be a function');
@@ -204,7 +213,7 @@ export function createAskCoordinator(opts: CreateAskCoordinatorOptions): AskCoor
 
   const gateway = new AskApprovalGateway({
     askRegistry: registry,
-    approvalSource: approvalManagerAsSource(opts.approvalManager),
+    approvalSource: workflowTaskAsSource(opts.coreClient),
   });
 
   const handlerOpts: AskHandlerOptions = {
@@ -251,7 +260,7 @@ export function buildAgenticExecuteFn(args: {
   const buildToolsForAsk = args.pipeline.buildToolsForAsk;
   if (!buildToolsForAsk) {
     throw new TypeError(
-      'buildAgenticExecuteFn: pipeline.buildToolsForAsk is missing — pass approvalManager to buildAgenticAskPipeline',
+      'buildAgenticExecuteFn: pipeline.buildToolsForAsk is missing',
     );
   }
   const { pipeline, systemPrompt } = args;
@@ -286,25 +295,33 @@ export function buildAgenticExecuteFn(args: {
 }
 
 /**
- * Adapter — `ApprovalManager` (in-memory) → `ApprovalSource`
- * (gateway's interface). Same pattern used in
- * `ask_locked_persona_e2e.test.ts`; lifted here so callers don't have
- * to reimplement it.
+ * Adapter — `AskCoordinatorCoreClient` (workflow tasks) → `ApprovalSource`
+ * (gateway's interface).
+ *
+ * Workflow task status → ApprovalSourceStatus mapping:
+ *   pending_approval → pending
+ *   queued | running  → approved (operator approved, ready to consume)
+ *   cancelled | failed → denied
+ *   (not found)        → expired
+ *   completed          → expired (already consumed)
  */
-export function approvalManagerAsSource(mgr: ApprovalManager): ApprovalSource {
+export function workflowTaskAsSource(core: AskCoordinatorCoreClient): ApprovalSource {
   return {
-    getStatus(id: string): ApprovalSourceStatus {
-      const r = mgr.getRequest(id);
-      if (!r) return 'unknown';
-      if (r.status === 'pending') return 'pending';
-      if (r.status === 'approved') return 'approved';
-      return 'denied';
+    async getStatus(id: string): Promise<ApprovalSourceStatus> {
+      const task = await core.getWorkflowTask(id);
+      if (task === null) return 'expired';
+      const s = task.status;
+      if (s === 'pending_approval') return 'pending';
+      if (s === 'queued' || s === 'running') return 'approved';
+      if (s === 'cancelled' || s === 'failed') return 'denied';
+      // completed (already consumed) or other terminal
+      return 'expired';
     },
-    approve(id: string): void {
-      mgr.approveRequest(id, 'single', 'operator');
+    async approve(id: string): Promise<void> {
+      await core.approveWorkflowTask(id);
     },
-    deny(id: string): void {
-      mgr.denyRequest(id);
+    async deny(id: string): Promise<void> {
+      await core.cancelWorkflowTask(id, 'denied_by_operator');
     },
   };
 }

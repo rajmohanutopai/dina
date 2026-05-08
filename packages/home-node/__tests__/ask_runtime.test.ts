@@ -30,7 +30,6 @@ describe('@dina/home-node/ask-runtime', () => {
     expect(result.body.request_id).toMatch(/^[0-9a-f]{32}$/);
     expect(provider.chat).toHaveBeenCalledTimes(1);
     expect(runtime.orchestrator).toBeDefined();
-    expect(runtime.approvalManager).toBeDefined();
   });
 
   it('uses an injected orchestrator handle (mobile path) and skips internal construction', async () => {
@@ -43,7 +42,7 @@ describe('@dina/home-node/ask-runtime', () => {
       deduped: false,
     }));
     const runtime = buildHomeNodeAskRuntime({
-      core: { findContactsByPreference: jest.fn(async () => []) },
+      core: stubHandleCore(),
       appView: stubAppView(),
       llm: provider,
       providerName: 'gemini',
@@ -51,7 +50,6 @@ describe('@dina/home-node/ask-runtime', () => {
     });
 
     expect(runtime.orchestrator).toBeNull();
-    expect(runtime.approvalManager).toBeDefined();
 
     const result = await runtime.coordinator.handleAsk({
       question: 'mobile path?',
@@ -126,4 +124,17 @@ function stubCore(): CoreClient {
       deduped: false,
     })),
   } as unknown as CoreClient;
+}
+
+/** Minimal core stub for the handle-mode path (mobile style). Must satisfy
+ * `BuildAgenticAskPipelineInput['coreClient'] & AskCoordinatorCoreClient`. */
+function stubHandleCore() {
+  return {
+    findContactsByPreference: jest.fn(async () => []),
+    createWorkflowTask: jest.fn(async () => ({ task: {} as never, deduped: false })),
+    getWorkflowTask: jest.fn(async () => null),
+    completeWorkflowTask: jest.fn(async () => ({} as never)),
+    approveWorkflowTask: jest.fn(async () => ({} as never)),
+    cancelWorkflowTask: jest.fn(async () => ({} as never)),
+  };
 }

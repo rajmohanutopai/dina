@@ -796,4 +796,5 @@ export class InProcessTransport implements CoreClient {
     // No return value — throw on non-2xx, including 404 (unknown DID).
     expectOk<unknown>(res, `updateContact(did=${did})`);
   }
+
 }

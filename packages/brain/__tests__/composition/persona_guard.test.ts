@@ -1,43 +1,96 @@
 /**
  * `createPersonaGuard` — unit tests for the per-ask approval factory
  * built in 5.21-E.
+ *
+ * Approvals are now workflow tasks (like Go Core's dina_tasks), so the
+ * mock replaces `ApprovalManager` with a minimal `VaultApprovalWorkflowClient`.
  */
 
-import { ApprovalManager } from '@dina/core';
 import {
   createPersona,
   openPersona,
   resetPersonaState,
 } from '@dina/core';
+import type { CreateWorkflowTaskInput, WorkflowTask } from '@dina/core';
 import {
   approvalIdFor,
   createPersonaGuard,
+  type VaultApprovalWorkflowClient,
 } from '../../src/composition/persona_guard';
 
 const REQUESTER = 'did:key:z6MkAlonsoTester';
 const ASK_ID = 'ask-1';
-const FROZEN_NOW_MS = 1_750_000_000_000;
+
+// ---------------------------------------------------------------------------
+// Minimal in-memory workflow client fake
+// ---------------------------------------------------------------------------
+
+interface FakeTask {
+  id: string;
+  status: string;
+  payload: string;
+}
+
+function makeFakeWorkflowClient(): {
+  client: VaultApprovalWorkflowClient;
+  tasks: Map<string, FakeTask>;
+  setStatus: (id: string, status: string) => void;
+} {
+  const tasks = new Map<string, FakeTask>();
+  const client: VaultApprovalWorkflowClient = {
+    async createWorkflowTask(input: CreateWorkflowTaskInput) {
+      if (tasks.has(input.id)) {
+        // Simulate idempotency conflict — guard catches and swallows it.
+        throw new Error(`duplicate id: ${input.id}`);
+      }
+      const task: FakeTask = {
+        id: input.id,
+        status: input.initialState ?? 'pending_approval',
+        payload: input.payload,
+      };
+      tasks.set(input.id, task);
+      return { task: task as unknown as WorkflowTask, deduped: false };
+    },
+    async getWorkflowTask(id: string) {
+      return (tasks.get(id) as unknown as WorkflowTask) ?? null;
+    },
+    async completeWorkflowTask(id: string) {
+      const t = tasks.get(id);
+      if (t) t.status = 'completed';
+      return t as unknown as WorkflowTask;
+    },
+  };
+  return {
+    client,
+    tasks,
+    setStatus(id: string, status: string) {
+      const t = tasks.get(id);
+      if (t) t.status = status;
+    },
+  };
+}
 
 beforeEach(() => {
   resetPersonaState();
 });
 
 describe('createPersonaGuard — construction', () => {
-  it('rejects missing approvalManager', () => {
+  it('rejects missing coreClient', () => {
     expect(() =>
       createPersonaGuard({
         // @ts-expect-error testing runtime validation
-        approvalManager: undefined,
+        coreClient: undefined,
         askId: ASK_ID,
         requesterDid: REQUESTER,
       }),
-    ).toThrow('approvalManager is required');
+    ).toThrow('coreClient is required');
   });
 
   it('rejects empty askId', () => {
+    const { client } = makeFakeWorkflowClient();
     expect(() =>
       createPersonaGuard({
-        approvalManager: new ApprovalManager(),
+        coreClient: client,
         askId: '',
         requesterDid: REQUESTER,
       }),
@@ -45,9 +98,10 @@ describe('createPersonaGuard — construction', () => {
   });
 
   it('rejects empty requesterDid', () => {
+    const { client } = makeFakeWorkflowClient();
     expect(() =>
       createPersonaGuard({
-        approvalManager: new ApprovalManager(),
+        coreClient: client,
         askId: ASK_ID,
         requesterDid: '   ',
       }),
@@ -56,225 +110,157 @@ describe('createPersonaGuard — construction', () => {
 });
 
 describe('createPersonaGuard — tier policy', () => {
-  it('returns null for default tier (open)', () => {
+  it('returns null for default tier (open)', async () => {
     createPersona('general', 'default');
-    const guard = createPersonaGuard({
-      approvalManager: new ApprovalManager(),
-      askId: ASK_ID,
-      requesterDid: REQUESTER,
-    });
-    expect(guard('general')).toBeNull();
+    const { client } = makeFakeWorkflowClient();
+    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    expect(await guard('general')).toBeNull();
   });
 
-  it('returns null for standard tier', () => {
+  it('returns null for standard tier', async () => {
     createPersona('work', 'standard');
-    const guard = createPersonaGuard({
-      approvalManager: new ApprovalManager(),
-      askId: ASK_ID,
-      requesterDid: REQUESTER,
-    });
-    expect(guard('work')).toBeNull();
+    const { client } = makeFakeWorkflowClient();
+    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    expect(await guard('work')).toBeNull();
   });
 
-  it('returns null for unknown persona (lets accessibility check handle it)', () => {
-    const guard = createPersonaGuard({
-      approvalManager: new ApprovalManager(),
-      askId: ASK_ID,
-      requesterDid: REQUESTER,
-    });
-    expect(guard('does_not_exist')).toBeNull();
+  it('returns null for unknown persona', async () => {
+    const { client } = makeFakeWorkflowClient();
+    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    expect(await guard('does_not_exist')).toBeNull();
   });
 
-  it('returns approvalId for sensitive tier', () => {
+  it('returns approvalId for sensitive tier', async () => {
     createPersona('health', 'sensitive');
-    const am = new ApprovalManager();
-    const guard = createPersonaGuard({
-      approvalManager: am,
-      askId: ASK_ID,
-      requesterDid: REQUESTER,
-    });
-    const result = guard('health');
+    const { client } = makeFakeWorkflowClient();
+    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    const result = await guard('health');
     expect(result).toBe('appr-ask-1-health');
   });
 
-  it('returns approvalId for locked tier', () => {
+  it('returns approvalId for locked tier', async () => {
     createPersona('financial', 'locked');
-    const am = new ApprovalManager();
-    const guard = createPersonaGuard({
-      approvalManager: am,
-      askId: ASK_ID,
-      requesterDid: REQUESTER,
-    });
-    expect(guard('financial')).toBe('appr-ask-1-financial');
+    const { client } = makeFakeWorkflowClient();
+    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    expect(await guard('financial')).toBe('appr-ask-1-financial');
   });
 });
 
 describe('createPersonaGuard — approval registration', () => {
-  it('mints a pending approval with the right shape', () => {
+  it('creates a pending workflow task with the right payload', async () => {
     createPersona('health', 'sensitive');
-    const am = new ApprovalManager();
-    const guard = createPersonaGuard({
-      approvalManager: am,
-      askId: ASK_ID,
-      requesterDid: REQUESTER,
-      nowMsFn: () => FROZEN_NOW_MS,
-    });
-    guard('health');
+    const { client, tasks } = makeFakeWorkflowClient();
+    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    await guard('health');
 
-    const req = am.getRequest('appr-ask-1-health');
-    expect(req).toBeDefined();
-    expect(req).toMatchObject({
-      id: 'appr-ask-1-health',
-      action: 'vault_read',
-      requester_did: REQUESTER,
+    const task = tasks.get('appr-ask-1-health');
+    expect(task).toBeDefined();
+    expect(task?.status).toBe('pending_approval');
+    const payload = JSON.parse(task?.payload ?? '{}');
+    expect(payload).toMatchObject({
+      type: 'vault_read_request',
       persona: 'health',
-      reason: expect.stringContaining('persona "health"'),
-      status: 'pending',
-      created_at: FROZEN_NOW_MS,
+      source_ask_id: ASK_ID,
+      requester_did: REQUESTER,
     });
   });
 
-  it('embeds the askId in the reason text', () => {
+  it('embeds the askId in the reason text', async () => {
     createPersona('health', 'sensitive');
-    const am = new ApprovalManager();
-    const guard = createPersonaGuard({
-      approvalManager: am,
-      askId: 'ask-xyz',
-      requesterDid: REQUESTER,
-    });
-    guard('health');
-    const req = am.getRequest('appr-ask-xyz-health');
-    expect(req?.reason).toContain('ask-xyz');
+    const { client, tasks } = makeFakeWorkflowClient();
+    const guard = createPersonaGuard({ coreClient: client, askId: 'ask-xyz', requesterDid: REQUESTER });
+    await guard('health');
+    const payload = JSON.parse(tasks.get('appr-ask-xyz-health')?.payload ?? '{}');
+    expect(payload.reason).toContain('ask-xyz');
   });
 
-  it('is idempotent on a re-call with pending approval', () => {
+  it('is idempotent on a re-call with pending task', async () => {
     createPersona('health', 'sensitive');
-    const am = new ApprovalManager();
-    const guard = createPersonaGuard({
-      approvalManager: am,
-      askId: ASK_ID,
-      requesterDid: REQUESTER,
-    });
-    const id1 = guard('health');
-    const id2 = guard('health');
+    const { client, tasks } = makeFakeWorkflowClient();
+    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    const id1 = await guard('health');
+    const id2 = await guard('health'); // task exists (pending_approval) → idempotent
     expect(id1).toBe(id2);
-    // Only one approval registered.
-    expect(am.listPending()).toHaveLength(1);
+    expect(tasks.size).toBe(1);
   });
 
-  it('mints distinct approval ids for distinct personas in the same ask', () => {
+  it('mints distinct approval ids for distinct personas in the same ask', async () => {
     createPersona('health', 'sensitive');
     createPersona('financial', 'sensitive');
-    const am = new ApprovalManager();
-    const guard = createPersonaGuard({
-      approvalManager: am,
-      askId: ASK_ID,
-      requesterDid: REQUESTER,
-    });
-    expect(guard('health')).toBe('appr-ask-1-health');
-    expect(guard('financial')).toBe('appr-ask-1-financial');
-    expect(am.listPending()).toHaveLength(2);
+    const { client, tasks } = makeFakeWorkflowClient();
+    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    expect(await guard('health')).toBe('appr-ask-1-health');
+    expect(await guard('financial')).toBe('appr-ask-1-financial');
+    expect(tasks.size).toBe(2);
   });
 
-  it('mints distinct approval ids for the same persona across different asks', () => {
+  it('mints distinct approval ids for the same persona across different asks', async () => {
     createPersona('health', 'sensitive');
-    const am = new ApprovalManager();
-    const guard1 = createPersonaGuard({
-      approvalManager: am,
-      askId: 'ask-1',
-      requesterDid: REQUESTER,
-    });
-    const guard2 = createPersonaGuard({
-      approvalManager: am,
-      askId: 'ask-2',
-      requesterDid: REQUESTER,
-    });
-    expect(guard1('health')).toBe('appr-ask-1-health');
-    expect(guard2('health')).toBe('appr-ask-2-health');
-    expect(am.listPending()).toHaveLength(2);
+    const { client, tasks } = makeFakeWorkflowClient();
+    const guard1 = createPersonaGuard({ coreClient: client, askId: 'ask-1', requesterDid: REQUESTER });
+    const guard2 = createPersonaGuard({ coreClient: client, askId: 'ask-2', requesterDid: REQUESTER });
+    expect(await guard1('health')).toBe('appr-ask-1-health');
+    expect(await guard2('health')).toBe('appr-ask-2-health');
+    expect(tasks.size).toBe(2);
   });
 });
 
 describe('createPersonaGuard — resume cycle (consume on second call)', () => {
-  it('returns null after operator approves (single-scope consumed)', () => {
+  it('returns null after operator approves (task moves to queued)', async () => {
     createPersona('health', 'sensitive');
-    const am = new ApprovalManager();
-    const guard = createPersonaGuard({
-      approvalManager: am,
-      askId: ASK_ID,
-      requesterDid: REQUESTER,
-    });
+    const { client, setStatus } = makeFakeWorkflowClient();
+    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
 
-    // First call: mint pending.
-    const id = guard('health');
+    // First call: mint pending task.
+    const id = await guard('health');
     expect(id).toBe('appr-ask-1-health');
 
-    // Operator approves single-scope.
-    am.approveRequest(id!, 'single', 'did:operator');
+    // Operator approves — workflow task transitions pending_approval → queued.
+    setStatus(id!, 'queued');
 
-    // Second call: consume + allow.
-    expect(guard('health')).toBeNull();
-
-    // Approval was consumed (single-scope removes the record).
-    expect(am.getRequest(id!)).toBeUndefined();
+    // Second call: finds queued → completes task → allows.
+    expect(await guard('health')).toBeNull();
   });
 
-  it('returns null on every subsequent call when operator approved session-scope', () => {
+  it('completing the task marks it consumed (status → completed)', async () => {
     createPersona('health', 'sensitive');
-    const am = new ApprovalManager();
-    const guard = createPersonaGuard({
-      approvalManager: am,
-      askId: ASK_ID,
-      requesterDid: REQUESTER,
-    });
-    const id = guard('health')!;
-    am.approveRequest(id, 'session', 'did:operator');
+    const { client, tasks, setStatus } = makeFakeWorkflowClient();
+    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
 
-    // Multiple subsequent reads — all allowed.
-    expect(guard('health')).toBeNull();
-    expect(guard('health')).toBeNull();
-    expect(guard('health')).toBeNull();
-    // Session-scope NOT consumed by consumeSingle.
-    expect(am.getRequest(id)?.status).toBe('approved');
+    const id = await guard('health');
+    setStatus(id!, 'queued');
+    await guard('health'); // consumes
+
+    expect(tasks.get(id!)?.status).toBe('completed');
   });
 
-  it('a third read after single-scope consume mints a fresh approval', () => {
-    // Single-shot semantics: after consume, the approval is gone. A
-    // subsequent LLM tool call has to ask the operator again.
+  it('a third call after consuming mints a fresh task', async () => {
     createPersona('health', 'sensitive');
-    const am = new ApprovalManager();
-    const guard = createPersonaGuard({
-      approvalManager: am,
-      askId: ASK_ID,
-      requesterDid: REQUESTER,
-    });
+    const { client, tasks, setStatus } = makeFakeWorkflowClient();
+    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
 
-    const firstId = guard('health')!;
-    am.approveRequest(firstId, 'single', 'did:operator');
-    expect(guard('health')).toBeNull(); // consume
+    const firstId = await guard('health');
+    setStatus(firstId!, 'queued');
+    await guard('health'); // consume → completed
 
-    // Third call: no approval exists → mint fresh pending.
-    const thirdId = guard('health');
+    // Third call: completed task → mint fresh pending (same id, no conflict
+    // since mock allows re-insertion after removal).
+    // Simulate removal of completed task from the fake store.
+    tasks.delete(firstId!);
+    const thirdId = await guard('health');
     expect(thirdId).toBe('appr-ask-1-health'); // same deterministic id
-    expect(am.getRequest(thirdId!)?.status).toBe('pending');
+    expect(tasks.get(thirdId!)?.status).toBe('pending_approval');
   });
 
-  it('a denied approval surfaces approvalId so the loop bails predictably', () => {
+  it('a denied task (cancelled status) surfaces approvalId so the loop bails', async () => {
     createPersona('health', 'sensitive');
-    const am = new ApprovalManager();
-    const guard = createPersonaGuard({
-      approvalManager: am,
-      askId: ASK_ID,
-      requesterDid: REQUESTER,
-    });
-    const id = guard('health')!;
-    am.denyRequest(id);
+    const { client, setStatus } = makeFakeWorkflowClient();
+    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    const id = await guard('health');
+    setStatus(id!, 'cancelled');
 
-    // Subsequent read still surfaces the approval id — caller can
-    // inspect manager state to detect 'denied' and translate to a
-    // hard failure if desired.
-    expect(guard('health')).toBe(id);
-    expect(am.getRequest(id)?.status).toBe('denied');
+    // Subsequent call sees cancelled → return approvalId (bail).
+    expect(await guard('health')).toBe(id);
   });
 });
 
@@ -285,19 +271,11 @@ describe('approvalIdFor', () => {
 });
 
 describe('createPersonaGuard — interaction with persona unlock state', () => {
-  it('treats sensitive persona as approval-required regardless of isOpen', () => {
-    // Even if the persona was previously unlocked (DEK in RAM), the
-    // gate still requires per-call approval — that's the whole point
-    // of the sensitive tier (auditable per-access, not a free-for-all
-    // until lock).
+  it('treats sensitive persona as approval-required regardless of isOpen', async () => {
     createPersona('health', 'sensitive');
-    openPersona('health', true); // simulate operator-approved unlock
-    const am = new ApprovalManager();
-    const guard = createPersonaGuard({
-      approvalManager: am,
-      askId: ASK_ID,
-      requesterDid: REQUESTER,
-    });
-    expect(guard('health')).toBe('appr-ask-1-health');
+    openPersona('health', true);
+    const { client } = makeFakeWorkflowClient();
+    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    expect(await guard('health')).toBe('appr-ask-1-health');
   });
 });

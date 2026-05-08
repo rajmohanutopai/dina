@@ -25,6 +25,7 @@ import {
   Pressable,
   ActivityIndicator,
   Alert,
+  Share,
 } from 'react-native';
 import { Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -67,6 +68,7 @@ export default function PairedDevicesScreen() {
   const [generating, setGenerating] = useState(false);
   const [liveCode, setLiveCode] = useState<LiveCode | null>(null);
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  const [copied, setCopied] = useState(false);
 
   const refreshDevices = useCallback(() => {
     try {
@@ -133,6 +135,13 @@ export default function PairedDevicesScreen() {
       setLiveCode(null);
     }
   }, [liveCode, now]);
+
+  const handleCopy = useCallback(() => {
+    if (liveCode === null) return;
+    Share.share({ message: liveCode.code }).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [liveCode]);
 
   const handleGenerate = useCallback(() => {
     const name = deviceName.trim();
@@ -270,7 +279,14 @@ export default function PairedDevicesScreen() {
             <Text selectable style={styles.code}>
               {formatCode(liveCode.code)}
             </Text>
-            <Text style={styles.codeHint}>Long-press to copy.</Text>
+            <Pressable
+              onPress={handleCopy}
+              style={({ pressed }) => [styles.copyButton, pressed && styles.copyButtonPressed]}
+              accessibilityRole="button"
+              accessibilityLabel="Copy pairing code"
+            >
+              <Text style={styles.copyButtonText}>{copied ? 'Copied!' : 'Copy Code'}</Text>
+            </Pressable>
             <Text style={styles.codeMeta}>
               Pairing <Text style={styles.mono}>{liveCode.deviceName}</Text> as{' '}
               <Text style={styles.mono}>{liveCode.role}</Text>
@@ -404,11 +420,19 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
     marginVertical: spacing.sm,
   },
-  codeHint: {
-    fontFamily: fonts.sans,
-    textAlign: 'center',
-    fontSize: 12,
-    color: colors.textSecondary,
+  copyButton: {
+    alignSelf: 'center',
+    marginTop: spacing.xs,
+    paddingVertical: 8,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.sm,
+    backgroundColor: colors.accent,
+  },
+  copyButtonPressed: { opacity: 0.7 },
+  copyButtonText: {
+    fontFamily: fonts.sansSemibold,
+    fontSize: 14,
+    color: colors.white,
   },
   codeMeta: {
     fontFamily: fonts.sans,

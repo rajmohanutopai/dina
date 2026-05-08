@@ -14,6 +14,7 @@ import { ToolRegistry } from '../../src/reasoning/tool_registry';
 import type { LLMProvider, ChatResponse } from '../../src/llm/adapters/provider';
 import { resetReminderLLM } from '../../src/pipeline/reminder_planner';
 import { resetIdentityExtractor } from '../../src/pipeline/identity_extraction';
+import type { CreateWorkflowTaskInput, WorkflowTask } from '@dina/core';
 
 /**
  * Minimal fake LLMProvider. The builder doesn't call it during
@@ -88,12 +89,36 @@ function fakeOrchestratorHandle(): Parameters<typeof buildAgenticAskPipeline>[0]
   };
 }
 
+interface FakeTask { id: string; status: string; payload: string }
+
 function fakeCoreClient(): Parameters<typeof buildAgenticAskPipeline>[0]['coreClient'] {
   return {
-    async findContactsByPreference() {
-      return [];
-    },
+    async findContactsByPreference() { return []; },
+    async createWorkflowTask() { return { task: {} as unknown as WorkflowTask, deduped: false }; },
+    async getWorkflowTask() { return null; },
+    async completeWorkflowTask() { return {} as unknown as WorkflowTask; },
   };
+}
+
+function makeFakeWorkflowCoreClient(): {
+  client: Parameters<typeof buildAgenticAskPipeline>[0]['coreClient'];
+  tasks: Map<string, FakeTask>;
+  setStatus: (id: string, s: string) => void;
+} {
+  const tasks = new Map<string, FakeTask>();
+  const setStatus = (id: string, s: string) => { const t = tasks.get(id); if (t) t.status = s; };
+  const client = {
+    async findContactsByPreference() { return []; },
+    async createWorkflowTask(input: CreateWorkflowTaskInput) {
+      if (tasks.has(input.id)) throw new Error(`duplicate: ${input.id}`);
+      const t: FakeTask = { id: input.id, status: input.initialState ?? 'pending_approval', payload: input.payload };
+      tasks.set(input.id, t);
+      return { task: t as unknown as WorkflowTask, deduped: false };
+    },
+    async getWorkflowTask(id: string) { return (tasks.get(id) as unknown as WorkflowTask) ?? null; },
+    async completeWorkflowTask(id: string) { setStatus(id, 'completed'); return tasks.get(id) as unknown as WorkflowTask; },
+  };
+  return { client, tasks, setStatus };
 }
 
 function makeBuilderInput(): Parameters<typeof buildAgenticAskPipeline>[0] {
@@ -190,26 +215,15 @@ describe('buildAgenticAskPipeline', () => {
   });
 
   describe('Pattern A composition (5.21-E)', () => {
-    it('omits buildToolsForAsk when approvalManager is not supplied', () => {
+    it('always exposes buildToolsForAsk (coreClient always provides the workflow task surface)', () => {
+      // buildAgenticAskPipeline unconditionally wires buildToolsForAsk because
+      // coreClient (always required) includes VaultApprovalWorkflowClient methods.
       const pipeline = buildAgenticAskPipeline(makeBuilderInput());
-      expect(pipeline.buildToolsForAsk).toBeUndefined();
-    });
-
-    it('exposes buildToolsForAsk when approvalManager is wired', () => {
-      const { ApprovalManager } = require('../../../core/src/approval/manager');
-      const pipeline = buildAgenticAskPipeline({
-        ...makeBuilderInput(),
-        approvalManager: new ApprovalManager(),
-      });
       expect(typeof pipeline.buildToolsForAsk).toBe('function');
     });
 
     it('per-ask registry has the same 12 tools as the static one', () => {
-      const { ApprovalManager } = require('../../../core/src/approval/manager');
-      const pipeline = buildAgenticAskPipeline({
-        ...makeBuilderInput(),
-        approvalManager: new ApprovalManager(),
-      });
+      const pipeline = buildAgenticAskPipeline(makeBuilderInput());
       const askTools = pipeline.buildToolsForAsk!({
         askId: 'ask-1',
         requesterDid: 'did:key:zRequester',
@@ -219,17 +233,16 @@ describe('buildAgenticAskPipeline', () => {
       expect(askNames).toEqual(staticNames);
     });
 
-    it('per-ask vault_search throws ApprovalRequiredError on a sensitive persona', async () => {
-      const { ApprovalManager } = require('../../../core/src/approval/manager');
+    it('per-ask vault_search returns approval_required on a sensitive persona', async () => {
       const { createPersona, resetPersonaState } =
         require('../../../core/src/persona/service');
       resetPersonaState();
       createPersona('health', 'sensitive');
 
-      const am = new ApprovalManager();
+      const { client, tasks } = makeFakeWorkflowCoreClient();
       const pipeline = buildAgenticAskPipeline({
         ...makeBuilderInput(),
-        approvalManager: am,
+        coreClient: client,
       });
       const tools = pipeline.buildToolsForAsk!({
         askId: 'ask-1',
@@ -248,20 +261,23 @@ describe('buildAgenticAskPipeline', () => {
         persona: 'health',
         error: expect.stringContaining('appr-ask-1-health'),
       });
-      // Approval was minted with the right shape.
-      expect(am.getRequest('appr-ask-1-health')).toMatchObject({
-        action: 'vault_read',
-        requester_did: 'did:key:zRequester',
+      // Workflow task was created with the right payload shape.
+      const task = tasks.get('appr-ask-1-health');
+      expect(task).toBeDefined();
+      expect(task?.status).toBe('pending_approval');
+      const payload = JSON.parse(task?.payload ?? '{}');
+      expect(payload).toMatchObject({
+        type: 'vault_read_request',
         persona: 'health',
-        status: 'pending',
+        source_ask_id: 'ask-1',
+        requester_did: 'did:key:zRequester',
       });
     });
 
-    it('static tools registry still allows sensitive-persona reads (legacy degraded mode)', async () => {
-      // Without approvalManager, the legacy "accessible:false" path
-      // applies — the read returns an empty result instead of bailing.
-      // This documents the degraded-mode contract for callers that
-      // haven't migrated to Pattern A yet.
+    it('static tools registry returns accessible:false for sensitive-persona reads (no guard on static registry)', async () => {
+      // The static pipeline.tools has no persona guard — sensitive personas
+      // surface as accessible:false rather than bailing the loop. This is
+      // the degraded-mode contract for callers that use pipeline.tools directly.
       const { setAccessiblePersonas, resetReasoningProvider } =
         require('../../src/vault_context/assembly');
       resetReasoningProvider();
@@ -281,16 +297,15 @@ describe('buildAgenticAskPipeline', () => {
     });
 
     it('two asks get distinct approval ids (askId binding)', async () => {
-      const { ApprovalManager } = require('../../../core/src/approval/manager');
       const { createPersona, resetPersonaState } =
         require('../../../core/src/persona/service');
       resetPersonaState();
       createPersona('health', 'sensitive');
 
-      const am = new ApprovalManager();
+      const { client, tasks } = makeFakeWorkflowCoreClient();
       const pipeline = buildAgenticAskPipeline({
         ...makeBuilderInput(),
-        approvalManager: am,
+        coreClient: client,
       });
       const tools1 = pipeline.buildToolsForAsk!({
         askId: 'ask-1',
@@ -304,12 +319,13 @@ describe('buildAgenticAskPipeline', () => {
       const o2 = await tools2.execute('vault_search', { query: 'q', persona: 'health' });
       expect((o1 as { approvalId: string }).approvalId).toBe('appr-ask-1-health');
       expect((o2 as { approvalId: string }).approvalId).toBe('appr-ask-2-health');
+      expect(tasks.size).toBe(2);
     });
 
     it('per-ask registry allows reads after operator approves (consume on retry)', async () => {
-      // End-to-end: first read parks; operator approves; second read
-      // (Pattern A resume path simulation) consumes + proceeds.
-      const { ApprovalManager } = require('../../../core/src/approval/manager');
+      // End-to-end: first read parks (pending_approval); operator approves
+      // (task → queued); second read (Pattern A resume path) consumes
+      // (task → completed) + proceeds.
       const { createPersona, resetPersonaState } =
         require('../../../core/src/persona/service');
       const { setAccessiblePersonas, resetReasoningProvider } =
@@ -322,24 +338,25 @@ describe('buildAgenticAskPipeline', () => {
       setAccessiblePersonas(['health']); // operator-unlocked DEK
       storeItem('health', { type: 'note', summary: 'BP reading', body: '120/80' });
 
-      const am = new ApprovalManager();
+      const { client, tasks, setStatus } = makeFakeWorkflowCoreClient();
       const pipeline = buildAgenticAskPipeline({
         ...makeBuilderInput(),
-        approvalManager: am,
+        coreClient: client,
       });
       const tools = pipeline.buildToolsForAsk!({
         askId: 'ask-1',
         requesterDid: 'did:key:zRequester',
       });
 
-      // First read — bails.
+      // First read — bails (creates pending workflow task).
       const first = await tools.execute('vault_search', { query: 'BP', persona: 'health' });
       expect(first).toMatchObject({ code: 'approval_required' });
 
-      // Operator approves.
-      am.approveRequest('appr-ask-1-health', 'single', 'did:operator');
+      // Operator approves — workflow task transitions pending_approval → queued.
+      setStatus('appr-ask-1-health', 'queued');
 
-      // Resume path — same registry, second call. Consumes + reads.
+      // Resume path — same registry, second call. Guard sees queued →
+      // completes the task (consumed) → vault read proceeds.
       const second = await tools.execute('vault_search', { query: 'BP', persona: 'health' });
       expect((second as { success: boolean }).success).toBe(true);
       const result = (second as { success: true; result: unknown }).result as {
@@ -348,8 +365,8 @@ describe('buildAgenticAskPipeline', () => {
       };
       expect(result.accessible).toBe(true);
       expect(result.results.length).toBeGreaterThanOrEqual(1);
-      // Approval consumed.
-      expect(am.getRequest('appr-ask-1-health')).toBeUndefined();
+      // Approval workflow task was consumed (completed).
+      expect(tasks.get('appr-ask-1-health')?.status).toBe('completed');
     });
   });
 });

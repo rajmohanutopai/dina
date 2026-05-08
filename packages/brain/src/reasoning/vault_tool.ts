@@ -191,6 +191,7 @@ export function createVaultSearchTool(options: VaultSearchToolOptions = {}): Age
       // to 'general'. Per-row persona stays in each result so the LLM
       // can still cite the source vault.
       const accessiblePersonas = getAccessiblePersonas();
+      const accessibleSet = new Set(accessiblePersonas);
       const merged: Array<{
         id: string;
         content_l0: string;
@@ -199,6 +200,27 @@ export function createVaultSearchTool(options: VaultSearchToolOptions = {}): Age
         score: number;
         persona: string;
       }> = [];
+
+      // When a guard is wired (agent-ask context), the fan-out also
+      // surfaces locked personas so the approval system can gate them.
+      // The guard checks each locked persona's tier:
+      //   - default / standard → null (allow; already in accessiblePersonas)
+      //   - sensitive / locked → throws ApprovalRequiredError (Pattern A)
+      // The first locked persona that fires the guard bails the agentic
+      // loop with suspend/resume. On resume, the approved persona is in
+      // accessiblePersonas and the fan-out searches it normally.
+      // Agents do NOT need to name the persona explicitly — Dina
+      // discovers the lock and requests approval automatically.
+      // Without a guard (mobile in-process), locked personas are silently
+      // skipped — the user controls persona unlocking via the app UI.
+      if (personaGuard) {
+        const allPersonas = listPersonas();
+        for (const p of allPersonas) {
+          if (!accessibleSet.has(p.name)) {
+            await checkPersonaGuard(personaGuard, p.name);
+          }
+        }
+      }
 
       for (const persona of accessiblePersonas) {
         const rows = await executeToolSearch(persona, query, limit);

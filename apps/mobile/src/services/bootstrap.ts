@@ -813,6 +813,22 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       // Bridge subscribed to the coordinator's event stream — release
       // that subscription on dispose so re-bootstrapping doesn't leak.
       globalDisposers.push(dispose);
+      // Reconcile loop: poll the gateway every 3 s so out-of-band
+      // operator decisions (Approve/Deny in the mobile Approvals tab)
+      // propagate into the ask state machine. The workflow task status
+      // changes when the operator taps, but nothing reads that change
+      // back into the registry without a reconcile sweep.
+      const _siReconcile: (fn: () => void, ms: number) => unknown =
+        options.setInterval ?? ((fn, ms) => setInterval(fn, ms));
+      const _ciReconcile: (h: unknown) => void =
+        options.clearInterval ?? ((h) => clearInterval(h as ReturnType<typeof setInterval>));
+      const reconcileHandle = _siReconcile(
+        () => {
+          void cfg.coordinator.gateway.reconcile().catch(() => {});
+        },
+        3_000,
+      );
+      globalDisposers.push(() => _ciReconcile(reconcileHandle));
     } else if (options.agenticAsk !== undefined) {
       setAskCommandHandler(
         makeAgenticAskHandler({

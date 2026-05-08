@@ -895,7 +895,7 @@ export default function RootLayout() {
             <Tabs.Screen
               name="chat/[did]"
               options={{
-                title: 'Chat',
+                title: 'Talk',
                 // Per-peer drill-down; never a tab target.
                 href: null,
                 headerLeft: renderHeaderBackButton,

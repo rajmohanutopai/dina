@@ -106,8 +106,10 @@ const AUTHZ_RULES: Array<{ prefix: string; allowed: Set<CallerType> }> = [
   // Session lifecycle — paired dina-agent opens a session before
   // claiming a delegation task (vault scoping) and ends it after
   // completion. Brain + Admin orchestrate session lifecycle from the
-  // app side.
-  { prefix: '/v1/session/', allowed: new Set(['brain', 'admin', 'agent']) },
+  // app side. Device (CLI) callers also create sessions to scope
+  // interactive queries — TS Core sessions are currently no-op stubs
+  // so there is no vault-grant risk.
+  { prefix: '/v1/session/', allowed: new Set(['brain', 'admin', 'agent', 'device']) },
 
   // Agent intent validation — `dina validate` from OpenClaw + sample
   // agents. Paired agents POST

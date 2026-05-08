@@ -407,18 +407,59 @@ describe('vault tools — personaGuard (Pattern A approval bail)', () => {
     expect(result.results.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('vault_search fan-out path does NOT invoke the guard (pre-filtered to accessible personas)', async () => {
+  it('vault_search fan-out WITHOUT guard does not invoke guard — silently skips locked personas', async () => {
     storeItem('general', { type: 'user_memory', summary: 'something', body: 'about cats' });
+    // No guard wired → mobile in-process path. Locked personas silently skipped;
+    // the user controls persona unlocking via the app UI.
+    const tool = createVaultSearchTool();
+    // Omitting `persona` arg → fan-out across already-accessible personas only.
+    const result = (await tool.execute({ query: 'cats' })) as {
+      personas_searched: string[];
+      results: unknown[];
+    };
+    // Only accessible personas appear in the fan-out.
+    expect(result.personas_searched).toEqual(['general']);
+    expect(result.results.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('vault_search fan-out WITH guard invokes guard for locked personas — throws ApprovalRequiredError', async () => {
+    // This is the agent-ask path (MT-38). The agent asks "what is my blood
+    // pressure?" without naming any persona. The fan-out must discover the
+    // locked health persona and fire the guard so the approval flow triggers.
+    // The agent never needs to know which persona holds the data.
+    storeItem('general', { type: 'user_memory', summary: 'something', body: 'about cats' });
+    createPersona('financial', 'sensitive');
+    // financial is NOT in accessiblePersonas (locked from the beforeEach: ['general'])
     const guardCalls: string[] = [];
     const guard = async (persona: string): Promise<string | null> => {
       guardCalls.push(persona);
-      return null;
+      // financial is locked → return approval id
+      return persona === 'financial' ? 'appr-fan-out-financial' : null;
     };
     const tool = createVaultSearchTool({ personaGuard: guard });
 
-    // Omitting `persona` arg → fan-out across already-accessible personas only.
-    await tool.execute({ query: 'cats' });
-    expect(guardCalls).toEqual([]);
+    await expect(tool.execute({ query: 'cats' })).rejects.toMatchObject({
+      name: 'ApprovalRequiredError',
+      approvalId: 'appr-fan-out-financial',
+      persona: 'financial',
+    });
+    // Guard was called for the locked persona (not the accessible 'general').
+    expect(guardCalls).toContain('financial');
+  });
+
+  it('vault_search fan-out WITH guard proceeds normally when all locked personas allow', async () => {
+    // Guard wired but returns null for every persona → all personas allow.
+    storeItem('general', { type: 'user_memory', summary: 'something', body: 'about cats' });
+    createPersona('financial', 'default'); // default tier → guard returns null
+    const guard = async (): Promise<string | null> => null;
+    const tool = createVaultSearchTool({ personaGuard: guard });
+
+    const result = (await tool.execute({ query: 'cats' })) as {
+      persona: string;
+      results: unknown[];
+    };
+    expect(result.persona).toBe('all');
+    expect(result.results.length).toBeGreaterThanOrEqual(1);
   });
 
   it('browse_vault throws ApprovalRequiredError for sensitive persona', async () => {

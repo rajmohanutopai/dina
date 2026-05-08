@@ -121,11 +121,14 @@ export default function ApprovalsScreen() {
           : '';
       const isIntent = item.kind === 'intent_validation';
       const isStagingAccess = item.kind === 'staging_persona_access';
+      const isVaultRead = item.kind === 'vault_read';
       const headline = isIntent
         ? 'Agent action approval'
         : isStagingAccess
           ? 'Memory access approval'
-        : item.serviceName || 'Unnamed service';
+          : isVaultRead
+            ? 'Vault read approval'
+            : item.serviceName || 'Unnamed service';
       const tagText = isIntent && item.riskLevel !== undefined ? item.riskLevel : item.capability;
       const tagStyle =
         isIntent && item.riskLevel === 'HIGH'
@@ -133,7 +136,7 @@ export default function ApprovalsScreen() {
           : isIntent && item.riskLevel === 'MODERATE'
             ? [styles.capability, styles.riskModerate]
             : styles.capability;
-      const requesterPrefix = isIntent ? 'agent' : isStagingAccess ? 'source' : 'from';
+      const requesterPrefix = isIntent ? 'agent' : isStagingAccess ? 'source' : isVaultRead ? 'requester' : 'from';
       return (
         <View style={styles.card}>
           <View style={styles.cardHeader}>
@@ -199,7 +202,7 @@ export default function ApprovalsScreen() {
                     // truly inaccessible.
                   }
                 }
-                return approvePending(item.id);
+                return approvePending(item.id, item.kind);
               })
             }
             >
@@ -243,8 +246,8 @@ export default function ApprovalsScreen() {
             <Text style={styles.emptyTitle}>All caught up</Text>
             <Text style={styles.emptySubtitle}>
               Nothing waiting for your approval right now — service queries,
-              memory writes into closed vaults, and agent intents will appear
-              here when they need a review.
+              memory writes into closed vaults, agent intents, and vault read
+              requests will appear here when they need a review.
             </Text>
           </View>
         </View>

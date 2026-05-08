@@ -6,11 +6,11 @@
  * exercises the same composer behind HTTP routes.
  */
 
-import { ApprovalManager } from '@dina/core';
 import {
   createPersona,
   resetPersonaState,
 } from '@dina/core';
+import type { CreateWorkflowTaskInput, WorkflowTask } from '@dina/core';
 import {
   setAccessiblePersonas,
   resetReasoningProvider,
@@ -21,9 +21,10 @@ import {
   type BuildAgenticAskPipelineInput,
 } from '../../src/composition/agentic_ask';
 import {
-  approvalManagerAsSource,
   buildAgenticExecuteFn,
   createAskCoordinator,
+  workflowTaskAsSource,
+  type AskCoordinatorCoreClient,
 } from '../../src/composition/ask_coordinator';
 import type {
   ChatMessage,
@@ -128,28 +129,45 @@ function fakeOrchestrator(): BuildAgenticAskPipelineInput['orchestratorHandle'] 
   };
 }
 
-function fakeCoreClient(): BuildAgenticAskPipelineInput['coreClient'] {
-  return {
-    async findContactsByPreference() {
-      return [];
+// ---------------------------------------------------------------------------
+// Fake AskCoordinatorCoreClient — in-memory workflow task store.
+// ---------------------------------------------------------------------------
+
+interface FakeTask { id: string; status: string; payload: string }
+
+function makeFakeCoreClient(): {
+  client: AskCoordinatorCoreClient & BuildAgenticAskPipelineInput['coreClient'];
+  tasks: Map<string, FakeTask>;
+  setStatus: (id: string, s: string) => void;
+} {
+  const tasks = new Map<string, FakeTask>();
+  const setStatus = (id: string, s: string) => { const t = tasks.get(id); if (t) t.status = s; };
+  const client = {
+    // find_preferred_provider surface
+    async findContactsByPreference() { return []; },
+    // workflow approval surface
+    async createWorkflowTask(input: CreateWorkflowTaskInput) {
+      if (tasks.has(input.id)) throw new Error(`duplicate: ${input.id}`);
+      const t: FakeTask = { id: input.id, status: input.initialState ?? 'pending_approval', payload: input.payload };
+      tasks.set(input.id, t);
+      return { task: t as unknown as WorkflowTask, deduped: false };
     },
+    async getWorkflowTask(id: string) { return (tasks.get(id) as unknown as WorkflowTask) ?? null; },
+    async completeWorkflowTask(id: string) { setStatus(id, 'completed'); return tasks.get(id) as unknown as WorkflowTask; },
+    async approveWorkflowTask(id: string) { setStatus(id, 'queued'); return tasks.get(id) as unknown as WorkflowTask; },
+    async cancelWorkflowTask(id: string) { setStatus(id, 'cancelled'); return tasks.get(id) as unknown as WorkflowTask; },
   };
+  return { client, tasks, setStatus };
 }
 
-interface BuildArgs {
-  llm: LLMProvider;
-  approvalManager: ApprovalManager;
-}
-
-function buildPipeline(args: BuildArgs) {
+function buildPipeline(args: { llm: LLMProvider; coreClient: BuildAgenticAskPipelineInput['coreClient'] }) {
   return buildAgenticAskPipeline({
     llm: args.llm,
     providerName: 'gemini',
     appViewClient: fakeAppView(),
     orchestratorHandle: fakeOrchestrator(),
-    coreClient: fakeCoreClient(),
+    coreClient: args.coreClient,
     cloudConsentGranted: true,
-    approvalManager: args.approvalManager,
   });
 }
 
@@ -167,20 +185,15 @@ afterEach(() => {
 
 describe('createAskCoordinator — construction', () => {
   it('rejects pipeline without buildToolsForAsk', () => {
-    const llm = makeScripted();
-    // Build pipeline WITHOUT approvalManager → buildToolsForAsk is undefined.
-    const pipeline = buildAgenticAskPipeline({
-      llm: llm.provider,
-      providerName: 'gemini',
-      appViewClient: fakeAppView(),
-      orchestratorHandle: fakeOrchestrator(),
-      coreClient: fakeCoreClient(),
-      cloudConsentGranted: true,
-    });
+    const { provider } = makeScripted();
+    // Manually stub a pipeline that lacks buildToolsForAsk — the coordinator
+    // always rejects this, regardless of how the pipeline was built.
+    const pipeline = { provider, buildToolsForAsk: undefined } as never;
+    const { client } = makeFakeCoreClient();
     expect(() =>
       createAskCoordinator({
         pipeline,
-        approvalManager: new ApprovalManager(),
+        coreClient: client,
         executeFn: async () => ({ kind: 'answer', answer: {} }),
         systemPrompt: SYSTEM_PROMPT,
       }),
@@ -189,12 +202,12 @@ describe('createAskCoordinator — construction', () => {
 
   it('rejects empty systemPrompt', () => {
     const llm = makeScripted();
-    const am = new ApprovalManager();
-    const pipeline = buildPipeline({ llm: llm.provider, approvalManager: am });
+    const { client } = makeFakeCoreClient();
+    const pipeline = buildPipeline({ llm: llm.provider, coreClient: client });
     expect(() =>
       createAskCoordinator({
         pipeline,
-        approvalManager: am,
+        coreClient: client,
         executeFn: async () => ({ kind: 'answer', answer: {} }),
         systemPrompt: '',
       }),
@@ -207,11 +220,11 @@ describe('createAskCoordinator — Pattern B happy path', () => {
     const llm = makeScripted();
     llm.push(answerResp('General-public answer.'));
 
-    const am = new ApprovalManager();
-    const pipeline = buildPipeline({ llm: llm.provider, approvalManager: am });
+    const { client } = makeFakeCoreClient();
+    const pipeline = buildPipeline({ llm: llm.provider, coreClient: client });
     const coord = createAskCoordinator({
       pipeline,
-      approvalManager: am,
+      coreClient: client,
       executeFn: buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT }),
       systemPrompt: SYSTEM_PROMPT,
       fastPathMs: 5_000,
@@ -256,11 +269,11 @@ describe('createAskCoordinator — Pattern A end-to-end', () => {
       answerResp('Your BP was 120/80.'),
     );
 
-    const am = new ApprovalManager();
-    const pipeline = buildPipeline({ llm: llm.provider, approvalManager: am });
+    const { client, tasks } = makeFakeCoreClient();
+    const pipeline = buildPipeline({ llm: llm.provider, coreClient: client });
     const coord = createAskCoordinator({
       pipeline,
-      approvalManager: am,
+      coreClient: client,
       executeFn: buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT }),
       systemPrompt: SYSTEM_PROMPT,
       fastPathMs: 1_000,
@@ -294,8 +307,8 @@ describe('createAskCoordinator — Pattern A end-to-end', () => {
     expect(status.body.status).toBe('complete');
     expect(status.body.answer).toEqual({ text: 'Your BP was 120/80.' });
 
-    // Approval was consumed.
-    expect(am.getRequest(approvalId!)).toBeUndefined();
+    // Approval workflow task was consumed (completed) after vault read.
+    expect(tasks.get(approvalId!)?.status).toBe('completed');
   });
 
   it('Pattern A invariant: pausedState is persisted to registry; resume calls LLM exactly once more (5.21-G)', async () => {
@@ -313,11 +326,11 @@ describe('createAskCoordinator — Pattern A end-to-end', () => {
       answerResp('Your BP was 120/80.'),
     );
 
-    const am = new ApprovalManager();
-    const pipeline = buildPipeline({ llm: llm.provider, approvalManager: am });
+    const { client } = makeFakeCoreClient();
+    const pipeline = buildPipeline({ llm: llm.provider, coreClient: client });
     const coord = createAskCoordinator({
       pipeline,
-      approvalManager: am,
+      coreClient: client,
       executeFn: buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT }),
       systemPrompt: SYSTEM_PROMPT,
       fastPathMs: 1_000,
@@ -362,11 +375,11 @@ describe('createAskCoordinator — Pattern A end-to-end', () => {
 
   it('handleStatus returns 404 for unknown request_id', async () => {
     const llm = makeScripted();
-    const am = new ApprovalManager();
-    const pipeline = buildPipeline({ llm: llm.provider, approvalManager: am });
+    const { client } = makeFakeCoreClient();
+    const pipeline = buildPipeline({ llm: llm.provider, coreClient: client });
     const coord = createAskCoordinator({
       pipeline,
-      approvalManager: am,
+      coreClient: client,
       executeFn: buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT }),
       systemPrompt: SYSTEM_PROMPT,
     });
@@ -387,11 +400,11 @@ describe('createAskCoordinator — Pattern A end-to-end', () => {
       }),
     );
 
-    const am = new ApprovalManager();
-    const pipeline = buildPipeline({ llm: llm.provider, approvalManager: am });
+    const { client } = makeFakeCoreClient();
+    const pipeline = buildPipeline({ llm: llm.provider, coreClient: client });
     const coord = createAskCoordinator({
       pipeline,
-      approvalManager: am,
+      coreClient: client,
       executeFn: buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT }),
       systemPrompt: SYSTEM_PROMPT,
       fastPathMs: 1_000,
@@ -416,38 +429,69 @@ describe('createAskCoordinator — Pattern A end-to-end', () => {
   });
 });
 
-describe('approvalManagerAsSource adapter', () => {
-  it('maps every ApprovalManager state to the right source status', () => {
-    const am = new ApprovalManager();
-    const source = approvalManagerAsSource(am);
+describe('workflowTaskAsSource adapter', () => {
+  it('maps null task (not found) to expired', async () => {
+    const { client } = makeFakeCoreClient();
+    const source = workflowTaskAsSource(client);
+    expect(await source.getStatus('ghost')).toBe('expired');
+  });
 
-    expect(source.getStatus('ghost')).toBe('unknown');
+  it('maps pending_approval → pending', async () => {
+    const { client, tasks } = makeFakeCoreClient();
+    tasks.set('a1', { id: 'a1', status: 'pending_approval', payload: '{}' });
+    const source = workflowTaskAsSource(client);
+    expect(await source.getStatus('a1')).toBe('pending');
+  });
 
-    am.requestApproval({
-      id: 'a1',
-      action: 'vault_read',
-      requester_did: 'did:x',
-      persona: 'health',
-      reason: 't',
-      preview: '',
-      created_at: 0,
-    });
-    expect(source.getStatus('a1')).toBe('pending');
+  it('maps queued → approved', async () => {
+    const { client, tasks } = makeFakeCoreClient();
+    tasks.set('a1', { id: 'a1', status: 'queued', payload: '{}' });
+    const source = workflowTaskAsSource(client);
+    expect(await source.getStatus('a1')).toBe('approved');
+  });
 
-    source.approve('a1');
-    expect(source.getStatus('a1')).toBe('approved');
+  it('maps running → approved', async () => {
+    const { client, tasks } = makeFakeCoreClient();
+    tasks.set('a1', { id: 'a1', status: 'running', payload: '{}' });
+    const source = workflowTaskAsSource(client);
+    expect(await source.getStatus('a1')).toBe('approved');
+  });
 
-    am.requestApproval({
-      id: 'a2',
-      action: 'vault_read',
-      requester_did: 'did:x',
-      persona: 'health',
-      reason: 't',
-      preview: '',
-      created_at: 0,
-    });
-    source.deny('a2');
-    expect(source.getStatus('a2')).toBe('denied');
+  it('maps cancelled → denied', async () => {
+    const { client, tasks } = makeFakeCoreClient();
+    tasks.set('a1', { id: 'a1', status: 'cancelled', payload: '{}' });
+    const source = workflowTaskAsSource(client);
+    expect(await source.getStatus('a1')).toBe('denied');
+  });
+
+  it('maps failed → denied', async () => {
+    const { client, tasks } = makeFakeCoreClient();
+    tasks.set('a1', { id: 'a1', status: 'failed', payload: '{}' });
+    const source = workflowTaskAsSource(client);
+    expect(await source.getStatus('a1')).toBe('denied');
+  });
+
+  it('maps completed → expired (already consumed)', async () => {
+    const { client, tasks } = makeFakeCoreClient();
+    tasks.set('a1', { id: 'a1', status: 'completed', payload: '{}' });
+    const source = workflowTaskAsSource(client);
+    expect(await source.getStatus('a1')).toBe('expired');
+  });
+
+  it('approve() calls approveWorkflowTask → task transitions to queued', async () => {
+    const { client, tasks } = makeFakeCoreClient();
+    tasks.set('a1', { id: 'a1', status: 'pending_approval', payload: '{}' });
+    const source = workflowTaskAsSource(client);
+    await source.approve('a1');
+    expect(tasks.get('a1')?.status).toBe('queued');
+  });
+
+  it('deny() calls cancelWorkflowTask → task transitions to cancelled', async () => {
+    const { client, tasks } = makeFakeCoreClient();
+    tasks.set('a1', { id: 'a1', status: 'pending_approval', payload: '{}' });
+    const source = workflowTaskAsSource(client);
+    await source.deny('a1');
+    expect(tasks.get('a1')?.status).toBe('cancelled');
   });
 });
 
@@ -456,8 +500,8 @@ describe('buildAgenticExecuteFn translation', () => {
     const llm = makeScripted();
     llm.push(answerResp('hi'));
 
-    const am = new ApprovalManager();
-    const pipeline = buildPipeline({ llm: llm.provider, approvalManager: am });
+    const { client } = makeFakeCoreClient();
+    const pipeline = buildPipeline({ llm: llm.provider, coreClient: client });
     const fn = buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT });
 
     const out = await fn({ id: 'ask-1', question: 'q', requesterDid: REQUESTER });
@@ -475,8 +519,8 @@ describe('buildAgenticExecuteFn translation', () => {
       }),
     );
 
-    const am = new ApprovalManager();
-    const pipeline = buildPipeline({ llm: llm.provider, approvalManager: am });
+    const { client } = makeFakeCoreClient();
+    const pipeline = buildPipeline({ llm: llm.provider, coreClient: client });
     const fn = buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT });
 
     const out = await fn({ id: 'ask-1', question: 'q', requesterDid: REQUESTER });
@@ -494,14 +538,9 @@ describe('buildAgenticExecuteFn translation', () => {
   });
 
   it('throws TypeError when pipeline lacks buildToolsForAsk', () => {
-    const llm = makeScripted();
-    const pipeline = buildAgenticAskPipeline({
-      llm: llm.provider,
-      providerName: 'gemini',
-      appViewClient: fakeAppView(),
-      orchestratorHandle: fakeOrchestrator(),
-      coreClient: fakeCoreClient(),
-    });
+    const { provider } = makeScripted();
+    // Manually stub a pipeline without buildToolsForAsk.
+    const pipeline = { provider, buildToolsForAsk: undefined } as never;
     expect(() => buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT })).toThrow(
       'pipeline.buildToolsForAsk is missing',
     );

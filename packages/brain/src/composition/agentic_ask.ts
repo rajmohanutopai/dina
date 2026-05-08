@@ -67,12 +67,11 @@ import {
   type VaultPersonaGuard,
 } from '../reasoning/vault_tool';
 
-import { createPersonaGuard } from './persona_guard';
+import { createPersonaGuard, type VaultApprovalWorkflowClient } from './persona_guard';
 
 import type { LLMProvider } from '../llm/adapters/provider';
 import type { ProviderName , TaskType } from '../llm/router';
 import type { AgenticAskHandlerOptions } from '../reasoning/ask_handler';
-import type { ApprovalManager } from '@dina/core';
 
 
 /**
@@ -93,8 +92,13 @@ export interface BuildAgenticAskPipelineInput {
   /** Lazy orchestrator handle for `query_service` — callers wire a thunk-backed
    *  proxy when the orchestrator is constructed later in the boot sequence. */
   orchestratorHandle: Parameters<typeof createQueryServiceTool>[0]['orchestrator'];
-  /** Lazy core client for `find_preferred_provider`. */
-  coreClient: Parameters<typeof createFindPreferredProviderTool>[0]['core'];
+  /**
+   * Core client — combines the `find_preferred_provider` tool surface with
+   * the vault-read approval workflow task methods. The full `CoreClient`
+   * (InProcessTransport or HttpCoreTransport) satisfies both.
+   */
+  coreClient: Parameters<typeof createFindPreferredProviderTool>[0]['core'] &
+    VaultApprovalWorkflowClient;
   /**
    * Workflow surface for `delegate_to_agent` — narrower than the full
    * `BrainCoreClient` so a host that hasn't paired any agents can omit
@@ -117,17 +121,6 @@ export interface BuildAgenticAskPipelineInput {
    * (server operators consented by running the binary).
    */
   cloudConsentGranted?: boolean;
-  /**
-   * Optional `ApprovalManager` — when supplied, the pipeline exposes
-   * `buildToolsForAsk(askContext)` so the ask handler can construct a
-   * per-ask `ToolRegistry` with vault tools wired to a
-   * `personaGuard` that mints/consumes per-ask approvals (5.21-D /
-   * 5.21-E). Without this, `buildToolsForAsk` is undefined and the
-   * static `tools` registry continues to work as before — sensitive
-   * personas surface as `accessible:false` rather than bailing the
-   * agentic loop with `ApprovalRequiredError`.
-   */
-  approvalManager?: ApprovalManager;
 }
 
 /**
@@ -326,11 +319,14 @@ export function buildAgenticAskPipeline(
     handlerOptions: { intentClassifier, guardScanner },
   };
 
-  if (input.approvalManager !== undefined) {
-    const approvalManager = input.approvalManager;
+  // Always wire buildToolsForAsk — coreClient is always provided and
+  // includes the workflow task methods the guard needs for per-ask
+  // vault-read approvals (sensitive/locked persona gates).
+  {
+    const coreClient = input.coreClient;
     result.buildToolsForAsk = (ctx: AskToolContext): ToolRegistry => {
       const guard = createPersonaGuard({
-        approvalManager,
+        coreClient,
         askId: ctx.askId,
         requesterDid: ctx.requesterDid,
       });

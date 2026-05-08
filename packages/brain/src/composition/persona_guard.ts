@@ -1,10 +1,17 @@
 /**
  * `createPersonaGuard` — builds a `VaultPersonaGuard` that mints
- * (or consumes) per-ask approvals via the shared `ApprovalManager`.
+ * (or consumes) per-ask approvals via workflow tasks, exactly as Go
+ * Core uses `dina_tasks` for every approval gate.
+ *
+ * **Why workflow tasks (not ApprovalManager)**: the mobile Approvals tab
+ * polls `listWorkflowTasks({kind:'approval', state:'pending_approval'})`.
+ * Routing vault-read approvals through the same workflow task store means
+ * they appear there automatically with zero extra transport — no separate
+ * ApprovalManager HTTP surface needed.
  *
  * **Why this lives here, not in `vault_tool.ts`**: the tool factory
  * is framework-free + unit-testable with a plain function stub
- * (5.21-D). Wiring an `ApprovalManager` + persona registry is
+ * (5.21-D). Wiring a CoreClient + persona registry is
  * composition-layer logic — multiple build targets (mobile in-process,
  * brain-server HTTP) construct one of these, then thread it into
  * `buildAgenticAskPipeline` (5.21-E).
@@ -13,54 +20,57 @@
  *   - `default` / `standard` → null (allow). These tiers auto-open on
  *     boot; the LLM reads freely.
  *   - `sensitive` / `locked` → require approval. The guard mints (or
- *     looks up) a pending approval and returns its id. The agentic
+ *     looks up) a pending workflow task and returns its id. The agentic
  *     loop bails with `ApprovalRequiredError`; `AskApprovalResumer`
  *     parks the ask in `pending_approval`. Operator approves via UI;
- *     resume re-runs the bailing tool, which now finds the approval
- *     in `approved` state, consumes the single-scope grant, and
- *     proceeds.
+ *     resume re-runs the bailing tool, which now finds the task in
+ *     `queued` state (operator-approved), completes it (consumes),
+ *     and proceeds.
  *
  * **Approval-id derivation**: `appr-<askId>-<persona>` —
  * deterministic so the resume's second tool call finds the SAME
- * approval the first call minted. Includes the persona so a
+ * workflow task the first call minted. Includes the persona so a
  * multi-persona ask can carry a separate approval per persona
  * (one bail, one approve, one resume — repeated for each).
  *
- * **Resume cycle pinned by tests**:
- *   1. First read on `sensitive` → mints pending → returns id.
- *   2. Operator calls `approvalManager.approveRequest(id, 'single', ...)`.
- *   3. Second read finds approved → `consumeSingle()` → returns null
- *      (single-scope grant used; if the LLM tries to read again it'll
- *      mint a fresh pending approval — correct one-shot semantics).
+ * **Resume cycle**:
+ *   1. First read on `sensitive` → task not found → create workflow task
+ *      (kind=approval, status=pending_approval) → return approvalId.
+ *   2. Operator taps Approve → `approveWorkflowTask(id)` → status=queued.
+ *   3. Second read finds task status=queued → `completeWorkflowTask(id)`
+ *      (mark consumed) → return null (allow vault read).
  *
  * **Unknown persona** (`getPersona` returns null) → null. The vault
  * tool's existing accessibility check produces an empty result.
  * Fabricating an approval for a non-existent persona would confuse
  * the operator UI ("approve read of /nonexistent?").
  *
- * **Idempotency on collision**: a pending approval with the same id
- * already exists → return its id without re-minting. Happens when
- * the same persona is hit twice in one batch (the loop bails on the
- * first; the resumer eventually re-runs and we see the still-pending
- * approval).
- *
  * Source: docs/HOME_NODE_LITE_TASKS.md task 5.21-E.
  */
 
-import { getPersona, type ApprovalManager } from '@dina/core';
+import { getPersona } from '@dina/core';
+import type { CreateWorkflowTaskInput, CreateWorkflowTaskResult, WorkflowTask } from '@dina/core';
 
 /**
- * The guard returned here is synchronous — `ApprovalManager` is
- * in-memory and persona lookup is local, so no async I/O is needed.
- * `VaultPersonaGuard` accepts either shape (sync or Promise);
- * narrowing to sync keeps callers from accidentally awaiting a
- * non-promise.
+ * Minimal CoreClient surface persona_guard needs for vault-read approvals.
+ * Satisfied by the full `CoreClient` and by test fakes (3 methods only).
  */
-export type SyncPersonaGuard = (persona: string) => string | null;
+export interface VaultApprovalWorkflowClient {
+  createWorkflowTask(input: CreateWorkflowTaskInput): Promise<CreateWorkflowTaskResult>;
+  getWorkflowTask(id: string): Promise<WorkflowTask | null>;
+  completeWorkflowTask(id: string, result: string, resultSummary: string, agentDID?: string): Promise<WorkflowTask>;
+}
+
+/**
+ * The guard returned here is async — workflow task operations are async
+ * (in-process router dispatch or HTTP hop). `VaultPersonaGuard` accepts
+ * either sync or async return values.
+ */
+export type AsyncPersonaGuard = (persona: string) => Promise<string | null>;
 
 export interface CreatePersonaGuardOptions {
-  /** Shared `ApprovalManager` singleton — same instance UI + handler use. */
-  approvalManager: ApprovalManager;
+  /** CoreClient subset for vault-read approval workflow tasks. */
+  coreClient: VaultApprovalWorkflowClient;
   /** Current ask id; embedded in the deterministic approval id. */
   askId: string;
   /** DID of the original requester — written into the approval record. */
@@ -71,15 +81,14 @@ export interface CreatePersonaGuardOptions {
 
 /**
  * Build a `VaultPersonaGuard` bound to the given ask context.
- * The returned guard is synchronous — the underlying
- * `ApprovalManager` is in-memory + all persona lookups are local.
+ * The returned guard is async — workflow task dispatch requires I/O.
  */
-export function createPersonaGuard(opts: CreatePersonaGuardOptions): SyncPersonaGuard {
+export function createPersonaGuard(opts: CreatePersonaGuardOptions): AsyncPersonaGuard {
   if (!opts || typeof opts !== 'object') {
     throw new TypeError('createPersonaGuard: options object is required');
   }
-  if (!opts.approvalManager) {
-    throw new TypeError('createPersonaGuard: approvalManager is required');
+  if (!opts.coreClient) {
+    throw new TypeError('createPersonaGuard: coreClient is required');
   }
   if (typeof opts.askId !== 'string' || opts.askId.trim() === '') {
     throw new TypeError('createPersonaGuard: askId must be a non-empty string');
@@ -87,10 +96,10 @@ export function createPersonaGuard(opts: CreatePersonaGuardOptions): SyncPersona
   if (typeof opts.requesterDid !== 'string' || opts.requesterDid.trim() === '') {
     throw new TypeError('createPersonaGuard: requesterDid must be a non-empty string');
   }
-  const { approvalManager, askId, requesterDid } = opts;
+  const { coreClient, askId, requesterDid } = opts;
   const now = opts.nowMsFn ?? ((): number => Date.now());
 
-  return (persona: string): string | null => {
+  return async (persona: string): Promise<string | null> => {
     const personaState = getPersona(persona);
     if (personaState === null) {
       // Unknown persona — let the vault tool's accessibility check
@@ -106,39 +115,54 @@ export function createPersonaGuard(opts: CreatePersonaGuardOptions): SyncPersona
     // Sensitive / locked tier — approval required.
     const approvalId = approvalIdFor(askId, persona);
 
-    const existing = approvalManager.getRequest(approvalId);
-    if (existing) {
-      if (existing.status === 'approved') {
-        // Resume case: consume the single-scope grant and allow this
-        // read. `consumeSingle` returns false for session-scope or
-        // already-consumed approvals — in either case we still allow
-        // (session means "blanket grant", consumed means we already
-        // honoured a prior consume).
-        approvalManager.consumeSingle(approvalId);
+    const existing = await coreClient.getWorkflowTask(approvalId);
+    if (existing !== null) {
+      if (existing.status === 'queued' || existing.status === 'running') {
+        // Resume case: operator approved the workflow task.
+        // Complete (consume) the task and allow this vault read.
+        await coreClient.completeWorkflowTask(
+          approvalId,
+          '{}',
+          `vault_read consumed: persona "${persona}" for ask ${askId}`,
+        );
         return null;
       }
-      if (existing.status === 'denied') {
+      if (existing.status === 'cancelled' || existing.status === 'failed') {
         // Operator explicitly refused — short-circuit. Surface as
-        // approval_required so the loop bails predictably; the next
-        // resume cycle will see the same denied state. Caller can
-        // detect via `approvalManager.getRequest(id).status === 'denied'`
-        // and translate to a hard failure if needed.
+        // approval_required so the loop bails predictably.
         return approvalId;
       }
-      // status === 'pending' — re-use the existing id (idempotent).
-      return approvalId;
+      if (existing.status === 'pending_approval') {
+        // Still waiting — re-use the existing approval id (idempotent).
+        return approvalId;
+      }
+      // completed (already consumed) or other terminal — fall through
+      // to mint a fresh task (the prior approval was used up).
     }
 
-    // Fresh approval — mint a pending request.
-    approvalManager.requestApproval({
-      id: approvalId,
-      action: 'vault_read',
-      requester_did: requesterDid,
-      persona,
-      reason: `Agentic /ask ${askId} requires read of persona "${persona}"`,
-      preview: '',
-      created_at: now(),
-    });
+    // Fresh approval — create a workflow task in pending_approval state.
+    // idempotencyKey prevents duplicate tasks on concurrent re-entries.
+    try {
+      await coreClient.createWorkflowTask({
+        id: approvalId,
+        kind: 'approval',
+        description: `Vault read: persona "${persona}" for ask ${askId}`,
+        payload: JSON.stringify({
+          type: 'vault_read_request',
+          persona,
+          source_ask_id: askId,
+          requester_did: requesterDid,
+          reason: `Agentic /ask ${askId} requires read of persona "${persona}"`,
+          preview: '',
+          created_at: now(),
+        }),
+        initialState: 'pending_approval',
+        idempotencyKey: `vault-read-${approvalId}`,
+      });
+    } catch {
+      // Idempotent: task already exists (same id/idempotency key).
+      // Continue — the existing task is in the right state.
+    }
     return approvalId;
   };
 }

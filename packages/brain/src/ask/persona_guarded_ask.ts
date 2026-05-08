@@ -27,14 +27,18 @@
  * via `AskApprovalGateway.approve(...)`. The handler then re-issues
  * the executeFn (the test does this manually; production wires a
  * subscriber on `approval_resumed`). On the second call the gate
- * still says "approval required" — but we look up the
- * `ApprovalManager` first; if the per-ask approval is already in
- * `approved` status, we consume it (`single` scope = one-shot) and
- * skip the gate. That's the only deviation from the pure gate result.
+ * still says "approval required" — but we look up the workflow task
+ * first; if it is in `queued` state (operator-approved), we consume
+ * it (complete the task) and skip the gate. That's the only deviation
+ * from the pure gate result.
  *
  * **Per-ask approval id derivation**: `appr-<askId>`. Deterministic
  * so the second executeFn call can find the previously-issued
  * approval without storing extra state.
+ *
+ * **Why workflow tasks**: Go Core uses `dina_tasks` for every approval
+ * gate. The mobile Approvals tab polls workflow tasks, so vault-read
+ * approvals appear there automatically — no separate HTTP surface needed.
  */
 
 import type { AskExecuteFn, ExecuteOutcome } from './ask_handler';
@@ -45,7 +49,7 @@ import {
   type PersonaGateOutcome,
   type PersonaGateTier,
 } from './persona_gate';
-import type { ApprovalManager } from '@dina/core';
+import type { VaultApprovalWorkflowClient } from '../composition/persona_guard';
 
 /** Persona shape the gate cares about. */
 export interface PersonaInfo {
@@ -67,8 +71,8 @@ export interface BuildPersonaGuardedExecuteFnOptions {
   personaResolver: (question: string) => string;
   /** Fetch tier + open state for a persona name. */
   personaLookup: (name: string) => PersonaInfo | null;
-  /** Approval store (in-memory `ApprovalManager` or HTTP adapter). */
-  approvalManager: ApprovalManager;
+  /** CoreClient subset for vault-read approval workflow tasks. */
+  coreClient: VaultApprovalWorkflowClient;
   /** LLM the executeFn calls once the gate clears. */
   llm: GuardedLLM;
   /**
@@ -94,8 +98,8 @@ export function buildPersonaGuardedExecuteFn(
   if (!opts.personaLookup) {
     throw new TypeError('buildPersonaGuardedExecuteFn: personaLookup is required');
   }
-  if (!opts.approvalManager) {
-    throw new TypeError('buildPersonaGuardedExecuteFn: approvalManager is required');
+  if (!opts.coreClient) {
+    throw new TypeError('buildPersonaGuardedExecuteFn: coreClient is required');
   }
   if (!opts.llm) {
     throw new TypeError('buildPersonaGuardedExecuteFn: llm is required');
@@ -117,24 +121,22 @@ export function buildPersonaGuardedExecuteFn(
     }
 
     // Pre-flight: if a previous turn already requested approval and
-    // the operator approved it, consume the single-shot grant and
-    // skip the gate. This is the only path that allows a non-default
-    // persona to be answered without the gate — and the consume step
-    // makes it idempotent (a replay attempt finds the approval
-    // already-consumed and falls back to the gate).
+    // the operator approved it (workflow task is in `queued` state),
+    // consume the task (complete it) and skip the gate.
     const approvalId = approvalIdForAsk(input.id);
-    const existing = opts.approvalManager.getRequest(approvalId);
-    if (existing && existing.status === 'approved') {
-      const consumed = opts.approvalManager.consumeSingle(approvalId);
-      if (consumed) {
-        const answer = await opts.llm({
-          question: input.question,
-          persona,
-          askId: input.id,
-        });
-        return { kind: 'answer', answer };
-      }
-      // already consumed — fall through to the gate
+    const existing = await opts.coreClient.getWorkflowTask(approvalId);
+    if (existing !== null && (existing.status === 'queued' || existing.status === 'running')) {
+      await opts.coreClient.completeWorkflowTask(
+        approvalId,
+        '{}',
+        `vault_read consumed: persona "${persona.name}" for ask ${input.id}`,
+      );
+      const answer = await opts.llm({
+        question: input.question,
+        persona,
+        askId: input.id,
+      });
+      return { kind: 'answer', answer };
     }
 
     const gateInput: PersonaGateInput = {
@@ -165,19 +167,26 @@ export function buildPersonaGuardedExecuteFn(
       // refinement can distinguish the two — locked needs an actual
       // passphrase entry, not a tap-to-approve.
       try {
-        opts.approvalManager.requestApproval({
+        await opts.coreClient.createWorkflowTask({
           id: approvalId,
-          action: 'ask_persona_access',
-          requester_did: input.requesterDid,
-          persona: persona.name,
-          reason: gate.reason,
-          preview: input.question.slice(0, 200),
-          created_at: Date.now(),
+          kind: 'approval',
+          description: `Vault read: persona "${persona.name}" for ask ${input.id}`,
+          payload: JSON.stringify({
+            type: 'vault_read_request',
+            persona: persona.name,
+            source_ask_id: input.id,
+            requester_did: input.requesterDid,
+            reason: gate.reason,
+            preview: input.question.slice(0, 200),
+            created_at: Date.now(),
+          }),
+          initialState: 'pending_approval',
+          idempotencyKey: `vault-read-${approvalId}`,
         });
       } catch {
-        // Idempotent: an existing approval with the same id is
-        // expected on re-issue paths. Surface it via the same
-        // pending response so the handler holds the same state.
+        // Idempotent: task already exists (same id/idempotency key).
+        // Surface via the same pending response so the handler holds
+        // the same state.
       }
       return { kind: 'approval', approvalId };
     }

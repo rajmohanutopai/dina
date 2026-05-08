@@ -533,3 +533,56 @@ describe('createNode — chat delivery', () => {
     await node.dispose();
   });
 });
+
+describe('createNode — askCoordinator reconcile loop', () => {
+  it('fires gateway.reconcile() every 3 s and stops on dispose', async () => {
+    const sched = fakeScheduler();
+    const reconcileCalls: number[] = [];
+    const stubCoordinator = {
+      gateway: {
+        reconcile: jest.fn(async () => {
+          reconcileCalls.push(sched.now());
+          return { examined: 0, resumed: 0, denied: 0, expired: 0, unchanged: 0, errors: 0 };
+        }),
+        approve: jest.fn(async () => ({ ok: true as const, askId: '', approvalId: '' })),
+        deny: jest.fn(async () => ({ ok: true as const, askId: '', approvalId: '' })),
+        listOpenApprovals: jest.fn(async () => []),
+      },
+      subscribe: jest.fn(() => () => {}),
+      handleAsk: jest.fn(async () => ({ status: 200, body: {} })),
+      handleStatus: jest.fn(async () => ({ status: 200, body: {} })),
+      registry: { get: jest.fn(async () => null) } as never,
+      resumer: {} as never,
+    };
+
+    const node = await createNode(
+      baseOptions({
+        globalWiring: true,
+        setInterval: sched.setInterval,
+        clearInterval: sched.clearInterval,
+        askCoordinator: {
+          coordinator: stubCoordinator as never,
+          requesterDid: DID,
+        },
+      }),
+    );
+    await node.start();
+
+    expect(reconcileCalls).toHaveLength(0);
+
+    sched.advance(3_000);
+    await Promise.resolve(); // flush microtasks
+    expect(stubCoordinator.gateway.reconcile).toHaveBeenCalledTimes(1);
+
+    sched.advance(3_000);
+    await Promise.resolve();
+    expect(stubCoordinator.gateway.reconcile).toHaveBeenCalledTimes(2);
+
+    await node.dispose();
+
+    sched.advance(3_000);
+    await Promise.resolve();
+    // After dispose the interval is cleared — reconcile must NOT fire again.
+    expect(stubCoordinator.gateway.reconcile).toHaveBeenCalledTimes(2);
+  });
+});
