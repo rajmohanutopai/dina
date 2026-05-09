@@ -18,7 +18,11 @@
       "bundleIdentifier": "com.dinakernel.mobile",
       "icon": "./assets/branding/dina-icon.png",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification", "fetch"]
+        "UIBackgroundModes": [
+          "remote-notification",
+          "fetch"
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -37,6 +41,18 @@
           "defaultChannel": "solicited"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "061afa64-783b-4212-acbb-deb8660907f3"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/061afa64-783b-4212-acbb-deb8660907f3"
+    }
   }
 }

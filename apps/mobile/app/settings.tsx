@@ -371,7 +371,7 @@ export default function SettingsScreen() {
           Drives the V2 actionability layer: which results get
           surfaced / boosted / demoted on the trust-network screens.
           Loyalty Law: NONE of this leaves the device. */}
-      <SettingsSection title="TRUST PREFERENCES">
+      <SettingsSection title="PEERLENS PREFERENCES">
         <TouchableOpacity
           style={styles.row}
           onPress={() => router.push('/trust-preferences/region')}

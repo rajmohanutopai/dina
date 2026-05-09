@@ -51,9 +51,9 @@
       "env": {
         "EXPO_PUBLIC_DINA_ENV": "production",
         "EXPO_PUBLIC_DINA_ENDPOINT_MODE": "release",
-        "EXPO_PUBLIC_DINA_APPVIEW_URL": "",
-        "EXPO_PUBLIC_DINA_MSGBOX_URL": "",
-        "EXPO_PUBLIC_DINA_PDS_URL": ""
+        "EXPO_PUBLIC_DINA_APPVIEW_URL": "https://appview.dinakernel.com",
+        "EXPO_PUBLIC_DINA_MSGBOX_URL": "wss://mailbox.dinakernel.com/ws",
+        "EXPO_PUBLIC_DINA_PDS_URL": "https://pds.dinakernel.com"
       }
     }
   },

@@ -377,7 +377,7 @@ export default function ChatScreen() {
               redundant DINA label here. */}
           <Text style={styles.heroTitle}>Your sovereign{'\n'}personal AI</Text>
           <Text style={styles.heroSubtitle}>
-            Everything stays on your device.{'\n'}Your data, your rules.
+            Everything stays on your device.{'\n'}Zero personal data on any server.
           </Text>
 
           {/* Help CTA \u2014 first-time-user discovery surface. The previous
