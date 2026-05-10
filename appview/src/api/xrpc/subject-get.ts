@@ -11,7 +11,7 @@ import { getCachedGraphContext } from '@/api/middleware/graph-context-cache.js'
 import { normalizeHandle } from '@/util/handle_normalize.js'
 
 /**
- * `com.dina.trust.subjectGet` (TN-API-002 / Plan §6.2).
+ * `com.dina.peerlens.subjectGet` (TN-API-002 / Plan §6.2).
  *
  * Returns a subject's full reviewer roster grouped by network position
  * relative to the viewer. Backs the `app/trust/[subjectId].tsx` mobile
@@ -61,14 +61,14 @@ export const SubjectGetParams = z.object({
 
 export type SubjectGetParamsType = z.infer<typeof SubjectGetParams>
 
-export type TrustBand = 'high' | 'moderate' | 'low' | 'very-low' | 'unrated'
+export type PeerlensBand = 'high' | 'moderate' | 'low' | 'very-low' | 'unrated'
 
 /**
  * Map a `[0, 1]` PeerLens rating to its public band label. Mirrors
  * `packages/protocol/src/trust/score_bands.ts` so the AppView surface
  * agrees with the rest of the workspace.
  */
-function trustBandFor(score: number | null | undefined): TrustBand {
+function trustBandFor(score: number | null | undefined): PeerlensBand {
   if (score === null || score === undefined || !Number.isFinite(score)) {
     return 'unrated'
   }
@@ -97,7 +97,7 @@ export interface ReviewerEntry {
    */
   handle: string | null
   trustScore: number | null
-  trustBand: TrustBand
+  trustBand: PeerlensBand
   attestation: {
     uri: string
     text: string | null
@@ -109,7 +109,7 @@ export interface ReviewerEntry {
 export interface SubjectGetResponse {
   subject: SubjectRefShape | null
   score: number | null
-  band: TrustBand
+  band: PeerlensBand
   reviewCount: number
   reviewers: {
     /**

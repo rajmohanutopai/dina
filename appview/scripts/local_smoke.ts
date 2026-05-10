@@ -35,11 +35,11 @@ async function main() {
   await db.execute(sql`DELETE FROM did_profiles WHERE did       IN (${ALICE}, ${BOB}, ${SHOP})`)
 
   console.log('--- 2. ingest attestation A (alice → shop, positive) ---')
-  const attHandler = routeHandler('com.dina.trust.attestation')!
+  const attHandler = routeHandler('com.dina.peerlens.attestation')!
   await attHandler.handleCreate(ctx, {
-    uri: `at://${ALICE}/com.dina.trust.attestation/3kabcd1`,
+    uri: `at://${ALICE}/com.dina.peerlens.attestation/3kabcd1`,
     did: ALICE,
-    collection: 'com.dina.trust.attestation',
+    collection: 'com.dina.peerlens.attestation',
     rkey: '3kabcd1',
     cid: 'bafyreiabc1',
     record: {
@@ -57,9 +57,9 @@ async function main() {
 
   console.log('--- 4. ingest attestation B (bob → shop, neutral) ---')
   await attHandler.handleCreate(ctx, {
-    uri: `at://${BOB}/com.dina.trust.attestation/3kabcd2`,
+    uri: `at://${BOB}/com.dina.peerlens.attestation/3kabcd2`,
     did: BOB,
-    collection: 'com.dina.trust.attestation',
+    collection: 'com.dina.peerlens.attestation',
     rkey: '3kabcd2',
     cid: 'bafyreiabc2',
     record: {
@@ -80,16 +80,16 @@ async function main() {
   console.log(' trust_edges rows :', (r2.rows[0] as any).n, '(expect 0: organization subjects do not create trust edges)')
   console.log(' subjects rows    :', (r3.rows[0] as any).n)
 
-  console.log('--- 6. hit xRPC com.dina.trust.search ---')
-  const search = await fetch(`${WEB_URL}/xrpc/com.dina.trust.search?q=Aeron`).then(r => r.json())
+  console.log('--- 6. hit xRPC com.dina.peerlens.search ---')
+  const search = await fetch(`${WEB_URL}/xrpc/com.dina.peerlens.search?q=Aeron`).then(r => r.json())
   console.log(' search results:', JSON.stringify(search, null, 2))
 
-  console.log('--- 7. hit xRPC com.dina.trust.networkFeed (alice) ---')
-  const feed = await fetch(`${WEB_URL}/xrpc/com.dina.trust.networkFeed?viewerDid=${encodeURIComponent(ALICE)}`).then(r => r.json())
+  console.log('--- 7. hit xRPC com.dina.peerlens.networkFeed (alice) ---')
+  const feed = await fetch(`${WEB_URL}/xrpc/com.dina.peerlens.networkFeed?viewerDid=${encodeURIComponent(ALICE)}`).then(r => r.json())
   console.log(' feed:', JSON.stringify(feed, null, 2))
 
-  console.log('--- 8. hit xRPC com.dina.trust.getAttestations (subject = shop) ---')
-  const att = await fetch(`${WEB_URL}/xrpc/com.dina.trust.getAttestations?subject=${encodeURIComponent(SHOP)}`).then(r => r.json())
+  console.log('--- 8. hit xRPC com.dina.peerlens.getAttestations (subject = shop) ---')
+  const att = await fetch(`${WEB_URL}/xrpc/com.dina.peerlens.getAttestations?subject=${encodeURIComponent(SHOP)}`).then(r => r.json())
   console.log(' attestations response:', JSON.stringify(att, null, 2))
 
   console.log('--- DONE ---')

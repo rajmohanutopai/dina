@@ -64,7 +64,7 @@ function validVouch(overrides: Record<string, unknown> = {}) {
 /** Minimal valid reaction record */
 function validReaction(overrides: Record<string, unknown> = {}) {
   return {
-    targetUri: 'at://did:plc:abc/com.dina.trust.attestation/tid1',
+    targetUri: 'at://did:plc:abc/com.dina.peerlens.attestation/tid1',
     reaction: 'helpful',
     createdAt: now,
     ...overrides,
@@ -74,7 +74,7 @@ function validReaction(overrides: Record<string, unknown> = {}) {
 /** Minimal valid report record */
 function validReport(overrides: Record<string, unknown> = {}) {
   return {
-    targetUri: 'at://did:plc:abc/com.dina.trust.attestation/tid1',
+    targetUri: 'at://did:plc:abc/com.dina.peerlens.attestation/tid1',
     reportType: 'spam',
     createdAt: now,
     ...overrides,
@@ -84,74 +84,74 @@ function validReport(overrides: Record<string, unknown> = {}) {
 /** Map of minimal valid records for every collection */
 function minimalRecordForCollection(collection: string): Record<string, unknown> {
   const map: Record<string, Record<string, unknown>> = {
-    'com.dina.trust.attestation': validAttestation(),
-    'com.dina.trust.vouch': validVouch(),
-    'com.dina.trust.endorsement': {
+    'com.dina.peerlens.attestation': validAttestation(),
+    'com.dina.peerlens.vouch': validVouch(),
+    'com.dina.peerlens.endorsement': {
       subject: 'did:plc:abc',
       skill: 'typescript',
       endorsementType: 'worked-together',
       createdAt: now,
     },
-    'com.dina.trust.flag': {
+    'com.dina.peerlens.flag': {
       subject: { type: 'did', did: 'did:plc:abc' },
       flagType: 'suspicious-activity',
       severity: 'warning',
       createdAt: now,
     },
-    'com.dina.trust.reply': {
-      rootUri: 'at://did:plc:abc/com.dina.trust.attestation/tid1',
-      parentUri: 'at://did:plc:abc/com.dina.trust.attestation/tid1',
+    'com.dina.peerlens.reply': {
+      rootUri: 'at://did:plc:abc/com.dina.peerlens.attestation/tid1',
+      parentUri: 'at://did:plc:abc/com.dina.peerlens.attestation/tid1',
       intent: 'agree',
       text: 'I agree with this assessment.',
       createdAt: now,
     },
-    'com.dina.trust.reaction': validReaction(),
-    'com.dina.trust.reportRecord': validReport(),
-    'com.dina.trust.revocation': {
-      targetUri: 'at://did:plc:abc/com.dina.trust.attestation/tid1',
+    'com.dina.peerlens.reaction': validReaction(),
+    'com.dina.peerlens.reportRecord': validReport(),
+    'com.dina.peerlens.revocation': {
+      targetUri: 'at://did:plc:abc/com.dina.peerlens.attestation/tid1',
       reason: 'Changed my mind',
       createdAt: now,
     },
-    'com.dina.trust.delegation': {
+    'com.dina.peerlens.delegation': {
       subject: 'did:plc:delegate',
-      scope: 'com.dina.trust.attestation',
+      scope: 'com.dina.peerlens.attestation',
       permissions: ['create'],
       createdAt: now,
     },
-    'com.dina.trust.collection': {
+    'com.dina.peerlens.collection': {
       name: 'My favorites',
-      items: ['at://did:plc:abc/com.dina.trust.attestation/tid1'],
+      items: ['at://did:plc:abc/com.dina.peerlens.attestation/tid1'],
       isDiscoverable: true,
       createdAt: now,
     },
-    'com.dina.trust.media': {
-      parentUri: 'at://did:plc:abc/com.dina.trust.attestation/tid1',
+    'com.dina.peerlens.media': {
+      parentUri: 'at://did:plc:abc/com.dina.peerlens.attestation/tid1',
       mediaType: 'image/png',
       url: 'https://example.com/img.png',
       createdAt: now,
     },
-    'com.dina.trust.subject': {
+    'com.dina.peerlens.subject': {
       name: 'ACME Corp',
       subjectType: 'organization',
       createdAt: now,
     },
-    'com.dina.trust.amendment': {
-      targetUri: 'at://did:plc:abc/com.dina.trust.attestation/tid1',
+    'com.dina.peerlens.amendment': {
+      targetUri: 'at://did:plc:abc/com.dina.peerlens.attestation/tid1',
       amendmentType: 'correction',
       createdAt: now,
     },
-    'com.dina.trust.verification': {
-      targetUri: 'at://did:plc:abc/com.dina.trust.attestation/tid1',
+    'com.dina.peerlens.verification': {
+      targetUri: 'at://did:plc:abc/com.dina.peerlens.attestation/tid1',
       verificationType: 'manual',
       result: 'confirmed',
       createdAt: now,
     },
-    'com.dina.trust.reviewRequest': {
+    'com.dina.peerlens.reviewRequest': {
       subject: { type: 'product', name: 'Widget X' },
       requestType: 'review',
       createdAt: now,
     },
-    'com.dina.trust.comparison': {
+    'com.dina.peerlens.comparison': {
       subjects: [
         { type: 'product', name: 'Widget A' },
         { type: 'product', name: 'Widget B' },
@@ -159,16 +159,16 @@ function minimalRecordForCollection(collection: string): Record<string, unknown>
       category: 'quality',
       createdAt: now,
     },
-    'com.dina.trust.subjectClaim': {
+    'com.dina.peerlens.subjectClaim': {
       sourceSubjectId: 'subject-1',
       targetSubjectId: 'subject-2',
       claimType: 'same-entity',
       createdAt: now,
     },
-    'com.dina.trust.trustPolicy': {
+    'com.dina.peerlens.trustPolicy': {
       createdAt: now,
     },
-    'com.dina.trust.notificationPrefs': {
+    'com.dina.peerlens.notificationPrefs': {
       enableMentions: true,
       enableReactions: true,
       enableReplies: false,
@@ -204,7 +204,7 @@ describe('§2.1 Record Validator', () => {
   it('UT-RV-001: valid attestation record', () => {
     // Input: All required fields, valid sentiment enum
     // Expected: success = true, data populated
-    const result = validateRecord('com.dina.trust.attestation', validAttestation())
+    const result = validateRecord('com.dina.peerlens.attestation', validAttestation())
     expect(result.success).toBe(true)
     expect(result.data).toBeDefined()
     expect((result.data as Record<string, unknown>).sentiment).toBe('positive')
@@ -215,7 +215,7 @@ describe('§2.1 Record Validator', () => {
     // Input: Attestation without subject
     // Expected: success = false, errors point to "subject"
     const { subject: _, ...noSubject } = validAttestation()
-    const result = validateRecord('com.dina.trust.attestation', noSubject)
+    const result = validateRecord('com.dina.peerlens.attestation', noSubject)
     expect(result.success).toBe(false)
     expect(result.errors).toBeDefined()
   })
@@ -225,7 +225,7 @@ describe('§2.1 Record Validator', () => {
     // Input: Attestation without createdAt
     // Expected: success = false
     const { createdAt: _, ...noCreatedAt } = validAttestation()
-    const result = validateRecord('com.dina.trust.attestation', noCreatedAt)
+    const result = validateRecord('com.dina.peerlens.attestation', noCreatedAt)
     expect(result.success).toBe(false)
     expect(result.errors).toBeDefined()
   })
@@ -235,7 +235,7 @@ describe('§2.1 Record Validator', () => {
     // Input: sentiment = "excellent" (not in enum)
     // Expected: success = false, errors mention enum values
     const result = validateRecord(
-      'com.dina.trust.attestation',
+      'com.dina.peerlens.attestation',
       validAttestation({ sentiment: 'excellent' }),
     )
     expect(result.success).toBe(false)
@@ -245,7 +245,7 @@ describe('§2.1 Record Validator', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0082", "section": "01", "sectionName": "General", "title": "UT-RV-005: text exceeds max length"}
   it('UT-RV-005: text exceeds max length', () => {
     const result = validateRecord(
-      'com.dina.trust.attestation',
+      'com.dina.peerlens.attestation',
       validAttestation({ text: 'x'.repeat(3000) }),
     )
     expect(result.success).toBe(false)
@@ -255,7 +255,7 @@ describe('§2.1 Record Validator', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0083", "section": "01", "sectionName": "General", "title": "UT-RV-006: tags exceeds max count"}
   it('UT-RV-006: tags exceeds max count', () => {
     const result = validateRecord(
-      'com.dina.trust.attestation',
+      'com.dina.peerlens.attestation',
       validAttestation({ tags: Array.from({ length: 15 }, (_, i) => `tag${i}`) }),
     )
     expect(result.success).toBe(false)
@@ -265,7 +265,7 @@ describe('§2.1 Record Validator', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0084", "section": "01", "sectionName": "General", "title": "UT-RV-007: tag exceeds max length"}
   it('UT-RV-007: tag exceeds max length', () => {
     const result = validateRecord(
-      'com.dina.trust.attestation',
+      'com.dina.peerlens.attestation',
       validAttestation({ tags: ['x'.repeat(60)] }),
     )
     expect(result.success).toBe(false)
@@ -276,7 +276,7 @@ describe('§2.1 Record Validator', () => {
   it('UT-RV-008: dimensions exceeds max count', () => {
     const dims = Array.from({ length: 15 }, (_, i) => ({ dimension: `dim${i}`, value: 'met' }))
     const result = validateRecord(
-      'com.dina.trust.attestation',
+      'com.dina.peerlens.attestation',
       validAttestation({ dimensions: dims }),
     )
     expect(result.success).toBe(false)
@@ -287,7 +287,7 @@ describe('§2.1 Record Validator', () => {
   it('UT-RV-009: evidence exceeds max count', () => {
     const items = Array.from({ length: 15 }, (_, i) => ({ type: `type${i}` }))
     const result = validateRecord(
-      'com.dina.trust.attestation',
+      'com.dina.peerlens.attestation',
       validAttestation({ evidence: items }),
     )
     expect(result.success).toBe(false)
@@ -298,7 +298,7 @@ describe('§2.1 Record Validator', () => {
   it('UT-RV-010: valid vouch record', () => {
     // Input: All required fields
     // Expected: success = true
-    const result = validateRecord('com.dina.trust.vouch', validVouch())
+    const result = validateRecord('com.dina.peerlens.vouch', validVouch())
     expect(result.success).toBe(true)
     expect(result.data).toBeDefined()
   })
@@ -308,7 +308,7 @@ describe('§2.1 Record Validator', () => {
     // Input: confidence = "extremely-high"
     // Expected: success = false
     const result = validateRecord(
-      'com.dina.trust.vouch',
+      'com.dina.peerlens.vouch',
       validVouch({ confidence: 'extremely-high' }),
     )
     expect(result.success).toBe(false)
@@ -319,7 +319,7 @@ describe('§2.1 Record Validator', () => {
   it('UT-RV-012: valid reaction record', () => {
     // Input: Valid targetUri and reaction enum value
     // Expected: success = true
-    const result = validateRecord('com.dina.trust.reaction', validReaction())
+    const result = validateRecord('com.dina.peerlens.reaction', validReaction())
     expect(result.success).toBe(true)
     expect(result.data).toBeDefined()
   })
@@ -329,7 +329,7 @@ describe('§2.1 Record Validator', () => {
     // Input: reaction = "love" (not in enum)
     // Expected: success = false
     const result = validateRecord(
-      'com.dina.trust.reaction',
+      'com.dina.peerlens.reaction',
       validReaction({ reaction: 'love' }),
     )
     expect(result.success).toBe(false)
@@ -341,7 +341,7 @@ describe('§2.1 Record Validator', () => {
     // Input: Valid targetUri, reportType, optional text
     // Expected: success = true
     const result = validateRecord(
-      'com.dina.trust.reportRecord',
+      'com.dina.peerlens.reportRecord',
       validReport({ text: 'This is spam' }),
     )
     expect(result.success).toBe(true)
@@ -353,7 +353,7 @@ describe('§2.1 Record Validator', () => {
     // Input: reportType = "illegal" (not in enum)
     // Expected: success = false
     const result = validateRecord(
-      'com.dina.trust.reportRecord',
+      'com.dina.peerlens.reportRecord',
       validReport({ reportType: 'illegal' }),
     )
     expect(result.success).toBe(false)
@@ -363,7 +363,7 @@ describe('§2.1 Record Validator', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0093", "section": "01", "sectionName": "General", "title": "UT-RV-016: report text exceeds max"}
   it('UT-RV-016: report text exceeds max', () => {
     const result = validateRecord(
-      'com.dina.trust.reportRecord',
+      'com.dina.peerlens.reportRecord',
       validReport({ text: 'x'.repeat(1500) }),
     )
     expect(result.success).toBe(false)
@@ -374,7 +374,7 @@ describe('§2.1 Record Validator', () => {
   it('UT-RV-017: report evidence max count', () => {
     const items = Array.from({ length: 6 }, (_, i) => ({ type: `type${i}` }))
     const result = validateRecord(
-      'com.dina.trust.reportRecord',
+      'com.dina.peerlens.reportRecord',
       validReport({ evidence: items }),
     )
     expect(result.success).toBe(false)
@@ -383,9 +383,9 @@ describe('§2.1 Record Validator', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0095", "section": "01", "sectionName": "General", "title": "UT-RV-018: unknown collection -> error"}
   it('UT-RV-018: unknown collection -> error', () => {
-    // Input: collection = "com.dina.trust.unknown"
+    // Input: collection = "com.dina.peerlens.unknown"
     // Expected: success = false, error says "Unknown collection"
-    const result = validateRecord('com.dina.trust.unknown', { foo: 'bar' })
+    const result = validateRecord('com.dina.peerlens.unknown', { foo: 'bar' })
     expect(result.success).toBe(false)
     // No schema found means no errors object — just success = false
     expect(result.data).toBeUndefined()
@@ -410,13 +410,13 @@ describe('§2.1 Record Validator', () => {
       isAgentGenerated: false,
       coSignature: { did: 'did:plc:cosigner', sig: 'abcdef1234', sigCreatedAt: now },
       mentions: [{ did: 'did:plc:mentioned', role: 'manufacturer' }],
-      relatedAttestations: [{ uri: 'at://did:plc:other/com.dina.trust.attestation/tid2', relation: 'agrees' }],
+      relatedAttestations: [{ uri: 'at://did:plc:other/com.dina.peerlens.attestation/tid2', relation: 'agrees' }],
       interactionContext: { purchaseDate: '2024-01-15' },
       contentContext: { platform: 'youtube' },
       productContext: { brand: 'ACME' },
       bilateralReview: { bothParties: true },
     })
-    const result = validateRecord('com.dina.trust.attestation', full)
+    const result = validateRecord('com.dina.peerlens.attestation', full)
     expect(result.success).toBe(true)
     expect(result.data).toBeDefined()
     const data = result.data as Record<string, unknown>
@@ -432,7 +432,7 @@ describe('§2.1 Record Validator', () => {
     const types = ['did', 'content', 'product', 'dataset', 'organization', 'claim', 'place'] as const
     for (const type of types) {
       const result = validateRecord(
-        'com.dina.trust.attestation',
+        'com.dina.peerlens.attestation',
         validAttestation({ subject: { type, did: 'did:plc:test' } }),
       )
       expect(result.success).toBe(true)
@@ -444,7 +444,7 @@ describe('§2.1 Record Validator', () => {
     // Input: type = made-up value (not in enum). 'place' is now accepted
     // (TN-DB-011, 2026-04-29); use a clearly invalid sentinel here.
     const result = validateRecord(
-      'com.dina.trust.attestation',
+      'com.dina.peerlens.attestation',
       validAttestation({ subject: { type: 'not-a-real-type', did: 'did:plc:test' } }),
     )
     expect(result.success).toBe(false)
@@ -454,7 +454,7 @@ describe('§2.1 Record Validator', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0099", "section": "01", "sectionName": "General", "title": "UT-RV-022: subject name max length"}
   it('UT-RV-022: subject name max length', () => {
     const result = validateRecord(
-      'com.dina.trust.attestation',
+      'com.dina.peerlens.attestation',
       validAttestation({ subject: { type: 'product', name: 'x'.repeat(250) } }),
     )
     expect(result.success).toBe(false)
@@ -468,7 +468,7 @@ describe('§2.1 Record Validator', () => {
     const values = ['exceeded', 'met', 'below', 'failed'] as const
     for (const value of values) {
       const result = validateRecord(
-        'com.dina.trust.attestation',
+        'com.dina.peerlens.attestation',
         validAttestation({
           dimensions: [{ dimension: 'quality', value }],
         }),
@@ -482,7 +482,7 @@ describe('§2.1 Record Validator', () => {
     // Input: value = "good"
     // Expected: success = false
     const result = validateRecord(
-      'com.dina.trust.attestation',
+      'com.dina.peerlens.attestation',
       validAttestation({
         dimensions: [{ dimension: 'quality', value: 'good' }],
       }),
@@ -496,7 +496,7 @@ describe('§2.1 Record Validator', () => {
     // Input: type + optional uri/hash/description
     // Expected: success = true
     const result = validateRecord(
-      'com.dina.trust.attestation',
+      'com.dina.peerlens.attestation',
       validAttestation({
         evidence: [
           { type: 'receipt', uri: 'https://example.com/receipt', hash: 'sha256:abc', description: 'Proof' },
@@ -510,7 +510,7 @@ describe('§2.1 Record Validator', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0103", "section": "01", "sectionName": "General", "title": "UT-RV-026: evidence description max length"}
   it('UT-RV-026: evidence description max length', () => {
     const result = validateRecord(
-      'com.dina.trust.attestation',
+      'com.dina.peerlens.attestation',
       validAttestation({ evidence: [{ type: 'receipt', description: 'x'.repeat(400) }] }),
     )
     expect(result.success).toBe(false)
@@ -522,7 +522,7 @@ describe('§2.1 Record Validator', () => {
     // Input: did (required) + optional role
     // Expected: success = true
     const result = validateRecord(
-      'com.dina.trust.attestation',
+      'com.dina.peerlens.attestation',
       validAttestation({
         mentions: [
           { did: 'did:plc:mentioned1', role: 'manufacturer' },
@@ -537,7 +537,7 @@ describe('§2.1 Record Validator', () => {
   it('UT-RV-028: mentions exceeds max count', () => {
     const mentions = Array.from({ length: 15 }, (_, i) => ({ did: `did:plc:mention${i}` }))
     const result = validateRecord(
-      'com.dina.trust.attestation',
+      'com.dina.peerlens.attestation',
       validAttestation({ mentions }),
     )
     expect(result.success).toBe(false)
@@ -546,9 +546,9 @@ describe('§2.1 Record Validator', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0106", "section": "01", "sectionName": "General", "title": "UT-RV-029: relatedAttestations max count"}
   it('UT-RV-029: relatedAttestations max count', () => {
-    const related = Array.from({ length: 6 }, (_, i) => ({ uri: `at://did:plc:x/com.dina.trust.attestation/tid${i}`, relation: 'agrees' }))
+    const related = Array.from({ length: 6 }, (_, i) => ({ uri: `at://did:plc:x/com.dina.peerlens.attestation/tid${i}`, relation: 'agrees' }))
     const result = validateRecord(
-      'com.dina.trust.attestation',
+      'com.dina.peerlens.attestation',
       validAttestation({ relatedAttestations: related }),
     )
     expect(result.success).toBe(false)
@@ -560,7 +560,7 @@ describe('§2.1 Record Validator', () => {
     // Input: did + sig + sigCreatedAt all present
     // Expected: success = true
     const result = validateRecord(
-      'com.dina.trust.attestation',
+      'com.dina.peerlens.attestation',
       validAttestation({
         coSignature: { did: 'did:plc:cosigner', sig: 'deadbeef', sigCreatedAt: now },
       }),
@@ -577,7 +577,7 @@ describe('§2.1 Record Validator', () => {
     // Input: Cosignature without sig
     // Expected: success = false
     const result = validateRecord(
-      'com.dina.trust.attestation',
+      'com.dina.peerlens.attestation',
       validAttestation({
         coSignature: { did: 'did:plc:cosigner', sigCreatedAt: now },
       }),
@@ -593,7 +593,7 @@ describe('§2.1 Record Validator', () => {
     const values = ['certain', 'high', 'moderate', 'speculative'] as const
     for (const confidence of values) {
       const result = validateRecord(
-        'com.dina.trust.attestation',
+        'com.dina.peerlens.attestation',
         validAttestation({ confidence }),
       )
       expect(result.success).toBe(true)
@@ -605,7 +605,7 @@ describe('§2.1 Record Validator', () => {
     // Input: confidence = "low"
     // Expected: success = false
     const result = validateRecord(
-      'com.dina.trust.attestation',
+      'com.dina.peerlens.attestation',
       validAttestation({ confidence: 'low' }),
     )
     expect(result.success).toBe(false)
@@ -629,7 +629,7 @@ describe('§2.1 Record Validator', () => {
     // Input: Record with extra fields not in schema
     // Expected: success = true (zod strips extras by default)
     const result = validateRecord(
-      'com.dina.trust.attestation',
+      'com.dina.peerlens.attestation',
       validAttestation({ extraField: 'should be ignored', anotherExtra: 42 }),
     )
     expect(result.success).toBe(true)
@@ -641,9 +641,9 @@ describe('§2.1 Record Validator', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0113", "section": "01", "sectionName": "General", "title": "UT-RV-036: relatedRecords max on report"}
   it('UT-RV-036: relatedRecords max on report', () => {
-    const records = Array.from({ length: 11 }, (_, i) => `at://did:plc:x/com.dina.trust.attestation/tid${i}`)
+    const records = Array.from({ length: 11 }, (_, i) => `at://did:plc:x/com.dina.peerlens.attestation/tid${i}`)
     const result = validateRecord(
-      'com.dina.trust.reportRecord',
+      'com.dina.peerlens.reportRecord',
       validReport({ relatedRecords: records }),
     )
     expect(result.success).toBe(false)
@@ -708,7 +708,7 @@ describe('§2.1 Record Validator', () => {
     // Plan §3.5 — pseudonymous-namespace fragment passes validation. Empty/absent is also valid
     // (root identity case) — covered by UT-RV-001 which already passes without `namespace`.
     const result = validateRecord(
-      'com.dina.trust.attestation',
+      'com.dina.peerlens.attestation',
       validAttestation({ namespace: '#namespace_2' }),
     )
     expect(result.success).toBe(true)
@@ -720,7 +720,7 @@ describe('§2.1 Record Validator', () => {
     // Length cap (255 chars) protects against pathological / malicious fragments. Strict format
     // checking is deferred to TN-ING-003 (signature gate that resolves the DID document).
     const result = validateRecord(
-      'com.dina.trust.attestation',
+      'com.dina.peerlens.attestation',
       validAttestation({ namespace: 'x'.repeat(300) }),
     )
     expect(result.success).toBe(false)
@@ -738,7 +738,7 @@ describe('§2.1 Record Validator', () => {
       createdAt: now,
       namespace: '#namespace_3',
     }
-    const result = validateRecord('com.dina.trust.endorsement', validEndorsement)
+    const result = validateRecord('com.dina.peerlens.endorsement', validEndorsement)
     expect(result.success).toBe(true)
     expect((result.data as Record<string, unknown>).namespace).toBe('#namespace_3')
   })
@@ -959,20 +959,20 @@ describe('§2.2 Rate Limiter', () => {
     // Pin them as a regression guard: if a future PR rebalances the
     // caps, this test surfaces the change at the unit level so the
     // doc + impl stay in lockstep.
-    expect(getCollectionDailyCap('com.dina.trust.attestation')).toBe(60)
-    expect(getCollectionDailyCap('com.dina.trust.endorsement')).toBe(30)
-    expect(getCollectionDailyCap('com.dina.trust.flag')).toBe(10)
+    expect(getCollectionDailyCap('com.dina.peerlens.attestation')).toBe(60)
+    expect(getCollectionDailyCap('com.dina.peerlens.endorsement')).toBe(30)
+    expect(getCollectionDailyCap('com.dina.peerlens.flag')).toBe(10)
   })
 
   it('UT-RL-012: collections without a documented cap return null + are unrestricted (TN-ING-002)', () => {
     // Plan §3.5 only specifies caps for attestation/endorsement/flag.
     // Other trust collections (vouches, replies, reactions, …) use only
     // the hourly per-DID gate — the per-collection check returns false.
-    expect(getCollectionDailyCap('com.dina.trust.vouch')).toBeNull()
+    expect(getCollectionDailyCap('com.dina.peerlens.vouch')).toBeNull()
     const did = 'did:plc:rl012'
     // 100 vouches don't trigger per-collection rate limiting.
     for (let i = 0; i < 100; i++) {
-      expect(isCollectionRateLimited(did, 'com.dina.trust.vouch')).toBe(false)
+      expect(isCollectionRateLimited(did, 'com.dina.peerlens.vouch')).toBe(false)
     }
   })
 
@@ -980,25 +980,25 @@ describe('§2.2 Rate Limiter', () => {
     // Cap is 60/day. Records 1..60 pass; 61 hits.
     const did = 'did:plc:rl013'
     for (let i = 0; i < 60; i++) {
-      expect(isCollectionRateLimited(did, 'com.dina.trust.attestation')).toBe(false)
+      expect(isCollectionRateLimited(did, 'com.dina.peerlens.attestation')).toBe(false)
     }
-    expect(isCollectionRateLimited(did, 'com.dina.trust.attestation')).toBe(true)
+    expect(isCollectionRateLimited(did, 'com.dina.peerlens.attestation')).toBe(true)
   })
 
   it('UT-RL-014: 30th endorsement passes; 31st rejected (TN-ING-002)', () => {
     const did = 'did:plc:rl014'
     for (let i = 0; i < 30; i++) {
-      expect(isCollectionRateLimited(did, 'com.dina.trust.endorsement')).toBe(false)
+      expect(isCollectionRateLimited(did, 'com.dina.peerlens.endorsement')).toBe(false)
     }
-    expect(isCollectionRateLimited(did, 'com.dina.trust.endorsement')).toBe(true)
+    expect(isCollectionRateLimited(did, 'com.dina.peerlens.endorsement')).toBe(true)
   })
 
   it('UT-RL-015: 10th flag passes; 11th rejected (TN-ING-002)', () => {
     const did = 'did:plc:rl015'
     for (let i = 0; i < 10; i++) {
-      expect(isCollectionRateLimited(did, 'com.dina.trust.flag')).toBe(false)
+      expect(isCollectionRateLimited(did, 'com.dina.peerlens.flag')).toBe(false)
     }
-    expect(isCollectionRateLimited(did, 'com.dina.trust.flag')).toBe(true)
+    expect(isCollectionRateLimited(did, 'com.dina.peerlens.flag')).toBe(true)
   })
 
   it('UT-RL-016: per-collection caps are independent — saturating one does not affect another (TN-ING-002)', () => {
@@ -1007,22 +1007,22 @@ describe('§2.2 Rate Limiter', () => {
     // (DID, collection); each tuple is its own bucket.
     const did = 'did:plc:rl016'
     for (let i = 0; i < 60; i++) {
-      isCollectionRateLimited(did, 'com.dina.trust.attestation')
+      isCollectionRateLimited(did, 'com.dina.peerlens.attestation')
     }
-    expect(isCollectionRateLimited(did, 'com.dina.trust.attestation')).toBe(true)
+    expect(isCollectionRateLimited(did, 'com.dina.peerlens.attestation')).toBe(true)
     // Endorsement bucket untouched.
-    expect(isCollectionRateLimited(did, 'com.dina.trust.endorsement')).toBe(false)
-    expect(isCollectionRateLimited(did, 'com.dina.trust.flag')).toBe(false)
+    expect(isCollectionRateLimited(did, 'com.dina.peerlens.endorsement')).toBe(false)
+    expect(isCollectionRateLimited(did, 'com.dina.peerlens.flag')).toBe(false)
   })
 
   it('UT-RL-017: different DIDs are independent (TN-ING-002)', () => {
     const didA = 'did:plc:rl017a'
     const didB = 'did:plc:rl017b'
     for (let i = 0; i < 60; i++) {
-      isCollectionRateLimited(didA, 'com.dina.trust.attestation')
+      isCollectionRateLimited(didA, 'com.dina.peerlens.attestation')
     }
-    expect(isCollectionRateLimited(didA, 'com.dina.trust.attestation')).toBe(true)
-    expect(isCollectionRateLimited(didB, 'com.dina.trust.attestation')).toBe(false)
+    expect(isCollectionRateLimited(didA, 'com.dina.peerlens.attestation')).toBe(true)
+    expect(isCollectionRateLimited(didB, 'com.dina.peerlens.attestation')).toBe(false)
   })
 
   it('UT-RL-018: getCollectionWriteCount tracks the bucket, not the rolled-up DID counter (TN-ING-002)', () => {
@@ -1031,11 +1031,11 @@ describe('§2.2 Rate Limiter', () => {
     // bucket only, not endorsements/flags.
     const did = 'did:plc:rl018'
     for (let i = 0; i < 5; i++) {
-      isCollectionRateLimited(did, 'com.dina.trust.attestation')
+      isCollectionRateLimited(did, 'com.dina.peerlens.attestation')
     }
-    expect(getCollectionWriteCount(did, 'com.dina.trust.attestation')).toBe(5)
-    expect(getCollectionWriteCount(did, 'com.dina.trust.endorsement')).toBe(0)
-    expect(getCollectionWriteCount(did, 'com.dina.trust.flag')).toBe(0)
+    expect(getCollectionWriteCount(did, 'com.dina.peerlens.attestation')).toBe(5)
+    expect(getCollectionWriteCount(did, 'com.dina.peerlens.endorsement')).toBe(0)
+    expect(getCollectionWriteCount(did, 'com.dina.peerlens.flag')).toBe(0)
   })
 
   it('UT-RL-019: 24h sliding window — old timestamps prune, freeing the cap (TN-ING-002)', () => {
@@ -1047,13 +1047,13 @@ describe('§2.2 Rate Limiter', () => {
 
     // Saturate the attestation cap at t0.
     for (let i = 0; i < 60; i++) {
-      isCollectionRateLimited(did, 'com.dina.trust.attestation')
+      isCollectionRateLimited(did, 'com.dina.peerlens.attestation')
     }
-    expect(isCollectionRateLimited(did, 'com.dina.trust.attestation')).toBe(true)
+    expect(isCollectionRateLimited(did, 'com.dina.peerlens.attestation')).toBe(true)
 
     // Advance past 24h — old timestamps prune, capacity restored.
     nowSpy.mockReturnValue(t0 + 24 * 60 * 60 * 1000 + 1)
-    expect(isCollectionRateLimited(did, 'com.dina.trust.attestation')).toBe(false)
+    expect(isCollectionRateLimited(did, 'com.dina.peerlens.attestation')).toBe(false)
 
     nowSpy.mockRestore()
   })
@@ -1699,17 +1699,17 @@ describe('§2.3 Bounded Queue', () => {
 describe('§2.4 Handler Router', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0138", "section": "01", "sectionName": "General", "title": "UT-HR-001: routeHandler \u2014 attestation"}
   it('UT-HR-001: routeHandler — attestation', () => {
-    // Input: collection = "com.dina.trust.attestation"
+    // Input: collection = "com.dina.peerlens.attestation"
     // Expected: Returns a handler (not null)
-    const handler = routeHandler('com.dina.trust.attestation')
+    const handler = routeHandler('com.dina.peerlens.attestation')
     expect(handler).not.toBeNull()
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0139", "section": "01", "sectionName": "General", "title": "UT-HR-002: routeHandler \u2014 vouch"}
   it('UT-HR-002: routeHandler — vouch', () => {
-    // Input: collection = "com.dina.trust.vouch"
+    // Input: collection = "com.dina.peerlens.vouch"
     // Expected: Returns a handler (not null)
-    const handler = routeHandler('com.dina.trust.vouch')
+    const handler = routeHandler('com.dina.peerlens.vouch')
     expect(handler).not.toBeNull()
   })
 
@@ -1728,9 +1728,9 @@ describe('§2.4 Handler Router', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0141", "section": "01", "sectionName": "General", "title": "UT-HR-004: routeHandler \u2014 unknown collection"}
   it('UT-HR-004: routeHandler — unknown collection', () => {
-    // Input: collection = "com.dina.trust.foo"
+    // Input: collection = "com.dina.peerlens.foo"
     // Expected: Returns null
-    const handler = routeHandler('com.dina.trust.foo')
+    const handler = routeHandler('com.dina.peerlens.foo')
     expect(handler).toBeNull()
   })
 
@@ -1772,17 +1772,17 @@ describe('§2.4 Handler Router', () => {
 describe('§2.5 Deletion Handler', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0145", "section": "01", "sectionName": "General", "title": "UT-DH-001: getSourceTable \u2014 attestation -> attestations table"}
   it('UT-DH-001: getSourceTable — attestation -> attestations table', () => {
-    // Input: "com.dina.trust.attestation"
+    // Input: "com.dina.peerlens.attestation"
     // Expected: Returns attestations Drizzle table
-    const table = getSourceTable('com.dina.trust.attestation')
+    const table = getSourceTable('com.dina.peerlens.attestation')
     expect(table).toBe(schema.attestations)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0146", "section": "01", "sectionName": "General", "title": "UT-DH-002: getSourceTable \u2014 vouch -> vouches table"}
   it('UT-DH-002: getSourceTable — vouch -> vouches table', () => {
-    // Input: "com.dina.trust.vouch"
+    // Input: "com.dina.peerlens.vouch"
     // Expected: Returns vouches Drizzle table
-    const table = getSourceTable('com.dina.trust.vouch')
+    const table = getSourceTable('com.dina.peerlens.vouch')
     expect(table).toBe(schema.vouches)
   })
 
@@ -1791,24 +1791,24 @@ describe('§2.5 Deletion Handler', () => {
     // Input: Iterate all entries in COLLECTION_TABLE_MAP
     // Expected: All 18 collections (excluding 'subject') map to correct tables
     const expectedMappings: Record<string, any> = {
-      'com.dina.trust.attestation': schema.attestations,
-      'com.dina.trust.vouch': schema.vouches,
-      'com.dina.trust.endorsement': schema.endorsements,
-      'com.dina.trust.flag': schema.flags,
-      'com.dina.trust.reply': schema.replies,
-      'com.dina.trust.reaction': schema.reactions,
-      'com.dina.trust.reportRecord': schema.reportRecords,
-      'com.dina.trust.revocation': schema.revocations,
-      'com.dina.trust.delegation': schema.delegations,
-      'com.dina.trust.collection': schema.collections,
-      'com.dina.trust.media': schema.media,
-      'com.dina.trust.amendment': schema.amendments,
-      'com.dina.trust.verification': schema.verifications,
-      'com.dina.trust.reviewRequest': schema.reviewRequests,
-      'com.dina.trust.comparison': schema.comparisons,
-      'com.dina.trust.subjectClaim': schema.subjectClaims,
-      'com.dina.trust.trustPolicy': schema.trustPolicies,
-      'com.dina.trust.notificationPrefs': schema.notificationPrefs,
+      'com.dina.peerlens.attestation': schema.attestations,
+      'com.dina.peerlens.vouch': schema.vouches,
+      'com.dina.peerlens.endorsement': schema.endorsements,
+      'com.dina.peerlens.flag': schema.flags,
+      'com.dina.peerlens.reply': schema.replies,
+      'com.dina.peerlens.reaction': schema.reactions,
+      'com.dina.peerlens.reportRecord': schema.reportRecords,
+      'com.dina.peerlens.revocation': schema.revocations,
+      'com.dina.peerlens.delegation': schema.delegations,
+      'com.dina.peerlens.collection': schema.collections,
+      'com.dina.peerlens.media': schema.media,
+      'com.dina.peerlens.amendment': schema.amendments,
+      'com.dina.peerlens.verification': schema.verifications,
+      'com.dina.peerlens.reviewRequest': schema.reviewRequests,
+      'com.dina.peerlens.comparison': schema.comparisons,
+      'com.dina.peerlens.subjectClaim': schema.subjectClaims,
+      'com.dina.peerlens.trustPolicy': schema.peerlensPolicies,
+      'com.dina.peerlens.notificationPrefs': schema.notificationPrefs,
     }
 
     for (const [collection, expectedTable] of Object.entries(expectedMappings)) {
@@ -1819,17 +1819,17 @@ describe('§2.5 Deletion Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0148", "section": "01", "sectionName": "General", "title": "UT-DH-004: getSourceTable \u2014 unknown collection -> null"}
   it('UT-DH-004: getSourceTable — unknown collection -> null', () => {
-    // Input: "com.dina.trust.unknown"
+    // Input: "com.dina.peerlens.unknown"
     // Expected: Returns null
-    const table = getSourceTable('com.dina.trust.unknown')
+    const table = getSourceTable('com.dina.peerlens.unknown')
     expect(table).toBeNull()
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0149", "section": "01", "sectionName": "General", "title": "UT-DH-005: getSourceTable \u2014 media -> media table"}
   it('UT-DH-005: getSourceTable — media -> media table', () => {
-    // Input: "com.dina.trust.media"
+    // Input: "com.dina.peerlens.media"
     // Expected: Returns the media Drizzle table (media has a dedicated table)
-    const table = getSourceTable('com.dina.trust.media')
+    const table = getSourceTable('com.dina.peerlens.media')
     expect(table).toBe(schema.media)
   })
 
@@ -1849,7 +1849,7 @@ describe('§2.5 Deletion Handler', () => {
     }
 
     // The 'subject' collection is NOT in the map (handled separately)
-    expect(COLLECTION_TABLE_MAP['com.dina.trust.subject']).toBeUndefined()
+    expect(COLLECTION_TABLE_MAP['com.dina.peerlens.subject']).toBeUndefined()
   })
 })
 
@@ -1863,7 +1863,7 @@ describe('§2.5 Deletion Handler', () => {
 
 // Capture calls to addTrustEdge
 const addTrustEdgeCalls: Array<{ weight: number; edgeType: string; fromDid: string; toDid: string }> = []
-vi.mock('@/ingester/trust-edge-sync.js', () => ({
+vi.mock('@/ingester/peerlens-edge-sync.js', () => ({
   addTrustEdge: vi.fn(async (_ctx: any, params: any) => {
     addTrustEdgeCalls.push({
       weight: params.weight,
@@ -1929,9 +1929,9 @@ describe('§2.6 Trust Edge Sync', () => {
     // Expected: weight = 1.0
     const ctx = mockHandlerCtx()
     await vouchHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:author/com.dina.trust.vouch/tid1',
+      uri: 'at://did:plc:author/com.dina.peerlens.vouch/tid1',
       did: 'did:plc:author',
-      collection: 'com.dina.trust.vouch',
+      collection: 'com.dina.peerlens.vouch',
       rkey: 'tid1',
       cid: 'cid1',
       record: { subject: 'did:plc:target', vouchType: 'personal', confidence: 'high', createdAt: now },
@@ -1947,9 +1947,9 @@ describe('§2.6 Trust Edge Sync', () => {
     // Expected: weight = 0.6
     const ctx = mockHandlerCtx()
     await vouchHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:author/com.dina.trust.vouch/tid2',
+      uri: 'at://did:plc:author/com.dina.peerlens.vouch/tid2',
       did: 'did:plc:author',
-      collection: 'com.dina.trust.vouch',
+      collection: 'com.dina.peerlens.vouch',
       rkey: 'tid2',
       cid: 'cid2',
       record: { subject: 'did:plc:target', vouchType: 'personal', confidence: 'moderate', createdAt: now },
@@ -1964,9 +1964,9 @@ describe('§2.6 Trust Edge Sync', () => {
     // Expected: weight = 0.3
     const ctx = mockHandlerCtx()
     await vouchHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:author/com.dina.trust.vouch/tid3',
+      uri: 'at://did:plc:author/com.dina.peerlens.vouch/tid3',
       did: 'did:plc:author',
-      collection: 'com.dina.trust.vouch',
+      collection: 'com.dina.peerlens.vouch',
       rkey: 'tid3',
       cid: 'cid3',
       record: { subject: 'did:plc:target', vouchType: 'personal', confidence: 'low', createdAt: now },
@@ -1981,9 +1981,9 @@ describe('§2.6 Trust Edge Sync', () => {
     // Expected: weight = 0.8
     const ctx = mockHandlerCtx()
     await endorsementHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:author/com.dina.trust.endorsement/tid4',
+      uri: 'at://did:plc:author/com.dina.peerlens.endorsement/tid4',
       did: 'did:plc:author',
-      collection: 'com.dina.trust.endorsement',
+      collection: 'com.dina.peerlens.endorsement',
       rkey: 'tid4',
       cid: 'cid4',
       record: { subject: 'did:plc:target', skill: 'cooking', endorsementType: 'worked-together', createdAt: now },
@@ -1999,9 +1999,9 @@ describe('§2.6 Trust Edge Sync', () => {
     // Expected: weight = 0.4
     const ctx = mockHandlerCtx()
     await endorsementHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:author/com.dina.trust.endorsement/tid5',
+      uri: 'at://did:plc:author/com.dina.peerlens.endorsement/tid5',
       did: 'did:plc:author',
-      collection: 'com.dina.trust.endorsement',
+      collection: 'com.dina.peerlens.endorsement',
       rkey: 'tid5',
       cid: 'cid5',
       record: { subject: 'did:plc:target', skill: 'design', endorsementType: 'observed-output', createdAt: now },
@@ -2016,9 +2016,9 @@ describe('§2.6 Trust Edge Sync', () => {
     // Expected: weight = 0.9
     const ctx = mockHandlerCtx()
     await delegationHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:author/com.dina.trust.delegation/tid6',
+      uri: 'at://did:plc:author/com.dina.peerlens.delegation/tid6',
       did: 'did:plc:author',
-      collection: 'com.dina.trust.delegation',
+      collection: 'com.dina.peerlens.delegation',
       rkey: 'tid6',
       cid: 'cid6',
       record: { subject: 'did:plc:target', scope: 'reviews', permissions: ['read'], createdAt: now },
@@ -2036,9 +2036,9 @@ describe('§2.6 Trust Edge Sync', () => {
     // wired into the handler. This test verifies the current behavior.
     const ctx = mockHandlerCtx()
     await attestationHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:author/com.dina.trust.attestation/tid7',
+      uri: 'at://did:plc:author/com.dina.peerlens.attestation/tid7',
       did: 'did:plc:author',
-      collection: 'com.dina.trust.attestation',
+      collection: 'com.dina.peerlens.attestation',
       rkey: 'tid7',
       cid: 'cid7',
       record: {
@@ -2063,9 +2063,9 @@ describe('§2.6 Trust Edge Sync', () => {
     // Expected: weight = 0.3
     const ctx = mockHandlerCtx()
     await attestationHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:author/com.dina.trust.attestation/tid8',
+      uri: 'at://did:plc:author/com.dina.peerlens.attestation/tid8',
       did: 'did:plc:author',
-      collection: 'com.dina.trust.attestation',
+      collection: 'com.dina.peerlens.attestation',
       rkey: 'tid8',
       cid: 'cid8',
       record: {
@@ -2088,9 +2088,9 @@ describe('§2.6 Trust Edge Sync', () => {
     // Expected: No trust edge created — HIGH-07 added positive-only guard
     const ctx = mockHandlerCtx()
     await attestationHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:author/com.dina.trust.attestation/tid9',
+      uri: 'at://did:plc:author/com.dina.peerlens.attestation/tid9',
       did: 'did:plc:author',
-      collection: 'com.dina.trust.attestation',
+      collection: 'com.dina.peerlens.attestation',
       rkey: 'tid9',
       cid: 'cid9',
       record: {
@@ -2110,9 +2110,9 @@ describe('§2.6 Trust Edge Sync', () => {
     // Expected: No trust edge created (only DID subjects create edges)
     const ctx = mockHandlerCtx()
     await attestationHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:author/com.dina.trust.attestation/tid10',
+      uri: 'at://did:plc:author/com.dina.peerlens.attestation/tid10',
       did: 'did:plc:author',
-      collection: 'com.dina.trust.attestation',
+      collection: 'com.dina.peerlens.attestation',
       rkey: 'tid10',
       cid: 'cid10',
       record: {

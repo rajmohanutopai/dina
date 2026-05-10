@@ -497,7 +497,7 @@ Security is fundamental for Dina. She stores your most important data, so she ha
 - **CLI:** `dina remember`, `ask`, `draft`, `validate`, `task`, `configure`, `session`, `status` (`remember`, `ask`, and `validate` require `--session <session-id>`)
 - **Admin:** `dina-admin` CLI (Unix socket), web UI at `/admin/*` (dashboard, settings, contacts, devices, chat, history)
 - **PeerLens V1:** First social-review system on AT Protocol with pseudonymous identities and bilateral cosignature
-  - **Records (19 lexicons under `com.dina.trust.*`):** attestation, vouch, endorsement, flag, reply, reaction, report, revocation, delegation, collection, media, subject, amendment, verification, reviewRequest, comparison, subjectClaim, trustPolicy, namespaceProfile
+  - **Records (19 lexicons under `com.dina.peerlens.*`):** attestation, vouch, endorsement, flag, reply, reaction, report, revocation, delegation, collection, media, subject, amendment, verification, reviewRequest, comparison, subjectClaim, trustPolicy, namespaceProfile
   - **Scoring:** v1 PeerLens rating formula (sentiment / vouch / reviewer / network components) with frozen conformance vectors that every Dina implementation pins to byte-for-byte
   - **Pseudonymous namespaces:** users derive per-context identity keys from their master seed (`m/9999'/4'/N'`) and register them as `assertionMethod` verification methods on their published DID document. One PDS account, multiple namespaces, single-mnemonic recovery
   - **Cosignature handshake:** D2D request/accept/reject with state-machine-driven expiry, sender footer ("Co-signed by X · Y"), recipient inbox row, push notification dispatch

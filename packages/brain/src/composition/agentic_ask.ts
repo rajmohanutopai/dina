@@ -58,7 +58,7 @@ import { createDraftReviewTool } from '../reasoning/draft_review_tool';
 import { createDelegateToAgentTool } from '../reasoning/delegate_agent_tool';
 import { createScheduleReminderTool } from '../reasoning/schedule_reminder_tool';
 import { ToolRegistry } from '../reasoning/tool_registry';
-import { createSearchTrustNetworkTool } from '../reasoning/trust_tool';
+import { createSearchTrustNetworkTool } from '../reasoning/peerlens_tool';
 import {
   createVaultSearchTool,
   createListPersonasTool,

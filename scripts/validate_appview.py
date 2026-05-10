@@ -12,11 +12,11 @@ Usage:
 Checks:
     1. Postgres connectivity (pg_isready or TCP)
     2. AppView Web /health
-    3. XRPC resolve — com.dina.trust.resolve
-    4. XRPC search — com.dina.trust.search
-    5. XRPC getProfile — com.dina.trust.getProfile
-    6. XRPC getAttestations — com.dina.trust.getAttestations
-    7. XRPC getGraph — com.dina.trust.getGraph
+    3. XRPC resolve — com.dina.peerlens.resolve
+    4. XRPC search — com.dina.peerlens.search
+    5. XRPC getProfile — com.dina.peerlens.getProfile
+    6. XRPC getAttestations — com.dina.peerlens.getAttestations
+    7. XRPC getGraph — com.dina.peerlens.getGraph
 
 Exit code 0 = all checks pass, 1 = one or more failed.
 """
@@ -145,10 +145,10 @@ def check_web_health(base: str) -> bool:
 
 
 def check_xrpc_resolve(base: str) -> bool:
-    """Test com.dina.trust.resolve with a synthetic DID."""
+    """Test com.dina.peerlens.resolve with a synthetic DID."""
     subject = json.dumps({"type": "did", "did": "did:plc:test_validate"})
     params = urllib.parse.urlencode({"subject": subject})
-    url = f"{base}/xrpc/com.dina.trust.resolve?{params}"
+    url = f"{base}/xrpc/com.dina.peerlens.resolve?{params}"
     status, body = _request(url)
 
     # Valid responses: 200 with PeerLens data, or 200 with low confidence (no data yet)
@@ -167,9 +167,9 @@ def check_xrpc_resolve(base: str) -> bool:
 
 
 def check_xrpc_search(base: str) -> bool:
-    """Test com.dina.trust.search with an empty query."""
+    """Test com.dina.peerlens.search with an empty query."""
     params = urllib.parse.urlencode({"limit": "5"})
-    url = f"{base}/xrpc/com.dina.trust.search?{params}"
+    url = f"{base}/xrpc/com.dina.peerlens.search?{params}"
     status, body = _request(url)
 
     if status == 200:
@@ -182,9 +182,9 @@ def check_xrpc_search(base: str) -> bool:
 
 
 def check_xrpc_get_profile(base: str) -> bool:
-    """Test com.dina.trust.getProfile with a synthetic DID."""
+    """Test com.dina.peerlens.getProfile with a synthetic DID."""
     params = urllib.parse.urlencode({"did": "did:plc:test_validate"})
-    url = f"{base}/xrpc/com.dina.trust.getProfile?{params}"
+    url = f"{base}/xrpc/com.dina.peerlens.getProfile?{params}"
     status, body = _request(url)
 
     if status in (200, 404):
@@ -196,9 +196,9 @@ def check_xrpc_get_profile(base: str) -> bool:
 
 
 def check_xrpc_get_attestations(base: str) -> bool:
-    """Test com.dina.trust.getAttestations."""
+    """Test com.dina.peerlens.getAttestations."""
     params = urllib.parse.urlencode({"limit": "5"})
-    url = f"{base}/xrpc/com.dina.trust.getAttestations?{params}"
+    url = f"{base}/xrpc/com.dina.peerlens.getAttestations?{params}"
     status, body = _request(url)
 
     if status == 200:
@@ -211,9 +211,9 @@ def check_xrpc_get_attestations(base: str) -> bool:
 
 
 def check_xrpc_get_graph(base: str) -> bool:
-    """Test com.dina.trust.getGraph with a synthetic DID."""
+    """Test com.dina.peerlens.getGraph with a synthetic DID."""
     params = urllib.parse.urlencode({"did": "did:plc:test_validate", "maxDepth": "1"})
-    url = f"{base}/xrpc/com.dina.trust.getGraph?{params}"
+    url = f"{base}/xrpc/com.dina.peerlens.getGraph?{params}"
     status, body = _request(url)
 
     if status == 200:

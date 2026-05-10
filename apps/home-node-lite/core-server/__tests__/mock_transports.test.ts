@@ -284,7 +284,7 @@ describe('integration: mock transports drive real clients', () => {
 
   it('MockAppViewTransport wires cleanly into trust.resolve client', async () => {
     const { createTrustResolveClient } = await import(
-      '../src/appview/trust_resolve_client'
+      '../src/appview/peerlens_resolve_client'
     );
     const mock = new MockAppViewTransport().respond('trust.resolve', {
       status: 200,

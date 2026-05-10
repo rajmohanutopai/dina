@@ -30,8 +30,8 @@
 | 14 | **V1 namespace identity = one PDS account with multiple verification methods** | Lowest-friction V1; namespace pseudonymity is "first impression" only — DID document is correlatable. V2 adds per-namespace PDS accounts for true pseudonymity |
 | 15 | **Namespace key registered as `assertionMethod` in DID document**, id pattern `did:plc:xxxx#namespace_<index>` | AppView verifies records by resolving DID doc and matching the verification method id used in the commit |
 | 16 | **Cosig requests get their own table (`cosig_requests`)**, not `dina_tasks` | Different lifecycle (cross-network, multi-day expiry); expiry-swept hourly |
-| 17 | **the PeerLens tab default landing = friends' recent reviews (1-hop, 14-day window)**, served by `com.dina.trust.networkFeed` xRPC | Teaches social-review framing on first open; doesn't require typing a query |
-| 18 | **Compose flow calls `com.dina.trust.resolve` before publish** | Server returns canonical `subject_id` (or null + conflicts list for disambiguation); UI shows the canonical subject before the user commits |
+| 17 | **the PeerLens tab default landing = friends' recent reviews (1-hop, 14-day window)**, served by `com.dina.peerlens.networkFeed` xRPC | Teaches social-review framing on first open; doesn't require typing a query |
+| 18 | **Compose flow calls `com.dina.peerlens.resolve` before publish** | Server returns canonical `subject_id` (or null + conflicts list for disambiguation); UI shows the canonical subject before the user commits |
 | 19 | **Author edit = atproto-standard delete + republish**; no in-place edit | atproto records are immutable; AppView's incremental rescoring handles the recompute transparently |
 | 20 | **Namespace deletion is "disable", not delete, in V1** | Hard delete requires PLC verification-method removal + bulk record tombstone. V1 ships disable (read-only marker on `namespace.profile`); V2 ships hard delete |
 | 21 | **AppView enriches subjects with `category` + `metadata` JSONB at ingest** | Lexicon `SubjectRef` is intentionally sparse (publisher writes minimum); search needs richer context (sub-category, location, language, host, brand). Enrichment runs server-side from heuristics — publishers don't need to know the taxonomy |
@@ -59,9 +59,9 @@
 | XRPC auth model? | Read endpoints (`subject.search`, `subject.get`, `feed.network`, `subject.resolve`) public. Writes go directly to PDS via `com.atproto.repo.createRecord`; rate limit + namespace signature verification happen at AppView's **firehose ingester** | Mobile cannot get synchronous 429 — see §3.5 for async-failure UX |
 | PDS write path? | Mobile calls `com.atproto.repo.createRecord` against the user's PDS using the namespace key as record-signing key; AppView never sees the write directly | Standard atproto pattern; AppView is a read-side service |
 | Namespace identity in V1? | One PDS account, multiple namespace keys registered as `assertionMethod` verification methods in the user's DID document | First-impression pseudonymity. V2 = per-namespace PDS accounts for full segregation |
-| Namespace key registration? | New namespace = mobile derives key + appends `assertionMethod` to DID document via PLC operation signed by recovery key + publishes `com.dina.trust.namespaceProfile` | See §3.5 for sequence |
+| Namespace key registration? | New namespace = mobile derives key + appends `assertionMethod` to DID document via PLC operation signed by recovery key + publishes `com.dina.peerlens.namespaceProfile` | See §3.5 for sequence |
 | Search query semantics? | Postgres FTS (`english` config, no stop words, no stemmer) over `subjects.name` ⊕ `attestations.headline` ⊕ `attestations.body`; weighted A/B/C respectively | Tunable in `trust_v1_params` table |
-| Empty `q` parameter behaviour? | Returns the network feed via `com.dina.trust.networkFeed` (1-hop reviewers, 14d window, sorted by reviewer trust × recency) | Same data the PeerLens tab landing renders |
+| Empty `q` parameter behaviour? | Returns the network feed via `com.dina.peerlens.networkFeed` (1-hop reviewers, 14d window, sorted by reviewer trust × recency) | Same data the PeerLens tab landing renders |
 | Subject type picker UX? | Auto-detect from input shape: `did:` prefix → did; URL → product OR content (heuristic on host); ISBN-13 / ASIN format → product; else show 3-row chooser (product / place / content) with "more types" expand for org / dataset / claim | Implemented in `apps/mobile/src/trust/identifier_parser.ts` |
 | What is the `claim` subject type for? | Free-text claim ("Drinking 3L of water daily is healthy"). `name` carries the claim text. `subject.resolve` returns a per-author canonical subject so different framings of the same claim don't collide | Discovery via FTS over the claim text |
 | Author edit flow? | Delete + republish. Mobile UI labels it "Edit"; under the hood it's two atproto operations | atproto record bodies are immutable; standard pattern |
@@ -80,16 +80,16 @@
 
 All records published as AT Protocol records under the user's PDS. Schemas frozen for V1. Optional fields reserved for V2 are explicitly enumerated.
 
-**Lexicon namespace decision (TN-DEC-001):** V1 keeps the existing `com.dina.trust.*` namespace already in production AppView. The plan was originally drafted with `com.dina.subject.*` names; those have been renamed throughout the doc to match the existing namespace. Lexicons §3.1–§3.3 (attestation, endorsement, flag) **already exist** in `appview/src/ingester/handlers/` — V1 work modifies them in place rather than creating new lexicons. §3.4 `namespaceProfile` is genuinely net-new; it's a V1 addition.
+**Lexicon namespace decision (TN-DEC-001):** V1 keeps the existing `com.dina.peerlens.*` namespace already in production AppView. The plan was originally drafted with `com.dina.subject.*` names; those have been renamed throughout the doc to match the existing namespace. Lexicons §3.1–§3.3 (attestation, endorsement, flag) **already exist** in `appview/src/ingester/handlers/` — V1 work modifies them in place rather than creating new lexicons. §3.4 `namespaceProfile` is genuinely net-new; it's a V1 addition.
 
 The V1 attestation field set in §3.1 below is the **subset the plan formally relies on**. The existing AppView attestation schema carries additional fields (sentiment, dimensions, evidence, mentions, related, bilateralReview, tags, text) that V1 leaves untouched — they continue to flow through the ingester unchanged. Audit task TN-AUDIT-002 documents the full superset.
 
-### 3.1 `com.dina.trust.attestation`
+### 3.1 `com.dina.peerlens.attestation`
 
 ```json
 {
   "lexicon": 1,
-  "id": "com.dina.trust.attestation",
+  "id": "com.dina.peerlens.attestation",
   "defs": {
     "main": {
       "type": "record",
@@ -152,13 +152,13 @@ The V1 attestation field set in §3.1 below is the **subset the plan formally re
 - `organization` — a company or institution identified by URL or DID
 - `claim` — a free-text proposition ("Drinking 3L of water daily is healthy"); `name` carries the claim text. Different framings of the same claim resolve as separate per-author canonical subjects (tier 2)
 
-### 3.2 `com.dina.trust.endorsement` (cosignature)
+### 3.2 `com.dina.peerlens.endorsement` (cosignature)
 
-> **Note:** The plan originally named this primitive "binding". V1 uses the existing AppView lexicon `com.dina.trust.endorsement` — same concept (a cosignature on another reviewer's attestation), existing field names take precedence.
+> **Note:** The plan originally named this primitive "binding". V1 uses the existing AppView lexicon `com.dina.peerlens.endorsement` — same concept (a cosignature on another reviewer's attestation), existing field names take precedence.
 
 ```json
 {
-  "id": "com.dina.trust.endorsement",
+  "id": "com.dina.peerlens.endorsement",
   "record": {
     "required": ["target", "createdAt"],
     "properties": {
@@ -171,11 +171,11 @@ The V1 attestation field set in §3.1 below is the **subset the plan formally re
 }
 ```
 
-### 3.3 `com.dina.trust.flag` (V1 record exists, V1 UI defers)
+### 3.3 `com.dina.peerlens.flag` (V1 record exists, V1 UI defers)
 
 ```json
 {
-  "id": "com.dina.trust.flag",
+  "id": "com.dina.peerlens.flag",
   "record": {
     "required": ["target", "reason", "createdAt"],
     "properties": {
@@ -190,11 +190,11 @@ The V1 attestation field set in §3.1 below is the **subset the plan formally re
 
 **V1 ingester behaviour:** index, store, do not feed scorer. **Rate limit at ingester: 10 flags per author per day** (a 24 h sliding window). Excess flags are dropped with a `flag.ratelimit` log line — the firehose record itself is not rejected. V2 unblocks scorer integration + moderation UI + the per-author quota tunable.
 
-### 3.4 `com.dina.trust.namespaceProfile` (per pseudonymous identity)
+### 3.4 `com.dina.peerlens.namespaceProfile` (per pseudonymous identity)
 
 ```json
 {
-  "id": "com.dina.trust.namespaceProfile",
+  "id": "com.dina.peerlens.namespaceProfile",
   "record": {
     "key": "literal:<namespace_id>",
     "required": ["name", "createdAt", "verificationMethodId"],
@@ -224,7 +224,7 @@ The lexicon-level integrity checks (rate limit, namespace-key signature, schema 
 - The mobile client does NOT see a synchronous 429. Instead, the client maintains an "expected pending" set keyed on the AT-URI it generated; if a record fails to appear in the AppView index within 60 s of publish, it surfaces an inbox `system_message` ("Your review didn't post — rate limit reached" / "signature invalid" / etc.) and offers the user a re-try on the original draft.
 - This trades synchronous-error UX for the architectural guarantee that AppView is read-only with respect to PDS state.
 
-Mobile-side polling: `apps/mobile/src/trust/outbox.ts` keeps a small in-memory + persisted set of `{at_uri, draft_body, submitted_at}` rows. A 5 s timer polls `com.dina.trust.attestationStatus` (§6.5) for each pending AT-URI until the response transitions from `pending` → `indexed` (success) or `rejected` (surface inbox failure row), or the 60 s budget elapses (surface "stuck — retry?" inbox row).
+Mobile-side polling: `apps/mobile/src/trust/outbox.ts` keeps a small in-memory + persisted set of `{at_uri, draft_body, submitted_at}` rows. A 5 s timer polls `com.dina.peerlens.attestationStatus` (§6.5) for each pending AT-URI until the response transitions from `pending` → `indexed` (success) or `rejected` (surface inbox failure row), or the 60 s budget elapses (surface "stuck — retry?" inbox row).
 
 #### 3.5.2 V1 namespace identity model
 
@@ -260,7 +260,7 @@ One PDS account per user (the user's existing root account). The DID document's 
 3. Mobile constructs PLC operation appending the new key as an `assertionMethod` verification method with id `did:plc:xxxx#namespace_<N>`
 4. Mobile signs the PLC op with the rotation key (root account's recovery key, derived `m/9999'/2'/0'`)
 5. Mobile submits PLC op to PLC directory; awaits acceptance (typically < 5 s)
-6. Mobile publishes `com.dina.trust.namespaceProfile{name, verificationMethodId, createdAt}` record signed by the new namespace key
+6. Mobile publishes `com.dina.peerlens.namespaceProfile{name, verificationMethodId, createdAt}` record signed by the new namespace key
 7. UI confirms once the namespace.profile record appears in AppView (via `subject.resolve` polling)
 
 If the PLC op fails (rotation-key mismatch, directory rate limit), the mobile UI rolls back: no namespace.profile record is published, no key is exposed in the DID doc. Failure surface: inline error in the namespace creation modal.
@@ -268,7 +268,7 @@ If the PLC op fails (rotation-key mismatch, directory rate limit), the mobile UI
 #### 3.5.4 Namespace disable flow
 
 1. User taps "Disable" in the namespace settings screen
-2. Mobile publishes a delete-and-republish of `com.dina.trust.namespaceProfile` with `disabled: true` and the same `verificationMethodId`
+2. Mobile publishes a delete-and-republish of `com.dina.peerlens.namespaceProfile` with `disabled: true` and the same `verificationMethodId`
 3. AppView ingester picks up the change; subsequent attestations published under that namespace are rejected with `trust_v1.ingest.reject{reason: 'namespace_disabled'}`
 4. The verification method stays in the DID document (so existing records can still be verified). V2 hard-delete will remove it via PLC op.
 
@@ -672,12 +672,12 @@ All read endpoints under `com.dina.*`, served by the AppView Web daemon (port 30
 
 | Endpoint | Kind | Auth | Rate limit |
 |---|---|---|---|
-| `com.dina.trust.search` | Read (xRPC query) | Public | 60 / IP / min |
-| `com.dina.trust.subjectGet` | Read (xRPC query) | Public | 120 / IP / min |
-| `com.dina.trust.resolve` | Read (xRPC query) | Public | 60 / IP / min |
-| `com.dina.trust.networkFeed` | Read (xRPC query) | Public, viewerDid mandatory | 60 / IP / min |
-| `com.dina.trust.attestationStatus` | Read (xRPC query) | Public | 600 / IP / min (high — outbox polls every 5 s) |
-| `com.dina.trust.cosigList` | Read (xRPC query) | Public, recipientDid filter | 60 / IP / min |
+| `com.dina.peerlens.search` | Read (xRPC query) | Public | 60 / IP / min |
+| `com.dina.peerlens.subjectGet` | Read (xRPC query) | Public | 120 / IP / min |
+| `com.dina.peerlens.resolve` | Read (xRPC query) | Public | 60 / IP / min |
+| `com.dina.peerlens.networkFeed` | Read (xRPC query) | Public, viewerDid mandatory | 60 / IP / min |
+| `com.dina.peerlens.attestationStatus` | Read (xRPC query) | Public | 600 / IP / min (high — outbox polls every 5 s) |
+| `com.dina.peerlens.cosigList` | Read (xRPC query) | Public, recipientDid filter | 60 / IP / min |
 
 **Why no `*.publish` / `*.delete` on AppView:** mobile writes records straight to the user's PDS using `com.atproto.repo.createRecord` and `com.atproto.repo.deleteRecord` with the appropriate lexicon ID. AppView ingests from the firehose and applies the rate-limit + signature gates there (see §3.5.1). Asynchronous-failure UX surfaces in the mobile inbox via the outbox-watcher pattern.
 
@@ -692,7 +692,7 @@ Failed records produce a `trust_v1.ingest.reject{at_uri, reason}` log + a `(at_u
 
 
 
-### 6.1 `com.dina.trust.search` (query)
+### 6.1 `com.dina.peerlens.search` (query)
 
 **Params:**
 ```ts
@@ -752,7 +752,7 @@ Failed records produce a `trust_v1.ingest.reject{at_uri, reason}` log + a `(at_u
 
 Ranking: see §7.
 
-### 6.2 `com.dina.trust.subjectGet` (query)
+### 6.2 `com.dina.peerlens.subjectGet` (query)
 
 **Params:** `{ subjectId: string; viewerDid: string; cursor?: string; limit?: number }`
 
@@ -772,7 +772,7 @@ Ranking: see §7.
 }
 ```
 
-### 6.3 `com.dina.trust.resolve` (query)
+### 6.3 `com.dina.peerlens.resolve` (query)
 
 Returns the canonical `subject_id` for a SubjectRef, or `null` if the subject doesn't yet exist in the index. Used by the mobile compose flow to preview the canonical match before publish.
 
@@ -794,7 +794,7 @@ Returns the canonical `subject_id` for a SubjectRef, or `null` if the subject do
 
 `conflicts` lets the mobile UI disambiguate when, e.g., two "Aeron chair" entries with different `identifier` values both partial-match the user's input. UI shows a chooser in that case.
 
-### 6.4 `com.dina.trust.networkFeed` (query)
+### 6.4 `com.dina.peerlens.networkFeed` (query)
 
 Returns the viewer's network-feed: recent attestations from the viewer's 1-hop contact set within a configurable window. Backs the PeerLens tab landing screen.
 
@@ -826,7 +826,7 @@ Returns the viewer's network-feed: recent attestations from the viewer's 1-hop c
 
 When the viewer has no 1-hop contacts, returns `items: []` and the UI swaps in a "Add contacts to see their reviews" prompt. (No global fallback — that would contradict the social-review framing.)
 
-### 6.5 `com.dina.trust.attestationStatus` (query)
+### 6.5 `com.dina.peerlens.attestationStatus` (query)
 
 Polled by the mobile outbox watcher (§3.5.1) to determine whether a record it published has been indexed, rejected, or is still in flight.
 
@@ -847,7 +847,7 @@ Polled by the mobile outbox watcher (§3.5.1) to determine whether a record it p
 
 `state: 'pending'` means AppView has neither indexed nor rejected the record. Mobile keeps polling until terminal (or 60 s budget elapses, then surfaces a "stuck — retry?" inbox row).
 
-### 6.6 `com.dina.trust.cosigList` (query)
+### 6.6 `com.dina.peerlens.cosigList` (query)
 
 Returns the cosig requests addressed to a given recipient (used by the unified-inbox renderer to populate the badge count and to display the request rows).
 
@@ -908,7 +908,7 @@ app/trust/reviewer/[did].tsx     — Reviewer profile: their public attestations
 app/trust/search.tsx             — Search results (FTS + filters)
 ```
 
-The landing screen is `app/trust/index.tsx`; it renders the `com.dina.trust.networkFeed` response (1-hop reviewers' recent attestations, 14-day window) above the search input. Tapping a feed row deep-links into `[subjectId]`. When the viewer has no contacts yet, the feed swaps to a "Add contacts to see their reviews" prompt with a button to People tab.
+The landing screen is `app/trust/index.tsx`; it renders the `com.dina.peerlens.networkFeed` response (1-hop reviewers' recent attestations, 14-day window) above the search input. Tapping a feed row deep-links into `[subjectId]`. When the viewer has no contacts yet, the feed swaps to a "Add contacts to see their reviews" prompt with a button to People tab.
 
 ### 8.2 Bottom-tab entry
 
@@ -954,7 +954,7 @@ Sections: Header (subject + score), Friends (collapsible, sorted by trust), Frie
 
 ### 8.5 Write attestation flow
 
-1. **Pick subject** — search by name, paste URL, scan ASIN/ISBN, or "Reviewing a place near me" (taps lat/lng from device). Subject type auto-detected from input shape (`did:` → did, URL → product/content per host heuristic, ISBN-13/ASIN → product, lat/lng → place, else show 3-row chooser). Mobile calls `com.dina.trust.resolve` to preview the canonical match.
+1. **Pick subject** — search by name, paste URL, scan ASIN/ISBN, or "Reviewing a place near me" (taps lat/lng from device). Subject type auto-detected from input shape (`did:` → did, URL → product/content per host heuristic, ISBN-13/ASIN → product, lat/lng → place, else show 3-row chooser). Mobile calls `com.dina.peerlens.resolve` to preview the canonical match.
    - If `subjectId` exists → show "Reviewing **<name>** — N reviewers" inline confirmation
    - If `null` and no conflicts → show "Creating new subject" inline notice
    - If `conflicts` → present a chooser with each candidate's `reviewCount`; user picks one or "None of these"
@@ -991,7 +991,7 @@ Dismissed once → flag in keystore. Settings → "About PeerLens" repeats the s
 - Tabs: "Reviews" (their attestations, paginated), "Co-signed by them" (endorsements they've published)
 - Long-press on a review row: "Block this reviewer" — adds the DID to the viewer's mute list (V1 client-side only; no server-side block)
 
-Reviewer's namespace name is `name` from `com.dina.trust.namespaceProfile` if the namespace is visible (i.e., DID document includes the verification method). For namespaces the viewer can't yet see, falls back to "Pseudonymous reviewer · #namespace_K".
+Reviewer's namespace name is `name` from `com.dina.peerlens.namespaceProfile` if the namespace is visible (i.e., DID document includes the verification method). For namespaces the viewer can't yet see, falls back to "Pseudonymous reviewer · #namespace_K".
 
 ### 8.10 Loading / error / empty states
 
@@ -1036,7 +1036,7 @@ Implementation:
 - `packages/keystore-node/src/derivation.ts` — Lite implementation, byte-equivalent
 - `packages/keystore-expo/src/derivation.ts` — Expo implementation, byte-equivalent
 
-Recovery: master seed regenerates all namespace keys deterministically. Namespace metadata (display name, optional public handle) lives in `com.dina.trust.namespaceProfile` records on the user's PDS — recovered by re-resolving the user's repo.
+Recovery: master seed regenerates all namespace keys deterministically. Namespace metadata (display name, optional public handle) lives in `com.dina.peerlens.namespaceProfile` records on the user's PDS — recovered by re-resolving the user's repo.
 
 ## 10. Bilateral cosignature handshake
 
@@ -1044,7 +1044,7 @@ V1 D2D message types (in `packages/protocol/src/d2d/`):
 
 ```ts
 type CosigRequest = {
-  type: 'trust.cosig.request';
+  type: 'peerlens.cosig.request';
   attestation_uri: string;       // target
   namespace: string;
   expires_at: string;            // ISO datetime
@@ -1075,7 +1075,7 @@ Optional in V1 — users can publish attestations without ever requesting cosign
 
 **Expiry sweeper:** hourly cron job `cosig_expiry_sweep` finds rows with `status = 'pending' AND expires_at < now`, flips their status to `expired`, sends a `trust.cosig.reject{reason: 'expired'}` D2D message back to the requester, and increments the corresponding inbox row to `kind: 'approval', subKind: 'trust_cosig', state: 'expired'` so the recipient sees the expired entry struck through.
 
-**Recipient UX surface:** an inbound `trust.cosig.request` lands in the unified inbox (`apps/mobile/app/notifications.tsx`) as `kind: 'approval'` with `subKind: 'trust_cosig'`. Title: `"Sancho asked you to co-sign their review"`. Tap deep-links to the source attestation in `app/trust/[subjectId]` with an Endorse / Decline action sheet pinned to the bottom. Action choice emits `trust.cosig.accept` (publishes endorsement + sends D2D response) or `trust.cosig.reject`. Auto-expire fires `trust.cosig.reject{reason: 'expired'}` 7 days after the request and clears the inbox row.
+**Recipient UX surface:** an inbound `peerlens.cosig.request` lands in the unified inbox (`apps/mobile/app/notifications.tsx`) as `kind: 'approval'` with `subKind: 'trust_cosig'`. Title: `"Sancho asked you to co-sign their review"`. Tap deep-links to the source attestation in `app/trust/[subjectId]` with an Endorse / Decline action sheet pinned to the bottom. Action choice emits `trust.cosig.accept` (publishes endorsement + sends D2D response) or `trust.cosig.reject`. Auto-expire fires `trust.cosig.reject{reason: 'expired'}` 7 days after the request and clears the inbox row.
 
 **Sender UX surface:** the user's own attestation detail screen shows pending cosig requests inline (`"2 pending"`) and accepted cosigs as a "Co-signed by Sancho · Albert" footer once endorsements land.
 
@@ -1109,7 +1109,7 @@ V2 mitigations are policy/scoring changes, not lexicon changes. The score row's 
 | Mutual-praise detection | Reciprocal endorsement pairs in `score_inputs` | Re-weights `reviewer_base` with reciprocity penalty |
 | Sybil clustering | Account-age, IP diversity, behaviour fingerprint | New `score_version: "v2"` row alongside V1 |
 | Statistics-aware aggregation | Existing review_count + variance | Adds Bayesian prior; subject_score becomes a posterior with confidence band |
-| Flag UI | Existing `com.dina.trust.flag` records | UI surfaces; scorer absorbs flagged-count signal |
+| Flag UI | Existing `com.dina.peerlens.flag` records | UI surfaces; scorer absorbs flagged-count signal |
 | Federation | New AppView peer table | Cross-instance lookup; V1 records federate as-is |
 | Same-as merges | Existing `canonicalSubjectId` field | Populated by moderator action |
 | **Per-namespace PDS accounts** (true pseudonymity) | Existing `verificationMethodId` on `namespace.profile` records | New `_v2_pdsAccount` field on namespace.profile pointing at the migrated DID; mobile flow provisions separate PDS account; existing records stay at original DID |
@@ -1184,7 +1184,7 @@ Both thresholds are stored in `trust_v1_params` and live-tunable.
 `appview_config.trust_v1_enabled` boolean stored in AppView's existing config table. When `false`:
 
 - All `com.dina.*` xRPC endpoints return HTTP 503 with body `{error: 'trust_v1_disabled'}`
-- Firehose ingester skips trust-network lexicon records (`com.dina.trust.attestation`, `endorsement`, `flag`, `namespaceProfile`)
+- Firehose ingester skips trust-network lexicon records (`com.dina.peerlens.attestation`, `endorsement`, `flag`, `namespaceProfile`)
 - Mobile UI hides the PeerLens tab (the PeerLens tab entry in `_layout.tsx` becomes `href: null` when the bootstrap detects the flag is `false`)
 - Scorer jobs no-op (return success without computing)
 
@@ -1280,10 +1280,10 @@ Conformance: PeerLens rating formula vectors pinned in `packages/protocol/confor
 ## 16. Files to touch
 
 **Lexicons (mostly modify-in-place):**
-- 🔧 Extend existing `com.dina.trust.attestation` lexicon — add namespace field semantics (no schema break)
-- 🔧 Extend existing `com.dina.trust.endorsement` lexicon — confirm cosignature semantics match plan §3.2
-- 🔧 Extend existing `com.dina.trust.flag` lexicon — confirm matches plan §3.3, add ingester-level rate-limit
-- ✨ New: `com.dina.trust.namespaceProfile` lexicon (one of the few genuinely-new artifacts in V1)
+- 🔧 Extend existing `com.dina.peerlens.attestation` lexicon — add namespace field semantics (no schema break)
+- 🔧 Extend existing `com.dina.peerlens.endorsement` lexicon — confirm cosignature semantics match plan §3.2
+- 🔧 Extend existing `com.dina.peerlens.flag` lexicon — confirm matches plan §3.3, add ingester-level rate-limit
+- ✨ New: `com.dina.peerlens.namespaceProfile` lexicon (one of the few genuinely-new artifacts in V1)
 
 **New (AppView storage + scorer):**
 - `appview/src/db/schema/trust_scores.ts` (`reviewer_trust_scores`, `subject_scores`, `cosig_requests`, `trust_v1_params`, `ingest_rejections`, `subjects.last_attested_at`)
@@ -1331,7 +1331,7 @@ Conformance: PeerLens rating formula vectors pinned in `packages/protocol/confor
 **Reuse from existing TS Lite (`packages/core/src/trust/`):**
 - 🔧 `cache.ts` (TrustScore cache with KV backing + 1h TTL) — already implemented; mobile imports as-is
 - 🔧 `query_client.ts` (`TrustQueryClient` calls AppView xRPC) — already implemented; needs xRPC NSID alignment with current AppView surface
-- 🔧 `pds_publish.ts` (signs + publishes attestations) — already implemented; **needs lexicon NSID update from `community.dina.trust.attestation` → `com.dina.trust.attestation`**, and SubjectRef extension (currently DID-only)
+- 🔧 `pds_publish.ts` (signs + publishes attestations) — already implemented; **needs lexicon NSID update from `community.dina.trust.attestation` → `com.dina.peerlens.attestation`**, and SubjectRef extension (currently DID-only)
 - 🔧 `network_search.ts` (entity / identity / topic search) — already implemented; mobile reuses
 - 🔧 `source_trust.ts` (sender → trust classifier) — already implemented; reused unchanged
 - 🔧 `levels.ts` (trust ring 1/2/3 levels) — already implemented; reused unchanged
@@ -1370,7 +1370,7 @@ Weekly batches log `trust_v1.enrich.changed_total{field}` so we can see how many
 
 - **Subject** — the thing being reviewed (chair, video, person, place, organisation, claim)
 - **Attestation** — a single review by one reviewer of one subject
-- **Endorsement** — a cosignature on someone else's attestation (V1 endorse-only); existing AppView lexicon `com.dina.trust.endorsement`. Plan-internal name "binding" is retired
+- **Endorsement** — a cosignature on someone else's attestation (V1 endorse-only); existing AppView lexicon `com.dina.peerlens.endorsement`. Plan-internal name "binding" is retired
 - **Flag** — negative signal record (V1 stored, V1 UI deferred); rate-limited at ingester
 - **Namespace** — a pseudonymous identity scoped to a topic; key derived `m/9999'/4'/N'`; registered as a verification method (`#namespace_N`) in the user's DID document
 - **Verification method** — atproto/W3C DID concept; an entry in the DID document declaring a public key plus its purpose (`assertionMethod`, `keyAgreement`, etc.); namespace keys live here

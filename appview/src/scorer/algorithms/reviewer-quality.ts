@@ -1,5 +1,5 @@
 import { CONSTANTS } from '@/config/constants.js'
-import { clamp } from './trust-score.js'
+import { clamp } from './peerlens-score.js'
 
 export interface ReviewerQualityInput {
   totalAttestationsBy: number

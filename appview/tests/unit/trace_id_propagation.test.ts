@@ -76,9 +76,9 @@ describe('trace_id propagation — TN-OBS-002', () => {
     // an accidental rename to `trace_id_` or moving it under a
     // nested object).
     const op: RecordOp = {
-      uri: 'at://did:plc:author/com.dina.trust.attestation/abc',
+      uri: 'at://did:plc:author/com.dina.peerlens.attestation/abc',
       did: 'did:plc:author',
-      collection: 'com.dina.trust.attestation',
+      collection: 'com.dina.peerlens.attestation',
       rkey: 'abc',
       cid: 'bafyfake',
       record: { hello: 'world' },
@@ -94,7 +94,7 @@ describe('trace_id propagation — TN-OBS-002', () => {
     await recordRejection(
       { db, logger: { warn: mockLoggerWarn } as never, metrics: { incr: mockMetricsIncr } as never, traceId },
       {
-        atUri: 'at://did:plc:author/com.dina.trust.attestation/x',
+        atUri: 'at://did:plc:author/com.dina.peerlens.attestation/x',
         did: 'did:plc:author',
         reason: 'rate_limit',
       },
@@ -121,7 +121,7 @@ describe('trace_id propagation — TN-OBS-002', () => {
     await recordRejection(
       { db, logger: { warn: mockLoggerWarn } as never, metrics: { incr: mockMetricsIncr } as never },
       {
-        atUri: 'at://did:plc:author/com.dina.trust.attestation/y',
+        atUri: 'at://did:plc:author/com.dina.peerlens.attestation/y',
         did: 'did:plc:author',
         reason: 'feature_off',
       },

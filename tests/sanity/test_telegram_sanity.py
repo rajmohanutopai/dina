@@ -350,7 +350,7 @@ class TestPurchaseJourney:
         handle, pw = _get_pds_creds(instance)
         if not handle or not pw:
             return
-        for collection in ("com.dina.trust.attestation", "com.dina.trust.outcome"):
+        for collection in ("com.dina.peerlens.attestation", "com.dina.peerlens.outcome"):
             records = _pds_list_records(COMMUNITY_PDS_URL, did, collection)
             for rec in records:
                 uri = rec.get("uri", "")

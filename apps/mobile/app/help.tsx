@@ -12,10 +12,12 @@
 import React, { useCallback } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { colors, fonts, radius, shadows, spacing } from '../src/theme';
+import { FEATURES, FeatureIcon } from '../src/features';
+import { FEATURE_NAMES } from '@dina/core';
+import { colors, fonts, radius, shadows, spacing, textStyles } from '../src/theme';
 
 interface CapabilityCard {
-  icon: string;
+  icon: import('../src/features').FeatureKey;
   title: string;
   description: string;
   /** Italic chat-bubble-style sample phrasing surfaced under the
@@ -26,125 +28,102 @@ interface CapabilityCard {
   href?: string;
 }
 
-const STORAGE_CARDS: CapabilityCard[] = [
+const VAULT_CARDS: CapabilityCard[] = [
   {
-    icon: '✦',
+    icon: 'identity',
     title: 'Remember something',
     description:
-      'Store a fact, preference, event, or note. Dina classifies it into the right vault — health into Health, finance into Financial, everyday into General — and sensitive vaults stay locked, so what you tell Dina there stays gated. PII is scrubbed and the entry is indexed for later search.',
-    // The previous design used a chat screenshot (16:9 image) here.
-    // It rendered ~540px tall — twice the height of every other
-    // card on this page — which made Help feel broken before the
-    // user even scrolled. Switching to the same `example` pattern
-    // every other card uses brings the page into rhythm and lets
-    // the user try /remember directly from the Chat tab anyway.
-    example: '“Emma’s birthday is March 15.”',
+      'Store a fact, preference, event, or note. Dina classifies it into the right vault — health into Health, finance into Financial, everyday into General. Sensitive vaults stay locked, so what you tell Dina there stays gated. PII is scrubbed and the entry is indexed for later search.',
+    example: '"Emma\'s birthday is March 15."',
   },
   {
-    icon: '?',
+    icon: 'vault',
     title: 'Ask a question',
     description:
-      'Search across everything you’ve stored. Dina runs hybrid keyword + semantic search across your unlocked personas and answers from your own data.',
-    example: '“When is Emma’s birthday?”',
+      'Search across everything you\'ve stored. Dina runs hybrid keyword and semantic search across your unlocked vaults and answers from your own data.',
+    example: '"When is Emma\'s birthday?"',
   },
 ];
 
-const TIME_CARDS: CapabilityCard[] = [
+const REMINDER_CARDS: CapabilityCard[] = [
   {
-    icon: '⏰',
+    icon: 'reminders',
     title: 'Reminders that just work',
     description:
-      'Mention a date or time and Dina sets a reminder. When it fires you’ll get a card right in your chat with Snooze and Mark-done buttons.',
-    example: '“Pay rent on the 1st.”',
+      'Mention a date or time and Dina sets a reminder automatically, with context pulled from your vault. When it fires you\'ll get a card in your chat with Snooze and Mark-done buttons.',
+    example: '"Pay rent on the 1st."',
   },
   {
-    icon: '✉',
+    icon: 'notifications',
     title: 'Notifications, three tiers',
     description:
-      'Fiduciary (silence would harm you) interrupts. Solicited (you asked) lands in the shade. Engagement (background) batches into a briefing — never a spammy push.',
+      'Fiduciary (silence would harm you) interrupts immediately. Solicited (you asked) lands in the notification shade. Engagement (background) batches into a briefing — no spammy pushes.',
   },
 ];
 
-// People → People via Dinas. The headline isn't just encrypted P2P
-// (that's the channel); it's that the receiving Dina enriches the
-// arriving message with context from ITS OWN vault about the sender,
-// so the recipient is prepared without having to remember anything.
-const PEOPLE_CARDS: CapabilityCard[] = [
+const TALK_CARDS: CapabilityCard[] = [
   {
-    icon: '✉',
+    icon: 'talk',
     title: 'Your Dina talks to theirs',
     description:
-      'Tell your Dina to inform a contact — “Tell Sancho I’ll be there in 15” — and your Dina hands off to Sancho’s Dina over an encrypted peer-to-peer channel. Sancho’s Dina notifies him AND pulls context from its own vault about you: “Alonso’s coming in 15. He loves PB&J. His mother had a fall last week — you might ask how she’s doing.” Each Dina enriches the message with what its own user would want to know.',
+      'Tell your Dina to inform a contact and your Dina hands off to their Dina over an encrypted peer-to-peer channel. Their Dina notifies them AND pulls context from its own vault about you, so they\'re prepared without having to remember anything. Each Dina enriches the message with what its own user would want to know.',
     example:
-      '“Inform Sancho I’ll be there in 15” → Sancho’s Dina alerts him with a reminder and the context it knows about you.',
+      '"Inform Sancho I\'ll be there in 15" — Sancho\'s Dina alerts him with a reminder and the context it knows about you.',
   },
 ];
 
-// Working WITH agents is the primary value prop — Dina coordinates,
-// agents (dina-agent installs, today reached via OpenClaw / dina-cli)
-// do the real fetching/executing. The safety net (approval gate) is
-// part of the agent story — agents do work, Dina holds the keys to
-// risky operations — so it lives inside this section instead of
-// floating as its own one-card "Safety net" group.
 const AGENT_CARDS: CapabilityCard[] = [
   {
-    icon: '🤖',
+    icon: 'agentTasks',
     title: 'Run real work through agents',
     description:
-      'Agents work with Dina in two directions. Dina can hand work to an agent (e.g. OpenClaw) — “fetch new email”, “book the flight” — and the agent executes. Or an agent acts on its own and submits its intent to Dina first, so Dina can apply your rules, approve, or ask you. Install dina-agent (pip install dina-agent) and pair it; both flows are supported.',
+      'Agents work with Dina in two directions. Dina can hand work to an agent — "fetch new email", "book the flight" — and the agent executes. Or an agent acts on its own and submits its intent to Dina first, so Dina can apply your rules, approve, or ask you. Install dina-agent (pip install dina-agent) and pair it; both flows are supported.',
     example:
-      'dina-agent fetches your Gmail → Dina classifies new mail → reminders, contacts, and notes land in the right vault.',
+      'dina-agent fetches your Gmail. Dina classifies new mail. Reminders, contacts, and notes land in the right vault.',
   },
   {
-    icon: '✓',
-    title: 'You approve risky actions',
+    icon: 'security',
+    title: 'You approve sensitive actions',
     description:
-      'Sensitive vaults (health, financial, anything you flag) stay locked by default. When an agent needs to read one, Dina waits for your approval.',
+      'Sensitive vaults (health, financial, anything you flag) stay locked by default. When a connected agent needs access or wants to take a risky action, Dina surfaces it for your approval before anything happens.',
   },
 ];
 
-// Network capabilities — these reach OUTSIDE your local Dina. The
-// previous copy described them like a web crawler ("searches the
-// public network"), which made them sound interchangeable with any
-// agent that hits the open web (OpenClaw, generic LLM tools). The
-// distinction matters: Dina queries the operator's OWN Dina with
-// a typed schema, and trust signals come from a decentralized graph
-// the network maintains — neither lives on your device.
-const NETWORK_CARDS: CapabilityCard[] = [
+const SERVICES_CARDS: CapabilityCard[] = [
   {
-    icon: '🚌',
+    icon: 'services',
     title: 'Direct answers from the source',
     description:
-      'You can connect to external services hosted by other Dinas — bus arrivals, store hours, a clinic’s next opening. Each operator runs their own Dina that publishes the capabilities it serves through its connected agents (SF Transit publishes "eta_query", a clinic publishes "next_opening"). Your Dina finds the operator on the Dina network and sends a typed query directly to their Dina; the operator’s agent computes the answer. The reply is a structured response from the source itself.',
+      'A network of Dinas acting as service providers. Your Dina finds the right provider and sends a typed query directly to their Dina. The provider\'s agent computes the answer and sends it back. No central platform, no middleman.',
     example:
-      '“When does bus 42 reach Castro?” → SF Transit’s Dina answers with the ETA and a map link.',
+      '"When does bus 42 reach Castro?" — SF Transit\'s Dina answers with the ETA and a map link.',
   },
   {
-    icon: '❖',
-    title: 'PeerLens reviews',
+    icon: 'peerlens',
+    title: `${FEATURE_NAMES.peerlens} reviews`,
     description:
-      'All reviews, including yours, live in PeerLens. Each review is signed by the reviewer’s identity (DID), weighted by whether they actually transacted, vouched for by peers, and time-decayed.\n\nBecause every review carries signed provenance, signals in the graph are harder to fake. Sponsored reviews and synthetic reviews should not move the recommendation.\n\nWhen you ask Dina something, Dina checks PeerLens — whether you’re picking a chair to buy, or checking whether a YouTube creator typically posts AI-generated videos.',
-    example: '“Is the Calmly mattress any good?”',
+      'All reviews live in PeerLens. Each review is signed by the reviewer\'s identity, weighted by whether they actually transacted, vouched for by peers, and time-decayed. Used by Dina during high value decisions — picking a product, choosing a service, evaluating a creator.',
+    example: '"Is the Calmly mattress any good?"',
   },
   {
-    icon: '🎯',
-    title: 'Searches that know you',
+    icon: 'identity',
+    title: 'Queries shaped by your context',
     description:
-      'Dina applies what she knows about you to every external query. Ask for a chair and Dina searches for one with lumbar support under $500 — because she’s seen your back-pain notes and your budget. Doctors, restaurants, flights, products: results come back already tuned to your context.',
-    example: '“Find me a chair” → Dina searches for “chair with lumbar support, under $500”.',
+      'Dina applies what she knows about you to every external query. Ask for a chair and Dina searches for one with lumbar support under $500 — because she\'s seen your back-pain notes and your budget. Results come back already shaped to your situation.',
+    example: '"Find me a chair" — Dina searches for "chair with lumbar support, under $500".',
   },
 ];
 
 const PRIVACY_CARDS: CapabilityCard[] = [
   {
-    icon: '···',
+    icon: 'vault',
     title: 'Your data stays on this device',
     description:
       'Vault is encrypted with keys derived from your passphrase. The Dina network sees only what you explicitly publish — never your raw notes.',
   },
   {
-    icon: '☰',
-    title: 'Admin & diagnostics',
+    icon: 'settings',
+    title: 'Admin and diagnostics',
     description:
       'See your DID, runtime warnings, sign out, or erase everything on this device.',
     href: '/admin',
@@ -174,25 +153,17 @@ export default function HelpScreen(): React.ReactElement {
           </Text>
         </View>
 
-        <CardSection title="Your data" cards={STORAGE_CARDS} onPress={onCardPress} />
-        <CardSection title="Time-aware" cards={TIME_CARDS} onPress={onCardPress} />
-        {/* People comes after Time-aware: contact coordination is
-            still about local-life primitives (events, reminders),
-            just routed through someone else's Dina. */}
-        <CardSection title="Coordinate with people" cards={PEOPLE_CARDS} onPress={onCardPress} />
-        {/* Agents come BEFORE Beyond your Dina — the network section
-            makes more sense in the context that you have agents
-            doing real work for you. The approval-gate card lives
-            inside Work-with-agents (it's the safety net for what
-            agents do, not its own concept). */}
-        <CardSection title="Work with agents" cards={AGENT_CARDS} onPress={onCardPress} />
-        <CardSection title="Beyond your Dina" cards={NETWORK_CARDS} onPress={onCardPress} />
-        <CardSection title="Privacy & control" cards={PRIVACY_CARDS} onPress={onCardPress} />
+        <CardSection title="Your vault" cards={VAULT_CARDS} onPress={onCardPress} />
+        <CardSection title="Reminders" cards={REMINDER_CARDS} onPress={onCardPress} />
+        <CardSection title={FEATURE_NAMES.talk} cards={TALK_CARDS} onPress={onCardPress} />
+        <CardSection title={FEATURE_NAMES.agentTasks} cards={AGENT_CARDS} onPress={onCardPress} />
+        <CardSection title={`${FEATURE_NAMES.services} and ${FEATURE_NAMES.peerlens}`} cards={SERVICES_CARDS} onPress={onCardPress} />
+        <CardSection title="Privacy and control" cards={PRIVACY_CARDS} onPress={onCardPress} />
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>
-            Dina is a sovereign AI. The keys live on your phone — no one can read your data
-            without you.
+            Dina is a sovereign AI. The keys live on your phone — one identity, all your data
+            anchored to it.
           </Text>
         </View>
       </ScrollView>
@@ -225,7 +196,7 @@ function CardSection({
         >
           <View style={styles.cardHeader}>
             <View style={styles.iconBubble}>
-              <Text style={styles.iconText}>{card.icon}</Text>
+              <FeatureIcon feature={card.icon} size={18} color={colors.accent} />
             </View>
             <Text style={styles.cardTitle}>{card.title}</Text>
             {card.href !== undefined ? <Text style={styles.cardArrow}>{'›'}</Text> : null}
@@ -256,25 +227,19 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
   },
   heroEyebrow: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
-    letterSpacing: 2.4,
-    color: colors.textMuted,
+    ...textStyles.screenEyebrow,
   },
   heroTitle: {
-    fontFamily: fonts.serif,
-    fontStyle: 'italic',
+    ...textStyles.screenHeadline,
     marginTop: spacing.xs,
     fontSize: 30,
-    color: colors.textPrimary,
-    letterSpacing: -0.3,
+    lineHeight: 38,
   },
   heroSubtitle: {
-    fontFamily: fonts.sans,
+    ...textStyles.screenBody,
     marginTop: spacing.sm,
     fontSize: 14,
     lineHeight: 20,
-    color: colors.textSecondary,
   },
   section: {
     marginTop: spacing.lg,
@@ -309,11 +274,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgTertiary,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  iconText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 16,
-    color: colors.accent,
   },
   cardTitle: {
     flex: 1,

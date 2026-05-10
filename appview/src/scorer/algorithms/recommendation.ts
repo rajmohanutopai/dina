@@ -1,5 +1,5 @@
 import { CONSTANTS } from '@/config/constants.js'
-import { clamp } from './trust-score.js'
+import { clamp } from './peerlens-score.js'
 import type { GraphContext } from '@/shared/types/api-types.js'
 
 export interface RecommendationInput {

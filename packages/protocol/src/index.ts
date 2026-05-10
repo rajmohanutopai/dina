@@ -53,8 +53,8 @@ export {
   MSG_TYPE_COORDINATION_RESPONSE,
   MSG_TYPE_SOCIAL_UPDATE,
   MSG_TYPE_SAFETY_ALERT,
-  MSG_TYPE_TRUST_VOUCH_REQUEST,
-  MSG_TYPE_TRUST_VOUCH_RESPONSE,
+  MSG_TYPE_PEERLENS_VOUCH_REQUEST,
+  MSG_TYPE_PEERLENS_VOUCH_RESPONSE,
   MSG_TYPE_SERVICE_QUERY,
   MSG_TYPE_SERVICE_RESPONSE,
   MAX_MESSAGE_BODY_SIZE,
@@ -119,7 +119,7 @@ export type {
 } from './validators';
 
 // PeerLens wire types (TN-PROTO-001). Pure type declarations
-// for the `com.dina.trust.*` AT Protocol record family — Lite, Brain
+// for the `com.dina.peerlens.*` AT Protocol record family — Lite, Brain
 // and mobile all consume from here so the workspace has one
 // definition. AppView's parallel `lexicon-types.ts` mirrors this
 // file until cross-workspace publish is set up.
@@ -158,11 +158,11 @@ export type {
   Comparison,
   SubjectClaimType,
   SubjectClaim,
-  TrustPolicy,
+  PeerlensPolicy,
   NotificationPrefs,
-  TrustNsid,
-} from './trust/types';
-export { TRUST_NSIDS } from './trust/types';
+  PeerlensNsid,
+} from './peerlens/types';
+export { PEERLENS_NSIDS } from './peerlens/types';
 
 // D2D cosig handshake (TN-PROTO-002). Wire types + pure state
 // machine for the trust.cosig.{request,accept,reject} 3-message
@@ -198,7 +198,7 @@ export {
 // formatters for the `[0, 1]` real score. Mobile + home-node-lite
 // trust decision both import from here so band semantics stay
 // consistent across the UI surface.
-export type { TrustBand } from './trust/score_bands';
+export type { PeerlensBand } from './peerlens/score_bands';
 export {
   BAND_HIGH,
   BAND_MODERATE,
@@ -206,13 +206,13 @@ export {
   trustBandFor,
   trustScoreDisplay,
   trustScoreLabel,
-} from './trust/score_bands';
+} from './peerlens/score_bands';
 
 // Shared identifier parser (TN-PROTO-003). Pure functions — used by
 // mobile compose flows + AppView's subject enricher to detect and
 // normalise external identifiers (DOI / arxiv / ISBN / EAN / UPC /
 // ASIN / place_id) into a canonical form.
-export type { IdentifierType, ParsedIdentifier } from './trust/identifier_parser';
+export type { IdentifierType, ParsedIdentifier } from './peerlens/identifier_parser';
 export {
   parseIdentifier,
   parseDoi,
@@ -223,7 +223,7 @@ export {
   parseUpc,
   parseAsin,
   parsePlaceId,
-} from './trust/identifier_parser';
+} from './peerlens/identifier_parser';
 
 // DID document `assertionMethod` resolution (TN-AUTH-001). Pure
 // resolver — translates `assertionMethod` string-references and
@@ -257,7 +257,7 @@ export type {
   ScoreV1Input,
   ScoreV1Components,
   ScoreV1Output,
-} from './trust/score_v1';
+} from './peerlens/score_v1';
 export {
   SCORE_V1_CONSTANTS,
   computeScoreV1,
@@ -266,4 +266,4 @@ export {
   computeReviewerV1,
   computeNetworkV1,
   computeConfidenceV1,
-} from './trust/score_v1';
+} from './peerlens/score_v1';

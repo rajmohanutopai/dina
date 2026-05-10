@@ -19,15 +19,15 @@
 import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
-import SearchScreen from '../../app/trust/search';
+import SearchScreen from '../../app/peerlens/search';
 import {
   resetUserPreferencesForTest,
   saveUserPreferences,
 } from '../../src/services/user_preferences';
 import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 
-import type { SubjectCardDisplay } from '../../src/trust/subject_card';
-import type { FacetBar } from '../../src/trust/facets';
+import type { SubjectCardDisplay } from '../../src/peerlens/subject_card';
+import type { FacetBar } from '../../src/peerlens/facets';
 
 const ORIGINAL_INTL = global.Intl;
 

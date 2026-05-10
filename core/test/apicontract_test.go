@@ -182,7 +182,7 @@ func TestAPIContract_18_7_AllBrainEndpointsAcceptToken(t *testing.T) {
 		"/v1/pii/scrub",
 		"/v1/notify",
 		"/v1/msg/send",
-		"/v1/trust/query",
+		"/v1/peerlens/query",
 	}
 
 	for _, ep := range brainEndpoints {
@@ -256,21 +256,21 @@ func TestAPIContract_18_9_MsgSendExposed(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
-// §18.10 Core exposes /v1/trust/query to brain
+// §18.10 Core exposes /v1/peerlens/query to brain
 // --------------------------------------------------------------------------
 
 // TST-CORE-648
-// TRACE: {"suite": "CORE", "case": "0015", "section": "18", "sectionName": "Core-Brain API Contract", "subsection": "10", "scenario": "01", "title": "TrustQueryExposed"}
-func TestAPIContract_18_10_TrustQueryExposed(t *testing.T) {
+// TRACE: {"suite": "CORE", "case": "0015", "section": "18", "sectionName": "Core-Brain API Contract", "subsection": "10", "scenario": "01", "title": "PeerlensQueryExposed"}
+func TestAPIContract_18_10_PeerlensQueryExposed(t *testing.T) {
 	// var impl testutil.APIContract = realcontract.New(...)
 	impl := realAPIContract
 	testutil.RequireImplementation(t, impl, "APIContract")
 
 	// BRAIN_TOKEN + query (entity, category) must return 200 with PeerLens rating.
-	testutil.RequireTrue(t, impl.IsBrainCallable("/v1/trust/query"),
-		"/v1/trust/query must accept BRAIN_TOKEN")
+	testutil.RequireTrue(t, impl.IsBrainCallable("/v1/peerlens/query"),
+		"/v1/peerlens/query must accept BRAIN_TOKEN")
 
-	statusCode, _, err := impl.CallEndpoint("POST", "/v1/trust/query", testutil.TestBrainToken,
+	statusCode, _, err := impl.CallEndpoint("POST", "/v1/peerlens/query", testutil.TestBrainToken,
 		[]byte(`{"entity":"did:plc:vendor123","category":"electronics"}`))
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, statusCode, 200)
@@ -447,7 +447,7 @@ func TestCI_30_8_ContractCoreBrainStage(t *testing.T) {
 			"/v1/pii/scrub",
 			"/v1/notify",
 			"/v1/msg/send",
-			"/v1/trust/query",
+			"/v1/peerlens/query",
 			"/healthz",
 			"/readyz",
 		}

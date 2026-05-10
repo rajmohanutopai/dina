@@ -66,11 +66,11 @@ func (p *PDSPublisher) SignAndPublish(_ context.Context, record PDSRecord) (stri
 // ValidateLexicon checks a record against its Lexicon schema.
 func (p *PDSPublisher) ValidateLexicon(record PDSRecord) error {
 	switch record.Collection {
-	case "com.dina.trust.attestation":
+	case "com.dina.peerlens.attestation":
 		return validateAttestation(record.Payload)
-	case "com.dina.trust.outcome":
+	case "com.dina.peerlens.outcome":
 		return validateOutcome(record.Payload)
-	case "com.dina.trust.bot":
+	case "com.dina.peerlens.bot":
 		return validateBot(record.Payload)
 	default:
 		// Unknown collection — allow for extensibility.

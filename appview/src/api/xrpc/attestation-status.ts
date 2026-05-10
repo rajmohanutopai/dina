@@ -4,7 +4,7 @@ import type { DrizzleDB } from '@/db/connection.js'
 import { attestations, ingestRejections } from '@/db/schema/index.js'
 
 /**
- * `com.dina.trust.attestationStatus` (TN-API-005 / Plan §3.5.1 + §6).
+ * `com.dina.peerlens.attestationStatus` (TN-API-005 / Plan §3.5.1 + §6).
  *
  * Mobile outbox-watcher polling endpoint. The mobile client maintains
  * an "expected pending" set of AT-URIs it published to its local PDS;

@@ -4,12 +4,12 @@ import {
   domainScores,
   didProfiles,
   attestations,
-  trustEdges,
+  peerlensEdges,
 } from '@/db/schema/index.js'
 import { CONSTANTS } from '@/config/constants.js'
 import { logger } from '@/shared/utils/logger.js'
 import { metrics } from '@/shared/utils/metrics.js'
-import { clamp } from '../algorithms/trust-score.js'
+import { clamp } from '../algorithms/peerlens-score.js'
 
 const BATCH_SIZE = CONSTANTS.SCORER_BATCH_SIZE
 
@@ -74,12 +74,12 @@ export async function refreshDomainScores(db: DrizzleDB): Promise<void> {
 
       // Boost from domain-specific inbound trust edges
       const domainEdges = await db
-        .select({ weight: trustEdges.weight })
-        .from(trustEdges)
+        .select({ weight: peerlensEdges.weight })
+        .from(peerlensEdges)
         .where(
           and(
-            eq(trustEdges.toDid, ds.did),
-            eq(trustEdges.domain, ds.domain),
+            eq(peerlensEdges.toDid, ds.did),
+            eq(peerlensEdges.domain, ds.domain),
           )
         )
 

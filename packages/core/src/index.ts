@@ -586,15 +586,15 @@ export {
 // expect.resolves, fs.resolve, path.resolve) — keep it isolated to
 // `stagingResolve`. Same for `fail` (jest's `fail()`).
 export type { StagingItem } from './staging/service';
-export * from './trust/levels';
-export type { TrustLevel, TrustRing } from './trust/levels';
-export * from './trust/source_trust';
+export * from './peerlens/levels';
+export type { TrustLevel, TrustRing } from './peerlens/levels';
+export * from './peerlens/source_trust';
 export type {
   SenderTrust,
   Confidence,
   RetrievalPolicy,
   SourceTrustResult,
-} from './trust/source_trust';
+} from './peerlens/source_trust';
 export * from './audit/hash_chain';
 export type { AuditEntry as AuditHashEntry } from './audit/hash_chain';
 export * from './export/archive';
@@ -634,8 +634,8 @@ export * from './ws/framing';
 export type { WSMessageType, WSMessage } from './ws/framing';
 export * from './onboarding/portable';
 export type { OnboardingResult } from './onboarding/portable';
-export * from './trust/pds_publish';
-export type { Attestation, SignedAttestation } from './trust/pds_publish';
+export * from './peerlens/pds_publish';
+export type { Attestation, SignedAttestation } from './peerlens/pds_publish';
 export * from './approval/pending_reason';
 export type { PendingReasonRecord } from './approval/pending_reason';
 export {
@@ -688,12 +688,12 @@ export * from './process/model';
 export type { Platform } from './process/model';
 export * from './lifecycle/sleep_wake';
 export type { AppState } from './lifecycle/sleep_wake';
-export * from './trust/network_search';
-export * from './trust/cache';
-export type { TrustScore } from './trust/cache';
-export { TrustQueryClient } from './trust/query_client';
+export * from './peerlens/network_search';
+export * from './peerlens/cache';
+export type { TrustScore } from './peerlens/cache';
+export { PeerlensQueryClient } from './peerlens/query_client';
 export type {
-  TrustProfile,
+  PeerlensProfile,
   AttestationSummary,
   ReviewerStats,
   QueryConfig,
@@ -702,7 +702,7 @@ export type {
   AttestationSearchParams,
   AttestationSearchHit,
   SearchResult,
-} from './trust/query_client';
+} from './peerlens/query_client';
 export * from './relay/msgbox_handlers';
 export { bootstrapMsgBox } from './relay/msgbox_boot';
 export type { MsgBoxBootConfig } from './relay/msgbox_boot';
@@ -900,3 +900,4 @@ export type {
   CanonicalRequestSigner,
   HttpCoreTransportOptions,
 } from './client/http-transport';
+export { FEATURE_NAMES, type FeatureKey, type FeatureName } from './feature-names';

@@ -74,7 +74,7 @@ describe('SearchParams — limit + cursor', () => {
   })
 
   it('accepts an opaque cursor string (composite or legacy)', () => {
-    const composite = '2026-04-30T00:00:00.000Z::at://did:plc:x/com.dina.trust.attestation/abc'
+    const composite = '2026-04-30T00:00:00.000Z::at://did:plc:x/com.dina.peerlens.attestation/abc'
     const r = SearchParams.safeParse({ cursor: composite })
     expect(r.success).toBe(true)
   })

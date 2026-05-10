@@ -12,8 +12,8 @@
 import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
-import AccessibilityScreen from '../../app/trust-preferences/accessibility';
-import LanguagesScreen from '../../app/trust-preferences/languages';
+import AccessibilityScreen from '../../app/peerlens-preferences/accessibility';
+import LanguagesScreen from '../../app/peerlens-preferences/languages';
 import {
   loadUserPreferences,
   resetUserPreferencesForTest,

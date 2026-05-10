@@ -7,15 +7,16 @@
  */
 
 import React from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { StyleSheet, Text, View } from 'react-native';
 import { OnboardingShell } from './shell';
-import { colors, fonts, spacing, radius } from '../../theme';
+import { FEATURES, FeatureIcon } from '../../features';
+import { colors, fonts, spacing, radius, textStyles } from '../../theme';
 
 export interface WelcomeProps {
   onGetStarted: () => void;
 }
+
+const PILL_FEATURES = ['vault', 'agentTasks', 'reminders', 'talk', 'services', 'peerlens'] as const;
 
 export function Welcome(props: WelcomeProps): React.ReactElement {
   return (
@@ -24,9 +25,9 @@ export function Welcome(props: WelcomeProps): React.ReactElement {
         <Text style={styles.brand}>DINA</Text>
         <Text style={styles.headline}>Your sovereign{'\n'}personal AI</Text>
         <View style={styles.pills}>
-          {['Data Security', 'Agent Tasks', 'Reminders', 'Dina-to-Dina Talk', 'Services', 'PeerLens'].map((label) => (
-            <View key={label} style={styles.pill}>
-              <Text style={styles.pillText}>{label}</Text>
+          {PILL_FEATURES.map((key) => (
+            <View key={key} style={styles.pill}>
+              <Text style={styles.pillText}>{FEATURES[key].pillLabel ?? FEATURES[key].name}</Text>
             </View>
           ))}
         </View>
@@ -34,43 +35,37 @@ export function Welcome(props: WelcomeProps): React.ReactElement {
 
       <View style={styles.pillars}>
         <Pillar
-          icon={<Ionicons name="finger-print" size={18} color={colors.accent} />}
-          title="Sovereign Identity"
+          feature="identity"
           body="One identity, with all your data, memories, and connections anchored to it."
         />
         <Pillar
-          icon={<Ionicons name="lock-closed-outline" size={18} color={colors.accent} />}
+          feature="vault"
           title="Private by default"
           body="All data encrypted and in your device, signed by your identity. Delete the key to delete everything, forever."
         />
         <Pillar
-          icon={<Ionicons name="alarm-outline" size={18} color={colors.accent} />}
+          feature="reminders"
           title="Smart reminders"
           body="Dina sets reminders automatically, with context from your vault."
         />
         <Pillar
-          icon={<Ionicons name="chatbubbles-outline" size={18} color={colors.accent} />}
-          title="Dina-to-Dina Talk"
+          feature="talk"
           body="Encrypted peer-to-peer messaging with the people you trust, without a server in the middle."
         />
         <Pillar
-          icon={<MaterialCommunityIcons name="robot-outline" size={18} color={colors.accent} />}
-          title="Agent Tasks"
+          feature="agentTasks"
           body="Give Dina a task and she delegates it to your connected agents."
         />
         <Pillar
-          icon={<Ionicons name="shield-checkmark-outline" size={18} color={colors.accent} />}
-          title="Approvals & Security"
+          feature="security"
           body="Sensitive actions from connected agents wait for your approval."
         />
         <Pillar
-          icon={<Ionicons name="glasses-outline" size={18} color={colors.accent} />}
-          title="PeerLens"
+          feature="peerlens"
           body="Reviews signed by real people, used by Dina during high value decisions."
         />
         <Pillar
-          icon={<Ionicons name="compass-outline" size={18} color={colors.accent} />}
-          title="Services"
+          feature="services"
           body="A network of Dinas acting as service providers. Ask a question, and the right service provider answers you directly."
         />
       </View>
@@ -79,19 +74,22 @@ export function Welcome(props: WelcomeProps): React.ReactElement {
 }
 
 function Pillar({
-  icon,
+  feature,
   title,
   body,
 }: {
-  icon: React.ReactNode;
-  title: string;
+  feature: import('../../features').FeatureKey;
+  /** Overrides the feature's canonical name when the welcome copy differs. */
+  title?: string;
   body: string;
 }): React.ReactElement {
   return (
     <View style={styles.pillar}>
-      <View style={styles.pillarIcon}>{icon}</View>
+      <View style={styles.pillarIcon}>
+        <FeatureIcon feature={feature} size={18} color={colors.accent} />
+      </View>
       <View style={styles.pillarText}>
-        <Text style={styles.pillarTitle}>{title}</Text>
+        <Text style={styles.pillarTitle}>{title ?? FEATURES[feature].name}</Text>
         <Text style={styles.pillarBody}>{body}</Text>
       </View>
     </View>
@@ -105,20 +103,15 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
   },
   brand: {
-    fontSize: 12,
+    ...textStyles.screenEyebrow,
     letterSpacing: 6,
-    color: colors.textMuted,
-    fontWeight: '700',
     marginBottom: spacing.lg,
   },
   headline: {
-    fontFamily: Platform.OS === 'ios' ? fonts.serif : undefined,
-    fontStyle: 'italic',
+    ...textStyles.screenHeadline,
     fontSize: 40,
-    lineHeight: 46,
+    lineHeight: 48,
     textAlign: 'center',
-    color: colors.textPrimary,
-    letterSpacing: -0.4,
   },
   pills: {
     flexDirection: 'row',

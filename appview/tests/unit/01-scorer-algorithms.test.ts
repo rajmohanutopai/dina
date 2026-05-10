@@ -23,7 +23,7 @@ import {
   daysSince,
   type TrustScoreInput,
   type TrustScoreOutput,
-} from '@/scorer/algorithms/trust-score'
+} from '@/scorer/algorithms/peerlens-score'
 import {
   computeReviewerQuality,
   type ReviewerQualityInput,

@@ -52,7 +52,7 @@ import {
   wipeOrphanVaultFiles,
   writeInstallMarker,
 } from '../services/install_marker';
-import { colors, fonts, radius, spacing } from '../theme';
+import { colors, fonts, radius, spacing, textStyles } from '../theme';
 import { OnboardingFlow } from './onboarding/onboarding_flow';
 import { InfraSetupForm } from './onboarding/infra_setup';
 
@@ -335,25 +335,18 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xxl * 2,
   },
   brand: {
-    fontSize: 12,
+    ...textStyles.screenEyebrow,
     letterSpacing: 6,
-    fontWeight: '700',
-    color: colors.textMuted,
   },
   headline: {
+    ...textStyles.screenHeadline,
     marginTop: spacing.md,
-    fontFamily: Platform.OS === 'ios' ? fonts.serif : undefined,
-    fontStyle: 'italic',
     fontSize: 36,
-    lineHeight: 40,
-    color: colors.textPrimary,
-    letterSpacing: -0.4,
+    lineHeight: 44,
   },
   sub: {
+    ...textStyles.screenBody,
     marginTop: spacing.sm,
-    fontSize: 15,
-    lineHeight: 22,
-    color: colors.textSecondary,
   },
   label: {
     marginTop: spacing.xl,

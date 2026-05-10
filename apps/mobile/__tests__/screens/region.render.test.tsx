@@ -14,7 +14,7 @@
 import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
-import RegionScreen from '../../app/trust-preferences/region';
+import RegionScreen from '../../app/peerlens-preferences/region';
 import {
   resetUserPreferencesForTest,
   saveUserPreferences,

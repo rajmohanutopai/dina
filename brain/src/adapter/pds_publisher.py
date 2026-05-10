@@ -1,6 +1,6 @@
 """AT Protocol PDS publisher for trust records.
 
-Publishes com.dina.trust.* records to the community PDS
+Publishes com.dina.peerlens.* records to the community PDS
 (e.g., pds.dinakernel.com) via standard AT Protocol API.
 
 Records are signed with the PDS account credentials, not the
@@ -53,10 +53,10 @@ class PDSPublisher:
         self, subject_did: str, text: str, confidence: str = "high",
         relationship: str = "personal",
     ) -> dict:
-        """Publish a com.dina.trust.vouch record."""
+        """Publish a com.dina.peerlens.vouch record."""
         await self._ensure_session()
         record = {
-            "$type": "com.dina.trust.vouch",
+            "$type": "com.dina.peerlens.vouch",
             "subject": subject_did,
             "vouchType": "personal",
             "confidence": confidence,
@@ -64,16 +64,16 @@ class PDSPublisher:
             "text": text,
             "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
-        return await self._create_record("com.dina.trust.vouch", record)
+        return await self._create_record("com.dina.peerlens.vouch", record)
 
     async def publish_review(
         self, subject_name: str, text: str, sentiment: str = "positive",
         category: str = "product-review",
     ) -> dict:
-        """Publish a com.dina.trust.attestation record (product review)."""
+        """Publish a com.dina.peerlens.attestation record (product review)."""
         await self._ensure_session()
         record = {
-            "$type": "com.dina.trust.attestation",
+            "$type": "com.dina.peerlens.attestation",
             "subject": {
                 "type": "product",
                 "name": subject_name,
@@ -84,22 +84,22 @@ class PDSPublisher:
             "text": text,
             "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
-        return await self._create_record("com.dina.trust.attestation", record)
+        return await self._create_record("com.dina.peerlens.attestation", record)
 
     async def publish_flag(
         self, subject_did: str, text: str, severity: str = "critical",
     ) -> dict:
-        """Publish a com.dina.trust.flag record."""
+        """Publish a com.dina.peerlens.flag record."""
         await self._ensure_session()
         record = {
-            "$type": "com.dina.trust.flag",
+            "$type": "com.dina.peerlens.flag",
             "subject": {"type": "did", "did": subject_did},
             "flagType": "fraud",
             "severity": severity,
             "text": text,
             "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
-        return await self._create_record("com.dina.trust.flag", record)
+        return await self._create_record("com.dina.peerlens.flag", record)
 
     async def _create_record(self, collection: str, record: dict) -> dict:
         """Create an AT Protocol record on the PDS."""

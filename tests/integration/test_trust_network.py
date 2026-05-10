@@ -628,12 +628,12 @@ class TestATProtocolPDS:
         self,
         mock_app_view: MockAppView,
     ) -> None:
-        """Trust records use custom com.dina.trust.* lexicons.
+        """Trust records use custom com.dina.peerlens.* lexicons.
         The AppView indexes only matching lexicons."""
         records = [
             {
                 "id": "rec_1",
-                "lexicon": "com.dina.trust.review",
+                "lexicon": "com.dina.peerlens.review",
                 "author_did": "did:plc:Author1",
                 "product_id": "laptop_1",
                 "rating": 90,
@@ -641,7 +641,7 @@ class TestATProtocolPDS:
             },
             {
                 "id": "rec_2",
-                "lexicon": "com.dina.trust.outcome",
+                "lexicon": "com.dina.peerlens.outcome",
                 "author_did": "did:plc:Author2",
                 "product_id": "laptop_1",
                 "rating": 85,
@@ -656,11 +656,11 @@ class TestATProtocolPDS:
         ]
         indexed = mock_app_view.consume_firehose(records)
 
-        # Only the two com.dina.trust.* records are indexed
+        # Only the two com.dina.peerlens.* records are indexed
         assert indexed == 2
         assert len(mock_app_view.indexed_records) == 2
         lexicons = {r["lexicon"] for r in mock_app_view.indexed_records}
-        assert all(lex.startswith("com.dina.trust.") for lex in lexicons)
+        assert all(lex.startswith("com.dina.peerlens.") for lex in lexicons)
 
 # TST-INT-305
     # TRACE: {"suite": "INT", "case": "0305", "section": "11", "sectionName": "PeerLens Integration", "subsection": "04", "scenario": "05", "title": "author_deletes_own_review_signed_tombstone"}
@@ -738,7 +738,7 @@ class TestATProtocolPDS:
         records = [
             {
                 "id": f"rec_{i}",
-                "lexicon": "com.dina.trust.review",
+                "lexicon": "com.dina.peerlens.review",
                 "author_did": f"did:plc:Expert{i}",
                 "product_id": "laptop_agg",
                 "rating": rating,
@@ -754,7 +754,7 @@ class TestATProtocolPDS:
 
         # No separate aggregate record exists in the index
         assert all(
-            r.get("lexicon") != "com.dina.trust.aggregate"
+            r.get("lexicon") != "com.dina.peerlens.aggregate"
             for r in mock_app_view.indexed_records
         )
         # Only the 3 individual review records
@@ -777,7 +777,7 @@ class TestATProtocolPDS:
         records = [
             {
                 "id": "rec_replicated_1",
-                "lexicon": "com.dina.trust.review",
+                "lexicon": "com.dina.peerlens.review",
                 "author_did": "did:plc:Author1",
                 "product_id": "laptop_offline",
                 "rating": 88,
@@ -855,7 +855,7 @@ class TestATProtocolPDS:
         records = [
             {
                 "id": "rep_1",
-                "lexicon": "com.dina.trust.review",
+                "lexicon": "com.dina.peerlens.review",
                 "author_did": "did:plc:Author1",
                 "product_id": "chair_1",
                 "rating": 91,
@@ -879,7 +879,7 @@ class TestATProtocolPDS:
         # Only the trust record is indexed
         assert indexed == 1
         assert len(mock_app_view.indexed_records) == 1
-        assert mock_app_view.indexed_records[0]["lexicon"] == "com.dina.trust.review"
+        assert mock_app_view.indexed_records[0]["lexicon"] == "com.dina.peerlens.review"
 
 # TST-INT-319
     # TRACE: {"suite": "INT", "case": "0319", "section": "11", "sectionName": "PeerLens Integration", "subsection": "04", "scenario": "11", "title": "relay_crawls_pds_via_delta_sync"}
@@ -892,7 +892,7 @@ class TestATProtocolPDS:
         batch_1 = [
             {
                 "id": "rec_1",
-                "lexicon": "com.dina.trust.review",
+                "lexicon": "com.dina.peerlens.review",
                 "author_did": "did:plc:Author1",
                 "product_id": "phone_1",
                 "rating": 85,
@@ -907,7 +907,7 @@ class TestATProtocolPDS:
         batch_2 = [
             {
                 "id": "rec_2",
-                "lexicon": "com.dina.trust.review",
+                "lexicon": "com.dina.peerlens.review",
                 "author_did": "did:plc:Author2",
                 "product_id": "phone_2",
                 "rating": 78,
@@ -915,7 +915,7 @@ class TestATProtocolPDS:
             },
             {
                 "id": "rec_3",
-                "lexicon": "com.dina.trust.outcome",
+                "lexicon": "com.dina.peerlens.outcome",
                 "author_did": "did:plc:Author3",
                 "product_id": "phone_1",
                 "rating": 82,

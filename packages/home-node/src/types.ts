@@ -52,14 +52,14 @@ export interface AskResult {
   error?: string;
 }
 
-export interface TrustPublishInput {
+export interface PeerlensPublishInput {
   subjectDid: string;
   category: string;
   rating: number;
   note?: string;
 }
 
-export interface TrustPublishResult {
+export interface PeerlensPublishResult {
   status: 'queued' | 'published' | 'failed';
   recordUri?: string;
   error?: string;
@@ -81,7 +81,7 @@ export interface HomeNodeRuntime extends HomeNodeLifecycle {
   status(): Promise<HomeNodeStatus>;
   remember(input: RememberInput): Promise<RememberResult>;
   ask(input: AskInput): Promise<AskResult>;
-  publishTrust(input: TrustPublishInput): Promise<TrustPublishResult>;
+  publishTrust(input: PeerlensPublishInput): Promise<PeerlensPublishResult>;
   queryService(input: ServiceQueryInput): Promise<ServiceQueryResult>;
 }
 
@@ -99,7 +99,7 @@ export type HomeNodeHandler<I, O> = (
 export interface HomeNodeRuntimeHandlers {
   remember?: HomeNodeHandler<RememberInput, RememberResult>;
   ask?: HomeNodeHandler<AskInput, AskResult>;
-  publishTrust?: HomeNodeHandler<TrustPublishInput, TrustPublishResult>;
+  publishTrust?: HomeNodeHandler<PeerlensPublishInput, PeerlensPublishResult>;
   queryService?: HomeNodeHandler<ServiceQueryInput, ServiceQueryResult>;
 }
 

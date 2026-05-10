@@ -105,6 +105,47 @@ export const fonts = {
   monoMedium: 'JetBrainsMono_500Medium',
 } as const;
 
+/**
+ * Shared text styles for screen-level headings, eyebrows, and body copy.
+ *
+ * Spread these into `StyleSheet.create` objects and add
+ * context-specific overrides (fontSize, textAlign, marginTop, …):
+ *
+ *   headline: { ...textStyles.screenHeadline, fontSize: 36 },
+ *
+ * This keeps the display font, colour, and letter-spacing consistent
+ * across infra_setup, welcome, help, unlock_gate, and any future
+ * informational screen without repeating the Platform.OS conditional.
+ */
+import type { TextStyle } from 'react-native';
+
+export const textStyles = {
+  // Small-caps eyebrow label above a headline ("DINA", "HELP", …).
+  screenEyebrow: {
+    fontFamily: fonts.sansSemibold,
+    fontSize: 11,
+    letterSpacing: 2.4,
+    color: colors.textMuted,
+  } as TextStyle,
+
+  // Cormorant Garamond italic — the Dina display face.
+  // Add fontSize + lineHeight per context; textAlign if centered.
+  screenHeadline: {
+    fontFamily: Platform.OS === 'ios' ? fonts.display : undefined,
+    fontStyle: 'italic' as TextStyle['fontStyle'],
+    color: colors.textPrimary,
+    letterSpacing: -0.4,
+  } as TextStyle,
+
+  // Body paragraph below a headline.
+  screenBody: {
+    fontFamily: fonts.sans,
+    fontSize: 15,
+    lineHeight: 22,
+    color: colors.textSecondary,
+  } as TextStyle,
+} as const;
+
 export const shadows = {
   sm: Platform.select({
     ios: {

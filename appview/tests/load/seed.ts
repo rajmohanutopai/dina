@@ -164,7 +164,7 @@ function subjectId(i: number): string {
 }
 
 function attestationUri(authorIdx: number, attIdx: number): string {
-  return `at://${authorDid(authorIdx)}/com.dina.trust.attestation/loadtest-${String(attIdx).padStart(7, '0')}`
+  return `at://${authorDid(authorIdx)}/com.dina.peerlens.attestation/loadtest-${String(attIdx).padStart(7, '0')}`
 }
 
 function syntheticHandle(i: number): string {

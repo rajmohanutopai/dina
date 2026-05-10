@@ -11,8 +11,8 @@ import type {
   RememberResult,
   ServiceQueryInput,
   ServiceQueryResult,
-  TrustPublishInput,
-  TrustPublishResult,
+  PeerlensPublishInput,
+  PeerlensPublishResult,
 } from './types';
 
 export class HomeNodeFeatureUnavailableError extends Error {
@@ -90,7 +90,7 @@ class DelegatingHomeNodeRuntime implements HomeNodeRuntime {
     return handler(input, this.context);
   }
 
-  async publishTrust(input: TrustPublishInput): Promise<TrustPublishResult> {
+  async publishTrust(input: PeerlensPublishInput): Promise<PeerlensPublishResult> {
     const handler = this.options.handlers?.publishTrust;
     if (!handler) throw new HomeNodeFeatureUnavailableError('trust_publish');
     return handler(input, this.context);

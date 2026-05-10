@@ -611,7 +611,7 @@ class TestProductResearchPurchase:
         }
 
         record_uri = don_alonso.pds.publish(
-            "com.dina.trust.outcome", record,
+            "com.dina.peerlens.outcome", record,
         )
         assert record_uri.startswith("at://")
         assert don_alonso.did in record_uri, (
@@ -621,7 +621,7 @@ class TestProductResearchPurchase:
         # ------------------------------------------------------------------
         # 1. Verify exact record count and field VALUES
         # ------------------------------------------------------------------
-        published_records = don_alonso.pds.list_records("com.dina.trust.outcome")
+        published_records = don_alonso.pds.list_records("com.dina.peerlens.outcome")
         assert len(published_records) == 1, (
             f"Expected exactly 1 published record, got {len(published_records)}"
         )

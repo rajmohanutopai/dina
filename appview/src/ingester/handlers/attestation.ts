@@ -1,16 +1,16 @@
 import { eq, sql } from 'drizzle-orm'
 import type { RecordHandler, HandlerContext, RecordOp } from './index.js'
 import type { Attestation } from '@/shared/types/lexicon-types.js'
-import { attestations, mentionEdges, subjects, trustEdges } from '@/db/schema/index.js'
+import { attestations, mentionEdges, subjects, peerlensEdges } from '@/db/schema/index.js'
 import { deletionHandler } from '../deletion-handler.js'
-import { addTrustEdge } from '../trust-edge-sync.js'
+import { addTrustEdge } from '../peerlens-edge-sync.js'
 import { detectLanguage } from '../language-detect.js'
 import { resolveOrCreateSubject } from '@/db/queries/subjects.js'
 import { markDirty } from '@/db/queries/dirty-flags.js'
-import { readCachedTrustV1Params } from '@/scorer/trust-v1-params-reader.js'
+import { readCachedTrustV1Params } from '@/scorer/peerlens-v1-params-reader.js'
 
 /**
- * Handler for com.dina.trust.attestation records.
+ * Handler for com.dina.peerlens.attestation records.
  *
  * Attestations are the core trust primitive — a structured review
  * of a subject (person, product, content, etc.). This is the most complex
@@ -246,7 +246,7 @@ export const attestationHandler: RecordHandler = {
     // HIGH-10 fix: Always remove old trust edge for this URI first, then
     // conditionally re-add. Prevents stale edges when sentiment changes
     // from positive to non-positive on update.
-    await ctx.db.delete(trustEdges).where(eq(trustEdges.sourceUri, op.uri))
+    await ctx.db.delete(peerlensEdges).where(eq(peerlensEdges.sourceUri, op.uri))
 
     // Add trust edge only for positive attestations of DID subjects (HIGH-07)
     if (record.sentiment === 'positive' && record.subject.type === 'did' && record.subject.did) {

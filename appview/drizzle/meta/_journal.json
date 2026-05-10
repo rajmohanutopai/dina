@@ -71,6 +71,20 @@
       "when": 1788430000000,
       "tag": "0009_attestation_availability_schedule",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1747094400000,
+      "tag": "0010_rename_trust_to_peerview",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1747098000000,
+      "tag": "0011_rename_peerview_to_peerlens",
+      "breakpoints": true
     }
   ]
 }

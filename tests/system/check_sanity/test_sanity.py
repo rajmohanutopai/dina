@@ -619,7 +619,7 @@ class TestAppViewTrustQueries:
 
     def test_resolve_did(self, appview, alonso_did):
         r = httpx.get(
-            f"{appview}/xrpc/com.dina.trust.resolve",
+            f"{appview}/xrpc/com.dina.peerlens.resolve",
             params={"did": alonso_did},
             timeout=5,
         )
@@ -628,7 +628,7 @@ class TestAppViewTrustQueries:
 
     def test_search_attestations(self, appview):
         r = httpx.get(
-            f"{appview}/xrpc/com.dina.trust.search",
+            f"{appview}/xrpc/com.dina.peerlens.search",
             params={"q": "quality", "limit": 10},
             timeout=5,
         )
@@ -638,7 +638,7 @@ class TestAppViewTrustQueries:
 
     def test_get_profile(self, appview, alonso_did):
         r = httpx.get(
-            f"{appview}/xrpc/com.dina.trust.getProfile",
+            f"{appview}/xrpc/com.dina.peerlens.getProfile",
             params={"did": alonso_did},
             timeout=5,
         )
@@ -646,7 +646,7 @@ class TestAppViewTrustQueries:
 
     def test_get_attestations(self, appview, alonso_did):
         r = httpx.get(
-            f"{appview}/xrpc/com.dina.trust.getAttestations",
+            f"{appview}/xrpc/com.dina.peerlens.getAttestations",
             params={"authorDid": alonso_did, "limit": 10},
             timeout=5,
         )
@@ -721,7 +721,7 @@ class TestFullPipeline:
         assert len(jwt) > 0
 
     def test_create_attestation_on_pds(self, pds_url, pds_account, pds_auth_headers):
-        """Create a com.dina.trust.attestation record on the local PDS."""
+        """Create a com.dina.peerlens.attestation record on the local PDS."""
         did, _ = pds_account
         now = datetime.now(timezone.utc).isoformat()
 
@@ -729,9 +729,9 @@ class TestFullPipeline:
             f"{pds_url}/xrpc/com.atproto.repo.createRecord",
             json={
                 "repo": did,
-                "collection": "com.dina.trust.attestation",
+                "collection": "com.dina.peerlens.attestation",
                 "record": {
-                    "$type": "com.dina.trust.attestation",
+                    "$type": "com.dina.peerlens.attestation",
                     "subject": {
                         "type": "product",
                         "name": "Pipeline Test Chair",
@@ -768,9 +768,9 @@ class TestFullPipeline:
             f"{pds_url}/xrpc/com.atproto.repo.createRecord",
             json={
                 "repo": did,
-                "collection": "com.dina.trust.attestation",
+                "collection": "com.dina.peerlens.attestation",
                 "record": {
-                    "$type": "com.dina.trust.attestation",
+                    "$type": "com.dina.peerlens.attestation",
                     "subject": {
                         "type": "product",
                         "name": marker,
@@ -835,9 +835,9 @@ class TestFullPipeline:
             f"{pds_url}/xrpc/com.atproto.repo.createRecord",
             json={
                 "repo": did,
-                "collection": "com.dina.trust.attestation",
+                "collection": "com.dina.peerlens.attestation",
                 "record": {
-                    "$type": "com.dina.trust.attestation",
+                    "$type": "com.dina.peerlens.attestation",
                     "subject": {
                         "type": "did",
                         "did": target_did,

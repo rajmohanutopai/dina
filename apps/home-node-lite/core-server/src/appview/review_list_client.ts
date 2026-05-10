@@ -39,7 +39,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 6d task 6.15.
  */
 
-import type { XrpcFetchResult } from './trust_resolve_client';
+import type { XrpcFetchResult } from './peerlens_resolve_client';
 
 export interface ReviewListRequest {
   /** DID of the person/service being reviewed. */

@@ -28,8 +28,8 @@ import {
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import type { ChatMessage } from '@dina/brain/chat';
 import { useD2DChat } from '../../src/hooks/useD2DChat';
-import { getProfile as getTrustProfile } from '../../src/trust/appview_runtime';
-import { displayName as displayNameOf } from '../../src/trust/handle_display';
+import { getProfile as getTrustProfile } from '../../src/peerlens/appview_runtime';
+import { displayName as displayNameOf } from '../../src/peerlens/handle_display';
 import { colors, fonts, spacing } from '../../src/theme';
 import { ChatSendError } from '../../src/services/chat_d2d';
 import { IdentityModal } from '../../src/components/identity/identity_modal';

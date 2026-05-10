@@ -1,7 +1,7 @@
 /**
  * Unit tests for the TN-OPS-003 PDS-suspension stack:
  *   - `db/queries/suspended-pds-hosts.ts` reader/writer
- *   - `admin/trust-suspend-pds-cli.ts` CLI parser + runner
+ *   - `admin/peerlens-suspend-pds-cli.ts` CLI parser + runner
  *
  * Strategy:
  *   - The query layer is tested via a stub DB that captures the
@@ -42,7 +42,7 @@ import {
   parseArgs,
   runSuspendPdsCommand,
   type ParsedArgs,
-} from '@/admin/trust-suspend-pds-cli'
+} from '@/admin/peerlens-suspend-pds-cli'
 import type { DrizzleDB } from '@/db/connection'
 
 // ── Stub DB ────────────────────────────────────────────────────

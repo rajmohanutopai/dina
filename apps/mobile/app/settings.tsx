@@ -374,7 +374,7 @@ export default function SettingsScreen() {
       <SettingsSection title="PEERLENS PREFERENCES">
         <TouchableOpacity
           style={styles.row}
-          onPress={() => router.push('/trust-preferences/region')}
+          onPress={() => router.push('/peerlens-preferences/region')}
           accessibilityRole="button"
           accessibilityLabel="Open Region settings"
           testID="settings-row-region"
@@ -384,7 +384,7 @@ export default function SettingsScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.row}
-          onPress={() => router.push('/trust-preferences/budget')}
+          onPress={() => router.push('/peerlens-preferences/budget')}
           accessibilityRole="button"
           accessibilityLabel="Open Budget settings"
           testID="settings-row-budget"
@@ -394,7 +394,7 @@ export default function SettingsScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.row}
-          onPress={() => router.push('/trust-preferences/devices')}
+          onPress={() => router.push('/peerlens-preferences/devices')}
           accessibilityRole="button"
           accessibilityLabel="Open Devices settings"
           testID="settings-row-devices"
@@ -404,7 +404,7 @@ export default function SettingsScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.row}
-          onPress={() => router.push('/trust-preferences/languages')}
+          onPress={() => router.push('/peerlens-preferences/languages')}
           accessibilityRole="button"
           accessibilityLabel="Open Languages settings"
           testID="settings-row-languages"
@@ -414,7 +414,7 @@ export default function SettingsScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.row}
-          onPress={() => router.push('/trust-preferences/dietary')}
+          onPress={() => router.push('/peerlens-preferences/dietary')}
           accessibilityRole="button"
           accessibilityLabel="Open Dietary settings"
           testID="settings-row-dietary"
@@ -424,7 +424,7 @@ export default function SettingsScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.row}
-          onPress={() => router.push('/trust-preferences/accessibility')}
+          onPress={() => router.push('/peerlens-preferences/accessibility')}
           accessibilityRole="button"
           accessibilityLabel="Open Accessibility settings"
           testID="settings-row-accessibility"

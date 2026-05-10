@@ -1119,7 +1119,7 @@ def test_appview_censorship_detection():
 
     # AppView A indexes 50 records
     records = [
-        {"lexicon": "com.dina.trust.attestation",
+        {"lexicon": "com.dina.peerlens.attestation",
          "author_did": "did:plc:Author1",
          "product_id": f"product_{i}",
          "rating": 80 + (i % 20)}

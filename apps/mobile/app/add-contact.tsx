@@ -35,7 +35,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { addContact, getContact } from '@dina/core';
-import { getProfile as getTrustProfile } from '../src/trust/appview_runtime';
+import { getProfile as getTrustProfile } from '../src/peerlens/appview_runtime';
 import { colors, fonts, spacing, radius } from '../src/theme';
 
 export default function AddContactScreen() {

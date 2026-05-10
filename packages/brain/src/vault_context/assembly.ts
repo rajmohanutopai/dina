@@ -19,7 +19,7 @@ import {
 import { listPending } from '@dina/core/reminders';
 import {
   searchTrustNetwork,
-  type TrustSearchQuery,
+  type PeerlensSearchQuery,
   type SearchType,
 } from '@dina/core';
 

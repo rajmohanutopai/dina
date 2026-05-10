@@ -1,7 +1,7 @@
 /**
  * JS-rendered header for per-tab Stack INDEX screens (CR-3 fix).
  *
- * Background: per-tab Stack screens (`app/trust/_layout.tsx`,
+ * Background: per-tab Stack screens (`app/peerlens/_layout.tsx`,
  * `app/vault/_layout.tsx`) use `react-native-screens` native-stack on
  * iOS, which renders the header via UINavigationBar +
  * UIBarButtonItem. Custom `headerLeft` / `headerRight` JSX —
@@ -18,7 +18,7 @@
  * module provides that JS header, parameterised so both the Vault
  * and Trust per-tab Stacks can share it.
  *
- * Drill-down screens within those Stacks (e.g. `/trust/[subjectId]`,
+ * Drill-down screens within those Stacks (e.g. `/peerlens/[subjectId]`,
  * `/vault/[name]`) keep the native header — their auto-back chevron
  * uses iOS's system back-button trait and is exposed to VoiceOver
  * correctly. Only the index-screen hamburger + help needed

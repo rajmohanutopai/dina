@@ -7,7 +7,7 @@ import {
   endorsements,
   flags,
   reactions,
-  trustEdges,
+  peerlensEdges,
   revocations,
   tombstones,
   delegations,
@@ -15,7 +15,7 @@ import {
   subjectScores,
   verifications,
 } from '@/db/schema/index.js'
-import { computeTrustScore, type TrustScoreInput } from '../algorithms/trust-score.js'
+import { computeTrustScore, type TrustScoreInput } from '../algorithms/peerlens-score.js'
 import { CONSTANTS } from '@/config/constants.js'
 import { logger } from '@/shared/utils/logger.js'
 import { metrics } from '@/shared/utils/metrics.js'
@@ -384,9 +384,9 @@ async function gatherTrustScoreInputs(db: DrizzleDB, did: string): Promise<Trust
 
   // Inbound trust edges
   const inboundEdges = await db
-    .select({ id: trustEdges.id })
-    .from(trustEdges)
-    .where(eq(trustEdges.toDid, did))
+    .select({ id: peerlensEdges.id })
+    .from(peerlensEdges)
+    .where(eq(peerlensEdges.toDid, did))
 
   const inboundEdgeCount = inboundEdges.length
 

@@ -10,8 +10,8 @@
 import {
   signAttestation,
   verifyAttestation,
-} from '../../../core/src/trust/pds_publish';
-import type { Attestation } from '../../../core/src/trust/pds_publish';
+} from '../../../core/src/peerlens/pds_publish';
+import type { Attestation } from '../../../core/src/peerlens/pds_publish';
 import { storeItem, queryVault, clearVaults } from '../../../core/src/vault/crud';
 import {
   createPersona,

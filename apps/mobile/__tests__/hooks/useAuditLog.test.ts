@@ -47,7 +47,7 @@ describe('Audit Log Hook (9.13)', () => {
     it('maps known action labels', () => {
       appendAudit('system', 'd2d_send', 'did:key:z6Mk', 'type=social.update');
       const entry = getAuditEntries()[0];
-      expect(entry.actionLabel).toBe('Sent D2D message');
+      expect(entry.actionLabel).toBe('Sent Talk message');
     });
 
     it('maps known actor labels', () => {

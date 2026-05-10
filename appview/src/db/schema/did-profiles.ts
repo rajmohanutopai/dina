@@ -30,7 +30,7 @@ export const didProfiles = pgTable('did_profiles', {
    * `backfill-handles` scorer job; nullable until first resolution
    * (and stays null when the DID's owner never published a handle).
    *
-   * Surfaced through `com.dina.trust.subjectGet` so the mobile reviewer
+   * Surfaced through `com.dina.peerlens.subjectGet` so the mobile reviewer
    * roster can render `raju.pds.dinakernel.com` instead of
    * `did:plc:abc123…`. The handle is informational only — DID is the
    * authoritative identity. A handle change in PLC eventually

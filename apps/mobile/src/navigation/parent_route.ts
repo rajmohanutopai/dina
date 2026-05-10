@@ -2,7 +2,7 @@
  * Logical-parent route resolution for the header back chevron.
  *
  * Most tabs that have drill-downs (Trust, Vault) now wrap their
- * folder in a `<Stack>` (`app/trust/_layout.tsx`,
+ * folder in a `<Stack>` (`app/peerlens/_layout.tsx`,
  * `app/vault/_layout.tsx`), and the Stack's auto back-chevron walks
  * the actual navigation history — `search → subject → reviewer →
  * back` correctly pops to subject rather than jumping to /trust.
@@ -51,16 +51,16 @@ const SECTION_PARENTS: Record<string, string> = {
 /**
  * Compute the logical parent route for the current pathname.
  *
- *   `/trust/search`         → `/trust`
- *   `/trust/<subjectId>`    → `/trust`
- *   `/trust/reviewer/<did>` → `/trust`
+ *   `/peerlens/search`         → `/peerlens`
+ *   `/peerlens/<subjectId>`    → `/peerlens`
+ *   `/peerlens/reviewer/<did>` → `/peerlens`
  *   `/admin`                → `/settings`
  *   `/chat/<did>`           → `/people`
  *   `/vault/<name>`         → `/vault`
  *   anything unknown        → `/`
  *
  * Special case: when the user is already AT a section's root path
- * (e.g. `/trust` itself), the back chevron should land on the Chat
+ * (e.g. `/peerlens` itself), the back chevron should land on the Chat
  * tab — there's nowhere else for it to go. Drill-downs under the
  * section keep returning to that section.
  */
@@ -76,8 +76,8 @@ export function parentRouteFor(pathname: string): string {
 
   if (sectionParent === undefined) return '/';
 
-  // At a section root (e.g. `/trust`, `/settings`) — bounce up one
-  // more level. Drill-downs under the section (`/trust/search`,
+  // At a section root (e.g. `/peerlens`, `/settings`) — bounce up one
+  // more level. Drill-downs under the section (`/peerlens/search`,
   // `/settings/...`) stay anchored to the section.
   if (segs.length === 1 && `/${first}` === sectionParent) {
     return '/';

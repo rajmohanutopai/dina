@@ -433,7 +433,7 @@ describe('CachingPlcResolver (task 6.10)', () => {
     });
 
     it('exactly one resolved event per resolve() call (no duplicate emission)', async () => {
-      // Same contract iter-60 pinned for trust_resolve_client. Two
+      // Same contract iter-60 pinned for peerlens_resolve_client. Two
       // sequential resolutions of the same DID emit two events, not
       // four (one per call, not "one per cache-state-machine-step").
       const { events, onEvent } = captureResolved();

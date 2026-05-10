@@ -26,8 +26,8 @@ export {
   MSG_TYPE_COORDINATION_RESPONSE as MsgTypeCoordinationResponse,
   MSG_TYPE_SOCIAL_UPDATE as MsgTypeSocialUpdate,
   MSG_TYPE_SAFETY_ALERT as MsgTypeSafetyAlert,
-  MSG_TYPE_TRUST_VOUCH_REQUEST as MsgTypeTrustVouchRequest,
-  MSG_TYPE_TRUST_VOUCH_RESPONSE as MsgTypeTrustVouchResponse,
+  MSG_TYPE_PEERLENS_VOUCH_REQUEST as MsgTypeTrustVouchRequest,
+  MSG_TYPE_PEERLENS_VOUCH_RESPONSE as MsgTypeTrustVouchResponse,
   MSG_TYPE_SERVICE_QUERY as MsgTypeServiceQuery,
   MSG_TYPE_SERVICE_RESPONSE as MsgTypeServiceResponse,
 } from '@dina/protocol';
@@ -37,8 +37,8 @@ import {
   MSG_TYPE_COORDINATION_RESPONSE as MsgTypeCoordinationResponse,
   MSG_TYPE_SOCIAL_UPDATE as MsgTypeSocialUpdate,
   MSG_TYPE_SAFETY_ALERT as MsgTypeSafetyAlert,
-  MSG_TYPE_TRUST_VOUCH_REQUEST as MsgTypeTrustVouchRequest,
-  MSG_TYPE_TRUST_VOUCH_RESPONSE as MsgTypeTrustVouchResponse,
+  MSG_TYPE_PEERLENS_VOUCH_REQUEST as MsgTypeTrustVouchRequest,
+  MSG_TYPE_PEERLENS_VOUCH_RESPONSE as MsgTypeTrustVouchResponse,
   MSG_TYPE_SERVICE_QUERY as MsgTypeServiceQuery,
   MSG_TYPE_SERVICE_RESPONSE as MsgTypeServiceResponse,
 } from '@dina/protocol';

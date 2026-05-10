@@ -15,7 +15,7 @@ import {
   computeSentimentV1,
   computeVouchV1,
   type ScoreV1Input,
-} from '../src/trust/score_v1';
+} from '../src/peerlens/score_v1';
 
 const NOW_MS = Date.UTC(2026, 4 - 1, 22, 12, 0, 0);
 const DAY = 86_400_000;

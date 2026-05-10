@@ -23,7 +23,7 @@ import { Link, useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { listContacts, deleteContact, type Contact } from '@dina/core';
 import { colors, fonts, spacing, radius, shadows } from '../src/theme';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
-import { getProfile as getTrustProfile } from '../src/trust/appview_runtime';
+import { getProfile as getTrustProfile } from '../src/peerlens/appview_runtime';
 import { loadInfraPreferences } from '../src/services/infra_preferences';
 
 export default function PeopleScreen() {

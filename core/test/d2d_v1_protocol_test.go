@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/mr-tron/base58"
-	trustadapter "github.com/rajmohanutopai/dina/core/internal/adapter/trust"
+	peerlensadapter "github.com/rajmohanutopai/dina/core/internal/adapter/peerlens"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/service"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
@@ -30,11 +30,11 @@ func testMultibaseKey() string {
 
 // TRACE: {"suite": "CORE", "case": "0452", "section": "07", "sectionName": "Transport Layer", "subsection": "01", "scenario": "01", "title": "D2D_V1_IngressContactsOnly_ExplicitContactAccepted"}
 func TestD2D_V1_IngressContactsOnly_ExplicitContactAccepted(t *testing.T) {
-	cache := trustadapter.NewInMemoryCache()
+	cache := peerlensadapter.NewInMemoryCache()
 	contacts := &mockContactLookup{contacts: map[string]string{
 		"did:plc:friend": "trusted",
 	}}
-	svc := service.NewTrustService(cache, trustadapter.NewResolver(""), contacts)
+	svc := service.NewPeerlensService(cache, peerlensadapter.NewResolver(""), contacts)
 
 	decision := svc.EvaluateIngress("did:plc:friend")
 	testutil.RequireTrue(t, decision == domain.IngressAccept, "explicit contact should be accepted")
@@ -42,14 +42,14 @@ func TestD2D_V1_IngressContactsOnly_ExplicitContactAccepted(t *testing.T) {
 
 // TRACE: {"suite": "CORE", "case": "0453", "section": "07", "sectionName": "Transport Layer", "subsection": "02", "scenario": "01", "title": "D2D_V1_IngressContactsOnly_NonContactQuarantined"}
 func TestD2D_V1_IngressContactsOnly_NonContactQuarantined(t *testing.T) {
-	cache := trustadapter.NewInMemoryCache()
+	cache := peerlensadapter.NewInMemoryCache()
 	// Add high PeerLens rating in cache but NOT as contact.
 	cache.Upsert(domain.TrustEntry{
 		DID: "did:plc:stranger", TrustScore: 0.95, TrustRing: 3,
 		Relationship: "1-hop", Source: "appview_sync",
 	})
 	contacts := &mockContactLookup{contacts: map[string]string{}}
-	svc := service.NewTrustService(cache, trustadapter.NewResolver(""), contacts)
+	svc := service.NewPeerlensService(cache, peerlensadapter.NewResolver(""), contacts)
 
 	decision := svc.EvaluateIngress("did:plc:stranger")
 	testutil.RequireTrue(t, decision == domain.IngressQuarantine,
@@ -58,11 +58,11 @@ func TestD2D_V1_IngressContactsOnly_NonContactQuarantined(t *testing.T) {
 
 // TRACE: {"suite": "CORE", "case": "0454", "section": "07", "sectionName": "Transport Layer", "subsection": "03", "scenario": "01", "title": "D2D_V1_IngressContactsOnly_BlockedContactDropped"}
 func TestD2D_V1_IngressContactsOnly_BlockedContactDropped(t *testing.T) {
-	cache := trustadapter.NewInMemoryCache()
+	cache := peerlensadapter.NewInMemoryCache()
 	contacts := &mockContactLookup{contacts: map[string]string{
 		"did:plc:blocked_user": "blocked",
 	}}
-	svc := service.NewTrustService(cache, trustadapter.NewResolver(""), contacts)
+	svc := service.NewPeerlensService(cache, peerlensadapter.NewResolver(""), contacts)
 
 	decision := svc.EvaluateIngress("did:plc:blocked_user")
 	testutil.RequireTrue(t, decision == domain.IngressDrop, "blocked contact should be dropped")
@@ -70,9 +70,9 @@ func TestD2D_V1_IngressContactsOnly_BlockedContactDropped(t *testing.T) {
 
 // TRACE: {"suite": "CORE", "case": "0455", "section": "07", "sectionName": "Transport Layer", "subsection": "04", "scenario": "01", "title": "D2D_V1_IngressContactsOnly_EmptyDIDQuarantined"}
 func TestD2D_V1_IngressContactsOnly_EmptyDIDQuarantined(t *testing.T) {
-	cache := trustadapter.NewInMemoryCache()
+	cache := peerlensadapter.NewInMemoryCache()
 	contacts := &mockContactLookup{contacts: map[string]string{}}
-	svc := service.NewTrustService(cache, trustadapter.NewResolver(""), contacts)
+	svc := service.NewPeerlensService(cache, peerlensadapter.NewResolver(""), contacts)
 
 	decision := svc.EvaluateIngress("")
 	testutil.RequireTrue(t, decision == domain.IngressQuarantine, "empty DID should be quarantined")
@@ -81,11 +81,11 @@ func TestD2D_V1_IngressContactsOnly_EmptyDIDQuarantined(t *testing.T) {
 // TRACE: {"suite": "CORE", "case": "0456", "section": "07", "sectionName": "Transport Layer", "subsection": "05", "scenario": "01", "title": "D2D_V1_IngressContactsOnly_UnknownTrustLevelAccepted"}
 func TestD2D_V1_IngressContactsOnly_UnknownTrustLevelAccepted(t *testing.T) {
 	// A contact with trust_level="unknown" is still an explicit contact.
-	cache := trustadapter.NewInMemoryCache()
+	cache := peerlensadapter.NewInMemoryCache()
 	contacts := &mockContactLookup{contacts: map[string]string{
 		"did:plc:new_contact": "unknown",
 	}}
-	svc := service.NewTrustService(cache, trustadapter.NewResolver(""), contacts)
+	svc := service.NewPeerlensService(cache, peerlensadapter.NewResolver(""), contacts)
 
 	decision := svc.EvaluateIngress("did:plc:new_contact")
 	testutil.RequireTrue(t, decision == domain.IngressAccept,

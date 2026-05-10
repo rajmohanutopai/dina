@@ -31,7 +31,7 @@ export type AppviewFlagKey = keyof typeof FLAG_DEFAULTS
  * Adding a new flag: add an entry here AND seed it in TN-DB-010.
  */
 export const FLAG_DEFAULTS = Object.freeze({
-  /** Master kill-switch for the `com.dina.trust.*` V1 surface. Plan §13.10 cutover defaults to ON. */
+  /** Master kill-switch for the `com.dina.peerlens.*` V1 surface. Plan §13.10 cutover defaults to ON. */
   trust_v1_enabled: true,
 } as const)
 

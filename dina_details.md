@@ -21,7 +21,7 @@
 
 7. originally dina was written in python and go. when it was expanded to mobile, it was rewritten in typescript - so, dina home node server is also written in typescript with the same code base between dina home node mobile and dina home node server
 
-8. dina-agent cli is a pypi project. we publish it from here to pypi
+8. dina-agent cli is a pypi project. we publish it from here to pypi. dina-agent cli is the only way for dina to connect with openclaw ai agent for dina to get agent tasks done. dina-agent cli tool will connect to your dina using msgbox cloud service. extremely important - dina never connects to the openclaw system straight - it always goes through dina-agent using msgbox cloud service. 
 
 9. to test dina integration with openclaw, setup dina-cli agent locally in one folder (under the folders python .venv ) and then test - normal tests can be done with dina validate etc - 
 
@@ -30,3 +30,62 @@
 11. mobile side of application uses EAS Build (Expo Application Services)
 
 12. we can test everything without docker from now on. run openclaw also locally, and use the dina-agent cli like i told earlier and conenct to openclaw for testing
+
+13. Test scenarios for each
+please note that all these actions /remember etc is done by clicking on mobile app manually using idb or adb in appropriate screens. 
+this is a quick and easy way to inform here
+
+13.1   remember - 
+You:
+/remember My daughters name is Emma
+Dina:
+Stored in General Vault
+/remember My daughter loves dinosaurs
+Dina:
+Stored in General Vault
+
+13.2 ask -
+You:
+/ask What does Emma like?
+Dina:
+Emma loves dinosaurs
+
+You:
+/remember Emma's birthday is on Nov 7th
+
+Dina:
+Stored in general vault.
+
+Dina:
+Reminders set:
+[87b5] 🎂 Nov 06, 10:00 AM — Emma's birthday is tomorrow, you may want to buy a dinosaur-themed gift.
+[2c9d] 🎂 Nov 07, 09:00 AM — It is Emma's birthday today, you may wish to contact her.
+
+13.3 security
+You:
+/remember My friend James loves craft beer
+Stored in general vault.
+
+You:
+/remember My bank account is in Barclay's and ends with 0102
+Dina:
+Stored in finance vault. << vault has been changed. but since the data was asked by user in mobile, and user is safe, no approval request required
+
+You:
+/remember My HbA1c is 9%, very high
+Dina:
+Stored in health vault.
+
+13.4 approvals
+install dina-agent cli in a /tmp/<tmpfolder>/.venv from pypi 
+dina-agent cli - named as dina
+dina configure to setup the agent (create pairing number from dina mobile app and pair) - you can screenshot and understand the pairing number there and pair it
+then you setup sessions to test
+(.venv) ~/dina % dina session start
+  Session: ses_55s3khhq55s3 (SName-25Mar0728:22) active
+(.venv) ~/dina % dina ask --session ses_55s3khhq55s3  "Which bank has my account" 
+approval will come to dina mobile app
+🔐 claw-agent wants to access health
+[Approve] [Deny] [Approve Once]
+✅ Approved: apr-1774423823840426930
+

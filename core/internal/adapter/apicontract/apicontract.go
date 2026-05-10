@@ -45,7 +45,7 @@ func NewAPIContract(serviceID string) *APIContract {
 		{Method: "POST", Path: "/v1/pii/scrub", TokenType: "brain", StatusCode: 200},
 		{Method: "POST", Path: "/v1/notify", TokenType: "brain", StatusCode: 200},
 		{Method: "POST", Path: "/v1/msg/send", TokenType: "brain", StatusCode: 200},
-		{Method: "POST", Path: "/v1/trust/query", TokenType: "brain", StatusCode: 200},
+		{Method: "POST", Path: "/v1/peerlens/query", TokenType: "brain", StatusCode: 200},
 		{Method: "POST", Path: "/v1/did/sign", TokenType: "admin", StatusCode: 200},
 		// Planned endpoints — not yet routed in main.go:
 		{Method: "POST", Path: "/v1/did/rotate", TokenType: "admin", StatusCode: 200},   // planned: requires signature-based rotation (CORE-HIGH-14)

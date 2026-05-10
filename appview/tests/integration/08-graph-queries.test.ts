@@ -11,7 +11,7 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { getTestDb, cleanAllTables, closeTestDb, type TestDB } from '../test-db'
-import { trustEdges, didProfiles } from '@/db/schema/index'
+import { peerlensEdges, didProfiles } from '@/db/schema/index'
 import { computeGraphContext, getGraphAroundDid, withGraphTimeout } from '@/db/queries/graph'
 import { CONSTANTS } from '@/config/constants'
 
@@ -33,7 +33,7 @@ async function insertEdge(
   opts: { edgeType?: string; domain?: string | null; weight?: number; sourceUri?: string } = {},
 ) {
   const sourceUri = opts.sourceUri ?? `at://${fromDid}/edge/${toDid}/${Math.random().toString(36).slice(2)}`
-  await db.insert(trustEdges).values({
+  await db.insert(peerlensEdges).values({
     fromDid,
     toDid,
     edgeType: opts.edgeType ?? 'vouch',

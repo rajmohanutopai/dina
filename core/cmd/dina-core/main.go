@@ -39,7 +39,7 @@ import (
 	"github.com/rajmohanutopai/dina/core/internal/adapter/servicekey"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/taskqueue"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/transport"
-	trustadapter "github.com/rajmohanutopai/dina/core/internal/adapter/trust"
+	peerlensadapter "github.com/rajmohanutopai/dina/core/internal/adapter/peerlens"
 	appviewAdapter "github.com/rajmohanutopai/dina/core/internal/adapter/appview"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/ws"
 	"github.com/rajmohanutopai/dina/core/internal/config"
@@ -510,9 +510,9 @@ func main() {
 	recoveryMgr := identity.NewRecoveryManager()
 
 	// 5a. Trust cache + resolver (for ingress gatekeeper — no SQLite dependency for now)
-	trustCache := trustadapter.NewInMemoryCache()
-	trustResolver := trustadapter.NewResolver(cfg.AppViewURL)
-	trustSvc := service.NewTrustService(trustCache, trustResolver, contactDir)
+	trustCache := peerlensadapter.NewInMemoryCache()
+	trustResolver := peerlensadapter.NewResolver(cfg.AppViewURL)
+	trustSvc := service.NewPeerlensService(trustCache, trustResolver, contactDir)
 
 	// 5b. K256 rotation key + PLC/PDS (optional — enabled when DINA_PDS_URL is set)
 	// Core uses the community PDS (same as Brain) for DID operations.
@@ -1482,7 +1482,7 @@ func main() {
 
 	personaH := &handler.PersonaHandler{Identity: identitySvc, Personas: personaMgr, Approvals: personaMgr, VaultManager: vaultMgr, KeyDeriver: keyDeriver, Seed: masterSeed, StagingInbox: stagingInbox, PendingReasons: pendingReasonStore, Brain: brain}
 	sessionH := &handler.SessionHandler{Sessions: personaMgr}
-	trustH := &handler.TrustHandler{Trust: trustSvc, OwnDID: ownDID}
+	trustH := &handler.PeerlensHandler{Trust: trustSvc, OwnDID: ownDID}
 	contactH := &handler.ContactHandler{Contacts: contactDir, Aliases: aliasStore, Sharing: sharingMgr, ScenarioPolicies: scenarioPolicyMgr}
 	var personH *handler.PersonHandler
 	if personStore != nil {
@@ -1672,11 +1672,11 @@ func main() {
 	}
 
 	// Trust Cache API
-	mux.HandleFunc("/v1/trust/cache", trustH.HandleListCache)
-	mux.HandleFunc("/v1/trust/stats", trustH.HandleStats)
-	mux.HandleFunc("/v1/trust/sync", trustH.HandleSync)
-	mux.HandleFunc("/v1/trust/resolve", trustH.HandleResolve)
-	mux.HandleFunc("/v1/trust/search", trustH.HandleSearch)
+	mux.HandleFunc("/v1/peerlens/cache", trustH.HandleListCache)
+	mux.HandleFunc("/v1/peerlens/stats", trustH.HandleStats)
+	mux.HandleFunc("/v1/peerlens/sync", trustH.HandleSync)
+	mux.HandleFunc("/v1/peerlens/resolve", trustH.HandleResolve)
+	mux.HandleFunc("/v1/peerlens/search", trustH.HandleSearch)
 
 	// Device Pairing API
 	mux.HandleFunc("/v1/pair/initiate", deviceH.HandleInitiatePairing)

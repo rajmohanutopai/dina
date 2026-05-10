@@ -1,6 +1,6 @@
 import { sql, eq, and } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
-import { trustEdges, didProfiles } from '@/db/schema/index.js'
+import { peerlensEdges, didProfiles } from '@/db/schema/index.js'
 import { CONSTANTS } from '@/config/constants.js'
 import { logger } from '@/shared/utils/logger.js'
 import type { GetGraphResponse, GraphNode as ApiGraphNode, GraphEdge as ApiGraphEdge } from '@/shared/types/api-types.js'
@@ -116,16 +116,16 @@ export async function computeGraphContext(
           // wasting query budget on irrelevant edges
           const outgoing = await tx
             .select({
-              fromDid: trustEdges.fromDid,
-              toDid: trustEdges.toDid,
-              edgeType: trustEdges.edgeType,
-              domain: trustEdges.domain,
-              weight: trustEdges.weight,
+              fromDid: peerlensEdges.fromDid,
+              toDid: peerlensEdges.toDid,
+              edgeType: peerlensEdges.edgeType,
+              domain: peerlensEdges.domain,
+              weight: peerlensEdges.weight,
             })
-            .from(trustEdges)
+            .from(peerlensEdges)
             .where(domain
-              ? and(eq(trustEdges.fromDid, did), eq(trustEdges.domain, domain))
-              : eq(trustEdges.fromDid, did))
+              ? and(eq(peerlensEdges.fromDid, did), eq(peerlensEdges.domain, domain))
+              : eq(peerlensEdges.fromDid, did))
             .limit(CONSTANTS.MAX_EDGES_PER_HOP)
           queryCount++
 
@@ -156,16 +156,16 @@ export async function computeGraphContext(
           // MED-08 fix: Pre-filter by domain in the SQL query
           const incoming = await tx
             .select({
-              fromDid: trustEdges.fromDid,
-              toDid: trustEdges.toDid,
-              edgeType: trustEdges.edgeType,
-              domain: trustEdges.domain,
-              weight: trustEdges.weight,
+              fromDid: peerlensEdges.fromDid,
+              toDid: peerlensEdges.toDid,
+              edgeType: peerlensEdges.edgeType,
+              domain: peerlensEdges.domain,
+              weight: peerlensEdges.weight,
             })
-            .from(trustEdges)
+            .from(peerlensEdges)
             .where(domain
-              ? and(eq(trustEdges.toDid, did), eq(trustEdges.domain, domain))
-              : eq(trustEdges.toDid, did))
+              ? and(eq(peerlensEdges.toDid, did), eq(peerlensEdges.domain, domain))
+              : eq(peerlensEdges.toDid, did))
             .limit(CONSTANTS.MAX_EDGES_PER_HOP)
           queryCount++
 

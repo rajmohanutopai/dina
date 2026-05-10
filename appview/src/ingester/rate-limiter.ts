@@ -146,9 +146,9 @@ export function resetRateLimiter(): void {
 // move to Redis-backed counters (sliding-window via INCR + EXPIRE).
 
 const COLLECTION_DAILY_CAPS: ReadonlyMap<string, number> = new Map([
-  ['com.dina.trust.attestation', 60],
-  ['com.dina.trust.endorsement', 30],
-  ['com.dina.trust.flag', 10],
+  ['com.dina.peerlens.attestation', 60],
+  ['com.dina.peerlens.endorsement', 30],
+  ['com.dina.peerlens.flag', 10],
 ])
 
 const COLLECTION_WINDOW_MS = 24 * 60 * 60 * 1000 // 24 hours

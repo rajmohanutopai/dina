@@ -82,7 +82,7 @@ Core uses a community PDS (e.g., `bsky.social`) for `did:plc` creation — no si
 
 **Nudge (Sancho Moment):** DIDComm message arrives → Core → `POST brain:8200/api/v1/process` → Brain queries vault (relationship, messages, calendar) → LLM assembles nudge → `POST core:8100/v1/notify` → Core pushes to client via WebSocket
 
-**Trust query:** Brain → AppView xRPC `com.dina.trust.resolve` → PeerLens rating + recommendation (proceed/caution/verify/avoid)
+**Trust query:** Brain → AppView xRPC `com.dina.peerlens.resolve` → PeerLens rating + recommendation (proceed/caution/verify/avoid)
 
 ## Technology Stack
 

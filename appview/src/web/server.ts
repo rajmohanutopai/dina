@@ -23,7 +23,7 @@ import {
   deleteAttestation,
   checkTestInjectAuth,
 } from '@/api/xrpc/test-inject.js'
-import { gateTrustNamespace } from '@/api/middleware/trust-flag-gate.js'
+import { gatePeerlensNamespace } from '@/api/middleware/peerlens-flag-gate.js'
 import {
   checkPerMethodRateLimit,
   createRateLimitCache,
@@ -54,19 +54,19 @@ const rateLimitEnvOverride = parseInt(process.env.RATE_LIMIT_RPM ?? '0', 10)
 const rateLimitCache = createRateLimitCache()
 
 const ROUTES: Record<string, { params: any; handler: (db: any, params: any) => Promise<any> }> = {
-  'com.dina.trust.resolve': { params: ResolveParams, handler: resolve },
-  'com.dina.trust.search': { params: SearchParams, handler: search },
-  'com.dina.trust.getGraph': { params: GetGraphParams, handler: getGraph },
-  'com.dina.trust.getProfile': { params: GetProfileParams, handler: getProfile },
-  'com.dina.trust.getAttestations': { params: GetAttestationsParams, handler: getAttestations },
+  'com.dina.peerlens.resolve': { params: ResolveParams, handler: resolve },
+  'com.dina.peerlens.search': { params: SearchParams, handler: search },
+  'com.dina.peerlens.getGraph': { params: GetGraphParams, handler: getGraph },
+  'com.dina.peerlens.getProfile': { params: GetProfileParams, handler: getProfile },
+  'com.dina.peerlens.getAttestations': { params: GetAttestationsParams, handler: getAttestations },
   'com.dina.service.search': { params: ServiceSearchParams, handler: serviceSearch },
   'com.dina.service.isDiscoverable': { params: ServiceIsDiscoverableParams, handler: serviceIsDiscoverable },
-  'com.dina.trust.attestationStatus': { params: AttestationStatusParams, handler: attestationStatus },
-  'com.dina.trust.cosigList': { params: CosigListParams, handler: cosigList },
-  'com.dina.trust.networkFeed': { params: NetworkFeedParams, handler: networkFeed },
-  'com.dina.trust.subjectGet': { params: SubjectGetParams, handler: subjectGet },
-  'com.dina.trust.getAlternatives': { params: GetAlternativesParams, handler: getAlternatives },
-  'com.dina.trust.getNegativeSpace': { params: GetNegativeSpaceParams, handler: getNegativeSpace },
+  'com.dina.peerlens.attestationStatus': { params: AttestationStatusParams, handler: attestationStatus },
+  'com.dina.peerlens.cosigList': { params: CosigListParams, handler: cosigList },
+  'com.dina.peerlens.networkFeed': { params: NetworkFeedParams, handler: networkFeed },
+  'com.dina.peerlens.subjectGet': { params: SubjectGetParams, handler: subjectGet },
+  'com.dina.peerlens.getAlternatives': { params: GetAlternativesParams, handler: getAlternatives },
+  'com.dina.peerlens.getNegativeSpace': { params: GetNegativeSpaceParams, handler: getNegativeSpace },
 }
 
 const server = http.createServer(async (req, res) => {
@@ -88,7 +88,7 @@ const server = http.createServer(async (req, res) => {
   // would cause gaps in dashboards exactly when operators need them
   // (during incident traffic spikes). The aggregator is process-
   // singleton, so the response reflects the running counter/gauge
-  // state at request time. See `docs/trust-network/observability.md`
+  // state at request time. See `docs/peerlens-network/observability.md`
   // for the canonical metric list + alert thresholds.
   if (url.pathname === '/metrics') {
     res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4' })
@@ -201,11 +201,11 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
-    // TN-FLAG-003: kill-switch gate for `com.dina.trust.*`. Service
+    // TN-FLAG-003: kill-switch gate for `com.dina.peerlens.*`. Service
     // namespaces pass through; trust-namespace methods 503 when the
     // operator has disabled the V1 surface (or when the flag read
     // itself fails — closed-default).
-    const gate = await gateTrustNamespace(db, methodId)
+    const gate = await gatePeerlensNamespace(db, methodId)
     if (!gate.ok) {
       res.writeHead(gate.status, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(gate.body))

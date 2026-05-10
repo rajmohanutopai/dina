@@ -36,7 +36,7 @@
  * recency yet — the existing `trust_v1_params` table is keyed
  * (string, number) and doesn't carry per-category mappings cleanly.
  * When a config schema lands (V3 admin surface), the lookup function
- * here gets a DB-merge layer the same way `trust-v1-params-reader`
+ * here gets a DB-merge layer the same way `peerlens-v1-params-reader`
  * works today. The function signature already accepts an optional
  * override map so callers can inject params from a future config.
  *

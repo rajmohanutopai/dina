@@ -614,7 +614,7 @@ Wires the three-surface notification model end-to-end on the Expo app:
 
 ### 6d. AppView xRPC client
 
-- [x] 6.11 `com.dina.trust.resolve`
+- [x] 6.11 `com.dina.peerlens.resolve`
 - [x] 6.12 `com.dina.service.search`
 - [x] 6.13 `com.dina.service.getProfile`
 - [x] 6.14 `com.dina.contact.resolve`

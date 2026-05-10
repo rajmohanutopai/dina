@@ -4,7 +4,7 @@ import type { DrizzleDB } from '@/db/connection.js'
 import { cosigRequests } from '@/db/schema/index.js'
 
 /**
- * `com.dina.trust.cosigList` (TN-API-006 / Plan §6 + §10).
+ * `com.dina.peerlens.cosigList` (TN-API-006 / Plan §6 + §10).
  *
  * List cosig requests addressed to a recipient DID. The mobile
  * cosig-inbox screen calls this to render the "asks awaiting your

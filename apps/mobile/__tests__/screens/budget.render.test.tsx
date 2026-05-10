@@ -16,7 +16,7 @@
 import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
-import BudgetScreen from '../../app/trust-preferences/budget';
+import BudgetScreen from '../../app/peerlens-preferences/budget';
 import {
   loadUserPreferences,
   resetUserPreferencesForTest,
@@ -25,7 +25,7 @@ import {
 import {
   BUDGET_CATEGORIES,
   BUDGET_CATEGORY_KEYS,
-} from '../../src/trust/preferences/budget_categories';
+} from '../../src/peerlens/preferences/budget_categories';
 import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 
 const ORIGINAL_INTL = global.Intl;

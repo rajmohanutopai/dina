@@ -15,8 +15,8 @@
 import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
-import DevicesScreen from '../../app/trust-preferences/devices';
-import DietaryScreen from '../../app/trust-preferences/dietary';
+import DevicesScreen from '../../app/peerlens-preferences/devices';
+import DietaryScreen from '../../app/peerlens-preferences/dietary';
 import {
   loadUserPreferences,
   resetUserPreferencesForTest,

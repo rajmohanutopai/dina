@@ -45,7 +45,7 @@ import {
   savePdsUrl,
   saveAppViewURL,
 } from '../../services/infra_preferences';
-import { colors, fonts, radius, spacing } from '../../theme';
+import { colors, fonts, radius, spacing, textStyles } from '../../theme';
 
 const DEFAULT_PDS_URL = 'https://test-pds.dinakernel.com';
 const DEFAULT_APPVIEW_URL = 'https://test-appview.dinakernel.com';
@@ -122,8 +122,8 @@ export function InfraSetupForm({
         <Text style={styles.brand}>DINA</Text>
         <Text style={styles.headline}>Choose your infrastructure</Text>
         <Text style={styles.sub}>
-          Dina needs a PDS for identity and an AppView for PeerLens. The defaults
-          point at the public test infrastructure — change them if you self-host.
+          Dina uses AT Protocol and needs a PDS for identity and an AppView for
+          PeerLens and Services. You can use your own, or use the defaults here.
         </Text>
 
         <Text style={styles.label}>PDS URL</Text>
@@ -144,7 +144,7 @@ export function InfraSetupForm({
           records.
         </Text>
 
-        <Text style={styles.label}>AppView URL</Text>
+        <Text style={styles.label}>PeerLens and Services URL</Text>
         <TextInput
           value={appViewURL}
           onChangeText={setAppViewURL}
@@ -158,7 +158,8 @@ export function InfraSetupForm({
           keyboardType="url"
         />
         <Text style={styles.helpText}>
-          Indexes service profiles + trust attestations. Service discovery hits this URL.
+          Indexes PeerLens attestations and service profiles. PeerLens reviews and service
+          discovery both hit this URL.
         </Text>
 
         {error !== null ? <Text style={styles.error}>{error}</Text> : null}
@@ -207,25 +208,18 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xxl * 2,
   },
   brand: {
-    fontSize: 12,
+    ...textStyles.screenEyebrow,
     letterSpacing: 6,
-    fontWeight: '700',
-    color: colors.textMuted,
   },
   headline: {
+    ...textStyles.screenHeadline,
     marginTop: spacing.md,
-    fontFamily: Platform.OS === 'ios' ? fonts.serif : undefined,
-    fontStyle: 'italic',
     fontSize: 32,
-    lineHeight: 38,
-    color: colors.textPrimary,
-    letterSpacing: -0.4,
+    lineHeight: 40,
   },
   sub: {
+    ...textStyles.screenBody,
     marginTop: spacing.sm,
-    fontSize: 15,
-    lineHeight: 22,
-    color: colors.textSecondary,
   },
   label: {
     marginTop: spacing.xl,

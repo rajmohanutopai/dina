@@ -19,7 +19,7 @@ export interface RecordOp {
   uri: string
   /** DID of the record author */
   did: string
-  /** Collection NSID (e.g. com.dina.trust.attestation) */
+  /** Collection NSID (e.g. com.dina.peerlens.attestation) */
   collection: string
   /** Record key within the collection */
   rkey: string
@@ -69,30 +69,30 @@ import { verificationHandler } from './verification.js'
 import { reviewRequestHandler } from './review-request.js'
 import { comparisonHandler } from './comparison.js'
 import { subjectClaimHandler } from './subject-claim.js'
-import { trustPolicyHandler } from './trust-policy.js'
+import { peerlensPolicyHandler } from './peerlens-policy.js'
 import { notificationPrefsHandler } from './notification-prefs.js'
 import { serviceProfileHandler } from './service-profile.js'
 
 const handlers: Record<string, RecordHandler> = {
-  'com.dina.trust.attestation': attestationHandler,
-  'com.dina.trust.vouch': vouchHandler,
-  'com.dina.trust.endorsement': endorsementHandler,
-  'com.dina.trust.flag': flagHandler,
-  'com.dina.trust.reply': replyHandler,
-  'com.dina.trust.reaction': reactionHandler,
-  'com.dina.trust.reportRecord': reportRecordHandler,
-  'com.dina.trust.revocation': revocationHandler,
-  'com.dina.trust.delegation': delegationHandler,
-  'com.dina.trust.collection': collectionHandler,
-  'com.dina.trust.media': mediaHandler,
-  'com.dina.trust.subject': subjectHandler,
-  'com.dina.trust.amendment': amendmentHandler,
-  'com.dina.trust.verification': verificationHandler,
-  'com.dina.trust.reviewRequest': reviewRequestHandler,
-  'com.dina.trust.comparison': comparisonHandler,
-  'com.dina.trust.subjectClaim': subjectClaimHandler,
-  'com.dina.trust.trustPolicy': trustPolicyHandler,
-  'com.dina.trust.notificationPrefs': notificationPrefsHandler,
+  'com.dina.peerlens.attestation': attestationHandler,
+  'com.dina.peerlens.vouch': vouchHandler,
+  'com.dina.peerlens.endorsement': endorsementHandler,
+  'com.dina.peerlens.flag': flagHandler,
+  'com.dina.peerlens.reply': replyHandler,
+  'com.dina.peerlens.reaction': reactionHandler,
+  'com.dina.peerlens.reportRecord': reportRecordHandler,
+  'com.dina.peerlens.revocation': revocationHandler,
+  'com.dina.peerlens.delegation': delegationHandler,
+  'com.dina.peerlens.collection': collectionHandler,
+  'com.dina.peerlens.media': mediaHandler,
+  'com.dina.peerlens.subject': subjectHandler,
+  'com.dina.peerlens.amendment': amendmentHandler,
+  'com.dina.peerlens.verification': verificationHandler,
+  'com.dina.peerlens.reviewRequest': reviewRequestHandler,
+  'com.dina.peerlens.comparison': comparisonHandler,
+  'com.dina.peerlens.subjectClaim': subjectClaimHandler,
+  'com.dina.peerlens.trustPolicy': peerlensPolicyHandler,
+  'com.dina.peerlens.notificationPrefs': notificationPrefsHandler,
   'com.dina.service.profile': serviceProfileHandler,
 }
 

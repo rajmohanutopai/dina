@@ -485,9 +485,9 @@ Both use the same `http.ServeMux` router but different middleware chains — the
 | Client | Target | Auth | Purpose |
 |--------|--------|------|---------|
 | **BrainClient** | `brain:8200` | Ed25519 service key | Process events, reason, health check. Circuit breaker (5 failures → open, 30s cooldown) |
-| **TrustResolver** | AppView `:3000` | None (internal network) | XRPC endpoints: `com.dina.trust.getProfile`, `com.dina.trust.getGraph` |
+| **TrustResolver** | AppView `:3000` | None (internal network) | XRPC endpoints: `com.dina.peerlens.getProfile`, `com.dina.peerlens.getGraph` |
 | **PLCClient** | PLC directory + community PDS | Session auth | DID creation/rotation on `plc.directory` via community PDS |
-| **PDSPublisher** | Community PDS | Session auth | Publish trust records (`com.dina.trust.*` lexicons) |
+| **PDSPublisher** | Community PDS | Session auth | Publish trust records (`com.dina.peerlens.*` lexicons) |
 | **Transporter** | Other Dina nodes | NaCl sealed box (payload-level) | D2D message delivery to `POST /msg` on recipient |
 
 **Proxy paths (Core relays to Brain):**
@@ -1112,8 +1112,8 @@ Lookups return a *copy* of the entry (not a pointer) to prevent data races on th
 
 The TrustResolver (`core/internal/adapter/trust/resolver.go`) fetches profiles and neighborhood graphs from AppView's XRPC endpoints:
 
-- `GET /xrpc/com.dina.trust.getProfile?did={did}` — single entity profile (used by two methods: `ResolveProfile` returns a structured `TrustEntry`, `ResolveFullProfile` returns raw JSON for Brain reasoning)
-- `GET /xrpc/com.dina.trust.getGraph?did={did}&depth={hops}&limit={limit}` — PeerLens graph neighborhood
+- `GET /xrpc/com.dina.peerlens.getProfile?did={did}` — single entity profile (used by two methods: `ResolveProfile` returns a structured `TrustEntry`, `ResolveFullProfile` returns raw JSON for Brain reasoning)
+- `GET /xrpc/com.dina.peerlens.getGraph?did={did}&depth={hops}&limit={limit}` — PeerLens graph neighborhood
 
 Response size is capped (64KB per profile, 512KB for graphs) to prevent OOM attacks. The two profile methods have deliberately different error semantics: `ResolveProfile` and `ResolveNeighborhood` return nil (not an error) when AppView is unreachable — the trust cache and sync cycle degrade gracefully. `ResolveFullProfile` returns distinct errors (`ErrAppViewNotConfigured`, upstream failure, or nil for 404) so the TrustHandler can map them to proper HTTP status codes (503, 502, 404 respectively). When `baseURL` is empty (AppView not configured), all methods short-circuit immediately.
 
@@ -1307,9 +1307,9 @@ AppView's Postgres is seeded with two creator profiles:
 - **Elena** (Ring 3): trust_score 0.95, 200 attestations, 15 peer vouches, 2-year history.
 - **BotFarm** (Ring 1): trust_score 0.0, 0 attestations, 3-day-old account.
 
-Core's trust resolver (`/v1/trust/resolve?did={did}`) fetches these profiles from AppView's XRPC endpoint (`com.dina.trust.getProfile`) and passes them through unchanged — core doesn't editorialize. Brain's LLM receives the raw trust signals and recognizes the pattern: Elena's 2-year track record with 200 attestations means "authentic, trusted creator." BotFarm's empty history means "unverified, check other sources."
+Core's trust resolver (`/v1/trust/resolve?did={did}`) fetches these profiles from AppView's XRPC endpoint (`com.dina.peerlens.getProfile`) and passes them through unchanged — core doesn't editorialize. Brain's LLM receives the raw trust signals and recognizes the pattern: Elena's 2-year track record with 200 attestations means "authentic, trusted creator." BotFarm's empty history means "unverified, check other sources."
 
-**Core's role:** Identity resolution and PeerLens data passthrough. The AppView integration uses the same XRPC pattern as AT Protocol — `com.dina.trust.getProfile` returns a standardised PeerLens profile that any client can consume.
+**Core's role:** Identity resolution and PeerLens data passthrough. The AppView integration uses the same XRPC pattern as AT Protocol — `com.dina.peerlens.getProfile` returns a standardised PeerLens profile that any client can consume.
 
 ### Story 04: The Persona Wall (11 tests)
 

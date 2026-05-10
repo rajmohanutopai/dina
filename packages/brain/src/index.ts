@@ -1,7 +1,7 @@
 export * from './pii/entity_vault';
 export * from './pii/tier2_patterns';
-export * from './trust/scorer';
-export * from './trust/tier_classifier';
+export * from './peerlens/scorer';
+export * from './peerlens/tier_classifier';
 export * from './enrichment/l0_deterministic';
 export * from './contact/matcher';
 export * from './contact/attributor';
@@ -220,7 +220,7 @@ export {
   confirmResponse,
   statusResponse,
   contactListResponse,
-  trustScoreResponse,
+  peerlensScoreResponse,
   sendResponse,
 } from './chat/response_types';
 export type {
@@ -233,7 +233,7 @@ export type {
   StatusResponse,
   ContactListResponse,
   ContactListEntry,
-  TrustScoreResponse,
+  PeerlensScoreResponse,
   SendResponse,
   ErrorResponse,
   TextFormat,

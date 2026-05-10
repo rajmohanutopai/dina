@@ -2,11 +2,11 @@ import type { RecordHandler, HandlerContext, RecordOp } from './index.js'
 import type { Vouch } from '@/shared/types/lexicon-types.js'
 import { vouches } from '@/db/schema/index.js'
 import { deletionHandler } from '../deletion-handler.js'
-import { addTrustEdge } from '../trust-edge-sync.js'
+import { addTrustEdge } from '../peerlens-edge-sync.js'
 import { markDirty } from '@/db/queries/dirty-flags.js'
 
 /**
- * Handler for com.dina.trust.vouch records.
+ * Handler for com.dina.peerlens.vouch records.
  *
  * A vouch is a trust signal from one DID to another — "I trust this person."
  * The trust edge weight is derived from the confidence level.

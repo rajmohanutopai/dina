@@ -1,4 +1,4 @@
-/** Response from com.dina.trust.resolve */
+/** Response from com.dina.peerlens.resolve */
 export interface ResolveResponse {
   // ── TN-API-003 / Plan §6.3 fields ──────────────────────────────
   // Used by the mobile compose flow to preview the canonical match
@@ -55,14 +55,14 @@ export interface GraphContext {
   trustedAttestors: string[]
 }
 
-/** Response from com.dina.trust.search */
+/** Response from com.dina.peerlens.search */
 export interface SearchResponse {
   results: unknown[]
   cursor?: string
   totalEstimate: number | null
 }
 
-/** Response from com.dina.trust.getProfile */
+/** Response from com.dina.peerlens.getProfile */
 export interface GetProfileResponse {
   did: string
   /**

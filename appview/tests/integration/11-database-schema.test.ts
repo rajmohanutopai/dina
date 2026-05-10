@@ -78,7 +78,7 @@ describe('11.1 Schema Correctness', () => {
   it('IT-DB-003: attestations -- primary key on uri', async () => {
     // Description: Duplicate uri insert
     // Expected: Constraint violation (without onConflict)
-    const testUri = `at://did:plc:test11/com.dina.trust.attestation/db003-${Date.now()}`
+    const testUri = `at://did:plc:test11/com.dina.peerlens.attestation/db003-${Date.now()}`
 
     await db.execute(sql.raw(`
       INSERT INTO attestations (uri, author_did, cid, subject_ref_raw, category, sentiment, record_created_at, indexed_at)
@@ -247,7 +247,7 @@ describe('11.1 Schema Correctness', () => {
   it('IT-DB-028: ingest_rejections -- accepts a valid row (TN-DB-005)', async () => {
     // Description: Plan §4.1 contract — atUri + did + reason required, detail JSON optional,
     // rejectedAt defaults to NOW(). Outbox watcher polls by atUri; the row is the source of truth.
-    const testUri = `at://did:plc:db028/com.dina.trust.attestation/db028-${Date.now()}`
+    const testUri = `at://did:plc:db028/com.dina.peerlens.attestation/db028-${Date.now()}`
     await db.execute(sql.raw(`
       INSERT INTO ingest_rejections (at_uri, did, reason, detail)
       VALUES ('${testUri}', 'did:plc:db028', 'signature_invalid', '{"expected_key_id":"did:plc:db028/#namespace_2"}'::jsonb)
@@ -268,7 +268,7 @@ describe('11.1 Schema Correctness', () => {
     // Description: Same record CAN be rejected more than once — e.g. signature_invalid first,
     // then rate_limit on retry. Row count per AT-URI is itself a useful signal for the outbox
     // watcher. A unique constraint here would silently drop retry-failure history.
-    const testUri = `at://did:plc:db029/com.dina.trust.attestation/db029-${Date.now()}`
+    const testUri = `at://did:plc:db029/com.dina.peerlens.attestation/db029-${Date.now()}`
     await db.execute(sql.raw(`
       INSERT INTO ingest_rejections (at_uri, did, reason)
       VALUES ('${testUri}', 'did:plc:db029', 'signature_invalid')
@@ -359,7 +359,7 @@ describe('11.1 Schema Correctness', () => {
   it('IT-DB-036: attestations -- language column nullable (TN-DB-008)', async () => {
     // Description: TN-DB-008 — `language` BCP-47 tag, nullable for legacy rows + content where
     // detection failed (mixed languages, very short text). Auto-detected by ingester via franc-min.
-    const testUri = `at://did:plc:db036/com.dina.trust.attestation/db036-${Date.now()}`
+    const testUri = `at://did:plc:db036/com.dina.peerlens.attestation/db036-${Date.now()}`
     await db.execute(sql.raw(`
       INSERT INTO attestations (uri, author_did, cid, subject_ref_raw, category, sentiment, language, record_created_at, indexed_at)
       VALUES ('${testUri}', 'did:plc:db036', 'bafytest', '{}'::jsonb, 'product', 'positive', 'pt-BR', NOW(), NOW())
@@ -370,7 +370,7 @@ describe('11.1 Schema Correctness', () => {
     expect(result.rows[0].language).toBe('pt-BR')
 
     // Same shape with no language → NULL (legacy / detection-failure row).
-    const testUri2 = `at://did:plc:db036/com.dina.trust.attestation/db036b-${Date.now()}`
+    const testUri2 = `at://did:plc:db036/com.dina.peerlens.attestation/db036b-${Date.now()}`
     await db.execute(sql.raw(`
       INSERT INTO attestations (uri, author_did, cid, subject_ref_raw, category, sentiment, record_created_at, indexed_at)
       VALUES ('${testUri2}', 'did:plc:db036', 'bafytest2', '{}'::jsonb, 'product', 'positive', NOW(), NOW())
@@ -385,7 +385,7 @@ describe('11.1 Schema Correctness', () => {
   it('IT-DB-038: cosig_requests -- accepts valid pending row (TN-DB-003)', async () => {
     // Description: Plan §4.1 + §10 — `pending` is the initial state; endorsement_uri NULL until
     // accepted, reject_reason NULL until rejected/expired. Round-trip preserves all fields.
-    const testUri = `at://did:plc:db038/com.dina.trust.attestation/db038-${Date.now()}`
+    const testUri = `at://did:plc:db038/com.dina.peerlens.attestation/db038-${Date.now()}`
     await db.execute(sql.raw(`
       INSERT INTO cosig_requests (requester_did, recipient_did, attestation_uri, status, expires_at)
       VALUES ('did:plc:db038-req', 'did:plc:db038-rec', '${testUri}', 'pending',
@@ -408,7 +408,7 @@ describe('11.1 Schema Correctness', () => {
     // DB level via CHECK constraint. A future code path with a typo (`'pending '` with trailing
     // space, `'cancelled'`, etc.) fails loudly instead of writing a state the sweep job can't
     // reason about.
-    const testUri = `at://did:plc:db039/com.dina.trust.attestation/db039-${Date.now()}`
+    const testUri = `at://did:plc:db039/com.dina.peerlens.attestation/db039-${Date.now()}`
     await expect(
       db.execute(sql.raw(`
         INSERT INTO cosig_requests (requester_did, recipient_did, attestation_uri, status, expires_at)
@@ -421,7 +421,7 @@ describe('11.1 Schema Correctness', () => {
   it('IT-DB-040: cosig_requests -- unique (requester_did, attestation_uri, recipient_did) (TN-DB-003)', async () => {
     // Description: One cosig request per (requester, attestation, recipient) tuple. Re-asking
     // the same recipient about the same attestation must fail at INSERT, not silently dedupe.
-    const testUri = `at://did:plc:db040/com.dina.trust.attestation/db040-${Date.now()}`
+    const testUri = `at://did:plc:db040/com.dina.peerlens.attestation/db040-${Date.now()}`
     await db.execute(sql.raw(`
       INSERT INTO cosig_requests (requester_did, recipient_did, attestation_uri, status, expires_at)
       VALUES ('did:plc:db040-req', 'did:plc:db040-rec', '${testUri}', 'pending', NOW() + INTERVAL '7 days')
@@ -510,8 +510,8 @@ describe('11.1 Schema Correctness', () => {
     // Description: TN-DB-012 — pseudonymous namespace fragment. Nullable for root-identity records
     // (the V1-launch majority); populated value (e.g. `'#namespace_2'`) for records signed under
     // a non-root verificationMethod. Reviewer-PeerLens rating is per-(authorDid, namespace).
-    const testUriRoot = `at://did:plc:db046/com.dina.trust.attestation/db046-root-${Date.now()}`
-    const testUriNs = `at://did:plc:db046/com.dina.trust.attestation/db046-ns-${Date.now()}`
+    const testUriRoot = `at://did:plc:db046/com.dina.peerlens.attestation/db046-root-${Date.now()}`
+    const testUriNs = `at://did:plc:db046/com.dina.peerlens.attestation/db046-ns-${Date.now()}`
     await db.execute(sql.raw(`
       INSERT INTO attestations (uri, author_did, cid, subject_ref_raw, category, sentiment, record_created_at, indexed_at)
       VALUES ('${testUriRoot}', 'did:plc:db046', 'bafy1', '{}'::jsonb, 'product', 'positive', NOW(), NOW())
@@ -530,7 +530,7 @@ describe('11.1 Schema Correctness', () => {
   it('IT-DB-047: endorsements.namespace -- nullable + round-trip (TN-DB-012)', async () => {
     // Description: Symmetric with IT-DB-046 — endorsements published under a pseudonymous
     // namespace stay accountable to that compartment.
-    const testUri = `at://did:plc:db047/com.dina.trust.endorsement/db047-${Date.now()}`
+    const testUri = `at://did:plc:db047/com.dina.peerlens.endorsement/db047-${Date.now()}`
     await db.execute(sql.raw(`
       INSERT INTO endorsements (uri, author_did, cid, subject_did, skill, endorsement_type, namespace, record_created_at, indexed_at)
       VALUES ('${testUri}', 'did:plc:db047', 'bafyend', 'did:plc:db047-target', 'cooking', 'worked-together', '#namespace_3', NOW(), NOW())

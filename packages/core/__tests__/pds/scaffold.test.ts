@@ -7,7 +7,7 @@
  *      implementation (type-only check — no runtime behaviour).
  *   3. Re-exports from `../trust/pds_publish` still reach the
  *      consumer through the new `pds/` namespace — so external
- *      code can migrate `import … from '.../trust/pds_publish'`
+ *      code can migrate `import … from '.../peerlens/pds_publish'`
  *      to `import … from '.../pds'` without changing semantics.
  *
  * Actual PDS behaviour is covered by existing tests at the pre-

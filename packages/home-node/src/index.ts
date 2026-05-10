@@ -35,6 +35,6 @@ export type {
   RememberResult,
   ServiceQueryInput,
   ServiceQueryResult,
-  TrustPublishInput,
-  TrustPublishResult,
+  PeerlensPublishInput,
+  PeerlensPublishResult,
 } from './types';

@@ -525,11 +525,11 @@ def test_appview_phase1_single_go_binary_postgresql():
         "AppView must support query by product"
 
     # Lexicon filter — only trust records
-    assert app_view.lexicon_filter == "com.dina.trust."
+    assert app_view.lexicon_filter == "com.dina.peerlens."
 
     # Firehose consumption works
     records = [
-        {"lexicon": "com.dina.trust.review", "author_did": "did:plc:a",
+        {"lexicon": "com.dina.peerlens.review", "author_did": "did:plc:a",
          "product_id": "aeron_2025", "rating": 90},
         {"lexicon": "app.bsky.feed.post", "content": "hello"},  # Ignored
         {"lexicon": "com.dina.identity.attestation", "did": "did:plc:b"},

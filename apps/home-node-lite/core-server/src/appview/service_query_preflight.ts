@@ -45,7 +45,7 @@ import {
   type TrustInput,
   type TrustLevel,
   decideTrust,
-} from './trust_decision';
+} from './peerlens_decision';
 
 /** A candidate surfaced by service.search that pre-flight will check. */
 export interface PreflightCandidate {

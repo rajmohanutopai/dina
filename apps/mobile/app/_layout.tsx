@@ -12,6 +12,9 @@
 
 import '../src/polyfills';
 import { Ionicons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { FEATURES, FeatureIcon, type FeatureKey } from '../src/features';
+import { FEATURE_NAMES } from '@dina/core';
 import { CormorantGaramond_600SemiBold_Italic } from '@expo-google-fonts/cormorant-garamond';
 import {
   Figtree_400Regular,
@@ -65,7 +68,7 @@ import {
   type RuntimeWarning,
 } from '../src/services/runtime_warnings';
 import { colors, fonts } from '../src/theme';
-import { isTrustTabHidden } from '../src/trust/flags';
+import { isTrustTabHidden } from '../src/peerlens/flags';
 
 import type { BootDegradation } from '../src/services/boot_service';
 
@@ -94,16 +97,16 @@ function DinaHeaderTitle() {
 // on both iOS and Android and stays out of the way of a rightward
 // `headerRight` content slot.
 type NavMenuItem =
-  | { label: string; icon: IoniconName; href: string; action?: undefined }
-  | { label: string; icon: IoniconName; href?: undefined; action: 'lock' };
+  | { feature: FeatureKey; href: string; action?: undefined }
+  | { feature: FeatureKey; href?: undefined; action: 'lock' };
 
 const NAV_MENU_ITEMS: NavMenuItem[] = [
-  { label: 'Vault',         icon: 'lock-closed-outline',     href: '/vault'         },
-  { label: 'Reminders',     icon: 'notifications-outline',   href: '/reminders'     },
+  { feature: 'vault',    href: '/vault'    },
+  { feature: 'reminders', href: '/reminders' },
   // Notifications was here; now it's a bottom-bar tab so the menu
   // entry would just be a duplicate. Reachable via the bell-icon tab.
-  { label: 'Settings',      icon: 'settings-outline',        href: '/settings'      },
-  { label: 'Help',          icon: 'help-circle-outline',     href: '/help'          },
+  { feature: 'settings', href: '/settings' },
+  { feature: 'help',     href: '/help'     },
   // Action item — drops in-memory DEKs, closes SQLCipher handles, and
   // arms the one-shot force-prompt flag so the next vault access
   // prompts for a passphrase even when `startupMode === 'auto'` has
@@ -111,7 +114,7 @@ const NAV_MENU_ITEMS: NavMenuItem[] = [
   // the "Welcome back" passphrase prompt on the next tick.
   // Named "Sign out" because the underlying SQLCipher files are always
   // encrypted at rest — this button locks the SESSION, not the vault.
-  { label: 'Sign out',      icon: 'log-out-outline',         action: 'lock'         },
+  { feature: 'signOut',  action: 'lock'   },
 ];
 
 function HeaderMenuButton({ onPress }: { onPress: () => void }) {
@@ -130,7 +133,7 @@ function HeaderMenuButton({ onPress }: { onPress: () => void }) {
 
 /**
  * iOS-style back chevron used on every drill-down screen
- * (`/admin`, `/trust/[subjectId]`, `/chat/[did]`, …).
+ * (`/admin`, `/peerlens/[subjectId]`, `/chat/[did]`, …).
  *
  * We can't rely on Expo Router's automatic back button here: the
  * root layout uses `<Tabs>`, and the global `screenOptions.headerLeft`
@@ -278,16 +281,15 @@ function NavMenuSheet({
               key={item.href ?? `action:${item.action}`}
               style={navMenuStyles.row}
               accessibilityRole="button"
-              accessibilityLabel={item.label}
+              accessibilityLabel={FEATURES[item.feature].menuLabel ?? FEATURES[item.feature].name}
               onPress={() => onSelect(item)}
             >
-              <Ionicons
-                name={item.icon}
-                size={22}
-                color={colors.textPrimary}
-                style={{ marginRight: 14 }}
-              />
-              <Text style={navMenuStyles.rowText}>{item.label}</Text>
+              <View style={{ marginRight: 14 }}>
+                <FeatureIcon feature={item.feature} size={22} color={colors.textPrimary} />
+              </View>
+              <Text style={navMenuStyles.rowText}>
+                {FEATURES[item.feature].menuLabel ?? FEATURES[item.feature].name}
+              </Text>
             </TouchableOpacity>
           ))}
         </Pressable>
@@ -360,23 +362,20 @@ type TabName =
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
-// One outline + one filled glyph per tab. Filled is shown when the tab
-// is focused, outline otherwise — matches the iOS HIG convention.
-const TAB_GLYPHS: Record<TabName, { outline: IoniconName; filled: IoniconName }> = {
-  Chat:          { outline: 'chatbubble-outline',         filled: 'chatbubble' },
-  People:        { outline: 'people-outline',             filled: 'people' },
-  PeerLens:      { outline: 'shield-checkmark-outline',   filled: 'shield-checkmark' },
-  Notifications: { outline: 'notifications-outline',      filled: 'notifications' },
-  Approvals:     { outline: 'checkmark-circle-outline',   filled: 'checkmark-circle' },
+// Maps each tab to its feature key — icons and labels come from the registry.
+const TAB_FEATURE: Record<TabName, FeatureKey> = {
+  Chat:          'chat',
+  People:        'people',
+  PeerLens:      'peerlens',
+  Notifications: 'notifications',
+  Approvals:     'security',
 };
 
 function TabIcon({ name, focused }: { name: TabName; focused: boolean }) {
-  const glyph = TAB_GLYPHS[name];
-  const iconName = focused ? glyph.filled : glyph.outline;
   const tint = focused ? colors.tabActive : colors.tabInactive;
   return (
     <View style={tabIconStyles.container}>
-      <Ionicons name={iconName} size={22} color={tint} />
+      <FeatureIcon feature={TAB_FEATURE[name]} size={22} color={tint} focused={focused} />
     </View>
   );
 }
@@ -398,6 +397,7 @@ export default function RootLayout() {
   // no font called "ionicons" registered.
   const [iconsFontLoaded] = useFonts({
     ...Ionicons.font,
+    ...MaterialCommunityIcons.font,
     Figtree_400Regular,
     Figtree_500Medium,
     Figtree_600SemiBold,
@@ -486,7 +486,7 @@ export default function RootLayout() {
   const router = useRouter();
   const pathname = usePathname();
   // Menu open state lives in a module singleton so per-tab Stack
-  // headers (`app/trust/_layout.tsx`, `app/vault/_layout.tsx`) can
+  // headers (`app/peerlens/_layout.tsx`, `app/vault/_layout.tsx`) can
   // open it from inside their nav trees too.
   const menuOpen = useSyncExternalStore(
     subscribeMenuOpen,
@@ -599,6 +599,14 @@ export default function RootLayout() {
     getRuntimeWarnings,
     getRuntimeWarnings,
   );
+
+  // Block render until fonts are loaded so every screen — including the
+  // very first InfraSetupForm — gets Cormorant Garamond / Figtree on
+  // first paint instead of flashing to system font. The blank off-white
+  // view is invisible behind the native splash screen on first launch.
+  if (!iconsFontLoaded) {
+    return <View style={{ flex: 1, backgroundColor: colors.bgPrimary }} />;
+  }
 
   return (
     <View style={{ flex: 1 }}>
@@ -717,11 +725,11 @@ export default function RootLayout() {
               }}
             />
             <Tabs.Screen
-              name="trust"
+              name="peerlens"
               options={({ route }) => {
                 // Hide the bottom tab bar on focused-flow PeerLens screens
                 // (compose / edit / outbox). Two reasons:
-                //   1. The fixed-bottom Publish CTA on `/trust/write`
+                //   1. The fixed-bottom Publish CTA on `/peerlens/write`
                 //      sits in the same vertical band as the tab bar
                 //      (CTA y=801-852, tab bar y=795-840). Tapping the
                 //      Publish edit centre lands on a tab and pops the
@@ -738,12 +746,12 @@ export default function RootLayout() {
                 const focused = getFocusedRouteNameFromRoute(route);
                 const hideTabBar = focused === 'write' || focused === 'outbox';
                 return {
-                  title: 'PeerLens',
+                  title: FEATURE_NAMES.peerlens,
                   tabBarIcon: ({ focused: f }: { focused: boolean }) => (
                     <TabIcon name="PeerLens" focused={f} />
                   ),
                   // The trust folder has its own Stack layout
-                  // (`app/trust/_layout.tsx`) that scopes back-navigation
+                  // (`app/peerlens/_layout.tsx`) that scopes back-navigation
                   // properly: search → subject → reviewer → back goes
                   // to subject. With the Stack in place, every nested
                   // `trust/...` route is a Stack child rather than its
@@ -773,33 +781,33 @@ export default function RootLayout() {
               * never their own tab. Without `href: null` Expo Router
               * file-based routing auto-registers each as a bottom-bar
               * entry, blowing out the tab bar with `Bud…`, `Diet…`,
-              * `Acc…` and three raw paths (`trust-preferences/region`,
+              * `Acc…` and three raw paths (`peerlens-preferences/region`,
               * `…/devices`, `…/languages`) that don't even have a
               * friendly title. Six leaks on a four-tab bar — the worst
               * UX regression in the app. Each entry below mirrors the
               * pattern used for `settings`, `help`, etc. above. */}
             <Tabs.Screen
-              name="trust-preferences/region"
+              name="peerlens-preferences/region"
               options={{ title: 'Region', href: null, headerLeft: renderHeaderBackButton }}
             />
             <Tabs.Screen
-              name="trust-preferences/budget"
+              name="peerlens-preferences/budget"
               options={{ title: 'Budget', href: null, headerLeft: renderHeaderBackButton }}
             />
             <Tabs.Screen
-              name="trust-preferences/devices"
+              name="peerlens-preferences/devices"
               options={{ title: 'Devices', href: null, headerLeft: renderHeaderBackButton }}
             />
             <Tabs.Screen
-              name="trust-preferences/languages"
+              name="peerlens-preferences/languages"
               options={{ title: 'Languages', href: null, headerLeft: renderHeaderBackButton }}
             />
             <Tabs.Screen
-              name="trust-preferences/dietary"
+              name="peerlens-preferences/dietary"
               options={{ title: 'Dietary', href: null, headerLeft: renderHeaderBackButton }}
             />
             <Tabs.Screen
-              name="trust-preferences/accessibility"
+              name="peerlens-preferences/accessibility"
               options={{ title: 'Accessibility', href: null, headerLeft: renderHeaderBackButton }}
             />
             <Tabs.Screen

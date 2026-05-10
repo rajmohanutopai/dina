@@ -86,13 +86,13 @@ export async function injectAttestation(
   db: DrizzleDB,
   body: InjectAttestationBodyType,
 ): Promise<InjectAttestationResult> {
-  const uri = `at://${body.authorDid}/com.dina.trust.attestation/${body.rkey}`
+  const uri = `at://${body.authorDid}/com.dina.peerlens.attestation/${body.rkey}`
   await attestationHandler.handleCreate(
     { db, logger, metrics },
     {
       uri,
       did: body.authorDid,
-      collection: 'com.dina.trust.attestation',
+      collection: 'com.dina.peerlens.attestation',
       rkey: body.rkey,
       cid: body.cid,
       record: body.record as unknown as Record<string, unknown>,
@@ -103,7 +103,7 @@ export async function injectAttestation(
 }
 
 /**
- * Run the revocation handler — emits a `com.dina.trust.revocation`
+ * Run the revocation handler — emits a `com.dina.peerlens.revocation`
  * record and the existing handler chain marks the original
  * attestation as revoked. Mirrors the production flow: a delete via
  * PeerLens is a SOFT delete (revocation), not a tombstone.
@@ -116,13 +116,13 @@ export async function deleteAttestation(
   // no-op rather than creating a flock of duplicate revocations.
   const targetRkey = body.uri.split('/').pop() ?? 'unknown'
   const rkey = `rev-${targetRkey}`
-  const revUri = `at://${body.authorDid}/com.dina.trust.revocation/${rkey}`
+  const revUri = `at://${body.authorDid}/com.dina.peerlens.revocation/${rkey}`
   await revocationHandler.handleCreate(
     { db, logger, metrics },
     {
       uri: revUri,
       did: body.authorDid,
-      collection: 'com.dina.trust.revocation',
+      collection: 'com.dina.peerlens.revocation',
       rkey,
       cid: `bafyrev${Date.now().toString(36)}`,
       record: {

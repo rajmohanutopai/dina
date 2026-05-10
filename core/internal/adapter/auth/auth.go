@@ -1213,7 +1213,7 @@ func (c *adminEndpointChecker) allowedForBrain(path string) bool {
 		"/v1/pii",
 		"/v1/did",
 		"/v1/contacts",
-		"/v1/trust",
+		"/v1/peerlens",
 		"/v1/workflow/tasks",  // workflow task create + queue-by-proposal
 		"/v1/workflow/events", // workflow event ACK
 		"/v1/people",       // person memory layer (recall expansion)

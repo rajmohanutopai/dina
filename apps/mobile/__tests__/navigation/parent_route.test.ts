@@ -20,9 +20,9 @@ describe('parentRouteFor', () => {
     // those Stacks, so trust/vault paths fall through to the Chat
     // default. This pin documents that contract.
     it('trust drill-downs are no longer mapped here (Stack-managed)', () => {
-      expect(parentRouteFor('/trust/search')).toBe('/');
-      expect(parentRouteFor('/trust/sub_83b9d57f0b25a6bbe78e0e87f61995fc')).toBe('/');
-      expect(parentRouteFor('/trust/reviewer/did:plc:zaxxz2vts2umzfk2r5fpzes4')).toBe('/');
+      expect(parentRouteFor('/peerlens/search')).toBe('/');
+      expect(parentRouteFor('/peerlens/sub_83b9d57f0b25a6bbe78e0e87f61995fc')).toBe('/');
+      expect(parentRouteFor('/peerlens/reviewer/did:plc:zaxxz2vts2umzfk2r5fpzes4')).toBe('/');
     });
 
     it('vault drill-down is no longer mapped here (Stack-managed)', () => {

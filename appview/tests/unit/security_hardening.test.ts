@@ -26,7 +26,7 @@
  *
  *   3. **Flag spam** — covered by the ingester rate limiter:
  *      `tests/unit/02-ingester-components.test.ts` UT-RL-011..018
- *      pin per-collection daily caps including `com.dina.trust.flag`
+ *      pin per-collection daily caps including `com.dina.peerlens.flag`
  *      at 10/day. This file references that coverage so any future
  *      "where's the flag-spam defence?" search lands here.
  *
@@ -227,21 +227,21 @@ describe('rate-limit isolation — bypass-resistance', () => {
     // which is much harder. The test pins that the limiter buckets
     // are correctly keyed by IP.
     const cache = createRateLimitCache()
-    const limit = getMethodLimit('com.dina.trust.search') // 60
+    const limit = getMethodLimit('com.dina.peerlens.search') // 60
 
     // ip-A burns the bucket
     for (let i = 0; i < limit; i++) {
-      const r = checkPerMethodRateLimit(cache, '1.1.1.1', 'com.dina.trust.search', NOW)
+      const r = checkPerMethodRateLimit(cache, '1.1.1.1', 'com.dina.peerlens.search', NOW)
       expect(r.ok).toBe(true)
     }
     // ip-A's next request is denied
     expect(
-      checkPerMethodRateLimit(cache, '1.1.1.1', 'com.dina.trust.search', NOW).ok,
+      checkPerMethodRateLimit(cache, '1.1.1.1', 'com.dina.peerlens.search', NOW).ok,
     ).toBe(false)
 
     // ip-B is still fresh (proves bucket isolation)
     expect(
-      checkPerMethodRateLimit(cache, '2.2.2.2', 'com.dina.trust.search', NOW).ok,
+      checkPerMethodRateLimit(cache, '2.2.2.2', 'com.dina.peerlens.search', NOW).ok,
     ).toBe(true)
   })
 
@@ -252,18 +252,18 @@ describe('rate-limit isolation — bypass-resistance', () => {
     // the "what if I just use a different endpoint" approach.
     const cache = createRateLimitCache()
     const ip = '1.1.1.1'
-    const searchLimit = getMethodLimit('com.dina.trust.search') // 60
+    const searchLimit = getMethodLimit('com.dina.peerlens.search') // 60
 
     for (let i = 0; i < searchLimit; i++) {
-      checkPerMethodRateLimit(cache, ip, 'com.dina.trust.search', NOW)
+      checkPerMethodRateLimit(cache, ip, 'com.dina.peerlens.search', NOW)
     }
     expect(
-      checkPerMethodRateLimit(cache, ip, 'com.dina.trust.search', NOW).ok,
+      checkPerMethodRateLimit(cache, ip, 'com.dina.peerlens.search', NOW).ok,
     ).toBe(false)
 
     // subjectGet is a separate bucket — fresh.
     expect(
-      checkPerMethodRateLimit(cache, ip, 'com.dina.trust.subjectGet', NOW).ok,
+      checkPerMethodRateLimit(cache, ip, 'com.dina.peerlens.subjectGet', NOW).ok,
     ).toBe(true)
   })
 
@@ -273,38 +273,38 @@ describe('rate-limit isolation — bypass-resistance', () => {
     // choice — better than letting an attacker on a detached socket
     // reset the bucket per request.
     const cache = createRateLimitCache()
-    const limit = getMethodLimit('com.dina.trust.search')
+    const limit = getMethodLimit('com.dina.peerlens.search')
 
     // First client (call them A) exhausts the unknown bucket
     for (let i = 0; i < limit; i++) {
-      checkPerMethodRateLimit(cache, UNKNOWN_IP_BUCKET, 'com.dina.trust.search', NOW)
+      checkPerMethodRateLimit(cache, UNKNOWN_IP_BUCKET, 'com.dina.peerlens.search', NOW)
     }
     // A is now denied
     expect(
-      checkPerMethodRateLimit(cache, UNKNOWN_IP_BUCKET, 'com.dina.trust.search', NOW).ok,
+      checkPerMethodRateLimit(cache, UNKNOWN_IP_BUCKET, 'com.dina.peerlens.search', NOW).ok,
     ).toBe(false)
     // Another "unknown" client (call them B) is also denied — they
     // share the bucket. This is BY DESIGN: see the helper docstring.
     expect(
-      checkPerMethodRateLimit(cache, UNKNOWN_IP_BUCKET, 'com.dina.trust.search', NOW).ok,
+      checkPerMethodRateLimit(cache, UNKNOWN_IP_BUCKET, 'com.dina.peerlens.search', NOW).ok,
     ).toBe(false)
   })
 
   it('window roll-over: bucket resets at +60s', () => {
     const cache = createRateLimitCache()
     const ip = '1.1.1.1'
-    const limit = getMethodLimit('com.dina.trust.search')
+    const limit = getMethodLimit('com.dina.peerlens.search')
 
     for (let i = 0; i < limit; i++) {
-      checkPerMethodRateLimit(cache, ip, 'com.dina.trust.search', NOW)
+      checkPerMethodRateLimit(cache, ip, 'com.dina.peerlens.search', NOW)
     }
     expect(
-      checkPerMethodRateLimit(cache, ip, 'com.dina.trust.search', NOW).ok,
+      checkPerMethodRateLimit(cache, ip, 'com.dina.peerlens.search', NOW).ok,
     ).toBe(false)
 
     // Step the clock past the 60s window — bucket rolls over.
     expect(
-      checkPerMethodRateLimit(cache, ip, 'com.dina.trust.search', NOW + 60_001).ok,
+      checkPerMethodRateLimit(cache, ip, 'com.dina.peerlens.search', NOW + 60_001).ok,
     ).toBe(true)
   })
 
@@ -312,8 +312,8 @@ describe('rate-limit isolation — bypass-resistance', () => {
     // Ops mistake guard: setting `RATE_LIMIT_RPM=10` cannot make
     // `attestationStatus` (cap 600) into a 10/min limit. Env raises
     // ceilings (test-mode bypass) but NEVER lowers them.
-    expect(getMethodLimit('com.dina.trust.attestationStatus', 10)).toBe(600)
-    expect(getMethodLimit('com.dina.trust.search', 10)).toBe(60)
+    expect(getMethodLimit('com.dina.peerlens.attestationStatus', 10)).toBe(600)
+    expect(getMethodLimit('com.dina.peerlens.search', 10)).toBe(60)
   })
 })
 
@@ -339,7 +339,7 @@ describe('PER_METHOD_LIMITS_RPM — tier integrity', () => {
     // it to a lower tier the outbox starts 429-ing, breaking publish
     // recovery. Pin it.
     const allCaps = Object.values(PER_METHOD_LIMITS_RPM)
-    expect(PER_METHOD_LIMITS_RPM['com.dina.trust.attestationStatus']).toBe(
+    expect(PER_METHOD_LIMITS_RPM['com.dina.peerlens.attestationStatus']).toBe(
       Math.max(...allCaps),
     )
   })
@@ -357,8 +357,8 @@ describe('flag-spam (TN-TEST-082 — cross-cutting reference)', () => {
   // tests — single-bucket boundary tests stay green, but the
   // discoverable security-tests file makes the intent obvious.
 
-  it('com.dina.trust.flag cap is 10/day (Plan §6.4 — strictest tier)', () => {
-    expect(getCollectionDailyCap('com.dina.trust.flag')).toBe(10)
+  it('com.dina.peerlens.flag cap is 10/day (Plan §6.4 — strictest tier)', () => {
+    expect(getCollectionDailyCap('com.dina.peerlens.flag')).toBe(10)
   })
 
   it('cap tiers are ordered by abuse risk: flag(10) < endorsement(30) < attestation(60)', () => {
@@ -367,9 +367,9 @@ describe('flag-spam (TN-TEST-082 — cross-cutting reference)', () => {
     // medium (a fake reputation booster), attestations are lowest
     // (the bread-and-butter publishing path). Pinning the ordering
     // catches any refactor that flips the tier rationale.
-    const flag = getCollectionDailyCap('com.dina.trust.flag')!
-    const endorsement = getCollectionDailyCap('com.dina.trust.endorsement')!
-    const attestation = getCollectionDailyCap('com.dina.trust.attestation')!
+    const flag = getCollectionDailyCap('com.dina.peerlens.flag')!
+    const endorsement = getCollectionDailyCap('com.dina.peerlens.endorsement')!
+    const attestation = getCollectionDailyCap('com.dina.peerlens.attestation')!
     expect(flag).toBeLessThan(endorsement)
     expect(endorsement).toBeLessThan(attestation)
     expect(flag).toBe(10)
@@ -381,10 +381,10 @@ describe('flag-spam (TN-TEST-082 — cross-cutting reference)', () => {
     // The cap table is selective — capping every collection would
     // cripple legitimate publishing. Vouches / reactions / replies
     // have their own per-DID hourly gate and don't need a daily cap.
-    expect(getCollectionDailyCap('com.dina.trust.vouch')).toBeNull()
-    expect(getCollectionDailyCap('com.dina.trust.reaction')).toBeNull()
-    expect(getCollectionDailyCap('com.dina.trust.reply')).toBeNull()
-    expect(getCollectionDailyCap('com.dina.trust.reportRecord')).toBeNull()
+    expect(getCollectionDailyCap('com.dina.peerlens.vouch')).toBeNull()
+    expect(getCollectionDailyCap('com.dina.peerlens.reaction')).toBeNull()
+    expect(getCollectionDailyCap('com.dina.peerlens.reply')).toBeNull()
+    expect(getCollectionDailyCap('com.dina.peerlens.reportRecord')).toBeNull()
   })
 
   it('unknown / unmapped collection returns null (no surprise cap)', () => {
@@ -392,6 +392,6 @@ describe('flag-spam (TN-TEST-082 — cross-cutting reference)', () => {
     // null (no cap) rather than an inherited cap. Forces the operator
     // to consciously decide whether the new collection needs spam
     // defence at the rate-limiter layer.
-    expect(getCollectionDailyCap('com.dina.trust.somethingNew')).toBeNull()
+    expect(getCollectionDailyCap('com.dina.peerlens.somethingNew')).toBeNull()
   })
 })

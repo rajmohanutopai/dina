@@ -461,7 +461,7 @@ Tapped Publish → form dismissed → Outbox screen showed "Nothing in your outb
 Verified end-to-end on AppView via direct xRPC:
 
 ```
-curl https://test-appview.dinakernel.com/xrpc/com.dina.trust.search?q=tMT
+curl https://test-appview.dinakernel.com/xrpc/com.dina.peerlens.search?q=tMT
 → results[0]: authorDid=did:plc:bipda2…gmfq (Sancho), subjectRefRaw={name: "tMT-22 test subject", type: "product"},
    text="MT-22 review headline", category="commerce/product", sentiment="positive"
 ```

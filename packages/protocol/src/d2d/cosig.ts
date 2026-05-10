@@ -5,7 +5,7 @@
  * peer to endorse it. The handshake is a tiny three-message D2D
  * exchange plus a state machine the requester drives client-side:
  *
- *   author → peer    trust.cosig.request   "would you cosign at://X?"
+ *   author → peer    peerlens.cosig.request   "would you cosign at://X?"
  *   peer   → author  trust.cosig.accept    "yes — here's my endorsement at://Y"
  *   peer   → author  trust.cosig.reject    "no — reason X"
  *
@@ -26,7 +26,7 @@
  * D2D message-type literal for cosig messages. Mirrors the
  * convention in `@dina/protocol` constants for other D2D scenarios.
  */
-export const COSIG_REQUEST_TYPE = 'trust.cosig.request' as const;
+export const COSIG_REQUEST_TYPE = 'peerlens.cosig.request' as const;
 export const COSIG_ACCEPT_TYPE = 'trust.cosig.accept' as const;
 export const COSIG_REJECT_TYPE = 'trust.cosig.reject' as const;
 

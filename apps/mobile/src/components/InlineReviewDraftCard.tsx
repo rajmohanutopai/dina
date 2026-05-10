@@ -37,23 +37,23 @@ import {
 } from '@dina/brain/chat';
 import { colors, fonts, radius, spacing } from '../theme';
 import { MessageTimestamp } from './MessageTimestamp';
-import { setReviewDraftStatus } from '../trust/review_draft';
+import { setReviewDraftStatus } from '../peerlens/review_draft';
 import {
   buildAttestationRecord,
   newPublishKeys,
-} from '../trust/publish_helpers';
+} from '../peerlens/publish_helpers';
 import {
   HEADLINE_MAX_LENGTH,
   BODY_MAX_LENGTH,
   SENTIMENT_OPTIONS,
   type WriteFormState,
-} from '../trust/write_form_data';
+} from '../peerlens/write_form_data';
 import type { Sentiment } from '@dina/protocol';
 import {
   injectAttestation,
   isTestPublishConfigured,
   type InjectAttestationRequest,
-} from '../trust/appview_runtime';
+} from '../peerlens/appview_runtime';
 import { getBootedNode } from '../hooks/useNodeBootstrap';
 
 export interface InlineReviewDraftCardProps {
@@ -227,7 +227,7 @@ function ReadyState({
     // Navigate to the write form prefilled. Pass the draftId via query
     // so the form can pull the lifecycle on mount.
     router.push({
-      pathname: '/trust/write',
+      pathname: '/peerlens/write',
       params: { draftId: lc.draftId, threadId: message.threadId },
     });
   }, [

@@ -42,6 +42,7 @@ import {
   savePdsPassword,
   savePdsEmail,
   saveAppViewURL,
+  saveServicesAppViewURL,
 } from '../src/services/infra_preferences';
 import type { NodeRole } from '../src/services/bootstrap';
 import type { ServiceConfig } from '@dina/core';
@@ -105,6 +106,7 @@ export default function ServiceSettingsScreen() {
   const [pdsPassword, setPdsPasswordState] = useState('');
   const [pdsEmail, setPdsEmailState] = useState('');
   const [appViewURLState, setAppViewURLState] = useState('');
+  const [servicesAppViewURLState, setServicesAppViewURLState] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -114,6 +116,7 @@ export default function ServiceSettingsScreen() {
       setPdsPasswordState(infra.pdsPassword ?? '');
       setPdsEmailState(infra.pdsEmail ?? '');
       setAppViewURLState(infra.appViewURL ?? '');
+      setServicesAppViewURLState(infra.servicesAppViewURL ?? '');
     })();
   }, []);
 
@@ -299,11 +302,21 @@ export default function ServiceSettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionHeader}>INFRASTRUCTURE</Text>
           <View style={styles.card}>
-            <Text style={styles.label}>AppView URL</Text>
+            <Text style={styles.label}>PeerLens AppView URL</Text>
             <TextInput
               value={appViewURLState}
               onChangeText={setAppViewURLState}
               placeholder="https://test-appview.dinakernel.com"
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.input}
+            />
+            <View style={styles.inputDivider} />
+            <Text style={styles.label}>Service Discovery AppView URL</Text>
+            <TextInput
+              value={servicesAppViewURLState}
+              onChangeText={setServicesAppViewURLState}
+              placeholder="Leave blank to use PeerLens AppView"
               autoCapitalize="none"
               autoCorrect={false}
               style={styles.input}
@@ -356,6 +369,7 @@ export default function ServiceSettingsScreen() {
             onPress={async () => {
               await Promise.all([
                 saveAppViewURL(appViewURLState),
+                saveServicesAppViewURL(servicesAppViewURLState),
                 savePdsUrl(pdsUrl),
                 savePdsHandle(pdsHandle),
                 savePdsPassword(pdsPassword),

@@ -5,7 +5,7 @@
  * once at the root layout. The hamburger button that opens it used
  * to live alongside the sheet in the same file via a local
  * `useState`. After we introduced per-tab `<Stack>` navigators
- * (`app/trust/_layout.tsx`, `app/vault/_layout.tsx`), the Stack
+ * (`app/peerlens/_layout.tsx`, `app/vault/_layout.tsx`), the Stack
  * headers also need to render the hamburger on the tab's index
  * screen — which means the open/close state has to be reachable
  * from inside the Stack tree, not just the root.

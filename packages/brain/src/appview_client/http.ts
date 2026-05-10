@@ -97,7 +97,7 @@ export interface IsDiscoverableResult {
 // ---------------------------------------------------------------------------
 
 /** Aggregate attestation counts for a trust subject. */
-export interface TrustAttestationSummary {
+export interface PeerlensAttestationSummary {
   total: number;
   positive: number;
   neutral: number;
@@ -106,44 +106,44 @@ export interface TrustAttestationSummary {
 }
 
 /** Community-flagged concerns on a subject (scam / fake / deceptive / etc.). */
-export interface TrustFlag {
+export interface PeerlensFlag {
   flagType: string;
   severity: string;
 }
 
 /** Authenticity consensus block — present when reviewers have weighed in. */
-export interface TrustAuthenticity {
+export interface PeerlensAuthenticity {
   predominantAssessment: string;
   confidence: number | null;
 }
 
 /** How the requester relates to the target in PeerLens graph. */
-export interface TrustGraphContext {
+export interface PeerlensGraphContext {
   shortestPath: number | null;
   mutualConnections: number | null;
   trustedAttestors: string[];
 }
 
 /**
- * `com.dina.trust.resolve` response — trust level + recommendation
+ * `com.dina.peerlens.resolve` response — trust level + recommendation
  * for a subject (DID / product / content / etc.). `subject` must be a
  * JSON-stringified subject reference: `{"type":"did","did":"did:plc:..."}`
  * or `{"type":"product","domain":"amazon.com","productId":"B0..."}`.
  */
-export interface ResolveTrustResponse {
+export interface ResolvePeerlensResponse {
   subjectType: string;
   trustLevel: string;
   confidence: number;
-  attestationSummary: TrustAttestationSummary | null;
-  flags: TrustFlag[];
-  authenticity: TrustAuthenticity | null;
-  graphContext: TrustGraphContext | null;
+  attestationSummary: PeerlensAttestationSummary | null;
+  flags: PeerlensFlag[];
+  authenticity: PeerlensAuthenticity | null;
+  graphContext: PeerlensGraphContext | null;
   recommendation: string;
   reasoning: string;
 }
 
-/** `com.dina.trust.resolve` params. `subject` is JSON-stringified. */
-export interface ResolveTrustParams {
+/** `com.dina.peerlens.resolve` params. `subject` is JSON-stringified. */
+export interface ResolvePeerlensParams {
   subject: string;
   requesterDid?: string;
   domain?: string;
@@ -155,9 +155,9 @@ export interface ResolveTrustParams {
     | 'general-lookup';
 }
 
-/** `com.dina.trust.search` result — raw attestation rows (AppView sends
+/** `com.dina.peerlens.search` result — raw attestation rows (AppView sends
  *  them as `Attestation` records, not normalised further here). */
-export interface TrustAttestation {
+export interface PeerlensAttestation {
   uri?: string;
   cid?: string;
   authorDid?: string;
@@ -171,17 +171,17 @@ export interface TrustAttestation {
   [key: string]: unknown;
 }
 
-/** `com.dina.trust.search` response — attestation rows + pagination cursor. */
-export interface SearchTrustResponse {
-  results: TrustAttestation[];
+/** `com.dina.peerlens.search` response — attestation rows + pagination cursor. */
+export interface SearchPeerlensResponse {
+  results: PeerlensAttestation[];
   cursor?: string;
   totalEstimate: number | null;
 }
 
-/** `com.dina.trust.search` params (subset of AppView's surface — we
+/** `com.dina.peerlens.search` params (subset of AppView's surface — we
  *  don't expose the full date / cursor / tag-array knobs to the agent
  *  yet, just the fields a product-vendor query needs). */
-export interface SearchTrustParams {
+export interface SearchPeerlensParams {
   q?: string;
   category?: string;
   domain?: string;
@@ -315,12 +315,12 @@ export class AppViewClient {
   }
 
   // -------------------------------------------------------------------------
-  // PeerLens — `com.dina.trust.*`
+  // PeerLens — `com.dina.peerlens.*`
   // -------------------------------------------------------------------------
 
   /**
    * Resolve the trust level of a subject (DID / product / content /
-   * etc.). Maps to AppView `com.dina.trust.resolve`. Returns
+   * etc.). Maps to AppView `com.dina.peerlens.resolve`. Returns
    * `trustLevel` + `recommendation` + `attestationSummary` so the
    * caller can decide whether to proceed / warn / block.
    *
@@ -331,12 +331,12 @@ export class AppViewClient {
    *   - `{"type":"content","uri":"at://..."}`
    *   - `{"type":"organization","domain":"nytimes.com"}`
    */
-  async resolveTrust(params: ResolveTrustParams): Promise<ResolveTrustResponse> {
+  async resolveTrust(params: ResolvePeerlensParams): Promise<ResolvePeerlensResponse> {
     if (!params.subject) {
       throw new AppViewError(
         'resolveTrust: subject is required',
         null,
-        '/xrpc/com.dina.trust.resolve',
+        '/xrpc/com.dina.peerlens.resolve',
       );
     }
     const query: Record<string, string> = { subject: params.subject };
@@ -344,17 +344,17 @@ export class AppViewClient {
     if (params.domain !== undefined) query.domain = params.domain;
     if (params.context !== undefined) query.context = params.context;
 
-    const body = await this.get('/xrpc/com.dina.trust.resolve', query);
-    return body as ResolveTrustResponse;
+    const body = await this.get('/xrpc/com.dina.peerlens.resolve', query);
+    return body as ResolvePeerlensResponse;
   }
 
   /**
    * Free-text / faceted search over trust attestations. Maps to
-   * AppView `com.dina.trust.search`. Returns attestation rows (not
+   * AppView `com.dina.peerlens.search`. Returns attestation rows (not
    * subject aggregates — use `resolveTrust` for that). Pagination via
    * the returned `cursor`.
    */
-  async searchTrust(params: SearchTrustParams): Promise<SearchTrustResponse> {
+  async searchTrust(params: SearchPeerlensParams): Promise<SearchPeerlensResponse> {
     const query: Record<string, string> = {};
     if (params.q !== undefined) query.q = params.q;
     if (params.category !== undefined) query.category = params.category;
@@ -369,10 +369,10 @@ export class AppViewClient {
     if (params.sort !== undefined) query.sort = params.sort;
     if (params.limit !== undefined) query.limit = String(params.limit);
 
-    const body = await this.get('/xrpc/com.dina.trust.search', query);
+    const body = await this.get('/xrpc/com.dina.peerlens.search', query);
     const r = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
     return {
-      results: Array.isArray(r.results) ? (r.results as TrustAttestation[]) : [],
+      results: Array.isArray(r.results) ? (r.results as PeerlensAttestation[]) : [],
       cursor: typeof r.cursor === 'string' ? r.cursor : undefined,
       totalEstimate: typeof r.totalEstimate === 'number' ? r.totalEstimate : null,
     };

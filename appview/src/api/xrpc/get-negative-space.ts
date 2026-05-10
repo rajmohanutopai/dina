@@ -5,7 +5,7 @@ import { flags, subjects } from '@/db/schema/index.js'
 import { getCachedGraphContext } from '@/api/middleware/graph-context-cache.js'
 
 /**
- * `com.dina.trust.getNegativeSpace` (TN-V2-RANK-010 / Plan §6.X).
+ * `com.dina.peerlens.getNegativeSpace` (TN-V2-RANK-010 / Plan §6.X).
  *
  * Returns subjects in a category that the viewer's 1-hop contacts
  * have actively flagged. Powers the proactive warning surface — the

@@ -332,7 +332,7 @@ Dina:
 Publish to PeerLens?
 [Publish] [Cancel]
 Published review of ErgoMax 205.
-URI: at://did:plc:pmsxrxnraasohaqr3euwy6j/com.dina.trust.attestation/3mhsfgdcwqc2r
+URI: at://did:plc:pmsxrxnraasohaqr3euwy6j/com.dina.peerlens.attestation/3mhsfgdcwqc2r
 ```
 
 Now someone else, who wants to buy the chair gets this review as part of their recommendation

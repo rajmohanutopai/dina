@@ -2,11 +2,11 @@ import type { RecordHandler, HandlerContext, RecordOp } from './index.js'
 import type { Delegation } from '@/shared/types/lexicon-types.js'
 import { delegations } from '@/db/schema/index.js'
 import { deletionHandler } from '../deletion-handler.js'
-import { addTrustEdge } from '../trust-edge-sync.js'
+import { addTrustEdge } from '../peerlens-edge-sync.js'
 import { markDirty } from '@/db/queries/dirty-flags.js'
 
 /**
- * Handler for com.dina.trust.delegation records.
+ * Handler for com.dina.peerlens.delegation records.
  *
  * A delegation grants scoped permissions from one DID to another —
  * "I allow this agent to act on my behalf within this scope."

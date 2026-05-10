@@ -36,7 +36,7 @@ function makeRequest(overrides: Partial<CosigRequest> = {}): CosigRequest {
   return {
     type: COSIG_REQUEST_TYPE,
     requestId: 'req-001',
-    attestationUri: 'at://did:plc:author/com.dina.trust.attestation/abc',
+    attestationUri: 'at://did:plc:author/com.dina.peerlens.attestation/abc',
     attestationCid: 'bafyreigzv4ig...example',
     expiresAt: T_EXPIRES,
     createdAt: T_CREATED,
@@ -48,7 +48,7 @@ function makeAccept(overrides: Partial<CosigAccept> = {}): CosigAccept {
   return {
     type: COSIG_ACCEPT_TYPE,
     requestId: 'req-001',
-    endorsementUri: 'at://did:plc:peer/com.dina.trust.endorsement/xyz',
+    endorsementUri: 'at://did:plc:peer/com.dina.peerlens.endorsement/xyz',
     endorsementCid: 'bafyreiaccept...example',
     createdAt: T_BEFORE_EXPIRY,
     ...overrides,

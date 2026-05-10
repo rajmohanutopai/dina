@@ -43,7 +43,7 @@ import {
   computeSchemaHash,
   getCapability,
 } from '@dina/brain';
-import { loadInfraPreferences } from './infra_preferences';
+import { loadInfraPreferences, resolveServicesAppViewURL } from './infra_preferences';
 import type { ServiceConfig } from '@dina/protocol';
 import { getIdentityAdapter } from '../storage/init';
 import { resolveMobileHostedDinaEndpoints } from '@dina/home-node';
@@ -76,7 +76,7 @@ import {
   setReviewDraftStarter,
   type ProviderName,
 } from '@dina/brain/runtime';
-import { startReviewDraft } from '../trust/review_draft';
+import { startReviewDraft } from '../peerlens/review_draft';
 import type { BootServiceInputs } from './boot_service';
 import type { NodeRole } from './bootstrap';
 import {
@@ -352,6 +352,10 @@ export async function buildBootInputs(
   // share one client.
   const infra = await loadInfraPreferences();
   const appViewURLOverride = infra.appViewURL ?? process.env.EXPO_PUBLIC_DINA_APPVIEW_URL ?? '';
+  // Service discovery may use a separate AppView (e.g. a community
+  // registry). Falls back to the PeerLens AppView when unset.
+  const servicesAppViewURLOverride =
+    resolveServicesAppViewURL(infra) ?? process.env.EXPO_PUBLIC_DINA_APPVIEW_URL ?? '';
 
   // AppView client priority:
   //   1. explicit caller-supplied (tests / programmatic boots),
@@ -493,8 +497,8 @@ export async function buildBootInputs(
   // AppView. Provider-side service.response replies use the
   // provider-window path and don't need the resolver.
   const providerServiceResolver =
-    appViewURLOverride !== ''
-      ? new AppViewServiceResolver({ appViewURL: appViewURLOverride })
+    servicesAppViewURLOverride !== ''
+      ? new AppViewServiceResolver({ appViewURL: servicesAppViewURLOverride })
       : undefined;
 
   const sendD2D: BootServiceInputs['sendD2D'] = async (to, type, body) => {

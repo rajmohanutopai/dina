@@ -29,7 +29,7 @@
 
 import { GUARD_SCAN } from '../llm/prompts';
 import type { LLMProvider } from '../llm/adapters/provider';
-import { isTrustTool } from '../guardian/trust_tools';
+import { isTrustTool } from '../guardian/peerlens_tools';
 
 export interface GuardScanViolations {
   anti_her_sentences: number[];
@@ -85,7 +85,7 @@ export interface GuardScannerOptions {
    * Override the trust-tool registry. Useful for tests that want to
    * pin a custom set; production callers should leave this undefined
    * and rely on the canonical registry in
-   * `guardian/trust_tools.ts`. When provided, the override REPLACES
+   * `guardian/peerlens_tools.ts`. When provided, the override REPLACES
    * the canonical registry entirely (no merge) — a deliberate choice
    * so tests can exercise the "no trust tool used" branch by passing
    * `[]`.
@@ -113,7 +113,7 @@ export function createGuardScanner(
 ): GuardScanner {
   // When the caller supplies an override, use it verbatim (Set lookup
   // only). Otherwise delegate to the canonical registry in
-  // `guardian/trust_tools.ts`, which also handles prefix families.
+  // `guardian/peerlens_tools.ts`, which also handles prefix families.
   const overrideSet = options.trustToolNames ? new Set(options.trustToolNames) : null;
   const isTrustToolName = (name: string): boolean =>
     overrideSet ? overrideSet.has(name) : isTrustTool(name);

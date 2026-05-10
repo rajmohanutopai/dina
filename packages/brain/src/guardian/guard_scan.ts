@@ -28,7 +28,7 @@
 import { isTherapyStyle, isEngagementHook, isIntimacySimulation } from './anti_her';
 import { detectPII, scrubPII } from '@dina/core';
 import { GUARD_SCAN } from '../llm/prompts';
-import { trustToolUsed } from './trust_tools';
+import { trustToolUsed } from './peerlens_tools';
 
 // ---------------------------------------------------------------
 // Violation types
@@ -95,7 +95,7 @@ function hasPIIToken(text: string): boolean {
  *
  *   2. AUDIT — is there a runtime signal that the claim/recommendation
  *      was earned? For trust: a trust-providing tool was called this
- *      turn (`trust_tools.ts`). For unsolicited: the user prompt
+ *      turn (`peerlens_tools.ts`). For unsolicited: the user prompt
  *      explicitly invited a recommendation. If the audit passes, the
  *      sentence is data/intent-backed and not flagged.
  *
@@ -106,7 +106,7 @@ function hasPIIToken(text: string): boolean {
  * The agentic loop's separate LLM-based scanner
  * (`reasoning/guard_scanner.ts`) does the same audit on its own
  * fabricated-sentence path; both scanners share the trust-tool
- * registry via `trust_tools.ts`.
+ * registry via `peerlens_tools.ts`.
  */
 
 /** Maximum token-distance between a claim word and its companion
@@ -494,7 +494,7 @@ export function splitSentences(text: string): string[] {
  *                        warning to a block.
  *   - `toolsCalled`    — names of tools the loop called this turn.
  *                        Drives the rating-claim audit: ANY trust-
- *                        providing tool fired (`trust_tools.ts`) →
+ *                        providing tool fired (`peerlens_tools.ts`) →
  *                        suppress. Single-shot reasoners should pass
  *                        `[]` (no tools) — that flags conservatively.
  *   - `userPrompt`     — the user's original question. Drives the

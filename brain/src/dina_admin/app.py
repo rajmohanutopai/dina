@@ -32,7 +32,7 @@ from .routes.login import get_csrf_token, validate_session
 from .routes import pages as pages_route
 from .routes import chat as chat_route
 from .routes import history as history_route
-from .routes import trust as trust_route
+from .routes import peerlens as peerlens_route
 
 log = logging.getLogger(__name__)
 
@@ -234,7 +234,7 @@ def create_admin_app(
     pages_route.set_config(config)
     chat_route.set_guardian(guardian)
     history_route.set_core_client(core_client)
-    trust_route.set_core_client(core_client)
+    peerlens_route.set_core_client(core_client)
 
     # ------------------------------------------------------------------
     # Include routers — JSON API (cookie-or-bearer auth)
@@ -282,7 +282,7 @@ def create_admin_app(
         dependencies=[Depends(verify_cookie_or_bearer)],
     )
     app.include_router(
-        trust_route.router,
+        peerlens_route.router,
         dependencies=[Depends(verify_cookie_or_bearer)],
     )
 

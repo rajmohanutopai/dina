@@ -37,7 +37,7 @@ type vaultBackend interface {
 // Both the in-memory and SQLite contact directories satisfy this combined
 // interface. Used by the build-tag factory so main.go can pass the same value
 // to both handler.ContactHandler (needs ContactDirectory) and
-// service.NewTrustService (needs ContactLookup).
+// service.NewPeerlensService (needs ContactLookup).
 type contactDirectoryFull interface {
 	port.ContactDirectory
 	port.ContactLookup

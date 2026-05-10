@@ -16,17 +16,17 @@
  *                  = 1.0           otherwise
  *
  * `FRIEND_BOOST` defaults to **1.5** (Plan §13.6 — operator-tunable
- * via `trust_v1_params`; surfaced through `readTrustV1Params` from
+ * via `trust_v1_params`; surfaced through `readPeerlensV1Params` from
  * TN-SCORE-009).
  *
  * **Audit verdict on existing scorer** (per Plan §13 line 601):
  * the per-viewer 1-hop / 2-hop / 3+ network-position weights from the
- * original draft are deliberately **NOT** in `trust-score.ts`. Reviewer
+ * original draft are deliberately **NOT** in `peerlens-score.ts`. Reviewer
  * PeerLens rating is viewer-independent and cacheable; the per-viewer
  * friend-boost is a query-time multiplier applied on top by the search
  * ranker. The only network-position weight specified in Plan §7 is the
  * 1-hop FRIEND_BOOST below — there are no 2-hop or 3+ multipliers in
- * the V1 ranker. Hence "no drift to fix" in `trust-score.ts`; the work
+ * the V1 ranker. Hence "no drift to fix" in `peerlens-score.ts`; the work
  * for TN-SCORE-003 is shipping this primitive so TN-API-001 (search
  * filters + ranker wiring) can compose it.
  *
@@ -79,7 +79,7 @@ export interface FriendBoostInput {
   /**
    * The boost multiplier from `trust_v1_params.FRIEND_BOOST`
    * (operator-tunable, default 1.5). Caller resolves via
-   * `readTrustV1Params(db).FRIEND_BOOST` so the snapshot is reused
+   * `readPeerlensV1Params(db).FRIEND_BOOST` so the snapshot is reused
    * across many subjects in a single ranker pass.
    *
    * **Validation**: caller is responsible for ensuring this is a

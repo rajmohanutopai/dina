@@ -2049,7 +2049,7 @@ func TestTransport_7_4_7_MessageCategories(t *testing.T) {
 		"dina/social/arrival",
 		"dina/commerce/order",
 		"dina/identity/verify",
-		"dina/trust/attestation",
+		"dina/peerlens/attestation",
 	}
 	for _, typ := range validTypes {
 		testutil.RequireHasPrefix(t, typ, "dina/")

@@ -35,8 +35,8 @@ export {
   validateLexicon,
   setPDSFetchFn,
   resetPDSFetchFn,
-} from '../trust/pds_publish';
+} from '../peerlens/pds_publish';
 export type {
   Attestation,
   SignedAttestation,
-} from '../trust/pds_publish';
+} from '../peerlens/pds_publish';

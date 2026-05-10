@@ -13,7 +13,7 @@ import {
   richResponse,
   sendResponse,
   statusResponse,
-  trustScoreResponse,
+  peerlensScoreResponse,
   type BotResponse,
 } from '../../src/chat/response_types';
 import {
@@ -76,8 +76,8 @@ describe('Typed response constructors', () => {
     expect(r.text).toContain('Bob');
   });
 
-  it('trustScoreResponse carries both the numeric score + natural-language text', () => {
-    const r = trustScoreResponse({
+  it('peerlensScoreResponse carries both the numeric score + natural-language text', () => {
+    const r = peerlensScoreResponse({
       displayName: 'Acme',
       did: 'did:plc:acme',
       score: 0.92,
@@ -85,7 +85,7 @@ describe('Typed response constructors', () => {
       positiveAttestations: 9,
       vouchCount: 3,
     });
-    expect(r.kind).toBe('trust_score');
+    expect(r.kind).toBe('peerlens_score');
     expect(r.score).toBe(0.92);
     expect(r.text).toContain('Acme');
     expect(r.text).toContain('9/10');

@@ -579,8 +579,8 @@ func TestInfra_30_StaticAuditNoUnexpectedPublicRoutes(t *testing.T) {
 		"/v1/pair/complete":           true,
 		"/v1/pii/scrub":              true,
 		"/v1/notify":                  true,
-		"/v1/trust/query":             true,
-		"/v1/trust/publish":           true,
+		"/v1/peerlens/query":             true,
+		"/v1/peerlens/publish":           true,
 	}
 
 	// Extract route strings from source code — look for quoted route patterns.

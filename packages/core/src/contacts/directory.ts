@@ -25,7 +25,7 @@ import { getContactRepository } from './repository';
 import { normalisePreferredForCategories, normalisePreferredForCategory } from './preferred_for';
 import { addContact as addEgressGateContact } from '../d2d/gates';
 import { getPeopleRepository } from '../people/repository';
-import { addKnownContact } from '../trust/source_trust';
+import { addKnownContact } from '../peerlens/source_trust';
 
 export type TrustLevel = 'blocked' | 'unknown' | 'verified' | 'trusted';
 export type SharingTier = 'none' | 'summary' | 'full' | 'locked';

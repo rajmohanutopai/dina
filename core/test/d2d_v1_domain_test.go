@@ -250,7 +250,7 @@ func TestValidateV1Body_CoordinationResponse_Valid(t *testing.T) {
 func TestValidateV1Body_UnknownType(t *testing.T) {
 	unknownTypes := []domain.MessageType{
 		"dina/social/update",
-		"dina/trust/attestation",
+		"dina/peerlens/attestation",
 		"totally.unknown",
 		"",
 		domain.MessageTypeEstate,

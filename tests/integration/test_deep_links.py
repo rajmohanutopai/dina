@@ -3665,7 +3665,7 @@ def simulate_appview_to_user_pipeline(
     """Simulate the full deep-link pipeline from AppView to user delivery.
 
     In production, this is the flow:
-    1. AppView returns ExpertAttestations via xRPC ``com.dina.trust.resolve``
+    1. AppView returns ExpertAttestations via xRPC ``com.dina.peerlens.resolve``
     2. Brain receives attestations and assembles a user-facing response,
        preserving source_url, deep_link, deep_link_context, and creator_name
        from each attestation.

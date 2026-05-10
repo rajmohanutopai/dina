@@ -36,7 +36,7 @@ describe('18 Web Server (HIGH-09)', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0615", "section": "01", "sectionName": "General", "title": "IT-WEB-002: HIGH-09: resolve route validates params via ResolveParams"}
   it('IT-WEB-002: HIGH-09: resolve route validates params via ResolveParams', () => {
-    // The server uses ResolveParams.parse(queryParams) for /xrpc/com.dina.trust.resolve
+    // The server uses ResolveParams.parse(queryParams) for /xrpc/com.dina.peerlens.resolve
     const valid = ResolveParams.safeParse({
       subject: '{"type":"did","did":"did:plc:abc"}',
     })
@@ -48,7 +48,7 @@ describe('18 Web Server (HIGH-09)', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0616", "section": "01", "sectionName": "General", "title": "IT-WEB-003: HIGH-09: search route validates params via SearchParams"}
   it('IT-WEB-003: HIGH-09: search route validates params via SearchParams', () => {
-    // The server uses SearchParams.parse(queryParams) for /xrpc/com.dina.trust.search
+    // The server uses SearchParams.parse(queryParams) for /xrpc/com.dina.peerlens.search
     const valid = SearchParams.safeParse({ q: 'test' })
     expect(valid.success).toBe(true)
 
@@ -80,7 +80,7 @@ describe('18 Web Server (HIGH-09)', () => {
   it('IT-WEB-005: HIGH-09: unknown XRPC method returns error shape', () => {
     // The server returns { error: 'InvalidRequest', message: ... } for unknown methods
     // We verify the expected error response shape
-    const errorResponse = { error: 'InvalidRequest', message: 'Unknown method: com.dina.trust.nonexistent' }
+    const errorResponse = { error: 'InvalidRequest', message: 'Unknown method: com.dina.peerlens.nonexistent' }
     expect(errorResponse.error).toBe('InvalidRequest')
     expect(errorResponse.message).toContain('Unknown method')
   })

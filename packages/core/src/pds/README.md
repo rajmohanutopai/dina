@@ -36,7 +36,7 @@ imports don't move.
   `packages/core/src/identity/directory.ts`. Separate namespace from
   PDS record CRUD; don't entangle.
 - **AppView queries** — PeerLens reader side
-  (`com.dina.trust.resolve`, `com.dina.service.search`, …) lives in
+  (`com.dina.peerlens.resolve`, `com.dina.service.search`, …) lives in
   `packages/core/src/trust/`. PDS is the writer side; AppView is the
   cross-indexed reader side.
 

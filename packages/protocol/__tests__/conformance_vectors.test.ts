@@ -671,7 +671,7 @@ import {
   computeScoreV1,
   type ScoreV1Input,
   type ScoreV1Output,
-} from '../src/trust/score_v1';
+} from '../src/peerlens/score_v1';
 
 interface ScoreV1Case {
   name: string;

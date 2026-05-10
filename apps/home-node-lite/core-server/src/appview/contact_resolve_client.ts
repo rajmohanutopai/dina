@@ -36,7 +36,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 6d task 6.14.
  */
 
-import type { XrpcFetchResult } from './trust_resolve_client';
+import type { XrpcFetchResult } from './peerlens_resolve_client';
 
 export interface ContactResolveRequest {
   /** Free-text handle / display-name to resolve. Required. */

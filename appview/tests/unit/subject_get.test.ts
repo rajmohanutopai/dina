@@ -163,7 +163,7 @@ function subjectRow(): SubjectRow {
 
 function attRow(overrides: Partial<AttRow> = {}): AttRow {
   return {
-    uri: 'at://did:plc:r1/com.dina.trust.attestation/A',
+    uri: 'at://did:plc:r1/com.dina.peerlens.attestation/A',
     text: 'Solid build — comfortable for long sessions.',
     sentiment: 'positive',
     recordCreatedAt: new Date('2026-04-29T10:00:00Z'),

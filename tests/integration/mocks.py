@@ -2794,7 +2794,7 @@ class MockAppView:
     def __init__(self) -> None:
         self.indexed_records: list[dict[str, Any]] = []
         self.cursor: int = 0
-        self.lexicon_filter = "com.dina.trust."
+        self.lexicon_filter = "com.dina.peerlens."
 
     def consume_firehose(
         self, records: list[dict[str, Any]]

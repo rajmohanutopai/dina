@@ -5,14 +5,14 @@
  *   1. `searchTrustNetwork({ query, type })` is called — e.g. from
  *      the purchase-decision helper, or a dedicated `/trust` command.
  *   2. Local contacts are searched first (highest-weight ring).
- *   3. If a `TrustQueryClient` is registered, the AppView network is
+ *   3. If a `PeerlensQueryClient` is registered, the AppView network is
  *      queried for attestations.
  *   4. Aggregate score is computed + cached.
  *
  * This test composes the exact same pieces the mobile stack uses:
  *   - the contacts directory (ring-1 weight)
- *   - an injected `TrustQueryClient`-shaped stub standing in for
- *     `com.dina.trust.getProfile` (what the mobile app would hit
+ *   - an injected `PeerlensQueryClient`-shaped stub standing in for
+ *     `com.dina.peerlens.getProfile` (what the mobile app would hit
  *     via the real AppView HTTP client)
  *
  * What this catches vs the simulator:
@@ -30,7 +30,7 @@ import {
   resetTrustQueryClient,
   resetSearchCache,
 } from '@dina/core';
-import type { TrustQueryClient, TrustProfile, QueryResult } from '@dina/core';
+import type { PeerlensQueryClient, PeerlensProfile, QueryResult } from '@dina/core';
 import {
   addContact,
   resetContactDirectory,
@@ -44,10 +44,10 @@ describe('mobile Scenario 4 — PeerLens query', () => {
   });
 
   /**
-   * Minimal `TrustQueryClient`-shaped stub. Returns the canned profile
+   * Minimal `PeerlensQueryClient`-shaped stub. Returns the canned profile
    * the test configures — zero network I/O.
    */
-  function makeStubClient(profile: TrustProfile | null): TrustQueryClient {
+  function makeStubClient(profile: PeerlensProfile | null): PeerlensQueryClient {
     return {
       async queryProfile(did: string): Promise<QueryResult> {
         if (profile !== null && profile.did === did) {
@@ -58,7 +58,7 @@ describe('mobile Scenario 4 — PeerLens query', () => {
       async queryBatch(): Promise<Map<string, QueryResult>> {
         return new Map();
       },
-    } as unknown as TrustQueryClient;
+    } as unknown as PeerlensQueryClient;
   }
 
   it('searches local contacts when no AppView client is wired (offline mode)', async () => {

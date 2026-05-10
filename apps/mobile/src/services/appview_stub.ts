@@ -13,6 +13,7 @@
  * Source: BUS_DRIVER_IMPLEMENTATION.md Blocker #4 (demo seed).
  */
 
+import { FEATURE_NAMES } from '@dina/core';
 import {
   computeSchemaHash,
   EtaQueryParamsSchema,
@@ -116,7 +117,7 @@ export class AppViewStub {
    * subject. The `search_trust_network` tool surfaces this as a
    * graceful "no verified peer data" note instead of throwing.
    * Production swaps in `AppViewClient` whose implementations actually
-   * hit `com.dina.trust.resolve` / `com.dina.trust.search`.
+   * hit `com.dina.peerlens.resolve` / `com.dina.peerlens.search`.
    */
   async resolveTrust(): Promise<{
     subjectType: string;
@@ -138,7 +139,7 @@ export class AppViewStub {
       authenticity: null,
       graphContext: null,
       recommendation: 'no_data',
-      reasoning: 'AppView not wired in this build — no verified PeerLens data.',
+      reasoning: `AppView not wired in this build — no verified ${FEATURE_NAMES.peerlens} data.`,
     };
   }
 

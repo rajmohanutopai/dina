@@ -3,7 +3,7 @@ import { eq, and, gt, inArray } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import {
   didProfiles,
-  trustEdges,
+  peerlensEdges,
   anomalyEvents,
   flags,
   subjects,
@@ -51,16 +51,16 @@ export async function detectSybilJob(db: DrizzleDB): Promise<void> {
 
   logger.info({ quarantinedCount: quarantinedDids.length }, 'detect-sybil: analyzing quarantined DIDs')
 
-  // Build edges between quarantined DIDs from trustEdges table
+  // Build edges between quarantined DIDs from peerlensEdges table
   const edges = quarantinedDids.length > 0
     ? await db
         .select({
-          fromDid: trustEdges.fromDid,
-          toDid: trustEdges.toDid,
+          fromDid: peerlensEdges.fromDid,
+          toDid: peerlensEdges.toDid,
         })
-        .from(trustEdges)
+        .from(peerlensEdges)
         .where(
-          inArray(trustEdges.fromDid, quarantinedDids)
+          inArray(peerlensEdges.fromDid, quarantinedDids)
         )
     : []
 

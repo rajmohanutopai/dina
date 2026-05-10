@@ -35,7 +35,7 @@ vi.mock('@/shared/utils/logger.js', () => ({
 }))
 
 const mockComputeTrustScore = vi.fn()
-vi.mock('@/scorer/algorithms/trust-score.js', () => ({
+vi.mock('@/scorer/algorithms/peerlens-score.js', () => ({
   computeTrustScore: (...a: unknown[]) => mockComputeTrustScore(...a),
 }))
 

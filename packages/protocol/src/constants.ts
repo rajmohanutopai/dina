@@ -82,8 +82,8 @@ export const MSG_TYPE_COORDINATION_REQUEST = 'coordination.request' as const;
 export const MSG_TYPE_COORDINATION_RESPONSE = 'coordination.response' as const;
 export const MSG_TYPE_SOCIAL_UPDATE = 'social.update' as const;
 export const MSG_TYPE_SAFETY_ALERT = 'safety.alert' as const;
-export const MSG_TYPE_TRUST_VOUCH_REQUEST = 'trust.vouch.request' as const;
-export const MSG_TYPE_TRUST_VOUCH_RESPONSE = 'trust.vouch.response' as const;
+export const MSG_TYPE_PEERLENS_VOUCH_REQUEST = 'peerlens.vouch.request' as const;
+export const MSG_TYPE_PEERLENS_VOUCH_RESPONSE = 'peerlens.vouch.response' as const;
 export const MSG_TYPE_SERVICE_QUERY = 'service.query' as const;
 export const MSG_TYPE_SERVICE_RESPONSE = 'service.response' as const;
 
@@ -94,8 +94,8 @@ export type D2DMessageType =
   | typeof MSG_TYPE_COORDINATION_RESPONSE
   | typeof MSG_TYPE_SOCIAL_UPDATE
   | typeof MSG_TYPE_SAFETY_ALERT
-  | typeof MSG_TYPE_TRUST_VOUCH_REQUEST
-  | typeof MSG_TYPE_TRUST_VOUCH_RESPONSE
+  | typeof MSG_TYPE_PEERLENS_VOUCH_REQUEST
+  | typeof MSG_TYPE_PEERLENS_VOUCH_RESPONSE
   | typeof MSG_TYPE_SERVICE_QUERY
   | typeof MSG_TYPE_SERVICE_RESPONSE;
 

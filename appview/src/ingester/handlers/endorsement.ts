@@ -2,11 +2,11 @@ import type { RecordHandler, HandlerContext, RecordOp } from './index.js'
 import type { Endorsement } from '@/shared/types/lexicon-types.js'
 import { endorsements } from '@/db/schema/index.js'
 import { deletionHandler } from '../deletion-handler.js'
-import { addTrustEdge } from '../trust-edge-sync.js'
+import { addTrustEdge } from '../peerlens-edge-sync.js'
 import { markDirty } from '@/db/queries/dirty-flags.js'
 
 /**
- * Handler for com.dina.trust.endorsement records.
+ * Handler for com.dina.peerlens.endorsement records.
  *
  * An endorsement is a skill-specific trust signal — "This person is good at X."
  * The trust edge weight is higher for first-hand experience (worked-together).

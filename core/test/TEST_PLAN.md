@@ -1464,7 +1464,7 @@ Legacy tiers are auto-migrated: `open` → `default`/`standard`, `restricted` �
 
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-CORE-710]** Sign attestation record | Brain requests `POST /v1/trust/publish` with attestation payload | Core signs with persona key → writes to PDS as `com.dina.trust.attestation` record |
+| 1 | **[TST-CORE-710]** Sign attestation record | Brain requests `POST /v1/trust/publish` with attestation payload | Core signs with persona key → writes to PDS as `com.dina.peerlens.attestation` record |
 | 2 | **[TST-CORE-711]** Sign outcome report | Brain requests outcome publication | Core signs with Trust Signing Key (HKDF "dina:trust:v1") → writes to PDS |
 | 3 | **[TST-CORE-712]** Lexicon validation | Attestation missing required field (`productCategory`) | Core rejects before signing — schema enforced |
 | 4 | **[TST-CORE-713]** Record in Merkle repo | Inspect PDS after publish | Record stored in signed Merkle tree — tamper-evident |
@@ -1483,7 +1483,7 @@ Legacy tiers are auto-migrated: `open` → `default`/`standard`, `restricted` �
 | 2 | **[TST-CORE-721]** Non-author deletion rejected | External request to delete someone else's record | Signature doesn't match author → rejected |
 | 3 | **[TST-CORE-722]** Tombstone propagation | Tombstone published to PDS | Relay distributes tombstone to all federated AppViews |
 | 4 | **[TST-CORE-723]** Deleted record absent from queries | Record deleted via tombstone | AppView no longer returns record — aggregate scores recomputed without it |
-| 5 | **[TST-CORE-918]** `com.dina.trust.bot` and `com.dina.trust.membership` Lexicons validated | Bot/membership Lexicon records | Schema validation passes for bot and membership Lexicon types |
+| 5 | **[TST-CORE-918]** `com.dina.peerlens.bot` and `com.dina.peerlens.membership` Lexicons validated | Bot/membership Lexicon records | Schema validation passes for bot and membership Lexicon types |
 | 6 | **[TST-CORE-919]** Outcome data schema validation (reporter_trust_ring, outcome, satisfaction) | Outcome record payload | Required fields validated: reporter_trust_ring, outcome, satisfaction, issues |
 | 7 | **[TST-CORE-920]** Attestation optional fields URI format (sourceUrl, deepLink) | Attestation with sourceUrl and deepLink | URI format validated for optional URL fields |
 | 8 | **[TST-CORE-921]** Trust query response includes signed payloads | Query trust endpoint | Response payloads include Ed25519 signatures |

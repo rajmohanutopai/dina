@@ -4,7 +4,7 @@
 > entry point into what Dina's PeerLens V1 is, how it's wired,
 > and where to look for deeper context.
 >
-> **Scope**: V1 (the `com.dina.trust.*` × 19 lexicons +
+> **Scope**: V1 (the `com.dina.peerlens.*` × 19 lexicons +
 > `com.dina.service.profile`, the AppView's three daemons, the 12
 > scheduled jobs, the 11 xRPC endpoints, the `appview_config`
 > operator surface, the mobile the PeerLens tab). V2 work is referenced
@@ -14,13 +14,13 @@
 > - `docs/appview-walkthrough.md` — the broader AppView architecture
 >   guide (predates V1; covers the database / FTS / scoring
 >   plumbing in depth).
-> - `docs/trust-network/threat-model.md` — V1 limitations
+> - `docs/peerlens-network/threat-model.md` — V1 limitations
 >   enumerated (TN-DOCS-002), with §8 extending the model for V2.
-> - `docs/trust-network/V2-actionability.md` — public-facing
+> - `docs/peerlens-network/V2-actionability.md` — public-facing
 >   explainer of the V2 actionability layer (TN-V2-DOCS-001).
-> - `docs/trust-network/deploy-runbook.md` — production deploy
+> - `docs/peerlens-network/deploy-runbook.md` — production deploy
 >   procedure (TN-OPS-001).
-> - `docs/trust-network/ops-runbook.md` — incident-response
+> - `docs/peerlens-network/ops-runbook.md` — incident-response
 >   runbook for on-call operators (TN-OPS-002).
 > - `docs/TRUST_NETWORK_V1_BACKLOG.md` — line-item backlog with
 >   per-task substantive completion notes.
@@ -98,7 +98,7 @@ land in `ingest_rejections` with one of five closed reasons
 **Scorer** runs 12 background jobs on cron (see §6 below).
 
 **Web** serves 11 xRPC endpoints (see §7 below) at
-`/xrpc/com.dina.trust.*` + `/xrpc/com.dina.service.*`.
+`/xrpc/com.dina.peerlens.*` + `/xrpc/com.dina.service.*`.
 
 The three daemons can run in one process (single-node V1
 default) or three processes (horizontal scale). State is in
@@ -115,32 +115,32 @@ every schema with happy-path + rejection tests).
 
 | NSID | Purpose |
 |---|---|
-| `com.dina.trust.attestation` | The core review record — subject + category + sentiment + dimensions + evidence + tags |
-| `com.dina.trust.vouch` | "I vouch for this person professionally" — DID-targeted, weighted by relationship |
-| `com.dina.trust.endorsement` | Skill endorsement — DID + skill |
-| `com.dina.trust.flag` | Subject-level abuse flag (4-severity closed enum) |
-| `com.dina.trust.reply` | Threaded reply with intent (agree, dispute, clarify, etc.) |
-| `com.dina.trust.reaction` | Lightweight reaction (helpful, suspicious, etc., 8-value enum) |
-| `com.dina.trust.reportRecord` | Operator-actionable abuse report (13-value reason taxonomy) |
-| `com.dina.trust.revocation` | Retract a previously-published record |
-| `com.dina.trust.delegation` | Grant another DID limited authority on your behalf |
-| `com.dina.trust.collection` | Curated list ("my recommendations for office chairs") |
-| `com.dina.trust.media` | Photo / video attached to a parent record |
-| `com.dina.trust.subject` | First-class subject record (the thing being attested about) |
-| `com.dina.trust.amendment` | Edit / correction of an earlier record |
-| `com.dina.trust.verification` | Fact-check verdict (confirmed / denied / inconclusive) |
-| `com.dina.trust.reviewRequest` | Solicit reviews from your network for a subject |
-| `com.dina.trust.comparison` | Side-by-side comparison of multiple subjects |
-| `com.dina.trust.subjectClaim` | Same-as / related / part-of links between subjects |
-| `com.dina.trust.trustPolicy` | Per-user policy declaration (depth limits, blocked DIDs, etc.) |
-| `com.dina.trust.notificationPrefs` | Notification routing for the user's mobile client |
+| `com.dina.peerlens.attestation` | The core review record — subject + category + sentiment + dimensions + evidence + tags |
+| `com.dina.peerlens.vouch` | "I vouch for this person professionally" — DID-targeted, weighted by relationship |
+| `com.dina.peerlens.endorsement` | Skill endorsement — DID + skill |
+| `com.dina.peerlens.flag` | Subject-level abuse flag (4-severity closed enum) |
+| `com.dina.peerlens.reply` | Threaded reply with intent (agree, dispute, clarify, etc.) |
+| `com.dina.peerlens.reaction` | Lightweight reaction (helpful, suspicious, etc., 8-value enum) |
+| `com.dina.peerlens.reportRecord` | Operator-actionable abuse report (13-value reason taxonomy) |
+| `com.dina.peerlens.revocation` | Retract a previously-published record |
+| `com.dina.peerlens.delegation` | Grant another DID limited authority on your behalf |
+| `com.dina.peerlens.collection` | Curated list ("my recommendations for office chairs") |
+| `com.dina.peerlens.media` | Photo / video attached to a parent record |
+| `com.dina.peerlens.subject` | First-class subject record (the thing being attested about) |
+| `com.dina.peerlens.amendment` | Edit / correction of an earlier record |
+| `com.dina.peerlens.verification` | Fact-check verdict (confirmed / denied / inconclusive) |
+| `com.dina.peerlens.reviewRequest` | Solicit reviews from your network for a subject |
+| `com.dina.peerlens.comparison` | Side-by-side comparison of multiple subjects |
+| `com.dina.peerlens.subjectClaim` | Same-as / related / part-of links between subjects |
+| `com.dina.peerlens.trustPolicy` | Per-user policy declaration (depth limits, blocked DIDs, etc.) |
+| `com.dina.peerlens.notificationPrefs` | Notification routing for the user's mobile client |
 | `com.dina.service.profile` | Service registry (notary bots, transit oracles, etc.) — discovery namespace, NOT trust-namespace |
 
 **Pseudonymous namespaces** (`namespace_<N>` under
 `m/9999'/4'/N'` derivation) attach to attestations + endorsements
 via the optional `namespace` field. Each namespace gets its own
 Ed25519 signing key, registered in the user's DID document under
-`assertionMethod`. See `docs/trust-network/threat-model.md` §1.1
+`assertionMethod`. See `docs/peerlens-network/threat-model.md` §1.1
 for the V1 pseudonymity caveat.
 
 ---
@@ -245,21 +245,21 @@ tiers (60 / 120 / 600 per minute).
 
 | Endpoint | Tier | Purpose |
 |---|---|---|
-| `com.dina.trust.search` | 60/min | Free-text + filter search over attestations (TN-API-001 added category/language/location/metadata/minReviewCount filters) |
-| `com.dina.trust.subjectGet` | 120/min | Subject detail with reviewer groups (contacts / extended / strangers) (TN-API-002) |
-| `com.dina.trust.resolve` | 60/min | Resolve a free-text or DID into a subjectId + trust verdict (TN-API-003) |
-| `com.dina.trust.networkFeed` | 60/min | Viewer's 1-hop reviewers' recent attestations (TN-API-004) |
-| `com.dina.trust.attestationStatus` | 600/min | Outbox-watcher polling: pending → indexed / rejected (TN-API-005) |
-| `com.dina.trust.cosigList` | 60/min | Mobile cosig inbox — recipient-filtered, status-filtered (TN-API-006) |
-| `com.dina.trust.getProfile` | 120/min | Per-DID profile (legacy, predates V1) |
-| `com.dina.trust.getAttestations` | 120/min | Per-author attestation feed (legacy, predates V1) |
-| `com.dina.trust.getGraph` | 60/min | Graph traversal — N-hop expansion |
+| `com.dina.peerlens.search` | 60/min | Free-text + filter search over attestations (TN-API-001 added category/language/location/metadata/minReviewCount filters) |
+| `com.dina.peerlens.subjectGet` | 120/min | Subject detail with reviewer groups (contacts / extended / strangers) (TN-API-002) |
+| `com.dina.peerlens.resolve` | 60/min | Resolve a free-text or DID into a subjectId + trust verdict (TN-API-003) |
+| `com.dina.peerlens.networkFeed` | 60/min | Viewer's 1-hop reviewers' recent attestations (TN-API-004) |
+| `com.dina.peerlens.attestationStatus` | 600/min | Outbox-watcher polling: pending → indexed / rejected (TN-API-005) |
+| `com.dina.peerlens.cosigList` | 60/min | Mobile cosig inbox — recipient-filtered, status-filtered (TN-API-006) |
+| `com.dina.peerlens.getProfile` | 120/min | Per-DID profile (legacy, predates V1) |
+| `com.dina.peerlens.getAttestations` | 120/min | Per-author attestation feed (legacy, predates V1) |
+| `com.dina.peerlens.getGraph` | 60/min | Graph traversal — N-hop expansion |
 | `com.dina.service.search` | 60/min | Service discovery — capability + location |
 | `com.dina.service.isDiscoverable` | 60/min | Predicate: is this service profile public? |
 
 The trust-namespace endpoints are gated by the `trust_v1_enabled`
 master kill switch (TN-FLAG-003); flipping disable returns 503
-for `com.dina.trust.*` traffic but leaves `com.dina.service.*`
+for `com.dina.peerlens.*` traffic but leaves `com.dina.service.*`
 unaffected.
 
 ---
@@ -326,16 +326,16 @@ is done.
 | If you want to … | Read |
 |---|---|
 | Understand the broader AppView architecture | `docs/appview-walkthrough.md` |
-| Understand V1's deliberate limits | `docs/trust-network/threat-model.md` |
-| Deploy V1 to production | `docs/trust-network/deploy-runbook.md` |
-| Respond to an incident | `docs/trust-network/ops-runbook.md` |
+| Understand V1's deliberate limits | `docs/peerlens-network/threat-model.md` |
+| Deploy V1 to production | `docs/peerlens-network/deploy-runbook.md` |
+| Respond to an incident | `docs/peerlens-network/ops-runbook.md` |
 | Track open work | `docs/TRUST_NETWORK_V1_BACKLOG.md` |
 | Cross-reference Plan v3 sections | `docs/TRUST_NETWORK_V1_TASKS.md` |
 | Review the PeerLens rating formula | `appview/src/scorer/algorithms/trust-score.ts` + `appview/tests/unit/trust_score_conformance.test.ts` |
 | Add a new record type | `appview/src/ingester/record-validator.ts` (Zod schema), `appview/src/ingester/handlers/<name>.ts` (handler), `appview/src/db/schema/<name>.ts` (table), then update the totals in BACKLOG.md |
 | Add a new xRPC endpoint | `appview/src/api/xrpc/<name>.ts`, wire in `appview/src/web/server.ts`, add to TN-API-007's `PER_METHOD_LIMITS_RPM` table |
 | Add a new operator CLI | match the `appview/src/admin/trust-flag-cli.ts` pattern (positional args, exit 0/1/2 semantics, fresh DB per invocation, pure `run<X>Command` for testability) |
-| Browse the V2 actionability layer | `docs/trust-network/V2-actionability.md` (overview), `docs/TRUST_NETWORK_V2_BACKLOG.md` (per-task work), §11 below (cluster overview) |
+| Browse the V2 actionability layer | `docs/peerlens-network/V2-actionability.md` (overview), `docs/TRUST_NETWORK_V2_BACKLOG.md` (per-task work), §11 below (cluster overview) |
 
 ---
 
@@ -361,7 +361,7 @@ work into four clusters that compose:
 |---|---|---|---|
 | **A — Viewer profile** | Region / languages / budget / devices / dietary / accessibility | `apps/mobile/src/services/user_preferences.ts` + `app/trust-preferences/*` | Local-only (never sent to AppView) |
 | **B — Subject metadata** | `availability`, `price`, `compat`, `schedule`, `compliance`, `accessibility` | `appview/src/db/schema/subjects.ts` (`metadata` JSONB) + ingester enrichers | Server-side, public |
-| **C — Review structure** | `useCase`, `reviewerExperience`, `lastUsedMs`, `recommendFor`, `alternatives` | `com.dina.trust.attestation.v2` lexicon + `apps/mobile/app/write/*` | Public, optional fields (V1 attestations remain valid) |
+| **C — Review structure** | `useCase`, `reviewerExperience`, `lastUsedMs`, `recommendFor`, `alternatives` | `com.dina.peerlens.attestation.v2` lexicon + `apps/mobile/app/write/*` | Public, optional fields (V1 attestations remain valid) |
 | **D — Ranking + surfaces** | Search filters, region boost, alternatives strip, negative-space warnings, card chips | `appview/src/api/xrpc/*` + `apps/mobile/app/trust/*` | Composed from A + B + C |
 
 Cluster A is the privacy hinge. The viewer profile *never* leaves

@@ -1,5 +1,5 @@
 import { CONSTANTS } from '@/config/constants.js'
-import { clamp, daysSince } from './trust-score.js'
+import { clamp, daysSince } from './peerlens-score.js'
 import { halflifeForCategory } from './category_halflife.js'
 
 export interface AttestationForAggregation {
@@ -64,11 +64,11 @@ export function aggregateSubjectSentiment(attestations: AttestationForAggregatio
     if (a.isVerified) verifiedCount++
 
     // Weighted score — TS1 fix: include verified + bilateral multipliers
-    // to match the formula in trust-score.ts (was missing 2.1x for
+    // to match the formula in peerlens-score.ts (was missing 2.1x for
     // verified bilateral attestations).
     const ageDays = Math.max(0, daysSince(a.recordCreatedAt))
     // TN-V2-RANK-006 — per-category recency-decay (symmetric with
-    // computeSentiment in trust-score.ts). When `category` is null
+    // computeSentiment in peerlens-score.ts). When `category` is null
     // the lookup falls back to the V1 baseline; explicit per-category
     // half-lives apply when present.
     const recency = Math.exp(-ageDays / halflifeForCategory(a.category))

@@ -256,7 +256,7 @@ describe('16.1 Docker Compose Smoke Tests', () => {
     //   3. Kubernetes liveness/readiness probes
     //
     // The web server at appview/src/web/server.ts serves 5 xRPC endpoints
-    // (com.dina.trust.resolve, .query, .aggregate, .history, .batch) plus
+    // (com.dina.peerlens.resolve, .query, .aggregate, .history, .batch) plus
     // health endpoints. Without a healthy web container, no trust queries
     // can be answered.
     //

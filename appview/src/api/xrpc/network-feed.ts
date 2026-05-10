@@ -6,7 +6,7 @@ import { getCachedGraphContext } from '@/api/middleware/graph-context-cache.js'
 import { normalizeHandle } from '@/util/handle_normalize.js'
 
 /**
- * `com.dina.trust.networkFeed` (TN-API-004 / Plan §6.4).
+ * `com.dina.peerlens.networkFeed` (TN-API-004 / Plan §6.4).
  *
  * Returns recent attestations authored by the viewer's 1-hop trust
  * graph — the DIDs the viewer has directly attested to / vouched for

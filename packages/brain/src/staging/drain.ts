@@ -30,7 +30,7 @@ import { processEvent } from '../pipeline/event_processor';
 import { handlePostPublish } from '../pipeline/post_publish';
 import { classifyDomain, classifyPersonas } from '../routing/domain';
 import { selectPersonaRich } from '../routing/persona_selector';
-import { scoreSender } from '../trust/scorer';
+import { scoreSender } from '../peerlens/scorer';
 import { getAccessiblePersonas } from '../vault_context/assembly';
 
 import type { StagingProcessResult } from './processor';

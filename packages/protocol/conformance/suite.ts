@@ -36,7 +36,7 @@ import { base58 } from '@scure/base';
 
 import { buildCanonicalPayload } from '../src/canonical_sign';
 import { buildMessageJSON, type BuildMessageJSONInput } from '../src/envelope_builder';
-import { computeScoreV1, type ScoreV1Input, type ScoreV1Output } from '../src/trust/score_v1';
+import { computeScoreV1, type ScoreV1Input, type ScoreV1Output } from '../src/peerlens/score_v1';
 import { buildAuthSignedPayload } from '../src/types/auth_frames';
 
 // ─── Report shape ──────────────────────────────────────────────────────────

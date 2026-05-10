@@ -6,7 +6,7 @@ import { deletionHandler } from '../deletion-handler.js'
 import { markDirty } from '@/db/queries/dirty-flags.js'
 
 /**
- * Handler for com.dina.trust.verification records.
+ * Handler for com.dina.peerlens.verification records.
  *
  * Verifications are third-party confirmations of attestation claims.
  * When a verification result is 'confirmed', the target attestation

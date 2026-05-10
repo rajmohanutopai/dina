@@ -18,13 +18,22 @@ const SERVICE_PDS_HANDLE = 'dina.infra.pds_handle';
 const SERVICE_PDS_PASSWORD = 'dina.infra.pds_password';
 const SERVICE_PDS_EMAIL = 'dina.infra.pds_email';
 const SERVICE_APPVIEW_URL = 'dina.infra.appview_url';
+const SERVICE_SERVICES_APPVIEW_URL = 'dina.infra.services_appview_url';
 
 export interface InfraPreferences {
   pdsUrl: string | null;
   pdsHandle: string | null;
   pdsPassword: string | null;
   pdsEmail: string | null;
+  /** AppView used for PeerLens trust attestations. */
   appViewURL: string | null;
+  /**
+   * AppView used for service discovery. When null, falls back to
+   * `appViewURL` — the common case where one AppView handles both.
+   * Set this only when PeerLens and service discovery run on separate
+   * AppView instances.
+   */
+  servicesAppViewURL: string | null;
 }
 
 async function get(service: string): Promise<string | null> {
@@ -43,14 +52,21 @@ async function set(service: string, value: string): Promise<void> {
 }
 
 export async function loadInfraPreferences(): Promise<InfraPreferences> {
-  const [pdsUrl, pdsHandle, pdsPassword, pdsEmail, appViewURL] = await Promise.all([
-    get(SERVICE_PDS_URL),
-    get(SERVICE_PDS_HANDLE),
-    get(SERVICE_PDS_PASSWORD),
-    get(SERVICE_PDS_EMAIL),
-    get(SERVICE_APPVIEW_URL),
-  ]);
-  return { pdsUrl, pdsHandle, pdsPassword, pdsEmail, appViewURL };
+  const [pdsUrl, pdsHandle, pdsPassword, pdsEmail, appViewURL, servicesAppViewURL] =
+    await Promise.all([
+      get(SERVICE_PDS_URL),
+      get(SERVICE_PDS_HANDLE),
+      get(SERVICE_PDS_PASSWORD),
+      get(SERVICE_PDS_EMAIL),
+      get(SERVICE_APPVIEW_URL),
+      get(SERVICE_SERVICES_APPVIEW_URL),
+    ]);
+  return { pdsUrl, pdsHandle, pdsPassword, pdsEmail, appViewURL, servicesAppViewURL };
+}
+
+/** Effective URL for service discovery — falls back to appViewURL when no override is set. */
+export function resolveServicesAppViewURL(prefs: InfraPreferences): string | null {
+  return prefs.servicesAppViewURL ?? prefs.appViewURL;
 }
 
 export async function savePdsUrl(value: string): Promise<void> {
@@ -67,4 +83,7 @@ export async function savePdsEmail(value: string): Promise<void> {
 }
 export async function saveAppViewURL(value: string): Promise<void> {
   return set(SERVICE_APPVIEW_URL, value.trim());
+}
+export async function saveServicesAppViewURL(value: string): Promise<void> {
+  return set(SERVICE_SERVICES_APPVIEW_URL, value.trim());
 }

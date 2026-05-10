@@ -56,7 +56,7 @@ Every environment variable is validated through a Zod schema at startup (line 5-
 
 ### Lexicons (config/lexicons.ts)
 
-19 trust record collection NSIDs plus `com.dina.service.profile` — the vocabulary of the trust and service networks. The trust records map to `com.dina.trust.*` collections in the AT Protocol namespace. These are the 20 record types that the ingester subscribes to on the Jetstream firehose.
+19 trust record collection NSIDs plus `com.dina.service.profile` — the vocabulary of the trust and service networks. The trust records map to `com.dina.peerlens.*` collections in the AT Protocol namespace. These are the 20 record types that the ingester subscribes to on the Jetstream firehose.
 
 ---
 
@@ -280,7 +280,7 @@ If the subject only has a name (no DID, no URI), the subject ID is scoped to the
 
 ### Tier 3: Canonical Chains (lines 120-145)
 
-Subject Claims (`com.dina.trust.subjectClaim`) allow users to assert that two subjects are the same entity. When approved, a `canonical_subject_id` pointer is set, creating a merge chain. `resolveCanonicalChain()` follows these pointers (with cycle detection at line 128 and depth limiting at line 127) to find the root canonical subject. All future attestations resolve to the canonical subject.
+Subject Claims (`com.dina.peerlens.subjectClaim`) allow users to assert that two subjects are the same entity. When approved, a `canonical_subject_id` pointer is set, creating a merge chain. `resolveCanonicalChain()` follows these pointers (with cycle detection at line 128 and depth limiting at line 127) to find the root canonical subject. All future attestations resolve to the canonical subject.
 
 <details>
 <summary><strong>Design Decision — Why three tiers instead of fuzzy name matching?</strong></summary>
@@ -369,15 +369,15 @@ The AppView serves 7 read-only endpoints (5 trust + 2 service discovery). Expres
 
 ### The Seven Endpoints
 
-1. **com.dina.trust.resolve** (`api/xrpc/resolve.ts`) — The primary endpoint. Given a subject reference (DID, URI, or name), returns: trust level, confidence, attestation summary, active flags, authenticity assessment, graph context (if requester DID is provided), and a recommendation (proceed/caution/verify/avoid) with reasoning.
+1. **com.dina.peerlens.resolve** (`api/xrpc/resolve.ts`) — The primary endpoint. Given a subject reference (DID, URI, or name), returns: trust level, confidence, attestation summary, active flags, authenticity assessment, graph context (if requester DID is provided), and a recommendation (proceed/caution/verify/avoid) with reasoning.
 
-2. **com.dina.trust.getProfile** — DID PeerLens profile with PeerLens ratings, vouch count, flag count, and component breakdown.
+2. **com.dina.peerlens.getProfile** — DID PeerLens profile with PeerLens ratings, vouch count, flag count, and component breakdown.
 
-3. **com.dina.trust.getGraph** — PeerLens graph visualization data (nodes and edges) around a DID.
+3. **com.dina.peerlens.getGraph** — PeerLens graph visualization data (nodes and edges) around a DID.
 
-4. **com.dina.trust.search** — Full-text search across attestations with filters for sentiment, domain, tags, and confidence.
+4. **com.dina.peerlens.search** — Full-text search across attestations with filters for sentiment, domain, tags, and confidence.
 
-5. **com.dina.trust.getAttestations** — Paginated attestation list for a subject or author.
+5. **com.dina.peerlens.getAttestations** — Paginated attestation list for a subject or author.
 
 6. **com.dina.service.search** — Ranked service discovery by capability, location, and text query. Ranking: distance (40%) + text (30%) + trust (30%). Composite cursor pagination.
 

@@ -111,9 +111,9 @@ export interface ContactListResponse extends BotResponseBase {
 }
 
 /** PeerLens rating response — rendered as a trust card. Matches Python's
- *  `TrustScoreResponse`. */
-export interface TrustScoreResponse extends BotResponseBase {
-  kind: 'trust_score';
+ *  `PeerlensScoreResponse`. */
+export interface PeerlensScoreResponse extends BotResponseBase {
+  kind: 'peerlens_score';
   displayName: string;
   did: string;
   /** Overall score — numeric (0-1) or a descriptor ("trusted",
@@ -147,7 +147,7 @@ export type BotResponse =
   | ConfirmResponse
   | StatusResponse
   | ContactListResponse
-  | TrustScoreResponse
+  | PeerlensScoreResponse
   | SendResponse
   | ErrorResponse;
 
@@ -205,7 +205,7 @@ export const contactListResponse = (
   contacts,
 });
 
-export const trustScoreResponse = (args: {
+export const peerlensScoreResponse = (args: {
   displayName: string;
   did: string;
   score: number | string | null;
@@ -213,8 +213,8 @@ export const trustScoreResponse = (args: {
   positiveAttestations: number;
   vouchCount: number;
   text?: string;
-}): TrustScoreResponse => ({
-  kind: 'trust_score',
+}): PeerlensScoreResponse => ({
+  kind: 'peerlens_score',
   text: args.text ?? defaultTrustScoreText(args),
   displayName: args.displayName,
   did: args.did,
