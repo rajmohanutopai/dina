@@ -34,6 +34,7 @@ import React from 'react';
 import {
   View,
   Text,
+  Platform,
   StyleSheet,
   Pressable,
   ScrollView,
@@ -810,9 +811,11 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   title: {
-    fontFamily: fonts.heading,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontStyle: 'italic',
     fontSize: 20,
     color: colors.textPrimary,
+    letterSpacing: -0.3,
   },
   subtitle: {
     fontFamily: fonts.sans,

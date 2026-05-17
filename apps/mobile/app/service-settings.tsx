@@ -239,7 +239,7 @@ export default function ServiceSettingsScreen() {
       };
       await saveServiceConfig(next);
       Alert.alert('Saved', 'Service config updated.', [
-        { text: 'OK', onPress: () => router.back() },
+        { text: 'OK', onPress: () => router.replace('/settings') },
       ]);
     } catch (err) {
       if (err instanceof ServiceConfigValidationError) {

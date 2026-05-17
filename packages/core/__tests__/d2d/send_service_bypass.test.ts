@@ -50,7 +50,6 @@ function baseReq(overrides: Record<string, unknown> = {}) {
     senderDID,
     senderPrivateKey: senderPriv,
     recipientPublicKey: recipientPub,
-    serviceType: 'DinaMsgBox' as const,
     endpoint: 'wss://mailbox.dinakernel.com',
     ...overrides,
   };

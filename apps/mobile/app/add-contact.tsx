@@ -96,7 +96,7 @@ export default function AddContactScreen() {
     setStatus('saving');
     try {
       addContact(did, name, 'verified');
-      router.back();
+      router.replace('/people');
     } catch (err) {
       setStatus('error');
       setErrorText(`Couldn't add contact: ${err instanceof Error ? err.message : String(err)}`);
@@ -147,7 +147,7 @@ export default function AddContactScreen() {
 
         <View style={styles.buttons}>
           <Pressable
-            onPress={() => router.back()}
+            onPress={() => router.replace('/people')}
             style={({ pressed }) => [styles.cancel, pressed && styles.pressed]}
             disabled={busy}
           >
@@ -179,25 +179,35 @@ export default function AddContactScreen() {
 /**
  * Resolve a handle (e.g. `alice.test-pds.dinakernel.com`) to a DID.
  *
- * Two strategies, tried in order — both per the AT Protocol spec
- * (atproto.com/specs/handle):
+ * Two strategies, both per the AT Protocol spec (atproto.com/specs/handle):
  *
- *   1. **Well-known HTTPS** — GET `https://<handle>/.well-known/atproto-did`.
- *      Returns the DID as plain text. Canonical method; the handle's
- *      host serves it directly. Works for hosted PDS where users get
- *      subdomains and the PDS routes well-known correctly.
- *
- *   2. **PDS xrpc resolve** — POST to
+ *   1. **PDS xrpc resolve** (tried first) — GET
  *      `https://<inferred-host>/xrpc/com.atproto.identity.resolveHandle`
- *      with the inferred host being everything after the leftmost
- *      label of the handle (`alice.test-pds.dinakernel.com` →
- *      `test-pds.dinakernel.com`). Fallback for dev environments
- *      where well-known isn't wired up yet.
+ *      with the inferred host being everything after the leftmost label
+ *      of the handle (`alice.test-pds.dinakernel.com` →
+ *      `test-pds.dinakernel.com`). This is the common case for every
+ *      PDS-hosted handle: the handle is a subdomain *of* the PDS, the
+ *      PDS knows the DID.
+ *
+ *   2. **Well-known HTTPS** (fallback) — GET
+ *      `https://<handle>/.well-known/atproto-did`. Canonical for
+ *      self-hosted handles where the handle is a real DNS host that
+ *      serves its own DID document.
+ *
+ * Order matters: PDS-hosted handles dominate, and Path 2 always issues
+ * a DNS lookup against the handle as if it were a host (e.g.
+ * `alonso64.test-pds.dinakernel.com`). For PDS-hosted handles that DNS
+ * lookup is guaranteed to NXDOMAIN. On iOS, RN's fetch wraps the failed
+ * response in an `RCTBlobManager` Blob whose ID dangles before the
+ * surrounding catch can swallow it, producing a useless
+ * `"Unable to resolve data for blob: <UUID>"` error that bypasses
+ * fallback. Putting xrpc first means we never trip the iOS quirk on
+ * the common path.
  *
  * The DNS TXT method (the third spec'd path, `_atproto.<handle>`) is
  * intentionally skipped — React Native has no built-in DNS resolver
- * and the well-known + xrpc paths cover the deployments we care
- * about (hosted PDS with TLS).
+ * and the xrpc + well-known paths cover the deployments we care about
+ * (hosted PDS with TLS, plus self-hosted handles with /.well-known).
  *
  * Throws on resolution failure with a message that names which path
  * failed last so the user can recover (e.g. typo'd handle vs.
@@ -205,18 +215,6 @@ export default function AddContactScreen() {
  */
 async function resolveHandle(handle: string): Promise<string> {
   const trimmed = handle.trim().toLowerCase();
-  // Path 1: well-known. Bypasses any need for the user to know the
-  // PDS URL — the handle IS the host.
-  try {
-    const wkDid = await resolveViaWellKnown(trimmed);
-    if (wkDid !== null) return wkDid;
-  } catch {
-    // Fall through to xrpc path; the well-known endpoint can be
-    // missing on dev PDS deployments without affecting xrpc.
-  }
-
-  // Path 2: xrpc on the inferred PDS host. Strip the leftmost label
-  // — `alice.test-pds.dinakernel.com` → `test-pds.dinakernel.com`.
   const dot = trimmed.indexOf('.');
   if (dot < 0) {
     throw new Error('Handle must include a domain (e.g. alice.test-pds.dinakernel.com)');
@@ -225,16 +223,36 @@ async function resolveHandle(handle: string): Promise<string> {
   if (pdsHost === '') {
     throw new Error('Handle must include a domain');
   }
-  const xrpcUrl = `https://${pdsHost}/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(trimmed)}`;
-  const res = await fetch(xrpcUrl);
-  if (!res.ok) {
-    throw new Error(`PDS ${pdsHost} returned HTTP ${res.status}`);
+
+  // Path 1 (preferred): PDS xrpc on the inferred host. Works for every
+  // PDS-hosted handle without a DNS round-trip against the handle itself.
+  let xrpcError: Error | null = null;
+  try {
+    const xrpcUrl = `https://${pdsHost}/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(trimmed)}`;
+    const res = await fetch(xrpcUrl);
+    if (res.ok) {
+      const body = (await res.json()) as { did?: string };
+      if (typeof body.did === 'string' && body.did.startsWith('did:')) {
+        return body.did;
+      }
+      xrpcError = new Error(`PDS ${pdsHost} returned no DID`);
+    } else {
+      xrpcError = new Error(`PDS ${pdsHost} returned HTTP ${res.status}`);
+    }
+  } catch (err) {
+    xrpcError = err instanceof Error ? err : new Error(String(err));
   }
-  const body = (await res.json()) as { did?: string };
-  if (typeof body.did !== 'string' || !body.did.startsWith('did:')) {
-    throw new Error(`PDS ${pdsHost} returned no DID`);
+
+  // Path 2 (fallback): well-known on the handle itself. Only meaningful
+  // for self-hosted handles where the handle is a real DNS host.
+  try {
+    const wkDid = await resolveViaWellKnown(trimmed);
+    if (wkDid !== null) return wkDid;
+  } catch {
+    // Swallow; report xrpc's error below since it was the primary path.
   }
-  return body.did;
+
+  throw xrpcError ?? new Error(`Could not resolve handle ${trimmed}`);
 }
 
 /**

@@ -77,6 +77,9 @@ import type {
   MemoryTouchResult,
   UpdateContactParams,
   Contact,
+  ActionPolicyEntry,
+  ActionPolicyResult,
+  RiskLevel,
 } from './core-client';
 
 // ---------------------------------------------------------------------------
@@ -633,8 +636,10 @@ export class HttpCoreTransport implements CoreClient {
 
   // ─── Workflow task state transitions ─────────────────────────────────
 
-  async approveWorkflowTask(id: string): Promise<WorkflowTask> {
-    return this.workflowAction(id, 'approve');
+  async approveWorkflowTask(id: string, opts?: { scope?: 'single' | 'session' }): Promise<WorkflowTask> {
+    const body: Record<string, unknown> | undefined =
+      opts?.scope !== undefined ? { scope: opts.scope } : undefined;
+    return this.workflowAction(id, 'approve', body);
   }
 
   async cancelWorkflowTask(id: string, reason = ''): Promise<WorkflowTask> {
@@ -751,6 +756,21 @@ export class HttpCoreTransport implements CoreClient {
       body,
       `updateContact(did=${did})`,
     );
+  }
+
+  async getActionPolicy(): Promise<ActionPolicyResult> {
+    return this.call<ActionPolicyResult>('GET', '/v1/policy/actions', undefined, undefined, 'getActionPolicy');
+  }
+
+  async setActionRisk(action: string, risk: RiskLevel): Promise<ActionPolicyEntry> {
+    return this.call<ActionPolicyEntry>('PUT', `/v1/policy/actions/${encodeURIComponent(action)}`, undefined, { risk }, `setActionRisk(${action})`);
+  }
+
+  async deleteActionOverride(action: string): Promise<void> {
+    const res = await this.callRaw('DELETE', `/v1/policy/actions/${encodeURIComponent(action)}`, undefined, undefined);
+    if (res.status !== 204 && res.status !== 200) {
+      throw new Error(`deleteActionOverride(${action}) failed: ${res.status}`);
+    }
   }
 
   // -------------------------------------------------------------------------

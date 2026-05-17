@@ -47,6 +47,11 @@ import { loadConfig, type BrainServerConfig } from './config';
 import { buildBrainServerLLMRuntime } from './llm_provider';
 import { createLogger, type Logger } from './logger';
 import { registerAskRoutes } from './routes/ask';
+import { registerChatRoutes } from './routes/chat';
+import {
+  wireChatRememberRuntime,
+  type ChatRememberRuntimeHandle,
+} from '@dina/home-node/chat-runtime';
 
 export interface BrainServerClients {
   appView: AppViewClient;
@@ -157,6 +162,7 @@ export async function bootServer(
   }
   const schedulers: BrainServerSchedulers = {};
   const compositions: BrainServerCompositions = {};
+  let chatRememberRuntime: ChatRememberRuntimeHandle | undefined;
   const dependencyStatus: BrainServerDependencyStatus = {
     appView: 'configured',
     core: coreResult.status,
@@ -180,12 +186,26 @@ export async function bootServer(
       ...(options.clearInterval !== undefined ? { clearInterval: options.clearInterval } : {}),
     });
     schedulers.stagingDrain = stagingDrain;
+
+    // Wire the chat orchestrator's Core + drain hook through the
+    // shared runtime so /remember replies on `/api/v1/chat` arrive
+    // sub-second instead of waiting for a periodic tick. Same
+    // helper mobile's bootstrap uses — one source of truth for the
+    // run-tick + status-poll behaviour. We omit `lookupPendingApproval`
+    // because the staging service lives in another process (Core);
+    // the orchestrator falls back to a generic parked-row reply.
+    chatRememberRuntime = wireChatRememberRuntime({
+      core: clients.core,
+      stagingDrain,
+      maxAttempts: 8,
+    });
   }
 
   // fastify_start (scaffold — full route binding in tasks 5.3 – 5.49).
   const app = Fastify({ logger: false }); // we manage our own logger
   app.addHook('onClose', async () => {
     schedulers.stagingDrain?.stop();
+    chatRememberRuntime?.dispose();
     await compositions.service?.dispose();
   });
   app.get('/healthz', async () => ({ status: 'ok', role: 'brain' }));
@@ -245,6 +265,17 @@ export async function bootServer(
     });
     dependencyStatus.askRoutes = 'configured';
   }
+
+  // Chat orchestrator routes — wraps `handleChat` from the brain
+  // chat module so a browser dev UI can drive `/remember` + `/ask`
+  // without a mobile build. Zero code duplication: the orchestrator
+  // is the same one mobile uses in-process.
+  //
+  // `/dev` UI is opt-in via `DINA_BRAIN_DEV_UI=1` so production
+  // operators don't accidentally expose it to the public listener.
+  registerChatRoutes(app, {
+    exposeDevUI: process.env.DINA_BRAIN_DEV_UI === '1',
+  });
   app.get('/readyz', async (_req, reply) => {
     const checks = {
       appView: 'ok' as const,

@@ -64,6 +64,44 @@ const DEFAULT_TTL_SEC = 30 * 60; // 30 min — matches Python ActionRiskPolicy
 /** Hard cap on inbound body size (matches Go: `maxValidateBody = 64 KB`). */
 const MAX_VALIDATE_BODY_BYTES = 64 * 1024;
 
+// ─── Session-scoped approvals ────────────────────────────────────────────────
+//
+// Stored in-memory as `action → expiry-ms`. When the user approves a
+// MODERATE intent_validation task with scope='session', the action is
+// added here. Subsequent validate calls for the same action auto-approve
+// without showing a new card, until the TTL expires.
+//
+// No persistence — session approvals are intentionally ephemeral. A cold
+// relaunch clears them, which is the right security posture: "this session"
+// means the current process lifetime, not across reboots.
+
+const sessionApprovals = new Map<string, number>(); // action → expiresAtMs
+
+function isSessionApproved(action: string): boolean {
+  const exp = sessionApprovals.get(action);
+  if (exp === undefined) return false;
+  if (Date.now() >= exp) {
+    sessionApprovals.delete(action);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Grant a session-scoped approval for the given action. Called by the
+ * workflow approve handler when `scope='session'` is set on an
+ * intent_validation approval task.
+ */
+export function grantSessionApproval(action: string, durationMs = DEFAULT_TTL_SEC * 1000): void {
+  if (typeof action !== 'string' || action.trim() === '') return;
+  sessionApprovals.set(action, Date.now() + durationMs);
+}
+
+/** Reset session approvals (for testing). */
+export function resetSessionApprovals(): void {
+  sessionApprovals.clear();
+}
+
 export type RiskLabel = 'SAFE' | 'MODERATE' | 'HIGH' | 'BLOCKED';
 export type GuardianAction = 'auto_approve' | 'flag_for_review' | 'deny';
 
@@ -158,6 +196,15 @@ export function registerIntentRoutes(router: CoreRouter): void {
       return {
         status: 200,
         body: shapeSyncResponse('deny', decision.riskLevel, decision.reason),
+      };
+    }
+
+    // MODERATE with an active session approval — auto-approve without
+    // surfacing a new card. HIGH always requires explicit approval.
+    if (decision.riskLevel === 'MODERATE' && isSessionApproved(action)) {
+      return {
+        status: 200,
+        body: shapeSyncResponse('auto_approve', decision.riskLevel, 'Session approval active'),
       };
     }
 

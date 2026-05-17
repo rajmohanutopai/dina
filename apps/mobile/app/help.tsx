@@ -135,7 +135,8 @@ export default function HelpScreen(): React.ReactElement {
 
   const onCardPress = useCallback(
     (card: CapabilityCard) => {
-      if (card.href !== undefined) router.push(card.href);
+      if (card.href !== undefined)
+        router.push({ pathname: card.href, params: { from: '/help' } } as never);
     },
     [router],
   );

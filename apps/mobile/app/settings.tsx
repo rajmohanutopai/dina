@@ -449,17 +449,17 @@ export default function SettingsScreen() {
           onPress={() => router.push('/paired-devices')}
           accessibilityRole="button"
           accessibilityLabel="Open Agents"
+          testID="settings-row-agents"
         >
           <Text style={styles.rowLabel}>Agents</Text>
           <Text style={styles.rowValue}>{'\u203A'}</Text>
         </TouchableOpacity>
-        {/* Admin folded into MORE; used to be its own
-            single-row section, which read as a layout bug. */}
         <TouchableOpacity
           style={styles.row}
           onPress={() => router.push('/admin')}
           accessibilityRole="button"
           accessibilityLabel="Open Admin"
+          testID="settings-row-admin"
         >
           <Text style={styles.rowLabel}>Admin</Text>
           <Text style={styles.rowValue}>{'\u203A'}</Text>

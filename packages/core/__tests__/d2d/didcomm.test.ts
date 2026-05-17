@@ -70,7 +70,7 @@ describe('DIDComm Portable', () => {
     it('seller rules permit product queries', () => {
       addContact('did:plc:seller');
       // No restrictions → product queries allowed
-      const result = checkEgressGates('did:plc:seller', 'trust.vouch.request', ['consumer']);
+      const result = checkEgressGates('did:plc:seller', 'peerlens.vouch.request', ['consumer']);
       expect(result.allowed).toBe(true);
     });
 
@@ -89,7 +89,7 @@ describe('DIDComm Portable', () => {
 
       // Data that passes the gate CAN be encrypted
       addContact('did:plc:seller');
-      const allowed = checkEgressGates('did:plc:seller', 'trust.vouch.request', ['consumer']);
+      const allowed = checkEgressGates('did:plc:seller', 'peerlens.vouch.request', ['consumer']);
       expect(allowed.allowed).toBe(true);
 
       // If allowed, encrypt with seller's public key

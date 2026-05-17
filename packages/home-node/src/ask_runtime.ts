@@ -3,12 +3,14 @@ import {
   buildAgenticExecuteFn,
   createAskCoordinator,
   DEFAULT_ASK_SYSTEM_PROMPT,
+  registerCloudProvider as registerCloudEmbeddingProvider,
   ServiceQueryOrchestrator,
   type AgenticAskPipeline,
   type AppViewClient,
   type AskCoordinator,
   type AskCoordinatorCoreClient,
   type BuildAgenticAskPipelineInput,
+  type EmbeddingProvider,
   type LLMProvider,
   type ProviderName,
 } from '@dina/brain';
@@ -22,6 +24,25 @@ export interface HomeNodeAskRuntimeOptions {
   systemPrompt?: string;
   cloudConsentGranted?: boolean;
   sensitivePersonas?: readonly string[];
+  /**
+   * Optional embedding provider — when supplied, registered via the
+   * shared `registerCloudProvider` so the enrichment pipeline embeds
+   * stored items and `gatherVaultContext` can switch to hybrid
+   * (FTS5 + cosine) retrieval. Wiring lives here so mobile boot and
+   * the home-node-lite brain-server share one registration site
+   * instead of duplicating it.
+   *
+   * Without an embedding provider the system falls back to FTS5-only
+   * retrieval — query expansion still bridges most semantic gaps,
+   * but rare phrasings that share no tokens with prior facts won't
+   * surface.
+   */
+  embedding?: {
+    /** Human-readable model name recorded on each embedding for
+     *  provenance — surfaces in `embedding_meta.model`. */
+    name: string;
+    generate: EmbeddingProvider;
+  };
 }
 
 interface BuildHomeNodeAskRuntimeCommon extends HomeNodeAskRuntimeOptions {
@@ -78,6 +99,14 @@ export function buildHomeNodeAskRuntime(
   options: BuildHomeNodeAskRuntimeOptions,
 ): HomeNodeAskRuntime {
   validateAskRuntimeOptions(options);
+
+  // Register the embedding provider before anything else so the
+  // enrichment pipeline + vault context retrieval see a live
+  // provider on the very first /remember. Order matters — the
+  // pipeline reads `isEmbeddingAvailable()` at item-enqueue time.
+  if (options.embedding !== undefined) {
+    registerCloudEmbeddingProvider(options.embedding.name, options.embedding.generate);
+  }
 
   // When the caller injects a handle (mobile's lazy proxy to a
   // node-owned orchestrator), use it directly and skip constructing

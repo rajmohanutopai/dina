@@ -346,4 +346,128 @@ describe('Reminder planner — PersonResolver + vault facts wiring', () => {
     // No expansion, no fact in the prompt.
     expect(prompt).not.toContain('cardamom tea');
   });
+
+  it('self-/remember: by-name lookup surfaces a confirmed person referenced in the body', async () => {
+    // The Emma scenario the user has raised repeatedly: "Emma is set
+    // as daughter" via the People UI (→ confirmed person with
+    // relationshipHint 'daughter'), then a later /remember "Emma's
+    // birthday is on November 7th" has NO senderDid (self-action).
+    // The planner must still pick up Emma's relationship from the
+    // people graph so the reminder can read "your daughter Emma's
+    // birthday".
+    //
+    // Pins both contributions of the by-name lookup:
+    //   1. A "Referenced: Emma (daughter)" line in the prompt context.
+    //   2. Emma's surfaces become FTS keyword expansions so vault
+    //      facts mentioning her under any alias rank in.
+    harness.repo.applyExtraction({
+      sourceItemId: 'seed-emma',
+      extractorVersion: 'test-v1',
+      results: [
+        {
+          canonicalName: 'Emma',
+          relationshipHint: 'daughter',
+          sourceExcerpt: 'Emma is my daughter',
+          surfaces: [
+            { surface: 'Emma', surfaceType: 'name', confidence: 'high' },
+            { surface: 'my daughter', surfaceType: 'role_phrase', confidence: 'high' },
+          ],
+        },
+      ],
+    });
+
+    // A prior /remember whose text doesn't contain "Emma" — only the
+    // role phrase. Without surface expansion, FTS would never reach
+    // it from a query about "Emma's birthday".
+    storeItem('general', {
+      id: 'fact-role-phrase',
+      type: 'note',
+      timestamp: Date.now(),
+      summary: 'my daughter loves dinosaurs',
+      content_l0: 'my daughter loves dinosaurs',
+      body: '',
+    });
+
+    await planReminders({
+      itemId: 'item-self-remember',
+      type: 'note',
+      summary: "Emma's birthday is on November 7th",
+      body: "Emma's birthday is on November 7th",
+      timestamp: Date.now(),
+      persona: 'general',
+      // No senderDid — this is a self-/remember.
+    });
+
+    const prompt = capturedPrompts[0];
+    // (1) Referenced line carries the relationship.
+    expect(prompt).toContain('Referenced: Emma (daughter)');
+    // (2) Surface expansion ("my daughter") pulled the role-phrase
+    //     vault note into the context block even though "Emma" never
+    //     appears in its text.
+    expect(prompt).toContain('dinosaurs');
+  });
+
+  it('self-/remember: by-name lookup skips suggested (unconfirmed) people', async () => {
+    // Mirror of the test above but with a SUGGESTED Emma (no
+    // high-confidence surface). The planner must NOT surface
+    // unsanctioned people-graph guesses — that would put extraction
+    // mistakes into the user's reminders.
+    harness.repo.applyExtraction({
+      sourceItemId: 'seed-emma-suggested',
+      extractorVersion: 'test-v1',
+      results: [
+        {
+          canonicalName: 'Emma',
+          relationshipHint: 'daughter',
+          sourceExcerpt: 'Emma is my daughter',
+          surfaces: [
+            // All `medium` → person stays in 'suggested' state.
+            { surface: 'Emma', surfaceType: 'name', confidence: 'medium' },
+          ],
+        },
+      ],
+    });
+
+    await planReminders({
+      itemId: 'item-self-suggested',
+      type: 'note',
+      summary: "Emma's birthday is on November 7th",
+      body: "Emma's birthday is on November 7th",
+      timestamp: Date.now(),
+      persona: 'general',
+    });
+
+    const prompt = capturedPrompts[0];
+    expect(prompt).not.toContain('Referenced: Emma');
+  });
+
+  it('D2D: by-name lookup does not double-list the sender as "Referenced"', async () => {
+    // When the inbound D2D names the sender themselves ("I, Sancho,
+    // am arriving") the sender already shows up via senderHint;
+    // the by-name pass must not re-emit them as Referenced.
+    seedSancho(harness.repo, 'did:plc:sancho');
+
+    await planReminders({
+      itemId: 'item-d2d-self-ref',
+      type: 'message',
+      summary: 'Sancho is arriving in 10 minutes',
+      body: 'Sancho is arriving in 10 minutes',
+      timestamp: Date.now(),
+      persona: 'general',
+      senderDid: 'did:plc:sancho',
+    });
+
+    const prompt = capturedPrompts[0];
+    // Pull just the "Related vault context" block so we don't match
+    // template prose (e.g., the prompt's worked example mentions a
+    // sender for an unrelated Alonso scenario).
+    const ctxStart = prompt.indexOf('Related vault context');
+    const ctxEnd = prompt.indexOf('How to compute');
+    const ctxSlice = ctxStart >= 0 && ctxEnd > ctxStart ? prompt.slice(ctxStart, ctxEnd) : '';
+    // Sender line is there exactly once.
+    const senderMatches = ctxSlice.match(/Sender: Sancho/g) ?? [];
+    expect(senderMatches.length).toBe(1);
+    // Referenced line is NOT emitted for the sender themselves.
+    expect(ctxSlice).not.toContain('Referenced: Sancho');
+  });
 });

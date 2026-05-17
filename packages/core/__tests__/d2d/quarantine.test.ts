@@ -62,7 +62,7 @@ describe('Quarantine Management', () => {
     it('filters by sender DID', () => {
       quarantineMessage('did:plc:alice', 'social.update', '1');
       quarantineMessage('did:plc:bob', 'social.update', '2');
-      quarantineMessage('did:plc:alice', 'trust.vouch.request', '3');
+      quarantineMessage('did:plc:alice', 'peerlens.vouch.request', '3');
       expect(listBySender('did:plc:alice')).toHaveLength(2);
       expect(listBySender('did:plc:bob')).toHaveLength(1);
     });
@@ -71,7 +71,7 @@ describe('Quarantine Management', () => {
   describe('unquarantineSender', () => {
     it('removes and returns messages for sender', () => {
       quarantineMessage('did:plc:alice', 'social.update', '{"text":"hi"}');
-      quarantineMessage('did:plc:alice', 'trust.vouch.request', '{}');
+      quarantineMessage('did:plc:alice', 'peerlens.vouch.request', '{}');
       quarantineMessage('did:plc:bob', 'social.update', '{}');
 
       const removed = unquarantineSender('did:plc:alice');

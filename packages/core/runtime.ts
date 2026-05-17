@@ -58,7 +58,6 @@ export {
 export type { ServiceConfigRepository } from './src/service/service_config_repository';
 export type { DatabaseAdapter } from './src/storage/db_adapter';
 export { setWSDeliverFn } from './src/transport/delivery';
-export type { ServiceType } from './src/transport/delivery';
 export { BridgePendingSweeper } from './src/workflow/bridge_pending_sweeper';
 export { LeaseExpirySweeper } from './src/workflow/lease_expiry_sweeper';
 export { LocalDelegationRunner } from './src/workflow/local_delegation_runner';
@@ -70,5 +69,5 @@ export {
   setWorkflowRepository,
 } from './src/workflow/repository';
 export type { WorkflowRepository } from './src/workflow/repository';
-export { WorkflowService, setWorkflowService } from './src/workflow/service';
+export { WorkflowService, setWorkflowService, getWorkflowService } from './src/workflow/service';
 export { TaskExpirySweeper } from './src/workflow/task_expiry_sweeper';

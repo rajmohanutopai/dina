@@ -361,8 +361,19 @@ export interface CoreClient {
 
   // ─── Workflow task state transitions (task 1.32 slice D) ──────────────
 
-  /** POST /v1/workflow/tasks/:id/approve — pending_approval → queued. */
-  approveWorkflowTask(id: string): Promise<WorkflowTask>;
+  /**
+   * POST /v1/workflow/tasks/:id/approve — pending_approval → queued.
+   *
+   * `opts.scope`:
+   *   'single'  — one-time approval (default). The agent's next call
+   *               for the same action creates a fresh approval task.
+   *   'session' — grant stands for the session (~30 min). The next
+   *               validate call for the same action on an intent_validation
+   *               task auto-approves without surfacing a new card.
+   *               Only effective on `intent_validation` tasks; all other
+   *               kinds behave as 'single'.
+   */
+  approveWorkflowTask(id: string, opts?: { scope?: 'single' | 'session' }): Promise<WorkflowTask>;
 
   /** POST /v1/workflow/tasks/:id/cancel — any active state → cancelled. */
   cancelWorkflowTask(id: string, reason?: string): Promise<WorkflowTask>;
@@ -430,6 +441,32 @@ export interface CoreClient {
    * reasoning agent falls back to `search_provider_services`).
    */
   findContactsByPreference(category: string): Promise<Contact[]>;
+
+  // ─── Agent policy management ───────────────────────────────────────────────
+
+  /**
+   * Get the current action risk policy — all known actions merged with
+   * their effective risk levels (defaults + operator overrides). `locked`
+   * entries are BRAIN_DENIED and cannot be changed.
+   */
+  getActionPolicy(): Promise<ActionPolicyResult>;
+
+  /**
+   * Set the risk level for a single action. Throws on BRAIN_DENIED
+   * actions (server returns 403). Setting to the action's default risk
+   * removes any override.
+   */
+  setActionRisk(action: string, risk: RiskLevel): Promise<ActionPolicyEntry>;
+
+  /**
+   * Remove the operator override for an action. For DEFAULT_POLICY actions
+   * this resets the action to its hardcoded default and `isDefault` becomes
+   * true again. For custom-added actions (not in DEFAULT_POLICY) the action
+   * disappears from the policy list entirely.
+   *
+   * Throws on BRAIN_DENIED actions (server returns 403).
+   */
+  deleteActionOverride(action: string): Promise<void>;
 }
 
 /** Minimal identity snapshot Core reveals to a live-probe caller. */
@@ -971,4 +1008,22 @@ export interface UpdateContactParams {
    * trimmed + deduped) so callers can pass raw strings.
    */
   preferredFor?: string[];
+}
+
+// ─── Policy management types ────────────────────────────────────────────────
+
+export type { RiskLevel } from '../gatekeeper/intent';
+import type { RiskLevel } from '../gatekeeper/intent';
+
+export interface ActionPolicyEntry {
+  action: string;
+  risk: RiskLevel;
+  isDefault: boolean;
+  locked: boolean;
+  /** true when this action is part of the hardcoded DEFAULT_POLICY table. */
+  inDefaultPolicy: boolean;
+}
+
+export interface ActionPolicyResult {
+  actions: ActionPolicyEntry[];
 }

@@ -36,14 +36,17 @@ export const DINA_MESSAGING_FRAGMENT = '#dina_messaging';
 // ─── Dina service-endpoint type literals ─────────────────────────────────
 
 /**
- * Service-endpoint `type` field values. Narrows the `ServiceEndpoint.type`
- * union so consumers can switch on it exhaustively.
+ * Service-endpoint `type` field value. MsgBox-relayed delivery is the
+ * sole transport — every Home Node (mobile or server) sits behind a
+ * NAT, relies on the relay for offline buffering, and reuses the
+ * already-open authenticated WebSocket. The pre-0.16 `DinaDirectHTTPS`
+ * literal was never produced by any identity-creation path and has
+ * been removed from the wire format.
  */
 export const SERVICE_TYPE_MSGBOX = 'DinaMsgBox';
-export const SERVICE_TYPE_DIRECT_HTTPS = 'DinaDirectHTTPS';
 
-/** Discriminated-union of all Dina service endpoint types. */
-export type DinaServiceType = typeof SERVICE_TYPE_MSGBOX | typeof SERVICE_TYPE_DIRECT_HTTPS;
+/** The (currently single-valued) union of Dina service endpoint types. */
+export type DinaServiceType = typeof SERVICE_TYPE_MSGBOX;
 
 // ─── MsgBox auth frame type strings ──────────────────────────────────────
 

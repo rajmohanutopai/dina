@@ -15,8 +15,7 @@
  *       messageType: 'service.response',
  *       body: JSON.stringify(body),
  *       senderDID, senderPrivateKey, recipientPublicKey: resolve(to),
- *       serviceType: 'DinaDirectHTTPS',
- *       endpoint: coreURL,
+ *       endpoint: msgboxEndpoint,
  *     }).then(() => {}),
  *   });
  *   setWorkflowService(new WorkflowService({

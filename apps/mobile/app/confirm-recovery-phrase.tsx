@@ -20,8 +20,8 @@
  */
 
 import React, { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { entropyToMnemonic, unwrapSeed } from '@dina/core';
 import { MnemonicVerify } from '../src/components/onboarding/mnemonic_verify';
 import { loadWrappedSeed } from '../src/services/wrapped_seed_store';
@@ -32,6 +32,14 @@ type Mode = 'gate' | 'unlocking' | 'verify';
 
 export default function ConfirmRecoveryPhraseScreen(): React.ReactElement {
   const router = useRouter();
+  const { from } = useLocalSearchParams<{ from?: string }>();
+  // Honour the ?from param so the chat-banner entry point (from='/') goes
+  // back to Chat, and the Settings entry point (no from / from='/settings')
+  // goes back to Settings.
+  const backTarget: string =
+    typeof from === 'string' && from.startsWith('/') && !from.startsWith('//')
+      ? from
+      : '/settings';
   const [mode, setMode] = useState<Mode>('gate');
   const [passphrase, setPassphrase] = useState('');
   const [error, setError] = useState('');
@@ -66,18 +74,18 @@ export default function ConfirmRecoveryPhraseScreen(): React.ReactElement {
     return (
       <MnemonicVerify
         mnemonic={words}
-        onBack={() => router.back()}
-        // `compact` hides the "5 OF 6 · CONFIRM PHRASE" step pill
-        // and the shell's own back arrow — the route header here
-        // already provides those.
+        onBack={() => router.replace(backTarget as never)}
         compact
+        onViewPhrase={() =>
+          router.push({
+            pathname: '/recovery-phrase',
+            params: { from: '/confirm-recovery-phrase' },
+          })
+        }
         onVerified={() => {
           void markVerified();
-          // Wipe local copy of the words before popping. Defensive —
-          // even though setWords([]) lives on the unmount path,
-          // explicit clearing makes the intent obvious.
           setWords([]);
-          router.back();
+          router.replace(backTarget as never);
         }}
       />
     );
@@ -139,7 +147,7 @@ export default function ConfirmRecoveryPhraseScreen(): React.ReactElement {
           Pops back to Settings; the chat-home banner stays visible
           since status is still pending. */}
       <Pressable
-        onPress={() => router.back()}
+        onPress={() => router.replace(backTarget as never)}
         accessibilityRole="button"
         accessibilityLabel="Cancel and go back"
         style={styles.cancelButton}
@@ -167,9 +175,11 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
   },
   title: {
-    fontFamily: fonts.heading,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontStyle: 'italic',
     fontSize: 24,
     color: colors.textPrimary,
+    letterSpacing: -0.3,
     marginBottom: spacing.sm,
   },
   subtitle: {

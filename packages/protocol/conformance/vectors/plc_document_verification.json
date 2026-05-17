@@ -44,7 +44,7 @@
     "backward_compat_accepted_messaging_fragment": "#dina-messaging",
     "verification_method_type": "Multikey",
     "publicKeyMultibase_prefix": "z",
-    "allowed_service_types": ["DinaMsgBox", "DinaDirectHTTPS"],
+    "allowed_service_types": ["DinaMsgBox"],
     "id_format_regex": "^did:plc:[a-z0-9]{24,}$",
     "authentication_references_verification_method": true,
     "created_format": "RFC3339 with fractional seconds, Z-suffixed"
@@ -52,7 +52,7 @@
   "notes": [
     "publicKeyMultibase uses multibase base58-btc encoding (z-prefix). The 34-byte payload for Ed25519 is: multicodec prefix 0xed 0x01 (2 bytes) followed by 32 bytes of raw Ed25519 public key.",
     "The #dina_signing fragment (underscore form) is the publish-time canonical; readers MUST also accept the legacy #dina-signing (hyphen) form for backward compat with pre-0.14 Dina builds. Same backward-compat rule applies to #dina_messaging.",
-    "service[].type is one of two literal strings: DinaMsgBox (for MsgBox-relayed D2D) or DinaDirectHTTPS (for direct-to-home-node over HTTPS). Anything else is non-conforming.",
+    "service[].type is the literal string DinaMsgBox — every Home Node delivers D2D through the MsgBox relay. The pre-0.16 DinaDirectHTTPS alternative was removed because no identity-creation path produced it and the direct-HTTPS endpoints it implied could not be reached by NAT'd Home Nodes (mobile + most servers). Anything other than DinaMsgBox is non-conforming.",
     "did:plc identifier body is 24 or more lowercase alphanumeric characters (Bluesky's PLC spec — base32 over the truncated SHA-256 of the genesis record). The example 'example7alonso7alice012345ab' is a test fixture and not a real registered DID.",
     "authentication[] is a list of verification-method URIs. Each entry MUST be the full URL form (DID + fragment), not just the fragment.",
     "The document is JSON-serialised with arbitrary key order — unlike DinaMessage, the PLC document is a W3C DID doc and consumers (Bluesky infra, AT Protocol relays) accept any key ordering. Dina's emitter picks a stable order for readability but does not depend on it for signatures."

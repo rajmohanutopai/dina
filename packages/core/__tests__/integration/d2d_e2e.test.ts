@@ -69,7 +69,6 @@ describe('D2D End-to-End Integration', () => {
         senderDID: aliceDID,
         senderPrivateKey: alicePriv,
         recipientPublicKey: bobPub,
-        serviceType: 'DinaMsgBox',
         endpoint: 'wss://mailbox.dinakernel.com',
       });
 
@@ -229,7 +228,6 @@ describe('D2D End-to-End Integration', () => {
         senderDID: aliceDID,
         senderPrivateKey: alicePriv,
         recipientPublicKey: bobPub,
-        serviceType: 'DinaMsgBox',
         endpoint: 'wss://mailbox.dinakernel.com',
       });
 

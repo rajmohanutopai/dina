@@ -28,6 +28,7 @@ import {
   denyApproval,
   drainForApproval,
 } from '../../staging/service';
+import { grantSessionApproval } from './intent';
 
 /**
  * Lift `payload.type` to a top-level `payload_type` wire field. Go-Core
@@ -327,10 +328,21 @@ type TaskAction = (
 
 function approveTask(
   id: string,
-  _body: Record<string, unknown> | null,
+  body: Record<string, unknown> | null,
   service: NonNullable<ReturnType<typeof getWorkflowService>>,
 ): WorkflowTask {
   const before = service.store().getById(id);
+
+  // Session-scoped approval: if the caller passes scope='session' on an
+  // intent_validation task, grant a module-level session approval so the
+  // next validate call for the same action auto-approves without a new card.
+  if (body?.scope === 'session' && before !== null) {
+    const payload = safeParseBody(before.payload);
+    if (payload?.type === 'intent_validation' && typeof payload.action === 'string') {
+      grantSessionApproval(payload.action);
+    }
+  }
+
   if (
     !isStagingPersonaAccessApproval(before) ||
     before?.status !== WorkflowTaskState.PendingApproval
@@ -354,6 +366,17 @@ function approveTask(
     resume.drained > 0 ? 'staging memory stored' : 'staging memory already stored',
     'system',
   );
+}
+
+function safeParseBody(raw: string): Record<string, unknown> | null {
+  try {
+    const p = JSON.parse(raw);
+    return p !== null && typeof p === 'object' && !Array.isArray(p)
+      ? (p as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function cancelTask(

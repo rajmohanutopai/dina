@@ -25,7 +25,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { colors, fonts, radius, spacing } from '../../theme';
+import { colors, radius, spacing } from '../../theme';
 import type { StepLocation } from '../../onboarding/state';
 
 export interface OnboardingShellProps {
@@ -227,6 +227,4 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   pressed: { opacity: 0.7 },
-  // Referenced in style array above for consistency even when unused.
-  _fontsReference: { fontFamily: fonts.serif },
 });

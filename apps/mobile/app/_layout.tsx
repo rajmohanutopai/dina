@@ -34,7 +34,7 @@ import {
 import { getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import * as Notifications from 'expo-notifications';
-import { Tabs, useRouter, usePathname, useLocalSearchParams } from 'expo-router';
+import { Tabs, useRouter, usePathname, useGlobalSearchParams } from 'expo-router';
 import React, { useEffect, useSyncExternalStore } from 'react';
 import { Image, Modal, Platform, Pressable, TouchableOpacity, View, Text, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -165,7 +165,7 @@ function HeaderBackButton({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const params = useLocalSearchParams<{ from?: string | string[] }>();
+  const params = useGlobalSearchParams<{ from?: string | string[] }>();
   const onPress = () => {
     const fromRaw = params.from;
     const from = typeof fromRaw === 'string' ? fromRaw : null;
@@ -672,7 +672,13 @@ export default function RootLayout() {
               },
               headerShadowVisible: false,
               headerLeft: () => <HeaderMenuButton onPress={openMenu} />,
-              headerRight: () => <HeaderHelpButton onPress={() => router.push('/help')} />,
+              headerRight: () => (
+                <HeaderHelpButton
+                  onPress={() =>
+                    router.push({ pathname: '/help', params: { from: pathname } } as never)
+                  }
+                />
+              ),
               tabBarStyle: {
                 backgroundColor: colors.bgPrimary,
                 borderTopWidth: 1,
@@ -850,6 +856,15 @@ export default function RootLayout() {
               options={{
                 title: 'Settings',
                 // Reached via the hamburger menu (HeaderMenuButton).
+                href: null,
+                headerLeft: renderHeaderBackButton,
+              }}
+            />
+            <Tabs.Screen
+              name="policy"
+              options={{
+                title: 'Agent policies',
+                // Reached via Settings → MORE → Agent policies; not a tab target.
                 href: null,
                 headerLeft: renderHeaderBackButton,
               }}

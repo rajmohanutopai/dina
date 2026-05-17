@@ -455,7 +455,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgPrimary,
   },
   emptyTitle: {
-    fontFamily: fonts.serif,
+    fontFamily: fonts.heading,
     fontSize: 22,
     color: colors.textPrimary,
     marginTop: spacing.md,

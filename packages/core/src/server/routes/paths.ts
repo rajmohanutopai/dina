@@ -167,3 +167,10 @@ export const SCRATCHPAD = '/v1/scratchpad';
 
 export const API_ASK = '/api/v1/ask';
 export const API_REMEMBER = '/api/v1/remember';
+
+// ---------------------------------------------------------------
+// Policy
+// ---------------------------------------------------------------
+
+export const POLICY_ACTIONS = '/v1/policy/actions';
+export const POLICY_ACTION = '/v1/policy/actions/:action';

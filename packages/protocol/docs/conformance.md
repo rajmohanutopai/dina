@@ -237,8 +237,10 @@ protocol violation; the relay MUST close with WebSocket code 1008.
   accept the legacy `#dina-signing` form for backward compat.
 - Messaging-service endpoint fragment is `DINA_MESSAGING_FRAGMENT`
   (= `#dina_messaging`), same backward-compat rule applies.
-- Service-endpoint `type` is one of `SERVICE_TYPE_MSGBOX` or
-  `SERVICE_TYPE_DIRECT_HTTPS`.
+- Service-endpoint `type` is the literal `SERVICE_TYPE_MSGBOX`
+  (= `"DinaMsgBox"`). The pre-0.16 `DinaDirectHTTPS` alternative was
+  removed; no Home Node ever published it and direct delivery could
+  not reach NAT'd peers.
 
 ## 9. Constants (L1 requirement)
 

@@ -25,9 +25,9 @@ describe('D2D Receive — Stage Memory', () => {
       expect(result.stagingId).toMatch(/^stg-/);
     });
 
-    it('stages trust.vouch.response as trust_attestation', () => {
+    it('stages peerlens.vouch.response as trust_attestation', () => {
       const result = receiveAndStage(
-        'trust.vouch.response',
+        'peerlens.vouch.response',
         'did:plc:bob',
         'verified',
         '{"rating":85}',

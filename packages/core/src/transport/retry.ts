@@ -7,14 +7,7 @@
  * Source: ARCHITECTURE.md Task 6.14
  */
 
-import {
-  getPendingForRetry,
-  markDelivered,
-  markFailed,
-  deleteExpired,
-  type OutboxEntry,
-} from './outbox';
-import { deliverMessage, type ServiceType } from './delivery';
+import { getPendingForRetry, markDelivered, markFailed, deleteExpired } from './outbox';
 
 export interface RetryResult {
   attempted: number;

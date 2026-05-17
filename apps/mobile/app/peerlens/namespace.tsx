@@ -35,6 +35,7 @@ import React from 'react';
 import {
   View,
   Text,
+  Platform,
   StyleSheet,
   Pressable,
   ScrollView,
@@ -220,7 +221,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgPrimary },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
   header: { marginBottom: spacing.lg },
-  title: { fontFamily: fonts.heading, fontSize: 22, color: colors.textPrimary },
+  title: { fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontStyle: 'italic', fontSize: 22, color: colors.textPrimary, letterSpacing: -0.3 },
   subtitle: {
     fontFamily: fonts.sans,
     fontSize: 14,

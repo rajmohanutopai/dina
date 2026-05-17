@@ -284,14 +284,19 @@ export type VaultItemType = (typeof VAULT_ITEM_TYPES)[number];
 // D2D V1 Message Families
 // ---------------------------------------------------------------------------
 
+// Mirrors `@dina/protocol` `MSG_TYPE_*` constants — single source of
+// truth for the wire format. The `peerlens.vouch.*` names replaced
+// the legacy `trust.vouch.*` in commit f976ddb (peerview → peerlens
+// rename); any future addition must land in BOTH this fixture and
+// `packages/protocol/src/constants.ts`.
 export const D2D_V1_MESSAGE_TYPES = [
   'presence.signal',
   'coordination.request',
   'coordination.response',
   'social.update',
   'safety.alert',
-  'trust.vouch.request',
-  'trust.vouch.response',
+  'peerlens.vouch.request',
+  'peerlens.vouch.response',
   'service.query',
   'service.response',
 ] as const;
@@ -310,7 +315,7 @@ export const D2D_EPHEMERAL_MESSAGE_TYPES = [
 
 export const D2D_MEMORY_TYPE_MAP: Record<string, string> = {
   'social.update': 'relationship_note',
-  'trust.vouch.response': 'trust_attestation',
+  'peerlens.vouch.response': 'trust_attestation',
 };
 
 // ---------------------------------------------------------------------------
@@ -332,9 +337,11 @@ export const DEFAULT_ACTION_POLICIES: Record<string, RiskLevel> = {
   modify_settings: 'MODERATE',
   purchase: 'HIGH',
   payment: 'HIGH',
+  transfer_money: 'HIGH',
   bulk_operation: 'HIGH',
   credential_export: 'BLOCKED',
   key_access: 'BLOCKED',
+  read_vault: 'BLOCKED',
 };
 
 export const BRAIN_DENIED_ACTIONS = [

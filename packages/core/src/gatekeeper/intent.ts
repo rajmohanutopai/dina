@@ -34,7 +34,19 @@ export interface IntentDecision {
 // Policy table — matches server gatekeeper.go exactly
 // ---------------------------------------------------------------
 
-const DEFAULT_POLICY: Record<string, RiskLevel> = {
+/**
+ * Canonical action → risk-level policy table. Mirrors
+ * `@dina/test-harness` `DEFAULT_ACTION_POLICIES` (the cross-package
+ * fixture) byte-for-byte so contract tests in core, brain, and the
+ * stories suite can all assert against the same source. Any update
+ * here MUST also land in `packages/test-harness/src/fixtures/constants.ts`
+ * — `__tests__/gatekeeper/intent.test.ts` will fail loud if they
+ * drift again.
+ */
+export const DEFAULT_POLICY: Record<string, RiskLevel> = {
+  // SAFE — auto-approved, no prompt. Read-only + tiny user-initiated
+  // actions ("search", "remember") that the Four Laws explicitly
+  // permit without an interrupt.
   search: 'SAFE',
   list: 'SAFE',
   query: 'SAFE',
@@ -42,24 +54,26 @@ const DEFAULT_POLICY: Record<string, RiskLevel> = {
   store: 'SAFE',
   send_small: 'SAFE',
   delete_small: 'SAFE',
+  // MODERATE — requires approval once per session. Bulk-ish
+  // operations where one slip is recoverable but the user should
+  // see them happen.
   send_large: 'MODERATE',
   delete_large: 'MODERATE',
   modify_settings: 'MODERATE',
-  // Docs-canonical aliases — `CAPABILITIES.md` shows
-  // `dina validate ... send_email` / `transfer_money` / `read_vault`.
-  // These names are what OpenClaw + sample agents actually pass over
-  // MCP, so the policy table needs to recognise them at the same risk
-  // levels the docs claim. Without these the resolver fell back to
-  // the `MODERATE` default for everything outside `purchase`/`payment`,
-  // making the BLOCKED scenario silently pass approval instead.
-  send_email: 'MODERATE',
-  transfer_money: 'HIGH',
-  read_vault: 'BLOCKED',
+  // HIGH — requires approval every invocation. Cart Handover
+  // principle (README.md Four Laws): Dina advises on purchases but
+  // never touches money, so any agent-initiated purchase/payment
+  // surfaces to the user every time. `MONEY_ACTIONS` below adds the
+  // trust-ring gate (untrusted agents are BLOCKED outright).
   purchase: 'HIGH',
   payment: 'HIGH',
+  transfer_money: 'HIGH',
   bulk_operation: 'HIGH',
+  // BLOCKED — always denied. The user goes through the UI for these,
+  // not an agent.
   credential_export: 'BLOCKED',
   key_access: 'BLOCKED',
+  read_vault: 'BLOCKED',
 };
 
 /**
@@ -68,7 +82,7 @@ const DEFAULT_POLICY: Record<string, RiskLevel> = {
  * Includes the 3 vault actions missing from mobile (A27 #3):
  * vault_raw_read, vault_raw_write, vault_export
  */
-const BRAIN_DENIED = new Set([
+export const BRAIN_DENIED = new Set([
   'did_sign',
   'did_rotate',
   'vault_backup',

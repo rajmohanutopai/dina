@@ -53,11 +53,11 @@ Produced 2026-04-21. Subsequent 1.17+ edits should be checked against this list;
 
 ### 1.16g — Service-endpoint type constants
 
-| File                                      | Lines | Key exports                                                                     |
-| ----------------------------------------- | ----: | ------------------------------------------------------------------------------- |
-| `packages/core/src/transport/delivery.ts` |   286 | `ServiceType = 'DinaMsgBox' \| 'DinaDirectHTTPS'` constant string-literal union |
+| File                                      | Lines | Key exports                                                |
+| ----------------------------------------- | ----: | ---------------------------------------------------------- |
+| `packages/core/src/transport/delivery.ts` |   286 | (no longer exports a `ServiceType` — MsgBox is sole transport) |
 
-**Note**: Only the `ServiceType` type + associated string-literal constants move. The `DeliveryResult` / `WSDeliverFn` types + actual delivery machinery stay in `@dina/core`.
+**Note**: The `SERVICE_TYPE_MSGBOX` constant lives in `@dina/protocol/constants.ts`. `ServiceType` was removed in 0.16 (along with `SERVICE_TYPE_DIRECT_HTTPS`) because the direct-HTTPS path was never produced by any identity-creation code and could not reach NAT'd Home Nodes. `DeliveryResult` / `WSDeliverFn` types + actual delivery machinery stay in `@dina/core`.
 
 ## Files NOT moving
 
@@ -89,7 +89,7 @@ packages/protocol/src/
 │   ├── auth_frames.ts            auth_challenge / auth_response / auth_success (1.16d)
 │   ├── capability.ts             capability schema + schema_hash (1.16e)
 │   ├── core_rpc.ts               Core HTTP envelope types (1.16f)
-│   └── service_endpoint.ts       DinaMsgBox / DinaDirectHTTPS constants (1.16g)
+│   └── service_endpoint.ts       DinaMsgBox constant (1.16g)
 ├── constants.ts                   `#dina_signing`, `#dina_messaging`, port numbers, frame type strings
 ├── canonical_sign.ts              pure canonical-string builder (1.22)
 ├── envelope_builder.ts            typed constructors (1.23)

@@ -16,6 +16,8 @@
  * Source: brain/tests/test_routing.py, brain/src/service/domain_classifier.py
  */
 
+import { listPersonas } from '@dina/core';
+
 import { resolveAlias } from '../persona/registry';
 
 /**
@@ -372,7 +374,7 @@ export function classifyDomain(input: ClassificationInput): ClassificationResult
 
   if (bestConfidence > 0) {
     return {
-      persona: bestPersona,
+      persona: gateToInstalledPersona(bestPersona),
       confidence: Math.min(MAX_KEYWORD_CONFIDENCE, bestConfidence),
       matchedKeywords: bestKeywords,
       method: 'keyword',
@@ -386,6 +388,33 @@ export function classifyDomain(input: ClassificationInput): ClassificationResult
     matchedKeywords: [],
     method: 'fallback',
   };
+}
+
+/**
+ * Personas are user-configurable — `general/work/health/finance`
+ * are mobile defaults, but users can add or delete them in the
+ * Settings UI. The keyword classifier's `DOMAINS` list is
+ * hardcoded and includes legacy persona names (`social`, `legal`,
+ * `professional`) that may not exist on this device.
+ *
+ * When the classifier picks a persona that isn't installed,
+ * silently fall back to `general` so we never write to a
+ * non-existent vault. `general` is the always-default tier; the
+ * mobile bootstrap installs it before any other persona, and the
+ * test harness's `DEFAULT_TEST_PERSONAS` includes it. If even
+ * `general` is missing (a strict test harness wiring only one
+ * custom persona), the install is incoherent and the caller's
+ * own validation should surface it — we don't try to second-
+ * guess what to do.
+ *
+ * `listPersonas()` is fast — in-memory map iteration. Called
+ * once per classify; not worth caching.
+ */
+function gateToInstalledPersona(candidate: string): string {
+  const installed = listPersonas();
+  if (installed.length === 0) return candidate; // test/early-boot
+  if (installed.some((p) => p.name === candidate)) return candidate;
+  return 'general';
 }
 
 /**
@@ -414,14 +443,16 @@ export function classifyPersonas(input: ClassificationInput): string[] {
   for (const domain of DOMAINS) {
     const { confidence } = scoreDomain(text, domain);
     if (confidence >= 0.5) {
-      scored.push({ persona: domain.persona, confidence });
+      scored.push({ persona: gateToInstalledPersona(domain.persona), confidence });
     }
   }
   if (scored.length === 0) return ['general'];
 
   // Sort DESC by confidence so the primary persona is first.
   scored.sort((a, b) => b.confidence - a.confidence);
-  // Dedup in case two domain entries point at the same persona.
+  // Dedup in case two domain entries point at the same persona,
+  // or two different DOMAINS rows both folded back to `general`
+  // via the installed-persona gate.
   const seen = new Set<string>();
   const out: string[] = [];
   for (const s of scored) {

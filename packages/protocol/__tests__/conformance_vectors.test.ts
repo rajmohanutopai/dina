@@ -39,7 +39,6 @@ import {
   DINA_MESSAGING_FRAGMENT,
   DINA_SIGNING_FRAGMENT,
   MULTIKEY_CONTEXT,
-  SERVICE_TYPE_DIRECT_HTTPS,
   SERVICE_TYPE_MSGBOX,
 } from '../src/constants';
 
@@ -292,7 +291,7 @@ describe('conformance vector — plc_document_verification (task 10.13)', () => 
     expect(doc.service.length).toBeGreaterThan(0);
     const svc = doc.service[0]!;
     expect(svc.id.endsWith(DINA_MESSAGING_FRAGMENT)).toBe(true);
-    expect([SERVICE_TYPE_MSGBOX, SERVICE_TYPE_DIRECT_HTTPS]).toContain(svc.type);
+    expect(svc.type).toBe(SERVICE_TYPE_MSGBOX);
     expect(svc.serviceEndpoint.length).toBeGreaterThan(0);
   });
 
@@ -301,9 +300,7 @@ describe('conformance vector — plc_document_verification (task 10.13)', () => 
   });
 
   it('vector\'s allowed_service_types matches the reference union', () => {
-    expect(vector.assertions.allowed_service_types.sort()).toEqual(
-      [SERVICE_TYPE_DIRECT_HTTPS, SERVICE_TYPE_MSGBOX].sort(),
-    );
+    expect(vector.assertions.allowed_service_types).toEqual([SERVICE_TYPE_MSGBOX]);
   });
 });
 

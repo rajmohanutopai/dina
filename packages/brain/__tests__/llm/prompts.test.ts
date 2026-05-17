@@ -29,8 +29,8 @@ import {
 
 describe('Prompt Registry', () => {
   describe('completeness', () => {
-    it('has exactly 13 prompts', () => {
-      expect(PROMPT_NAMES.length).toBe(13);
+    it('has exactly 14 prompts', () => {
+      expect(PROMPT_NAMES.length).toBe(14);
     });
 
     const expectedNames = [
@@ -41,6 +41,7 @@ describe('Prompt Registry', () => {
       'ANTI_HER',
       'ANTI_HER_CLASSIFY',
       'REMINDER_PLAN',
+      'REMINDER_QUERY_EXPANSION',
       'NUDGE_ASSEMBLE',
       'PERSON_IDENTITY_EXTRACTION',
       'VAULT_CONTEXT',

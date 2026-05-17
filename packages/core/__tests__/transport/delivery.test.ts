@@ -29,7 +29,7 @@ describe('D2D Message Delivery', () => {
   });
 
   describe('deliverMessage', () => {
-    it('delivers via MsgBox relay for DinaMsgBox type', async () => {
+    it('delivers via MsgBox /forward', async () => {
       setDeliveryFetchFn(async (url: any) => {
         expect(String(url)).toContain('/forward');
         return {
@@ -40,25 +40,10 @@ describe('D2D Message Delivery', () => {
       const result = await deliverMessage(
         'did:plc:recipient',
         new Uint8Array([0xca, 0xfe]),
-        'DinaMsgBox',
         'wss://mailbox.dinakernel.com',
       );
       expect(result.delivered).toBe(true);
       expect(result.messageId).toBe('msg-1');
-    });
-
-    it('delivers directly for DinaDirectHTTPS type', async () => {
-      setDeliveryFetchFn(async (url: any) => {
-        expect(String(url)).toContain('/msg');
-        return { ok: true, text: async () => '{}' } as Response;
-      });
-      const result = await deliverMessage(
-        'did:plc:recipient',
-        new Uint8Array([0xca, 0xfe]),
-        'DinaDirectHTTPS',
-        'https://dina.example.com',
-      );
-      expect(result.delivered).toBe(true);
     });
 
     it('returns delivered:true on MsgBox success', async () => {
@@ -69,12 +54,7 @@ describe('D2D Message Delivery', () => {
             json: async () => ({ status: 'delivered', msg_id: 'x' }),
           }) as Response,
       );
-      const result = await deliverMessage(
-        'did:plc:r',
-        new Uint8Array(0),
-        'DinaMsgBox',
-        'wss://mb.com',
-      );
+      const result = await deliverMessage('did:plc:r', new Uint8Array(0), 'wss://mb.com');
       expect(result.delivered).toBe(true);
       expect(result.buffered).toBe(false);
     });
@@ -87,12 +67,7 @@ describe('D2D Message Delivery', () => {
             json: async () => ({ status: 'buffered', msg_id: 'buf-1' }),
           }) as Response,
       );
-      const result = await deliverMessage(
-        'did:plc:offline',
-        new Uint8Array(0),
-        'DinaMsgBox',
-        'wss://mb.com',
-      );
+      const result = await deliverMessage('did:plc:offline', new Uint8Array(0), 'wss://mb.com');
       expect(result.delivered).toBe(false);
       expect(result.buffered).toBe(true);
     });
@@ -106,12 +81,7 @@ describe('D2D Message Delivery', () => {
             json: async () => ({}),
           }) as Response,
       );
-      const result = await deliverMessage(
-        'did:plc:fail',
-        new Uint8Array(0),
-        'DinaDirectHTTPS',
-        'https://down.com',
-      );
+      const result = await deliverMessage('did:plc:fail', new Uint8Array(0), 'wss://down.com');
       expect(result.delivered).toBe(false);
       expect(result.error).toContain('502');
     });
@@ -123,7 +93,6 @@ describe('D2D Message Delivery', () => {
       const result = await deliverMessage(
         'did:plc:r',
         new Uint8Array(0),
-        'DinaMsgBox',
         'wss://unreachable.com',
       );
       expect(result.delivered).toBe(false);
@@ -173,11 +142,8 @@ describe('D2D Message Delivery', () => {
 
   describe('DID resolution cache', () => {
     it('caches and retrieves resolution', () => {
-      cacheDIDResolution('did:plc:test', 'DinaMsgBox', 'wss://mb.com');
-      expect(lookupDIDCache('did:plc:test')).toEqual({
-        type: 'DinaMsgBox',
-        endpoint: 'wss://mb.com',
-      });
+      cacheDIDResolution('did:plc:test', 'wss://mb.com');
+      expect(lookupDIDCache('did:plc:test')).toEqual({ endpoint: 'wss://mb.com' });
     });
 
     it('returns null for uncached DID', () => {
@@ -185,18 +151,18 @@ describe('D2D Message Delivery', () => {
     });
 
     it('expires after 10-minute TTL', () => {
-      cacheDIDResolution('did:plc:test', 'DinaMsgBox', 'wss://mb.com');
+      cacheDIDResolution('did:plc:test', 'wss://mb.com');
       expect(lookupDIDCache('did:plc:test', Date.now() + 11 * 60 * 1000)).toBeNull();
     });
 
     it('is valid within TTL', () => {
-      cacheDIDResolution('did:plc:test', 'DinaMsgBox', 'wss://mb.com');
+      cacheDIDResolution('did:plc:test', 'wss://mb.com');
       expect(lookupDIDCache('did:plc:test', Date.now() + 9 * 60 * 1000)).not.toBeNull();
     });
 
     it('invalidateDIDCache removes specific entry', () => {
-      cacheDIDResolution('did:plc:a', 'DinaMsgBox', 'wss://a.com');
-      cacheDIDResolution('did:plc:b', 'DinaDirectHTTPS', 'https://b.com');
+      cacheDIDResolution('did:plc:a', 'wss://a.com');
+      cacheDIDResolution('did:plc:b', 'wss://b.com');
       invalidateDIDCache('did:plc:a');
       expect(lookupDIDCache('did:plc:a')).toBeNull();
       expect(lookupDIDCache('did:plc:b')).not.toBeNull();
@@ -207,8 +173,8 @@ describe('D2D Message Delivery', () => {
     });
 
     it('clearDIDCache removes all entries', () => {
-      cacheDIDResolution('did:plc:a', 'DinaMsgBox', 'wss://a.com');
-      cacheDIDResolution('did:plc:b', 'DinaMsgBox', 'wss://b.com');
+      cacheDIDResolution('did:plc:a', 'wss://a.com');
+      cacheDIDResolution('did:plc:b', 'wss://b.com');
       clearDIDCache();
       expect(lookupDIDCache('did:plc:a')).toBeNull();
       expect(lookupDIDCache('did:plc:b')).toBeNull();
@@ -233,25 +199,25 @@ describe('D2D Message Delivery', () => {
 
   describe('resolveMessagingEndpoint', () => {
     it('returns cached resolution on cache hit', async () => {
-      cacheDIDResolution('did:plc:cached', 'DinaMsgBox', 'wss://cached.com');
+      cacheDIDResolution('did:plc:cached', 'wss://cached.com');
       const result = await resolveMessagingEndpoint('did:plc:cached');
-      expect(result).toEqual({ type: 'DinaMsgBox', endpoint: 'wss://cached.com' });
+      expect(result).toEqual({ endpoint: 'wss://cached.com' });
     });
 
     it('calls resolver on cache miss', async () => {
       setDIDResolver(async (did) => {
-        if (did === 'did:plc:test123') return { type: 'DinaMsgBox', endpoint: 'wss://test.com' };
+        if (did === 'did:plc:test123') return { endpoint: 'wss://test.com' };
         return null;
       });
       const result = await resolveMessagingEndpoint('did:plc:test123');
-      expect(result).toEqual({ type: 'DinaMsgBox', endpoint: 'wss://test.com' });
+      expect(result).toEqual({ endpoint: 'wss://test.com' });
     });
 
     it('caches resolved result', async () => {
       let callCount = 0;
       setDIDResolver(async () => {
         callCount++;
-        return { type: 'DinaMsgBox' as const, endpoint: 'wss://x.com' };
+        return { endpoint: 'wss://x.com' };
       });
       await resolveMessagingEndpoint('did:plc:x');
       await resolveMessagingEndpoint('did:plc:x');

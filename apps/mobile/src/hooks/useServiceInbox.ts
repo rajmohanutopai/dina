@@ -114,14 +114,19 @@ export async function listPendingApprovals(limit = 50): Promise<InboxEntry[]> {
  * Approve a pending workflow task. All approval kinds — including
  * `vault_read` — are backed by workflow tasks, so this always calls
  * `approveWorkflowTask`.
+ *
+ * `scope` is only meaningful for `intent_validation` tasks:
+ *   'single'  — one-time approval (default).
+ *   'session' — auto-approve the same action for the session (~30 min).
  */
 export async function approvePending(
   taskId: string,
   kind: InboxEntryKind = 'service_query',
+  scope?: 'single' | 'session',
 ): Promise<WorkflowTask> {
   const c = requireClient();
   void kind; // all kinds are workflow tasks; kept for UI discriminator use only
-  return c.approveWorkflowTask(taskId);
+  return c.approveWorkflowTask(taskId, scope !== undefined ? { scope } : undefined);
 }
 
 /**

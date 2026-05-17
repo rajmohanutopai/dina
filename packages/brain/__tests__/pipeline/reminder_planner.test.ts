@@ -22,6 +22,8 @@ import {
   resetReminderLLM,
   registerReminderLogger,
   resetReminderLogger,
+  registerReminderQueryExpander,
+  resetReminderQueryExpander,
 } from '../../src/pipeline/reminder_planner';
 
 
@@ -31,6 +33,7 @@ describe('Reminder Planner', () => {
   beforeEach(() => {
     resetReminderState();
     resetReminderLLM();
+    resetReminderQueryExpander();
     resetFactoryCounters();
     clearVaults();
     resetPersonaState();
@@ -39,7 +42,12 @@ describe('Reminder Planner', () => {
     createPersona('financial', 'sensitive');
     openPersona('general');
     openPersona('work');
-    openPersona('financial');
+    // `financial` is `sensitive` tier — second arg is the explicit
+    // user-approval signal openPersona requires; without it the
+    // call silently returns false and the persona stays closed,
+    // which would invisibly skip the financial vault during the
+    // multi-persona context walk.
+    openPersona('financial', true);
 
     // Capture logger output so we can assert on warnings without
     // letting the default console.warn pollute test output.
@@ -408,13 +416,13 @@ describe('Reminder Planner', () => {
       expect(receivedPrompt).toContain('pour-over');
     });
 
-    it('queries the always-open `general` persona for vault context (Python parity)', async () => {
-      // Python `_gather_vault_context` hardcodes `"general"` because
-      // personal facts about people the user knows live in the
-      // default vault even when the reminder itself is for a
-      // different persona (work, health, financial). Searching
-      // `input.persona` would miss those facts whenever the reminder
-      // isn't itself in `general`.
+    it('finds facts in `general` when planning for a different persona', async () => {
+      // Personal facts about people the user knows may live in
+      // `general` even when the reminder itself is for a different
+      // persona (`work`, `health`). The planner walks every open
+      // persona for context, not just the input persona, so a
+      // colleague-preference note in `general` still reaches the
+      // prompt for a `work`-scoped meeting reminder.
       storeItem(
         'general',
         makeVaultItem({
@@ -429,9 +437,6 @@ describe('Reminder Planner', () => {
         return '{"reminders":[]}';
       });
 
-      // Plan a reminder for the `work` persona. The fact about
-      // Bridget lives in `general` — only the cross-persona search
-      // path will pull it into the prompt.
       await planReminders({
         itemId: 'item-cross-persona',
         type: 'note',
@@ -443,6 +448,105 @@ describe('Reminder Planner', () => {
 
       expect(receivedPrompt).toContain('cardamom');
     });
+
+    it('cross-domain synthesis: query expansion pulls finance context into a birthday reminder', async () => {
+      // Pins the multi-domain synthesis invariant: when planning
+      // "Emma's birthday", facts that change the right answer may
+      // live in a *different* persona than the event itself —
+      // budget state in `financial` decides whether the suggestion
+      // is "buy an affordable dinosaur toy" or "buy a premium one".
+      //
+      // FTS5 alone can't connect "birthday" → "budget" (no token
+      // overlap). The registered query expander broadens the FTS5
+      // keyword set with implied terms ("birthday", "gift",
+      // "budget") so the finance note ranks into the context.
+      //
+      // The test pins RETRIEVAL — both facts reach the prompt.
+      // Synthesis (the LLM actually emitting "affordable dinosaur
+      // toy") depends on the model and is verified live, not here.
+      storeItem(
+        'general',
+        makeVaultItem({
+          summary: 'Emma loves dinosaurs',
+          content_l0: 'My daughter Emma loves dinosaurs',
+        }),
+      );
+      storeItem(
+        'financial',
+        makeVaultItem({
+          summary: 'Saving aggressively, budget tight this year',
+          content_l0: 'Saving aggressively for house deposit — discretionary budget tight this year',
+        }),
+      );
+
+      // Mocked expander returns the keywords a real lite-tier LLM
+      // would emit for this prompt (see REMINDER_QUERY_EXPANSION in
+      // src/llm/prompts.ts for the contract).
+      registerReminderQueryExpander(async (input) => {
+        expect(input.subject).toContain('Emma');
+        return ['birthday gift', 'purchase', 'budget', 'spending'];
+      });
+
+      let receivedPrompt = '';
+      registerReminderLLM(async (_system, prompt) => {
+        receivedPrompt = prompt;
+        return '{"reminders":[]}';
+      });
+
+      const result = await planReminders({
+        itemId: 'item-emma-birthday',
+        type: 'note',
+        summary: "Emma's birthday is on November 7th",
+        body: "Emma's birthday is on November 7th",
+        timestamp: Date.now(),
+        persona: 'general',
+      });
+
+      // Both contexts reach the prompt: Emma-preference via name
+      // overlap with the literal text, and the budget signal via
+      // the expander's "budget" / "spending" terms.
+      expect(receivedPrompt).toContain('dinosaurs');
+      expect(receivedPrompt).toContain('budget');
+      expect(result.vaultContextUsed).toBeGreaterThanOrEqual(2);
+    });
+
+    it('query expander failure is fail-soft — planner falls back to literal-text search', async () => {
+      storeItem(
+        'general',
+        makeVaultItem({
+          summary: 'Emma loves dinosaurs',
+          content_l0: 'Emma loves dinosaurs',
+        }),
+      );
+
+      registerReminderQueryExpander(async () => {
+        throw new Error('lite LLM unreachable');
+      });
+
+      let receivedPrompt = '';
+      registerReminderLLM(async (_system, prompt) => {
+        receivedPrompt = prompt;
+        return '{"reminders":[]}';
+      });
+
+      const result = await planReminders({
+        itemId: 'item-expander-throws',
+        type: 'note',
+        summary: "Emma's birthday is on November 7th",
+        body: "Emma's birthday is on November 7th",
+        timestamp: Date.now(),
+        persona: 'general',
+      });
+
+      // The Emma fact still surfaces — literal text shares "Emma".
+      // Expander failure is logged but doesn't break retrieval.
+      expect(receivedPrompt).toContain('dinosaurs');
+      expect(result.remindersCreated).toBe(0);
+      expect(
+        loggedWarnings.find((w) => w.event === 'reminder_planner.query_expansion_error'),
+      ).toBeDefined();
+    });
+
 
     it('truncates each vault context item at 150 chars', async () => {
       // A long stored summary must not blow the prompt budget on a

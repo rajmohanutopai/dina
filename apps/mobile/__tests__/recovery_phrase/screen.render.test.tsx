@@ -33,6 +33,10 @@ jest.mock('@dina/core', () => {
 const backCalls: number[] = [];
 jest.mock('expo-router', () => ({
   useRouter: () => ({ back: () => void backCalls.push(Date.now()) }),
+  // Screen reads `?from` to pick the back target — empty params is the
+  // implicit "navigated directly, no source screen" case the tests
+  // exercise. Per-test overrides via jest.mocked(...) when needed.
+  useLocalSearchParams: () => ({}),
 }));
 
 import RecoveryPhraseScreen from '../../app/recovery-phrase';

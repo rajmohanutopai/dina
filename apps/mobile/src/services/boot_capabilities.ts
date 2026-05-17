@@ -41,8 +41,10 @@ import {
   PDSAccountClient,
   PDSPublisher,
   computeSchemaHash,
+  createGeminiEmbeddingProvider,
   getCapability,
 } from '@dina/brain';
+import { getApiKey } from '../ai/provider';
 import { loadInfraPreferences, resolveServicesAppViewURL } from './infra_preferences';
 import type { ServiceConfig } from '@dina/protocol';
 import { getIdentityAdapter } from '../storage/init';
@@ -89,7 +91,6 @@ import {
   DIDResolver,
   hydrateDeviceRegistry,
   sendD2D as coreSendD2D,
-  type ServiceType,
 } from '@dina/core/runtime';
 import {
   AppViewServiceResolver,
@@ -514,13 +515,10 @@ export async function buildBootInputs(
 
     // Prefer the `#dina-messaging` endpoint published in the peer's
     // DID doc so each peer can advertise its own relay. Fall back to
-    // our shared relay when the peer's doc doesn't carry one.
+    // our shared relay when the peer's doc doesn't carry one. The
+    // service type is always MsgBox — the pre-0.16 DinaDirectHTTPS
+    // alternative was removed.
     const endpoint = resolved.messagingService?.endpoint ?? msgboxURL;
-    // DID docs carry either "DinaMsgBox" (WS relay) or "DinaDirectHTTPS"
-    // (direct HTTPS). Default to DinaMsgBox when the doc doesn't
-    // advertise a service since the fallback endpoint IS the relay.
-    const serviceType: ServiceType =
-      resolved.messagingService?.type === 'DinaDirectHTTPS' ? 'DinaDirectHTTPS' : 'DinaMsgBox';
 
     const result = await coreSendD2D({
       recipientDID: to,
@@ -529,7 +527,6 @@ export async function buildBootInputs(
       senderDID: did,
       senderPrivateKey: signingKeypair.privateKey,
       recipientPublicKey,
-      serviceType,
       endpoint,
       providerServiceResolver,
     });
@@ -748,6 +745,17 @@ async function tryBuildAgenticAsk(opts: {
     return { draftId };
   });
 
+  // Resolve an embedding provider when the active LLM is Gemini and
+  // an API key is available. The runtime wires `registerCloudProvider`
+  // so the enrichment pipeline embeds stored items and the reminder
+  // planner's `gatherVaultContext` switches to hybrid (FTS5 + cosine)
+  // retrieval. Failing soft is fine — no provider just means FTS5-
+  // only context, which still works.
+  const embedding =
+    provider === 'gemini'
+      ? await tryBuildGeminiEmbedding(provider)
+      : undefined;
+
   // Delegate to the shared `@dina/home-node/ask-runtime` builder. The
   // builder constructs the pipeline + AskCoordinator from the same
   // inputs home-node-lite brain-server uses — mobile only differs in
@@ -761,6 +769,7 @@ async function tryBuildAgenticAsk(opts: {
     orchestratorHandle: lazyOrchestratorHandle(),
     workflowClient: lazyWorkflowClient(),
     ...(opts.logger !== undefined ? { logger: opts.logger } : {}),
+    ...(embedding !== undefined ? { embedding } : {}),
   });
 
   return { ...runtime.pipeline, askCoordinator: runtime.coordinator };
@@ -775,6 +784,29 @@ async function tryBuildAgenticAsk(opts: {
  *  supplied — lets the tool report "no candidates" rather than throw. */
 function emptyAppView(): AppViewStub {
   return new AppViewStub();
+}
+
+/**
+ * Resolve a Gemini embedding provider when an API key is available.
+ * Returns `undefined` when no key is stored — the runtime then skips
+ * embedding registration and the system falls back to FTS5-only
+ * retrieval (query expansion still bridges most cases).
+ */
+async function tryBuildGeminiEmbedding(
+  provider: ProviderType,
+): Promise<{ name: string; generate: ReturnType<typeof createGeminiEmbeddingProvider> } | undefined> {
+  try {
+    const apiKey = await getApiKey(provider);
+    if (apiKey === null || apiKey.length === 0) return undefined;
+    return {
+      name: 'gemini-embedding-001',
+      generate: createGeminiEmbeddingProvider({ apiKey }),
+    };
+  } catch {
+    // Keychain read failure or provider construction error → fall
+    // back to no-embedding. Don't crash the boot.
+    return undefined;
+  }
 }
 
 async function pickProvider(override: ProviderType | undefined): Promise<ProviderType | null> {

@@ -100,7 +100,8 @@ export async function handlePostPublish(item: {
     result.remindersCreated = planResult.remindersCreated;
     result.llmRefinedReminders = planResult.llmRefined;
   } catch (err) {
-    result.errors.push(`reminders: ${err instanceof Error ? err.message : String(err)}`);
+    const msg = err instanceof Error ? err.message : String(err);
+    result.errors.push(`reminders: ${msg}`);
   }
 
   // 2. Update contact last_interaction
@@ -129,7 +130,8 @@ export async function handlePostPublish(item: {
       result.identityLinksFound = extraction.links.length;
     }
   } catch (err) {
-    result.errors.push(`identity: ${err instanceof Error ? err.message : String(err)}`);
+    const msg = err instanceof Error ? err.message : String(err);
+    result.errors.push(`identity: ${msg}`);
   }
 
   // 5. People-graph apply — runs the typed person-link extractor and

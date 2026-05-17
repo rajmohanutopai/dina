@@ -20,7 +20,6 @@ import { appendAudit } from '../audit/service';
 import {
   deliverMessage,
   getWSDeliverFn,
-  type ServiceType,
   type DeliveryResult,
   type SenderIdentity,
 } from '../transport/delivery';
@@ -41,7 +40,7 @@ export interface SendRequest {
   senderDID: string;
   senderPrivateKey: Uint8Array;
   recipientPublicKey: Uint8Array;
-  serviceType: ServiceType;
+  /** Recipient's MsgBox endpoint (the `serviceEndpoint` from their DID doc's `#dina_messaging`). */
   endpoint: string;
   dataCategories?: string[];
   /**
@@ -82,7 +81,7 @@ export async function sendD2D(req: SendRequest): Promise<SendResult> {
       buffered: false,
       queued: false,
       deniedAt: 'type_enforcement',
-      error: `Unknown message type "${req.messageType}". Valid V1 types: presence.signal, coordination.request/response, social.update, safety.alert, trust.vouch.request/response`,
+      error: `Unknown message type "${req.messageType}". Valid V1 types: presence.signal, coordination.request/response, social.update, safety.alert, peerlens.vouch.request/response`,
     };
   }
 
@@ -234,17 +233,16 @@ export async function sendD2D(req: SendRequest): Promise<SendResult> {
       did: req.senderDID,
       privateKey: req.senderPrivateKey,
     };
-    // WS-first for DinaMsgBox-routed recipients (issue #14). When the
-    // home node holds an authenticated WebSocket to MsgBox, push the
-    // envelope down that connection — it avoids a fresh TLS handshake
-    // per message and reuses the long-lived signed session.
-    // `sendD2DViaWS` takes plaintext + recipient pub (it seals + signs
-    // internally, matching the format POST /forward would have produced).
-    // On WS failure (session down / backpressure) we fall through to
-    // the HTTP `/forward` path in `deliverMessage`.
+    // WS-first delivery (issue #14). When the home node holds an
+    // authenticated WebSocket to MsgBox, push the envelope down that
+    // connection — it avoids a fresh TLS handshake per message and
+    // reuses the long-lived signed session. `sendD2DViaWS` takes
+    // plaintext + recipient pub (it seals + signs internally, matching
+    // the format POST /forward would have produced). On WS failure
+    // (session down / backpressure) we fall through to the HTTP
+    // `/forward` path in `deliverMessage`.
     const wsDeliverFn = getWSDeliverFn();
     if (
-      req.serviceType === 'DinaMsgBox' &&
       wsDeliverFn !== null &&
       wsDeliverFn(
         req.recipientDID,
@@ -270,7 +268,6 @@ export async function sendD2D(req: SendRequest): Promise<SendResult> {
     const delivery = await deliverMessage(
       req.recipientDID,
       payloadBytes,
-      req.serviceType,
       req.endpoint,
       senderIdentity,
     );

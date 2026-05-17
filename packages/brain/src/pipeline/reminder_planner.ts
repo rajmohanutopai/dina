@@ -35,7 +35,8 @@ import {
 
 import { scrubPII, rehydratePII } from '@dina/core';
 import { createReminder, type Reminder } from '@dina/core/reminders';
-import { queryVault } from '@dina/core';
+import { queryVault, listPersonas } from '@dina/core';
+import { generateEmbedding, isEmbeddingAvailable } from '../embedding/generation';
 import { isValidReminderPayload, isExtractedEventKind } from '../enrichment/event_extractor';
 import { parseReminderPlan } from '../llm/output_parser';
 import { REMINDER_PLAN } from '../llm/prompts';
@@ -90,6 +91,45 @@ export function registerReminderLLM(provider: ReminderLLMProvider): void {
 /** Reset the provider (for testing). */
 export function resetReminderLLM(): void {
   llmProvider = null;
+}
+
+/**
+ * Query-expansion provider — broadens the FTS5 search beyond the
+ * literal text of the current item so cross-domain facts can surface.
+ *
+ * Plain FTS5 on "Emma's birthday is on November 7th" has zero token
+ * overlap with a finance note like "saving aggressively, budget
+ * tight" — so a single-query approach can never assemble the
+ * multi-domain context the LLM needs to suggest an appropriately
+ * priced gift. The expander asks a lite-tier LLM what *implied*
+ * keywords ("birthday", "gift", "purchase", "budget", "spending")
+ * help bridge the semantic gap, and those terms get OR-joined into
+ * the FTS5 match so other personas can contribute.
+ *
+ * Optional — when no expander is registered, the planner falls back
+ * to the literal-text-only search (current behaviour, single-domain).
+ * Failures inside the expander are swallowed and treated as "no
+ * expansion", never block the reminder.
+ */
+export interface QueryExpansionInput {
+  itemId: string;
+  type: string;
+  subject: string;
+  body: string;
+}
+
+export type ReminderQueryExpander = (input: QueryExpansionInput) => Promise<string[]>;
+
+let queryExpander: ReminderQueryExpander | null = null;
+
+/** Register a query-expansion provider. */
+export function registerReminderQueryExpander(provider: ReminderQueryExpander): void {
+  queryExpander = provider;
+}
+
+/** Reset the expander (for testing). */
+export function resetReminderQueryExpander(): void {
+  queryExpander = null;
 }
 
 /**
@@ -173,7 +213,7 @@ export async function planReminders(input: PlannerInput): Promise<PlannerResult>
 
   // 2 + 3. LLM call with vault context + PII scrub.
   try {
-    const { text: vaultContext, itemCount } = gatherVaultContext(input);
+    const { text: vaultContext, itemCount } = await gatherVaultContext(input);
     vaultContextUsed = itemCount;
 
     // PII scrub before sending to cloud LLM — vault context and item body
@@ -336,13 +376,12 @@ const VAULT_CONTEXT_LINE_MAX_CHARS = 150;
  *  criterion; we just truncate the head. */
 const VAULT_CONTEXT_MAX_ITEMS = 5;
 
-/** Vault context search runs against the always-open `general`
- *  persona. Personal facts about people the user knows ("Emma likes
- *  dinosaurs") get classified into `general` even when the reminder
- *  itself is for `work` or `health` — querying the input persona
- *  would miss those facts whenever the reminder isn't itself in
- *  `general`. */
-const VAULT_CONTEXT_PERSONA = 'general';
+/** Always include `general` in the vault-context search even when no
+ *  persona is open yet (defensive — `general` is the default tier and
+ *  always-on in production). The full set of search personas is
+ *  computed at call time from `listPersonas()` so we pick up every
+ *  persona the user has currently unlocked. */
+const VAULT_CONTEXT_DEFAULT_PERSONA = 'general';
 
 /**
  * Gather related vault items for context enrichment.
@@ -364,7 +403,9 @@ const VAULT_CONTEXT_PERSONA = 'general';
  * a vault item).
  */
 
-function gatherVaultContext(input: PlannerInput): { text: string; itemCount: number } {
+async function gatherVaultContext(
+  input: PlannerInput,
+): Promise<{ text: string; itemCount: number }> {
   const senderHint = resolveSenderHint(input.senderDid);
 
   // Hand the user's text straight to FTS5 — no JS-side keyword
@@ -383,49 +424,158 @@ function gatherVaultContext(input: PlannerInput): { text: string; itemCount: num
   if (senderHint !== null) {
     queryParts.push(...senderHint.surfaces);
   }
-  const queryText = queryParts.filter((s) => s.length > 0).join(' ');
 
-  const contextItems: string[] = [];
+  // Self-/remember has no senderDid — but the user's text often
+  // names someone known to the people-graph ("Emma's birthday",
+  // "Sancho is arriving"). Scan the body for confirmed-surface
+  // matches and bring those people's relationship + alias-set into
+  // the context. This is what lets "Emma is set as daughter"
+  // (added via the People UI → confirmed) reach the reminder
+  // planner when the user later says "Emma's birthday is Nov 7".
+  //
+  // Limited to CONFIRMED people: surfaces extracted from /remember
+  // text default to `medium` confidence and stay in `suggested`
+  // status until the user promotes them. Pulling suggested people
+  // here would surface mis-extracted relationships the user never
+  // sanctioned — wrong direction for a sovereign-loyalty system.
+  const referencedPeople = resolveReferencedPeople(
+    `${input.summary}\n${input.body}`,
+    input.senderDid,
+  );
+  for (const p of referencedPeople) {
+    for (const s of p.surfaces) {
+      const trimmed = s.surface.trim();
+      if (trimmed.length > 0) queryParts.push(trimmed);
+    }
+  }
 
-  if (queryText.length > 0) {
+  // Query expansion — bridges the semantic gap between the literal
+  // event text and cross-domain facts that share no tokens. FTS5 is
+  // a keyword matcher; without expansion "Emma's birthday" can never
+  // pull a finance vault's "saving aggressively, budget tight" note
+  // even though the LLM needs both to suggest an appropriately-
+  // priced gift. The expander is optional + fail-soft: if it isn't
+  // registered or it throws, we fall back to literal-only search.
+  if (queryExpander !== null) {
     try {
-      // One FTS5 pass against the user's combined text. Limit pulls
-      // up to VAULT_CONTEXT_MAX_ITEMS rows directly — the engine's
-      // rank order is the selection criterion, not anything we
-      // compute on the JS side.
-      const results = queryVault(VAULT_CONTEXT_PERSONA, {
-        mode: 'fts5',
-        text: queryText,
-        limit: VAULT_CONTEXT_MAX_ITEMS,
+      const extra = await queryExpander({
+        itemId: input.itemId,
+        type: input.type,
+        subject: input.summary,
+        body: input.body,
       });
-      for (const item of results) {
-        if (contextItems.length >= VAULT_CONTEXT_MAX_ITEMS) break;
-        const raw = item.content_l0 || item.summary || '';
-        if (raw === '') continue;
-        // Truncate to match Python's 150-char per-item cap. Long
-        // summaries (full email bodies, multi-paragraph notes)
-        // would otherwise blow the prompt budget on a single item.
-        const line = raw.slice(0, VAULT_CONTEXT_LINE_MAX_CHARS);
-        if (!contextItems.includes(line)) {
-          contextItems.push(line);
+      for (const term of extra) {
+        if (typeof term === 'string' && term.trim().length > 0) {
+          queryParts.push(term.trim());
         }
       }
     } catch (err) {
-      // Vault search failed — proceed without context, but log so a
-      // misconfigured vault (closed persona, missing FTS5) doesn't
-      // silently degrade the prompt quality.
       logger.warn({
-        event: 'reminder_planner.vault_context_error',
+        event: 'reminder_planner.query_expansion_error',
         itemId: input.itemId,
         error: err instanceof Error ? err.message : String(err),
       });
     }
   }
 
-  // No sender hint AND no vault context → preserve the legacy
-  // sentinel string so callers/tests detecting "no context" still
-  // see it.
-  if (senderHint === null && contextItems.length === 0) {
+  const queryText = queryParts.filter((s) => s.length > 0).join(' ');
+
+  // Try to embed the query for hybrid retrieval. The vault's
+  // `hybrid` mode scores `0.4 × FTS5_rank + 0.6 × cosine` — so when
+  // the literal query shares only "Emma" with a prior fact about
+  // "my daughter loves dinosaurs" but the embeddings are
+  // semantically close, the prior fact still ranks in. Fail-soft:
+  // embedding errors (quota, network, missing provider) fall back
+  // to FTS5-only, never block the reminder.
+  let queryEmbedding: Float32Array | undefined;
+  if (isEmbeddingAvailable() && queryText.length > 0) {
+    try {
+      const result = await generateEmbedding(queryText);
+      queryEmbedding = result.vector;
+    } catch (err) {
+      logger.warn({
+        event: 'reminder_planner.query_embedding_error',
+        itemId: input.itemId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  const searchMode: 'fts5' | 'hybrid' = queryEmbedding !== undefined ? 'hybrid' : 'fts5';
+
+  const contextItems: string[] = [];
+
+  if (queryText.length > 0) {
+    // Walk every currently-open persona, not just `general`. The
+    // LLM-rich classifier routes family/relationship facts ("my
+    // daughter Emma loves dinosaurs") to whatever persona it judges
+    // semantically — `social`, `general`, `health`, anywhere. The
+    // older `general`-only search was a static assumption that broke
+    // once the rich classifier became the primary store-target
+    // selector, so a follow-up /remember about Emma's birthday saw
+    // an empty context and the LLM had no preferences to weave in.
+    //
+    // Dedup the persona list and always include the item's own
+    // storage persona + the default `general` even if `isOpen` is
+    // somehow false at this moment (defensive — the item was JUST
+    // stored to `input.persona`, so the repo for that persona is
+    // live).
+    const searchPersonas: string[] = [];
+    const seenPersona = new Set<string>();
+    const addPersona = (name: string): void => {
+      if (name === '' || seenPersona.has(name)) return;
+      seenPersona.add(name);
+      searchPersonas.push(name);
+    };
+    addPersona(input.persona);
+    for (const p of listPersonas()) {
+      if (p.isOpen) addPersona(p.name);
+    }
+    addPersona(VAULT_CONTEXT_DEFAULT_PERSONA);
+
+    for (const persona of searchPersonas) {
+      if (contextItems.length >= VAULT_CONTEXT_MAX_ITEMS) break;
+      try {
+        const results = queryVault(persona, {
+          mode: searchMode,
+          text: queryText,
+          limit: VAULT_CONTEXT_MAX_ITEMS,
+          ...(queryEmbedding !== undefined ? { embedding: queryEmbedding } : {}),
+        });
+        for (const item of results) {
+          if (contextItems.length >= VAULT_CONTEXT_MAX_ITEMS) break;
+          const raw = item.content_l0 || item.summary || '';
+          if (raw === '') continue;
+          // Truncate to match Python's 150-char per-item cap. Long
+          // summaries (full email bodies, multi-paragraph notes)
+          // would otherwise blow the prompt budget on a single item.
+          const line = raw.slice(0, VAULT_CONTEXT_LINE_MAX_CHARS);
+          if (!contextItems.includes(line)) {
+            contextItems.push(line);
+          }
+        }
+      } catch (err) {
+        // One persona missing/closed is not fatal — keep walking.
+        // Surface the failure so a misconfigured vault (missing
+        // FTS5, locked persona, etc.) doesn't silently degrade
+        // prompt quality across the board.
+        logger.warn({
+          event: 'reminder_planner.vault_context_error',
+          itemId: input.itemId,
+          persona,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+
+  // No sender hint AND no referenced people AND no vault context
+  // → preserve the legacy sentinel string so callers/tests detecting
+  // "no context" still see it.
+  if (
+    senderHint === null &&
+    referencedPeople.length === 0 &&
+    contextItems.length === 0
+  ) {
     return { text: '(no related context found)', itemCount: 0 };
   }
 
@@ -435,10 +585,82 @@ function gatherVaultContext(input: PlannerInput): { text: string; itemCount: num
       senderHint.relationshipHint !== '' ? ` (${senderHint.relationshipHint})` : '';
     lines.push(`Sender: ${senderHint.displayName}${relationshipSuffix}`);
   }
+  for (const p of referencedPeople) {
+    const relationshipSuffix =
+      p.relationshipHint !== '' ? ` (${p.relationshipHint})` : '';
+    const name = p.canonicalName !== '' ? p.canonicalName : p.surfaces[0]?.surface ?? '';
+    if (name !== '') lines.push(`Referenced: ${name}${relationshipSuffix}`);
+  }
   for (const c of contextItems) {
     lines.push(`- ${c}`);
   }
   return { text: lines.join('\n'), itemCount: contextItems.length };
+}
+
+/**
+ * Scan free text for confirmed people-graph surfaces and return the
+ * resolved persons. Used for self-/remember (no senderDid): when the
+ * user says "Emma's birthday is Nov 7" and Emma is a confirmed
+ * contact with relationship "daughter", that relationship reaches
+ * the reminder prompt as "Referenced: Emma (daughter)" and Emma's
+ * alias-set widens the FTS query so prior vault facts under any
+ * surface (nicknames, role phrases) still surface.
+ *
+ * Confirmed-only by design — see comment at the call site.
+ *
+ * Skips the surface that already corresponds to the senderDid (if
+ * any), so a D2D ingress from Sancho doesn't double-list Sancho as
+ * "Sender" AND "Referenced".
+ *
+ * O(N×L) where N = confirmed surface count, L = text length. For
+ * the realistic case of <100 confirmed contacts and <4KB text, this
+ * runs in well under a millisecond — cheaper than the FTS5 search
+ * that follows, certainly cheaper than the LLM call.
+ */
+function resolveReferencedPeople(text: string, excludeSenderDid?: string): ResolvedPerson[] {
+  if (typeof text !== 'string' || text.trim().length === 0) return [];
+  const repo = getPeopleRepository();
+  if (repo === null) return [];
+  const resolver: PersonResolver = new RepositoryPersonResolver(repo);
+
+  const excludePersonId =
+    typeof excludeSenderDid === 'string' && excludeSenderDid !== ''
+      ? resolver.resolveByDID(excludeSenderDid)?.personId ?? ''
+      : '';
+
+  const surfacesMap = resolver.confirmedSurfacesMap();
+  if (surfacesMap.size === 0) return [];
+
+  const lowered = text.toLowerCase();
+  const seenPersonIds = new Set<string>();
+  const found: ResolvedPerson[] = [];
+
+  for (const [normalizedSurface, surfaces] of surfacesMap) {
+    // Word-boundary check to avoid false positives like "Emma"
+    // matching "gemma" or "ema" matching "cinema". The normalized
+    // surface is already whitespace-trimmed and lower-cased by
+    // `normalizeAlias`, so we only need to escape regex metas.
+    if (normalizedSurface.length === 0) continue;
+    const escaped = normalizedSurface.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`\\b${escaped}\\b`, 'i');
+    if (!re.test(lowered)) continue;
+    for (const s of surfaces) {
+      if (seenPersonIds.has(s.personId)) continue;
+      if (excludePersonId !== '' && s.personId === excludePersonId) continue;
+      const person = repo.getPerson(s.personId);
+      if (person === null || person.status === 'rejected') continue;
+      seenPersonIds.add(s.personId);
+      found.push({
+        personId: person.personId,
+        canonicalName: person.canonicalName,
+        contactDid: person.contactDid,
+        relationshipHint: person.relationshipHint,
+        surfaces: (person.surfaces ?? []).filter((sf) => sf.status === 'confirmed'),
+      });
+    }
+  }
+
+  return found;
 }
 
 interface SenderHint {

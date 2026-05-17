@@ -20,10 +20,10 @@ export interface VerificationMethod {
   publicKeyMultibase: string;
 }
 
-/** Dina service endpoint — routes D2D traffic via MsgBox relay or direct HTTPS. */
+/** Dina service endpoint — routes D2D traffic via the MsgBox relay. */
 export interface ServiceEndpoint {
   id: string;
-  type: 'DinaMsgBox' | 'DinaDirectHTTPS';
+  type: 'DinaMsgBox';
   serviceEndpoint: string;
 }
 

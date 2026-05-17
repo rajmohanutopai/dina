@@ -105,6 +105,58 @@ export default function ApprovalsScreen() {
     [],
   );
 
+  const handleApprove = useCallback(
+    (item: InboxEntry) => {
+      // MODERATE intent_validation: offer once-only vs session scope.
+      if (item.kind === 'intent_validation' && item.riskLevel === 'MODERATE') {
+        Alert.alert(
+          `Approve "${item.capability}"?`,
+          'Choose how long this approval lasts.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'This time only',
+              onPress: () => {
+                setPendingActionId(item.id);
+                void approvePending(item.id, item.kind, 'single')
+                  .then(() => setEntries((list) => list.filter((e) => e.id !== item.id)))
+                  .catch((err) =>
+                    Alert.alert('Error', (err as Error).message ?? 'Failed to approve'),
+                  )
+                  .finally(() => setPendingActionId(null));
+              },
+            },
+            {
+              text: 'Allow for this session',
+              onPress: () => {
+                setPendingActionId(item.id);
+                void approvePending(item.id, item.kind, 'session')
+                  .then(() => setEntries((list) => list.filter((e) => e.id !== item.id)))
+                  .catch((err) =>
+                    Alert.alert('Error', (err as Error).message ?? 'Failed to approve'),
+                  )
+                  .finally(() => setPendingActionId(null));
+              },
+            },
+          ],
+        );
+        return;
+      }
+      // All other kinds: standard single-confirmation flow.
+      confirmAndRun(item, 'Approve', async () => {
+        if (item.kind === 'staging_persona_access' && isPersistenceReady()) {
+          try {
+            await openPersonaDB(item.capability);
+          } catch {
+            // Already open or init failed — let Core attempt the drain anyway.
+          }
+        }
+        return approvePending(item.id, item.kind);
+      });
+    },
+    [confirmAndRun],
+  );
+
   const renderItem = useCallback(
     ({ item }: { item: InboxEntry }) => {
       const busy = pendingActionId === item.id;
@@ -137,6 +189,12 @@ export default function ApprovalsScreen() {
             ? [styles.capability, styles.riskModerate]
             : styles.capability;
       const requesterPrefix = isIntent ? 'agent' : isStagingAccess ? 'source' : isVaultRead ? 'requester' : 'from';
+      const riskHint =
+        isIntent && item.riskLevel === 'MODERATE'
+          ? 'Once per session'
+          : isIntent && item.riskLevel === 'HIGH'
+            ? 'Every invocation'
+            : null;
       return (
         <View style={styles.card}>
           <View style={styles.cardHeader}>
@@ -147,6 +205,9 @@ export default function ApprovalsScreen() {
           </View>
           {isIntent ? (
             <Text style={styles.intentAction}>{item.capability}</Text>
+          ) : null}
+          {riskHint !== null ? (
+            <Text style={styles.riskHint}>{riskHint}</Text>
           ) : null}
           {item.requesterDID !== '' ? (
             <Text style={styles.requester} numberOfLines={1}>
@@ -187,24 +248,7 @@ export default function ApprovalsScreen() {
                 busy && styles.disabled,
               ]}
               disabled={busy}
-              onPress={() =>
-              confirmAndRun(item, 'Approve', async () => {
-                // For staging_persona_access, open the persona vault before
-                // approving — Core's drain writes directly to the vault repo
-                // and fails if the repo isn't registered yet (sensitive-tier
-                // personas are not auto-opened at boot).
-                if (item.kind === 'staging_persona_access' && isPersistenceReady()) {
-                  try {
-                    await openPersonaDB(item.capability);
-                  } catch {
-                    // Already open or init failed — let Core attempt the drain
-                    // anyway; it will surface a real error if the vault is
-                    // truly inaccessible.
-                  }
-                }
-                return approvePending(item.id, item.kind);
-              })
-            }
+              onPress={() => handleApprove(item)}
             >
               {busy ? (
                 <ActivityIndicator size="small" color={colors.white} />
@@ -216,7 +260,7 @@ export default function ApprovalsScreen() {
         </View>
       );
     },
-    [pendingActionId, confirmAndRun],
+    [pendingActionId, confirmAndRun, handleApprove],
   );
 
   if (loading && entries.length === 0) {
@@ -344,6 +388,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textPrimary,
     marginBottom: spacing.xs,
+  },
+  riskHint: {
+    fontFamily: fonts.sans,
+    fontSize: 11,
+    color: colors.textMuted,
+    marginBottom: spacing.xs,
+    letterSpacing: 0.2,
   },
   requester: {
     fontFamily: fonts.mono,

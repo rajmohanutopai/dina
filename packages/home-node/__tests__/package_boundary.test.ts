@@ -39,6 +39,10 @@ describe('@dina/home-node package boundaries', () => {
         types: './service-runtime.ts',
         default: './service-runtime.ts',
       },
+      './chat-runtime': {
+        types: './chat-runtime.ts',
+        default: './chat-runtime.ts',
+      },
     });
   });
 });

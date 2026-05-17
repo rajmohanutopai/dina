@@ -128,6 +128,16 @@ export const textStyles = {
     color: colors.textMuted,
   } as TextStyle,
 
+  // Georgia italic — the standard page-level screen title (h1 equivalent).
+  // Use for the main heading at the top of every functional screen.
+  // Georgia is a system font; no load delay, crisp at 24–28 px on all devices.
+  pageTitle: {
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontStyle: 'italic' as TextStyle['fontStyle'],
+    color: colors.textPrimary,
+    letterSpacing: -0.3,
+  } as TextStyle,
+
   // Cormorant Garamond italic — the Dina display face.
   // Add fontSize + lineHeight per context; textAlign if centered.
   screenHeadline: {

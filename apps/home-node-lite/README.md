@@ -81,6 +81,35 @@ curl http://127.0.0.1:8200/healthz
 # {"status":"ok","role":"brain"}
 ```
 
+### Dev chat UI (no mobile app needed)
+
+The Brain server can expose a minimal browser chat UI that drives the
+**same** `handleChat` orchestrator the mobile app uses in-process
+(`packages/brain/src/chat/orchestrator.ts`). Useful for fast iteration
+on `/remember` / `/ask` flows when you don't want to spin up Expo.
+
+Turn it on with the `DINA_BRAIN_DEV_UI=1` env flag. Production
+deployments leave it off so the UI never appears on the public
+listener.
+
+```bash
+cd apps/home-node-lite/brain-server
+DINA_BRAIN_DEV_UI=1 npm start
+# then open http://127.0.0.1:8200/dev
+```
+
+HTTP surface exposed:
+
+| Route                          | Purpose                                         |
+|--------------------------------|-------------------------------------------------|
+| `POST /api/v1/chat`            | `{text, threadId?}` → `ChatResponse` (mobile-parity) |
+| `POST /api/v1/chat/reset`      | `{threadId?}` — wipes the thread (dev convenience)   |
+| `GET /dev`                     | Single-page HTML chat UI (only when `DINA_BRAIN_DEV_UI=1`) |
+
+The orchestrator needs Core wired (vault writes go through it), so
+start the Core server first and configure `DINA_BRAIN_CORE_BASE_URL`
++ service keys before hitting the dev UI.
+
 ## Test
 
 From this directory (runs both apps' Jest suites):

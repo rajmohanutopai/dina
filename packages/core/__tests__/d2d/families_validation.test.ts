@@ -23,8 +23,8 @@ describe('D2D Message Families', () => {
         'coordination.response',
         'social.update',
         'safety.alert',
-        'trust.vouch.request',
-        'trust.vouch.response',
+        'peerlens.vouch.request',
+        'peerlens.vouch.response',
         'service.query',
         'service.response',
       ];
@@ -61,12 +61,12 @@ describe('D2D Message Families', () => {
       expect(msgTypeToScenario('safety.alert')).toBe('safety');
     });
 
-    it('maps trust.vouch.request → trust', () => {
-      expect(msgTypeToScenario('trust.vouch.request')).toBe('trust');
+    it('maps peerlens.vouch.request → trust', () => {
+      expect(msgTypeToScenario('peerlens.vouch.request')).toBe('trust');
     });
 
-    it('maps trust.vouch.response → trust', () => {
-      expect(msgTypeToScenario('trust.vouch.response')).toBe('trust');
+    it('maps peerlens.vouch.response → trust', () => {
+      expect(msgTypeToScenario('peerlens.vouch.response')).toBe('trust');
     });
 
     it('maps service.query → service', () => {
@@ -141,8 +141,8 @@ describe('D2D Message Families', () => {
       expect(mapToVaultItemType('social.update')).toBe('relationship_note');
     });
 
-    it('maps trust.vouch.response → trust_attestation', () => {
-      expect(mapToVaultItemType('trust.vouch.response')).toBe('trust_attestation');
+    it('maps peerlens.vouch.response → trust_attestation', () => {
+      expect(mapToVaultItemType('peerlens.vouch.response')).toBe('trust_attestation');
     });
 
     it('returns null for ephemeral types', () => {

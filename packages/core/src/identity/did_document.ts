@@ -6,6 +6,8 @@
  * - verificationMethod: Multikey type with publicKeyMultibase
  * - Fragment: #key-1 (singular, matching Go)
  * - service: [{ id: "#dina-messaging", type: "DinaMsgBox", serviceEndpoint: "wss://..." }]
+ *   The `type` is always `DinaMsgBox` — every Home Node reaches peers
+ *   through the relay (mobile/NAT'd direct delivery isn't reachable).
  * - created: ISO 8601 timestamp
  * - authentication references the verification method
  *

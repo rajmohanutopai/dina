@@ -61,6 +61,10 @@ export * from './scratchpad/lifecycle';
 export * from './routing/task';
 export * from './sync/engine';
 export * from './embedding/generation';
+export {
+  createGeminiEmbeddingProvider,
+  type GeminiEmbeddingAdapterOptions,
+} from './embedding/gemini_provider';
 export * from './mcp/delegation';
 export { loadBrainConfig, validateBrainConfig } from './config/loading';
 export type { BrainConfig } from './config/loading';

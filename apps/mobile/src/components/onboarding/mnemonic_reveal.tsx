@@ -25,15 +25,14 @@ export function MnemonicReveal(props: MnemonicRevealProps): React.ReactElement {
     <OnboardingShell
       location={locateStep(step)}
       title="Your recovery phrase"
-      subtitle="These 24 words are the only way to restore your Dina identity — your handle, your keys, your network presence — on a new device. They do NOT back up your saved memories or chats; that's a separate backup. Write them down on paper and keep them somewhere safe."
+      subtitle="To restore your Dina identity (your handle, keys, and network presence), you will need these 24 words. Please keep them safe. Anyone with these words can access your Dina identity."
       primaryLabel="I've written it down"
       onPrimary={props.onContinue}
       onBack={props.onBack}
     >
       <View style={styles.warningBanner}>
         <Text style={styles.warningText}>
-          Don't screenshot. Don't save to a cloud note. Anyone with these words can impersonate
-          your Dina identity.
+          Note: your chats and memories backup is separate from this.
         </Text>
       </View>
 

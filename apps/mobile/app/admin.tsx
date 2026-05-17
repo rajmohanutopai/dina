@@ -22,6 +22,7 @@
 import React, { useCallback, useState, useSyncExternalStore } from 'react';
 import {
   Alert,
+  Platform,
   Pressable,
   ScrollView,
   Share,
@@ -30,7 +31,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { colors, fonts, radius, shadows, spacing } from '../src/theme';
 import { getBootedNode, getBootDegradations } from '../src/hooks/useNodeBootstrap';
 import { getRuntimeWarnings, subscribeRuntimeWarnings } from '../src/services/runtime_warnings';
@@ -128,7 +129,6 @@ export default function AdminScreen(): React.ReactElement {
 
   return (
     <>
-      <Stack.Screen options={{ title: 'Admin', headerShown: true }} />
       <ScrollView contentContainerStyle={styles.scroll} style={styles.root}>
         {/* Header */}
         <View style={styles.header}>
@@ -161,41 +161,9 @@ export default function AdminScreen(): React.ReactElement {
           />
         </Section>
 
-        {/* Security */}
-        <Section title="Security">
-          <Row label="Encryption" value="AES-256-GCM" />
-          <Row label="KDF" value="Argon2id (64 MiB, t=3, p=4)" />
-          <Row label="Key storage" value="Device Keychain" />
-          <Placeholder
-            title="Change passphrase"
-            body="Re-wrap your master seed with a new passphrase."
-          />
-          <Placeholder
-            title="Auto-start vs manual-start"
-            body="Require passphrase on every launch for extra safety."
-          />
-        </Section>
-
-        {/* Agents — see paired-devices.tsx for why this is "Agents"
-            and not "Paired Devices". Route + section preserved. */}
-        <Section title="Agents">
-          <DrillRow label="Agents" onPress={() => router.push('/paired-devices')} />
-        </Section>
-
-        {/* Model */}
-        <Section title="Language model">
-          <DrillRow
-            label="BYOK providers (OpenAI / Gemini)"
-            onPress={() => router.push('/settings')}
-          />
-        </Section>
-
         {/* Policies */}
         <Section title="Policies">
-          <Placeholder
-            title="Risk thresholds"
-            body="Gate which agent actions require explicit approval."
-          />
+          <DrillRow label="Agent policies" onPress={() => router.push('/policy')} />
         </Section>
 
         {/* Dev-only self-test — routes a real D2D coordination.request
@@ -664,9 +632,9 @@ const styles = StyleSheet.create({
   },
   title: {
     marginTop: spacing.xs,
-    fontFamily: fonts.serif,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     fontStyle: 'italic',
-    fontSize: 30,
+    fontSize: 26,
     color: colors.textPrimary,
     letterSpacing: -0.3,
   },
@@ -698,6 +666,8 @@ const styles = StyleSheet.create({
   sectionCard: {
     backgroundColor: colors.bgCard,
     borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
     ...shadows.sm,
     overflow: 'hidden',
   },
@@ -708,7 +678,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     gap: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: colors.borderLight,
+    borderBottomColor: colors.border,
   },
   rowLabel: {
     fontFamily: fonts.sansSemibold,
@@ -743,31 +713,27 @@ const styles = StyleSheet.create({
   drillRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: colors.borderLight,
+    borderBottomColor: colors.border,
   },
-  // DrillRow label is a primary action (e.g. "Agents") — title-case,
-  // 16pt. rowLabel below is a small-caps key for the IDENTITY /
-  // SECURITY key-value pairs and would otherwise render the row's
-  // "Agents" as "AGENTS", duplicating the section title above it.
   drillLabel: {
-    fontFamily: fonts.sans,
-    fontSize: 16,
+    fontFamily: fonts.sansMedium,
+    fontSize: 15,
     color: colors.textPrimary,
   },
   drillArrow: {
     fontFamily: fonts.sans,
-    marginLeft: 'auto',
-    fontSize: 18,
+    fontSize: 14,
     color: colors.textMuted,
   },
   placeholder: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: colors.borderLight,
+    borderBottomColor: colors.border,
   },
   placeholderTitle: {
     fontFamily: fonts.sansSemibold,
@@ -841,7 +807,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
     paddingBottom: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: colors.borderLight,
+    borderBottomColor: colors.border,
   },
   dangerNoteText: {
     fontFamily: fonts.sans,

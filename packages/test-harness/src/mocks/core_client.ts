@@ -70,6 +70,9 @@ import type {
   MemoryTouchResult,
   UpdateContactParams,
   Contact,
+  ActionPolicyEntry,
+  ActionPolicyResult,
+  RiskLevel,
 } from '@dina/core';
 
 /** One captured call — method name + positional args passed. */
@@ -216,6 +219,7 @@ export class MockCoreClient implements CoreClient {
    *  triggers the role-match branch. Keys are compared after
    *  trim + lowercase (matching the route's normalisation). */
   contactsByPreferenceResult: Record<string, Contact[]> = {};
+  actionPolicyResult: ActionPolicyResult = { actions: [] };
 
   /**
    * Per-persona override for `personaStatus`. When a tested code path
@@ -548,10 +552,31 @@ export class MockCoreClient implements CoreClient {
     });
   }
 
-  async approveWorkflowTask(id: string): Promise<WorkflowTask> {
+  async approveWorkflowTask(
+    id: string,
+    _opts?: { scope?: 'single' | 'session' },
+  ): Promise<WorkflowTask> {
     return this.workflowAction('approveWorkflowTask', id, (task) => {
       task.status = 'queued';
     });
+  }
+
+  async getActionPolicy(): Promise<ActionPolicyResult> {
+    return this.dispatch('getActionPolicy', [], () => this.actionPolicyResult);
+  }
+
+  async setActionRisk(action: string, risk: RiskLevel): Promise<ActionPolicyEntry> {
+    return this.dispatch('setActionRisk', [action, risk], () => ({
+      action,
+      risk,
+      isDefault: false,
+      locked: false,
+      inDefaultPolicy: false,
+    }));
+  }
+
+  async deleteActionOverride(action: string): Promise<void> {
+    return this.dispatch('deleteActionOverride', [action], () => undefined);
   }
 
   async cancelWorkflowTask(id: string, reason = ''): Promise<WorkflowTask> {

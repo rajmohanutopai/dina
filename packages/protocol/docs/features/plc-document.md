@@ -48,7 +48,7 @@ specific conventions.
 | Verification-method type | `Multikey` (NOT `Ed25519VerificationKey2020`)         |
 | Public-key encoding | Multibase base58btc (leading `z`)                        |
 | Multicodec for Ed25519-pub | 0xed 0x01 varint (same as the did:key encoding)    |
-| Service types | `DinaMsgBox` (relay) or `DinaDirectHTTPS` (direct delivery) |
+| Service types | `DinaMsgBox` (relay — sole transport)                       |
 
 **Backward-compat readers MUST also accept** the hyphenated forms
 `#dina-signing` and `#dina-messaging` — pre-0.14 Dina builds emitted
@@ -74,8 +74,8 @@ For inbound auth handshake:
 - Types: [`types/plc_document.ts`](../../src/types/plc_document.ts)
   — `DIDDocument`, `VerificationMethod`, `ServiceEndpoint`.
 - Constants: `DINA_SIGNING_FRAGMENT`, `DINA_MESSAGING_FRAGMENT`,
-  `DID_V1_CONTEXT`, `MULTIKEY_CONTEXT`, `SERVICE_TYPE_MSGBOX`,
-  `SERVICE_TYPE_DIRECT_HTTPS` in [`constants.ts`](../../src/constants.ts).
+  `DID_V1_CONTEXT`, `MULTIKEY_CONTEXT`, `SERVICE_TYPE_MSGBOX`
+  in [`constants.ts`](../../src/constants.ts).
 
 ## Vectors
 

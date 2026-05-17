@@ -343,7 +343,9 @@ export default function ChatScreen() {
 
       {verificationPending ? (
         <Pressable
-          onPress={() => router.push('/confirm-recovery-phrase')}
+          onPress={() =>
+            router.push({ pathname: '/confirm-recovery-phrase', params: { from: '/' } })
+          }
           accessibilityRole="button"
           accessibilityLabel="Confirm your recovery phrase"
           style={({ pressed }) => [

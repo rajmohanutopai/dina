@@ -3,7 +3,10 @@
 2. mobile is its own home node. as in, the mobile app dina is completely self sufficient - it is not a UI layer - the whole home node is in the mobile
 
 3. the functionality supported by dina are ask, remember, task, talk, peerlens, reminders, security, approvals and services
-3.1.  functionality 1  - remember  - ask dina to remember something and dina will remember. dina can add to memory, even if it is a normal convo and something feels like it should be remembered. the memory (vault) can be open (general), or locked (health, finance etc). dina classifier will clasiffy the item to remember and put it to appropriate vault. since it is being asked by the user, there is no further approval required even if it is a locked vault.
+3.1.  functionality 1  - remember  - ask dina to remember something and dina will remember. dina can add to memory, even if it is a normal convo and something feels like it should be remembered. the memory (vault) can be open (general), or locked (health, finance etc). dina classifier will clasiffy the item to remember and put it to appropriate vault. since it is being asked by the user, there is no further approval required even if it is a locked vault.   1. Personas are user-configurable — general/work/health/finance are just defaults, users can add or delete. Any code that hardcodes a persona list (like classifyDomain's DOMAINS array, or my old
+  2. Cross-domain synthesis is the actual goal — "appropriate dinosaur toy" requires merging Emma-preferences (general) with budget-state (finance) with maybe schedule-state (work). The multi-persona walk is
+  necessary, not over-engineering.
+
 3.2.  functionality 2  - ask  - this is normal chat. dina can do actions for you or bring some information back from memeory. dina mobile is considered safe space (asked by the user), there is no further approval required even if it is a locked vault
 3.3.  functionality 3  - reminders  - if i ask dina to remember that Emmas birthday is on May 7th - it will automatically create a reminder on May 6th reminding me to buy dinosaur themed toys because dina remembers that Emma loves dinosaurs. basically reminders are created automatically based on discussion and it also brings additional information from the vaults which are pertinent for the reminder
 3.4.  functionality 4  - task  - if you have openclaw or hermes or other agent integration, you can give dina a task. dina will connect with openclaw using dina-agent cli tool, and get the action done. dina-agent cli tool will connect to your dina using msgbox cloud service. extremely important - dina never connects to the openclaw system straight - it always goes through msgbox cloud service. similarly, extremely important - dina never does any function other than the ones listed in here - anything more , it uses the openclaw system connected to it
@@ -84,8 +87,37 @@ then you setup sessions to test
 (.venv) ~/dina % dina session start
   Session: ses_55s3khhq55s3 (SName-25Mar0728:22) active
 (.venv) ~/dina % dina ask --session ses_55s3khhq55s3  "Which bank has my account" 
+I don't have access to your bank account details.
+
 approval will come to dina mobile app
 🔐 claw-agent wants to access health
 [Approve] [Deny] [Approve Once]
 ✅ Approved: apr-1774423823840426930
+
+Agent can query that previous questions status to get the answer, once approval is available. Also, further questions in that session related to finance will be allowed
+(.venv) ~/dina % dina ask --session ses_55s3khhq55s3  "Which bank has my account"
+Your account is with Barclay's (ending in 0102).
+  req_id: 55e828fcf816
+
+13.4.1 approval for agent validation
+(.venv) ~/dina % dina validate --session $S search "best ergonomic chair"
+status: approved
+risk: SAFE
+
+(.venv) ~/dina % dina validate --session $S send_email "draft resignation letter to HR"
+status: pending_approval
+risk: MODERATE
+
+(.venv) ~/dina % dina validate --session $S transfer_money "500 to vendor account"
+status: pending_approval
+risk: HIGH
+
+(.venv) ~/dina % dina validate --session $S read_vault "health records"
+status: denied
+risk: BLOCKED
+
+🔐 claw-agent wants to send resignation email to HR 
+[Approve] [Deny] [Approve Once]
+✅ Approved: apr-1774423823840426930
+
 

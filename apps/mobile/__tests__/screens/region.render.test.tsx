@@ -21,15 +21,23 @@ import {
 } from '../../src/services/user_preferences';
 import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 
-// Capture router.back calls so the test can assert pop-on-select.
+// Capture pop-on-select calls. The screen uses `router.replace` (not
+// `router.back`) to land on Settings — replace prevents the user from
+// walking back into a stale region screen. We accept either signal so
+// a future revert to `back()` doesn't silently break the assertions.
 let backCalls = 0;
+const replaceCalls: string[] = [];
 jest.mock('expo-router', () => {
   const actual = jest.requireActual('../../__mocks__/expo-router');
   return {
     ...actual,
     useRouter: () => ({
       push: () => undefined,
-      replace: () => undefined,
+      replace: (href: string) => {
+        replaceCalls.push(href);
+        // Count replace as a pop so legacy assertions keep working.
+        backCalls += 1;
+      },
       back: () => {
         backCalls += 1;
       },
@@ -56,6 +64,7 @@ beforeEach(async () => {
   await resetUserPreferencesForTest();
   stubLocale('en-US');
   backCalls = 0;
+  replaceCalls.length = 0;
 });
 
 afterEach(() => {

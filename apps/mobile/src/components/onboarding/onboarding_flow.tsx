@@ -158,6 +158,7 @@ export function OnboardingFlow(): React.ReactElement {
         <MnemonicVerify
           mnemonic={step.draft.mnemonic}
           onBack={goBack}
+          onViewPhrase={() => setStep({ kind: 'create_mnemonic_reveal', draft: step.draft })}
           onVerified={() => {
             // Defensive — clear any leftover `pending` marker before
             // advancing. Normally absent on a fresh flow; covers the

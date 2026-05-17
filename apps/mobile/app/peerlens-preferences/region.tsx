@@ -59,8 +59,8 @@ export default function RegionScreen(): React.ReactElement {
   const onSelect = useCallback(
     async (code: string | null) => {
       // Optimistic save — write through then pop. If the keystore
-      // write throws, expo-router's router.back() still fires; the
-      // user lands back on the parent with the OLD region intact (the
+      // write throws, expo-router's router.replace still fires; the
+      // user lands back on Settings with the OLD region intact (the
       // hook didn't update because the write failed). That's the
       // right behaviour: a save failure should NOT silently appear
       // committed.
@@ -74,7 +74,7 @@ export default function RegionScreen(): React.ReactElement {
         // screen). The hook didn't update, so the parent shows the
         // unchanged region — which IS the truth.
       }
-      router.back();
+      router.replace('/settings');
     },
     [profile, router, save],
   );

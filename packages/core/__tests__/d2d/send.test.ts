@@ -24,7 +24,6 @@ const baseReq = {
   senderDID,
   senderPrivateKey: senderPriv,
   recipientPublicKey: recipientPub,
-  serviceType: 'DinaMsgBox' as const,
   endpoint: 'wss://mailbox.dinakernel.com',
 };
 

@@ -210,7 +210,7 @@ describe('@dina/protocol npm-publish readiness (task 10.18 prep)', () => {
         expect(typeof built.buildCanonicalPayload).toBe('function');
         expect(typeof built.buildMessageJSON).toBe('function');
         expect(built.SERVICE_TYPE_MSGBOX).toBe('DinaMsgBox');
-        expect(built.SERVICE_TYPE_DIRECT_HTTPS).toBe('DinaDirectHTTPS');
+        expect(built.SERVICE_TYPE_DIRECT_HTTPS).toBeUndefined();
         // Bounds check — the public API surface today is ~35 exports;
         // if it drops below 20 the build clearly stripped too much.
         expect(Object.keys(built).length).toBeGreaterThanOrEqual(20);

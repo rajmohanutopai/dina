@@ -335,6 +335,44 @@ Rules:
 - Never penalize emotional expression — only flag AI-as-companion patterns`;
 
 /**
+ * REMINDER_QUERY_EXPANSION — Broaden the retrieval query for a
+ * reminder so cross-domain facts (finance budget, schedule
+ * conflicts, people preferences) can surface alongside the literal
+ * event text.
+ *
+ * The result is appended to the FTS5 keyword set; the engine OR-
+ * joins terms, so adding "budget" lets a finance-vault note
+ * mentioning "budget tight" rank into the context for an "Emma's
+ * birthday" reminder. The list MUST be short — every term widens
+ * the recall and dilutes ranking precision. 3–8 short keywords or
+ * 2-word phrases hits the sweet spot.
+ *
+ * Lite-tier (gemini-flash-lite class) is enough — this is a
+ * keyword-association task, not synthesis.
+ */
+export const REMINDER_QUERY_EXPANSION = `You help retrieve relevant facts from a personal vault for an upcoming reminder.
+
+Reminder subject: {{subject}}
+Body: {{body}}
+
+What topical keywords (besides words already in the subject/body) would help find related facts the user has stored? Think about:
+- People named: their preferences, family role, recent updates
+- Implied actions: birthday → gift/purchase; meeting → preparation/agenda; arrival → hospitality; travel → packing/booking; payment → balance/budget
+- Cross-domain context that changes the right answer: purchase → budget/spending/savings; medical → conditions/allergies/medications; travel → calendar conflicts
+
+Return ONLY a JSON array of 3–8 short keywords or 2-word phrases. No commentary, no markdown fences.
+
+Examples:
+Input: "Emma's birthday is on November 7th"
+Output: ["birthday gift", "purchase", "budget", "spending", "Emma preferences"]
+
+Input: "Doctor appointment next Tuesday at 10am"
+Output: ["medication", "symptoms", "insurance", "prior appointments", "fasting"]
+
+Input: "Sancho is arriving in 15 minutes"
+Output: ["Sancho preferences", "guest", "coffee", "snack", "recent updates"]`;
+
+/**
  * REMINDER_PLAN — Extract reminders from an item with events.
  *
  * Aligned with Python `PROMPT_REMINDER_PLANNER_SYSTEM`
@@ -644,6 +682,7 @@ export const PROMPT_REGISTRY: Record<string, string> = {
   ANTI_HER,
   ANTI_HER_CLASSIFY,
   REMINDER_PLAN,
+  REMINDER_QUERY_EXPANSION,
   NUDGE_ASSEMBLE,
   PERSON_IDENTITY_EXTRACTION,
   VAULT_CONTEXT,

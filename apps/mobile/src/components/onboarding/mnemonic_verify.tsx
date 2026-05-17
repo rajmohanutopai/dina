@@ -8,7 +8,7 @@
  */
 
 import React, { useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { OnboardingShell } from './shell';
 import { locateStep, type Step } from '../../onboarding/state';
 import { createVerificationChallenge, verifyMnemonicAnswers } from '../../hooks/useOnboarding';
@@ -37,6 +37,12 @@ export interface MnemonicVerifyProps {
    * chrome).
    */
   compact?: boolean;
+  /**
+   * When provided (onboarding only), renders a "View my recovery phrase
+   * again" link so the user can go back and copy the words they may have
+   * missed. Omit in the Settings confirm flow — user already has the phrase.
+   */
+  onViewPhrase?: () => void;
 }
 
 export function MnemonicVerify(props: MnemonicVerifyProps): React.ReactElement {
@@ -125,6 +131,17 @@ export function MnemonicVerify(props: MnemonicVerifyProps): React.ReactElement {
       ))}
 
       {error !== null ? <Text style={styles.error}>{error}</Text> : null}
+
+      {props.onViewPhrase !== undefined ? (
+        <Pressable
+          onPress={props.onViewPhrase}
+          accessibilityRole="link"
+          accessibilityLabel="View my recovery phrase again"
+          style={styles.viewPhraseLink}
+        >
+          <Text style={styles.viewPhraseLinkText}>View my recovery phrase again</Text>
+        </Pressable>
+      ) : null}
     </OnboardingShell>
   );
 }
@@ -157,5 +174,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     color: colors.error,
+  },
+  viewPhraseLink: {
+    marginTop: spacing.lg,
+    alignItems: 'center',
+  },
+  viewPhraseLinkText: {
+    fontFamily: fonts.sans,
+    fontSize: 14,
+    color: colors.accent,
+    textDecorationLine: 'underline',
   },
 });

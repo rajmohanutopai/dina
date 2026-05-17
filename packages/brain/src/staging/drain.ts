@@ -461,9 +461,16 @@ export async function runStagingDrainTick(
         data: enriched,
       });
       if (resolveResult.status !== 'stored') {
+        // Use the storage target (`personas[0]`), not the keyword
+        // classifier's raw output. Same reasoning as the stored
+        // branch below: the keyword DOMAINS table includes legacy
+        // persona names (`social`, `legal`, `professional`) that
+        // may not be installed on this device, while `personas[0]`
+        // comes from the LLM-rich selector or the threshold fan-out
+        // — both of which target real, installed personas.
         const result: StagingProcessResult = {
           itemId,
-          persona: classification.persona,
+          persona: personas[0] ?? classification.persona,
           status: resolveResult.status === 'pending_unlock' ? 'pending_unlock' : 'failed',
           enriched: true,
         };
@@ -484,9 +491,20 @@ export async function runStagingDrainTick(
         personas,
       });
 
+      // The primary persona where the item actually got stored is
+      // `personas[0]`, not `classification.persona`. `classification`
+      // is the keyword-classifier's best-match output (used as a
+      // weak prior); the actual storage destination is the rich-LLM
+      // primary (when registered) or the threshold-gated keyword
+      // fan-out, both of which can differ from the bare keyword
+      // best-match. Reporting `classification.persona` here led to
+      // "Stored in Social vault" replies in chat while the row
+      // actually landed in `general` — the keyword classifier scored
+      // 'birthday' as a weak social signal, while the LLM (or the
+      // 0.5-threshold fan-out) correctly fell back to general.
       const result: StagingProcessResult = {
         itemId,
-        persona: classification.persona,
+        persona: personas[0] ?? classification.persona,
         status: 'stored',
         enriched: true,
       };

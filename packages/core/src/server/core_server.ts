@@ -31,6 +31,7 @@ import { registerScratchpadRoutes } from './routes/scratchpad';
 import { registerIntentRoutes } from './routes/intent';
 import { registerSessionRoutes } from './routes/session';
 import { registerAskRoutes, setAskRouteHandler, type AskRouteHandler, type AskRouteOptions } from './routes/ask';
+import { registerPolicyRoutes } from './routes/policy';
 export { setAskRouteHandler, type AskRouteHandler };
 import { setDeviceRoleResolver } from '../auth/caller_type';
 import { getDeviceByDID } from '../devices/registry';
@@ -126,6 +127,8 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   // resumes and returns the answer. Always registered; returns 503 until
   // `setAskRouteHandler` installs the Brain coordinator at boot.
   registerAskRoutes(router, options.ask ?? {});
+
+  registerPolicyRoutes(router);
 
   return router;
 }

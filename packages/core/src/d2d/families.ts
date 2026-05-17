@@ -7,8 +7,8 @@
  *   coordination.response → stored (reply to coordination)
  *   social.update         → stored as "relationship_note"
  *   safety.alert          → always passes (cannot be blocked by policy)
- *   trust.vouch.request   → stored (identity verification request)
- *   trust.vouch.response  → stored as "trust_attestation"
+ *   peerlens.vouch.request   → stored (identity verification request)
+ *   peerlens.vouch.response  → stored as "trust_attestation"
  *   service.query         → never stored (ephemeral, public-service query)
  *   service.response      → never stored (ephemeral, public-service response)
  *
@@ -100,7 +100,7 @@ const V1_TYPES = new Set<string>(V1_TYPES_LIST);
  * `safety.alert` had no entry) was caught by the contract test we added,
  * and is now also caught at compile time here.
  *
- * `coordination.*` and `trust.vouch.request` are free-form chat-style
+ * `coordination.*` and `peerlens.vouch.request` are free-form chat-style
  * payloads → generic `message`. `safety.alert` is storable (bypasses
  * sharing-policy gates so a record is always retained); since the vault
  * validator has no dedicated `safety_alert` type, pin to `message` —

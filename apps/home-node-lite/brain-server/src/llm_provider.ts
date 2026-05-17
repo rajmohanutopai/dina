@@ -7,7 +7,9 @@
  */
 
 import {
+  createGeminiEmbeddingProvider,
   GeminiGenaiAdapter,
+  type EmbeddingProvider,
   type LLMProvider,
   type ProviderName,
 } from '@dina/brain';
@@ -17,6 +19,9 @@ import type { BrainServerConfig } from './config';
 export interface BrainServerLLMRuntime {
   llm: LLMProvider;
   providerName: ProviderName;
+  /** Embedding provider matched to the chat provider's credentials.
+   *  Forwarded to `buildHomeNodeAskRuntime` for shared registration. */
+  embedding?: { name: string; generate: EmbeddingProvider };
 }
 
 export function buildBrainServerLLMRuntime(
@@ -32,6 +37,10 @@ export function buildBrainServerLLMRuntime(
           apiKey: config.apiKey,
           ...(config.model !== undefined ? { defaultModel: config.model } : {}),
         }),
+        embedding: {
+          name: 'gemini-embedding-001',
+          generate: createGeminiEmbeddingProvider({ apiKey: config.apiKey }),
+        },
       };
   }
 }

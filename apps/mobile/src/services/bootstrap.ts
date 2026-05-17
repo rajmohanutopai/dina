@@ -53,6 +53,7 @@ import {
   setServiceRespondSender,
   setWorkflowRepository,
   setWorkflowService,
+  getWorkflowService,
   setWSDeliverFn,
   type CoreClient,
   type CoreRouter,
@@ -133,11 +134,8 @@ import {
   resetServiceDenyCommandHandler,
   setAskCommandHandler,
   resetAskCommandHandler,
-  setRememberCoreClient,
-  resetRememberCoreClient,
-  setRememberDrainHook,
-  resetRememberDrainHook,
 } from '@dina/brain/chat';
+import { wireChatRememberRuntime } from '@dina/home-node/chat-runtime';
 import {
   addDinaResponse,
   addApprovalMessage,
@@ -788,8 +786,6 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     globalDisposers.push(resetInboxCoreClient);
     setServiceConfigCoreClient(options.coreClient);
     globalDisposers.push(resetServiceConfigCoreClient);
-    setRememberCoreClient(options.coreClient);
-    globalDisposers.push(resetRememberCoreClient);
     // Pattern A coordinator wins over the simpler agenticAsk path —
     // coordinator subsumes the tool-loop and adds the suspend/resume
     // chain. Tests / minimal nodes that don't need approval gating
@@ -840,41 +836,21 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       globalDisposers.push(resetAskCommandHandler);
     }
 
-    // /remember drain hook — when the staging scheduler is wired,
-    // route /remember through it so the user-facing reply mirrors
-    // Python's Telegram flow: "Stored in <persona> vault." + the
-    // auto-generated reminder list. Without this hook, the
-    // orchestrator falls back to the bare "Got it" ack.
+    // /remember orchestrator wiring — Core transport + drain hook —
+    // delegated to the shared `@dina/home-node/chat-runtime` helper
+    // so this module and the home-node-lite brain-server boot stay
+    // in lock-step (no duplicate retry budgets / status branches).
+    // The mobile-specific bit is `lookupPendingApproval`: we read
+    // the staging row in-process to surface the approval id when
+    // the classifier routes to a closed persona. Brain-server can't
+    // do that (Core lives in another process) and omits the lookup.
     if (stagingDrain !== null) {
-      setRememberDrainHook(async (stagingId) => {
-        // Drive the drain until OUR row reaches `stored`. The scheduler's
-        // in-flight-coalesce may return a tick that doesn't include our
-        // item (if a periodic tick was already running when /remember
-        // fired), so keep invoking runTick + checking the staging row
-        // up to a small retry budget. On mobile the drain is in-process
-        // so each tick is sub-second.
-        const MAX_ATTEMPTS = 5;
-        for (let i = 0; i < MAX_ATTEMPTS; i++) {
-          const tick = await stagingDrain.runTick();
-          const item = tick.results.find((r) => r.itemId === stagingId);
-          if (item?.status === 'stored' && item.persona) {
-            return { persona: item.persona };
-          }
-          // MT-13-I1: when the classifier routes to a closed persona,
-          // staging parks the row in pending_unlock + opens a
-          // workflow approval task. Forward the classified persona so
-          // the chat reply can tell the user what's parked and why
-          // (instead of the misleading "Got it — I'll remember that").
-          if (item?.status === 'pending_unlock' && item.persona) {
-            const stagingRow = stagingGetItem(stagingId);
-            const pendingNeedsApproval = stagingRow?.approval_id !== undefined;
-            return { persona: null, pendingPersona: item.persona, pendingNeedsApproval };
-          }
-          if (item?.status === 'failed') break;
-        }
-        return { persona: null };
+      const chatRuntime = wireChatRememberRuntime({
+        core: options.coreClient,
+        stagingDrain,
+        lookupPendingApproval: stagingGetItem,
       });
-      globalDisposers.push(resetRememberDrainHook);
+      globalDisposers.push(() => chatRuntime.dispose());
     }
   };
 
@@ -1184,8 +1160,14 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       // claimed. A node constructed with `coreGlobals: false` never
       // wrote to the singletons, so tearing them down here would clobber
       // whatever the process actually uses. Issue #2.
+      //
+      // Ownership guard on workflowService: React StrictMode double-mount
+      // can cause a concurrent boot (Boot 2) to install its own
+      // workflowService BEFORE this node's dispose() finishes. Without
+      // the check, dispose() would clobber Boot 2's singleton with null,
+      // leaving its WorkflowEventConsumer permanently failing with 503.
       if (coreGlobals) {
-        setWorkflowService(null);
+        if (getWorkflowService() === workflowService) setWorkflowService(null);
         setWorkflowRepository(null);
         setServiceQuerySender(null);
         setServiceRespondSender(null);

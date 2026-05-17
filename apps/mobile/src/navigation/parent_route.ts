@@ -17,8 +17,9 @@
  * predictably.
  *
  * Sections covered here:
- *   - Settings family (`/admin`, `/paired-devices`,
- *     `/service-settings` → `/settings`; `/settings` → `/`)
+ *   - Settings family (`/admin`, `/policy`, `/paired-devices`,
+ *     `/service-settings`, `/recovery-phrase`, `/confirm-recovery-phrase`,
+ *     `/peerlens-preferences/*` → `/settings`; `/settings` → `/`)
  *   - Chat thread + add-contact (reached from People tab)
  *   - Hamburger items not in a Stack folder (`/help`, `/reminders`)
  */
@@ -37,8 +38,13 @@ const SECTION_PARENTS: Record<string, string> = {
   // Settings family — every subscreen returns to /settings, and
   // settings itself returns to Chat.
   admin: '/settings',
+  policy: '/admin',
   'paired-devices': '/settings',
   'service-settings': '/settings',
+  'recovery-phrase': '/settings',
+  'confirm-recovery-phrase': '/settings',
+  // All /peerlens-preferences/* sub-screens return to Settings.
+  'peerlens-preferences': '/settings',
   // Hamburger-menu items return to the Chat tab as the safe default.
   // We don't track which tab the user was on when they opened the
   // menu — making that reliable would need an explicit "menu source"

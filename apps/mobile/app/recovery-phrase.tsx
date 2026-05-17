@@ -27,6 +27,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AppState,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -34,7 +35,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { entropyToMnemonic, unwrapSeed } from '@dina/core';
 import { loadWrappedSeed } from '../src/services/wrapped_seed_store';
 import { colors, fonts, radius, spacing } from '../src/theme';
@@ -51,6 +52,13 @@ const IDLE_HIDE_MS = 60_000;
 
 export default function RecoveryPhraseScreen(): React.ReactElement {
   const router = useRouter();
+  const { from } = useLocalSearchParams<{ from?: string }>();
+  // Honour ?from so confirm-recovery-phrase → view phrase → back returns
+  // to the verify step, and Settings → view phrase → back returns to Settings.
+  const backTarget: string =
+    typeof from === 'string' && from.startsWith('/') && !from.startsWith('//')
+      ? from
+      : '/settings';
   const [mode, setMode] = useState<Mode>('gate');
   const [passphrase, setPassphrase] = useState('');
   const [error, setError] = useState('');
@@ -144,8 +152,8 @@ export default function RecoveryPhraseScreen(): React.ReactElement {
         <Text style={styles.title}>Your recovery phrase</Text>
         <View style={styles.warningBanner}>
           <Text style={styles.warningText}>
-            Don't screenshot. Don't save to a cloud note. Anyone with these words can impersonate
-            your Dina identity. We'll auto-hide them in 60 seconds.
+            Keep these somewhere very safe. Anyone with these words can access your Dina identity.
+            We'll auto-hide them in 60 seconds.
           </Text>
         </View>
 
@@ -171,7 +179,7 @@ export default function RecoveryPhraseScreen(): React.ReactElement {
         <Pressable
           onPress={() => {
             wipeRevealed();
-            router.back();
+            router.replace(backTarget as never);
           }}
           accessibilityRole="button"
           accessibilityLabel="Hide recovery phrase and go back"
@@ -191,9 +199,9 @@ export default function RecoveryPhraseScreen(): React.ReactElement {
     >
       <Text style={styles.title}>View recovery phrase</Text>
       <Text style={styles.subtitle}>
-        Your 24-word phrase is the only way to restore your Dina identity on a new device. We don't
-        store the words — we re-derive them from your wrapped seed when you ask. Enter your
-        passphrase to continue.
+        Use this before upgrading or switching phones — enter your passphrase to see your 24 words
+        and write them down somewhere safe. As long as you have this app and your passphrase, you
+        can always retrieve them here.
       </Text>
 
       <Text style={styles.fieldLabel}>PASSPHRASE</Text>
@@ -249,9 +257,11 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
   },
   title: {
-    fontFamily: fonts.heading,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontStyle: 'italic',
     fontSize: 24,
     color: colors.textPrimary,
+    letterSpacing: -0.3,
     marginBottom: spacing.sm,
   },
   subtitle: {

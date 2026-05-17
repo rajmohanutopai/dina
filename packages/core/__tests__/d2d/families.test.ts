@@ -48,8 +48,8 @@ describe('D2D V1 Message Families', () => {
       expect(mapToVaultItemType('social.update')).toBe('relationship_note');
     });
 
-    it('maps trust.vouch.response → trust_attestation', () => {
-      expect(mapToVaultItemType('trust.vouch.response')).toBe('trust_attestation');
+    it('maps peerlens.vouch.response → trust_attestation', () => {
+      expect(mapToVaultItemType('peerlens.vouch.response')).toBe('trust_attestation');
     });
 
     it('returns null for presence.signal (never stored)', () => {
@@ -71,14 +71,14 @@ describe('D2D V1 Message Families', () => {
       });
     }
 
-    it('coordination + trust.vouch.request map to "message"', () => {
+    it('coordination + peerlens.vouch.request map to "message"', () => {
       // Free-form chat-style D2D payloads land in the vault under the
       // generic "message" type so they pass `validateVaultItem`. Without
       // this mapping the staged row gets dropped at the drain because
       // "coordination.request" isn't in VALID_VAULT_ITEM_TYPES.
       expect(mapToVaultItemType('coordination.request')).toBe('message');
       expect(mapToVaultItemType('coordination.response')).toBe('message');
-      expect(mapToVaultItemType('trust.vouch.request')).toBe('message');
+      expect(mapToVaultItemType('peerlens.vouch.request')).toBe('message');
     });
 
     it('safety.alert maps to the generic "message" vault type', () => {

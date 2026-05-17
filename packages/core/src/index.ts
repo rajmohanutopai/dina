@@ -628,7 +628,7 @@ export type { GuardianTier, NotificationPriority } from './notify/priority';
 export * from './transport/outbox';
 export type { OutboxEntry } from './transport/outbox';
 export * from './transport/delivery';
-export type { ServiceType, DeliveryResult } from './transport/delivery';
+export type { DeliveryResult } from './transport/delivery';
 export * from './transport/adversarial';
 export * from './ws/framing';
 export type { WSMessageType, WSMessage } from './ws/framing';
@@ -788,6 +788,9 @@ export type {
   MemoryTouchResult,
   UpdateContactParams,
   Contact,
+  ActionPolicyEntry,
+  ActionPolicyResult,
+  RiskLevel,
 } from './client/core-client';
 // Relay / MsgBox RPC envelope helpers — used by the home-node-lite
 // core-server's MsgBox client to seal/unseal CoreRPCRequest +
