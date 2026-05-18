@@ -316,3 +316,11 @@ coverage/
 apps/mobile/android/
 apps/mobile/ios/
 
+# Playwright artifacts — html reports, traces, screenshots. CI uploads
+# the report on failure; locally the operator looks at the on-disk
+# version. Neither belongs in git. The SPA bundle output is generated
+# by `npm run build:bundle` and is reproducible on demand.
+apps/home-node-lite/web/playwright-report/
+apps/home-node-lite/web/test-results/
+apps/home-node-lite/web/dist/
+

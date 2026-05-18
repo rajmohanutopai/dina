@@ -11,7 +11,7 @@
  * (URL set but no password) is well-defined.
  */
 
-import * as Keychain from 'react-native-keychain';
+import * as Keychain from './keychain';
 
 const SERVICE_PDS_URL = 'dina.infra.pds_url';
 const SERVICE_PDS_HANDLE = 'dina.infra.pds_handle';

@@ -12,7 +12,8 @@
  * ServicePublisher or register inbound handlers.
  */
 
-import * as Keychain from 'react-native-keychain';
+import * as Keychain from './keychain';
+
 import type { NodeRole } from './bootstrap';
 
 const SERVICE = 'dina.node_role';

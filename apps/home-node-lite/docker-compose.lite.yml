@@ -117,8 +117,22 @@ services:
       DINA_OPENAI_API_KEY: ${DINA_OPENAI_API_KEY:-}
       DINA_GEMINI_API_KEY: ${DINA_GEMINI_API_KEY:-}
       DINA_MODEL_DEFAULT: ${DINA_MODEL_DEFAULT:-anthropic:claude-haiku-4-5}
+      # Web SPA serving — when `install-lite.sh --web-ui` runs, it
+      # writes `DINA_BRAIN_WEB_UI=1` into .env and that flows through
+      # here. The SPA bundle is bind-mounted into the container at
+      # /web-dist; brain reads it via `DINA_BRAIN_WEB_BUNDLE_DIR`.
+      # Default is the empty string so the regular install path stays
+      # silent — `webUI: 'disabled'` in /readyz.
+      DINA_BRAIN_WEB_UI: ${DINA_BRAIN_WEB_UI:-}
+      DINA_BRAIN_WEB_BUNDLE_DIR: /web-dist
     ports:
       - "${DINA_BRAIN_PORT_EXTERNAL:-8200}:8200"
+    volumes:
+      # Web SPA bundle bind-mount. The host path is empty (so the
+      # mount is harmless) when --web-ui wasn't passed; install-lite
+      # creates it before `docker compose up` so brain finds
+      # /web-dist/index.html on boot.
+      - ./web/dist:/web-dist:ro
     networks:
       - dina-lite
     # Task 7.18 — Brain waits for Core to be healthy before booting.

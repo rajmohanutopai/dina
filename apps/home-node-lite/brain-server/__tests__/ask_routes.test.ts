@@ -3,14 +3,19 @@
  *
  * Drives the routes through `app.inject(...)` so no real socket is
  * opened. Wires a real `AskCoordinator` with a scripted LLM provider,
- * the in-memory `ApprovalManager`, and a real persona / vault setup —
- * proves the full Pattern A chain (submit → 200 pending_approval →
- * approve → status complete) end-to-end behind HTTP.
+ * an in-memory workflow-task coreClient stub, and a real persona /
+ * vault setup — proves the full Pattern A chain (submit → 200
+ * pending_approval → approve → status complete) end-to-end behind HTTP.
+ *
+ * The coreClient stub mirrors the pattern in
+ * `packages/brain/__tests__/composition/ask_coordinator.test.ts` —
+ * a single object satisfies both `BuildAgenticAskPipelineInput['coreClient']`
+ * (the find-preferred-provider surface) and `AskCoordinatorCoreClient`
+ * (the workflow-task surface) so one wiring serves both.
  */
 
 import Fastify, { type FastifyInstance } from 'fastify';
 
-import { ApprovalManager, createPersona, resetPersonaState } from '@dina/core';
 import {
   buildAgenticAskPipeline,
   buildAgenticExecuteFn,
@@ -19,12 +24,20 @@ import {
   resetReasoningProvider,
   resetReminderLLM,
   setAccessiblePersonas,
+  type AskCoordinatorCoreClient,
   type BuildAgenticAskPipelineInput,
   type ChatResponse,
   type LLMProvider,
   type ToolCall,
 } from '@dina/brain';
-import { clearVaults, storeItem } from '@dina/core';
+import {
+  clearVaults,
+  createPersona,
+  resetPersonaState,
+  storeItem,
+  type CreateWorkflowTaskInput,
+  type WorkflowTask,
+} from '@dina/core';
 
 import { registerAskRoutes } from '../src/routes/ask';
 
@@ -108,36 +121,77 @@ function fakeOrchestrator(): BuildAgenticAskPipelineInput['orchestratorHandle'] 
   };
 }
 
-function fakeCoreClient(): BuildAgenticAskPipelineInput['coreClient'] {
+interface FakeTaskRecord {
+  id: string;
+  status: string;
+  payload: string;
+}
+
+/** In-memory `AskCoordinatorCoreClient` — same shape the brain package's
+ *  own coordinator tests use. Implements both the find-preferred-provider
+ *  surface (pipeline input) and the workflow-task surface (coordinator)
+ *  in one object so a single wiring drives both. */
+function makeFakeCoreClient(): AskCoordinatorCoreClient &
+  BuildAgenticAskPipelineInput['coreClient'] {
+  const tasks = new Map<string, FakeTaskRecord>();
+  const setStatus = (id: string, status: string): void => {
+    const t = tasks.get(id);
+    if (t) t.status = status;
+  };
   return {
     async findContactsByPreference() {
       return [];
+    },
+    async createWorkflowTask(input: CreateWorkflowTaskInput) {
+      if (tasks.has(input.id)) {
+        throw new Error(`fakeCoreClient: duplicate task id ${input.id}`);
+      }
+      const t: FakeTaskRecord = {
+        id: input.id,
+        status: input.initialState ?? 'pending_approval',
+        payload: input.payload,
+      };
+      tasks.set(input.id, t);
+      return { task: t as unknown as WorkflowTask, deduped: false };
+    },
+    async getWorkflowTask(id: string) {
+      return (tasks.get(id) as unknown as WorkflowTask) ?? null;
+    },
+    async completeWorkflowTask(id: string) {
+      setStatus(id, 'completed');
+      return tasks.get(id) as unknown as WorkflowTask;
+    },
+    async approveWorkflowTask(id: string) {
+      setStatus(id, 'queued');
+      return tasks.get(id) as unknown as WorkflowTask;
+    },
+    async cancelWorkflowTask(id: string) {
+      setStatus(id, 'cancelled');
+      return tasks.get(id) as unknown as WorkflowTask;
     },
   };
 }
 
 interface Harness {
   app: FastifyInstance;
-  approvalManager: ApprovalManager;
   push: (...rs: ChatResponse[]) => void;
   close: () => Promise<void>;
 }
 
 async function buildHarness(): Promise<Harness> {
   const llm = makeScripted();
-  const approvalManager = new ApprovalManager();
+  const coreClient = makeFakeCoreClient();
   const pipeline = buildAgenticAskPipeline({
     llm: llm.provider,
     providerName: 'gemini',
     appViewClient: fakeAppView(),
     orchestratorHandle: fakeOrchestrator(),
-    coreClient: fakeCoreClient(),
+    coreClient,
     cloudConsentGranted: true,
-    approvalManager,
   });
   const coordinator = createAskCoordinator({
     pipeline,
-    approvalManager,
+    coreClient,
     executeFn: buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT }),
     systemPrompt: SYSTEM_PROMPT,
     fastPathMs: 1_000,
@@ -149,7 +203,6 @@ async function buildHarness(): Promise<Harness> {
 
   return {
     app,
-    approvalManager,
     push: llm.push,
     close: () => app.close(),
   };
@@ -316,9 +369,6 @@ describe('Pattern A end-to-end through HTTP routes', () => {
       const finalBody = final.json();
       expect(finalBody.status).toBe('complete');
       expect(finalBody.answer).toEqual({ text: 'Your BP was 120/80.' });
-
-      // Approval was consumed.
-      expect(h.approvalManager.getRequest(`appr-${askId}-health`)).toBeUndefined();
     } finally {
       await h.close();
     }

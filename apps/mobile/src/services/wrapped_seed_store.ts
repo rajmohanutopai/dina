@@ -17,8 +17,10 @@
  * trap the user forever.
  */
 
-import * as Keychain from 'react-native-keychain';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
+
+import * as Keychain from './keychain';
+
 import type { WrappedSeed } from '@dina/core';
 
 const SERVICE = 'dina.vault.wrapped_seed';

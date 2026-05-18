@@ -25,33 +25,38 @@
  * Brain composition reuses.
  */
 
+import path from 'node:path';
+
 import Fastify, { type FastifyInstance } from 'fastify';
+
 import { AppViewClient, StagingDrainScheduler } from '@dina/brain';
-import type { AskCoordinator } from '@dina/brain';
 import { installNodeTraceScopeStorage } from '@dina/brain/node-trace-storage';
 import {
   buildHomeNodeAskRuntime,
   type HomeNodeAskRuntime,
   type HomeNodeAskRuntimeOptions,
 } from '@dina/home-node/ask-runtime';
-import type { HomeNodeRuntime } from '@dina/home-node';
+import {
+  wireChatRememberRuntime,
+  type ChatRememberRuntimeHandle,
+} from '@dina/home-node/chat-runtime';
 import {
   buildHomeNodeServiceRuntime,
   type HomeNodeServiceRuntime,
   type HomeNodeServiceRuntimeOptions,
 } from '@dina/home-node/service-runtime';
-import type { CoreClient } from '@dina/core';
 
-import { buildCoreClient, type CoreClientStatus } from './core_client';
 import { loadConfig, type BrainServerConfig } from './config';
+import { buildCoreClient, type CoreClientStatus } from './core_client';
 import { buildBrainServerLLMRuntime } from './llm_provider';
 import { createLogger, type Logger } from './logger';
 import { registerAskRoutes } from './routes/ask';
 import { registerChatRoutes } from './routes/chat';
-import {
-  wireChatRememberRuntime,
-  type ChatRememberRuntimeHandle,
-} from '@dina/home-node/chat-runtime';
+import { registerWebRoutes } from './routes/web';
+
+import type { AskCoordinator } from '@dina/brain';
+import type { CoreClient } from '@dina/core';
+import type { HomeNodeRuntime } from '@dina/home-node';
 
 export interface BrainServerClients {
   appView: AppViewClient;
@@ -64,6 +69,17 @@ export interface BrainServerDependencyStatus {
   askRoutes: 'configured' | 'disabled';
   serviceRuntime: 'configured' | 'disabled';
   stagingDrain: 'running' | 'disabled';
+  /**
+   * Web SPA serving status.
+   *   - `'disabled'`  — `DINA_BRAIN_WEB_UI` is unset/false (production default).
+   *   - `'configured'` — flag is set and the bundle was found + mounted.
+   *   - `'missing_bundle'` — flag is set but `web/dist/index.html` is missing.
+   *      Boot does NOT crash; the rest of the brain server stays up so an
+   *      operator can run `npm run web:export` and re-enable on the next
+   *      restart. The status is surfaced via `/readyz` so they can see why
+   *      `/web/` is 404'ing.
+   */
+  webUI: 'configured' | 'disabled' | 'missing_bundle';
   /**
    * `'pending'` while `bootServer` is mid-flight (route handler also
    * sees this if `/readyz` is hit before listen returns). Flips to
@@ -169,6 +185,7 @@ export async function bootServer(
     askRoutes: 'disabled',
     serviceRuntime: 'disabled',
     stagingDrain: 'disabled',
+    webUI: 'disabled',
     runtime: 'pending',
   };
 
@@ -276,6 +293,36 @@ export async function bootServer(
   registerChatRoutes(app, {
     exposeDevUI: process.env.DINA_BRAIN_DEV_UI === '1',
   });
+
+  // SPA bundle serving. Opt-in via `DINA_BRAIN_WEB_UI=1` — same gate
+  // philosophy as `/dev`. The bundle is produced by `npx expo export
+  // --platform web` from `apps/mobile/`; default location is the
+  // sibling `apps/home-node-lite/web/dist/` directory so a `git pull`
+  // of a freshly built tree just works without env overrides.
+  //
+  // We swallow "bundle missing" rather than crash boot: the brain
+  // server has plenty of value (chat API, ask API) without the UI,
+  // and the operator's first signal that something's wrong is the
+  // `webUI: 'missing_bundle'` flag in `/readyz`.
+  if (process.env.DINA_BRAIN_WEB_UI === '1') {
+    const bundleDir =
+      process.env.DINA_BRAIN_WEB_BUNDLE_DIR ?? path.resolve(__dirname, '..', '..', 'web', 'dist');
+    try {
+      const result = await registerWebRoutes(app, { bundleDir });
+      dependencyStatus.webUI = 'configured';
+      logger.info(
+        { bundleDir: result.bundleDir, urlPrefix: result.urlPrefix },
+        'brain-server web UI configured',
+      );
+    } catch (err) {
+      dependencyStatus.webUI = 'missing_bundle';
+      logger.warn(
+        { bundleDir, error: err instanceof Error ? err.message : String(err) },
+        'brain-server web UI requested but bundle is missing — /web/ will 404 until built',
+      );
+    }
+  }
+
   app.get('/readyz', async (_req, reply) => {
     const checks = {
       appView: 'ok' as const,
@@ -283,11 +330,15 @@ export async function bootServer(
       askRoutes:
         dependencyStatus.askRoutes === 'configured' ? ('ok' as const) : ('disabled' as const),
       serviceRuntime:
-        dependencyStatus.serviceRuntime === 'configured'
-          ? ('ok' as const)
-          : ('disabled' as const),
+        dependencyStatus.serviceRuntime === 'configured' ? ('ok' as const) : ('disabled' as const),
       stagingDrain:
         dependencyStatus.stagingDrain === 'running' ? ('ok' as const) : ('disabled' as const),
+      webUI:
+        dependencyStatus.webUI === 'configured'
+          ? ('ok' as const)
+          : dependencyStatus.webUI === 'missing_bundle'
+            ? ('missing_bundle' as const)
+            : ('disabled' as const),
       runtime: dependencyStatus.runtime === 'ok' ? ('ok' as const) : ('fail' as const),
     };
     // Ready when boot completed (`runtime === 'ok'`) AND Core is wired.

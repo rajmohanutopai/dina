@@ -1,0 +1,18 @@
+{
+  "name": "@dina/home-node-lite-web-e2e",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Playwright end-to-end smoke tests for the React Native Web bundle served by brain-server's /web/* route. Opt-in: not part of root 'npm test' because Chromium downloads are heavy. CI invokes it explicitly via 'npm run -w @dina/home-node-lite-web-e2e test:e2e'.",
+  "license": "MIT",
+  "scripts": {
+    "build:bundle": "cd ../../mobile && npx expo export --platform web --output-dir ../home-node-lite/web/dist",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install --with-deps chromium",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22",
+    "typescript": "^5.6.0"
+  }
+}

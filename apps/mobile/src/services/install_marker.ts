@@ -35,7 +35,8 @@
  */
 
 import { File, Paths, type Directory } from 'expo-file-system';
-import * as Keychain from 'react-native-keychain';
+
+import * as Keychain from './keychain';
 
 /**
  * The marker file name. Lives in the documents directory alongside the
@@ -221,7 +222,7 @@ export function wipeOrphanVaultFiles(): void {
   try {
     const docDir = Paths.document;
     if (!docDir.exists) return;
-    const entries: ReadonlyArray<Directory | File> = docDir.list();
+    const entries: readonly (Directory | File)[] = docDir.list();
     for (const entry of entries) {
       if (!isSqliteArtifact(entry.name)) continue;
       try {

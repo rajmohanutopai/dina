@@ -19,6 +19,7 @@
 # Usage:
 #   ./apps/home-node-lite/install-lite.sh              # install (or re-run; idempotent)
 #   ./apps/home-node-lite/install-lite.sh --test-infra # install pointed at test-*.dinakernel.com (task 13.1)
+#   ./apps/home-node-lite/install-lite.sh --web-ui     # build SPA bundle + enable brain's /web/* mount
 #   ./apps/home-node-lite/install-lite.sh --uninstall  # stop + remove containers + network + vault
 #   ./apps/home-node-lite/install-lite.sh --help       # usage summary
 
@@ -43,6 +44,20 @@ ENV_EXAMPLE="${SCRIPT_DIR}/.env.example"
 # expects.
 TEST_INFRA=false
 PDS_URL_DEFAULT="https://bsky.social"
+
+# ─── Web UI flag (Phase 11) ────────────────────────────────────────────
+# When --web-ui is supplied, the installer ALSO:
+#   1. Builds the React Native Web SPA bundle from `apps/mobile/`
+#      into `apps/home-node-lite/web/dist/`. Requires Node + npm on
+#      the host; doesn't need Docker for the build step itself.
+#   2. Writes `DINA_BRAIN_WEB_UI=1` into `.env` so the brain
+#      container mounts `GET /web/*` and serves the bundle.
+#
+# Off by default — the web UI's trust boundary is the operator's
+# browser session (no Secure Enclave equivalent). See
+# `apps/home-node-lite/web/SECURITY.md` for the threat model
+# before exposing the brain port beyond loopback.
+WEB_UI=false
 
 # ─── ANSI colour helpers ───────────────────────────────────────────────
 if [ -t 1 ]; then
@@ -77,6 +92,13 @@ Commands:
                    bsky.social. Used for the Phase 13 adoption soak
                    (task 13.1). Compose with an empty handle to skip
                    PDS publish entirely during local dev.
+
+  --web-ui         Modifier on (no flag) — also build the React Native
+                   Web SPA bundle and enable the brain container's
+                   /web/* mount. After install completes, the UI is
+                   served at http://127.0.0.1:<brain-port>/web/. Read
+                   apps/home-node-lite/web/SECURITY.md before exposing
+                   beyond loopback.
 
   --uninstall      Stop + remove containers, network, and the named
                    dina-core-vault volume. Destructive — your mnemonic
@@ -206,6 +228,35 @@ print_credentials() {
   fi
 }
 
+build_web_ui() {
+  # Phase 11 — build the SPA bundle from apps/mobile so the brain
+  # container can serve it at /web/*. Idempotent: if the bundle is
+  # already present and fresher than its sources, npm's build step
+  # is still cheap (Metro re-uses incremental cache).
+  require_tool node
+  require_tool npm
+  local repo_root
+  repo_root="$(cd "$SCRIPT_DIR/../.." && pwd)"
+  info "building React Native Web SPA bundle..."
+  (
+    cd "$repo_root"
+    npm run -w @dina/home-node-lite-web-e2e build:bundle
+  )
+  ok "SPA bundle ready at ${SCRIPT_DIR}/web/dist"
+
+  # Make sure brain reads DINA_BRAIN_WEB_UI=1 on boot. We append to
+  # .env only if the line isn't already present; idempotent across
+  # re-runs.
+  if ! grep -q '^DINA_BRAIN_WEB_UI=' "$ENV_FILE" 2>/dev/null; then
+    printf "\nDINA_BRAIN_WEB_UI=1\n" >>"$ENV_FILE"
+    ok "DINA_BRAIN_WEB_UI=1 appended to ${ENV_FILE}"
+  else
+    sed -i.bak 's|^DINA_BRAIN_WEB_UI=.*|DINA_BRAIN_WEB_UI=1|' "$ENV_FILE"
+    rm -f "${ENV_FILE}.bak"
+    info "DINA_BRAIN_WEB_UI already in .env — set to 1"
+  fi
+}
+
 install() {
   require_tool docker
   require_tool curl
@@ -215,6 +266,10 @@ install() {
   fi
 
   ensure_env
+
+  if [ "$WEB_UI" = "true" ]; then
+    build_web_ui
+  fi
 
   info "pulling + starting containers..."
   docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --build
@@ -241,6 +296,10 @@ for arg in "$@"; do
       PDS_URL_DEFAULT="https://test-pds.dinakernel.com"
       info "test-infra mode — defaults point at test-*.dinakernel.com"
       ;;
+    --web-ui)
+      WEB_UI=true
+      info "web-ui mode — building SPA bundle + enabling brain /web/* mount"
+      ;;
     --uninstall|--help|-h)
       # Handled in the primary dispatcher below.
       ;;
@@ -255,7 +314,8 @@ done
 case "${1:-}" in
   --uninstall)   uninstall ;;
   --help|-h)     usage ;;
-  --test-infra)  install ;;  # test-infra modifier already applied above
+  --test-infra)  install ;;  # modifiers already applied above
+  --web-ui)      install ;;  # modifiers already applied above
   "")            install ;;
   *)             error "unknown flag: $1"; usage; exit 1 ;;
 esac

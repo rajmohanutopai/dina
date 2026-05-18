@@ -32,6 +32,17 @@
       },
       "package": "com.dinakernel.mobile"
     },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/branding/dina-icon.png",
+      "name": "Dina",
+      "shortName": "Dina",
+      "lang": "en",
+      "themeColor": "#F9F2EC",
+      "backgroundColor": "#F9F2EC",
+      "description": "Dina — the sovereign personal AI. Web app served by your home node."
+    },
     "plugins": [
       "expo-router",
       [
@@ -42,6 +53,9 @@
         }
       ]
     ],
+    "experiments": {
+      "baseUrl": "/web"
+    },
     "extra": {
       "router": {},
       "eas": {

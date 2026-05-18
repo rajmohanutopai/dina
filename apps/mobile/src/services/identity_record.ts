@@ -14,7 +14,7 @@
  * property the reviewer asked for (issue #3).
  */
 
-import * as Keychain from 'react-native-keychain';
+import * as Keychain from './keychain';
 
 const SERVICE = 'dina.node_identity.did';
 const USERNAME = 'dina_node_did';

@@ -110,6 +110,44 @@ The orchestrator needs Core wired (vault writes go through it), so
 start the Core server first and configure `DINA_BRAIN_CORE_BASE_URL`
 + service keys before hitting the dev UI.
 
+### Full Web UI (React Native Web bundle)
+
+A more complete browser UI exists for operators who want the full
+mobile app without installing Expo — same React tree, same hooks,
+served as a static SPA from the Brain container's `/web/*` mount.
+
+Quickstart (interactive):
+
+```bash
+./install-lite.sh --web-ui
+# After install completes, open http://127.0.0.1:8200/web/
+```
+
+Manual route (dev iteration):
+
+```bash
+# 1. Build the SPA bundle from apps/mobile
+npm run -w @dina/home-node-lite-web-e2e build:bundle
+
+# 2. Start the Brain server with the web UI flag set
+cd apps/home-node-lite/brain-server
+DINA_BRAIN_WEB_UI=1 npm start
+# Open http://127.0.0.1:8200/web/
+```
+
+Caveats — read **before** exposing the brain port beyond loopback:
+
+- The web target has **no Secure Enclave equivalent**. Device-local
+  secrets live in IndexedDB under WebCrypto AES-GCM. See
+  `apps/home-node-lite/web/SECURITY.md` for the full threat model.
+- The brain port (8200 by default) carries the SPA AND the
+  `/api/v1/*` API. Exposing it on a public hostname requires TLS,
+  the operator's Ed25519 device keys per request, and ideally a
+  reverse proxy that scopes `/api/*` to authenticated requests.
+- The Playwright smoke + onboarding specs at
+  `apps/home-node-lite/web/__e2e__/` are the regression contract.
+  CI runs them on every PR via `.github/workflows/ts-web-e2e.yml`.
+
 ## Test
 
 From this directory (runs both apps' Jest suites):

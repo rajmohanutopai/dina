@@ -10,7 +10,7 @@
  * (render-time reads in Settings) don't need to await every time.
  */
 
-import * as Keychain from 'react-native-keychain';
+import * as Keychain from '../services/keychain';
 
 import { PROVIDERS } from './provider';
 

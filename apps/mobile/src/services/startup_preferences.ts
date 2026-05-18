@@ -18,7 +18,7 @@
  * Android via react-native-keychain). Keys never leave the device.
  */
 
-import * as Keychain from 'react-native-keychain';
+import * as Keychain from './keychain';
 
 import type { StartupMode } from '../onboarding/state';
 

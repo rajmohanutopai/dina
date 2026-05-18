@@ -7,6 +7,8 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
+    "web": "expo start --web",
+    "web:export": "expo export --platform web --output-dir ../home-node-lite/web/dist",
     "test": "jest",
     "typecheck": "tsc --noEmit",
     "lint": "expo lint"
@@ -44,11 +46,14 @@
     "react-native": "0.83.4",
     "react-native-argon2": "^4.0.0",
     "react-native-get-random-values": "^2.0.0",
+    "react-dom": "19.2.5",
     "react-native-keychain": "^10.0.0",
     "react-native-safe-area-context": "~5.6.2",
-    "react-native-screens": "~4.23.0"
+    "react-native-screens": "~4.23.0",
+    "react-native-web": "~0.21.0"
   },
   "devDependencies": {
+    "fake-indexeddb": "^6.2.5",
     "@babel/core": "^7.25.0",
     "@testing-library/react-native": "~13.3.3",
     "@types/jest": "^29.5.0",

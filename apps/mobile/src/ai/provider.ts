@@ -5,10 +5,8 @@
  * stored in react-native-keychain. No shared platform keys.
  */
 
-import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import type { LanguageModel } from 'ai';
-import * as Keychain from 'react-native-keychain';
+import { createOpenAI } from '@ai-sdk/openai';
 
 import {
   AISDKAdapter,
@@ -16,6 +14,12 @@ import {
   getProviderTiers,
   type LLMProvider,
 } from '@dina/brain/llm';
+
+import * as Keychain from '../services/keychain';
+
+import type { LanguageModel } from 'ai';
+
+
 
 export type ProviderType = 'openai' | 'gemini';
 

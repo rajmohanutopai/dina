@@ -44,7 +44,7 @@
  * a tagged-union in a structurally-typed language.
  */
 
-import * as Keychain from 'react-native-keychain';
+import * as Keychain from './keychain';
 
 const SERVICE = 'dina.user_preferences';
 const USERNAME = 'dina_user_preferences';

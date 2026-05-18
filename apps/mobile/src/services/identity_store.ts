@@ -11,9 +11,10 @@
  * avoids any url-safe padding concerns.
  */
 
-import * as Keychain from 'react-native-keychain';
-import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import { randomBytes } from '@noble/ciphers/utils.js';
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
+
+import * as Keychain from './keychain';
 
 export interface NodeIdentitySeeds {
   signingSeed: Uint8Array;

@@ -10,9 +10,9 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { AskCoordinator, LLMProvider } from '@dina/brain';
-
 import { bootServer, ConfigError, loadConfig } from '../src/main';
+
+import type { AskCoordinator, LLMProvider } from '@dina/brain';
 
 describe('brain-server — config (task 5.1/5.4 scaffold)', () => {
   it('loads defaults from empty env', () => {
@@ -147,6 +147,7 @@ describe('brain-server — boot (task 5.1)', () => {
           askRoutes: 'disabled',
           serviceRuntime: 'disabled',
           stagingDrain: 'disabled',
+          webUI: 'disabled',
           runtime: 'ok',
         },
       });
@@ -496,9 +497,7 @@ describe('brain-server — boot (task 5.1)', () => {
 
       expect(booted.dependencyStatus.serviceRuntime).toBe('configured');
       expect(booted.compositions.service).toBeDefined();
-      expect(booted.compositions.service?.dispatcher.registeredTypes()).toEqual([
-        'service.query',
-      ]);
+      expect(booted.compositions.service?.dispatcher.registeredTypes()).toEqual(['service.query']);
       expect(setIntervalFn).toHaveBeenNthCalledWith(2, expect.any(Function), 25);
       expect(setIntervalFn).toHaveBeenNthCalledWith(3, expect.any(Function), 50);
       await Promise.all([
@@ -542,9 +541,12 @@ describe('brain-server — boot (task 5.1)', () => {
         });
       }
       if (url === 'http://core.example:8100/healthz') {
-        return new Response(JSON.stringify({ status: 'ok', did: 'did:plc:core', version: 'test' }), {
-          headers: { 'content-type': 'application/json' },
-        });
+        return new Response(
+          JSON.stringify({ status: 'ok', did: 'did:plc:core', version: 'test' }),
+          {
+            headers: { 'content-type': 'application/json' },
+          },
+        );
       }
       return new Response(JSON.stringify({ error: `unexpected url ${url}` }), {
         status: 500,

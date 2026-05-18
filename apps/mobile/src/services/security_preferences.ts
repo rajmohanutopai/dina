@@ -20,7 +20,7 @@
  * set" and the caller falls back to the Core default.
  */
 
-import * as Keychain from 'react-native-keychain';
+import * as Keychain from './keychain';
 
 const SERVICE_BG_TIMEOUT = 'dina.security.background_timeout_s';
 

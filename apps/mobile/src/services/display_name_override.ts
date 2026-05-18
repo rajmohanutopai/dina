@@ -23,7 +23,7 @@
  * which lives on `contacts.directory` if/when we add it.
  */
 
-import * as Keychain from 'react-native-keychain';
+import * as Keychain from './keychain';
 
 const SERVICE = 'dina.display_name_override';
 const USERNAME = 'dina_display_name_override';

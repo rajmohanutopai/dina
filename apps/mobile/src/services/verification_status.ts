@@ -27,7 +27,7 @@
  * the in-onboarding flow re-decides.
  */
 
-import * as Keychain from 'react-native-keychain';
+import * as Keychain from './keychain';
 
 export type VerificationStatus = 'pending' | 'verified';
 
