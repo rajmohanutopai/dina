@@ -306,6 +306,22 @@ coverage/
 .env.test.local
 .env.production.local
 
+# Catch-all for any other env-file variant — `.env.dev-injection`,
+# `.env.foo.bak`, `.env.staging`, etc. The carve-outs below preserve
+# `.env.example` templates (committed as setup references) and any
+# `.env.example.<variant>` siblings. Without this rule the literal
+# `.env` line above only catches files named exactly `.env`, leaving
+# every `.env.<suffix>` to leak — which is exactly how
+# `apps/mobile/.env.dev-injection.bak` (containing the dev Gemini key)
+# slipped past the first sweep.
+.env.*
+!.env.example
+!.env.*.example
+!.env.example.*
+
+# `.env` backup files written by editors / sed -i / install scripts.
+*.env.bak
+
 # npm pack artifacts (in case we ever publish @dina/protocol etc. manually).
 *.tgz
 
