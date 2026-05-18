@@ -90,6 +90,22 @@ const CorsSchema = z.object({
   allowOrigin: z.string().optional(),
 });
 
+/**
+ * Service-DID allowlist. Today only `brain` lives here. install-lite
+ * (and the test harness) derives the brain Ed25519 seed and computes
+ * its `did:key:` form; we wire that into Core's caller-type registry
+ * at boot so signed requests from brain-server resolve to
+ * `callerType: 'service' / name: 'brain'` instead of falling through
+ * to the unknown-caller 403.
+ *
+ * Optional — omitting it leaves the allowlist empty (signed requests
+ * from any unregistered DID stay 403, which is the safe default). When
+ * present, the DID must be a `did:key:` (canonical-sign requirement).
+ */
+const ServicesSchema = z.object({
+  brainDid: z.string().optional(),
+});
+
 /** Full server config — every subsection required. */
 export const CoreServerConfigSchema = z.object({
   endpoints: EndpointSchema.optional(),
@@ -98,6 +114,10 @@ export const CoreServerConfigSchema = z.object({
   runtime: RuntimeSchema,
   msgbox: MsgBoxSchema,
   cors: CorsSchema,
+  // Optional — keeps existing test fixtures (which don't supply
+  // `services`) typecheck-clean while still surfacing the loaded
+  // shape via `LoadedCoreServerConfig` below.
+  services: ServicesSchema.optional(),
 });
 
 export type CoreServerConfig = z.infer<typeof CoreServerConfigSchema>;
@@ -218,6 +238,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): LoadedCoreServ
   //   DINA_PLC_URL         → endpoints.plcDirectoryUrl
   //   DINA_HOMENODE_DID    → msgbox.homeNodeDid (optional)
   //   DINA_CORS_ORIGIN     → cors.allowOrigin   (optional; matches Go's AllowOrigin)
+  //   DINA_BRAIN_DID       → services.brainDid  (optional; install-lite + paired-stack tests set this)
 
   const endpoints = readEndpoints(env);
   const draft = {
@@ -246,6 +267,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): LoadedCoreServ
     },
     cors: {
       allowOrigin: readString(env, 'DINA_CORS_ORIGIN'),
+    },
+    services: {
+      brainDid: readString(env, 'DINA_BRAIN_DID'),
     },
   };
 

@@ -58,6 +58,14 @@ export interface CoreClient {
    */
   vaultQuery(persona: string, query: VaultQuery): Promise<VaultQueryResult>;
 
+  /**
+   * Fetch a single vault item by id from the named persona. Returns
+   * `null` when the id isn't found (404 → null, not throw). Used by
+   * Brain's vault tools when the agent wants to drill into a specific
+   * item the search surfaced.
+   */
+  vaultGet(persona: string, itemId: string): Promise<VaultQueryItem | null>;
+
   /** Insert or upsert a vault item into the named persona's DB. */
   vaultStore(persona: string, item: VaultItemInput): Promise<VaultStoreResult>;
 
@@ -442,6 +450,52 @@ export interface CoreClient {
    */
   findContactsByPreference(category: string): Promise<Contact[]>;
 
+  /**
+   * Apply a people-graph extraction result. Brain's post-publish
+   * extractor invokes this after each successful vault store; Core
+   * dispatches to the registered `PeopleRepository.applyExtraction`.
+   *
+   * Returns the repo's full `ApplyExtractionResponse` (counts +
+   * conflicts). Idempotent per
+   * `(sourceItemId, extractorVersion, fingerprint)` — replaying the
+   * same extraction is a no-op.
+   *
+   * Throws `CoreUnreachableError` when Core is unavailable. Returns
+   * `{ ok: false, reason: 'no_repo' }` style outcomes are NOT modeled
+   * here; the route returns 503 in that case and the transport raises.
+   */
+  peopleApplyExtraction(result: ExtractionResult): Promise<ApplyExtractionResponse>;
+
+  /**
+   * List every confirmed/suggested person in the graph (rejected hidden).
+   * Used by the reasoning agent's `find_person` tool when it needs the
+   * full registry — for example, to disambiguate when the user's mention
+   * matches multiple people.
+   */
+  peopleList(): Promise<Person[]>;
+
+  /**
+   * Find every person whose surfaces include `surface` (case-insensitive
+   * match against `normalizedSurface`). Returns multiple rows when two
+   * contacts share a surface form ("Alex"); the agent can then ask the
+   * user to clarify, or pick by relationshipHint.
+   *
+   * Empty `surface` rejects with a 400-bound error from the transport.
+   */
+  peopleFindByName(surface: string): Promise<Person[]>;
+
+  // ─── Persona registry (read-only) ──────────────────────────────────────────
+
+  /**
+   * List every persona currently registered in Core's persona service.
+   * Used by out-of-process Brain (home-node-lite) at boot to mirror the
+   * registry into its own `accessiblePersonas` state. Mobile doesn't
+   * call this — Brain shares the registry in-process.
+   *
+   * Returns names sorted alphabetically for stable iteration order.
+   */
+  personasList(): Promise<PersonaListEntry[]>;
+
   // ─── Agent policy management ───────────────────────────────────────────────
 
   /**
@@ -487,19 +541,39 @@ export interface CoreHealth {
 // while forcing Brain to narrow explicitly at each callsite.
 
 export interface VaultQuery {
-  /** Free-text search term. */
-  q?: string;
+  /** Free-text search term (FTS5 / hybrid). */
+  text?: string;
   /** Semantic-search vector (768-dim, embedding-model-specific). */
   embedding?: number[];
+  /** Search mode. Default: `fts5`. `semantic` requires `embedding`. */
+  mode?: 'fts5' | 'semantic' | 'hybrid';
   /** Result limit; Core clamps to its own max. */
   limit?: number;
   /** Filter: vault-item type (e.g. `note`, `contact`, `relationship_note`). */
   type?: string;
 }
 
+/**
+ * Vault item shape returned by Core's `vaultQuery` and `vaultGet`.
+ * Mirrors the in-process `VaultItem` from `@dina/core/vault/crud`. Kept
+ * as a structural interface here so consumers don't have to import the
+ * concrete class transitively.
+ */
+export interface VaultQueryItem {
+  id: string;
+  type: string;
+  persona: string;
+  summary?: string;
+  body?: string;
+  content_l0?: string;
+  content_l1?: string;
+  timestamp?: number;
+  [key: string]: unknown;
+}
+
 export interface VaultQueryResult {
-  /** Result rows — `unknown` until Phase 2 narrows to a typed VaultItem. */
-  items: unknown[];
+  /** Result rows from `/v1/vault/query`. */
+  items: VaultQueryItem[];
   /** Number of rows returned (mirrors `items.length`, distinct for UX). */
   count: number;
 }
@@ -999,6 +1073,24 @@ export interface MemoryTouchResult {
  *  barrel without deep-importing from `contacts/directory`. */
 import type { Contact } from '../contacts/directory';
 export type { Contact };
+
+/** People-graph types crossing the Core HTTP boundary. */
+import type {
+  ExtractionResult,
+  ApplyExtractionResponse,
+  Person,
+} from '../people/domain';
+export type { ExtractionResult, ApplyExtractionResponse, Person };
+
+/** One row in the response from `personasList()`. */
+export interface PersonaListEntry {
+  /** Persona name (lowercased, e.g. "general"). */
+  name: string;
+  /** Tier — drives gatekeeper behaviour for external agents. */
+  tier: 'default' | 'standard' | 'sensitive' | 'locked';
+  /** True when the persona's vault is currently mounted/decrypted. */
+  isOpen: boolean;
+}
 
 export interface UpdateContactParams {
   /**

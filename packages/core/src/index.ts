@@ -1,4 +1,8 @@
 export * from './crypto';
+// Platform-safe fetch accessor — bind it to globalThis so the
+// browser's WebIDL fetch (which checks `this === Window`) works when
+// the reference is captured into a class field or module-level let.
+export { defaultFetch } from './runtime/fetch';
 export * from './auth/canonical';
 export * from './auth/timestamp';
 export { NonceCache } from './auth/nonce';
@@ -745,6 +749,7 @@ export type {
   CoreHealth,
   VaultQuery,
   VaultQueryResult,
+  VaultQueryItem,
   VaultItemInput,
   VaultStoreResult,
   VaultListOptions,
@@ -791,6 +796,7 @@ export type {
   ActionPolicyEntry,
   ActionPolicyResult,
   RiskLevel,
+  PersonaListEntry,
 } from './client/core-client';
 // Relay / MsgBox RPC envelope helpers — used by the home-node-lite
 // core-server's MsgBox client to seal/unseal CoreRPCRequest +

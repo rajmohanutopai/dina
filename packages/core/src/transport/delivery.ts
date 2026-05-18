@@ -15,6 +15,7 @@
 
 import { isDiscoverableURL } from './ssrf';
 import { buildForwardHeaders } from '../relay/msgbox_forward';
+import { defaultFetch } from '../runtime/fetch';
 import { getPublicKey } from '../crypto/ed25519';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
@@ -48,8 +49,8 @@ const DID_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 /** In-memory DID → messaging endpoint resolution cache. */
 const didCache = new Map<string, CachedResolution>();
 
-/** Injectable fetch function. */
-let fetchFn: typeof globalThis.fetch = globalThis.fetch;
+/** Injectable fetch function. Tests can override via `setDeliveryFetchFn`. */
+let fetchFn: typeof globalThis.fetch = defaultFetch();
 
 /** Injectable DID resolver (for testing/integration). */
 let didResolver: ((did: string) => Promise<{ endpoint: string } | null>) | null = null;
@@ -99,7 +100,7 @@ export function getWSDeliverFn(): WSDeliverFn | null {
 
 /** Reset all injectable dependencies (for testing). */
 export function resetDeliveryDeps(): void {
-  fetchFn = globalThis.fetch;
+  fetchFn = defaultFetch();
   didResolver = null;
   spoolDrainHandler = null;
   wsDeliverFn = null;

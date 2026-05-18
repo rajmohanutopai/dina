@@ -36,7 +36,13 @@
 
 import type { Logger } from './logger';
 import type { LoadedCoreServerConfig } from './config';
-import { createCoreRouter, deriveDIDKey, HEALTHZ_PATH, type CoreRouter } from '@dina/core';
+import {
+  createCoreRouter,
+  deriveDIDKey,
+  HEALTHZ_PATH,
+  registerService,
+  type CoreRouter,
+} from '@dina/core';
 import {
   bootstrapMsgBox,
   disconnectMsgBox,
@@ -50,6 +56,7 @@ import { createServer } from './server';
 import { loadOrGenerateSeed, type SeedSource } from './identity/master_seed';
 import { deriveIdentity } from './identity/derivations';
 import { bindCoreRouter } from './server/bind_core_router';
+import { initializeStorage } from './storage/init';
 
 /** The canonical sequence — enumerated once, consulted everywhere. */
 export const BOOT_STEPS = [
@@ -162,6 +169,20 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     'core-server booting',
   );
 
+  // Register configured service DIDs (currently just `brain`) into
+  // `@dina/core`'s caller-type registry. Without this, signed
+  // requests from brain-server resolve to `callerType: 'unknown'`
+  // and Core's auth middleware rejects with 403 "Cannot determine
+  // authorization role for unknown/unknown" — which is exactly the
+  // staging-ingest failure mode that surfaced when wiring the web
+  // UI's /remember end-to-end. install-lite supplies DINA_BRAIN_DID
+  // alongside the brain seed it generates; the Playwright paired-
+  // stack does the same.
+  if (config.services?.brainDid !== undefined) {
+    registerService(config.services.brainDid, 'brain');
+    logger.info({ brainDid: config.services.brainDid }, 'brain service DID registered');
+  }
+
   // Step 2 (task 4.51 + 4.52): identity — load or first-boot-generate
   // the master seed. Convenience mode (raw keyfile) lands here;
   // wrapped-seed (task 4.53) returns a placeholder that leaves the
@@ -208,18 +229,54 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     elapsedMs: 0,
     pendingReason: '@dina/adapters-node FileKeystore wiring pending identity',
   });
-  trace.push({
-    step: 'db_open',
-    status: 'pending',
-    elapsedMs: 0,
-    pendingReason: '@dina/storage-node concrete adapter pending (Phase 3a)',
-  });
-  trace.push({
-    step: 'adapter_wire',
-    status: 'pending',
-    elapsedMs: 0,
-    pendingReason: 'waits on identity + keystore + db above',
-  });
+
+  // Step 4 (db_open): SQLite persistence via `@dina/storage-node`. We
+  // only do this when the master seed is materialized (convenience or
+  // generated mode). Wrapped-seed mode defers until a later unwrap.
+  const dbStart = Date.now();
+  if (
+    identity !== undefined &&
+    (identity.kind === 'loaded_convenience' || identity.kind === 'generated')
+  ) {
+    try {
+      const result = await initializeStorage(identity.seed, config.storage.vaultDir, logger);
+      trace.push({
+        step: 'db_open',
+        status: 'ok',
+        elapsedMs: Date.now() - dbStart,
+      });
+      trace.push({
+        step: 'adapter_wire',
+        status: 'ok',
+        elapsedMs: 0,
+      });
+      logger.info(
+        { openedPersonas: result.openedPersonas },
+        'SQLite repositories wired into Core service modules',
+      );
+    } catch (err) {
+      trace.push({
+        step: 'db_open',
+        status: 'failed',
+        elapsedMs: Date.now() - dbStart,
+        error: (err as Error).message,
+      });
+      throw err;
+    }
+  } else {
+    trace.push({
+      step: 'db_open',
+      status: 'pending',
+      elapsedMs: 0,
+      pendingReason: 'wrapped-seed identity not yet unwrapped',
+    });
+    trace.push({
+      step: 'adapter_wire',
+      status: 'pending',
+      elapsedMs: 0,
+      pendingReason: 'waits on identity + db above',
+    });
+  }
 
   // Step 6: core_router. The transport-independent CoreRouter is
   // usable now; storage-backed adapters still land behind the pending

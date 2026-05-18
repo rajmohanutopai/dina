@@ -22,6 +22,62 @@ import {
   type PeerlensSearchQuery,
   type SearchType,
 } from '@dina/core';
+import type { CoreClient, VaultQueryItem } from '@dina/core';
+
+/**
+ * Vault-read backend the brain uses for out-of-process Core deployments
+ * (home-node-lite). When set, all vault reads route through these
+ * methods (which the host wires to its `CoreClient`). When `null`
+ * (mobile / tests), the in-process `queryVault` / `getItem` /
+ * `browseRecent` from `@dina/core` are used directly.
+ *
+ * Narrow interface — only the read methods this module needs. Lets a
+ * test inject just three lambdas instead of mocking a full CoreClient.
+ */
+export interface VaultReadBackend {
+  vaultQuery: CoreClient['vaultQuery'];
+  vaultGet?: CoreClient['vaultGet'];
+  vaultList?: CoreClient['vaultList'];
+}
+
+let vaultBackend: VaultReadBackend | null = null;
+
+/**
+ * Register a remote vault-read backend. Home-node-lite's brain-server
+ * calls this at boot with its `CoreClient`. Mobile leaves it unset so
+ * the in-process fast path is used.
+ */
+export function setVaultReadBackend(backend: VaultReadBackend | null): void {
+  vaultBackend = backend;
+}
+
+export function getVaultReadBackend(): VaultReadBackend | null {
+  return vaultBackend;
+}
+
+/**
+ * People-graph read backend — parallel to `VaultReadBackend`. The
+ * reasoning agent's `find_person` tool resolves a named individual
+ * through this surface so mobile (in-process repo via `getPeopleRepository`)
+ * and lite (out-of-process via `CoreClient.peopleFindByName`) share the
+ * same tool implementation. Mobile's default unset = call the in-process
+ * `getPeopleRepository()` directly inside `find_person`. Lite's
+ * brain-server `setPeopleReadBackend` at boot.
+ */
+export interface PeopleReadBackend {
+  peopleList: CoreClient['peopleList'];
+  peopleFindByName: CoreClient['peopleFindByName'];
+}
+
+let peopleBackend: PeopleReadBackend | null = null;
+
+export function setPeopleReadBackend(backend: PeopleReadBackend | null): void {
+  peopleBackend = backend;
+}
+
+export function getPeopleReadBackend(): PeopleReadBackend | null {
+  return peopleBackend;
+}
 
 export interface ContextItem {
   id: string;
@@ -170,8 +226,30 @@ export async function executeToolSearch(
   if (!getAccessiblePersonas().includes(persona)) return [];
 
   const searchLimit = limit ?? 20;
-  const results = queryVault(persona, { mode: 'fts5', text: query, limit: searchLimit });
 
+  // Out-of-process Core (home-node-lite): route through the registered
+  // backend so brain doesn't reach for SQLite. Mobile leaves the backend
+  // unset → in-process `queryVault` runs.
+  if (vaultBackend !== null) {
+    const result = await vaultBackend.vaultQuery(persona, {
+      mode: 'fts5',
+      text: query,
+      limit: searchLimit,
+    });
+    return result.items.map((raw, index) => {
+      const item = raw as VaultQueryItem;
+      return {
+        id: String(item.id ?? ''),
+        content_l0: String(item.content_l0 ?? item.summary ?? ''),
+        content_l1: index < 5 ? (item.content_l1 as string | undefined) : undefined,
+        body: index < 1 ? (item.body as string | undefined) : undefined,
+        score: 1.0 - index * 0.05,
+        persona,
+      };
+    });
+  }
+
+  const results = queryVault(persona, { mode: 'fts5', text: query, limit: searchLimit });
   return results.map((item, index) => ({
     id: item.id,
     content_l0: item.content_l0 || item.summary || '',

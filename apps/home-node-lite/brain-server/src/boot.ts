@@ -29,7 +29,17 @@ import path from 'node:path';
 
 import Fastify, { type FastifyInstance } from 'fastify';
 
-import { AppViewClient, StagingDrainScheduler } from '@dina/brain';
+import {
+  AppViewClient,
+  StagingDrainScheduler,
+  buildRememberRuntime,
+  createCoordinatorAskHandler,
+  resetAskCommandHandler,
+  setAccessiblePersonas,
+  setAskCommandHandler,
+  setPeopleReadBackend,
+  setVaultReadBackend,
+} from '@dina/brain';
 import { installNodeTraceScopeStorage } from '@dina/brain/node-trace-storage';
 import {
   buildHomeNodeAskRuntime,
@@ -53,6 +63,19 @@ import { createLogger, type Logger } from './logger';
 import { registerAskRoutes } from './routes/ask';
 import { registerChatRoutes } from './routes/chat';
 import { registerWebRoutes } from './routes/web';
+
+/**
+ * Per-persona hints used by the agentic /remember loop's system prompt.
+ * Helps the LLM disambiguate (e.g. routing a "$25 toy budget" memory to
+ * `finance` rather than `general` because finance is described as the
+ * money/budget vault). Add entries here as new default personas land.
+ */
+const PERSONA_DESCRIPTIONS: Record<string, string> = {
+  general: 'Everyday notes — anything that doesn\'t clearly fit a more specific vault.',
+  work: 'Job, projects, colleagues, work calendar items, professional context.',
+  health: 'Medical, fitness, symptoms, medications, doctors, allergies.',
+  finance: 'Money, budgets, spending, income, bills, debt, investments, taxes.',
+};
 
 import type { AskCoordinator } from '@dina/brain';
 import type { CoreClient } from '@dina/core';
@@ -179,6 +202,12 @@ export async function bootServer(
   const schedulers: BrainServerSchedulers = {};
   const compositions: BrainServerCompositions = {};
   let chatRememberRuntime: ChatRememberRuntimeHandle | undefined;
+  // Hoisted so both the staging drain (which builds rememberRuntime
+  // from these descriptors) and the askRuntime path further down
+  // (which feeds them into the pre-flight retrieval planner) can
+  // share one source of truth. Populated inside the
+  // `clients.core !== undefined` block below.
+  let personaDescriptors: Array<{ name: string; description: string }> = [];
   const dependencyStatus: BrainServerDependencyStatus = {
     appView: 'configured',
     core: coreResult.status,
@@ -190,8 +219,101 @@ export async function bootServer(
   };
 
   if (clients.core !== undefined) {
+    const core = clients.core;
+    // Route brain's vault reads through Core HTTP. Mobile leaves this
+    // unset so it uses the in-process queryVault fast-path; lite must
+    // route through `core.vaultQuery` because vault SQLite lives in
+    // core-server's process.
+    setVaultReadBackend({
+      vaultQuery: (persona, query) => core.vaultQuery(persona, query),
+      vaultGet: (persona, itemId) => core.vaultGet(persona, itemId),
+      vaultList: (persona, opts) => core.vaultList(persona, opts),
+    });
+
+    // People-graph read backend — parallel to the vault backend. The
+    // reasoning agent's `find_person` tool uses these handles to
+    // resolve named individuals (Emma → daughter) without keyword-
+    // guessing through vault items. Mobile leaves the backend null
+    // and reads `getPeopleRepository()` in-process.
+    setPeopleReadBackend({
+      peopleList: () => core.peopleList(),
+      peopleFindByName: (surface) => core.peopleFindByName(surface),
+    });
+
+    // Build the LLM runtime early so the staging drain can use it
+    // for the per-item agentic loop (rememberRuntime below). The
+    // ask coordinator further down reuses the same instance.
+    const llmRuntime = options.askRuntime ?? buildBrainServerLLMRuntime(config.llm);
+
+    // Mirror Core's persona registry into Brain's `accessiblePersonas`
+    // state. Brain runs in a separate Node process from Core in lite,
+    // so its in-process `listPersonas()` returns []. Without this
+    // mirror, `vault_search` has no personas to fan out across.
+    //
+    // ALL personas are exposed to the in-app chat path, regardless of
+    // tier or lock state — the SPA/mobile user is the owner and has
+    // full access by definition. The gatekeeper's tier protections
+    // exist only for external agents reaching Core via dina-agent CLI;
+    // they don't apply to the user's own chat (see memory:
+    // `user-vs-agent-persona-access`). The hardcoded
+    // `['general', 'work']` this replaces was leaving `health` +
+    // `finance` invisible to multi-domain synthesis (e.g. budget
+    // context for a "what to buy" question).
+    //
+    // Failure to fetch is non-fatal — the boot continues with an empty
+    // persona list and the operator sees the warning. Re-mirroring on
+    // a schedule (or on persona-create push) is a future polish.
+    let remotePersonas: Array<{ name: string; tier: string; isOpen: boolean }> = [];
+    try {
+      remotePersonas = await core.personasList();
+      const names = remotePersonas.map((p) => p.name);
+      setAccessiblePersonas(names);
+      logger.info(
+        { count: names.length, personas: names },
+        'brain-server accessible personas mirrored from Core',
+      );
+    } catch (err) {
+      logger.warn(
+        { error: err instanceof Error ? err.message : String(err) },
+        'brain-server persona mirror failed; vault_search will see no personas',
+      );
+      setAccessiblePersonas([]);
+    }
+
+    // Build the per-item remember runtime when an LLM is configured.
+    // The staging drain receives it and uses the agentic loop for
+    // every drained item — replacing the legacy keyword classifier
+    // + reminder_planner + identity-link extractor sequence with
+    // one LLM round-trip per item. When no LLM is configured, the
+    // drain falls back to the legacy path.
+    personaDescriptors = remotePersonas.map((p) => ({
+      name: p.name,
+      description: PERSONA_DESCRIPTIONS[p.name] ?? '',
+    }));
+    const rememberRuntime =
+      llmRuntime !== undefined
+        ? buildRememberRuntime({
+            llm: llmRuntime.llm,
+            personas: personaDescriptors,
+            defaultPersona: 'general',
+          })
+        : undefined;
+    if (rememberRuntime !== undefined) {
+      logger.info(
+        { personaCount: personaDescriptors.length },
+        'brain-server remember runtime configured (agentic /remember)',
+      );
+    }
+
     const stagingDrain = new StagingDrainScheduler({
-      core: clients.core,
+      core,
+      drain: {
+        // Out-of-process people-graph writer. Core owns SQLite in lite;
+        // Brain's post-publish extractor POSTs the structured result
+        // through the signed Core HTTP surface.
+        peopleGraphApply: (result) => core.peopleApplyExtraction(result),
+        ...(rememberRuntime !== undefined ? { rememberRuntime } : {}),
+      },
       logger: (entry) => logger.info(entry, 'brain-server staging drain'),
       onError: (err) => {
         logger.warn(
@@ -261,11 +383,60 @@ export async function bootServer(
         'brain-server ask coordinator disabled because Core client is not configured',
       );
     } else {
+      // Pre-flight retrieval planner — turns each `/ask` question
+      // into a structured cross-domain plan before the agentic loop
+      // runs. Mirrors the planner the mobile app wires; same router,
+      // same prompt. Lite's fetchers route through Core's HTTP
+      // surface (CoreClient.vaultQuery / peopleFindByName) because
+      // Brain runs in a separate process and never opens SQLite
+      // directly. Fail-soft at every step — any planner error /
+      // empty plan / fetch failure falls back to the legacy
+      // tools-only loop.
+      const lookupPersonas = personaDescriptors;
+      const liteCoreClient = clients.core;
+      const retrievalFetchers = {
+        async vaultSearch(persona: string, query: string) {
+          const result = await liteCoreClient.vaultQuery(persona, {
+            mode: 'fts5',
+            text: query,
+            limit: 5,
+          });
+          return result.items.map((item) => ({
+            id: String(item.id ?? ''),
+            content_l0: String(item.content_l0 ?? item.summary ?? ''),
+            ...(typeof item.body === 'string' ? { body: item.body } : {}),
+            persona,
+          }));
+        },
+        async findPerson(name: string) {
+          const matches = await liteCoreClient.peopleFindByName(name);
+          return matches.map((p) => ({
+            canonicalName: p.canonicalName,
+            ...(p.relationshipHint !== '' ? { relationshipHint: p.relationshipHint } : {}),
+            surfaceSummary: (p.surfaces ?? [])
+              .filter((s) => s.status !== 'rejected')
+              .map((s) => s.surface)
+              .slice(0, 3)
+              .join(', '),
+          }));
+        },
+      };
+
       const ask = buildHomeNodeAskRuntime({
         ...askRuntime,
         core: clients.core,
         appView: clients.appView,
         logger: (entry) => logger.info(entry, 'brain-server ask'),
+        installedPersonas: () => lookupPersonas,
+        retrievalFetchers,
+        // Default fastPathMs (3 s). Async overflow is no longer a
+        // problem: the SPA's chat_transport.web.ts subscribes to
+        // `/api/v1/chat/stream` (SSE) and reflects every server-side
+        // thread mutation — including late-arriving lifecycle
+        // patches — into its local thread store via
+        // `applyRemoteMessage`. Long-running queries (multi-Dina
+        // service calls, multi-minute agent loops) deliver their
+        // answer through the stream, not by holding the POST open.
       });
       compositions.ask = ask;
       askCoordinator = ask.coordinator;
@@ -281,6 +452,27 @@ export async function bootServer(
       ...(options.askRoutePrefix !== undefined ? { prefix: options.askRoutePrefix } : {}),
     });
     dependencyStatus.askRoutes = 'configured';
+
+    // Install the chat orchestrator's /ask command handler. Without
+    // this, /ask falls through to a context-only template
+    // (`buildContextOnlyAnswer` in chat_reasoning.ts) that just lists
+    // vault items verbatim — no LLM synthesis. Mobile wires this in
+    // its `globalWiring` step; we mirror that here so /ask through
+    // the chat HTTP surface uses the agentic Gemini-backed pipeline.
+    const requesterDid =
+      process.env.DINA_OWNER_DID && process.env.DINA_OWNER_DID.trim() !== ''
+        ? process.env.DINA_OWNER_DID.trim()
+        : 'did:key:dina-lite-owner';
+    const askCommandHandler = createCoordinatorAskHandler({
+      coordinator: askCoordinator,
+      requesterDid,
+    });
+    setAskCommandHandler(askCommandHandler.handler);
+    app.addHook('onClose', async () => {
+      askCommandHandler.dispose();
+      resetAskCommandHandler();
+    });
+    logger.info('brain-server /ask command handler wired (agentic LLM)');
   }
 
   // Chat orchestrator routes — wraps `handleChat` from the brain

@@ -24,9 +24,11 @@ import {
   resetThreads,
   subscribeToThread,
   type ChatMessage,
+  type ChatResponse,
   type MessageType,
 } from '@dina/brain/chat';
-import { handleChat, type ChatResponse } from '@dina/brain/chat';
+
+import { runChatTurn } from './chat_transport';
 
 const DEFAULT_THREAD = 'main';
 
@@ -95,12 +97,13 @@ export async function sendMessage(text: string, threadId?: string): Promise<Chat
   typingState.set(tid, true);
 
   try {
-    // Route through Brain orchestrator. The agentic /ask path picks
-    // tools based on the user's natural-language query — including
-    // the `draft_review` tool the host registers via
-    // `setReviewDraftStarter` at boot. No regex pre-empt; the LLM
-    // decides what to do.
-    const response = await handleChat(text, tid);
+    // Route through the platform's chat transport. On native this
+    // hits `handleChat` in-process (LLM key from OS keychain). On
+    // web it POSTs to brain-server's `/api/v1/chat` (LLM key stays
+    // server-side). Either way the local thread store ends up with
+    // user message + dina response — `useLiveThread`'s subscriber
+    // fires on both writes. See `chat_transport.ts` for contract.
+    const response = await runChatTurn(text, tid);
 
     // Track response time
     lastDinaResponseAt.set(tid, Date.now());

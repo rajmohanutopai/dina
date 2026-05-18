@@ -173,17 +173,22 @@ describe('ordered boot (task 4.3)', () => {
       }
     });
 
-    it('keystore / db_open / adapter_wire are "pending"', async () => {
+    it('keystore is "pending"; db_open + adapter_wire run when seed is materialized', async () => {
       const booted = await bootTestServer();
       try {
+        // With a generated/loaded master seed available, `initializeStorage`
+        // runs at boot — db_open + adapter_wire reach 'ok'. Only the
+        // keystore step is still scaffold-only.
         const pendingSteps = booted.trace.steps.filter((s) => s.status === 'pending');
-        expect(pendingSteps.map((s) => s.step).sort()).toEqual(
-          ['adapter_wire', 'db_open', 'keystore'].sort(),
-        );
+        expect(pendingSteps.map((s) => s.step).sort()).toEqual(['keystore']);
         for (const s of pendingSteps) {
           expect(s.pendingReason).toBeDefined();
           expect(s.pendingReason!.length).toBeGreaterThan(0);
         }
+        const byStep: Record<string, { status: string }> = {};
+        for (const s of booted.trace.steps) byStep[s.step] = s;
+        expect(byStep['db_open']?.status).toBe('ok');
+        expect(byStep['adapter_wire']?.status).toBe('ok');
       } finally {
         await booted.app.close();
       }

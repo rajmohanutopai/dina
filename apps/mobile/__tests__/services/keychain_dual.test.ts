@@ -121,6 +121,28 @@ function scenarios(name: string, build: () => KeychainKit): void {
       expect(cred).not.toBe(false);
       expect((cred as { password: string }).password).toBe(pw);
     });
+
+    it('concurrent writes preserve every value (wrap-key race regression)', async () => {
+      // Regression: `infra_setup.tsx`'s Continue handler fires
+      // `Promise.all([savePdsUrl, saveAppViewURL])` on the FIRST run
+      // (before any wrap key exists). Without single-flighting the
+      // bootstrap, both saves used to generate different CryptoKeys
+      // and one row's ciphertext became permanently undecryptable.
+      // Caught only when the user reloaded the page and the
+      // unlock-gate's `loadInfraPreferences` returned partial state.
+      const pairs = Array.from({ length: 8 }, (_, i) => [
+        `svc-${i}`,
+        `value-${i}-${'pad'.repeat(20)}`,
+      ] as const);
+      await Promise.all(
+        pairs.map(([s, v]) => kit.setGenericPassword(`user-${s}`, v, { service: s })),
+      );
+      for (const [s, v] of pairs) {
+        const cred = await kit.getGenericPassword({ service: s });
+        expect(cred).not.toBe(false);
+        expect((cred as { password: string }).password).toBe(v);
+      }
+    });
   });
 }
 

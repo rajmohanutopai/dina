@@ -19,6 +19,7 @@
  */
 
 import { backoff as defaultBackoff } from '../transport/http_retry';
+import { defaultFetch } from '../runtime/fetch';
 
 /** Configuration for `AppViewServiceResolver`. */
 export interface AppViewServiceResolverOptions {
@@ -138,7 +139,7 @@ export class AppViewServiceResolver {
     this.appViewURL = options.appViewURL.replace(/\/$/, '');
     this.cacheTtlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    this.fetchFn = options.fetch ?? globalThis.fetch;
+    this.fetchFn = options.fetch ?? defaultFetch();
     this.nowFn = options.nowFn ?? Date.now;
     this.cache = new LruCache(options.maxCacheEntries ?? DEFAULT_MAX_CACHE_ENTRIES);
     this.maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;

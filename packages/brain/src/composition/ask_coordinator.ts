@@ -64,6 +64,8 @@ import {
   type AgenticLoopResult,
 } from '../reasoning/agentic_loop';
 import { formatCurrentTimeBlock } from '../reasoning/ask_handler';
+import type { PreFlightRetrievalProvider } from '../reasoning/ask_handler';
+import type { PreFlightRetrievalResult } from './ask_retrieval_planner';
 import type { AgenticAskPipeline } from './agentic_ask';
 
 /** CoreClient surface `createAskCoordinator` needs for the approval gateway. */
@@ -256,6 +258,14 @@ export function createAskCoordinator(opts: CreateAskCoordinatorOptions): AskCoor
 export function buildAgenticExecuteFn(args: {
   pipeline: AgenticAskPipeline;
   systemPrompt: string;
+  /**
+   * Optional pre-flight retrieval planner — same shape the non-
+   * coordinator path consumes. When wired, runs once per /ask before
+   * the agentic loop and prepends the formatted `[Retrieved context]`
+   * block to the user message. Fail-soft: planner errors return
+   * `null` and the loop runs unchanged.
+   */
+  preFlight?: PreFlightRetrievalProvider;
 }): AskExecuteFn {
   const buildToolsForAsk = args.pipeline.buildToolsForAsk;
   if (!buildToolsForAsk) {
@@ -263,7 +273,7 @@ export function buildAgenticExecuteFn(args: {
       'buildAgenticExecuteFn: pipeline.buildToolsForAsk is missing',
     );
   }
-  const { pipeline, systemPrompt } = args;
+  const { pipeline, systemPrompt, preFlight } = args;
   return async (input) => {
     const tools = buildToolsForAsk({ askId: input.id, requesterDid: input.requesterDid });
     // MT-15-I3 — prepend the current-time block per turn so tools like
@@ -274,13 +284,27 @@ export function buildAgenticExecuteFn(args: {
     // session must stay synced with wall-clock — `now_iso` baked in at
     // `buildAgenticExecuteFn` time would silently age across turns.
     const promptForTurn = `${formatCurrentTimeBlock()}\n\n${systemPrompt}`;
+
+    let userMessage = input.question;
+    if (preFlight !== undefined) {
+      let result: PreFlightRetrievalResult | null = null;
+      try {
+        result = await preFlight(input.question);
+      } catch {
+        result = null;
+      }
+      if (result && result.block !== '') {
+        userMessage = `${result.block}\n\nUser's question:\n${input.question}`;
+      }
+    }
+
     let result: AgenticLoopResult;
     try {
       const turnArgs: Parameters<typeof runAgenticTurn>[0] = {
         provider: pipeline.provider,
         tools,
         systemPrompt: promptForTurn,
-        userMessage: input.question,
+        userMessage,
       };
       if (input.signal !== undefined) {
         turnArgs.options = { signal: input.signal };

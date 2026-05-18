@@ -19,6 +19,7 @@ import type { AppViewClient, ServiceProfile } from '../appview_client/http';
 import type { ServiceQueryOrchestrator } from '../service/service_query_orchestrator';
 import type { Contact } from '@dina/core';
 import { autofillRequesterFields, type RequesterAutofillSchema } from './requester_autofill';
+import { defaultFetch } from '../runtime/fetch';
 
 // ---------------------------------------------------------------------------
 // geocode
@@ -69,7 +70,7 @@ const DEFAULT_GEOCODE_TIMEOUT_MS = 10_000;
  * `geocode` name so the LLM prompt stays stable.
  */
 export function createGeocodeTool(options: GeocodeToolOptions = {}): AgentTool {
-  const fetchFn = options.fetch ?? globalThis.fetch;
+  const fetchFn = options.fetch ?? defaultFetch();
   const endpoint = options.endpoint ?? DEFAULT_NOMINATIM_ENDPOINT;
   const userAgent = options.userAgent ?? DEFAULT_USER_AGENT;
   const minGapMs = options.minGapMs ?? DEFAULT_MIN_GAP_MS;

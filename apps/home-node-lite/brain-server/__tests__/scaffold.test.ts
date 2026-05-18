@@ -354,7 +354,13 @@ describe('brain-server — boot (task 5.1)', () => {
         status: 'complete',
         answer: { text: 'server coordinator answered' },
       });
-      expect(provider.chat).toHaveBeenCalledTimes(1);
+      // Two provider.chat calls: (1) the pre-flight retrieval planner
+      // (taskType: 'intent_classification', emits a structured plan
+      // before the agentic loop), and (2) the agentic loop itself
+      // (taskType: 'reason'). The planner is fail-soft — if the
+      // scripted provider returned malformed JSON the plan is empty
+      // and the loop runs unchanged, but the call still counts.
+      expect(provider.chat).toHaveBeenCalledTimes(2);
 
       // Core configured + ask wired + staging drain running → /readyz
       // returns 200 (status: 'ok'). Real runtime status: boot is fully
@@ -427,7 +433,10 @@ describe('brain-server — boot (task 5.1)', () => {
       });
       expect(booted.compositions.ask).toBeDefined();
       expect(booted.dependencyStatus.askRoutes).toBe('configured');
-      expect(fetchFn).not.toHaveBeenCalled();
+      // Boot issues one fetch — GET /v1/personas — to mirror Core's
+      // persona registry. Other interactions are still lazy.
+      expect(fetchFn).toHaveBeenCalledTimes(1);
+      expect(fetchFn.mock.calls[0]?.[0]).toBe('http://core.example:8100/v1/personas');
     } finally {
       await booted?.app.close();
       if (booted !== undefined) {
@@ -548,6 +557,17 @@ describe('brain-server — boot (task 5.1)', () => {
           },
         );
       }
+      if (url === 'http://core.example:8100/v1/personas') {
+        return new Response(
+          JSON.stringify({
+            personas: [
+              { name: 'general', tier: 'default', isOpen: true },
+              { name: 'work', tier: 'standard', isOpen: true },
+            ],
+          }),
+          { headers: { 'content-type': 'application/json' } },
+        );
+      }
       return new Response(JSON.stringify({ error: `unexpected url ${url}` }), {
         status: 500,
         headers: { 'content-type': 'application/json' },
@@ -577,6 +597,12 @@ describe('brain-server — boot (task 5.1)', () => {
       expect(booted.schedulers.stagingDrain).toBeDefined();
       expect(setIntervalFn).toHaveBeenCalledTimes(1);
       expect(timerHandle.unref).toHaveBeenCalledTimes(1);
+      // Boot itself issues one fetch — GET /v1/personas — to mirror
+      // Core's persona registry into Brain's accessiblePersonas state.
+      expect(fetchFn).toHaveBeenCalledTimes(1);
+      expect(fetchFn.mock.calls[0]?.[0]).toBe('http://core.example:8100/v1/personas');
+      fetchFn.mockClear();
+
       await booted.schedulers.stagingDrain!.flush();
 
       // Signed Core client up + staging drain running → /readyz green.

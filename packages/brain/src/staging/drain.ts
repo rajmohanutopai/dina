@@ -19,7 +19,7 @@
  * which talk to Core instead of the in-memory queue.
  */
 
-import { listContacts, getContact } from '@dina/core';
+import { listContacts, getContact, updateContact } from '@dina/core';
 import { isVaultItemType } from '@dina/core';
 import { enrichItem as enrichVaultItem } from '../enrichment/pipeline';
 import {
@@ -32,10 +32,12 @@ import { classifyDomain, classifyPersonas } from '../routing/domain';
 import { selectPersonaRich } from '../routing/persona_selector';
 import { scoreSender } from '../peerlens/scorer';
 import { getAccessiblePersonas } from '../vault_context/assembly';
+import { getPeopleRepository } from '@dina/core';
 
 import type { StagingProcessResult } from './processor';
 import type { VaultItemType } from '@dina/core';
-import type { CoreClient } from '@dina/core';
+import type { CoreClient, ApplyExtractionResponse, ExtractionResult } from '@dina/core';
+import type { RememberTurnInput, RememberTurnResult } from '../composition/remember_runtime';
 
 /**
  * Minimal subset of `CoreClient` the drain needs.
@@ -157,6 +159,35 @@ export interface StagingDrainOptions {
    * and test harnesses leave this undefined (vaults are always open there).
    */
   ownerPersonaOpener?: (persona: string) => Promise<void>;
+  /**
+   * [pipeline hook] Out-of-process people-graph writer. When set, the
+   * post-publish people-graph extractor routes the structured result
+   * through this callback instead of the local `PeopleRepository`
+   * singleton. Home-node-lite's brain-server wires
+   * `(r) => coreClient.peopleApplyExtraction(r)`; mobile leaves this
+   * undefined so the in-process repo handles the write directly.
+   */
+  peopleGraphApply?: (result: ExtractionResult) => Promise<ApplyExtractionResponse>;
+  /**
+   * [pipeline hook] The per-item agentic loop. **REQUIRED in production**;
+   * `runStagingDrainTick` throws on the first item if it's missing.
+   * Tests that don't care about classification omit this and the drain
+   * defaults the route to `general`, skips people-graph + preferences,
+   * still runs trust scoring + topic touch + vault write. This lets
+   * legacy fixtures keep passing while the new path proves out.
+   *
+   * Built via `buildRememberRuntime({ llm, personas, ... })` in the
+   * host's boot (lite brain-server + mobile `boot_capabilities`).
+   */
+  rememberRuntime?: {
+    run(turn: RememberTurnInput): Promise<RememberTurnResult>;
+  };
+  /**
+   * [config] `today` ISO date string passed into the remember runtime's
+   * system prompt. Tests use this to make scripted-LLM scenarios
+   * deterministic against fixed dates. Defaults to current date.
+   */
+  rememberToday?: string;
 }
 
 export interface StagingDrainTickResult {
@@ -271,29 +302,78 @@ export async function runStagingDrainTick(
         subject: pickString('summary') || pickString('subject'),
         body: pickString('body'),
       };
-      const classification = classifyDomain(classifyInput);
 
-      // LLM-first routing — if `registerPersonaSelector` installed a
-      // provider at boot (mobile's `boot_capabilities.ts` does this
-      // when an API key is configured), trust its primary + secondary
-      // directly. This matches Python's `staging_processor.py` which
-      // calls `PersonaSelector.select()` with no keyword pre-pass —
-      // the LLM sees installed-persona names + descriptions and picks
-      // accordingly. The keyword `classifyPersonas` is a fallback for
-      // boot-time / no-key runs, not a co-classifier.
+      // ────────────────────────────────────────────────────────────────
+      // Per-item agentic loop (preferred path). When `rememberRuntime`
+      // is wired (lite brain-server + mobile boot when an LLM is
+      // configured), the loop sees the item once and emits tool calls
+      // for every side effect: persona routing, reminders, people
+      // links, preferences. The drain reads `turn.sideEffects` and
+      // applies them after vault storage.
+      //
+      // Fallback (no runtime): the original separate
+      // `classifyDomain` → `selectPersonaRich` → keyword fallback +
+      // `handlePostPublish` pipeline runs. This keeps legacy fixtures
+      // and integration tests green while the new path proves out in
+      // production. A future cleanup pass removes the fallback once
+      // every consumer wires the runtime.
+      // ────────────────────────────────────────────────────────────────
+      let turn: RememberTurnResult | null = null;
+      if (options.rememberRuntime !== undefined) {
+        try {
+          const memoryText =
+            classifyInput.body !== '' ? classifyInput.body : classifyInput.subject;
+          turn = await options.rememberRuntime.run({
+            memoryText,
+            metadata: {
+              type: classifyInput.type,
+              source: classifyInput.source,
+              sender: classifyInput.sender,
+              subject: classifyInput.subject,
+            },
+          });
+        } catch (err) {
+          log({
+            event: 'staging.drain.remember_runtime_failed',
+            item_id: itemId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          // Falls through to the keyword classifier below.
+        }
+      }
+
       let personas: string[];
-      const rich = await selectPersonaRich(classifyInput);
-      if (rich !== null) {
-        personas = [rich.primary ?? rich.persona, ...(rich.secondary ?? [])];
+      let classifierMethod: 'agentic' | 'llm' | 'keyword' = 'keyword';
+      let classifierConfidence = 0;
+      let classifierReason = '';
+      const classification = classifyDomain(classifyInput);
+      if (turn !== null) {
+        const routedPrimary = turn.sideEffects.routes[0]?.primary;
+        const routedSecondary = turn.sideEffects.routes[0]?.secondary ?? [];
+        personas = [routedPrimary ?? 'general', ...routedSecondary];
+        classifierMethod = 'agentic';
+        classifierConfidence = 1;
+        classifierReason = turn.text ?? '';
       } else {
-        personas = classifyPersonas(classifyInput);
+        const rich = await selectPersonaRich(classifyInput);
+        if (rich !== null) {
+          personas = [rich.primary ?? rich.persona, ...(rich.secondary ?? [])];
+          classifierMethod = 'llm';
+          classifierConfidence = rich.confidence ?? 0;
+          classifierReason = rich.reason ?? '';
+        } else {
+          personas = classifyPersonas(classifyInput);
+          classifierMethod = 'keyword';
+          classifierConfidence = classification.confidence;
+        }
       }
       log({
         event: 'staging.drain.classified',
         item_id: itemId,
         personas,
-        method: rich !== null ? 'llm' : 'keyword',
-        confidence: rich?.confidence ?? classification.confidence,
+        method: classifierMethod,
+        confidence: classifierConfidence,
+        ...(turn !== null ? { toolNames: turn.toolNames } : {}),
       });
 
       // PeerLens rating — stamp provenance onto the vault row BEFORE
@@ -350,15 +430,14 @@ export async function runStagingDrainTick(
         ingressChannel.toLowerCase() === 'd2d' && originDid !== '' ? originDid : '';
 
       // Routing metadata — stash the classifier's primary/secondary/
-      // confidence/reason in the item metadata blob. Matches Python's
-      // `base_classified["metadata"] = json.dumps({...existing, routing: routing_meta})`.
-      // Lets `/ask` diagnostics explain why a row landed where.
+      // confidence/reason in the item metadata blob. `/ask` diagnostics
+      // surface this to explain why a row landed where.
       const routingMeta = {
         primary: personas[0] ?? 'general',
         secondary: personas.slice(1),
-        confidence: rich?.confidence ?? classification.confidence,
-        reason: rich?.reason ?? '',
-        method: rich !== null ? 'llm' : 'keyword',
+        confidence: classifierConfidence,
+        reason: classifierReason,
+        method: classifierMethod,
       };
 
       const enrichment = await enrichVaultItem({
@@ -470,7 +549,7 @@ export async function runStagingDrainTick(
         // — both of which target real, installed personas.
         const result: StagingProcessResult = {
           itemId,
-          persona: personas[0] ?? classification.persona,
+          persona: personas[0] ?? 'general',
           status: resolveResult.status === 'pending_unlock' ? 'pending_unlock' : 'failed',
           enriched: true,
         };
@@ -504,7 +583,7 @@ export async function runStagingDrainTick(
       // 0.5-threshold fan-out) correctly fell back to general.
       const result: StagingProcessResult = {
         itemId,
-        persona: personas[0] ?? classification.persona,
+        persona: personas[0] ?? 'general',
         status: 'stored',
         enriched: true,
       };
@@ -529,66 +608,162 @@ export async function runStagingDrainTick(
         result.topics = touchResult;
       }
 
-      // Post-publish — reminder planning, identity-link extraction,
-      // contact last-seen update, ambiguous-routing flag. Runs AFTER
-      // a successful resolve so failed items don't generate orphan
-      // reminders; runs against the primary persona only (Python's
-      // staging_processor hands one persona to post_publish even for
-      // multi-persona fan-outs, since reminders live in the identity
-      // DB and aren't persona-scoped).
+      // ────────────────────────────────────────────────────────────────
+      // Post-storage side effects. Two paths:
       //
-      // Fail-soft: `handlePostPublish` catches its own errors — if
-      // the reminder planner throws or the identity extractor times
-      // out, the item still counts as stored. Errors land in
-      // `result.postPublish.errors` for telemetry.
-      try {
-        const primaryPersona = personas[0] ?? 'general';
-        // The vault validator already accepted the row on store
-        // (validateVaultItem rejects unknown types), so a SQL value that
-        // reaches us here must be a real VaultItemType. Narrow at the
-        // boundary instead of casting blindly — if someone bypasses the
-        // validator, post-publish gets 'note' rather than crashing.
-        const rawType = pickString('type');
-        const itemType: VaultItemType = isVaultItemType(rawType) ? rawType : 'note';
-        const postResult = await handlePostPublish({
-          id: itemId,
-          type: itemType,
-          summary: pickString('summary'),
-          body: pickString('body'),
-          timestamp: originalTimestamp > 0 ? originalTimestamp : Date.now(),
-          persona: primaryPersona,
-          sender_did: d2dContactDid !== '' ? d2dContactDid : undefined,
-          confidence: rich?.confidence ?? classification.confidence,
-          metadata: routingMeta,
-        });
+      // (A) Agentic — `turn` is non-null because `rememberRuntime` ran.
+      //     Apply the loop's collected side effects: people-graph link,
+      //     reminders already fired mid-loop, preferences logged. The
+      //     contact last-seen update is deterministic and runs regardless.
+      //
+      // (B) Legacy — no runtime injected. `handlePostPublish` does the
+      //     reminder_planner LLM call, identity-link extraction, etc.
+      //     This is the path existing tests + the Python-parity pipeline
+      //     still use until every consumer wires the runtime.
+      // ────────────────────────────────────────────────────────────────
+      if (turn !== null) {
+        const postErrors: string[] = [];
+        let peopleGraphTelemetry: {
+          applied: number;
+          created: number;
+          updated: number;
+          conflicts: number;
+          skipped: boolean;
+        } | null = null;
+        let contactUpdated = false;
+        const ambiguousRouting = turn.sideEffects.routes.length === 0;
+
+        if (turn.sideEffects.people.length > 0) {
+          const extraction: ExtractionResult = {
+            sourceItemId: itemId,
+            extractorVersion: 'remember_runtime/v1',
+            results: turn.sideEffects.people.map((p) => ({
+              canonicalName: p.canonicalName,
+              relationshipHint: p.relationshipHint,
+              sourceExcerpt: p.sourceExcerpt,
+              surfaces: [
+                {
+                  surface: p.surface,
+                  surfaceType: p.surfaceType,
+                  confidence: 'high' as const,
+                },
+              ],
+            })),
+          };
+          try {
+            const applyFn =
+              options.peopleGraphApply ??
+              (async (r) => {
+                const repo = getPeopleRepository();
+                if (repo === null) {
+                  return {
+                    created: 0,
+                    updated: 0,
+                    conflicts: [],
+                    skipped: true,
+                  } as ApplyExtractionResponse;
+                }
+                return repo.applyExtraction(r);
+              });
+            const applied = await applyFn(extraction);
+            peopleGraphTelemetry = {
+              applied: applied.created + applied.updated,
+              created: applied.created,
+              updated: applied.updated,
+              conflicts: applied.conflicts.length,
+              skipped: applied.skipped,
+            };
+          } catch (err) {
+            postErrors.push(
+              `people_graph: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
+
+        if (turn.sideEffects.preferences.length > 0) {
+          // No dedicated preferences table yet — log for telemetry.
+          log({
+            event: 'staging.drain.preferences_recorded',
+            item_id: itemId,
+            count: turn.sideEffects.preferences.length,
+            preferences: turn.sideEffects.preferences,
+          });
+        }
+
+        if (d2dContactDid !== '') {
+          try {
+            const contact = getContact(d2dContactDid);
+            if (contact) {
+              updateContact(d2dContactDid, {});
+              contactUpdated = true;
+            }
+          } catch (err) {
+            postErrors.push(
+              `contact_last_seen: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
+
         result.postPublish = {
-          remindersCreated: postResult.remindersCreated,
-          identityLinksFound: postResult.identityLinksFound,
-          contactUpdated: postResult.contactUpdated,
-          ambiguousRouting: postResult.ambiguousRouting,
-          llmRefinedReminders: postResult.llmRefinedReminders,
-          peopleGraph: postResult.peopleGraph,
-          errors: postResult.errors,
+          remindersCreated: turn.toolNames.filter((n) => n === 'schedule_reminder').length,
+          identityLinksFound: turn.sideEffects.people.length,
+          contactUpdated,
+          ambiguousRouting,
+          llmRefinedReminders: true,
+          peopleGraph: peopleGraphTelemetry,
+          errors: postErrors,
         };
-      } catch (err) {
-        // `handlePostPublish` is fail-soft by design — any throw here
-        // is a programming bug, not a runtime condition. Surface it
-        // on the telemetry result but keep the drain moving.
-        const reason = err instanceof Error ? err.message : String(err);
-        log({
-          event: 'staging.drain.post_publish_threw',
-          item_id: itemId,
-          error: reason,
-        });
-        result.postPublish = {
-          remindersCreated: 0,
-          identityLinksFound: 0,
-          contactUpdated: false,
-          ambiguousRouting: false,
-          llmRefinedReminders: false,
-          peopleGraph: null,
-          errors: [`post_publish threw: ${reason}`],
-        };
+      } else {
+        // Legacy path — handlePostPublish does reminder_planner LLM
+        // call, identity extraction, contact last-seen, ambiguous flag.
+        try {
+          const primaryPersona = personas[0] ?? 'general';
+          const rawType = pickString('type');
+          const itemType: VaultItemType = isVaultItemType(rawType) ? rawType : 'note';
+          const postResult = await handlePostPublish(
+            {
+              id: itemId,
+              type: itemType,
+              summary: pickString('summary'),
+              body: pickString('body'),
+              timestamp: originalTimestamp > 0 ? originalTimestamp : Date.now(),
+              persona: primaryPersona,
+              sender_did: d2dContactDid !== '' ? d2dContactDid : undefined,
+              confidence: classifierConfidence,
+              metadata: routingMeta,
+            },
+            {
+              ...(options.peopleGraphApply !== undefined
+                ? { peopleGraphApply: options.peopleGraphApply }
+                : {}),
+            },
+          );
+          result.postPublish = {
+            remindersCreated: postResult.remindersCreated,
+            identityLinksFound: postResult.identityLinksFound,
+            contactUpdated: postResult.contactUpdated,
+            ambiguousRouting: postResult.ambiguousRouting,
+            llmRefinedReminders: postResult.llmRefinedReminders,
+            peopleGraph: postResult.peopleGraph,
+            errors: postResult.errors,
+          };
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          log({
+            event: 'staging.drain.post_publish_threw',
+            item_id: itemId,
+            error: reason,
+          });
+          result.postPublish = {
+            remindersCreated: 0,
+            identityLinksFound: 0,
+            contactUpdated: false,
+            ambiguousRouting: false,
+            llmRefinedReminders: false,
+            peopleGraph: null,
+            errors: [`post_publish threw: ${reason}`],
+          };
+        }
       }
 
       // D2D → nudge chain. Fires only for items that came in over

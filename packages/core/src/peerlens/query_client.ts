@@ -42,6 +42,7 @@
 import type { Confidence, Sentiment, SubjectType } from '@dina/protocol';
 import type { TrustScore } from './cache';
 import { DEFAULT_APPVIEW_URL as APPVIEW_URL } from '../constants';
+import { defaultFetch } from '../runtime/fetch';
 
 const DEFAULT_APPVIEW_URL = APPVIEW_URL;
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -168,7 +169,7 @@ export class PeerlensQueryClient {
   constructor(config?: QueryConfig) {
     this.appviewURL = (config?.appviewURL ?? DEFAULT_APPVIEW_URL).replace(/\/$/, '');
     this.timeoutMs = config?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    this.fetchFn = config?.fetch ?? globalThis.fetch;
+    this.fetchFn = config?.fetch ?? defaultFetch();
   }
 
   /**

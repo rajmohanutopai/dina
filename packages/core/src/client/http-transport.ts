@@ -33,6 +33,7 @@ import type {
   CoreHealth,
   VaultQuery,
   VaultQueryResult,
+  VaultQueryItem,
   VaultItemInput,
   VaultStoreResult,
   VaultListOptions,
@@ -77,6 +78,10 @@ import type {
   MemoryTouchResult,
   UpdateContactParams,
   Contact,
+  ExtractionResult,
+  ApplyExtractionResponse,
+  Person,
+  PersonaListEntry,
   ActionPolicyEntry,
   ActionPolicyResult,
   RiskLevel,
@@ -163,13 +168,42 @@ export class HttpCoreTransport implements CoreClient {
   }
 
   async vaultQuery(persona: string, query: VaultQuery): Promise<VaultQueryResult> {
+    // Route reads persona from the query string and the search params
+    // (text, mode, limit, embedding, type) from the body.
+    const body: Record<string, unknown> = {};
+    if (query.text !== undefined) body.text = query.text;
+    if (query.mode !== undefined) body.mode = query.mode;
+    if (query.limit !== undefined) body.limit = query.limit;
+    if (query.embedding !== undefined) body.embedding = query.embedding;
+    if (query.type !== undefined) body.type = query.type;
     return this.call<VaultQueryResult>(
       'POST',
       '/v1/vault/query',
-      undefined,
-      { persona, ...query },
+      { persona },
+      body,
       `vaultQuery(persona=${persona})`,
     );
+  }
+
+  async vaultGet(persona: string, itemId: string): Promise<VaultQueryItem | null> {
+    try {
+      return await this.call<VaultQueryItem>(
+        'GET',
+        `/v1/vault/item/${encodeURIComponent(itemId)}`,
+        { persona },
+        undefined,
+        `vaultGet(persona=${persona}, id=${itemId})`,
+      );
+    } catch (err) {
+      // 404 is a valid "not found" — map to null rather than throw.
+      if (
+        err instanceof Error &&
+        (err.message.includes('404') || err.message.includes('not found'))
+      ) {
+        return null;
+      }
+      throw err;
+    }
   }
 
   async vaultStore(persona: string, item: VaultItemInput): Promise<VaultStoreResult> {
@@ -739,6 +773,58 @@ export class HttpCoreTransport implements CoreClient {
       return [];
     }
     return Array.isArray(raw.contacts) ? (raw.contacts as Contact[]) : [];
+  }
+
+  async peopleApplyExtraction(
+    result: ExtractionResult,
+  ): Promise<ApplyExtractionResponse> {
+    return this.call<ApplyExtractionResponse>(
+      'POST',
+      '/v1/people/apply-extraction',
+      undefined,
+      result as unknown as Record<string, unknown>,
+      `peopleApplyExtraction(sourceItemId=${result.sourceItemId})`,
+    );
+  }
+
+  async personasList(): Promise<PersonaListEntry[]> {
+    const raw = await this.call<{ personas?: unknown }>(
+      'GET',
+      '/v1/personas',
+      undefined,
+      undefined,
+      'personasList',
+    );
+    return Array.isArray(raw.personas) ? (raw.personas as PersonaListEntry[]) : [];
+  }
+
+  async peopleList(): Promise<Person[]> {
+    const raw = await this.call<{ people?: unknown }>(
+      'GET',
+      '/v1/people',
+      undefined,
+      undefined,
+      'peopleList',
+    );
+    return Array.isArray(raw.people) ? (raw.people as Person[]) : [];
+  }
+
+  async peopleFindByName(surface: string): Promise<Person[]> {
+    if (typeof surface !== 'string' || surface.trim() === '') {
+      throw new Error('peopleFindByName: surface is required');
+    }
+    // Query goes through the `query` parameter (not embedded in path)
+    // so the canonical-signature builder includes it under the
+    // `?query` field — Core's signed-auth middleware verifies against
+    // that exact canonicalization.
+    const raw = await this.call<{ people?: unknown }>(
+      'GET',
+      '/v1/people/find',
+      { surface: surface.trim() },
+      undefined,
+      `peopleFindByName(surface=${surface})`,
+    );
+    return Array.isArray(raw.people) ? (raw.people as Person[]) : [];
   }
 
   async updateContact(did: string, updates: UpdateContactParams): Promise<void> {

@@ -32,6 +32,7 @@ describe('core-server config (task 4.4/4.5)', () => {
         },
         msgbox: { url: 'wss://test-mailbox.dinakernel.com/ws', enabled: true },
         cors: {},
+        services: {},
       });
     });
 
@@ -70,6 +71,7 @@ describe('core-server config (task 4.4/4.5)', () => {
           enabled: false,
         },
         cors: { allowOrigin: 'https://admin.example.com' },
+        services: {},
       });
     });
 

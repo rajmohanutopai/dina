@@ -89,6 +89,19 @@ export interface ApplyPeopleGraphOptions {
    */
   repo?: PeopleRepository;
   /**
+   * Async writer callback that takes precedence over `repo`. Used by
+   * the home-node-lite brain-server, where Brain runs in a different
+   * process from Core (the only place that owns SQLite). Setting
+   * `apply` routes the write through `CoreClient.peopleApplyExtraction`,
+   * which POSTs the structured `ExtractionResult` over the signed
+   * Core HTTP surface.
+   *
+   * When set, `repo` is ignored. The callback's return value (the
+   * repo's `ApplyExtractionResponse`) is recorded verbatim on the
+   * outcome.
+   */
+  apply?: (result: ExtractionResult) => Promise<ApplyExtractionResponse>;
+  /**
    * Override the extractor version stamp recorded on every surface +
    * the idempotency log. Tests use this to force a fresh apply on
    * an item the previous test already wrote.
@@ -111,8 +124,14 @@ export async function applyPeopleGraphExtraction(
   if (typeof text !== 'string' || text.trim().length === 0) {
     return { ok: false, reason: 'empty_text' };
   }
-  const repo = options.repo ?? getPeopleRepository();
-  if (repo === null) {
+  const apply = options.apply;
+  // Only consult the local repo singleton when an explicit `apply`
+  // callback isn't supplied. The HTTP-routed `apply` path is used by
+  // out-of-process Brain runtimes (home-node-lite) where the people
+  // repo lives on the Core side and an in-process `getPeopleRepository`
+  // returns null by design.
+  const repo = apply !== undefined ? null : options.repo ?? getPeopleRepository();
+  if (apply === undefined && repo === null) {
     return { ok: false, reason: 'no_repo' };
   }
   const extractorVersion = options.extractorVersion ?? PEOPLE_GRAPH_EXTRACTOR_VERSION;
@@ -139,7 +158,12 @@ export async function applyPeopleGraphExtraction(
 
   let applied: ApplyExtractionResponse;
   try {
-    applied = repo.applyExtraction(result);
+    if (apply !== undefined) {
+      applied = await apply(result);
+    } else {
+      // `repo` is non-null in this branch (gated above).
+      applied = (repo as PeopleRepository).applyExtraction(result);
+    }
   } catch (err) {
     return {
       ok: false,

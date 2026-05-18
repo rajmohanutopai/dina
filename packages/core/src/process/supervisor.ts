@@ -56,6 +56,7 @@ export interface SupervisorCallbacks {
 }
 
 import { HEALTH_CHECK_TIMEOUT_MS, UNHEALTHY_THRESHOLD, MS_SECOND } from '../constants';
+import { defaultFetch } from '../runtime/fetch';
 
 const DEFAULT_HEALTH_INTERVAL_MS = 10 * MS_SECOND;
 const DEFAULT_MAX_RESTART_ATTEMPTS = 10;
@@ -71,7 +72,7 @@ export class ProcessSupervisor {
 
   constructor(callbacks?: SupervisorCallbacks, fetchFn?: typeof globalThis.fetch) {
     this.callbacks = callbacks ?? {};
-    this.fetchFn = fetchFn ?? globalThis.fetch;
+    this.fetchFn = fetchFn ?? defaultFetch();
   }
 
   /** Register a process to be supervised. */

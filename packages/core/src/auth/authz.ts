@@ -72,6 +72,10 @@ const AUTHZ_RULES: Array<{ prefix: string; allowed: Set<CallerType> }> = [
   // Source: Go adminEndpointChecker.allowedForBrain (auth.go).
   { prefix: '/v1/memory/', allowed: new Set(['brain']) },
 
+  // People graph — Brain owns the write surface
+  // (post-publish extractor in the staging drain).
+  { prefix: '/v1/people/', allowed: new Set(['brain']) },
+
   // Staging inbox — Brain owns remember/connectors drain over signed HTTP.
   { prefix: '/v1/staging/', allowed: new Set(['brain']) },
 

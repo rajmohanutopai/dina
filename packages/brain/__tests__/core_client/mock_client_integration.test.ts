@@ -69,7 +69,7 @@ class SubjectUnderTest {
 
   /** Query the vault, returning just the result count. */
   async countMatches(persona: string, q: string): Promise<number> {
-    const r = await this.core.vaultQuery(persona, { q });
+    const r = await this.core.vaultQuery(persona, { text: q });
     return r.count;
   }
 }
@@ -137,7 +137,7 @@ describe('Brain ↔ MockCoreClient exemplar (task 1.35)', () => {
 
       // Call is still recorded — matches the dispatch contract documented
       // in test-harness/src/mocks/core_client.ts (log-before-throw).
-      expect(core.calls).toEqual([{ method: 'vaultQuery', args: ['financial', { q: 'invoice' }] }]);
+      expect(core.calls).toEqual([{ method: 'vaultQuery', args: ['financial', { text: 'invoice' }] }]);
     });
 
     it('resets cleanly between tests', async () => {

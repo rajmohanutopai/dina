@@ -28,6 +28,7 @@ import type {
   CoreHealth,
   VaultQuery,
   VaultQueryResult,
+  VaultQueryItem,
   VaultItemInput,
   VaultStoreResult,
   VaultListOptions,
@@ -72,6 +73,10 @@ import type {
   MemoryTouchResult,
   UpdateContactParams,
   Contact,
+  ExtractionResult,
+  ApplyExtractionResponse,
+  Person,
+  PersonaListEntry,
   ActionPolicyEntry,
   ActionPolicyResult,
   RiskLevel,
@@ -145,14 +150,34 @@ export class InProcessTransport implements CoreClient {
   }
 
   async vaultQuery(persona: string, query: VaultQuery): Promise<VaultQueryResult> {
+    // Match the route: persona in querystring, search params in body.
+    const body: Record<string, unknown> = {};
+    if (query.text !== undefined) body.text = query.text;
+    if (query.mode !== undefined) body.mode = query.mode;
+    if (query.limit !== undefined) body.limit = query.limit;
+    if (query.embedding !== undefined) body.embedding = query.embedding;
+    if (query.type !== undefined) body.type = query.type;
     const res = await this.router.handle(
       blankRequest({
         method: 'POST',
         path: `/v1/vault/query`,
-        body: { persona, ...query },
+        query: { persona },
+        body,
       }),
     );
     return expectOk<VaultQueryResult>(res, `vaultQuery(persona=${persona})`);
+  }
+
+  async vaultGet(persona: string, itemId: string): Promise<VaultQueryItem | null> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'GET',
+        path: `/v1/vault/item/${encodeURIComponent(itemId)}`,
+        query: { persona },
+      }),
+    );
+    if (res.status === 404) return null;
+    return expectOk<VaultQueryItem>(res, `vaultGet(persona=${persona}, id=${itemId})`);
   }
 
   async vaultStore(persona: string, item: VaultItemInput): Promise<VaultStoreResult> {
@@ -778,6 +803,54 @@ export class InProcessTransport implements CoreClient {
     if (res.status !== 200) return [];
     const raw = (res.body ?? {}) as { contacts?: unknown };
     return Array.isArray(raw.contacts) ? (raw.contacts as Contact[]) : [];
+  }
+
+  async peopleApplyExtraction(
+    result: ExtractionResult,
+  ): Promise<ApplyExtractionResponse> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'POST',
+        path: '/v1/people/apply-extraction',
+        body: result as unknown as Record<string, unknown>,
+      }),
+    );
+    return expectOk<ApplyExtractionResponse>(
+      res,
+      `peopleApplyExtraction(sourceItemId=${result.sourceItemId})`,
+    );
+  }
+
+  async personasList(): Promise<PersonaListEntry[]> {
+    const res = await this.router.handle(
+      blankRequest({ method: 'GET', path: '/v1/personas' }),
+    );
+    if (res.status !== 200) return [];
+    const raw = (res.body ?? {}) as { personas?: unknown };
+    return Array.isArray(raw.personas) ? (raw.personas as PersonaListEntry[]) : [];
+  }
+
+  async peopleList(): Promise<Person[]> {
+    const res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/people' }));
+    if (res.status !== 200) return [];
+    const raw = (res.body ?? {}) as { people?: unknown };
+    return Array.isArray(raw.people) ? (raw.people as Person[]) : [];
+  }
+
+  async peopleFindByName(surface: string): Promise<Person[]> {
+    if (typeof surface !== 'string' || surface.trim() === '') {
+      throw new Error('peopleFindByName: surface is required');
+    }
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'GET',
+        path: '/v1/people/find',
+        query: { surface: surface.trim() },
+      }),
+    );
+    if (res.status !== 200) return [];
+    const raw = (res.body ?? {}) as { people?: unknown };
+    return Array.isArray(raw.people) ? (raw.people as Person[]) : [];
   }
 
   async updateContact(did: string, updates: UpdateContactParams): Promise<void> {

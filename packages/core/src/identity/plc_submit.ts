@@ -32,6 +32,7 @@
  */
 
 import { DEFAULT_PLC_DIRECTORY } from '../constants';
+import { defaultFetch } from '../runtime/fetch';
 
 /** Default total attempts including the first try. */
 export const DEFAULT_MAX_ATTEMPTS = 5;
@@ -143,7 +144,8 @@ export async function submitPlcOperation(
 ): Promise<SubmitPlcOperationResult> {
   validateDID(params.did);
 
-  const fetchFn = config.fetch ?? globalThis.fetch;
+  const fetchFn =
+    config.fetch ?? (typeof globalThis.fetch === 'function' ? defaultFetch() : undefined);
   if (typeof fetchFn !== 'function') {
     throw new PLCSubmitError({
       kind: 'invalid_input',

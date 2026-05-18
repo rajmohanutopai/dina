@@ -25,6 +25,20 @@ import { runAgenticTurn, type AgenticLoopOptions } from './agentic_loop';
 import type { ToolRegistry } from './tool_registry';
 import { IntentClassifier, type IntentClassification } from './intent_classifier';
 import type { GuardScanner } from './guard_scanner';
+import type { PreFlightRetrievalResult } from '../composition/ask_retrieval_planner';
+
+/**
+ * Pre-flight retrieval provider — runs ONCE per ask before the
+ * agentic loop. The host wires it (see
+ * `composition/ask_retrieval_planner.ts` for shape + builders).
+ * Resolves to a formatted `[Retrieved context]` block + the
+ * underlying plan; the handler prepends the block to the user
+ * message. Fail-soft: implementations should never throw; they
+ * return `null` (or an empty block) when planning fails.
+ */
+export type PreFlightRetrievalProvider = (
+  question: string,
+) => Promise<PreFlightRetrievalResult | null>;
 
 export interface AgenticAskHandlerOptions {
   provider: LLMProvider;
@@ -55,6 +69,18 @@ export interface AgenticAskHandlerOptions {
    * omitted the handler behaves exactly as before — no scanning.
    */
   guardScanner?: GuardScanner;
+  /**
+   * Optional pre-flight retrieval planner — runs once before the
+   * reasoning loop and prepends a `[Retrieved context]` block to the
+   * user message so the loop starts with the right vault rows (and
+   * `find_person` matches) already in context. Use this to bridge
+   * cross-domain gaps (e.g. surfacing a finance-vault budget on a
+   * birthday-gift question that never mentions money).
+   *
+   * Fail-soft: the provider returns `null` or an empty block on any
+   * upstream issue; the loop runs unchanged.
+   */
+  preFlight?: PreFlightRetrievalProvider;
   /** Optional sink for diagnostics — last turn's trace, usage, etc. */
   onTurn?: (trace: {
     query: string;
@@ -252,11 +278,29 @@ export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCom
       }
     }
 
+    // Pre-flight retrieval planner — turn the question into a
+    // structured plan (which personas + people to pre-fetch), execute
+    // the plan in parallel, and prepend the result to the user
+    // message. Fail-soft: any error swallowed at the provider, returns
+    // `null`, loop runs unchanged.
+    let userMessage = query;
+    if (options.preFlight !== undefined) {
+      let preFlight: PreFlightRetrievalResult | null = null;
+      try {
+        preFlight = await options.preFlight(query);
+      } catch {
+        preFlight = null;
+      }
+      if (preFlight && preFlight.block !== '') {
+        userMessage = `${preFlight.block}\n\nUser's question:\n${query}`;
+      }
+    }
+
     const result = await runAgenticTurn({
       provider: options.provider,
       tools: options.tools,
       systemPrompt,
-      userMessage: query,
+      userMessage,
       options: options.loopOptions,
     });
 

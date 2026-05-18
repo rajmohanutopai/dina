@@ -20,7 +20,7 @@
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
-import { handleChat, deleteThread } from '@dina/brain/chat';
+import { handleChat, deleteThread, getThread, subscribeToThread } from '@dina/brain/chat';
 
 export interface RegisterChatRoutesOptions {
   /** Route prefix override (defaults to `/api/v1`). */
@@ -75,6 +75,108 @@ export function registerChatRoutes(
       const threadId = typeof body.threadId === 'string' ? body.threadId : 'main';
       const removed = deleteThread(threadId);
       return reply.status(200).send({ ok: true, removed });
+    },
+  );
+
+  // ────────────────────────────────────────────────────────────────
+  // GET /api/v1/chat/stream?threadId=X  —  Server-Sent Events
+  //
+  // Mirrors mobile's in-process `subscribeToThread` listener over HTTP.
+  // Browser opens an EventSource; every message added to the brain-side
+  // thread store (user bubble, dina bubble, ask_pending placeholder,
+  // late-arriving lifecycle patches, etc.) is pushed as an SSE frame.
+  //
+  // Wire format: one event per ChatMessage. Event type defaults to
+  // "message"; the data payload is the JSON-serialized ChatMessage so
+  // the SPA can apply it to its own browser-side thread store via the
+  // same primitives (`addUserMessage`, `addDinaResponse`, …) that mobile
+  // calls in-process.
+  //
+  // On connect we also flush the existing thread history so a refresh
+  // or late subscriber lands on the latest state without needing a
+  // separate GET endpoint.
+  //
+  // Why SSE (not WebSockets): the channel is one-way (server → client),
+  // EventSource handles auto-reconnect natively, and there's no extra
+  // dep — Fastify's raw `reply.raw` is enough.
+  // ────────────────────────────────────────────────────────────────
+  app.get(
+    `${prefix}/chat/stream`,
+    async (
+      req: FastifyRequest<{ Querystring: { threadId?: string } }>,
+      reply: FastifyReply,
+    ) => {
+      const threadId =
+        typeof req.query.threadId === 'string' && req.query.threadId !== ''
+          ? req.query.threadId
+          : 'main';
+
+      // Headers must land before any body bytes. Fastify wants to set
+      // its own Content-Type, so we send headers via the raw socket.
+      reply.raw.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        // Disable buffering at reverse proxies (e.g., nginx).
+        'X-Accel-Buffering': 'no',
+      });
+
+      // SSE retry hint — if the connection drops, EventSource waits
+      // this long before reconnecting (default would be ~3s).
+      reply.raw.write('retry: 2000\n\n');
+
+      // Flush existing history so a fresh subscriber sees the current
+      // thread state without a separate GET. `getThread` returns the
+      // in-memory array; no clone needed since we only stringify.
+      const existing = getThread(threadId);
+      for (const msg of existing) {
+        reply.raw.write(`event: message\ndata: ${JSON.stringify(msg)}\n\n`);
+      }
+
+      // Live subscription. Listener runs synchronously per message
+      // (subscribeToThread's contract), so writes preserve order.
+      const unsubscribe = subscribeToThread(threadId, (msg) => {
+        // Guard against writes after the client disconnected. Once
+        // `reply.raw.destroyed` is true the stream is gone.
+        if (reply.raw.destroyed || reply.raw.writableEnded) return;
+        try {
+          reply.raw.write(`event: message\ndata: ${JSON.stringify(msg)}\n\n`);
+        } catch {
+          // Connection went away between the destroyed check and the
+          // actual write. Drop silently — cleanup will run on close.
+        }
+      });
+
+      // Keepalive — proxies and some browsers close idle SSE streams
+      // after ~30s. A 15s comment-only heartbeat keeps NATs happy and
+      // gives the client a clean "still alive" signal.
+      const keepalive = setInterval(() => {
+        if (reply.raw.destroyed || reply.raw.writableEnded) return;
+        try {
+          reply.raw.write(': keepalive\n\n');
+        } catch {
+          /* see above */
+        }
+      }, 15_000);
+      // Don't pin the process open just for the timer.
+      if (typeof (keepalive as { unref?: () => void }).unref === 'function') {
+        (keepalive as { unref: () => void }).unref();
+      }
+
+      const cleanup = (): void => {
+        clearInterval(keepalive);
+        unsubscribe();
+      };
+      req.raw.once('close', cleanup);
+      reply.raw.once('close', cleanup);
+      reply.raw.once('error', cleanup);
+
+      // Fastify expects an awaited reply; return a never-resolving
+      // promise so the route handler doesn't try to send another body.
+      // The connection lifetime is now managed by req/reply.raw events.
+      return new Promise<never>(() => {
+        /* lives until the client disconnects */
+      });
     },
   );
 

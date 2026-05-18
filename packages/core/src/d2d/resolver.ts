@@ -21,6 +21,7 @@ import { buildDIDDocument } from '../identity/did_document';
 import { extractPublicKey, publicKeyToMultibase } from '../identity/did';
 
 import { DEFAULT_PLC_DIRECTORY, DID_CACHE_TTL_MS } from '../constants';
+import { defaultFetch } from '../runtime/fetch';
 
 const DEFAULT_TTL_MS = DID_CACHE_TTL_MS;
 
@@ -52,7 +53,7 @@ export class DIDResolver {
   constructor(config?: ResolverConfig) {
     this.plcDirectory = (config?.plcDirectory ?? DEFAULT_PLC_DIRECTORY).replace(/\/$/, '');
     this.ttlMs = config?.ttlMs ?? DEFAULT_TTL_MS;
-    this.fetchFn = config?.fetch ?? globalThis.fetch;
+    this.fetchFn = config?.fetch ?? defaultFetch();
     this.cache = new Map();
   }
 

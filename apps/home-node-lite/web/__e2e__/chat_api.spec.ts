@@ -10,11 +10,16 @@
  * surface mobile chat hooks would call (`useChatThread.ts` POSTs to
  * `/api/v1/chat`) actually responds.
  *
- * Scope deliberately stops at the `/help` command — that's the
- * orchestrator path that does NOT need Core wired in. /remember and
- * /ask hit the vault + LLM and need core-server next to brain-server;
- * a future CI matrix can layer those on once we ship a paired-stack
- * webServer config.
+ * Covers the two orchestrator paths the chat tab actually exercises
+ * end-to-end today:
+ *   - `/help`     — static slash-command listing, no Core needed
+ *   - `/remember` — writes to Core's staging table via the
+ *                   chat-remember runtime (paired-stack wired by
+ *                   `playwright.config.ts`)
+ *
+ * `/ask` involves an LLM provider key + tool-calling loop and lives
+ * behind a separate test sweep (and behind whichever provider key
+ * CI has access to). That's a follow-on.
  *
  * Source: docs/HOME_NODE_LITE_WEB_UI_TASKS.md Phase 4 "Chat tab".
  */
@@ -43,6 +48,36 @@ test('POST /api/v1/chat rejects empty text with 400 (input validation)', async (
   expect(resp.status()).toBe(400);
   const body = (await resp.json()) as { error: string };
   expect(typeof body.error).toBe('string');
+});
+
+test('POST /api/v1/chat with /remember writes a memory record and acknowledges', async ({
+  request,
+}) => {
+  // /remember stages a memory in Core's `staging` table via the
+  // chat-remember runtime (the wire that `boot.ts` sets up via
+  // `wireChatRememberRuntime`). On the paired-stack the request
+  // walks: browser → brain-server's /api/v1/chat → handleChat →
+  // /remember handler → Core. We assert the round-trip ack here;
+  // verifying the record actually landed in Core is a Core-side
+  // integration concern already covered by Core's own staging tests.
+  const resp = await request.post('/api/v1/chat', {
+    data: {
+      text: '/remember Emma loves dinosaurs',
+      threadId: 'phase-4-remember',
+    },
+  });
+  expect(resp.status()).toBe(200);
+  const body = (await resp.json()) as {
+    intent: string;
+    response: string;
+    sources?: string[];
+  };
+  expect(typeof body.intent).toBe('string');
+  // The /remember handler returns a human-readable acknowledgement;
+  // the exact wording evolves with copy tweaks but every variant
+  // confirms the memory landed (or the user can decide whether to
+  // park it via approvals). Pin on the stable-affirmation vocabulary.
+  expect(body.response).toMatch(/saved|remember|parked|noted|stored|got it|approval/i);
 });
 
 test('POST /api/v1/chat/reset clears a thread', async ({ request }) => {

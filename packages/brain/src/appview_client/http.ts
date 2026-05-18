@@ -26,6 +26,7 @@ import {
   isRetryableStatus,
   parseResponseBody,
 } from '@dina/core';
+import { defaultFetch } from '../runtime/fetch';
 
 /** Retryable client-side response statuses beyond 5xx. */
 const RETRYABLE_4XX = new Set([408, 429]);
@@ -241,7 +242,7 @@ export class AppViewClient {
     this.appViewURL = options.appViewURL.replace(/\/$/, '');
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
-    this.fetchFn = options.fetch ?? globalThis.fetch;
+    this.fetchFn = options.fetch ?? defaultFetch();
     this.sleepFn = options.sleepFn ?? backoff;
     if (this.timeoutMs <= 0) {
       throw new Error(`AppViewClient: timeoutMs must be > 0 (got ${this.timeoutMs})`);

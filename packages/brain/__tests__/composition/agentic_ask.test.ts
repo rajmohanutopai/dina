@@ -171,6 +171,7 @@ describe('buildAgenticAskPipeline', () => {
         'browse_vault',
         'classify_intent',
         'draft_review',
+        'find_person',
         'find_preferred_provider',
         'geocode',
         'get_full_content',
@@ -182,7 +183,7 @@ describe('buildAgenticAskPipeline', () => {
         'vault_search',
       ].sort(),
     );
-    expect(pipeline.tools.size()).toBe(12);
+    expect(pipeline.tools.size()).toBe(13);
   });
 
   it('defaults sensitivePersonas to [health, financial] when omitted', () => {

@@ -25,6 +25,8 @@ import {
   type ServiceRespondRouteOptions,
 } from './routes/service_respond';
 import { registerMemoryRoutes } from './routes/memory';
+import { registerPeopleRoutes } from './routes/people';
+import { registerPersonasRoutes } from './routes/personas';
 import { registerContactsRoutes } from './routes/contacts';
 import { registerPairRoutes } from './routes/pair';
 import { registerScratchpadRoutes } from './routes/scratchpad';
@@ -79,6 +81,18 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   // (installed in bootstrap). No wiring options needed at router
   // construction time; see WM-CORE-09 + WM-CORE-10.
   registerMemoryRoutes(router);
+
+  // People-graph write surface — Brain's post-publish people
+  // extractor POSTs structured ExtractionResult into the people repo.
+  // Dispatches to the module-global registered via
+  // `setPeopleRepository`.
+  registerPeopleRoutes(router);
+
+  // Persona registry read surface — out-of-process Brain queries this
+  // at boot to mirror the persona list into its own `accessiblePersonas`
+  // state (replaces the hardcoded `['general', 'work']` in lite). Mobile
+  // doesn't need this route (Brain shares the registry in-process).
+  registerPersonasRoutes(router);
 
   // Contacts HTTP surface (PC-CORE-10 + PC-CORE-11). Reads the
   // module-global contact directory; no options needed at router

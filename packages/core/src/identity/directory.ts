@@ -35,6 +35,7 @@ function secp256k1ToMultibase(pubKey: Uint8Array): string {
 }
 
 import { DEFAULT_PLC_DIRECTORY } from '../constants';
+import { defaultFetch } from '../runtime/fetch';
 const DEFAULT_PLC_URL = DEFAULT_PLC_DIRECTORY;
 
 export interface PLCCreateParams {
@@ -330,7 +331,7 @@ export async function resolveDIDPLC(
   did: string,
   config?: PLCDirectoryConfig,
 ): Promise<Record<string, unknown>> {
-  const fetchFn = config?.fetch ?? globalThis.fetch;
+  const fetchFn = config?.fetch ?? defaultFetch();
   const plcURL = (config?.plcURL ?? DEFAULT_PLC_URL).replace(/\/$/, '');
 
   const response = await fetchFn(`${plcURL}/${did}`, {

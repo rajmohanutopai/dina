@@ -17,6 +17,7 @@ import { randomBytes } from '@noble/ciphers/utils.js';
 import { sign } from '../crypto/ed25519';
 import { toRFC3339 } from '../auth/timestamp';
 import { MSGBOX_FORWARD_SUFFIX } from '../constants';
+import { defaultFetch } from '../runtime/fetch';
 
 export interface ForwardHeaders {
   'X-Recipient-DID': string;
@@ -32,8 +33,8 @@ export interface ForwardResult {
   msg_id: string;
 }
 
-/** Injectable fetch for testing. */
-let fetchFn: typeof globalThis.fetch = globalThis.fetch;
+/** Injectable fetch for testing. Defaults to `defaultFetch()`. */
+let fetchFn: typeof globalThis.fetch = defaultFetch();
 
 /** Set the fetch function (for testing). */
 export function setFetchFn(fn: typeof globalThis.fetch): void {
@@ -42,7 +43,7 @@ export function setFetchFn(fn: typeof globalThis.fetch): void {
 
 /** Reset the fetch function to default (for testing). */
 export function resetFetchFn(): void {
-  fetchFn = globalThis.fetch;
+  fetchFn = defaultFetch();
 }
 
 /**

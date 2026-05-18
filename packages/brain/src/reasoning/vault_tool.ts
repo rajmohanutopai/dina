@@ -22,7 +22,11 @@
  */
 
 import { ApprovalRequiredError, type AgentTool } from './tool_registry';
-import { executeToolSearch, getAccessiblePersonas } from '../vault_context/assembly';
+import {
+  executeToolSearch,
+  getAccessiblePersonas,
+  getVaultReadBackend,
+} from '../vault_context/assembly';
 import { getItem, listRecentItems } from '@dina/core';
 import { listPersonas } from '@dina/core';
 
@@ -470,7 +474,12 @@ export function createGetFullContentTool(
         return { error: `Persona '${persona}' is locked` };
       }
 
-      const item = getItem(persona, itemId);
+      // Out-of-process Core: route through the registered backend.
+      const backend = getVaultReadBackend();
+      const item =
+        backend !== null && backend.vaultGet !== undefined
+          ? ((await backend.vaultGet(persona, itemId)) as Awaited<ReturnType<typeof getItem>>)
+          : getItem(persona, itemId);
       if (item === null) return { error: `Item ${itemId} not found in ${persona}` };
 
       return {

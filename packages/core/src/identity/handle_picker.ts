@@ -24,6 +24,8 @@
  * it is also injectable.
  */
 
+import { defaultFetch } from '../runtime/fetch';
+
 // ─── Types ────────────────────────────────────────────────────────────────
 
 export type AvailabilityKind = 'available' | 'taken' | 'invalid' | 'unknown';
@@ -204,7 +206,7 @@ export async function checkHandleAvailability(
     return { handle, kind: 'invalid', reason: formatCheck.reason };
   }
 
-  const f = opts.fetch ?? globalThis.fetch;
+  const f = opts.fetch ?? defaultFetch();
   const base = opts.pdsURL.replace(/\/$/, '');
   const url = `${base}/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(handle)}`;
   const controller = new AbortController();

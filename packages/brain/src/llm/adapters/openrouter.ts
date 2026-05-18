@@ -37,6 +37,7 @@ import {
   DEFAULT_MAX_TOKENS as MAX_TOKENS,
 } from '../../constants';
 import { safeCall } from './safety';
+import { defaultFetch } from '../../runtime/fetch';
 
 const OPENROUTER_BASE_URL = OR_BASE;
 const DEFAULT_MODEL = DEFAULT_OPENROUTER_MODEL;
@@ -91,7 +92,7 @@ export class OpenRouterAdapter implements LLMProvider {
     this.defaultModel = config.defaultModel ?? DEFAULT_MODEL;
     this.appName = config.appName ?? OPENROUTER_APP_NAME;
     this.appURL = config.appURL ?? OPENROUTER_APP_URL;
-    this.fetchFn = config.fetch ?? globalThis.fetch;
+    this.fetchFn = config.fetch ?? defaultFetch();
   }
 
   async chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResponse> {

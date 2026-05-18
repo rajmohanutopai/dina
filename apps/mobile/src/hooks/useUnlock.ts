@@ -21,7 +21,7 @@ import {
   deriveRootSigningKey,
   getPublicKey,
   listPersonas,
-  openBootPersonas,
+  openPersona,
   unwrapSeed,
   type WrappedSeed,
 } from '@dina/core';
@@ -199,10 +199,35 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
     }
   }
 
-  // 5. Open boot personas (default + standard auto-open)
+  // 5. Open ALL personas. The in-app user has full access by definition
+  //    (they hold the master seed and just authenticated with the device
+  //    passphrase) — tier-based access controls exist to protect against
+  //    external agents reaching Core via dina-agent CLI, NOT against the
+  //    owner using their own app. Mirrors the lite brain-server's
+  //    boot-time "open everything" approach so a budget note in
+  //    `finance` is reachable for an /ask "what should I get Emma for
+  //    her birthday" without an approval round-trip.
+  //
+  //    See memory `user-vs-agent-persona-access` for the standing rule.
+  //    Without this, the pre-flight retrieval planner's fan-out into
+  //    sensitive/locked vaults silently returns 0 hits and cross-domain
+  //    synthesis collapses to "what's in `general`".
   state.step = 'opening_vaults';
   notify();
-  const opened = openBootPersonas();
+  const personasBeforeUnlock = listPersonas();
+  for (const persona of personasBeforeUnlock) {
+    if (!persona.isOpen) {
+      // `openPersona(name, approved=true)` bypasses the tier guard —
+      // approval is implicit because the user just unlocked the device.
+      try {
+        openPersona(persona.name, true);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn(`[unlock] openPersona failed for "${persona.name}":`, err);
+      }
+    }
+  }
+  const opened = listPersonas().filter((p) => p.isOpen).map((p) => p.name);
   state.openedPersonas = opened;
 
   // 5a. Wire persona-vault repos for every persona the unlock
@@ -226,15 +251,7 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
   //     invisible to `/ask`. Keeping this in lockstep with the
   //     unlocked-persona set is the critical wiring — latent bug
   //     documented in the scenario-1+2 E2E test's docstring.
-  //
-  //     Use the full set of currently-open personas rather than the
-  //     return value of openBootPersonas() (which only returns NEWLY-
-  //     opened personas). After a sealVault → re-unlock cycle, personas
-  //     remain isOpen:true from the previous unlock, so openBootPersonas()
-  //     returns [] — causing setAccessiblePersonas([]) → drain sees no
-  //     accessible personas → all items land in pending_unlock even for
-  //     the general persona (MT-12-I2 root cause).
-  setAccessiblePersonas(listPersonas().filter((p) => p.isOpen).map((p) => p.name));
+  setAccessiblePersonas(opened);
 
   // 6. Complete. Consume any pending force-prompt signal — a
   //    successful manual unlock is the user re-asserting access, so

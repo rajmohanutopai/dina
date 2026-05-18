@@ -35,7 +35,35 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import * as ed25519 from '@noble/ed25519';
+import { sha512 } from '@noble/hashes/sha2.js';
+import { base58 } from '@scure/base';
 import { defineConfig, devices } from '@playwright/test';
+
+// @noble/ed25519 v3+ requires explicit SHA-512 configuration. We
+// mirror what `packages/core/src/crypto/ed25519.ts` does — that's the
+// runtime brain-server uses to derive its DID, so we match it byte-
+// for-byte. Doing the derivation inline (rather than importing
+// `deriveDIDKey` from @dina/core) keeps the web tsconfig free of the
+// jest-typed test helpers that live inside the core package's src
+// tree.
+const edHashes = ed25519.hashes as { sha512?: (...msgs: Uint8Array[]) => Uint8Array };
+edHashes.sha512 = (...msgs: Uint8Array[]) => {
+  const h = sha512.create();
+  for (const m of msgs) h.update(m);
+  return h.digest();
+};
+
+/** Mirrors `@dina/core` `deriveDIDKey(getPublicKey(seed))`. */
+function deriveBrainDidKey(seed: Uint8Array): string {
+  const publicKey = ed25519.getPublicKey(seed);
+  // 0xed 0x01 = Ed25519 multicodec varint prefix.
+  const payload = new Uint8Array(2 + publicKey.length);
+  payload[0] = 0xed;
+  payload[1] = 0x01;
+  payload.set(publicKey, 2);
+  return `did:key:z${base58.encode(payload)}`;
+}
 
 const CORE_PORT = Number(process.env.DINA_CORE_E2E_PORT ?? 18298);
 const BRAIN_PORT = Number(process.env.DINA_BRAIN_E2E_PORT ?? 18299);
@@ -59,6 +87,16 @@ if (!fs.existsSync(BRAIN_KEY_PATH)) {
   // is derived, and a `did:key:` is computed from it.
   fs.writeFileSync(BRAIN_KEY_PATH, randomBytes(32), { mode: 0o600 });
 }
+
+// Derive the brain's did:key from the same seed brain-server reads at
+// boot. core-server needs to know this DID so it can register the
+// brain service in its caller-type allowlist — otherwise signed
+// requests from brain-server land as `unknown/unknown` and Core 403s
+// before they reach a handler. Keeping the derivation here (and not
+// in a globalSetup hook) means the env var is materialized before
+// Playwright forks either webServer child.
+const BRAIN_SEED = new Uint8Array(fs.readFileSync(BRAIN_KEY_PATH));
+const BRAIN_DID = deriveBrainDidKey(BRAIN_SEED);
 
 // Anchor the workspace root so npm --workspace runs from a known cwd.
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
@@ -95,12 +133,17 @@ export default defineConfig({
         DINA_CORE_HOST: '127.0.0.1',
         DINA_CORE_PORT: String(CORE_PORT),
         DINA_VAULT_DIR: VAULT_DIR,
-        DINA_LOG_LEVEL: 'warn',
+        DINA_LOG_LEVEL: process.env.DINA_E2E_LOG_LEVEL ?? 'warn',
         // Tests fire many requests in quick succession (Playwright's
         // resource loaders + repeated /api/v1/* hits). Disable the
         // per-DID rate limiter in test mode so a single test run
         // doesn't trip the 60/min cap.
         DINA_RATE_LIMIT: '100000',
+        // Register the brain-server's DID in Core's caller-type
+        // allowlist so signed requests (chat-remember staging,
+        // vault writes, etc.) resolve to `service/brain` instead of
+        // falling through to the unknown-caller 403.
+        DINA_BRAIN_DID: BRAIN_DID,
       },
     },
     // Brain — analyst. Reads from Core via signed HTTP.
@@ -114,7 +157,7 @@ export default defineConfig({
         DINA_BRAIN_WEB_UI: '1',
         DINA_BRAIN_HOST: '127.0.0.1',
         DINA_BRAIN_PORT: String(BRAIN_PORT),
-        DINA_BRAIN_LOG_LEVEL: 'warn',
+        DINA_BRAIN_LOG_LEVEL: process.env.DINA_E2E_LOG_LEVEL ?? 'warn',
         DINA_BRAIN_WEB_BUNDLE_DIR: path.resolve(__dirname, 'dist'),
         // Point at the just-started Core. Compose service-name DNS
         // is not in play here — both processes are on loopback.

@@ -71,6 +71,7 @@ import {
   createGetFullContentTool,
   type VaultPersonaGuard,
 } from '../reasoning/vault_tool';
+import { createFindPersonTool } from '../reasoning/people_tool';
 
 import { createPersonaGuard, type VaultApprovalWorkflowClient } from './persona_guard';
 
@@ -258,6 +259,7 @@ export function buildAgenticAskPipeline(
   const buildToolsWithGuard = (guard?: VaultPersonaGuard): ToolRegistry => {
     const reg = new ToolRegistry();
     reg.register(createListPersonasTool());
+    reg.register(createFindPersonTool());
     reg.register(createVaultSearchTool(guard ? { personaGuard: guard } : {}));
     reg.register(createBrowseVaultTool(guard ? { personaGuard: guard } : {}));
     reg.register(createGetFullContentTool(guard ? { personaGuard: guard } : {}));

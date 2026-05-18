@@ -153,6 +153,20 @@ export const MEMORY_TOPIC_TOUCH = '/v1/memory/topic/touch';
 export const MEMORY_TOC = '/v1/memory/toc';
 
 // ---------------------------------------------------------------
+// People graph — write-side endpoint used by Brain's post-publish
+// people-graph extractor. Brain's drain composes the structured
+// `ExtractionResult` from the LLM-derived links and POSTs it here;
+// Core dispatches to the registered `PeopleRepository.applyExtraction`
+// (the only sync method the drain needs).
+// ---------------------------------------------------------------
+
+export const PEOPLE_APPLY_EXTRACTION = '/v1/people/apply-extraction';
+/** GET — list every confirmed/suggested person (rejected hidden). */
+export const PEOPLE_LIST = '/v1/people';
+/** GET — find people whose surfaces match a name (query: `?surface=Emma`). */
+export const PEOPLE_FIND = '/v1/people/find';
+
+// ---------------------------------------------------------------
 // Scratchpad — cognitive checkpoints for multi-step reasoning
 // (nudge pipeline, agent-action approvals, crash-report staging).
 // Scratchpad routes used by brain-side crash recovery. Matches the

@@ -20,11 +20,19 @@ function buildRouter(): CoreRouter {
   r.post(
     '/v1/vault/query',
     (req) => {
-      const body = req.body as { persona?: string; q?: string; type?: string };
+      // Route reads persona from querystring + text/mode/limit from body.
+      const body = req.body as { text?: string; mode?: string; type?: string };
       return {
         status: 200,
         body: {
-          items: [{ id: 'i1', persona: body.persona, q: body.q }],
+          items: [
+            {
+              id: 'i1',
+              type: 'note',
+              persona: req.query.persona,
+              text: body.text,
+            },
+          ],
           count: 1,
         },
       };
@@ -794,11 +802,11 @@ describe('InProcessTransport (task 1.30)', () => {
 
   it('vaultQuery sends persona + query body', async () => {
     const t = new InProcessTransport(buildRouter());
-    const r = await t.vaultQuery('personal', { q: 'dentist', type: 'contact' });
+    const r = await t.vaultQuery('personal', { text: 'dentist', type: 'contact' });
     expect(r.count).toBe(1);
     const first = (r.items as Array<Record<string, unknown>>)[0];
     expect(first?.persona).toBe('personal');
-    expect(first?.q).toBe('dentist');
+    expect(first?.text).toBe('dentist');
   });
 
   it('vaultStore returns the assigned id', async () => {

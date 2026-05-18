@@ -14,6 +14,7 @@
  * value never lingers across screens.
  */
 
+import { defaultFetch } from '@dina/core';
 import { resolveMobileHostedDinaEndpoints } from '@dina/home-node';
 
 const TTL_MS = 60_000;
@@ -65,7 +66,7 @@ export async function lookupPlc(
   did: string,
   options?: { fetchFn?: typeof globalThis.fetch; plcDirectory?: string },
 ): Promise<PlcLookupResult> {
-  const fetchFn = options?.fetchFn ?? globalThis.fetch;
+  const fetchFn = options?.fetchFn ?? defaultFetch();
   const directory = (options?.plcDirectory ?? resolveMobileHostedDinaEndpoints().plcDirectoryUrl)
     .replace(/\/$/, '');
 

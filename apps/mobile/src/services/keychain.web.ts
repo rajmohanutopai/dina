@@ -81,10 +81,21 @@ const WRAP_KEY_SERVICE = '__dina_wrap_key__';
 const DEFAULT_SERVICE = 'dina';
 
 let cachedDb: IDBDatabase | null = null;
+/**
+ * Single-flight handle for the open request. Same rationale as
+ * `wrapKeyPromise`: if `setGenericPassword(...)` fires from a
+ * `Promise.all([...])` while the cache is cold, every call enters
+ * `openDB()` synchronously, observes `cachedDb === null`, and starts
+ * its OWN `indexedDB.open(...)`. That leaks N–1 orphan connections
+ * that prevent any future `deleteDatabase` from completing (it stays
+ * blocked until every connection closes).
+ */
+let openDbPromise: Promise<IDBDatabase> | null = null;
 
 function openDB(): Promise<IDBDatabase> {
   if (cachedDb !== null) return Promise.resolve(cachedDb);
-  return new Promise<IDBDatabase>((resolve, reject) => {
+  if (openDbPromise !== null) return openDbPromise;
+  openDbPromise = new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
@@ -101,11 +112,16 @@ function openDB(): Promise<IDBDatabase> {
       cachedDb.onversionchange = () => {
         cachedDb?.close();
         cachedDb = null;
+        openDbPromise = null;
       };
       resolve(cachedDb);
     };
-    req.onerror = () => reject(req.error ?? new Error('IndexedDB open failed'));
+    req.onerror = () => {
+      openDbPromise = null;
+      reject(req.error ?? new Error('IndexedDB open failed'));
+    };
   });
+  return openDbPromise;
 }
 
 function tx(db: IDBDatabase, mode: IDBTransactionMode): IDBObjectStore {
@@ -128,25 +144,51 @@ interface WrapKeyRow {
   key: CryptoKey;
 }
 
+/**
+ * Single-flight cache for the wrap key. Caching a `Promise<CryptoKey>`
+ * (not the resolved value) is what defeats the concurrent-write race:
+ * the FIRST caller starts the read-or-generate flow, every subsequent
+ * caller awaits the same promise.
+ *
+ * Why this matters: `infra_setup.tsx` fires
+ * `Promise.all([savePdsUrl, saveAppViewURL])` on the Continue press.
+ * Without single-flighting, both calls reach `loadOrCreateWrapKey`
+ * concurrently, both see no key in IndexedDB, both call
+ * `crypto.subtle.generateKey` (producing DIFFERENT keys), both PUT
+ * their key under the same row — one wins persistence. The losing
+ * call has already encrypted its row's ciphertext under the now-orphan
+ * key; that row is permanently undecryptable.
+ *
+ * Resetting the cache (`__dangerouslyResetForTests`) drops this so
+ * the dual-mode test can deterministically observe fresh state.
+ */
+let wrapKeyPromise: Promise<CryptoKey> | null = null;
+
 async function loadOrCreateWrapKey(db: IDBDatabase): Promise<CryptoKey> {
-  // Try to read the existing key first. AES-GCM keys are structured-
-  // cloneable into IndexedDB, so the CryptoKey survives a round-trip
-  // even though the raw bytes never leak.
-  const existing = (await awaitRequest(tx(db, 'readonly').get(WRAP_KEY_SERVICE))) as
-    | WrapKeyRow
-    | undefined;
-  if (existing !== undefined && existing.key instanceof CryptoKey) {
-    return existing.key;
-  }
-  const fresh = await crypto.subtle.generateKey(
-    { name: 'AES-GCM', length: 256 },
-    /* extractable */ false,
-    ['encrypt', 'decrypt'],
-  );
-  await awaitRequest(
-    tx(db, 'readwrite').put({ service: WRAP_KEY_SERVICE, key: fresh } satisfies WrapKeyRow),
-  );
-  return fresh;
+  if (wrapKeyPromise !== null) return wrapKeyPromise;
+  wrapKeyPromise = (async () => {
+    const existing = (await awaitRequest(tx(db, 'readonly').get(WRAP_KEY_SERVICE))) as
+      | WrapKeyRow
+      | undefined;
+    if (existing !== undefined && existing.key instanceof CryptoKey) {
+      return existing.key;
+    }
+    const fresh = await crypto.subtle.generateKey(
+      { name: 'AES-GCM', length: 256 },
+      /* extractable */ false,
+      ['encrypt', 'decrypt'],
+    );
+    await awaitRequest(
+      tx(db, 'readwrite').put({ service: WRAP_KEY_SERVICE, key: fresh } satisfies WrapKeyRow),
+    );
+    return fresh;
+  })().catch((err) => {
+    // Drop the cached rejection so the next caller retries the flow
+    // (rather than every future call inheriting a permanent failure).
+    wrapKeyPromise = null;
+    throw err;
+  });
+  return wrapKeyPromise;
 }
 
 // ---------------------------------------------------------------------------
@@ -247,14 +289,36 @@ export async function resetGenericPassword(options?: BaseOptions): Promise<boole
 // ---------------------------------------------------------------------------
 
 export async function __dangerouslyResetForTests(): Promise<void> {
+  // Settle anything the previous test left in flight (concurrent-write
+  // tests can have CryptoKey-generation work mid-promise). Failure
+  // here is fine — we're about to delete the whole DB anyway.
+  if (wrapKeyPromise !== null) {
+    try {
+      await wrapKeyPromise;
+    } catch {
+      /* swallow */
+    }
+  }
+  wrapKeyPromise = null;
   if (cachedDb !== null) {
     cachedDb.close();
     cachedDb = null;
   }
+  openDbPromise = null;
+  // `onblocked` fires when another connection still holds the database
+  // open. Instead of rejecting (which racy-but-correct teardown would
+  // surface as a confusing failure on every other test), we wait for
+  // the eventual `onsuccess` — IndexedDB will deliver it once the
+  // outstanding connections drop. We DO log the block so a genuinely
+  // stuck test (i.e. one that forgot to close a connection it opened)
+  // surfaces in CI output rather than hanging silently.
   await new Promise<void>((resolve, reject) => {
     const req = indexedDB.deleteDatabase(DB_NAME);
     req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error ?? new Error('IndexedDB delete failed'));
-    req.onblocked = () => reject(new Error('IndexedDB delete blocked'));
+    req.onblocked = () => {
+      // eslint-disable-next-line no-console
+      console.warn('keychain.web: IndexedDB deleteDatabase blocked — waiting for connections to drain');
+    };
   });
 }

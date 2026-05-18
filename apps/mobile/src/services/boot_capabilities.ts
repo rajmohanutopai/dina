@@ -79,7 +79,7 @@ import {
   type ProviderName,
 } from '@dina/brain/runtime';
 import { startReviewDraft } from '../peerlens/review_draft';
-import type { BootServiceInputs } from './boot_service';
+import { MOBILE_PERSONA_DESCRIPTIONS, type BootServiceInputs } from './boot_service';
 import type { NodeRole } from './bootstrap';
 import {
   DEFAULT_MSGBOX_URL,
@@ -95,9 +95,12 @@ import {
 import {
   AppViewServiceResolver,
   addContactIfNotExists,
+  getPeopleRepository,
   hydrateContactDirectory,
+  listPersonas,
   multibaseToPublicKey,
 } from '@dina/core';
+import { executeToolSearch } from '@dina/brain';
 
 /**
  * Dev-only seed: EXPO_PUBLIC_DINA_DEV_CONTACT=`did:method:id|Display Name`.
@@ -756,6 +759,57 @@ async function tryBuildAgenticAsk(opts: {
       ? await tryBuildGeminiEmbedding(provider)
       : undefined;
 
+  // Pre-flight retrieval planner — same shape lite brain-server
+  // wires. Mobile's fetchers stay in-process because vault SQLite
+  // lives in the same Node process as Brain on the device:
+  //   - vault search → `executeToolSearch` (which already routes
+  //     through `getVaultReadBackend()` if set; mobile leaves it
+  //     unset and hits SQLite directly).
+  //   - person lookup → `getPeopleRepository()` filtered on
+  //     normalised surface text.
+  // `installedPersonas` is recomputed per /ask via `listPersonas()`
+  // so a persona added by the user mid-session shows up in the
+  // planner's menu without a reboot.
+  const installedPersonas = (): Array<{ name: string; description: string }> =>
+    listPersonas().map((p) => ({
+      name: p.name,
+      description: MOBILE_PERSONA_DESCRIPTIONS[p.name] ?? '',
+    }));
+  const retrievalFetchers = {
+    async vaultSearch(persona: string, query: string) {
+      const items = await executeToolSearch(persona, query, 5);
+      return items.map((i) => ({
+        id: i.id,
+        content_l0: i.content_l0,
+        ...(i.body !== undefined ? { body: i.body } : {}),
+        persona,
+      }));
+    },
+    async findPerson(name: string) {
+      const repo = getPeopleRepository();
+      if (repo === null) return [];
+      const needle = name.trim().toLowerCase();
+      return repo
+        .listPeople()
+        .filter((p) =>
+          (p.surfaces ?? []).some(
+            (s) => s.status !== 'rejected' && s.normalizedSurface === needle,
+          ),
+        )
+        .map((p) => ({
+          canonicalName: p.canonicalName,
+          ...(p.relationshipHint !== ''
+            ? { relationshipHint: p.relationshipHint }
+            : {}),
+          surfaceSummary: (p.surfaces ?? [])
+            .filter((s) => s.status !== 'rejected')
+            .map((s) => s.surface)
+            .slice(0, 3)
+            .join(', '),
+        }));
+    },
+  };
+
   // Delegate to the shared `@dina/home-node/ask-runtime` builder. The
   // builder constructs the pipeline + AskCoordinator from the same
   // inputs home-node-lite brain-server uses — mobile only differs in
@@ -768,6 +822,8 @@ async function tryBuildAgenticAsk(opts: {
     core: lazyCoreClient(),
     orchestratorHandle: lazyOrchestratorHandle(),
     workflowClient: lazyWorkflowClient(),
+    installedPersonas,
+    retrievalFetchers,
     ...(opts.logger !== undefined ? { logger: opts.logger } : {}),
     ...(embedding !== undefined ? { embedding } : {}),
   });

@@ -26,6 +26,8 @@
  * publish_flag — those are PeerLens features, not Bus Driver.
  */
 
+import { defaultFetch } from '../runtime/fetch';
+
 /** Result of a successful `putRecord`. */
 export interface PutRecordResult {
   /** Full AT URI of the record, e.g. `at://did:plc:.../col/rkey`. */
@@ -100,7 +102,7 @@ export class PDSPublisher {
     this.password = options.password;
     this.sessionTtlMs = options.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    this.fetchFn = options.fetch ?? globalThis.fetch;
+    this.fetchFn = options.fetch ?? defaultFetch();
     this.nowFn = options.nowFn ?? Date.now;
 
     if (this.sessionTtlMs <= 0) {

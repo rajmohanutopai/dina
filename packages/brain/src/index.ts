@@ -1,3 +1,9 @@
+// Platform-safe fetch accessor — bind it to globalThis so the
+// browser's WebIDL fetch (which checks `this === Window`) works when
+// the reference is captured into a class field or module-level let.
+// Peer of `@dina/core`'s `defaultFetch()` — kept local because
+// `@dina/brain` doesn't depend on `@dina/core`.
+export { defaultFetch } from './runtime/fetch';
 export * from './pii/entity_vault';
 export * from './pii/tier2_patterns';
 export * from './peerlens/scorer';
@@ -193,12 +199,45 @@ export type {
 } from './reasoning/schedule_reminder_tool';
 export { makeAgenticAskHandler, DEFAULT_ASK_SYSTEM_PROMPT } from './reasoning/ask_handler';
 export type { AgenticAskHandlerOptions } from './reasoning/ask_handler';
+export {
+  buildRememberRuntime,
+} from './composition/remember_runtime';
+export type {
+  RememberRuntimeInput,
+  RememberTurnInput,
+  RememberTurnResult,
+} from './composition/remember_runtime';
+export {
+  emptyRememberSideEffects,
+} from './reasoning/remember_tools';
+export type {
+  RememberSideEffects,
+} from './reasoning/remember_tools';
 export { buildAgenticAskPipeline } from './composition/agentic_ask';
 export type {
   AgenticAskPipeline,
   AskToolContext,
   BuildAgenticAskPipelineInput,
 } from './composition/agentic_ask';
+export {
+  planAskRetrieval,
+  parseAskRetrievalPlan,
+  emptyAskRetrievalPlan,
+  buildAskRetrievalPlannerCall,
+  runAskPreFlightRetrieval,
+  formatRetrievalContextBlock,
+  ASK_RETRIEVAL_PLAN_RESPONSE_SCHEMA,
+} from './composition/ask_retrieval_planner';
+export type {
+  AskRetrievalPlan,
+  PlannedPersonaSearch,
+  InstalledPersona,
+  PlanAskRetrievalOptions,
+  AskRetrievalFetchers,
+  RetrievedVaultItem,
+  RetrievedPersonMatch,
+  PreFlightRetrievalResult,
+} from './composition/ask_retrieval_planner';
 export {
   buildAgenticExecuteFn,
   createAskCoordinator,

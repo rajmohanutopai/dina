@@ -25,6 +25,7 @@ import {
   type SubjectType,
 } from '@dina/protocol';
 import { canonicalize, signCanonical, verifyCanonical } from '../identity/signing';
+import { defaultFetch } from '../runtime/fetch';
 
 // ── Re-exports of the canonical wire types ─────────────────────────
 
@@ -119,14 +120,14 @@ const ATTESTATION_LEXICON = PEERLENS_NSIDS.attestation;
 
 // ── Injectable fetch (for testing) ──────────────────────────────────
 
-let fetchFn: typeof globalThis.fetch = globalThis.fetch;
+let fetchFn: typeof globalThis.fetch = defaultFetch();
 
 export function setPDSFetchFn(fn: typeof globalThis.fetch): void {
   fetchFn = fn;
 }
 
 export function resetPDSFetchFn(): void {
-  fetchFn = globalThis.fetch;
+  fetchFn = defaultFetch();
 }
 
 // ── Validation ──────────────────────────────────────────────────────

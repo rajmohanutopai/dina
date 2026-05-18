@@ -52,6 +52,7 @@
 import {
   cidForOperation,
   deriveRootSigningKey,
+  defaultFetch,
   deriveRotationKey,
   getPublicKey,
   mnemonicToEntropy,
@@ -412,7 +413,7 @@ async function applyDinaPLCUpdate(params: {
     },
     {
       plcURL,
-      fetch: globalThis.fetch,
+      fetch: defaultFetch(),
     },
   );
 }

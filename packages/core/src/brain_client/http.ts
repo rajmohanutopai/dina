@@ -19,6 +19,7 @@ import {
   backoff,
   parseResponseBody,
 } from '../transport/http_retry';
+import { defaultFetch } from '../runtime/fetch';
 
 export interface BrainClientConfig {
   coreURL: string;
@@ -46,7 +47,7 @@ export class CoreHTTPClient {
     this.did = config.did;
     this.timeoutMs = config.timeoutMs ?? 30_000;
     this.maxRetries = config.maxRetries ?? 3;
-    this.fetchFn = config.fetch ?? globalThis.fetch;
+    this.fetchFn = config.fetch ?? defaultFetch();
   }
 
   /**

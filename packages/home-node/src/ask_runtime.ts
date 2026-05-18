@@ -3,15 +3,20 @@ import {
   buildAgenticExecuteFn,
   createAskCoordinator,
   DEFAULT_ASK_SYSTEM_PROMPT,
+  planAskRetrieval,
+  runAskPreFlightRetrieval,
   registerCloudProvider as registerCloudEmbeddingProvider,
   ServiceQueryOrchestrator,
   type AgenticAskPipeline,
   type AppViewClient,
   type AskCoordinator,
   type AskCoordinatorCoreClient,
+  type AskRetrievalFetchers,
   type BuildAgenticAskPipelineInput,
   type EmbeddingProvider,
+  type InstalledPersona,
   type LLMProvider,
+  type PreFlightRetrievalResult,
   type ProviderName,
 } from '@dina/brain';
 import {
@@ -43,6 +48,27 @@ export interface HomeNodeAskRuntimeOptions {
     name: string;
     generate: EmbeddingProvider;
   };
+  /**
+   * Optional pre-flight retrieval planner — when both
+   * `installedPersonas` (a callable returning the user's current
+   * persona list with one-line descriptions) and `retrievalFetchers`
+   * (vault + people-graph backends) are supplied, the runtime builds
+   * a planner that runs once before every /ask and pre-fetches
+   * cross-domain context.
+   *
+   * Either omit both (planner disabled — loop runs with tools only,
+   * legacy behaviour) or supply both. Supplying only one is rejected
+   * at runtime construction so misconfiguration is caught at boot.
+   *
+   * The fetchers are typically thin wrappers around the same backends
+   * the agentic loop's vault_search / find_person tools use:
+   *   - mobile boot:    `executeToolSearch` (in-process queryVault)
+   *                     and `getPeopleRepository()` (in-process repo)
+   *   - lite brain-srv: HTTP `CoreClient.vaultQuery` /
+   *                     `CoreClient.peopleFindByName`
+   */
+  installedPersonas?: () => readonly InstalledPersona[];
+  retrievalFetchers?: AskRetrievalFetchers;
 }
 
 interface BuildHomeNodeAskRuntimeCommon extends HomeNodeAskRuntimeOptions {
@@ -53,6 +79,20 @@ interface BuildHomeNodeAskRuntimeCommon extends HomeNodeAskRuntimeOptions {
    * agentic loop drops the delegation tool from the registry.
    */
   workflowClient?: BuildAgenticAskPipelineInput['workflowClient'];
+  /**
+   * How long the AskCoordinator waits for the agentic loop to
+   * produce a terminal answer before falling back to async-resume
+   * delivery (`kind: 'async'` from `handleAsk`).
+   *
+   * Mobile leaves this at the default (3 s) because the chat bridge
+   * has an in-process listener that grafts the deferred answer into
+   * the chat thread later. Home-node-lite's HTTP-shaped chat
+   * endpoint is request/response — there's no long-lived listener
+   * to deliver a deferred bubble — so the host bumps this to
+   * something that comfortably covers the multi-turn Gemini loop
+   * (typically 5–15 s).
+   */
+  fastPathMs?: number;
 }
 
 /**
@@ -125,6 +165,25 @@ export function buildHomeNodeAskRuntime(
     orchestratorHandle = orchestrator;
   }
 
+  // Pre-flight planner — opt-in via installedPersonas + retrievalFetchers.
+  // We need an LLM call surface; the router lives inside the pipeline,
+  // so build the pipeline first, then derive the planner callable
+  // from `pipeline.router`. The planner is registered after pipeline
+  // construction; both `makeAgenticAskHandler` consumers and the
+  // coordinator's `buildAgenticExecuteFn` receive the same
+  // `preFlight` callable below.
+  const plannerEnabled =
+    options.installedPersonas !== undefined &&
+    options.retrievalFetchers !== undefined;
+  if (
+    (options.installedPersonas !== undefined) !==
+    (options.retrievalFetchers !== undefined)
+  ) {
+    throw new Error(
+      'buildHomeNodeAskRuntime: installedPersonas and retrievalFetchers must be provided together',
+    );
+  }
+
   const pipeline = buildAgenticAskPipeline({
     llm: options.llm,
     providerName: options.providerName,
@@ -141,11 +200,51 @@ export function buildHomeNodeAskRuntime(
       : {}),
   });
   const systemPrompt = options.systemPrompt ?? DEFAULT_ASK_SYSTEM_PROMPT;
+
+  // Build the pre-flight planner callable now that `pipeline.router`
+  // exists. The planner LLM call goes through the same router as the
+  // rest of the brain — same PII scrub, same consent gate, same tier
+  // selection (intent_classification → lite tier).
+  let preFlight: ((question: string) => Promise<PreFlightRetrievalResult | null>) | undefined;
+  if (plannerEnabled) {
+    const installedPersonas = options.installedPersonas!;
+    const fetchers = options.retrievalFetchers!;
+    const router = pipeline.router;
+    const llmCall = async (system: string, prompt: string): Promise<string> => {
+      try {
+        const response = await router.chat({
+          taskType: 'intent_classification',
+          messages: [{ role: 'user', content: prompt }],
+          ...(system !== '' ? { systemPrompt: system } : {}),
+          temperature: 0.1,
+          maxTokens: 512,
+        });
+        return response.content;
+      } catch {
+        return '';
+      }
+    };
+    preFlight = async (question: string): Promise<PreFlightRetrievalResult | null> => {
+      try {
+        const personas = installedPersonas();
+        const plan = await planAskRetrieval(question, { llmCall, personas });
+        return await runAskPreFlightRetrieval(plan, fetchers);
+      } catch {
+        return null;
+      }
+    };
+  }
+
   const coordinator = createAskCoordinator({
     pipeline,
     coreClient: options.core,
-    executeFn: buildAgenticExecuteFn({ pipeline, systemPrompt }),
+    executeFn: buildAgenticExecuteFn({
+      pipeline,
+      systemPrompt,
+      ...(preFlight !== undefined ? { preFlight } : {}),
+    }),
     systemPrompt,
+    ...(options.fastPathMs !== undefined ? { fastPathMs: options.fastPathMs } : {}),
   });
   return { coordinator, orchestrator, pipeline };
 }

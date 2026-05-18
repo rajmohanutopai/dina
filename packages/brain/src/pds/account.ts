@@ -16,6 +16,8 @@
  * Source: docker-compose-test-stack.yml + AT Protocol createAccount spec.
  */
 
+import { defaultFetch } from '../runtime/fetch';
+
 /** Structured error for PDS account failures. */
 export class PDSAccountError extends Error {
   constructor(
@@ -97,7 +99,7 @@ export class PDSAccountClient {
     if (this.timeoutMs <= 0) {
       throw new Error(`PDSAccountClient: timeoutMs must be > 0 (got ${this.timeoutMs})`);
     }
-    this.fetchFn = options.fetch ?? globalThis.fetch;
+    this.fetchFn = options.fetch ?? defaultFetch();
   }
 
   /** Return the PDS's `describeServer` response (invite requirement, available handles, etc.). */

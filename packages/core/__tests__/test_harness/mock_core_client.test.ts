@@ -24,14 +24,14 @@ describe('MockCoreClient (task 1.34)', () => {
   it('records every method call with its args', async () => {
     const m = new MockCoreClient();
     await m.healthz();
-    await m.vaultQuery('personal', { q: 'dentist' });
+    await m.vaultQuery('personal', { text: 'dentist' });
     await m.personaStatus('financial');
 
     expect(m.calls).toHaveLength(3);
     expect(m.calls[0]?.method).toBe('healthz');
     expect(m.calls[0]?.args).toEqual([]);
     expect(m.calls[1]?.method).toBe('vaultQuery');
-    expect(m.calls[1]?.args).toEqual(['personal', { q: 'dentist' }]);
+    expect(m.calls[1]?.args).toEqual(['personal', { text: 'dentist' }]);
     expect(m.calls[2]?.method).toBe('personaStatus');
     expect(m.calls[2]?.args).toEqual(['financial']);
 

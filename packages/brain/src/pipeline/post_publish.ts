@@ -21,7 +21,22 @@ import {
 } from './people_graph_extraction';
 import { planReminders } from './reminder_planner';
 
-import type { VaultItemType } from '@dina/core';
+import type {
+  ApplyExtractionResponse,
+  ExtractionResult,
+  VaultItemType,
+} from '@dina/core';
+
+export interface PostPublishOptions {
+  /**
+   * Out-of-process people-graph writer. When set, `applyPeopleGraphExtraction`
+   * routes the structured result through this callback instead of the
+   * local `PeopleRepository`. Home-node-lite supplies
+   * `(r) => coreClient.peopleApplyExtraction(r)`; mobile leaves it
+   * `undefined` so the in-process repo handles the write directly.
+   */
+  peopleGraphApply?: (result: ExtractionResult) => Promise<ApplyExtractionResponse>;
+}
 
 export interface PostPublishResult {
   remindersCreated: number;
@@ -59,17 +74,20 @@ export interface PeopleGraphTelemetry {
  *
  * Safe: catches all errors internally. Returns a result summary.
  */
-export async function handlePostPublish(item: {
-  id: string;
-  type: VaultItemType;
-  summary: string;
-  body: string;
-  timestamp: number;
-  persona: string;
-  sender_did?: string;
-  confidence?: number;
-  metadata?: Record<string, unknown>;
-}): Promise<PostPublishResult> {
+export async function handlePostPublish(
+  item: {
+    id: string;
+    type: VaultItemType;
+    summary: string;
+    body: string;
+    timestamp: number;
+    persona: string;
+    sender_did?: string;
+    confidence?: number;
+    metadata?: Record<string, unknown>;
+  },
+  options: PostPublishOptions = {},
+): Promise<PostPublishResult> {
   const result: PostPublishResult = {
     remindersCreated: 0,
     contactUpdated: false,
@@ -137,9 +155,16 @@ export async function handlePostPublish(item: {
   // 5. People-graph apply — runs the typed person-link extractor and
   //    persists the result via `peopleRepo.applyExtraction`. Fail-soft;
   //    if the repo isn't registered yet (mobile bootstrap not yet
-  //    upgraded), this is a no-op rather than an error.
+  //    upgraded), this is a no-op rather than an error. When the host
+  //    runtime supplies `peopleGraphApply` (home-node-lite, where
+  //    Core owns SQLite out-of-process), the write goes over the Core
+  //    HTTP surface instead of the local repo.
   if (text.length > 0) {
-    const outcome = await applyPeopleGraphExtraction(text, item.id);
+    const outcome = await applyPeopleGraphExtraction(text, item.id, {
+      ...(options.peopleGraphApply !== undefined
+        ? { apply: options.peopleGraphApply }
+        : {}),
+    });
     result.peopleGraph = telemetryFromOutcome(outcome);
     if (!outcome.ok && (outcome.reason === 'extractor_failed' || outcome.reason === 'apply_failed')) {
       result.errors.push(`people_graph: ${outcome.reason}: ${outcome.error}`);

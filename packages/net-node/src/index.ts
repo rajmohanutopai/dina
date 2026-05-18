@@ -30,6 +30,7 @@
  */
 
 import type { HttpClient, HttpRequestInit, HttpResponse, CanonicalRequestSigner } from '@dina/core';
+import { defaultFetch } from '@dina/core';
 import { buildCanonicalPayload } from '@dina/protocol';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
@@ -77,15 +78,23 @@ export class NodeHttpClient implements HttpClient {
     this.timeoutMs = options.timeoutMs;
     // Explicit `in` check: if the caller passed `fetchFn: undefined`
     // that's an assertion of "no fetch available in this runtime"
-    // and we throw; otherwise fall through to the global.
-    const resolved =
-      'fetchFn' in options ? options.fetchFn : globalThis.fetch;
-    if (typeof resolved !== 'function') {
-      throw new Error(
-        'net-node: global fetch is not available (Node 22+ required); pass options.fetchFn explicitly',
-      );
+    // and we throw. Otherwise use `defaultFetch()` (handles WebIDL
+    // `this === Window` binding for browser runtimes).
+    if ('fetchFn' in options) {
+      if (typeof options.fetchFn !== 'function') {
+        throw new Error(
+          'net-node: global fetch is not available (Node 22+ required); pass options.fetchFn explicitly',
+        );
+      }
+      this.fetchFn = options.fetchFn;
+    } else {
+      if (typeof globalThis.fetch !== 'function') {
+        throw new Error(
+          'net-node: global fetch is not available (Node 22+ required); pass options.fetchFn explicitly',
+        );
+      }
+      this.fetchFn = defaultFetch();
     }
-    this.fetchFn = resolved;
   }
 
   async request(url: string, init: HttpRequestInit): Promise<HttpResponse> {

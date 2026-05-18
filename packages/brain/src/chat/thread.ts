@@ -257,6 +257,63 @@ export function addMessage(
 }
 
 /**
+ * Apply a remote `ChatMessage` verbatim to the local thread cache.
+ *
+ * Lite's browser SPA receives server-side thread mutations over SSE
+ * (`GET /api/v1/chat/stream`). Each frame carries a ChatMessage built
+ * by `addMessage` on the brain-server side; the SPA mirrors it into
+ * its own browser-side thread store via this helper.
+ *
+ * Why not call `addMessage`: that function generates a fresh `id`,
+ * which would diverge from the server's view of the same message.
+ * Mismatched IDs are mostly harmless (lifecycle patches are keyed by
+ * `askId`, not message id) but break dedup of repeat SSE frames after
+ * a reconnect, where the server flushes existing history.
+ *
+ * Semantics:
+ *   - If a message with the same `id` already exists, REPLACE it
+ *     in place. This covers `updateAskLifecycle`-style patches that
+ *     the server re-emits with the same id and a mutated payload.
+ *   - Otherwise append in timestamp order (or at the end if the
+ *     existing tail is older). Out-of-order arrivals are rare —
+ *     SSE is ordered per stream — but the timestamp-sort guards
+ *     against history-flush races on reconnect.
+ *
+ * Fires subscribers on every write, exactly like `addMessage`, so
+ * `useLiveThread` re-renders for both inserts and patches.
+ */
+export function applyRemoteMessage(msg: ChatMessage): ChatMessage {
+  let thread = threads.get(msg.threadId);
+  if (!thread) {
+    thread = [];
+    threads.set(msg.threadId, thread);
+  }
+
+  const existingIdx = thread.findIndex((m) => m.id === msg.id);
+  if (existingIdx !== -1) {
+    thread[existingIdx] = msg;
+  } else {
+    // Cheap insertion: most arrivals are at the tail. Walk back only
+    // when the new message's timestamp is older than the current tail.
+    const tail = thread[thread.length - 1];
+    if (tail === undefined || tail.timestamp <= msg.timestamp) {
+      thread.push(msg);
+    } else {
+      const insertAt = thread.findIndex((m) => m.timestamp > msg.timestamp);
+      if (insertAt === -1) {
+        thread.push(msg);
+      } else {
+        thread.splice(insertAt, 0, msg);
+      }
+    }
+  }
+
+  persistMessage(msg);
+  fireSubscribers(msg);
+  return msg;
+}
+
+/**
  * Hydrate a thread's in-memory cache from the persisted repository.
  * Called by the app layer after unlock (when persistence is wired) so
  * the chat UI shows prior history on first render. Idempotent —

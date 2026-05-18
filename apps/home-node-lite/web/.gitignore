@@ -1,0 +1,4 @@
+# Playwright pre-compiles .spec.ts and playwright.config.ts to .js
+# at run time. The .ts files are the source of truth.
+__e2e__/*.js
+playwright.config.js

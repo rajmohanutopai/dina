@@ -59,6 +59,23 @@ import type {
 import type { IdentityKeypair } from '@dina/core';
 import { createNode, type DinaNode, type NodeRole, type CreateNodeOptions } from './bootstrap';
 import { buildStagingEnrichment } from './staging_enrichment';
+import { buildRememberRuntime } from '@dina/brain';
+import { listPersonas } from '@dina/core';
+
+/**
+ * Per-persona hints for the agentic /remember loop on mobile. Matches
+ * the lite brain-server's `PERSONA_DESCRIPTIONS` so both stacks route
+ * a "$25 toy budget" memory to `finance` rather than `general`. Also
+ * fed into the `/ask` pre-flight retrieval planner so the planner's
+ * persona menu carries the same descriptions across both stacks —
+ * exported for `boot_capabilities.ts` to consume.
+ */
+export const MOBILE_PERSONA_DESCRIPTIONS: Record<string, string> = {
+  general: 'Everyday notes — anything that doesn\'t clearly fit a more specific vault.',
+  work: 'Job, projects, colleagues, work calendar items, professional context.',
+  health: 'Medical, fitness, symptoms, medications, doctors, allergies.',
+  finance: 'Money, budgets, spending, income, bills, debt, investments, taxes.',
+};
 import { emitRuntimeWarning, clearRuntimeWarning } from './runtime_warnings';
 import { createDemoBusDriverResponder } from './demo_bus_driver_responder';
 import { isAppViewStub } from './appview_stub';
@@ -483,6 +500,30 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
         llm: inputs.stagingEnrichment.llm,
       }),
     };
+    // Wire the per-item agentic /remember loop when we have an LLM in
+    // hand. The drain prefers this path; the legacy
+    // classifyDomain + reminder_planner pipeline only runs when no
+    // runtime is supplied (kept as a fallback during the transition).
+    try {
+      const personas = listPersonas().map((p) => ({
+        name: p.name,
+        description: MOBILE_PERSONA_DESCRIPTIONS[p.name] ?? '',
+      }));
+      const llm = inputs.stagingEnrichment.llm;
+      if (llm !== undefined) {
+        (stagingDrainOption as { rememberRuntime?: unknown }).rememberRuntime =
+          buildRememberRuntime({
+            llm,
+            personas,
+            defaultPersona: 'general',
+          });
+      }
+    } catch (err) {
+      addDegradation(
+        'staging.no_remember_runtime',
+        `Remember runtime construction failed: ${err instanceof Error ? err.message : String(err)}. Drain falls back to keyword classifier + reminder_planner.`,
+      );
+    }
   } else {
     addDegradation(
       'staging.no_enrichment',

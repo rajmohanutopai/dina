@@ -26,6 +26,7 @@ import type {
   CoreHealth,
   VaultQuery,
   VaultQueryResult,
+  VaultQueryItem,
   VaultItemInput,
   VaultStoreResult,
   VaultListOptions,
@@ -70,6 +71,10 @@ import type {
   MemoryTouchResult,
   UpdateContactParams,
   Contact,
+  ExtractionResult,
+  ApplyExtractionResponse,
+  Person,
+  PersonaListEntry,
   ActionPolicyEntry,
   ActionPolicyResult,
   RiskLevel,
@@ -105,6 +110,7 @@ export class MockCoreClient implements CoreClient {
     version: '0.0.0-test',
   };
   vaultQueryResult: VaultQueryResult = { items: [], count: 0 };
+  vaultGetResult: VaultQueryItem | null = null;
   vaultStoreResult: VaultStoreResult = {
     id: 'mock-item-id',
     storedAt: '2026-04-21T00:00:00Z',
@@ -212,6 +218,16 @@ export class MockCoreClient implements CoreClient {
    * `{status: 'ok', canonical: topic}` for happy-path tests.
    */
   memoryTouchResult?: MemoryTouchResult;
+  /** Extraction results recorded by `peopleApplyExtraction`. */
+  readonly peopleExtractions: ExtractionResult[] = [];
+  /** Override for `peopleApplyExtraction`'s return value. */
+  peopleApplyExtractionResult?: ApplyExtractionResponse;
+  /** Canned return value for `personasList()`. Empty by default. */
+  personasListResult: PersonaListEntry[] = [];
+  /** Canned people list — drives both `peopleList()` and the
+   *  filter inside `peopleFindByName()` (matches against
+   *  `surfaces[*].normalizedSurface`). Empty by default. */
+  peopleListResult: Person[] = [];
   /** Per-contact updates — tests assert `{did, preferredFor}` binds fired. */
   readonly contactUpdates: { did: string; updates: UpdateContactParams }[] = [];
   /** Per-category canned result for `findContactsByPreference` — tests
@@ -241,6 +257,10 @@ export class MockCoreClient implements CoreClient {
     this.memoryTouches.length = 0;
     this.contactUpdates.length = 0;
     this.memoryTouchResult = undefined;
+    this.peopleExtractions.length = 0;
+    this.peopleApplyExtractionResult = undefined;
+    this.personasListResult.length = 0;
+    this.peopleListResult.length = 0;
   }
 
   /** Count how many times a given method was called. */
@@ -256,6 +276,10 @@ export class MockCoreClient implements CoreClient {
 
   async vaultQuery(persona: string, query: VaultQuery): Promise<VaultQueryResult> {
     return this.dispatch('vaultQuery', [persona, query], () => this.vaultQueryResult);
+  }
+
+  async vaultGet(persona: string, itemId: string): Promise<VaultQueryItem | null> {
+    return this.dispatch('vaultGet', [persona, itemId], () => this.vaultGetResult);
   }
 
   async vaultStore(persona: string, item: VaultItemInput): Promise<VaultStoreResult> {
@@ -641,6 +665,48 @@ export class MockCoreClient implements CoreClient {
   async findContactsByPreference(category: string): Promise<Contact[]> {
     return this.dispatch('findContactsByPreference', [category], () => {
       return this.contactsByPreferenceResult[category.trim().toLowerCase()] ?? [];
+    });
+  }
+
+  async peopleApplyExtraction(
+    result: ExtractionResult,
+  ): Promise<ApplyExtractionResponse> {
+    return this.dispatch('peopleApplyExtraction', [result], () => {
+      this.peopleExtractions.push(result);
+      // Default: report every link as a freshly created person + surface.
+      // Tests that need a different shape override
+      // `peopleApplyExtractionResult` before the call.
+      if (this.peopleApplyExtractionResult !== undefined) {
+        return this.peopleApplyExtractionResult;
+      }
+      return {
+        created: result.results.length,
+        updated: 0,
+        conflicts: [],
+        skipped: false,
+      };
+    });
+  }
+
+  async personasList(): Promise<PersonaListEntry[]> {
+    return this.dispatch('personasList', [], () => this.personasListResult);
+  }
+
+  async peopleList(): Promise<Person[]> {
+    return this.dispatch('peopleList', [], () => [...this.peopleListResult]);
+  }
+
+  async peopleFindByName(surface: string): Promise<Person[]> {
+    if (typeof surface !== 'string' || surface.trim() === '') {
+      throw new Error('peopleFindByName: surface is required');
+    }
+    return this.dispatch('peopleFindByName', [surface], () => {
+      const needle = surface.trim().toLowerCase();
+      return this.peopleListResult.filter((p) =>
+        (p.surfaces ?? []).some(
+          (s) => s.status !== 'rejected' && s.normalizedSurface === needle,
+        ),
+      );
     });
   }
 
