@@ -31,7 +31,7 @@ import { createDIDPLC, getPublicKey, type IdentityKeypair } from '@dina/core';
 import { PDSAccountClient, PDSAccountError, type PDSSession } from '../pds/account';
 
 export interface EnsureNodeIdentityParams {
-  /** PDS handle, e.g. `busdriver.test-pds.dinakernel.com`. */
+  /** PDS handle, e.g. `demoprovider.test-pds.dinakernel.com`. */
   handle: string;
   /** PDS account password. Never logged. */
   password: string;

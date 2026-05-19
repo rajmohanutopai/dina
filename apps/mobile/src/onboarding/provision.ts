@@ -50,17 +50,16 @@
  */
 
 import {
-  cidForOperation,
-  deriveRootSigningKey,
   defaultFetch,
+  deriveRootSigningKey,
   deriveRotationKey,
   getPublicKey,
   mnemonicToEntropy,
   publicKeyToMultibase,
   secp256k1ToDidKeyMultibase,
-  updateDIDPLC,
   wrapSeed,
 } from '@dina/core';
+import { applyDinaPlcUpdate } from '@dina/home-node';
 import { hmac } from '@noble/hashes/hmac.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
@@ -268,13 +267,14 @@ export async function provisionIdentity(opts: ProvisionOptions): Promise<Provisi
   //    yields a key not in the doc's `rotationKeys` and PLC rejects.
   progress(opts.onProgress, 'publishing_plc_update');
   try {
-    await applyDinaPLCUpdate({
+    await applyDinaPlcUpdate({
       did: pdsDid,
-      plcURL: opts.plcURL,
+      ...(opts.plcURL !== undefined ? { plcURL: opts.plcURL } : {}),
       handle,
       msgboxEndpoint,
       signingPubKey: signing.publicKey,
       masterSeed,
+      fetch: defaultFetch(),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -315,151 +315,6 @@ export async function provisionIdentity(opts: ProvisionOptions): Promise<Provisi
   };
 }
 
-/**
- * Apply the post-mint PLC update that adds `dina_signing` VM +
- * `dina-messaging` service to a freshly-PDS-minted DID document.
- *
- * Steps:
- *   1. Resolve current DID document from plc.directory (`GET /:did`).
- *   2. Read existing `verificationMethod`, `service`, `rotationKeys`,
- *      `alsoKnownAs` fields.
- *   3. Fetch the audit log (`GET /:did/log/audit`) to get the prior
- *      op's CID.
- *   4. Build update op merging our additions on top.
- *   5. Sign + POST.
- */
-async function applyDinaPLCUpdate(params: {
-  did: string;
-  plcURL?: string;
-  handle: string;
-  msgboxEndpoint: string;
-  signingPubKey: Uint8Array;
-  /**
-   * Master seed (32 bytes BIP-39 entropy). `updateDIDPLC` will run
-   * `deriveRotationKey(seed, 0)` against this — must match the seed
-   * the recoveryKey we sent to PDS was derived from, otherwise the
-   * signature won't verify against any key in the doc's
-   * `rotationKeys` and PLC will reject the update.
-   */
-  masterSeed: Uint8Array;
-}): Promise<void> {
-  const plcURL = params.plcURL ?? 'https://plc.directory';
-
-  // Fetch the audit log → take the most recent operation. This is
-  // the operation our update will chain to via `prev = cid(lastOp)`.
-  const auditLog = await fetchAuditLog(params.did, plcURL);
-  if (auditLog.length === 0) {
-    throw new Error(`PLC audit log is empty for ${params.did} — DID not yet propagated?`);
-  }
-  const lastEntry = auditLog[auditLog.length - 1];
-  if (!lastEntry || typeof lastEntry !== 'object') {
-    throw new Error('PLC audit log returned a malformed last entry');
-  }
-
-  // The audit-log entry shape is `{ did, operation, cid, nullified, createdAt }`.
-  const lastOp = (lastEntry as Record<string, unknown>).operation;
-  if (!lastOp || typeof lastOp !== 'object') {
-    throw new Error('PLC audit log entry missing `operation` field');
-  }
-  const lastOpRecord = lastOp as Record<string, unknown>;
-
-  // Read the prior op's fields so we can MERGE on top — never overwrite
-  // PDS-managed entries (atproto VM, atproto_pds service, PDS rotation
-  // key). The resolved DID document path would also work but the audit
-  // log gives us the raw operation shape directly.
-  const priorVMs = readStringMap(lastOpRecord.verificationMethods);
-  const priorServices = readServicesMap(lastOpRecord.services);
-  const priorRotationKeys = readStringArray(lastOpRecord.rotationKeys);
-  const priorAlsoKnownAs = readStringArray(lastOpRecord.alsoKnownAs);
-
-  if (priorRotationKeys.length === 0) {
-    throw new Error('PLC prior op has no rotation keys — refusing to publish update');
-  }
-
-  // Compute the prior CID — every PLC update chains to this.
-  const priorCid = cidForOperation(lastOpRecord);
-
-  // Build the new fields. Merge our additions on top of PDS's.
-  const dinaSigningDidKey = `did:key:${publicKeyToMultibase(params.signingPubKey)}`;
-  const verificationMethods: Record<string, string> = {
-    ...priorVMs,
-    dina_signing: dinaSigningDidKey,
-  };
-  const services: Record<string, { type: string; endpoint: string }> = {
-    ...priorServices,
-    'dina-messaging': {
-      type: 'DinaMsgBox',
-      endpoint: params.msgboxEndpoint,
-    },
-  };
-  const alsoKnownAs =
-    priorAlsoKnownAs.length > 0 ? priorAlsoKnownAs : [`at://${params.handle}`];
-
-  await updateDIDPLC(
-    {
-      did: params.did,
-      prev: priorCid,
-      verificationMethods,
-      rotationKeys: priorRotationKeys,
-      services,
-      alsoKnownAs,
-      // updateDIDPLC re-derives the signer privkey via
-      // `deriveRotationKey(seed, gen ?? 0)`. We must pass the same
-      // masterSeed + generation that produced the K256 we sent as
-      // `recoveryKey` to PDS (which PDS published in `rotationKeys`
-      // on the genesis op). Mismatch → signature against a key not
-      // in `rotationKeys` → PLC rejects.
-      signerRotationSeed: params.masterSeed,
-    },
-    {
-      plcURL,
-      fetch: defaultFetch(),
-    },
-  );
-}
-
-async function fetchAuditLog(did: string, plcURL: string): Promise<unknown[]> {
-  const url = `${plcURL.replace(/\/$/, '')}/${did}/log/audit`;
-  const resp = await fetch(url, { headers: { Accept: 'application/json' } });
-  if (!resp.ok) {
-    throw new Error(`PLC audit log fetch failed: HTTP ${resp.status} ${resp.statusText}`);
-  }
-  const body = await resp.json();
-  if (!Array.isArray(body)) {
-    throw new Error('PLC audit log response is not an array');
-  }
-  return body;
-}
-
-function readStringMap(v: unknown): Record<string, string> {
-  if (v === null || typeof v !== 'object') return {};
-  const out: Record<string, string> = {};
-  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-    if (typeof val === 'string') out[k] = val;
-  }
-  return out;
-}
-
-function readServicesMap(
-  v: unknown,
-): Record<string, { type: string; endpoint: string }> {
-  if (v === null || typeof v !== 'object') return {};
-  const out: Record<string, { type: string; endpoint: string }> = {};
-  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-    if (val !== null && typeof val === 'object') {
-      const entry = val as Record<string, unknown>;
-      const type = typeof entry.type === 'string' ? entry.type : '';
-      const endpoint = typeof entry.endpoint === 'string' ? entry.endpoint : '';
-      if (type !== '' && endpoint !== '') out[k] = { type, endpoint };
-    }
-  }
-  return out;
-}
-
-function readStringArray(v: unknown): string[] {
-  if (!Array.isArray(v)) return [];
-  return v.filter((x): x is string => typeof x === 'string');
-}
 
 function defaultEmailForHandle(handle: string): string {
   // PDS createAccount accepts any RFC-5322-shaped value; we don't use

@@ -51,8 +51,8 @@ async function main(): Promise<void> {
 
   const config: ServiceConfig = {
     isDiscoverable: true,
-    name: 'Dina Lite Bus 42',
-    description: 'lite-stack provider — eta_query (test stub)',
+    name: 'Demo ETA Provider',
+    description: 'lite-stack provider — eta_query (test stub, post-rename)',
     capabilities: {
       eta_query: {
         mcpServer: 'stub_eta',

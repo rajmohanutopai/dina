@@ -43,7 +43,7 @@ export type PreFlightRetrievalProvider = (
 export interface AgenticAskHandlerOptions {
   provider: LLMProvider;
   tools: ToolRegistry;
-  /** Override the default Bus Driver system prompt. */
+  /** Override the default service-query system prompt. */
   systemPrompt?: string;
   /** Pass-through for loop budget / cancellation. */
   loopOptions?: AgenticLoopOptions;

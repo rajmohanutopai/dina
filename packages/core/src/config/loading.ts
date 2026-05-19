@@ -17,7 +17,7 @@
  *   DINA_APPVIEW_URL         → appviewURL (optional)
  *   DINA_PDS_URL             → pdsURL (optional)
  *   DINA_PLC_URL             → plcURL (optional, default "https://plc.directory")
- *   DINA_PDS_HANDLE          → pdsHandle (optional, e.g. "busdriver.test-pds.dinakernel.com")
+ *   DINA_PDS_HANDLE          → pdsHandle (optional, e.g. "demoprovider.test-pds.dinakernel.com")
  *   DINA_PDS_ADMIN_PASSWORD  → pdsAdminPassword (optional, for first-run account creation)
  *
  * Source: core/test/config_test.go + docker-compose-test-stack.yml

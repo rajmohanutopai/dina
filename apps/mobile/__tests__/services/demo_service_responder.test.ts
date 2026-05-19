@@ -1,5 +1,5 @@
 /**
- * Demo BusDriver loopback responder — wraps `sendD2D` so outbound
+ * Demo service loopback responder — wraps `sendD2D` so outbound
  * `service.query` envelopes addressed to `did:plc:bus42demo` complete
  * the matching workflow task with a synthesized `eta_query` result.
  *
@@ -19,9 +19,9 @@ import {
   InMemoryWorkflowRepository,
 } from '@dina/core';
 import {
-  createDemoBusDriverResponder,
-  DEMO_BUS_DRIVER_DID,
-} from '../../src/services/demo_bus_driver_responder';
+  createDemoServiceResponder,
+  DEMO_DEMO_PROVIDER_DID,
+} from '../../src/services/demo_service_responder';
 
 function setupWorkflow(): {
   repo: InMemoryWorkflowRepository;
@@ -65,7 +65,7 @@ function seedServiceQueryTask(
   });
 }
 
-describe('demo BusDriver loopback responder', () => {
+describe('demo service loopback responder', () => {
   it('completes the service_query workflow task with a synthesized response', async () => {
     jest.useFakeTimers();
     const { repo, teardown } = setupWorkflow();
@@ -74,17 +74,17 @@ describe('demo BusDriver loopback responder', () => {
       const realSendD2D = async (to: string, type: string) => {
         realSends.push({ to, type });
       };
-      const wrappedSendD2D = createDemoBusDriverResponder().wrap(realSendD2D);
+      const wrappedSendD2D = createDemoServiceResponder().wrap(realSendD2D);
 
       const taskId = 'sq-q-test-1-deadbeef';
       seedServiceQueryTask(repo, {
         taskId,
         queryId: 'q-test-1',
-        peerDID: DEMO_BUS_DRIVER_DID,
+        peerDID: DEMO_DEMO_PROVIDER_DID,
         capability: 'eta_query',
       });
 
-      await wrappedSendD2D(DEMO_BUS_DRIVER_DID, 'service.query', {
+      await wrappedSendD2D(DEMO_DEMO_PROVIDER_DID, 'service.query', {
         query_id: 'q-test-1',
         capability: 'eta_query',
         params: { route_id: '42', location: { lat: 37.762, lng: -122.435 } },
@@ -124,7 +124,7 @@ describe('demo BusDriver loopback responder', () => {
       const realSendD2D = async (to: string, type: string) => {
         realSends.push({ to, type });
       };
-      const wrappedSendD2D = createDemoBusDriverResponder().wrap(realSendD2D);
+      const wrappedSendD2D = createDemoServiceResponder().wrap(realSendD2D);
 
       await wrappedSendD2D('did:plc:somebody-else', 'service.query', {
         query_id: 'q-test-2',
@@ -132,14 +132,14 @@ describe('demo BusDriver loopback responder', () => {
         params: { route_id: '5', location: { lat: 0, lng: 0 } },
         ttl_seconds: 60,
       });
-      await wrappedSendD2D(DEMO_BUS_DRIVER_DID, 'service.response', {
+      await wrappedSendD2D(DEMO_DEMO_PROVIDER_DID, 'service.response', {
         query_id: 'q-test-3',
       });
 
       jest.advanceTimersByTime(100);
       expect(realSends).toEqual([
         { to: 'did:plc:somebody-else', type: 'service.query' },
-        { to: DEMO_BUS_DRIVER_DID, type: 'service.response' },
+        { to: DEMO_DEMO_PROVIDER_DID, type: 'service.response' },
       ]);
     } finally {
       jest.useRealTimers();
@@ -153,9 +153,9 @@ describe('demo BusDriver loopback responder', () => {
     try {
       const log: Array<Record<string, unknown>> = [];
       const realSendD2D = async () => {};
-      const wrapped = createDemoBusDriverResponder({ log: (e) => log.push(e) }).wrap(realSendD2D);
+      const wrapped = createDemoServiceResponder({ log: (e) => log.push(e) }).wrap(realSendD2D);
 
-      await wrapped(DEMO_BUS_DRIVER_DID, 'service.query', {
+      await wrapped(DEMO_DEMO_PROVIDER_DID, 'service.query', {
         query_id: 'q-orphan',
         capability: 'eta_query',
         params: { route_id: '42', location: { lat: 37.762, lng: -122.435 } },
@@ -163,7 +163,7 @@ describe('demo BusDriver loopback responder', () => {
       });
 
       jest.advanceTimersByTime(100);
-      expect(log.some((e) => e.event === 'demo.bus_driver.no_matching_task')).toBe(true);
+      expect(log.some((e) => e.event === 'demo.service.no_matching_task')).toBe(true);
     } finally {
       jest.useRealTimers();
       teardown();

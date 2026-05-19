@@ -1,5 +1,5 @@
 /**
- * Bus Driver tool set — the three tools the LLM uses during `/ask` to
+ * service-discovery tool set — the three tools the LLM uses during `/ask` to
  * classify a query as service-answerable and dispatch it.
  *
  *   geocode                    free-text address → {lat, lng}

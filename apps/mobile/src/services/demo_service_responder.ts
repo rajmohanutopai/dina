@@ -1,17 +1,17 @@
 /**
- * Demo loopback responder for the Bus Driver scenario.
+ * Demo loopback responder for the service discovery scenario.
  *
  * The mobile demo seeds an AppView profile for `did:plc:bus42demo`
- * (`busDriverDemoProfile()`), but no real peer answers at that DID —
+ * (`demoServiceProfile()`), but no real peer answers at that DID —
  * outbound `service.query` envelopes go straight into `sendD2D` and
  * disappear. Without a response the workflow task ages out, the chat
  * thread never sees a result, and the README walk-through silently
  * fails.
  *
  * This module wraps `sendD2D`. When a `service.query` is dispatched to
- * the demo BusDriver DID, the wrapper:
+ * the demo provider DID, the wrapper:
  *   1. Computes a deterministic `eta_query` result from the params
- *      (route_id + location → "Bus 42 — 12 min to Castro Station" +
+ *      (route_id + location → "Demo Bus — 12 min to Castro Station" +
  *      Google Maps deep link).
  *   2. Finds the open `service_query` workflow task by
  *      `(query_id, peerDID, capability)` — same primitive Core's receive
@@ -22,14 +22,14 @@
  *
  * This deliberately bypasses signature verification + audit logging:
  * we're impersonating a peer to exercise the requester half of the
- * pipeline. Production swaps the demo profile out for a real BusDriver
+ * pipeline. Production swaps the demo profile out for a real provider
  * provider node and the wrapper becomes a no-op.
  */
 
 import type { EtaQueryParams, EtaQueryResult } from '@dina/brain';
 import { getWorkflowService } from '@dina/core';
 
-export const DEMO_BUS_DRIVER_DID = 'did:plc:bus42demo';
+export const DEMO_DEMO_PROVIDER_DID = 'did:plc:bus42demo';
 
 /** Fallback location pin — Castro & Market, SF. Used when the LLM hasn't
  * supplied a location and we still need to render a map URL. */
@@ -47,16 +47,16 @@ interface DemoLogEntry {
   [k: string]: unknown;
 }
 
-export interface DemoBusDriverResponder {
+export interface DemoServiceResponder {
   /**
    * Wrap a real `sendD2D` so that envelopes addressed to the demo
-   * BusDriver short-circuit into a synthesized `service.response`.
+   * service short-circuit into a synthesized `service.response`.
    * Other DIDs pass through untouched.
    */
   wrap(sendD2D: SendD2DFn): SendD2DFn;
 }
 
-export interface DemoBusDriverResponderOptions {
+export interface DemoServiceResponderOptions {
   /** DID to short-circuit on. Defaults to `did:plc:bus42demo`. */
   busDID?: string;
   /**
@@ -71,10 +71,10 @@ export interface DemoBusDriverResponderOptions {
   buildResult?: (params: EtaQueryParams) => EtaQueryResult;
 }
 
-export function createDemoBusDriverResponder(
-  options: DemoBusDriverResponderOptions = {},
-): DemoBusDriverResponder {
-  const busDID = options.busDID ?? DEMO_BUS_DRIVER_DID;
+export function createDemoServiceResponder(
+  options: DemoServiceResponderOptions = {},
+): DemoServiceResponder {
+  const busDID = options.busDID ?? DEMO_DEMO_PROVIDER_DID;
   const buildResult = options.buildResult ?? defaultEtaResult;
   const log = options.log ?? (() => {});
 
@@ -105,7 +105,7 @@ function completeServiceQueryTask(
   const capability = typeof queryBody.capability === 'string' ? queryBody.capability : '';
   if (queryId === '' || capability === '') {
     log({
-      event: 'demo.bus_driver.invalid_query',
+      event: 'demo.service.invalid_query',
       query_id: queryId,
       capability,
     });
@@ -115,7 +115,7 @@ function completeServiceQueryTask(
 
   const service = getWorkflowService();
   if (service === null) {
-    log({ event: 'demo.bus_driver.no_workflow_service', query_id: queryId });
+    log({ event: 'demo.service.no_workflow_service', query_id: queryId });
     return;
   }
 
@@ -125,14 +125,14 @@ function completeServiceQueryTask(
     task = service.store().findServiceQueryTask(queryId, busDID, capability, nowSec);
   } catch (err) {
     log({
-      event: 'demo.bus_driver.find_task_error',
+      event: 'demo.service.find_task_error',
       query_id: queryId,
       error: err instanceof Error ? err.message : String(err),
     });
     return;
   }
   if (task === null) {
-    log({ event: 'demo.bus_driver.no_matching_task', query_id: queryId, peer: busDID });
+    log({ event: 'demo.service.no_matching_task', query_id: queryId, peer: busDID });
     return;
   }
 
@@ -169,7 +169,7 @@ function completeServiceQueryTask(
     Date.now(),
   );
   log({
-    event: 'demo.bus_driver.responded',
+    event: 'demo.service.responded',
     task_id: task.id,
     query_id: queryId,
     eta_minutes: result.eta_minutes,

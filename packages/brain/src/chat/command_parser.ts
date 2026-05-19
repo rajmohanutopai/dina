@@ -5,14 +5,14 @@
  *   /remember <text>                    → store a memory in the vault
  *   /ask <question>                     → search vault + reason about a question
  *   /search <query>                     → vault search (FTS only, no LLM)
- *   /service <capability> <free text>   → route to a public service (Bus Driver)
+ *   /service <capability> <free text>   → route to a public service
  *   /help                               → show available commands
  *
  * Implicit intent detection:
  *   Questions (who/what/when/where/why/how/is/are/does/did/can/will)
  *   → treated as /ask unless the text is clearly a statement.
  *
- * Source: ARCHITECTURE.md Tasks 4.8, 4.9 + BUS_DRIVER_IMPLEMENTATION.md BRAIN-P1-W01.
+ * Source: ARCHITECTURE.md Tasks 4.8, 4.9 + SERVICE_DISCOVERY_DESIGN.md BRAIN-P1-W01.
  */
 
 export type ChatIntent =

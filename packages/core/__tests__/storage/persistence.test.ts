@@ -136,7 +136,7 @@ describe('Schema definitions', () => {
     expect(db.hasTable('reminders')).toBe(true);
     expect(db.hasTable('staging_inbox')).toBe(true);
     expect(db.hasTable('kv_store')).toBe(true);
-    // v2 added for Bus Driver Scenario (commit f3a1bc7).
+    // v2 added for service-discovery (commit f3a1bc7).
     expect(db.hasTable('service_config')).toBe(true);
     // v3 added for WS2 workflow tasks (commit 9c01611).
     expect(db.hasTable('workflow_tasks')).toBe(true);

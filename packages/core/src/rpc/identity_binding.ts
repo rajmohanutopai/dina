@@ -10,7 +10,7 @@
  * prevents a signed envelope from carrying an inner request attributed
  * to someone else — the two identities MUST match.
  *
- * Source: BUS_DRIVER_IMPLEMENTATION.md CORE-P0-004.
+ * Source: SERVICE_DISCOVERY_DESIGN.md CORE-P0-004.
  */
 
 import type { RPCInnerRequest } from './types';

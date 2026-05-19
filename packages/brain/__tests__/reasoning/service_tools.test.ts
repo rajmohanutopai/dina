@@ -1,5 +1,5 @@
 /**
- * Bus Driver tool factories — mocked dependency tests.
+ * Service-discovery tool factories — mocked dependency tests.
  */
 
 import {
@@ -9,7 +9,7 @@ import {
   createFindPreferredProviderTool,
   type PreferredContactsClient,
   type FindPreferredProviderResult,
-} from '../../src/reasoning/bus_driver_tools';
+} from '../../src/reasoning/service_tools';
 import type { Contact } from '@dina/core';
 import type { ServiceProfile } from '../../src/appview_client/http';
 import type { ServiceQueryOrchestrator } from '../../src/service/service_query_orchestrator';
@@ -102,7 +102,7 @@ describe('createGeocodeTool', () => {
 
 describe('createSearchProviderServicesTool', () => {
   const sampleProfile: ServiceProfile = {
-    did: 'did:plc:busdriver',
+    did: 'did:plc:demoprovider',
     name: 'Bus 42',
     capabilities: ['eta_query'],
     responsePolicy: { eta_query: 'auto' },
@@ -152,7 +152,7 @@ describe('createSearchProviderServicesTool', () => {
       >;
     }>;
     expect(profiles).toHaveLength(1);
-    expect(profiles[0].did).toBe('did:plc:busdriver');
+    expect(profiles[0].did).toBe('did:plc:demoprovider');
     expect(profiles[0].capability_schemas).toEqual({
       eta_query: { params_schema: {}, schema_hash: 'sha256:abc' },
     });
@@ -246,7 +246,7 @@ describe('createQueryServiceTool', () => {
       },
     });
     const result = (await tool.execute({
-      operator_did: 'did:plc:busdriver',
+      operator_did: 'did:plc:demoprovider',
       capability: 'eta_query',
       params: { route: '42' },
       schema_hash: 'sha256:abc',
@@ -255,14 +255,14 @@ describe('createQueryServiceTool', () => {
     expect(result).toMatchObject({
       task_id: 'svc-q-1',
       query_id: 'q-1',
-      to_did: 'did:plc:busdriver',
+      to_did: 'did:plc:demoprovider',
       deduped: false,
       status: 'pending',
     });
     // The tool MUST forward the LLM's chosen DID + schema_hash verbatim
     // — this is the whole point of the refactor.
     expect(calls[0]).toMatchObject({
-      toDID: 'did:plc:busdriver',
+      toDID: 'did:plc:demoprovider',
       capability: 'eta_query',
       params: { route: '42' },
       ttlSeconds: 60,

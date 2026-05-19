@@ -27,7 +27,7 @@
  * `onSendError` hook — the bridge MUST NOT roll back the completion
  * that already landed. Durable retry is the outbox layer (CORE-P4-I05).
  *
- * Source: BUS_DRIVER_IMPLEMENTATION.md CORE-P3-I03.
+ * Source: SERVICE_DISCOVERY_DESIGN.md CORE-P3-I03.
  */
 
 import type { ResponseBridgeSender, ServiceQueryBridgeContext } from './service';

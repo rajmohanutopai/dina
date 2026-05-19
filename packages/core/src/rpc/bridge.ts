@@ -19,7 +19,7 @@
  * `RPCInnerResponse`. Adapters wrap Express's `app(req, res)` pattern
  * into this shape.
  *
- * Source: BUS_DRIVER_IMPLEMENTATION.md CORE-P0-002.
+ * Source: SERVICE_DISCOVERY_DESIGN.md CORE-P0-002.
  */
 
 import {

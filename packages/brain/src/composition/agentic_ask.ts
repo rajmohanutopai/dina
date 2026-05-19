@@ -55,7 +55,7 @@ import {
   createSearchProviderServicesTool,
   createQueryServiceTool,
   createFindPreferredProviderTool,
-} from '../reasoning/bus_driver_tools';
+} from '../reasoning/service_tools';
 import { createGuardScanner } from '../reasoning/guard_scanner';
 import { IntentClassifier } from '../reasoning/intent_classifier';
 import { createClassifyIntentTool } from '../reasoning/classify_intent_tool';

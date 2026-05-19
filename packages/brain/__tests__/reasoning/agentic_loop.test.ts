@@ -161,7 +161,7 @@ describe('runAgenticTurn — single tool call', () => {
 });
 
 describe('runAgenticTurn — multi-step chain', () => {
-  it('chains three tool calls then answers (Bus Driver shape)', async () => {
+  it('chains three tool calls then answers (service-query shape)', async () => {
     const geoCall: ToolCall = { id: 'c1', name: 'geocode', arguments: { address: 'Castro' } };
     const searchCall: ToolCall = {
       id: 'c2',

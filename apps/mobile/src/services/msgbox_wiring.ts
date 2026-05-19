@@ -27,10 +27,13 @@
  * still works). The caller passes our identity in as a closure.
  */
 
-import { DIDResolver, type WSFactory, type WSLike } from '@dina/core/d2d';
-import { multibaseToPublicKey } from '@dina/core';
-import { getContact } from '@dina/core';
-import { resolveHostedDinaEndpoints, resolveMobileHostedDinaEndpoints } from '@dina/home-node';
+import type { WSFactory, WSLike } from '@dina/core/d2d';
+import {
+  makeResolveSender,
+  resolveHostedDinaEndpoints,
+  resolveMobileHostedDinaEndpoints,
+  type MakeResolveSenderOptions,
+} from '@dina/home-node';
 
 /** Default shared Dina mailbox for greenfield test installs. */
 export const DEFAULT_MSGBOX_URL = resolveHostedDinaEndpoints('test').msgboxWsUrl;
@@ -52,100 +55,9 @@ export function makeWSFactory(): WSFactory {
   };
 }
 
-export interface MakeResolveSenderOptions {
-  selfDID: string;
-  selfPublicKey: Uint8Array;
-  /** Optional resolver override — defaults to a shared instance. */
-  resolver?: DIDResolver;
-  /** Telemetry hook for failed resolves. Defaults to `console.warn`. */
-  onResolveError?: (did: string, err: Error) => void;
-}
-
-const sharedResolver = new DIDResolver();
-
-/**
- * Build a resolveSender closure that the MsgBox receive pipeline calls
- * with every inbound envelope's sender DID. Returns the sender's
- * Ed25519 public key(s) + the trust level we've recorded for that DID.
- *
- * Failure modes:
- *   - DID doesn't resolve at all         → `{ keys: [], trust: 'unknown' }`
- *   - DID resolves but no verification   → same (caller treats as unverified)
- *   - DID resolves with a key            → `{ keys: [k], trust }` where
- *                                          `trust` comes from the contact
- *                                          directory, defaulting to
- *                                          'unknown' when the sender
- *                                          isn't a recorded contact.
- */
-export function makeResolveSender(
-  opts: MakeResolveSenderOptions,
-): (did: string) => Promise<{ keys: Uint8Array[]; trust: string }> {
-  const resolver = opts.resolver ?? sharedResolver;
-  const onError =
-    opts.onResolveError ??
-    ((did, err) => {
-      // eslint-disable-next-line no-console
-      console.warn(`[resolveSender] ${did} failed:`, err.message);
-    });
-
-  return async (did: string) => {
-    if (did === opts.selfDID) {
-      // Self-lookup stays local; trust is always 'self' so the receive
-      // pipeline doesn't gate our own echoes on a contact row.
-      return { keys: [opts.selfPublicKey], trust: 'self' };
-    }
-
-    const contact = getContact(did);
-    const trust = contact?.trustLevel ?? 'unknown';
-
-    try {
-      const resolved = await resolver.resolve(did);
-      // ATProto PLC docs list the secp256k1 rotation key FIRST
-      // (#atproto) and the Ed25519 signing key SECOND (#dina_signing).
-      // We need the Ed25519 for D2D signature verification; picking
-      // VM[0] blindly would hand back a secp256k1 key that
-      // multibaseToPublicKey decodes to the wrong byte shape.
-      const vm = pickEd25519VerificationMethod(resolved.document.verificationMethod);
-      if (vm === null || typeof vm.publicKeyMultibase !== 'string') {
-        return { keys: [], trust };
-      }
-      const pubkey = multibaseToPublicKey(vm.publicKeyMultibase);
-      return { keys: [pubkey], trust };
-    } catch (err) {
-      onError(did, err as Error);
-      return { keys: [], trust };
-    }
-  };
-}
-
-/**
- * Pick the Ed25519 signing verification method from a DID doc's
- * `verificationMethod` list. Matching order:
- *
- *   1. A method whose id fragment is `#dina_signing` — the convention
- *      the Dina PLC publisher uses for the signing key.
- *   2. Any Multikey whose publicKeyMultibase decodes to a 32-byte
- *      value (Ed25519 keys are 32 bytes, secp256k1 compressed is 33).
- *
- * Returns `null` when neither heuristic finds a match — the caller
- * treats that as "unverifiable sender" and lets the gate drop/
- * quarantine the envelope.
- */
-function pickEd25519VerificationMethod(
-  vms: Array<{ id?: string; type?: string; publicKeyMultibase?: string }>,
-): { publicKeyMultibase?: string } | null {
-  for (const vm of vms) {
-    if (typeof vm.id === 'string' && vm.id.endsWith('#dina_signing')) {
-      return vm;
-    }
-  }
-  for (const vm of vms) {
-    if (vm.type !== 'Multikey' || typeof vm.publicKeyMultibase !== 'string') continue;
-    try {
-      if (multibaseToPublicKey(vm.publicKeyMultibase).length === 32) return vm;
-    } catch {
-      /* malformed multibase — skip */
-    }
-  }
-  return null;
-}
+// `makeResolveSender` + `pickEd25519VerificationMethod` are now
+// shared via `@dina/home-node` so the lite Core's boot consumes the
+// exact same logic. Mobile re-exports them here so legacy callers
+// (boot_capabilities.ts) keep their existing import path.
+export { makeResolveSender } from '@dina/home-node';
+export type { MakeResolveSenderOptions } from '@dina/home-node';

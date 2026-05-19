@@ -10,7 +10,7 @@
  * The consumer is owned by the caller — they receive `start()` / `stop()`
  * lifecycle handles and dispose on unmount or app-background.
  *
- * Source: BUS_DRIVER_IMPLEMENTATION.md MOBILE-009.
+ * Source: SERVICE_DISCOVERY_DESIGN.md MOBILE-009.
  */
 
 import type { CoreClient } from '@dina/core';

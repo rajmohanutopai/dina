@@ -185,16 +185,20 @@ describe('updateDIDPLC (task 4.60)', () => {
     ).rejects.toThrow(/is not in rotationKeys/);
   });
 
-  it('rejects wrong-length signerRotationSeed', async () => {
+  it('rejects too-short signerRotationSeed', async () => {
+    // The minimum length is 16 bytes — enough material for SLIP-0010
+    // to seed the secp256k1 derivation. Mobile passes 32-byte BIP-39
+    // entropy; lite passes the 64-byte BIP-39 PBKDF2 seed; both are
+    // valid. Below the minimum we fail closed.
     await expect(
       updateDIDPLC({
         did: TEST_DID,
         prev: PREV_CID,
         verificationMethods: { dina_signing: 'did:key:z' + 'x'.repeat(40) },
         rotationKeys: [],
-        signerRotationSeed: new Uint8Array(16),
+        signerRotationSeed: new Uint8Array(8),
       }),
-    ).rejects.toThrow(/must be 32 bytes/);
+    ).rejects.toThrow(/at least 16 bytes/);
   });
 
   it('POSTs to PLC directory when config.fetch is wired', async () => {

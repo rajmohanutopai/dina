@@ -116,7 +116,7 @@ export interface ServiceQueryBridgeContext {
  * called post-completion, so its failure can't roll back the task
  * state.
  *
- * Source: BUS_DRIVER_IMPLEMENTATION.md CORE-P3-I01 / I02.
+ * Source: SERVICE_DISCOVERY_DESIGN.md CORE-P3-I01 / I02.
  */
 export type ResponseBridgeSender = (ctx: ServiceQueryBridgeContext) => Promise<void>;
 

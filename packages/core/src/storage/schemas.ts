@@ -124,7 +124,7 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
     `,
   },
   {
-    // Bus Driver Scenario (commit f3a1bc7) — local service configuration.
+    // Service-discovery (commit f3a1bc7) — local service configuration.
     // Schema is key-value; a single 'self' row carries the operator's
     // JSON-encoded service profile. See service/service_config.ts.
     version: 2,

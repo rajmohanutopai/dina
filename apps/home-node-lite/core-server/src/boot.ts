@@ -40,12 +40,11 @@ import {
   createCoreRouter,
   deriveDIDKey,
   HEALTHZ_PATH,
-  multibaseToPublicKey,
   registerService,
   setNodeDID,
   type CoreRouter,
 } from '@dina/core';
-import { DIDResolver } from '@dina/core/runtime';
+import { makeResolveSender } from '@dina/home-node';
 import {
   bootstrapMsgBox,
   disconnectMsgBox,
@@ -152,28 +151,6 @@ export interface BootServerOptions {
 // ---------------------------------------------------------------------------
 // Boot runner
 // ---------------------------------------------------------------------------
-
-/**
- * Pick the Ed25519 signing key from a DID doc's verificationMethod
- * list. Prefers an explicit `#dina_signing` id, falls back to any
- * 32-byte Multikey. Mirrors mobile's `pickEd25519VerificationMethod`.
- */
-function pickEd25519SigningVM(
-  vms: Array<{ id?: string; type?: string; publicKeyMultibase?: string }>,
-): { publicKeyMultibase?: string } | null {
-  for (const vm of vms) {
-    if (typeof vm.id === 'string' && vm.id.endsWith('#dina_signing')) return vm;
-  }
-  for (const vm of vms) {
-    if (vm.type !== 'Multikey' || typeof vm.publicKeyMultibase !== 'string') continue;
-    try {
-      if (multibaseToPublicKey(vm.publicKeyMultibase).length === 32) return vm;
-    } catch {
-      /* malformed multibase — skip */
-    }
-  }
-  return null;
-}
 
 /**
  * Execute the boot sequence. Each step is timed + traced. A failure
@@ -304,6 +281,19 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   const pdsProvisionEnabled =
     (process.env.DINA_PDS_PROVISION ?? '').trim() === '1' &&
     (process.env.DINA_PDS_HANDLE ?? '').trim() !== '';
+  const pdsStartGlobal = Date.now();
+  if (!pdsProvisionEnabled) {
+    // Always emit a `pds_provision` trace entry so the boot trace
+    // shape matches `BOOT_STEPS` exactly. Operators who haven't
+    // opted in get a 'pending' status with a clear reason; the boot
+    // continues using the locally-derived did:key identity.
+    trace.push({
+      step: 'pds_provision',
+      status: 'pending',
+      elapsedMs: Date.now() - pdsStartGlobal,
+      pendingReason: 'DINA_PDS_PROVISION not set — using local did:key identity',
+    });
+  }
   if (pdsProvisionEnabled) {
     const pdsStart = Date.now();
     if (
@@ -599,29 +589,13 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       // Build a real resolveSender so the receive pipeline can verify
       // inbound signatures. Without this every D2D arrival fails at
       // step 2 (signature check) — including our own loopbacks, which
-      // is why a self-targeted service.query silently drops. Mirrors
-      // mobile's `makeResolveSender` minimal shape: self returns our
-      // own pubkey + 'self' trust; peers resolve via PLC and pick the
-      // Ed25519 #dina_signing VM.
-      const senderResolver = new DIDResolver();
-      const selfPub = derivations.root.publicKey;
+      // is why a self-targeted service.query silently drops. Shared
+      // helper with mobile's `makeResolveSender`.
       const resolveSender =
         options.resolveMsgBoxSender ??
-        (async (senderDid: string) => {
-          if (senderDid === did) {
-            return { keys: [selfPub], trust: 'self' };
-          }
-          try {
-            const resolved = await senderResolver.resolve(senderDid);
-            const ed25519VM = pickEd25519SigningVM(resolved.document.verificationMethod);
-            if (ed25519VM === null || typeof ed25519VM.publicKeyMultibase !== 'string') {
-              return { keys: [], trust: 'unknown' };
-            }
-            const pubkey = multibaseToPublicKey(ed25519VM.publicKeyMultibase);
-            return { keys: [pubkey], trust: 'unknown' };
-          } catch {
-            return { keys: [], trust: 'unknown' };
-          }
+        makeResolveSender({
+          selfDID: did,
+          selfPublicKey: derivations.root.publicKey,
         });
       await bootstrapMsgBox({
         did,

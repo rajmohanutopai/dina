@@ -13,7 +13,7 @@
  *   // Second caller with same jobKey while first is in flight:
  *   //   awaits the SAME promise, never starts a second worker.
  *
- * Source: BUS_DRIVER_IMPLEMENTATION.md CORE-P0-011.
+ * Source: SERVICE_DISCOVERY_DESIGN.md CORE-P0-011.
  */
 
 export interface RPCWorkerPoolOptions {

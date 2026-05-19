@@ -8,7 +8,7 @@
  * Validation is shared with Core's `validateServiceConfig`, so the UI
  * surfaces the same error strings the server would.
  *
- * Source: BUS_DRIVER_IMPLEMENTATION.md MOBILE-010.
+ * Source: SERVICE_DISCOVERY_DESIGN.md MOBILE-010.
  */
 
 import type { CoreClient } from '@dina/core';

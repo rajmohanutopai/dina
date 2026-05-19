@@ -1,12 +1,12 @@
 /**
- * Mobile Scenario 5 — Bus Driver end-to-end (README demo flow).
+ * Mobile Scenario 5 — Service-query end-to-end (README demo flow).
  *
  * Pipeline mirrored:
  *   User: "when does bus 42 reach Castro?"
  *     ↓ (the agentic ask LLM loop — simulated here deterministically)
  *   1. geocode("Castro, SF") → {lat, lng}
  *   2. search_provider_services({capability: 'eta_query', lat, lng})
- *        → BusDriver profile with DID, capability schema, schema_hash
+ *        → service provider profile with DID, capability schema, schema_hash
  *   3. query_service({operator_did, capability, params: {route_id, location}})
  *        → orchestrator.issueQueryToDID → D2D service.query envelope on
  *          the wire, workflow task id returned
@@ -26,8 +26,8 @@
  *
  * What simulator still catches:
  *   - Real LLM decides the tool sequence (nondeterministic, token-bound)
- *   - Real MsgBox transport carries the envelope to BusDriver
- *   - BusDriver's own /task execution (OpenClaw in the demo)
+ *   - Real MsgBox transport carries the envelope to service provider
+ *   - service provider's own /task execution (OpenClaw in the demo)
  *   - Response-event delivery back into the chat thread
  */
 
@@ -35,7 +35,7 @@ import {
   createGeocodeTool,
   createSearchProviderServicesTool,
   createQueryServiceTool,
-} from '../../src/reasoning/bus_driver_tools';
+} from '../../src/reasoning/service_tools';
 import type { ServiceProfile } from '../../src/appview_client/http';
 import type { ServiceQueryOrchestrator } from '../../src/service/service_query_orchestrator';
 
@@ -47,10 +47,10 @@ function mockFetchOnce(body: unknown, status = 200): typeof globalThis.fetch {
     })) as unknown as typeof globalThis.fetch;
 }
 
-describe('mobile Scenario 5 — Bus Driver end-to-end', () => {
-  const BUS_DRIVER_DID = 'did:plc:busdriver';
-  const BUS_DRIVER_PROFILE: ServiceProfile = {
-    did: BUS_DRIVER_DID,
+describe('mobile Scenario 5 — Service-query end-to-end', () => {
+  const DEMO_PROVIDER_DID = 'did:plc:demoprovider';
+  const DEMO_PROVIDER_PROFILE: ServiceProfile = {
+    did: DEMO_PROVIDER_DID,
     name: 'SF Transit Authority',
     capabilities: ['eta_query'],
     responsePolicy: { eta_query: 'auto' },
@@ -72,7 +72,7 @@ describe('mobile Scenario 5 — Bus Driver end-to-end', () => {
           },
         },
         result: { type: 'object' },
-        schemaHash: 'sha256:busdriver-eta-v1',
+        schemaHash: 'sha256:demoprovider-eta-v1',
         description: 'ETA to next stop on a given bus route',
         defaultTtlSeconds: 120,
       },
@@ -110,7 +110,7 @@ describe('mobile Scenario 5 — Bus Driver end-to-end', () => {
             lat: loc.lat,
             lng: loc.lng,
           });
-          return [BUS_DRIVER_PROFILE];
+          return [DEMO_PROVIDER_PROFILE];
         },
       },
     });
@@ -129,10 +129,10 @@ describe('mobile Scenario 5 — Bus Driver end-to-end', () => {
     }>;
 
     expect(providers.length).toBe(1);
-    const busDriver = providers[0]!;
-    expect(busDriver.did).toBe(BUS_DRIVER_DID);
-    expect(busDriver.capability_schemas.eta_query!.schema_hash).toBe(
-      'sha256:busdriver-eta-v1',
+    const demoProvider = providers[0]!;
+    expect(demoProvider.did).toBe(DEMO_PROVIDER_DID);
+    expect(demoProvider.capability_schemas.eta_query!.schema_hash).toBe(
+      'sha256:demoprovider-eta-v1',
     );
 
     // ── Step 3: query_service — dispatches through orchestrator ────────
@@ -181,11 +181,11 @@ describe('mobile Scenario 5 — Bus Driver end-to-end', () => {
 
     const queryTool = createQueryServiceTool({ orchestrator });
     const ack = (await queryTool.execute({
-      operator_did: busDriver.did,
+      operator_did: demoProvider.did,
       capability: 'eta_query',
       params: { route_id: '42', location: { lat: loc.lat, lng: loc.lng } },
-      schema_hash: busDriver.capability_schemas.eta_query!.schema_hash,
-      service_name: busDriver.name,
+      schema_hash: demoProvider.capability_schemas.eta_query!.schema_hash,
+      service_name: demoProvider.name,
     })) as {
       task_id: string;
       query_id: string;
@@ -204,10 +204,10 @@ describe('mobile Scenario 5 — Bus Driver end-to-end', () => {
     // And the orchestrator got the exact params the LLM asked to dispatch.
     expect(dispatched).toHaveLength(1);
     expect(dispatched[0]).toEqual({
-      toDID: BUS_DRIVER_DID,
+      toDID: DEMO_PROVIDER_DID,
       capability: 'eta_query',
       params: { route_id: '42', location: { lat: 37.762, lng: -122.435 } },
-      schemaHash: 'sha256:busdriver-eta-v1',
+      schemaHash: 'sha256:demoprovider-eta-v1',
       serviceName: 'SF Transit Authority',
     });
   });
@@ -226,7 +226,7 @@ describe('mobile Scenario 5 — Bus Driver end-to-end', () => {
 
     // No params at all
     await expect(
-      tool.execute({ operator_did: BUS_DRIVER_DID, capability: 'eta_query' } as Record<
+      tool.execute({ operator_did: DEMO_PROVIDER_DID, capability: 'eta_query' } as Record<
         string,
         unknown
       >),
@@ -235,7 +235,7 @@ describe('mobile Scenario 5 — Bus Driver end-to-end', () => {
     // Wrong-type params (array instead of object)
     await expect(
       tool.execute({
-        operator_did: BUS_DRIVER_DID,
+        operator_did: DEMO_PROVIDER_DID,
         capability: 'eta_query',
         params: ['not-an-object'],
       }),
@@ -250,7 +250,7 @@ describe('mobile Scenario 5 — Bus Driver end-to-end', () => {
     // documented in docs/designs/SF_TRANSIT_DEMO.md.
     const search = createSearchProviderServicesTool({
       appViewClient: { async searchServices() {
-        return [BUS_DRIVER_PROFILE];
+        return [DEMO_PROVIDER_PROFILE];
       } },
     });
     const [profile] = (await search.execute({ capability: 'eta_query' })) as Array<{
@@ -258,7 +258,7 @@ describe('mobile Scenario 5 — Bus Driver end-to-end', () => {
     }>;
 
     expect(profile.capability_schemas.eta_query!.schema_hash).toBe(
-      'sha256:busdriver-eta-v1',
+      'sha256:demoprovider-eta-v1',
     );
   });
 

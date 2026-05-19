@@ -533,7 +533,7 @@ function handleAuthChallenge(challenge: { nonce: string; ts: number }): void {
   // The production relay doesn't send `auth_success` — it just holds
   // the socket open on a successful sig, and closes on failure. The Go
   // client treats a still-open socket 500 ms after `auth_response` as
-  // authenticated (matches `msgbox_client.connected` in busdriver-core
+  // authenticated (matches `msgbox_client.connected` in the Go Home Node reference impl
   // logs). We mirror that: optimistically flip the flag here, then let
   // `onclose` undo it if the server rejects. Without this the TS client
   // waits forever for an `auth_success` that never arrives on the real

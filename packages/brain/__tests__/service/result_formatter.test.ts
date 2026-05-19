@@ -7,48 +7,48 @@ import {
   type ServiceQueryEventDetails,
 } from '../../src/service/result_formatter';
 
-const BUS_DRIVER = 'Bus Driver';
+const DEMO_PROVIDER = 'Demo Provider';
 
 describe('formatServiceQueryResult', () => {
   describe('terminal statuses', () => {
     it('expired → "No response from <name>"', () => {
       const out = formatServiceQueryResult({
         response_status: 'expired',
-        service_name: BUS_DRIVER,
+        service_name: DEMO_PROVIDER,
       });
-      expect(out).toBe('No response from Bus Driver.');
+      expect(out).toBe('No response from Demo Provider.');
     });
 
     it('unavailable → "<name> — service unavailable"', () => {
       const out = formatServiceQueryResult({
         response_status: 'unavailable',
-        service_name: BUS_DRIVER,
+        service_name: DEMO_PROVIDER,
       });
-      expect(out).toBe('Bus Driver — service unavailable.');
+      expect(out).toBe('Demo Provider — service unavailable.');
     });
 
     it('error with explicit error text', () => {
       const out = formatServiceQueryResult({
         response_status: 'error',
-        service_name: BUS_DRIVER,
+        service_name: DEMO_PROVIDER,
         error: 'schema_version_mismatch',
       });
       // Matches Python: no trailing period on the error message itself.
-      expect(out).toBe('Bus Driver — error: schema_version_mismatch');
+      expect(out).toBe('Demo Provider — error: schema_version_mismatch');
     });
 
     it('error with missing error text defaults to "unknown"', () => {
       const out = formatServiceQueryResult({
         response_status: 'error',
-        service_name: BUS_DRIVER,
+        service_name: DEMO_PROVIDER,
       });
-      expect(out).toBe('Bus Driver — error: unknown');
+      expect(out).toBe('Demo Provider — error: unknown');
     });
 
     it('unknown status renders a fallback notice', () => {
       const out = formatServiceQueryResult({
         response_status: 'cosmic_ray',
-        service_name: BUS_DRIVER,
+        service_name: DEMO_PROVIDER,
       });
       expect(out).toMatch(/unexpected status/);
     });
@@ -63,7 +63,7 @@ describe('formatServiceQueryResult', () => {
     const base: ServiceQueryEventDetails = {
       response_status: 'success',
       capability: 'eta_query',
-      service_name: BUS_DRIVER,
+      service_name: DEMO_PROVIDER,
     };
 
     it('on_route with ETA + stop + map URL renders a 3-line summary', () => {
@@ -110,7 +110,7 @@ describe('formatServiceQueryResult', () => {
         ...base,
         result: { eta_minutes: 3, vehicle_type: 'Bus', route_name: '', status: 'on_route' },
       });
-      expect(out.split('\n')[0]).toBe('Bus Driver');
+      expect(out.split('\n')[0]).toBe('Demo Provider');
     });
 
     it('not_on_route surfaces result.message when present', () => {
@@ -126,7 +126,7 @@ describe('formatServiceQueryResult', () => {
         ...base,
         result: { status: 'not_on_route' },
       });
-      expect(out).toBe("Bus Driver doesn't serve your area.");
+      expect(out).toBe("Demo Provider doesn't serve your area.");
     });
 
     it('out_of_service generic fallback', () => {
@@ -134,7 +134,7 @@ describe('formatServiceQueryResult', () => {
         ...base,
         result: { status: 'out_of_service' },
       });
-      expect(out).toBe('Bus Driver is not running at this time.');
+      expect(out).toBe('Demo Provider is not running at this time.');
     });
 
     it('not_found generic fallback', () => {
@@ -142,7 +142,7 @@ describe('formatServiceQueryResult', () => {
         ...base,
         result: { status: 'not_found' },
       });
-      expect(out).toBe('Bus Driver — route not found.');
+      expect(out).toBe('Demo Provider — route not found.');
     });
 
     it('accepts result delivered as a JSON string (mixed pipe delivery)', () => {
@@ -164,7 +164,7 @@ describe('formatServiceQueryResult', () => {
         result: '{not json',
       });
       // result becomes {} → no ETA line, label falls back to service_name.
-      expect(out).toBe('Bus Driver');
+      expect(out).toBe('Demo Provider');
     });
 
     it('never throws on null result', () => {

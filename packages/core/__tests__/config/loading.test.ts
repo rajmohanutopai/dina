@@ -96,14 +96,14 @@ describe('Configuration Loading', () => {
         DINA_PDS_URL: 'https://test-pds.dinakernel.com',
         DINA_PLC_URL: 'https://plc.directory',
         DINA_MSGBOX_URL: 'wss://test-mailbox.dinakernel.com',
-        DINA_PDS_HANDLE: 'busdriver.test-pds.dinakernel.com',
+        DINA_PDS_HANDLE: 'demoprovider.test-pds.dinakernel.com',
         DINA_PDS_ADMIN_PASSWORD: 'hunter2',
       });
       expect(config.appviewURL).toBe('https://test-appview.dinakernel.com');
       expect(config.pdsURL).toBe('https://test-pds.dinakernel.com');
       expect(config.plcURL).toBe('https://plc.directory');
       expect(config.msgboxURL).toBe('wss://test-mailbox.dinakernel.com');
-      expect(config.pdsHandle).toBe('busdriver.test-pds.dinakernel.com');
+      expect(config.pdsHandle).toBe('demoprovider.test-pds.dinakernel.com');
       expect(config.pdsAdminPassword).toBe('hunter2');
     });
 
@@ -216,7 +216,7 @@ describe('Configuration Loading', () => {
     it('allows pdsHandle and pdsAdminPassword with no format check', () => {
       const errors = validateConfig({
         ...validConfig,
-        pdsHandle: 'busdriver.test-pds.dinakernel.com',
+        pdsHandle: 'demoprovider.test-pds.dinakernel.com',
         pdsAdminPassword: 'any string ok',
       });
       expect(errors).toEqual([]);

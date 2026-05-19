@@ -1,5 +1,5 @@
 /**
- * Router-level integration tests — the Bus Driver critical path served
+ * Router-level integration tests — the service-discovery critical path served
  * by the pure CoreRouter (no Express, no HTTP).
  *
  * Replaces the family of supertest-based endpoint tests (vault / pii /
@@ -307,7 +307,7 @@ describe('CoreRouter integration', () => {
     });
 
     it('claim lifts payload.type to payload_type for service_query_execution', async () => {
-      // Real BusDriver-shaped payload: the brain stores `type`,
+      // Real service provider-shaped payload: the brain stores `type`,
       // `capability`, `params`, `mcp_tool` etc. as a JSON string in the
       // task's `payload` column. Core MUST surface `type` as a sibling
       // top-level `payload_type` field on every wire response or the

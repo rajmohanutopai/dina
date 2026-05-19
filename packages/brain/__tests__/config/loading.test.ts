@@ -63,13 +63,13 @@ describe('Brain Configuration', () => {
         DINA_APPVIEW_URL: 'https://test-appview.dinakernel.com',
         DINA_PDS_URL: 'https://test-pds.dinakernel.com',
         DINA_PLC_URL: 'https://plc.directory',
-        DINA_PDS_HANDLE: 'busdriver.test-pds.dinakernel.com',
+        DINA_PDS_HANDLE: 'demoprovider.test-pds.dinakernel.com',
         DINA_PDS_ADMIN_PASSWORD: 'hunter2',
       });
       expect(config.appviewURL).toBe('https://test-appview.dinakernel.com');
       expect(config.pdsURL).toBe('https://test-pds.dinakernel.com');
       expect(config.plcURL).toBe('https://plc.directory');
-      expect(config.pdsHandle).toBe('busdriver.test-pds.dinakernel.com');
+      expect(config.pdsHandle).toBe('demoprovider.test-pds.dinakernel.com');
       expect(config.pdsAdminPassword).toBe('hunter2');
     });
   });

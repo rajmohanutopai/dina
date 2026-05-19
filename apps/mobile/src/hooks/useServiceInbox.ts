@@ -9,7 +9,7 @@
  * `CoreClient` once via `setInboxCoreClient`; the hook then calls
  * through it. Tests inject a fake client.
  *
- * Source: BUS_DRIVER_IMPLEMENTATION.md MOBILE-008.
+ * Source: SERVICE_DISCOVERY_DESIGN.md MOBILE-008.
  */
 
 import type { CoreClient, WorkflowTask } from '@dina/core';

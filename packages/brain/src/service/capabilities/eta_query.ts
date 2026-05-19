@@ -1,8 +1,8 @@
 /**
  * `eta_query` capability — estimated time of arrival for a transit service.
  *
- * This is the capability used in the "Bus Driver Scenario": the user's Dina
- * asks a bus driver's Dina "when will you reach my location?".
+ * This is the capability used in the "service-discovery scenario": the user's Dina
+ * asks a transit provider's Dina "when will you reach my location?".
  *
  * Source: brain/src/service/capabilities/eta_query.py  (Pydantic models)
  *
@@ -98,7 +98,7 @@ export const EtaQueryParamsSchema = {
  * (on_route / not_on_route / out_of_service / not_found) drive everything
  * else. `eta_minutes` only makes sense for `on_route`, so requiring it
  * would make valid `out_of_service` / `not_found` responses fail
- * validation. Mirrors the BusDriver demo contract.
+ * validation. Mirrors the service-discovery demo contract.
  */
 export const EtaQueryResultSchema = {
   type: 'object',

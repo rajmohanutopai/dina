@@ -162,7 +162,7 @@ describe('@dina/home-node/service-runtime', () => {
     await runtime.dispose();
   });
 
-  it('fires inboundNotifier on accepted queries (mobile parity — BusDriver flow)', async () => {
+  it('fires inboundNotifier on accepted queries (mobile parity — service provider flow)', async () => {
     const core = stubCore();
     const inboundNotifier = jest.fn();
     const runtime = buildHomeNodeServiceRuntime({
@@ -178,7 +178,7 @@ describe('@dina/home-node/service-runtime', () => {
 
     await runtime.dispatcher.dispatch(
       REQUESTER,
-      { type: 'service.query', from: REQUESTER, to: 'did:plc:busdriver' } as never,
+      { type: 'service.query', from: REQUESTER, to: 'did:plc:demoprovider' } as never,
       VALID_QUERY,
     );
 

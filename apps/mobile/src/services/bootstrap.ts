@@ -509,7 +509,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     // ResponseBridge is service.response-only; inject the type so the
     // app's single sendD2D keeps one signature across all call sites.
     // After a successful send, post a system message into the operator's
-    // chat so the BusDriver/provider sees evidence the response went out
+    // chat so the service/provider sees evidence the response went out
     // (matches the inbound notification posted on receive — closes the
     // visibility loop end-to-end).
     sendResponse: async (to, body) => {

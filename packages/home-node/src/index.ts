@@ -40,3 +40,11 @@ export type {
 } from './types';
 export { openAllPersonasForInAppUser } from './persona_lifecycle';
 export type { OpenAllPersonasOptions } from './persona_lifecycle';
+export { applyDinaPlcUpdate } from './plc_dina_update';
+export type { ApplyDinaPlcUpdateOptions } from './plc_dina_update';
+export { makeResolveSender, pickEd25519VerificationMethod } from './resolve_sender';
+export type { MakeResolveSenderOptions } from './resolve_sender';
+export { makeSendD2D } from './send_d2d';
+export type { MakeSendD2DOptions, SendD2D } from './send_d2d';
+export { wireWorkflowPlane } from './workflow_plane';
+export type { WireWorkflowPlaneOptions, WiredWorkflowPlane } from './workflow_plane';

@@ -10,7 +10,7 @@
  * a malicious peer cannot force Core into unbounded allocation by framing
  * a huge plaintext inside a small ciphertext.
  *
- * Source: BUS_DRIVER_IMPLEMENTATION.md CORE-P0-001 / CORE-P0-003.
+ * Source: SERVICE_DISCOVERY_DESIGN.md CORE-P0-001 / CORE-P0-003.
  */
 
 /** Maximum inner-body size in bytes: 1 MiB. */

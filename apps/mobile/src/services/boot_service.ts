@@ -77,7 +77,7 @@ export const MOBILE_PERSONA_DESCRIPTIONS: Record<string, string> = {
   finance: 'Money, budgets, spending, income, bills, debt, investments, taxes.',
 };
 import { emitRuntimeWarning, clearRuntimeWarning } from './runtime_warnings';
-import { createDemoBusDriverResponder } from './demo_bus_driver_responder';
+import { createDemoServiceResponder } from './demo_service_responder';
 import { isAppViewStub } from './appview_stub';
 
 export type BootLogger = (entry: Record<string, unknown>) => void;
@@ -419,13 +419,13 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     );
   }
 
-  // Demo BusDriver loopback — when the in-memory AppView stub is in
+  // Demo service loopback — when the in-memory AppView stub is in
   // play, also wrap `sendD2D` so outbound `service.query` envelopes
   // addressed to `did:plc:bus42demo` short-circuit into a synthesized
   // `service.response`. Production builds (real AppView) skip the wrap;
   // bus42demo is only published as a stub profile in demo bootstraps.
   const demoSendD2D: CreateNodeOptions['sendD2D'] = isAppViewStub(appViewClient)
-    ? createDemoBusDriverResponder({ log }).wrap(sendD2D)
+    ? createDemoServiceResponder({ log }).wrap(sendD2D)
     : sendD2D;
 
   const isProvider = inputs.role === 'provider' || inputs.role === 'both';

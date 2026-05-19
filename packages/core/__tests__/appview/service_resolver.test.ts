@@ -38,7 +38,7 @@ function jsonResponse(status: number, body: unknown): Response {
 
 describe('AppViewServiceResolver', () => {
   const APPVIEW = 'https://appview.test';
-  const DID = 'did:plc:busdriver';
+  const DID = 'did:plc:demoprovider';
 
   const noSleep = () => Promise.resolve();
 

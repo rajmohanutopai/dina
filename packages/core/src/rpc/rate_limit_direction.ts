@@ -10,7 +10,7 @@
  * This helper classifies a message's direction and says whether it is
  * subject to rate limiting.
  *
- * Source: BUS_DRIVER_IMPLEMENTATION.md CORE-P0-012.
+ * Source: SERVICE_DISCOVERY_DESIGN.md CORE-P0-012.
  */
 
 export type RPCDirection = 'inbound-request' | 'inbound-response';

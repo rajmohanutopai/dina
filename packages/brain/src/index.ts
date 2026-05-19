@@ -177,14 +177,14 @@ export {
   createSearchProviderServicesTool,
   createQueryServiceTool,
   createFindPreferredProviderTool,
-} from './reasoning/bus_driver_tools';
+} from './reasoning/service_tools';
 export type {
   GeocodeToolOptions,
   GeocodeResult,
   SearchProviderServicesToolOptions,
   QueryServiceToolOptions,
   FindPreferredProviderToolOptions,
-} from './reasoning/bus_driver_tools';
+} from './reasoning/service_tools';
 export { runAgenticTurn } from './reasoning/agentic_loop';
 export type { AgenticLoopOptions, AgenticLoopResult } from './reasoning/agentic_loop';
 export { createDelegateToAgentTool } from './reasoning/delegate_agent_tool';

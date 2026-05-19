@@ -32,8 +32,8 @@ function errorJson(status: number, error: string, message?: string): Response {
 const VALID_SESSION = {
   accessJwt: 'access-jwt-xyz',
   refreshJwt: 'refresh-jwt-xyz',
-  handle: 'busdriver.test-pds.dinakernel.com',
-  did: 'did:plc:busdriver42',
+  handle: 'demoprovider.test-pds.dinakernel.com',
+  did: 'did:plc:demoprovider42',
 };
 
 describe('PDSAccountClient — construction', () => {
@@ -117,7 +117,7 @@ describe('PDSAccountClient.createAccount', () => {
     const fetchFn = mockFetch(() => okJson(VALID_SESSION));
     const client = new PDSAccountClient({ pdsUrl: 'https://pds', fetch: fetchFn });
     await client.createAccount({
-      handle: 'busdriver.test-pds',
+      handle: 'demoprovider.test-pds',
       password: 'p',
       recoveryKey: 'did:key:zQ3sh-our-secp256k1-rotation-key',
     });
@@ -164,13 +164,13 @@ describe('PDSAccountClient.createSession', () => {
     const fetchFn = mockFetch(() => okJson(VALID_SESSION));
     const client = new PDSAccountClient({ pdsUrl: 'https://pds', fetch: fetchFn });
     const session = await client.createSession({
-      identifier: 'busdriver.test-pds',
+      identifier: 'demoprovider.test-pds',
       password: 'hunter2',
     });
     expect(session).toEqual(VALID_SESSION);
     const sentBody = JSON.parse(fetchFn.mock.calls[0][1]!.body as string);
     expect(sentBody).toEqual({
-      identifier: 'busdriver.test-pds',
+      identifier: 'demoprovider.test-pds',
       password: 'hunter2',
     });
   });
@@ -224,7 +224,7 @@ describe('PDSAccountClient.ensureAccount', () => {
     });
     const client = new PDSAccountClient({ pdsUrl: 'https://pds', fetch: fetchFn });
     const { session, created } = await client.ensureAccount({
-      handle: 'busdriver.test-pds',
+      handle: 'demoprovider.test-pds',
       password: 'hunter2',
     });
     expect(created).toBe(false);

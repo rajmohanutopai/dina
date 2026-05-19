@@ -42,13 +42,13 @@ describe('Chat orchestrator — /service', () => {
     const calls: Array<{ capability: string; payload: string }> = [];
     setServiceCommandHandler(async (capability, payload) => {
       calls.push({ capability, payload });
-      return { ack: `Asking Bus Driver for ${capability}…` };
+      return { ack: `Asking provider for ${capability}…` };
     });
 
     const res = await handleChat('/service eta_query when will bus 42 arrive?');
 
     expect(calls).toEqual([{ capability: 'eta_query', payload: 'when will bus 42 arrive?' }]);
-    expect(res.response).toBe('Asking Bus Driver for eta_query…');
+    expect(res.response).toBe('Asking provider for eta_query…');
   });
 
   it('handler throwing → surfaces error message to the user (no crash)', async () => {

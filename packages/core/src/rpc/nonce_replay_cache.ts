@@ -13,7 +13,7 @@
  * nonces for the signature freshness window (default 5 min — matches
  * idempotency cache).
  *
- * Source: BUS_DRIVER_IMPLEMENTATION.md CORE-P0-010.
+ * Source: SERVICE_DISCOVERY_DESIGN.md CORE-P0-010.
  */
 
 /** Default TTL: 5 minutes in ms — matches signature freshness window. */

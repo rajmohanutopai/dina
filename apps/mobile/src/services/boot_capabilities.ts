@@ -17,23 +17,23 @@
  *        next boot.
  *   #4 — reuses the open identity DatabaseAdapter (if persistence was
  *        initialised pre-boot) so workflow + service config persist.
- *   #5 — builds the Bus Driver tool registry + AISDK LLM provider so
+ *   #5 — builds the service-discovery tool registry + AISDK LLM provider so
  *        `/ask` runs the multi-turn agentic loop when a BYOK key is set.
  *   #6 — supplies a real AppView client by default; demo mode can
- *        still seed an AppViewStub for the Bus 42 walkthrough.
+ *        still seed an AppViewStub for the service-discovery walkthrough.
  *   #7 — MsgBox stays unconfigured by design in the demo build (there's
  *        no relay to connect to); the degradation remains, but the
  *        INPUT shape the caller provides is explicit, not forgotten.
  *   #8 — pulls role from the persisted preference so the Service
  *        Sharing screen can flip to provider / both.
- *   #18 — the AppView stub from #6 uses `busDriverDemoProfile()` so the
- *         Bus 42 demo is actually runnable from the current app shell.
+ *   #18 — the AppView stub from #6 uses `demoServiceProfile()` so the
+ *         service-discovery demo is actually runnable from the current app shell.
  */
 
 import { loadOrGenerateSeeds } from './identity_store';
 import { loadPersistedDid } from './identity_record';
 import { loadRolePreference } from './role_preference';
-import { AppViewStub, busDriverDemoProfile } from './appview_stub';
+import { AppViewStub, demoServiceProfile } from './appview_stub';
 import {
   AppViewClient,
   EtaQueryParamsSchema,
@@ -87,19 +87,15 @@ import {
   makeWSFactory,
   resolveMsgBoxURL,
 } from './msgbox_wiring';
-import {
-  DIDResolver,
-  hydrateDeviceRegistry,
-  sendD2D as coreSendD2D,
-} from '@dina/core/runtime';
+import { DIDResolver, hydrateDeviceRegistry } from '@dina/core/runtime';
 import {
   AppViewServiceResolver,
   addContactIfNotExists,
   getPeopleRepository,
   hydrateContactDirectory,
   listPersonas,
-  multibaseToPublicKey,
 } from '@dina/core';
+import { makeSendD2D } from '@dina/home-node';
 import { executeToolSearch } from '@dina/brain';
 
 /**
@@ -293,7 +289,7 @@ export interface BuildBootInputsOptions {
   didOverride?: string;
   /**
    * Supply a pre-built AppView client. When omitted the helper either
-   * returns an `AppViewStub` seeded with the Bus 42 demo profile (when
+   * returns an `AppViewStub` seeded with the service-discovery demo profile (when
    * `demoMode` is true), or constructs a real hosted AppView client
    * from the shared endpoint resolver. The shipped app no longer
    * silently boots against fake discovery data (findings #1, #15).
@@ -460,86 +456,24 @@ export async function buildBootInputs(
     resolver: didResolver,
   });
 
-  /**
-   * Outbound D2D egress for the iOS app. Resolves the recipient via
-   * the shared DIDResolver (PLC directory for did:plc, local derive
-   * for did:key), extracts the Ed25519 signing key + `#dina-messaging`
-   * service endpoint, and hands off to Core's `sendD2D` pipeline —
-   * which seals, signs, and (once MsgBox is bootstrapped) routes the
-   * envelope onto the WebSocket via `sendD2DViaWS`.
-   *
-   * When the peer has no `#dina-messaging` service yet (did:key peers
-   * that haven't published a DID doc), we fall through to the direct
-   * HTTPS delivery path with the relay as the endpoint. Core's
-   * delivery module will still prefer the WS path when MsgBox has
-   * installed `sendD2DViaWS` via `setWSDeliverFn`.
-   */
-  // Same heuristic msgbox_wiring uses: prefer an id ending `#dina_signing`,
-  // else any 32-byte Multikey (Ed25519). Kept here (not imported) because
-  // msgbox_wiring's helper is private to that module.
-  const pickPeerSigningKey = (
-    vms: Array<{ id?: string; type?: string; publicKeyMultibase?: string }>,
-  ): { publicKeyMultibase?: string } | null => {
-    for (const vm of vms) {
-      if (typeof vm.id === 'string' && vm.id.endsWith('#dina_signing')) return vm;
-    }
-    for (const vm of vms) {
-      if (vm.type !== 'Multikey' || typeof vm.publicKeyMultibase !== 'string') continue;
-      try {
-        if (multibaseToPublicKey(vm.publicKeyMultibase).length === 32) return vm;
-      } catch {
-        /* malformed — skip */
-      }
-    }
-    return null;
-  };
-
-  // Resolver consulted by `service.query` egress to skip the contact gate
-  // when the recipient is a publicly-discoverable service. Without this
-  // every cross-Dina service.query (incl. the bus-ETA demo) is denied
-  // at contact even though the recipient advertises the capability on
-  // AppView. Provider-side service.response replies use the
-  // provider-window path and don't need the resolver.
+  // Outbound D2D egress for the iOS app. Shares `makeSendD2D` with
+  // the lite Core so the resolve → pick `#dina_signing` VM → seal →
+  // sign → forward path lives in one module. The AppView resolver is
+  // wired here when the operator overrode the services-AppView URL
+  // so cross-Dina `service.query` egress bypasses the contact gate
+  // for published service DIDs.
   const providerServiceResolver =
     servicesAppViewURLOverride !== ''
       ? new AppViewServiceResolver({ appViewURL: servicesAppViewURLOverride })
       : undefined;
 
-  const sendD2D: BootServiceInputs['sendD2D'] = async (to, type, body) => {
-    const resolved = await didResolver.resolve(to);
-    // ATProto PLC docs list the secp256k1 rotation key first
-    // (#atproto); we need the Ed25519 signing key (#dina_signing / any
-    // 32-byte Multikey) for sealMessage's `recipientEd25519Pub`.
-    const vm = pickPeerSigningKey(resolved.document.verificationMethod);
-    if (vm === null) {
-      throw new Error(`sendD2D: recipient ${to} has no Ed25519 signing key in its DID doc`);
-    }
-    const recipientPublicKey = multibaseToPublicKey(vm.publicKeyMultibase as string);
-
-    // Prefer the `#dina-messaging` endpoint published in the peer's
-    // DID doc so each peer can advertise its own relay. Fall back to
-    // our shared relay when the peer's doc doesn't carry one. The
-    // service type is always MsgBox — the pre-0.16 DinaDirectHTTPS
-    // alternative was removed.
-    const endpoint = resolved.messagingService?.endpoint ?? msgboxURL;
-
-    const result = await coreSendD2D({
-      recipientDID: to,
-      messageType: type,
-      body: JSON.stringify(body),
-      senderDID: did,
-      senderPrivateKey: signingKeypair.privateKey,
-      recipientPublicKey,
-      endpoint,
-      providerServiceResolver,
-    });
-
-    if (!result.sent) {
-      throw new Error(
-        `sendD2D: ${type} to ${to} denied at ${result.deniedAt ?? 'unknown'}: ${result.error ?? 'no detail'}`,
-      );
-    }
-  };
+  const sendD2D: BootServiceInputs['sendD2D'] = makeSendD2D({
+    senderDID: did,
+    senderPrivateKey: signingKeypair.privateKey,
+    defaultMsgboxEndpoint: msgboxURL,
+    resolver: didResolver,
+    ...(providerServiceResolver !== undefined ? { providerServiceResolver } : {}),
+  });
 
   // Provider-mode env overrides (only honoured when role is provider/both).
   // - EXPO_PUBLIC_DINA_HAS_PAIRED_AGENT=1 → declares an external dina-agent
@@ -618,12 +552,12 @@ async function resolveIdentity(
 function demoAppView(): AppViewStub {
   return new AppViewStub({
     profiles: [
-      busDriverDemoProfile({
+      demoServiceProfile({
         // Pin the demo lat/lng so `search_provider_services` lat/lng ranking
         // returns a deterministic distance for the walk-through scenario.
         lat: 37.7749,
         lng: -122.4194,
-      } as Parameters<typeof busDriverDemoProfile>[0]),
+      } as Parameters<typeof demoServiceProfile>[0]),
     ],
   });
 }

@@ -10,7 +10,7 @@
  *       record) but cannot host services — they are not addressable as
  *       a recipient.
  *
- * Source: BUS_DRIVER_IMPLEMENTATION.md CORE-P0-005 / CORE-P0-006.
+ * Source: SERVICE_DISCOVERY_DESIGN.md CORE-P0-005 / CORE-P0-006.
  */
 
 export class PolicyViolationError extends Error {

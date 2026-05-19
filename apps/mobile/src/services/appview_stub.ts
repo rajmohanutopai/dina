@@ -1,5 +1,5 @@
 /**
- * In-memory AppView stub — seed a provider profile for the Bus Driver demo.
+ * In-memory AppView stub — seed a provider profile for the service-discovery demo.
  *
  * Replaces the real AppView HTTP client for dev/demo builds: no network
  * dependency, no PDS round-trip, deterministic ranking. Production builds
@@ -10,7 +10,7 @@
  * with one or more profiles at boot; searches match on capability name
  * and optionally rank by haversine distance to the viewer.
  *
- * Source: BUS_DRIVER_IMPLEMENTATION.md Blocker #4 (demo seed).
+ * Source: SERVICE_DISCOVERY_DESIGN.md Blocker #4 (demo seed).
  */
 
 import { FEATURE_NAMES } from '@dina/core';
@@ -160,7 +160,7 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
 }
 
 /**
- * Convenience: build a Bus Driver demo profile for `eta_query`.
+ * Convenience: build a service-discovery demo profile for `eta_query`.
  * Keeps demo seeds consistent across bootstrap + tests.
  *
  * Publishes the same params/result schemas the brain's capability
@@ -170,7 +170,7 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
  *   - the local hash matches what `computeSchemaHash` on the registry
  *     schemas would produce, so any version-pinning round-trip lines up
  */
-export function busDriverDemoProfile(overrides: Partial<ServiceProfile> = {}): ServiceProfile {
+export function demoServiceProfile(overrides: Partial<ServiceProfile> = {}): ServiceProfile {
   const paramsSchema = EtaQueryParamsSchema as unknown as Record<string, unknown>;
   const resultSchema = EtaQueryResultSchema as unknown as Record<string, unknown>;
   // Per-capability description MUST match the canonical text from main-dina
@@ -183,7 +183,7 @@ export function busDriverDemoProfile(overrides: Partial<ServiceProfile> = {}): S
   return {
     did: 'did:plc:bus42demo',
     name: 'Bus 42',
-    description: 'Bus Driver demo — deterministic transit stub',
+    description: 'service-discovery demo — deterministic transit stub',
     capabilities: ['eta_query'],
     responsePolicy: { eta_query: 'auto' },
     isDiscoverable: true,
@@ -212,8 +212,8 @@ export function busDriverDemoProfile(overrides: Partial<ServiceProfile> = {}): S
  * directly via `query_service` — no intermediate
  * `search_provider_services` turn needed.
  *
- * Seed alongside `busDriverDemoProfile` in demo bootstraps when you
- * want both the Bus Driver (ETA) and Dr Carl (appointment) surfaces
+ * Seed alongside `demoServiceProfile` in demo bootstraps when you
+ * want both the service-discovery (ETA) and Dr Carl (appointment) surfaces
  * available end-to-end.
  */
 export function drCarlDemoProfile(overrides: Partial<ServiceProfile> = {}): ServiceProfile {

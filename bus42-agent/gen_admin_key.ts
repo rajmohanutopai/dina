@@ -1,14 +1,11 @@
 import { writeFile } from 'node:fs/promises';
-import { Crypto } from '@dina/adapters-node';
+import { randomBytes as nodeRandomBytes } from 'node:crypto';
 import { deriveDIDKey, getPublicKey } from '@dina/core';
 
 async function main(): Promise<void> {
-  const crypto = new Crypto();
-  const seedBuf = crypto.randomBytes(32);
-  // noble's strict Uint8Array check rejects Buffer subclass — copy
-  // bytes into a fresh Uint8Array so length/type both match.
-  const seed = new Uint8Array(32);
-  seed.set(seedBuf);
+  // `Crypto.randomBytes` from `@dina/adapters-node` is async — using
+  // node:crypto directly here avoids the unawaited-Promise pitfall.
+  const seed = new Uint8Array(nodeRandomBytes(32));
   const pub = getPublicKey(seed);
   const did = deriveDIDKey(pub);
 

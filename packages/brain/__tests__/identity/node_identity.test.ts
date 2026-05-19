@@ -39,7 +39,7 @@ function errorJson(status: number, error: string, message?: string): Response {
 const SIGNING_SEED = new Uint8Array(32).fill(0x42);
 const ROTATION_SEED = new Uint8Array(32).fill(0x7f);
 
-const HANDLE = 'busdriver.test-pds.dinakernel.com';
+const HANDLE = 'demoprovider.test-pds.dinakernel.com';
 const PASSWORD = 'hunter2';
 const PDS_URL = 'https://test-pds.dinakernel.com';
 const PLC_URL = 'https://plc.directory';
@@ -88,7 +88,7 @@ describe('ensureNodeIdentity — fast path (account exists)', () => {
           accessJwt: 'access-xyz',
           refreshJwt: 'refresh-xyz',
           handle: HANDLE,
-          did: 'did:plc:existing-busdriver',
+          did: 'did:plc:existing-demoprovider',
         });
       }
       throw new Error(`unexpected URL: ${url}`);
@@ -104,7 +104,7 @@ describe('ensureNodeIdentity — fast path (account exists)', () => {
       fetch: fetchFn,
     });
 
-    expect(ident.did).toBe('did:plc:existing-busdriver');
+    expect(ident.did).toBe('did:plc:existing-demoprovider');
     expect(ident.accountCreated).toBe(false);
     expect(ident.plcRegistered).toBe(false);
     expect(ident.pdsSession.accessJwt).toBe('access-xyz');
@@ -154,7 +154,7 @@ describe('ensureNodeIdentity — slow path (new account)', () => {
       pdsUrl: PDS_URL,
       plcUrl: PLC_URL,
       msgboxEndpoint: 'wss://test-mailbox.dinakernel.com',
-      email: 'busdriver@example.com',
+      email: 'demoprovider@example.com',
       signingSeed: SIGNING_SEED,
       rotationSeed: ROTATION_SEED,
       fetch: fetchFn,
@@ -169,7 +169,7 @@ describe('ensureNodeIdentity — slow path (new account)', () => {
     // The DID we registered with PLC is what we handed to createAccount.
     expect(seen[0].did).toBe(expectedDID);
     expect(seen[0].handle).toBe(HANDLE);
-    expect(seen[0].email).toBe('busdriver@example.com');
+    expect(seen[0].email).toBe('demoprovider@example.com');
     // Call sequence: createSession (miss) → PLC registration → createAccount.
     expect(calls.map((c) => new URL(c).pathname).join(' / ')).toMatch(
       /createSession.*plc.*createAccount/s,

@@ -128,10 +128,10 @@ const TEST_KEYPAIR: IdentityKeypair = {
 const TEST_SESSION: PDSSession = {
   accessJwt: 'access',
   refreshJwt: 'refresh',
-  handle: 'busdriver.test-pds.dinakernel.com',
-  did: 'did:plc:busdriver',
+  handle: 'demoprovider.test-pds.dinakernel.com',
+  did: 'did:plc:demoprovider',
 };
-const DID = 'did:plc:busdriver';
+const DID = 'did:plc:demoprovider';
 
 const BUS_CONFIG: ServiceConfig = {
   isDiscoverable: true,

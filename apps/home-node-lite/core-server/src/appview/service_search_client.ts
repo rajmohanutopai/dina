@@ -15,7 +15,7 @@
  *
  *   {
  *     "services": [{
- *       "operatorDid": "did:plc:busdriver",
+ *       "operatorDid": "did:plc:demoprovider",
  *       "name": "SF Transit Authority",
  *       "capability": "eta_query",
  *       "schema": { params, result, description },

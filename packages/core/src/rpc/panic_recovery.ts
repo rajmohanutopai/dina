@@ -11,7 +11,7 @@
  * withPanicRecovery(work, {onPanic: log}))` so every job in the pool
  * is automatically shielded.
  *
- * Source: BUS_DRIVER_IMPLEMENTATION.md CORE-P0-007.
+ * Source: SERVICE_DISCOVERY_DESIGN.md CORE-P0-007.
  */
 
 import type { RPCInnerResponse } from './types';

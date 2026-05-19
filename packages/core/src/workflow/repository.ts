@@ -115,7 +115,7 @@ export interface WorkflowRepository {
    * agent_did / lease_expires_at) or null when no eligible task exists.
    *
    * This is the server side of `POST /v1/workflow/tasks/claim` used by
-   * paired dina-agent instances (role='agent') in the Bus Driver path.
+   * paired dina-agent instances (role='agent') in the service-discovery path.
    */
   claimDelegationTask(agentDID: string, nowMs: number, leaseMs: number): WorkflowTask | null;
 

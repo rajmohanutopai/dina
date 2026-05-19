@@ -131,6 +131,7 @@ describe('ordered boot (task 4.3)', () => {
         'config',
         'identity',
         'keystore',
+        'pds_provision',
         'db_open',
         'adapter_wire',
         'core_router',
@@ -177,10 +178,11 @@ describe('ordered boot (task 4.3)', () => {
       const booted = await bootTestServer();
       try {
         // With a generated/loaded master seed available, `initializeStorage`
-        // runs at boot — db_open + adapter_wire reach 'ok'. Only the
-        // keystore step is still scaffold-only.
+        // runs at boot — db_open + adapter_wire reach 'ok'. Two steps
+        // remain scaffold-only: `keystore` (not yet implemented) and
+        // `pds_provision` (opt-in via DINA_PDS_PROVISION).
         const pendingSteps = booted.trace.steps.filter((s) => s.status === 'pending');
-        expect(pendingSteps.map((s) => s.step).sort()).toEqual(['keystore']);
+        expect(pendingSteps.map((s) => s.step).sort()).toEqual(['keystore', 'pds_provision']);
         for (const s of pendingSteps) {
           expect(s.pendingReason).toBeDefined();
           expect(s.pendingReason!.length).toBeGreaterThan(0);

@@ -23,7 +23,7 @@
  * Source: brain/src/adapter/pds_publisher.py
  *
  * Out of scope (will be added by later tasks): publish_vouch, publish_review,
- * publish_flag — those are PeerLens features, not Bus Driver.
+ * publish_flag — those are PeerLens features, not service-query.
  */
 
 import { defaultFetch } from '../runtime/fetch';
@@ -40,7 +40,7 @@ export interface PutRecordResult {
 export interface PDSPublisherOptions {
   /** Base URL of the PDS (trailing slash stripped). */
   pdsUrl: string;
-  /** PDS account handle, e.g. `busdriver.dinakernel.com`. */
+  /** PDS account handle, e.g. `demoprovider.dinakernel.com`. */
   handle: string;
   /** PDS account app password. Never logged. */
   password: string;

@@ -155,7 +155,7 @@ export async function bootstrapMsgBox(config: MsgBoxBootConfig): Promise<void> {
   // WS-based D2D egress is intentionally NOT installed. The shared
   // Dina MsgBox relay (dina-infra-test-msgbox) logs only `rpc_routed`
   // and `buffered` for envelopes it accepts; `type: 'd2d'` WS frames
-  // are silently dropped on its side. The Go Home Node (busdriver,
+  // are silently dropped on its side. The Go Home Node reference impl (
   // openclaw-user) only uses HTTP POST /forward for D2D, which is
   // what the relay actually routes. `deliverMessage` (HTTP /forward
   // fallback) is what every D2D send should hit — setting

@@ -118,7 +118,7 @@ describe('mobile package boundaries', () => {
     const files = [
       join(root, 'src', 'services', 'staging_enrichment.ts'),
       join(root, 'src', 'services', 'appview_stub.ts'),
-      join(root, 'src', 'services', 'demo_bus_driver_responder.ts'),
+      join(root, 'src', 'services', 'demo_service_responder.ts'),
     ];
     const offenders: string[] = [];
 
@@ -159,7 +159,7 @@ describe('mobile package boundaries', () => {
     const root = join(__dirname, '..', '..');
     const files = [
       join(root, 'src', 'hooks', 'useServiceConfigForm.ts'),
-      join(root, 'src', 'services', 'demo_bus_driver_responder.ts'),
+      join(root, 'src', 'services', 'demo_service_responder.ts'),
       join(root, 'app', 'service-settings.tsx'),
     ];
     const offenders: string[] = [];

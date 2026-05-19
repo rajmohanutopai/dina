@@ -11,12 +11,12 @@
  *   - Default cadence 1 second so requester-side replies feel snappy.
  *   - Per-event error isolation — one bad event never breaks the tick.
  *   - Events that do not match our filter are still acknowledged: we are
- *     the single Bus Driver consumer, so leaving them unacked would stall
+ *     the single service-query consumer, so leaving them unacked would stall
  *     the delivery scheduler. Other event streams (approval lifecycle
  *     audit, etc.) are write-only from Core's perspective; the ack is
  *     a no-op from their side because nothing else consumes them.
  *
- * Source: BUS_DRIVER_IMPLEMENTATION.md BRAIN-P2-W03 / MOBILE-009.
+ * Source: SERVICE_DISCOVERY_DESIGN.md BRAIN-P2-W03 / MOBILE-009.
  */
 
 import type { CoreClient, WorkflowEvent, WorkflowTask } from '@dina/core';
@@ -57,7 +57,7 @@ export interface ApprovedExecutionPayload {
  * errors behave like `deliver` errors: the event is NOT acked, so Core
  * re-drives it on the next tick.
  *
- * Source: BUS_DRIVER_IMPLEMENTATION.md BRAIN-P4-P01.
+ * Source: SERVICE_DISCOVERY_DESIGN.md BRAIN-P4-P01.
  */
 export type ApprovalEventDispatcher = (args: {
   event: WorkflowEvent;

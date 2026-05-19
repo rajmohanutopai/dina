@@ -198,7 +198,7 @@ describe('HttpCoreTransport (task 1.31)', () => {
       signer: stub.signer,
     });
     const r = await t.sendServiceQuery({
-      toDID: 'did:plc:busdriver',
+      toDID: 'did:plc:demoprovider',
       capability: 'eta_query',
       queryId: 'q-abc',
       params: { route_id: '42' },
@@ -210,7 +210,7 @@ describe('HttpCoreTransport (task 1.31)', () => {
     expect(r.queryId).toBe('q-abc');
     const sent = JSON.parse(new TextDecoder().decode(calls[0]!.init.body!));
     expect(sent).toEqual({
-      to_did: 'did:plc:busdriver',
+      to_did: 'did:plc:demoprovider',
       capability: 'eta_query',
       query_id: 'q-abc',
       params: { route_id: '42' },

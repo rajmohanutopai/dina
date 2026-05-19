@@ -1,14 +1,14 @@
 /**
  * AppViewStub — seed helper + search/isDiscoverable parity.
  *
- * Covers both demo fixtures (`busDriverDemoProfile`, `drCarlDemoProfile`
+ * Covers both demo fixtures (`demoServiceProfile`, `drCarlDemoProfile`
  * / WM-DEMO-02) and the stub's `AppViewClient` parity surface so the
  * reasoning pipeline can consume either interchangeably.
  */
 
 import {
   AppViewStub,
-  busDriverDemoProfile,
+  demoServiceProfile,
   drCarlDemoProfile,
   isAppViewStub,
 } from '../../src/services/appview_stub';
@@ -16,14 +16,14 @@ import {
 describe('AppViewStub', () => {
   it('publishes seeded profiles and counts them', () => {
     const stub = new AppViewStub({
-      profiles: [busDriverDemoProfile(), drCarlDemoProfile()],
+      profiles: [demoServiceProfile(), drCarlDemoProfile()],
     });
     expect(stub.size()).toBe(2);
   });
 
   it('searchServices filters by capability', async () => {
     const stub = new AppViewStub({
-      profiles: [busDriverDemoProfile(), drCarlDemoProfile()],
+      profiles: [demoServiceProfile(), drCarlDemoProfile()],
     });
     const eta = await stub.searchServices({ capability: 'eta_query' });
     const appt = await stub.searchServices({ capability: 'appointment_status' });

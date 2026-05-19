@@ -55,9 +55,9 @@ function makeFetch(responses: Array<Response | Error | ((req: Recorded) => Respo
 }
 
 const PDS = 'https://pds.test';
-const HANDLE = 'busdriver.dinakernel.com';
+const HANDLE = 'demoprovider.dinakernel.com';
 const PASSWORD = 'app-password-123';
-const DID = 'did:plc:busdriver';
+const DID = 'did:plc:demoprovider';
 const JWT = 'jwt-abc.def.ghi';
 
 function sessionOK(): Response {

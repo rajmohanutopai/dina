@@ -12,7 +12,7 @@
  * background timer — callers (or tests) advance time via `nowMsFn` and
  * the cache recomputes eligibility each lookup.
  *
- * Source: BUS_DRIVER_IMPLEMENTATION.md CORE-P0-009.
+ * Source: SERVICE_DISCOVERY_DESIGN.md CORE-P0-009.
  */
 
 import type { RPCInnerResponse } from './types';

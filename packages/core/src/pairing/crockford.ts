@@ -10,7 +10,7 @@
  *   - `O`/`o` → `0`
  *   - Whitespace + hyphens stripped
  *
- * Source: BUS_DRIVER_IMPLEMENTATION.md CORE-P0-013 / CORE-P0-014 / CORE-P0-015.
+ * Source: SERVICE_DISCOVERY_DESIGN.md CORE-P0-013 / CORE-P0-014 / CORE-P0-015.
  */
 
 /** 32 characters, one per 5-bit symbol. */

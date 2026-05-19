@@ -6,7 +6,7 @@
  * dropped with an audit entry rather than dispatched — prevents a slow
  * drain from acting on stale commands.
  *
- * Source: BUS_DRIVER_IMPLEMENTATION.md CORE-P0-008.
+ * Source: SERVICE_DISCOVERY_DESIGN.md CORE-P0-008.
  */
 
 export interface MessageWithExpiry {

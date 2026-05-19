@@ -95,7 +95,7 @@ const AUTHZ_RULES: Array<{ prefix: string; allowed: Set<CallerType> }> = [
   // D2D messaging — Brain
   { prefix: '/v1/msg/', allowed: new Set(['brain']) },
 
-  // Service discovery + workflow (Bus Driver scenario) — Brain owns publish
+  // Service discovery + workflow (service discovery scenario) — Brain owns publish
   // flow + orchestrates queries; Admin can read/write config from the UI.
   { prefix: '/v1/service/', allowed: new Set(['brain', 'admin']) },
 

@@ -111,7 +111,7 @@ export function validateDIDDocument(doc: DIDDocument): string[] {
 /**
  * Extract the messaging service endpoint from a DID Document.
  *
- * Accepts either fragment form — ATProto / busdriver PLC docs publish
+ * Accepts either fragment form — ATProto-style PLC docs publish
  * the service under `#dina_messaging` (underscore), while older Dina
  * docs used `#dina-messaging` (hyphen). Accepting both keeps cross-
  * generation peers routable without the caller caring which fragment

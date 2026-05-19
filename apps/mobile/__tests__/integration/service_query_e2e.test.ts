@@ -157,7 +157,7 @@ async function composeNode(opts?: {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('Bus Driver end-to-end runtime composition', () => {
+describe('Service-query end-to-end runtime composition', () => {
   afterEach(() => {
     // No teardown needed — each test composes its own node via
     // createNode(), and each test calls node.dispose() which resets

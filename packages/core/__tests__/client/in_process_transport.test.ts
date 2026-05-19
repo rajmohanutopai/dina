@@ -966,7 +966,7 @@ describe('InProcessTransport (task 1.30)', () => {
   it('serviceQuery maps camelCase → snake_case + returns task handle', async () => {
     const t = new InProcessTransport(buildRouter());
     const r = await t.sendServiceQuery({
-      toDID: 'did:plc:busdriver',
+      toDID: 'did:plc:demoprovider',
       capability: 'eta_query',
       queryId: 'q-abc',
       params: { route_id: '42', location: { lat: 37.762, lng: -122.435 } },
@@ -983,7 +983,7 @@ describe('InProcessTransport (task 1.30)', () => {
     // deduped:true path. Verifies the optional field round-trips.
     const t = new InProcessTransport(buildRouter());
     const r = await t.sendServiceQuery({
-      toDID: 'did:plc:busdriver',
+      toDID: 'did:plc:demoprovider',
       capability: 'eta_query',
       queryId: 'q-dup',
       params: { route_id: '42' },

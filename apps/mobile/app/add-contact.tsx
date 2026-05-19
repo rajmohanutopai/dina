@@ -2,7 +2,7 @@
  * Add Contact — form to append a peer to the core contact directory.
  *
  * Accepts a DID directly, or a handle (e.g.
- * `busdriver.test-pds.dinakernel.com`). For handle input, we resolve
+ * `demoprovider.test-pds.dinakernel.com`). For handle input, we resolve
  * to a DID via AT Protocol's standard methods — `.well-known/atproto-
  * did` on the handle's host, falling back to the PDS xrpc endpoint
  * with the host inferred from the handle (strip the leftmost label).

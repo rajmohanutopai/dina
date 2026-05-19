@@ -16,7 +16,7 @@
  * Kept in a separate module from the orchestrator so the orchestrator stays
  * core-client-agnostic (useful for unit tests that stub the handler directly).
  *
- * Source: BUS_DRIVER_IMPLEMENTATION.md BRAIN-P2-W02, BRAIN-P2-W04, BRAIN-P2-W05.
+ * Source: SERVICE_DISCOVERY_DESIGN.md BRAIN-P2-W02, BRAIN-P2-W04, BRAIN-P2-W05.
  */
 
 import type { ServiceApproveCommandHandler, ServiceDenyCommandHandler } from '../chat/orchestrator';

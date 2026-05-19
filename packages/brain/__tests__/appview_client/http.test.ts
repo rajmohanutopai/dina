@@ -38,9 +38,9 @@ function noSleep(): Promise<void> {
 
 const APPVIEW = 'https://appview.test';
 const SERVICE_A: ServiceProfile = {
-  did: 'did:plc:busdriver',
-  handle: 'busdriver.dinakernel.com',
-  name: 'Bus Driver 42',
+  did: 'did:plc:demoprovider',
+  handle: 'demoprovider.dinakernel.com',
+  name: 'Demo Provider 42',
   description: 'Route 42 operator',
   capabilities: ['eta_query'],
   responsePolicy: { eta_query: 'auto' },
@@ -83,7 +83,7 @@ describe('AppViewClient', () => {
 
       const result = await c.searchServices({ capability: 'eta_query' });
       expect(result).toHaveLength(1);
-      expect(result[0].did).toBe('did:plc:busdriver');
+      expect(result[0].did).toBe('did:plc:demoprovider');
     });
 
     it('passes all query params', async () => {
@@ -143,7 +143,7 @@ describe('AppViewClient', () => {
 
       const result = await c.searchServices({ capability: 'eta_query' });
       expect(result).toHaveLength(1);
-      expect(result[0].did).toBe('did:plc:busdriver');
+      expect(result[0].did).toBe('did:plc:demoprovider');
     });
   });
 

@@ -13,7 +13,7 @@
  * message is absorbed by Core's ingress pipeline, which marks the
  * `service_query` task completed + emits the event consumed above.
  *
- * Source: BUS_DRIVER_IMPLEMENTATION.md BRAIN-P2-Q (simplified — Core owns state).
+ * Source: SERVICE_DISCOVERY_DESIGN.md BRAIN-P2-Q (simplified — Core owns state).
  */
 
 import {

@@ -8,7 +8,7 @@ import { sendChatMessage, ChatSendError } from '../../src/services/chat_d2d';
 import { setD2DSender, getD2DSender } from '../../../core/src/server/routes/d2d_msg';
 import { resetThreads, getThread } from '../../../brain/src/chat/thread';
 
-const PEER = 'did:plc:testbusdriver';
+const PEER = 'did:plc:testdemoprovider';
 
 beforeEach(() => {
   resetThreads();

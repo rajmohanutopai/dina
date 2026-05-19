@@ -1,15 +1,15 @@
 /**
- * Bus Driver — provider-side end-to-end (cross-node round-trip, second
+ * Service-query — provider-side end-to-end (cross-node round-trip, second
  * half).
  *
- * `mobile_bus_driver_e2e.test.ts` covers the **requester** half: the
+ * `mobile_service_query_e2e.test.ts` covers the **requester** half: the
  * agentic flow on Alonso's node — geocode → AppView search →
  * orchestrator builds the wire payload — but stops at the dispatched
  * `service.query` body. The orchestrator is stubbed; nothing actually
  * processes the query.
  *
  * This test takes that captured wire payload and runs it through the
- * **provider** half end-to-end: BusDriver's `ServiceHandler` →
+ * **provider** half end-to-end: service provider's `ServiceHandler` →
  * delegation task → `LocalDelegationRunner` (acting as the
  * out-of-process dina-agent / OpenClaw) → `WorkflowService.complete`
  * → `bridgeServiceQueryCompletion` → outbound `service.response` body.
@@ -17,13 +17,13 @@
  * Combined, the two tests prove the full cross-node round-trip with
  * real production code on each side:
  *
- *   Alonso side (mobile_bus_driver_e2e):
+ *   Alonso side (mobile_service_query_e2e):
  *     vault_search → geocode → search_provider_services
  *       → orchestrator.issueQueryToDID → outbound service.query body  ──┐
  *                                                                       │
  *   ─── opaque bytes on the wire (in prod: D2D MsgBox; here: in-memory) │
  *                                                                       │
- *   BusDriver side (this test):                                         │
+ *   service provider side (this test):                                         │
  *     ServiceHandler.handleQuery(body)  ◀──────────────────────────────┘
  *       → workflow task (kind=delegation, payload.type=service_query_execution)
  *       → LocalDelegationRunner claims + runs `eta_query` capability
@@ -75,8 +75,8 @@ import {
 import { makeServiceResponseBridgeSender } from '@dina/core';
 
 const ALONSO_DID = 'did:plc:alonso-test';
-const BUSDRIVER_DID = 'did:plc:busdriver-test';
-const RUNNER_AGENT_DID = 'did:plc:busdriver-openclaw-test';
+const DEMO_PROVIDER_DID = 'did:plc:demo-provider-test';
+const RUNNER_AGENT_DID = 'did:plc:demo-provider-agent-test';
 
 const ETA_PARAMS_SCHEMA = {
   type: 'object',
@@ -108,7 +108,7 @@ const ETA_RESULT_SCHEMA = {
   },
 } as const;
 
-const SCHEMA_HASH = 'sha256:busdriver-eta-v1';
+const SCHEMA_HASH = 'sha256:demoprovider-eta-v1';
 
 // No service-config repo wired here. `setServiceConfig` writes through
 // the in-memory module-global first (the SQLite repo is for restart
@@ -118,7 +118,7 @@ const SCHEMA_HASH = 'sha256:busdriver-eta-v1';
 // Skipping the repo keeps the test free of DB plumbing without losing
 // any read/write fidelity.
 
-describe('Bus Driver — provider-side cross-node E2E', () => {
+describe('Service-query — provider-side cross-node E2E', () => {
   let workflowRepo: InMemoryWorkflowRepository;
   let workflowService: WorkflowService;
   let runner: LocalDelegationRunner;
@@ -152,15 +152,15 @@ describe('Bus Driver — provider-side cross-node E2E', () => {
   beforeEach(() => {
     capturedResponses = [];
 
-    // Wire BusDriver's module-global state. Each `beforeEach` resets
-    // these because every test in this file plays the BusDriver role
+    // Wire service provider's module-global state. Each `beforeEach` resets
+    // these because every test in this file plays the service role
     // — there's no Alonso state to preserve here.
     workflowRepo = new InMemoryWorkflowRepository();
     setWorkflowRepository(workflowRepo);
 
     // Reset config state; no repo wired — see header note.
     resetServiceConfigState();
-    const busDriverConfig: ServiceConfig = {
+    const demoProviderConfig: ServiceConfig = {
       isDiscoverable: true,
       name: 'SF Transit Authority',
       description: 'Real-time SF Muni bus arrival ETAs',
@@ -182,7 +182,7 @@ describe('Bus Driver — provider-side cross-node E2E', () => {
         },
       },
     };
-    setServiceConfig(busDriverConfig);
+    setServiceConfig(demoProviderConfig);
 
     // WorkflowService with the response-bridge sender wired —
     // `bridgeServiceQueryCompletion` calls this when a service_query
@@ -245,7 +245,7 @@ describe('Bus Driver — provider-side cross-node E2E', () => {
     });
 
     // Wire bytes Alonso would have sent. Shape matches what the
-    // requester-side `mobile_bus_driver_e2e.test.ts` proves the
+    // requester-side `mobile_service_query_e2e.test.ts` proves the
     // orchestrator emits.
     const inboundQuery: ServiceQueryBody = {
       query_id: 'q-xyz-001',
@@ -258,7 +258,7 @@ describe('Bus Driver — provider-side cross-node E2E', () => {
       ttl_seconds: 60,
     };
 
-    // ── Step 1: BusDriver's ServiceHandler validates + creates task ──
+    // ── Step 1: service provider's ServiceHandler validates + creates task ──
     await handler.handleQuery(ALONSO_DID, inboundQuery);
 
     // Workflow repo now holds exactly one delegation task with the

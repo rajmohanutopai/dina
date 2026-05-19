@@ -44,13 +44,9 @@ import { hmac } from '@noble/hashes/hmac.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
-import {
-  cidForOperation,
-  publicKeyToMultibase,
-  secp256k1ToDidKeyMultibase,
-  updateDIDPLC,
-} from '@dina/core';
+import { secp256k1ToDidKeyMultibase } from '@dina/core';
 import { PDSAccountClient, PDSAccountError } from '@dina/brain';
+import { applyDinaPlcUpdate } from '@dina/home-node';
 
 import type { IdentityDerivations } from './derivations';
 
@@ -153,9 +149,9 @@ export async function loadOrProvisionPdsIdentity(
         did: identity.did,
         handle: identity.handle,
         msgboxEndpoint: opts.msgboxEndpoint,
-        signingPublicKey: opts.signingPublicKey,
+        signingPubKey: opts.signingPublicKey,
         masterSeed: opts.masterSeed,
-        plcURL: opts.plcURL,
+        ...(opts.plcURL !== undefined ? { plcURL: opts.plcURL } : {}),
       });
       identity.dinaUpdateApplied = true;
       await writeAtomic(filePath, JSON.stringify(identity, null, 2));
@@ -226,122 +222,14 @@ export async function loadOrProvisionPdsIdentity(
     did: identity.did,
     handle: identity.handle,
     msgboxEndpoint: opts.msgboxEndpoint,
-    signingPublicKey: opts.signingPublicKey,
+    signingPubKey: opts.signingPublicKey,
     masterSeed: opts.masterSeed,
-    plcURL: opts.plcURL,
+    ...(opts.plcURL !== undefined ? { plcURL: opts.plcURL } : {}),
   });
   identity.dinaUpdateApplied = true;
 
   await writeAtomic(filePath, JSON.stringify(identity, null, 2));
   return identity;
-}
-
-/**
- * Merge the Dina-specific additions onto the existing PLC document.
- * Port of the mobile onboarding helper (`apps/mobile/src/onboarding/
- * provision.ts::applyDinaPLCUpdate`) — same audit-log read, same
- * merge-on-top rule, same `prev = cid(lastOp)` chaining.
- *
- * Why we can't lazily skip this: `sendD2D` needs the recipient's
- * `dina_signing` VM to seal envelopes, and the published DinaMsgBox
- * service endpoint to know where to route — both come from the PLC
- * doc.
- */
-async function applyDinaPlcUpdate(params: {
-  did: string;
-  handle: string;
-  msgboxEndpoint: string;
-  signingPublicKey: Uint8Array;
-  masterSeed: Uint8Array;
-  plcURL?: string;
-}): Promise<void> {
-  const plcURL = params.plcURL ?? 'https://plc.directory';
-  const auditURL = `${plcURL.replace(/\/$/, '')}/${params.did}/log/audit`;
-  const resp = await fetch(auditURL, { headers: { Accept: 'application/json' } });
-  if (!resp.ok) {
-    throw new Error(`PLC audit log fetch failed: HTTP ${resp.status} ${resp.statusText}`);
-  }
-  const auditLog = (await resp.json()) as unknown[];
-  if (!Array.isArray(auditLog) || auditLog.length === 0) {
-    throw new Error(`PLC audit log is empty for ${params.did}`);
-  }
-  const lastEntry = auditLog[auditLog.length - 1] as Record<string, unknown>;
-  const lastOp = lastEntry.operation as Record<string, unknown> | undefined;
-  if (lastOp === undefined) {
-    throw new Error('PLC audit log entry missing `operation` field');
-  }
-  const priorVMs = readStringMap(lastOp.verificationMethods);
-  const priorServices = readServicesMap(lastOp.services);
-  const priorRotationKeys = readStringArray(lastOp.rotationKeys);
-  const priorAlsoKnownAs = readStringArray(lastOp.alsoKnownAs);
-
-  if (priorRotationKeys.length === 0) {
-    throw new Error('PLC prior op has no rotation keys — refusing to publish update');
-  }
-
-  const priorCid = cidForOperation(lastOp);
-  const dinaSigningDidKey = `did:key:${publicKeyToMultibase(params.signingPublicKey)}`;
-  const verificationMethods: Record<string, string> = {
-    ...priorVMs,
-    dina_signing: dinaSigningDidKey,
-  };
-  const services: Record<string, { type: string; endpoint: string }> = {
-    ...priorServices,
-    'dina-messaging': {
-      type: 'DinaMsgBox',
-      endpoint: params.msgboxEndpoint,
-    },
-  };
-  const alsoKnownAs =
-    priorAlsoKnownAs.length > 0 ? priorAlsoKnownAs : [`at://${params.handle}`];
-
-  await updateDIDPLC(
-    {
-      did: params.did,
-      prev: priorCid,
-      verificationMethods,
-      rotationKeys: priorRotationKeys,
-      services,
-      alsoKnownAs,
-      signerRotationSeed: params.masterSeed,
-    },
-    {
-      plcURL,
-      // Without an injected fetch, `updateDIDPLC` builds + signs the
-      // op but never POSTs it. Pass node's global fetch so the update
-      // actually lands at plc.directory.
-      fetch: (input, init) =>
-        fetch(input as unknown as string | URL | Request, init as RequestInit | undefined),
-    },
-  );
-}
-
-function readStringMap(v: unknown): Record<string, string> {
-  if (v === null || typeof v !== 'object') return {};
-  const out: Record<string, string> = {};
-  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-    if (typeof val === 'string') out[k] = val;
-  }
-  return out;
-}
-
-function readServicesMap(v: unknown): Record<string, { type: string; endpoint: string }> {
-  if (v === null || typeof v !== 'object') return {};
-  const out: Record<string, { type: string; endpoint: string }> = {};
-  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-    if (val !== null && typeof val === 'object') {
-      const entry = val as Record<string, unknown>;
-      const type = typeof entry.type === 'string' ? entry.type : '';
-      const endpoint = typeof entry.endpoint === 'string' ? entry.endpoint : '';
-      if (type !== '' && endpoint !== '') out[k] = { type, endpoint };
-    }
-  }
-  return out;
-}
-
-function readStringArray(v: unknown): string[] {
-  if (!Array.isArray(v)) return [];
-  return v.filter((x): x is string => typeof x === 'string');
 }
 
 /**

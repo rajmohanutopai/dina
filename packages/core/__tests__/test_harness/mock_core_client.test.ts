@@ -110,7 +110,7 @@ describe('MockCoreClient (task 1.34)', () => {
   it('serviceQuery echoes queryId so callers can correlate without configuring per-test', async () => {
     const m = new MockCoreClient();
     const r = await m.sendServiceQuery({
-      toDID: 'did:plc:busdriver',
+      toDID: 'did:plc:demoprovider',
       capability: 'eta_query',
       queryId: 'q-real-id',
       params: {},
