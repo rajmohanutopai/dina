@@ -114,7 +114,7 @@ export class AppViewStub {
   /**
    * PeerLens stubs — no local PeerLens data in dev mode, so these
    * return the shape the real AppView would return for an unknown
-   * subject. The `search_trust_network` tool surfaces this as a
+   * subject. The `search_peerlens` tool surfaces this as a
    * graceful "no verified peer data" note instead of throwing.
    * Production swaps in `AppViewClient` whose implementations actually
    * hit `com.dina.peerlens.resolve` / `com.dina.peerlens.search`.

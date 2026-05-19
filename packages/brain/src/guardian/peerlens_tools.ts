@@ -28,6 +28,10 @@
  * of being enumerated one by one.
  */
 export const TRUST_TOOL_NAMES: ReadonlySet<string> = new Set([
+  'search_peerlens',
+  // Legacy alias — older clients / model checkpoints may still emit
+  // the renamed name. Kept here so detection stays correct during
+  // the transition window.
   'search_trust_network',
   'peerlens_lookup',
   'peer_lens_lookup',

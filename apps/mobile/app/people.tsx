@@ -1,10 +1,17 @@
 /**
- * People — contacts the user has added for D2D messaging.
+ * People — two-sub-tab surface.
  *
- * Lists every row from the core contact directory. Tapping a row
- * drills into /chat/[did]; the "+ Add" button in the header drills
- * into /add-contact. The directory doesn't ship a subscribe API, so
- * we re-read on focus (Expo Router's `useFocusEffect`).
+ *   - Contacts (default): paired peers from the core contact
+ *     directory (`listContacts()`). Tap → /chat/[did]; long-press →
+ *     remove from local list (the DID stays on PLC). The "+" in the
+ *     navbar still routes to /add-contact.
+ *   - Relations: the local people graph (`getPeopleRepository()`).
+ *     Read-only first cut — shows every confirmed/suggested person
+ *     with their relationship hint and surface aliases.
+ *
+ * Why both sub-tabs see DID-bound persons: a paired contact is also a
+ * relation (e.g. Sancho the peer is also "my brother"), so suppressing
+ * DID-bound rows from Relations would hide useful context.
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
@@ -20,23 +27,36 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Link, useFocusEffect, useNavigation, useRouter } from 'expo-router';
-import { listContacts, deleteContact, type Contact } from '@dina/core';
+import {
+  listContacts,
+  deleteContact,
+  getPeopleRepository,
+  type Contact,
+  type Person,
+} from '@dina/core';
 import { colors, fonts, spacing, radius, shadows } from '../src/theme';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
 import { getProfile as getTrustProfile } from '../src/peerlens/appview_runtime';
 import { loadInfraPreferences } from '../src/services/infra_preferences';
 
+type SubTab = 'contacts' | 'relations';
+
 export default function PeopleScreen() {
+  const [subTab, setSubTab] = useState<SubTab>('contacts');
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
   const navigation = useNavigation();
   const router = useRouter();
 
   const refresh = useCallback(() => {
     setContacts(listContacts());
+    const repo = getPeopleRepository();
+    setPeople(repo === null ? [] : repo.listPeople());
   }, []);
 
   // Refresh on screen focus. Cheap: listContacts reads the in-memory
-  // map and returns a snapshot array.
+  // map and returns a snapshot array; listPeople is a single SQLite
+  // read.
   useFocusEffect(
     useCallback(() => {
       refresh();
@@ -46,7 +66,8 @@ export default function PeopleScreen() {
   // Pin the "+ Add contact" action into the navbar's headerRight so
   // the in-page hero stays clean.  Using `setOptions` instead of
   // setting it from the parent Tabs layout keeps the action local
-  // to the screen that owns it.
+  // to the screen that owns it. The "+" is contact-only for now;
+  // adding a relation manually is the next milestone.
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
@@ -88,28 +109,169 @@ export default function PeopleScreen() {
   return (
     <View style={styles.container}>
       <OwnIdentityCard />
-      {contacts.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Ionicons
-            name="people-outline"
-            size={40}
-            color={colors.textMuted}
-            style={{ marginBottom: spacing.md }}
-          />
-          <Text style={styles.emptyTitle}>No contacts yet</Text>
-          <Text style={styles.emptyBody}>
-            Add someone by their handle to start an end-to-end encrypted conversation.
-          </Text>
-        </View>
+      <SubTabBar value={subTab} onChange={setSubTab} />
+      {subTab === 'contacts' ? (
+        <ContactsView contacts={contacts} onLongPress={onLongPress} />
       ) : (
-        <FlatList
-          style={styles.list}
-          contentContainerStyle={styles.listContent}
-          data={contacts}
-          keyExtractor={(c) => c.did}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
-          renderItem={({ item }) => <ContactRow contact={item} onLongPress={onLongPress} />}
+        <RelationsView people={people} />
+      )}
+    </View>
+  );
+}
+
+function ContactsView({
+  contacts,
+  onLongPress,
+}: {
+  contacts: Contact[];
+  onLongPress: (contact: Contact) => void;
+}) {
+  if (contacts.length === 0) {
+    return (
+      <View style={styles.emptyState}>
+        <Ionicons
+          name="people-outline"
+          size={40}
+          color={colors.textMuted}
+          style={{ marginBottom: spacing.md }}
         />
+        <Text style={styles.emptyTitle}>No contacts yet</Text>
+        <Text style={styles.emptyBody}>
+          Add someone by their handle to start an end-to-end encrypted conversation.
+        </Text>
+      </View>
+    );
+  }
+  return (
+    <FlatList
+      style={styles.list}
+      contentContainerStyle={styles.listContent}
+      data={contacts}
+      keyExtractor={(c) => c.did}
+      ItemSeparatorComponent={() => <View style={styles.separator} />}
+      renderItem={({ item }) => <ContactRow contact={item} onLongPress={onLongPress} />}
+    />
+  );
+}
+
+function RelationsView({ people }: { people: Person[] }) {
+  if (people.length === 0) {
+    return (
+      <View style={styles.emptyState}>
+        <Ionicons
+          name="git-network-outline"
+          size={40}
+          color={colors.textMuted}
+          style={{ marginBottom: spacing.md }}
+        />
+        <Text style={styles.emptyTitle}>No relations yet</Text>
+        <Text style={styles.emptyBody}>
+          As you tell Dina about people in your life — "Emma is my daughter", "Sancho is my
+          brother" — they’ll show up here.
+        </Text>
+      </View>
+    );
+  }
+  return (
+    <FlatList
+      style={styles.list}
+      contentContainerStyle={styles.listContent}
+      data={people}
+      keyExtractor={(p) => p.personId}
+      ItemSeparatorComponent={() => <View style={styles.separator} />}
+      renderItem={({ item }) => <RelationRow person={item} />}
+    />
+  );
+}
+
+function SubTabBar({
+  value,
+  onChange,
+}: {
+  value: SubTab;
+  onChange: (v: SubTab) => void;
+}) {
+  return (
+    <View style={styles.subTabBar}>
+      <Pressable
+        onPress={() => onChange('contacts')}
+        accessibilityRole="tab"
+        accessibilityState={{ selected: value === 'contacts' }}
+        style={[styles.subTab, value === 'contacts' && styles.subTabActive]}
+      >
+        <Text
+          style={[
+            styles.subTabLabel,
+            value === 'contacts' && styles.subTabLabelActive,
+          ]}
+        >
+          Contacts
+        </Text>
+      </Pressable>
+      <Pressable
+        onPress={() => onChange('relations')}
+        accessibilityRole="tab"
+        accessibilityState={{ selected: value === 'relations' }}
+        style={[styles.subTab, value === 'relations' && styles.subTabActive]}
+      >
+        <Text
+          style={[
+            styles.subTabLabel,
+            value === 'relations' && styles.subTabLabelActive,
+          ]}
+        >
+          Relations
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function RelationRow({ person }: { person: Person }) {
+  // Show up to 3 non-rejected, non-canonical surfaces so the row stays
+  // readable even when the LLM has captured many aliases.
+  const aliasSurfaces = (person.surfaces ?? [])
+    .filter((s) => s.status !== 'rejected' && s.surface !== person.canonicalName)
+    .slice(0, 3)
+    .map((s) => s.surface);
+
+  return (
+    <View
+      style={[styles.row, person.status === 'suggested' && styles.rowSuggested]}
+      accessibilityLabel={
+        `${person.canonicalName}` +
+        (person.relationshipHint !== '' ? `, ${person.relationshipHint}` : '')
+      }
+    >
+      <View style={styles.avatar}>
+        <Text style={styles.avatarText}>
+          {person.canonicalName.slice(0, 1).toUpperCase() || '?'}
+        </Text>
+      </View>
+      <View style={styles.rowText}>
+        <Text style={styles.rowName} numberOfLines={1}>
+          {person.canonicalName}
+        </Text>
+        {person.relationshipHint !== '' && (
+          <Text style={styles.rowDid} numberOfLines={1}>
+            {person.relationshipHint}
+          </Text>
+        )}
+        {aliasSurfaces.length > 0 && (
+          <Text style={styles.rowAliases} numberOfLines={1}>
+            also: {aliasSurfaces.join(', ')}
+          </Text>
+        )}
+      </View>
+      {person.contactDid !== '' && (
+        <View style={[styles.badge, { backgroundColor: '#E6F0FE' }]}>
+          <Text style={[styles.badgeText, { color: '#1F5BB8' }]}>Paired</Text>
+        </View>
+      )}
+      {person.status === 'suggested' && (
+        <View style={[styles.badge, { backgroundColor: '#FFF4D6' }]}>
+          <Text style={[styles.badgeText, { color: '#8A6300' }]}>Suggested</Text>
+        </View>
       )}
     </View>
   );
@@ -340,6 +502,38 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#FFFFFF',
   },
+  // Segmented [Contacts | Relations] strip below the OwnIdentityCard.
+  // A thin pill row rather than a full segmented control — keeps the
+  // visual weight matching the contact-list rows that follow.
+  subTabBar: {
+    flexDirection: 'row',
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.bgSecondary,
+    borderRadius: radius.md,
+    padding: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  subTab: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    borderRadius: radius.sm,
+  },
+  subTabActive: {
+    backgroundColor: colors.bgPrimary,
+    ...(Platform.OS === 'ios' ? shadows.sm : {}),
+  },
+  subTabLabel: {
+    fontFamily: fonts.sansSemibold,
+    fontSize: 13,
+    color: colors.textMuted,
+    letterSpacing: 0.2,
+  },
+  subTabLabelActive: {
+    color: colors.textPrimary,
+  },
   list: { flex: 1 },
   listContent: {
     paddingHorizontal: spacing.md,
@@ -360,6 +554,17 @@ const styles = StyleSheet.create({
   },
   rowPressed: {
     backgroundColor: colors.bgTertiary,
+  },
+  // Subtle treatment for unconfirmed Person rows so the user can tell
+  // at a glance what Dina is still guessing at vs. what's locked in.
+  rowSuggested: {
+    opacity: 0.85,
+  },
+  rowAliases: {
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: 2,
   },
   avatar: {
     width: 40,

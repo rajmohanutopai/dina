@@ -8,7 +8,7 @@
  *
  * **Why a tool, not a separate intent classifier output.** The
  * existing `IntentClassifier` emits substrate routing
- * (vault / trust_network / provider_services / general_knowledge),
+ * (vault / peerlens / provider_services / general_knowledge),
  * not actions. Actions belong in the tool registry: the agent picks
  * which tool to call from the natural-language query, the same way
  * it picks `search_vault` vs `query_service` vs `geocode`. This is

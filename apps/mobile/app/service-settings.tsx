@@ -12,7 +12,7 @@
  * depending on isDiscoverable).
  */
 
-import React, { useState, useEffect, useCallback, useSyncExternalStore } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useSyncExternalStore } from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,7 @@ import {
   Pressable,
   ActivityIndicator,
   Alert,
+  Modal,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { colors, fonts, spacing, radius, shadows } from '../src/theme';
@@ -46,6 +47,21 @@ import {
 } from '../src/services/infra_preferences';
 import type { NodeRole } from '../src/services/bootstrap';
 import type { ServiceConfig } from '@dina/core';
+// Local capability registry — every capability the brain knows how to
+// validate (paramsSchema, resultSchema, hash, default TTL). Surfacing
+// these in the Add-Capability picker means a user adding `eta_query`
+// from the UI gets the canonical schema attached automatically; no
+// hand-typing a JSON Schema. Capabilities NOT in this registry can
+// still be added via the free-text path, but they won't ship a
+// `capabilitySchemas` entry — provider-side request validation will
+// be skipped for them. The list mirrors what AppView accepts across
+// the network; new capabilities are added to
+// `packages/brain/src/service/capabilities/registry.ts` first.
+import {
+  listCapabilities as listLocalCapabilities,
+  computeSchemaHash,
+  type CapabilityDef,
+} from '@dina/brain';
 
 /**
  * Degradation codes that mean "this screen overpromises."
@@ -94,6 +110,17 @@ export default function ServiceSettingsScreen() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [capabilities, setCapabilities] = useState<Array<{ key: string; policy: Policy }>>([]);
+  // Add-Capability modal. When open, the user picks a known capability
+  // from the local registry (canonical schemas attached automatically)
+  // OR types a custom key (schemas skipped — provider-side validation
+  // will be lenient until they're registered in the brain registry).
+  const [addModalVisible, setAddModalVisible] = useState(false);
+  const [customCapName, setCustomCapName] = useState('');
+  // Local snapshot of the brain registry's known capabilities. Frozen
+  // at mount — the registry is module-scope so it can't change at
+  // runtime. Filtered to capabilities NOT already configured so the
+  // picker doesn't show duplicates.
+  const localKnownCapabilities = useMemo(() => listLocalCapabilities(), []);
   const bootedNode = getBootedNode();
   const [role, setRole] = useState<NodeRole>(
     bootedNode !== null ? (bootedNode.role as NodeRole) : 'requester',
@@ -194,6 +221,21 @@ export default function ServiceSettingsScreen() {
     );
   }, []);
 
+  const addCapability = useCallback((key: string) => {
+    const trimmed = key.trim();
+    if (trimmed === '') return;
+    setCapabilities((list) => {
+      if (list.some((c) => c.key === trimmed)) return list;
+      return [...list, { key: trimmed, policy: 'auto' }];
+    });
+    setAddModalVisible(false);
+    setCustomCapName('');
+  }, []);
+
+  const removeCapability = useCallback((key: string) => {
+    setCapabilities((list) => list.filter((c) => c.key !== key));
+  }, []);
+
   const onSave = useCallback(async () => {
     if (name.trim() === '') {
       Alert.alert('Missing name', 'Give this node a display name before saving.');
@@ -219,23 +261,63 @@ export default function ServiceSettingsScreen() {
       // array alone and every unseen capability got silently dropped.
       const caps: ServiceConfig['capabilities'] =
         existing !== null ? { ...existing.capabilities } : {};
-      // Overlay the policy changes from this screen on top. Unknown
-      // caps added via this screen (future-ish) keep the same defaults
-      // as before — mcpServer='transit' / mcpTool=<cap key>.
+      // Start from the EXISTING capabilitySchemas map so any schemas
+      // configured outside this screen (CLI, onboarding) survive the
+      // save. Newly-added known capabilities (picked from the brain's
+      // local registry) get their canonical schemas attached here.
+      const schemas: NonNullable<ServiceConfig['capabilitySchemas']> = {
+        ...(existing?.capabilitySchemas ?? {}),
+      };
+      // Drop schemas for capabilities the user removed via this screen.
+      const liveKeys = new Set(capabilities.map((c) => c.key));
+      for (const k of Object.keys(caps)) {
+        if (!liveKeys.has(k)) delete caps[k];
+        if (!liveKeys.has(k) && k in schemas) delete schemas[k];
+      }
+      // Overlay the policy + schema for each capability still in the
+      // screen list. For caps NOT in `existing` (newly added via Add
+      // Capability), look up the brain registry to attach the
+      // canonical paramsSchema/resultSchema/schemaHash. Caps not in
+      // the registry (free-text custom) are written without schemas;
+      // provider-side params validation will be skipped for them.
       for (const c of capabilities) {
         const prior = existing?.capabilities[c.key] ?? caps[c.key];
+        const def: CapabilityDef | undefined =
+          prior === undefined
+            ? localKnownCapabilities.find((cap) => cap.name === c.key)
+            : undefined;
+        // schema_hash precedence:
+        //   1) any hash on the existing entry (preserved across saves)
+        //   2) recomputed from the registry's paramsSchema (matches
+        //      what ServicePublisher would compute on publish)
+        const schemaHash =
+          prior?.schemaHash ??
+          (def !== undefined ? computeSchemaHash(def.paramsSchema) : undefined);
         caps[c.key] = {
           mcpServer: prior?.mcpServer ?? 'transit',
           mcpTool: prior?.mcpTool ?? c.key,
           responsePolicy: c.policy,
-          ...(prior?.schemaHash !== undefined ? { schemaHash: prior.schemaHash } : {}),
+          ...(schemaHash !== undefined ? { schemaHash } : {}),
         };
+        // Attach capabilitySchemas only when we have a registry def
+        // AND it's not already in the existing schemas map. Mirrors
+        // the published profile shape AppView consumers expect.
+        if (def !== undefined && !(c.key in schemas)) {
+          schemas[c.key] = {
+            params: def.paramsSchema,
+            result: def.resultSchema,
+            schemaHash: schemaHash ?? computeSchemaHash(def.paramsSchema),
+            description: def.description,
+            defaultTtlSeconds: def.defaultTtlSeconds,
+          };
+        }
       }
       const next: ServiceConfig = {
         isDiscoverable,
         name: name.trim(),
         description: description.trim() !== '' ? description.trim() : undefined,
         capabilities: caps,
+        ...(Object.keys(schemas).length > 0 ? { capabilitySchemas: schemas } : {}),
       };
       await saveServiceConfig(next);
       Alert.alert('Saved', 'Service config updated.', [
@@ -250,7 +332,7 @@ export default function ServiceSettingsScreen() {
     } finally {
       setSaving(false);
     }
-  }, [name, description, isDiscoverable, capabilities, router]);
+  }, [name, description, isDiscoverable, capabilities, localKnownCapabilities, router]);
 
   if (loading) {
     return (
@@ -455,7 +537,7 @@ export default function ServiceSettingsScreen() {
           <View style={styles.card}>
             {capabilities.length === 0 ? (
               <Text style={styles.emptyText}>
-                No capabilities configured yet. Add them via onboarding or CLI first.
+                No capabilities configured yet. Tap “Add capability” to advertise one.
               </Text>
             ) : (
               capabilities.map((cap, idx) => (
@@ -466,7 +548,9 @@ export default function ServiceSettingsScreen() {
                     idx === capabilities.length - 1 && styles.capabilityRowLast,
                   ]}
                 >
-                  <Text style={styles.capabilityName}>{cap.key}</Text>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.capabilityName}>{cap.key}</Text>
+                  </View>
                   <Pressable
                     onPress={() => toggleCapabilityPolicy(cap.key)}
                     style={({ pressed }) => [styles.policyToggle, pressed && styles.pressed]}
@@ -494,11 +578,129 @@ export default function ServiceSettingsScreen() {
                       </Text>
                     </View>
                   </Pressable>
+                  <Pressable
+                    onPress={() => removeCapability(cap.key)}
+                    style={({ pressed }) => [styles.removeButton, pressed && styles.pressed]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remove ${cap.key} capability`}
+                    hitSlop={8}
+                  >
+                    <Text style={styles.removeButtonText}>×</Text>
+                  </Pressable>
                 </View>
               ))
             )}
           </View>
+          <Pressable
+            onPress={() => setAddModalVisible(true)}
+            style={({ pressed }) => [styles.addCapButton, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Add a capability to this service profile"
+          >
+            <Text style={styles.addCapButtonText}>+ Add capability</Text>
+          </Pressable>
         </View>
+
+        <Modal
+          visible={addModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setAddModalVisible(false)}
+        >
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={() => setAddModalVisible(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Close add-capability sheet"
+          >
+            {/* Inner Pressable swallows backdrop taps so the sheet
+                itself isn't dismissed when the user taps inside. */}
+            <Pressable
+              onPress={(e) => e.stopPropagation()}
+              style={styles.modalSheet}
+              accessibilityRole="none"
+            >
+              <Text style={styles.modalTitle}>Add capability</Text>
+              <Text style={styles.modalSubtitle}>
+                Pick one this node knows how to validate, or type a custom key. Known
+                capabilities ship with their JSON Schemas + schema_hash so requesters can
+                detect version skew.
+              </Text>
+
+              <Text style={styles.modalSectionHeader}>KNOWN</Text>
+              <View style={styles.card}>
+                {localKnownCapabilities
+                  .filter((def) => !capabilities.some((c) => c.key === def.name))
+                  .map((def, idx, arr) => (
+                    <Pressable
+                      key={def.name}
+                      onPress={() => addCapability(def.name)}
+                      style={({ pressed }) => [
+                        styles.knownCapRow,
+                        idx === arr.length - 1 && styles.capabilityRowLast,
+                        pressed && styles.pressed,
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Add ${def.name}`}
+                    >
+                      <Text style={styles.capabilityName}>{def.name}</Text>
+                      <Text style={styles.knownCapDescription} numberOfLines={2}>
+                        {def.description}
+                      </Text>
+                    </Pressable>
+                  ))}
+                {localKnownCapabilities.every((def) =>
+                  capabilities.some((c) => c.key === def.name),
+                ) ? (
+                  <Text style={styles.emptyText}>
+                    All known capabilities are already configured.
+                  </Text>
+                ) : null}
+              </View>
+
+              <Text style={styles.modalSectionHeader}>CUSTOM</Text>
+              <View style={styles.card}>
+                <Text style={styles.label}>Capability key</Text>
+                <TextInput
+                  value={customCapName}
+                  onChangeText={setCustomCapName}
+                  placeholder="e.g. weather_forecast"
+                  placeholderTextColor={colors.textMuted}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={styles.input}
+                />
+                <Text style={styles.modalHelpText}>
+                  Custom capabilities are written without JSON Schemas — requesters that
+                  pre-validate params will reject the call. Register the capability in
+                  `packages/brain/src/service/capabilities/registry.ts` to ship schemas.
+                </Text>
+                <Pressable
+                  onPress={() => addCapability(customCapName)}
+                  disabled={customCapName.trim() === ''}
+                  style={({ pressed }) => [
+                    styles.modalAddButton,
+                    pressed && styles.pressed,
+                    customCapName.trim() === '' && styles.disabled,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add custom capability"
+                >
+                  <Text style={styles.modalAddButtonText}>Add custom</Text>
+                </Pressable>
+              </View>
+
+              <Pressable
+                onPress={() => setAddModalVisible(false)}
+                style={({ pressed }) => [styles.modalCancelButton, pressed && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
+              >
+                <Text style={styles.modalCancelButtonText}>Cancel</Text>
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </Modal>
 
         <Pressable
           onPress={onSave}
@@ -747,5 +949,112 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     lineHeight: 17,
+  },
+  // Add-capability affordance below the capabilities card. Plain text
+  // button rather than a filled CTA so it doesn't compete visually
+  // with the "Save changes" footer button.
+  addCapButton: {
+    marginTop: spacing.sm,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+  },
+  addCapButtonText: {
+    fontFamily: fonts.sansSemibold,
+    fontSize: 14,
+    color: colors.accent,
+  },
+  removeButton: {
+    marginLeft: spacing.sm,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bgTertiary,
+  },
+  removeButtonText: {
+    fontFamily: fonts.sansSemibold,
+    fontSize: 18,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  // Add-capability modal sheet. Backdrop dims the screen; sheet sits
+  // centered with a small max-height so the keyboard for the custom
+  // input doesn't shove it off-screen.
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  modalSheet: {
+    backgroundColor: colors.bgPrimary,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    maxHeight: '85%',
+  },
+  modalTitle: {
+    fontFamily: fonts.sansSemibold,
+    fontSize: 17,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  modalSubtitle: {
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
+    lineHeight: 18,
+  },
+  modalSectionHeader: {
+    fontFamily: fonts.sansSemibold,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    color: colors.textMuted,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+    marginLeft: spacing.xs,
+  },
+  knownCapRow: {
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight,
+  },
+  knownCapDescription: {
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  modalHelpText: {
+    fontFamily: fonts.sans,
+    fontSize: 11,
+    color: colors.textMuted,
+    lineHeight: 15,
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  modalAddButton: {
+    marginTop: spacing.xs,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.accent,
+    borderRadius: radius.md,
+    alignItems: 'center',
+  },
+  modalAddButtonText: {
+    fontFamily: fonts.sansSemibold,
+    fontSize: 14,
+    color: colors.white,
+  },
+  modalCancelButton: {
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+  },
+  modalCancelButtonText: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 14,
+    color: colors.textSecondary,
   },
 });

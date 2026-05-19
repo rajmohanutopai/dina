@@ -1,5 +1,5 @@
 /**
- * `search_trust_network` agentic tool — verified peer reviews and
+ * `search_peerlens` agentic tool — verified peer reviews and
  * vendor/product reputation via PeerLens AppView.
  *
  * The `VAULT_CONTEXT` system prompt points the agent here whenever
@@ -20,6 +20,8 @@
  * tool-call error.
  *
  * Source: brain/src/service/vault_context.py::_search_trust_network —
+ * the legacy Python stack still uses its original method name; only
+ * the user-visible / LLM-visible tool name was renamed on the TS side.
  * Python uses `self._core.search_trust_network(...)` which proxies to
  * the AppView. TS goes direct to AppView via the shared client
  * already wired into the agentic loop (same `appViewClient` instance
@@ -53,15 +55,15 @@ export interface SearchPeerlensNetworkToolOptions {
 
 /**
  * Factory — returns an `AgentTool` the reasoning loop can register.
- * Tool name is `search_trust_network` to match the `VAULT_CONTEXT`
+ * Tool name is `search_peerlens` to match the `VAULT_CONTEXT`
  * prompt's enumeration.
  */
-export function createSearchTrustNetworkTool(
+export function createSearchPeerlensTool(
   options: SearchPeerlensNetworkToolOptions,
 ): AgentTool {
   const { appViewClient, logger, requesterDid } = options;
   return {
-    name: 'search_trust_network',
+    name: 'search_peerlens',
     description:
       "Search verified peer reviews and vendor/product reputation in PeerLens. Pass `subject` (a JSON string like `{\"type\":\"product\",\"domain\":\"amazon.com\",\"productId\":\"B0...\"}` or `{\"type\":\"did\",\"did\":\"did:plc:...\"}` or `{\"type\":\"organization\",\"domain\":\"nytimes.com\"}`) for an aggregate credibility signal + recommendation. Pass `query` (free text like 'standing desk reviews') + optional `subjectType` / `domain` / `sentiment` / `minConfidence` for raw attestation rows. At least one of subject or query is required.",
     parameters: {
@@ -117,7 +119,7 @@ export function createSearchTrustNetworkTool(
       const subject = typeof args.subject === 'string' && args.subject !== '' ? args.subject : '';
       const query = typeof args.query === 'string' && args.query !== '' ? args.query : '';
       if (subject === '' && query === '') {
-        throw new Error('search_trust_network: pass at least one of `subject` or `query`');
+        throw new Error('search_peerlens: pass at least one of `subject` or `query`');
       }
 
       const out: { subject?: ResolvePeerlensResponse; search?: SearchPeerlensResponse; note?: string } = {};

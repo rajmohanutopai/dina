@@ -326,12 +326,12 @@ describeReal(
       });
 
       // Full pipeline — vault_search, find_person, list_personas,
-      // browse_vault, get_full_content, search_trust_network,
+      // browse_vault, get_full_content, search_peerlens,
       // geocode, search_provider_services, query_service,
       // schedule_reminder, draft_review, classify_intent,
       // find_preferred_provider. We need this richness so the LLM
       // genuinely has the option to do cross-domain searches.
-      // AppView is needed for `search_trust_network`. The fetch is
+      // AppView is needed for `search_peerlens`. The fetch is
       // stubbed to return an empty body fast so PeerLens calls don't
       // hang or hit the network during prompt-tuning runs.
       const stubAppView = new AppViewClient({

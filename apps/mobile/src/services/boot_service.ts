@@ -144,7 +144,7 @@ export interface BootServiceInputs {
    *     + `query_service` auto-fetch path)
    *   - `isDiscoverable` — per-capability check (`find_preferred_provider`)
    *   - `resolveTrust` + `searchTrust` — PeerLens peer data
-   *     (`search_trust_network`)
+   *     (`search_peerlens`)
    *
    * Both `AppViewClient` (real) and `AppViewStub` (demo) implement
    * all four so either can be passed.

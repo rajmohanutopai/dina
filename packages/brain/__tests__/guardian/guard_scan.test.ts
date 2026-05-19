@@ -142,13 +142,13 @@ describe('Guard Scan', () => {
     });
 
     it('rating claim is NOT flagged when a trust-providing tool fired this turn', async () => {
-      // Tool-audit gate: if the agentic loop called `search_trust_network`
+      // Tool-audit gate: if the agentic loop called `search_peerlens`
       // (or any peer_lens_* / peerlens_* tool), the LLM had real data
       // to draw on. The rating-claim detector still fires, but the
       // outer audit suppresses the violation. This is the data-driven
       // path that replaces the brittle brand-name regex.
       const result = await scanResponse('This sender has a PeerLens rating: 8/10.', {
-        toolsCalled: ['search_trust_network'],
+        toolsCalled: ['search_peerlens'],
       });
       expect(result.violations.filter((v) => v.category === 'hallucinated_trust')).toEqual([]);
     });

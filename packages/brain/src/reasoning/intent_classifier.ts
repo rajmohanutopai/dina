@@ -6,7 +6,7 @@
  * a structured routing hint:
  *
  *   sources            — which substrates the reasoning agent should
- *                        consult (vault / trust_network /
+ *                        consult (vault / peerlens /
  *                        provider_services / general_knowledge).
  *   relevant_personas  — the personas whose vault context is worth
  *                        loading first.
@@ -33,7 +33,7 @@ import { extractJSON } from '../llm/output_parser';
 /** One of the four substrates the reasoning agent can consult. */
 export const INTENT_SOURCES = [
   'vault',
-  'trust_network',
+  'peerlens',
   'provider_services',
   'general_knowledge',
 ] as const;
@@ -94,7 +94,11 @@ Output schema (every key required):
   {
     "sources": [ ... one or more of:
         "vault"              — the user's own captured data
-        "trust_network"      — messages / posts from the user's contacts
+        "peerlens"           — Dina's verified peer-review network
+                               (product / vendor reviews from real
+                               people in the user's trust graph). Use
+                               when the question is about buying,
+                               vendor reputation, or product comparison.
         "provider_services"  — live services on the Dina network
                                (bus ETAs, appointment status, etc.)
         "general_knowledge"  — facts the LLM itself knows
@@ -242,10 +246,14 @@ function coerceSources(raw: unknown): IntentSource[] {
   const seen = new Set<string>();
   for (const v of raw) {
     if (typeof v !== 'string') continue;
-    if (!valid.has(v)) continue;
-    if (seen.has(v)) continue;
-    seen.add(v);
-    out.push(v as IntentSource);
+    // Legacy alias: older prompts and tests still emit "trust_network"
+    // — fold it into the renamed "peerlens" source so a model running
+    // an older checkpoint doesn't get its hint silently dropped.
+    const normalized = v === 'trust_network' ? 'peerlens' : v;
+    if (!valid.has(normalized)) continue;
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized as IntentSource);
   }
   // Fallback when the model returned only unknown literals (or empty).
   return out.length === 0 ? ['vault'] : out;

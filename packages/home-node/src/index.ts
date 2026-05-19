@@ -38,3 +38,5 @@ export type {
   PeerlensPublishInput,
   PeerlensPublishResult,
 } from './types';
+export { openAllPersonasForInAppUser } from './persona_lifecycle';
+export type { OpenAllPersonasOptions } from './persona_lifecycle';

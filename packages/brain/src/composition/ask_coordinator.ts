@@ -379,6 +379,21 @@ function translateLoopResult(result: AgenticLoopResult): ReturnType<AskExecuteFn
       pausedStateJson: JSON.stringify(result.pausedState),
     };
   }
+  // For provider_error specifically, surface the underlying message
+  // the loop captured so the chat-bridge can render a diagnostic
+  // line instead of the generic "I ran into a problem reaching the AI
+  // provider" string. Lets operators on platforms where JS console
+  // logs aren't reachable (iOS sim) see WHY the call failed without
+  // a custom debug build.
+  if (result.finishReason === 'provider_error' && result.providerErrorMessage) {
+    return {
+      kind: 'failure',
+      failure: {
+        kind: 'provider_error',
+        message: result.providerErrorMessage,
+      },
+    };
+  }
   return {
     kind: 'failure',
     failure: {

@@ -93,9 +93,9 @@ const SCENARIOS: readonly Scenario[] = [
     expectedEntityMatch: 'Dr Carl',
   },
   {
-    label: 'trust_network + static',
+    label: 'peerlens + static',
     query: 'what did Alice post yesterday',
-    expectedSources: ['trust_network'],
+    expectedSources: ['peerlens'],
     expectedTemporal: 'static',
     expectedEntityMatch: 'Alice',
   },
@@ -163,9 +163,9 @@ const SCENARIOS: readonly Scenario[] = [
     expectedTemporal: 'live_state',
   },
   {
-    label: 'trust_network + comparative',
+    label: 'peerlens + comparative',
     query: 'who posted more often — Alice or a stranger',
-    expectedSources: ['trust_network'],
+    expectedSources: ['peerlens'],
     expectedTemporal: 'comparative',
     expectedEntityMatch: 'Alice',
   },

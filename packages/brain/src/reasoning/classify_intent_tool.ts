@@ -23,7 +23,7 @@ import type { IntentClassifier } from './intent_classifier';
 
 const CLASSIFY_INTENT_DESCRIPTION = [
   'Re-evaluate routing for a query when your understanding has evolved (e.g. you gathered new context from other tools and need to reroute).',
-  'Returns sources (vault / trust_network / provider_services / general_knowledge), relevant_personas, toc_evidence, temporal stance, and a one-sentence reasoning_hint.',
+  'Returns sources (vault / peerlens / provider_services / general_knowledge), relevant_personas, toc_evidence, temporal stance, and a one-sentence reasoning_hint.',
   'This is a soft routing nudge — you can still call any other tool regardless of the result.',
   'You typically do NOT need to call this for the first turn (the initial classification is already in the system prompt). Use it for multi-step queries where your plan has shifted.',
 ].join(' ');

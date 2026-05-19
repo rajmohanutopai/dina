@@ -133,8 +133,19 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
     opts.formatFailureMessage ??
     (({ failureKind, raw }: { failureKind: string; raw: AskFailure | string }): string => {
       switch (failureKind) {
-        case 'provider_error':
+        case 'provider_error': {
+          // Surface the underlying error message when the loop captured
+          // one (set by ask_coordinator.translateLoopResult). Keeps the
+          // generic fallback for callers that didn't carry the detail.
+          const detail =
+            typeof raw === 'object' && raw !== null && 'message' in raw
+              ? String((raw as { message: unknown }).message)
+              : '';
+          if (detail !== '' && !detail.startsWith('agentic loop terminated with')) {
+            return `AI provider error: ${detail}`;
+          }
           return "I ran into a problem reaching the AI provider. Please try again in a moment.";
+        }
         case 'max_iterations':
         case 'max_tool_calls':
           return "I wasn't able to complete this in the available steps. Try a simpler query.";

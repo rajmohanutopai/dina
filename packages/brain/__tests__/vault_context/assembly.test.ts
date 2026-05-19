@@ -237,7 +237,7 @@ describe('Vault Context Assembly', () => {
       expect(names).toContain('vault_read');
       expect(names).toContain('contact_lookup');
       expect(names).toContain('reminder_check');
-      expect(names).toContain('search_trust_network');
+      expect(names).toContain('search_peerlens');
     });
 
     it('every tool has name and description', () => {
@@ -484,7 +484,7 @@ describe('Vault Context Assembly', () => {
       expect((toolResult as any[]).length).toBe(0); // health not accessible
     });
 
-    it('search_trust_network returns PeerLens data for known contacts', async () => {
+    it('search_peerlens returns PeerLens data for known contacts', async () => {
       addContact('did:plc:vendor', 'Acme Corp', 'trusted', 'full', 'colleague');
 
       let toolResult: unknown = null;
@@ -498,7 +498,7 @@ describe('Vault Context Assembly', () => {
           role: 'assistant' as const,
           content: '',
           toolCalls: [
-            { name: 'search_trust_network', args: { query: 'Acme', type: 'entity_reviews' } },
+            { name: 'search_peerlens', args: { query: 'Acme', type: 'entity_reviews' } },
           ],
         };
       });

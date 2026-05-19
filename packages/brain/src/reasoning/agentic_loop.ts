@@ -137,6 +137,14 @@ export interface AgenticLoopResult {
    * `resumeAgenticTurn` once the operator approves.
    */
   pausedState?: PausedAgenticState;
+  /**
+   * Present iff `finishReason === 'provider_error'`. The first 240
+   * characters of the LLM-call failure message. Surfaced upstream so
+   * the chat UI can show "what went wrong" on platforms where the
+   * RN console log isn't reachable (iOS sim — Metro stdout isn't
+   * captured by the system log stream).
+   */
+  providerErrorMessage?: string;
 }
 
 const DEFAULT_MAX_ITERATIONS = 8;
@@ -339,6 +347,7 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
   let outputTokens = state.outputTokens;
   const toolLog = state.toolLog;
   let answer = '';
+  let providerErrorMessage: string | undefined;
 
   // eslint-disable-next-line no-console
   console.log('[agentic_loop] start', {
@@ -363,10 +372,75 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
         signal: options.signal,
       });
     } catch (err) {
+      const errMessage = err instanceof Error ? err.message : String(err);
+      const errStack = err instanceof Error && err.stack ? err.stack : '';
+      // Capture every signal we can dig out of the thrown value so the
+      // iOS "cannot parse response" / "fetch failed" branch is
+      // attributable. `err.message` alone hasn't been findable in any
+      // upstream library source (neither @google/genai nor expo/fetch's
+      // Swift), so we surface `name`, `constructor.name`, the full
+      // own-property bag, and any `cause` chain.
+      const errName = err instanceof Error ? err.name : 'NotAnError';
+      const errCtor =
+        err !== null && err !== undefined && typeof err === 'object'
+          ? (err as object).constructor.name
+          : typeof err;
+      let errProps = '';
+      try {
+        if (err !== null && err !== undefined && typeof err === 'object') {
+          const own: Record<string, unknown> = {};
+          for (const key of Object.getOwnPropertyNames(err)) {
+            const val = (err as Record<string, unknown>)[key];
+            if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
+              own[key] = val;
+            } else if (val !== null && typeof val === 'object') {
+              own[key] = `[${(val as object).constructor.name}]`;
+            }
+          }
+          errProps = JSON.stringify(own).slice(0, 400);
+        }
+      } catch {
+        errProps = '[unserializable]';
+      }
+      let causeChain = '';
+      let cursor: unknown = err;
+      let depth = 0;
+      while (
+        cursor !== null &&
+        cursor !== undefined &&
+        typeof cursor === 'object' &&
+        'cause' in (cursor as object) &&
+        (cursor as { cause: unknown }).cause !== undefined &&
+        depth < 4
+      ) {
+        const c = (cursor as { cause: unknown }).cause;
+        const cMsg = c instanceof Error ? c.message : String(c);
+        const cName = c instanceof Error ? c.name : typeof c;
+        const cCtor =
+          c !== null && c !== undefined && typeof c === 'object'
+            ? (c as object).constructor.name
+            : typeof c;
+        causeChain += `\n  cause[${depth}] ${cCtor}/${cName}: ${cMsg}`;
+        cursor = c;
+        depth++;
+      }
       // eslint-disable-next-line no-console
       console.warn(
-        `[agentic_loop] provider.chat threw: ${err instanceof Error ? err.message : String(err)}`,
+        `[agentic_loop] provider.chat threw: ${errCtor}/${errName}: ${errMessage}` +
+          (errProps !== '' ? `\nprops: ${errProps}` : '') +
+          causeChain +
+          (errStack !== '' ? `\nstack: ${errStack.slice(0, 800)}` : ''),
       );
+      // Stash the raw provider error message on the loop result so the
+      // chat surface can display it. Keeps the generic "provider_error"
+      // failureKind unchanged for callers that already branch on it,
+      // but unblocks operator debugging on platforms where JS console
+      // output isn't reachable (iOS sim — RN console.log goes to
+      // Metro stdout which isn't surfaced through the iOS system log).
+      // Include the constructor name + cause head so the on-device
+      // failure card is self-diagnostic.
+      const causeHead = causeChain !== '' ? ` | ${causeChain.split('\n')[1]?.trim() ?? ''}` : '';
+      providerErrorMessage = `${errCtor}: ${errMessage}${causeHead}`.slice(0, 240);
       return done('provider_error');
     }
 
@@ -449,13 +523,17 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
   return done('max_iterations');
 
   function done(finishReason: AgenticFinishReason): AgenticLoopResult {
-    return {
+    const result: AgenticLoopResult = {
       answer,
       toolCalls: toolLog,
       finishReason,
       usage: { inputTokens, outputTokens },
       transcript,
     };
+    if (providerErrorMessage !== undefined) {
+      result.providerErrorMessage = providerErrorMessage;
+    }
+    return result;
   }
 }
 

@@ -81,7 +81,7 @@ describe('parseIntentClassification — parse', () => {
 // ---------------------------------------------------------------------------
 
 describe('parseIntentClassification — coerce', () => {
-  it('filters_unknown_sources (keeps only the 4 valid literals)', () => {
+  it('filters_unknown_sources (keeps only the valid literals, folds legacy trust_network → peerlens)', () => {
     const raw = JSON.stringify({
       sources: ['vault', 'pinterest', 'trust_network', 42, ''],
       relevant_personas: [],
@@ -89,7 +89,21 @@ describe('parseIntentClassification — coerce', () => {
       temporal: '',
       reasoning_hint: '',
     });
-    expect(parseIntentClassification(raw).sources).toEqual(['vault', 'trust_network']);
+    // Legacy alias `trust_network` is normalised to `peerlens` so an
+    // older model checkpoint emitting the old enum still routes the
+    // user's question correctly during the rename window.
+    expect(parseIntentClassification(raw).sources).toEqual(['vault', 'peerlens']);
+  });
+
+  it('passes the modern peerlens source through unchanged', () => {
+    const raw = JSON.stringify({
+      sources: ['vault', 'peerlens'],
+      relevant_personas: [],
+      toc_evidence: {},
+      temporal: '',
+      reasoning_hint: '',
+    });
+    expect(parseIntentClassification(raw).sources).toEqual(['vault', 'peerlens']);
   });
 
   it('all_unknown_sources_fallback_to_vault', () => {

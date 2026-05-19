@@ -17,7 +17,13 @@ import { hkdf } from '@noble/hashes/hkdf.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { NodeDBProvider } from '@dina/storage-node';
-import { hydrateContactDirectory } from '@dina/core';
+import {
+  SQLiteServiceConfigRepository,
+  hydrateContactDirectory,
+  hydrateServiceConfig,
+  setServiceConfigRepository,
+} from '@dina/core';
+import { hydrateDeviceRegistry } from '@dina/core/runtime';
 import {
   SQLiteAuditRepository,
   SQLiteChatMessageRepository,
@@ -144,6 +150,19 @@ export async function initializeStorage(
   setReminderRepository(new SQLiteReminderRepository(identityDB));
   setAuditRepository(new SQLiteAuditRepository(identityDB));
   setDeviceRepository(new SQLiteDeviceRepository(identityDB));
+  // Pull every previously-paired device back into the in-memory
+  // registry. Without this, every signed call from a paired agent
+  // (workflow claim, service.query) lands as caller-type 'unknown'
+  // and 403s. Matches mobile's boot_capabilities.ts.
+  await hydrateDeviceRegistry();
+
+  // Service-config repo + hydrate. Without hydration, `getServiceConfig()`
+  // returns null at boot even when a config was previously persisted —
+  // and `isCapabilityConfigured` (consulted by D2D ingress for the
+  // service-query bypass) reads that null and denies every inbound
+  // service.query at the contact gate.
+  setServiceConfigRepository(new SQLiteServiceConfigRepository(identityDB));
+  await hydrateServiceConfig();
   setStagingRepository(new SQLiteStagingRepository(identityDB));
   hydrateStagingFromRepository();
   setChatMessageRepository(new SQLiteChatMessageRepository(identityDB));
@@ -151,29 +170,34 @@ export async function initializeStorage(
   hydrateContactDirectory();
   await hydrateRemindersFromRepo();
 
-  // Seed default personas, then open EVERY one — not just the tiered
-  // auto-opens. The lite stack's only client is the owner's own app
-  // (SPA / mobile); locked tiers (health, finance) are protections
+  // Seed default personas, then open EVERY one via the shared
+  // lifecycle helper. The lite stack's only client is the owner's own
+  // app (SPA / mobile); locked tiers (health, finance) are protections
   // against external agents, not against the owner of the home node
   // (memory: `user-vs-agent-persona-access`). Leaving them closed at
   // boot would silently break cross-domain synthesis ("Emma birthday
   // → finance budget") for the in-app user.
-  const { createPersona, listPersonas, openPersona, personaExists, setPersonaDescription } =
-    await import('@dina/core');
+  //
+  // `openAllPersonasForInAppUser` is the same helper mobile's
+  // `useUnlock` calls — one place to evolve the rule, one suite to
+  // test it (`packages/home-node/__tests__/persona_lifecycle.test.ts`).
+  // The `openVaultDB` callback wires the per-persona SQLite vault
+  // handle + the topic repo after the registry marks it open.
+  const { createPersona, personaExists, setPersonaDescription } = await import('@dina/core');
+  const { openAllPersonasForInAppUser } = await import('@dina/home-node');
   for (const spec of DEFAULT_PERSONAS) {
     if (!personaExists(spec.name)) {
       createPersona(spec.name, spec.tier, spec.description);
       setPersonaDescription(spec.name, spec.description);
     }
   }
-  const opened: string[] = [];
-  for (const persona of listPersonas()) {
-    openPersona(persona.name);
-    const personaDB = await openPersonaVault(provider, persona.name);
-    setVaultRepository(persona.name, new SQLiteVaultRepository(personaDB));
-    setTopicRepository(persona.name, new SQLiteTopicRepository(personaDB));
-    opened.push(persona.name);
-  }
+  const opened = await openAllPersonasForInAppUser({
+    openVaultDB: async (persona: string) => {
+      const personaDB = await openPersonaVault(provider, persona);
+      setVaultRepository(persona, new SQLiteVaultRepository(personaDB));
+      setTopicRepository(persona, new SQLiteTopicRepository(personaDB));
+    },
+  });
   logger.info({ openedPersonas: opened }, 'persona vaults opened');
 
   return { provider, identityDB, openedPersonas: opened };

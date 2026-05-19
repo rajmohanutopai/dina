@@ -21,11 +21,11 @@ import {
   deriveRootSigningKey,
   getPublicKey,
   listPersonas,
-  openPersona,
   unwrapSeed,
   type WrappedSeed,
 } from '@dina/core';
 import { setAccessiblePersonas } from '@dina/brain';
+import { openAllPersonasForInAppUser } from '@dina/home-node';
 import { loadPersistedDid } from '../services/identity_record';
 import {
   initializePersistence,
@@ -199,59 +199,36 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
     }
   }
 
-  // 5. Open ALL personas. The in-app user has full access by definition
-  //    (they hold the master seed and just authenticated with the device
-  //    passphrase) — tier-based access controls exist to protect against
-  //    external agents reaching Core via dina-agent CLI, NOT against the
-  //    owner using their own app. Mirrors the lite brain-server's
-  //    boot-time "open everything" approach so a budget note in
-  //    `finance` is reachable for an /ask "what should I get Emma for
-  //    her birthday" without an approval round-trip.
+  // 5. Open ALL personas via the shared lifecycle helper. The in-app
+  //    user has full access by definition (they hold the master seed
+  //    and just authenticated with the device passphrase) — tier-based
+  //    access controls exist to protect against external agents
+  //    reaching Core via dina-agent CLI, NOT against the owner using
+  //    their own app.
   //
-  //    See memory `user-vs-agent-persona-access` for the standing rule.
-  //    Without this, the pre-flight retrieval planner's fan-out into
-  //    sensitive/locked vaults silently returns 0 hits and cross-domain
-  //    synthesis collapses to "what's in `general`".
+  //    `openAllPersonasForInAppUser` is the same helper the lite
+  //    core-server's `storage/init.ts` calls at boot — one place to
+  //    evolve this rule, one suite to test it (memory:
+  //    `user-vs-agent-persona-access`).
+  //
+  //    The `openVaultDB` callback wires the op-sqlite handle for each
+  //    persona AFTER the registry opens it; errors are reported but
+  //    don't bail the whole unlock — a single bad SQLite file
+  //    shouldn't brick the rest of the vault surface (this matches
+  //    the prior behaviour where `openPersonaDB` failures were
+  //    swallowed with a console.warn).
   state.step = 'opening_vaults';
   notify();
-  const personasBeforeUnlock = listPersonas();
-  for (const persona of personasBeforeUnlock) {
-    if (!persona.isOpen) {
-      // `openPersona(name, approved=true)` bypasses the tier guard —
-      // approval is implicit because the user just unlocked the device.
-      try {
-        openPersona(persona.name, true);
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn(`[unlock] openPersona failed for "${persona.name}":`, err);
-      }
-    }
-  }
-  const opened = listPersonas().filter((p) => p.isOpen).map((p) => p.name);
+  const opened = await openAllPersonasForInAppUser({
+    openVaultDB: isPersistenceReady()
+      ? (persona: string) => openPersonaDB(persona)
+      : undefined,
+    onVaultOpenError: (persona: string, err: unknown) => {
+      // eslint-disable-next-line no-console
+      console.warn(`[unlock] openPersonaDB failed for "${persona}":`, err);
+    },
+  });
   state.openedPersonas = opened;
-
-  // 5a. Wire persona-vault repos for every persona the unlock
-  //     opened — `openPersonaDB` is a no-op when persistence init
-  //     failed above.
-  if (isPersistenceReady()) {
-    for (const persona of opened) {
-      try {
-        await openPersonaDB(persona);
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn(`[unlock] openPersonaDB failed for "${persona}":`, err);
-      }
-    }
-  }
-
-  // 5b. Wire the /ask-side accessiblePersonas list. Without this,
-  //     `assembleContext` defaults to searching only the `general`
-  //     vault, and every `/remember` that routes to a non-general
-  //     persona (health / family / professional / etc.) becomes
-  //     invisible to `/ask`. Keeping this in lockstep with the
-  //     unlocked-persona set is the critical wiring — latent bug
-  //     documented in the scenario-1+2 E2E test's docstring.
-  setAccessiblePersonas(opened);
 
   // 6. Complete. Consume any pending force-prompt signal — a
   //    successful manual unlock is the user re-asserting access, so

@@ -81,4 +81,41 @@ if (Platform.OS !== 'web') {
     globalThis.TextEncoderStream = streams.TextEncoderStream;
     globalThis.TextDecoderStream = streams.TextDecoderStream;
   }
+
+  // expo/fetch — strict superset of React Native's default fetch that
+  // adds response-body streaming + proper AbortSignal handling. Stays
+  // a drop-in replacement for the global, so other code paths that
+  // call `fetch(...)` are unaffected.
+  //
+  // Why we have to swap: the `@google/genai` SDK (Gemini, used by the
+  // agentic `/ask` + `/remember` loops) reads `globalThis.fetch` at
+  // each request site. RN's default fetch is XHR-backed and fails
+  // with `Network request failed` for the SDK's POST/body+headers
+  // shape on iOS — the SDK's own error message points at this exact
+  // remedy:
+  //
+  //   "The default react-native fetch implementation does not support
+  //    streaming. Please use expo/fetch:
+  //    https://docs.expo.dev/versions/latest/sdk/expo/#expofetch-api"
+  //
+  // (Source: navigator.product === 'ReactNative' branch in
+  // `node_modules/@google/genai/dist/web/index.mjs`.)
+  //
+  // The swap happens before any LLM provider is constructed because
+  // `polyfills.ts` is the very first import of the Expo entry. Idempotent
+  // — re-running the module (Metro hot-reload) re-installs the same
+  // function reference, no compounding wrappers.
+  //
+  // Risk: this overrides `globalThis.fetch` for the entire RN process.
+  // Anything else in the app that used the prior fetch (e.g. AppView
+  // client, MsgBox HTTP, identity / PDS / PLC clients) now goes through
+  // expo/fetch instead. We accept that because expo/fetch is documented
+  // as feature-equivalent for the request shapes we use; if a specific
+  // call site needs the old fetch, capture it as `globalThis.fetch`
+  // BEFORE this polyfill loads (no current call site does).
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const expoFetchModule = require('expo/fetch');
+  if (typeof expoFetchModule.fetch === 'function') {
+    globalThis.fetch = expoFetchModule.fetch as typeof globalThis.fetch;
+  }
 }

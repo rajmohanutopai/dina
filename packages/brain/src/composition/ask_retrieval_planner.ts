@@ -8,8 +8,9 @@
  *                              the search queries the loop should pre-fetch
  *                              and a one-line "why" the planner picked it.
  *   - `people[]`             — names to resolve via the people-graph.
- *   - `needs_trust_network`  — true when vendor / product evaluation is
- *                              implied (PeerLens should be consulted).
+ *   - `needs_peerlens`       — true when vendor / product evaluation is
+ *                              implied (PeerLens should be consulted —
+ *                              Dina's verified-peer-review network).
  *   - `intent`               — one-line restatement of what the user is
  *                              really asking — useful in telemetry and as
  *                              a quote-able preamble in the [Retrieved
@@ -71,10 +72,10 @@ export interface AskRetrievalPlan {
   people: string[];
   /**
    * True when the question is shopping / vendor / product evaluation
-   * — signals the loop should also call `search_trust_network`. False
-   * for purely informational asks ("what time is my meeting").
+   * — signals the loop should also call `search_peerlens`. False for
+   * purely informational asks ("what time is my meeting").
    */
-  needs_trust_network: boolean;
+  needs_peerlens: boolean;
   /** One-line restatement of the user's intent. */
   intent: string;
 }
@@ -111,7 +112,7 @@ export interface PlanAskRetrievalOptions {
 const EMPTY_PLAN: AskRetrievalPlan = {
   personas: [],
   people: [],
-  needs_trust_network: false,
+  needs_peerlens: false,
   intent: '',
 };
 
@@ -120,7 +121,7 @@ export function emptyAskRetrievalPlan(): AskRetrievalPlan {
   return {
     personas: [],
     people: [],
-    needs_trust_network: false,
+    needs_peerlens: false,
     intent: '',
   };
 }
@@ -224,11 +225,18 @@ export function parseAskRetrievalPlan(
   const installedNames = new Set(installed.map((p) => p.name));
   const personas = extractPersonas(obj.personas, installedNames);
   const people = extractStringList(obj.people, 20).map((n) => n.trim()).filter(Boolean);
-  const needs_trust_network =
-    typeof obj.needs_trust_network === 'boolean' ? obj.needs_trust_network : false;
+  // Accept the new `needs_peerlens` key; tolerate the legacy
+  // `needs_trust_network` key in case an older model checkpoint still
+  // emits the renamed field (handles in-flight upgrades).
+  const needs_peerlens =
+    typeof obj.needs_peerlens === 'boolean'
+      ? obj.needs_peerlens
+      : typeof obj.needs_trust_network === 'boolean'
+        ? obj.needs_trust_network
+        : false;
   const intent = typeof obj.intent === 'string' ? obj.intent.trim() : '';
 
-  return { personas, people, needs_trust_network, intent };
+  return { personas, people, needs_peerlens, intent };
 }
 
 function extractPersonas(
@@ -323,10 +331,10 @@ export const ASK_RETRIEVAL_PLAN_RESPONSE_SCHEMA: Record<string, unknown> = {
       type: 'array',
       items: { type: 'string' },
     },
-    needs_trust_network: { type: 'boolean' },
+    needs_peerlens: { type: 'boolean' },
     intent: { type: 'string' },
   },
-  required: ['personas', 'people', 'needs_trust_network', 'intent'],
+  required: ['personas', 'people', 'needs_peerlens', 'intent'],
 };
 
 // ---------------------------------------------------------------

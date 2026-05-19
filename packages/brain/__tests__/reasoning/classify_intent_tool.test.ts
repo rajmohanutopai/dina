@@ -23,7 +23,7 @@ function fakeClassifier(result: IntentClassification): IntentClassifier {
 }
 
 const DEFAULT_OUTPUT: IntentClassification = {
-  sources: ['vault', 'trust_network'],
+  sources: ['vault', 'peerlens'],
   relevant_personas: ['general'],
   toc_evidence: { entity_matches: ['Aeron Chair'] },
   temporal: 'static',

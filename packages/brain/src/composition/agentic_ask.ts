@@ -63,7 +63,7 @@ import { createDraftReviewTool } from '../reasoning/draft_review_tool';
 import { createDelegateToAgentTool } from '../reasoning/delegate_agent_tool';
 import { createScheduleReminderTool } from '../reasoning/schedule_reminder_tool';
 import { ToolRegistry } from '../reasoning/tool_registry';
-import { createSearchTrustNetworkTool } from '../reasoning/peerlens_tool';
+import { createSearchPeerlensTool } from '../reasoning/peerlens_tool';
 import {
   createVaultSearchTool,
   createListPersonasTool,
@@ -92,7 +92,7 @@ export interface BuildAgenticAskPipelineInput {
   providerName: ProviderName;
   /** AppView client handle — any object satisfying the tool-surface subsets. */
   appViewClient: Parameters<typeof createSearchProviderServicesTool>[0]['appViewClient'] &
-    Parameters<typeof createSearchTrustNetworkTool>[0]['appViewClient'] &
+    Parameters<typeof createSearchPeerlensTool>[0]['appViewClient'] &
     Parameters<typeof createQueryServiceTool>[0]['appViewClient'] &
     Parameters<typeof createFindPreferredProviderTool>[0]['appViewClient'];
   /** Lazy orchestrator handle for `query_service` — callers wire a thunk-backed
@@ -265,7 +265,7 @@ export function buildAgenticAskPipeline(
     reg.register(createGetFullContentTool(guard ? { personaGuard: guard } : {}));
     reg.register(createGeocodeTool());
     reg.register(
-      createSearchTrustNetworkTool({
+      createSearchPeerlensTool({
         appViewClient: input.appViewClient,
         logger: input.logger,
       }),

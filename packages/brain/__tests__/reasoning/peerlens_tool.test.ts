@@ -1,10 +1,10 @@
 /**
- * `search_trust_network` tool — deterministic plumbing around the
+ * `search_peerlens` tool — deterministic plumbing around the
  * AppView trust xRPCs. Real-AppView integration is a separate concern;
  * this file pins the arg parsing + branch logic + failure envelopes.
  */
 
-import { createSearchTrustNetworkTool } from '../../src/reasoning/peerlens_tool';
+import { createSearchPeerlensTool } from '../../src/reasoning/peerlens_tool';
 import type { PeerlensAppViewClient } from '../../src/reasoning/peerlens_tool';
 
 function stubClient(overrides?: Partial<PeerlensAppViewClient>): PeerlensAppViewClient {
@@ -36,15 +36,15 @@ function stubClient(overrides?: Partial<PeerlensAppViewClient>): PeerlensAppView
   };
 }
 
-describe('createSearchTrustNetworkTool', () => {
+describe('createSearchPeerlensTool', () => {
   it('throws when neither subject nor query is provided', async () => {
-    const tool = createSearchTrustNetworkTool({ appViewClient: stubClient() });
+    const tool = createSearchPeerlensTool({ appViewClient: stubClient() });
     await expect(tool.execute({})).rejects.toThrow(/subject.*query/);
   });
 
   it('routes a subject to resolveTrust and returns the aggregate envelope', async () => {
     const client = stubClient();
-    const tool = createSearchTrustNetworkTool({ appViewClient: client });
+    const tool = createSearchPeerlensTool({ appViewClient: client });
     const subject = JSON.stringify({ type: 'product', domain: 'amazon.com', productId: 'B0' });
     const raw = await tool.execute({ subject });
     const result = raw as { subject: { trustLevel: string; recommendation: string } };
@@ -57,7 +57,7 @@ describe('createSearchTrustNetworkTool', () => {
 
   it('routes a query to searchTrust and filters pass-through', async () => {
     const client = stubClient();
-    const tool = createSearchTrustNetworkTool({ appViewClient: client });
+    const tool = createSearchPeerlensTool({ appViewClient: client });
     const raw = await tool.execute({
       query: 'standing desk reviews',
       subjectType: 'product',
@@ -80,7 +80,7 @@ describe('createSearchTrustNetworkTool', () => {
 
   it('runs both resolveTrust + searchTrust when both args supplied', async () => {
     const client = stubClient();
-    const tool = createSearchTrustNetworkTool({ appViewClient: client });
+    const tool = createSearchPeerlensTool({ appViewClient: client });
     const raw = await tool.execute({
       subject: JSON.stringify({ type: 'did', did: 'did:plc:vendor' }),
       query: 'vendor reviews',
@@ -94,7 +94,7 @@ describe('createSearchTrustNetworkTool', () => {
 
   it('forwards requesterDid + context to resolveTrust', async () => {
     const client = stubClient();
-    const tool = createSearchTrustNetworkTool({
+    const tool = createSearchPeerlensTool({
       appViewClient: client,
       requesterDid: 'did:plc:alonso',
     });
@@ -118,7 +118,7 @@ describe('createSearchTrustNetworkTool', () => {
         throw new Error('appview 503');
       }),
     });
-    const tool = createSearchTrustNetworkTool({ appViewClient: client });
+    const tool = createSearchPeerlensTool({ appViewClient: client });
     const raw = await tool.execute({ subject: JSON.stringify({ type: 'did', did: 'did:plc:x' }) });
     const result = raw as { subject?: unknown; note?: string };
     expect(result.subject).toBeUndefined();
@@ -131,7 +131,7 @@ describe('createSearchTrustNetworkTool', () => {
         throw new Error('appview timeout');
       }),
     });
-    const tool = createSearchTrustNetworkTool({ appViewClient: client });
+    const tool = createSearchPeerlensTool({ appViewClient: client });
     const raw = await tool.execute({ query: 'anything' });
     const result = raw as { search?: unknown; note?: string };
     expect(result.search).toBeUndefined();
@@ -140,7 +140,7 @@ describe('createSearchTrustNetworkTool', () => {
 
   it('drops invalid enum values instead of forwarding them', async () => {
     const client = stubClient();
-    const tool = createSearchTrustNetworkTool({ appViewClient: client });
+    const tool = createSearchPeerlensTool({ appViewClient: client });
     await tool.execute({
       query: 'laptops',
       subjectType: 'bogus-type',

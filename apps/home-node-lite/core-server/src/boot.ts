@@ -40,9 +40,12 @@ import {
   createCoreRouter,
   deriveDIDKey,
   HEALTHZ_PATH,
+  multibaseToPublicKey,
   registerService,
+  setNodeDID,
   type CoreRouter,
 } from '@dina/core';
+import { DIDResolver } from '@dina/core/runtime';
 import {
   bootstrapMsgBox,
   disconnectMsgBox,
@@ -55,6 +58,21 @@ import { createLogger } from './logger';
 import { createServer } from './server';
 import { loadOrGenerateSeed, type SeedSource } from './identity/master_seed';
 import { deriveIdentity } from './identity/derivations';
+import {
+  loadOrProvisionPdsIdentity,
+  type PdsIdentity,
+} from './identity/provision_pds';
+import {
+  wireServiceProfilePublisher,
+  publishOnce,
+  type WiredServicePublisher,
+} from './appview/wire_publisher';
+import {
+  wireWorkflowPlane,
+  type WiredWorkflowPlane,
+} from './workflow/wire_workflow_plane';
+import type { DatabaseAdapter } from '@dina/core/storage';
+import { getServiceConfig } from '@dina/core';
 import { bindCoreRouter } from './server/bind_core_router';
 import { initializeStorage } from './storage/init';
 
@@ -63,6 +81,12 @@ export const BOOT_STEPS = [
   'config',
   'identity',
   'keystore',
+  // Optional — only present in the trace when DINA_PDS_PROVISION=1
+  // is set. Runs between keystore and db_open conceptually; we keep
+  // it after keystore in the canonical list so /readyz output stays
+  // in chronological order regardless of whether the operator opted
+  // in to PDS-backed identity.
+  'pds_provision',
   'db_open',
   'adapter_wire',
   'core_router',
@@ -130,6 +154,28 @@ export interface BootServerOptions {
 // ---------------------------------------------------------------------------
 
 /**
+ * Pick the Ed25519 signing key from a DID doc's verificationMethod
+ * list. Prefers an explicit `#dina_signing` id, falls back to any
+ * 32-byte Multikey. Mirrors mobile's `pickEd25519VerificationMethod`.
+ */
+function pickEd25519SigningVM(
+  vms: Array<{ id?: string; type?: string; publicKeyMultibase?: string }>,
+): { publicKeyMultibase?: string } | null {
+  for (const vm of vms) {
+    if (typeof vm.id === 'string' && vm.id.endsWith('#dina_signing')) return vm;
+  }
+  for (const vm of vms) {
+    if (vm.type !== 'Multikey' || typeof vm.publicKeyMultibase !== 'string') continue;
+    try {
+      if (multibaseToPublicKey(vm.publicKeyMultibase).length === 32) return vm;
+    } catch {
+      /* malformed multibase — skip */
+    }
+  }
+  return null;
+}
+
+/**
  * Execute the boot sequence. Each step is timed + traced. A failure
  * rethrows — callers (bin.ts) decide whether to exit. A 'pending'
  * step logs an info message + continues.
@@ -183,6 +229,18 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     logger.info({ brainDid: config.services.brainDid }, 'brain service DID registered');
   }
 
+  // Admin service registration. `/v1/pair/initiate` and other
+  // device-management routes are admin-only by authz policy; lite by
+  // default ships without an admin key so those routes 403. When
+  // DINA_ADMIN_DID is set (operator opts in for ops automation +
+  // bus-driver pairing flows), register it so the holder can mint
+  // pairing codes etc.
+  const adminDid = (process.env.DINA_ADMIN_DID ?? '').trim();
+  if (adminDid !== '') {
+    registerService(adminDid, 'admin');
+    logger.info({ adminDid }, 'admin service DID registered');
+  }
+
   // Step 2 (task 4.51 + 4.52): identity — load or first-boot-generate
   // the master seed. Convenience mode (raw keyfile) lands here;
   // wrapped-seed (task 4.53) returns a placeholder that leaves the
@@ -230,6 +288,97 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     pendingReason: '@dina/adapters-node FileKeystore wiring pending identity',
   });
 
+  // PDS provisioning — analog of mobile onboarding's `provisionIdentity`
+  // for the Node runtime. Off by default (DINA_PDS_PROVISION=1 +
+  // DINA_PDS_HANDLE required) so existing did:key dev deployments keep
+  // working unchanged. When ON, mints (or rehydrates) an atproto
+  // account on test-pds.dinakernel.com and persists the did:plc + creds
+  // to <vaultDir>/pds_identity.json. Subsequent boots load the file and
+  // skip the network call.
+  //
+  // Why behind a flag: most lite deployments are dev-only and shouldn't
+  // create PDS accounts. Operators who want their lite stack to act as
+  // a real service provider (publish service.profile to AppView) flip
+  // the flag once at install time.
+  let pdsIdentity: PdsIdentity | undefined;
+  const pdsProvisionEnabled =
+    (process.env.DINA_PDS_PROVISION ?? '').trim() === '1' &&
+    (process.env.DINA_PDS_HANDLE ?? '').trim() !== '';
+  if (pdsProvisionEnabled) {
+    const pdsStart = Date.now();
+    if (
+      identity !== undefined &&
+      (identity.kind === 'loaded_convenience' || identity.kind === 'generated')
+    ) {
+      try {
+        const derivations = deriveIdentity({ masterSeed: identity.seed });
+        pdsIdentity = await loadOrProvisionPdsIdentity({
+          vaultDir: config.storage.vaultDir,
+          identity: derivations,
+          masterSeed: identity.seed,
+          pdsUrl: config.endpoints.pdsBaseUrl,
+          handle: (process.env.DINA_PDS_HANDLE ?? '').trim(),
+          msgboxEndpoint: config.msgbox.url,
+          signingPublicKey: derivations.root.publicKey,
+          plcURL: config.endpoints.plcDirectoryUrl,
+          ...(process.env.DINA_PDS_EMAIL !== undefined
+            ? { email: process.env.DINA_PDS_EMAIL.trim() }
+            : {}),
+        });
+        trace.push({
+          step: 'pds_provision',
+          status: 'ok',
+          elapsedMs: Date.now() - pdsStart,
+        });
+        logger.info(
+          { did: pdsIdentity.did, handle: pdsIdentity.handle, pdsUrl: pdsIdentity.pdsUrl },
+          'PDS identity loaded/provisioned',
+        );
+        // Pairing ceremony embeds the node's DID in every pair code so
+        // pairing devices know which home node they're joining. With
+        // a PDS-provisioned did:plc, that's our canonical identity.
+        setNodeDID(pdsIdentity.did);
+      } catch (err) {
+        // Don't take down the whole boot if PDS is unreachable — surface
+        // it as a degradation so /readyz reports honestly + downstream
+        // service publishing reflects the broken state. This keeps the
+        // lite stack usable for non-provider duties even when test-pds
+        // is offline.
+        trace.push({
+          step: 'pds_provision',
+          status: 'failed',
+          elapsedMs: Date.now() - pdsStart,
+          error: (err as Error).message,
+        });
+        logger.warn(
+          { error: (err as Error).message },
+          'PDS provisioning failed; continuing without a did:plc identity',
+        );
+      }
+    } else {
+      trace.push({
+        step: 'pds_provision',
+        status: 'pending',
+        elapsedMs: Date.now() - pdsStart,
+        pendingReason: 'master seed not materialized (wrapped-seed mode)',
+      });
+    }
+  }
+
+  // Holds the publisher pipeline (PDS session + ServiceProfilePublisher
+  // + onServiceConfigChanged subscriber) when PDS provisioning succeeded.
+  // Wired AFTER db_open since the config listener reads from the SQLite
+  // KV repo, which db_open initializes.
+  let wiredPublisher: WiredServicePublisher | undefined;
+  // Workflow + service-query plane (repo + WorkflowService + sweepers +
+  // runtime). Wired AFTER core_router because the runtime's
+  // InProcessTransport dispatches through the router. Captured during
+  // db_open and re-used once the router is ready.
+  let wiredWorkflow: WiredWorkflowPlane | undefined;
+  // Captured during db_open; consumed in the post-core_router wiring
+  // block once the CoreRouter is available.
+  let identityDBForWorkflow: DatabaseAdapter | undefined;
+
   // Step 4 (db_open): SQLite persistence via `@dina/storage-node`. We
   // only do this when the master seed is materialized (convenience or
   // generated mode). Wrapped-seed mode defers until a later unwrap.
@@ -254,6 +403,33 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         { openedPersonas: result.openedPersonas },
         'SQLite repositories wired into Core service modules',
       );
+
+      // Layer 2: wire the service-profile publisher pipeline. Only
+      // runs when PDS provisioning succeeded (`pdsIdentity` set). The
+      // publisher subscribes to `onServiceConfigChanged` so every
+      // `PUT /v1/service/config` triggers a real PDS write +
+      // AppView indexing. If no service config is persisted yet,
+      // nothing publishes — the listener fires the first publish
+      // when the operator saves a config.
+      if (pdsIdentity !== undefined) {
+        wiredPublisher = wireServiceProfilePublisher({ pdsIdentity, logger });
+        // If a config was already persisted from a prior boot, fire
+        // an immediate publish so the AppView reflects current state
+        // without waiting for an edit.
+        const existingConfig = getServiceConfig();
+        if (existingConfig !== null) {
+          void publishOnce(
+            wiredPublisher.publisher,
+            pdsIdentity,
+            existingConfig,
+            logger,
+          );
+        }
+        // Workflow plane wiring needs the CoreRouter (created in the
+        // next boot step), so stash the identityDB now and let the
+        // post-core_router block run wireWorkflowPlane.
+        identityDBForWorkflow = result.identityDB;
+      }
     } catch (err) {
       trace.push({
         step: 'db_open',
@@ -302,6 +478,32 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     elapsedMs: Date.now() - coreRouterStart,
   });
 
+  // Workflow plane — wired post-core_router (the runtime's
+  // InProcessTransport needs the router) but BEFORE fastify_start so
+  // every bound HTTP route already sees the singletons set. Without
+  // this, /v1/workflow/tasks/* and /v1/service/* return 503 even
+  // though they're routable.
+  if (
+    pdsIdentity !== undefined &&
+    identity !== undefined &&
+    (identity.kind === 'loaded_convenience' || identity.kind === 'generated') &&
+    identityDBForWorkflow !== undefined
+  ) {
+    const derivations = deriveIdentity({ masterSeed: identity.seed });
+    wiredWorkflow = wireWorkflowPlane({
+      identityDB: identityDBForWorkflow,
+      pdsIdentity,
+      signingKeypair: {
+        publicKey: derivations.root.publicKey,
+        privateKey: derivations.root.privateKey,
+      },
+      msgboxURL: config.msgbox.url,
+      appViewURL: config.endpoints.appViewBaseUrl,
+      coreRouter,
+      logger,
+    });
+  }
+
   // Step 7: fastify_start — this runs today, even without the earlier
   // dependencies, so /healthz + /readyz are reachable.
   const fastifyStart = Date.now();
@@ -325,6 +527,12 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       ],
     });
     app.addHook('onClose', async () => {
+      if (wiredWorkflow !== undefined) {
+        await wiredWorkflow.dispose();
+      }
+      if (wiredPublisher !== undefined) {
+        wiredPublisher.dispose();
+      }
       await disconnectMsgBox();
     });
     routesBound = bindCoreRouter({
@@ -380,19 +588,56 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     try {
       await disconnectMsgBox();
       const derivations = deriveIdentity({ masterSeed: identity.seed });
-      const did = config.msgbox.homeNodeDid ?? deriveDIDKey(derivations.root.publicKey);
+      // Prefer the PDS-provisioned did:plc when available — that's the
+      // DID published in our service profile + the one peers seal to.
+      // Falls back to env override, then the local did:key for
+      // dev-only setups that never minted a did:plc.
+      const did =
+        pdsIdentity?.did ??
+        config.msgbox.homeNodeDid ??
+        deriveDIDKey(derivations.root.publicKey);
+      // Build a real resolveSender so the receive pipeline can verify
+      // inbound signatures. Without this every D2D arrival fails at
+      // step 2 (signature check) — including our own loopbacks, which
+      // is why a self-targeted service.query silently drops. Mirrors
+      // mobile's `makeResolveSender` minimal shape: self returns our
+      // own pubkey + 'self' trust; peers resolve via PLC and pick the
+      // Ed25519 #dina_signing VM.
+      const senderResolver = new DIDResolver();
+      const selfPub = derivations.root.publicKey;
+      const resolveSender =
+        options.resolveMsgBoxSender ??
+        (async (senderDid: string) => {
+          if (senderDid === did) {
+            return { keys: [selfPub], trust: 'self' };
+          }
+          try {
+            const resolved = await senderResolver.resolve(senderDid);
+            const ed25519VM = pickEd25519SigningVM(resolved.document.verificationMethod);
+            if (ed25519VM === null || typeof ed25519VM.publicKeyMultibase !== 'string') {
+              return { keys: [], trust: 'unknown' };
+            }
+            const pubkey = multibaseToPublicKey(ed25519VM.publicKeyMultibase);
+            return { keys: [pubkey], trust: 'unknown' };
+          } catch {
+            return { keys: [], trust: 'unknown' };
+          }
+        });
       await bootstrapMsgBox({
         did,
         privateKey: derivations.root.privateKey,
         msgboxURL: config.msgbox.url,
         wsFactory: options.msgboxWsFactory ?? makeNodeWebSocketFactory(),
         coreRouter,
-        resolveSender:
-          options.resolveMsgBoxSender ??
-          (async () => ({
-            keys: [],
-            trust: 'unknown',
-          })),
+        resolveSender,
+        // Hand bypassed service.query / service.response D2D envelopes
+        // into the workflow plane's local dispatcher. Without this the
+        // receive pipeline validates + decrypts inbound queries and
+        // then silently discards them — handler never fires, no
+        // workflow_task minted.
+        ...(wiredWorkflow !== undefined
+          ? { onBypassedD2D: wiredWorkflow.onBypassedD2D.bind(wiredWorkflow) }
+          : {}),
         readyTimeoutMs: options.msgboxReadyTimeoutMs ?? 10_000,
       });
       msgboxState = {

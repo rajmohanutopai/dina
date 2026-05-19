@@ -187,9 +187,9 @@ const TOOL_DECLARATIONS: Array<{
     parameters: { query: 'string', days_ahead: 'number' },
   },
   {
-    name: 'search_trust_network',
+    name: 'search_peerlens',
     description:
-      'Search PeerLens for signed peer reviews about a person, product, or vendor. Returns aggregated credibility signals and individual reviews.',
+      "Search PeerLens — Dina's verified peer-review network — for signed reviews about a person, product, or vendor. Returns aggregated credibility signals and individual reviews from real people in the user's trust graph.",
     parameters: { query: 'string', type: 'string' },
   },
 ];
@@ -441,7 +441,7 @@ async function executeToolCall(call: ToolCall): Promise<unknown> {
       return executeReminderCheck(query, daysAhead);
     }
 
-    case 'search_trust_network': {
+    case 'search_peerlens': {
       const query = String(call.args.query ?? '');
       const searchType = String(call.args.type ?? 'entity_reviews') as SearchType;
       return executeTrustSearch(query, searchType);

@@ -150,9 +150,13 @@ export async function updateDIDPLC(
   params: PLCUpdateParams,
   config?: PLCDirectoryConfig,
 ): Promise<PLCUpdateResult> {
-  if (!params.signerRotationSeed || params.signerRotationSeed.length !== 32) {
+  // Accept any SLIP-0010 seed material ≥16 bytes. Mobile passes 32-byte
+  // BIP-39 entropy; lite Core passes the 64-byte BIP-39 PBKDF2 seed.
+  // Both are valid input to `derivePathSecp256k1` (which validates the
+  // seed itself); rejecting non-32-byte input here would break lite.
+  if (!params.signerRotationSeed || params.signerRotationSeed.length < 16) {
     throw new Error(
-      'updateDIDPLC: signerRotationSeed must be 32 bytes (secp256k1 seed)',
+      'updateDIDPLC: signerRotationSeed must be at least 16 bytes',
     );
   }
 

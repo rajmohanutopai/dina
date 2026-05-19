@@ -49,7 +49,7 @@ describe('parseAskRetrievalPlan', () => {
         { persona: 'general', queries: ['Emma preferences'], why: 'her interests' },
       ],
       people: ['Emma'],
-      needs_trust_network: true,
+      needs_peerlens: true,
       intent: 'Recommend a birthday gift for Emma within budget',
     });
     const plan = parseAskRetrievalPlan(raw, PERSONAS);
@@ -58,7 +58,7 @@ describe('parseAskRetrievalPlan', () => {
     expect(plan.personas[0].queries).toEqual(['toy budget', 'gift spending']);
     expect(plan.personas[0].why).toBe('budget constrains the gift');
     expect(plan.people).toEqual(['Emma']);
-    expect(plan.needs_trust_network).toBe(true);
+    expect(plan.needs_peerlens).toBe(true);
     expect(plan.intent).toContain('birthday gift');
   });
 
@@ -66,7 +66,7 @@ describe('parseAskRetrievalPlan', () => {
     const raw = `Sure, here is the plan:\n\`\`\`json\n${JSON.stringify({
       personas: [{ persona: 'health', queries: ['allergies'], why: 'safety check' }],
       people: [],
-      needs_trust_network: false,
+      needs_peerlens: false,
       intent: 'Check supplement safety',
     })}\n\`\`\``;
     const plan = parseAskRetrievalPlan(raw, PERSONAS);
@@ -81,7 +81,7 @@ describe('parseAskRetrievalPlan', () => {
         { persona: 'taxes', queries: ['tax bracket'], why: 'invented' }, // not in PERSONAS
       ],
       people: [],
-      needs_trust_network: false,
+      needs_peerlens: false,
       intent: 'Plan a purchase',
     });
     const plan = parseAskRetrievalPlan(raw, PERSONAS);
@@ -96,7 +96,7 @@ describe('parseAskRetrievalPlan', () => {
         { persona: 'finance', queries: ['savings'], why: 'savings' }, // duplicate
       ],
       people: [],
-      needs_trust_network: false,
+      needs_peerlens: false,
       intent: '',
     });
     const plan = parseAskRetrievalPlan(raw, PERSONAS);
@@ -114,11 +114,22 @@ describe('parseAskRetrievalPlan', () => {
     const raw = JSON.stringify({
       personas: [{ persona: 'finance', queries: [], why: 'no terms' }],
       people: [],
-      needs_trust_network: false,
+      needs_peerlens: false,
       intent: '',
     });
     const plan = parseAskRetrievalPlan(raw, PERSONAS);
     expect(plan.personas).toHaveLength(0);
+  });
+
+  it('accepts the legacy needs_trust_network key (back-compat for older model checkpoints)', () => {
+    const raw = JSON.stringify({
+      personas: [],
+      people: [],
+      needs_trust_network: true,
+      intent: '',
+    });
+    const plan = parseAskRetrievalPlan(raw, PERSONAS);
+    expect(plan.needs_peerlens).toBe(true);
   });
 
   it('caps people list at 20 and discards non-strings', () => {
@@ -126,7 +137,7 @@ describe('parseAskRetrievalPlan', () => {
     const raw = JSON.stringify({
       personas: [],
       people: [...tooMany, 42, null, {}],
-      needs_trust_network: false,
+      needs_peerlens: false,
       intent: '',
     });
     const plan = parseAskRetrievalPlan(raw, PERSONAS);
@@ -150,7 +161,7 @@ describe('planAskRetrieval', () => {
       return JSON.stringify({
         personas: [],
         people: [],
-        needs_trust_network: false,
+        needs_peerlens: false,
         intent: '',
       });
     };
@@ -176,7 +187,7 @@ describe('runAskPreFlightRetrieval', () => {
       { persona: 'general', queries: ['Emma preferences'], why: 'her interests' },
     ],
     people: ['Emma'],
-    needs_trust_network: false,
+    needs_peerlens: false,
     intent: 'Recommend birthday gift for Emma',
   };
 
@@ -220,7 +231,7 @@ describe('runAskPreFlightRetrieval', () => {
         { persona: 'finance', queries: ['budget', 'spending'], why: 'cost' },
       ],
       people: [],
-      needs_trust_network: false,
+      needs_peerlens: false,
       intent: '',
     };
     const dup: RetrievedVaultItem = {
@@ -277,7 +288,7 @@ describe('formatRetrievalContextBlock', () => {
       plan: {
         personas: [],
         people: ['Emma'],
-        needs_trust_network: false,
+        needs_peerlens: false,
         intent: 'Plan Emma\'s birthday gift',
       },
       grouped,
@@ -296,7 +307,7 @@ describe('formatRetrievalContextBlock', () => {
 
   it('marks an unmatched person', () => {
     const block = formatRetrievalContextBlock({
-      plan: { personas: [], people: ['Zelda'], needs_trust_network: false, intent: '' },
+      plan: { personas: [], people: ['Zelda'], needs_peerlens: false, intent: '' },
       grouped: new Map(),
       personMatches: [{ name: 'Zelda', matches: [] }],
     });
@@ -309,7 +320,7 @@ describe('ASK_RETRIEVAL_PLAN_RESPONSE_SCHEMA', () => {
     expect(ASK_RETRIEVAL_PLAN_RESPONSE_SCHEMA.required).toEqual([
       'personas',
       'people',
-      'needs_trust_network',
+      'needs_peerlens',
       'intent',
     ]);
   });

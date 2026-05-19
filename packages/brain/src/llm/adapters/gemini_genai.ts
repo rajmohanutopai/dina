@@ -80,7 +80,30 @@ export class GeminiGenaiAdapter implements LLMProvider {
   private readonly defaultModel: string;
 
   constructor(options: GeminiGenaiAdapterOptions) {
-    this.client = options.client ?? new GoogleGenAI({ apiKey: options.apiKey });
+    // `httpOptions.retryOptions` toggles the SDK's built-in pRetry
+    // wrapper around every `fetch` call. Without it, any thrown error
+    // (including iOS's instant-fail NSURLErrorNetworkConnectionLost
+    // when URLSession has a stale HTTP/2 connection cached for the
+    // origin) propagates straight up and the agentic loop terminates
+    // with `provider_error`. With retries enabled, the SDK transparently
+    // re-fetches — iOS establishes a fresh connection on the second
+    // attempt and the call usually succeeds.
+    //
+    // The retry path also catches transient 5xx responses from Gemini
+    // itself (the SDK ships its own `DEFAULT_RETRY_HTTP_STATUS_CODES`
+    // list — 408, 429, 500, 502, 503, 504) which we'd otherwise surface
+    // as user-visible failures.
+    //
+    // 4 attempts (1 original + 3 retries) gives ~2 s of effective
+    // backoff before bailing, well inside the 3 s fast-path window in
+    // the AskCoordinator. Doesn't apply when the caller injected its
+    // own `options.client` for tests.
+    this.client =
+      options.client ??
+      new GoogleGenAI({
+        apiKey: options.apiKey,
+        httpOptions: { retryOptions: { attempts: 4 } },
+      });
     this.defaultModel = options.defaultModel ?? DEFAULT_GEMINI_MODEL;
   }
 

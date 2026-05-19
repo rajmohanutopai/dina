@@ -178,8 +178,8 @@ describe('buildAgenticAskPipeline', () => {
         'list_personas',
         'query_service',
         'schedule_reminder',
+        'search_peerlens',
         'search_provider_services',
-        'search_trust_network',
         'vault_search',
       ].sort(),
     );
