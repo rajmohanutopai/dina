@@ -34,7 +34,7 @@ import {
   type Contact,
   type Person,
 } from '@dina/core';
-import { colors, fonts, spacing, radius, shadows } from '../src/theme';
+import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
 import { getProfile as getTrustProfile } from '../src/peerlens/appview_runtime';
 import { loadInfraPreferences } from '../src/services/infra_preferences';
@@ -111,7 +111,11 @@ export default function PeopleScreen() {
       <OwnIdentityCard />
       <SubTabBar value={subTab} onChange={setSubTab} />
       {subTab === 'contacts' ? (
-        <ContactsView contacts={contacts} onLongPress={onLongPress} />
+        <ContactsView
+          contacts={contacts}
+          onLongPress={onLongPress}
+          onAdd={() => router.push('/add-contact' as never)}
+        />
       ) : (
         <RelationsView people={people} />
       )}
@@ -122,9 +126,11 @@ export default function PeopleScreen() {
 function ContactsView({
   contacts,
   onLongPress,
+  onAdd,
 }: {
   contacts: Contact[];
   onLongPress: (contact: Contact) => void;
+  onAdd: () => void;
 }) {
   if (contacts.length === 0) {
     return (
@@ -139,6 +145,14 @@ function ContactsView({
         <Text style={styles.emptyBody}>
           Add someone by their handle to start an end-to-end encrypted conversation.
         </Text>
+        <Pressable
+          onPress={onAdd}
+          accessibilityRole="button"
+          accessibilityLabel="Add a contact"
+          style={({ pressed }) => [styles.emptyCta, pressed && { opacity: 0.7 }]}
+        >
+          <Text style={styles.emptyCtaText}>Add a contact</Text>
+        </Pressable>
       </View>
     );
   }
@@ -166,8 +180,8 @@ function RelationsView({ people }: { people: Person[] }) {
         />
         <Text style={styles.emptyTitle}>No relations yet</Text>
         <Text style={styles.emptyBody}>
-          As you tell Dina about people in your life — "Emma is my daughter", "Sancho is my
-          brother" — they’ll show up here.
+          As you tell Dina about people in your life (for example, "Emma is my daughter" or
+          "Sancho is my brother"), they’ll show up here.
         </Text>
       </View>
     );
@@ -264,13 +278,13 @@ function RelationRow({ person }: { person: Person }) {
         )}
       </View>
       {person.contactDid !== '' && (
-        <View style={[styles.badge, { backgroundColor: '#E6F0FE' }]}>
-          <Text style={[styles.badgeText, { color: '#1F5BB8' }]}>Paired</Text>
+        <View style={[styles.badge, { backgroundColor: colors.badgePairedBg }]}>
+          <Text style={[styles.badgeText, { color: colors.badgePairedText }]}>Paired</Text>
         </View>
       )}
       {person.status === 'suggested' && (
-        <View style={[styles.badge, { backgroundColor: '#FFF4D6' }]}>
-          <Text style={[styles.badgeText, { color: '#8A6300' }]}>Suggested</Text>
+        <View style={[styles.badge, { backgroundColor: colors.badgeSuggestedBg }]}>
+          <Text style={[styles.badgeText, { color: colors.badgeSuggestedText }]}>Suggested</Text>
         </View>
       )}
     </View>
@@ -466,22 +480,13 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   identityLabel: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
-    color: colors.textMuted,
+    ...textStyles.eyebrow,
     letterSpacing: 0.5,
-    textTransform: 'uppercase',
     marginBottom: 2,
   },
-  identityValue: {
-    fontFamily: fonts.mono,
-    fontSize: 14,
-    color: colors.textPrimary,
-  },
+  identityValue: textStyles.mono,
   identityHint: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.textMuted,
+    ...textStyles.caption,
     marginTop: 2,
   },
   shareButton: {
@@ -498,9 +503,8 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   shareButtonText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 13,
-    color: '#FFFFFF',
+    ...textStyles.bodySmallStrong,
+    color: colors.white,
   },
   // Segmented [Contacts | Relations] strip below the OwnIdentityCard.
   // A thin pill row rather than a full segmented control — keeps the
@@ -522,17 +526,19 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   subTabActive: {
-    backgroundColor: colors.bgPrimary,
+    // Filled-accent treatment so the selected sub-tab is unmistakable
+    // at a glance — previously a near-white card on cream that was
+    // hard to distinguish from the unselected pill.
+    backgroundColor: colors.accent,
     ...(Platform.OS === 'ios' ? shadows.sm : {}),
   },
   subTabLabel: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 13,
+    ...textStyles.bodySmallStrong,
     color: colors.textMuted,
     letterSpacing: 0.2,
   },
   subTabLabelActive: {
-    color: colors.textPrimary,
+    color: colors.white,
   },
   list: { flex: 1 },
   listContent: {
@@ -561,9 +567,7 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   rowAliases: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.textMuted,
+    ...textStyles.caption,
     marginTop: 2,
   },
   avatar: {
@@ -575,22 +579,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: spacing.md,
   },
-  avatarText: {
-    fontFamily: fonts.headingBold,
-    fontSize: 16,
-    color: colors.textPrimary,
-  },
+  avatarText: textStyles.bodyLargeStrong,
   rowText: { flex: 1 },
   rowName: {
-    fontFamily: fonts.heading,
-    fontSize: 15,
-    color: colors.textPrimary,
+    ...textStyles.bodyStrong,
     letterSpacing: 0.1,
   },
   rowDid: {
-    fontFamily: fonts.mono,
-    fontSize: 12,
-    color: colors.textMuted,
+    ...textStyles.monoSmall,
     marginTop: 2,
   },
   badge: {
@@ -600,8 +596,7 @@ const styles = StyleSheet.create({
     marginLeft: spacing.sm,
   },
   badgeText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
+    ...textStyles.eyebrow,
     letterSpacing: 0.3,
   },
   emptyState: {
@@ -610,17 +605,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
   },
-  emptyTitle: {
-    fontFamily: fonts.heading,
-    fontSize: 18,
-    color: colors.textPrimary,
-  },
+  emptyTitle: textStyles.h3,
   emptyBody: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.textSecondary,
     textAlign: 'center',
     marginTop: spacing.sm,
-    lineHeight: 20,
+  },
+  emptyCta: {
+    marginTop: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.full,
+    backgroundColor: colors.accent,
+  },
+  emptyCtaText: {
+    ...textStyles.bodyStrong,
+    color: colors.white,
   },
 });

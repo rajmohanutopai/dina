@@ -45,7 +45,7 @@ import {
 import { pdsHostForEndpoints, resolveMobileHostedDinaEndpoints } from '@dina/home-node';
 import { OnboardingShell } from './shell';
 import { locateStep, type Step } from '../../onboarding/state';
-import { colors, fonts, radius, spacing } from '../../theme';
+import { colors, radius, spacing, textStyles } from '../../theme';
 
 export interface HandlePickProps {
   /** Sanitised seed from `create_name`. May be empty if the user typed
@@ -221,7 +221,7 @@ function StatusLine({ status }: { status: CheckStatus }): React.ReactElement | n
     return (
       <View style={styles.statusRow} testID="handle-status-error">
         <Text style={styles.statusWarn}>
-          Couldn&rsquo;t reach the directory ({status.reason}). You can keep going — we&rsquo;ll
+          Couldn&rsquo;t reach the directory ({status.reason}). You can keep going. We&rsquo;ll
           retry on commit.
         </Text>
       </View>
@@ -239,7 +239,7 @@ function StatusLine({ status }: { status: CheckStatus }): React.ReactElement | n
   if (p.kind === 'taken') {
     return (
       <View style={styles.statusRow} testID="handle-status-taken">
-        <Text style={styles.statusBad}>{'✗'} Taken — try one of these:</Text>
+        <Text style={styles.statusBad}>{'✗'} Taken. Try one of these:</Text>
       </View>
     );
   }
@@ -247,7 +247,7 @@ function StatusLine({ status }: { status: CheckStatus }): React.ReactElement | n
     return (
       <View style={styles.statusRow} testID="handle-status-unknown">
         <Text style={styles.statusWarn}>
-          Directory unreachable — you can keep going at your own risk.
+          Directory unreachable. You can keep going; we'll verify on commit.
         </Text>
       </View>
     );
@@ -298,11 +298,7 @@ function resolvePDSHost(): string {
 
 const styles = StyleSheet.create({
   label: {
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    color: colors.textMuted,
+    ...textStyles.label,
     marginBottom: spacing.sm,
   },
   inputRow: {
@@ -317,14 +313,12 @@ const styles = StyleSheet.create({
     paddingRight: spacing.sm,
   },
   input: {
+    ...textStyles.bodyLarge,
     flex: 1,
-    color: colors.textPrimary,
-    fontSize: 17,
   },
   suffix: {
-    fontSize: 13,
+    ...textStyles.mono,
     color: colors.textMuted,
-    fontFamily: fonts.mono,
     marginLeft: spacing.xs,
   },
   statusRow: {
@@ -335,21 +329,19 @@ const styles = StyleSheet.create({
     minHeight: 22,
   },
   statusMuted: {
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textMuted,
   },
   statusGood: {
-    fontSize: 14,
-    fontWeight: '600',
+    ...textStyles.bodySmallStrong,
     color: colors.success,
   },
   statusBad: {
-    fontSize: 14,
-    fontWeight: '600',
+    ...textStyles.bodySmallStrong,
     color: colors.error,
   },
   statusWarn: {
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textMuted,
     flexShrink: 1,
   },
@@ -366,15 +358,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  suggestionText: {
-    fontSize: 14,
-    fontFamily: fonts.mono,
-    color: colors.textPrimary,
-  },
+  suggestionText: textStyles.mono,
   suggestionHint: {
-    fontSize: 11,
-    color: colors.textMuted,
-    textTransform: 'uppercase',
+    ...textStyles.eyebrow,
     letterSpacing: 0.8,
   },
   pressed: { opacity: 0.6 },

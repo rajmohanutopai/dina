@@ -72,8 +72,8 @@ export const SUBJECT_KIND_OPTIONS: readonly SubjectKind[] = [
  * fit on one line under the chip row.
  */
 export const SUBJECT_KIND_HINT: Record<SubjectKind, string> = {
-  product: 'A reviewable product (e.g. Aeron Chair, ASIN, ISBN).',
-  place: 'A location — restaurant, venue, address.',
+  product: 'A reviewable product (e.g. headphones, a book, a software tool).',
+  place: 'A location: restaurant, venue, address.',
   organization: 'A company, publisher, or service provider.',
   content: 'An article, video, podcast, or web page (URL).',
   did: 'A person or AT-protocol identity (did:plc / did:web).',
@@ -244,7 +244,7 @@ export const REVIEWER_EXPERIENCE_LABEL: Readonly<Record<ReviewerExperience, stri
 export const REVIEWER_EXPERIENCE_HINT: Readonly<Record<ReviewerExperience, string>> = {
   novice: 'Just starting out with this category.',
   intermediate: 'Regular use, comfortable with the basics.',
-  expert: 'Deep familiarity — domain professional or long-term user.',
+  expert: 'Deep familiarity. A domain professional or long-term user.',
 };
 
 // ─── TN-V2-META-002: price ────────────────────────────────────────────────

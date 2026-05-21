@@ -8,7 +8,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { OnboardingShell } from './shell';
-import { colors, radius, shadows, spacing } from '../../theme';
+import { colors, radius, shadows, spacing, textStyles } from '../../theme';
 
 export interface ModeChoiceProps {
   onCreate: () => void;
@@ -18,11 +18,14 @@ export interface ModeChoiceProps {
 
 export function ModeChoice(props: ModeChoiceProps): React.ReactElement {
   return (
-    <OnboardingShell
-      title="Let's get your Dina set up"
-      subtitle="New to Dina? Start fresh. Coming back? Restore from your 24-word recovery phrase."
-      onBack={props.onBack}
-    >
+    <OnboardingShell onBack={props.onBack}>
+      {/* Brand-continuation headline — matches the Welcome screen's
+          serif-italic display face so the visual identity carries
+          from Welcome → Choose without a typography jump. */}
+      <Text style={styles.headline}>Welcome to Dina</Text>
+      <Text style={styles.subtitle}>
+        New to Dina? Start fresh. Coming back? Restore from your 24-word recovery phrase.
+      </Text>
       <ChoiceCard
         glyph={'\u002B'}
         title="Create a new Dina"
@@ -33,7 +36,7 @@ export function ModeChoice(props: ModeChoiceProps): React.ReactElement {
       <ChoiceCard
         glyph={'\u21BA'}
         title="Restore from recovery phrase"
-        body="Bring your published handle back on this device. Restores identity only — saved memories stay on your old device's vault."
+        body="Restore your identity on this device. Saved memories stay on your old device's vault."
         onPress={props.onRecover}
       />
     </OnboardingShell>
@@ -55,7 +58,8 @@ function ChoiceCard({
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [styles.card, pressed && styles.pressed]}
-      accessibilityLabel={title}
+      accessibilityRole="button"
+      accessibilityLabel={`${title}. ${body}`}
     >
       <View style={styles.cardGlyph}>
         <Text style={styles.cardGlyphText}>{glyph}</Text>
@@ -70,6 +74,15 @@ function ChoiceCard({
 }
 
 const styles = StyleSheet.create({
+  headline: {
+    ...textStyles.display,
+    marginBottom: spacing.md,
+  },
+  subtitle: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+    marginBottom: spacing.xl,
+  },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -77,6 +90,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.lg,
     gap: spacing.md,
+    // Reserve enough vertical room for the longer card's body so the
+    // shorter card matches its height — keeps the two cards visually
+    // balanced on the choice screen.
+    minHeight: 132,
     ...shadows.sm,
   },
   spacer: { height: spacing.md },
@@ -89,25 +106,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cardGlyphText: {
-    fontSize: 20,
+    ...textStyles.h3,
     color: colors.accent,
-    fontWeight: '500',
   },
   cardText: { flex: 1 },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    letterSpacing: -0.1,
-  },
+  cardTitle: textStyles.bodyStrong,
   cardBody: {
+    ...textStyles.bodySmall,
     marginTop: 2,
-    fontSize: 13,
-    lineHeight: 18,
     color: colors.textSecondary,
   },
   cardArrow: {
-    fontSize: 18,
+    ...textStyles.h3,
     color: colors.textMuted,
   },
   pressed: { opacity: 0.7 },

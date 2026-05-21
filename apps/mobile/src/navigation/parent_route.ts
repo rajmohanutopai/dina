@@ -43,7 +43,10 @@ const SECTION_PARENTS: Record<string, string> = {
   'service-settings': '/settings',
   'recovery-phrase': '/settings',
   'confirm-recovery-phrase': '/settings',
-  // All /peerlens-preferences/* sub-screens return to Settings.
+  // /peerlens-preferences index returns to Settings; its sub-screens
+  // (region, budget, devices, languages, dietary, accessibility)
+  // return to the index page — handled as a special case in
+  // `parentRouteFor` below.
   'peerlens-preferences': '/settings',
   // Hamburger-menu items return to the Chat tab as the safe default.
   // We don't track which tab the user was on when they opened the
@@ -87,6 +90,14 @@ export function parentRouteFor(pathname: string): string {
   // `/settings/...`) stay anchored to the section.
   if (segs.length === 1 && `/${first}` === sectionParent) {
     return '/';
+  }
+
+  // Special case: `/peerlens-preferences/<leaf>` (region, budget, …)
+  // returns to the prefs index, not all the way back to Settings.
+  // The index itself (`/peerlens-preferences`) returns to Settings via
+  // the SECTION_PARENTS map above.
+  if (first === 'peerlens-preferences' && segs.length === 2) {
+    return '/peerlens-preferences';
   }
 
   return sectionParent;

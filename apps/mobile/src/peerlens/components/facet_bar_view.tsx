@@ -29,7 +29,7 @@
 import React from 'react';
 import { ScrollView, Pressable, Text, StyleSheet } from 'react-native';
 
-import { colors, fonts, spacing, radius } from '../../theme';
+import { colors, spacing, radius, textStyles } from '../../theme';
 import type { FacetBar } from '../facets';
 
 export interface FacetBarViewProps {
@@ -84,7 +84,7 @@ export function FacetBarView(props: FacetBarViewProps): React.ReactElement | nul
           active={false}
           onPress={onShowMore}
           testID="facet-chip-more"
-          accessibilityLabel={`More — ${facets.overflow.length} more`}
+          accessibilityLabel={`More. ${facets.overflow.length} additional facets.`}
         />
       )}
     </ScrollView>
@@ -141,11 +141,7 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
   },
   chipPressed: { backgroundColor: colors.bgTertiary },
-  chipLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
-    color: colors.textPrimary,
-  },
+  chipLabel: textStyles.bodySmall,
   chipLabelActive: {
     color: colors.bgSecondary,
   },

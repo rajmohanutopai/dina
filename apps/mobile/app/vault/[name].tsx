@@ -27,7 +27,7 @@ import {
 } from 'react-native';
 import { Redirect, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, fonts, radius, shadows, spacing } from '../../src/theme';
+import { colors, radius, shadows, spacing, textStyles } from '../../src/theme';
 import {
   formatPersonaDisplayName,
   getPersonaUI,
@@ -167,18 +167,18 @@ export default function VaultDetail(): React.ReactElement {
         options={{ title: formatPersonaDisplayName(persona.name), headerShown: true }}
       />
       <ScrollView style={styles.root} contentContainerStyle={styles.content}>
-        {/* Header card — lock state + tier. The persona name lives
-          * in the Stack title above, so don't duplicate it here.
-          * Showing "General" twice (page title + this card) read as
-          * a layout bug. */}
-        <View style={styles.headerCard}>
-          <View style={styles.headerRow}>
+        {/* Tier badge — compact inline pill rather than a full-width
+          * card. The persona name lives in the Stack title above.
+          * Single badge keeps the vertical rhythm tight; the full
+          * card was wasted real estate on something this small. */}
+        <View style={styles.tierRow}>
+          <View style={styles.tierBadge}>
             <Ionicons
               name={persona.isOpen ? 'lock-open-outline' : 'lock-closed-outline'}
-              size={20}
+              size={14}
               color={persona.isOpen ? colors.accent : colors.textMuted}
             />
-            <Text style={styles.tierLabel}>{persona.tierLabel}</Text>
+            <Text style={styles.tierBadgeText}>{persona.tierLabel}</Text>
           </View>
         </View>
 
@@ -455,36 +455,30 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgPrimary,
   },
   emptyTitle: {
-    fontFamily: fonts.heading,
-    fontSize: 22,
-    color: colors.textPrimary,
+    ...textStyles.h2,
     marginTop: spacing.md,
   },
   emptySub: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.textMuted,
     marginTop: spacing.xs,
   },
-  headerCard: {
-    backgroundColor: colors.bgCard,
-    margin: spacing.lg,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    ...shadows.sm,
+  tierRow: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+    flexDirection: 'row',
   },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  headerTitle: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 18,
-    color: colors.textPrimary,
+  tierBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+    backgroundColor: colors.bgTertiary,
   },
-  tierLabel: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.textMuted,
-    marginTop: spacing.xs,
-  },
+  tierBadgeText: textStyles.caption,
   descCard: {
     backgroundColor: colors.bgCard,
     marginHorizontal: spacing.lg,
@@ -498,40 +492,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   descLabel: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
+    ...textStyles.eyebrow,
     letterSpacing: 1.5,
-    color: colors.textMuted,
   },
   editLink: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 13,
+    ...textStyles.bodySmallStrong,
     color: colors.accent,
   },
   descHelp: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    lineHeight: 17,
-    color: colors.textMuted,
+    ...textStyles.caption,
     marginTop: spacing.xs,
     marginBottom: spacing.sm,
   },
   descBody: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    lineHeight: 20,
+    ...textStyles.body,
     color: colors.textSecondary,
   },
   descInput: {
+    ...textStyles.body,
     backgroundColor: colors.bgPrimary,
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.border,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.textPrimary,
     minHeight: 90,
   },
   descButtonRow: {
@@ -545,8 +529,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   descCancelText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 13,
+    ...textStyles.bodySmallStrong,
     color: colors.textSecondary,
   },
   descSaveButton: {
@@ -556,13 +539,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   descSaveText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 13,
+    ...textStyles.bodySmallStrong,
     color: colors.bgPrimary,
   },
   errorText: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.error,
     marginTop: spacing.sm,
   },
@@ -571,10 +552,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   sectionTitle: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
+    ...textStyles.eyebrow,
     letterSpacing: 1.5,
-    color: colors.textMuted,
     marginBottom: spacing.sm,
     paddingLeft: 4,
   },
@@ -586,16 +565,11 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   lockedTitle: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 14,
-    color: colors.textPrimary,
+    ...textStyles.bodyStrong,
     marginTop: spacing.sm,
   },
   lockedSub: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    lineHeight: 17,
-    color: colors.textMuted,
+    ...textStyles.caption,
     textAlign: 'center',
     marginTop: spacing.xs,
   },
@@ -604,9 +578,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyItemsText: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
-    lineHeight: 18,
+    ...textStyles.bodySmall,
     color: colors.textMuted,
     textAlign: 'center',
   },
@@ -624,11 +596,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   itemHeadline: {
+    ...textStyles.bodyStrong,
     flex: 1,
-    fontFamily: fonts.sansSemibold,
-    fontSize: 14,
-    lineHeight: 20,
-    color: colors.textPrimary,
   },
   unverifiedBadge: {
     flexDirection: 'row',
@@ -639,26 +608,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
     borderRadius: radius.sm,
-    backgroundColor: '#FFF7ED',
+    backgroundColor: colors.warningBgSoft,
     borderWidth: 1,
-    borderColor: '#FED7AA',
+    borderColor: colors.warning,
   },
   unverifiedText: {
-    fontFamily: fonts.sans,
-    fontSize: 11,
-    fontWeight: '600',
+    ...textStyles.eyebrow,
     color: colors.warning,
   },
   itemBody: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
-    lineHeight: 18,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
     marginTop: spacing.xs,
   },
   itemMeta: {
-    fontFamily: fonts.sans,
-    fontSize: 11,
+    ...textStyles.eyebrow,
     color: colors.textMuted,
     marginTop: spacing.xs,
   },

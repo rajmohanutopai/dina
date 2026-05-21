@@ -21,7 +21,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, fonts, spacing, radius, shadows } from '../src/theme';
+import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 import {
   listPendingApprovals,
   approvePending,
@@ -46,7 +46,7 @@ export default function ApprovalsScreen() {
     } catch (err) {
       if (err instanceof InboxNotConfiguredError) {
         setErrorMessage(
-          "Approvals inbox isn't wired yet — finish onboarding to pair the node first.",
+          "Approvals inbox isn't wired yet. Finish onboarding to pair the node first.",
         );
       } else {
         setErrorMessage((err as Error).message ?? 'Failed to load approvals');
@@ -335,10 +335,8 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
   listHeader: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
+    ...textStyles.eyebrow,
     letterSpacing: 1.2,
-    color: colors.textMuted,
     marginTop: spacing.md,
     marginBottom: spacing.sm,
     marginLeft: spacing.xs,
@@ -359,15 +357,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   serviceName: {
-    fontFamily: fonts.heading,
-    fontSize: 16,
-    color: colors.textPrimary,
+    ...textStyles.bodyLargeStrong,
     flex: 1,
     marginRight: spacing.sm,
   },
   capability: {
-    fontFamily: fonts.mono,
-    fontSize: 12,
+    ...textStyles.monoSmall,
     color: colors.textSecondary,
     backgroundColor: colors.bgTertiary,
     paddingVertical: 2,
@@ -376,43 +371,33 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   riskModerate: {
-    backgroundColor: '#FEF3C7',
-    color: '#92400E',
+    backgroundColor: colors.warningBgSoft,
+    color: colors.warningTextMid,
   },
   riskHigh: {
-    backgroundColor: '#FEE2E2',
-    color: '#991B1B',
+    backgroundColor: colors.errorBgSoft,
+    color: colors.errorTextDeep,
   },
   intentAction: {
-    fontFamily: fonts.mono,
-    fontSize: 14,
-    color: colors.textPrimary,
+    ...textStyles.mono,
     marginBottom: spacing.xs,
   },
   riskHint: {
-    fontFamily: fonts.sans,
-    fontSize: 11,
-    color: colors.textMuted,
+    ...textStyles.caption,
     marginBottom: spacing.xs,
     letterSpacing: 0.2,
   },
   requester: {
-    fontFamily: fonts.mono,
-    fontSize: 13,
+    ...textStyles.mono,
     color: colors.textSecondary,
     marginBottom: spacing.xs,
   },
   paramsPreview: {
-    fontFamily: fonts.mono,
-    fontSize: 12,
-    color: colors.textMuted,
+    ...textStyles.monoSmall,
     marginBottom: spacing.xs,
-    lineHeight: 18,
   },
   meta: {
-    fontFamily: fonts.sans,
-    fontSize: 11,
-    color: colors.textMuted,
+    ...textStyles.caption,
     letterSpacing: 0.2,
     marginBottom: spacing.sm,
   },
@@ -432,20 +417,15 @@ const styles = StyleSheet.create({
   approveButton: {
     backgroundColor: colors.accent,
   },
-  approveText: {
-    fontFamily: fonts.sansSemibold,
-    color: colors.white,
-    fontSize: 14,
-  },
+  approveText: textStyles.buttonSmall,
   denyButton: {
     backgroundColor: colors.bgSecondary,
     borderWidth: 1,
     borderColor: colors.border,
   },
   denyText: {
-    fontFamily: fonts.sansSemibold,
+    ...textStyles.buttonSmall,
     color: colors.error,
-    fontSize: 14,
   },
   pressed: { opacity: 0.7 },
   disabled: { opacity: 0.4 },
@@ -464,32 +444,26 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   emptyTitle: {
-    fontFamily: fonts.heading,
-    fontSize: 22,
-    color: colors.textPrimary,
+    ...textStyles.h2,
     letterSpacing: 0.3,
   },
   emptySubtitle: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.textSecondary,
     marginTop: spacing.xs,
     textAlign: 'center',
-    lineHeight: 20,
   },
   errorBanner: {
-    backgroundColor: '#FEF2F2',
+    backgroundColor: colors.errorBgSoft,
     borderWidth: 1,
-    borderColor: '#FCA5A5',
+    borderColor: colors.error,
     borderRadius: radius.sm,
     padding: spacing.md,
     marginHorizontal: spacing.md,
     marginTop: spacing.md,
   },
   errorText: {
-    fontFamily: fonts.sans,
+    ...textStyles.bodySmall,
     color: colors.error,
-    fontSize: 13,
-    lineHeight: 18,
   },
 });

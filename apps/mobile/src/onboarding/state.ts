@@ -130,8 +130,9 @@ export function locateStep(step: Step): StepLocation | null {
 export function previousStep(step: Step): Step | null {
   switch (step.kind) {
     case 'welcome':
-    case 'choose':
       return null;
+    case 'choose':
+      return { kind: 'welcome' };
     case 'create_name':
       return { kind: 'choose' };
     case 'create_handle':

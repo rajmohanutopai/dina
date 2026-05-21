@@ -45,7 +45,7 @@ import {
   Pressable,
 } from 'react-native';
 
-import { colors, fonts, spacing, radius } from '../../theme';
+import { colors, spacing, radius, textStyles } from '../../theme';
 import { FIRST_RUN_MODAL_COPY } from '../first_run';
 
 export interface FirstRunModalViewProps {
@@ -124,17 +124,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  title: {
-    fontFamily: fonts.heading,
-    fontSize: 20,
-    color: colors.textPrimary,
-  },
+  title: textStyles.h2,
   bodyStack: { gap: spacing.md },
   bodyText: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.textSecondary,
-    lineHeight: 20,
   },
   dismissBtn: {
     backgroundColor: colors.accent,
@@ -147,8 +141,7 @@ const styles = StyleSheet.create({
   },
   dismissBtnPressed: { backgroundColor: colors.accentHover },
   dismissLabel: {
-    fontFamily: fonts.headingBold,
-    fontSize: 15,
+    ...textStyles.button,
     color: colors.bgSecondary,
   },
 });

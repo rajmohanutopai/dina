@@ -167,7 +167,7 @@ export function validateRecoveryMnemonic(words: string[]): {
   const mnemonic = words.map((w) => w.trim().toLowerCase()).join(' ');
 
   if (!validateMnemonic(mnemonic)) {
-    return { valid: false, error: 'Invalid mnemonic — check the words and order' };
+    return { valid: false, error: 'Invalid mnemonic. Check the words and order.' };
   }
 
   return { valid: true, error: null };

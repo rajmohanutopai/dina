@@ -28,7 +28,7 @@ import React, { useCallback, useState } from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import type { ChatMessage } from '@dina/brain/chat';
-import { colors, fonts, radius, spacing } from '../theme';
+import { colors, radius, spacing, textStyles } from '../theme';
 import { MessageTimestamp } from './MessageTimestamp';
 
 export interface InlineBriefingCardProps {
@@ -189,27 +189,15 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
     gap: spacing.sm,
   },
-  label: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
-    letterSpacing: 1.5,
-    color: colors.textMuted,
-  },
-  period: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.textMuted,
-  },
+  label: textStyles.eyebrow,
+  period: textStyles.caption,
   summary: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
   },
   preview: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.textSecondary,
-    lineHeight: 20,
     marginTop: spacing.sm,
   },
   sections: {
@@ -219,27 +207,19 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   sectionTitle: {
-    fontFamily: fonts.heading,
-    fontSize: 13,
-    color: colors.textPrimary,
+    ...textStyles.bodySmallStrong,
     marginBottom: spacing.xs,
   },
   item: {
     paddingVertical: 4,
   },
-  itemText: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.textPrimary,
-    lineHeight: 20,
-  },
+  itemText: textStyles.body,
   itemLink: {
     color: colors.accent,
     textDecorationLine: 'underline',
   },
   empty: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textMuted,
     fontStyle: 'italic',
   },

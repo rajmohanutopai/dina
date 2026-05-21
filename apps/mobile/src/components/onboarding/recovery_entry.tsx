@@ -13,7 +13,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { previewRecoveryDID, validateRecoveryMnemonic } from '../../hooks/useOnboarding';
 import { locateStep, type Step } from '../../onboarding/state';
-import { colors, fonts, radius, spacing } from '../../theme';
+import { colors, radius, spacing, textStyles } from '../../theme';
 
 import { OnboardingShell } from './shell';
 
@@ -55,7 +55,7 @@ export function RecoveryEntry(props: RecoveryEntryProps): React.ReactElement {
     <OnboardingShell
       location={locateStep(step)}
       title="Enter your recovery phrase"
-      subtitle="Type the 24 words from your paper copy in order. To paste the whole phrase at once: long-press the first field and pick Paste — Dina will fan the words out across all 24 boxes."
+      subtitle="Type the 24 words from your paper copy in order. To paste the whole phrase at once, long-press the first field and pick Paste. Dina will fan the words out across all 24 boxes."
       primaryLabel="Continue"
       onPrimary={() =>
         valid &&
@@ -135,29 +135,24 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   index: {
+    ...textStyles.monoSmall,
     width: 22,
     textAlign: 'right',
-    fontSize: 11,
-    color: colors.textMuted,
-    fontFamily: fonts.mono,
   },
   input: {
+    ...textStyles.mono,
     flex: 1,
     height: 40,
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.bgSecondary,
-    color: colors.textPrimary,
     paddingHorizontal: spacing.sm,
-    fontSize: 14,
-    fontFamily: fonts.mono,
   },
   error: {
-    marginTop: spacing.md,
-    fontSize: 13,
-    lineHeight: 18,
+    ...textStyles.bodySmall,
     color: colors.error,
+    marginTop: spacing.md,
   },
   didPreview: {
     marginTop: spacing.lg,
@@ -166,16 +161,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   didLabel: {
-    fontSize: 10,
-    fontWeight: '700',
+    ...textStyles.eyebrow,
     letterSpacing: 1.5,
-    color: colors.textMuted,
   },
   didValue: {
+    ...textStyles.monoSmall,
     marginTop: 4,
-    fontSize: 12,
-    fontFamily: fonts.mono,
-    color: colors.textPrimary,
-    lineHeight: 18,
   },
 });

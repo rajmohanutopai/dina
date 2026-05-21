@@ -11,7 +11,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { OnboardingShell } from './shell';
 import { locateStep, type Step } from '../../onboarding/state';
-import { colors, fonts, radius, spacing } from '../../theme';
+import { colors, radius, spacing, textStyles } from '../../theme';
 
 export interface MnemonicRevealProps {
   mnemonic: string[];
@@ -39,17 +39,33 @@ export function MnemonicReveal(props: MnemonicRevealProps): React.ReactElement {
       <View style={styles.card}>
         <View style={styles.grid}>
           {props.mnemonic.map((word, i) => (
-            <View key={i} style={styles.cell}>
-              <Text style={styles.cellIndex}>{String(i + 1).padStart(2, '0')}</Text>
-              <Text style={styles.cellWord}>{word}</Text>
+            <View
+              key={i}
+              style={styles.cell}
+              accessibilityLabel={`Word ${i + 1}: ${word}`}
+            >
+              <Text
+                style={styles.cellIndex}
+                accessibilityElementsHidden
+                importantForAccessibility="no"
+              >
+                {String(i + 1).padStart(2, '0')}
+              </Text>
+              <Text
+                style={styles.cellWord}
+                accessibilityElementsHidden
+                importantForAccessibility="no"
+              >
+                {word}
+              </Text>
             </View>
           ))}
         </View>
       </View>
 
       <Text style={styles.footer}>
-        Next we'll ask you to fill in a few of these words — quick check to make sure your copy is
-        good. You can re-view the full phrase any time from Settings.
+        Next we'll ask you to fill in a few of these words. Quick check to make sure you've got
+        them right. You can re-view the full phrase any time from Settings.
       </Text>
     </OnboardingShell>
   );
@@ -57,7 +73,7 @@ export function MnemonicReveal(props: MnemonicRevealProps): React.ReactElement {
 
 const styles = StyleSheet.create({
   warningBanner: {
-    backgroundColor: '#FFF4DB',
+    backgroundColor: colors.warningBgSoft,
     borderLeftWidth: 3,
     borderLeftColor: colors.warning,
     padding: spacing.md,
@@ -65,9 +81,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   warningText: {
-    fontSize: 13,
-    lineHeight: 19,
-    color: '#8A5A00',
+    ...textStyles.bodySmall,
+    color: colors.warningTextDeep,
   },
   card: {
     backgroundColor: colors.bgSecondary,
@@ -88,23 +103,18 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   cellIndex: {
+    ...textStyles.monoSmall,
     width: 20,
     textAlign: 'right',
-    fontSize: 11,
-    color: colors.textMuted,
-    fontFamily: fonts.mono,
   },
   cellWord: {
-    fontSize: 14,
-    color: colors.textPrimary,
-    fontFamily: fonts.mono,
+    ...textStyles.mono,
     letterSpacing: 0.2,
   },
   footer: {
-    marginTop: spacing.lg,
-    fontSize: 13,
-    lineHeight: 18,
+    ...textStyles.bodySmall,
     color: colors.textMuted,
+    marginTop: spacing.lg,
     textAlign: 'center',
   },
 });

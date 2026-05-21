@@ -8,10 +8,11 @@
  */
 
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { locateStep, type StartupMode, type Step } from '../../onboarding/state';
-import { colors, radius, spacing } from '../../theme';
+import { colors, radius, spacing, textStyles } from '../../theme';
+import { PassphraseField } from '../PassphraseField';
 
 import { OnboardingShell } from './shell';
 
@@ -50,29 +51,31 @@ export function PassphraseSet(props: PassphraseSetProps): React.ReactElement {
     <OnboardingShell
       location={locateStep(step)}
       title="Set your passphrase"
-      subtitle="This encrypts your vault on this device. Keep it safe — it's the only way into your data."
+      subtitle="This encrypts your vault on this device. Keep it safe. It's the only way into your data."
       primaryLabel="Continue"
       onPrimary={() => valid && props.onContinue(pp, mode)}
       primaryDisabled={!valid}
       onBack={props.onBack}
     >
-      <Field
+      <PassphraseField
         label="Passphrase"
         value={pp}
         onChangeText={setPp}
         placeholder="At least 8 characters"
-        helperError={tooShort ? 'At least 8 characters' : undefined}
+        error={tooShort ? 'At least 8 characters' : undefined}
+        accessibilityLabel="Passphrase"
       />
       <StrengthBar score={strength} />
 
       <View style={styles.gap} />
 
-      <Field
+      <PassphraseField
         label="Confirm"
         value={confirm}
         onChangeText={setConfirm}
         placeholder="Type it again"
-        helperError={mismatch ? 'Passphrases don\u2019t match' : undefined}
+        error={mismatch ? 'Passphrases don\u2019t match' : undefined}
+        accessibilityLabel="Confirm passphrase"
       />
 
       <View style={styles.section}>
@@ -80,14 +83,14 @@ export function PassphraseSet(props: PassphraseSetProps): React.ReactElement {
         <ModeCard
           selected={mode === 'auto'}
           onPress={() => setMode('auto')}
-          title="Start automatically"
-          body="Dina unlocks on launch. Convenient for daily use; less resilient if your phone is stolen."
+          title="Unlock automatically"
+          body="Dina unlocks on launch. Convenient for daily use. Less secure if your phone is stolen."
         />
         <View style={styles.modeGap} />
         <ModeCard
           selected={mode === 'manual'}
           onPress={() => setMode('manual')}
-          title="Ask for my passphrase each time"
+          title="Ask me each time"
           body="Your vault stays sealed until you enter the passphrase. Safer, one extra tap."
         />
       </View>
@@ -95,44 +98,22 @@ export function PassphraseSet(props: PassphraseSetProps): React.ReactElement {
   );
 }
 
-function Field(props: {
-  label: string;
-  value: string;
-  onChangeText: (v: string) => void;
-  placeholder: string;
-  helperError?: string;
-}): React.ReactElement {
-  return (
-    <View>
-      <Text style={styles.fieldLabel}>{props.label}</Text>
-      <TextInput
-        value={props.value}
-        onChangeText={props.onChangeText}
-        placeholder={props.placeholder}
-        placeholderTextColor={colors.textMuted}
-        secureTextEntry
-        autoCapitalize="none"
-        autoCorrect={false}
-        spellCheck={false}
-        style={[styles.input, props.helperError !== undefined && styles.inputError]}
-      />
-      {props.helperError !== undefined ? (
-        <Text style={styles.fieldError}>{props.helperError}</Text>
-      ) : null}
-    </View>
-  );
-}
+const STRENGTH_LABELS = ['', 'Weak', 'Okay', 'Strong', 'Excellent'] as const;
 
-function StrengthBar({ score }: { score: number }): React.ReactElement {
+function StrengthBar({ score }: { score: number }): React.ReactElement | null {
+  if (score === 0) return null;
   const color = score >= 3 ? colors.success : score === 2 ? colors.warning : colors.error;
   return (
-    <View style={styles.strengthRow}>
-      {[0, 1, 2, 3].map((i) => (
-        <View
-          key={i}
-          style={[styles.strengthPip, { backgroundColor: i < score ? color : colors.border }]}
-        />
-      ))}
+    <View accessibilityLabel={`Passphrase strength: ${STRENGTH_LABELS[score]}`}>
+      <View style={styles.strengthRow}>
+        {[0, 1, 2, 3].map((i) => (
+          <View
+            key={i}
+            style={[styles.strengthPip, { backgroundColor: i < score ? color : colors.border }]}
+          />
+        ))}
+      </View>
+      <Text style={[styles.strengthLabel, { color }]}>{STRENGTH_LABELS[score]}</Text>
     </View>
   );
 }
@@ -166,7 +147,9 @@ function ModeCard({
         selected && styles.modeCardSelected,
         pressed && styles.pressed,
       ]}
-      accessibilityLabel={title}
+      accessibilityRole="radio"
+      accessibilityState={{ selected }}
+      accessibilityLabel={`${title}. ${body}`}
     >
       <View style={[styles.radio, selected && styles.radioSelected]}>
         {selected ? <View style={styles.radioDot} /> : null}
@@ -185,37 +168,9 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
   },
   sectionLabel: {
-    fontSize: 11,
-    fontWeight: '700',
+    ...textStyles.eyebrow,
     letterSpacing: 1.5,
-    color: colors.textMuted,
     marginBottom: spacing.sm,
-  },
-  fieldLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    color: colors.textMuted,
-    marginBottom: spacing.sm,
-  },
-  input: {
-    height: 52,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.bgSecondary,
-    color: colors.textPrimary,
-    paddingHorizontal: spacing.md,
-    fontSize: 16,
-  },
-  inputError: {
-    borderColor: colors.error,
-  },
-  fieldError: {
-    marginTop: 6,
-    fontSize: 12,
-    color: colors.error,
   },
   strengthRow: {
     flexDirection: 'row',
@@ -224,8 +179,12 @@ const styles = StyleSheet.create({
   },
   strengthPip: {
     flex: 1,
-    height: 3,
-    borderRadius: 2,
+    height: 6,
+    borderRadius: 3,
+  },
+  strengthLabel: {
+    ...textStyles.bodySmallStrong,
+    marginTop: 4,
   },
   modeCard: {
     flexDirection: 'row',
@@ -260,16 +219,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   modeText: { flex: 1 },
-  modeTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textPrimary,
-  },
+  modeTitle: textStyles.bodyStrong,
   modeBody: {
-    marginTop: 2,
-    fontSize: 13,
-    lineHeight: 18,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
+    marginTop: 2,
   },
   pressed: { opacity: 0.7 },
 });

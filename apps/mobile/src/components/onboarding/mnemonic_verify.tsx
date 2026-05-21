@@ -12,7 +12,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { OnboardingShell } from './shell';
 import { locateStep, type Step } from '../../onboarding/state';
 import { createVerificationChallenge, verifyMnemonicAnswers } from '../../hooks/useOnboarding';
-import { colors, fonts, radius, spacing } from '../../theme';
+import { colors, radius, spacing, textStyles } from '../../theme';
 
 export interface MnemonicVerifyProps {
   mnemonic: string[];
@@ -63,11 +63,21 @@ export function MnemonicVerify(props: MnemonicVerifyProps): React.ReactElement {
       props.onVerified();
       return;
     }
+    // Only clear the wrong answers; keep the ones the user got right
+    // so they don't have to re-type everything for a single mismatch.
+    // The verifier returns per-position correctness; for now we treat
+    // the whole submission as "at least one wrong" and clear only the
+    // entries that don't match the expected word at that position.
+    const next = challenge.indices.map((pos, i) => {
+      const expected = props.mnemonic[pos];
+      return answers[i].trim().toLowerCase() === expected.toLowerCase() ? answers[i] : '';
+    });
+    const firstWrong = next.findIndex((a) => a === '');
     setError(
       'One of those words doesn\u2019t match what we generated. Take another look at your paper copy.',
     );
-    setAnswers(challenge.indices.map(() => ''));
-    inputs.current[0]?.focus();
+    setAnswers(next);
+    if (firstWrong >= 0) inputs.current[firstWrong]?.focus();
   };
 
   const setAnswerAt = (i: number, value: string): void => {
@@ -151,37 +161,30 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   rowLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
+    ...textStyles.label,
     color: colors.textMuted,
     marginBottom: 6,
   },
   input: {
+    ...textStyles.mono,
     height: 52,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.bgSecondary,
-    color: colors.textPrimary,
     paddingHorizontal: spacing.md,
-    fontSize: 16,
-    fontFamily: fonts.mono,
   },
   error: {
-    marginTop: spacing.md,
-    fontSize: 13,
-    lineHeight: 18,
+    ...textStyles.bodySmall,
     color: colors.error,
+    marginTop: spacing.md,
   },
   viewPhraseLink: {
     marginTop: spacing.lg,
     alignItems: 'center',
   },
   viewPhraseLinkText: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
+    ...textStyles.link,
     color: colors.accent,
     textDecorationLine: 'underline',
   },

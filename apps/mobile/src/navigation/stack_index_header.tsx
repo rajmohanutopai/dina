@@ -30,7 +30,7 @@ import { Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
-import { colors, fonts } from '../theme';
+import { colors, navTitle } from '../theme';
 
 /**
  * Visual height of the header content row (excluding safe-area
@@ -145,10 +145,5 @@ const styles = StyleSheet.create({
     right: 60,
     alignItems: 'center',
   },
-  title: {
-    fontFamily: fonts.heading,
-    fontWeight: '600',
-    fontSize: 17,
-    color: colors.textPrimary,
-  },
+  title: navTitle,
 });

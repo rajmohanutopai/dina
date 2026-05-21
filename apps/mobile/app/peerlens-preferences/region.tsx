@@ -36,7 +36,7 @@ import {
 } from 'react-native';
 
 import { useViewerPreferences } from '../../src/hooks/useViewerPreferences';
-import { colors, fonts, radius, spacing } from '../../src/theme';
+import { colors, radius, spacing, textStyles } from '../../src/theme';
 import {
   buildCountryList,
   filterCountries,
@@ -225,10 +225,8 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   searchInput: {
+    ...textStyles.body,
     flex: 1,
-    fontFamily: fonts.sans,
-    fontSize: 15,
-    color: colors.textPrimary,
     padding: 0,
   },
   row: {
@@ -243,15 +241,9 @@ const styles = StyleSheet.create({
   },
   rowPressed: { backgroundColor: colors.bgTertiary },
   rowMain: { flex: 1, flexDirection: 'column', justifyContent: 'center' },
-  rowLabel: {
-    fontFamily: fonts.sans,
-    fontSize: 15,
-    color: colors.textPrimary,
-  },
+  rowLabel: textStyles.body,
   rowSublabel: {
-    fontFamily: fonts.mono,
-    fontSize: 11,
-    color: colors.textMuted,
+    ...textStyles.monoSmall,
     marginTop: 1,
   },
   divider: {
@@ -264,8 +256,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   placeholderText: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.textMuted,
   },
 });

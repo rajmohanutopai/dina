@@ -33,14 +33,14 @@ const VAULT_CARDS: CapabilityCard[] = [
     icon: 'identity',
     title: 'Remember something',
     description:
-      'Store a fact, preference, event, or note. Dina classifies it into the right vault — health into Health, finance into Financial, everyday into General. Sensitive vaults stay locked, so what you tell Dina there stays gated. PII is scrubbed and the entry is indexed for later search.',
+      'Store a fact, preference, event, or note. Dina classifies it into the right vault: health into Health, finance into Financial, everyday into General. Sensitive vaults stay locked, so a connected agent will need your approval to read them.',
     example: '"Emma\'s birthday is March 15."',
   },
   {
     icon: 'vault',
     title: 'Ask a question',
     description:
-      'Search across everything you\'ve stored. Dina runs hybrid keyword and semantic search across your unlocked vaults and answers from your own data.',
+      'Dina looks in your vault first, then reaches out to PeerLens for reviewed opinions and the Dina services network for live answers. Vault search is hybrid keyword + semantic across your unlocked vaults.',
     example: '"When is Emma\'s birthday?"',
   },
 ];
@@ -48,16 +48,10 @@ const VAULT_CARDS: CapabilityCard[] = [
 const REMINDER_CARDS: CapabilityCard[] = [
   {
     icon: 'reminders',
-    title: 'Reminders that just work',
+    title: 'Reminders, picked up automatically',
     description:
-      'Mention a date or time and Dina sets a reminder automatically, with context pulled from your vault. When it fires you\'ll get a card in your chat with Snooze and Mark-done buttons.',
-    example: '"Pay rent on the 1st."',
-  },
-  {
-    icon: 'notifications',
-    title: 'Notifications, three tiers',
-    description:
-      'Fiduciary (silence would harm you) interrupts immediately. Solicited (you asked) lands in the notification shade. Engagement (background) batches into a briefing — no spammy pushes.',
+      'When Dina is doing something for you and a reminder would help, it just adds one automatically. Since Dina also knows the context about the user, the reminder has extra context added. Emma\'s birthday is on Nov 7? On Nov 6 morning a reminder shows up with possible dinosaur toys suggested, since Dina knew from earlier that Emma loves dinosaurs.',
+    example: '"Tell Sancho I\'ll be there in 15." A reminder shows up on Sancho\'s phone: Alonso coming in 15 minutes. She reminds you to get the cold brew ready. He likes it extra strong.',
   },
 ];
 
@@ -66,9 +60,9 @@ const TALK_CARDS: CapabilityCard[] = [
     icon: 'talk',
     title: 'Your Dina talks to theirs',
     description:
-      'Tell your Dina to inform a contact and your Dina hands off to their Dina over an encrypted peer-to-peer channel. Their Dina notifies them AND pulls context from its own vault about you, so they\'re prepared without having to remember anything. Each Dina enriches the message with what its own user would want to know.',
+      'Tell your Dina to reach a contact. Your Dina hands off to their Dina over an end-to-end encrypted peer-to-peer channel; no server in between. The other Dina announces the message with context from its own vault, so the recipient is prepared without having to remember anything. If a reminder would help either side, both Dinas quietly set one up.',
     example:
-      '"Inform Sancho I\'ll be there in 15" — Sancho\'s Dina alerts him with a reminder and the context it knows about you.',
+      '"Tell Sancho I\'ll be there in 15." Sancho\'s Dina alerts him with the context it has on you. Both Dinas set a reminder for their owners.',
   },
 ];
 
@@ -77,40 +71,50 @@ const AGENT_CARDS: CapabilityCard[] = [
     icon: 'agentTasks',
     title: 'Run real work through agents',
     description:
-      'Agents work with Dina in two directions. Dina can hand work to an agent — "fetch new email", "book the flight" — and the agent executes. Or an agent acts on its own and submits its intent to Dina first, so Dina can apply your rules, approve, or ask you. Install dina-agent (pip install dina-agent) and pair it; both flows are supported.',
+      'Agents work with Dina in two directions. Dina can hand work to an agent (fetch new email, book the flight) and the agent executes. Or an agent acts on its own and submits its intent to Dina first, so Dina can apply your rules, approve, or ask you. Install dina-agent (pip install dina-agent) and pair it; both flows are supported.',
     example:
-      'dina-agent fetches your Gmail. Dina classifies new mail. Reminders, contacts, and notes land in the right vault.',
+      'Ask Dina to email Sancho a quick note. The mail agent drafts it and sends it on your behalf.',
   },
   {
     icon: 'security',
     title: 'You approve sensitive actions',
     description:
       'Sensitive vaults (health, financial, anything you flag) stay locked by default. When a connected agent needs access or wants to take a risky action, Dina surfaces it for your approval before anything happens.',
+    example:
+      'Your mail agent drafts a reply to Sancho on your behalf and submits it to Dina. Dina reviews it and decides it needs your approval. An approval notification is shown in the mobile app.',
   },
 ];
 
 const SERVICES_CARDS: CapabilityCard[] = [
   {
-    icon: 'services',
-    title: 'Direct answers from the source',
-    description:
-      'A network of Dinas acting as service providers. Your Dina finds the right provider and sends a typed query directly to their Dina. The provider\'s agent computes the answer and sends it back. No central platform, no middleman.',
-    example:
-      '"When does bus 42 reach Castro?" — SF Transit\'s Dina answers with the ETA and a map link.',
-  },
-  {
     icon: 'peerlens',
     title: `${FEATURE_NAMES.peerlens} reviews`,
     description:
-      'All reviews live in PeerLens. Each review is signed by the reviewer\'s identity, weighted by whether they actually transacted, vouched for by peers, and time-decayed. Used by Dina during high value decisions — picking a product, choosing a service, evaluating a creator.',
-    example: '"Is the Calmly mattress any good?"',
+      'So far everything\'s been inside Dina. PeerLens is the network on top of it. You can review anything on it. Products, restaurants, YouTube videos, books, people. All reviews are signed by their reviewers, and weighted by whether they actually paid for or used the thing. Stale opinions fade. The ranking works like PageRank: a review from someone many people trust counts more than one from a stranger. Even the query your Dina sends to PeerLens is shaped by what it knows about you, so the reviews that come back are already filtered to your context. When several answers fit, PeerLens decides which one Dina takes first.',
+    example: '"Is the Calmly mattress any good?" or "Is this YouTube tutorial worth watching?" PeerLens pulls signed reviews and weights them by who said them.',
+  },
+  {
+    icon: 'services',
+    title: 'A directory of Dina services',
+    description:
+      'There\'s a public directory of every Public Dina Service. Each entry says what it answers, who runs it, and where. Any Dina can opt in to become a public service from its settings. When you ask Dina something, it searches the directory. Looking for a bus ETA? It finds the transit authority. Want sourdough? It finds the bakery nearby. Dina also filters the candidates by your settings (budget, location, languages), and PeerLens ranks what\'s left.',
+    example:
+      '"When does bus 42 reach Castro?" Dina searches the directory, finds SF Transit\'s Dina, and routes the query there.',
+  },
+  {
+    icon: 'services',
+    title: 'Behind every service, a real operator',
+    description:
+      'Each Dina service has a person or organisation behind it, and that person has their own Dina and their own agents. When SF Transit\'s Dina answers a bus ETA, its agent is the one doing the work. It reads from the transit database, the GPS feed, the maps. Your Dina just hands off the question; the operator\'s agent answers it.',
+    example:
+      'The bus driver has Dina on her phone. Her Dina has an agent reading the GPS and maps. When your Dina asks "Where\'s bus 42?", her agent answers in real time.',
   },
   {
     icon: 'identity',
     title: 'Queries shaped by your context',
     description:
-      'Dina applies what she knows about you to every external query. Ask for a chair and Dina searches for one with lumbar support under $500 — because she\'s seen your back-pain notes and your budget. Results come back already shaped to your situation.',
-    example: '"Find me a chair" — Dina searches for "chair with lumbar support, under $500".',
+      'Dina applies what it knows about you to every external query. Ask for a chair and Dina searches for one with lumbar support under $500, because it has seen your back-pain notes and your budget. Results come back already shaped to your situation.',
+    example: '"Find me a chair." Dina searches for "chair with lumbar support, under $500".',
   },
 ];
 
@@ -119,7 +123,7 @@ const PRIVACY_CARDS: CapabilityCard[] = [
     icon: 'vault',
     title: 'Your data stays on this device',
     description:
-      'Vault is encrypted with keys derived from your passphrase. The Dina network sees only what you explicitly publish — never your raw notes.',
+      'Vault is encrypted with keys derived from your passphrase. The Dina network sees only what you explicitly publish, never your raw notes.',
   },
   {
     icon: 'settings',
@@ -163,7 +167,7 @@ export default function HelpScreen(): React.ReactElement {
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>
-            Dina is a sovereign AI. The keys live on your phone — one identity, all your data
+            Dina is a sovereign AI. The keys live on your phone. One identity, all your data
             anchored to it.
           </Text>
         </View>
@@ -227,30 +231,23 @@ const styles = StyleSheet.create({
     paddingTop: spacing.lg,
     paddingBottom: spacing.md,
   },
-  heroEyebrow: {
-    ...textStyles.screenEyebrow,
-  },
+  heroEyebrow: textStyles.eyebrow,
   heroTitle: {
-    ...textStyles.screenHeadline,
+    ...textStyles.displaySmall,
     marginTop: spacing.xs,
-    fontSize: 30,
-    lineHeight: 38,
   },
   heroSubtitle: {
-    ...textStyles.screenBody,
+    ...textStyles.bodySmall,
+    color: colors.textSecondary,
     marginTop: spacing.sm,
-    fontSize: 14,
-    lineHeight: 20,
   },
   section: {
     marginTop: spacing.lg,
     paddingHorizontal: spacing.lg,
   },
   sectionTitle: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
+    ...textStyles.eyebrow,
     letterSpacing: 1.5,
-    color: colors.textMuted,
     marginBottom: spacing.sm,
     paddingLeft: 4,
   },
@@ -261,7 +258,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     ...shadows.sm,
   },
-  cardLinkable: {},
+  // Linkable cards get a left-edge accent stripe so a glance
+  // distinguishes "this card opens something" from "this card is
+  // explanatory text". The chevron alone was too subtle.
+  cardLinkable: {
+    borderLeftWidth: 3,
+    borderLeftColor: colors.accent,
+    paddingLeft: spacing.md - 3, // keep content alignment despite border
+  },
   cardPressed: { opacity: 0.7 },
   cardHeader: {
     flexDirection: 'row',
@@ -277,23 +281,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cardTitle: {
+    ...textStyles.bodyStrong,
     flex: 1,
-    fontFamily: fonts.sansSemibold,
-    fontSize: 15,
-    color: colors.textPrimary,
   },
   cardArrow: {
-    fontFamily: fonts.sans,
-    fontSize: 22,
+    ...textStyles.h2,
     color: colors.textMuted,
     paddingLeft: spacing.xs,
   },
   cardDesc: {
-    fontFamily: fonts.sans,
-    marginTop: spacing.sm,
-    fontSize: 13,
-    lineHeight: 19,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
+    marginTop: spacing.sm,
   },
   exampleBox: {
     marginTop: spacing.sm,
@@ -303,20 +302,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgTertiary,
   },
   exampleText: {
-    fontFamily: fonts.sans,
-    fontStyle: 'italic',
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
+    fontStyle: 'italic',
   },
   footer: {
     marginTop: spacing.lg,
     paddingHorizontal: spacing.lg,
   },
   footerText: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    lineHeight: 17,
-    color: colors.textMuted,
+    ...textStyles.caption,
     fontStyle: 'italic',
   },
 });

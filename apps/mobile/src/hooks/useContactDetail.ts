@@ -161,10 +161,10 @@ export function getSharingCategories(): string[] {
  */
 export function getSharingTierOptions(): Array<{ value: PolicyTier; label: string }> {
   return [
-    { value: 'none', label: 'None — no data shared' },
-    { value: 'summary', label: 'Summary — headlines only' },
-    { value: 'full', label: 'Full — complete content' },
-    { value: 'locked', label: 'Locked — never shared' },
+    { value: 'none', label: 'None. No data shared.' },
+    { value: 'summary', label: 'Summary. Headlines only.' },
+    { value: 'full', label: 'Full. Complete content.' },
+    { value: 'locked', label: 'Locked. Never shared.' },
   ];
 }
 

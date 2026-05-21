@@ -30,7 +30,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useNavigation } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, fonts, spacing, radius, shadows } from '../src/theme';
+import { colors, spacing, radius, textStyles } from '../src/theme';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
 import type { ActionPolicyEntry, RiskLevel } from '@dina/core';
 
@@ -46,23 +46,23 @@ const RISK_ORDER: RiskLevel[] = ['SAFE', 'MODERATE', 'HIGH', 'BLOCKED'];
 const RISK_META: Record<RiskLevel, { label: string; description: string; color: string }> = {
   SAFE: {
     label: 'SAFE',
-    description: 'Auto-approved — no prompt shown',
-    color: '#059669',
+    description: 'Auto-approved. No prompt shown.',
+    color: colors.riskLow,
   },
   MODERATE: {
     label: 'MODERATE',
     description: 'Requires approval once per session',
-    color: '#D97706',
+    color: colors.riskMed,
   },
   HIGH: {
     label: 'HIGH',
     description: 'Requires approval every invocation',
-    color: '#DC2626',
+    color: colors.riskHigh,
   },
   BLOCKED: {
     label: 'BLOCKED',
-    description: 'Always denied — agent cannot perform this',
-    color: '#7C3AED',
+    description: 'Always denied. The agent cannot perform this.',
+    color: colors.riskAdmin,
   },
 };
 
@@ -81,7 +81,7 @@ export default function PolicyScreen() {
     setErrorMessage(null);
     const node = getBootedNode();
     if (node === null) {
-      setErrorMessage('Node not booted — complete onboarding first.');
+      setErrorMessage('Node not booted. Complete onboarding first.');
       setLoading(false);
       setRefreshing(false);
       return;
@@ -394,15 +394,11 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   sectionTitle: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 12,
-    letterSpacing: 1,
+    ...textStyles.label,
     color: colors.textPrimary,
   },
   sectionDesc: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.textMuted,
+    ...textStyles.caption,
     marginTop: 1,
   },
   row: {
@@ -430,16 +426,14 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   actionName: {
-    fontFamily: fonts.mono,
-    fontSize: 14,
+    ...textStyles.mono,
     color: colors.textPrimary,
   },
   actionNameLocked: {
     color: colors.textMuted,
   },
   chevron: {
-    fontFamily: fonts.sans,
-    fontSize: 18,
+    ...textStyles.h3,
     color: colors.textMuted,
   },
   emptyState: {
@@ -447,24 +441,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyText: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.textMuted,
   },
   errorBanner: {
-    backgroundColor: '#FEF2F2',
+    backgroundColor: colors.errorBgSoft,
     borderWidth: 1,
-    borderColor: '#FCA5A5',
+    borderColor: colors.error,
     borderRadius: radius.sm,
     padding: spacing.md,
     marginHorizontal: spacing.md,
     marginTop: spacing.md,
   },
   errorText: {
-    fontFamily: fonts.sans,
+    ...textStyles.bodySmall,
     color: colors.error,
-    fontSize: 13,
-    lineHeight: 18,
   },
   addButton: {
     paddingHorizontal: spacing.sm,
@@ -484,15 +475,9 @@ const styles = StyleSheet.create({
     width: '100%',
     gap: spacing.md,
   },
-  modalTitle: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 16,
-    color: colors.textPrimary,
-  },
+  modalTitle: textStyles.bodyLargeStrong,
   modalInput: {
-    fontFamily: fonts.mono,
-    fontSize: 14,
-    color: colors.textPrimary,
+    ...textStyles.mono,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.sm,
@@ -510,8 +495,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   modalCancelText: {
-    fontFamily: fonts.sans,
-    fontSize: 15,
+    ...textStyles.body,
     color: colors.textMuted,
   },
   modalConfirm: {
@@ -519,8 +503,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   modalConfirmText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 15,
+    ...textStyles.bodyStrong,
     color: colors.accent,
   },
 });

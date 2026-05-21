@@ -13,7 +13,7 @@ import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { pdsHostForEndpoints, resolveMobileHostedDinaEndpoints } from '@dina/home-node';
 import { OnboardingShell } from './shell';
 import { locateStep, type Step } from '../../onboarding/state';
-import { colors, fonts, radius, spacing } from '../../theme';
+import { colors, radius, spacing, textStyles } from '../../theme';
 
 export interface OwnerNameProps {
   initialName?: string;
@@ -33,7 +33,7 @@ export function OwnerName(props: OwnerNameProps): React.ReactElement {
     <OnboardingShell
       location={locateStep(step)}
       title="What should we call you?"
-      subtitle="Just a display name — we use it as the base of your Dina handle on the community directory."
+      subtitle="Just a display name. We'll use it as the basis of your Dina handle on the public directory."
       primaryLabel="Continue"
       onPrimary={() => valid && props.onContinue(trimmed)}
       primaryDisabled={!valid}
@@ -79,22 +79,18 @@ function buildPreview(name: string): string | null {
 
 const styles = StyleSheet.create({
   label: {
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
+    ...textStyles.label,
     color: colors.textMuted,
     marginBottom: spacing.sm,
   },
   input: {
+    ...textStyles.bodyLarge,
     height: 52,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.bgSecondary,
-    color: colors.textPrimary,
     paddingHorizontal: spacing.md,
-    fontSize: 17,
   },
   preview: {
     marginTop: spacing.xl,
@@ -103,21 +99,15 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   previewLabel: {
-    fontSize: 10,
-    fontWeight: '700',
+    ...textStyles.eyebrow,
     letterSpacing: 1.5,
-    color: colors.textMuted,
   },
   previewValue: {
+    ...textStyles.mono,
     marginTop: 6,
-    fontSize: 14,
-    fontFamily: fonts.mono,
-    color: colors.textPrimary,
   },
   previewHint: {
+    ...textStyles.caption,
     marginTop: spacing.sm,
-    fontSize: 12,
-    color: colors.textMuted,
-    lineHeight: 17,
   },
 });

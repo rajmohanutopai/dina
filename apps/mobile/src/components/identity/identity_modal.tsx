@@ -37,7 +37,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, fonts, radius, spacing } from '../../theme';
+import { colors, radius, spacing, textStyles } from '../../theme';
 import { lookupPlc, type PlcLookupResult } from '../../services/plc_lookup';
 
 export interface IdentityModalProps {
@@ -320,15 +320,9 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   headerText: { flex: 1 },
-  handle: {
-    fontFamily: fonts.headingBold,
-    fontSize: 20,
-    color: colors.textPrimary,
-  },
+  handle: textStyles.h3,
   didCaption: {
-    fontFamily: fonts.mono,
-    fontSize: 11,
-    color: colors.textMuted,
+    ...textStyles.monoSmall,
     marginTop: 2,
   },
   closeBtn: {
@@ -346,25 +340,18 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xl,
     gap: spacing.sm,
   },
-  loadingText: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
-    color: colors.textMuted,
-  },
+  loadingText: textStyles.bodySmall,
   errorPanel: {
     alignItems: 'center',
     paddingVertical: spacing.xl,
     gap: spacing.xs,
   },
   errorTitle: {
-    fontFamily: fonts.heading,
-    fontSize: 15,
-    color: colors.textPrimary,
+    ...textStyles.bodyStrong,
     marginTop: spacing.xs,
   },
   errorBody: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
     textAlign: 'center',
   },
@@ -372,10 +359,8 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   groupTitle: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
+    ...textStyles.eyebrow,
     letterSpacing: 1.5,
-    color: colors.textMuted,
     paddingLeft: 4,
   },
   groupCard: {
@@ -391,11 +376,8 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   fieldLabel: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
+    ...textStyles.eyebrow,
     letterSpacing: 0.5,
-    textTransform: 'uppercase',
-    color: colors.textMuted,
   },
   fieldValueWrap: {
     flexDirection: 'row',
@@ -403,16 +385,11 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   fieldValue: {
+    ...textStyles.bodySmall,
     flex: 1,
-    fontFamily: fonts.sans,
-    fontSize: 13,
-    lineHeight: 18,
     color: colors.textPrimary,
   },
-  fieldValueMono: {
-    fontFamily: fonts.mono,
-    fontSize: 12,
-  },
+  fieldValueMono: textStyles.monoSmall,
   copyBtn: {
     padding: 2,
   },

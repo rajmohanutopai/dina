@@ -22,7 +22,6 @@
 import React, { useCallback, useState, useSyncExternalStore } from 'react';
 import {
   Alert,
-  Platform,
   Pressable,
   ScrollView,
   Share,
@@ -32,7 +31,7 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors, fonts, radius, shadows, spacing } from '../src/theme';
+import { colors, radius, shadows, spacing, textStyles } from '../src/theme';
 import { getBootedNode, getBootDegradations } from '../src/hooks/useNodeBootstrap';
 import { getRuntimeWarnings, subscribeRuntimeWarnings } from '../src/services/runtime_warnings';
 import { loadPersistedDid } from '../src/services/identity_record';
@@ -69,7 +68,7 @@ export default function AdminScreen(): React.ReactElement {
   const onSignOut = useCallback(() => {
     Alert.alert(
       'Sign out from this device?',
-      'Removes this device’s keys and disconnects it from your Dina. Encrypted data on this device stays on disk but is unreadable without the keys. Re-onboard with your recovery phrase to come back — your data on this device will be recoverable.\n\nYour Dina identity on the network is unaffected.',
+      'Removes this device’s keys and disconnects it from your Dina. Encrypted data on this device stays on disk but is unreadable without the keys. Re-onboard with your recovery phrase to come back; your data on this device will be recoverable.\n\nYour Dina identity on the network is unaffected.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -94,7 +93,7 @@ export default function AdminScreen(): React.ReactElement {
   const onEraseEverything = useCallback(() => {
     Alert.alert(
       'Erase everything on this device?',
-      'Permanently deletes all data on this device — chat history, reminders, contacts, vault entries, and your keys. This cannot be undone on this device.\n\nYour Dina identity on the network is unaffected. Re-onboard with your recovery phrase to start fresh on this device.',
+      'Permanently deletes all data on this device: chat history, reminders, contacts, vault entries, and your keys. This cannot be undone on this device.\n\nYour Dina identity on the network is unaffected. Re-onboard with your recovery phrase to start fresh on this device.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -235,7 +234,7 @@ export default function AdminScreen(): React.ReactElement {
           >
             <Text style={styles.dangerTitle}>Erase everything on this device</Text>
             <Text style={styles.dangerBody}>
-              Permanently deletes all data on this device — chat, reminders, contacts, vault
+              Permanently deletes all data on this device: chat, reminders, contacts, vault
               entries, and keys. Cannot be undone on this device.
             </Text>
           </Pressable>
@@ -308,18 +307,11 @@ const devTestStyles = StyleSheet.create({
   wrap: {
     padding: spacing.md,
   },
-  label: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    color: colors.textMuted,
-  },
+  label: textStyles.label,
   did: {
-    marginTop: 2,
-    fontSize: 12,
-    fontFamily: fonts.mono,
+    ...textStyles.monoSmall,
     color: colors.textPrimary,
+    marginTop: 2,
   },
   btn: {
     marginTop: spacing.sm,
@@ -330,16 +322,13 @@ const devTestStyles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   btnText: {
-    fontFamily: fonts.sansSemibold,
-    color: '#FFFFFF',
-    fontSize: 13,
+    ...textStyles.bodySmallStrong,
+    color: colors.white,
   },
   detail: {
+    ...textStyles.monoSmall,
     marginTop: spacing.sm,
-    fontSize: 12,
-    lineHeight: 17,
     color: colors.success,
-    fontFamily: fonts.mono,
   },
   detailErr: {
     color: colors.error,
@@ -448,7 +437,7 @@ function DisplayNameRow(): React.ReactElement {
             </Pressable>
           </View>
           <Text style={displayNameStyles.hint}>
-            Local only — does not change your handle on plc.directory.
+            Local only. Does not change your handle on plc.directory.
           </Text>
         </View>
       </View>
@@ -466,7 +455,7 @@ function DisplayNameRow(): React.ReactElement {
           ]}
           numberOfLines={1}
         >
-          {override ?? 'Not set — tap to edit'}
+          {override ?? 'Not set. Tap to edit.'}
         </Text>
         <Text style={styles.copyGlyph}>{'✎'}</Text>
       </View>
@@ -479,14 +468,12 @@ const displayNameStyles = StyleSheet.create({
     flex: 1,
   },
   input: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
+    ...textStyles.body,
     paddingVertical: 6,
     paddingHorizontal: 8,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.sm,
-    color: colors.textPrimary,
     backgroundColor: colors.bgPrimary,
   },
   actions: {
@@ -507,19 +494,12 @@ const displayNameStyles = StyleSheet.create({
     borderColor: colors.accent,
   },
   btnTextPrimary: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 13,
-    color: '#FFFFFF',
+    ...textStyles.bodySmallStrong,
+    color: colors.white,
   },
-  btnTextSecondary: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 13,
-    color: colors.textPrimary,
-  },
+  btnTextSecondary: textStyles.bodySmallStrong,
   hint: {
-    fontFamily: fonts.sans,
-    fontSize: 11,
-    color: colors.textMuted,
+    ...textStyles.tiny,
     marginTop: 6,
     fontStyle: 'italic',
   },
@@ -625,29 +605,21 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
   },
   eyebrow: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
+    ...textStyles.eyebrow,
     letterSpacing: 2.4,
-    color: colors.textMuted,
   },
   title: {
+    ...textStyles.displaySmall,
     marginTop: spacing.xs,
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-    fontStyle: 'italic',
-    fontSize: 26,
-    color: colors.textPrimary,
     letterSpacing: -0.3,
   },
   subtitle: {
-    fontFamily: fonts.sans,
+    ...textStyles.body,
     marginTop: spacing.sm,
-    fontSize: 14,
-    lineHeight: 20,
     color: colors.textSecondary,
   },
   code: {
-    fontFamily: fonts.mono,
-    fontSize: 13,
+    ...textStyles.mono,
     color: colors.textPrimary,
   },
   section: {
@@ -655,10 +627,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   sectionTitle: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
+    ...textStyles.eyebrow,
     letterSpacing: 1.5,
-    color: colors.textMuted,
     marginBottom: spacing.sm,
     paddingLeft: 4,
   },
@@ -681,12 +651,9 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   rowLabel: {
-    fontFamily: fonts.sansSemibold,
+    ...textStyles.label,
     width: 110,
-    fontSize: 12,
     letterSpacing: 0.5,
-    textTransform: 'uppercase',
-    color: colors.textMuted,
     marginTop: 2,
   },
   rowValueWrap: {
@@ -696,18 +663,12 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   rowValue: {
+    ...textStyles.body,
     flex: 1,
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.textPrimary,
-    lineHeight: 20,
   },
-  rowValueMono: {
-    fontFamily: fonts.mono,
-    fontSize: 12,
-  },
+  rowValueMono: textStyles.monoSmall,
   copyGlyph: {
-    fontSize: 16,
+    ...textStyles.bodyLarge,
     color: colors.textMuted,
   },
   drillRow: {
@@ -719,14 +680,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  drillLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 15,
-    color: colors.textPrimary,
-  },
+  drillLabel: textStyles.bodyStrong,
   drillArrow: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.textMuted,
   },
   placeholder: {
@@ -735,42 +691,29 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  placeholderTitle: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 14,
-    color: colors.textPrimary,
-  },
+  placeholderTitle: textStyles.bodyStrong,
   placeholderBody: {
-    fontFamily: fonts.sans,
+    ...textStyles.bodySmall,
     marginTop: 3,
-    fontSize: 13,
-    lineHeight: 18,
     color: colors.textSecondary,
   },
   placeholderBadge: {
-    fontFamily: fonts.sansSemibold,
+    ...textStyles.tiny,
     marginTop: 6,
-    fontSize: 9,
     letterSpacing: 1.5,
-    color: colors.textMuted,
   },
   diagGroupLabel: {
-    fontFamily: fonts.sansSemibold,
+    ...textStyles.label,
     paddingHorizontal: spacing.md,
     paddingTop: spacing.md,
-    fontSize: 11,
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    color: colors.textMuted,
   },
   diagGroupSpacer: {
     marginTop: spacing.md,
   },
   diagEmpty: {
-    fontFamily: fonts.sans,
+    ...textStyles.bodySmall,
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.md,
-    fontSize: 13,
     color: colors.success,
   },
   diagItem: {
@@ -778,16 +721,13 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   diagCode: {
-    fontFamily: fonts.mono,
-    fontSize: 11,
+    ...textStyles.monoSmall,
     color: colors.warning,
     letterSpacing: 0.2,
   },
   diagMessage: {
-    fontFamily: fonts.sans,
+    ...textStyles.bodySmall,
     marginTop: 2,
-    fontSize: 13,
-    lineHeight: 18,
     color: colors.textPrimary,
   },
   copyAll: {
@@ -797,11 +737,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgTertiary,
     alignItems: 'center',
   },
-  copyAllText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 13,
-    color: colors.textPrimary,
-  },
+  copyAllText: textStyles.bodySmallStrong,
   dangerNote: {
     paddingHorizontal: spacing.md,
     paddingTop: spacing.md,
@@ -810,10 +746,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   dangerNoteText: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    lineHeight: 17,
-    color: colors.textMuted,
+    ...textStyles.caption,
     fontStyle: 'italic',
   },
   dangerBtn: {
@@ -824,15 +757,12 @@ const styles = StyleSheet.create({
     borderTopColor: colors.borderLight,
   },
   dangerTitle: {
-    fontFamily: fonts.headingBold,
-    fontSize: 15,
+    ...textStyles.bodyLargeStrong,
     color: colors.error,
   },
   dangerBody: {
-    fontFamily: fonts.sans,
+    ...textStyles.bodySmall,
     marginTop: 3,
-    fontSize: 13,
-    lineHeight: 19,
     color: colors.textSecondary,
   },
   pressed: { opacity: 0.7 },

@@ -19,7 +19,7 @@ import React, { useCallback, useState } from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import type { ChatMessage } from '@dina/brain/chat';
 import { actOnNudge, dismissNudge, type NudgeKind } from '../hooks/useChatNudges';
-import { colors, fonts, radius, spacing } from '../theme';
+import { colors, radius, spacing, textStyles } from '../theme';
 import { MessageTimestamp } from './MessageTimestamp';
 
 export interface InlineNudgeCardProps {
@@ -178,29 +178,18 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
   },
-  label: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
-    letterSpacing: 1.5,
-    color: colors.textMuted,
-  },
+  label: textStyles.eyebrow,
   title: {
-    fontFamily: fonts.heading,
-    fontSize: 15,
-    color: colors.textPrimary,
+    ...textStyles.bodyStrong,
     marginBottom: 2,
   },
   body: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.textSecondary,
-    lineHeight: 20,
     marginBottom: spacing.sm,
   },
   contactLine: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 12,
-    color: colors.textMuted,
+    ...textStyles.caption,
     marginBottom: spacing.sm,
   },
   row: {
@@ -219,9 +208,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textPrimary,
   },
   actionText: {
-    fontFamily: fonts.sansSemibold,
+    ...textStyles.buttonSmall,
     color: colors.bgPrimary,
-    fontSize: 14,
   },
   dismiss: {
     backgroundColor: 'transparent',
@@ -229,13 +217,11 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   dismissText: {
-    fontFamily: fonts.sansMedium,
+    ...textStyles.buttonSmall,
     color: colors.textPrimary,
-    fontSize: 14,
   },
   statusLine: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textMuted,
     fontStyle: 'italic',
   },

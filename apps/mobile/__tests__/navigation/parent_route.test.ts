@@ -47,6 +47,19 @@ describe('parentRouteFor', () => {
     it('settings root → /', () => {
       expect(parentRouteFor('/settings')).toBe('/');
     });
+
+    it('peerlens-preferences index → /settings', () => {
+      expect(parentRouteFor('/peerlens-preferences')).toBe('/settings');
+    });
+
+    it('peerlens-preferences/<leaf> → /peerlens-preferences (not /settings)', () => {
+      expect(parentRouteFor('/peerlens-preferences/region')).toBe('/peerlens-preferences');
+      expect(parentRouteFor('/peerlens-preferences/budget')).toBe('/peerlens-preferences');
+      expect(parentRouteFor('/peerlens-preferences/devices')).toBe('/peerlens-preferences');
+      expect(parentRouteFor('/peerlens-preferences/languages')).toBe('/peerlens-preferences');
+      expect(parentRouteFor('/peerlens-preferences/dietary')).toBe('/peerlens-preferences');
+      expect(parentRouteFor('/peerlens-preferences/accessibility')).toBe('/peerlens-preferences');
+    });
   });
 
   describe('People family', () => {

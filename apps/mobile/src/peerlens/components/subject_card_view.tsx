@@ -32,7 +32,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 
-import { colors, fonts, spacing, radius } from '../../theme';
+import { colors, spacing, radius, textStyles } from '../../theme';
 import { BAND_COLOUR, BAND_LABEL } from '../band_theme';
 
 import type { SubjectCardDisplay } from '../subject_card';
@@ -304,16 +304,8 @@ const styles = StyleSheet.create({
   },
   cardPressed: { backgroundColor: colors.bgTertiary },
   header: { gap: spacing.xs },
-  title: {
-    fontFamily: fonts.heading,
-    fontSize: 16,
-    color: colors.textPrimary,
-  },
-  subtitle: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.textMuted,
-  },
+  title: textStyles.h3,
+  subtitle: textStyles.caption,
   // TN-V2-P1 context chips — small muted pills under the subtitle.
   // Visual weight intentionally lower than the score badge so the
   // primary signal (trust band + count) still dominates the card.
@@ -341,9 +333,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   contextChipText: {
-    fontFamily: fonts.mono,
-    fontSize: 10,
-    color: colors.textMuted,
+    ...textStyles.monoSmall,
     letterSpacing: 0.3,
   },
   scoreRow: {
@@ -359,13 +349,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   scoreText: {
-    fontFamily: fonts.headingBold,
-    fontSize: 13,
+    ...textStyles.bodySmallStrong,
     color: colors.bgSecondary,
   },
   reviewCount: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
   },
   maturityBadge: {
@@ -377,9 +365,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   maturityText: {
-    fontFamily: fonts.heading,
-    fontSize: 11,
-    fontWeight: '600',
+    ...textStyles.eyebrow,
     letterSpacing: 0.4,
   },
   friendsPill: {
@@ -388,24 +374,14 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   friendsText: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 12,
+    ...textStyles.caption,
     color: colors.textSecondary,
   },
-  strangersText: {
-    fontFamily: fonts.sans,
-    color: colors.textMuted,
-  },
+  strangersText: textStyles.caption,
   topReviewer: { gap: spacing.xs, marginTop: spacing.xs },
   headline: {
-    fontFamily: fonts.serif,
-    fontSize: 13,
-    color: colors.textPrimary,
-    lineHeight: 18,
+    ...textStyles.bodySmall,
+    fontStyle: 'italic',
   },
-  attribution: {
-    fontFamily: fonts.sans,
-    fontSize: 11,
-    color: colors.textMuted,
-  },
+  attribution: textStyles.tiny,
 });

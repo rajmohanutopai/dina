@@ -8,7 +8,7 @@
 
 import React from 'react';
 import { StyleSheet, Text } from 'react-native';
-import { colors, fonts, spacing } from '../theme';
+import { spacing, textStyles } from '../theme';
 
 export interface MessageTimestampProps {
   /** Epoch milliseconds — typically `ChatMessage.timestamp`. */
@@ -25,9 +25,7 @@ export function MessageTimestamp({ timestamp }: MessageTimestampProps): React.JS
 
 const styles = StyleSheet.create({
   timestamp: {
-    fontFamily: fonts.sans,
-    fontSize: 10,
-    color: colors.textMuted,
+    ...textStyles.tiny,
     marginTop: spacing.xs,
     alignSelf: 'flex-start',
   },

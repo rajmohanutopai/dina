@@ -721,7 +721,7 @@ describe('SubjectDetailScreen — own review row tappable (F2 fix)', () => {
         onPressOwnReview={onPressOwnReview}
       />,
     );
-    fireEvent.press(getByLabelText('Your review — tap to edit'));
+    fireEvent.press(getByLabelText('Your review. Tap to edit.'));
     expect(onPressOwnReview).toHaveBeenCalledTimes(1);
   });
 
@@ -738,7 +738,7 @@ describe('SubjectDetailScreen — own review row tappable (F2 fix)', () => {
         onPressOwnReview={() => undefined}
       />,
     );
-    expect(getByLabelText('Your review — tap to edit').props.accessibilityRole).toBe('button');
+    expect(getByLabelText('Your review. Tap to edit.').props.accessibilityRole).toBe('button');
   });
 
   it('row stays as text when onPressOwnReview is not provided (graceful)', () => {

@@ -24,7 +24,7 @@ import {
 } from 'react-native';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, fonts, radius, shadows, spacing } from '../../src/theme';
+import { colors, radius, shadows, spacing, textStyles } from '../../src/theme';
 import {
   addPersona,
   formatPersonaDisplayName,
@@ -36,7 +36,7 @@ import { countVaultItems } from '../../src/hooks/useVaultItems';
 import type { PersonaTier } from '@dina/core';
 
 interface VaultRow extends PersonaUIState {
-  itemCount: number;
+  itemCount: number | null;
 }
 
 /**
@@ -45,11 +45,14 @@ interface VaultRow extends PersonaUIState {
  * shows up as `0` rather than crashing the screen. The user's vault
  * is fine — there's just no SQLite repo to count from yet.
  */
-function safeCount(persona: string): number {
+function safeCount(persona: string): number | null {
   try {
     return countVaultItems(persona);
   } catch {
-    return 0;
+    // Sensitive / locked vault — DEK not in RAM. Distinguish from a
+    // genuinely empty vault by returning null; the row renders an
+    // em-dash placeholder instead of misleading "0".
+    return null;
   }
 }
 
@@ -138,7 +141,7 @@ function VaultCard({
           color={row.isOpen ? colors.accent : colors.textMuted}
         />
         <Text style={styles.cardTitle}>{formatPersonaDisplayName(row.name)}</Text>
-        <Text style={styles.cardCount}>{row.itemCount}</Text>
+        <Text style={styles.cardCount}>{row.itemCount ?? '—'}</Text>
         <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
       </View>
       <Text style={styles.tierLabel}>{row.tierLabel}</Text>
@@ -256,17 +259,13 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
   },
   heroEyebrow: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
+    ...textStyles.eyebrow,
     letterSpacing: 2.4,
-    color: colors.textMuted,
   },
   heroSubtitle: {
-    fontFamily: fonts.sans,
-    marginTop: spacing.sm,
-    fontSize: 14,
-    lineHeight: 20,
+    ...textStyles.body,
     color: colors.textSecondary,
+    marginTop: spacing.sm,
   },
   section: {
     paddingHorizontal: spacing.lg,
@@ -282,28 +281,21 @@ const styles = StyleSheet.create({
   cardPressed: { opacity: 0.7 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   cardTitle: {
+    ...textStyles.bodyLargeStrong,
     flex: 1,
-    fontFamily: fonts.sansSemibold,
-    fontSize: 16,
-    color: colors.textPrimary,
   },
   cardCount: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 13,
+    ...textStyles.bodySmallStrong,
     color: colors.textMuted,
     minWidth: 24,
     textAlign: 'right',
   },
   tierLabel: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.textMuted,
+    ...textStyles.caption,
     marginTop: spacing.xs,
   },
   description: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
-    lineHeight: 18,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
     marginTop: spacing.xs,
   },
@@ -321,8 +313,7 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
   },
   addButtonText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 14,
+    ...textStyles.buttonSmall,
     color: colors.accent,
   },
   formCard: {
@@ -334,36 +325,28 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   formTitle: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 16,
-    color: colors.textPrimary,
+    ...textStyles.bodyLargeStrong,
     marginBottom: spacing.sm,
   },
   formLabel: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 12,
-    letterSpacing: 1.2,
+    ...textStyles.label,
     color: colors.textMuted,
+    letterSpacing: 1.2,
     marginTop: spacing.md,
     marginBottom: spacing.xs,
   },
   formHelp: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    lineHeight: 17,
-    color: colors.textMuted,
+    ...textStyles.caption,
     marginBottom: spacing.xs,
   },
   formInput: {
+    ...textStyles.body,
     backgroundColor: colors.bgPrimary,
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.border,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.textPrimary,
   },
   formInputMultiline: {
     minHeight: 80,
@@ -381,21 +364,16 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
   },
   tierChipText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 12,
+    ...textStyles.caption,
     color: colors.textSecondary,
   },
   tierChipTextActive: { color: colors.bgPrimary },
   tierHelpText: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    lineHeight: 17,
-    color: colors.textMuted,
+    ...textStyles.caption,
     marginTop: spacing.xs,
   },
   errorText: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.error,
     marginTop: spacing.sm,
   },
@@ -410,8 +388,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   formButtonSecondaryText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 14,
+    ...textStyles.buttonSmall,
     color: colors.textSecondary,
   },
   formButtonPrimary: {
@@ -422,8 +399,7 @@ const styles = StyleSheet.create({
   },
   formButtonDisabled: { opacity: 0.4 },
   formButtonPrimaryText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 14,
+    ...textStyles.buttonSmall,
     color: colors.bgPrimary,
   },
 });

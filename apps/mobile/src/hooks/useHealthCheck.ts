@@ -134,7 +134,7 @@ function checkVaultAccessible(): HealthCheck {
     return {
       name: 'vault',
       status: 'fail',
-      message: 'No vaults open — unlock required',
+      message: 'No vaults open. Unlock required.',
       critical: true,
     };
   }
@@ -170,7 +170,7 @@ function checkLLMReachable(): HealthCheck {
     return {
       name: 'llm',
       status: 'warn',
-      message: 'No LLM provider configured — FTS-only mode',
+      message: 'No LLM provider configured. FTS-only mode.',
       critical: false,
     };
   }
@@ -192,7 +192,7 @@ function checkMsgBoxConnected(): HealthCheck {
     status: connected ? 'pass' : 'warn',
     message: connected
       ? 'MsgBox WebSocket connected'
-      : 'MsgBox disconnected — Talk messaging unavailable',
+      : 'MsgBox disconnected. Talk messaging unavailable.',
     critical: false,
   };
 }
@@ -210,7 +210,7 @@ function checkNotifications(): HealthCheck {
   return {
     name: 'notifications',
     status: enabled ? 'pass' : 'warn',
-    message: enabled ? 'Notifications enabled' : "Notifications disabled — reminders won't fire",
+    message: enabled ? 'Notifications enabled' : "Notifications disabled. Reminders won't fire.",
     critical: false,
   };
 }
@@ -228,7 +228,7 @@ function checkIdentity(): HealthCheck {
   return {
     name: 'identity',
     status: initialized ? 'pass' : 'fail',
-    message: initialized ? 'DID initialized' : 'Identity not initialized — complete onboarding',
+    message: initialized ? 'DID initialized' : 'Identity not initialized. Complete onboarding.',
     critical: true,
   };
 }

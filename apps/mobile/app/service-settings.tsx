@@ -26,7 +26,7 @@ import {
   Modal,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { colors, fonts, spacing, radius, shadows } from '../src/theme';
+import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 import {
   loadServiceConfig,
   saveServiceConfig,
@@ -191,7 +191,7 @@ export default function ServiceSettingsScreen() {
         if (cfg !== null) hydrate(cfg);
       } catch (err) {
         if (err instanceof ServiceConfigNotConfiguredError) {
-          setLoadError("Service config isn't wired yet — complete onboarding first.");
+          setLoadError("Service config isn't wired yet. Complete onboarding first.");
         } else {
           setLoadError((err as Error).message ?? 'Failed to load service config');
         }
@@ -492,7 +492,7 @@ export default function ServiceSettingsScreen() {
                 <Text style={styles.discoveryCaveatTitle}>Not actually discoverable yet.</Text>
                 <Text style={styles.discoveryCaveatBody}>
                   Missing: {activeBlockers.join(', ')}.{'\n'}Flip this switch on once onboarding
-                  wires PDS + MsgBox — until then the profile is saved locally but will not reach
+                  wires PDS + MsgBox. Until then the profile is saved locally but will not reach
                   AppView.
                 </Text>
               </View>
@@ -610,56 +610,73 @@ export default function ServiceSettingsScreen() {
           <Pressable
             style={styles.modalBackdrop}
             onPress={() => setAddModalVisible(false)}
-            accessibilityRole="button"
-            accessibilityLabel="Close add-capability sheet"
+            // accessible={false} so the backdrop doesn't consume the
+            // entire modal as one accessibility element — VoiceOver
+            // can then reach the inputs and buttons inside the sheet.
+            // The Cancel button below provides the keyboard/AX dismiss
+            // path; the backdrop's tap-to-dismiss is a touch-only
+            // affordance.
+            accessible={false}
+            importantForAccessibility="no-hide-descendants"
           >
             {/* Inner Pressable swallows backdrop taps so the sheet
                 itself isn't dismissed when the user taps inside. */}
             <Pressable
               onPress={(e) => e.stopPropagation()}
               style={styles.modalSheet}
-              accessibilityRole="none"
+              accessible={false}
+              accessibilityViewIsModal
             >
-              <Text style={styles.modalTitle}>Add capability</Text>
+              <Text
+                style={styles.modalTitle}
+                accessibilityRole="header"
+              >
+                Add capability
+              </Text>
               <Text style={styles.modalSubtitle}>
-                Pick one this node knows how to validate, or type a custom key. Known
-                capabilities ship with their JSON Schemas + schema_hash so requesters can
-                detect version skew.
+                Pick a known one or type your own. Known capabilities ship with JSON
+                Schemas + schema_hash so requesters can detect version skew.
               </Text>
 
-              <Text style={styles.modalSectionHeader}>KNOWN</Text>
-              <View style={styles.card}>
-                {localKnownCapabilities
-                  .filter((def) => !capabilities.some((c) => c.key === def.name))
-                  .map((def, idx, arr) => (
-                    <Pressable
-                      key={def.name}
-                      onPress={() => addCapability(def.name)}
-                      style={({ pressed }) => [
-                        styles.knownCapRow,
-                        idx === arr.length - 1 && styles.capabilityRowLast,
-                        pressed && styles.pressed,
-                      ]}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Add ${def.name}`}
-                    >
-                      <Text style={styles.capabilityName}>{def.name}</Text>
-                      <Text style={styles.knownCapDescription} numberOfLines={2}>
-                        {def.description}
-                      </Text>
-                    </Pressable>
-                  ))}
-                {localKnownCapabilities.every((def) =>
-                  capabilities.some((c) => c.key === def.name),
-                ) ? (
-                  <Text style={styles.emptyText}>
-                    All known capabilities are already configured.
-                  </Text>
-                ) : null}
-              </View>
+              {/* KNOWN — render only when at least one preset is unused. */}
+              {localKnownCapabilities.some(
+                (def) => !capabilities.some((c) => c.key === def.name),
+              ) ? (
+                <>
+                  <Text style={styles.modalSectionHeader}>FROM CATALOGUE</Text>
+                  <View style={styles.card}>
+                    {localKnownCapabilities
+                      .filter((def) => !capabilities.some((c) => c.key === def.name))
+                      .map((def, idx, arr) => (
+                        <Pressable
+                          key={def.name}
+                          onPress={() => addCapability(def.name)}
+                          style={({ pressed }) => [
+                            styles.knownCapRow,
+                            idx === arr.length - 1 && styles.capabilityRowLast,
+                            pressed && styles.pressed,
+                          ]}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Add ${def.name}. ${def.description}`}
+                        >
+                          <Text style={styles.capabilityName}>{def.name}</Text>
+                          <Text style={styles.knownCapDescription} numberOfLines={2}>
+                            {def.description}
+                          </Text>
+                        </Pressable>
+                      ))}
+                  </View>
+                </>
+              ) : null}
 
-              <Text style={styles.modalSectionHeader}>CUSTOM</Text>
-              <View style={styles.card}>
+              <Text style={styles.modalSectionHeader}>
+                {localKnownCapabilities.some(
+                  (def) => !capabilities.some((c) => c.key === def.name),
+                )
+                  ? 'OR TYPE YOUR OWN'
+                  : 'TYPE YOUR OWN'}
+              </Text>
+              <View style={styles.customCard}>
                 <Text style={styles.label}>Capability key</Text>
                 <TextInput
                   value={customCapName}
@@ -668,11 +685,12 @@ export default function ServiceSettingsScreen() {
                   placeholderTextColor={colors.textMuted}
                   autoCapitalize="none"
                   autoCorrect={false}
-                  style={styles.input}
+                  style={styles.customCapInput}
+                  accessibilityLabel="Custom capability key"
                 />
                 <Text style={styles.modalHelpText}>
-                  Custom capabilities are written without JSON Schemas — requesters that
-                  pre-validate params will reject the call. Register the capability in
+                  Custom capabilities ship without JSON Schemas. Requesters that
+                  pre-validate params will reject the call. Register the key in
                   `packages/brain/src/service/capabilities/registry.ts` to ship schemas.
                 </Text>
                 <Pressable
@@ -723,9 +741,9 @@ export default function ServiceSettingsScreen() {
 }
 
 function labelForRole(r: NodeRole): string {
-  if (r === 'requester') return 'Requester only — ask others, never serve';
-  if (r === 'provider') return 'Provider — accept inbound service queries';
-  return 'Both — provider + requester';
+  if (r === 'requester') return 'Requester only. Ask others, never serve.';
+  if (r === 'provider') return 'Provider. Accept inbound service queries.';
+  return 'Both: provider plus requester.';
 }
 
 const styles = StyleSheet.create({
@@ -742,20 +760,16 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   sectionHeader: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
+    ...textStyles.eyebrow,
     letterSpacing: 1.2,
-    color: colors.textMuted,
     marginBottom: spacing.xs,
     marginLeft: spacing.xs,
   },
   sectionSubtitle: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
     marginBottom: spacing.sm,
     marginLeft: spacing.xs,
-    lineHeight: 18,
   },
   card: {
     backgroundColor: colors.bgCard,
@@ -785,21 +799,16 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0,
   },
   rowValue: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 16,
+    ...textStyles.bodyLargeStrong,
     color: colors.accent,
   },
   rowTitle: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 15,
-    color: colors.textPrimary,
+    ...textStyles.bodyStrong,
     marginBottom: 2,
   },
   rowSubtitle: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
-    lineHeight: 18,
   },
   inputRow: {
     borderBottomWidth: 1,
@@ -813,16 +822,12 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   label: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
+    ...textStyles.eyebrow,
     letterSpacing: 0.8,
-    color: colors.textMuted,
     marginBottom: spacing.xs,
   },
   input: {
-    fontFamily: fonts.sans,
-    fontSize: 15,
-    color: colors.textPrimary,
+    ...textStyles.body,
     paddingVertical: 4,
     minHeight: 28,
   },
@@ -836,9 +841,7 @@ const styles = StyleSheet.create({
     marginVertical: spacing.sm,
   },
   helpText: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.textMuted,
+    ...textStyles.caption,
     marginTop: spacing.xs,
     paddingHorizontal: spacing.xs,
   },
@@ -850,8 +853,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   infraSaveButtonText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 15,
+    ...textStyles.bodyStrong,
     color: colors.white,
   },
   capabilityRow: {
@@ -865,11 +867,7 @@ const styles = StyleSheet.create({
   capabilityRowLast: {
     borderBottomWidth: 0,
   },
-  capabilityName: {
-    fontFamily: fonts.monoMedium,
-    fontSize: 15,
-    color: colors.textPrimary,
-  },
+  capabilityName: textStyles.mono,
   policyToggle: {
     flexDirection: 'row',
     borderRadius: radius.sm,
@@ -886,12 +884,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   policyText: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
   },
   policyActiveText: {
-    fontFamily: fonts.sansSemibold,
+    ...textStyles.bodySmallStrong,
     color: colors.white,
   },
   pressed: { opacity: 0.7 },
@@ -906,31 +903,25 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   saveButtonText: {
-    fontFamily: fonts.sansSemibold,
-    color: colors.white,
-    fontSize: 16,
+    ...textStyles.button,
     letterSpacing: 0.3,
   },
   emptyText: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textMuted,
-    lineHeight: 18,
   },
   errorBanner: {
-    backgroundColor: '#FEF2F2',
+    backgroundColor: colors.errorBgSoft,
     borderWidth: 1,
-    borderColor: '#FCA5A5',
+    borderColor: colors.error,
     borderRadius: radius.sm,
     padding: spacing.md,
     marginHorizontal: spacing.md,
     marginTop: spacing.md,
   },
   errorText: {
-    fontFamily: fonts.sansMedium,
+    ...textStyles.bodySmall,
     color: colors.error,
-    fontSize: 13,
-    lineHeight: 18,
   },
   discoveryCaveat: {
     marginTop: spacing.sm,
@@ -939,16 +930,13 @@ const styles = StyleSheet.create({
     borderTopColor: colors.borderLight,
   },
   discoveryCaveatTitle: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 13,
+    ...textStyles.bodySmallStrong,
     color: colors.error,
     marginBottom: 4,
   },
   discoveryCaveatBody: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
+    ...textStyles.caption,
     color: colors.textSecondary,
-    lineHeight: 17,
   },
   // Add-capability affordance below the capabilities card. Plain text
   // button rather than a filled CTA so it doesn't compete visually
@@ -959,8 +947,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   addCapButtonText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 14,
+    ...textStyles.buttonSmall,
     color: colors.accent,
   },
   removeButton: {
@@ -973,10 +960,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgTertiary,
   },
   removeButtonText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 18,
+    ...textStyles.h3,
     color: colors.textSecondary,
-    lineHeight: 18,
   },
   // Add-capability modal sheet. Backdrop dims the screen; sheet sits
   // centered with a small max-height so the keyboard for the custom
@@ -994,26 +979,47 @@ const styles = StyleSheet.create({
     maxHeight: '85%',
   },
   modalTitle: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 17,
-    color: colors.textPrimary,
+    ...textStyles.h3,
     marginBottom: spacing.xs,
   },
   modalSubtitle: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
     marginBottom: spacing.md,
-    lineHeight: 18,
   },
   modalSectionHeader: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
+    ...textStyles.eyebrow,
     letterSpacing: 1.2,
-    color: colors.textMuted,
     marginTop: spacing.md,
     marginBottom: spacing.xs,
     marginLeft: spacing.xs,
+  },
+  // CUSTOM-section card. Dashed accent border + tinted background
+  // sets it visually apart from the white "FROM CATALOGUE" card so
+  // the alternative path is unmistakable, not a continuation of the
+  // selection list.
+  customCard: {
+    backgroundColor: colors.bgTertiary,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.accent,
+    padding: spacing.md,
+  },
+  // Input inside the dashed CUSTOM card. The page's shared `input`
+  // style has no visible border (it relies on the parent form card's
+  // dividers for shape) — here that left the field looking like
+  // static example text. Solid white background + hairline border
+  // reads unambiguously as "type here".
+  customCapInput: {
+    ...textStyles.body,
+    backgroundColor: colors.bgSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    minHeight: 44,
   },
   knownCapRow: {
     paddingVertical: spacing.sm,
@@ -1021,17 +1027,12 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.borderLight,
   },
   knownCapDescription: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
+    ...textStyles.caption,
     color: colors.textSecondary,
     marginTop: 2,
-    lineHeight: 16,
   },
   modalHelpText: {
-    fontFamily: fonts.sans,
-    fontSize: 11,
-    color: colors.textMuted,
-    lineHeight: 15,
+    ...textStyles.tiny,
     marginTop: spacing.xs,
     marginBottom: spacing.sm,
   },
@@ -1042,19 +1043,14 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     alignItems: 'center',
   },
-  modalAddButtonText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 14,
-    color: colors.white,
-  },
+  modalAddButtonText: textStyles.buttonSmall,
   modalCancelButton: {
     marginTop: spacing.md,
     paddingVertical: spacing.sm,
     alignItems: 'center',
   },
   modalCancelButtonText: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
+    ...textStyles.link,
     color: colors.textSecondary,
   },
 });

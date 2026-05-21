@@ -22,22 +22,21 @@ import WriteScreen from '../../app/peerlens/write';
 import { emptyWriteFormState } from '../../src/peerlens/write_form_data';
 
 describe('WriteScreen — compose vs edit mode', () => {
-  it('compose mode: header reads "Write a review", Publish CTA reads "Publish"', () => {
-    const { getByText, getByTestId } = render(
-      <WriteScreen subjectTitle="Aeron chair" />,
-    );
-    expect(getByText('Write a review')).toBeTruthy();
+  // The in-page H1 was removed (it duplicated the native Stack
+  // header). Tests now distinguish compose vs edit via the publish
+  // button's accessibilityLabel ("Publish" vs "Publish edit").
+  it('compose mode: Publish CTA reads "Publish"', () => {
+    const { getByTestId } = render(<WriteScreen subjectTitle="Aeron chair" />);
     expect(getByTestId('write-publish').props.accessibilityLabel).toBe('Publish');
   });
 
-  it('edit mode (no cosig): header reads "Edit review", CTA reads "Publish edit", no warning', () => {
-    const { getByText, getByTestId, queryByTestId } = render(
+  it('edit mode (no cosig): CTA reads "Publish edit", no warning', () => {
+    const { getByTestId, queryByTestId } = render(
       <WriteScreen
         subjectTitle="Aeron chair"
         editing={{ originalUri: 'at://x/y/1', cosigCount: 0 }}
       />,
     );
-    expect(getByText('Edit review')).toBeTruthy();
     expect(getByTestId('write-publish').props.accessibilityLabel).toBe('Publish edit');
     expect(queryByTestId('write-edit-warning')).toBeNull();
   });
@@ -304,8 +303,7 @@ describe('WriteScreen — URL-param-driven edit mode', () => {
       editingHeadline: 'Worth every penny',
       editingBody: 'Best chair I have owned.',
     });
-    const { getByText, getByTestId } = render(<WriteScreen />);
-    expect(getByText('Edit review')).toBeTruthy();
+    const { getByTestId } = render(<WriteScreen />);
     expect(getByTestId('write-publish').props.accessibilityLabel).toBe('Publish edit');
   });
 
@@ -390,8 +388,8 @@ describe('WriteScreen — URL-param-driven edit mode', () => {
 
   it('compose mode (no editingUri) leaves the screen as a fresh write', () => {
     mockParams({});
-    const { getByText } = render(<WriteScreen subjectTitle="Aeron chair" />);
-    expect(getByText('Write a review')).toBeTruthy();
+    const { getByTestId } = render(<WriteScreen subjectTitle="Aeron chair" />);
+    expect(getByTestId('write-publish').props.accessibilityLabel).toBe('Publish');
   });
 });
 

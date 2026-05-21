@@ -41,13 +41,12 @@ import React from 'react';
 import {
   View,
   Text,
-  Platform,
   StyleSheet,
   Pressable,
   ScrollView,
 } from 'react-native';
 
-import { colors, fonts, spacing, radius } from '../../src/theme';
+import { colors, spacing, radius, textStyles } from '../../src/theme';
 import {
   selectInboxFailureRows,
   inFlightCount,
@@ -87,7 +86,7 @@ export interface OutboxScreenProps<DraftBody = unknown> {
  */
 const STATUS_LABEL: Record<Extract<OutboxStatus, 'rejected' | 'stuck-pending' | 'stuck-offline'>, string> = {
   'rejected': 'Rejected',
-  'stuck-pending': 'Stuck — no AppView response',
+  'stuck-pending': 'Stuck (no AppView response)',
   'stuck-offline': 'Queued > 24 h',
 };
 
@@ -97,9 +96,9 @@ const STATUS_LABEL: Record<Extract<OutboxStatus, 'rejected' | 'stuck-pending' | 
  * are stable so a future i18n bundle can lift them out unchanged.
  */
 const REJECT_REASON_LABEL: Record<string, string> = {
-  rate_limit: 'Rate limit exceeded — try again later',
-  signature_invalid: 'Signature invalid — recompose required',
-  schema_invalid: 'Record format rejected — recompose required',
+  rate_limit: 'Rate limit exceeded. Try again later.',
+  signature_invalid: 'Signature invalid. Recompose required.',
+  schema_invalid: 'Record format rejected. Recompose required.',
   namespace_disabled: 'Namespace not declared in your DID document',
   feature_off: `${FEATURE_NAMES.peerlens} temporarily unavailable`,
   pds_suspended: 'Your PDS host is suspended by the operator',
@@ -167,7 +166,7 @@ export default function OutboxScreen<DraftBody = unknown>(
       testID="outbox-screen"
     >
       <View style={styles.header}>
-        <Text style={styles.title}>Outbox</Text>
+        {/* In-page H1 removed — native Stack header "Outbox" covers it. */}
         <Text style={styles.subtitle}>
           Reviews waiting to publish, plus any that didn&apos;t go through.
         </Text>
@@ -177,7 +176,7 @@ export default function OutboxScreen<DraftBody = unknown>(
         <View style={styles.inFlightBanner} testID="outbox-inflight-banner">
           <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
           <Text style={styles.inFlightText}>
-            {inFlight} {inFlight === 1 ? 'review' : 'reviews'} queued — will publish when back online.
+            {inFlight} {inFlight === 1 ? 'review' : 'reviews'} queued. Will publish when back online.
           </Text>
         </View>
       )}
@@ -346,13 +345,14 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgPrimary },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
   header: { marginBottom: spacing.lg },
-  title: { fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontStyle: 'italic', fontSize: 22, color: colors.textPrimary, letterSpacing: -0.3 },
+  title: {
+    ...textStyles.h2,
+    letterSpacing: -0.3,
+  },
   subtitle: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.textSecondary,
     marginTop: spacing.sm,
-    lineHeight: 20,
   },
   inFlightBanner: {
     flexDirection: 'row',
@@ -364,8 +364,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   inFlightText: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
     flex: 1,
   },
@@ -375,17 +374,13 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   emptyTitle: {
-    fontFamily: fonts.heading,
-    fontSize: 16,
-    color: colors.textPrimary,
+    ...textStyles.h3,
     marginTop: spacing.md,
   },
   emptyBody: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 18,
     paddingHorizontal: spacing.lg,
   },
   list: {
@@ -404,22 +399,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
   },
-  rowStatus: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
-    color: colors.textPrimary,
-  },
+  rowStatus: textStyles.bodySmallStrong,
   rowPreview: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.textPrimary,
+    ...textStyles.body,
     marginTop: spacing.xs,
   },
-  rowReason: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.textMuted,
-  },
+  rowReason: textStyles.caption,
   rowActions: {
     flexDirection: 'row',
     gap: spacing.sm,
@@ -437,8 +422,7 @@ const styles = StyleSheet.create({
   },
   retryBtnPressed: { backgroundColor: colors.accentHover },
   retryLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
+    ...textStyles.bodySmallStrong,
     color: colors.bgSecondary,
   },
   dismissBtn: {
@@ -450,8 +434,7 @@ const styles = StyleSheet.create({
   },
   dismissBtnPressed: { backgroundColor: colors.bgTertiary },
   dismissLabel: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
   },
 });

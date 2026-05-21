@@ -35,7 +35,7 @@ import {
   type ChatMessage,
   type ReviewDraftLifecycle,
 } from '@dina/brain/chat';
-import { colors, fonts, radius, spacing } from '../theme';
+import { colors, radius, spacing, textStyles } from '../theme';
 import { MessageTimestamp } from './MessageTimestamp';
 import { setReviewDraftStatus } from '../peerlens/review_draft';
 import {
@@ -448,31 +448,24 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   title: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 15,
-    color: colors.textPrimary,
+    ...textStyles.bodyStrong,
     flexShrink: 1,
   },
   titleMuted: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.textMuted,
     flexShrink: 1,
   },
   subtitle: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textMuted,
   },
   fieldBlock: {
     marginTop: spacing.sm,
   },
   label: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 12,
-    color: colors.textMuted,
+    ...textStyles.label,
     marginBottom: spacing.xs,
-    textTransform: 'uppercase',
     letterSpacing: 0.4,
   },
   sentimentRow: {
@@ -493,18 +486,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
     borderColor: colors.accent,
   },
-  sentimentPillText: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
-    color: colors.textPrimary,
-  },
+  sentimentPillText: textStyles.bodySmall,
   sentimentPillTextActive: {
     color: colors.bgPrimary,
   },
   headlineInput: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
-    color: colors.textPrimary,
+    ...textStyles.body,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.sm,
@@ -512,9 +499,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
   },
   bodyInput: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.textPrimary,
+    ...textStyles.body,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.sm,
@@ -537,11 +522,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  secondaryButtonText: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
-    color: colors.textPrimary,
-  },
+  secondaryButtonText: textStyles.bodySmall,
   primaryButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -556,13 +537,11 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   primaryButtonText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 13,
+    ...textStyles.bodySmallStrong,
     color: colors.bgPrimary,
   },
   errorText: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.error,
     marginTop: spacing.xs,
   },

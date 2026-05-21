@@ -27,7 +27,7 @@ import {
   getServiceApproveCommandHandler,
   getServiceDenyCommandHandler,
 } from '@dina/brain/chat';
-import { colors, fonts, radius, spacing } from '../theme';
+import { colors, fonts, radius, spacing, textStyles } from '../theme';
 import { MessageTimestamp } from './MessageTimestamp';
 
 export interface InlineServiceApprovalCardProps {
@@ -167,25 +167,19 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.sm,
   },
   label: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
-    letterSpacing: 1.5,
-    color: colors.textMuted,
+    ...textStyles.eyebrow,
     marginBottom: spacing.xs,
   },
   body: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 15,
-    color: colors.textPrimary,
-    lineHeight: 22,
+    ...textStyles.body,
     marginBottom: spacing.sm,
   },
   requester: {
     fontFamily: fonts.sansSemibold,
   },
   capability: {
+    ...textStyles.mono,
     fontFamily: fonts.monoMedium,
-    fontSize: 14,
   },
   row: {
     flexDirection: 'row',
@@ -206,9 +200,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textPrimary,
   },
   approveText: {
-    fontFamily: fonts.sansSemibold,
+    ...textStyles.buttonSmall,
     color: colors.bgPrimary,
-    fontSize: 14,
   },
   deny: {
     backgroundColor: 'transparent',
@@ -216,13 +209,11 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   denyText: {
-    fontFamily: fonts.sansMedium,
+    ...textStyles.buttonSmall,
     color: colors.textPrimary,
-    fontSize: 14,
   },
   statusLine: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textMuted,
     fontStyle: 'italic',
   },

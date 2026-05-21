@@ -96,7 +96,7 @@ describe('Security Settings Hook (4.15)', () => {
     it('rejects when not initialized', async () => {
       const result = await doChangePassphrase('old', 'NewPass1!');
       expect(result.success).toBe(false);
-      expect(result.error).toContain('unlock first');
+      expect(result.error).toContain('Unlock first');
     });
 
     it('changes passphrase successfully', async () => {

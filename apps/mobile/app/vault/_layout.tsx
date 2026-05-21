@@ -16,7 +16,7 @@ import React from 'react';
 import { Stack, useRouter } from 'expo-router';
 import { Platform, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, fonts } from '../../src/theme';
+import { colors, navTitle } from '../../src/theme';
 import { openMenu } from '../../src/navigation/menu_state';
 import { StackIndexHeader } from '../../src/navigation/stack_index_header';
 
@@ -77,12 +77,7 @@ export default function VaultStackLayout(): React.ReactElement {
           backgroundColor: colors.bgPrimary,
           ...(Platform.OS === 'ios' ? { shadowOpacity: 0 } : { elevation: 0 }),
         },
-        headerTitleStyle: {
-          fontFamily: fonts.heading,
-          fontWeight: '600',
-          fontSize: 17,
-          color: colors.textPrimary,
-        },
+        headerTitleStyle: navTitle,
         headerShadowVisible: false,
         headerTintColor: colors.textPrimary,
         headerBackTitle: '',

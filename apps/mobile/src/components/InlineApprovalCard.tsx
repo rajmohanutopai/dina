@@ -20,7 +20,7 @@ import React, { useCallback, useState } from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import type { ChatMessage } from '@dina/brain/chat';
 import { approveCard, denyCard } from '../hooks/useChatApprovals';
-import { colors, fonts, radius, spacing } from '../theme';
+import { colors, radius, spacing, textStyles } from '../theme';
 import { MessageTimestamp } from './MessageTimestamp';
 
 export interface InlineApprovalCardProps {
@@ -114,7 +114,7 @@ export function InlineApprovalCard({ message, approverDID }: InlineApprovalCardP
           </TouchableOpacity>
         </View>
       )}
-      {resolved === 'approved' && <Text style={styles.statusApproved}>Approved — fetching answer…</Text>}
+      {resolved === 'approved' && <Text style={styles.statusApproved}>Approved. Fetching answer…</Text>}
       {resolved === 'denied' && <Text style={styles.statusDenied}>Denied.</Text>}
       <MessageTimestamp timestamp={message.timestamp} />
     </View>
@@ -132,17 +132,11 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.sm,
   },
   label: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
-    letterSpacing: 1.5,
-    color: colors.textMuted,
+    ...textStyles.eyebrow,
     marginBottom: spacing.xs,
   },
   body: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 15,
-    color: colors.textPrimary,
-    lineHeight: 22,
+    ...textStyles.body,
     marginBottom: spacing.sm,
   },
   row: {
@@ -164,9 +158,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textPrimary,
   },
   approveText: {
-    fontFamily: fonts.sansSemibold,
+    ...textStyles.buttonSmall,
     color: colors.bgPrimary,
-    fontSize: 14,
   },
   deny: {
     backgroundColor: 'transparent',
@@ -174,19 +167,16 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   denyText: {
-    fontFamily: fonts.sansMedium,
+    ...textStyles.buttonSmall,
     color: colors.textPrimary,
-    fontSize: 14,
   },
   statusApproved: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textMuted,
     fontStyle: 'italic',
   },
   statusDenied: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textMuted,
     fontStyle: 'italic',
   },

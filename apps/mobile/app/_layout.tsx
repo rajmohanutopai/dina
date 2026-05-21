@@ -67,7 +67,7 @@ import {
   getRuntimeWarnings,
   type RuntimeWarning,
 } from '../src/services/runtime_warnings';
-import { colors, fonts } from '../src/theme';
+import { colors, navTitle, textStyles } from '../src/theme';
 import { isTrustTabHidden } from '../src/peerlens/flags';
 
 import type { BootDegradation } from '../src/services/boot_service';
@@ -323,12 +323,7 @@ const navMenuStyles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 14,
   },
-  rowText: {
-    fontFamily: fonts.sans,
-    fontSize: 16,
-    color: colors.textPrimary,
-    fontWeight: '500',
-  },
+  rowText: textStyles.bodyLargeStrong,
 });
 
 /**
@@ -664,10 +659,7 @@ export default function RootLayout() {
                 ...(Platform.OS === 'ios' ? { shadowOpacity: 0 } : { elevation: 0 }),
               },
               headerTitleStyle: {
-                fontFamily: fonts.heading,
-                fontWeight: '600',
-                fontSize: 17,
-                color: colors.textPrimary,
+                ...navTitle,
                 letterSpacing: 0.3,
               },
               headerShadowVisible: false,
@@ -689,9 +681,9 @@ export default function RootLayout() {
               tabBarActiveTintColor: colors.tabActive,
               tabBarInactiveTintColor: colors.tabInactive,
               tabBarLabelStyle: {
-                fontFamily: fonts.sans,
-                fontSize: 11,
-                fontWeight: '500',
+                fontFamily: textStyles.tiny.fontFamily,
+                fontSize: textStyles.tiny.fontSize,
+                color: textStyles.tiny.color as string | undefined,
                 letterSpacing: 0.2,
                 marginTop: 2,
               },
@@ -716,6 +708,7 @@ export default function RootLayout() {
                 // single Tabs.Screen entry is enough — every nested
                 // `vault/<name>` is rendered inside that Stack.
                 href: null,
+
                 // Same rationale as `trust` above — the Stack owns
                 // header rendering for the whole tab, including the
                 // index. Letting Tabs render its header would
@@ -793,6 +786,10 @@ export default function RootLayout() {
               * UX regression in the app. Each entry below mirrors the
               * pattern used for `settings`, `help`, etc. above. */}
             <Tabs.Screen
+              name="peerlens-preferences/index"
+              options={{ title: 'PeerLens preferences', href: null, headerLeft: renderHeaderBackButton }}
+            />
+            <Tabs.Screen
               name="peerlens-preferences/region"
               options={{ title: 'Region', href: null, headerLeft: renderHeaderBackButton }}
             />
@@ -824,6 +821,7 @@ export default function RootLayout() {
                 // so deep links (notifications → reminder detail) still
                 // work; href: null only hides the tab-bar entry.
                 href: null,
+
                 headerLeft: renderHeaderBackButton,
               }}
             />
@@ -857,6 +855,7 @@ export default function RootLayout() {
                 title: 'Settings',
                 // Reached via the hamburger menu (HeaderMenuButton).
                 href: null,
+
                 headerLeft: renderHeaderBackButton,
               }}
             />
@@ -866,6 +865,7 @@ export default function RootLayout() {
                 title: 'Agent policies',
                 // Reached via Settings → MORE → Agent policies; not a tab target.
                 href: null,
+
                 headerLeft: renderHeaderBackButton,
               }}
             />
@@ -877,6 +877,7 @@ export default function RootLayout() {
                 // Also hidden entirely when the node isn't provider-capable so
                 // the drill-down target doesn't expose a dead-end flow.
                 href: null,
+
                 headerLeft: renderHeaderBackButton,
               }}
             />
@@ -892,6 +893,7 @@ export default function RootLayout() {
                 // Hidden from the tab bar — reached via drill-down from Settings.
                 // Admin surface for `dina-admin device pair`; no dedicated tab.
                 href: null,
+
                 headerLeft: renderHeaderBackButton,
               }}
             />
@@ -903,6 +905,7 @@ export default function RootLayout() {
                 // tab. Without this entry expo-router file-based routing
                 // would auto-register `app/help.tsx` as a bottom tab.
                 href: null,
+
                 headerLeft: renderHeaderBackButton,
               }}
             />
@@ -912,6 +915,7 @@ export default function RootLayout() {
                 title: 'Add Contact',
                 // Reached via the People tab's "+ Add" button; no tab of its own.
                 href: null,
+
                 headerLeft: renderHeaderBackButton,
               }}
             />
@@ -921,6 +925,7 @@ export default function RootLayout() {
                 title: 'Talk',
                 // Per-peer drill-down; never a tab target.
                 href: null,
+
                 headerLeft: renderHeaderBackButton,
               }}
             />
@@ -930,6 +935,7 @@ export default function RootLayout() {
                 title: 'Admin',
                 // Drill-down from Settings; not a tab target.
                 href: null,
+
                 headerLeft: renderHeaderBackButton,
               }}
             />
@@ -940,6 +946,7 @@ export default function RootLayout() {
                 // Drill-down from Settings → Security. Highest-stakes
                 // reveal in the app — never a tab target.
                 href: null,
+
                 headerLeft: renderHeaderBackButton,
               }}
             />
@@ -951,6 +958,7 @@ export default function RootLayout() {
                 // Settings → "Confirm recovery phrase" row that
                 // appears only while verification is pending.
                 href: null,
+
                 headerLeft: renderHeaderBackButton,
               }}
             />
@@ -1076,17 +1084,11 @@ const bannerStyles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   primary: {
+    ...textStyles.bodySmallStrong,
     flex: 1,
-    fontFamily: fonts.heading,
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textPrimary,
   },
   secondary: {
-    fontFamily: fonts.sans,
-    fontSize: 11,
-    color: colors.textMuted,
+    ...textStyles.tiny,
     marginTop: 2,
-    lineHeight: 15,
   },
 });

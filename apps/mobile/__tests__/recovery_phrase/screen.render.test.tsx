@@ -61,7 +61,9 @@ beforeEach(() => {
 describe('recovery-phrase gate', () => {
   it('renders the passphrase prompt initially — no words on screen', () => {
     const { queryByText, getByLabelText } = render(<RecoveryPhraseScreen />);
-    expect(queryByText('View recovery phrase')).toBeTruthy();
+    // In-page H1 "View recovery phrase" was removed (the native Stack
+    // header already shows "Recovery phrase"). Gate identity is the
+    // passphrase input + the masked fixture-word assertion below.
     expect(getByLabelText('Enter passphrase to view recovery phrase')).toBeTruthy();
     // None of the fixture words leak through the gate.
     for (const word of FIXTURE_MNEMONIC.split(' ')) {

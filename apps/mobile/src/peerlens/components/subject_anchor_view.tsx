@@ -19,7 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
-import { colors, fonts, spacing, radius } from '../../theme';
+import { colors, spacing, radius, textStyles } from '../../theme';
 
 import { deriveCardSubtitle } from '../subject_card';
 
@@ -107,14 +107,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   body: { flex: 1, gap: 2 },
-  title: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 15,
-    color: colors.textPrimary,
-  },
-  subtitle: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.textMuted,
-  },
+  title: textStyles.bodyStrong,
+  subtitle: textStyles.caption,
 });

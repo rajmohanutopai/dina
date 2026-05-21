@@ -35,7 +35,7 @@ import {
   type ListRenderItem,
 } from 'react-native';
 
-import { colors, fonts, radius, spacing } from '../../theme';
+import { colors, radius, spacing, textStyles } from '../../theme';
 
 export interface MultiSelectOption<T extends string> {
   /** The persisted value (must match the underlying field's enum). */
@@ -243,10 +243,8 @@ export function toggleArrayValue<T extends string>(
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgPrimary },
   description: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
-    lineHeight: 18,
   },
   // Description is INSIDE the screen frame (above the search and the
   // list), so it gets matched padding to align with the list rows.
@@ -269,10 +267,8 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   searchInput: {
+    ...textStyles.body,
     flex: 1,
-    fontFamily: fonts.sans,
-    fontSize: 15,
-    color: colors.textPrimary,
     padding: 0,
   },
   listContent: {
@@ -291,15 +287,9 @@ const styles = StyleSheet.create({
   },
   rowPressed: { backgroundColor: colors.bgTertiary },
   rowMain: { flex: 1 },
-  rowLabel: {
-    fontFamily: fonts.sans,
-    fontSize: 15,
-    color: colors.textPrimary,
-  },
+  rowLabel: textStyles.body,
   rowDescription: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.textMuted,
+    ...textStyles.caption,
     marginTop: 2,
   },
   placeholderWrap: {
@@ -307,8 +297,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   placeholderText: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.textMuted,
   },
 });

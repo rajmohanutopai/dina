@@ -38,7 +38,7 @@ import { useLiveThread } from '../src/hooks/useChatThread';
 import { useHasActiveAgent } from '../src/hooks/useHasActiveAgent';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
 import { loadVerificationStatus } from '../src/services/verification_status';
-import { colors, fonts, spacing, radius, shadows } from '../src/theme';
+import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 
 import type { ChatMessage } from '@dina/brain/chat';
 
@@ -136,7 +136,7 @@ const ACTIONS = [
   {
     key: 'task',
     label: 'Task',
-    description: 'Hand work to an agent \u2014 fetch email, run a workflow, \u2026',
+    description: 'Hand work to an agent. Fetch email, run a workflow, \u2026',
     prefix: '/task ',
     placeholder: 'e.g. Fetch my new email',
   },
@@ -375,11 +375,12 @@ export default function ChatScreen() {
           contentContainerStyle={styles.emptyState}
           showsVerticalScrollIndicator={false}
         >
-          {/* Hero — header already shows the Dina wordmark, so no
-              redundant DINA label here. */}
-          <Text style={styles.heroTitle}>Your sovereign{'\n'}personal AI</Text>
+          {/* Small italic brand tagline + supporting body. No big hero
+              greeting — keeps the empty state quiet so the action
+              card below carries the discovery work. */}
+          <Text style={styles.heroTagline}>Your sovereign personal AI</Text>
           <Text style={styles.heroSubtitle}>
-            Everything stays on your device.{'\n'}Zero personal data on any server.
+            Ask, remember, or hand off a task. Everything stays on your device.
           </Text>
 
           {/* Help CTA \u2014 first-time-user discovery surface. The previous
@@ -402,7 +403,7 @@ export default function ChatScreen() {
                 <Text style={styles.actionArrow}>{'\u2192'}</Text>
               </View>
               <Text style={styles.actionCardDesc}>
-                {'Tour the capabilities \u2014 your vault, working with agents, coordinating with people, and queries to the Dina network.'}
+                {'Tour Dina\'s capabilities: your vault, agents, people, and network services.'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -591,7 +592,7 @@ const styles = StyleSheet.create({
   verifyBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFF4DB',
+    backgroundColor: colors.warningBgSoft,
     borderLeftWidth: 3,
     borderLeftColor: colors.warning,
     paddingHorizontal: spacing.md,
@@ -604,19 +605,17 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   verifyBannerTitle: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 13,
-    color: '#5A3A00',
+    ...textStyles.bodySmallStrong,
+    color: colors.warningTextDeepest,
   },
   verifyBannerBody: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: '#8A5A00',
+    ...textStyles.caption,
+    color: colors.warningTextDeep,
     marginTop: 1,
   },
   verifyBannerChevron: {
-    fontSize: 18,
-    color: '#8A5A00',
+    ...textStyles.h3,
+    color: colors.warningTextDeep,
     marginLeft: spacing.sm,
   },
 
@@ -630,21 +629,20 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: spacing.xl,
   },
-  heroTitle: {
-    fontSize: 32,
-    fontWeight: '300',
-    color: colors.textPrimary,
+  heroTagline: {
+    ...textStyles.tagline,
     textAlign: 'center',
-    lineHeight: 40,
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-    fontStyle: 'italic',
+    marginBottom: spacing.xs,
+  },
+  heroTitle: {
+    ...textStyles.displaySmall,
+    textAlign: 'center',
   },
   heroSubtitle: {
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.textSecondary,
     textAlign: 'center',
     marginTop: spacing.md,
-    lineHeight: 22,
   },
 
   // Action cards
@@ -675,25 +673,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 10,
   },
-  actionIconText: {
-    fontSize: 14,
-    color: colors.textPrimary,
-    fontWeight: '600',
-  },
+  actionIconText: textStyles.bodySmallStrong,
   actionCardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.textPrimary,
+    ...textStyles.bodyLargeStrong,
     flex: 1,
   },
   actionArrow: {
-    fontSize: 16,
+    ...textStyles.bodyLarge,
     color: colors.textMuted,
   },
   actionCardDesc: {
-    fontSize: 14,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
-    lineHeight: 20,
     marginLeft: 40,
   },
   // Message list
@@ -735,36 +726,30 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   senderLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.textMuted,
-    marginBottom: 3,
+    ...textStyles.eyebrow,
     letterSpacing: 0.3,
+    marginBottom: 3,
   },
   systemLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.textMuted,
-    marginBottom: 3,
+    ...textStyles.eyebrow,
     letterSpacing: 0.3,
+    marginBottom: 3,
     textAlign: 'center',
   },
   messageText: {
-    fontSize: 16,
-    lineHeight: 23,
+    ...textStyles.bodyLarge,
     color: colors.dinaBubbleText,
   },
   userText: {
     color: colors.userBubbleText,
   },
   systemText: {
+    ...textStyles.body,
     color: colors.textSecondary,
     textAlign: 'center',
-    fontSize: 14,
   },
   timestamp: {
-    fontSize: 10,
-    color: colors.textMuted,
+    ...textStyles.tiny,
     marginTop: 4,
     alignSelf: 'flex-start',
   },
@@ -792,7 +777,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textMuted,
   },
   typingText: {
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textMuted,
     fontStyle: 'italic',
   },
@@ -814,11 +799,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     alignItems: 'center',
   },
-  modeChipLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: colors.textPrimary,
-  },
+  modeChipLabel: textStyles.link,
 
   // Mode pill — selected mode shown inside the input wrapper.
   // Tappable: opens the mode-switch popover.
@@ -833,16 +814,14 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   modePillLabel: {
-    fontSize: 13,
-    fontWeight: '600',
+    ...textStyles.bodySmallStrong,
     color: colors.white,
     letterSpacing: 0.3,
   },
   modePillChevron: {
-    fontSize: 12,
+    ...textStyles.caption,
     color: 'rgba(255,255,255,0.85)',
     marginLeft: 5,
-    fontWeight: '600',
   },
 
   // Message chip (in user bubble)
@@ -855,11 +834,9 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   msgChipText: {
-    fontSize: 11,
-    fontWeight: '600',
+    ...textStyles.eyebrow,
     color: 'rgba(255,255,255,0.85)',
     letterSpacing: 0.5,
-    textTransform: 'uppercase',
   },
 
   // Mode-switch popover (modal slide-up sheet)
@@ -878,11 +855,8 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   popoverHint: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.textMuted,
+    ...textStyles.eyebrow,
     letterSpacing: 0.5,
-    textTransform: 'uppercase',
     marginBottom: 12,
   },
   popoverRow: {
@@ -895,18 +869,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgSecondary,
   },
   popoverLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.textPrimary,
+    ...textStyles.bodyLargeStrong,
     marginBottom: 2,
   },
   popoverLabelActive: {
     color: colors.accent,
   },
   popoverDesc: {
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
-    lineHeight: 18,
   },
 
   // Input
@@ -936,10 +907,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   textInput: {
+    ...textStyles.bodyLarge,
     flex: 1,
-    fontSize: 16,
     lineHeight: 22,
-    color: colors.textPrimary,
     maxHeight: 100,
     paddingVertical: Platform.OS === 'ios' ? 8 : 6,
   },
@@ -959,9 +929,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgTertiary,
   },
   sendArrow: {
+    ...textStyles.h3,
     color: colors.white,
-    fontSize: 18,
-    fontWeight: '700',
     marginTop: -1,
   },
   sendArrowDisabled: {

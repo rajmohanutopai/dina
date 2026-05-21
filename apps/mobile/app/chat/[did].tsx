@@ -30,7 +30,7 @@ import type { ChatMessage } from '@dina/brain/chat';
 import { useD2DChat } from '../../src/hooks/useD2DChat';
 import { getProfile as getTrustProfile } from '../../src/peerlens/appview_runtime';
 import { displayName as displayNameOf } from '../../src/peerlens/handle_display';
-import { colors, fonts, spacing } from '../../src/theme';
+import { colors, spacing, textStyles } from '../../src/theme';
 import { ChatSendError } from '../../src/services/chat_d2d';
 import { IdentityModal } from '../../src/components/identity/identity_modal';
 
@@ -266,9 +266,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgPrimary,
   },
   warningBanner: {
-    backgroundColor: '#FFF4DB',
+    backgroundColor: colors.warningBgSoft,
     borderBottomWidth: 1,
-    borderBottomColor: '#D97706',
+    borderBottomColor: colors.warning,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     flexDirection: 'row',
@@ -276,15 +276,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   warningText: {
+    ...textStyles.bodySmall,
     flex: 1,
-    fontFamily: fonts.sans,
-    fontSize: 13,
-    color: colors.textPrimary,
     marginRight: spacing.sm,
   },
   warningAction: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 13,
+    ...textStyles.bodySmallStrong,
     color: colors.accent,
   },
   list: {
@@ -298,9 +295,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xl,
   },
   emptyText: {
-    fontFamily: fonts.sans,
+    ...textStyles.body,
     color: colors.textMuted,
-    fontSize: 14,
   },
   bubbleRow: {
     marginVertical: 4,
@@ -323,15 +319,13 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 4,
   },
   bubbleTextPeer: {
-    fontFamily: fonts.sans,
+    ...textStyles.body,
     color: colors.dinaBubbleText,
-    fontSize: 15,
     lineHeight: 20,
   },
   bubbleTextMe: {
-    fontFamily: fonts.sans,
+    ...textStyles.body,
     color: colors.userBubbleText,
-    fontSize: 15,
     lineHeight: 20,
   },
   deliveryIndicator: {
@@ -339,8 +333,7 @@ const styles = StyleSheet.create({
     // against the bubble's bottom edge. Tiny font keeps the row
     // height stable — without `alignSelf` the FlexRow would baseline
     // the indicator against the bubble's text and look misaligned.
-    fontFamily: fonts.sans,
-    fontSize: 11,
+    ...textStyles.tiny,
     marginLeft: 6,
     marginRight: 2,
     alignSelf: 'flex-end',
@@ -351,8 +344,7 @@ const styles = StyleSheet.create({
     marginVertical: spacing.sm,
   },
   errorText: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
+    ...textStyles.caption,
     color: colors.error,
     fontStyle: 'italic',
   },
@@ -367,16 +359,14 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   input: {
+    ...textStyles.body,
     flex: 1,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.bgPrimary,
-    color: colors.textPrimary,
     borderRadius: 20,
     paddingHorizontal: spacing.md,
     paddingVertical: Platform.OS === 'ios' ? spacing.sm : 6,
-    fontFamily: fonts.sans,
-    fontSize: 15,
     maxHeight: 120,
   },
   sendButton: {
@@ -388,26 +378,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sendText: {
-    fontFamily: fonts.headingBold,
-    color: '#FFFFFF',
-    fontSize: 18,
+    ...textStyles.h3,
+    color: colors.white,
   },
   pressed: { opacity: 0.7 },
   disabled: { opacity: 0.4 },
   headerTitleBtn: {
     alignItems: 'center',
   },
-  headerTitleText: {
-    fontFamily: fonts.headingBold,
-    fontSize: 16,
-    color: colors.textPrimary,
-  },
+  headerTitleText: textStyles.bodyLargeStrong,
   headerTitleHint: {
-    fontFamily: fonts.sans,
-    fontSize: 9,
+    ...textStyles.tiny,
     letterSpacing: 0.6,
     textTransform: 'uppercase',
-    color: colors.textMuted,
     marginTop: 1,
   },
 });

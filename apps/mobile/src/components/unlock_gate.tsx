@@ -33,6 +33,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { PassphraseField } from './PassphraseField';
 import {
   unlock,
   useIsUnlocked,
@@ -282,22 +283,15 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
           Your vault is on this device. Enter the passphrase you set during onboarding.
         </Text>
 
-        <Text style={styles.label}>Passphrase</Text>
-        <TextInput
+        <PassphraseField
+          label="Passphrase"
           value={passphrase}
           onChangeText={setPassphrase}
-          secureTextEntry
-          autoCapitalize="none"
-          autoCorrect={false}
-          spellCheck={false}
           editable={!busy}
           placeholder="Passphrase"
-          placeholderTextColor={colors.textMuted}
-          style={styles.input}
           onSubmitEditing={() => void runUnlock(passphrase)}
+          error={error !== '' ? error : undefined}
         />
-
-        {error !== '' ? <Text style={styles.error}>{error}</Text> : null}
 
         <Pressable
           onPress={() => void runUnlock(passphrase)}
@@ -335,48 +329,43 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xxl * 2,
   },
   brand: {
-    ...textStyles.screenEyebrow,
+    ...textStyles.eyebrow,
     letterSpacing: 6,
   },
   headline: {
-    ...textStyles.screenHeadline,
+    ...textStyles.display,
     marginTop: spacing.md,
-    fontSize: 36,
-    lineHeight: 44,
   },
   sub: {
-    ...textStyles.screenBody,
+    ...textStyles.body,
+    color: colors.textSecondary,
     marginTop: spacing.sm,
   },
   label: {
+    ...textStyles.label,
     marginTop: spacing.xl,
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
     color: colors.textMuted,
   },
   input: {
+    ...textStyles.bodyLarge,
     marginTop: spacing.sm,
     height: 52,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.bgSecondary,
-    color: colors.textPrimary,
     paddingHorizontal: spacing.md,
-    fontSize: 16,
   },
   error: {
-    marginTop: spacing.md,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.error,
+    marginTop: spacing.md,
   },
   progress: {
+    ...textStyles.bodySmall,
+    color: colors.textSecondary,
     marginTop: spacing.md,
     textAlign: 'center',
-    fontSize: 13,
-    color: colors.textSecondary,
   },
   primary: {
     marginTop: spacing.xl,
@@ -387,10 +376,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   disabled: { opacity: 0.5 },
-  primaryText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  primaryText: textStyles.button,
   pressed: { opacity: 0.7 },
 });

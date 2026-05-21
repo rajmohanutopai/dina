@@ -149,12 +149,12 @@ describe('FacetBarView — accessibility (TN-TEST-061 surface)', () => {
   });
 
   it('"More" chip carries an explicit count in accessibilityLabel', () => {
-    // Sighted users see "More"; screen-reader users get "More — N more"
+    // Sighted users see "More"; screen-reader users get "More. N additional facets."
     // so they know how many additional facets exist behind the CTA.
     const { getByLabelText } = render(
       <FacetBarView facets={SAMPLE_FACETS} onShowMore={() => undefined} />,
     );
-    expect(getByLabelText(/More — 2 more/)).toBeTruthy();
+    expect(getByLabelText(/More\. 2 additional facets\./)).toBeTruthy();
   });
 });
 

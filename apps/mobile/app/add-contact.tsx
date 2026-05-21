@@ -36,7 +36,7 @@ import {
 import { useRouter } from 'expo-router';
 import { addContact, getContact } from '@dina/core';
 import { getProfile as getTrustProfile } from '../src/peerlens/appview_runtime';
-import { colors, fonts, spacing, radius } from '../src/theme';
+import { colors, spacing, radius, textStyles } from '../src/theme';
 
 export default function AddContactScreen() {
   const router = useRouter();
@@ -291,43 +291,33 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   sub: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.textSecondary,
-    lineHeight: 20,
     marginBottom: spacing.lg,
   },
   label: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 12,
-    color: colors.textMuted,
+    ...textStyles.label,
     letterSpacing: 0.5,
-    textTransform: 'uppercase',
     marginBottom: spacing.xs,
     marginTop: spacing.md,
   },
   input: {
+    ...textStyles.mono,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.bgSecondary,
-    color: colors.textPrimary,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
     paddingVertical: Platform.OS === 'ios' ? spacing.md : spacing.sm,
-    fontFamily: fonts.mono,
-    fontSize: 15,
   },
   error: {
-    fontFamily: fonts.sansMedium,
+    ...textStyles.body,
     marginTop: spacing.md,
     color: colors.error,
-    fontSize: 14,
   },
   hint: {
-    fontFamily: fonts.sans,
+    ...textStyles.bodySmall,
     marginTop: spacing.md,
-    color: colors.textMuted,
-    fontSize: 13,
   },
   buttons: {
     flexDirection: 'row',
@@ -344,11 +334,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.bgSecondary,
   },
-  cancelText: {
-    fontFamily: fonts.sansSemibold,
-    color: colors.textPrimary,
-    fontSize: 15,
-  },
+  cancelText: textStyles.bodyStrong,
   save: {
     flex: 1,
     alignItems: 'center',
@@ -358,9 +344,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   saveText: {
-    fontFamily: fonts.sansSemibold,
-    color: '#FFFFFF',
-    fontSize: 15,
+    ...textStyles.bodyStrong,
+    color: colors.white,
   },
   pressed: { opacity: 0.7 },
   disabled: { opacity: 0.5 },

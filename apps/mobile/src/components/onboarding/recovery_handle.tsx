@@ -26,7 +26,7 @@ import {
   type ResolveDidResult,
 } from '../../hooks/useOnboarding';
 import { locateStep, type Step } from '../../onboarding/state';
-import { colors, fonts, radius, spacing } from '../../theme';
+import { colors, radius, spacing, textStyles } from '../../theme';
 
 import { OnboardingShell } from './shell';
 
@@ -98,7 +98,7 @@ export function RecoveryHandle(props: RecoveryHandleProps): React.ReactElement {
 
       <Text style={styles.hint}>
         Dina checks that the recovery phrase you entered is registered as a rotation key on
-        the handle's PLC document — so a wrong phrase or a wrong handle will fail loudly
+        the handle's PLC document, so a wrong phrase or a wrong handle will fail loudly
         instead of silently restoring into the wrong account.
       </Text>
     </OnboardingShell>
@@ -107,16 +107,12 @@ export function RecoveryHandle(props: RecoveryHandleProps): React.ReactElement {
 
 const styles = StyleSheet.create({
   label: {
-    fontFamily: fonts.mono,
-    fontSize: 11,
+    ...textStyles.monoSmall,
     letterSpacing: 1.2,
-    color: colors.textMuted,
     marginBottom: spacing.xs,
   },
   input: {
-    fontFamily: fonts.mono,
-    fontSize: 15,
-    color: colors.textPrimary,
+    ...textStyles.mono,
     backgroundColor: colors.bgSecondary,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
@@ -130,22 +126,17 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   busyText: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textMuted,
     flex: 1,
   },
   error: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.error,
     marginTop: spacing.md,
   },
   hint: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.textMuted,
+    ...textStyles.caption,
     marginTop: spacing.lg,
-    lineHeight: 18,
   },
 });

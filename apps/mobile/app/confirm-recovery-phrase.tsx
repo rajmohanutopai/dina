@@ -20,13 +20,14 @@
  */
 
 import React, { useCallback, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { entropyToMnemonic, unwrapSeed } from '@dina/core';
 import { MnemonicVerify } from '../src/components/onboarding/mnemonic_verify';
+import { PassphraseField } from '../src/components/PassphraseField';
 import { loadWrappedSeed } from '../src/services/wrapped_seed_store';
 import { markVerified } from '../src/services/verification_status';
-import { colors, fonts, radius, spacing } from '../src/theme';
+import { colors, fonts, radius, spacing, textStyles } from '../src/theme';
 
 type Mode = 'gate' | 'unlocking' | 'verify';
 
@@ -97,34 +98,26 @@ export default function ConfirmRecoveryPhraseScreen(): React.ReactElement {
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={styles.title}>Confirm recovery phrase</Text>
+      {/* In-page H1 removed — the native Stack header already shows
+          "Confirm phrase" (the same intent). */}
       <Text style={styles.subtitle}>
         Quick check to make sure your written copy is good. Enter your passphrase, then we'll ask
         for a few of the words.
       </Text>
 
-      <Text style={styles.fieldLabel}>PASSPHRASE</Text>
-      <TextInput
+      <PassphraseField
+        label="PASSPHRASE"
         value={passphrase}
         onChangeText={(v) => {
           setPassphrase(v);
           if (error !== '') setError('');
         }}
-        secureTextEntry
-        autoCapitalize="none"
-        autoCorrect={false}
-        spellCheck={false}
-        autoComplete="off"
-        textContentType="password"
         editable={mode !== 'unlocking'}
         placeholder="Your passphrase"
-        placeholderTextColor={colors.textMuted}
-        style={styles.input}
         onSubmitEditing={() => void handleUnlock()}
         accessibilityLabel="Enter passphrase to confirm recovery phrase"
+        error={error !== '' ? error : undefined}
       />
-
-      {error !== '' ? <Text style={styles.error}>{error}</Text> : null}
 
       <Pressable
         onPress={() => void handleUnlock()}
@@ -175,43 +168,35 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
   },
   title: {
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    ...textStyles.h2,
+    fontFamily: fonts.display,
     fontStyle: 'italic',
-    fontSize: 24,
-    color: colors.textPrimary,
     letterSpacing: -0.3,
     marginBottom: spacing.sm,
   },
   subtitle: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    lineHeight: 20,
+    ...textStyles.body,
     color: colors.textSecondary,
     marginBottom: spacing.lg,
   },
   fieldLabel: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
+    ...textStyles.eyebrow,
     letterSpacing: 0.5,
-    color: colors.textMuted,
     marginBottom: 6,
   },
   input: {
+    ...textStyles.mono,
+    fontSize: 16,
     height: 52,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.bgSecondary,
-    color: colors.textPrimary,
     paddingHorizontal: spacing.md,
-    fontSize: 16,
-    fontFamily: fonts.mono,
     marginBottom: spacing.md,
   },
   error: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
-    lineHeight: 18,
+    ...textStyles.bodySmall,
     color: colors.error,
     marginBottom: spacing.md,
   },
@@ -230,8 +215,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   primaryButtonText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 15,
+    ...textStyles.bodyStrong,
     color: colors.bgPrimary,
   },
   cancelButton: {
@@ -240,17 +224,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cancelButtonText: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.textMuted,
   },
   hint: {
     marginTop: spacing.lg,
   },
-  hintText: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    lineHeight: 17,
-    color: colors.textMuted,
-  },
+  hintText: textStyles.caption,
 });

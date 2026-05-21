@@ -27,7 +27,7 @@ import React, { useCallback, useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useViewerPreferences } from '../../src/hooks/useViewerPreferences';
-import { colors, fonts, radius, spacing } from '../../src/theme';
+import { colors, radius, spacing, textStyles } from '../../src/theme';
 import {
   BUDGET_CATEGORIES,
   type BudgetCategory,
@@ -192,10 +192,8 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   description: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
-    lineHeight: 18,
   },
   list: {
     backgroundColor: colors.bgCard,
@@ -212,15 +210,9 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   rowMain: {},
-  rowLabel: {
-    fontFamily: fonts.sans,
-    fontSize: 15,
-    color: colors.textPrimary,
-  },
+  rowLabel: textStyles.body,
   rowDescription: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.textMuted,
+    ...textStyles.caption,
     marginTop: 2,
   },
   segments: {
@@ -241,8 +233,7 @@ const styles = StyleSheet.create({
   },
   segmentPressed: { opacity: 0.7 },
   segmentLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
   },
   segmentLabelSelected: {

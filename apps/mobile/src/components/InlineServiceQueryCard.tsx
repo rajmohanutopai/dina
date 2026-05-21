@@ -27,7 +27,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { readLifecycle, type ChatMessage } from '@dina/brain/chat';
-import { colors, fonts, radius, spacing } from '../theme';
+import { colors, radius, spacing, textStyles } from '../theme';
 import { MessageTimestamp } from './MessageTimestamp';
 
 export interface InlineServiceQueryCardProps {
@@ -86,7 +86,7 @@ export function InlineServiceQueryCard({
     <View style={[styles.card, styles.cardError]}>
       <View style={styles.headerRow}>
         <Ionicons name="alert-circle-outline" size={18} color={colors.error} />
-        <Text style={styles.title}>{serviceName} — couldn't reach</Text>
+        <Text style={styles.title}>{serviceName}: couldn't reach</Text>
       </View>
       {error !== undefined && error !== '' && <Text style={styles.errorText}>{error}</Text>}
       <MessageTimestamp timestamp={message.timestamp} />
@@ -183,31 +183,20 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   title: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 15,
-    color: colors.textPrimary,
+    ...textStyles.bodyStrong,
     flexShrink: 1,
   },
   subtitle: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textMuted,
   },
-  body: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
-    color: colors.textPrimary,
-    lineHeight: 20,
-  },
+  body: textStyles.body,
   etaPrimary: {
-    fontFamily: fonts.headingBold,
-    fontSize: 28,
-    color: colors.textPrimary,
+    ...textStyles.h2,
     marginVertical: spacing.xs,
   },
   etaSecondary: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 16,
+    ...textStyles.bodyLarge,
     color: colors.textSecondary,
   },
   mapButton: {
@@ -222,13 +211,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   mapButtonText: {
-    fontFamily: fonts.sansSemibold,
+    ...textStyles.buttonSmall,
     color: colors.bgPrimary,
-    fontSize: 14,
   },
   errorText: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.error,
     marginTop: spacing.xs,
   },

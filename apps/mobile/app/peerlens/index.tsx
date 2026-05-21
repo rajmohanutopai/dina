@@ -54,7 +54,7 @@ import {
   TextInput,
 } from 'react-native';
 
-import { colors, fonts, spacing, radius } from '../../src/theme';
+import { colors, spacing, radius, textStyles } from '../../src/theme';
 import { FacetBarView } from '../../src/peerlens/components/facet_bar_view';
 import { FirstRunModalView } from '../../src/peerlens/components/first_run_modal_view';
 import { SubjectCardView } from '../../src/peerlens/components/subject_card_view';
@@ -549,10 +549,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   selfCardHeading: {
+    ...textStyles.body,
     flex: 1,
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
-    color: colors.textPrimary,
   },
   // 2-column wrapped grid (Reddit-style). Four stats laid out as
   // a single row collapsed "Endorsements" to a second line on
@@ -577,16 +575,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 2,
   },
-  selfStatValue: {
-    fontFamily: fonts.heading,
-    fontSize: 20,
-    color: colors.textPrimary,
-  },
-  selfStatLabel: {
-    fontFamily: fonts.sans,
-    fontSize: 11,
-    color: colors.textMuted,
-  },
+  selfStatValue: textStyles.h3,
+  selfStatLabel: textStyles.tiny,
   searchBarContainer: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
@@ -604,10 +594,8 @@ const styles = StyleSheet.create({
   },
   searchIcon: { marginRight: spacing.sm },
   searchInput: {
+    ...textStyles.body,
     flex: 1,
-    fontFamily: fonts.sans,
-    fontSize: 15,
-    color: colors.textPrimary,
     paddingVertical: spacing.sm,
   },
   searchClearBtn: {
@@ -624,11 +612,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
   },
-  loadingText: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
-    color: colors.textMuted,
-  },
+  loadingText: textStyles.bodySmall,
   empty: {
     flex: 1,
     paddingVertical: spacing.xxl,
@@ -637,17 +621,13 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   emptyTitle: {
-    fontFamily: fonts.heading,
-    fontSize: 16,
-    color: colors.textPrimary,
+    ...textStyles.h3,
     marginTop: spacing.md,
   },
   emptyBody: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 18,
   },
   searchCta: {
     flexDirection: 'row',
@@ -662,8 +642,7 @@ const styles = StyleSheet.create({
   },
   searchCtaPressed: { backgroundColor: colors.accentHover },
   searchCtaLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.bgSecondary,
   },
   feedContainer: {
@@ -680,14 +659,6 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
   },
-  footerLink: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
-    color: colors.textMuted,
-  },
-  footerSeparator: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
-    color: colors.textMuted,
-  },
+  footerLink: textStyles.bodySmall,
+  footerSeparator: textStyles.bodySmall,
 });

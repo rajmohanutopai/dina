@@ -34,7 +34,6 @@ import React from 'react';
 import {
   View,
   Text,
-  Platform,
   StyleSheet,
   Pressable,
   ScrollView,
@@ -43,7 +42,7 @@ import {
 
 import { getBootedNode } from '../../src/hooks/useNodeBootstrap';
 import { useViewerPreferences } from '../../src/hooks/useViewerPreferences';
-import { colors, fonts, spacing, radius } from '../../src/theme';
+import { colors, spacing, radius, textStyles } from '../../src/theme';
 import { BAND_COLOUR, BAND_LABEL } from '../../src/peerlens/band_theme';
 import { useSubjectDetail } from '../../src/peerlens/runners/use_subject_detail';
 import { trustBandFor, type PeerlensBand } from '../../src/peerlens/score_helpers';
@@ -468,7 +467,7 @@ export default function SubjectDetailScreen(
           detail.friendsReviews.length === 0 &&
           detail.fofReviews.length === 0 &&
           detail.strangerReviews.length === 0
-            ? 'No reviews yet — be the first.'
+            ? 'No reviews yet. Be the first.'
             : null
         }
         testIdPrefix="strangers"
@@ -694,7 +693,7 @@ function ReviewRow(props: ReviewRowProps): React.ReactElement {
               pressed && onPressOwnReview ? styles.selfBodyTouchablePressed : null,
             ]}
             accessibilityRole={onPressOwnReview ? 'button' : 'text'}
-            accessibilityLabel="Your review — tap to edit"
+            accessibilityLabel="Your review. Tap to edit."
             testID={`${testID}-body`}
           >
             <Text style={styles.reviewerName}>Your review</Text>
@@ -768,21 +767,16 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   panelTitle: {
-    fontFamily: fonts.heading,
-    fontSize: 16,
-    color: colors.textPrimary,
+    ...textStyles.h3,
     marginTop: spacing.md,
   },
   panelBody: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
     textAlign: 'center',
   },
   loadingText: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
-    color: colors.textMuted,
+    ...textStyles.bodySmall,
     marginTop: spacing.md,
   },
   retryBtn: {
@@ -798,8 +792,7 @@ const styles = StyleSheet.create({
   },
   retryBtnPressed: { backgroundColor: colors.accentHover },
   retryLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.bgSecondary,
   },
   headerCard: {
@@ -811,17 +804,10 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   title: {
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-    fontStyle: 'italic',
-    fontSize: 20,
-    color: colors.textPrimary,
+    ...textStyles.h3,
     letterSpacing: -0.3,
   },
-  subtitle: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
-    color: colors.textMuted,
-  },
+  subtitle: textStyles.bodySmall,
   // TN-V2-P1-004: context chips on the detail header. Slightly larger
   // type than the card chips (12pt vs 10pt) since the detail surface
   // has more vertical space and the chips are still the secondary
@@ -864,16 +850,11 @@ const styles = StyleSheet.create({
     borderColor: colors.warning,
   },
   flagWarningText: {
+    ...textStyles.bodySmall,
     flex: 1,
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
-    color: colors.textPrimary,
-    lineHeight: 18,
   },
   contextChipText: {
-    fontFamily: fonts.mono,
-    fontSize: 12,
-    color: colors.textMuted,
+    ...textStyles.monoSmall,
     letterSpacing: 0.3,
   },
   headerRow: {
@@ -890,20 +871,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   scoreText: {
-    fontFamily: fonts.headingBold,
-    fontSize: 14,
+    ...textStyles.bodyStrong,
     color: colors.bgSecondary,
   },
   reviewCount: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.textSecondary,
   },
-  ringSummary: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.textMuted,
-  },
+  ringSummary: textStyles.caption,
   writeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -916,8 +891,7 @@ const styles = StyleSheet.create({
   },
   writeBtnPressed: { backgroundColor: colors.accentHover },
   writeBtnLabel: {
-    fontFamily: fonts.headingBold,
-    fontSize: 15,
+    ...textStyles.button,
     color: colors.bgSecondary,
   },
   section: { gap: spacing.sm },
@@ -926,25 +900,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  sectionTitle: {
-    fontFamily: fonts.heading,
-    fontSize: 16,
-    color: colors.textPrimary,
-  },
-  sectionCount: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
-    color: colors.textMuted,
-  },
-  sectionSubtitle: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.textMuted,
-  },
+  sectionTitle: textStyles.h3,
+  sectionCount: textStyles.bodySmall,
+  sectionSubtitle: textStyles.caption,
   emptyHint: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
-    color: colors.textMuted,
+    ...textStyles.bodySmall,
     fontStyle: 'italic',
     paddingVertical: spacing.md,
   },
@@ -969,19 +929,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  reviewerName: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
-    color: colors.textPrimary,
-  },
+  reviewerName: textStyles.body,
   miniBand: {
     paddingVertical: 2,
     paddingHorizontal: spacing.sm,
     borderRadius: radius.sm,
   },
   miniBandText: {
-    fontFamily: fonts.headingBold,
-    fontSize: 10,
+    ...textStyles.tiny,
     color: colors.bgSecondary,
   },
   editPill: {
@@ -994,15 +949,12 @@ const styles = StyleSheet.create({
   },
   editPillPressed: { backgroundColor: colors.bgTertiary },
   editPillText: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 11,
+    ...textStyles.tiny,
     color: colors.textPrimary,
   },
   headline: {
-    fontFamily: fonts.serif,
-    fontSize: 14,
-    color: colors.textPrimary,
-    lineHeight: 19,
+    ...textStyles.body,
+    fontStyle: 'italic',
   },
   // TN-V2-RANK-014 — alternatives strip below the review list. Lays
   // out as a horizontal row of compact cards with a section header.
@@ -1013,11 +965,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
     gap: spacing.sm,
   },
-  alternativesTitle: {
-    fontFamily: fonts.headingBold,
-    fontSize: 14,
-    color: colors.textPrimary,
-  },
+  alternativesTitle: textStyles.bodyStrong,
   alternativesRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1039,15 +987,6 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: radius.sm,
   },
-  alternativeTitle: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
-    color: colors.textPrimary,
-    lineHeight: 17,
-  },
-  alternativeCategory: {
-    fontFamily: fonts.sans,
-    fontSize: 11,
-    color: colors.textMuted,
-  },
+  alternativeTitle: textStyles.bodySmallStrong,
+  alternativeCategory: textStyles.tiny,
 });

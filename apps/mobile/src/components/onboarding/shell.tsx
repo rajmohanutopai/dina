@@ -25,7 +25,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { colors, radius, spacing } from '../../theme';
+import { colors, radius, spacing, textStyles } from '../../theme';
 import type { StepLocation } from '../../onboarding/state';
 
 export interface OnboardingShellProps {
@@ -154,41 +154,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   backGlyph: {
-    fontSize: 22,
+    ...textStyles.h2,
     color: colors.textPrimary,
   },
-  locationPill: {
-    fontSize: 11,
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    color: colors.textMuted,
-    fontWeight: '600',
-  },
+  locationPill: textStyles.eyebrow,
   scroll: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.xl,
     paddingBottom: spacing.xxl,
   },
   eyebrow: {
-    fontSize: 13,
-    letterSpacing: 3,
-    fontWeight: '600',
-    color: colors.textMuted,
-    textTransform: 'uppercase',
+    ...textStyles.eyebrow,
     marginBottom: spacing.md,
   },
-  title: {
-    fontSize: 32,
-    lineHeight: 38,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    letterSpacing: -0.5,
-  },
+  title: textStyles.h1,
   subtitle: {
-    marginTop: spacing.md,
-    fontSize: 15,
-    lineHeight: 22,
+    ...textStyles.body,
     color: colors.textSecondary,
+    marginTop: spacing.md,
   },
   body: {
     marginTop: spacing.xl,
@@ -211,20 +194,14 @@ const styles = StyleSheet.create({
   primaryDisabled: {
     opacity: 0.35,
   },
-  primaryText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-    letterSpacing: 0.2,
-  },
+  primaryText: textStyles.button,
   secondary: {
     alignItems: 'center',
     paddingVertical: spacing.md,
   },
   secondaryText: {
+    ...textStyles.link,
     color: colors.textSecondary,
-    fontSize: 14,
-    fontWeight: '500',
   },
   pressed: { opacity: 0.7 },
 });

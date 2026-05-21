@@ -183,7 +183,7 @@ export function demoServiceProfile(overrides: Partial<ServiceProfile> = {}): Ser
   return {
     did: 'did:plc:bus42demo',
     name: 'Bus 42',
-    description: 'service-discovery demo — deterministic transit stub',
+    description: 'Service-discovery demo. Deterministic transit stub.',
     capabilities: ['eta_query'],
     responsePolicy: { eta_query: 'auto' },
     isDiscoverable: true,
@@ -220,7 +220,7 @@ export function drCarlDemoProfile(overrides: Partial<ServiceProfile> = {}): Serv
   return {
     did: 'did:plc:drcarldemo',
     name: "Dr Carl's Clinic",
-    description: 'Dr Carl demo — appointment_status live capability',
+    description: 'Dr Carl demo. Appointment_status live capability.',
     capabilities: ['appointment_status'],
     responsePolicy: { appointment_status: 'auto' },
     isDiscoverable: true,

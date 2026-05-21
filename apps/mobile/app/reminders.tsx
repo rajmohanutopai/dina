@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, SectionList, Pressable, Alert } from 'react-native';
 
@@ -10,7 +10,7 @@ import {
   type ReminderUIItem,
   type ReminderGroup,
 } from '../src/hooks/useReminders';
-import { colors, fonts, spacing, radius, shadows } from '../src/theme';
+import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 
 /**
  * Reminders tab — shows upcoming + overdue reminders from Brain's
@@ -25,6 +25,7 @@ import { colors, fonts, spacing, radius, shadows } from '../src/theme';
  * the user switches tabs. A focus-time re-read is good enough.
  */
 export default function RemindersScreen() {
+  const router = useRouter();
   const [sections, setSections] = useState<ReminderGroup[]>([]);
 
   const refresh = useCallback(() => {
@@ -71,10 +72,18 @@ export default function RemindersScreen() {
           />
           <Text style={styles.emptyTitle}>No reminders yet</Text>
           <Text style={styles.emptyBody}>
-            Tell Dina about an event in Chat — pick{' '}
+            Tell Dina about an event in Chat. Pick{' '}
             <Text style={styles.code}>Remember</Text> and any dates inside will turn into
             reminders here.
           </Text>
+          <Pressable
+            onPress={() => router.replace('/')}
+            accessibilityRole="button"
+            accessibilityLabel="Go to Chat"
+            style={({ pressed }) => [styles.emptyCta, pressed && { opacity: 0.7 }]}
+          >
+            <Text style={styles.emptyCtaText}>Go to Chat</Text>
+          </Pressable>
         </View>
       </View>
     );
@@ -150,11 +159,8 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
   },
   sectionHeader: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
+    ...textStyles.eyebrow,
     letterSpacing: 0.6,
-    color: colors.textMuted,
-    textTransform: 'uppercase',
     paddingTop: spacing.md,
     paddingBottom: spacing.xs,
     backgroundColor: colors.bgPrimary,
@@ -174,12 +180,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgTertiary,
   },
   rowMain: { flex: 1 },
-  message: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 15,
-    color: colors.textPrimary,
-    lineHeight: 20,
-  },
+  message: textStyles.body,
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -188,13 +189,11 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   due: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
   },
   dueOverdue: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 13,
+    ...textStyles.bodySmallStrong,
     color: colors.error,
   },
   personaBadge: {
@@ -204,16 +203,13 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   personaText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
+    ...textStyles.eyebrow,
     color: colors.textSecondary,
     letterSpacing: 0.3,
     textTransform: 'lowercase',
   },
   recurring: {
-    fontFamily: fonts.sans,
-    fontSize: 11,
-    color: colors.textMuted,
+    ...textStyles.tiny,
     fontStyle: 'italic',
   },
   emptyState: {
@@ -222,25 +218,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
   },
-  emptyTitle: {
-    fontFamily: fonts.heading,
-    fontSize: 18,
-    color: colors.textPrimary,
-  },
+  emptyTitle: textStyles.h3,
   emptyBody: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.textSecondary,
     marginTop: spacing.sm,
-    lineHeight: 20,
     textAlign: 'center',
   },
   code: {
-    fontFamily: fonts.mono,
-    fontSize: 13,
-    color: colors.textPrimary,
+    ...textStyles.mono,
     backgroundColor: colors.bgTertiary,
     paddingHorizontal: 4,
     borderRadius: 3,
+  },
+  emptyCta: {
+    marginTop: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.full,
+    backgroundColor: colors.accent,
+  },
+  emptyCtaText: {
+    ...textStyles.bodyStrong,
+    color: colors.white,
   },
 });

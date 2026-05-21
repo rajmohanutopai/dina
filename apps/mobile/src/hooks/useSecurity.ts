@@ -109,7 +109,7 @@ export async function doChangePassphrase(
   newPassphrase: string,
 ): Promise<{ success: boolean; error?: string }> {
   if (!currentWrappedSeed) {
-    return { success: false, error: 'No wrapped seed available — unlock first' };
+    return { success: false, error: 'No wrapped seed available. Unlock first.' };
   }
 
   // Validate new passphrase

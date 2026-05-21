@@ -27,7 +27,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AppState,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -38,7 +37,8 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { entropyToMnemonic, unwrapSeed } from '@dina/core';
 import { loadWrappedSeed } from '../src/services/wrapped_seed_store';
-import { colors, fonts, radius, spacing } from '../src/theme';
+import { PassphraseField } from '../src/components/PassphraseField';
+import { colors, fonts, radius, spacing, textStyles } from '../src/theme';
 
 type Mode = 'gate' | 'unlocking' | 'revealed';
 
@@ -149,7 +149,7 @@ export default function RecoveryPhraseScreen(): React.ReactElement {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.title}>Your recovery phrase</Text>
+        {/* In-page H1 removed — native header "Recovery phrase" covers it. */}
         <View style={styles.warningBanner}>
           <Text style={styles.warningText}>
             Keep these somewhere very safe. Anyone with these words can access your Dina identity.
@@ -197,35 +197,26 @@ export default function RecoveryPhraseScreen(): React.ReactElement {
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={styles.title}>View recovery phrase</Text>
+      {/* In-page H1 removed — native header "Recovery phrase" covers it. */}
       <Text style={styles.subtitle}>
-        Use this before upgrading or switching phones — enter your passphrase to see your 24 words
+        Use this before upgrading or switching phones. Enter your passphrase to see your 24 words
         and write them down somewhere safe. As long as you have this app and your passphrase, you
         can always retrieve them here.
       </Text>
 
-      <Text style={styles.fieldLabel}>PASSPHRASE</Text>
-      <TextInput
+      <PassphraseField
+        label="PASSPHRASE"
         value={passphrase}
         onChangeText={(v) => {
           setPassphrase(v);
           if (error !== '') setError('');
         }}
-        secureTextEntry
-        autoCapitalize="none"
-        autoCorrect={false}
-        spellCheck={false}
-        autoComplete="off"
-        textContentType="password"
         editable={mode !== 'unlocking'}
         placeholder="Your passphrase"
-        placeholderTextColor={colors.textMuted}
-        style={styles.input}
         onSubmitEditing={() => void handleReveal()}
         accessibilityLabel="Enter passphrase to view recovery phrase"
+        error={error !== '' ? error : undefined}
       />
-
-      {error !== '' ? <Text style={styles.error}>{error}</Text> : null}
 
       <Pressable
         onPress={() => void handleReveal()}
@@ -257,43 +248,35 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
   },
   title: {
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    ...textStyles.h2,
+    fontFamily: fonts.display,
     fontStyle: 'italic',
-    fontSize: 24,
-    color: colors.textPrimary,
     letterSpacing: -0.3,
     marginBottom: spacing.sm,
   },
   subtitle: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    lineHeight: 20,
+    ...textStyles.body,
     color: colors.textSecondary,
     marginBottom: spacing.lg,
   },
   fieldLabel: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
+    ...textStyles.eyebrow,
     letterSpacing: 0.5,
-    color: colors.textMuted,
     marginBottom: 6,
   },
   input: {
+    ...textStyles.mono,
+    fontSize: 16,
     height: 52,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.bgSecondary,
-    color: colors.textPrimary,
     paddingHorizontal: spacing.md,
-    fontSize: 16,
-    fontFamily: fonts.mono,
     marginBottom: spacing.md,
   },
   error: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
-    lineHeight: 18,
+    ...textStyles.bodySmall,
     color: colors.error,
     marginBottom: spacing.md,
   },
@@ -312,12 +295,11 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   primaryButtonText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 15,
+    ...textStyles.bodyStrong,
     color: colors.bgPrimary,
   },
   warningBanner: {
-    backgroundColor: '#FFF4DB',
+    backgroundColor: colors.warningBgSoft,
     borderLeftWidth: 3,
     borderLeftColor: colors.warning,
     padding: spacing.md,
@@ -325,9 +307,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   warningText: {
-    fontSize: 13,
-    lineHeight: 19,
-    color: '#8A5A00',
+    ...textStyles.bodySmall,
+    color: colors.warningTextDeep,
   },
   card: {
     backgroundColor: colors.bgSecondary,
@@ -349,16 +330,13 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   cellIndex: {
+    ...textStyles.monoSmall,
     width: 20,
     textAlign: 'right',
-    fontSize: 11,
-    color: colors.textMuted,
-    fontFamily: fonts.mono,
   },
   cellWord: {
-    fontSize: 14,
+    ...textStyles.mono,
     color: colors.textPrimary,
-    fontFamily: fonts.mono,
     letterSpacing: 0.2,
   },
 });

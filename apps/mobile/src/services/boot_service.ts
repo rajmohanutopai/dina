@@ -71,7 +71,7 @@ import { listPersonas } from '@dina/core';
  * exported for `boot_capabilities.ts` to consume.
  */
 export const MOBILE_PERSONA_DESCRIPTIONS: Record<string, string> = {
-  general: 'Everyday notes — anything that doesn\'t clearly fit a more specific vault.',
+  general: 'Everyday notes. Anything that doesn\'t clearly fit a more specific vault.',
   work: 'Job, projects, colleagues, work calendar items, professional context.',
   health: 'Medical, fitness, symptoms, medications, doctors, allergies.',
   finance: 'Money, budgets, spending, income, bills, debt, investments, taxes.',

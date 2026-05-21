@@ -38,7 +38,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 
-import { colors, fonts, spacing, radius } from '../../theme';
+import { colors, spacing, radius, textStyles } from '../../theme';
 import type { CosigInboxRowDisplay, CosigInboxAction } from '../cosig_inbox';
 
 const STATE_LABEL: Record<CosigInboxRowDisplay['state'], string> = {
@@ -191,26 +191,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
   },
-  stateLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 12,
-  },
-  expiry: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.textMuted,
-  },
+  stateLabel: textStyles.caption,
+  expiry: textStyles.caption,
   title: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
-    color: colors.textPrimary,
+    ...textStyles.body,
     marginTop: spacing.xs,
   },
   bodyPreview: {
-    fontFamily: fonts.serif,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
-    lineHeight: 18,
+    fontStyle: 'italic',
   },
   actions: {
     flexDirection: 'row',
@@ -229,8 +219,7 @@ const styles = StyleSheet.create({
   },
   endorseBtnPressed: { backgroundColor: colors.accentHover },
   endorseLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.bgSecondary,
   },
   declineBtn: {
@@ -242,8 +231,7 @@ const styles = StyleSheet.create({
   },
   declineBtnPressed: { backgroundColor: colors.bgTertiary },
   declineLabel: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
   },
 });

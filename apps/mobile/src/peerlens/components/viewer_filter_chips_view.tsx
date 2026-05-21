@@ -22,7 +22,7 @@
 import React, { useCallback } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { colors, fonts, radius, spacing } from '../../theme';
+import { colors, fonts, radius, spacing, textStyles } from '../../theme';
 import type { ViewerFilter, ViewerFilterId } from '../preferences/viewer_filters';
 
 export interface ViewerFilterChipsViewProps {
@@ -118,8 +118,7 @@ const styles = StyleSheet.create({
   },
   chipPressed: { opacity: 0.7 },
   chipLabel: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
+    ...textStyles.caption,
     color: colors.textSecondary,
   },
   chipLabelActive: {

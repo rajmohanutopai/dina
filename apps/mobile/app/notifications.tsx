@@ -26,7 +26,7 @@ import {
   type NotificationKind,
 } from '@dina/brain/notifications';
 import { applyNotificationFilter, type FilterKey } from '../src/notifications/screen_filter';
-import { colors, fonts, radius, spacing } from '../src/theme';
+import { colors, radius, spacing, textStyles } from '../src/theme';
 
 const FILTERS: ReadonlyArray<{ key: FilterKey; label: string }> = [
   { key: 'all', label: 'All' },
@@ -239,11 +239,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textPrimary,
     borderColor: colors.textPrimary,
   },
-  chipText: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
-    color: colors.textPrimary,
-  },
+  chipText: textStyles.bodySmall,
   chipTextActive: {
     color: colors.bgPrimary,
   },
@@ -281,29 +277,23 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm + 2,
   },
   iconWrapUnread: {
-    backgroundColor: '#F0EAE0',
+    backgroundColor: colors.bgTertiary,
   },
   rowBody: {
     flex: 1,
     paddingRight: spacing.sm,
   },
   rowTitle: {
-    fontFamily: fonts.heading,
-    fontSize: 15,
-    color: colors.textPrimary,
+    ...textStyles.bodyStrong,
     marginBottom: 2,
   },
   rowSubtitle: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
-    lineHeight: 18,
     marginBottom: 4,
   },
   rowMeta: {
-    fontFamily: fonts.sans,
-    fontSize: 11,
-    color: colors.textMuted,
+    ...textStyles.tiny,
     letterSpacing: 0.2,
   },
   dot: {
@@ -318,18 +308,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyText: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.textMuted,
   },
   emptySubtitle: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
-    color: colors.textMuted,
+    ...textStyles.bodySmall,
     marginTop: spacing.xs,
     textAlign: 'center',
     paddingHorizontal: spacing.lg,
-    lineHeight: 18,
     opacity: 0.8,
   },
 });

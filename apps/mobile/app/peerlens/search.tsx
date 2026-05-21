@@ -33,7 +33,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 
-import { colors, fonts, spacing, radius } from '../../src/theme';
+import { colors, spacing, radius, textStyles } from '../../src/theme';
 import { useViewerPreferences } from '../../src/hooks/useViewerPreferences';
 import { SubjectCardView } from '../../src/peerlens/components/subject_card_view';
 import { FacetBarView } from '../../src/peerlens/components/facet_bar_view';
@@ -229,6 +229,11 @@ export default function SearchScreen(props: SearchScreenProps): React.ReactEleme
               ? `Nothing found for “${trimmedQ}”. Try a different search or write the first review.`
               : 'Try a search above, or browse by category.'}
           </Text>
+          {activeFilters.size > 0 && trimmedQ.length > 0 ? (
+            <Text style={styles.emptyHint}>
+              Filters active. Tap a chip above to broaden the search.
+            </Text>
+          ) : null}
           <Pressable
             onPress={() =>
               router.push({
@@ -291,8 +296,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   queryEchoText: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.textSecondary,
     flexShrink: 1,
   },
@@ -309,8 +313,7 @@ const styles = StyleSheet.create({
   },
   writeCtaPressed: { backgroundColor: colors.accentHover },
   writeCtaLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.bgSecondary,
   },
   loading: {
@@ -319,11 +322,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
   },
-  loadingText: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
-    color: colors.textMuted,
-  },
+  loadingText: textStyles.bodySmall,
   empty: {
     flex: 1,
     paddingVertical: spacing.xxl,
@@ -332,17 +331,20 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   emptyTitle: {
-    fontFamily: fonts.heading,
-    fontSize: 16,
-    color: colors.textPrimary,
+    ...textStyles.h3,
     marginTop: spacing.md,
   },
   emptyBody: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 18,
+  },
+  emptyHint: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+    fontStyle: 'italic',
   },
   errorPanel: {
     flex: 1,
@@ -352,14 +354,11 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   errorTitle: {
-    fontFamily: fonts.heading,
-    fontSize: 16,
-    color: colors.textPrimary,
+    ...textStyles.h3,
     marginTop: spacing.md,
   },
   errorBody: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
     textAlign: 'center',
   },
@@ -376,8 +375,7 @@ const styles = StyleSheet.create({
   },
   retryBtnPressed: { backgroundColor: colors.accentHover },
   retryLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.bgSecondary,
   },
   resultsContainer: {

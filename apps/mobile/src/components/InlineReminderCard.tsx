@@ -19,7 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { ChatMessage } from '@dina/brain/chat';
 import { completeReminder, snoozeReminder } from '@dina/core/reminders';
 import { addSystemMessage } from '@dina/brain/chat';
-import { colors, fonts, radius, spacing } from '../theme';
+import { colors, radius, spacing, textStyles } from '../theme';
 import { MessageTimestamp } from './MessageTimestamp';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -163,23 +163,13 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     marginBottom: spacing.xs,
   },
-  label: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
-    letterSpacing: 1.5,
-    color: colors.textMuted,
-  },
+  label: textStyles.eyebrow,
   body: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 15,
-    color: colors.textPrimary,
-    lineHeight: 22,
+    ...textStyles.body,
     marginBottom: spacing.xs,
   },
   personaLine: {
-    fontFamily: fonts.mono,
-    fontSize: 12,
-    color: colors.textMuted,
+    ...textStyles.monoSmall,
     marginBottom: spacing.sm,
   },
   row: {
@@ -199,9 +189,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textPrimary,
   },
   doneText: {
-    fontFamily: fonts.sansSemibold,
+    ...textStyles.buttonSmall,
     color: colors.bgPrimary,
-    fontSize: 14,
   },
   snooze: {
     backgroundColor: 'transparent',
@@ -209,13 +198,11 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   snoozeText: {
-    fontFamily: fonts.sansMedium,
+    ...textStyles.buttonSmall,
     color: colors.textPrimary,
-    fontSize: 14,
   },
   statusLine: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textMuted,
     fontStyle: 'italic',
   },

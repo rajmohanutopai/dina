@@ -10,20 +10,33 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { OnboardingShell } from './shell';
 import { FEATURES, FeatureIcon } from '../../features';
-import { colors, fonts, spacing, radius, textStyles } from '../../theme';
+import { colors, spacing, radius, textStyles } from '../../theme';
 
 export interface WelcomeProps {
   onGetStarted: () => void;
 }
 
-const PILL_FEATURES = ['vault', 'agentTasks', 'reminders', 'talk', 'services', 'peerlens'] as const;
+// Match the pillars list below: 8 entries (adds Identity + Approvals
+// & Security to the original 6). Keeps the hero promise honest with
+// the detailed breakdown that follows so users don't feel like the
+// page contradicts itself.
+const PILL_FEATURES = [
+  'identity',
+  'vault',
+  'reminders',
+  'talk',
+  'agentTasks',
+  'security',
+  'peerlens',
+  'services',
+] as const;
 
 export function Welcome(props: WelcomeProps): React.ReactElement {
   return (
     <OnboardingShell canGoBack={false} primaryLabel="Get started" onPrimary={props.onGetStarted}>
       <View style={styles.hero}>
         <Text style={styles.brand}>DINA</Text>
-        <Text style={styles.headline}>Your sovereign{'\n'}personal AI</Text>
+        <Text style={styles.headline}>Your sovereign personal AI</Text>
         <View style={styles.pills}>
           {PILL_FEATURES.map((key) => (
             <View key={key} style={styles.pill}>
@@ -54,7 +67,7 @@ export function Welcome(props: WelcomeProps): React.ReactElement {
         />
         <Pillar
           feature="agentTasks"
-          body="Give Dina a task and she delegates it to your connected agents."
+          body="Give Dina a task and it gets delegated to your connected agents."
         />
         <Pillar
           feature="security"
@@ -103,14 +116,12 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
   },
   brand: {
-    ...textStyles.screenEyebrow,
+    ...textStyles.eyebrow,
     letterSpacing: 6,
     marginBottom: spacing.lg,
   },
   headline: {
-    ...textStyles.screenHeadline,
-    fontSize: 40,
-    lineHeight: 48,
+    ...textStyles.display,
     textAlign: 'center',
   },
   pills: {
@@ -130,8 +141,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgSecondary,
   },
   pillText: {
-    fontSize: 12,
-    fontFamily: fonts.sansSemibold,
+    ...textStyles.caption,
     color: colors.textSecondary,
     letterSpacing: 0.2,
   },
@@ -152,15 +162,10 @@ const styles = StyleSheet.create({
   pillarText: {
     flex: 1,
   },
-  pillarTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.textPrimary,
-  },
+  pillarTitle: textStyles.bodyStrong,
   pillarBody: {
+    ...textStyles.bodySmall,
     marginTop: 2,
-    fontSize: 14,
-    lineHeight: 20,
     color: colors.textSecondary,
   },
 });

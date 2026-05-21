@@ -19,7 +19,7 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { loadVerificationStatus } from '../src/services/verification_status';
-import { colors, fonts, spacing, radius, shadows } from '../src/theme';
+import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 import {
   PROVIDERS,
   saveApiKey,
@@ -371,79 +371,23 @@ export default function SettingsScreen() {
           Drives the V2 actionability layer: which results get
           surfaced / boosted / demoted on the trust-network screens.
           Loyalty Law: NONE of this leaves the device. */}
-      <SettingsSection title="PEERLENS PREFERENCES">
-        <TouchableOpacity
-          style={styles.row}
-          onPress={() => router.push('/peerlens-preferences/region')}
-          accessibilityRole="button"
-          accessibilityLabel="Open Region settings"
-          testID="settings-row-region"
-        >
-          <Text style={styles.rowLabel}>Region</Text>
-          <Text style={styles.rowValue}>{'›'}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.row}
-          onPress={() => router.push('/peerlens-preferences/budget')}
-          accessibilityRole="button"
-          accessibilityLabel="Open Budget settings"
-          testID="settings-row-budget"
-        >
-          <Text style={styles.rowLabel}>Budget</Text>
-          <Text style={styles.rowValue}>{'›'}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.row}
-          onPress={() => router.push('/peerlens-preferences/devices')}
-          accessibilityRole="button"
-          accessibilityLabel="Open Devices settings"
-          testID="settings-row-devices"
-        >
-          <Text style={styles.rowLabel}>Devices</Text>
-          <Text style={styles.rowValue}>{'›'}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.row}
-          onPress={() => router.push('/peerlens-preferences/languages')}
-          accessibilityRole="button"
-          accessibilityLabel="Open Languages settings"
-          testID="settings-row-languages"
-        >
-          <Text style={styles.rowLabel}>Languages</Text>
-          <Text style={styles.rowValue}>{'›'}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.row}
-          onPress={() => router.push('/peerlens-preferences/dietary')}
-          accessibilityRole="button"
-          accessibilityLabel="Open Dietary settings"
-          testID="settings-row-dietary"
-        >
-          <Text style={styles.rowLabel}>Dietary</Text>
-          <Text style={styles.rowValue}>{'›'}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.row}
-          onPress={() => router.push('/peerlens-preferences/accessibility')}
-          accessibilityRole="button"
-          accessibilityLabel="Open Accessibility settings"
-          testID="settings-row-accessibility"
-        >
-          <Text style={styles.rowLabel}>Accessibility</Text>
-          <Text style={styles.rowValue}>{'›'}</Text>
-        </TouchableOpacity>
-      </SettingsSection>
-
-      {/* Agents — admin surface for `dina-admin device pair`. Always
-          visible: even a requester-only node may want to authorize a
-          dina-agent install to run delegation tasks. Port of main-
-          dina's device admin CLI into the mobile app. Renamed away
-          from "Paired Devices" because first-time users read that
-          as "another phone running Dina"; see paired-devices.tsx
-          for the full rationale. */}
-      {/* MORE collapses Agents + Admin into one section header so two
-          single-row sections don't read as a layout bug. */}
+      {/* MORE — drill-downs that don't earn their own section.
+          PeerLens preferences was previously a dedicated PEERLENS
+          section with 6 inline rows; now a single drill-down to
+          /peerlens-preferences, so it folds in here. Agents is the
+          admin surface for `dina-admin device pair`. Admin is the
+          on-device port of dina-admin. */}
       <SettingsSection title="MORE">
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/peerlens-preferences')}
+          accessibilityRole="button"
+          accessibilityLabel="Open PeerLens preferences"
+          testID="settings-row-peerlens-preferences"
+        >
+          <Text style={styles.rowLabel}>PeerLens preferences</Text>
+          <Text style={styles.rowValue}>{'›'}</Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.row}
           onPress={() => router.push('/paired-devices')}
@@ -557,7 +501,8 @@ export default function SettingsScreen() {
           <Text style={styles.rowLabel}>Auto-lock when backgrounded</Text>
           <Text style={styles.rowValue}>{formatTimeoutLabel(autoLockSeconds)} {'›'}</Text>
         </TouchableOpacity>
-        <SettingsRow label="Encryption" value="AES-256-GCM" />
+        <SettingsRow label="Vault encryption" value="AES-256-CBC (SQLCipher)" />
+        <SettingsRow label="Seed wrap" value="AES-256-GCM" />
         <SettingsRow label="Key derivation" value="SLIP-0010 + HKDF" />
         <SettingsRow label="Key storage" value="Device Keychain" />
         <SettingsRow label="Storage" value="On device only" />
@@ -616,20 +561,16 @@ const styles = StyleSheet.create({
   },
   section: { marginBottom: spacing.lg },
   sectionTitle: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
+    ...textStyles.eyebrow,
     letterSpacing: 1.5,
-    color: colors.textMuted,
     marginBottom: spacing.sm,
     marginLeft: spacing.xs,
   },
   sectionDesc: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
     marginBottom: spacing.md,
     marginLeft: spacing.xs,
-    lineHeight: 18,
   },
   sectionCard: {
     backgroundColor: colors.bgSecondary,
@@ -658,14 +599,9 @@ const styles = StyleSheet.create({
   },
   providerInfo: { flex: 1, marginRight: spacing.md },
   providerNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  providerName: {
-    fontFamily: fonts.heading,
-    fontSize: 16,
-    color: colors.textPrimary,
-  },
+  providerName: textStyles.bodyLargeStrong,
   providerDesc: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
     marginTop: 2,
   },
@@ -676,32 +612,24 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   activeBadgeText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 9,
+    ...textStyles.eyebrow,
     color: colors.white,
     letterSpacing: 0.5,
   },
-  keyPreview: {
-    fontFamily: fonts.mono,
-    fontSize: 12,
-    color: colors.textMuted,
-  },
+  keyPreview: textStyles.monoSmall,
   addKey: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
+    ...textStyles.link,
     color: colors.accent,
   },
 
   // Key form
   keyForm: { paddingHorizontal: spacing.md, paddingBottom: spacing.md },
   keyInput: {
+    ...textStyles.mono,
     backgroundColor: colors.bgTertiary,
     borderRadius: radius.sm,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    fontFamily: fonts.mono,
-    fontSize: 14,
-    color: colors.textPrimary,
     borderWidth: 1,
     borderColor: colors.border,
   },
@@ -713,8 +641,7 @@ const styles = StyleSheet.create({
   },
   cancelButton: { paddingHorizontal: 16, paddingVertical: 10 },
   cancelText: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
+    ...textStyles.link,
     color: colors.textMuted,
   },
   saveButton: {
@@ -724,11 +651,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   saveButtonDisabled: { opacity: 0.5 },
-  saveText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 14,
-    color: colors.white,
-  },
+  saveText: textStyles.buttonSmall,
 
   // Configured actions
   configuredActions: {
@@ -744,14 +667,12 @@ const styles = StyleSheet.create({
     borderRightColor: colors.border,
   },
   useText: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
+    ...textStyles.bodySmallStrong,
     color: colors.accent,
   },
   removeButton: { flex: 1, paddingVertical: 12, alignItems: 'center' },
   removeText: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
+    ...textStyles.bodySmallStrong,
     color: colors.error,
   },
 
@@ -765,33 +686,24 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  rowLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 15,
-    color: colors.textPrimary,
-  },
+  rowLabel: textStyles.body,
   rowValue: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
+    ...textStyles.bodySmall,
     color: colors.textMuted,
   },
   rowValuePending: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 13,
+    ...textStyles.bodySmallStrong,
     color: colors.warning,
   },
 
   footer: { alignItems: 'center', marginTop: spacing.xl, paddingVertical: spacing.lg },
   footerText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 13,
+    ...textStyles.bodySmallStrong,
     color: colors.textMuted,
     letterSpacing: 0.5,
   },
   footerSubtext: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.textMuted,
+    ...textStyles.caption,
     marginTop: spacing.xs,
   },
 });

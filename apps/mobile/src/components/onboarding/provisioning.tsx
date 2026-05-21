@@ -22,7 +22,7 @@ import {
   provisionIdentity,
   recoverIdentity,
 } from '../../onboarding/provision';
-import { colors, fonts, radius, spacing } from '../../theme';
+import { colors, radius, spacing, textStyles } from '../../theme';
 
 const STAGES: ProvisionStage[] = [
   'deriving_seed',
@@ -202,34 +202,28 @@ const styles = StyleSheet.create({
   dotActive: { backgroundColor: colors.bgTertiary, borderWidth: 1, borderColor: colors.accent },
   dotDone: { backgroundColor: colors.success },
   dotErrBg: { backgroundColor: colors.error },
-  dotCheck: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
-  dotErr: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
-  rowText: {
-    fontSize: 15,
-    color: colors.textPrimary,
-  },
+  dotCheck: { ...textStyles.bodySmallStrong, color: colors.white },
+  dotErr: { ...textStyles.bodySmallStrong, color: colors.white },
+  rowText: textStyles.body,
   rowPending: { color: colors.textMuted },
   rowError: { color: colors.error },
   errorPanel: {
     marginTop: spacing.xl,
     padding: spacing.md,
-    backgroundColor: '#FDE8E8',
+    backgroundColor: colors.errorBgSofter,
     borderRadius: radius.md,
     borderLeftWidth: 3,
     borderLeftColor: colors.error,
   },
   errorTitle: {
-    fontSize: 14,
-    fontWeight: '700',
+    ...textStyles.bodySmallStrong,
     color: colors.error,
     letterSpacing: 0.2,
   },
   errorMessage: {
+    ...textStyles.mono,
+    color: colors.errorTextDeepest,
     marginTop: 4,
-    fontSize: 13,
-    lineHeight: 19,
-    color: '#7A1F1F',
-    fontFamily: fonts.mono,
   },
   retryBtn: {
     marginTop: spacing.md,
@@ -239,6 +233,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: radius.sm,
   },
-  retryText: { color: '#FFFFFF', fontWeight: '600' },
+  retryText: textStyles.buttonSmall,
   pressed: { opacity: 0.7 },
 });

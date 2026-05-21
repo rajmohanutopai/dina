@@ -52,7 +52,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 
-import { colors, fonts, spacing, radius } from '../../../src/theme';
+import { colors, spacing, radius, textStyles } from '../../../src/theme';
 import {
   deriveReviewerProfileDisplay,
   formatLastActive,
@@ -732,11 +732,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
   },
-  loadingText: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
-    color: colors.textMuted,
-  },
+  loadingText: textStyles.bodySmall,
   errorPanel: {
     flex: 1,
     paddingVertical: spacing.xxl,
@@ -745,14 +741,11 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   errorTitle: {
-    fontFamily: fonts.heading,
-    fontSize: 16,
-    color: colors.textPrimary,
+    ...textStyles.h3,
     marginTop: spacing.md,
   },
   errorBody: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
     textAlign: 'center',
   },
@@ -769,8 +762,7 @@ const styles = StyleSheet.create({
   },
   retryBtnPressed: { backgroundColor: colors.accentHover },
   retryLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.bgSecondary,
   },
   headerCard: {
@@ -787,32 +779,21 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   headerIdentity: { flex: 1, gap: spacing.xs },
-  headerDid: {
-    fontFamily: fonts.mono,
-    fontSize: 12,
-    color: colors.textPrimary,
-  },
+  headerDid: textStyles.monoSmall,
   // Primary line when a handle is resolved — readable, sans-serif,
   // sized like a name header rather than the mono small-caps DID.
-  headerHandle: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 16,
-    color: colors.textPrimary,
-  },
+  headerHandle: textStyles.bodyLargeStrong,
   // Tap-affordance hint below the short username. Tells the user
   // there's more to see (full handle, DID, PLC services) without
   // showing the noise inline.
   headerHint: {
-    fontFamily: fonts.sans,
-    fontSize: 10,
+    ...textStyles.tiny,
     letterSpacing: 0.6,
     textTransform: 'uppercase',
-    color: colors.textMuted,
     marginTop: 2,
   },
   headerNamespace: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
   },
   scoreBadge: {
@@ -826,8 +807,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textSecondary,
   },
   scoreLabel: {
-    fontFamily: fonts.headingBold,
-    fontSize: 14,
+    ...textStyles.bodyStrong,
     color: colors.bgSecondary,
   },
   headerMeta: {
@@ -835,11 +815,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
   },
-  headerMetaText: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.textMuted,
-  },
+  headerMetaText: textStyles.caption,
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -856,16 +832,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
   },
-  statValue: {
-    fontFamily: fonts.headingBold,
-    fontSize: 20,
-    color: colors.textPrimary,
-  },
-  statLabel: {
-    fontFamily: fonts.sans,
-    fontSize: 11,
-    color: colors.textMuted,
-  },
+  statValue: textStyles.h3,
+  statLabel: textStyles.tiny,
   sentimentRow: {
     flexDirection: 'row',
     gap: spacing.sm,
@@ -882,22 +850,13 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   sentimentDot: { width: 8, height: 8, borderRadius: 4 },
-  sentimentCount: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
-    color: colors.textPrimary,
-  },
+  sentimentCount: textStyles.bodySmallStrong,
   sentimentLabel: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
+    ...textStyles.caption,
     color: colors.textSecondary,
   },
   section: { gap: spacing.sm },
-  sectionTitle: {
-    fontFamily: fonts.heading,
-    fontSize: 14,
-    color: colors.textPrimary,
-  },
+  sectionTitle: textStyles.bodyStrong,
   chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -910,14 +869,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
   },
   chipText: {
-    fontFamily: fonts.mono,
-    fontSize: 11,
+    ...textStyles.monoSmall,
     color: colors.textSecondary,
   },
   authoredEmpty: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
-    color: colors.textMuted,
+    ...textStyles.bodySmall,
     paddingVertical: spacing.md,
   },
   authoredList: { gap: spacing.sm },
@@ -939,10 +895,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   authoredTitle: {
+    ...textStyles.body,
     flex: 1,
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
-    color: colors.textPrimary,
   },
   authoredSentiment: {
     paddingVertical: 2,
@@ -950,16 +904,13 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   authoredSentimentText: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 11,
+    ...textStyles.tiny,
     color: colors.bgSecondary,
   },
   authoredHeadline: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
     fontStyle: 'italic',
-    lineHeight: 18,
   },
   authoredFooter: {
     flexDirection: 'row',
@@ -968,16 +919,10 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   authoredCategory: {
+    ...textStyles.monoSmall,
     flex: 1,
-    fontFamily: fonts.mono,
-    fontSize: 11,
-    color: colors.textMuted,
   },
-  authoredAge: {
-    fontFamily: fonts.sans,
-    fontSize: 11,
-    color: colors.textMuted,
-  },
+  authoredAge: textStyles.tiny,
   authoredEditPill: {
     paddingHorizontal: spacing.sm,
     paddingVertical: 4,
@@ -990,9 +935,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgTertiary,
   },
   authoredEditPillText: {
-    fontFamily: fonts.sans,
-    fontSize: 11,
-    fontWeight: '600',
+    ...textStyles.tiny,
     color: colors.textPrimary,
   },
 });

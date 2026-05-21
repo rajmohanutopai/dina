@@ -97,7 +97,7 @@ export const ERROR_STATE_CONTENT: Readonly<Record<ErrorState, ErrorStateContent>
   }),
   not_found: Object.freeze({
     title: 'Not found',
-    body: `This doesn't exist on ${FEATURE_NAMES.peerlens} — it may have been removed by its author.`,
+    body: `This doesn't exist on ${FEATURE_NAMES.peerlens}. It may have been removed by its author.`,
     // No retry CTA: 404 is terminal for this resource. The screen
     // typically offers "go back" as a navigation action; that's a
     // navigation concern, not an error-recovery one.

@@ -48,7 +48,7 @@ import {
 } from 'react-native';
 
 import { getBootedNode } from '../../src/hooks/useNodeBootstrap';
-import { colors, fonts, spacing, radius } from '../../src/theme';
+import { colors, fonts, spacing, radius, textStyles } from '../../src/theme';
 import {
   injectAttestation,
   isTestPublishConfigured,
@@ -1074,11 +1074,9 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
         testID="write-screen"
         keyboardShouldPersistTaps="handled"
       >
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>
-          {headerTitle}
-        </Text>
-      </View>
+      {/* In-page H1 removed — the native Stack header already shows
+          `headerTitle`. Stacking the H1 underneath created a duplicate
+          title row (matches the convention in add-contact.tsx). */}
 
       {/* (Top stepper removed: Step 1 is now the canonical surface and
           the "Add additional data" pill below the Body field opens the
@@ -1272,7 +1270,10 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
 
       {/* ─── Sentiment ───────────────────────────────────────────── */}
       <View style={styles.field}>
-        <Text style={styles.fieldLabel}>Sentiment</Text>
+        <View style={styles.fieldHeader}>
+          <Text style={styles.fieldLabel}>Sentiment</Text>
+          <Text style={styles.fieldRequired}>Required</Text>
+        </View>
         <View style={styles.sentimentRow}>
           {SENTIMENT_OPTIONS.map((s) => (
             <Pressable
@@ -1870,7 +1871,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
               <>
                 {renderTagGrid({
                   label: 'Recommend for',
-                  hint: `Optional — up to ${MAX_RECOMMEND_FOR} use-cases you endorse.`,
+                  hint: `Optional. Up to ${MAX_RECOMMEND_FOR} use-cases you endorse.`,
                   vocabulary,
                   labelMap: USE_CASE_LABEL,
                   selected: state.recommendFor,
@@ -1881,7 +1882,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
                 })}
                 {renderTagGrid({
                   label: 'Not recommended for',
-                  hint: `Optional — up to ${MAX_RECOMMEND_FOR} use-cases you'd warn against.`,
+                  hint: `Optional. Up to ${MAX_RECOMMEND_FOR} use-cases you'd warn against.`,
                   vocabulary,
                   labelMap: USE_CASE_LABEL,
                   selected: state.notRecommendFor,
@@ -1899,7 +1900,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
               over-cap unselected entries). */}
           {renderTagGrid({
             label: 'Compliance',
-            hint: `Optional — pick up to ${MAX_COMPLIANCE} that apply (halal, vegan, gluten-free, …).`,
+            hint: `Optional. Pick up to ${MAX_COMPLIANCE} that apply (halal, vegan, gluten-free, …).`,
             vocabulary: COMPLIANCE_VOCABULARY,
             labelMap: COMPLIANCE_LABEL,
             selected: state.compliance,
@@ -1912,7 +1913,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
           {/* TN-V2-META-006 — accessibility. */}
           {renderTagGrid({
             label: 'Accessibility',
-            hint: `Optional — pick up to ${MAX_ACCESSIBILITY} (wheelchair, captions, screen-reader, …).`,
+            hint: `Optional. Pick up to ${MAX_ACCESSIBILITY} (wheelchair, captions, screen-reader, …).`,
             vocabulary: ACCESSIBILITY_VOCABULARY,
             labelMap: ACCESSIBILITY_LABEL,
             selected: state.accessibility,
@@ -1926,7 +1927,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
               compat surfaces). */}
           {renderTagGrid({
             label: 'Compatibility',
-            hint: `Optional — pick up to ${MAX_COMPAT} (iOS, USB-C, Bluetooth 5, …).`,
+            hint: `Optional. Pick up to ${MAX_COMPAT} (iOS, USB-C, Bluetooth 5, …).`,
             vocabulary: COMPAT_VOCABULARY,
             labelMap: COMPAT_LABEL,
             selected: state.compat,
@@ -2150,14 +2151,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgPrimary },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.lg },
   header: { gap: spacing.xs },
-  headerTitle: {
-    fontFamily: fonts.heading,
-    fontSize: 22,
-    color: colors.textPrimary,
-  },
+  headerTitle: textStyles.h2,
   headerSubtitle: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
   },
   headerSubject: {
@@ -2175,16 +2171,10 @@ const styles = StyleSheet.create({
     borderColor: colors.warning,
   },
   warningBody: { flex: 1, gap: spacing.xs },
-  warningTitle: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 13,
-    color: colors.textPrimary,
-  },
+  warningTitle: textStyles.bodySmallStrong,
   warningText: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
+    ...textStyles.caption,
     color: colors.textSecondary,
-    lineHeight: 17,
   },
   // Each form field is a card surface with breathing room — gives
   // visual separation between sections so labels don't collide with
@@ -2205,21 +2195,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   fieldLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
   },
+  fieldRequired: {
+    ...textStyles.tiny,
+    color: colors.error,
+    letterSpacing: 0.4,
+  },
   fieldError: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
+    ...textStyles.caption,
     color: colors.error,
     marginTop: spacing.xs,
   },
-  charCount: {
-    fontFamily: fonts.mono,
-    fontSize: 11,
-    color: colors.textMuted,
-  },
+  charCount: textStyles.monoSmall,
   charCountOverflow: { color: colors.error },
   kindRow: {
     flexDirection: 'row',
@@ -2242,15 +2231,12 @@ const styles = StyleSheet.create({
   },
   kindBtnPressed: { backgroundColor: colors.bgTertiary },
   kindLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
   },
   kindLabelActive: { color: colors.bgSecondary },
   kindHint: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.textMuted,
+    ...textStyles.caption,
     marginTop: spacing.sm,
   },
   sentimentRow: { flexDirection: 'row', gap: spacing.sm },
@@ -2274,21 +2260,18 @@ const styles = StyleSheet.create({
   },
   sentimentBtnPressed: { backgroundColor: colors.bgTertiary },
   sentimentLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
   },
   sentimentLabelActive: { color: colors.bgSecondary },
   input: {
+    ...textStyles.body,
     backgroundColor: colors.bgCard,
     borderRadius: radius.md,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.textPrimary,
     minHeight: 44,
   },
   headlineInput: {},
@@ -2325,15 +2308,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgTertiary,
   },
   stepperDotText: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 12,
+    ...textStyles.caption,
     color: colors.textSecondary,
   },
   stepperDotTextActive: { color: colors.bgSecondary },
   stepperLabel: {
-    fontFamily: fonts.sans,
-    fontSize: 11,
-    color: colors.textMuted,
+    ...textStyles.tiny,
     textAlign: 'center',
   },
   stepperLabelActive: { color: colors.textPrimary },
@@ -2353,9 +2333,8 @@ const styles = StyleSheet.create({
   },
   additionalDataPillPressed: { backgroundColor: colors.bgTertiary },
   additionalDataPillLabel: {
+    ...textStyles.body,
     flex: 1,
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
     color: colors.textSecondary,
   },
   // Modal scaffolding for the wizard.
@@ -2370,11 +2349,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingTop: spacing.md,
   },
-  modalTitle: {
-    fontFamily: fonts.heading,
-    fontSize: 20,
-    color: colors.textPrimary,
-  },
+  modalTitle: textStyles.h2,
   modalCloseBtn: {
     width: 36,
     height: 36,
@@ -2398,8 +2373,7 @@ const styles = StyleSheet.create({
   },
   modalDoneBtnPressed: { backgroundColor: colors.accentHover },
   modalDoneLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.bgSecondary,
   },
   // Subtle banner under Step 1 nudging the user toward Step 2 when
@@ -2411,8 +2385,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   prefillBannerText: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
+    ...textStyles.caption,
     color: colors.textSecondary,
   },
   // Wizard "Next" button — shares the cancel/back footprint but
@@ -2430,11 +2403,7 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
   nextBtnPressed: { backgroundColor: colors.bgTertiary },
-  nextLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
-    color: colors.textPrimary,
-  },
+  nextLabel: textStyles.body,
   // ─── Row list (single-select with checkmark) ─────────────────────
   // Used by the Last used picker. iOS-style rows: full-width
   // Pressable, label on the left, checkmark on the right when
@@ -2456,11 +2425,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   rowListRowPressed: { backgroundColor: colors.bgTertiary },
-  rowListLabel: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.textPrimary,
-  },
+  rowListLabel: textStyles.body,
   // ─── Segmented control (single-select, ≤5 options) ───────────────
   // Used by the Reviewer experience picker. Single horizontal pill
   // with N segments; the active segment gets the accent background
@@ -2493,8 +2458,7 @@ const styles = StyleSheet.create({
   },
   segmentedSegmentPressed: { backgroundColor: colors.bgTertiary },
   segmentedLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
   },
   segmentedLabelActive: { color: colors.bgSecondary },
@@ -2524,8 +2488,7 @@ const styles = StyleSheet.create({
   },
   lastUsedBtnPressed: { backgroundColor: colors.bgTertiary },
   lastUsedLabel: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
+    ...textStyles.caption,
     color: colors.textSecondary,
   },
   lastUsedLabelActive: { color: colors.bgSecondary },
@@ -2557,8 +2520,7 @@ const styles = StyleSheet.create({
   useCaseBtnDisabled: { opacity: 0.4 },
   useCaseBtnPressed: { backgroundColor: colors.bgTertiary },
   useCaseLabel: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
+    ...textStyles.caption,
     color: colors.textSecondary,
   },
   useCaseLabelActive: { color: colors.bgSecondary },
@@ -2582,8 +2544,7 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   altChipLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 12,
+    ...textStyles.caption,
     color: colors.textPrimary,
     flexShrink: 1,
   },
@@ -2598,15 +2559,13 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   altSearchInput: {
+    ...textStyles.body,
     backgroundColor: colors.bgCard,
     borderRadius: radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.textPrimary,
   },
   altSearchHint: {
     flexDirection: 'row',
@@ -2614,14 +2573,9 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     paddingHorizontal: spacing.xs,
   },
-  altSearchHintText: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.textMuted,
-  },
+  altSearchHintText: textStyles.caption,
   altSearchError: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
+    ...textStyles.caption,
     color: colors.error,
     paddingHorizontal: spacing.xs,
   },
@@ -2644,21 +2598,13 @@ const styles = StyleSheet.create({
   altResultRowPressed: { backgroundColor: colors.bgTertiary },
   altResultRowDisabled: { opacity: 0.5 },
   altResultName: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
-    color: colors.textPrimary,
+    ...textStyles.bodySmallStrong,
     flexShrink: 1,
   },
-  altResultMeta: {
-    fontFamily: fonts.sans,
-    fontSize: 11,
-    color: colors.textMuted,
-  },
+  altResultMeta: textStyles.tiny,
   altCapHint: {
+    ...textStyles.caption,
     marginTop: spacing.sm,
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.textMuted,
   },
   // ── V2 styles (TN-V2-MOBILE-WIRE) ──────────────────────────────────────
   priceRow: {
@@ -2667,6 +2613,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   priceInput: {
+    ...textStyles.body,
     flex: 1,
     backgroundColor: colors.bgCard,
     borderRadius: radius.sm,
@@ -2674,11 +2621,9 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.textPrimary,
   },
   priceCurrencyInput: {
+    ...textStyles.body,
     width: 72,
     backgroundColor: colors.bgCard,
     borderRadius: radius.sm,
@@ -2686,14 +2631,10 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
-    color: colors.textPrimary,
     textAlign: 'center',
   },
   priceSeparator: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textMuted,
   },
   submitErrorPanel: {
@@ -2707,9 +2648,8 @@ const styles = StyleSheet.create({
     borderColor: colors.error,
   },
   submitErrorText: {
+    ...textStyles.bodySmall,
     flex: 1,
-    fontFamily: fonts.sans,
-    fontSize: 13,
     color: colors.error,
   },
   actionRow: {
@@ -2728,8 +2668,7 @@ const styles = StyleSheet.create({
   },
   cancelBtnPressed: { backgroundColor: colors.bgTertiary },
   cancelLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.textSecondary,
   },
   publishBtn: {
@@ -2746,8 +2685,7 @@ const styles = StyleSheet.create({
   publishBtnDisabled: { backgroundColor: colors.textMuted },
   publishBtnPressed: { backgroundColor: colors.accentHover },
   publishLabel: {
-    fontFamily: fonts.headingBold,
-    fontSize: 15,
+    ...textStyles.button,
     color: colors.bgSecondary,
   },
 });

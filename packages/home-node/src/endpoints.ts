@@ -104,6 +104,17 @@ export function resolveMobileHostedDinaEndpoints(
   return resolveHostedDinaEndpointsFromEnv(env, MOBILE_ENDPOINT_ENV_KEYS);
 }
 
+/**
+ * Returns the bare PDS host (e.g. "pds.dinakernel.com") from the
+ * configured PDS URL. In dev/staging the host carries the
+ * environment prefix (e.g. "test-pds.dinakernel.com"); release
+ * builds use the clean prefix from RELEASE_ENDPOINTS. The handle
+ * pickers, "your handle" banners, and Add-Contact placeholders
+ * surface this string verbatim — so the env-driven prefix IS the
+ * environment indicator, not a leak: the stored handle in the PLC
+ * directory carries the same prefix. Don't strip in display copy
+ * (it would create a mismatch with the actual published handle).
+ */
 export function pdsHostForEndpoints(endpoints: Pick<HostedDinaEndpoints, 'pdsBaseUrl'>): string {
   try {
     return new URL(endpoints.pdsBaseUrl).host;

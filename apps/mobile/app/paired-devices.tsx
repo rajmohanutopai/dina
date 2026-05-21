@@ -29,7 +29,7 @@ import {
 } from 'react-native';
 import { Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, fonts, spacing, radius, shadows } from '../src/theme';
+import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 import {
   generatePairingCode,
   listDevices,
@@ -45,7 +45,7 @@ const ROLE_OPTIONS: readonly { value: DeviceRole; label: string; hint: string }[
     hint: 'Headless runner (dina-agent / openclaw). Claims delegation tasks.',
   },
   { value: 'rich', label: 'Rich', hint: 'Companion device with full UI.' },
-  { value: 'thin', label: 'Thin', hint: 'Limited device — view + approve only.' },
+  { value: 'thin', label: 'Thin', hint: 'Limited device. View + approve only.' },
   { value: 'cli', label: 'CLI', hint: 'Command-line interface.' },
 ];
 
@@ -223,7 +223,7 @@ export default function PairedDevicesScreen() {
 
         <Section title="AUTHORIZE A NEW AGENT">
           <Text style={styles.help}>
-            Agents act on your behalf — today that means{' '}
+            Agents act on your behalf. Today that means{' '}
             <Text style={styles.mono}>dina-agent</Text> (
             <Text style={styles.mono}>pip install dina-agent</Text>), used directly or via wrappers
             like OpenClaw and <Text style={styles.mono}>dina-cli</Text>.{'\n\n'}
@@ -338,8 +338,7 @@ const styles = StyleSheet.create({
   content: { padding: spacing.md },
   section: { marginBottom: spacing.lg },
   sectionTitle: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 12,
+    ...textStyles.label,
     color: colors.textSecondary,
     letterSpacing: 0.5,
     marginBottom: spacing.xs,
@@ -352,27 +351,21 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   help: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
     marginBottom: spacing.md,
-    lineHeight: 18,
   },
   label: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 13,
-    color: colors.textPrimary,
+    ...textStyles.bodySmallStrong,
     marginTop: spacing.sm,
     marginBottom: spacing.xs,
   },
   input: {
+    ...textStyles.body,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.sm,
     padding: spacing.sm,
-    fontFamily: fonts.sans,
-    fontSize: 15,
-    color: colors.textPrimary,
   },
   rolePicker: { marginTop: spacing.xs },
   roleOption: {
@@ -386,15 +379,10 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
     backgroundColor: colors.bgTertiary,
   },
-  roleLabel: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 14,
-    color: colors.textPrimary,
-  },
+  roleLabel: textStyles.bodyStrong,
   roleLabelActive: { color: colors.accent },
   roleHint: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
+    ...textStyles.caption,
     color: colors.textSecondary,
     marginTop: 2,
   },
@@ -407,13 +395,13 @@ const styles = StyleSheet.create({
   },
   primaryButtonDisabled: { opacity: 0.6 },
   primaryButtonText: {
-    fontFamily: fonts.sansSemibold,
+    ...textStyles.bodyStrong,
     color: colors.white,
-    fontSize: 15,
   },
   code: {
-    fontFamily: fonts.monoMedium,
-    fontSize: 42,
+    ...textStyles.display,
+    fontFamily: textStyles.mono.fontFamily,
+    fontStyle: 'normal',
     color: colors.accent,
     textAlign: 'center',
     letterSpacing: 8,
@@ -429,21 +417,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   copyButtonPressed: { opacity: 0.7 },
-  copyButtonText: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 14,
-    color: colors.white,
-  },
+  copyButtonText: textStyles.buttonSmall,
   codeMeta: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
     marginTop: spacing.xs,
   },
   codeExpiring: { color: colors.error },
   empty: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.textSecondary,
     fontStyle: 'italic',
     textAlign: 'center',
@@ -455,26 +437,19 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   deviceRowMain: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
-  deviceName: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 15,
-    color: colors.textPrimary,
-  },
+  deviceName: textStyles.bodyStrong,
   deviceMeta: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
     marginTop: 2,
   },
   deviceDID: {
-    fontFamily: fonts.mono,
-    fontSize: 11,
+    ...textStyles.monoSmall,
     color: colors.textSecondary,
   },
   refreshButton: { alignSelf: 'flex-end', padding: spacing.sm },
   refreshText: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.accent,
   },
   revokeButton: {
@@ -488,9 +463,8 @@ const styles = StyleSheet.create({
   },
   revokeButtonPressed: { opacity: 0.6 },
   revokeText: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 12,
+    ...textStyles.caption,
     color: colors.error,
   },
-  mono: { fontFamily: fonts.mono, fontSize: 12 },
+  mono: textStyles.monoSmall,
 });

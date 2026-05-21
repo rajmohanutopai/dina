@@ -35,14 +35,13 @@ import React from 'react';
 import {
   View,
   Text,
-  Platform,
   StyleSheet,
   Pressable,
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
 
-import { colors, fonts, spacing, radius } from '../../src/theme';
+import { colors, spacing, radius, textStyles } from '../../src/theme';
 
 /**
  * How long the screen waits for `prior` (the user's PLC operation)
@@ -221,41 +220,34 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgPrimary },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
   header: { marginBottom: spacing.lg },
-  title: { fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontStyle: 'italic', fontSize: 22, color: colors.textPrimary, letterSpacing: -0.3 },
+  title: {
+    ...textStyles.h2,
+    letterSpacing: -0.3,
+  },
   subtitle: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
+    ...textStyles.body,
     color: colors.textSecondary,
     marginTop: spacing.sm,
-    lineHeight: 20,
   },
   loading: {
     paddingVertical: spacing.xxl,
     alignItems: 'center',
     gap: spacing.md,
   },
-  loadingText: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
-    color: colors.textMuted,
-  },
+  loadingText: textStyles.bodySmall,
   empty: {
     paddingVertical: spacing.xxl,
     alignItems: 'center',
     gap: spacing.sm,
   },
   emptyTitle: {
-    fontFamily: fonts.heading,
-    fontSize: 16,
-    color: colors.textPrimary,
+    ...textStyles.h3,
     marginTop: spacing.md,
   },
   emptyBody: {
-    fontFamily: fonts.sans,
-    fontSize: 13,
+    ...textStyles.bodySmall,
     color: colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 18,
     paddingHorizontal: spacing.lg,
   },
   list: {
@@ -274,16 +266,8 @@ const styles = StyleSheet.create({
   },
   rowPressed: { backgroundColor: colors.bgTertiary },
   rowMain: { flex: 1, gap: spacing.xs },
-  rowFragment: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 15,
-    color: colors.textPrimary,
-  },
-  rowVmId: {
-    fontFamily: fonts.mono,
-    fontSize: 11,
-    color: colors.textMuted,
-  },
+  rowFragment: textStyles.bodyStrong,
+  rowVmId: textStyles.monoSmall,
   cta: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -297,8 +281,7 @@ const styles = StyleSheet.create({
   ctaDisabled: { backgroundColor: colors.textMuted },
   ctaPressed: { backgroundColor: colors.accentHover },
   ctaLabel: {
-    fontFamily: fonts.headingBold,
-    fontSize: 15,
+    ...textStyles.button,
     color: colors.bgSecondary,
   },
 });
