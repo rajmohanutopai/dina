@@ -1,9 +1,9 @@
 {
   "version": 1,
   "defaults": {
-    "primary": "gemini/gemini-3.1-pro-preview",
-    "lite": "gemini/gemini-3.1-flash-lite-preview",
-    "heavy": "gemini/gemini-3.1-pro-preview"
+    "primary": "gemini/gemini-3.5-flash",
+    "lite": "gemini/gemini-3.1-flash-lite",
+    "heavy": "gemini/gemini-3.5-flash"
   },
   "providers": {
     "gemini": {
@@ -11,16 +11,16 @@
       "api_key_env": "GEMINI_API_KEY",
       "api_key_env_alt": "GOOGLE_API_KEY",
       "embed_model": "models/gemini-embedding-001",
-      "primary": "gemini-3.1-pro-preview",
-      "lite": "gemini-3.1-flash-lite-preview",
-      "heavy": "gemini-3.1-pro-preview",
+      "primary": "gemini-3.5-flash",
+      "lite": "gemini-3.1-flash-lite",
+      "heavy": "gemini-3.5-flash",
       "models": {
+        "gemini-3.5-flash": { "pricing": [0.30, 2.50] },
         "gemini-3.1-pro-preview": { "pricing": [2.00, 12.00] },
-        "gemini-3.1-flash-preview": { "pricing": [0.50, 3.00] },
+        "gemini-3.1-flash-lite": { "pricing": [0.10, 0.40] },
         "gemini-3.1-flash-lite-preview": { "pricing": [0.25, 1.50] },
-        "gemini-3-flash-preview": { "pricing": [0.50, 3.00] },
-        "gemini-2.5-flash": { "pricing": [0.30, 2.50] },
-        "gemini-2.5-pro": { "pricing": [1.25, 10.00] }
+        "gemini-2.5-pro": { "pricing": [1.25, 10.00] },
+        "gemini-2.5-flash": { "pricing": [0.30, 2.50] }
       }
     },
     "claude": {
@@ -28,8 +28,9 @@
       "api_key_env": "ANTHROPIC_API_KEY",
       "primary": "claude-sonnet-4-6",
       "lite": "claude-haiku-4-5-20251001",
-      "heavy": "claude-sonnet-4-6",
+      "heavy": "claude-opus-4-7",
       "models": {
+        "claude-opus-4-7": { "pricing": [15.00, 75.00] },
         "claude-sonnet-4-6": { "pricing": [3.00, 15.00] },
         "claude-haiku-4-5-20251001": { "pricing": [1.00, 5.00] }
       }
@@ -38,23 +39,47 @@
       "display_name": "OpenAI GPT",
       "api_key_env": "OPENAI_API_KEY",
       "embed_model": "text-embedding-3-small",
-      "primary": "gpt-5.4",
+      "primary": "gpt-5.5",
       "lite": "gpt-5-mini",
-      "heavy": "gpt-5.4",
+      "heavy": "gpt-5.5+thinking",
       "models": {
-        "gpt-5.4": { "pricing": [5.00, 15.00] },
-        "gpt-5-mini": { "pricing": [0.40, 1.60] }
+        "gpt-5.5": {
+          "pricing": [5.00, 15.00],
+          "display_name": "gpt-5.5 (fast)"
+        },
+        "gpt-5.5+thinking": {
+          "pricing": [5.00, 15.00],
+          "display_name": "gpt-5.5 (thinking)",
+          "real_model": "gpt-5.5",
+          "reasoning_effort": "high"
+        },
+        "gpt-5.5-pro": {
+          "pricing": [15.00, 75.00],
+          "display_name": "gpt-5.5-pro (most capable)"
+        },
+        "gpt-5-mini": {
+          "pricing": [0.40, 1.60],
+          "display_name": "gpt-5-mini (cheap)"
+        },
+        "gpt-5-nano": {
+          "pricing": [0.05, 0.40],
+          "display_name": "gpt-5-nano (cheapest)"
+        }
       }
     },
     "openrouter": {
       "display_name": "OpenRouter",
       "api_key_env": "OPENROUTER_API_KEY",
-      "primary": "google/gemini-2.5-pro",
-      "lite": "google/gemini-3-flash",
+      "primary": "google/gemini-3.5-flash",
+      "lite": "google/gemini-3.5-flash",
       "heavy": "google/gemini-2.5-pro",
       "models": {
-        "google/gemini-2.5-pro": {},
-        "google/gemini-3-flash": {}
+        "google/gemini-3.5-flash": { "display_name": "Gemini 3.5 Flash (fast, recommended)" },
+        "google/gemini-2.5-pro": { "display_name": "Gemini 2.5 Pro (more capable)" },
+        "google/gemini-2.5-flash": { "display_name": "Gemini 2.5 Flash" },
+        "anthropic/claude-opus-4-7": { "display_name": "Claude Opus 4.7" },
+        "anthropic/claude-haiku-4-5": { "display_name": "Claude Haiku 4.5 (cheap)" },
+        "auto": { "display_name": "auto (OpenRouter picks per turn — unreliable for tool-use)" }
       }
     },
     "ollama": {

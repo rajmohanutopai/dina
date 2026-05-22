@@ -176,20 +176,25 @@ describe('LLM Provider Configuration', () => {
 
   describe('getProviderTiers (PC-BRAIN-17)', () => {
     it('returns the claude tier defaults when the provider is unconfigured', () => {
+      // Heavy tier upgraded to Opus 4-7 (newest flagship, verified
+      // live 2026-05-22). Sonnet 4-7 was reported but is not on
+      // api.anthropic.com yet, so primary stays at 4-6.
       const tiers = getProviderTiers('claude');
       expect(tiers.primary).toBe('claude-sonnet-4-6');
       expect(tiers.lite).toBe('claude-haiku-4-5-20251001');
-      expect(tiers.heavy).toBe('claude-sonnet-4-6');
+      expect(tiers.heavy).toBe('claude-opus-4-7');
     });
 
-    it('returns the gemini pro-on-heavy default (search_vault loop regression fix)', () => {
-      // The pro model is the heavy-tier pick because flash-preview
-      // was observed looping on search_vault tool calls (main-dina
-      // PC-BRAIN-17 commit note). Pinning the heavy pick here
-      // guards against a regression that reverts the tier.
+    it('returns the gemini 3.5 Flash primary + 3.1 Flash Lite lite defaults', () => {
+      // Gemini 3.5 family currently has only `gemini-3.5-flash`
+      // (no 3.5-pro, no 3.5-flash-lite). Flash 3.5 outperforms the
+      // older 3.1 Pro across most benchmarks, so it's now the
+      // primary + heavy pick. Lite tier stays on 3.1-flash-lite
+      // since it's strictly cheaper for classification turns.
       const tiers = getProviderTiers('gemini');
-      expect(tiers.heavy).toBe('gemini-3.1-pro-preview');
-      expect(tiers.lite).toBe('gemini-3.1-flash-lite-preview');
+      expect(tiers.primary).toBe('gemini-3.5-flash');
+      expect(tiers.heavy).toBe('gemini-3.5-flash');
+      expect(tiers.lite).toBe('gemini-3.1-flash-lite');
     });
 
     it('returns a tier map for every provider', () => {
@@ -209,7 +214,7 @@ describe('LLM Provider Configuration', () => {
       expect(getProviderTiers('gemini').primary).toBe('gemini-2.5-flash');
       // Lite / heavy still fall through to the provider defaults —
       // there's no per-tier override surface (yet).
-      expect(getProviderTiers('gemini').lite).toBe('gemini-3.1-flash-lite-preview');
+      expect(getProviderTiers('gemini').lite).toBe('gemini-3.1-flash-lite');
     });
 
     it('returns a fresh object per call (caller mutations do not leak)', () => {

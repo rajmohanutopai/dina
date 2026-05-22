@@ -57,6 +57,8 @@ import {
 } from '@dina/core';
 import { createLLMProvider, getConfiguredProviders } from '../ai/provider';
 import { loadActiveProvider } from '../ai/active_provider';
+import { registerAgenticRouter } from '../ai/agentic_swap';
+import { loadModelOverrides } from '../ai/model_overrides';
 import type { ProviderType } from '../ai/provider';
 import {
   type AgenticAskHandlerOptions,
@@ -630,6 +632,12 @@ async function tryBuildAgenticAsk(opts: {
 }): Promise<AgenticAskBundle | undefined> {
   if (opts.activeProvider === 'none') return undefined;
 
+  // Hydrate per-tier model overrides from AsyncStorage BEFORE building
+  // the LLM. `resolveModelId` reads them synchronously from an
+  // in-memory cache, so the first call after a cold boot would miss
+  // the user's picker selection unless we load here.
+  await loadModelOverrides();
+
   const provider = await pickProvider(opts.activeProvider);
   if (provider === null) return undefined;
 
@@ -761,6 +769,12 @@ async function tryBuildAgenticAsk(opts: {
     ...(opts.logger !== undefined ? { logger: opts.logger } : {}),
     ...(embedding !== undefined ? { embedding } : {}),
   });
+
+  // Register the live router so Settings can hot-swap the cloud
+  // provider without a reboot. Without this, switching BYOK keys
+  // appears to work in Settings (ACTIVE moves) but the /ask path
+  // keeps using the boot-time provider until the app restarts.
+  registerAgenticRouter(runtime.pipeline.router);
 
   return { ...runtime.pipeline, askCoordinator: runtime.coordinator };
 }

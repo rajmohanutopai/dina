@@ -455,13 +455,33 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
 
     if (resp.toolCalls.length === 0) {
       answer = resp.content;
-      transcript = [...transcript, { role: 'assistant', content: resp.content }];
+      transcript = [
+        ...transcript,
+        {
+          role: 'assistant',
+          content: resp.content,
+          // No tool calls to round-trip, but reasoning may still need
+          // to be carried for a possible next-turn `responseSchema`
+          // or follow-up; storing it costs nothing and matches the
+          // tool-call branch's behaviour for symmetry.
+          ...(resp.reasoning !== undefined ? { reasoning: resp.reasoning } : {}),
+        },
+      ];
       return done('completed');
     }
 
     transcript = [
       ...transcript,
-      { role: 'assistant', content: resp.content, toolCalls: resp.toolCalls },
+      {
+        role: 'assistant',
+        content: resp.content,
+        toolCalls: resp.toolCalls,
+        // Reasoning items must travel with the tool calls — OpenAI
+        // gpt-5+ + Claude Opus 4.7 reject the next request when a
+        // `function_call` is sent without its paired `reasoning`
+        // item. See `ChatMessage.reasoning` for the contract.
+        ...(resp.reasoning !== undefined ? { reasoning: resp.reasoning } : {}),
+      },
     ];
 
     for (let i = 0; i < resp.toolCalls.length; i++) {

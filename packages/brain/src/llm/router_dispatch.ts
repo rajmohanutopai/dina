@@ -94,12 +94,36 @@ type PIIEntity = PIIMatch & { token: string };
  * when you need the narrower `LLMProvider` surface.
  */
 export class LLMRouter {
-  private readonly providers: Partial<Record<ProviderName, LLMProvider>>;
-  private readonly config: RouterConfig;
+  private providers: Partial<Record<ProviderName, LLMProvider>>;
+  private config: RouterConfig;
 
   constructor(options: LLMRouterOptions) {
     this.providers = options.providers;
     this.config = options.config;
+  }
+
+  /**
+   * Replace the single configured cloud provider with a new one.
+   *
+   * Mobile flips between cloud providers at runtime when the user
+   * picks a different BYOK key in Settings. The change has to update
+   * three things in lock-step: the provider instance the router can
+   * call, the provider NAME (because `pickModel` reads it to choose a
+   * provider-specific model), and `config.cloudProviders[0]` (because
+   * that is what `pickProvider` reads to decide which entry to call).
+   *
+   * Any preserved `local` entry stays — local always wins over cloud
+   * and we don't want a cloud-swap to remove a local LLM if one is
+   * registered.
+   */
+  replaceCloudProvider(name: ProviderName, llm: LLMProvider): void {
+    const next: Partial<Record<ProviderName, LLMProvider>> = {};
+    if (this.providers.local !== undefined) {
+      next.local = this.providers.local;
+    }
+    next[name] = llm;
+    this.providers = next;
+    this.config = { ...this.config, cloudProviders: [name] };
   }
 
   /**

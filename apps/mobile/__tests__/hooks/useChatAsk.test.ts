@@ -13,6 +13,7 @@ import {
   getLastAnswer,
   formatAnswerWithSources,
   isAnyAskPending,
+  humaniseAskError,
   resetAskState,
 } from '../../src/hooks/useChatAsk';
 import { resetThreads } from '../../../brain/src/chat/thread';
@@ -179,6 +180,63 @@ describe('Chat /ask Hook (4.9)', () => {
     it('false after completion', async () => {
       await submitAsk('/ask test');
       expect(isAnyAskPending()).toBe(false);
+    });
+  });
+
+  describe('humaniseAskError', () => {
+    it('maps an OpenAI quota error to the friendly switch-provider hint', () => {
+      const raw = new Error(
+        'AI provider error: RetryError: Failed after 3 attempts. Last error: You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.',
+      );
+      const msg = humaniseAskError(raw);
+      expect(msg).toMatch(/out of quota/i);
+      expect(msg).toMatch(/Manage AI providers/);
+      expect(msg).not.toMatch(/RetryError/);
+      expect(msg).not.toMatch(/https?:\/\//);
+    });
+
+    it('classifies 429 rate-limit responses as wait-or-switch', () => {
+      const raw = new Error('Request failed: HTTP 429 — rate limit exceeded');
+      const msg = humaniseAskError(raw);
+      expect(msg).toMatch(/rate-limited/i);
+      expect(msg).toMatch(/Wait a minute|switch providers/i);
+    });
+
+    it('classifies a 401 / invalid API key as update-key', () => {
+      const raw = new Error('Invalid API key provided (HTTP 401).');
+      const msg = humaniseAskError(raw);
+      expect(msg).toMatch(/API key/);
+      expect(msg).toMatch(/Update it/);
+    });
+
+    it('classifies the 180s timeout as took-too-long', () => {
+      const raw = new Error('Ask took too long.');
+      const msg = humaniseAskError(raw);
+      expect(msg).toMatch(/too long/i);
+      expect(msg).toMatch(/switch providers|try again/i);
+    });
+
+    it('classifies React Native network failure as offline', () => {
+      const raw = new Error('Network request failed');
+      const msg = humaniseAskError(raw);
+      expect(msg).toMatch(/couldn't reach/i);
+    });
+
+    it('falls back with raw text stripped of wrapper noise, kept under an AI-provider-error prefix', () => {
+      const raw = new Error(
+        'AI provider error: RetryError: Failed after 3 attempts. Last error: something exotic happened. For more information visit https://example.com/docs',
+      );
+      const msg = humaniseAskError(raw);
+      expect(msg).toBe('AI provider error: something exotic happened.');
+    });
+
+    it('returns a generic message when stripped text is empty', () => {
+      const raw = new Error('');
+      expect(humaniseAskError(raw)).toBe('AI provider error.');
+    });
+
+    it('handles non-Error throwables', () => {
+      expect(humaniseAskError('rate limit reached')).toMatch(/rate-limited/i);
     });
   });
 });

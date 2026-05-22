@@ -77,8 +77,7 @@ export default function PeerLensPreferencesIndex(): React.ReactElement {
       <Stack.Screen options={{ title: 'PeerLens preferences', headerShown: true }} />
       <ScrollView style={styles.root} contentContainerStyle={styles.content}>
         <Text style={styles.subtitle}>
-          Shapes which results Dina surfaces in PeerLens. Everything here stays on this
-          device.
+          Dina uses these to customise the query it sends to PeerLens.
         </Text>
 
         <View style={styles.card}>

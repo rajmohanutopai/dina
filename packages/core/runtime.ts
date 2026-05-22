@@ -35,6 +35,7 @@ export type { MsgBoxBootConfig } from './src/relay/msgbox_boot';
 export {
   disconnect as disconnectMsgBox,
   isAuthenticated as isMsgBoxAuthenticated,
+  onAuthenticated as onMsgBoxAuthenticated,
 } from './src/relay/msgbox_ws';
 export type { WSFactory } from './src/relay/msgbox_ws';
 export { createCoreRouter, setAskRouteHandler } from './src/server/core_server';

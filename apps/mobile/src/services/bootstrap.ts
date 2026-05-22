@@ -36,6 +36,7 @@ import {
   disconnectMsgBox,
   getServiceConfig,
   isMsgBoxAuthenticated,
+  onMsgBoxAuthenticated,
   makeServiceResponseBridgeSender,
   onServiceConfigChanged,
   registerDevice as registerDeviceDID,
@@ -72,14 +73,16 @@ import {
   StagingDrainScheduler,
   type StagingDrainOptions,
 } from '@dina/brain/runtime';
-import { emitRuntimeWarning } from './runtime_warnings';
+import { clearRuntimeWarning } from './runtime_warnings';
 
-function emitMsgboxOfflineWarning(detail: string): void {
-  emitRuntimeWarning(
-    'transport.msgbox.offline',
-    `MsgBox relay unreachable: ${detail}. Outbound D2D will fail until the relay reconnects.`,
-  );
-}
+// Wire MsgBox WS authentication to clear any pending offline warning.
+// Fires on initial connect AND on every reconnect cycle, so a user
+// action that surfaced "relay offline" inline gets a silent
+// background recovery once the relay is reachable again — no
+// "everything is fine now" banner needed.
+onMsgBoxAuthenticated(() => {
+  clearRuntimeWarning('transport.msgbox.offline');
+});
 
 /**
  * App-layer D2D egress shape. Every outbound D2D route in bootstrap.ts
@@ -989,8 +992,13 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
           log({ event: 'node.msgbox_connected', did: options.did });
         } catch (err) {
           const msg = (err as Error).message ?? String(err);
+          // Silence First: a failed handshake at boot doesn't warrant
+          // a global banner. The relay reconnects in the background,
+          // and any actual user action that depends on D2D (Talk
+          // send, ask-through-services) surfaces its own inline error
+          // at the point of failure. Quietly log so the issue is
+          // still recoverable from traces.
           log({ event: 'node.msgbox_connect_failed', error: msg });
-          emitMsgboxOfflineWarning(msg);
         }
       }
 

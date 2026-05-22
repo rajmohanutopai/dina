@@ -18,8 +18,9 @@
  *
  * Sections covered here:
  *   - Settings family (`/admin`, `/policy`, `/paired-devices`,
- *     `/service-settings`, `/recovery-phrase`, `/confirm-recovery-phrase`,
- *     `/peerlens-preferences/*` → `/settings`; `/settings` → `/`)
+ *     `/service-settings`, `/ai-providers`, `/recovery-phrase`,
+ *     `/confirm-recovery-phrase`, `/peerlens-preferences/*` →
+ *     `/settings`; `/settings` → `/`)
  *   - Chat thread + add-contact (reached from People tab)
  *   - Hamburger items not in a Stack folder (`/help`, `/reminders`)
  */
@@ -40,6 +41,7 @@ const SECTION_PARENTS: Record<string, string> = {
   admin: '/settings',
   policy: '/admin',
   'paired-devices': '/settings',
+  'ai-providers': '/settings',
   'service-settings': '/settings',
   'recovery-phrase': '/settings',
   'confirm-recovery-phrase': '/settings',

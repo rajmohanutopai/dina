@@ -254,3 +254,90 @@ describe('AISDKAdapter — providerMetadata round-trip (Gemini thoughtSignature)
     });
   });
 });
+
+describe('lowestSupportedOpenAIEffort — model-id-aware reasoning floor', () => {
+  // Probed live against /v1/responses on 2026-05-22; if a future
+  // model loosens its floor, the worst outcome is a slightly
+  // higher-than-needed effort gets requested.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { lowestSupportedOpenAIEffort } = require('../../../../packages/brain/src/llm/adapters/aisdk');
+
+  it('returns "none" for gpt-5.5 base — the cheapest tier (no reasoning tokens billed)', () => {
+    expect(lowestSupportedOpenAIEffort('gpt-5.5')).toBe('none');
+    expect(lowestSupportedOpenAIEffort('gpt-5.5-2026-04-23')).toBe('none');
+  });
+
+  it('returns "medium" for gpt-5.5-pro — pro variant rejects none/low/minimal', () => {
+    expect(lowestSupportedOpenAIEffort('gpt-5.5-pro')).toBe('medium');
+    expect(lowestSupportedOpenAIEffort('gpt-5.5-pro-2026-04-23')).toBe('medium');
+  });
+
+  it('returns "minimal" for gpt-5-mini / gpt-5-nano — they support minimal but not none', () => {
+    expect(lowestSupportedOpenAIEffort('gpt-5-mini')).toBe('minimal');
+    expect(lowestSupportedOpenAIEffort('gpt-5-nano')).toBe('minimal');
+    expect(lowestSupportedOpenAIEffort('gpt-5-mini-2025-08-07')).toBe('minimal');
+  });
+
+  it('returns "medium" for gpt-5-pro (reasoning-only)', () => {
+    expect(lowestSupportedOpenAIEffort('gpt-5-pro')).toBe('medium');
+  });
+
+  it('falls back to "none" for plain gpt-5 base', () => {
+    expect(lowestSupportedOpenAIEffort('gpt-5')).toBe('none');
+  });
+
+  it('returns null for non-OpenAI model ids — caller skips the override', () => {
+    expect(lowestSupportedOpenAIEffort('claude-opus-4-7')).toBeNull();
+    expect(lowestSupportedOpenAIEffort('gemini-3.5-flash')).toBeNull();
+    expect(lowestSupportedOpenAIEffort('google/gemini-3.5-flash')).toBeNull();
+    expect(lowestSupportedOpenAIEffort('llama-local')).toBeNull();
+  });
+
+  // OpenRouter namespaces OpenAI ids as `openai/<id>`. The matcher
+  // strips the prefix and applies the same per-model floor so OR-
+  // routed calls don't silently pay for default reasoning tokens.
+  it('strips the `openai/` prefix and re-matches against the gpt-5+ floor table', () => {
+    expect(lowestSupportedOpenAIEffort('openai/gpt-5.5')).toBe('none');
+    expect(lowestSupportedOpenAIEffort('openai/gpt-5.5-pro')).toBe('medium');
+    expect(lowestSupportedOpenAIEffort('openai/gpt-5-mini')).toBe('minimal');
+    expect(lowestSupportedOpenAIEffort('openai/gpt-5')).toBe('none');
+  });
+
+  // gpt-5.5-pro starts with gpt-5.5 too — the matcher MUST check the
+  // more specific prefix first or pro would get classified as 'none'
+  // which the API rejects.
+  it('prefers the more specific gpt-5.5-pro match over the gpt-5.5 prefix', () => {
+    expect(lowestSupportedOpenAIEffort('gpt-5.5-pro')).toBe('medium');
+    expect(lowestSupportedOpenAIEffort('gpt-5.5-pro-2026-04-23')).toBe('medium');
+  });
+});
+
+describe('parseOpenAIModelId — pseudo-id unpacker', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { parseOpenAIModelId } = require('../../src/ai/provider');
+
+  it('passes plain model ids through with no effort override', () => {
+    expect(parseOpenAIModelId('gpt-5.5')).toEqual({ model: 'gpt-5.5' });
+    expect(parseOpenAIModelId('gpt-5.5-pro')).toEqual({ model: 'gpt-5.5-pro' });
+    expect(parseOpenAIModelId('gpt-5-mini')).toEqual({ model: 'gpt-5-mini' });
+  });
+
+  it('unpacks the `+thinking` suffix into the real model + effort=high', () => {
+    // The picker stores `gpt-5.5+thinking` so the same underlying
+    // model can offer two distinct modes. The adapter sees the
+    // bare `gpt-5.5` and pairs it with `reasoning.effort: 'high'`.
+    expect(parseOpenAIModelId('gpt-5.5+thinking')).toEqual({
+      model: 'gpt-5.5',
+      effortOverride: 'high',
+    });
+  });
+
+  it('leaves non-OpenAI ids alone — they never carry the suffix', () => {
+    expect(parseOpenAIModelId('claude-opus-4-7')).toEqual({
+      model: 'claude-opus-4-7',
+    });
+    expect(parseOpenAIModelId('gemini-3.5-flash')).toEqual({
+      model: 'gemini-3.5-flash',
+    });
+  });
+});

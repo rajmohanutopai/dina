@@ -135,14 +135,17 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
       switch (failureKind) {
         case 'provider_error': {
           // Surface the underlying error message when the loop captured
-          // one (set by ask_coordinator.translateLoopResult). Keeps the
-          // generic fallback for callers that didn't carry the detail.
+          // one (set by ask_coordinator.translateLoopResult). Run it
+          // through `humaniseProviderError` so quota / rate-limit /
+          // auth / timeout failures become user-friendly one-liners
+          // with actionable next steps instead of raw vendor stack
+          // traces (RetryError + docs URLs + nested wrappers).
           const detail =
             typeof raw === 'object' && raw !== null && 'message' in raw
               ? String((raw as { message: unknown }).message)
               : '';
           if (detail !== '' && !detail.startsWith('agentic loop terminated with')) {
-            return `AI provider error: ${detail}`;
+            return humaniseProviderError(detail);
           }
           return "I ran into a problem reaching the AI provider. Please try again in a moment.";
         }
@@ -444,4 +447,82 @@ function extractServiceQueries(value: unknown): Array<{
     });
   }
   return out;
+}
+
+/**
+ * Map a raw provider error string into a user-friendly one-liner.
+ *
+ * The agentic loop's underlying SDK throws wrapped errors like
+ * `"RetryError: Failed after 3 attempts. Last error: <vendor body>"`.
+ * Those are diagnostics, not user copy — they mention RetryError,
+ * link to platform.openai.com docs, and use jargon the chat-bubble
+ * reader will not parse.
+ *
+ * This helper sniffs known vendor signals (429 / quota / 401 / 403 /
+ * timeout / network) and returns plain English plus an actionable
+ * next step. Unrecognised errors fall through with their first
+ * sentence preserved so we never lose information we don't classify.
+ *
+ * Exported for tests; consumers should go through `formatFailure`.
+ */
+export function humaniseProviderError(raw: string): string {
+  const lower = raw.toLowerCase();
+
+  // Quota / rate-limit family — both surface as 429s but the body
+  // text distinguishes them and the action differs (top-up vs wait).
+  if (
+    lower.includes('exceeded your current quota') ||
+    lower.includes('insufficient_quota')
+  ) {
+    return "Your AI provider is out of quota. Open Settings → Manage AI providers and switch to a different one (or top up your account).";
+  }
+  if (lower.includes('rate limit') || lower.includes('429')) {
+    return 'AI provider rate-limited. Wait a minute and try again, or switch providers in Settings → Manage AI providers.';
+  }
+
+  // Invalid / revoked API key. 401/403 on every cloud provider.
+  if (
+    lower.includes('invalid_api_key') ||
+    lower.includes('invalid api key') ||
+    lower.includes('incorrect api key') ||
+    lower.includes(' 401') ||
+    lower.includes(' 403')
+  ) {
+    return 'Your API key was rejected. Update it in Settings → Manage AI providers.';
+  }
+
+  // Timeout — either from our hard cap or the SDK's `AbortError`.
+  if (
+    lower.includes('aborterror') ||
+    lower.includes('timed out') ||
+    lower.includes('took too long')
+  ) {
+    return "That took too long to come back. The provider may be slow right now — try again, or switch providers in Settings → Manage AI providers.";
+  }
+
+  // Network reachability.
+  if (
+    lower.includes('network request failed') ||
+    lower.includes('failed to fetch') ||
+    lower.includes('econnrefused') ||
+    lower.includes('enotfound')
+  ) {
+    return "Couldn't reach the AI provider. Check your connection and try again.";
+  }
+
+  // Generic fallback — strip the RetryError wrapper, docs URLs, and
+  // "For more information…" trailer so the user sees the meaningful
+  // first sentence. Prefix with "AI provider error:" so the failure
+  // category is clear even for vendor errors we haven't classified
+  // (and so callers/tests can distinguish provider failures from
+  // other failure kinds in the chat stream).
+  const cleaned = raw
+    .replace(/^AI provider error:\s*/i, '')
+    .replace(/RetryError:\s*Failed after \d+ attempts\.\s*Last error:\s*/i, '')
+    .replace(/\s*For more information.*$/i, '')
+    .replace(/\s*https?:\/\/\S+/g, '')
+    .trim();
+  return cleaned.length > 0
+    ? `AI provider error: ${cleaned}`
+    : 'I ran into a problem reaching the AI provider. Please try again in a moment.';
 }

@@ -17,10 +17,38 @@ export interface ChatMessage {
    * need the prior functionCall block before the functionResponse).
    */
   toolCalls?: ToolCall[];
+  /**
+   * Reasoning items the model emitted alongside its `toolCalls` on this
+   * turn. Required on the round-trip for reasoning-mode models:
+   *
+   *   - OpenAI gpt-5+ (/v1/responses) — each `function_call` item must
+   *     be paired with its `reasoning` item on the next request, or
+   *     the API rejects with `Item 'fc_...' was provided without its
+   *     required 'reasoning' item 'rs_...'`.
+   *   - Anthropic Claude Opus 4.7 / Sonnet (extended-thinking mode) —
+   *     same expectation.
+   *   - Gemini 3.x thinking models use `thoughtSignature` on each
+   *     `functionCall` instead, which is stashed in `ToolCall.providerMetadata`,
+   *     so this field stays empty for Gemini.
+   *
+   * Opaque content the adapter wrote; nothing above the LLM layer
+   * inspects this field.
+   */
+  reasoning?: ReasoningPart[];
   /** For role='tool': the tool call this result corresponds to. */
   toolCallId?: string;
   /** For role='tool': the tool that was invoked. */
   toolName?: string;
+}
+
+/**
+ * A reasoning item — text plus the provider-specific metadata (item
+ * id, encrypted content blob, etc.) needed to round-trip it on the
+ * next turn. See `ChatMessage.reasoning` for which models need this.
+ */
+export interface ReasoningPart {
+  text: string;
+  providerMetadata?: Record<string, unknown>;
 }
 
 export interface ToolDefinition {
@@ -50,6 +78,13 @@ export interface ToolCall {
 export interface ChatResponse {
   content: string;
   toolCalls: ToolCall[];
+  /**
+   * Reasoning items the model emitted on this turn. The agentic loop
+   * attaches them to the assistant ChatMessage it pushes into the
+   * transcript so they round-trip on the next request. See
+   * `ChatMessage.reasoning` for the model-specific motivation.
+   */
+  reasoning?: ReasoningPart[];
   model: string;
   usage: { inputTokens: number; outputTokens: number };
   finishReason: 'end' | 'tool_use' | 'max_tokens' | 'error';

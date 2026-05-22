@@ -76,7 +76,7 @@ describe('LLMRouter', () => {
         taskType: 'classify',
         messages: [{ role: 'user', content: 'pick a vault' }],
       });
-      expect(stub.lastOptions()?.model).toBe('gemini-3.1-flash-lite-preview');
+      expect(stub.lastOptions()?.model).toBe('gemini-3.1-flash-lite');
     });
 
     it('picks the primary tier for reason', async () => {
@@ -94,7 +94,7 @@ describe('LLMRouter', () => {
         taskType: 'reason',
         messages: [{ role: 'user', content: 'explain' }],
       });
-      expect(stub.lastOptions()?.model).toBe('gemini-3.1-pro-preview');
+      expect(stub.lastOptions()?.model).toBe('gemini-3.5-flash');
     });
 
     it('honours an explicit modelOverride', async () => {
@@ -324,7 +324,7 @@ describe('RoutedLLMProvider (LLMProvider adapter)', () => {
     });
     const routed = new RoutedLLMProvider({ router, taskType: 'classify' });
     await routed.chat([{ role: 'user', content: 'hi' }]);
-    expect(stub.lastOptions()?.model).toBe('gemini-3.1-flash-lite-preview');
+    expect(stub.lastOptions()?.model).toBe('gemini-3.1-flash-lite');
   });
 
   it('threads ChatOptions.model through as modelOverride', async () => {

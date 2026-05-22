@@ -77,7 +77,7 @@ describe('GeminiAdapter', () => {
       ]);
 
       expect(result.content).toBe('The answer is 42.');
-      expect(result.model).toBe('gemini-3.1-pro-preview');
+      expect(result.model).toBe('gemini-3.5-flash');
       expect(result.finishReason).toBe('end');
       expect(result.toolCalls).toHaveLength(0);
       expect(result.usage.inputTokens).toBe(10);

@@ -5,6 +5,7 @@
  * stored in react-native-keychain. No shared platform keys.
  */
 
+import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 
@@ -17,11 +18,16 @@ import {
 
 import * as Keychain from '../services/keychain';
 
+import { peekModelOverride } from './model_overrides';
+
 import type { LanguageModel } from 'ai';
 
 
 
-export type ProviderType = 'openai' | 'gemini';
+export type ProviderType = 'openai' | 'gemini' | 'claude' | 'openrouter';
+
+/** OpenRouter is OpenAI-compatible; reuse the OpenAI SDK with this baseURL. */
+const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
 /**
  * Model tier for a given provider — primary (default for chat / agentic
@@ -52,16 +58,30 @@ export const PROVIDERS: Record<ProviderType, ProviderInfo> = {
   openai: {
     type: 'openai',
     label: 'OpenAI',
-    description: 'GPT-5.4, GPT-5 mini',
+    description: 'GPT-5.5, GPT-5 mini',
     keyPrefix: 'sk-',
     minKeyLength: 40,
   },
   gemini: {
     type: 'gemini',
     label: 'Google Gemini',
-    description: 'Gemini 3.1 Pro',
+    description: 'Gemini 3.5 Flash, 3.1 Flash Lite',
     keyPrefix: 'AIza',
     minKeyLength: 39,
+  },
+  claude: {
+    type: 'claude',
+    label: 'Anthropic Claude',
+    description: 'Claude Opus 4.7, Sonnet 4.6, Haiku 4.5',
+    keyPrefix: 'sk-ant-',
+    minKeyLength: 40,
+  },
+  openrouter: {
+    type: 'openrouter',
+    label: 'OpenRouter',
+    description: 'Routes to any model across providers',
+    keyPrefix: 'sk-or-',
+    minKeyLength: 40,
   },
 };
 
@@ -77,17 +97,50 @@ export interface CreateProviderOptions {
 }
 
 /**
- * Resolve the model id for a provider call. Explicit `modelId` wins;
- * otherwise look up `getProviderTiers(provider)[tier]`. Centralises the
- * tier→model mapping so `createModel` and `createLLMProvider` stay in
- * sync and the rest of the app never hardcodes a model string.
+ * Resolve the model id for a provider call. Precedence:
+ *   1. Explicit `modelId` (caller pin — used by Settings probe).
+ *   2. User override from `model_overrides` (picker selection).
+ *   3. Tier default from `getProviderTiers(provider)[tier]`.
+ *
+ * Centralises the tier → model mapping so `createModel` and
+ * `createLLMProvider` stay in sync and the rest of the app never
+ * hardcodes a model string.
+ *
+ * Returns the PSEUDO-ID exactly as stored — pseudo-ids like
+ * `gpt-5.5+thinking` need to flow further before being unpacked into
+ * (realModel, effort). The unpacker lives in `parseOpenAIModelId`
+ * below; both `createModel` and `createLLMProvider` call it.
  */
 function resolveModelId(provider: ProviderType, opts: CreateProviderOptions): string {
   if (typeof opts.modelId === 'string' && opts.modelId.length > 0) {
     return opts.modelId;
   }
   const tier = opts.tier ?? 'primary';
+  const override = peekModelOverride(provider, tier);
+  if (override !== null) return override;
   return getProviderTiers(provider)[tier];
+}
+
+/**
+ * Unpack an OpenAI pseudo-id of the form `<realModel>+thinking` (or
+ * any future suffix) into (realModel, effortOverride). For ids
+ * without a suffix the model id passes through unchanged and the
+ * `effortOverride` is undefined — the adapter's auto-detected floor
+ * (via `lowestSupportedOpenAIEffort`) then applies.
+ *
+ * Pseudo-ids exist because the picker needs to surface the same
+ * underlying model in distinct modes (`gpt-5.5` fast vs
+ * `gpt-5.5+thinking` slow). Encoding the mode in the id keeps the
+ * existing `model_overrides` keychain shape — a single string per
+ * tier — without us needing a separate "effort" persistence field.
+ */
+export function parseOpenAIModelId(
+  pseudo: string,
+): { model: string; effortOverride?: 'none' | 'low' | 'minimal' | 'medium' | 'high' | 'xhigh' } {
+  if (pseudo.endsWith('+thinking')) {
+    return { model: pseudo.slice(0, -'+thinking'.length), effortOverride: 'high' };
+  }
+  return { model: pseudo };
 }
 
 const KEYCHAIN_SERVICE_PREFIX = 'dina.llm.';
@@ -119,25 +172,56 @@ export async function saveApiKey(provider: ProviderType, key: string): Promise<v
 const DEV_API_KEYS: Record<ProviderType, string> = {
   openai: process.env.EXPO_PUBLIC_DINA_DEV_OPENAI_API_KEY ?? '',
   gemini: process.env.EXPO_PUBLIC_DINA_DEV_GEMINI_API_KEY ?? '',
+  claude: process.env.EXPO_PUBLIC_DINA_DEV_CLAUDE_API_KEY ?? '',
+  openrouter: process.env.EXPO_PUBLIC_DINA_DEV_OPENROUTER_API_KEY ?? '',
 };
 
-/** Retrieve a stored API key. Returns null if not set.
- *  Priority: iOS Keychain → bundle-time dev-env fallback → null. */
+/**
+ * Retrieve a stored API key. Returns null if not set.
+ *
+ * Resolution precedence:
+ *   1. iOS Keychain — if the user has explicitly interacted with this
+ *      provider (set OR removed), the keychain has an entry. An entry
+ *      with a non-empty password is the user's key; an entry with an
+ *      empty password is "explicitly removed" — return null and skip
+ *      the dev-env fallback.
+ *   2. Bundle-time `EXPO_PUBLIC_DINA_DEV_*` fallback — used only when
+ *      the keychain has NO entry at all (fresh install on a dev
+ *      simulator). The moment the user saves or removes via Settings,
+ *      keychain takes over forever.
+ *
+ * Without rule (1), tapping Remove on a dev simulator did nothing —
+ * `resetGenericPassword` cleared the entry, the next `getApiKey`
+ * resolved through the dev env, and the provider tile reported
+ * "configured" again. See `removeApiKey` below for the matching
+ * write-side sticky-remove.
+ */
 export async function getApiKey(provider: ProviderType): Promise<string | null> {
   const result = await Keychain.getGenericPassword({
     service: `${KEYCHAIN_SERVICE_PREFIX}${provider}`,
   });
-  if (result && result.password) {
-    return result.password;
+  if (result !== false) {
+    // Keychain has an entry — empty password means "explicitly
+    // removed", not "fall back to dev". Don't consult DEV_API_KEYS.
+    return result.password.length > 0 ? result.password : null;
   }
   const devKey = DEV_API_KEYS[provider];
   if (devKey) return devKey;
   return null;
 }
 
-/** Remove a stored API key. */
+/**
+ * Remove a stored API key.
+ *
+ * Writes an empty string to the keychain rather than deleting the
+ * entry, so a subsequent `getApiKey` sees the entry-with-empty-value
+ * as "user explicitly removed" and does NOT fall back to the
+ * `EXPO_PUBLIC_DINA_DEV_*` env var. A true `resetGenericPassword`
+ * here would let the dev fallback resurrect the key on the next
+ * read — exactly the bug this commit fixes.
+ */
 export async function removeApiKey(provider: ProviderType): Promise<void> {
-  await Keychain.resetGenericPassword({
+  await Keychain.setGenericPassword(provider, '', {
     service: `${KEYCHAIN_SERVICE_PREFIX}${provider}`,
   });
 }
@@ -221,6 +305,38 @@ export async function verifyKey(
       }
       return `Google Gemini responded HTTP ${res.status} — try again later.`;
     }
+    if (provider === 'claude') {
+      // Anthropic requires both x-api-key and anthropic-version on every
+      // request. Their /v1/models endpoint is the cheapest probe — no
+      // tokens billed, returns 401 on a bad key.
+      const res = await fetch('https://api.anthropic.com/v1/models', {
+        method: 'GET',
+        headers: {
+          'x-api-key': trimmed,
+          'anthropic-version': '2023-06-01',
+        },
+        signal,
+      });
+      if (res.status === 200) return null;
+      if (res.status === 401 || res.status === 403) {
+        return "Anthropic rejected this key. Check that it's valid and has access to the Claude models.";
+      }
+      return `Anthropic responded HTTP ${res.status} — try again or check Anthropic's status.`;
+    }
+    if (provider === 'openrouter') {
+      // OpenRouter is OpenAI-compatible. /api/v1/models lists every
+      // routable model and works as a cheap key probe.
+      const res = await fetch(`${OPENROUTER_BASE_URL}/models`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${trimmed}` },
+        signal,
+      });
+      if (res.status === 200) return null;
+      if (res.status === 401 || res.status === 403) {
+        return "OpenRouter rejected this key. Check that it's valid and active.";
+      }
+      return `OpenRouter responded HTTP ${res.status} — try again later.`;
+    }
     return `Unknown provider: ${String(provider)}`;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -246,16 +362,39 @@ export async function createModel(
   const apiKey = await getApiKey(provider);
   if (!apiKey) return null;
 
-  const model = resolveModelId(provider, opts);
+  const pseudo = resolveModelId(provider, opts);
 
   switch (provider) {
     case 'openai': {
+      // Pseudo-ids like `gpt-5.5+thinking` are catalog-only — strip
+      // the suffix before binding to the real OpenAI model. Effort
+      // override (if any) is consumed by the adapter for chat calls,
+      // not here (single-shot path uses tier-default effort).
+      const { model } = parseOpenAIModelId(pseudo);
       const openai = createOpenAI({ apiKey });
       return openai(model);
     }
     case 'gemini': {
       const google = createGoogleGenerativeAI({ apiKey });
-      return google(model);
+      return google(pseudo);
+    }
+    case 'claude': {
+      const anthropic = createAnthropic({ apiKey });
+      return anthropic(pseudo);
+    }
+    case 'openrouter': {
+      // OpenRouter speaks OpenAI's wire format — reuse the OpenAI SDK
+      // with a baseURL override. Model ids are namespaced as
+      // `vendor/model` (e.g. `anthropic/claude-sonnet-4-6`).
+      //
+      // **Use `.chat(...)`, NOT the default `(...)` call.** The plain
+      // `openai('model')` form routes through `/v1/responses` (the new
+      // reasoning endpoint that gpt-5+ uses); OpenRouter has no such
+      // endpoint and silently hangs the connection. `.chat()` pins
+      // the call to `/v1/chat/completions` which OpenRouter actually
+      // serves.
+      const openrouter = createOpenAI({ apiKey, baseURL: OPENROUTER_BASE_URL });
+      return openrouter.chat(pseudo);
     }
   }
 }
@@ -287,15 +426,36 @@ export async function createLLMProvider(
   const apiKey = await getApiKey(provider);
   if (!apiKey) return null;
 
-  const model = resolveModelId(provider, opts);
+  const pseudo = resolveModelId(provider, opts);
 
   switch (provider) {
     case 'openai': {
+      // Unpack `<model>+thinking` pseudo-ids into (real model, effort
+      // override). The adapter passes the override into providerOptions
+      // on each chat call; the SDK then sends `reasoning.effort: 'high'`
+      // for thinking-mode picks instead of the model's auto-detected
+      // floor.
+      const { model, effortOverride } = parseOpenAIModelId(pseudo);
       const openai = createOpenAI({ apiKey });
-      return new AISDKAdapter({ model: openai(model), name: 'openai' });
+      return new AISDKAdapter({
+        model: openai(model),
+        name: 'openai',
+        ...(effortOverride !== undefined ? { openaiReasoningEffort: effortOverride } : {}),
+      });
     }
     case 'gemini': {
-      return new GeminiGenaiAdapter({ apiKey, defaultModel: model });
+      return new GeminiGenaiAdapter({ apiKey, defaultModel: pseudo });
+    }
+    case 'claude': {
+      const anthropic = createAnthropic({ apiKey });
+      return new AISDKAdapter({ model: anthropic(pseudo), name: 'claude' });
+    }
+    case 'openrouter': {
+      // See the `createModel` openrouter branch for why `.chat(...)`
+      // matters — OpenRouter doesn't serve `/v1/responses`, and the
+      // default `openai(...)` form would route there.
+      const openrouter = createOpenAI({ apiKey, baseURL: OPENROUTER_BASE_URL });
+      return new AISDKAdapter({ model: openrouter.chat(pseudo), name: 'openrouter' });
     }
   }
 }

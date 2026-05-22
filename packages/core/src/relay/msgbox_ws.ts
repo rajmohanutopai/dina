@@ -140,6 +140,31 @@ export function onRPCCancel(handler: EnvelopeHandler): void {
   cancelHandler = handler;
 }
 
+/**
+ * Listeners notified each time the socket completes authentication.
+ * Fires once after initial connect AND once per reconnect cycle, so
+ * subscribers can react to "MsgBox is usable again" without polling
+ * `isAuthenticated()`.
+ */
+const authListeners = new Set<() => void>();
+
+export function onAuthenticated(handler: () => void): () => void {
+  authListeners.add(handler);
+  return () => {
+    authListeners.delete(handler);
+  };
+}
+
+function fireAuthenticated(): void {
+  for (const fn of authListeners) {
+    try {
+      fn();
+    } catch {
+      /* swallow — subscriber bug must not break the receive pipeline */
+    }
+  }
+}
+
 // ---------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------
@@ -462,6 +487,7 @@ function handleFrameText(text: string): void {
     // eslint-disable-next-line no-console
     console.log('[WS] frame=auth_success — authenticated');
     authenticated = true;
+    fireAuthenticated();
     return;
   }
   if (!authenticated && isEnvelopeLike(msg) && authChallengeSeen) {
@@ -471,6 +497,7 @@ function handleFrameText(text: string): void {
     // eslint-disable-next-line no-console
     console.log('[WS] envelope arrived pre-auth_success — flipping to authenticated');
     authenticated = true;
+    fireAuthenticated();
   }
   if (authenticated) {
     // eslint-disable-next-line no-console
@@ -541,6 +568,7 @@ function handleAuthChallenge(challenge: { nonce: string; ts: number }): void {
   setTimeout(() => {
     if (ws !== null && connected && authChallengeSeen) {
       authenticated = true;
+      fireAuthenticated();
     }
   }, 500);
 }

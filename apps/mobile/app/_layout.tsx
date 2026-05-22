@@ -898,6 +898,18 @@ export default function RootLayout() {
               }}
             />
             <Tabs.Screen
+              name="ai-providers"
+              options={{
+                title: 'AI providers',
+                // Hidden from the tab bar — reached via Settings → AI
+                // PROVIDER → Manage providers. Owns the full BYOK key
+                // surface so the Settings screen can stay quiet.
+                href: null,
+
+                headerLeft: renderHeaderBackButton,
+              }}
+            />
+            <Tabs.Screen
               name="help"
               options={{
                 title: 'Help',

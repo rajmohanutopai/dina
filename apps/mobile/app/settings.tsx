@@ -1,8 +1,8 @@
 /**
  * Settings screen — BYOK provider configuration.
  *
- * Users select an AI provider (OpenAI / Gemini), enter their API key,
- * and it's stored securely in the device keychain.
+ * Users select an AI provider (OpenAI / Gemini / Claude / OpenRouter),
+ * enter their API key, and it's stored securely in the device keychain.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -12,9 +12,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   Alert,
-  ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,12 +20,8 @@ import { loadVerificationStatus } from '../src/services/verification_status';
 import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 import {
   PROVIDERS,
-  saveApiKey,
   getApiKey,
-  removeApiKey,
   maskKey,
-  validateKeyFormat,
-  verifyKey,
   getConfiguredProviders,
 } from '../src/ai/provider';
 import {
@@ -75,10 +69,9 @@ export default function SettingsScreen() {
   const [providerStates, setProviderStates] = useState<Record<ProviderType, ProviderState>>({
     openai: { configured: false, keyPreview: null, loading: true },
     gemini: { configured: false, keyPreview: null, loading: true },
+    claude: { configured: false, keyPreview: null, loading: true },
+    openrouter: { configured: false, keyPreview: null, loading: true },
   });
-  const [editingProvider, setEditingProvider] = useState<ProviderType | null>(null);
-  const [keyInput, setKeyInput] = useState('');
-  const [saving, setSaving] = useState(false);
   const [active, setActive] = useState<ProviderType | null>(peekActiveProvider());
   // Refreshed on focus so the row disappears as soon as the user
   // completes the deferred Confirm flow and navigates back.
@@ -102,9 +95,21 @@ export default function SettingsScreen() {
       void loadVerificationStatus().then((status) => {
         if (!cancelled) setVerificationPending(status === 'pending');
       });
+      // Refresh the active provider + key states whenever Settings
+      // comes back into focus — without this, a switch made in
+      // `/ai-providers` (Use this provider / Add key / Remove key)
+      // doesn't propagate to the compact card here. `loadStates` is
+      // idempotent: it just re-reads the keychain + active-provider
+      // pointer and updates local state if changed.
+      void loadStates();
       return () => {
         cancelled = true;
       };
+      // loadStates depends on `active`, which is the very thing we
+      // want to discover on focus — re-running on every active change
+      // would also reload on internal sets. Disable the lint rule
+      // here intentionally.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []),
   );
 
@@ -158,225 +163,68 @@ export default function SettingsScreen() {
     loadStates();
   }, [loadStates]);
 
-  const handleSaveKey = async (provider: ProviderType) => {
-    const formatError = validateKeyFormat(provider, keyInput);
-    if (formatError) {
-      Alert.alert('Invalid Key', formatError);
-      return;
-    }
-
-    setSaving(true);
-    // Probe the provider before persisting. Without this, an
-    // obviously-bogus-but-correctly-formatted key gets saved + flipped
-    // to ACTIVE; subsequent /ask calls quietly fall back through the
-    // chat-wiring stack instead of telling the user their key is dead
-    // (MT-08-I2). Catching it on save means the user sees the failure
-    // at the moment they're explicitly testing the key.
-    try {
-      const probeError = await verifyKey(provider, keyInput.trim());
-      if (probeError !== null) {
-        Alert.alert("Key didn't work", probeError);
-        return;
-      }
-      await saveApiKey(provider, keyInput.trim());
-      await saveActiveProvider(provider);
-      await wireBrainChatProvider(provider);
-      setActive(provider);
-      setKeyInput('');
-      setEditingProvider(null);
-      await loadStates();
-    } catch (err: any) {
-      Alert.alert('Error', err?.message ?? 'Failed to save key');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleRemoveKey = (provider: ProviderType) => {
-    Alert.alert(
-      'Remove API Key',
-      `Remove your ${PROVIDERS[provider].label} key? You can add it again later.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            await removeApiKey(provider);
-            if (active === provider) {
-              await saveActiveProvider(null);
-              await wireBrainChatProvider(null);
-              setActive(null);
-            }
-            await loadStates();
-          },
-        },
-      ],
-    );
-  };
-
-  const handleSelectActive = async (provider: ProviderType) => {
-    await saveActiveProvider(provider);
-    await wireBrainChatProvider(provider);
-    setActive(provider);
-  };
-
   return (
     <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}>
-      {/* LLM Providers */}
+      {/* LLM Providers — quiet summary. The full add/remove/switch
+          surface lives in /ai-providers; Settings only shows the
+          active provider + its model picks so the top-level screen
+          stays uncluttered. */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>AI PROVIDER</Text>
-        <Text style={styles.sectionDesc}>
-          Bring your own API key. Your key stays on this device.
-        </Text>
 
-        {(Object.keys(PROVIDERS) as ProviderType[]).map((type) => {
-          const info = PROVIDERS[type];
-          const state = providerStates[type];
-          const isActive = active === type;
-          const isEditing = editingProvider === type;
-
-          return (
-            <View key={type} style={styles.providerCard}>
-              <TouchableOpacity
-                style={styles.providerHeader}
-                onPress={() => {
-                  if (state.configured) {
-                    handleSelectActive(type);
-                  } else {
-                    setEditingProvider(isEditing ? null : type);
-                    setKeyInput('');
-                  }
-                }}
-                activeOpacity={0.7}
-              >
-                <View style={styles.providerInfo}>
-                  <View style={styles.providerNameRow}>
-                    <Text style={styles.providerName}>{info.label}</Text>
-                    {isActive && (
-                      <View style={styles.activeBadge}>
-                        <Text style={styles.activeBadgeText}>ACTIVE</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text style={styles.providerDesc}>{info.description}</Text>
-                </View>
-                {state.loading ? (
-                  <ActivityIndicator size="small" color={colors.textMuted} />
-                ) : state.configured ? (
-                  <Text style={styles.keyPreview}>{state.keyPreview}</Text>
-                ) : (
-                  <Text style={styles.addKey}>Add key</Text>
-                )}
-              </TouchableOpacity>
-
-              {/* Key input form */}
-              {isEditing && !state.configured && (
-                <View style={styles.keyForm}>
-                  <TextInput
-                    style={styles.keyInput}
-                    value={keyInput}
-                    onChangeText={setKeyInput}
-                    placeholder={`Paste your ${info.label} API key`}
-                    placeholderTextColor={colors.textMuted}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    secureTextEntry
-                  />
-                  <View style={styles.keyActions}>
-                    <TouchableOpacity
-                      style={styles.cancelButton}
-                      onPress={() => {
-                        setEditingProvider(null);
-                        setKeyInput('');
-                      }}
-                    >
-                      <Text style={styles.cancelText}>Cancel</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.saveButton, saving && styles.saveButtonDisabled]}
-                      onPress={() => handleSaveKey(type)}
-                      disabled={saving || !keyInput.trim()}
-                    >
-                      {saving ? (
-                        <ActivityIndicator size="small" color={colors.white} />
-                      ) : (
-                        <Text style={styles.saveText}>Save</Text>
-                      )}
-                    </TouchableOpacity>
+        {active !== null && providerStates[active].configured ? (
+          <View style={styles.providerCard}>
+            <View style={styles.providerHeader}>
+              <View style={styles.providerInfo}>
+                <View style={styles.providerNameRow}>
+                  <Text style={styles.providerName}>{PROVIDERS[active].label}</Text>
+                  <View style={styles.activeBadge}>
+                    <Text style={styles.activeBadgeText}>ACTIVE</Text>
                   </View>
                 </View>
-              )}
-
-              {/* Configured — show remove option */}
-              {state.configured && (
-                <View style={styles.configuredActions}>
-                  {!isActive && (
-                    <TouchableOpacity
-                      style={styles.useButton}
-                      onPress={() => handleSelectActive(type)}
-                    >
-                      <Text style={styles.useText}>Use this provider</Text>
-                    </TouchableOpacity>
-                  )}
-                  <TouchableOpacity
-                    style={styles.removeButton}
-                    onPress={() => handleRemoveKey(type)}
-                  >
-                    <Text style={styles.removeText}>Remove key</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
+                <Text style={styles.providerDesc}>{PROVIDERS[active].description}</Text>
+              </View>
+              <Text style={styles.keyPreview}>{providerStates[active].keyPreview}</Text>
             </View>
-          );
-        })}
+            {/* The per-tier model picks render on the /ai-providers
+                tile and would duplicate noise here — Settings stays
+                a one-glance "who's the active brain right now" view
+                with a single drill-down to the full surface. */}
+            <TouchableOpacity
+              style={styles.modelRow}
+              onPress={() => router.push('/ai-providers')}
+              accessibilityRole="button"
+              accessibilityLabel="Manage AI providers"
+              testID="settings-row-manage-providers"
+            >
+              <Text style={styles.modelRowLabel}>Manage AI providers</Text>
+              <Text style={styles.modelRowChevron}>›</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.providerCard}
+            onPress={() => router.push('/ai-providers')}
+            accessibilityRole="button"
+            accessibilityLabel="Add an AI provider"
+          >
+            <View style={styles.providerHeader}>
+              <Text style={styles.providerName}>Add an AI provider</Text>
+              <Text style={styles.modelRowChevron}>›</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+
       </View>
 
-      {/* Service sharing — drill-down to the service-settings screen.
-          Hidden entirely when the node isn't running as a provider or
-          is blocked from being one (review #17). Without this, the
-          link opens a screen that can save state the runtime will
-          never honour. */}
-      {(() => {
-        const node = getBootedNode();
-        const runningAsProvider =
-          node !== null && (node.role === 'provider' || node.role === 'both');
-        const blocked = getBootDegradations().some((d) => PROVIDER_BLOCKERS.has(d.code));
-        // Always show the Service Sharing entry. A non-provider node
-        // can still tap through to the Service Sharing screen, where
-        // the role toggle lives \u2014 without that path the role stays
-        // 'requester' forever. The runningAsProvider/blocked checks
-        // now only adjust the chevron copy.
-        const blockedLabel = blocked ? '\u2014 blocked' : '';
-        return (
-          <SettingsSection title="SERVICE SHARING">
-            <TouchableOpacity
-              style={styles.row}
-              onPress={() => router.push('/service-settings')}
-              accessibilityRole="button"
-              accessibilityLabel="Open Service Sharing settings"
-            >
-              <Text style={styles.rowLabel}>
-                {runningAsProvider ? 'Configure service profile' : 'Become a provider'}
-                {blockedLabel}
-              </Text>
-              <Text style={styles.rowValue}>{'\u203A'}</Text>
-            </TouchableOpacity>
-          </SettingsSection>
-        );
-      })()}
 
-      {/* Trust preferences (TN-V2-CTX). Local-only viewer profile —
-          region, languages, budget, devices, dietary, accessibility.
-          Drives the V2 actionability layer: which results get
-          surfaced / boosted / demoted on the trust-network screens.
-          Loyalty Law: NONE of this leaves the device. */}
       {/* MORE — drill-downs that don't earn their own section.
-          PeerLens preferences was previously a dedicated PEERLENS
-          section with 6 inline rows; now a single drill-down to
-          /peerlens-preferences, so it folds in here. Agents is the
-          admin surface for `dina-admin device pair`. Admin is the
-          on-device port of dina-admin. */}
+          PeerLens preferences was a dedicated PEERLENS section with
+          6 inline rows; collapsed to a single drill-down so it
+          folds in here. `Become a service` lived in its own SERVICE
+          SHARING section with one row; same reasoning, also folded
+          here. Agents is the admin surface for `dina-admin device
+          pair`; Admin is the on-device port of dina-admin. */}
       <SettingsSection title="MORE">
         <TouchableOpacity
           style={styles.row}
@@ -388,6 +236,35 @@ export default function SettingsScreen() {
           <Text style={styles.rowLabel}>PeerLens preferences</Text>
           <Text style={styles.rowValue}>{'›'}</Text>
         </TouchableOpacity>
+        {/* Service sharing row. The label adapts to whether the
+            node is already running as a provider; a non-provider
+            node can still tap through to /service-settings where
+            the role toggle lives. Without that path the role
+            stays 'requester' forever. */}
+        {(() => {
+          const node = getBootedNode();
+          const runningAsProvider =
+            node !== null && (node.role === 'provider' || node.role === 'both');
+          const blocked = getBootDegradations().some((d) =>
+            PROVIDER_BLOCKERS.has(d.code),
+          );
+          const blockedLabel = blocked ? ' (blocked)' : '';
+          return (
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => router.push('/service-settings')}
+              accessibilityRole="button"
+              accessibilityLabel="Open Service Sharing settings"
+              testID="settings-row-service-sharing"
+            >
+              <Text style={styles.rowLabel}>
+                {runningAsProvider ? 'Configure service profile' : 'Become a service provider'}
+                {blockedLabel}
+              </Text>
+              <Text style={styles.rowValue}>{'›'}</Text>
+            </TouchableOpacity>
+          );
+        })()}
         <TouchableOpacity
           style={styles.row}
           onPress={() => router.push('/paired-devices')}
@@ -652,6 +529,37 @@ const styles = StyleSheet.create({
   },
   saveButtonDisabled: { opacity: 0.5 },
   saveText: textStyles.buttonSmall,
+
+  // Model picker row (sits above configuredActions on configured providers)
+  modelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  modelRowLabel: {
+    ...textStyles.bodySmallStrong,
+    color: colors.textPrimary,
+  },
+  modelRowRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    flexShrink: 1,
+  },
+  modelRowValue: {
+    ...textStyles.bodySmall,
+    color: colors.textSecondary,
+    textAlign: 'right',
+    flexShrink: 1,
+  },
+  modelRowChevron: {
+    ...textStyles.body,
+    color: colors.textMuted,
+  },
 
   // Configured actions
   configuredActions: {
