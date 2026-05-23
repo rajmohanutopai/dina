@@ -514,6 +514,82 @@ describe('attestationSchema', () => {
     })
   })
 
+  // ── SubjectRef.refine: at-least-one resolver input ─────────────────
+  // The lexicon's `.refine()` requires a SubjectRef to carry at least
+  // one of did/uri/identifier/name (non-empty after trim). Without
+  // this, the resolver's Tier 2 fail-loud would fire at ingest time
+  // and the record would be dropped on the floor; rejecting at the
+  // lexicon layer surfaces a clean error to the publisher.
+  describe('subjectRefSchema .refine (at-least-one resolver input)', () => {
+    it('rejects {type: product} with no other fields', () => {
+      const issues = expectReject('com.dina.peerlens.attestation', {
+        subject: { type: 'product' },
+        category: 'commerce/product',
+        sentiment: 'positive',
+        createdAt: NOW_ISO,
+      })
+      // The refine fires at the subject path itself, not at a
+      // child field — Zod attaches refine issues to the parent.
+      expect(
+        issues.some(
+          (i) =>
+            i.path.join('.') === 'subject' &&
+            i.message.includes('at least one'),
+        ),
+      ).toBe(true)
+    })
+
+    it('rejects a whitespace-only name with no other fields', () => {
+      const issues = expectReject('com.dina.peerlens.attestation', {
+        subject: { type: 'product', name: '   ' },
+        category: 'commerce/product',
+        sentiment: 'positive',
+        createdAt: NOW_ISO,
+      })
+      expect(
+        issues.some(
+          (i) => i.path.join('.') === 'subject' && i.message.includes('at least one'),
+        ),
+      ).toBe(true)
+    })
+
+    it('accepts when name is the only field (non-empty after trim)', () => {
+      expectAccept('com.dina.peerlens.attestation', {
+        subject: { type: 'product', name: 'Aeron Chair' },
+        category: 'commerce/product',
+        sentiment: 'positive',
+        createdAt: NOW_ISO,
+      })
+    })
+
+    it('accepts when only did is supplied', () => {
+      expectAccept('com.dina.peerlens.attestation', {
+        subject: { type: 'did', did: VALID_DID },
+        category: 'identity/person',
+        sentiment: 'positive',
+        createdAt: NOW_ISO,
+      })
+    })
+
+    it('accepts when only uri is supplied', () => {
+      expectAccept('com.dina.peerlens.attestation', {
+        subject: { type: 'content', uri: 'https://example.com' },
+        category: 'content/web',
+        sentiment: 'positive',
+        createdAt: NOW_ISO,
+      })
+    })
+
+    it('accepts when only identifier is supplied', () => {
+      expectAccept('com.dina.peerlens.attestation', {
+        subject: { type: 'product', identifier: 'asin:B01234' },
+        category: 'commerce/product',
+        sentiment: 'positive',
+        createdAt: NOW_ISO,
+      })
+    })
+  })
+
   // ── TN-V2-META-005: compliance tags ────────────────────────────────
   describe('compliance (TN-V2-META-005)', () => {
     it('accepts up to 10 compliance tags', () => {

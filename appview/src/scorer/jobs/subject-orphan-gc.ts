@@ -1,5 +1,5 @@
 import { alias } from 'drizzle-orm/pg-core'
-import { and, eq, lt, notExists, or, inArray } from 'drizzle-orm'
+import { and, eq, isNull, lt, notExists, or, inArray } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import {
   attestations,
@@ -108,6 +108,11 @@ export async function subjectOrphanGc(db: DrizzleDB): Promise<void> {
     .where(
       and(
         lt(subjects.createdAt, ageCutoff),
+        // Keep merged-shadow rows alive (canonical_subject_id IS NOT NULL).
+        // They carry no attestations of their own after the Tier 2 merge
+        // migration but anchor the canonical chain so old subject_ids in
+        // existing URLs / cached references keep resolving.
+        isNull(subjects.canonicalSubjectId),
         notExists(
           db.select().from(attestations).where(eq(attestations.subjectId, subjects.id)),
         ),

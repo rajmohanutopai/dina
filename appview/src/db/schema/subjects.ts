@@ -47,6 +47,25 @@ export const subjects = pgTable('subjects', {
   // attestation path) but is permitted for forward-compat with
   // future "subject pre-registration" flows.
   lastActiveAt: timestamp('last_active_at'),
+  // ── Moderator takedown columns ────────────────────────────────────
+  // `tombstonedAt`: the subject row stays so old URLs / cached
+  // subject_ids continue to resolve, but it's hidden from active
+  // ranking + reviewer rosters. Distinct from orphan-GC (which hard-
+  // deletes empty subjects) and from `canonicalSubjectId` (merge, not
+  // takedown). NULL = active subject.
+  // `tombstoneReason`: free-text reason for audit. Pair with an
+  // `admin_audit_log` row for full accountability — this column is
+  // the inline reason shown alongside the takedown in API responses
+  // (if we ever surface them) and in operator queries.
+  tombstonedAt: timestamp('tombstoned_at'),
+  tombstoneReason: text('tombstone_reason'),
+  // Resolver formula version this subject_id was minted under
+  // (e.g. 'v2'). Stamped at INSERT time by `resolveOrCreateSubject`
+  // using the resolver's `RESOLVER_VERSION` constant. Lets operators
+  // query "which subjects were minted under v2?" directly instead of
+  // re-hashing every stored SubjectRef. NULL on rows from before
+  // this column existed.
+  resolverVersion: text('resolver_version'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => [
@@ -90,4 +109,11 @@ export const subjects = pgTable('subjects', {
   index('subjects_last_active_idx')
     .on(table.lastActiveAt)
     .where(sql`${table.lastActiveAt} IS NOT NULL`),
+  // Partial index over tombstoned subjects. Tombstones are rare
+  // (operator action against ToS violations), so the partial WHERE
+  // keeps the b-tree small. Used by admin queries + by future
+  // exclusion clauses in search/feed.
+  index('subjects_tombstoned_idx')
+    .on(table.tombstonedAt)
+    .where(sql`${table.tombstonedAt} IS NOT NULL`),
 ])

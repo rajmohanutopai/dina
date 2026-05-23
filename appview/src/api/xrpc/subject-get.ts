@@ -9,6 +9,7 @@ import {
 } from '@/db/schema/index.js'
 import { getCachedGraphContext } from '@/api/middleware/graph-context-cache.js'
 import { normalizeHandle } from '@/util/handle_normalize.js'
+import { resolveCanonicalChain } from '@/db/queries/subjects.js'
 
 /**
  * `com.dina.peerlens.subjectGet` (TN-API-002 / Plan §6.2).
@@ -124,6 +125,24 @@ export interface SubjectGetResponse {
     extended: ReviewerEntry[]
     strangers: ReviewerEntry[]
   }
+  // ── Forward-compat fields ──────────────────────────────────────────
+  // Pagination cursor for the reviewer roster. V1 returns the entire
+  // (capped) roster in one page, so `cursor` is always null. Locked
+  // in the wire shape NOW so adding cursor-based pagination later
+  // doesn't bump the response contract — clients that need pagination
+  // will start reading this field; today's clients ignore it.
+  cursor: string | null
+  // Moderator takedown flag. `true` when the subject was tombstoned
+  // by an operator (ToS / abuse / legal). The subject row + URL stay
+  // resolvable so cached references don't 404, but readers know not
+  // to surface it. The `reviewers.*` arrays are empty when tombstoned.
+  tombstoned: boolean
+  // Version of the scoring formula that produced `score`/`band`.
+  // `null` when the subject has no score row yet (pre-scoring). When
+  // the formula evolves to 'v2', the scorer writes 'v2' rows and the
+  // xRPC will reflect that — letting clients detect formula drift
+  // without out-of-band coordination.
+  scoreVersion: string | null
 }
 
 /** Build a SubjectRef-shaped object from the persisted subject row. */
@@ -191,7 +210,13 @@ export async function subjectGet(
   db: DrizzleDB,
   params: SubjectGetParamsType,
 ): Promise<SubjectGetResponse> {
-  const { subjectId, viewerDid } = params
+  const { subjectId: requestedSubjectId, viewerDid } = params
+
+  // Resolve through the canonical merge chain so callers can pass an
+  // old fragmented subject_id (from before the Tier 2 author-scope
+  // removal) and still get the canonical merged subject's reviews.
+  // The chain walk is cycle-safe (see resolveCanonicalChain).
+  const subjectId = await resolveCanonicalChain(db, requestedSubjectId)
 
   // Phase 1 — subject row + score row (single-row PK lookups).
   const [[subjectRow], [scoreRow]] = await Promise.all([
@@ -212,11 +237,44 @@ export async function subjectGet(
       band: 'unrated',
       reviewCount: 0,
       reviewers: { self: [], contacts: [], extended: [], strangers: [] },
+      cursor: null,
+      tombstoned: false,
+      scoreVersion: null,
     }
   }
 
   const subject = subjectRefFromRow(subjectRow)
   const score = scoreRow?.weightedScore ?? null
+  const scoreVersion = scoreRow?.scoreVersion ?? null
+  // `tombstonedAt` is a `timestamp` column — Drizzle returns a Date
+  // object when set, `null` when not. `!= null` covers both `null`
+  // and `undefined` (the latter only matters for older test stubs
+  // that pre-date this column).
+  const tombstoned = subjectRow.tombstonedAt != null
+
+  if (tombstoned) {
+    // Operator-tombstoned subjects keep their row + URL resolvable so
+    // cached references don't 404. The subject ref still flows so the
+    // client can render the canonical title ("X was removed by a
+    // moderator"), but every score-bearing field is hidden:
+    //   - `score` → null (don't expose what it was before takedown)
+    //   - `band` → 'unrated' (don't render "HIGH (REMOVED)")
+    //   - `scoreVersion` → null (no active scoring on a tombstoned row)
+    //   - reviewer roster → empty
+    // The pre-takedown score remains in `subject_scores` + the
+    // `admin_audit_log` row for operator forensics; it's just not
+    // surfaced to read APIs.
+    return {
+      subject,
+      score: null,
+      band: 'unrated',
+      reviewCount: 0,
+      reviewers: { self: [], contacts: [], extended: [], strangers: [] },
+      cursor: null,
+      tombstoned: true,
+      scoreVersion: null,
+    }
+  }
 
   // Phase 2 — attestation rows for this subject + the live count.
   //
@@ -241,6 +299,7 @@ export async function subjectGet(
         and(
           eq(attestations.subjectId, subjectId),
           eq(attestations.isRevoked, false),
+          eq(attestations.isTakedownByModerator, false),
         ),
       )
       .orderBy(desc(attestations.recordCreatedAt))
@@ -252,6 +311,7 @@ export async function subjectGet(
         and(
           eq(attestations.subjectId, subjectId),
           eq(attestations.isRevoked, false),
+          eq(attestations.isTakedownByModerator, false),
         ),
       ),
   ])
@@ -265,6 +325,9 @@ export async function subjectGet(
       band: trustBandFor(score),
       reviewCount,
       reviewers: { self: [], contacts: [], extended: [], strangers: [] },
+      cursor: null,
+      tombstoned: false,
+      scoreVersion,
     }
   }
 
@@ -336,5 +399,8 @@ export async function subjectGet(
       extended: sortReviewers(extended).slice(0, MAX_REVIEWERS_PER_GROUP),
       strangers: sortReviewers(strangers).slice(0, MAX_REVIEWERS_PER_GROUP),
     },
+    cursor: null,
+    tombstoned: false,
+    scoreVersion,
   }
 }

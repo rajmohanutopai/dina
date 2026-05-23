@@ -52,6 +52,18 @@ export const CONSTANTS = {
   // Subject resolution
   MAX_CHAIN_DEPTH: 5,
 
+  // SubjectRef wire-format bounds. Single source of truth for the
+  // resolver (`db/queries/subjects.ts`) AND the lexicon validators
+  // (`ingester/record-validator.ts`, `api/xrpc/test-inject.ts`). If
+  // they ever drift, names a publisher can submit might fail to
+  // hash, or hash-able names might be rejected by the lexicon —
+  // either way, asymmetric behavior. Pinned here so a single edit
+  // moves all three layers in lockstep.
+  SUBJECT_REF_MAX_NAME_LEN: 200,
+  SUBJECT_REF_MAX_IDENTIFIER_LEN: 500,
+  SUBJECT_REF_MAX_URI_LEN: 2048,
+  SUBJECT_REF_MAX_DID_LEN: 2048,
+
   // Scorer batch
   SCORER_BATCH_SIZE: 5000,
 

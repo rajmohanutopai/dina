@@ -378,7 +378,7 @@ export default function SettingsScreen() {
           <Text style={styles.rowLabel}>Auto-lock when backgrounded</Text>
           <Text style={styles.rowValue}>{formatTimeoutLabel(autoLockSeconds)} {'›'}</Text>
         </TouchableOpacity>
-        <SettingsRow label="Vault encryption" value="AES-256-CBC (SQLCipher)" />
+        <SettingsRow label="Vault encryption" value="AES-256-CBC" />
         <SettingsRow label="Seed wrap" value="AES-256-GCM" />
         <SettingsRow label="Key derivation" value="SLIP-0010 + HKDF" />
         <SettingsRow label="Key storage" value="Device Keychain" />
@@ -387,7 +387,7 @@ export default function SettingsScreen() {
 
       <View style={styles.footer}>
         <Text style={styles.footerText}>Dina v0.1.0</Text>
-        <Text style={styles.footerSubtext}>Your data never leaves this device</Text>
+        <Text style={styles.footerSubtext}>Vault contents are encrypted and stay on this device</Text>
       </View>
     </ScrollView>
   );

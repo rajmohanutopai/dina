@@ -12,7 +12,8 @@
     "migrate": "drizzle-kit migrate",
     "generate": "drizzle-kit generate",
     "admin:trust": "tsx src/admin/trust-flag-cli.ts",
-    "admin:enrich": "tsx src/admin/trust-enrich-cli.ts"
+    "admin:enrich": "tsx src/admin/trust-enrich-cli.ts",
+    "admin:moderation": "tsx src/admin/peerlens-moderation-cli.ts"
   },
   "dependencies": {
     "dotenv": "16.6.1",

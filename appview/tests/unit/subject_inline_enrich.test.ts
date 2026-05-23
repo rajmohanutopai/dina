@@ -158,13 +158,17 @@ describe('resolveOrCreateSubject inline enrichment — TN-ING-007', () => {
     // Parameters interpolated by `resolveOrCreateSubject` (in order):
     //   id, name, ref.type, did?, identifiers_json,
     //   category, metadata, language,
-    //   author_scoped_did
+    //   author_scoped_did, resolver_version
     // The stub's enrichSubject returns category='product:furniture',
     // metadata={brand:'IKEA'}; detectLanguage returns 'en'. We assert
     // those values appear in the parameter set.
     expect(params).toContain('product:furniture')
     expect(params).toContain('en')
     expect(params).toContain(JSON.stringify({ brand: 'IKEA' }))
+    // resolver_version is stamped at INSERT time so operators can
+    // query which subjects were minted under which formula without
+    // re-hashing every stored SubjectRef.
+    expect(params).toContain('v2')
   })
 
   it('passes enrichment ref BEFORE the SQL execute (no race)', async () => {

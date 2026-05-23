@@ -18,10 +18,25 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const computeGraphContextMock = vi.fn()
+const resolveCanonicalChainMock = vi.fn()
 
 vi.mock('@/db/queries/graph.js', () => ({
   computeGraphContext: (...args: unknown[]) => computeGraphContextMock(...args),
 }))
+
+// Partial-mock `@/db/queries/subjects` so we can pin the canonical-
+// chain integration without rewriting the whole resolver. Default
+// behaviour (when the mock isn't overridden in a test): pass the
+// requested subjectId through unchanged, matching the production
+// behaviour for non-merged subjects.
+vi.mock('@/db/queries/subjects.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/db/queries/subjects')>()
+  return {
+    ...actual,
+    resolveCanonicalChain: (...args: unknown[]) =>
+      resolveCanonicalChainMock(...args),
+  }
+})
 
 import { subjectGet, SubjectGetParams } from '@/api/xrpc/subject-get'
 import { clearGraphContextCache } from '@/api/middleware/graph-context-cache'
@@ -32,6 +47,11 @@ import { clearGraphContextCache } from '@/api/middleware/graph-context-cache'
 // are reused.
 beforeEach(() => {
   clearGraphContextCache()
+  // Default: chain walk is a no-op. Tests that exercise the merge
+  // path override with mockResolvedValueOnce.
+  resolveCanonicalChainMock.mockReset()
+  resolveCanonicalChainMock.mockImplementation(async (_db, id: string) => id)
+  _capturedAttRowWhereFilter = undefined
 })
 import {
   attestations,
@@ -47,11 +67,15 @@ interface SubjectRow {
   subjectType: string
   did: string | null
   identifiersJson: unknown
+  /** Operator takedown marker. `null` = active subject. */
+  tombstonedAt?: Date | null
 }
 
 interface ScoreRow {
   weightedScore: number | null
   totalAttestations: number | null
+  /** Formula version that produced the score. Defaults to 'v1' in DB. */
+  scoreVersion?: string | null
 }
 
 interface AttRow {
@@ -68,6 +92,18 @@ interface ProfileRow {
   /** Optional in test fixtures — handler maps `undefined` → null on the wire. */
   handle?: string | null
 }
+
+/**
+ * Module-level capture for the most-recent WHERE filter the
+ * attestation row-query received. Lets the SQL-predicate test
+ * inspect what subjectGet asked Postgres to filter on — the
+ * stub itself ignores the predicate (it returns whatever
+ * `opts.attRows` is), so this is the only way to assert the
+ * filter actually carries the takedown column reference.
+ *
+ * Reset in `beforeEach` so cross-test leakage can't happen.
+ */
+let _capturedAttRowWhereFilter: unknown = undefined
 
 /**
  * Stub the four query shapes the handler issues, routed by table
@@ -90,6 +126,9 @@ function stubDb(opts: {
   profileRows?: ProfileRow[]
 }): DrizzleDB {
   return {
+    // `resolveCanonicalChain` is mocked at the module level (see
+    // top-of-file `vi.mock`), so the stub doesn't need to model
+    // the `db.execute(SELECT canonical_subject_id ...)` shape.
     select: (sel?: unknown) => {
       // The handler issues two queries against `attestations`: a
       // row-projection query (`select({uri, text, ...})`) for the
@@ -130,12 +169,18 @@ function stubDb(opts: {
               }
             }
             // Row-projection query: where → orderBy → limit chain.
+            // The filter is captured into the closure-local
+            // `_capturedAttRowWhereFilter` so the SQL-predicate test
+            // can inspect what was passed in.
             return {
-              where: () => ({
-                orderBy: () => ({
-                  limit: async () => opts.attRows ?? [],
-                }),
-              }),
+              where: (filter: unknown) => {
+                _capturedAttRowWhereFilter = filter
+                return {
+                  orderBy: () => ({
+                    limit: async () => opts.attRows ?? [],
+                  }),
+                }
+              },
             }
           }
           if (table === didProfiles) {
@@ -581,5 +626,206 @@ describe('subjectGet handler — TN-API-002', () => {
     expect(r.reviewers.contacts[0].attestation.createdAt).toBe(
       '2026-04-29T12:34:56.000Z',
     )
+  })
+
+  // ─────────────────────────────────────────────────────────────────
+  // Forward-compat response fields (cursor, tombstoned, scoreVersion)
+  // ─────────────────────────────────────────────────────────────────
+
+  it('every return path carries the cursor / tombstoned / scoreVersion fields', async () => {
+    // subject-not-found path
+    const dbMissing = stubDb({ subject: null })
+    const rMissing = await subjectGet(dbMissing, {
+      subjectId: 'missing',
+      viewerDid: 'did:plc:v',
+    })
+    expect(rMissing.cursor).toBeNull()
+    expect(rMissing.tombstoned).toBe(false)
+    expect(rMissing.scoreVersion).toBeNull()
+
+    // no-attestations path
+    const dbEmpty = stubDb({ subject: subjectRow(), score: null, attRows: [] })
+    const rEmpty = await subjectGet(dbEmpty, {
+      subjectId: 'sub_x',
+      viewerDid: 'did:plc:v',
+    })
+    expect(rEmpty.cursor).toBeNull()
+    expect(rEmpty.tombstoned).toBe(false)
+    expect(rEmpty.scoreVersion).toBeNull()
+
+    // populated path — scoreVersion flows through from scoreRow
+    computeGraphContextMock.mockResolvedValueOnce({
+      nodes: [{ did: 'did:plc:v', trustScore: null, depth: 0 }],
+      edges: [],
+      rootDid: 'did:plc:v',
+      depth: 2,
+    })
+    const dbFull = stubDb({
+      subject: subjectRow(),
+      score: { weightedScore: 0.7, totalAttestations: 1, scoreVersion: 'v1' },
+      attRows: [attRow()],
+      profileRows: [{ did: 'did:plc:r1', overallTrustScore: 0.5 }],
+    })
+    const rFull = await subjectGet(dbFull, {
+      subjectId: 'sub_x',
+      viewerDid: 'did:plc:v',
+    })
+    expect(rFull.cursor).toBeNull()
+    expect(rFull.tombstoned).toBe(false)
+    expect(rFull.scoreVersion).toBe('v1')
+  })
+
+  // ─────────────────────────────────────────────────────────────────
+  // Canonical-chain integration — subjectGet MUST resolve the input
+  // subject_id through `resolveCanonicalChain` before doing any
+  // downstream queries. Without this, a caller passing a fragmented
+  // pre-merge subject_id would get an empty response.
+  // ─────────────────────────────────────────────────────────────────
+
+  it('runs `resolveCanonicalChain` with the requested subject_id', async () => {
+    const db = stubDb({ subject: null })
+    await subjectGet(db, {
+      subjectId: 'sub_fragmented',
+      viewerDid: 'did:plc:v',
+    })
+    expect(resolveCanonicalChainMock).toHaveBeenCalledWith(
+      db,
+      'sub_fragmented',
+    )
+  })
+
+  it('uses the canonical id (not the requested id) for downstream queries', async () => {
+    // Simulate a merge: `sub_fragmented` resolves to `sub_canonical`.
+    // The subjects row query should then key on `sub_canonical`. We
+    // capture the eq() filter passed to subjects.where() and assert
+    // it references the canonical id, not the fragmented one.
+    resolveCanonicalChainMock.mockResolvedValue('sub_canonical')
+
+    let _capturedSubjectsFilter: unknown = undefined
+    const db = {
+      // Re-implement select() to capture the subjects WHERE filter.
+      // Only the subjects branch differs from `stubDb`; other tables
+      // are unused here (the test short-circuits after Phase 1).
+      select: (_sel?: unknown) => ({
+        from: (table: unknown) => {
+          if (table === subjects) {
+            return {
+              where: (filter: unknown) => {
+                _capturedSubjectsFilter = filter
+                return { limit: async () => [] }
+              },
+            }
+          }
+          if (table === subjectScores) {
+            return { where: () => ({ limit: async () => [] }) }
+          }
+          throw new Error('unexpected table after canonical resolve')
+        },
+      }),
+    } as unknown as DrizzleDB
+
+    await subjectGet(db, {
+      subjectId: 'sub_fragmented',
+      viewerDid: 'did:plc:v',
+    })
+
+    // The filter is a Drizzle SQL object with `queryChunks`. The
+    // chunks reference Column objects (with `.name` + a circular
+    // back-ref through `.table`) and Param objects (with `.value`).
+    // Substituting both during JSON.stringify breaks the cycle AND
+    // surfaces the parameter values for assertion.
+    const serialized = JSON.stringify(_capturedSubjectsFilter, (_k, v) => {
+      if (v !== null && typeof v === 'object') {
+        const o = v as Record<string, unknown>
+        if ('name' in o && typeof o.name === 'string') return `col:${o.name}`
+        if ('value' in o) return o.value
+      }
+      return v
+    })
+    expect(serialized).toContain('sub_canonical')
+    expect(serialized).not.toContain('sub_fragmented')
+  })
+
+  // ─────────────────────────────────────────────────────────────────
+  // SQL-predicate test for moderator-takedown filtering. The
+  // reviewer-roster query MUST exclude attestations where
+  // `is_takedown_by_moderator = true`. Stub-returned rows would
+  // bypass the filter so we inspect the WHERE arg directly.
+  // ─────────────────────────────────────────────────────────────────
+
+  it('attestation row query filter references is_takedown_by_moderator', async () => {
+    computeGraphContextMock.mockResolvedValueOnce({
+      nodes: [{ did: 'did:plc:v', trustScore: null, depth: 0 }],
+      edges: [],
+      rootDid: 'did:plc:v',
+      depth: 2,
+    })
+    const db = stubDb({
+      subject: subjectRow(),
+      score: { weightedScore: 0.5, totalAttestations: 1 },
+      attRows: [attRow()],
+      profileRows: [{ did: 'did:plc:r1', overallTrustScore: 0.5 }],
+    })
+    await subjectGet(db, {
+      subjectId: 'sub_x',
+      viewerDid: 'did:plc:v',
+    })
+    expect(_capturedAttRowWhereFilter).toBeDefined()
+
+    // The filter is a Drizzle SQL object (`and(eq(...), eq(...), eq(...))`).
+    // Drizzle's `Column` objects carry a `.name` property holding the
+    // SQL column name. Walk the structure + substitute any object
+    // with a `.name` field as a `col:<name>` sentinel, then grep
+    // the serialized form for the takedown column.
+    const serialized = JSON.stringify(_capturedAttRowWhereFilter, (_k, v) => {
+      if (
+        v !== null &&
+        typeof v === 'object' &&
+        'name' in (v as Record<string, unknown>) &&
+        typeof (v as { name: unknown }).name === 'string'
+      ) {
+        return `col:${(v as { name: string }).name}`
+      }
+      return v
+    })
+    // The three columns that MUST be in the WHERE: subject_id (scope),
+    // is_revoked (author retraction), is_takedown_by_moderator
+    // (operator takedown). Pin all three — drop any one and the test
+    // fails loud.
+    expect(serialized).toContain('col:subject_id')
+    expect(serialized).toContain('col:is_revoked')
+    expect(serialized).toContain('col:is_takedown_by_moderator')
+  })
+
+  it('tombstoned subject hides score + band + scoreVersion but preserves subject metadata', async () => {
+    // Subject row carries tombstonedAt. The subject ref still flows
+    // so the client can render the canonical title in a "removed by
+    // moderator" state, but every score-bearing field is hidden:
+    // score=null, band='unrated', scoreVersion=null, empty roster.
+    // The pre-takedown score lives on in subject_scores + the
+    // admin_audit_log for operator forensics; it's just not exposed
+    // on the read API.
+    const dbTombstoned = stubDb({
+      subject: { ...subjectRow(), tombstonedAt: new Date('2026-05-22T10:00:00Z') },
+      score: { weightedScore: 0.5, totalAttestations: 3, scoreVersion: 'v1' },
+      attRows: [attRow()],
+      attCount: 3,
+    })
+    const r = await subjectGet(dbTombstoned, {
+      subjectId: 'sub_x',
+      viewerDid: 'did:plc:v',
+    })
+    expect(r.tombstoned).toBe(true)
+    expect(r.subject?.name).toBe('Aeron Chair')
+    expect(r.score).toBeNull()
+    expect(r.band).toBe('unrated')
+    expect(r.scoreVersion).toBeNull()
+    expect(r.reviewCount).toBe(0)
+    expect(r.reviewers).toEqual({
+      self: [],
+      contacts: [],
+      extended: [],
+      strangers: [],
+    })
   })
 })

@@ -28,14 +28,36 @@ import { logger } from '@/shared/utils/logger.js'
 import { metrics } from '@/shared/utils/metrics.js'
 import { attestationHandler } from '@/ingester/handlers/attestation.js'
 import { revocationHandler } from '@/ingester/handlers/revocation.js'
+import { CONSTANTS } from '@/config/constants.js'
 
-const SubjectRefSchema = z.object({
-  type: z.enum(['did', 'content', 'product', 'dataset', 'organization', 'claim', 'place']),
-  did: z.string().optional(),
-  uri: z.string().optional(),
-  name: z.string().optional(),
-  identifier: z.string().optional(),
-})
+// Matches `record-validator.ts:subjectRefSchema` byte-for-byte (same
+// bounds, same refine) so the dev-shortcut publish gate can't write
+// data the production lexicon would reject. Bounds come from the
+// shared `CONSTANTS.SUBJECT_REF_*` constants.
+const SubjectRefSchema = z
+  .object({
+    type: z.enum(['did', 'content', 'product', 'dataset', 'organization', 'claim', 'place']),
+    did: z
+      .string()
+      .min(8)
+      .max(CONSTANTS.SUBJECT_REF_MAX_DID_LEN)
+      .regex(/^did:[a-z]+:/, 'must be a DID')
+      .optional(),
+    uri: z.string().min(1).max(CONSTANTS.SUBJECT_REF_MAX_URI_LEN).optional(),
+    name: z.string().max(CONSTANTS.SUBJECT_REF_MAX_NAME_LEN).optional(),
+    identifier: z.string().max(CONSTANTS.SUBJECT_REF_MAX_IDENTIFIER_LEN).optional(),
+  })
+  .refine(
+    (ref) =>
+      !!ref.did ||
+      !!ref.uri ||
+      !!ref.identifier ||
+      (typeof ref.name === 'string' && ref.name.trim().length > 0),
+    {
+      message:
+        'SubjectRef must carry at least one of: did, uri, identifier, or a non-empty name.',
+    },
+  )
 
 export const InjectAttestationBody = z.object({
   authorDid: z.string().regex(/^did:[a-z]+:/, 'must be a DID'),

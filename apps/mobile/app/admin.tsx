@@ -129,19 +129,28 @@ export default function AdminScreen(): React.ReactElement {
   return (
     <>
       <ScrollView contentContainerStyle={styles.scroll} style={styles.root}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.eyebrow}>ADMIN</Text>
-          <Text style={styles.title}>
-            {node === null ? 'Node not booted' : `Running as ${shortRole(node.role)}`}
-          </Text>
-          <Text style={styles.subtitle}>
-            Everything you’d do from <Text style={styles.code}>dina-admin</Text> on the desktop
-            install, on-device.
+        {/* Subtitle. The page already wears "Admin" in the native
+            header — a second body-side title (the previous italic-
+            display "Running as requester") read as ceremonious for
+            what's really a status line. Now: one calm sentence that
+            sets context, then straight into the cards. */}
+        <View style={styles.intro}>
+          <Text style={styles.introBody}>
+            Identity, diagnostics, and device actions.{' '}
+            {node === null
+              ? 'Node not booted.'
+              : `Running as ${shortRole(node.role)} · brain ${
+                  node === null ? 'offline' : 'connected'
+                }.`}
           </Text>
         </View>
 
-        {/* Identity */}
+        {/* Identity — kept to the two truly identity-shaped rows
+            (the DID a support agent would ask for, and the local
+            display name the user can edit). The Role + Brain
+            client status moved up into the intro line; the
+            "Re-publish PLC document" Coming-Soon placeholder is
+            dropped until that feature actually lands. */}
         <Section title="Identity">
           <Row
             label="DID"
@@ -152,15 +161,12 @@ export default function AdminScreen(): React.ReactElement {
             truncate
           />
           <DisplayNameRow />
-          <Row label="Role" value={shortRole(node?.role)} />
-          <Row label="Brain client" value={node === null ? 'offline' : 'connected'} />
-          <Placeholder
-            title="Re-publish PLC document"
-            body="Update services (MsgBox endpoint, handle) on plc.directory."
-          />
         </Section>
 
-        {/* Policies */}
+        {/* Policies drill-down — single row, but it earns its own
+            section because the screen behind it is a substantive
+            agent-policy editor. Title kept as a noun so the row
+            label can stay short. */}
         <Section title="Policies">
           <DrillRow label="Agent policies" onPress={() => router.push('/policy')} />
         </Section>
@@ -578,16 +584,6 @@ function DrillRow({ label, onPress }: { label: string; onPress: () => void }): R
   );
 }
 
-function Placeholder({ title, body }: { title: string; body: string }): React.ReactElement {
-  return (
-    <View style={styles.placeholder}>
-      <Text style={styles.placeholderTitle}>{title}</Text>
-      <Text style={styles.placeholderBody}>{body}</Text>
-      <Text style={styles.placeholderBadge}>COMING SOON</Text>
-    </View>
-  );
-}
-
 function shortRole(role?: string): string {
   if (role === undefined || role === null) return '—';
   if (role === 'requester') return 'requester';
@@ -599,28 +595,14 @@ function shortRole(role?: string): string {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bgPrimary },
   scroll: { paddingBottom: spacing.xxl },
-  header: {
+  intro: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xs,
   },
-  eyebrow: {
-    ...textStyles.eyebrow,
-    letterSpacing: 2.4,
-  },
-  title: {
-    ...textStyles.displaySmall,
-    marginTop: spacing.xs,
-    letterSpacing: -0.3,
-  },
-  subtitle: {
+  introBody: {
     ...textStyles.body,
-    marginTop: spacing.sm,
     color: colors.textSecondary,
-  },
-  code: {
-    ...textStyles.mono,
-    color: colors.textPrimary,
   },
   section: {
     marginTop: spacing.lg,
@@ -628,7 +610,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...textStyles.eyebrow,
-    letterSpacing: 1.5,
+    letterSpacing: 1.2,
     marginBottom: spacing.sm,
     paddingLeft: 4,
   },
@@ -685,23 +667,6 @@ const styles = StyleSheet.create({
     ...textStyles.body,
     color: colors.textMuted,
   },
-  placeholder: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  placeholderTitle: textStyles.bodyStrong,
-  placeholderBody: {
-    ...textStyles.bodySmall,
-    marginTop: 3,
-    color: colors.textSecondary,
-  },
-  placeholderBadge: {
-    ...textStyles.tiny,
-    marginTop: 6,
-    letterSpacing: 1.5,
-  },
   diagGroupLabel: {
     ...textStyles.label,
     paddingHorizontal: spacing.md,
@@ -731,13 +696,17 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   copyAll: {
-    margin: spacing.md,
-    padding: spacing.sm,
-    borderRadius: radius.sm,
-    backgroundColor: colors.bgTertiary,
-    alignItems: 'center',
+    // De-emphasized link-style button — the prior full-width grey
+    // pill made it look like the primary action of the section. It's
+    // a support helper; render it small and right-aligned.
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    alignSelf: 'flex-end',
   },
-  copyAllText: textStyles.bodySmallStrong,
+  copyAllText: {
+    ...textStyles.bodySmallStrong,
+    color: colors.accent,
+  },
   dangerNote: {
     paddingHorizontal: spacing.md,
     paddingTop: spacing.md,

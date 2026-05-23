@@ -38,16 +38,6 @@ import {
   type PairedDevice,
 } from '@dina/core/devices';
 
-const ROLE_OPTIONS: readonly { value: DeviceRole; label: string; hint: string }[] = [
-  {
-    value: 'agent',
-    label: 'Agent',
-    hint: 'Headless runner (dina-agent / openclaw). Claims delegation tasks.',
-  },
-  { value: 'rich', label: 'Rich', hint: 'Companion device with full UI.' },
-  { value: 'thin', label: 'Thin', hint: 'Limited device. View + approve only.' },
-  { value: 'cli', label: 'CLI', hint: 'Command-line interface.' },
-];
 
 interface LiveCode {
   code: string;
@@ -64,7 +54,11 @@ export default function PairedDevicesScreen() {
   // hint. Pre-filling forced anyone pairing dina-cli or a phone to
   // clear the field before typing — a self-defeating "convenience".
   const [deviceName, setDeviceName] = useState('');
-  const [role, setRole] = useState<DeviceRole>('agent');
+  // Hardcoded — every paired entry is a `dina-agent` install today.
+  // See the help text above the form for the rationale, and the
+  // commented-out picker for the seam to restore if we ever add
+  // Rich / Thin / CLI roles.
+  const role: DeviceRole = 'agent';
   const [generating, setGenerating] = useState(false);
   const [liveCode, setLiveCode] = useState<LiveCode | null>(null);
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
@@ -223,13 +217,19 @@ export default function PairedDevicesScreen() {
 
         <Section title="AUTHORIZE A NEW AGENT">
           <Text style={styles.help}>
-            Agents act on your behalf. Today that means{' '}
-            <Text style={styles.mono}>dina-agent</Text> (
-            <Text style={styles.mono}>pip install dina-agent</Text>), used directly or via wrappers
-            like OpenClaw and <Text style={styles.mono}>dina-cli</Text>.{'\n\n'}
-            Generate an 8-character code, then hand it to the agent:{'\n'}• dina-agent / openclaw:
-            paste into <Text style={styles.mono}>USER_PAIRING_CODE</Text> in docker/.env.{'\n'}•
-            dina-cli: run <Text style={styles.mono}>dina configure --pairing-code &lt;code&gt;</Text>.
+            Agents act on your behalf. They run as{' '}
+            <Text style={styles.mono}>dina-agent</Text>, submit Ed25519
+            signed requests to this device, and only do what you allow.
+            {'\n\n'}
+            To pair a new agent:{'\n'}
+            1. Install on the agent host:{' '}
+            <Text style={styles.mono}>pip install dina-agent</Text>.{'\n'}
+            2. Generate a pairing code below.{'\n'}
+            3. On the agent host, run:{' '}
+            <Text style={styles.mono}>dina configure</Text>.
+            {'\n\n'}
+            The agent then registers its own keypair against this code. The
+            code expires shortly after it's issued.
           </Text>
 
           <Text style={styles.label}>Agent name</Text>
@@ -237,28 +237,19 @@ export default function PairedDevicesScreen() {
             style={styles.input}
             value={deviceName}
             onChangeText={setDeviceName}
-            placeholder="e.g. openclaw-user"
+            placeholder="e.g. my-agent"
             autoCapitalize="none"
             autoCorrect={false}
           />
 
-          <Text style={styles.label}>Role</Text>
-          <View style={styles.rolePicker}>
-            {ROLE_OPTIONS.map((opt) => (
-              <Pressable
-                key={opt.value}
-                style={[styles.roleOption, role === opt.value && styles.roleOptionActive]}
-                onPress={() => setRole(opt.value)}
-                accessibilityRole="radio"
-                accessibilityState={{ selected: role === opt.value }}
-              >
-                <Text style={[styles.roleLabel, role === opt.value && styles.roleLabelActive]}>
-                  {opt.label}
-                </Text>
-                <Text style={styles.roleHint}>{opt.hint}</Text>
-              </Pressable>
-            ))}
-          </View>
+          {/*
+            Role picker removed: today every paired entry is a
+            `dina-agent` install, and the legacy `rich` / `thin` /
+            `cli` branches aren't wired into mobile. `generatePairingCode`
+            still takes the role arg, so we hardcode the default
+            ('agent') from useState above — if we add companion-device
+            pairing later, this is the seam to bring the picker back.
+          */}
 
           <Pressable
             style={[styles.primaryButton, generating && styles.primaryButtonDisabled]}
@@ -366,25 +357,6 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radius.sm,
     padding: spacing.sm,
-  },
-  rolePicker: { marginTop: spacing.xs },
-  roleOption: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    padding: spacing.sm,
-    marginTop: spacing.xs,
-  },
-  roleOptionActive: {
-    borderColor: colors.accent,
-    backgroundColor: colors.bgTertiary,
-  },
-  roleLabel: textStyles.bodyStrong,
-  roleLabelActive: { color: colors.accent },
-  roleHint: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    marginTop: 2,
   },
   primaryButton: {
     backgroundColor: colors.accent,

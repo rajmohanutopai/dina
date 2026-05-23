@@ -11,7 +11,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
 import { getTestDb, cleanAllTables, closeTestDb, createTestHandlerContext, type TestDB } from '../test-db'
 import * as schema from '@/db/schema/index'
-import { resolveOrCreateSubject, generateDeterministicId } from '@/db/queries/subjects'
+import { resolveOrCreateSubject } from '@/db/queries/subjects'
 
 let db: TestDB
 let ctx: ReturnType<typeof createTestHandlerContext>
@@ -178,7 +178,7 @@ describe('§4.1 Concurrent Subject Creation (Fix 2 + Fix 10)', () => {
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0394", "section": "01", "sectionName": "General", "title": "IT-SUB-006: Fix 10: Tier 2 name-only \u2192 author-scoped"}
-  it('IT-SUB-006: Fix 10: Tier 2 name-only → author-scoped', async () => {
+  it('IT-SUB-006: Tier 2 name-only → one shared subject across authors', async () => {
     const ref = { type: 'organization' as const, name: 'Test Place' }
 
     // 5 different authors reference the same name (no DID/URI/identifier)
@@ -190,20 +190,18 @@ describe('§4.1 Concurrent Subject Creation (Fix 2 + Fix 10)', () => {
       ids.push(id)
     }
 
-    // Each author should get a distinct subject (author-scoped)
+    // PeerLens is a shared trust layer — 5 strangers reviewing the same
+    // name+type land on ONE subject so the reviews aggregate.
     const uniqueIds = new Set(ids)
-    expect(uniqueIds.size).toBe(5)
+    expect(uniqueIds.size).toBe(1)
 
-    // 5 distinct subject rows
     const allSubjects = await db.select().from(schema.subjects)
-    expect(allSubjects).toHaveLength(5)
-    for (const subject of allSubjects) {
-      expect(subject.authorScopedDid).toBeTruthy()
-    }
+    expect(allSubjects).toHaveLength(1)
+    expect(allSubjects[0].authorScopedDid).toBeNull()
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0395", "section": "01", "sectionName": "General", "title": "IT-SUB-007: Fix 10: Tier 2 same author same name \u2192 deduplicated"}
-  it('IT-SUB-007: Fix 10: Tier 2 same author same name → deduplicated', async () => {
+  it('IT-SUB-007: Tier 2 repeated resolves are idempotent', async () => {
     const ref = { type: 'organization' as const, name: 'Test Place' }
 
     // Same author, same name, 5 times
@@ -217,10 +215,10 @@ describe('§4.1 Concurrent Subject Creation (Fix 2 + Fix 10)', () => {
     const uniqueIds = new Set(ids)
     expect(uniqueIds.size).toBe(1)
 
-    // 1 subject row
+    // One row, no author scoping is stored anymore.
     const allSubjects = await db.select().from(schema.subjects)
     expect(allSubjects).toHaveLength(1)
-    expect(allSubjects[0].authorScopedDid).toBe(AUTHOR_DID_1)
+    expect(allSubjects[0].authorScopedDid).toBeNull()
   })
 })
 

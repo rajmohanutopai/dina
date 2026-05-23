@@ -14,7 +14,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createHash } from 'crypto'
 import { parseAtUri, constructAtUri } from '@/shared/utils/at-uri'
-import { generateDeterministicId } from '@/db/queries/subjects'
+import { generateDeterministicId, MAX_NAME_LENGTH, RESOLVER_VERSION } from '@/db/queries/subjects'
 import { AppError, ValidationError, NotFoundError } from '@/shared/errors/app-error'
 import type { SubjectRef } from '@/shared/types/lexicon-types'
 
@@ -105,41 +105,38 @@ describe('§3.2 Deterministic ID', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0169", "section": "01", "sectionName": "General", "title": "UT-DI-001: Fix 10: Tier 1 \u2014 DID produces global ID"}
   it('UT-DI-001: Fix 10: Tier 1 — DID produces global ID', () => {
     const ref: SubjectRef = { type: 'did', did: 'did:plc:abc' }
-    const result = generateDeterministicId(ref, 'did:plc:author1')
-    expect(result.id).toBe(expectedId('did:did:plc:abc'))
-    expect(result.isAuthorScoped).toBe(false)
+    const result = generateDeterministicId(ref)
+    expect(result.id).toBe(expectedId('v2:did:did:plc:abc'))
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0170", "section": "01", "sectionName": "General", "title": "UT-DI-002: Fix 10: Tier 1 \u2014 same DID, different authors -> same ID"}
   it('UT-DI-002: Fix 10: Tier 1 — same DID, different authors -> same ID', () => {
     const ref: SubjectRef = { type: 'did', did: 'did:plc:abc' }
-    const result1 = generateDeterministicId(ref, 'did:plc:author-a')
-    const result2 = generateDeterministicId(ref, 'did:plc:author-b')
+    const result1 = generateDeterministicId(ref)
+    const result2 = generateDeterministicId(ref)
     expect(result1.id).toBe(result2.id)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0171", "section": "01", "sectionName": "General", "title": "UT-DI-003: Fix 10: Tier 1 \u2014 URI produces global ID"}
   it('UT-DI-003: Fix 10: Tier 1 — URI produces global ID', () => {
     const ref: SubjectRef = { type: 'content', uri: 'https://example.com' }
-    const result = generateDeterministicId(ref, 'did:plc:author1')
-    expect(result.id).toBe(expectedId('uri:https://example.com'))
-    expect(result.isAuthorScoped).toBe(false)
+    const result = generateDeterministicId(ref)
+    expect(result.id).toBe(expectedId('v2:uri:https://example.com'))
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0172", "section": "01", "sectionName": "General", "title": "UT-DI-004: Fix 10: Tier 1 \u2014 same URI, different authors -> same ID"}
   it('UT-DI-004: Fix 10: Tier 1 — same URI, different authors -> same ID', () => {
     const ref: SubjectRef = { type: 'content', uri: 'https://example.com' }
-    const result1 = generateDeterministicId(ref, 'did:plc:author-a')
-    const result2 = generateDeterministicId(ref, 'did:plc:author-b')
+    const result1 = generateDeterministicId(ref)
+    const result2 = generateDeterministicId(ref)
     expect(result1.id).toBe(result2.id)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0173", "section": "01", "sectionName": "General", "title": "UT-DI-005: Fix 10: Tier 1 \u2014 identifier produces global ID"}
   it('UT-DI-005: Fix 10: Tier 1 — identifier produces global ID', () => {
     const ref: SubjectRef = { type: 'product', identifier: 'asin:B01234' }
-    const result = generateDeterministicId(ref, 'did:plc:author1')
-    expect(result.id).toBe(expectedId('id:asin:B01234'))
-    expect(result.isAuthorScoped).toBe(false)
+    const result = generateDeterministicId(ref)
+    expect(result.id).toBe(expectedId('v2:id:asin:B01234'))
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0174", "section": "01", "sectionName": "General", "title": "UT-DI-006: Fix 10: Tier 1 \u2014 priority: DID > URI > identifier"}
@@ -150,10 +147,9 @@ describe('§3.2 Deterministic ID', () => {
       uri: 'https://example.com',
       identifier: 'asin:B01234',
     }
-    const result = generateDeterministicId(ref, 'did:plc:author1')
+    const result = generateDeterministicId(ref)
     // DID takes priority — id is derived from DID, not URI or identifier
-    expect(result.id).toBe(expectedId('did:did:plc:abc'))
-    expect(result.isAuthorScoped).toBe(false)
+    expect(result.id).toBe(expectedId('v2:did:did:plc:abc'))
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0175", "section": "01", "sectionName": "General", "title": "UT-DI-007: Fix 10: Tier 1 \u2014 priority: URI > identifier"}
@@ -163,34 +159,31 @@ describe('§3.2 Deterministic ID', () => {
       uri: 'https://example.com',
       identifier: 'asin:B01234',
     }
-    const result = generateDeterministicId(ref, 'did:plc:author1')
+    const result = generateDeterministicId(ref)
     // URI takes priority over identifier (no DID present)
-    expect(result.id).toBe(expectedId('uri:https://example.com'))
-    expect(result.isAuthorScoped).toBe(false)
+    expect(result.id).toBe(expectedId('v2:uri:https://example.com'))
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0176", "section": "01", "sectionName": "General", "title": "UT-DI-008: Fix 10: Tier 2 \u2014 name-only -> author-scoped"}
-  it('UT-DI-008: Fix 10: Tier 2 — name-only -> author-scoped', () => {
+  it('UT-DI-008: Tier 2 — name+type produces global ID', () => {
     const ref = { type: 'organization', name: 'Darshini Tiffin Center' } as SubjectRef
-    const result = generateDeterministicId(ref, 'did:plc:author1')
-    expect(result.isAuthorScoped).toBe(true)
+    const result = generateDeterministicId(ref)
+    expect(result.id).toBe(expectedId('v2:name:organization:darshini tiffin center'))
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0177", "section": "01", "sectionName": "General", "title": "UT-DI-009: Fix 10: Tier 2 \u2014 same name, different authors -> different IDs"}
-  it('UT-DI-009: Fix 10: Tier 2 — same name, different authors -> different IDs', () => {
+  it('UT-DI-009: Tier 2 — same name → same ID regardless of caller', () => {
     const ref = { type: 'organization', name: 'Darshini Tiffin Center' } as SubjectRef
-    const resultA = generateDeterministicId(ref, 'did:plc:author-a')
-    const resultB = generateDeterministicId(ref, 'did:plc:author-b')
-    expect(resultA.id).not.toBe(resultB.id)
-    expect(resultA.isAuthorScoped).toBe(true)
-    expect(resultB.isAuthorScoped).toBe(true)
+    const resultA = generateDeterministicId(ref)
+    const resultB = generateDeterministicId(ref)
+    expect(resultA.id).toBe(resultB.id)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0178", "section": "01", "sectionName": "General", "title": "UT-DI-010: Fix 10: Tier 2 \u2014 same name, same author -> same ID"}
-  it('UT-DI-010: Fix 10: Tier 2 — same name, same author -> same ID', () => {
+  it('UT-DI-010: Tier 2 — repeated resolves are idempotent', () => {
     const ref = { type: 'organization', name: 'Darshini Tiffin Center' } as SubjectRef
-    const result1 = generateDeterministicId(ref, 'did:plc:author1')
-    const result2 = generateDeterministicId(ref, 'did:plc:author1')
+    const result1 = generateDeterministicId(ref)
+    const result2 = generateDeterministicId(ref)
     expect(result1.id).toBe(result2.id)
   })
 
@@ -198,8 +191,8 @@ describe('§3.2 Deterministic ID', () => {
   it('UT-DI-011: case normalization', () => {
     const ref1 = { type: 'organization', name: 'Darshini Tiffin' } as SubjectRef
     const ref2 = { type: 'organization', name: 'darshini tiffin' } as SubjectRef
-    const result1 = generateDeterministicId(ref1, 'did:plc:author1')
-    const result2 = generateDeterministicId(ref2, 'did:plc:author1')
+    const result1 = generateDeterministicId(ref1)
+    const result2 = generateDeterministicId(ref2)
     expect(result1.id).toBe(result2.id)
   })
 
@@ -207,22 +200,22 @@ describe('§3.2 Deterministic ID', () => {
   it('UT-DI-012: whitespace normalization', () => {
     const ref1 = { type: 'organization', name: '  Darshini Tiffin  ' } as SubjectRef
     const ref2 = { type: 'organization', name: 'Darshini Tiffin' } as SubjectRef
-    const result1 = generateDeterministicId(ref1, 'did:plc:author1')
-    const result2 = generateDeterministicId(ref2, 'did:plc:author1')
+    const result1 = generateDeterministicId(ref1)
+    const result2 = generateDeterministicId(ref2)
     expect(result1.id).toBe(result2.id)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0181", "section": "01", "sectionName": "General", "title": "UT-DI-013: ID format \u2014 prefix"}
   it('UT-DI-013: ID format — prefix', () => {
     const ref: SubjectRef = { type: 'did', did: 'did:plc:abc' }
-    const result = generateDeterministicId(ref, 'did:plc:author1')
+    const result = generateDeterministicId(ref)
     expect(result.id).toMatch(/^sub_/)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0182", "section": "01", "sectionName": "General", "title": "UT-DI-014: ID format \u2014 length"}
   it('UT-DI-014: ID format — length', () => {
     const ref: SubjectRef = { type: 'did', did: 'did:plc:abc' }
-    const result = generateDeterministicId(ref, 'did:plc:author1')
+    const result = generateDeterministicId(ref)
     // "sub_" (4 chars) + 32 hex chars = 36 total
     expect(result.id.length).toBe(36)
   })
@@ -231,33 +224,274 @@ describe('§3.2 Deterministic ID', () => {
   it('UT-DI-015: name fallback order', () => {
     // ref with DID but no name, no URI, no identifier — Tier 1 uses DID
     const ref: SubjectRef = { type: 'did', did: 'did:plc:abc' }
-    const result = generateDeterministicId(ref, 'did:plc:author1')
+    const result = generateDeterministicId(ref)
     // DID present -> Tier 1 (global), id derived from DID
-    expect(result.id).toBe(expectedId('did:did:plc:abc'))
-    expect(result.isAuthorScoped).toBe(false)
+    expect(result.id).toBe(expectedId('v2:did:did:plc:abc'))
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0184", "section": "01", "sectionName": "General", "title": "UT-DI-016: name fallback \u2014 "}
-  it('UT-DI-016: name fallback — "Unknown Subject"', () => {
-    // ref with no name, no URI, no DID, no identifier -> Tier 2 fallback
+  it('UT-DI-016: empty Tier 2 ref → throws (no garbage subject_ids)', () => {
+    // A ref with no DID / URI / identifier / name is unresolvable.
+    // Previously the hash would still produce a deterministic id from
+    // `name:type:undefined`, which seeded a ghost subject. The hardened
+    // resolver fails loud so the ingester catches the malformed record
+    // at write time.
     const ref = { type: 'organization' } as SubjectRef
-    const result = generateDeterministicId(ref, 'did:plc:author1')
-    // Falls through to Tier 2: name is undefined, toLowerCase().trim() on undefined
-    // The function uses ref.name?.toLowerCase().trim() which becomes "undefined"
-    expect(result.isAuthorScoped).toBe(true)
-    // The resolveOrCreateSubject function does the "Unknown Subject" fallback for
-    // the DB name field, but generateDeterministicId uses whatever ref.name is
-    expect(result.id).toBeDefined()
+    expect(() => generateDeterministicId(ref)).toThrow()
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0185", "section": "01", "sectionName": "General", "title": "UT-DI-017: different subject types -> different IDs (Tier 2)"}
   it('UT-DI-017: different subject types -> different IDs (Tier 2)', () => {
     const ref1 = { type: 'organization', name: 'Test Corp' } as SubjectRef
     const ref2 = { type: 'claim', name: 'Test Corp' } as SubjectRef
-    const author = 'did:plc:author1'
-    const result1 = generateDeterministicId(ref1, author)
-    const result2 = generateDeterministicId(ref2, author)
+    const result1 = generateDeterministicId(ref1)
+    const result2 = generateDeterministicId(ref2)
     expect(result1.id).not.toBe(result2.id)
+  })
+
+  // ─────────────────────────────────────────────────────────────────
+  // Tier 2 normalization (forward-compat safety net). The wire format
+  // is a public contract — these tests pin the canonicalization rules
+  // so two clients sending typographically-different but semantically-
+  // identical refs converge on the same subject.
+  // ─────────────────────────────────────────────────────────────────
+
+  it('UT-DI-018: Tier 2 — Unicode NFC composes equivalent code-point sequences', () => {
+    // "café" with precomposed é (U+00E9) vs the decomposed form
+    // (e + combining acute U+0301). NFC normalizes both to the
+    // composed form before hashing.
+    const ref1 = { type: 'place', name: 'café' } as SubjectRef
+    const ref2 = { type: 'place', name: 'café' } as SubjectRef
+    expect(generateDeterministicId(ref1).id).toBe(generateDeterministicId(ref2).id)
+  })
+
+  it('UT-DI-019: Tier 2 — internal whitespace runs collapse to a single space', () => {
+    const refs = [
+      { type: 'product', name: 'Aeron Chair' },
+      { type: 'product', name: 'Aeron  Chair' }, // double space
+      { type: 'product', name: 'Aeron\tChair' }, // tab
+      { type: 'product', name: 'Aeron\nChair' }, // newline
+      { type: 'product', name: '  Aeron Chair  ' }, // edge padding
+    ] as SubjectRef[]
+    const ids = refs.map((r) => generateDeterministicId(r).id)
+    expect(new Set(ids).size).toBe(1)
+  })
+
+  it('UT-DI-020: Tier 2 — type case + edge whitespace normalize', () => {
+    const ref1 = { type: 'product', name: 'X' } as SubjectRef
+    const ref2 = { type: 'Product ', name: 'X' } as unknown as SubjectRef
+    expect(generateDeterministicId(ref1).id).toBe(generateDeterministicId(ref2).id)
+  })
+
+  it('UT-DI-021: Tier 2 — names beyond the length cap are rejected', () => {
+    const ref = {
+      type: 'product',
+      name: 'A'.repeat(MAX_NAME_LENGTH + 1),
+    } as SubjectRef
+    expect(() => generateDeterministicId(ref)).toThrow()
+  })
+
+  it('UT-DI-022: Tier 2 — whitespace-only name is rejected', () => {
+    const ref = { type: 'product', name: '   \n\t  ' } as SubjectRef
+    expect(() => generateDeterministicId(ref)).toThrow()
+  })
+
+  // ─────────────────────────────────────────────────────────────────
+  // Tier 1 URI canonicalization (forward-compat safety net). A URI
+  // subject's identity should be stable across typographic variants
+  // that RFC 3986 treats as equivalent: scheme/host case, default
+  // port, trailing slash on path-empty roots.
+  // ─────────────────────────────────────────────────────────────────
+
+  it('UT-DI-024: URI scheme case folds (RFC 3986 sec 3.1)', () => {
+    const refLower = { type: 'content', uri: 'https://example.com' } as SubjectRef
+    const refUpper = { type: 'content', uri: 'HTTPS://example.com' } as SubjectRef
+    expect(generateDeterministicId(refLower).id).toBe(generateDeterministicId(refUpper).id)
+  })
+
+  it('UT-DI-025: URI host case folds (RFC 3986 sec 3.2.2)', () => {
+    const refLower = { type: 'content', uri: 'https://example.com' } as SubjectRef
+    const refMixed = { type: 'content', uri: 'https://Example.COM' } as SubjectRef
+    expect(generateDeterministicId(refLower).id).toBe(generateDeterministicId(refMixed).id)
+  })
+
+  it('UT-DI-026: default ports strip out', () => {
+    const cases = [
+      ['https://x.test', 'https://x.test:443'],
+      ['http://x.test', 'http://x.test:80'],
+      ['ftp://x.test', 'ftp://x.test:21'],
+    ]
+    for (const [a, b] of cases) {
+      const idA = generateDeterministicId({ type: 'content', uri: a } as SubjectRef).id
+      const idB = generateDeterministicId({ type: 'content', uri: b } as SubjectRef).id
+      expect(idA).toBe(idB)
+    }
+  })
+
+  it('UT-DI-027: non-default ports are PRESERVED', () => {
+    const ref443 = { type: 'content', uri: 'https://x.test' } as SubjectRef
+    const ref8443 = { type: 'content', uri: 'https://x.test:8443' } as SubjectRef
+    expect(generateDeterministicId(ref443).id).not.toBe(generateDeterministicId(ref8443).id)
+  })
+
+  it('UT-DI-028: trailing slash on path-empty URL folds', () => {
+    const refSlash = { type: 'content', uri: 'https://x.test/' } as SubjectRef
+    const refNoSlash = { type: 'content', uri: 'https://x.test' } as SubjectRef
+    expect(generateDeterministicId(refSlash).id).toBe(generateDeterministicId(refNoSlash).id)
+  })
+
+  it('UT-DI-029: trailing slash on non-root path is PRESERVED', () => {
+    // Servers may treat /page and /page/ differently — we don't fold.
+    const refSlash = { type: 'content', uri: 'https://x.test/page/' } as SubjectRef
+    const refNoSlash = { type: 'content', uri: 'https://x.test/page' } as SubjectRef
+    expect(generateDeterministicId(refSlash).id).not.toBe(generateDeterministicId(refNoSlash).id)
+  })
+
+  it('UT-DI-030: query strings are PRESERVED (semantic, not normalized)', () => {
+    const ref1 = { type: 'content', uri: 'https://x.test/?b=2&a=1' } as SubjectRef
+    const ref2 = { type: 'content', uri: 'https://x.test/?a=1&b=2' } as SubjectRef
+    // Query parameter order MAY be semantic; do not reorder.
+    expect(generateDeterministicId(ref1).id).not.toBe(generateDeterministicId(ref2).id)
+  })
+
+  it('UT-DI-031: path case is PRESERVED (servers may be case-sensitive)', () => {
+    const ref1 = { type: 'content', uri: 'https://x.test/Page' } as SubjectRef
+    const ref2 = { type: 'content', uri: 'https://x.test/page' } as SubjectRef
+    expect(generateDeterministicId(ref1).id).not.toBe(generateDeterministicId(ref2).id)
+  })
+
+  it('UT-DI-032: malformed URI falls back to verbatim hashing', () => {
+    // Garbage in: don't throw, just hash the literal string. The
+    // lexicon validator already bounded length; we shouldn't crash
+    // on a string the URL parser hates.
+    const ref = { type: 'content', uri: 'not a real uri' } as SubjectRef
+    expect(() => generateDeterministicId(ref)).not.toThrow()
+    const result = generateDeterministicId(ref)
+    expect(result.id).toMatch(/^sub_/)
+  })
+
+  it('UT-DI-033: IPv6 hosts are bracketed + lowercased', () => {
+    // RFC 3986 §3.2.2: IPv6 literals in URIs are enclosed in brackets.
+    // The URL parser preserves the brackets and lowercases the hex.
+    const refUpper = { type: 'content', uri: 'https://[2001:DB8::1]/' } as SubjectRef
+    const refLower = { type: 'content', uri: 'https://[2001:db8::1]/' } as SubjectRef
+    expect(generateDeterministicId(refUpper).id).toBe(generateDeterministicId(refLower).id)
+  })
+
+  // ─────────────────────────────────────────────────────────────────
+  // Tier 1 defense-in-depth: trim leading/trailing whitespace BEFORE
+  // the truthy check so a whitespace-only string falls through to the
+  // next tier instead of hashing `v2:did:   `. The lexicon validator
+  // catches truly empty strings; the resolver doesn't assume the
+  // validator was the only entry point.
+  // ─────────────────────────────────────────────────────────────────
+
+  it('UT-DI-035: whitespace-only did falls through to next tier', () => {
+    // `did:'   '` is not a real DID. The resolver should NOT mint a
+    // subject from `v2:did:   `; instead it should treat the field as
+    // absent and use the next tier (uri → identifier → name).
+    const refWithName = {
+      type: 'product',
+      did: '   ',
+      name: 'Aeron Chair',
+    } as SubjectRef
+    const refNameOnly = { type: 'product', name: 'Aeron Chair' } as SubjectRef
+    expect(generateDeterministicId(refWithName).id).toBe(
+      generateDeterministicId(refNameOnly).id,
+    )
+  })
+
+  it('UT-DI-036: whitespace-only uri falls through to next tier', () => {
+    const refWithName = {
+      type: 'product',
+      uri: '   ',
+      name: 'Aeron Chair',
+    } as SubjectRef
+    const refNameOnly = { type: 'product', name: 'Aeron Chair' } as SubjectRef
+    expect(generateDeterministicId(refWithName).id).toBe(
+      generateDeterministicId(refNameOnly).id,
+    )
+  })
+
+  it('UT-DI-037: whitespace-only identifier falls through to next tier', () => {
+    const refWithName = {
+      type: 'product',
+      identifier: '   ',
+      name: 'Aeron Chair',
+    } as SubjectRef
+    const refNameOnly = { type: 'product', name: 'Aeron Chair' } as SubjectRef
+    expect(generateDeterministicId(refWithName).id).toBe(
+      generateDeterministicId(refNameOnly).id,
+    )
+  })
+
+  it('UT-DI-038: leading/trailing whitespace on Tier 1 fields trims before hash', () => {
+    // `did:'  did:plc:abc  '` and `did:'did:plc:abc'` must hash the
+    // same — clearly the same identity, just typographic noise.
+    const refPadded = { type: 'did', did: '  did:plc:abc  ' } as SubjectRef
+    const refClean = { type: 'did', did: 'did:plc:abc' } as SubjectRef
+    expect(generateDeterministicId(refPadded).id).toBe(
+      generateDeterministicId(refClean).id,
+    )
+  })
+
+  it('UT-DI-039: URI fragments are stripped (anchor != identity)', () => {
+    // Wikipedia article reviewed at different sections is still the
+    // same article. Stripping `#anchor` folds them into one subject.
+    const refBare = { type: 'content', uri: 'https://wiki.test/Python' } as SubjectRef
+    const refHistory = {
+      type: 'content',
+      uri: 'https://wiki.test/Python#History',
+    } as SubjectRef
+    const refSyntax = {
+      type: 'content',
+      uri: 'https://wiki.test/Python#Syntax',
+    } as SubjectRef
+    const ids = [refBare, refHistory, refSyntax].map((r) => generateDeterministicId(r).id)
+    expect(new Set(ids).size).toBe(1)
+  })
+
+  it('UT-DI-040: fragment stripping plays nice with trailing slash folding', () => {
+    // `https://x.test/#section` → `https://x.test` (strip hash THEN
+    // strip root trailing slash).
+    const refBare = { type: 'content', uri: 'https://x.test' } as SubjectRef
+    const refHashRoot = { type: 'content', uri: 'https://x.test/#section' } as SubjectRef
+    expect(generateDeterministicId(refBare).id).toBe(
+      generateDeterministicId(refHashRoot).id,
+    )
+  })
+
+  it('UT-DI-034: userinfo passes through verbatim', () => {
+    // user:pass@ is part of the URI but rarely seen in practice. We
+    // don't strip or normalize it — the URL parser preserves it.
+    const refA = { type: 'content', uri: 'https://user:pass@x.test/' } as SubjectRef
+    const refB = { type: 'content', uri: 'https://x.test/' } as SubjectRef
+    // Different userinfo → different subject (treat as distinct
+    // resource identities even though most servers ignore the path
+    // for userinfo at the same host).
+    expect(generateDeterministicId(refA).id).not.toBe(generateDeterministicId(refB).id)
+  })
+
+  it('UT-DI-023: resolver version prefix is stamped on every tier', () => {
+    // The output ids must change if the version prefix changes —
+    // pin the prefix so a refactor can't silently drop it (which
+    // would silently collide with v1 hashes in the database).
+    const refDid = { type: 'did', did: 'did:plc:abc' } as SubjectRef
+    const refUri = { type: 'content', uri: 'https://x.test' } as SubjectRef
+    const refId = { type: 'product', identifier: 'k' } as SubjectRef
+    const refName = { type: 'product', name: 'k' } as SubjectRef
+    expect(generateDeterministicId(refDid).id).toBe(
+      expectedId(`${RESOLVER_VERSION}:did:did:plc:abc`),
+    )
+    expect(generateDeterministicId(refUri).id).toBe(
+      expectedId(`${RESOLVER_VERSION}:uri:https://x.test`),
+    )
+    expect(generateDeterministicId(refId).id).toBe(
+      expectedId(`${RESOLVER_VERSION}:id:k`),
+    )
+    expect(generateDeterministicId(refName).id).toBe(
+      expectedId(`${RESOLVER_VERSION}:name:product:k`),
+    )
   })
 })
 

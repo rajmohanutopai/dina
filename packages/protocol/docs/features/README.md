@@ -15,6 +15,7 @@ Dina implementation must reproduce. Each doc points at:
 | Auth handshake     | [auth.md](./auth.md)                        | L3          |
 | Sealed-box         | [sealed-box.md](./sealed-box.md)            | L2 / L3     |
 | PLC DID document   | [plc-document.md](./plc-document.md)        | L1          |
+| Subject ID         | [subject-id.md](./subject-id.md)            | L1          |
 
 Start with whichever feature you're implementing. Each doc is
 self-contained — you shouldn't need to cross-reference the others

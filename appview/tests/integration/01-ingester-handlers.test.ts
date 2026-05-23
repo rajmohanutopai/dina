@@ -1038,11 +1038,11 @@ describe('§1.1 Attestation Handler', () => {
     })
     const subjectRows = await db.select().from(schema.subjects)
     expect(subjectRows).toHaveLength(1)
-    expect(subjectRows[0].authorScopedDid).toBe('did:plc:author6')
+    expect(subjectRows[0].authorScopedDid).toBeNull()
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0302", "section": "01", "sectionName": "General", "title": "IT-ATT-007: Fix 10: same name, different authors \u2014 different subjects"}
-  it('IT-ATT-007: Fix 10: same name, different authors — different subjects', async () => {
+  it('IT-ATT-007: same name, different authors converge to one subject', async () => {
     const handler = routeHandler('com.dina.peerlens.attestation')!
     await handler.handleCreate(ctx, {
       uri: 'at://did:plc:test/com.dina.peerlens.attestation/7a',
@@ -1070,14 +1070,15 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
+    // Two reviewers of the same name → one shared subject (PeerLens is
+    // a shared trust layer; previously this was fragmented per author).
     const subjectRows = await db.select().from(schema.subjects)
-    expect(subjectRows).toHaveLength(2)
-    const scopedDids = subjectRows.map((r) => r.authorScopedDid).sort()
-    expect(scopedDids).toEqual(['did:plc:authorA', 'did:plc:authorB'])
+    expect(subjectRows).toHaveLength(1)
+    expect(subjectRows[0].authorScopedDid).toBeNull()
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0303", "section": "01", "sectionName": "General", "title": "IT-ATT-008: Fix 10: same name, same author \u2014 same subject"}
-  it('IT-ATT-008: Fix 10: same name, same author — same subject', async () => {
+  it('IT-ATT-008: same author republishing same name → one subject', async () => {
     const handler = routeHandler('com.dina.peerlens.attestation')!
     await handler.handleCreate(ctx, {
       uri: 'at://did:plc:test/com.dina.peerlens.attestation/8a',

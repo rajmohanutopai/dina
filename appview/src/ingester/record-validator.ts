@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { logger } from '@/shared/utils/logger.js'
 import type { TrustCollection } from '@/config/lexicons.js'
+import { CONSTANTS } from '@/config/constants.js'
 
 /**
  * Zod validation schemas for all 19 trust record types.
@@ -12,16 +13,36 @@ import type { TrustCollection } from '@/config/lexicons.js'
 // ── Shared schemas ──────────────────────────────────────────────────
 
 // ── Bounded validators (APPVIEW-MED-02, MED-09) ────────────────────
-const didString = z.string().min(8).max(2048).regex(/^did:[a-z]+:/, 'Must be a valid DID')
-const boundedUri = z.string().min(1).max(2048)
+const didString = z
+  .string()
+  .min(8)
+  .max(CONSTANTS.SUBJECT_REF_MAX_DID_LEN)
+  .regex(/^did:[a-z]+:/, 'Must be a valid DID')
+const boundedUri = z.string().min(1).max(CONSTANTS.SUBJECT_REF_MAX_URI_LEN)
 
-const subjectRefSchema = z.object({
-  type: z.enum(['did', 'content', 'product', 'dataset', 'organization', 'claim', 'place']),
-  did: didString.optional(),
-  uri: boundedUri.optional(),
-  name: z.string().max(200).optional(),
-  identifier: z.string().max(500).optional(),
-})
+// A SubjectRef must carry at least one resolver input — without one,
+// AppView can't mint a stable subject_id. The refine here is the
+// first gate; the resolver fails loud if a malformed ref ever slips
+// past (defense in depth).
+const subjectRefSchema = z
+  .object({
+    type: z.enum(['did', 'content', 'product', 'dataset', 'organization', 'claim', 'place']),
+    did: didString.optional(),
+    uri: boundedUri.optional(),
+    name: z.string().max(CONSTANTS.SUBJECT_REF_MAX_NAME_LEN).optional(),
+    identifier: z.string().max(CONSTANTS.SUBJECT_REF_MAX_IDENTIFIER_LEN).optional(),
+  })
+  .refine(
+    (ref) =>
+      !!ref.did ||
+      !!ref.uri ||
+      !!ref.identifier ||
+      (typeof ref.name === 'string' && ref.name.trim().length > 0),
+    {
+      message:
+        'SubjectRef must carry at least one of: did, uri, identifier, or a non-empty name.',
+    },
+  )
 
 const evidenceItemSchema = z.object({
   type: z.string().max(100),

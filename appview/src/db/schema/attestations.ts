@@ -158,6 +158,16 @@ export const attestations = pgTable('attestations', {
   latestAmendmentUri: text('latest_amendment_uri'),
   isVerified: boolean('is_verified').default(false),
   verifiedByUri: text('verified_by_uri'),
+  // ── Moderator takedown ────────────────────────────────────────────
+  // Distinct from `isRevoked` (author retracted their own attestation).
+  // Takedown is an operator action against ToS / abuse / legal — the
+  // attestation is hidden from active reads but the row remains for
+  // audit. Surfaced in xRPC filters as a separate flag so clients can
+  // tell the difference between "the reviewer revoked this" and "an
+  // operator removed this".
+  isTakedownByModerator: boolean('is_takedown_by_moderator').default(false).notNull(),
+  takedownReason: text('takedown_reason'),
+  takedownAt: timestamp('takedown_at'),
 }, (table) => [
   index('attestations_author_idx').on(table.authorDid),
   index('attestations_subject_idx').on(table.subjectId),
@@ -228,4 +238,12 @@ export const attestations = pgTable('attestations', {
   index('attestations_availability_regions_idx').using('gin', table.availabilityRegions),
   index('attestations_availability_ships_to_idx').using('gin', table.availabilityShipsTo),
   index('attestations_availability_sold_at_idx').using('gin', table.availabilitySoldAt),
+  // Partial b-tree over moderator takedowns. Rare event (operator
+  // action), so partial WHERE keeps the index small while still
+  // serving operator queries ("recent takedowns", "takedowns by
+  // reason"). Distinct from `attestations_revoked_idx` — author
+  // revocations are tracked via `isRevoked`.
+  index('attestations_takedown_idx')
+    .on(table.takedownAt)
+    .where(sql`${table.isTakedownByModerator} = true`),
 ])
