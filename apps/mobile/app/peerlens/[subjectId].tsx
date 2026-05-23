@@ -318,6 +318,20 @@ export default function SubjectDetailScreen(
             {header.subtitle}
           </Text>
         )}
+        {/* Moderator-removal banner. The most load-bearing signal on
+            this surface — renders ABOVE the flag-warning banner. When
+            a subject is tombstoned the AppView zeroes score + reviews,
+            so without this banner the screen would look like a normal
+            brand-new unrated subject. Error-coloured (not warning) to
+            read as "this was taken down", not "be cautious". */}
+        {header.tombstoned && (
+          <View style={styles.tombstonedBanner} testID="subject-detail-tombstoned">
+            <Ionicons name="trash-outline" size={16} color={colors.error} />
+            <Text style={styles.tombstonedText} numberOfLines={2}>
+              This subject was removed by a moderator.
+            </Text>
+          </View>
+        )}
         {/* TN-V2-RANK-015 — flag-warning banner. Renders above the
             chip row because it's the load-bearing exclusion signal
             (more critical than even the region pill: "your contacts
@@ -850,6 +864,21 @@ const styles = StyleSheet.create({
     borderColor: colors.warning,
   },
   flagWarningText: {
+    ...textStyles.bodySmall,
+    flex: 1,
+  },
+  tombstonedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
+    backgroundColor: colors.bgTertiary,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.error,
+  },
+  tombstonedText: {
     ...textStyles.bodySmall,
     flex: 1,
   },

@@ -115,6 +115,15 @@ export interface SubjectDetailHeader {
    * would be reassurance theatre, not signal.
    */
   readonly flagWarning: FlagWarning | null;
+  /**
+   * `true` when the subject was removed by a moderator. The screen
+   * renders a "removed by a moderator" banner and suppresses the
+   * normal score / review affordances — without this signal a
+   * tombstoned subject is indistinguishable from a brand-new unrated
+   * one (both surface score=null, reviewCount=0). Sourced from the
+   * AppView `subjectGet.tombstoned` field.
+   */
+  readonly tombstoned: boolean;
 }
 
 /**
@@ -187,6 +196,12 @@ export interface SubjectDetailInput {
    * tests passing synthetic `SubjectDetailInput` may omit it.
    */
   readonly subjectKind?: string;
+  /**
+   * `true` when the AppView reported the subject as moderator-removed
+   * (`subjectGet.tombstoned`). Optional for backwards compatibility +
+   * synthetic test inputs; defaults to `false` in the derivation.
+   */
+  readonly tombstoned?: boolean;
   /** Identifier (ASIN, ISBN, etc.) when the subject ref carries one. */
   readonly subjectIdentifier?: string;
   /** DID when the subject ref is a `did:` reference. */
@@ -396,6 +411,7 @@ export function deriveSubjectDetail(
       recency: deriveRecencyBadge(input.category, input.lastActiveMs, nowMs),
       regionPill: deriveRegionPill(input.availabilityRegions, context?.viewerRegion),
       flagWarning: deriveFlagWarning(input.flagSummary),
+      tombstoned: input.tombstoned ?? false,
     },
     friendsReviews: friends,
     fofReviews: fof,

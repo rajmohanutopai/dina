@@ -37,6 +37,8 @@ interface CapturedDeletes {
   /** Names of tables passed to `db.delete(...)` — order matters. */
   deleteOrder: string[]
   txStarted: boolean
+  /** The candidate-selection WHERE filter, for column-reference pins. */
+  candidateWhere: unknown
 }
 
 /**
@@ -47,7 +49,7 @@ interface CapturedDeletes {
 function stubDb(
   candidateIds: string[],
 ): { db: DrizzleDB; captured: CapturedDeletes } {
-  const captured: CapturedDeletes = { deleteOrder: [], txStarted: false }
+  const captured: CapturedDeletes = { deleteOrder: [], txStarted: false, candidateWhere: undefined }
 
   // Identify tables by object identity against the actual schema
   // imports — same table reference the production code uses, so the
@@ -61,9 +63,12 @@ function stubDb(
   const db = {
     select: () => ({
       from: () => ({
-        where: () => ({
-          limit: async () => candidateIds.map((id) => ({ id })),
-        }),
+        where: (w: unknown) => {
+          captured.candidateWhere = w
+          return {
+            limit: async () => candidateIds.map((id) => ({ id })),
+          }
+        },
       }),
     }),
     transaction: async (fn: (tx: unknown) => Promise<void>) => {
@@ -99,6 +104,26 @@ describe('subjectOrphanGc — TN-SCORE-005', () => {
       'scorer.subject_orphan_gc.deleted',
       0,
     )
+  })
+
+  it('candidate WHERE protects moderator-tombstoned subjects (tombstoned_at IS NULL)', async () => {
+    // The tombstone contract promises the row stays resolvable. GC
+    // must therefore exclude `tombstonedAt IS NOT NULL` rows from the
+    // orphan-candidate set even when they've shed all referrers.
+    const { db, captured } = stubDb([])
+    await subjectOrphanGc(db)
+    const serialized = JSON.stringify(captured.candidateWhere, (_k, v) => {
+      if (
+        v !== null &&
+        typeof v === 'object' &&
+        'name' in (v as Record<string, unknown>) &&
+        typeof (v as { name: unknown }).name === 'string'
+      ) {
+        return `col:${(v as { name: string }).name}`
+      }
+      return v
+    })
+    expect(serialized).toContain('col:tombstoned_at')
   })
 
   it('deletes dependents BEFORE parents (FK constraint order)', async () => {

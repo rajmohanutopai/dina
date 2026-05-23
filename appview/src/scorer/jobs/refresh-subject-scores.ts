@@ -57,6 +57,11 @@ export async function refreshSubjectScores(db: DrizzleDB): Promise<void> {
           and(
             eq(attestations.subjectId, subjectId),
             eq(attestations.isRevoked, false),
+            // Moderator-taken-down attestations must not feed the
+            // score, mirroring the read-path filters. Without this a
+            // taken-down review still moves the band even though
+            // subject-get reports reviewCount excluding it.
+            eq(attestations.isTakedownByModerator, false),
           )
         )
 

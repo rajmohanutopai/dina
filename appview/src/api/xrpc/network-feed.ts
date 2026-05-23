@@ -92,13 +92,15 @@ export async function networkFeed(
   }
 
   // Phase 2 — query attestations authored by the 1-hop set.
-  // The LEFT JOIN against `did_redactions` + IS NULL check below
-  // drops rows whose author DID has a redaction entry. Redacted-
-  // author attestations are hidden entirely (mirrors the service-
-  // search treatment of redacted operators — see service-search.ts).
+  // Read-path exclusions, uniform with subject-get / search:
+  //   - isRevoked: author retracted
+  //   - isTakedownByModerator: operator removed (audit row kept, never surfaced)
+  //   - didRedactions.did IS NULL: author DID redacted (GDPR-shaped),
+  //     pairs with the LEFT JOIN below
   const conditions: SQL[] = [
     inArray(attestations.authorDid, oneHopDids),
     eq(attestations.isRevoked, false),
+    eq(attestations.isTakedownByModerator, false),
     isNull(didRedactions.did),
   ]
 

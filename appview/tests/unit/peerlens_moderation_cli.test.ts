@@ -29,6 +29,17 @@ vi.mock('@/db/queries/admin-audit-log', async (importOriginal) => {
   }
 })
 
+// markDirty has its own unit tests; here we only assert the CLI calls
+// it (so a takedown/restore triggers score recalc). Mocking it also
+// keeps the stub DB free of subject_scores / did_profiles insert wiring.
+// Untyped `vi.fn()` (like recordAdminActionMock) so the variadic
+// passthrough below type-checks — a concrete `async () => {}` would
+// fix the arity at zero and reject the spread.
+const markDirtyMock = vi.fn()
+vi.mock('@/db/queries/dirty-flags', () => ({
+  markDirty: (...args: unknown[]) => markDirtyMock(...args),
+}))
+
 import {
   HELP_SENTINEL,
   parseArgs,
@@ -51,6 +62,7 @@ import type { DrizzleDB } from '@/db/connection'
 beforeEach(() => {
   recordAdminActionMock.mockReset()
   recordAdminActionMock.mockResolvedValue(123n)
+  markDirtyMock.mockClear()
 })
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -61,10 +73,24 @@ beforeEach(() => {
 
 interface StubOpts {
   subjectRow?: { tombstonedAt: Date | null; tombstoneReason: string | null }
-  attestationRow?: { isTakedown: boolean; reason: string | null }
+  // takedown/restore now also SELECT subjectId + authorDid (to mark
+  // them dirty); optional so existing fixtures that omit them still
+  // route through the `attestations` branch.
+  attestationRow?: {
+    isTakedown: boolean
+    reason: string | null
+    subjectId?: string | null
+    authorDid?: string
+  }
   serviceRow?: { tombstonedAt: Date | null; tombstoneReason: string | null }
   /** Override the row returned by `.update().returning()` for assertions. */
   updateReturning?: Record<string, unknown>
+  /**
+   * Force `.update().returning()` to yield `[]` — models the row
+   * vanishing between the FOR UPDATE select and the UPDATE (or a
+   * WHERE that matched nothing). Exercises the assert-RETURNING guard.
+   */
+  updateReturningEmpty?: boolean
 }
 
 interface Captured {
@@ -74,6 +100,8 @@ interface Captured {
   lastUpdateValues: Record<string, Record<string, unknown> | null>
   /** True if `db.transaction()` was opened at least once. */
   txOpened: boolean
+  /** True if a `.limit(...).for('update')` row lock was requested. */
+  forUpdate: boolean
 }
 
 function stubDb(opts: StubOpts = {}): { db: DrizzleDB; captured: Captured } {
@@ -81,6 +109,7 @@ function stubDb(opts: StubOpts = {}): { db: DrizzleDB; captured: Captured } {
     events: [],
     lastUpdateValues: {},
     txOpened: false,
+    forUpdate: false,
   }
 
   const tableName = (t: unknown): string => {
@@ -98,20 +127,35 @@ function stubDb(opts: StubOpts = {}): { db: DrizzleDB; captured: Captured } {
         from: (table: unknown) => {
           const name = tableName(table)
           captured.events.push(`${prefix}select:${name}`)
+          const resolveRows = (): unknown[] => {
+            if (name === 'subjects' && opts.subjectRow !== undefined) {
+              return [opts.subjectRow]
+            }
+            if (name === 'attestations' && opts.attestationRow !== undefined) {
+              return [opts.attestationRow]
+            }
+            if (name === 'services' && opts.serviceRow !== undefined) {
+              return [opts.serviceRow]
+            }
+            return []
+          }
+          // `.limit(1)` is awaited directly in some paths and chained
+          // with `.for('update')` in the moderation functions. Return
+          // a thenable that ALSO carries `.for()` (returning itself)
+          // so both shapes resolve to the same rows.
+          const limitResult = () => {
+            const p = Promise.resolve(resolveRows()) as Promise<unknown[]> & {
+              for: () => Promise<unknown[]>
+            }
+            p.for = () => {
+              captured.forUpdate = true
+              return p
+            }
+            return p
+          }
           return {
             where: () => ({
-              limit: async () => {
-                if (name === 'subjects' && opts.subjectRow !== undefined) {
-                  return [opts.subjectRow]
-                }
-                if (name === 'attestations' && opts.attestationRow !== undefined) {
-                  return [opts.attestationRow]
-                }
-                if (name === 'services' && opts.serviceRow !== undefined) {
-                  return [opts.serviceRow]
-                }
-                return []
-              },
+              limit: limitResult,
             }),
           }
         },
@@ -125,7 +169,9 @@ function stubDb(opts: StubOpts = {}): { db: DrizzleDB; captured: Captured } {
               where: () => ({
                 returning: async () => {
                   captured.events.push(`${prefix}update:${name}`)
-                  return [opts.updateReturning ?? values]
+                  return opts.updateReturningEmpty
+                    ? []
+                    : [opts.updateReturning ?? values]
                 },
               }),
             }
@@ -259,6 +305,28 @@ describe('helpText', () => {
 // ─────────────────────────────────────────────────────────────────────────
 
 describe('tombstoneSubject', () => {
+  it('locks the row FOR UPDATE before mutating', async () => {
+    const { db, captured } = stubDb({
+      subjectRow: { tombstonedAt: null, tombstoneReason: null },
+    })
+    await tombstoneSubject(db, { subjectId: 'sub_x', actorDid: 'did:plc:op', reason: 'spam' })
+    expect(captured.forUpdate).toBe(true)
+  })
+
+  it('throws when the UPDATE matches no row (never commits an audit for a no-op)', async () => {
+    // Models the subject vanishing between the FOR UPDATE select and
+    // the UPDATE. The function MUST throw so the whole tx (including
+    // the already-inserted audit row) rolls back — an audit entry for
+    // a mutation that didn't land is the B1 hazard.
+    const { db } = stubDb({
+      subjectRow: { tombstonedAt: null, tombstoneReason: null },
+      updateReturningEmpty: true,
+    })
+    await expect(
+      tombstoneSubject(db, { subjectId: 'sub_x', actorDid: 'did:plc:op', reason: 'spam' }),
+    ).rejects.toThrow(/vanished mid-update/i)
+  })
+
   it('opens a transaction and runs audit + mutation inside it', async () => {
     const { db, captured } = stubDb({
       subjectRow: { tombstonedAt: null, tombstoneReason: null },
@@ -435,6 +503,34 @@ describe('takedownAttestation', () => {
     ).rejects.toThrow(/not found/i)
     expect(recordAdminActionMock).not.toHaveBeenCalled()
   })
+
+  it('locks the row FOR UPDATE before mutating', async () => {
+    const { db, captured } = stubDb({
+      attestationRow: { isTakedown: false, reason: null, subjectId: 'sub_x', authorDid: 'did:plc:author' },
+    })
+    await takedownAttestation(db, {
+      uri: 'at://did:plc:author/com.dina.peerlens.attestation/x',
+      actorDid: 'did:plc:op',
+      reason: 'spam',
+    })
+    expect(captured.forUpdate).toBe(true)
+  })
+
+  it('marks the subject + author dirty so the score recomputes without the taken-down row', async () => {
+    const { db } = stubDb({
+      attestationRow: { isTakedown: false, reason: null, subjectId: 'sub_x', authorDid: 'did:plc:author' },
+    })
+    await takedownAttestation(db, {
+      uri: 'at://did:plc:author/com.dina.peerlens.attestation/x',
+      actorDid: 'did:plc:op',
+      reason: 'spam',
+    })
+    expect(markDirtyMock).toHaveBeenCalledTimes(1)
+    expect(markDirtyMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ subjectId: 'sub_x', authorDid: 'did:plc:author' }),
+    )
+  })
 })
 
 describe('tombstoneService', () => {
@@ -536,6 +632,22 @@ describe('restoreAttestation', () => {
       takedownAt: null,
     })
   })
+
+  it('locks FOR UPDATE + marks subject/author dirty (re-includes the restored row)', async () => {
+    const { db, captured } = stubDb({
+      attestationRow: { isTakedown: true, reason: 'spam', subjectId: 'sub_x', authorDid: 'did:plc:author' },
+    })
+    await restoreAttestation(db, {
+      uri: 'at://did:plc:author/com.dina.peerlens.attestation/x',
+      actorDid: 'did:plc:op',
+      reason: 'mistaken',
+    })
+    expect(captured.forUpdate).toBe(true)
+    expect(markDirtyMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ subjectId: 'sub_x', authorDid: 'did:plc:author' }),
+    )
+  })
 })
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -566,6 +678,42 @@ describe('dispatch', () => {
         flags: { actor: 'did:plc:op' },
       }),
     ).rejects.toThrow(/reason/)
+  })
+
+  it('rejects EXTRA positional args on a state-changing command (no silent drop)', async () => {
+    // `subject tombstone A B` must NOT silently tombstone A + ignore
+    // B — an irreversible action on the wrong/partial input.
+    const { db } = stubDb({})
+    await expect(
+      dispatch(db, {
+        command: 'subject',
+        subcommand: 'tombstone',
+        positional: ['sub_a', 'sub_b'],
+        flags: { actor: 'did:plc:op', reason: 'spam' },
+      }),
+    ).rejects.toThrow(/extra positional/i)
+  })
+
+  it('rejects positional args on audit-log (flag-only command)', async () => {
+    const { db } = stubDb({})
+    await expect(
+      dispatch(db, {
+        command: 'audit-log',
+        positional: ['oops'],
+        flags: {},
+      }),
+    ).rejects.toThrow(/no positional/i)
+  })
+
+  it('rejects a non-integer --limit (strict parse, not parseInt truncation)', async () => {
+    const { db } = stubDb({})
+    await expect(
+      dispatch(db, {
+        command: 'audit-log',
+        positional: [],
+        flags: { limit: '10abc' },
+      }),
+    ).rejects.toThrow(/--limit must be a positive integer/)
   })
 
   it('requires --reason on subject untombstone (parity)', async () => {

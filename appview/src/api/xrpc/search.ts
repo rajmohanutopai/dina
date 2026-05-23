@@ -197,14 +197,22 @@ export async function search(
     viewerDid,
   } = params
 
-  // The `isNull(didRedactions.did)` filter pairs with the LEFT JOIN
-  // on the runQuery branches below: any attestation whose author
-  // has a `did_redactions` row drops out of the result set entirely
-  // (mirrors service-search's GDPR-shaped operator exclusion). Row
-  // stays in `attestations` for audit; never surfaces to readers.
+  // Read-path exclusions, uniform with subject-get:
+  //   - isRevoked: author retracted the attestation
+  //   - isTakedownByModerator: operator removed it (ToS/abuse/legal);
+  //     row stays for audit but must not surface in any read path
+  //   - didRedactions.did IS NULL: author DID redacted (GDPR-shaped);
+  //     pairs with the LEFT JOIN on the runQuery branches below
+  //   - subjects.tombstonedAt IS NULL: subject removed by a moderator;
+  //     its attestations must not surface either. Both runQuery
+  //     branches LEFT JOIN subjects so this resolves. An attestation
+  //     with a NULL subjectId left-joins to a NULL row → tombstonedAt
+  //     reads NULL → passes (not tombstoned).
   const conditions: any[] = [
     eq(attestations.isRevoked, false),
+    eq(attestations.isTakedownByModerator, false),
     isNull(didRedactions.did),
+    isNull(subjects.tombstonedAt),
   ]
 
   if (category) conditions.push(eq(attestations.category, category))
@@ -534,12 +542,12 @@ export async function search(
   // result cards prefer the handle over the DID. Left join (not
   // inner) so authors without a profile row yet still appear.
   const runQuery = async (queryDb: DrizzleDB) => {
-    // TN-V2-RANK-007 — when the viewer-region boost is active, the
-    // ORDER BY references `subjects.metadata`, which requires an
-    // additional left-join. The two branches (with/without subjects
-    // join) keep the no-boost hot path identical to V1, so the
-    // baseline query plan doesn't regress for searches without
-    // viewerRegion.
+    // Both branches LEFT JOIN `subjects` — the WHERE filters on
+    // `subjects.tombstonedAt IS NULL` (moderator-removed subjects
+    // hidden) and the viewerRegion boost additionally reads
+    // `subjects.metadata` in its ORDER BY. The join is PK-on-FK
+    // (`attestations.subject_id` → `subjects.id`), so it's a cheap
+    // index lookup, not a scan.
     if (viewerRegion) {
       return queryDb.select({
         attestation: attestations,
@@ -562,6 +570,8 @@ export async function search(
       .leftJoin(didProfiles, eq(attestations.authorDid, didProfiles.did))
       // GDPR-shaped author exclusion — see `conditions` above.
       .leftJoin(didRedactions, eq(attestations.authorDid, didRedactions.did))
+      // Subject-tombstone exclusion — see `conditions` above.
+      .leftJoin(subjects, eq(attestations.subjectId, subjects.id))
       .where(and(...conditions))
       .orderBy(...orderClause)
       .limit(limit + 1)

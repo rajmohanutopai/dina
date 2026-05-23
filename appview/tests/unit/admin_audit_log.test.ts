@@ -196,23 +196,27 @@ describe('admin-audit-log wrapper', () => {
     interface ReadCaptured {
       whereCalled: boolean
       limit: number | null
+      orderByArgs: unknown[]
     }
     function readStub(
       rows: Array<Record<string, unknown>>,
     ): { db: DrizzleDB; captured: ReadCaptured } {
-      const captured: ReadCaptured = { whereCalled: false, limit: null }
+      const captured: ReadCaptured = { whereCalled: false, limit: null, orderByArgs: [] }
       const db = {
         select: () => ({
           from: () => ({
             where: (_filter: unknown) => {
               captured.whereCalled = true
               return {
-                orderBy: () => ({
-                  limit: async (n: number) => {
-                    captured.limit = n
-                    return rows
-                  },
-                }),
+                orderBy: (...args: unknown[]) => {
+                  captured.orderByArgs = args
+                  return {
+                    limit: async (n: number) => {
+                      captured.limit = n
+                      return rows
+                    },
+                  }
+                },
               }
             },
           }),
@@ -239,6 +243,29 @@ describe('admin-audit-log wrapper', () => {
       await expect(queryAuditLog(db, { limit: -1 })).rejects.toThrow()
       await expect(queryAuditLog(db, { limit: 1001 })).rejects.toThrow()
       await expect(queryAuditLog(db, { limit: 1.5 })).rejects.toThrow()
+    })
+
+    it('orders by performed_at DESC then id DESC (deterministic tiebreak)', async () => {
+      // Same-millisecond rows must have a stable order for forensic
+      // output. `id` (BIGSERIAL) is the monotonic tiebreaker after
+      // `performed_at`. Pin TWO order clauses + that both columns
+      // appear in the serialized order spec.
+      const { db, captured } = readStub([])
+      await queryAuditLog(db, {})
+      expect(captured.orderByArgs).toHaveLength(2)
+      const serialized = JSON.stringify(captured.orderByArgs, (_k, v) => {
+        if (
+          v !== null &&
+          typeof v === 'object' &&
+          'name' in (v as Record<string, unknown>) &&
+          typeof (v as { name: unknown }).name === 'string'
+        ) {
+          return `col:${(v as { name: string }).name}`
+        }
+        return v
+      })
+      expect(serialized).toContain('col:performed_at')
+      expect(serialized).toContain('col:id')
     })
 
     it('returns rows verbatim from the underlying query', async () => {

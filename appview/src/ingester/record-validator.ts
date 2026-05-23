@@ -13,12 +13,37 @@ import { CONSTANTS } from '@/config/constants.js'
 // ── Shared schemas ──────────────────────────────────────────────────
 
 // ── Bounded validators (APPVIEW-MED-02, MED-09) ────────────────────
+//
+// Tier 1 fields (did / uri / identifier) are hashed VERBATIM by the
+// subject-id resolver (per packages/protocol/docs/features/subject-id.md).
+// That makes surrounding whitespace identity-significant: `"did:plc:x "`
+// would mint a different subject than `"did:plc:x"`. Reject padded /
+// whitespace-only Tier 1 values here so the verbatim hash only ever
+// sees canonical input. `v === v.trim()` rejects both leading/trailing
+// padding AND whitespace-only strings (whose trim differs from the
+// original). A truly-empty string `""` passes this refine but the
+// resolver treats length-0 as "absent" (falls through to the next
+// tier), and the SubjectRef-level "at least one field" refine rejects
+// an all-empty ref — so empty needs no extra guard here.
+const noSurroundingWhitespace = (v: string) => v === v.trim()
+const WS_MSG = 'must not have leading/trailing whitespace'
+
 const didString = z
   .string()
   .min(8)
   .max(CONSTANTS.SUBJECT_REF_MAX_DID_LEN)
-  .regex(/^did:[a-z]+:/, 'Must be a valid DID')
-const boundedUri = z.string().min(1).max(CONSTANTS.SUBJECT_REF_MAX_URI_LEN)
+  // `.+` after the method colon requires a non-empty method-specific
+  // id — `did:plc:` (no id) is not a real DID and was previously
+  // accepted by the looser `^did:[a-z]+:`. The trailing identifier
+  // can itself contain colons (e.g. did:web:host:port), so `.+` is
+  // the right breadth; surrounding-whitespace is caught by the refine.
+  .regex(/^did:[a-z]+:.+/, 'Must be a valid DID (method-specific id required)')
+  .refine(noSurroundingWhitespace, { message: `DID ${WS_MSG}` })
+const boundedUri = z
+  .string()
+  .min(1)
+  .max(CONSTANTS.SUBJECT_REF_MAX_URI_LEN)
+  .refine(noSurroundingWhitespace, { message: `uri ${WS_MSG}` })
 
 // A SubjectRef must carry at least one resolver input — without one,
 // AppView can't mint a stable subject_id. The refine here is the
@@ -30,7 +55,15 @@ const subjectRefSchema = z
     did: didString.optional(),
     uri: boundedUri.optional(),
     name: z.string().max(CONSTANTS.SUBJECT_REF_MAX_NAME_LEN).optional(),
-    identifier: z.string().max(CONSTANTS.SUBJECT_REF_MAX_IDENTIFIER_LEN).optional(),
+    // No `.min(1)`: an empty identifier is "absent" (resolver falls
+    // through to name), not an error — preserving the pre-existing
+    // leniency. The refine still rejects whitespace-only / padded
+    // values, which is the part that matters for verbatim hashing.
+    identifier: z
+      .string()
+      .max(CONSTANTS.SUBJECT_REF_MAX_IDENTIFIER_LEN)
+      .refine(noSurroundingWhitespace, { message: `identifier ${WS_MSG}` })
+      .optional(),
   })
   .refine(
     (ref) =>

@@ -386,53 +386,66 @@ describe('§3.2 Deterministic ID', () => {
   // validator was the only entry point.
   // ─────────────────────────────────────────────────────────────────
 
-  it('UT-DI-035: whitespace-only did falls through to next tier', () => {
-    // `did:'   '` is not a real DID. The resolver should NOT mint a
-    // subject from `v2:did:   `; instead it should treat the field as
-    // absent and use the next tier (uri → identifier → name).
-    const refWithName = {
-      type: 'product',
-      did: '   ',
-      name: 'Aeron Chair',
-    } as SubjectRef
+  it('UT-DI-035: whitespace-only did is present (verbatim), does NOT fold to name', () => {
+    // `did:'   '` is not a real DID, but the resolver is spec-pure:
+    // a non-empty string is present and hashed verbatim. The DID
+    // regex in record-validator rejects `'   '` upstream (it can't
+    // match `^did:[a-z]+:`), so production never reaches here with it.
+    const refWithDid = { type: 'product', did: '   ', name: 'Aeron Chair' } as SubjectRef
     const refNameOnly = { type: 'product', name: 'Aeron Chair' } as SubjectRef
-    expect(generateDeterministicId(refWithName).id).toBe(
+    expect(generateDeterministicId(refWithDid).id).not.toBe(
       generateDeterministicId(refNameOnly).id,
     )
   })
 
-  it('UT-DI-036: whitespace-only uri falls through to next tier', () => {
-    const refWithName = {
-      type: 'product',
-      uri: '   ',
-      name: 'Aeron Chair',
-    } as SubjectRef
+  // Tier 1 hashing is VERBATIM per the federation spec
+  // (subject-id.md §"Tier 1 normalization"): no trimming, no
+  // lowercasing, no Unicode normalization. Surrounding whitespace is
+  // therefore identity-significant. The record-validator rejects
+  // whitespace-padded / whitespace-only Tier 1 values up front (see
+  // record_validator.test.ts), so production never reaches the hash
+  // with such input — but the resolver itself is spec-pure: it hashes
+  // exactly what it's given and a non-empty string is "present".
+  it('UT-DI-036: whitespace-only uri is present (verbatim), does NOT fold to name', () => {
+    const refWithUri = { type: 'product', uri: '   ', name: 'Aeron Chair' } as SubjectRef
     const refNameOnly = { type: 'product', name: 'Aeron Chair' } as SubjectRef
-    expect(generateDeterministicId(refWithName).id).toBe(
+    expect(generateDeterministicId(refWithUri).id).not.toBe(
       generateDeterministicId(refNameOnly).id,
     )
   })
 
-  it('UT-DI-037: whitespace-only identifier falls through to next tier', () => {
-    const refWithName = {
-      type: 'product',
-      identifier: '   ',
-      name: 'Aeron Chair',
-    } as SubjectRef
+  it('UT-DI-037: whitespace-only identifier is present (verbatim), does NOT fold to name', () => {
+    const refWithId = { type: 'product', identifier: '   ', name: 'Aeron Chair' } as SubjectRef
     const refNameOnly = { type: 'product', name: 'Aeron Chair' } as SubjectRef
-    expect(generateDeterministicId(refWithName).id).toBe(
+    expect(generateDeterministicId(refWithId).id).not.toBe(
       generateDeterministicId(refNameOnly).id,
     )
   })
 
-  it('UT-DI-038: leading/trailing whitespace on Tier 1 fields trims before hash', () => {
-    // `did:'  did:plc:abc  '` and `did:'did:plc:abc'` must hash the
-    // same — clearly the same identity, just typographic noise.
+  it('UT-DI-038: Tier 1 fields are hashed VERBATIM — padded != clean (caller owns canonical form)', () => {
+    // The old resolver trimmed; the spec says verbatim. Padded and
+    // clean now mint DIFFERENT subjects. The validator rejects the
+    // padded form, so this divergence is unreachable in production —
+    // but the resolver's verbatim contract is what every language
+    // port must replicate byte-for-byte.
     const refPadded = { type: 'did', did: '  did:plc:abc  ' } as SubjectRef
     const refClean = { type: 'did', did: 'did:plc:abc' } as SubjectRef
-    expect(generateDeterministicId(refPadded).id).toBe(
+    expect(generateDeterministicId(refPadded).id).not.toBe(
       generateDeterministicId(refClean).id,
     )
+  })
+
+  it('UT-DI-041: Tier 2 name length is bounded by CODE POINTS, not UTF-16 units', () => {
+    // 150 astral chars (emoji) = 150 code points but 300 UTF-16 code
+    // units. The spec bound is 200 CODE POINTS, so this name is valid
+    // and must hash without throwing. The old `.length` check counted
+    // 300 UTF-16 units > 200 and wrongly rejected it (threw). Pinning
+    // code-point counting keeps TS in step with non-TS ports.
+    const astralName = '😀'.repeat(150)
+    const ref = { type: 'product', name: astralName } as SubjectRef
+    expect(() => generateDeterministicId(ref)).not.toThrow()
+    // And it's stable: same astral name → same id.
+    expect(generateDeterministicId(ref).id).toBe(generateDeterministicId(ref).id)
   })
 
   it('UT-DI-039: URI fragments are stripped (anchor != identity)', () => {

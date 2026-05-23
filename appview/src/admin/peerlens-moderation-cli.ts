@@ -52,6 +52,7 @@ import {
   type AdminAction,
   type AuditLogEntry,
 } from '@/db/queries/admin-audit-log.js'
+import { markDirty } from '@/db/queries/dirty-flags.js'
 import { logger } from '@/shared/utils/logger.js'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -200,6 +201,27 @@ function requireDidFlag(
   return raw
 }
 
+/**
+ * Read the single positional argument a state-changing command takes,
+ * rejecting BOTH "missing" and "extra". The dispatcher only ever uses
+ * `positional[0]`, so without this guard `subject tombstone A B`
+ * would silently tombstone A and drop B — dangerous for an
+ * irreversible operator action. `label` names the expected argument
+ * for the error message.
+ */
+function singlePositional(parsed: ParsedArgs, label: string): string {
+  if (parsed.positional.length === 0) {
+    throw new Error(`Missing ${label} positional argument.`)
+  }
+  if (parsed.positional.length > 1) {
+    throw new Error(
+      `Unexpected extra positional argument(s): ` +
+        `${parsed.positional.slice(1).join(', ')}. ${label} takes exactly one.`,
+    )
+  }
+  return parsed.positional[0]
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Commands. Each returns a structured result the caller logs. Each
 // runs in a transaction so the audit-log row + the target mutation
@@ -226,6 +248,10 @@ export async function tombstoneSubject(
       .from(subjects)
       .where(eq(subjects.id, args.subjectId))
       .limit(1)
+      // FOR UPDATE locks the row so a concurrent delete can't slip
+      // between this read and the UPDATE — which would let the audit
+      // row commit for a mutation that matched zero rows.
+      .for('update')
     if (before === undefined) {
       throw new Error(`Subject not found: ${args.subjectId}`)
     }
@@ -251,6 +277,9 @@ export async function tombstoneSubject(
         tombstonedAt: subjects.tombstonedAt,
         tombstoneReason: subjects.tombstoneReason,
       })
+    if (after === undefined) {
+      throw new Error(`Subject vanished mid-update: ${args.subjectId}`)
+    }
 
     return { subjectId: args.subjectId, before, after, auditLogId }
   })
@@ -269,6 +298,10 @@ export async function untombstoneSubject(
       .from(subjects)
       .where(eq(subjects.id, args.subjectId))
       .limit(1)
+      // FOR UPDATE locks the row so a concurrent delete can't slip
+      // between this read and the UPDATE — which would let the audit
+      // row commit for a mutation that matched zero rows.
+      .for('update')
     if (before === undefined) {
       throw new Error(`Subject not found: ${args.subjectId}`)
     }
@@ -292,6 +325,9 @@ export async function untombstoneSubject(
         tombstonedAt: subjects.tombstonedAt,
         tombstoneReason: subjects.tombstoneReason,
       })
+    if (after === undefined) {
+      throw new Error(`Subject vanished mid-update: ${args.subjectId}`)
+    }
 
     return { subjectId: args.subjectId, before, after, auditLogId }
   })
@@ -309,14 +345,22 @@ export async function takedownAttestation(
   args: { uri: string; actorDid: string; reason: string },
 ): Promise<TakedownResult> {
   return db.transaction(async (tx) => {
+    // FOR UPDATE locks the row for the life of the tx so a concurrent
+    // delete/edit can't slip between this read and the UPDATE below —
+    // which would otherwise let the audit row commit for a mutation
+    // that matched zero rows. Also pull subjectId + authorDid so we
+    // can mark them for score recalc once the takedown lands.
     const [before] = await tx
       .select({
         isTakedown: attestations.isTakedownByModerator,
         reason: attestations.takedownReason,
+        subjectId: attestations.subjectId,
+        authorDid: attestations.authorDid,
       })
       .from(attestations)
       .where(eq(attestations.uri, args.uri))
       .limit(1)
+      .for('update')
     if (before === undefined) {
       throw new Error(`Attestation not found: ${args.uri}`)
     }
@@ -344,6 +388,20 @@ export async function takedownAttestation(
         isTakedown: attestations.isTakedownByModerator,
         reason: attestations.takedownReason,
       })
+    if (after === undefined) {
+      // FOR UPDATE makes this unreachable in practice (the row is
+      // locked), but assert rather than commit an audit row for a
+      // no-op mutation.
+      throw new Error(`Attestation vanished mid-takedown: ${args.uri}`)
+    }
+
+    // A taken-down attestation must stop feeding the subject score +
+    // the author's trust. Flip needs_recalc so the next scorer tick
+    // recomputes both without the now-excluded row.
+    await markDirty(tx as unknown as DrizzleDB, {
+      subjectId: before.subjectId,
+      authorDid: before.authorDid,
+    })
 
     return {
       uri: args.uri,
@@ -374,6 +432,8 @@ export async function tombstoneService(
       .from(services)
       .where(eq(services.uri, args.serviceUri))
       .limit(1)
+      // FOR UPDATE — see tombstoneSubject for rationale.
+      .for('update')
     if (before === undefined) {
       throw new Error(`Service profile not found: ${args.serviceUri}`)
     }
@@ -397,6 +457,9 @@ export async function tombstoneService(
         tombstonedAt: services.tombstonedAt,
         tombstoneReason: services.tombstoneReason,
       })
+    if (after === undefined) {
+      throw new Error(`Service profile vanished mid-update: ${args.serviceUri}`)
+    }
 
     return { serviceUri: args.serviceUri, before, after, auditLogId }
   })
@@ -415,6 +478,8 @@ export async function untombstoneService(
       .from(services)
       .where(eq(services.uri, args.serviceUri))
       .limit(1)
+      // FOR UPDATE — see tombstoneSubject for rationale.
+      .for('update')
     if (before === undefined) {
       throw new Error(`Service profile not found: ${args.serviceUri}`)
     }
@@ -438,6 +503,9 @@ export async function untombstoneService(
         tombstonedAt: services.tombstonedAt,
         tombstoneReason: services.tombstoneReason,
       })
+    if (after === undefined) {
+      throw new Error(`Service profile vanished mid-update: ${args.serviceUri}`)
+    }
 
     return { serviceUri: args.serviceUri, before, after, auditLogId }
   })
@@ -452,10 +520,13 @@ export async function restoreAttestation(
       .select({
         isTakedown: attestations.isTakedownByModerator,
         reason: attestations.takedownReason,
+        subjectId: attestations.subjectId,
+        authorDid: attestations.authorDid,
       })
       .from(attestations)
       .where(eq(attestations.uri, args.uri))
       .limit(1)
+      .for('update')
     if (before === undefined) {
       throw new Error(`Attestation not found: ${args.uri}`)
     }
@@ -483,6 +554,16 @@ export async function restoreAttestation(
         isTakedown: attestations.isTakedownByModerator,
         reason: attestations.takedownReason,
       })
+    if (after === undefined) {
+      throw new Error(`Attestation vanished mid-restore: ${args.uri}`)
+    }
+
+    // Restoring re-includes the attestation, so the subject score +
+    // author trust must recompute to count it again.
+    await markDirty(tx as unknown as DrizzleDB, {
+      subjectId: before.subjectId,
+      authorDid: before.authorDid,
+    })
 
     return {
       uri: args.uri,
@@ -510,19 +591,13 @@ export async function dispatch(
 
   if (parsed.command === 'subject') {
     if (parsed.subcommand === 'tombstone') {
-      const subjectId = parsed.positional[0]
-      if (subjectId === undefined) {
-        throw new Error('Missing subject_id positional argument.')
-      }
+      const subjectId = singlePositional(parsed, 'subject_id')
       const actorDid = requireDidFlag(parsed.flags, envActor, 'actor')
       const reason = requireFlag(parsed.flags, undefined, 'reason')
       return tombstoneSubject(db, { subjectId, actorDid, reason })
     }
     if (parsed.subcommand === 'untombstone') {
-      const subjectId = parsed.positional[0]
-      if (subjectId === undefined) {
-        throw new Error('Missing subject_id positional argument.')
-      }
+      const subjectId = singlePositional(parsed, 'subject_id')
       const actorDid = requireDidFlag(parsed.flags, envActor, 'actor')
       const reason = requireFlag(parsed.flags, undefined, 'reason')
       return untombstoneSubject(db, { subjectId, actorDid, reason })
@@ -534,10 +609,7 @@ export async function dispatch(
 
   if (parsed.command === 'service') {
     if (parsed.subcommand === 'tombstone') {
-      const serviceUri = parsed.positional[0]
-      if (serviceUri === undefined) {
-        throw new Error('Missing at:// service URI positional argument.')
-      }
+      const serviceUri = singlePositional(parsed, 'at:// service URI')
       if (!serviceUri.startsWith('at://')) {
         throw new Error(`Expected at:// URI, got "${serviceUri}"`)
       }
@@ -546,10 +618,7 @@ export async function dispatch(
       return tombstoneService(db, { serviceUri, actorDid, reason })
     }
     if (parsed.subcommand === 'untombstone') {
-      const serviceUri = parsed.positional[0]
-      if (serviceUri === undefined) {
-        throw new Error('Missing at:// service URI positional argument.')
-      }
+      const serviceUri = singlePositional(parsed, 'at:// service URI')
       if (!serviceUri.startsWith('at://')) {
         throw new Error(`Expected at:// URI, got "${serviceUri}"`)
       }
@@ -564,10 +633,7 @@ export async function dispatch(
 
   if (parsed.command === 'attestation') {
     if (parsed.subcommand === 'takedown') {
-      const uri = parsed.positional[0]
-      if (uri === undefined) {
-        throw new Error('Missing at:// URI positional argument.')
-      }
+      const uri = singlePositional(parsed, 'at:// URI')
       if (!uri.startsWith('at://')) {
         throw new Error(`Expected at:// URI, got "${uri}"`)
       }
@@ -576,10 +642,7 @@ export async function dispatch(
       return takedownAttestation(db, { uri, actorDid, reason })
     }
     if (parsed.subcommand === 'restore') {
-      const uri = parsed.positional[0]
-      if (uri === undefined) {
-        throw new Error('Missing at:// URI positional argument.')
-      }
+      const uri = singlePositional(parsed, 'at:// URI')
       if (!uri.startsWith('at://')) {
         throw new Error(`Expected at:// URI, got "${uri}"`)
       }
@@ -593,6 +656,14 @@ export async function dispatch(
   }
 
   if (parsed.command === 'audit-log') {
+    // audit-log is flag-only — reject stray positionals (likely a
+    // misquoted filter the operator expected to take effect).
+    if (parsed.positional.length > 0) {
+      throw new Error(
+        `audit-log takes no positional arguments; got: ${parsed.positional.join(', ')}. ` +
+          `Use --actor / --target / --action / --limit flags.`,
+      )
+    }
     const action = parsed.flags['action']
     if (
       action !== undefined &&
@@ -602,9 +673,17 @@ export async function dispatch(
         `Unknown --action verb: "${action}". Valid: ${ADMIN_ACTIONS.join(', ')}`,
       )
     }
+    // Strict integer parse — `Number.parseInt('10abc', 10)` would
+    // silently yield 10, masking a typo. Require all-digits so a
+    // malformed --limit fails loud instead of querying a surprise count.
     const limitRaw = parsed.flags['limit']
-    const limit =
-      limitRaw === undefined ? undefined : Number.parseInt(limitRaw, 10)
+    let limit: number | undefined
+    if (limitRaw !== undefined) {
+      if (!/^\d+$/.test(limitRaw)) {
+        throw new Error(`--limit must be a positive integer, got "${limitRaw}"`)
+      }
+      limit = Number(limitRaw)
+    }
     return queryAuditLog(db, {
       actor: parsed.flags['actor'],
       target: parsed.flags['target'],

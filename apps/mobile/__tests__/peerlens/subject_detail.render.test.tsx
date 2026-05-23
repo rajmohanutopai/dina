@@ -362,6 +362,24 @@ describe('SubjectDetailScreen — header', () => {
     expect(queryByTestId('subject-detail-flag-warning')).toBeNull();
   });
 
+  // Moderator-removal banner. Without it a tombstoned subject (score
+  // + reviews zeroed by the AppView) is indistinguishable from a
+  // brand-new unrated subject.
+  it('renders the moderator-removed banner when tombstoned', () => {
+    const { getByTestId, getByText } = render(
+      <SubjectDetailScreen subjectId="sub-1" data={makeInput({ tombstoned: true })} />,
+    );
+    expect(getByTestId('subject-detail-tombstoned')).toBeTruthy();
+    expect(getByText('This subject was removed by a moderator.')).toBeTruthy();
+  });
+
+  it('hides the moderator-removed banner for a normal subject', () => {
+    const { queryByTestId } = render(
+      <SubjectDetailScreen subjectId="sub-1" data={makeInput()} />,
+    );
+    expect(queryByTestId('subject-detail-tombstoned')).toBeNull();
+  });
+
   // TN-V2-RANK-014 — alternatives strip below the review list.
   it('hides the alternatives strip when alternatives is empty (default)', () => {
     const { queryByTestId } = render(

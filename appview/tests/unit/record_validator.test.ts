@@ -127,6 +127,84 @@ describe('shared validators — didString + boundedIsoDate', () => {
     expect(issues.some((i) => i.path[0] === 'subject')).toBe(true)
   })
 
+  // Tier 1 fields are hashed VERBATIM by the subject-id resolver, so
+  // surrounding whitespace is identity-significant. The validator must
+  // reject padded / whitespace-only Tier 1 values so the resolver only
+  // ever hashes canonical input (see 03-shared-utilities UT-DI-035..038).
+  it('rejects a DID with trailing whitespace (verbatim-hash guard)', () => {
+    const issues = expectReject('com.dina.peerlens.attestation', {
+      subject: { type: 'did', did: `${VALID_DID} ` },
+      category: 'product',
+      sentiment: 'positive',
+      createdAt: NOW_ISO,
+    })
+    expect(issues.some((i) => i.path.join('.') === 'subject.did')).toBe(true)
+  })
+
+  it('rejects a uri with surrounding whitespace (verbatim-hash guard)', () => {
+    const issues = expectReject('com.dina.peerlens.attestation', {
+      subject: { type: 'content', uri: '  https://example.test/article  ' },
+      category: 'content',
+      sentiment: 'positive',
+      createdAt: NOW_ISO,
+    })
+    expect(issues.some((i) => i.path.join('.') === 'subject.uri')).toBe(true)
+  })
+
+  it('rejects a whitespace-only identifier (verbatim-hash guard)', () => {
+    const issues = expectReject('com.dina.peerlens.attestation', {
+      subject: { type: 'product', identifier: '   ', name: 'Aeron Chair' },
+      category: 'product',
+      sentiment: 'positive',
+      createdAt: NOW_ISO,
+    })
+    expect(issues.some((i) => i.path.join('.') === 'subject.identifier')).toBe(true)
+  })
+
+  it('accepts a clean (unpadded) Tier 1 identifier', () => {
+    expectAccept('com.dina.peerlens.attestation', {
+      subject: { type: 'product', identifier: 'asin:B01234', name: 'Aeron Chair' },
+      category: 'product',
+      sentiment: 'positive',
+      createdAt: NOW_ISO,
+    })
+  })
+
+  it('treats an EMPTY identifier as absent (lenient) when a name is present', () => {
+    // `identifier: ""` is "no identifier", not an error — the resolver
+    // falls through to the name tier. Only whitespace-only / padded
+    // identifiers are rejected (verbatim-hash guard). This pins the
+    // deliberate non-strictness so a future `.min(1)` doesn't sneak in.
+    expectAccept('com.dina.peerlens.attestation', {
+      subject: { type: 'product', identifier: '', name: 'Aeron Chair' },
+      category: 'product',
+      sentiment: 'positive',
+      createdAt: NOW_ISO,
+    })
+  })
+
+  it('rejects a DID with no method-specific id ("did:plc:")', () => {
+    // `did:plc:` matched the old loose `^did:[a-z]+:` despite having
+    // no identifier. The tightened `^did:[a-z]+:.+` rejects it.
+    const issues = expectReject('com.dina.peerlens.attestation', {
+      subject: { type: 'did', did: 'did:plc:' },
+      category: 'product',
+      sentiment: 'positive',
+      createdAt: NOW_ISO,
+    })
+    expect(issues.some((i) => i.path.join('.') === 'subject.did')).toBe(true)
+  })
+
+  it('accepts did:web with colons in the method-specific id', () => {
+    // `.+` must not over-reject — did:web host:port ids carry colons.
+    expectAccept('com.dina.peerlens.attestation', {
+      subject: { type: 'did', did: 'did:web:example.test:8080' },
+      category: 'product',
+      sentiment: 'positive',
+      createdAt: NOW_ISO,
+    })
+  })
+
   it('rejects a createdAt > 5 minutes in the future (clock-skew guard)', () => {
     const future = new Date(Date.now() + 6 * 60 * 1000).toISOString()
     const issues = expectReject('com.dina.peerlens.attestation', {

@@ -179,6 +179,12 @@ export async function queryAuditLog(
     })
     .from(adminAuditLog)
     .where(filters.length === 0 ? undefined : and(...filters))
-    .orderBy(desc(adminAuditLog.performedAt))
+    // `id DESC` as a tiebreaker after `performed_at DESC`. NOW() can
+    // collide across rows written in the same millisecond (e.g. a
+    // scripted batch), and `performed_at` alone leaves their relative
+    // order undefined — non-deterministic forensic output. `id` is a
+    // monotonic BIGSERIAL, so it gives a stable, insertion-order
+    // tiebreak.
+    .orderBy(desc(adminAuditLog.performedAt), desc(adminAuditLog.id))
     .limit(limit)
 }

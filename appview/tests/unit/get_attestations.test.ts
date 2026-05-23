@@ -189,4 +189,23 @@ describe('getAttestations — did_redactions filter', () => {
     const didRefs = serialized.match(/col:did(?!_)/g) ?? []
     expect(didRefs.length).toBeGreaterThanOrEqual(1)
   })
+
+  it('WHERE references is_takedown_by_moderator (moderator takedown excluded)', async () => {
+    // A moderator-taken-down attestation must not surface in the raw
+    // attestation list. Mirror of subject-get's filter.
+    const db = stubDb([])
+    await getAttestations(db, { limit: 25 } as never)
+    const serialized = JSON.stringify(_capturedWhereFilter, (_k, v) => {
+      if (
+        v !== null &&
+        typeof v === 'object' &&
+        'name' in (v as Record<string, unknown>) &&
+        typeof (v as { name: unknown }).name === 'string'
+      ) {
+        return `col:${(v as { name: string }).name}`
+      }
+      return v
+    })
+    expect(serialized).toContain('col:is_takedown_by_moderator')
+  })
 })

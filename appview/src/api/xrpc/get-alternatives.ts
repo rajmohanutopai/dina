@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { and, desc, eq, ne, sql, isNotNull } from 'drizzle-orm'
+import { and, desc, eq, ne, sql, isNull, isNotNull } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import { subjects, subjectScores } from '@/db/schema/index.js'
 
@@ -114,6 +114,9 @@ export async function getAlternatives(
         eq(subjects.category, subjectRow.category),
         ne(subjects.id, subjectId),
         isNotNull(subjects.category),
+        // A moderator-tombstoned subject must not be surfaced as a
+        // discovery alternative — it was removed for a reason.
+        isNull(subjects.tombstonedAt),
       ),
     )
     // Drizzle's `desc()` on a nullable column places NULLs first by

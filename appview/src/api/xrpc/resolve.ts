@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { eq, and } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
-import { subjectScores, didProfiles, flags } from '@/db/schema/index.js'
+import { subjects, subjectScores, didProfiles, flags } from '@/db/schema/index.js'
 import { resolveSubject } from '@/db/queries/subjects.js'
 import { computeRecommendation } from '@/scorer/algorithms/recommendation.js'
 import { withSWR, resolveKey, CACHE_TTLS } from '../middleware/swr-cache.js'
@@ -64,6 +64,35 @@ async function computeResolveResponse(
   }
 
   const subjectId = await resolveSubject(db, subjectRef)
+
+  // Moderator-tombstoned subjects must not feed a trust decision —
+  // `resolve` drives proceed/caution/verify/avoid, and a removed
+  // subject should never green-light a transaction. Short-circuit
+  // with the subjectId preserved (so cached references don't 404)
+  // but every trust-bearing field zeroed and a hard `avoid`.
+  if (subjectId) {
+    const [subjectRow] = await db
+      .select({ tombstonedAt: subjects.tombstonedAt })
+      .from(subjects)
+      .where(eq(subjects.id, subjectId))
+      .limit(1)
+    if (subjectRow?.tombstonedAt != null) {
+      return {
+        subjectId,
+        reviewCount: 0,
+        lastAttestedAt: null,
+        subjectType: subjectRef.type,
+        trustLevel: 'none',
+        confidence: 0,
+        attestationSummary: null,
+        flags: [],
+        authenticity: null,
+        graphContext: null,
+        recommendation: 'avoid',
+        reasoning: 'Subject was removed by a moderator',
+      }
+    }
+  }
 
   const scores = subjectId
     ? await db.select().from(subjectScores)

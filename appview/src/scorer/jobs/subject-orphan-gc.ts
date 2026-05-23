@@ -113,6 +113,14 @@ export async function subjectOrphanGc(db: DrizzleDB): Promise<void> {
         // migration but anchor the canonical chain so old subject_ids in
         // existing URLs / cached references keep resolving.
         isNull(subjects.canonicalSubjectId),
+        // Keep moderator-tombstoned rows alive. The tombstone contract
+        // promises the row + URL stay resolvable (subjectGet renders a
+        // "removed by a moderator" state); GC'ing a tombstoned subject
+        // that happens to have shed all its referrers would break that
+        // and let old links 404. `tombstonedAt` (the moderator flag) is
+        // distinct from the `tombstones` table (deletion records),
+        // which is covered by its own notExists below.
+        isNull(subjects.tombstonedAt),
         notExists(
           db.select().from(attestations).where(eq(attestations.subjectId, subjects.id)),
         ),

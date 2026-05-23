@@ -71,6 +71,16 @@ describe('deriveSubjectDetail — header', () => {
     expect(detail.header.subtitle).toBeNull();
   });
 
+  it('tombstoned defaults to false when the input omits it', () => {
+    const detail = deriveSubjectDetail(makeInput());
+    expect(detail.header.tombstoned).toBe(false);
+  });
+
+  it('surfaces tombstoned=true onto the header so the screen can render a removed state', () => {
+    const detail = deriveSubjectDetail(makeInput({ tombstoned: true }));
+    expect(detail.header.tombstoned).toBe(true);
+  });
+
   it('showNumericScore=true at the N=3 boundary with a non-null score', () => {
     const detail = deriveSubjectDetail(
       makeInput({ subjectTrustScore: 0.7, reviewCount: 3 }),

@@ -24,12 +24,14 @@ export async function getAttestations(
   db: DrizzleDB,
   params: GetAttestationsParamsType,
 ) {
-  // The `isNull(didRedactions.did)` filter pairs with the LEFT JOIN
-  // below: any attestation whose author has a `did_redactions` row
-  // drops out of the result set entirely (mirrors service-search's
-  // GDPR-shaped operator exclusion).
+  // Read-path exclusions, uniform with subject-get / search:
+  //   - isRevoked: author retracted
+  //   - isTakedownByModerator: operator removed (audit row kept, never surfaced)
+  //   - didRedactions.did IS NULL: author DID redacted (GDPR-shaped),
+  //     pairs with the LEFT JOIN below
   const conditions: any[] = [
     eq(attestations.isRevoked, false),
+    eq(attestations.isTakedownByModerator, false),
     isNull(didRedactions.did),
   ]
 

@@ -199,6 +199,16 @@ export interface SubjectGetResponse {
   score: number | null;
   band: SubjectTrustBand;
   reviewCount: number;
+  /**
+   * True when the subject was removed by a moderator (ToS / abuse /
+   * legal). The AppView keeps the row + URL resolvable so cached
+   * references don't 404, but zeroes every score-bearing field
+   * (score=null, band='unrated', reviewCount=0, empty roster). The
+   * detail surface should render a "removed by a moderator" state
+   * rather than a normal unrated/0-review subject. Optional so older
+   * AppView builds (pre-tombstone) default to `false` on this side.
+   */
+  tombstoned?: boolean;
   reviewers: {
     /**
      * The viewer's own attestations on this subject, when they

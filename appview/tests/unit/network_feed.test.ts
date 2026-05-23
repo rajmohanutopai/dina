@@ -413,4 +413,29 @@ describe('networkFeed handler — TN-API-004', () => {
     const didRefs = serialized.match(/col:did(?!_)/g) ?? []
     expect(didRefs.length).toBeGreaterThanOrEqual(1)
   })
+
+  it('WHERE references is_takedown_by_moderator (moderator takedown excluded)', async () => {
+    // A moderator-taken-down attestation must not surface in the feed.
+    // Mirror of subject-get's filter — read paths stay uniform.
+    computeGraphContextMock.mockResolvedValueOnce({
+      nodes: [{ did: 'did:plc:r1', trustScore: 0.8, depth: 1 }],
+      edges: [],
+      rootDid: 'did:plc:viewer',
+      depth: 1,
+    })
+    const db = stubDb([])
+    await networkFeed(db, { viewerDid: 'did:plc:viewer', limit: 25 })
+    const serialized = JSON.stringify(_capturedWhereFilter, (_k, v) => {
+      if (
+        v !== null &&
+        typeof v === 'object' &&
+        'name' in (v as Record<string, unknown>) &&
+        typeof (v as { name: unknown }).name === 'string'
+      ) {
+        return `col:${(v as { name: string }).name}`
+      }
+      return v
+    })
+    expect(serialized).toContain('col:is_takedown_by_moderator')
+  })
 })

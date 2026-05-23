@@ -53,6 +53,17 @@ responsible for the canonical form of these strings (DIDs are
 lowercase by `did:plc` method spec; identifiers should be namespaced
 e.g. `asin:B01234`, `ean:0123456789012`, `wikidata:Q28865`).
 
+**Presence + tier selection.** A Tier 1 field is *present* iff it is
+a non-empty string (length > 0). Tier selection is `did` → `uri` →
+`identifier` → name; the first present field wins. Because hashing is
+verbatim, surrounding whitespace is identity-significant
+(`"did:plc:x "` ≠ `"did:plc:x"`). Implementations **SHOULD** reject
+whitespace-padded or whitespace-only Tier 1 values at the
+record-validation boundary so the verbatim hash only ever sees
+canonical input — a non-empty-but-blank value is a caller bug, not a
+distinct subject. The hash function itself does NOT trim (a verbatim
+contract can't depend on a normalization step some ports skip).
+
 ### `uri:` — conservative RFC 3986 normalization
 
 `normalize_uri(uri)` applies only foldings that RFC 3986 considers

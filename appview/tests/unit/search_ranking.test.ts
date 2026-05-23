@@ -424,18 +424,9 @@ describe('search handler — since / until', () => {
 
 // ── did_redactions GDPR-shaped exclusion ──────────────────────
 
-describe('search handler — did_redactions filter', () => {
-  it('WHERE references did_redactions.did (GDPR-shaped author exclusion)', async () => {
-    // LEFT JOIN against did_redactions + IS NULL check in the WHERE
-    // means a redacted author's attestations drop out of the search
-    // entirely. Pin the column reference so a refactor that drops
-    // the join surfaces in tests, not on the wire. Mirror of the
-    // service-search.ts stance — see that file's matching test.
-    const { db, capture } = makeStubDb({ rows: [] })
-    await search(db, { sort: 'recent', limit: 25 } as never)
-    expect(capture.whereFilter).toBeDefined()
-
-    const serialized = JSON.stringify(capture.whereFilter, (_k, v) => {
+describe('search handler — moderation read-path filters', () => {
+  function serializeWhere(filter: unknown): string {
+    return JSON.stringify(filter, (_k, v) => {
       if (
         v !== null &&
         typeof v === 'object' &&
@@ -446,11 +437,41 @@ describe('search handler — did_redactions filter', () => {
       }
       return v
     })
+  }
+
+  it('WHERE references did_redactions.did (GDPR-shaped author exclusion)', async () => {
+    // LEFT JOIN against did_redactions + IS NULL check in the WHERE
+    // means a redacted author's attestations drop out of the search
+    // entirely. Pin the column reference so a refactor that drops
+    // the join surfaces in tests, not on the wire. Mirror of the
+    // service-search.ts stance — see that file's matching test.
+    const { db, capture } = makeStubDb({ rows: [] })
+    await search(db, { sort: 'recent', limit: 25 } as never)
+    expect(capture.whereFilter).toBeDefined()
+    const serialized = serializeWhere(capture.whereFilter)
     // `did_redactions.did` shows up as `col:did` in the serialized
     // WHERE. Other DID-bearing columns on this query
     // (`attestations.author_did`) serialize as `col:author_did` so
     // the negative lookahead `(?!_)` keeps those out of the count.
     const didRefs = serialized.match(/col:did(?!_)/g) ?? []
     expect(didRefs.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('WHERE references is_takedown_by_moderator (moderator takedown excluded)', async () => {
+    // A moderator-taken-down attestation must not surface in search.
+    // Mirror of subject-get's filter — pin the column so the read
+    // paths stay uniform.
+    const { db, capture } = makeStubDb({ rows: [] })
+    await search(db, { sort: 'recent', limit: 25 } as never)
+    expect(serializeWhere(capture.whereFilter)).toContain('col:is_takedown_by_moderator')
+  })
+
+  it('WHERE references subjects.tombstoned_at (tombstoned-subject attestations excluded)', async () => {
+    // An attestation whose SUBJECT was tombstoned by a moderator must
+    // not surface in search either. Both runQuery branches LEFT JOIN
+    // subjects so the `isNull(subjects.tombstonedAt)` filter resolves.
+    const { db, capture } = makeStubDb({ rows: [] })
+    await search(db, { sort: 'recent', limit: 25 } as never)
+    expect(serializeWhere(capture.whereFilter)).toContain('col:tombstoned_at')
   })
 })

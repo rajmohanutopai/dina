@@ -73,30 +73,18 @@ function normalizeNameForHash(rawName: string | undefined | null): string | null
   // to a single ASCII space, then trim.
   const collapsed = lower.replace(/\s+/g, ' ').trim()
   if (collapsed.length === 0) return null
-  if (collapsed.length > MAX_NAME_LENGTH) return null
+  // Bound by CODE POINTS, not UTF-16 code units. The spec
+  // (subject-id.md §"Reject overlong") says "200 code points" so a
+  // non-TS port counting code points agrees with us. `[...str]`
+  // iterates code points (surrogate pairs count once); plain
+  // `.length` would count astral chars (emoji) as 2 and diverge near
+  // the bound.
+  if ([...collapsed].length > MAX_NAME_LENGTH) return null
   return collapsed
 }
 
 function normalizeTypeForHash(rawType: string): string {
   return rawType.toLowerCase().trim()
-}
-
-/**
- * Defensive trim for Tier 1 identifier inputs (did / uri / identifier).
- *
- * Tier 1 inputs are NOT lowercased or NFC-normalized — those are
- * spec-bearing identity bits: DIDs are lowercase by `did:plc:` method
- * spec, URIs are case-sensitive in path + query, external identifiers
- * are opaque to AppView. Trimming is the only safe fold: a caller
- * submitting `"  did:plc:abc"` clearly meant `"did:plc:abc"`.
- *
- * Returns null if trimming leaves the empty string so the resolver
- * falls through to the next tier instead of hashing whitespace
- * (`v2:did:` with an empty payload would be a stable bug magnet).
- */
-function trimTier1Field(raw: string): string | null {
-  const trimmed = raw.trim()
-  return trimmed.length === 0 ? null : trimmed
 }
 
 /**
@@ -176,24 +164,32 @@ function normalizeUriForHash(rawUri: string): string {
 function generateDeterministicId(ref: SubjectRef): { id: string } {
   const hash = createHash('sha256')
 
-  // Tier 1 inputs are trimmed before the truthy check so a
-  // whitespace-only string (`"   "`) falls through to the next tier
-  // instead of hashing `v2:did:   `. The lexicon would already reject
-  // a whitespace-only DID via its `^did:[a-z]+:` regex, but
-  // defense-in-depth: the resolver doesn't assume the validator.
-  const didTrim = ref.did != null ? trimTier1Field(ref.did) : null
-  if (didTrim !== null) {
-    hash.update(`${RESOLVER_VERSION}:did:${didTrim}`)
+  // Tier 1 hashing follows the federation spec (subject-id.md §"Tier
+  // 1 normalization") byte-for-byte so a Go / Rust / Swift port mints
+  // identical ids:
+  //   - `did` and `identifier`: hashed VERBATIM. No trim, no
+  //     lowercase, no Unicode normalization — callers own the
+  //     canonical form. The record-validator rejects whitespace-
+  //     padded / whitespace-only Tier 1 fields up front, so the
+  //     write path never reaches here with junk; a direct caller
+  //     (e.g. resolve.ts read path) passing a malformed value hashes
+  //     it verbatim and simply resolves to nothing.
+  //   - `uri`: conservative RFC 3986 normalization via
+  //     `normalizeUriForHash` (verbatim input, no pre-trim) — the
+  //     URL constructor handles the foldings the spec enumerates.
+  // Presence = a non-empty string (length > 0); we do NOT trim before
+  // the presence check, which is what kept the old code from matching
+  // the spec.
+  if (ref.did != null && ref.did.length > 0) {
+    hash.update(`${RESOLVER_VERSION}:did:${ref.did}`)
     return { id: `sub_${hash.digest('hex').slice(0, 32)}` }
   }
-  const uriTrim = ref.uri != null ? trimTier1Field(ref.uri) : null
-  if (uriTrim !== null) {
-    hash.update(`${RESOLVER_VERSION}:uri:${normalizeUriForHash(uriTrim)}`)
+  if (ref.uri != null && ref.uri.length > 0) {
+    hash.update(`${RESOLVER_VERSION}:uri:${normalizeUriForHash(ref.uri)}`)
     return { id: `sub_${hash.digest('hex').slice(0, 32)}` }
   }
-  const identifierTrim = ref.identifier != null ? trimTier1Field(ref.identifier) : null
-  if (identifierTrim !== null) {
-    hash.update(`${RESOLVER_VERSION}:id:${identifierTrim}`)
+  if (ref.identifier != null && ref.identifier.length > 0) {
+    hash.update(`${RESOLVER_VERSION}:id:${ref.identifier}`)
     return { id: `sub_${hash.digest('hex').slice(0, 32)}` }
   }
 
@@ -315,6 +311,13 @@ export async function resolveCanonicalChain(
 ): Promise<string> {
   const visited = new Set<string>()
   let currentId = startId
+  // The last id we confirmed EXISTS in `subjects`. `canonical_subject_id`
+  // has no FK constraint, so a merge target can be deleted (orphan-GC,
+  // manual cleanup) while a row still points at it. When we follow a
+  // pointer to a missing row, returning that missing id would make
+  // subjectGet 404 even though the ORIGINAL subject exists. Instead we
+  // fall back to the last existing id in the chain.
+  let lastExistingId = startId
 
   for (let depth = 0; depth < CONSTANTS.MAX_CHAIN_DEPTH; depth++) {
     if (visited.has(currentId)) {
@@ -327,7 +330,25 @@ export async function resolveCanonicalChain(
       SELECT canonical_subject_id FROM subjects WHERE id = ${currentId}
     `)
 
-    const nextId = (result as any).rows[0]?.canonical_subject_id as string | null
+    const row = (result as any).rows[0] as { canonical_subject_id: string | null } | undefined
+    if (row === undefined) {
+      // `currentId` doesn't exist — we followed a dangling pointer.
+      // Return the last id we know exists rather than the phantom. If
+      // `startId` itself is missing, lastExistingId === startId and the
+      // caller's "not found" handling fires correctly (genuine miss).
+      if (currentId !== startId) {
+        logger.warn(
+          `[Subjects] Dangling canonical pointer to missing ${currentId}; ` +
+            `resolved to last existing ${lastExistingId}`,
+        )
+      }
+      return lastExistingId
+    }
+
+    // currentId exists — it's now our best-known resolution.
+    lastExistingId = currentId
+
+    const nextId = row.canonical_subject_id
     if (!nextId) return currentId
     currentId = nextId
   }

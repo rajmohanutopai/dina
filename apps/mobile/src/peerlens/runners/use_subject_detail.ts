@@ -105,6 +105,9 @@ function mapToInput(response: SubjectGetResponse): SubjectDetailInput {
     reviewCount: response.reviewCount,
     reviews,
     subjectKind: subject?.type,
+    // Surface the moderator-removed signal so the screen can render a
+    // "removed" state instead of a normal unrated/0-review subject.
+    tombstoned: response.tombstoned ?? false,
     subjectDid: subject?.did,
     subjectIdentifier: firstIdentifier,
   };
