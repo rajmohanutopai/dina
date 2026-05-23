@@ -7,7 +7,15 @@
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { sql } from 'drizzle-orm'
 import pg from 'pg'
+import pino from 'pino'
 const { Pool } = pg
+
+// A real pino logger at `silent` level — satisfies the `Logger` type
+// that HandlerContext requires (it IS a pino Logger), with zero output
+// in tests. Using this instead of a `{info,warn,...}` duck-stub keeps
+// `createTestHandlerContext`'s result assignable to HandlerContext
+// without a cast. Created once; pino loggers are safe to share.
+const TEST_SILENT_LOGGER = pino({ level: 'silent' })
 
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://dina:dina@localhost:5432/dina_trust'
 
@@ -98,11 +106,6 @@ export function createTestHandlerContext(db: TestDB) {
       histogram: () => {},
       counter: () => {},
     },
-    logger: {
-      info: () => {},
-      warn: () => {},
-      error: () => {},
-      debug: () => {},
-    },
+    logger: TEST_SILENT_LOGGER,
   }
 }

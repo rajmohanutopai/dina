@@ -13,6 +13,12 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import pino from 'pino'
+
+// Real silent pino logger — satisfies HandlerContext's `Logger` type
+// (a `{info,warn,...}` duck-stub does not: pino's Logger has level/
+// fatal/trace/silent/msgPrefix). No test here asserts on logger calls.
+const SILENT_LOGGER = pino({ level: 'silent' })
 import { validateRecord, hasSchema } from '@/ingester/record-validator.js'
 import {
   isRateLimited,
@@ -1373,7 +1379,11 @@ describe('§2.3 Bounded Queue', () => {
   it('UT-BQ-008: Fix 7: low watermark prevents data loss', async () => {
     // Input: Event 1000 slow, event 2000 fast, event 2000 completes first
     // Expected: getSafeCursor still includes 1000
-    let resolveFirst: (() => void) | null = null
+    // Initialised to a no-op (not null) so it's always callable: the
+    // executor below reassigns it inside a closure, which TS flow
+    // analysis can't track — a `| null` type would narrow to `null`
+    // at the call site and report "not callable".
+    let resolveFirst: () => void = () => {}
     let callCount = 0
     const processFn = vi.fn(async (item: QueueItem) => {
       callCount++
@@ -1400,7 +1410,7 @@ describe('§2.3 Bounded Queue', () => {
     expect(queue.getSafeCursor()).toBe(1000)
 
     // Clean up
-    if (resolveFirst) resolveFirst()
+    resolveFirst()
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0132", "section": "01", "sectionName": "General", "title": "UT-BQ-009: error in processFn doesn\\"}
@@ -1935,7 +1945,7 @@ function mockHandlerCtx() {
   }
   return {
     db,
-    logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    logger: SILENT_LOGGER,
     metrics: { incr: vi.fn(), gauge: vi.fn(), histogram: vi.fn(), counter: vi.fn() },
   }
 }

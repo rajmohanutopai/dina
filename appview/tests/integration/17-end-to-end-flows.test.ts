@@ -193,7 +193,7 @@ describe('17.1 Ingest to Page', () => {
     })
 
     // Query PeerLens graph around the voucher
-    const graph = await getGraph(db, { did: voucher })
+    const graph = await getGraph(db, { did: voucher, maxDepth: 2 })
 
     // The graph should contain the vouch edge
     expect(graph).toBeDefined()
@@ -395,7 +395,7 @@ describe('17.2 Subject Page', () => {
 
     expect(subjectId).toBeDefined()
 
-    const attestationResult = await getAttestations(db, { subjectId })
+    const attestationResult = await getAttestations(db, { subjectId, limit: 25 })
     expect(attestationResult.attestations.length).toBe(5)
 
     // Each attestation should have the necessary fields for rendering
