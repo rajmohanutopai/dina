@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { pgTable, text, timestamp, boolean, jsonb, real, integer, index } from 'drizzle-orm/pg-core'
+import { pgTable, text, timestamp, boolean, jsonb, real, integer, index, check } from 'drizzle-orm/pg-core'
 import { subjects } from './subjects'
 
 /**
@@ -36,4 +36,11 @@ export const subjectScores = pgTable('subject_scores', {
   computedAt: timestamp('computed_at').notNull(),
 }, (table) => [
   index('subject_scores_needs_recalc_idx').on(table.needsRecalc).where(sql`${table.needsRecalc} = true`),
+  // DB-level range guard. `weighted_score` is a [0, 1] PeerLens
+  // rating; NULL = unscored. Matches the SQL in
+  // `drizzle/0018_peerlens_check_constraints.sql`.
+  check(
+    'subject_scores_weighted_score_range',
+    sql`${table.weightedScore} IS NULL OR (${table.weightedScore} BETWEEN 0 AND 1)`,
+  ),
 ])

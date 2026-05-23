@@ -1,9 +1,10 @@
 import { z } from 'zod'
-import { and, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import {
   attestations,
   didProfiles,
+  didRedactions,
   subjects,
   subjectScores,
 } from '@/db/schema/index.js'
@@ -285,6 +286,13 @@ export async function subjectGet(
   // The mobile detail screen showed "0 reviews" right after a publish
   // for exactly this reason. Counting non-revoked attestations
   // directly is one cheap COUNT(*) and is always current.
+  //
+  // Both queries LEFT JOIN `did_redactions` on the author DID and
+  // filter `IS NULL` so redacted-author attestations are hidden
+  // entirely — same row excluded from both the roster AND the
+  // reviewCount (mirrors the service-side stance: "hidden, not
+  // counted-but-masked"). Without the matching filter on the count
+  // query, the surface would show "5 reviewers" but only render 4.
   const [attRows, [countRow]] = await Promise.all([
     db
       .select({
@@ -295,11 +303,13 @@ export async function subjectGet(
         authorDid: attestations.authorDid,
       })
       .from(attestations)
+      .leftJoin(didRedactions, eq(attestations.authorDid, didRedactions.did))
       .where(
         and(
           eq(attestations.subjectId, subjectId),
           eq(attestations.isRevoked, false),
           eq(attestations.isTakedownByModerator, false),
+          isNull(didRedactions.did),
         ),
       )
       .orderBy(desc(attestations.recordCreatedAt))
@@ -307,11 +317,13 @@ export async function subjectGet(
     db
       .select({ c: sql<number>`count(*)::int` })
       .from(attestations)
+      .leftJoin(didRedactions, eq(attestations.authorDid, didRedactions.did))
       .where(
         and(
           eq(attestations.subjectId, subjectId),
           eq(attestations.isRevoked, false),
           eq(attestations.isTakedownByModerator, false),
+          isNull(didRedactions.did),
         ),
       ),
   ])

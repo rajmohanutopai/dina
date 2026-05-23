@@ -1911,8 +1911,30 @@ function mockHandlerCtx() {
       where: vi.fn().mockResolvedValue(undefined),
     }),
   })
+  // The attestation / vouch / endorsement / flag handlers now wrap
+  // their multi-write sequences in `ctx.db.transaction(async (tx) =>
+  // {...})`. The tx object exposes the same `insert/delete/update`
+  // surface, forwarded to the existing mocks so per-test assertions
+  // on those mocks still fire. `select` is included for handlers
+  // that read inside the tx (revocation), even though no §2.6 test
+  // exercises that today — keeps the stub safe to reuse.
+  const db: any = {
+    insert: insertMock,
+    delete: deleteMock,
+    update: updateMock,
+    select: vi.fn().mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    }),
+    transaction: async (fn: (tx: unknown) => Promise<void>) => {
+      await fn(db)
+    },
+  }
   return {
-    db: { insert: insertMock, delete: deleteMock, update: updateMock } as any,
+    db,
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
     metrics: { incr: vi.fn(), gauge: vi.fn(), histogram: vi.fn(), counter: vi.fn() },
   }

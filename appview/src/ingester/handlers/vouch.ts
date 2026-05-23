@@ -1,5 +1,6 @@
 import type { RecordHandler, HandlerContext, RecordOp } from './index.js'
 import type { Vouch } from '@/shared/types/lexicon-types.js'
+import type { DrizzleDB } from '@/db/connection.js'
 import { vouches } from '@/db/schema/index.js'
 import { deletionHandler } from '../deletion-handler.js'
 import { addTrustEdge } from '../peerlens-edge-sync.js'
@@ -25,21 +26,16 @@ export const vouchHandler: RecordHandler = {
   async handleCreate(ctx: HandlerContext, op: RecordOp) {
     const record = op.record as unknown as Vouch
 
-    // Upsert the vouch record
-    await ctx.db.insert(vouches).values({
-      uri: op.uri,
-      authorDid: op.did,
-      cid: op.cid!,
-      subjectDid: record.subject,
-      vouchType: record.vouchType,
-      confidence: record.confidence,
-      relationship: record.relationship ?? null,
-      knownSince: record.knownSince ?? null,
-      text: record.text ?? null,
-      recordCreatedAt: new Date(record.createdAt),
-    }).onConflictDoUpdate({
-      target: vouches.uri,
-      set: {
+    // Wrap the three writes (vouch upsert, trust edge, dirty flag)
+    // in one transaction so a process crash mid-flow can't leave a
+    // vouch row without its corresponding trust edge — the score
+    // graph would silently miss the relationship.
+    await ctx.db.transaction(async (tx) => {
+      const txDb = tx as unknown as DrizzleDB
+
+      await tx.insert(vouches).values({
+        uri: op.uri,
+        authorDid: op.did,
         cid: op.cid!,
         subjectDid: record.subject,
         vouchType: record.vouchType,
@@ -48,26 +44,40 @@ export const vouchHandler: RecordHandler = {
         knownSince: record.knownSince ?? null,
         text: record.text ?? null,
         recordCreatedAt: new Date(record.createdAt),
-        indexedAt: new Date(),
-      },
-    })
+      }).onConflictDoUpdate({
+        target: vouches.uri,
+        set: {
+          cid: op.cid!,
+          subjectDid: record.subject,
+          vouchType: record.vouchType,
+          confidence: record.confidence,
+          relationship: record.relationship ?? null,
+          knownSince: record.knownSince ?? null,
+          text: record.text ?? null,
+          recordCreatedAt: new Date(record.createdAt),
+          indexedAt: new Date(),
+        },
+      })
 
-    // Add trust edge weighted by confidence
-    await addTrustEdge(ctx, {
-      fromDid: op.did,
-      toDid: record.subject,
-      edgeType: 'vouch',
-      domain: null,
-      weight: confidenceToWeight(record.confidence),
-      sourceUri: op.uri,
-      createdAt: new Date(record.createdAt),
-    })
+      // Add trust edge weighted by confidence.
+      await addTrustEdge(
+        { ...ctx, db: txDb },
+        {
+          fromDid: op.did,
+          toDid: record.subject,
+          edgeType: 'vouch',
+          domain: null,
+          weight: confidenceToWeight(record.confidence),
+          sourceUri: op.uri,
+          createdAt: new Date(record.createdAt),
+        },
+      )
 
-    // Mark affected entities for score recalculation
-    await markDirty(ctx.db, {
-      subjectId: null,
-      authorDid: op.did,
-      subjectDid: record.subject,
+      await markDirty(txDb, {
+        subjectId: null,
+        authorDid: op.did,
+        subjectDid: record.subject,
+      })
     })
 
     ctx.metrics.incr('ingester.vouch.created')

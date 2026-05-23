@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PeerLens lift — match services-side hardening</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 880px; margin: 2rem auto; padding: 0 1.5rem; color: #1a1a1a; line-height: 1.55; }
+  h1 { border-bottom: 2px solid #1a1a1a; padding-bottom: 0.4rem; }
+  h2 { margin-top: 2rem; border-bottom: 1px solid #ddd; padding-bottom: 0.2rem; }
+  code { background: #f5f5f5; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.93em; }
+  .status { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 0.85em; font-weight: 600; }
+  .status.done { background: #c8e6c9; color: #1b5e20; }
+  .status.defer { background: #ffe082; color: #5d4000; }
+  .deviation { background: #ffebee; border-left: 4px solid #c62828; padding: 0.5rem 1rem; margin: 0.8rem 0; }
+  .tradeoff { background: #e3f2fd; border-left: 4px solid #1565c0; padding: 0.5rem 1rem; margin: 0.8rem 0; }
+  .openq { background: #f3e5f5; border-left: 4px solid #6a1b9a; padding: 0.5rem 1rem; margin: 0.8rem 0; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; }
+</style>
+</head>
+<body>
+
+<h1>PeerLens lift — match services-side hardening</h1>
+
+<p><em>Lifted 2026-05-23. Services-side ended up ahead on four
+dimensions after commit <code>28f3097</code>: shared opaque cursor,
+<code>did_redactions</code> read filter, DB-level CHECK constraints,
+and transactional multi-write handlers. This pass brings PeerLens
+endpoints + handlers up to the same bar. Tests: 1722 passing
+post-lift (+32 net over the 1690 baseline before this work
+started).</em></p>
+
+<h2>Items addressed</h2>
+
+<table>
+  <thead><tr><th>ID</th><th>What</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td>P1</td><td>Shared opaque cursor helper at <code>util/cursor.ts</code></td><td><span class="status done">done</span></td></tr>
+    <tr><td>P2</td><td><code>service-search.ts</code> lifted onto the shared helper (was duplicated inline)</td><td><span class="status done">done</span></td></tr>
+    <tr><td>P3</td><td><code>service-search.ts</code> malformed-cursor throw now maps to 400 (was plain <code>Error</code> → 500)</td><td><span class="status done">done</span></td></tr>
+    <tr><td>P4</td><td><code>search.ts</code> opaque cursor + legacy <code>${ts}::${uri}</code> rejection</td><td><span class="status done">done</span></td></tr>
+    <tr><td>P5</td><td><code>network-feed.ts</code> opaque cursor + legacy rejection</td><td><span class="status done">done</span></td></tr>
+    <tr><td>P6</td><td><code>get-attestations.ts</code> opaque cursor + legacy rejection</td><td><span class="status done">done</span></td></tr>
+    <tr><td>P7</td><td><code>InvalidCursorError</code> centralised in the helper (subclass with <code>name='ZodError'</code>)</td><td><span class="status done">done</span></td></tr>
+    <tr><td>R1</td><td><code>search.ts</code>: LEFT JOIN <code>did_redactions</code> + IS NULL filter</td><td><span class="status done">done</span></td></tr>
+    <tr><td>R2</td><td><code>network-feed.ts</code>: same</td><td><span class="status done">done</span></td></tr>
+    <tr><td>R3</td><td><code>get-attestations.ts</code>: same</td><td><span class="status done">done</span></td></tr>
+    <tr><td>R4</td><td><code>subject-get.ts</code>: filter on both reviewer roster AND count query (hidden entirely, not counted-but-masked)</td><td><span class="status done">done</span></td></tr>
+    <tr><td>C1</td><td>CHECK <code>attestations.sentiment</code> enum (positive/neutral/negative)</td><td><span class="status done">done</span></td></tr>
+    <tr><td>C2</td><td>CHECK <code>attestations.confidence</code> enum (nullable)</td><td><span class="status done">done</span></td></tr>
+    <tr><td>C3</td><td>CHECK <code>attestations.price_high_e7 &gt;= price_low_e7</code></td><td><span class="status done">done</span></td></tr>
+    <tr><td>C4</td><td>CHECK <code>subject_scores.weighted_score</code> ∈ [0, 1]</td><td><span class="status done">done</span></td></tr>
+    <tr><td>C5</td><td>Schema-side <code>check()</code> declarations match the migration (drizzle-kit round-trips)</td><td><span class="status done">done</span></td></tr>
+    <tr><td>T1</td><td><code>attestation.handleCreate</code>: subject upsert, attestation upsert, lastActiveAt bump, mention edges, peerlens edges, addTrustEdge, markDirty → single tx</td><td><span class="status done">done</span></td></tr>
+    <tr><td>T2</td><td><code>vouch.handleCreate</code>: vouch upsert + addTrustEdge + markDirty → single tx</td><td><span class="status done">done</span></td></tr>
+    <tr><td>T3</td><td><code>endorsement.handleCreate</code>: endorsement upsert + addTrustEdge + markDirty → single tx</td><td><span class="status done">done</span></td></tr>
+    <tr><td>T4</td><td><code>flag.handleCreate</code>: resolveOrCreateSubject + flag upsert + markDirty → single tx</td><td><span class="status done">done</span></td></tr>
+    <tr><td>T5</td><td><code>revocation.handleCreate</code>: revocation upsert + attestation isRevoked flip + markDirty(×N) → single tx</td><td><span class="status done">done</span></td></tr>
+    <tr><td>T6</td><td><code>revocation.handleDelete</code>: select-before-delete + delete + isRevoked unflip + markDirty → single tx</td><td><span class="status done">done</span></td></tr>
+    <tr><td>S1</td><td>Item 5 — <code>subjects.tombstoned_at</code> three-timestamp parity with services</td><td><span class="status defer">defer</span></td></tr>
+  </tbody>
+</table>
+
+<h2>Design decisions worth flagging</h2>
+
+<div class="tradeoff">
+  <strong>Opaque envelope is the only accepted cursor shape — no
+  plaintext fallback.</strong> The pre-existing
+  <code>${ISO}::${uri}</code> plaintext code paths in search.ts and
+  get-attestations.ts were removed in this lift (project is
+  greenfield, no users → no migration concern). A naive plaintext
+  string sent today gets a 400 InvalidRequest because it isn't a
+  valid base64url envelope. Forward-looking benefit: when a future
+  ranking-strategy change requires a CURSOR_VERSION bump, the same
+  rejection path catches v=1 cursors held mid-pagination by then-
+  current clients.
+</div>
+
+<div class="tradeoff">
+  <strong>Cursor shape is per-endpoint via a Zod schema.</strong>
+  Single <code>encodeCursor&lt;T&gt;(payload)</code> /
+  <code>decodeCursor&lt;T&gt;(raw, schema)</code> pair in
+  <code>util/cursor.ts</code>. service-search passes a
+  <code>{bucket, uri}</code> schema; peerlens endpoints pass
+  <code>{ts, uri}</code>. The envelope <code>v</code> is owned by the
+  helper, not the call site — so a single bump in the helper
+  invalidates every endpoint's cursors at once if we ever need to
+  re-shape the envelope itself (separate from a per-endpoint payload
+  swap, which doesn't need a v-bump as long as the schema rejects
+  the old payload).
+</div>
+
+<div class="deviation">
+  <strong>Acknowledged hack — <code>InvalidCursorError</code> names
+  itself <code>ZodError</code>.</strong> The class subclasses
+  <code>Error</code> with <code>override name = 'ZodError'</code>
+  purely to feed <code>web/server.ts</code>'s string-based 400
+  dispatch (<code>if (err?.name === 'ZodError') {...}</code>).
+  Mirrors the existing
+  <code>Object.assign(new Error(...), { name: 'ZodError' })</code>
+  spread throughout <code>api/xrpc/*</code> — centralising it into
+  a class is an improvement, but the underlying pattern is still a
+  workaround. <em>Follow-up:</em> introduce a typed error protocol
+  (e.g. <code>instanceof InvalidRequestError</code>) in
+  <code>web/server.ts</code> and migrate all xRPC throws + this
+  class onto it.
+</div>
+
+<div class="tradeoff">
+  <strong>Redaction filter on subjectGet hides reviewers entirely from
+  BOTH the roster and the live count.</strong> Mirror of the
+  service-search stance — "hidden, not counted-but-masked" prevents
+  the "5 reviewers" header showing above a list of 4. The
+  <code>scoreRow.totalAttestations</code> field would lie post-
+  redaction (it's a scorer materialisation that doesn't filter),
+  which is why subjectGet was already doing its own COUNT(*); that
+  count now carries the same filter as the row projection.
+</div>
+
+<div class="tradeoff">
+  <strong>CHECK constraints are added straight, not <code>NOT VALID</code>
+  + <code>VALIDATE</code>.</strong> Same stance as the services
+  0017 migration: pre-launch tables are expected to be clean, so a
+  blocking constraint fail-fast is the desired signal. Drizzle's
+  <code>__drizzle_migrations</code> ledger guards re-runs at the
+  file level, so intra-file idempotency wasn't needed (no
+  <code>DO $$ EXCEPTION</code> wrapper).
+</div>
+
+<div class="tradeoff">
+  <strong>Transaction wrapper uses <code>{ ...ctx, db: tx }</code> for
+  helpers that take a ctx.</strong> <code>addTrustEdge(ctx, params)</code>
+  reads <code>ctx.db</code> internally. Cleanest way to keep its
+  writes inside the parent transaction without changing its
+  signature: shallow-clone ctx with tx-scoped db. Tests use a
+  <code>__role: 'tx' | 'outer'</code> tag on the stub db so per-test
+  assertions can prove "ran through the tx" without depending on the
+  helper's internal structure.
+</div>
+
+<div class="tradeoff">
+  <strong>readCachedTrustV1Params stays OUTSIDE the transaction.</strong>
+  60s module-local cache → most calls don't touch the DB at all;
+  treating it as a tx-internal read would force every handler call
+  into the same lock window. A slightly-stale
+  <code>HOT_SUBJECT_THRESHOLD</code> only affects whether the dirty
+  flag flips synchronously vs deferring to the nightly batch — both
+  paths converge to the same score, so reading from a stale snapshot
+  is safe.
+</div>
+
+<div class="openq">
+  <strong>Open question — RANKING_VERSION → cursor-version policy.</strong>
+  Stance taken: <em>a <code>RANKING_VERSION</code> bump should also
+  bump the shared <code>CURSOR_VERSION</code>.</em> Cursors encode a
+  pagination state implicitly tied to the row ordering — if the
+  ordering changes mid-pagination, the cursor's "next page" claim is
+  wrong. Coupling them keeps the contract honest. The two versions
+  are independent in code (services-side's <code>RANKING_VERSION</code>
+  in <code>service-search.ts</code>; shared <code>CURSOR_VERSION</code>
+  in <code>util/cursor.ts</code>) — a future maintainer needs to
+  remember to bump both. Documented inline in both files.
+</div>
+
+<h2>Scope-drift disclosures + follow-up gaps</h2>
+
+<div class="deviation">
+  <strong>Scope drift — <code>get-attestations.ts</code> received the
+  redaction filter too.</strong> The handover named only
+  <code>subject-get.ts</code>, <code>search.ts</code>, and
+  <code>network-feed.ts</code> for Item 2 (did_redactions). I added
+  the same LEFT JOIN + IS NULL filter to <code>get-attestations.ts</code>
+  because (a) the cursor lift already touched the file, and (b)
+  leaving one read path emitting redacted-author rows while
+  siblings filter them felt inconsistent with the handover's "no
+  read path consults it today" framing. Surfacing the judgment
+  call here so it's reversible. Roll back: remove the LEFT JOIN +
+  the <code>isNull(didRedactions.did)</code> condition + the
+  <code>didRedactions</code> import.
+</div>
+
+<div class="openq">
+  <strong>Other peerlens read paths NOT covered by the redaction
+  filter.</strong> <code>get-graph.ts</code>,
+  <code>get-alternatives.ts</code>, <code>get-negative-space.ts</code>,
+  <code>get-profile.ts</code>, <code>resolve.ts</code> all surface
+  DID-linked data and were left untouched (handover didn't name
+  them). If "redacted authors are hidden entirely" is meant to be
+  a uniform property of the read surface, these are gaps worth a
+  follow-up sweep. Each needs its own analysis — e.g.,
+  <code>get-profile.ts</code> presumably should 404 on a redacted
+  DID, not "return profile but hide attestations."
+</div>
+
+<div class="openq">
+  <strong>Score staleness post-redaction (not introduced by this
+  lift — exposed by it).</strong> After a redaction lands,
+  <code>subjectScores.weightedScore</code> still reflects the
+  redacted reviewer's prior contribution. We hide the reviewer
+  from roster + count, but the aggregate score is stale until the
+  scorer recomputes. Three follow-up options: (a) have the
+  moderation CLI <code>markDirty</code> on every subject the
+  redacted DID ever attested to, (b) add a "score is stale"
+  freshness flag on the subjectGet response, (c) accept it as
+  eventually-consistent (current behaviour). Option (a) is
+  probably right but needs a query to enumerate affected
+  subjects.
+</div>
+
+<div class="openq">
+  <strong>CHECK constraint gap on
+  <code>subject_scores</code> sibling columns.</strong> Added
+  <code>weighted_score ∈ [0, 1]</code> per the handover. Did
+  NOT add equivalents for <code>confidence</code>,
+  <code>authenticity_confidence</code>, or
+  <code>would_recommend_rate</code> — all <code>real</code>
+  columns on the same table and likely also bounded reals. If
+  the principle is "DB-level guards catch direct SQL writes," it
+  should apply uniformly. Trivial follow-up: three more
+  <code>check()</code> calls + three more lines in a new
+  migration (or amend 0018 since it isn't deployed yet — see
+  below).
+</div>
+
+<div class="openq">
+  <strong>Out of scope: <code>cosig-list.ts</code> still has a
+  plaintext <code>${ts}::${id}</code> cursor.</strong> Different
+  payload shape (id is a BigInt, not a uri), and the handover
+  scoped this lift to search.ts / network-feed.ts /
+  get-attestations.ts. Worth a separate small follow-up to bring
+  it onto the shared helper with a <code>{ts, id}</code> Zod schema
+  for consistency.
+</div>
+
+<div class="openq">
+  <strong>Greenfield framing — 0018 hasn't deployed.</strong>
+  Working tree is held for review at the user's request. The
+  migration file + journal entry are committed-style (incremental
+  numbering, mirroring 0000–0017 convention), not collapsed into
+  the initial schema. If the project intends to collapse all
+  pre-launch migrations into a single setup script before first
+  prod deploy, 0018's content lives in
+  <code>db/schema/{attestations,subject-scores}.ts</code> as
+  <code>check()</code> calls already — collapsing it amounts to
+  dropping the .sql file + journal entry and re-generating the
+  initial migration.
+</div>
+
+<h2>Items deferred (with rationale)</h2>
+
+<ul>
+  <li><strong>S1 (<code>subjects.tombstoned_at</code> three-timestamp parity):</strong>
+  Services has <code>created_at</code> / operator-stamped
+  <code>updated_at</code> / AppView-side <code>indexed_at</code>.
+  Subjects don't have an obvious operator-stamp equivalent (they're
+  aggregations, not author-published records), so the three-timestamp
+  model doesn't translate 1:1. Per the handover's "probably leave as-
+  is" note — no change.</li>
+</ul>
+
+<h2>Test coverage delta</h2>
+
+<table>
+  <thead><tr><th>File</th><th>Tests added</th></tr></thead>
+  <tbody>
+    <tr><td><code>tests/unit/cursor.test.ts</code> (new)</td><td>9 (round-trip, version mismatch, schema reject, plaintext-input reject, 400 mapping)</td></tr>
+    <tr><td><code>tests/unit/get_attestations.test.ts</code> (new)</td><td>10 (params, opaque cursor round-trip, plaintext reject, redaction filter)</td></tr>
+    <tr><td><code>tests/unit/peerlens_handler_tx.test.ts</code> (new)</td><td>8 (tx wrapper invariant for all 5 handlers + full event-order assertion for attestation.handleCreate; revocation handleDelete included)</td></tr>
+    <tr><td><code>tests/unit/network_feed.test.ts</code></td><td>+2 (plaintext cursor reject, did_redactions filter; existing cursor assertions updated to opaque)</td></tr>
+    <tr><td><code>tests/unit/search_ranking.test.ts</code></td><td>+1 (did_redactions filter; existing cursor + plaintext-reject assertions updated)</td></tr>
+    <tr><td><code>tests/unit/subject_get.test.ts</code></td><td>+1 (did_redactions filter on attRows query)</td></tr>
+    <tr><td><code>tests/unit/02-ingester-components.test.ts</code></td><td>stub updated to support <code>db.transaction</code> (no new tests, existing 97 still pass)</td></tr>
+    <tr><td><code>tests/unit/service_search.test.ts</code></td><td>existing tests still pass against the lifted-to-shared-helper implementation; no test changes needed (the helper preserves wire shape)</td></tr>
+  </tbody>
+</table>
+
+<p>Final: <strong>1722 unit tests passing</strong> (+32 over the
+1690 pre-lift baseline). Typecheck clean for all touched files.</p>
+
+</body>
+</html>

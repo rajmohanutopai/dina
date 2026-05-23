@@ -3,55 +3,26 @@ import { eq, and, sql, lt, or, isNull, type SQL } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import { services } from '@/db/schema/index.js'
 import { didProfiles, didRedactions } from '@/db/schema/index.js'
+import { encodeCursor, decodeCursor } from '@/util/cursor.js'
 
 /**
  * Ranking-formula version. Stamped into the response so clients can
  * detect formula drift across deploys. Bump when the composite-score
  * weights change or when a new component is added.
+ *
+ * Versioning stance: a `RANKING_VERSION` bump should also bump the
+ * shared cursor `v` in `util/cursor.ts`. Cursors encode a pagination
+ * state tied to the row ordering — if the ordering changes, an
+ * in-flight cursor's "next page" claim is wrong. See the cursor
+ * helper docstring for the full rationale.
  */
 export const RANKING_VERSION = 'v1'
 
-/**
- * Cursor format version. The wire shape is an opaque base64url string
- * containing a JSON envelope `{v, bucket, uri}`. Bumping `v` lets a
- * future internal pagination change (e.g. a switch to true keyset on
- * score+uri instead of bucket-binned) coexist with old cursors held
- * by clients mid-pagination.
- */
-const CURSOR_VERSION = 1
-
-interface DecodedCursor {
-  v: number
-  bucket: number
-  uri: string
-}
-
-function encodeCursor(bucket: number, uri: string): string {
-  // base64url avoids any URL-percent-encoding for the cursor when it
-  // flows through query strings.
-  return Buffer.from(
-    JSON.stringify({ v: CURSOR_VERSION, bucket, uri } satisfies DecodedCursor),
-    'utf8',
-  ).toString('base64url')
-}
-
-function decodeCursor(raw: string): DecodedCursor | null {
-  try {
-    const json = Buffer.from(raw, 'base64url').toString('utf8')
-    const parsed = JSON.parse(json) as Partial<DecodedCursor>
-    if (
-      typeof parsed.v !== 'number' ||
-      typeof parsed.bucket !== 'number' ||
-      typeof parsed.uri !== 'string' ||
-      parsed.v !== CURSOR_VERSION
-    ) {
-      return null
-    }
-    return { v: parsed.v, bucket: parsed.bucket, uri: parsed.uri }
-  } catch {
-    return null
-  }
-}
+/** Payload shape for the service-search cursor (bucket-binned composite score). */
+const ServiceSearchCursor = z.object({
+  bucket: z.number(),
+  uri: z.string(),
+})
 
 /**
  * xRPC endpoint: com.dina.service.search
@@ -215,10 +186,10 @@ export async function serviceSearch(
   // Malformed / unknown-version cursors are rejected loud rather than
   // silently producing an unconstrained page.
   if (cursor !== undefined) {
-    const decoded = decodeCursor(cursor)
-    if (decoded === null) {
-      throw new Error('Invalid cursor')
-    }
+    // Throws InvalidCursorError (→ 400 InvalidRequest) on malformed
+    // input. Loud rejection beats silently producing an unconstrained
+    // page when a client sends a cursor from a prior CURSOR_VERSION.
+    const decoded = decodeCursor(cursor, ServiceSearchCursor)
     // `or(...)` is variadic and may return undefined when given zero
     // args; both branches below are concrete SQL fragments, so the
     // result is non-null at runtime. The `!` aligns the type checker
@@ -269,7 +240,7 @@ export async function serviceSearch(
   const page = hasMore ? results.slice(0, limit) : results
   const lastRow = page[page.length - 1]
   const nextCursor = hasMore && lastRow
-    ? encodeCursor(lastRow.scoreBucket, lastRow.uri)
+    ? encodeCursor({ bucket: lastRow.scoreBucket, uri: lastRow.uri })
     : null
 
   return {

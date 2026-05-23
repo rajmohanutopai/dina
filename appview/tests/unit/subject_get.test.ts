@@ -160,19 +160,25 @@ function stubDb(opts: {
           }
           if (table === attestations) {
             if (isCount) {
-              // COUNT(*) query: `.where()` is awaitable directly,
-              // no orderBy/limit chain. Returns one row of `{c}`.
-              return {
+              // COUNT(*) query: `.leftJoin(didRedactions, ...).where()`
+              // is awaitable directly, no orderBy/limit chain. Returns
+              // one row of `{c}`. The leftJoin is chainable so the
+              // handler can add more joins without touching the stub.
+              const countAfterJoin = (): unknown => ({
+                leftJoin: () => countAfterJoin(),
                 where: async () => [
                   { c: opts.attCount ?? opts.attRows?.length ?? 0 },
                 ],
-              }
+              })
+              return countAfterJoin()
             }
-            // Row-projection query: where → orderBy → limit chain.
+            // Row-projection query: leftJoin → where → orderBy → limit.
             // The filter is captured into the closure-local
             // `_capturedAttRowWhereFilter` so the SQL-predicate test
-            // can inspect what was passed in.
-            return {
+            // can inspect what was passed in. Chainable leftJoin keeps
+            // the stub tolerant of additional joins.
+            const rowAfterJoin = (): unknown => ({
+              leftJoin: () => rowAfterJoin(),
               where: (filter: unknown) => {
                 _capturedAttRowWhereFilter = filter
                 return {
@@ -181,7 +187,8 @@ function stubDb(opts: {
                   }),
                 }
               },
-            }
+            })
+            return rowAfterJoin()
           }
           if (table === didProfiles) {
             // didProfiles query: select.from.where (no orderBy/limit)
@@ -795,6 +802,53 @@ describe('subjectGet handler — TN-API-002', () => {
     expect(serialized).toContain('col:subject_id')
     expect(serialized).toContain('col:is_revoked')
     expect(serialized).toContain('col:is_takedown_by_moderator')
+  })
+
+  it('attestation row query filter references did_redactions.did (author exclusion)', async () => {
+    // LEFT JOIN against did_redactions + IS NULL check in the WHERE
+    // means a redacted author's attestations drop out of the roster
+    // AND the live count. Pin the column reference so a refactor
+    // that drops the join surfaces in tests, not on the wire. Mirror
+    // of the service-search.ts stance: hidden entirely, not
+    // counted-but-masked (otherwise the surface would show "5
+    // reviewers" but render 4).
+    computeGraphContextMock.mockResolvedValueOnce({
+      nodes: [{ did: 'did:plc:v', trustScore: null, depth: 0 }],
+      edges: [],
+      rootDid: 'did:plc:v',
+      depth: 2,
+    })
+    const db = stubDb({
+      subject: subjectRow(),
+      score: { weightedScore: 0.5, totalAttestations: 1 },
+      attRows: [attRow()],
+      profileRows: [{ did: 'did:plc:r1', overallTrustScore: 0.5 }],
+    })
+    await subjectGet(db, {
+      subjectId: 'sub_x',
+      viewerDid: 'did:plc:v',
+    })
+    expect(_capturedAttRowWhereFilter).toBeDefined()
+
+    const serialized = JSON.stringify(_capturedAttRowWhereFilter, (_k, v) => {
+      if (
+        v !== null &&
+        typeof v === 'object' &&
+        'name' in (v as Record<string, unknown>) &&
+        typeof (v as { name: unknown }).name === 'string'
+      ) {
+        return `col:${(v as { name: string }).name}`
+      }
+      return v
+    })
+    // The `did_redactions.did` column shows up as `col:did` in the
+    // serialized WHERE. Count `did` references — at least one must be
+    // present (the IS NULL on `did_redactions.did`). The handler also
+    // captures `attestations.subject_id` and `did_profiles.handle`
+    // elsewhere, but neither produces a `col:did` sentinel — only the
+    // redaction join does.
+    const didRefs = serialized.match(/col:did(?!_)/g) ?? []
+    expect(didRefs.length).toBeGreaterThanOrEqual(1)
   })
 
   it('tombstoned subject hides score + band + scoreVersion but preserves subject metadata', async () => {

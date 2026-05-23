@@ -2,9 +2,8 @@
  * Unit tests for the TN-API-001 / Plan §6.1 sort + pagination + FTS
  * surface of `appview/src/api/xrpc/search.ts`. Coverage target:
  *   - sort=recent / sort=relevant routing (FTS branch on/off)
- *   - composite cursor `(timestamp::uri)` parsing + emission
- *   - legacy timestamp-only cursor backwards-compatibility
- *   - malformed-cursor → ZodError-shaped 400
+ *   - opaque cursor envelope `{v, ts, uri}` parsing + emission
+ *   - non-envelope cursor input rejected as ZodError-shaped 400
  *   - hasMore detection via the limit+1 trick
  *   - graceful empty result on FTS statement-timeout cancellation
  *
@@ -73,9 +72,12 @@ describe('SearchParams — limit + cursor', () => {
     expect(r.success).toBe(false)
   })
 
-  it('accepts an opaque cursor string (composite or legacy)', () => {
-    const composite = '2026-04-30T00:00:00.000Z::at://did:plc:x/com.dina.peerlens.attestation/abc'
-    const r = SearchParams.safeParse({ cursor: composite })
+  it('accepts a cursor string up to the 500-char param bound', () => {
+    // The Zod schema only enforces the length bound; the opaque-cursor
+    // shape is validated inside the handler via decodeCursor. This
+    // test pins the param-layer contract.
+    const arbitrary = 'a'.repeat(500)
+    const r = SearchParams.safeParse({ cursor: arbitrary })
     expect(r.success).toBe(true)
   })
 })
@@ -88,6 +90,13 @@ interface CapturedQuery {
   rowCount: number
   /** Whether the query was wrapped in a transaction (FTS path uses one). */
   inTransaction: boolean
+  /**
+   * The most recent WHERE filter Drizzle SQL object passed to
+   * `.where(...)`. Lets per-test column-reference assertions inspect
+   * the actual filter (e.g. for the did_redactions IS NULL check)
+   * without re-parsing `sqlFragments`.
+   */
+  whereFilter: unknown
 }
 
 function captureWhere(node: unknown, fragments: string[]): void {
@@ -140,6 +149,7 @@ function makeStubDb(opts: { rows: StubRow[]; ftsTimeoutCode?: string }): {
     sqlFragments: [],
     rowCount: opts.rows.length,
     inTransaction: false,
+    whereFilter: undefined,
   }
 
   const orderByCaptures: unknown[] = []
@@ -162,18 +172,29 @@ function makeStubDb(opts: { rows: StubRow[]; ftsTimeoutCode?: string }): {
     }
     const buildWhere = (whereExpr: unknown) => {
       captureWhere(whereExpr, capture.sqlFragments)
+      // Capture the raw filter object too so column-reference tests
+      // (e.g. the did_redactions GDPR exclusion) can walk it instead
+      // of grepping the text fragments. Overwrites on each call, so
+      // the last `.where(...)` wins — that's the main attestation
+      // query for the search-handler tests.
+      capture.whereFilter = whereExpr
       return {
         orderBy: buildOrderBy,
       }
     }
+    // Chainable leftJoin so the handler can stack multiple joins
+    // (didProfiles + didRedactions + optional subjects) without
+    // requiring the stub to know how many. `where` is exposed on
+    // every level so subqueries that go `from(table).where(...)`
+    // directly (e.g. the inline `matchingSubjects` selects against
+    // `subjects` / `subjectScores`) also resolve.
+    const chainAfterJoin = (): unknown => ({
+      leftJoin: () => chainAfterJoin(),
+      where: buildWhere,
+    })
     return {
       select: () => ({
-        from: () => ({
-          leftJoin: () => ({
-            where: buildWhere,
-          }),
-          where: buildWhere,
-        }),
+        from: () => chainAfterJoin(),
       }),
     }
   }
@@ -288,7 +309,7 @@ describe('search handler — composite cursor', () => {
     expect(result.results).toHaveLength(2)
   })
 
-  it('emits a composite cursor (ISO::uri) when more rows exist', async () => {
+  it('emits an opaque base64url envelope `{v, ts, uri}` when more rows exist', async () => {
     // The handler queries `limit + 1` rows internally; if the result
     // set is exactly limit + 1 (or more), it slices to limit and
     // emits a cursor pointing AT the last row of the page.
@@ -305,18 +326,33 @@ describe('search handler — composite cursor', () => {
       cursor?: string
     }
     expect(result.results).toHaveLength(25)
-    expect(result.cursor).toBeDefined()
-    expect(result.cursor).toContain('::at://did:plc:a/x/24')
-    expect(result.cursor).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z::/)
+    expect(typeof result.cursor).toBe('string')
+    // Decode + check shape — pins the opaque envelope, not the wire
+    // string (so the assertion stays stable across CURSOR_VERSION bumps).
+    const decoded = JSON.parse(
+      Buffer.from(result.cursor!, 'base64url').toString('utf8'),
+    )
+    expect(decoded).toMatchObject({
+      v: 1,
+      ts: '2026-04-30T02:04:00.000Z',
+      uri: 'at://did:plc:a/x/24',
+    })
   })
 
-  it('parses a composite cursor and adds a (ts < OR ts == AND uri <) predicate', async () => {
+  it('decodes an opaque cursor and adds a (ts < OR ts == AND uri <) predicate', async () => {
     // The cursor's role is to emit a stable continuation: rows AFTER
     // the cursor point in `(recordCreatedAt DESC, uri DESC)` order.
     // The OR-AND structure handles the same-timestamp case correctly
     // (without it, two rows at the same microsecond would be
     // missed/duplicated across page boundaries).
-    const cursor = '2026-04-30T00:00:00.000Z::at://did:plc:x/y/abc'
+    const cursor = Buffer.from(
+      JSON.stringify({
+        v: 1,
+        ts: '2026-04-30T00:00:00.000Z',
+        uri: 'at://did:plc:x/y/abc',
+      }),
+      'utf8',
+    ).toString('base64url')
     const { db, capture } = makeStubDb({ rows: [] })
     await search(db, { sort: 'recent', limit: 25, cursor } as never)
     const sqlText = capture.sqlFragments.join('')
@@ -324,19 +360,18 @@ describe('search handler — composite cursor', () => {
     expect(sqlText).toMatch(/2026-04-30T00:00:00\.000Z|2026-04-30/)
   })
 
-  it('parses a legacy timestamp-only cursor (backwards-compat)', async () => {
-    // Older clients may have persisted timestamp-only cursors; the
-    // handler tolerates them by treating the cursor as "rows ≤ this
-    // timestamp", losing the strict-after-uri precision but staying
-    // forward-progressing.
-    const cursor = '2026-04-30T00:00:00.000Z'
+  it('rejects a plaintext `${ISO}::${uri}` cursor (not an opaque envelope)', async () => {
+    // A naive ISO-prefixed string is the most plausible-looking
+    // non-opaque input. The dispatcher's ZodError-name branch maps
+    // the InvalidCursorError throw to a 400 InvalidRequest.
+    const plaintext = '2026-04-30T00:00:00.000Z::at://did:plc:x/y/abc'
     const { db } = makeStubDb({ rows: [] })
     await expect(
-      search(db, { sort: 'recent', limit: 25, cursor } as never),
-    ).resolves.toBeTruthy()
+      search(db, { sort: 'recent', limit: 25, cursor: plaintext } as never),
+    ).rejects.toMatchObject({ name: 'ZodError' })
   })
 
-  it('rejects a malformed legacy cursor (invalid timestamp) as ZodError → 400', async () => {
+  it('rejects a garbage cursor as ZodError → 400', async () => {
     // Defensive: a garbage cursor string must produce a 400-shaped
     // error (ZodError name) rather than a 500. The dispatcher's
     // ZodError branch fires on `err.name === 'ZodError'`.
@@ -384,5 +419,38 @@ describe('search handler — since / until', () => {
       until: '2026-12-31T23:59:59.999Z',
     } as never)
     expect(capture.sqlFragments.join('')).toMatch(/<param:"2026-12-31/)
+  })
+})
+
+// ── did_redactions GDPR-shaped exclusion ──────────────────────
+
+describe('search handler — did_redactions filter', () => {
+  it('WHERE references did_redactions.did (GDPR-shaped author exclusion)', async () => {
+    // LEFT JOIN against did_redactions + IS NULL check in the WHERE
+    // means a redacted author's attestations drop out of the search
+    // entirely. Pin the column reference so a refactor that drops
+    // the join surfaces in tests, not on the wire. Mirror of the
+    // service-search.ts stance — see that file's matching test.
+    const { db, capture } = makeStubDb({ rows: [] })
+    await search(db, { sort: 'recent', limit: 25 } as never)
+    expect(capture.whereFilter).toBeDefined()
+
+    const serialized = JSON.stringify(capture.whereFilter, (_k, v) => {
+      if (
+        v !== null &&
+        typeof v === 'object' &&
+        'name' in (v as Record<string, unknown>) &&
+        typeof (v as { name: unknown }).name === 'string'
+      ) {
+        return `col:${(v as { name: string }).name}`
+      }
+      return v
+    })
+    // `did_redactions.did` shows up as `col:did` in the serialized
+    // WHERE. Other DID-bearing columns on this query
+    // (`attestations.author_did`) serialize as `col:author_did` so
+    // the negative lookahead `(?!_)` keeps those out of the count.
+    const didRefs = serialized.match(/col:did(?!_)/g) ?? []
+    expect(didRefs.length).toBeGreaterThanOrEqual(1)
   })
 })

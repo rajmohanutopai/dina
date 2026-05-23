@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { pgTable, text, timestamp, boolean, jsonb, bigint, index } from 'drizzle-orm/pg-core'
+import { pgTable, text, timestamp, boolean, jsonb, bigint, index, check } from 'drizzle-orm/pg-core'
 import { subjects } from './subjects'
 
 export const attestations = pgTable('attestations', {
@@ -246,4 +246,21 @@ export const attestations = pgTable('attestations', {
   index('attestations_takedown_idx')
     .on(table.takedownAt)
     .where(sql`${table.isTakedownByModerator} = true`),
+  // DB-level enum + range guards. Lexicon validators enforce the
+  // same shape at ingest; these catch direct SQL writes (admin
+  // tooling, ops scripts, scripted backfills). Match the SQL in
+  // `drizzle/0018_peerlens_check_constraints.sql` so a future
+  // `drizzle-kit generate` round-trips cleanly.
+  check(
+    'attestations_sentiment_enum',
+    sql`${table.sentiment} IN ('positive', 'neutral', 'negative')`,
+  ),
+  check(
+    'attestations_confidence_enum',
+    sql`${table.confidence} IS NULL OR ${table.confidence} IN ('certain', 'high', 'moderate', 'speculative')`,
+  ),
+  check(
+    'attestations_price_range_ordered',
+    sql`${table.priceLowE7} IS NULL OR ${table.priceHighE7} IS NULL OR ${table.priceHighE7} >= ${table.priceLowE7}`,
+  ),
 ])

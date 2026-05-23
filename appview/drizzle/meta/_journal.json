@@ -127,6 +127,13 @@
       "when": 1790000500000,
       "tag": "0017_services_timestamps_tombstone",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790000600000,
+      "tag": "0018_peerlens_check_constraints",
+      "breakpoints": true
     }
   ]
 }

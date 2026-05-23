@@ -1,10 +1,17 @@
 import { z } from 'zod'
-import { eq, and, desc, gte, lte, lt, or, sql, inArray } from 'drizzle-orm'
+import { eq, and, desc, gte, isNull, lte, lt, or, sql, inArray } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
-import { attestations, subjects, subjectScores, didProfiles } from '@/db/schema/index.js'
+import { attestations, subjects, subjectScores, didProfiles, didRedactions } from '@/db/schema/index.js'
 import { getCachedGraphContext } from '@/api/middleware/graph-context-cache.js'
 import { normalizeHandle } from '@/util/handle_normalize.js'
+import { encodeCursor, decodeCursor } from '@/util/cursor.js'
 import type { SearchResponse } from '@/shared/types/api-types.js'
+
+/** Payload shape for this endpoint's cursor (recordCreatedAt DESC, uri DESC). */
+const SearchCursor = z.object({
+  ts: z.string().datetime(),
+  uri: z.string(),
+})
 
 const CONFIDENCE_ORDER = ['speculative', 'moderate', 'high', 'certain'] as const
 
@@ -190,7 +197,15 @@ export async function search(
     viewerDid,
   } = params
 
-  const conditions: any[] = [eq(attestations.isRevoked, false)]
+  // The `isNull(didRedactions.did)` filter pairs with the LEFT JOIN
+  // on the runQuery branches below: any attestation whose author
+  // has a `did_redactions` row drops out of the result set entirely
+  // (mirrors service-search's GDPR-shaped operator exclusion). Row
+  // stays in `attestations` for audit; never surfaces to readers.
+  const conditions: any[] = [
+    eq(attestations.isRevoked, false),
+    isNull(didRedactions.did),
+  ]
 
   if (category) conditions.push(eq(attestations.category, category))
   // TN-API-001: prefix match on attestations.category. Drizzle's
@@ -430,24 +445,23 @@ export async function search(
     conditions.push(lte(attestations.recordCreatedAt, d))
   }
 
-  // MEDIUM-04: Composite cursor (timestamp::uri) for stable pagination
+  // Opaque base64url cursor `{v, ts, uri}` — keyset pagination on
+  // (recordCreatedAt DESC, uri DESC). decodeCursor throws
+  // InvalidCursorError (→ 400) on any input that isn't a current-
+  // version envelope wrapping a valid payload.
+  //
+  // Known latent issue: when sort=relevant (FTS) or a friend/region
+  // boost is active, the ORDER BY includes terms not encoded in this
+  // cursor (ts_rank, the boost-bucket CASE). Pagination past page 1
+  // in those modes uses a recordCreatedAt-only window. Fixing it
+  // would require a richer cursor payload + a CURSOR_VERSION bump.
   if (cursor) {
-    const sepIdx = cursor.indexOf('::')
-    if (sepIdx > 0) {
-      const cursorTs = new Date(cursor.slice(0, sepIdx))
-      const cursorUri = cursor.slice(sepIdx + 2)
-      conditions.push(or(
-        lt(attestations.recordCreatedAt, cursorTs),
-        and(eq(attestations.recordCreatedAt, cursorTs), lt(attestations.uri, cursorUri)),
-      ))
-    } else {
-      // Legacy cursor: timestamp-only — validate before use (MED-04 fix)
-      const legacyDate = new Date(cursor)
-      if (isNaN(legacyDate.getTime())) {
-        throw Object.assign(new Error('Invalid cursor format'), { name: 'ZodError', message: 'Invalid cursor format' })
-      }
-      conditions.push(lte(attestations.recordCreatedAt, legacyDate))
-    }
+    const { ts, uri: cursorUri } = decodeCursor(cursor, SearchCursor)
+    const cursorTs = new Date(ts)
+    conditions.push(or(
+      lt(attestations.recordCreatedAt, cursorTs),
+      and(eq(attestations.recordCreatedAt, cursorTs), lt(attestations.uri, cursorUri)),
+    ))
   }
 
   let orderClause: any[]
@@ -533,6 +547,8 @@ export async function search(
       })
         .from(attestations)
         .leftJoin(didProfiles, eq(attestations.authorDid, didProfiles.did))
+        // GDPR-shaped author exclusion — see `conditions` above.
+        .leftJoin(didRedactions, eq(attestations.authorDid, didRedactions.did))
         .leftJoin(subjects, eq(attestations.subjectId, subjects.id))
         .where(and(...conditions))
         .orderBy(...orderClause)
@@ -544,6 +560,8 @@ export async function search(
     })
       .from(attestations)
       .leftJoin(didProfiles, eq(attestations.authorDid, didProfiles.did))
+      // GDPR-shaped author exclusion — see `conditions` above.
+      .leftJoin(didRedactions, eq(attestations.authorDid, didRedactions.did))
       .where(and(...conditions))
       .orderBy(...orderClause)
       .limit(limit + 1)
@@ -577,7 +595,7 @@ export async function search(
   }))
   const lastRow = page[page.length - 1]?.attestation
   const nextCursor = hasMore && lastRow
-    ? `${lastRow.recordCreatedAt.toISOString()}::${lastRow.uri}`
+    ? encodeCursor({ ts: lastRow.recordCreatedAt.toISOString(), uri: lastRow.uri })
     : undefined
 
   return {

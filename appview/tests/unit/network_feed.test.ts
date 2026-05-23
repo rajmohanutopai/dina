@@ -30,6 +30,7 @@ import type { DrizzleDB } from '@/db/connection'
 // in beforeEach is the canonical pattern; mirror it here.
 beforeEach(() => {
   clearGraphContextCache()
+  _capturedWhereFilter = undefined
 })
 
 interface AttestationRow {
@@ -50,21 +51,35 @@ interface AttestationRow {
  * flatten step exercises naturally. Tests still assert at the
  * response boundary — the wrapping is plumbing.
  */
+/**
+ * Closure-local capture of the WHERE filter argument passed to the
+ * attestation query. Cleared in `beforeEach`. Lets per-test column-
+ * reference assertions inspect the actual Drizzle SQL object without
+ * standing up Postgres.
+ */
+let _capturedWhereFilter: unknown = undefined
+
 function stubDb(rows: AttestationRow[], handles?: Map<string, string | null>): DrizzleDB {
+  // Chainable leftJoin so adding more joins (didProfiles +
+  // didRedactions today; potentially more later) doesn't require
+  // touching the stub.
+  const chainAfterJoin = (): unknown => ({
+    leftJoin: () => chainAfterJoin(),
+    where: (filter: unknown) => {
+      _capturedWhereFilter = filter
+      return {
+        orderBy: () => ({
+          limit: async () => rows.map((r) => ({
+            attestation: r,
+            handle: handles?.get(r.authorDid) ?? null,
+          })),
+        }),
+      }
+    },
+  })
   return {
     select: () => ({
-      from: () => ({
-        leftJoin: () => ({
-          where: () => ({
-            orderBy: () => ({
-              limit: async () => rows.map((r) => ({
-                attestation: r,
-                handle: handles?.get(r.authorDid) ?? null,
-              })),
-            }),
-          }),
-        }),
-      }),
+      from: () => chainAfterJoin(),
     }),
   } as unknown as DrizzleDB
 }
@@ -232,9 +247,18 @@ describe('networkFeed handler — TN-API-004', () => {
       limit: 2,
     })
     expect(result.attestations).toHaveLength(2)
-    expect(result.cursor).toBe(
-      `2026-04-29T08:00:00.000Z::at://did:plc:r1/att/B`,
+    // Opaque base64url-wrapped JSON envelope `{v, ts, uri}`. Decode
+    // and assert the payload rather than the wire string — keeps the
+    // test stable across CURSOR_VERSION bumps.
+    expect(typeof result.cursor).toBe('string')
+    const decoded = JSON.parse(
+      Buffer.from(result.cursor!, 'base64url').toString('utf8'),
     )
+    expect(decoded).toMatchObject({
+      v: 1,
+      ts: '2026-04-29T08:00:00.000Z',
+      uri: 'at://did:plc:r1/att/B',
+    })
   })
 
   it('no cursor when fewer rows than limit+1', async () => {
@@ -294,13 +318,42 @@ describe('networkFeed handler — TN-API-004', () => {
       depth: 1,
     })
     const db = stubDb([])
+    // Build an opaque envelope the handler will accept. Non-envelope
+    // inputs (plaintext, garbage) are rejected by decodeCursor.
+    const cursor = Buffer.from(
+      JSON.stringify({
+        v: 1,
+        ts: '2026-04-29T10:00:00.000Z',
+        uri: 'at://did:plc:r1/att/X',
+      }),
+      'utf8',
+    ).toString('base64url')
+    await expect(
+      networkFeed(db, {
+        viewerDid: 'did:plc:viewer',
+        limit: 25,
+        cursor,
+      }),
+    ).resolves.toMatchObject({ attestations: [], cursor: undefined })
+  })
+
+  it('rejects a plaintext `${ISO}::${uri}` cursor (not an opaque envelope)', async () => {
+    // A naive ISO-prefixed string is the most plausible-looking
+    // non-opaque input. Confirm the envelope discipline rejects it.
+    computeGraphContextMock.mockResolvedValueOnce({
+      nodes: [{ did: 'did:plc:r1', trustScore: 0.8, depth: 1 }],
+      edges: [],
+      rootDid: 'did:plc:viewer',
+      depth: 1,
+    })
+    const db = stubDb([])
     await expect(
       networkFeed(db, {
         viewerDid: 'did:plc:viewer',
         limit: 25,
         cursor: '2026-04-29T10:00:00.000Z::at://did:plc:r1/att/X',
       }),
-    ).resolves.toMatchObject({ attestations: [], cursor: undefined })
+    ).rejects.toMatchObject({ name: 'ZodError' })
   })
 
   it('passes maxDepth=1 to computeGraphContext (single-hop pin)', async () => {
@@ -322,5 +375,42 @@ describe('networkFeed handler — TN-API-004', () => {
     // signature: computeGraphContext(db, rootDid, maxDepth)
     expect(args[1]).toBe('did:plc:viewer')
     expect(args[2]).toBe(1)
+  })
+
+  it('WHERE filter references did_redactions.did (GDPR-shaped author exclusion)', async () => {
+    // LEFT JOIN against did_redactions + IS NULL check in the WHERE
+    // means a redacted author's attestations drop out of the feed
+    // entirely. Pin the column reference so a refactor that drops
+    // the join surfaces in tests, not on the wire. Mirror of the
+    // service-search.ts stance — see that file's matching test.
+    computeGraphContextMock.mockResolvedValueOnce({
+      nodes: [{ did: 'did:plc:r1', trustScore: 0.8, depth: 1 }],
+      edges: [],
+      rootDid: 'did:plc:viewer',
+      depth: 1,
+    })
+    const db = stubDb([])
+    await networkFeed(db, { viewerDid: 'did:plc:viewer', limit: 25 })
+    expect(_capturedWhereFilter).toBeDefined()
+
+    // Walk the Drizzle SQL object and substitute any column-shaped
+    // node (`{name: string, ...}`) as `col:<name>`, then grep the
+    // serialized form for the redaction column. `did_redactions.did`
+    // is the only `did`-named column referenced in this query's
+    // WHERE; `attestations.author_did` serializes as `col:author_did`
+    // so the negative-lookahead `(?!_)` keeps those out of the count.
+    const serialized = JSON.stringify(_capturedWhereFilter, (_k, v) => {
+      if (
+        v !== null &&
+        typeof v === 'object' &&
+        'name' in (v as Record<string, unknown>) &&
+        typeof (v as { name: unknown }).name === 'string'
+      ) {
+        return `col:${(v as { name: string }).name}`
+      }
+      return v
+    })
+    const didRefs = serialized.match(/col:did(?!_)/g) ?? []
+    expect(didRefs.length).toBeGreaterThanOrEqual(1)
   })
 })

@@ -1,9 +1,10 @@
 import { z } from 'zod'
-import { and, desc, eq, inArray, lt, or, type SQL } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, lt, or, type SQL } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
-import { attestations, didProfiles } from '@/db/schema/index.js'
+import { attestations, didProfiles, didRedactions } from '@/db/schema/index.js'
 import { getCachedGraphContext } from '@/api/middleware/graph-context-cache.js'
 import { normalizeHandle } from '@/util/handle_normalize.js'
+import { encodeCursor, decodeCursor } from '@/util/cursor.js'
 
 /**
  * `com.dina.peerlens.networkFeed` (TN-API-004 / Plan §6.4).
@@ -46,6 +47,12 @@ import { normalizeHandle } from '@/util/handle_normalize.js'
  * client renders an "empty feed, find people to follow" UX.
  */
 
+/** Payload shape for this endpoint's cursor (recordCreatedAt DESC, uri DESC). */
+const NetworkFeedCursor = z.object({
+  ts: z.string().datetime(),
+  uri: z.string(),
+})
+
 export const NetworkFeedParams = z.object({
   viewerDid: z
     .string()
@@ -62,18 +69,6 @@ export interface NetworkFeedResponse {
   /** Attestation rows ordered by recordCreatedAt DESC, uri DESC. */
   attestations: unknown[]
   cursor?: string
-}
-
-/**
- * Parse a `${ISO}::${uri}` cursor. Returns null when malformed.
- * Same shape as `get-attestations.ts:25-39` for consistency.
- */
-function parseCursor(raw: string): { ts: Date; uri: string } | null {
-  const sepIdx = raw.indexOf('::')
-  if (sepIdx <= 0 || sepIdx >= raw.length - 2) return null
-  const ts = new Date(raw.slice(0, sepIdx))
-  if (Number.isNaN(ts.getTime())) return null
-  return { ts, uri: raw.slice(sepIdx + 2) }
 }
 
 export async function networkFeed(
@@ -97,25 +92,28 @@ export async function networkFeed(
   }
 
   // Phase 2 — query attestations authored by the 1-hop set.
+  // The LEFT JOIN against `did_redactions` + IS NULL check below
+  // drops rows whose author DID has a redaction entry. Redacted-
+  // author attestations are hidden entirely (mirrors the service-
+  // search treatment of redacted operators — see service-search.ts).
   const conditions: SQL[] = [
     inArray(attestations.authorDid, oneHopDids),
     eq(attestations.isRevoked, false),
+    isNull(didRedactions.did),
   ]
 
   if (params.cursor) {
-    const parsed = parseCursor(params.cursor)
-    if (parsed === null) {
-      throw Object.assign(new Error('Invalid cursor format'), {
-        name: 'ZodError',
-        message: 'Invalid cursor format',
-      })
-    }
+    // Opaque base64url cursor `{v, ts, uri}`. decodeCursor throws
+    // InvalidCursorError (→ 400) on any input that isn't a current-
+    // version envelope wrapping a valid payload.
+    const { ts, uri: cursorUri } = decodeCursor(params.cursor, NetworkFeedCursor)
+    const cursorTs = new Date(ts)
     conditions.push(
       or(
-        lt(attestations.recordCreatedAt, parsed.ts),
+        lt(attestations.recordCreatedAt, cursorTs),
         and(
-          eq(attestations.recordCreatedAt, parsed.ts),
-          lt(attestations.uri, parsed.uri),
+          eq(attestations.recordCreatedAt, cursorTs),
+          lt(attestations.uri, cursorUri),
         ),
       )!,
     )
@@ -133,6 +131,10 @@ export async function networkFeed(
     })
     .from(attestations)
     .leftJoin(didProfiles, eq(attestations.authorDid, didProfiles.did))
+    // GDPR-shaped: a `did_redactions` row for the attestation's
+    // author hides every attestation they ever published from this
+    // feed. Row stays in `attestations` for audit; never surfaces.
+    .leftJoin(didRedactions, eq(attestations.authorDid, didRedactions.did))
     .where(and(...conditions))
     .orderBy(desc(attestations.recordCreatedAt), desc(attestations.uri))
     .limit(params.limit + 1)
@@ -152,7 +154,7 @@ export async function networkFeed(
     attestations: flat,
     cursor:
       hasMore && last
-        ? `${last.recordCreatedAt.toISOString()}::${last.uri}`
+        ? encodeCursor({ ts: last.recordCreatedAt.toISOString(), uri: last.uri })
         : undefined,
   }
 }
