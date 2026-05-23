@@ -43,6 +43,7 @@ import 'dotenv/config'
 import { eq } from 'drizzle-orm'
 import { createDb, type DrizzleDB } from '@/db/connection.js'
 import { attestations } from '@/db/schema/attestations.js'
+import { services } from '@/db/schema/services.js'
 import { subjects } from '@/db/schema/subjects.js'
 import {
   ADMIN_ACTIONS,
@@ -88,7 +89,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   // Two-word commands: `subject tombstone`, `attestation takedown`, etc.
   // Single-word: `audit-log`.
   let subcommand: string | undefined
-  if (command === 'subject' || command === 'attestation') {
+  if (command === 'subject' || command === 'attestation' || command === 'service') {
     if (cursor >= args.length) {
       throw new Error(`Missing subcommand for "${command}".`)
     }
@@ -127,6 +128,8 @@ USAGE
   subject untombstone <subject_id>   --actor <DID> --reason <"text">
   attestation takedown <at://uri>    --actor <DID> --reason <"text">
   attestation restore <at://uri>     --actor <DID> --reason <"text">
+  service tombstone <at://uri>       --actor <DID> --reason <"text">
+  service untombstone <at://uri>     --actor <DID> --reason <"text">
   audit-log                          [--actor <DID>] [--target <id>] [--action <verb>] [--limit <N>]
 
 FLAGS
@@ -351,6 +354,95 @@ export async function takedownAttestation(
   })
 }
 
+export interface ServiceTombstoneResult {
+  serviceUri: string
+  before: { tombstonedAt: Date | null; tombstoneReason: string | null }
+  after: { tombstonedAt: Date | null; tombstoneReason: string | null }
+  auditLogId: bigint
+}
+
+export async function tombstoneService(
+  db: DrizzleDB,
+  args: { serviceUri: string; actorDid: string; reason: string },
+): Promise<ServiceTombstoneResult> {
+  return db.transaction(async (tx) => {
+    const [before] = await tx
+      .select({
+        tombstonedAt: services.tombstonedAt,
+        tombstoneReason: services.tombstoneReason,
+      })
+      .from(services)
+      .where(eq(services.uri, args.serviceUri))
+      .limit(1)
+    if (before === undefined) {
+      throw new Error(`Service profile not found: ${args.serviceUri}`)
+    }
+
+    const auditLogId = await recordAdminAction(tx, {
+      actorDid: args.actorDid,
+      action: 'tombstone_service',
+      targetId: args.serviceUri,
+      reason: args.reason,
+      context: {
+        before_tombstoned_at: before.tombstonedAt?.toISOString() ?? null,
+        before_reason: before.tombstoneReason,
+      },
+    })
+
+    const [after] = await tx
+      .update(services)
+      .set({ tombstonedAt: new Date(), tombstoneReason: args.reason })
+      .where(eq(services.uri, args.serviceUri))
+      .returning({
+        tombstonedAt: services.tombstonedAt,
+        tombstoneReason: services.tombstoneReason,
+      })
+
+    return { serviceUri: args.serviceUri, before, after, auditLogId }
+  })
+}
+
+export async function untombstoneService(
+  db: DrizzleDB,
+  args: { serviceUri: string; actorDid: string; reason: string },
+): Promise<ServiceTombstoneResult> {
+  return db.transaction(async (tx) => {
+    const [before] = await tx
+      .select({
+        tombstonedAt: services.tombstonedAt,
+        tombstoneReason: services.tombstoneReason,
+      })
+      .from(services)
+      .where(eq(services.uri, args.serviceUri))
+      .limit(1)
+    if (before === undefined) {
+      throw new Error(`Service profile not found: ${args.serviceUri}`)
+    }
+
+    const auditLogId = await recordAdminAction(tx, {
+      actorDid: args.actorDid,
+      action: 'untombstone_service',
+      targetId: args.serviceUri,
+      reason: args.reason,
+      context: {
+        before_tombstoned_at: before.tombstonedAt?.toISOString() ?? null,
+        before_reason: before.tombstoneReason,
+      },
+    })
+
+    const [after] = await tx
+      .update(services)
+      .set({ tombstonedAt: null, tombstoneReason: null })
+      .where(eq(services.uri, args.serviceUri))
+      .returning({
+        tombstonedAt: services.tombstonedAt,
+        tombstoneReason: services.tombstoneReason,
+      })
+
+    return { serviceUri: args.serviceUri, before, after, auditLogId }
+  })
+}
+
 export async function restoreAttestation(
   db: DrizzleDB,
   args: { uri: string; actorDid: string; reason: string },
@@ -437,6 +529,36 @@ export async function dispatch(
     }
     throw new Error(
       `Unknown subject subcommand: ${parsed.subcommand}. Valid: tombstone, untombstone`,
+    )
+  }
+
+  if (parsed.command === 'service') {
+    if (parsed.subcommand === 'tombstone') {
+      const serviceUri = parsed.positional[0]
+      if (serviceUri === undefined) {
+        throw new Error('Missing at:// service URI positional argument.')
+      }
+      if (!serviceUri.startsWith('at://')) {
+        throw new Error(`Expected at:// URI, got "${serviceUri}"`)
+      }
+      const actorDid = requireDidFlag(parsed.flags, envActor, 'actor')
+      const reason = requireFlag(parsed.flags, undefined, 'reason')
+      return tombstoneService(db, { serviceUri, actorDid, reason })
+    }
+    if (parsed.subcommand === 'untombstone') {
+      const serviceUri = parsed.positional[0]
+      if (serviceUri === undefined) {
+        throw new Error('Missing at:// service URI positional argument.')
+      }
+      if (!serviceUri.startsWith('at://')) {
+        throw new Error(`Expected at:// URI, got "${serviceUri}"`)
+      }
+      const actorDid = requireDidFlag(parsed.flags, envActor, 'actor')
+      const reason = requireFlag(parsed.flags, undefined, 'reason')
+      return untombstoneService(db, { serviceUri, actorDid, reason })
+    }
+    throw new Error(
+      `Unknown service subcommand: ${parsed.subcommand}. Valid: tombstone, untombstone`,
     )
   }
 

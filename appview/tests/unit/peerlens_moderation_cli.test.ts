@@ -37,11 +37,14 @@ import {
   untombstoneSubject,
   takedownAttestation,
   restoreAttestation,
+  tombstoneService,
+  untombstoneService,
   bigintReplacer,
   helpText,
 } from '@/admin/peerlens-moderation-cli'
 import { subjects } from '@/db/schema/subjects'
 import { attestations } from '@/db/schema/attestations'
+import { services } from '@/db/schema/services'
 import { adminAuditLog } from '@/db/schema/admin-audit-log'
 import type { DrizzleDB } from '@/db/connection'
 
@@ -59,6 +62,7 @@ beforeEach(() => {
 interface StubOpts {
   subjectRow?: { tombstonedAt: Date | null; tombstoneReason: string | null }
   attestationRow?: { isTakedown: boolean; reason: string | null }
+  serviceRow?: { tombstonedAt: Date | null; tombstoneReason: string | null }
   /** Override the row returned by `.update().returning()` for assertions. */
   updateReturning?: Record<string, unknown>
 }
@@ -82,6 +86,7 @@ function stubDb(opts: StubOpts = {}): { db: DrizzleDB; captured: Captured } {
   const tableName = (t: unknown): string => {
     if (t === subjects) return 'subjects'
     if (t === attestations) return 'attestations'
+    if (t === services) return 'services'
     if (t === adminAuditLog) return 'admin_audit_log'
     return 'unknown'
   }
@@ -101,6 +106,9 @@ function stubDb(opts: StubOpts = {}): { db: DrizzleDB; captured: Captured } {
                 }
                 if (name === 'attestations' && opts.attestationRow !== undefined) {
                   return [opts.attestationRow]
+                }
+                if (name === 'services' && opts.serviceRow !== undefined) {
+                  return [opts.serviceRow]
                 }
                 return []
               },
@@ -429,6 +437,71 @@ describe('takedownAttestation', () => {
   })
 })
 
+describe('tombstoneService', () => {
+  it('opens a transaction + writes audit then updates services', async () => {
+    const { db, captured } = stubDb({
+      serviceRow: { tombstonedAt: null, tombstoneReason: null },
+    })
+    await tombstoneService(db, {
+      serviceUri: 'at://did:plc:p/com.dina.service.profile/self',
+      actorDid: 'did:plc:op',
+      reason: 'ToS - misrepresentation of capability',
+    })
+    expect(captured.txOpened).toBe(true)
+    expect(captured.lastUpdateValues.services).toMatchObject({
+      tombstonedAt: expect.any(Date),
+      tombstoneReason: 'ToS - misrepresentation of capability',
+    })
+    expect(recordAdminActionMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: 'tombstone_service',
+        targetId: 'at://did:plc:p/com.dina.service.profile/self',
+        reason: 'ToS - misrepresentation of capability',
+      }),
+    )
+  })
+
+  it('throws when the service URI is unknown + does NOT write audit', async () => {
+    const { db } = stubDb({})
+    await expect(
+      tombstoneService(db, {
+        serviceUri: 'at://did:plc:missing/com.dina.service.profile/self',
+        actorDid: 'did:plc:op',
+        reason: 'x',
+      }),
+    ).rejects.toThrow(/not found/i)
+    expect(recordAdminActionMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('untombstoneService', () => {
+  it('clears tombstone columns and writes audit with reason', async () => {
+    const { db, captured } = stubDb({
+      serviceRow: {
+        tombstonedAt: new Date('2026-05-22T10:00:00Z'),
+        tombstoneReason: 'old',
+      },
+    })
+    await untombstoneService(db, {
+      serviceUri: 'at://did:plc:p/com.dina.service.profile/self',
+      actorDid: 'did:plc:op',
+      reason: 'restored after operator appeal',
+    })
+    expect(captured.lastUpdateValues.services).toEqual({
+      tombstonedAt: null,
+      tombstoneReason: null,
+    })
+    expect(recordAdminActionMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: 'untombstone_service',
+        reason: 'restored after operator appeal',
+      }),
+    )
+  })
+})
+
 describe('restoreAttestation', () => {
   it('requires a reason (parity with takedown)', async () => {
     const { db } = stubDb({
@@ -517,6 +590,47 @@ describe('dispatch', () => {
         flags: { actor: 'did:plc:op' },
       }),
     ).rejects.toThrow(/reason/)
+  })
+
+  it('routes service tombstone via --actor + --reason + at:// URI', async () => {
+    const { db } = stubDb({
+      serviceRow: { tombstonedAt: null, tombstoneReason: null },
+    })
+    await dispatch(db, {
+      command: 'service',
+      subcommand: 'tombstone',
+      positional: ['at://did:plc:p/com.dina.service.profile/self'],
+      flags: { actor: 'did:plc:op', reason: 'policy' },
+    })
+    expect(recordAdminActionMock).toHaveBeenCalledOnce()
+    expect(recordAdminActionMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ action: 'tombstone_service' }),
+    )
+  })
+
+  it('requires --reason on service untombstone', async () => {
+    const { db } = stubDb({})
+    await expect(
+      dispatch(db, {
+        command: 'service',
+        subcommand: 'untombstone',
+        positional: ['at://did:plc:p/com.dina.service.profile/self'],
+        flags: { actor: 'did:plc:op' },
+      }),
+    ).rejects.toThrow(/reason/)
+  })
+
+  it('rejects service tombstone with non-at:// URI', async () => {
+    const { db } = stubDb({})
+    await expect(
+      dispatch(db, {
+        command: 'service',
+        subcommand: 'tombstone',
+        positional: ['not-a-uri'],
+        flags: { actor: 'did:plc:op', reason: 'policy' },
+      }),
+    ).rejects.toThrow(/at:\/\//)
   })
 
   it('rejects attestation takedown with non-at:// URI', async () => {

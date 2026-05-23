@@ -16,6 +16,7 @@ Dina implementation must reproduce. Each doc points at:
 | Sealed-box         | [sealed-box.md](./sealed-box.md)            | L2 / L3     |
 | PLC DID document   | [plc-document.md](./plc-document.md)        | L1          |
 | Subject ID         | [subject-id.md](./subject-id.md)            | L1          |
+| Service search     | [service-search.md](./service-search.md)    | L1          |
 
 Start with whichever feature you're implementing. Each doc is
 self-contained — you shouldn't need to cross-reference the others

@@ -70,7 +70,7 @@ describe('admin-audit-log wrapper', () => {
       // the documented vocabulary count. If a future commit removes a
       // verb from the array without bumping the test count, the
       // failure is loud.
-      const expectedCount = 8
+      const expectedCount = 10
       expect(ADMIN_ACTIONS.length).toBe(expectedCount)
     })
   })

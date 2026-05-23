@@ -1541,9 +1541,57 @@ describe('serviceProfileSchema', () => {
         notarise: {
           params: { type: 'object' },
           result: { type: 'object' },
-          schema_hash: 'abc123',
+          schema_hash: '0000000000000000000000000000000000000000000000000000000000000abc',
         },
       },
+    })
+  })
+
+  it('rejects responsePolicy values outside the closed {auto, review} enum', async () => {
+    // Open `z.string()` here would let typos (`'manual'`, `'aprove'`)
+    // through that the ingester's gate silently drops. Closed enum
+    // surfaces them at validation time.
+    expectReject('com.dina.service.profile', {
+      name: 'Demo',
+      description: '',
+      capabilities: ['notarise'],
+      responsePolicy: { notarise: 'manual' },
+      isDiscoverable: true,
+      updatedAt: new Date().toISOString(),
+    })
+    expectAccept('com.dina.service.profile', {
+      name: 'Demo',
+      description: '',
+      capabilities: ['notarise'],
+      responsePolicy: { notarise: 'review' },
+      isDiscoverable: true,
+      updatedAt: new Date().toISOString(),
+    })
+    expectAccept('com.dina.service.profile', {
+      name: 'Demo',
+      description: '',
+      capabilities: ['notarise'],
+      responsePolicy: { notarise: 'auto' },
+      isDiscoverable: true,
+      updatedAt: new Date().toISOString(),
+    })
+  })
+
+  it('rejects non-hex schema_hash (catches operator typos before they hit the index)', async () => {
+    expectReject('com.dina.service.profile', {
+      name: 'Demo',
+      description: '',
+      capabilities: ['notarise'],
+      capabilitySchemas: {
+        notarise: {
+          params: { type: 'object' },
+          result: { type: 'object' },
+          schema_hash: 'not-a-hex-string',
+        },
+      },
+      responsePolicy: { notarise: 'auto' },
+      isDiscoverable: true,
+      updatedAt: new Date().toISOString(),
     })
   })
 
@@ -1558,7 +1606,7 @@ describe('serviceProfileSchema', () => {
         notarise: {
           params: { type: 'object' },
           result: { type: 'object' },
-          schema_hash: 'abc123',
+          schema_hash: '0000000000000000000000000000000000000000000000000000000000000abc',
         },
         // translate is missing — refine should fire
       },

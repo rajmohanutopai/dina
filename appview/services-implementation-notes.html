@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Services pre-launch hardening — notes</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 880px; margin: 2rem auto; padding: 0 1.5rem; color: #1a1a1a; line-height: 1.55; }
+  h1 { border-bottom: 2px solid #1a1a1a; padding-bottom: 0.4rem; }
+  h2 { margin-top: 2rem; border-bottom: 1px solid #ddd; padding-bottom: 0.2rem; }
+  code { background: #f5f5f5; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.93em; }
+  .status { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 0.85em; font-weight: 600; }
+  .status.done { background: #c8e6c9; color: #1b5e20; }
+  .status.defer { background: #ffe082; color: #5d4000; }
+  .deviation { background: #ffebee; border-left: 4px solid #c62828; padding: 0.5rem 1rem; margin: 0.8rem 0; }
+  .tradeoff { background: #e3f2fd; border-left: 4px solid #1565c0; padding: 0.5rem 1rem; margin: 0.8rem 0; }
+  .openq { background: #f3e5f5; border-left: 4px solid #6a1b9a; padding: 0.5rem 1rem; margin: 0.8rem 0; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; }
+</style>
+</head>
+<body>
+
+<h1>Services pre-launch hardening</h1>
+
+<p><em>Started 2026-05-23. Same shape as the AppView resolver hardening
+that just shipped (commit <code>d6a8fff</code>) — close forward-compat
+gaps, lock wire shapes, give operators a typed moderation surface.
+Tests: 1687 passing post-hardening (+26 net).</em></p>
+
+<h2>Items addressed</h2>
+
+<table>
+  <thead><tr><th>ID</th><th>What</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td>C1</td><td>ILIKE metacharacter handling in <code>q</code></td><td><span class="status done">done</span></td></tr>
+    <tr><td>C2</td><td>service-profile delete+insert transactional</td><td><span class="status done">done</span></td></tr>
+    <tr><td>C3</td><td>Dropped dead <code>ON CONFLICT</code> after DELETE</td><td><span class="status done">done</span></td></tr>
+    <tr><td>C4</td><td>Trust-score doc/code drift</td><td><span class="status done">done</span></td></tr>
+    <tr><td>C5</td><td>AppView/lite-client wire-shape mismatch</td><td><span class="status done">done</span></td></tr>
+    <tr><td>H1</td><td><code>services.created_at</code> (preserves across re-publish)</td><td><span class="status done">done</span></td></tr>
+    <tr><td>H2</td><td><code>services.updated_at</code> distinct from indexed_at</td><td><span class="status done">done</span></td></tr>
+    <tr><td>H3</td><td><code>services.tombstoned_at</code> + <code>tombstone_reason</code></td><td><span class="status done">done</span></td></tr>
+    <tr><td>H4</td><td><code>ADMIN_ACTIONS</code> += <code>tombstone_service</code> / <code>untombstone_service</code></td><td><span class="status done">done</span></td></tr>
+    <tr><td>H5</td><td><code>rankingVersion</code> in <code>ServiceSearchResponse</code></td><td><span class="status done">done</span></td></tr>
+    <tr><td>H6</td><td>Capability normalization (trim+lowercase+dedupe) at write + read</td><td><span class="status done">done</span></td></tr>
+    <tr><td>H7</td><td>Closed-enum <code>responsePolicy</code></td><td><span class="status done">done</span></td></tr>
+    <tr><td>H8</td><td>Opaque base64url cursor</td><td><span class="status done">done</span></td></tr>
+    <tr><td>H9</td><td>Malformed cursor rejected loud (was silent no-op)</td><td><span class="status done">done</span></td></tr>
+    <tr><td>H10</td><td><code>cursor: null</code>, <code>tombstoned</code>, <code>rankingVersion</code> in response</td><td><span class="status done">done</span></td></tr>
+    <tr><td>H11</td><td>LEFT JOIN <code>did_redactions</code> + IS NULL exclusion</td><td><span class="status done">done</span></td></tr>
+    <tr><td>H12</td><td>CHECK constraints on lat/lng ranges</td><td><span class="status done">done</span></td></tr>
+    <tr><td>M3</td><td>handleDelete behaviour documented in handler</td><td><span class="status done">done</span></td></tr>
+    <tr><td>M4</td><td><code>conditions: any[]</code> → <code>SQL[]</code></td><td><span class="status done">done</span></td></tr>
+    <tr><td>M5</td><td><code>schema_hash</code> hex regex</td><td><span class="status done">done</span></td></tr>
+    <tr><td>M6</td><td>responsePolicy enum (paired with H7)</td><td><span class="status done">done</span></td></tr>
+    <tr><td>M7</td><td>rankingVersion in response (paired with H5)</td><td><span class="status done">done</span></td></tr>
+    <tr><td>M1</td><td>tsvector FTS in place of ILIKE</td><td><span class="status defer">defer</span></td></tr>
+    <tr><td>M2</td><td>Rate-limit hint on serviceIsDiscoverable</td><td><span class="status defer">defer</span></td></tr>
+    <tr><td>M8</td><td>Structured search-query telemetry</td><td><span class="status defer">defer</span></td></tr>
+    <tr><td>F1</td><td>Federation spec: <code>service-search.md</code></td><td><span class="status done">done</span></td></tr>
+  </tbody>
+</table>
+
+<h2>Design decisions worth flagging</h2>
+
+<div class="tradeoff">
+  <strong>Capability normalization runs at BOTH write and read.</strong>
+  Read-side alone would mean re-indexing a misspelled capability after
+  a fix. Write-side alone would mean queries with mixed casing miss.
+  Doing both costs a few CPU cycles per insert/query and makes the
+  invariant easier to reason about. The price of a drift between the
+  two layers is silent zero-match queries, so the symmetry is
+  load-bearing.
+</div>
+
+<div class="tradeoff">
+  <strong>Cursor is base64url JSON, not opaque ciphertext.</strong>
+  A future signing layer could HMAC the envelope so callers can't
+  craft cursors. For launch the cost (signing key management, error
+  paths) outweighs the value — the cursor doesn't authorize anything,
+  it just points at a pagination position. Bumping <code>v</code> to
+  2 later if we add HMAC is forward-compat by design.
+</div>
+
+<div class="tradeoff">
+  <strong>GDPR redaction = exclude, not anonymize.</strong> When a
+  DID is in <code>did_redactions</code>, the LEFT JOIN's IS NULL gate
+  drops the entire row from search results. Considered substituting
+  <code>operatorDid</code> with a sentinel + leaving the service in
+  results, but service identity IS the operator on this surface —
+  anonymising it would mislead callers about who provides what.
+  Dropping is cleaner.
+</div>
+
+<div class="tradeoff">
+  <strong>One profile per operator, enforced at the indexer.</strong>
+  An operator who publishes two service.profile records (at any
+  rkey) only ever has the most-recent one indexed. The earlier rows
+  still exist on their PDS. Alternative was to allow many profiles
+  per operator (upsert by URI, no operator-wide DELETE) — rejected
+  because the AppView's search assumes one row per operator for
+  capability aggregation, and there's no client today that uses
+  multi-profile-per-operator semantics. Doc + comment make the
+  invariant explicit.
+</div>
+
+<div class="tradeoff">
+  <strong><code>handleDelete</code> is unconditional by URI.</strong>
+  After C2's DELETE-then-INSERT, the URI in the index may not match
+  the operator's most-recent publish (if they re-published under a
+  different rkey). A delete event for the stale URI is a no-op
+  (nothing to delete). Documented in the handler — no code change
+  needed, but the behaviour is now explicit instead of accidental.
+</div>
+
+<div class="tradeoff">
+  <strong>C5 resolved — flat matched-fields on AppView, lite-client
+  reads camelCase.</strong> The previous lite-client parser looked
+  for <code>capability</code> + <code>schema</code> +
+  <code>schema_hash</code> + <code>distance_km</code> +
+  <code>trust_score</code> at the top of each service row, which
+  meant every search returned an empty list. AppView now ALSO emits
+  flat <code>matchedCapability</code> + <code>matchedSchema</code> +
+  <code>matchedSchemaHash</code> + <code>distanceKm</code> fields
+  (the array + record shapes stay for callers that want them); the
+  lite client's <code>parseResponse</code> picks the flat fields and
+  translates camelCase → the snake_case <code>ServiceMatch</code>
+  shape its callers already consume. <code>schema</code> +
+  <code>schema_hash</code> are nullable since an operator can publish
+  a service.profile without a capability schema.
+</div>
+
+<div class="openq">
+  <strong>Open question — score formula version policy.</strong>
+  Bumping <code>RANKING_VERSION</code> requires re-emitting cursors
+  (because <code>scoreBucket</code> shifts under new weights). Should
+  a version bump also force a cursor-version bump? For now: yes,
+  in lockstep — but the two versions are independent in code, so a
+  future maintainer might not realise.
+</div>
+
+<h2>Items deferred (with rationale)</h2>
+
+<ul>
+  <li><strong>M1 (tsvector FTS):</strong> requires a generated column +
+  GIN index + tokenizer choice. ILIKE works at launch scale (&lt;100k
+  rows). When search latency creeps past 50ms p99, swap in.</li>
+  <li><strong>M2 (rate-limit hint on isDiscoverable):</strong> the
+  endpoint is currently uncapped at the application layer; the web
+  server's middleware already enforces per-IP / per-DID limits
+  uniformly. A per-endpoint freshness hint can land when callers ask
+  for one.</li>
+  <li><strong>M8 (structured search telemetry):</strong> standard
+  pino logging is in place; a dedicated search-query stream needs
+  privacy review (what we log about <code>q</code> matters) before
+  shipping.</li>
+</ul>
+
+<h2>Test coverage delta</h2>
+
+<table>
+  <thead><tr><th>File</th><th>Tests added</th></tr></thead>
+  <tbody>
+    <tr><td><code>tests/unit/service_search.test.ts</code> (new)</td><td>16</td></tr>
+    <tr><td><code>tests/unit/service_profile_handler.test.ts</code> (new)</td><td>10</td></tr>
+    <tr><td><code>tests/unit/record_validator.test.ts</code></td><td>+2 (responsePolicy enum, schema_hash regex)</td></tr>
+    <tr><td><code>tests/unit/peerlens_moderation_cli.test.ts</code></td><td>+5 (service tombstone/untombstone + dispatcher)</td></tr>
+    <tr><td><code>tests/unit/admin_audit_log.test.ts</code></td><td>updated count assertion (8 → 10)</td></tr>
+  </tbody>
+</table>
+
+<p>Final: <strong>1687 unit tests passing</strong>.</p>
+
+</body>
+</html>

@@ -25,19 +25,41 @@ export const serviceProfileHandler: RecordHandler = {
       return
     }
 
-    // WS2: index both "auto" and "review" response policies.
-    const validPolicies = new Set(['auto', 'review'])
-    const policyValues = Object.values(record.responsePolicy)
-    if (policyValues.length > 0 && !policyValues.every(v => validPolicies.has(v))) {
-      ctx.logger.debug({ uri: op.uri }, '[ServiceProfile] Skipping service with unsupported response policy')
+    // Lexicon enforces the closed `{auto, review}` enum at validation
+    // time. Belt-and-braces runtime gate here covers any future code
+    // path that calls the handler without going through the lexicon
+    // validator (tests, scripted reindex, etc.) so a stray policy
+    // value can't sneak into the index.
+    const SUPPORTED_POLICIES = new Set(['auto', 'review'])
+    if (
+      Object.values(record.responsePolicy).some((v) => !SUPPORTED_POLICIES.has(v))
+    ) {
+      ctx.logger.debug(
+        { uri: op.uri },
+        '[ServiceProfile] Skipping service with unsupported response policy',
+      )
       return
     }
 
-    // Build search content from name + description + capabilities
+    // Normalize capability names at the index layer so they match
+    // case-insensitively at query time. The same normalization runs
+    // in `service-search.ts`; if either drifts, lookups stop hitting.
+    // Trim + lowercase per element; drop any empty strings; dedupe so
+    // the GIN index doesn't carry duplicates.
+    const normalizedCapabilities = Array.from(
+      new Set(
+        (record.capabilities ?? [])
+          .map((c) => c.trim().toLowerCase())
+          .filter((c) => c.length > 0),
+      ),
+    )
+
+    // Build search content from name + description + (normalized)
+    // capabilities. Used by the ILIKE text-score branch in search.
     const searchParts: string[] = []
     searchParts.push(record.name)
     if (record.description) searchParts.push(record.description)
-    if (record.capabilities) searchParts.push(...record.capabilities)
+    if (normalizedCapabilities.length > 0) searchParts.push(...normalizedCapabilities)
     const searchContent = searchParts.join(' ').slice(0, 10_000) || null
 
     // Convert E7-scaled integer coords back to floats for Postgres.
@@ -48,32 +70,42 @@ export const serviceProfileHandler: RecordHandler = {
     const lngFloat = area?.lngE7 != null ? (area.lngE7 / 1e7).toString() : null
     const radiusKm = area?.radiusKm != null ? area.radiusKm.toString() : null
 
-    // One profile per DID: delete any existing records for this operator before inserting.
-    await ctx.db.delete(services).where(eq(services.operatorDid, op.did))
-
-    // Upsert the service record
-    await ctx.db.insert(services).values({
-      uri: op.uri,
-      operatorDid: op.did,
-      cid: op.cid!,
-      name: record.name,
-      description: record.description ?? null,
-      capabilitiesJson: record.capabilities,
-      lat: latFloat,
-      lng: lngFloat,
-      radiusKm,
-      hoursJson: record.hours ?? null,
-      responsePolicyJson: record.responsePolicy,
-      capabilitySchemasJson: record.capabilitySchemas ?? null,
-      isDiscoverable: record.isDiscoverable,
-      searchContent,
-    }).onConflictDoUpdate({
-      target: services.uri,
-      set: {
+    // Convention: at most one indexed profile per operator. An operator
+    // who publishes multiple service.profile records (any rkey) sees
+    // their latest one indexed; earlier rows by the same operator are
+    // dropped from the index. The records still live on their PDS.
+    //
+    // The delete + insert run in a single transaction so a concurrent
+    // service-search read can never observe the "0 profiles" gap
+    // between the two statements. Without the transaction wrapper,
+    // every publish would briefly hide all profiles by this operator
+    // from search.
+    //
+    // The insert deliberately does NOT carry an ON CONFLICT clause:
+    // the preceding DELETE guarantees no row at this URI (or any URI
+    // owned by this operator) survives, so a conflict on `uri` cannot
+    // arise. Keeping ON CONFLICT around would be dead code masking
+    // the simpler invariant.
+    const now = new Date()
+    await ctx.db.transaction(async (tx) => {
+      // Preserve `createdAt` across re-publishes by the same operator.
+      // The DELETE removes the prior row before the INSERT, so we have
+      // to capture it first. Falls back to `now` for genuinely new
+      // operators where no prior row exists.
+      const prior = await tx
+        .select({ createdAt: services.createdAt })
+        .from(services)
+        .where(eq(services.operatorDid, op.did))
+        .limit(1)
+      const createdAt = prior[0]?.createdAt ?? now
+      await tx.delete(services).where(eq(services.operatorDid, op.did))
+      await tx.insert(services).values({
+        uri: op.uri,
+        operatorDid: op.did,
         cid: op.cid!,
         name: record.name,
         description: record.description ?? null,
-        capabilitiesJson: record.capabilities,
+        capabilitiesJson: normalizedCapabilities,
         lat: latFloat,
         lng: lngFloat,
         radiusKm,
@@ -82,8 +114,22 @@ export const serviceProfileHandler: RecordHandler = {
         capabilitySchemasJson: record.capabilitySchemas ?? null,
         isDiscoverable: record.isDiscoverable,
         searchContent,
-        indexedAt: new Date(),
-      },
+        // `updatedAt` reflects the operator-driven change (new cid =
+        // new content). `indexedAt` is the AppView-side write time.
+        // For a re-ingest of identical content (same cid), both bump
+        // to `now`; production never re-ingests the same cid for the
+        // same URI, so the distinction matters at the operator layer.
+        createdAt,
+        // `updatedAt` mirrors the operator-stamped `record.updatedAt`
+        // (lexicon-required ISO timestamp). This is the source-of-
+        // truth for "when did the operator last touch this profile",
+        // independent of when AppView ingested or re-indexed it.
+        // Falls back to `now` only for malformed records where the
+        // field somehow slipped past the lexicon validator.
+        updatedAt: record.updatedAt ? new Date(record.updatedAt) : now,
+        // `indexedAt` is the AppView-side write time. Always = `now`.
+        indexedAt: now,
+      })
     })
 
     ctx.metrics.incr('ingester.service_profile.created')

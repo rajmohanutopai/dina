@@ -120,6 +120,13 @@
       "when": 1790000400000,
       "tag": "0016_did_redactions",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790000500000,
+      "tag": "0017_services_timestamps_tombstone",
+      "breakpoints": true
     }
   ]
 }

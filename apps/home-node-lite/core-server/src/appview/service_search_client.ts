@@ -11,25 +11,29 @@
  *    → AppView returns candidate providers sorted by distance.
  *    → Brain picks the top candidate + issues a `service.query`.
  *
- * **Response shape** matches the plan doc §1b:
+ * **Response shape** — the AppView wire is camelCase; this client
+ * translates to the original snake_case `ServiceMatch` shape that
+ * the rest of the lite codebase consumes.
  *
+ * AppView returns (per service):
  *   {
- *     "services": [{
- *       "operatorDid": "did:plc:demoprovider",
- *       "name": "SF Transit Authority",
- *       "capability": "eta_query",
- *       "schema": { params, result, description },
- *       "schema_hash": "<sha256>",
- *       "distance_km": 2.3,
- *       "trust_score": 0.92
- *     }]
+ *     "operatorDid": "did:plc:demoprovider",
+ *     "name": "SF Transit Authority",
+ *     "capabilities": ["eta_query", ...],
+ *     "capabilitySchemas": { eta_query: { description, params, result, schema_hash } },
+ *     "matchedCapability": "eta_query",
+ *     "matchedSchema": { description, params, result, schema_hash },
+ *     "matchedSchemaHash": "<sha256>",
+ *     "distanceKm": 2.3,
+ *     "trustScore": 0.92,
+ *     ...
  *   }
  *
- * **The schema is the capability schema** (task 6.17 `ProfileBuilder`
- * put it there). The requester reads `params_schema` to fill in the
- * query params, then sends the `schema_hash` along with the
- * `service.query` so the provider can detect stale-schema
- * mismatches.
+ * The client picks the flat `matched*` + `trustScore` + `distanceKm`
+ * fields and maps them to the snake_case `ServiceMatch` interface.
+ * `schema` and `schema_hash` are nullable: an operator can publish a
+ * service.profile without a capability schema, in which case the
+ * requester must either skip or fall back to schemaless queries.
  *
  * **Input validation**: the client enforces sensible limits on
  * `limit` (1–50), on location (`lat` ∈ [-90, 90], `lng` ∈ [-180, 180]),
@@ -72,16 +76,17 @@ export interface ServiceMatch {
   capability: string;
   /**
    * The capability schema the provider published (description +
-   * params + result). Consumers validate inbound queries against
-   * params before building the payload.
+   * params + result). `null` when the operator's service profile
+   * didn't include a schema for this capability — consumers must
+   * either skip such providers or fall back to schemaless queries.
    */
   schema: {
     description: string;
     params: Record<string, unknown>;
     result: Record<string, unknown>;
-  };
-  /** SHA-256 of the canonical schema — sent alongside service.query. */
-  schema_hash: string;
+  } | null;
+  /** SHA-256 of the canonical schema. `null` when no schema published. */
+  schema_hash: string | null;
   /** Kilometres from the requesting user's location. -1 when unknown. */
   distance_km: number;
   /** 0..1 PeerLens rating from PeerLens. null when no PeerLens data. */
@@ -287,35 +292,56 @@ function parseResponse(body: Record<string, unknown>): ParseOk | ParseFail {
     const e = entry as Record<string, unknown>;
     if (typeof e.operatorDid !== 'string' || !DID_RE.test(e.operatorDid)) continue;
     if (typeof e.name !== 'string' || e.name === '') continue;
-    if (typeof e.capability !== 'string' || !CAPABILITY_NAME_RE.test(e.capability)) continue;
-    if (e.schema === null || typeof e.schema !== 'object' || Array.isArray(e.schema)) continue;
-    const schemaObj = e.schema as Record<string, unknown>;
-    if (typeof schemaObj.description !== 'string') continue;
-    if (schemaObj.params === null || typeof schemaObj.params !== 'object' || Array.isArray(schemaObj.params)) {
-      continue;
+    // AppView emits the matched capability (the one the caller asked
+    // for, normalized) as `matchedCapability`. The flat shape lets us
+    // skip walking the full `capabilities` array.
+    if (
+      typeof e.matchedCapability !== 'string' ||
+      !CAPABILITY_NAME_RE.test(e.matchedCapability)
+    ) continue;
+    // `matchedSchema` is the capability schema entry the operator
+    // published for this capability; `null` when none was published.
+    // We accept either case but skip rows with malformed schemas so
+    // downstream callers don't have to defend against them.
+    let schema: ServiceMatch['schema'] = null;
+    let schemaHash: string | null = null;
+    if (e.matchedSchema !== null && e.matchedSchema !== undefined) {
+      if (typeof e.matchedSchema !== 'object' || Array.isArray(e.matchedSchema)) continue;
+      const schemaObj = e.matchedSchema as Record<string, unknown>;
+      const description = typeof schemaObj.description === 'string' ? schemaObj.description : '';
+      if (
+        schemaObj.params === null ||
+        typeof schemaObj.params !== 'object' ||
+        Array.isArray(schemaObj.params)
+      ) continue;
+      if (
+        schemaObj.result === null ||
+        typeof schemaObj.result !== 'object' ||
+        Array.isArray(schemaObj.result)
+      ) continue;
+      schema = {
+        description,
+        params: schemaObj.params as Record<string, unknown>,
+        result: schemaObj.result as Record<string, unknown>,
+      };
+      if (typeof e.matchedSchemaHash === 'string' && e.matchedSchemaHash !== '') {
+        schemaHash = e.matchedSchemaHash;
+      }
     }
-    if (schemaObj.result === null || typeof schemaObj.result !== 'object' || Array.isArray(schemaObj.result)) {
-      continue;
-    }
-    if (typeof e.schema_hash !== 'string' || e.schema_hash === '') continue;
     const distance =
-      typeof e.distance_km === 'number' && Number.isFinite(e.distance_km)
-        ? e.distance_km
+      typeof e.distanceKm === 'number' && Number.isFinite(e.distanceKm)
+        ? e.distanceKm
         : -1;
     const trustScore =
-      typeof e.trust_score === 'number' && Number.isFinite(e.trust_score)
-        ? e.trust_score
+      typeof e.trustScore === 'number' && Number.isFinite(e.trustScore)
+        ? e.trustScore
         : null;
     services.push({
       operatorDid: e.operatorDid,
       name: e.name,
-      capability: e.capability,
-      schema: {
-        description: schemaObj.description,
-        params: schemaObj.params as Record<string, unknown>,
-        result: schemaObj.result as Record<string, unknown>,
-      },
-      schema_hash: e.schema_hash,
+      capability: e.matchedCapability,
+      schema,
+      schema_hash: schemaHash,
       distance_km: distance,
       trust_score: trustScore,
     });

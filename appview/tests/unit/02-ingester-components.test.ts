@@ -184,7 +184,7 @@ function minimalRecordForCollection(collection: string): Record<string, unknown>
           description: 'Query ETA',
           params: { type: 'object' },
           result: { type: 'object' },
-          schema_hash: 'canonical-hash-eta',
+          schema_hash: '0000000000000000000000000000000000000000000000000000000000000001',
         },
       },
       responsePolicy: { eta_query: 'auto' },
@@ -664,7 +664,7 @@ describe('§2.1 Record Validator', () => {
           description: 'Query estimated time of arrival.',
           params: { type: 'object', required: ['route_id'] },
           result: { type: 'object', required: ['eta_minutes'] },
-          schema_hash: 'deadbeef-eta',
+          schema_hash: 'deadbeef00000000000000000000000000000000000000000000000000000000',
         },
       },
       serviceArea: { latE7: 377700000, lngE7: -1224300000, radiusKm: 10 },
@@ -677,7 +677,7 @@ describe('§2.1 Record Validator', () => {
     const data = result.data as Record<string, unknown>
     expect(data.capabilitySchemas).toBeDefined()
     const cap = (data.capabilitySchemas as Record<string, Record<string, unknown>>).eta_query
-    expect(cap.schema_hash).toBe('deadbeef-eta')
+    expect(cap.schema_hash).toBe('deadbeef00000000000000000000000000000000000000000000000000000000')
     expect(cap.params).toEqual({ type: 'object', required: ['route_id'] })
   })
 

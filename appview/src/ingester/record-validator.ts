@@ -402,7 +402,11 @@ const capabilitySchemaEntrySchema = z.object({
   description: z.string().max(2000).optional(),
   params: z.record(z.unknown()),
   result: z.record(z.unknown()),
-  schema_hash: z.string().min(1).max(128),
+  // Hex-encoded SHA-256 of the capability schema (64 chars). Tightening
+  // to a hex-only regex catches operator typos (a colon, a space, a
+  // truncation) before they land in the index, where they'd silently
+  // mismatch every request's `schema_hash` field on `service.query`.
+  schema_hash: z.string().regex(/^[0-9a-f]{64}$/, 'must be a lowercase 64-char hex SHA-256'),
   default_ttl_seconds: z.number().int().positive().max(86400).optional(),
 })
 
@@ -424,7 +428,13 @@ const serviceProfileSchema = z.object({
     close: z.string().max(10),
     timezone: z.string().max(50),
   }).optional(),
-  responsePolicy: z.record(z.string().max(50)),
+  // Closed enum: each capability maps to one of 'auto' (provider
+  // responds immediately) or 'review' (provider queues for manual
+  // approval). Open `z.string()` here would let typos through that
+  // the ingester's gate silently drops — closed enum surfaces them
+  // at validation time. Adding a new policy verb is a coordinated
+  // change (this enum + the gate in service-profile.ts).
+  responsePolicy: z.record(z.enum(['auto', 'review'])),
   isDiscoverable: z.boolean(),
   updatedAt: boundedIsoDate,
 }).refine(

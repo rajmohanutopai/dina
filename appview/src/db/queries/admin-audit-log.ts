@@ -50,6 +50,9 @@ export const ADMIN_ACTIONS = [
   'restore_did',
   // Operator-forced scorer runs
   'recompute_subject_score',
+  // Service profile moderation (parallel to subject tombstone)
+  'tombstone_service',
+  'untombstone_service',
 ] as const
 
 export type AdminAction = (typeof ADMIN_ACTIONS)[number]

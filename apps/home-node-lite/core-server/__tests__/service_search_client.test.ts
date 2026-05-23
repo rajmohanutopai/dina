@@ -29,8 +29,71 @@ function match(overrides: Partial<ServiceMatch> = {}): ServiceMatch {
   };
 }
 
+/**
+ * Translate a `ServiceMatch` (the lite-side shape consumed by callers)
+ * into the AppView wire shape (camelCase, matchedCapability +
+ * matchedSchema + matchedSchemaHash). The client's parser folds the
+ * wire shape back into `ServiceMatch`; tests build with `ServiceMatch`
+ * for readability, then push it through this translator so the stub
+ * fetch response looks like what AppView would actually send.
+ */
+function toAppviewServiceRow(m: ServiceMatch): Record<string, unknown> {
+  return {
+    uri: `at://${m.operatorDid}/com.dina.service.profile/self`,
+    operatorDid: m.operatorDid,
+    name: m.name,
+    description: null,
+    capabilities: [m.capability],
+    capabilitySchemas:
+      m.schema !== null && m.schema_hash !== null
+        ? { [m.capability]: { ...m.schema, schema_hash: m.schema_hash } }
+        : null,
+    serviceArea: null,
+    hours: null,
+    responsePolicy: { [m.capability]: 'auto' },
+    trustScore: m.trust_score,
+    score: 0.5,
+    tombstoned: false,
+    matchedCapability: m.capability,
+    matchedSchema:
+      m.schema !== null && m.schema_hash !== null
+        ? { ...m.schema, schema_hash: m.schema_hash }
+        : null,
+    matchedSchemaHash: m.schema_hash,
+    distanceKm: m.distance_km >= 0 ? m.distance_km : null,
+  };
+}
+
 function okBody(services: ServiceMatch[] = [match()], total?: number): Record<string, unknown> {
-  return { services, total: total ?? services.length };
+  return {
+    services: services.map(toAppviewServiceRow),
+    total: total ?? services.length,
+    cursor: null,
+    rankingVersion: 'v1',
+  };
+}
+
+/**
+ * Convenience: a stubFetch that emits an AppView-shaped body wrapping
+ * ServiceMatch entries (via the same translator `okBody` uses). Lets
+ * tests pass raw `ServiceMatch` arrays to the stub without manually
+ * wrapping each entry.
+ */
+function stubFetchMatches(
+  matches: unknown[],
+  total?: number,
+): ServiceSearchFetchFn {
+  const services = matches.map((m) =>
+    m === null || typeof m !== 'object'
+      ? m
+      : 'matchedCapability' in (m as Record<string, unknown>)
+        ? m
+        : toAppviewServiceRow(m as ServiceMatch),
+  );
+  return async () => ({
+    body: { services, total: total ?? services.length, cursor: null, rankingVersion: 'v1' },
+    status: 200,
+  });
 }
 
 function stubFetch(body: Record<string, unknown> | null, status = 200): ServiceSearchFetchFn {
@@ -99,7 +162,7 @@ describe('createServiceSearchClient (task 6.12)', () => {
     it('distance_km with missing field defaults to -1', async () => {
       const noDist = { ...match(), distance_km: undefined as unknown as number };
       const out = (await createServiceSearchClient({
-        fetchFn: stubFetch({ services: [noDist] }),
+        fetchFn: stubFetchMatches([noDist]),
       })({})) as Extract<ServiceSearchOutcome, { ok: true }>;
       expect(out.response.services[0]!.distance_km).toBe(-1);
     });
@@ -107,22 +170,25 @@ describe('createServiceSearchClient (task 6.12)', () => {
     it('null trust_score preserved', async () => {
       const noTrust: ServiceMatch = { ...match(), trust_score: null };
       const out = (await createServiceSearchClient({
-        fetchFn: stubFetch({ services: [noTrust] }),
+        fetchFn: stubFetchMatches([noTrust]),
       })({})) as Extract<ServiceSearchOutcome, { ok: true }>;
       expect(out.response.services[0]!.trust_score).toBeNull();
     });
 
     it('malformed service entries skipped', async () => {
-      const bad = [
-        match(),
-        null, // skip
-        { ...match(), operatorDid: 'not-a-did' }, // skip
-        { ...match(), capability: 'Bad-Capability' }, // skip (regex rejects uppercase + dash)
-        { ...match(), name: '' }, // skip
-        match({ name: 'Other Provider' }), // keep
+      // The translator detects already-wire-shaped objects vs lite-
+      // shape and only wraps the latter. Raw row dicts with bad
+      // operatorDid / matchedCapability / name reach the parser as-is.
+      const bad: unknown[] = [
+        toAppviewServiceRow(match()),
+        null, // skip — not an object
+        { ...toAppviewServiceRow(match()), operatorDid: 'not-a-did' }, // skip
+        { ...toAppviewServiceRow(match()), matchedCapability: 'Bad-Capability' }, // skip
+        { ...toAppviewServiceRow(match()), name: '' }, // skip
+        toAppviewServiceRow(match({ name: 'Other Provider' })),
       ];
       const out = (await createServiceSearchClient({
-        fetchFn: stubFetch({ services: bad }),
+        fetchFn: stubFetchMatches(bad),
       })({})) as Extract<ServiceSearchOutcome, { ok: true }>;
       expect(out.response.services).toHaveLength(2);
       expect(out.response.services.map((s) => s.name).sort()).toEqual([
@@ -377,7 +443,7 @@ describe('createServiceSearchClient (task 6.12)', () => {
   describe('parseResponse — total field guards', () => {
     it('valid integer total preserved when ≥ services.length', async () => {
       const search = createServiceSearchClient({
-        fetchFn: stubFetch({ services: [match()], total: 47 }),
+        fetchFn: stubFetchMatches([match()], 47),
       });
       const out = (await search({})) as Extract<ServiceSearchOutcome, { ok: true }>;
       expect(out.response.total).toBe(47);
@@ -389,7 +455,7 @@ describe('createServiceSearchClient (task 6.12)', () => {
       // would map 0 → fallback. 0 is meaningful ("no matches") and
       // must surface distinctly from "field missing".
       const search = createServiceSearchClient({
-        fetchFn: stubFetch({ services: [], total: 0 }),
+        fetchFn: stubFetchMatches([], 0),
       });
       const out = (await search({})) as Extract<ServiceSearchOutcome, { ok: true }>;
       expect(out.response.total).toBe(0);
@@ -397,7 +463,7 @@ describe('createServiceSearchClient (task 6.12)', () => {
 
     it('non-integer total falls back to services.length', async () => {
       const search = createServiceSearchClient({
-        fetchFn: stubFetch({ services: [match(), match({ name: 'B' })], total: 5.5 }),
+        fetchFn: stubFetchMatches([match(), match({ name: 'B' })], 5.5 as unknown as number),
       });
       const out = (await search({})) as Extract<ServiceSearchOutcome, { ok: true }>;
       expect(out.response.total).toBe(2); // services.length
@@ -405,7 +471,7 @@ describe('createServiceSearchClient (task 6.12)', () => {
 
     it('negative total falls back to services.length', async () => {
       const search = createServiceSearchClient({
-        fetchFn: stubFetch({ services: [match()], total: -1 }),
+        fetchFn: stubFetchMatches([match()], -1),
       });
       const out = (await search({})) as Extract<ServiceSearchOutcome, { ok: true }>;
       expect(out.response.total).toBe(1);
@@ -417,7 +483,7 @@ describe('createServiceSearchClient (task 6.12)', () => {
       ['-Infinity', Number.NEGATIVE_INFINITY],
     ])('non-finite total %s falls back to services.length', async (_label, value) => {
       const search = createServiceSearchClient({
-        fetchFn: stubFetch({ services: [match()], total: value }),
+        fetchFn: stubFetchMatches([match()], value as number),
       });
       const out = (await search({})) as Extract<ServiceSearchOutcome, { ok: true }>;
       expect(out.response.total).toBe(1);
@@ -425,7 +491,7 @@ describe('createServiceSearchClient (task 6.12)', () => {
 
     it('non-number total falls back to services.length', async () => {
       const search = createServiceSearchClient({
-        fetchFn: stubFetch({ services: [match()], total: '5' as unknown as number }),
+        fetchFn: stubFetchMatches([match()], '5' as unknown as number),
       });
       const out = (await search({})) as Extract<ServiceSearchOutcome, { ok: true }>;
       expect(out.response.total).toBe(1);
@@ -433,7 +499,7 @@ describe('createServiceSearchClient (task 6.12)', () => {
 
     it('missing total field falls back to services.length', async () => {
       const search = createServiceSearchClient({
-        fetchFn: stubFetch({ services: [match(), match({ name: 'B' }), match({ name: 'C' })] }),
+        fetchFn: stubFetchMatches([match(), match({ name: 'B' }), match({ name: 'C' })]),
       });
       const out = (await search({})) as Extract<ServiceSearchOutcome, { ok: true }>;
       expect(out.response.total).toBe(3);
