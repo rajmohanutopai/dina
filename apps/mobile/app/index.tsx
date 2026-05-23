@@ -225,6 +225,13 @@ export default function ChatScreen() {
   }, []);
 
   const renderMessage = useCallback(({ item }: { item: UiMessage }) => {
+    // Skip empty Dina rows. A resolved ask placeholder is blanked when a
+    // service-query card carries the turn's message (see
+    // coordinator_ask_handler) — rendering it would leave a stray empty
+    // bubble above the card.
+    if (item.displayType === 'dina' && (item.content ?? '').trim() === '') {
+      return null;
+    }
     // Pattern A inline approval card — 5.21-H. The bridge writes
     // `'approval'`-typed messages with `metadata.kind === 'ask_approval'`
     // when the agentic loop bails on a sensitive persona; render an
@@ -416,7 +423,14 @@ export default function ChatScreen() {
           renderItem={renderMessage}
           style={styles.messageList}
           contentContainerStyle={styles.messageListContent}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+          onContentSizeChange={() =>
+            // Defer to after the layout commit so scrollToEnd uses the
+            // *final* content height. A direct call races tall last
+            // items (e.g. the service-handoff card, whose Ionicons /
+            // spinner glyphs size in async) — the scroll then lands
+            // short and the card slips behind the composer.
+            requestAnimationFrame(() => flatListRef.current?.scrollToEnd({ animated: false }))
+          }
           showsVerticalScrollIndicator={false}
         />
       )}
@@ -694,7 +708,7 @@ const styles = StyleSheet.create({
   messageListContent: {
     paddingHorizontal: spacing.md,
     paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
+    paddingBottom: spacing.lg,
   },
 
   // Message bubbles

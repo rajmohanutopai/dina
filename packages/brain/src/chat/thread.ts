@@ -54,10 +54,22 @@ export interface ServiceQueryLifecycle {
   queryId: string;
   capability: string;
   serviceName: string;
+  /** The provider Dina's DID (`to_did` from the dispatch). Surfaced in
+   *  the handoff card so the user sees *which* other Dina was queried —
+   *  the "you're talking to someone else" signal. Optional: absent on
+   *  paths that don't carry it (the card degrades gracefully). */
+  providerDid?: string;
+  /** Capability params the query carried — rendered as a short summary
+   *  on the handoff card. Opaque to brain; the renderer formats it. */
+  params?: Record<string, unknown>;
   /** Validated capability result — present iff `status === 'resolved'`. */
   result?: Record<string, unknown>;
   /** Error explanation — present on `failed` / `expired`. */
   error?: string;
+  /** Epoch ms when the response landed (set on the resolve/fail patch).
+   *  The card derives "replied in Ns" from this minus the message's
+   *  creation timestamp (which is dispatch time). */
+  resolvedAt?: number;
 }
 
 /**

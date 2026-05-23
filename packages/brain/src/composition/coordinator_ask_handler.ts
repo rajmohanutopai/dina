@@ -234,12 +234,16 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
       // "I have sent a request — will follow up", which is redundant
       // with the spinner state).
       if (serviceQueries.length > 0) {
-        // If a placeholder is sitting in the thread, retire it so the
-        // service-query cards don't read as "Working on it… (pending)
-        // + service card (pending)". Patching in place keeps
-        // ordering, just swaps the content for the LLM narrative.
+        // If a placeholder is sitting in the thread, retire it. We blank
+        // its content (rather than swapping in the LLM narrative) so the
+        // service-query card is the *single* user-facing artifact for the
+        // turn — the narrative ("I'm checking the live ETA…") is redundant
+        // with the card's own progress + result, and reads as clutter
+        // above it. The empty placeholder renders nothing (the chat skips
+        // empty dina rows). The user's own question already carries the
+        // request context.
         if (hasAskPlaceholder) {
-          updateAskLifecycle(targetThread, askId, { status: 'complete' }, answerText);
+          updateAskLifecycle(targetThread, askId, { status: 'complete' }, '');
         }
         for (const sq of serviceQueries) {
           if (findMessageByTaskId(targetThread, sq.taskId) !== null) continue;
@@ -250,6 +254,8 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
             queryId: sq.queryId,
             capability: sq.capability,
             serviceName: sq.serviceName,
+            providerDid: sq.providerDid,
+            params: sq.params,
           };
           addLifecycleMessage(targetThread, answerText, lifecycle);
         }
@@ -429,12 +435,21 @@ function extractServiceQueries(value: unknown): Array<{
   queryId: string;
   capability: string;
   serviceName: string;
+  providerDid?: string;
+  params?: Record<string, unknown>;
 }> {
   if (typeof value !== 'object' || value === null) return [];
   const v = value as Record<string, unknown>;
   const raw = v.serviceQueries;
   if (!Array.isArray(raw)) return [];
-  const out: Array<{ taskId: string; queryId: string; capability: string; serviceName: string }> = [];
+  const out: Array<{
+    taskId: string;
+    queryId: string;
+    capability: string;
+    serviceName: string;
+    providerDid?: string;
+    params?: Record<string, unknown>;
+  }> = [];
   for (const entry of raw) {
     if (typeof entry !== 'object' || entry === null) continue;
     const e = entry as Record<string, unknown>;
@@ -444,6 +459,11 @@ function extractServiceQueries(value: unknown): Array<{
       queryId: typeof e.queryId === 'string' ? e.queryId : '',
       capability: typeof e.capability === 'string' ? e.capability : '',
       serviceName: typeof e.serviceName === 'string' ? e.serviceName : 'service',
+      providerDid: typeof e.providerDid === 'string' ? e.providerDid : undefined,
+      params:
+        typeof e.params === 'object' && e.params !== null
+          ? (e.params as Record<string, unknown>)
+          : undefined,
     });
   }
   return out;

@@ -175,6 +175,8 @@ export async function handleChat(text: string, threadId?: string): Promise<ChatR
         queryId: sq.queryId,
         capability: sq.capability,
         serviceName: sq.serviceName,
+        providerDid: sq.providerDid,
+        params: sq.params,
       });
       lastId = msg.id;
     }

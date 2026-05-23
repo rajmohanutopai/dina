@@ -417,8 +417,22 @@ function translateLoopResult(result: AgenticLoopResult): ReturnType<AskExecuteFn
  */
 function extractServiceQueriesFromToolCalls(
   toolCalls: AgenticLoopResult['toolCalls'],
-): Array<{ taskId: string; queryId: string; capability: string; serviceName: string }> {
-  const out: Array<{ taskId: string; queryId: string; capability: string; serviceName: string }> = [];
+): Array<{
+  taskId: string;
+  queryId: string;
+  capability: string;
+  serviceName: string;
+  providerDid?: string;
+  params?: Record<string, unknown>;
+}> {
+  const out: Array<{
+    taskId: string;
+    queryId: string;
+    capability: string;
+    serviceName: string;
+    providerDid?: string;
+    params?: Record<string, unknown>;
+  }> = [];
   for (const call of toolCalls) {
     if (call.name !== 'query_service') continue;
     if (!call.outcome.success) continue;
@@ -426,8 +440,12 @@ function extractServiceQueriesFromToolCalls(
       | { task_id?: string; query_id?: string; to_did?: string; service_name?: string }
       | null;
     if (!payload || typeof payload.task_id !== 'string' || payload.task_id === '') continue;
-    const args = call.arguments as { capability?: string } | null;
+    const args = call.arguments as { capability?: string; params?: unknown } | null;
     const capability = typeof args?.capability === 'string' ? args.capability : '';
+    const params =
+      args?.params !== undefined && args.params !== null && typeof args.params === 'object'
+        ? (args.params as Record<string, unknown>)
+        : undefined;
     const serviceName =
       typeof payload.service_name === 'string' && payload.service_name !== ''
         ? payload.service_name
@@ -437,6 +455,8 @@ function extractServiceQueriesFromToolCalls(
       queryId: typeof payload.query_id === 'string' ? payload.query_id : '',
       capability,
       serviceName,
+      providerDid: typeof payload.to_did === 'string' ? payload.to_did : undefined,
+      params,
     });
   }
   return out;

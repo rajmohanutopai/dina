@@ -612,7 +612,8 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
           result: Record<string, unknown>;
           error: string;
           serviceName: string;
-        }> = { status, serviceName };
+          resolvedAt: number;
+        }> = { status, serviceName, resolvedAt: Date.now() };
         if (resultBody !== null) patch.result = resultBody;
         if (typeof details.error === 'string' && details.error !== '') {
           patch.error = details.error;

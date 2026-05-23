@@ -337,8 +337,14 @@ export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCom
         | null;
       if (!payload || typeof payload.task_id !== 'string' || payload.task_id === '') continue;
       sources.push(payload.task_id);
-      const args = call.arguments as { capability?: string } | null;
+      const args = call.arguments as
+        | { capability?: string; params?: unknown }
+        | null;
       const capability = typeof args?.capability === 'string' ? args.capability : '';
+      const params =
+        args?.params !== undefined && args.params !== null && typeof args.params === 'object'
+          ? (args.params as Record<string, unknown>)
+          : undefined;
       const serviceName =
         typeof payload.service_name === 'string' && payload.service_name !== ''
           ? payload.service_name
@@ -348,6 +354,8 @@ export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCom
         queryId: typeof payload.query_id === 'string' ? payload.query_id : '',
         capability,
         serviceName,
+        providerDid: typeof payload.to_did === 'string' ? payload.to_did : undefined,
+        params,
       });
     }
 
@@ -392,6 +400,10 @@ export interface ServiceQueryDispatch {
   queryId: string;
   capability: string;
   serviceName: string;
+  /** The provider Dina's DID (`to_did`). Surfaced in the handoff card. */
+  providerDid?: string;
+  /** Capability params the query carried — summarised in the card. */
+  params?: Record<string, unknown>;
 }
 
 function fallbackAnswer(reason: string): string {
