@@ -1,3 +1,103 @@
+# Major architecture review
+go through docs/MOBILE_PROCESS_SCHEMA_REVIEW.md - gives a full picture
+
+# Architecture Review
+  Findings
+
+  - High: Vault writes ignore the requested persona in CoreClient paths.
+    packages/core/src/server/routes/vault.ts:31 reads persona from query params, but both transports send it in the body: packages/core/src/client/in-process-transport.ts:183 and packages/core/src/client/http-
+    transport.ts:209. Result: vaultStore('health', item) can silently write to general. This is a correctness bug and an architecture smell: the Core API contract is not enforced consistently.
+  - High: CoreClient.vaultList() exists but Core has no /v1/vault/list route.
+    The transports call /v1/vault/list, but packages/core/src/server/routes/vault.ts:31 only defines query/store/item routes. Brain-server wires vaultList through CoreClient in apps/home-node-lite/brain-server/
+    src/boot.ts:227, so list/browse style tools cannot reliably work in split-process home-node-lite.
+  - High: Brain still directly imports Core storage instead of consistently using CoreClient.
+    packages/brain/src/vault_context/assembly.ts:11 imports vault/contact/reminder functions directly from @dina/core. Some paths use the injected backend, but others still call direct Core globals: browse at
+    packages/brain/src/vault_context/assembly.ts:466, read at packages/brain/src/vault_context/assembly.ts:424, contact lookup at packages/brain/src/vault_context/assembly.ts:490, reminders at packages/brain/src/
+    vault_context/assembly.ts:535. This breaks the intended architecture where home-node-lite Brain talks to Core over HTTP.
+  - High: Agentic vault tools have the same split-process hole.
+    packages/brain/src/reasoning/vault_tool.ts:30 imports direct Core vault functions. Search and full-content reads partly use the backend, but list_personas and browse_vault use local Core state at packages/
+    brain/src/reasoning/vault_tool.ts:261 and packages/brain/src/reasoning/vault_tool.ts:346. In mobile this may work because everything is in-process; in home-node-lite it can read an empty/wrong Brain-side
+    store.
+  - High: Identity subject-link architecture is not yet end-to-end in home-node-lite.
+    packages/brain/src/pipeline/post_publish.ts:173 explicitly says vault_item_subjects linking is in-process only. The actual subject-link write happens through local getVaultRepository() at packages/brain/src/
+    pipeline/post_publish.ts:182. The agentic /remember path applies people extraction in packages/brain/src/staging/drain.ts:662 but does not write subject links. Yet reminder recall expects subject links in
+    packages/brain/src/pipeline/reminder_planner.ts:584. So the new identity hub design is right, but Core needs an API/write path for subject links.
+  - High: D2D outbox is described as durable but is in-memory.
+    packages/core/src/transport/outbox.ts:1 says durable queue, but packages/core/src/transport/outbox.ts:33 uses a process-local Map. Restart loses queued D2D messages. For a home node, this is a foundational
+    durability gap.
+  - High: D2D retry delivery is not wired as production infrastructure.
+    packages/core/src/transport/retry.ts:22 has optional deliveryFn, and packages/core/src/transport/retry.ts:57 fails when no delivery function is installed. I found no clear production wiring for
+    setRetryDeliveryFn. This means the outbox/retry layer is more of a test abstraction than reliable transport infrastructure.
+  - High: D2D send semantics can report success after delivery and queue failure.
+    packages/core/src/d2d/send.ts:304 and packages/core/src/d2d/send.ts:336 can return sent: true even when delivered: false and queued: false. packages/home-node/src/send_d2d.ts:87 only throws if !result.sent.
+    Callers can therefore proceed as if a message was accepted even when it was neither delivered nor durably queued.
+  - High: Mobile still duplicates workflow-plane wiring instead of using the shared runtime.
+    packages/home-node/src/workflow_plane.ts:1 says the shared helper replaced app-specific copies. home-node-lite uses it, but mobile still wires WorkflowService, sweepers, runtime, and cleanup manually in apps/
+    mobile/src/services/bootstrap.ts:22, apps/mobile/src/services/bootstrap.ts:555, apps/mobile/src/services/bootstrap.ts:685, and apps/mobile/src/services/bootstrap.ts:1178. This is exactly the kind of drift that
+    will keep breaking mobile vs home-node-lite parity.
+  - Medium-high: Module-level globals are still the dominant runtime composition mechanism.
+    Examples: workflow service in packages/core/src/workflow/service.ts:871, service windows in packages/core/src/service/windows.ts:22, D2D gates in packages/core/src/d2d/gates.ts:31, source trust in packages/
+    core/src/peerlens/source_trust.ts:56. This makes runtime ownership unclear and creates mobile/home-node-lite split-process bugs. The better direction is a HomeNodeRuntimeContext or CoreRuntimeContext that owns
+    repos, senders, policy, windows, and adapters.
+  - Medium-high: AppView discoverability policy is inconsistent.
+    Search excludes tombstoned/redacted services at appview/src/api/xrpc/service-search.ts:167 and appview/src/api/xrpc/service-search.ts:226. But service-is-discoverable checks only operatorDid and isDiscoverable
+    at appview/src/api/xrpc/service-is-discoverable.ts:29. Core uses that endpoint for service-query bypass in packages/core/src/appview/service_resolver.ts:160. A service hidden from search may still be treated
+    as discoverable if directly addressed.
+  - Medium-high: Capability architecture is still partially hardcoded.
+    packages/brain/src/service/capabilities/registry.ts:47 hardcodes eta_query. Provider-side schema validation exists, but packages/brain/src/service/service_handler.ts:577 still falls back to the registry.
+    Sender-side explicit validation in packages/brain/src/service/service_query_orchestrator.ts:282 also uses local registry logic. This is okay for the bus demo, but not for the long-term “provider-published
+    capability schema” architecture.
+  - Medium: Persona access policy is not centralized.
+    home-node-lite exposes all personas to in-app chat in apps/home-node-lite/brain-server/src/boot.ts:248. Shared persona lifecycle does similar setup in packages/home-node/src/persona_lifecycle.ts:86. Vault
+    tools have their own guard path. This should become a per-request AccessContext, not a module-global list, especially before multi-user, agent, Telegram, mobile, and external D2D contexts coexist.
+  - Medium: In-process transport bypasses route auth/rate-limit globally.
+    packages/core/src/server/router.ts:57 defines trustedInProcess, and packages/core/src/server/router.ts:198 bypasses auth/rate limiting. This is acceptable only for tightly controlled owner-local code. Long
+    term, local callers should have explicit principals/capabilities like owner, brain, agent, not a blanket bypass.
+  - Medium: AppView search is not yet semantic.
+    appview/src/api/xrpc/service-search.ts:37 documents the current keyword scoring, and appview/src/api/xrpc/service-search.ts:141 implements ILIKE matching. That is fine for explicit capability tests, but it is
+    not yet the “semantic service finder” needed for open-ended service discovery.
+
+  Release-Important
+
+  - Persistent D2D outbox is missing in TS schema/runtime.
+    Original Go has a real d2d_outbox table: core/internal/adapter/sqlite/pool.go:473. TS has only in-memory outbox: packages/core/src/transport/outbox.ts:33.
+    If mobile release includes real D2D, task handoff, approvals, or service query reliability, I would treat this like identity-level important. Mobile gets killed/backgrounded often; in-memory outbox is not
+    enough.
+
+  Important But Probably Not This-Week Blocker
+
+  - Schema source of truth is split/stale.
+    Runtime migrations are in packages/core/src/storage/schemas.ts:16, but fixture/metadata schemas still describe older shapes. Example: fixture identity schema is DID-keyed contacts at packages/fixtures/schema/
+    identity_001.sql:8, while runtime schema is person-id keyed contacts at packages/core/src/storage/schemas.ts:21.
+    This can make tests pass against the wrong contract. Not necessarily runtime-breaking, but bad for confidence.
+  - People graph has weak DB integrity constraints.
+    person_identities.person_id and person_surfaces.person_id are not FK-constrained to people.person_id: packages/core/src/storage/schemas.ts:337 and packages/core/src/storage/schemas.ts:356.
+    This may be deliberate because lifecycle uses soft status, but then repository tests must enforce “no orphan identity/surface” invariants. I would not block release if tests cover it.
+  - Primary identity is not constrained.
+    person_identities.primary_identity exists at packages/core/src/storage/schemas.ts:343, but there is no unique partial index like “only one primary DID per person.” Not a blocker unless UI already lets users
+    manage multiple identities.
+  - vault_item_subjects schema exists, but wiring is incomplete.
+    Table exists at packages/core/src/storage/schemas.ts:449. The issue is not the table shape; it is that Brain/Core split-process paths do not reliably write it yet. This is important for identity recall
+    quality, but if Claude is fixing identity now, this should be part of that work.
+
+
+# Multi contact
+
+  What Is Still Required
+
+  1. Complete contact lifecycle sync.
+     addContact() and boot hydration are good. But updateContact() and deleteContact() do not appear to fully update/remove the D2D gate, source-trust projection, or people-graph binding. See packages/core/src/
+     contacts/directory.ts:235 and packages/core/src/contacts/directory.ts:285. This matters for block/unblock/delete/rename correctness.
+  2. Make the admission policy explicit.
+     The policy exists, but it is split across receive_pipeline.ts, service/bypass.ts, gates, contacts, and windows. I would not add new behavior; I would wrap the decision into a named module/function so future
+     changes do not accidentally bypass blocklist/service-window/contact rules.
+  3. Add focused tests for the combined behavior.
+     Existing service bypass tests are good. Missing tests should cover: add contact → inbound personal D2D stages; non-contact personal D2D quarantines; non-contact service.query accepted only for configured
+     service; blocked sender always dropped; delete/block contact removes trust projection; Quixote-style DID → person → preference lookup.
+  4. Decide whether query windows need restart durability.
+     Current requester/provider windows are in-memory in packages/core/src/service/windows.ts:22. That is fine for live TTL flows, but if app restart during an active service query must still accept the response,
+     windows should be reconstructed from workflow tasks.
+
 
 # Everything through MSGBOX — SHIPPED (2026-04-19)
 

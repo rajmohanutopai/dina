@@ -121,3 +121,23 @@ risk: BLOCKED
 ✅ Approved: apr-1774423823840426930
 
 
+Some impleemntation details
+⏺ There are three separate identity/trust stores
+  - D2D trust gate (d2d/gates knownContacts) — controls whether inbound stages vs quarantines.
+  - Contact directory (what add-contact.tsx writes) — display name + trust scoring.
+  - People-graph (PeopleRepository) — confirmed person bound to a DID
+
+  Normally your Dina only accepts messages from people in your contacts. Strangers get turned away. But in the bus example, your Dina has to ask a stranger — the bus company's Dina — a question, and then let that
+  stranger's answer back in. How do you allow the answer without permanently opening your door to a stranger?
+  
+  When your Dina sends the question, it leaves itself a little note:
+  
+  ▎ "I'm expecting one reply, from the bus company, about this exact question, in the next minute."
+  
+  When the bus company's Dina replies, your Dina checks the note, sees it matches, lets that one reply in — and then tears up the note.
+
+  Same with the bus company's Dina:
+  - It published "I answer eta_query," so it accepts an eta_query from any stranger.
+  - It routes it to its service desk (the service handler) and answers — because it set its policy to answer these automatically.
+  - A personal message from you ("be my contact") would still be turned away — you're not in its contacts. Only the advertised service request gets in.
+
