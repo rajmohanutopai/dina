@@ -22,6 +22,10 @@ export interface VaultItem {
   source: string;
   source_id: string;
   contact_did: string;
+  /** Sender/author resolved to a canonical person_id (people graph) for
+   *  inbound D2D items; '' / absent for owner-authored or unresolved.
+   *  See docs/IDENTITY_HUB_REDESIGN.md §3.5. */
+  author_person_id?: string;
   summary: string;
   body: string;
   metadata: string;

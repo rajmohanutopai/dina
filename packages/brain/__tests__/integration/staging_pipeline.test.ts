@@ -28,8 +28,8 @@ import {
 } from '@dina/core';
 import { clearVaults, queryVault, storeItem } from '@dina/core';
 import { resetReminderState, listByPersona } from '@dina/core/reminders';
-import { addContact, resetContactDirectory } from '@dina/core';
-import { resetFactoryCounters } from '@dina/test-harness';
+import { addContact, resetContactDirectory, setPeopleRepository } from '@dina/core';
+import { resetFactoryCounters, makeFakePeopleRepo } from '@dina/test-harness';
 
 describe('Staging Pipeline End-to-End Integration', () => {
   beforeEach(() => {
@@ -39,6 +39,7 @@ describe('Staging Pipeline End-to-End Integration', () => {
     clearVaults();
     resetReminderState();
     resetContactDirectory();
+    setPeopleRepository(makeFakePeopleRepo());
     resetFactoryCounters();
 
     createPersona('general', 'default');

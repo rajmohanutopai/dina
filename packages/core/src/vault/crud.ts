@@ -213,6 +213,7 @@ export function storeItem(persona: string, item: VaultItemWrite): string {
     source: item.source ?? '',
     source_id: item.source_id ?? '',
     contact_did: item.contact_did ?? '',
+    author_person_id: item.author_person_id ?? '',
     summary: item.summary ?? '',
     body: item.body ?? '',
     metadata: item.metadata ?? '{}',
@@ -275,6 +276,18 @@ export function storeBatch(persona: string, items: VaultItemWrite[]): string[] {
  *
  * Excludes soft-deleted items. Clamps limit to [1, 100].
  */
+/**
+ * Items a person is a *subject* of (`vault_item_subjects`), newest-linked
+ * first, non-deleted. The structured recall path that an inbound DID's
+ * person resolves to — bypasses FTS/name matching entirely. Returns []
+ * when no repo is wired for the persona (matches the read-path contract).
+ */
+export function getItemsForPerson(persona: string, personId: string, limit: number): VaultItem[] {
+  const repo = getVaultRepository(persona);
+  if (repo === null) return [];
+  return repo.getItemsForPersonSync(personId, limit);
+}
+
 export function queryVault(persona: string, query: SearchQuery): VaultItem[] {
   const mode = query.mode || 'fts5';
 

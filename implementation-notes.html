@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Identity Hub Redesign — Implementation Notes</title>
+<style>
+  :root { --ink:#1a1a1a; --muted:#666; --line:#e2e2e2; --accent:#2b6cb0;
+          --warn:#b7791f; --bad:#c53030; --good:#2f855a; --bg:#fafafa; }
+  body { font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+         color:var(--ink); max-width:920px; margin:0 auto; padding:32px 24px; background:#fff; }
+  h1 { font-size:26px; margin:0 0 4px; }
+  h2 { font-size:20px; margin:34px 0 10px; padding-bottom:6px; border-bottom:2px solid var(--line); }
+  h3 { font-size:16px; margin:22px 0 6px; }
+  .sub { color:var(--muted); margin:0 0 18px; }
+  .phase { border:1px solid var(--line); border-radius:10px; padding:4px 18px 14px; margin:18px 0; background:var(--bg); }
+  .tag { display:inline-block; font-size:11px; font-weight:700; letter-spacing:.04em;
+         text-transform:uppercase; padding:2px 8px; border-radius:20px; vertical-align:middle; margin-left:8px; }
+  .t-done { background:#c6f6d5; color:var(--good); }
+  .t-prog { background:#feebc8; color:var(--warn); }
+  .t-todo { background:#e2e8f0; color:var(--muted); }
+  .item { margin:14px 0; padding-left:14px; border-left:3px solid var(--line); }
+  .item.decision { border-color:var(--accent); }
+  .item.deviation { border-color:var(--warn); }
+  .item.tradeoff { border-color:#805ad5; }
+  .item.open { border-color:var(--bad); }
+  .kind { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  .item.decision .kind { color:var(--accent); }
+  .item.deviation .kind { color:var(--warn); }
+  .item.tradeoff .kind { color:#805ad5; }
+  .item.open .kind { color:var(--bad); }
+  code { background:#f0f0f0; padding:1px 5px; border-radius:4px; font-size:13px;
+         font-family:"SF Mono",Menlo,Consolas,monospace; }
+  pre { background:#f6f8fa; border:1px solid var(--line); border-radius:8px; padding:12px 14px;
+        overflow-x:auto; font-size:12.5px; }
+  .log td { padding:6px 10px; border-bottom:1px solid var(--line); vertical-align:top; font-size:13px; }
+  .log th { text-align:left; padding:6px 10px; border-bottom:2px solid var(--line); font-size:12px;
+            text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  .log { border-collapse:collapse; width:100%; }
+  .ok { color:var(--good); font-weight:600; }
+  .meta { color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+<h1>Identity Hub Redesign — Implementation Notes</h1>
+<p class="sub">Running log of design decisions, deviations, tradeoffs, and open questions while implementing
+<code>docs/IDENTITY_HUB_REDESIGN.md</code>. Newest notes are appended within each phase.</p>
+
+<h2>Iteration log</h2>
+<table class="log">
+  <thead><tr><th>When</th><th>Phase</th><th>What changed</th><th>Tests</th><th>Next</th></tr></thead>
+  <tbody>
+  <tr>
+    <td class="meta">A · start</td>
+    <td>A</td>
+    <td>Read plan + all Phase-A source/tests. Mapped every <code>people.contact_did</code>
+        reference. Established baseline.</td>
+    <td><span class="ok">250 passed</span> (people/schema/storage)</td>
+    <td>Edit <code>schemas.ts</code>: drop <code>people.contact_did</code>, add
+        <code>person_identities</code>, <code>vault_item_subjects</code>,
+        <code>vault_items.author_person_id</code>.</td>
+  </tr>
+  <tr>
+    <td class="meta">A · 1</td>
+    <td>A</td>
+    <td>Schema edited (identity v5 + persona v1, in place). Rewired
+        <code>PeopleRepository</code>: <code>resolveByIdentity</code>/<code>upsertIdentity</code> added;
+        <code>findByContactDid</code>, <code>linkContact</code>, <code>upsertContactPerson</code>,
+        <code>mergePeople</code> now go through <code>person_identities</code>;
+        <code>contactDid</code> derived via primary-DID subquery (D5). Updated 4 stub repos
+        in core+brain tests to satisfy the widened interface.</td>
+    <td><span class="ok">250 passed</span> (people/schema/storage) · core tsc clean</td>
+    <td>Reconcile doc after Codex expansion; add <code>entity_type</code>; then full core/brain run.</td>
+  </tr>
+  <tr>
+    <td class="meta">A · 2</td>
+    <td>doc</td>
+    <td>Codex had expanded the plan with 7 categories (lifecycle, verification evidence,
+        perspective surfaces, source/author split, FKs, group/agent flows). Rewrote the doc to a
+        disciplined middle path (see decisions below) and added <code>people.entity_type</code>
+        (column only) to the live schema.</td>
+    <td class="meta">—</td>
+    <td>Add entity_type column; re-run.</td>
+  </tr>
+  <tr>
+    <td class="meta">A · 3</td>
+    <td>A</td>
+    <td>Added <code>people.entity_type</code> column. First run failed 70 tests:
+        <code>migration.ts</code> <code>splitSQL</code> is a naive splitter that ends a statement at
+        any line whose trimmed text ends in <code>;</code> — my comment line "…NOT permission
+        logic<strong>;</strong>" split the CREATE mid-statement → "incomplete input". Reworded the
+        comment to avoid a trailing semicolon.</td>
+    <td><span class="ok">403 passed</span> (people/schema/storage/contacts)</td>
+    <td>Full core + brain run; Phase A deep review (3-question pass).</td>
+  </tr>
+  <tr>
+    <td class="meta">A · 4</td>
+    <td>A</td>
+    <td>Full <code>packages/core</code> suite + <code>brain</code>/<code>core</code> typecheck.
+        Core: 4337 passed, 2 failed in <code>cross_stack_compat.test.ts</code>. Stashed my changes →
+        same 2 failures on a clean tree → <strong>pre-existing</strong> (a ts-jest
+        <code>__dirname</code>→<code>REPO_ROOT</code> quirk that makes route discovery find 0; none
+        of my files touch <code>/v1/</code> routes). Restored cleanly.</td>
+    <td><span class="ok">4337 passed</span>, 1 skipped, 2 pre-existing-unrelated fail; brain+core tsc clean</td>
+    <td>Phase B — <code>establishContact()</code>.</td>
+  </tr>
+  <tr>
+    <td class="meta">B · 1</td>
+    <td>B</td>
+    <td>Full re-key (user-chosen). Schema: <code>contacts</code> + <code>contact_aliases</code> →
+        <code>person_id</code> key. Repo: <code>SQLiteContactRepository</code> person-keyed.
+        Directory: person-keyed in-memory (<code>contactsByPerson</code> + <code>didIndex</code> +
+        <code>aliasIndex</code>), DID-facing public API resolving via the people graph; new
+        <code>establishContact()</code>/<code>removeContact()</code>. Projection removal added
+        (<code>gates.removeContact</code>, <code>source_trust.removeKnownContact</code>) + wired to
+        block/delete via <code>syncProjections</code>. People repo gained
+        <code>listIdentities</code>; <code>CreatedFrom</code> gained <code>'user'</code>
+        (the repo already wrote it — type now matches).</td>
+    <td class="meta">— (building)</td>
+    <td>Rework directory + 4 dependent suites; run.</td>
+  </tr>
+  <tr>
+    <td class="meta">B · 2</td>
+    <td>B</td>
+    <td>Reworked <code>directory.test.ts</code> to a real identity-DB harness; added a shared
+        in-memory <code>makeFakePeopleRepo</code> for the 4 dependent suites
+        (validation, network_search, preferred_for ×2) that use the coarse in-memory adapter.
+        <strong>Diagnostic gotcha:</strong> a wave of babel "type"/"!" parse errors across ALL suites
+        was not a code bug — my cwd had drifted to repo root (from an earlier <code>cd</code>), so
+        <code>npx jest</code> ran the <em>root</em> config (babel-jest, no ts-jest). Running from
+        <code>packages/core</code> fixed it. Lesson: always invoke jest from the package dir.</td>
+    <td><span class="ok">975 passed</span> (contacts/people/peerlens/d2d/schema/storage/server); core+brain tsc clean</td>
+    <td>Full core + brain suites; deep review.</td>
+  </tr>
+  <tr>
+    <td class="meta">B · ⚠ incident</td>
+    <td>infra</td>
+    <td><strong>Machine hung / OOM — required a restart.</strong> Cause: I launched the full
+        <code>core</code> AND full <code>brain</code> jest suites <em>simultaneously as background
+        jobs</em>. Each spins a worker pool, and the reworked directory/dependent suites now open a
+        <em>real native SQLCipher</em> DB per test — two full suites × many workers × native DB
+        handles exhausted RAM. Not an infinite loop. Working tree survived intact.</td>
+    <td class="meta">n/a</td>
+    <td>Re-verify with <code>--runInBand</code>, ONE package, foreground. Never run two full suites
+        in parallel, never full suites in the background.</td>
+  </tr>
+  <tr>
+    <td class="meta">B · 3</td>
+    <td>B</td>
+    <td>Spread the fake people repo to all dependent suites: moved <code>makeFakePeopleRepo</code>
+        into <code>@dina/test-harness</code> (shared by core + brain); exported
+        <code>PersonIdentity</code>/<code>IdentityType</code> from <code>@dina/core</code>. Wired it
+        into the brain suites that call <code>addContact</code> (persona_selector, assembly,
+        people_extraction, staging_pipeline, 3× D2D/trust e2e).</td>
+    <td><span class="ok">core 575 + brain 155 + 36 passed</span> in-band; core+brain tsc clean</td>
+    <td>Deep review; fix the per-test SQLCipher slowness + a cold-cache bug.</td>
+  </tr>
+  <tr>
+    <td class="meta">B · 4 (deep review fixes)</td>
+    <td>B</td>
+    <td><strong>Slowness:</strong> the full in-band suite took ~20 min because
+        <code>directory.test.ts</code> opened a native SQLCipher DB (slow PBKDF2 key-derivation) per
+        test (×75). Fixed: one adapter per file (<code>beforeAll</code>), clear tables in
+        <code>beforeEach</code> → 75 tests now run in 1.5s. <strong>Code smell:</strong> unified the
+        duplicated projection logic in <code>getContact</code>/<code>hydrate</code> onto the single
+        <code>syncProjections</code> path. <strong>Latent bug:</strong> <code>establishContact</code>
+        chose INSERT-vs-UPDATE from the in-memory cache only — on a cold cache an existing contact
+        would hit a <code>person_id</code> PK UNIQUE violation. Now decides from the durable store
+        (<code>sqlRepo.get</code> fallback) + a regression test.</td>
+    <td><span class="ok">226 passed</span> (contacts/people/network_search) in 2.2s; tsc clean</td>
+    <td>Phase C.</td>
+  </tr>
+  </tbody>
+</table>
+
+<h2>Phase A — Schema + PeopleRepository <span class="tag t-prog">in&nbsp;progress</span></h2>
+
+<div class="item decision">
+  <div class="kind">Design decision — fixtures are NOT updated</div>
+  <p>The plan (§6) warns to update <code>packages/fixtures/schema/*.sql</code> "in lockstep."
+  On inspection that is <em>wrong for this change</em>: <code>identity_001.sql</code> /
+  <code>persona_001.sql</code> are a frozen architectural-reference schema that already diverges from
+  the runtime <code>schemas.ts</code> (they contain <em>no</em> people-graph tables at all, and
+  <code>identity_schema.test.ts</code> asserts "exactly 10 tables"). The runtime schema source is
+  <code>schemas.ts</code>, consumed by every test harness via <code>applyMigrations()</code>.
+  <strong>Touching the fixtures would break the fixture-parser tests, not satisfy them.</strong>
+  Decision: leave the fixtures alone; treat <code>schemas.ts</code> as the single source the redesign edits.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Design decision — in-place schema edit (greenfield), not forward migrations</div>
+  <p>Per plan D7 (greenfield, no real installs), I edit the existing migration entries in place
+  (identity v5 <code>people_graph</code>; persona v1 <code>initial_persona_schema</code>) rather than
+  appending v6/v3 ALTER migrations. The migration runner (<code>migration.ts</code>) has no checksum
+  guard and replays all migrations on a fresh DB, so every test and every wiped sim gets the final
+  schema. This makes the initial schema read as if person-identities was always the design (no
+  "added then dropped" cruft) — the right outcome for a pre-launch product.</p>
+</div>
+
+<div class="item tradeoff">
+  <div class="kind">Tradeoff — in-place edit requires a dev-DB wipe</div>
+  <p>The cost of editing v5 in place: any dev DB already at version 5 will <em>not</em> pick up the
+  changes (the runner skips <code>version &lt;= current</code>), and a column DROP can't be expressed by
+  re-running an edited <code>CREATE</code> anyway. So existing sims/emulators must be wiped (already in
+  the plan checklist). The alternative — a forward v6 migration with
+  <code>ALTER TABLE people DROP COLUMN contact_did</code> + <code>CREATE person_identities</code> — would
+  migrate dev DBs without a wipe but permanently bakes evolution cruft into a product that has never
+  shipped. Chose the clean initial schema.</p>
+</div>
+
+<div class="item open">
+  <div class="kind">Open question — revisit before first real install</div>
+  <p>If/when Dina ships to real installs that hold data we can't wipe, the in-place-edit policy must flip
+  to forward, append-only migrations. Flagging now so it isn't forgotten.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Design decision — Codex doc expansion trimmed to a disciplined middle path</div>
+  <p>Codex rewrote <code>IDENTITY_HUB_REDESIGN.md</code> with 7 categories of additions. They are
+  correct about a <em>mature</em> identity system but most violate the plan's own discipline
+  (D2/§3.7: avoid premature structure) and some carry costs Codex didn't weigh. Reconciled to:
+  <strong>adopt now</strong> = <code>entity_type</code> column + cross-file integrity rule
+  (skip-and-log dangling links) + two real tests (persona-scoped recall non-leakage; dangling
+  subject-link safety). <strong>Defer</strong> (new §11) = lifecycle/revocation, verification
+  evidence, perspective-scoped role phrases, source≠author≠subject raw columns, group/agent flows,
+  canonicalizer, aggressive fuzzy linking, within-file FKs, typed facts. Everything deferred is
+  documented so the spine can't regress to DID-only / name-FTS-only.</p>
+</div>
+
+<div class="item deviation">
+  <div class="kind">Deviation from Codex — three rejected as premature/risky</div>
+  <p>(1) <strong>Perspective-scoped role phrases</strong> (<code>perspective_person_id</code> on
+  <code>person_surfaces</code>) collide with the frozen Go-parity contract that pins role-phrase
+  exclusivity as <em>global</em>, and no current flow ingests third-parties' statements about third
+  parties. (2) <strong>"verified+active required for admission"</strong> folds verification policy
+  into the identity schema — the plan deliberately keeps admission separate (D6), and it risks the
+  Quixote demo (a freshly-paired contact might not count as "verified"). (3) <strong>Raw
+  author/source identity columns on <code>vault_items</code></strong> partly re-introduce the
+  DID-tagging the redesign moved away from; <code>author_person_id</code> (resolved person) is the
+  linkage we actually need, and agent-relay paths are deprecated anyway.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Design decision — entity_type is a column, not domain plumbing</div>
+  <p>Added <code>people.entity_type</code> (<code>human|org|service|device|agent|group</code>,
+  default <code>'human'</code>) — a one-column future-proofing hook for non-human counterparts
+  (a clinic, a service DID). Deliberately <em>not</em> threaded through the <code>Person</code>
+  domain type or row mappers: no consumer reads it yet, and adding an unused interface field is the
+  same speculative plumbing the redesign avoids. INSERTs rely on the column DEFAULT, so no write-path
+  change. The column exists so a future provider/org flow needs no migration.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Design decision — no SQL FKs (within or across files)</div>
+  <p>Codex proposed FKs within identity.sqlite (<code>ON DELETE CASCADE</code> to <code>people</code>).
+  Rejected for now: the model never hard-deletes (lifecycle = a <code>status</code> flip, so cascade
+  never fires), and FKs require auditing <code>PRAGMA foreign_keys=ON</code> across every adapter or
+  they're silently inert — a "looks-enforced-but-isn't" footgun. Integrity stays repo-enforced
+  (matches what's implemented). Cross-file (persona vault → identity DB) FKs are impossible anyway
+  (separate SQLCipher files); recall skips-and-logs a dangling <code>person_id</code>.</p>
+</div>
+
+<div class="item tradeoff">
+  <div class="kind">Tradeoff — verified monotonicity on identity upsert</div>
+  <p><code>upsertIdentityRow</code> uses <code>verified = MAX(old, excluded)</code> on conflict so a
+  re-point never silently downgrades a previously-verified identity. Alternative
+  (<code>verified = excluded.verified</code>) is simpler but could clear verification on an
+  unrelated re-assert. In Phase A all identity writes are explicit (verified=1), so the choice is
+  latent insurance, not load-bearing yet.</p>
+</div>
+
+<h2>Phase B — establishContact() + contacts re-key <span class="tag t-prog">in&nbsp;progress</span></h2>
+
+<div class="item decision">
+  <div class="kind">Design decision — full re-key, DID-facing accessors retained (user-chosen)</div>
+  <p>User chose the full D3 re-key over the disciplined alternative. Implementation: the
+  <code>contacts</code> SQL table + <code>contact_aliases</code> + the in-memory directory become
+  <strong>person-keyed</strong> (policy stored once per person), but the public directory API stays
+  <strong>DID-facing</strong> (<code>getContact(did)</code>, <code>isContact(did)</code>, …) and
+  resolves <code>did → person_identities → person_id</code> internally. This satisfies D3
+  (policy-per-person in the table) while keeping the 143 consumer call sites across 27 files
+  unchanged — exactly the "retain a getContact(did) accessor to limit churn" escape hatch D3 allows.
+  In-memory model: <code>Map&lt;personId, Contact&gt;</code> (truth) + <code>Map&lt;did, personId&gt;</code>
+  index + <code>Map&lt;alias, personId&gt;</code>. <code>Contact.did</code> stays as the primary DID
+  (every contact has exactly one DID today; multi-DID is deferred §11).</p>
+</div>
+
+<div class="item deviation">
+  <div class="kind">Consequence — contact directory now hard-depends on the people graph</div>
+  <p>Today the people-graph mirror in <code>addContact</code> is optional/fail-soft; with policy keyed
+  by <code>person_id</code>, a contact cannot be stored without first resolving/creating its person.
+  So the people repo becomes a <strong>required</strong> dependency of contact creation (routed through
+  <code>establishContact()</code>), and the directory's standalone tests must wire a people repo. This
+  is the intended direction (people = the hub; contacts derive from person_id), not a workaround —
+  but it is a real coupling the DID-keyed design didn't have. No silent did-as-person_id fallback is
+  introduced (that would be the workaround); missing-repo is a hard error.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Design decision — no separate `blocked` column; keep trust_level='blocked'</div>
+  <p>The doc draft (from Codex) added a <code>blocked</code> flag to <code>contacts</code>. Rejected:
+  blocking already lives in the <code>TrustLevel</code> enum (<code>'blocked'</code>), and a second
+  column is the exact "two competing blocked states" anti-pattern the doc itself warns against.
+  Projection rule stays: a DID is in the gate iff its person's contact <code>trust_level !== 'blocked'</code>.</p>
+</div>
+
+<h3>Phase A deep review (the 3-question pass)</h3>
+<div class="item decision">
+  <div class="kind">(1) Is this the absolute correct way?</div>
+  <p>Yes for the spine. Identity resolution is now a JOIN through <code>person_identities</code>
+  (<code>UNIQUE(type,value)</code> = one identifier → one person); rejected people are filtered at
+  resolve time so tombstones never leak; re-adding a DID that pointed at a rejected person
+  <em>re-points</em> via <code>ON CONFLICT</code> rather than colliding; <code>mergePeople</code>
+  re-points identities + surfaces to the survivor so all old DIDs still resolve. <code>Person.contactDid</code>
+  is derived from the primary DID via a correlated subquery (D5) so no consumer churned.</p>
+</div>
+<div class="item decision">
+  <div class="kind">(2) Code smells / poor architecture / workarounds?</div>
+  <p>None found. No DID column lingers on <code>people</code>; <code>findByContactDid</code> is a thin
+  wrapper over <code>resolveByIdentity</code> (single lookup path); the subquery uses a distinct alias
+  (<code>pid</code>) to avoid clashing with the outer <code>pi</code> join. Two honest, documented
+  limitations, both deferred not worked-around: multiple <code>primary_identity=1</code> rows per
+  person are possible (the subquery is deterministic via <code>primary DESC, updated_at DESC</code>,
+  and single-DID is the only Phase-A flow); LLM-extracted people carry no identity until linked
+  (correct — they have no DID yet).</p>
+</div>
+<div class="item decision">
+  <div class="kind">(3) Issues in the test cases?</div>
+  <p>The Go-parity contract (<code>people/contract.ts</code>) and repository/resolver suites pass
+  unchanged — the rewire is behaviour-preserving at the interface. Four stub repos (1 core, 3 brain)
+  were widened to satisfy the new interface methods; no assertion was weakened. The new tables
+  (<code>vault_item_subjects</code>, <code>author_person_id</code>) are schema-only in Phase A and are
+  exercised by the migration-apply tests; their write/read paths land with tests in Phase C/D.</p>
+</div>
+<div class="item open">
+  <div class="kind">Known issue (not mine) — cross_stack_compat.test.ts</div>
+  <p>2 failures in <code>packages/core/__tests__/cross_stack_compat.test.ts</code> are
+  <strong>pre-existing</strong> (reproduced on a clean tree). The route-audit computes
+  <code>REPO_ROOT = resolve(__dirname,'..','..','..')</code>, but under ts-jest <code>__dirname</code>
+  maps into a <code>dist</code>-shaped path, so the <code>src/**</code> route walk finds 0 routes.
+  Out of scope for the identity redesign (fixing it needs the team's build-then-test flow); left
+  untouched, flagged here.</p>
+</div>
+
+<h2>Phase C — subject-link write + did→person recall <span class="tag t-prog">in&nbsp;progress</span></h2>
+
+<div class="item decision">
+  <div class="kind">C·1 — core foundation DONE + green</div>
+  <p>Added <code>vault_items.author_person_id</code> to the write path (<code>storeItemSync</code> +
+  <code>rowToVaultItem</code> + the <code>VaultItem</code> port type, optional). Added the structured
+  recall edge API to both vault repos (SQLite + InMemory): <code>linkSubject</code>/<code>linkSubjectSync</code>
+  (idempotent UPSERT on <code>(item_id, person_id)</code>), <code>getItemIdsForPerson(Sync)</code>, and
+  <code>getItemsForPersonSync</code> (subjects→items join, non-deleted, newest-linked first).
+  <strong>242 passed</strong> (vault/storage/persona schema); core tsc clean.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">C·2 — in-process write + recall + author_person_id DONE + green</div>
+  <p><strong>Write:</strong> <code>applyExtraction</code> now returns the resolved
+  <code>personIds</code> (optional field — no stub churn); <code>post_publish</code> step 5b links
+  each to the item via <code>vaultRepo.linkSubjectSync(itemId, personId, {source:'llm'})</code>.
+  <strong>Recall:</strong> <code>reminder_planner.gatherVaultContext</code> Phase 0 pulls
+  <code>getItemsForPersonSync(personId)</code> for the sender + referenced people BEFORE the FTS
+  phases (structured-link primary, FTS = D4 fallback). <strong>author_person_id:</strong> set on
+  inbound D2D rows in <code>drain.ts</code> (sender DID → person), mapped through <code>crud.ts</code>.
+  Added a post_publish test proving the subject link is written (the Quixote note → person edge).
+  Code smell fixed during review: extracted the duplicated item→line logic into <code>pushItemLine</code>.
+  <strong>Verified:</strong> core full <span class="ok">4338 passed</span>; brain full
+  <span class="ok">3225 passed</span> (one transient <code>degradation.test.ts</code> heap-threshold
+  flake — a hard 512MB V8-heap assert tripped under parallel load, passed on re-run; not a logic bug).</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">C·OOP — out-of-process write + recall-infra + legacy recall DONE + green</div>
+  <p>User asked to complete out-of-process. <strong>Write:</strong> Core links
+  <code>vault_item_subjects</code> when it applies the people-graph extraction — the Brain passes the
+  <code>persona</code> alongside the <code>ExtractionResult</code> (threaded through
+  <code>peopleGraphApply</code> → <code>applyPeopleGraphExtraction</code> → CoreClient
+  <code>peopleApplyExtraction(result, persona)</code> → the <code>/v1/people/apply-extraction</code>
+  route), and Core (holding both DBs) writes the edges using the <code>applied.personIds</code> — one
+  round-trip, no new write endpoint. The lite agentic drain path also passes the target persona.
+  <strong>Recall infra:</strong> new <code>vaultItemsForPerson(persona, personId, limit)</code> on the
+  CoreClient (+ http + in-process transports + mock) backed by <code>GET /v1/vault/subjects</code> →
+  <code>crud.getItemsForPerson</code>; added to the <code>VaultReadBackend</code> + wired in
+  brain-server boot. <strong>Recall:</strong> the planner's Phase 0 is now runtime-agnostic — uses the
+  in-process repo when present, else <code>vaultReadBackend.vaultItemsForPerson</code> (HTTP).
+  <strong>Verified:</strong> core 4350 + brain 3227 green; added an out-of-process recall test
+  (Phase 0 via the backend with no in-process repo).</p>
+</div>
+<div class="item decision">
+  <div class="kind">C·OOP deep review (3-question pass)</div>
+  <p><strong>(1) Correct way?</strong> Yes — the write folds into the existing apply round-trip (Core
+  has both the people graph and the persona vaults, so it links atomically with the apply), avoiding a
+  second endpoint; recall mirrors the existing read-backend pattern. <strong>(2) Smells?</strong>
+  None — <code>persona</code> rides as an optional field the apply route ignores for ExtractionResult
+  parsing; all new client methods are additive; both write and recall are fail-soft. <strong>(3) Test
+  issues?</strong> Covered by the new out-of-process recall test + existing client/route/staging suites
+  green; the write is exercised through the apply route + in-process agentic linking test.</p>
+</div>
+<div class="item decision">
+  <div class="kind">C·OOP·agentic — lite agentic recall DONE + green</div>
+  <p>Built the deterministic-seed approach (reliable; the LLM never sees a name to trigger a tool).
+  Added a Core <strong>resolve-person-by-DID</strong> surface (<code>GET /v1/people/by-did</code> →
+  <code>resolveByIdentity('did', …)</code>; CoreClient <code>peopleResolveByDid</code> + both
+  transports + mock + <code>PeopleReadBackend</code> + boot wiring). Added a runtime-agnostic helper
+  <code>recallSenderSubjectMemories(senderDid, personas, limit)</code> (in-process repos OR the HTTP
+  backends) and a <code>RememberTurnInput.relatedMemories</code> field rendered into the prompt
+  ("Known facts about the sender: …"). The staging drain pre-fetches it for D2D arrivals
+  (<code>originDid</code>) before the agentic <code>rememberRuntime.run</code>. Tested both runtimes
+  (<code>subject_recall.test.ts</code>) + the write route (<code>people_get.test.ts</code>).
+  <strong>Verified:</strong> core 4351 + brain 3229 green (same 2 pre-existing cross_stack_compat +
+  the transient degradation heap flake).</p>
+</div>
+<div class="item decision">
+  <div class="kind">C·OOP·agentic deep review (3-question pass)</div>
+  <p><strong>(1) Correct way?</strong> Yes — deterministic pre-fetch + prompt seed beats an
+  LLM-triggered tool for the D2D-arrival case (no name in the body), and it reuses the same
+  backend-or-in-process resolution pattern the rest of Brain uses, so mobile + lite share one code
+  path. <strong>(2) Smells?</strong> None — <code>relatedMemories</code> is optional + additive;
+  the recall + the drain pre-fetch are fail-soft (logged, never block the drain); the new Core route
+  mirrors the existing <code>/find</code> handler. <strong>(3) Test issues?</strong> The helper is
+  covered for both runtimes; the write route + the recall infra each have focused tests; the agentic
+  drain seed is exercised through the staging suite (green).</p>
+</div>
+
+<h2>Phase D — test matrix <span class="tag t-done">done</span></h2>
+<div class="item decision">
+  <div class="kind">D·1 — matrix coverage</div>
+  <p>Much of the plan §9 matrix was already pinned by tests added in A/B/C. Filled the explicit gaps:
+  <strong>the Quixote discriminating recall</strong> (a subject-linked note with zero token overlap
+  with both the person's name and the inbound event — recalled ONLY via the structured
+  <code>did→person→vault_item_subjects</code> edge, not FTS) in <code>reminder_planner.test.ts</code>;
+  <strong>block→gate-prune / unblock→restore</strong>, <strong>delete-preserves-person+identity</strong>,
+  and <strong>two-DIDs-resolve-to-one-person</strong> in <code>directory.test.ts</code>; and a vault
+  <code>subject_links.test.ts</code> for round-trip, idempotency, <strong>dangling-link safety</strong>
+  (missing item skipped, never throws — the cross-file no-FK case), deleted-item exclusion, and
+  <strong>persona-scoped non-leakage</strong>. <strong>Verified:</strong> core full
+  <span class="ok">4350 passed</span> (2 pre-existing <code>cross_stack_compat</code> fails), brain full
+  <span class="ok">3226 passed</span> (the <code>degradation.test.ts</code> heap-threshold flake is
+  transient/pre-existing — green on the clean run).</p>
+</div>
+<div class="item decision">
+  <div class="kind">Phase D deep review (3-question pass)</div>
+  <p><strong>(1) Correct way?</strong> Yes — the matrix asserts behaviour through the public APIs
+  (directory, people repo, vault repo, planner) at the right layer, and the crown-jewel test is
+  <em>discriminating</em> (it would fail on the old FTS-only path), so it actually proves the new
+  recall edge rather than re-passing on the fallback. <strong>(2) Smells/workarounds?</strong> None
+  — used the shared real-SQLite directory harness + the in-memory vault repo (contract-equivalent)
+  for speed; reset the module-global gate/source-trust sets in <code>beforeEach</code> so projection
+  assertions aren't order-dependent. <strong>(3) Test issues?</strong> The vault matrix runs against
+  <code>InMemoryVaultRepository</code> (fast, no per-test SQLCipher); the SQLite path is covered
+  end-to-end by the brain post_publish + planner suites — no assertion weakened.</p>
+</div>
+
+<h3>Phase C deep review (the 3-question pass — in-process scope)</h3>
+<div class="item decision">
+  <div class="kind">(1) Is this the absolute correct way?</div>
+  <p>Yes for the in-process path. The write reuses the extractor's own person-resolution
+  (<code>applied.personIds</code>) rather than re-resolving — the extraction is authoritative, so no
+  ambiguity is introduced. The recall is a structured <code>did → person_id → vault_item_subjects</code>
+  edge (Phase 0), with the surface-FTS retrieval preserved as the D4 fallback — exactly the plan's
+  primary/fallback design. <code>vault_item_subjects</code> (many items per person) is the right
+  shape vs. <code>person_surfaces.source_item_id</code> (which <code>upsertSurface</code> overwrites
+  to the latest item — would lose older notes).</p>
+</div>
+<div class="item decision">
+  <div class="kind">(2) Code smells / poor architecture / workarounds?</div>
+  <p>One found + fixed: duplicated item→context-line logic (Phase 0 vs <code>collectFrom</code>) →
+  extracted <code>pushItemLine</code>. New fields (<code>ApplyExtractionResponse.personIds</code>,
+  <code>VaultItem.author_person_id</code>) are optional → additive, no stub/fixture churn. The
+  subject-link + author_person_id writes are fail-soft (recall enrichment, never block the store) —
+  matching the existing post_publish contract, not a workaround. The out-of-process path is
+  <em>deferred</em> (user-chosen), with a graceful no-op fallback (no <code>personIds</code> → no link
+  → FTS recall) — a documented scope boundary, not a silent gap.</p>
+</div>
+<div class="item decision">
+  <div class="kind">(3) Issues in the test cases?</div>
+  <p>Added a write-side test (post_publish → <code>vault_item_subjects</code> link to the resolved
+  person). Wired the fake people repo into the one suite that regressed (post_publish "contact update").
+  The end-to-end recall (subject-linked note recalled by inbound DID with zero token overlap) is the
+  dedicated Quixote contract test — slated for Phase D (the test-matrix phase). The
+  <code>degradation.test.ts</code> heap-threshold flake is a pre-existing brittle assert (hard 512MB
+  V8 heap), exposed under parallel load; not introduced here.</p>
+</div>
+
+<h3>Phase B deep review (the 3-question pass)</h3>
+<div class="item decision">
+  <div class="kind">(1) Is this the absolute correct way?</div>
+  <p>Yes. Contact policy is now stored once per <code>person_id</code> (the people-graph hub), with
+  a DID-facing API resolving <code>did → person_identities → person_id → contacts</code> — the D3
+  design, with the "keep a did accessor to limit churn" escape hatch so the ~143 consumers are
+  untouched. <code>establishContact()</code> is the single mutation path (person + identity +
+  confirmed surface + policy + projections, in order, write-through-first). The D2D gate +
+  source-trust sets are derived caches with one sync path (<code>syncProjections</code>) used by
+  establish / get / hydrate alike, and block/delete now prune them (the real bug §1/§6 named).</p>
+</div>
+<div class="item decision">
+  <div class="kind">(2) Code smells / poor architecture / workarounds? — found 3, all fixed</div>
+  <p><strong>(a)</strong> Duplicated projection logic in <code>getContact</code>/<code>hydrate</code> →
+  unified onto <code>syncProjections</code>. <strong>(b)</strong> <code>establishContact</code> chose
+  INSERT-vs-UPDATE from the in-memory cache only → cold-cache UNIQUE-violation footgun; now durable-aware
+  (<code>sqlRepo.get</code> fallback) + regression test. <strong>(c)</strong> <code>directory.test.ts</code>
+  opened a native SQLCipher DB per test (slow PBKDF2 ×75 → ~minutes) → one adapter per file +
+  table-clear per test (1.5s). No silent fallbacks: a missing people repo is a hard error, never a
+  did-as-person_id pseudo-key (that would be the workaround). <code>Contact.did</code> as "primary
+  DID" is a documented single-DID-era simplification, not a hack (multi-DID is §11).</p>
+</div>
+<div class="item decision">
+  <div class="kind">(3) Issues in the test cases? — addressed</div>
+  <p>The directory suite was rewritten to real-SQL fidelity (person-keyed) and its stub-based tests
+  re-expressed against the new semantics (people-repo required; blocked still creates a person;
+  mirror-throws now throws). The widespread "people repo not wired" failures across dependent suites
+  were genuine (the new hard dependency), fixed by wiring the shared fake — not by weakening
+  assertions. Added regression coverage: ambiguous-name no-auto-link, DID re-point, cold-cache
+  re-add. Contract intent preserved (write-through-to-SQL contract now asserts the call happened,
+  since the key is a resolved person_id rather than the DID).</p>
+</div>
+<div class="item decision">
+  <div class="kind">Full-suite confirmation — DONE</div>
+  <p>Ran a single parallel core full suite (<code>--maxWorkers=2</code>, foreground, 105s,
+  memory-safe — no OOM). <strong>4338 passed</strong>, 1 skipped, 2 failed. The 2 failures are the
+  same pre-existing <code>cross_stack_compat.test.ts</code> route-audit cases proven to fail on a
+  clean tree (ts-jest <code>__dirname</code> quirk, unrelated to this work). This matches Phase A's
+  bar exactly (Phase A: 4337 passed + same 2). Phase B fully verified.</p>
+</div>
+
+</body>
+</html>

@@ -35,8 +35,12 @@ export type SurfaceStatus = 'suggested' | 'confirmed' | 'rejected';
 /** LLM-assessed confidence for an extracted surface. */
 export type SurfaceConfidence = 'high' | 'medium' | 'low';
 
-/** Provenance for both `Person` and `PersonSurface` rows. */
-export type CreatedFrom = 'llm' | 'manual' | 'imported';
+/**
+ * Provenance for both `Person` and `PersonSurface` rows. `user` is the
+ * stamp `upsertContactPerson` writes for a person the user explicitly
+ * saved as a contact (vs. `llm` for an extracted mention).
+ */
+export type CreatedFrom = 'llm' | 'manual' | 'imported' | 'user';
 
 /**
  * Type categories for a surface form. Drives the conflict rule
@@ -74,6 +78,7 @@ export const VALID_CREATED_FROM: ReadonlySet<string> = new Set<CreatedFrom>([
   'llm',
   'manual',
   'imported',
+  'user',
 ]);
 
 /**
@@ -94,6 +99,28 @@ export interface Person {
   updatedAt: number;
   /** Hydrated by `getPerson` / `listPeople`. Not set on raw row reads. */
   surfaces?: PersonSurface[];
+}
+
+/** Channel a `PersonIdentity` can carry. */
+export type IdentityType = 'did' | 'email' | 'phone' | 'handle' | 'device';
+
+/**
+ * One identifier bound to a person. Many identities map to one person
+ * (a DID per device, plus future email/phone/handle); the
+ * `(identityType, identityValue)` pair is globally unique — an
+ * identifier belongs to exactly one person at a time. Identities are
+ * the canonical link the contact directory + D2D admission resolve
+ * through (`did → person_id`).
+ */
+export interface PersonIdentity {
+  identityId: number;
+  personId: string;
+  identityType: IdentityType;
+  identityValue: string;
+  verified: boolean;
+  primary: boolean;
+  createdAt: number;
+  updatedAt: number;
 }
 
 /**
@@ -167,4 +194,12 @@ export interface ApplyExtractionResponse {
   updated: number;
   conflicts: string[];
   skipped: boolean;
+  /**
+   * The person_ids this extraction created or updated (in result order,
+   * deduped). Lets the caller write the structured recall edge
+   * (`vault_item_subjects`) linking the source item to each resolved
+   * person. Optional so existing stubs/fakes need no change; populated
+   * by the real repo, empty/absent on a skipped (idempotent) re-apply.
+   */
+  personIds?: string[];
 }

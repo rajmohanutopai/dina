@@ -25,9 +25,11 @@ import {
   resetContactDirectory,
 } from '../../src/contacts/directory';
 import { SQLiteContactRepository, setContactRepository } from '../../src/contacts/repository';
+import { setPeopleRepository } from '../../src/people/repository';
 import { InMemoryDatabaseAdapter } from '../../src/storage/db_adapter';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
+import { makeFakePeopleRepo } from '../_support/fake_people_repo';
 
 function makeSqliteContext() {
   const db = new InMemoryDatabaseAdapter();
@@ -45,7 +47,9 @@ describe('Contact directory — preferredFor (in-memory)', () => {
   beforeEach(() => {
     resetContactDirectory();
     setContactRepository(null); // detach SQL so this describe exercises memory only
+    setPeopleRepository(makeFakePeopleRepo()); // person-keyed policy needs a people repo
   });
+  afterEach(() => setPeopleRepository(null));
 
   it('roundtrip: setPreferredFor then getPreferredFor', () => {
     addContact('did:plc:alice', 'Alice');

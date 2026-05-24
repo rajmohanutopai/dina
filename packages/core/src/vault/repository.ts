@@ -27,6 +27,16 @@
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 import type { VaultItem } from '@dina/test-harness';
 
+/** Options for a `vault_item_subjects` link (the structured recall edge). */
+export interface SubjectLinkOptions {
+  /** subject | mentioned | about (default 'about'). */
+  relation?: string;
+  /** high | medium | low (default 'medium'). */
+  confidence?: string;
+  /** llm | contact_match | manual (default 'manual'). */
+  source?: string;
+}
+
 export interface VaultRepository {
   storeItem(item: VaultItem): Promise<void>;
   getItem(id: string): Promise<VaultItem | null>;
@@ -35,6 +45,17 @@ export interface VaultRepository {
   queryFTS(text: string, limit: number): Promise<VaultItem[]>;
   queryAll(limit: number): Promise<VaultItem[]>;
   storeBatch(items: VaultItem[]): Promise<void>;
+  /**
+   * Link a vault item to a person it is *about* (`vault_item_subjects`)
+   * — the structured recall edge that replaces name/FTS-only matching.
+   * Idempotent on `(item_id, person_id)`. Empty ids are a no-op.
+   */
+  linkSubject(itemId: string, personId: string, opts?: SubjectLinkOptions): Promise<void>;
+  /**
+   * Vault item ids a person is a subject of, newest-linked first.
+   * The inbound `did → person_id → subjects` recall hot path.
+   */
+  getItemIdsForPerson(personId: string): Promise<string[]>;
 
   // Sync variants — op-sqlite (mobile) + better-sqlite3 (node) are both
   // synchronous under the hood, so these match the underlying call. The
@@ -48,6 +69,9 @@ export interface VaultRepository {
   queryFTSSync(text: string, limit: number): VaultItem[];
   queryAllSync(limit: number): VaultItem[];
   storeBatchSync(items: VaultItem[]): void;
+  linkSubjectSync(itemId: string, personId: string, opts?: SubjectLinkOptions): void;
+  getItemIdsForPersonSync(personId: string): string[];
+  getItemsForPersonSync(personId: string, limit: number): VaultItem[];
   /**
    * Enumerate every **non-deleted** item (matches the API's default
    * "deleted rows are invisible" rule — same as `getItemSync`, the
@@ -125,17 +149,18 @@ export class SQLiteVaultRepository implements VaultRepository {
 
     this.db.execute(
       `INSERT OR REPLACE INTO vault_items (
-        id, type, source, source_id, contact_did, summary, body, metadata, tags,
+        id, type, source, source_id, contact_did, author_person_id, summary, body, metadata, tags,
         content_l0, content_l1, deleted, timestamp, created_at, updated_at,
         sender, sender_trust, source_type, confidence, retrieval_policy,
         contradicts, enrichment_status, enrichment_version, embedding
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         item.id,
         item.type,
         item.source,
         item.source_id,
         item.contact_did,
+        item.author_person_id ?? '',
         item.summary,
         item.body,
         item.metadata,
@@ -244,6 +269,60 @@ export class SQLiteVaultRepository implements VaultRepository {
     // rows are invisible" rule (see `VaultRepository.valuesSync` docs).
     const rows = this.db.query(
       'SELECT * FROM vault_items WHERE deleted = 0 ORDER BY timestamp DESC',
+    );
+    return rows.map(rowToVaultItem);
+  }
+
+  async linkSubject(itemId: string, personId: string, opts?: SubjectLinkOptions): Promise<void> {
+    this.linkSubjectSync(itemId, personId, opts);
+  }
+
+  linkSubjectSync(itemId: string, personId: string, opts?: SubjectLinkOptions): void {
+    if (itemId === '' || personId === '') return;
+    const nowSec = Math.floor(Date.now() / 1000);
+    // Idempotent on (item_id, person_id): re-linking refreshes the
+    // relation/confidence/source rather than duplicating.
+    this.db.execute(
+      `INSERT INTO vault_item_subjects (item_id, person_id, relation, confidence, source, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(item_id, person_id) DO UPDATE SET
+         relation = excluded.relation,
+         confidence = excluded.confidence,
+         source = excluded.source`,
+      [
+        itemId,
+        personId,
+        opts?.relation ?? 'about',
+        opts?.confidence ?? 'medium',
+        opts?.source ?? 'manual',
+        nowSec,
+      ],
+    );
+  }
+
+  async getItemIdsForPerson(personId: string): Promise<string[]> {
+    return this.getItemIdsForPersonSync(personId);
+  }
+
+  getItemIdsForPersonSync(personId: string): string[] {
+    if (personId === '') return [];
+    const rows = this.db.query(
+      `SELECT item_id FROM vault_item_subjects WHERE person_id = ? ORDER BY created_at DESC`,
+      [personId],
+    );
+    return rows.map((r) => String(r.item_id));
+  }
+
+  getItemsForPersonSync(personId: string, limit: number): VaultItem[] {
+    if (personId === '' || limit <= 0) return [];
+    // Join subjects → items, newest-linked first, non-deleted only.
+    const rows = this.db.query(
+      `SELECT vi.* FROM vault_item_subjects vis
+       JOIN vault_items vi ON vi.id = vis.item_id
+       WHERE vis.person_id = ? AND vi.deleted = 0
+       ORDER BY vis.created_at DESC
+       LIMIT ?`,
+      [personId, limit],
     );
     return rows.map(rowToVaultItem);
   }
@@ -367,6 +446,7 @@ export class InMemoryVaultRepository implements VaultRepository {
   /** Test helper — clear everything. */
   clear(): void {
     this.items.clear();
+    this.subjects.clear();
   }
 
   valuesSync(): VaultItem[] {
@@ -381,6 +461,40 @@ export class InMemoryVaultRepository implements VaultRepository {
       if (!item.deleted) live.push({ ...item });
     }
     return live;
+  }
+
+  // person_id -> item_ids, newest-linked last (we reverse on read).
+  private readonly subjects = new Map<string, string[]>();
+
+  async linkSubject(itemId: string, personId: string, opts?: SubjectLinkOptions): Promise<void> {
+    this.linkSubjectSync(itemId, personId, opts);
+  }
+
+  linkSubjectSync(itemId: string, personId: string, _opts?: SubjectLinkOptions): void {
+    if (itemId === '' || personId === '') return;
+    const list = this.subjects.get(personId) ?? [];
+    if (!list.includes(itemId)) list.push(itemId); // idempotent on (item,person)
+    this.subjects.set(personId, list);
+  }
+
+  async getItemIdsForPerson(personId: string): Promise<string[]> {
+    return this.getItemIdsForPersonSync(personId);
+  }
+
+  getItemIdsForPersonSync(personId: string): string[] {
+    if (personId === '') return [];
+    return [...(this.subjects.get(personId) ?? [])].reverse(); // newest-linked first
+  }
+
+  getItemsForPersonSync(personId: string, limit: number): VaultItem[] {
+    if (personId === '' || limit <= 0) return [];
+    const out: VaultItem[] = [];
+    for (const id of this.getItemIdsForPersonSync(personId)) {
+      const item = this.items.get(id);
+      if (item && !item.deleted) out.push({ ...item });
+      if (out.length >= limit) break;
+    }
+    return out;
   }
 }
 
@@ -397,6 +511,7 @@ function rowToVaultItem(row: DBRow): VaultItem {
     source: String(row.source ?? ''),
     source_id: String(row.source_id ?? ''),
     contact_did: String(row.contact_did ?? ''),
+    author_person_id: String(row.author_person_id ?? ''),
     summary: String(row.summary ?? ''),
     body: String(row.body ?? ''),
     metadata: String(row.metadata ?? '{}'),

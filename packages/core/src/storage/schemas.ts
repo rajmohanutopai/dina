@@ -18,8 +18,14 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
     version: 1,
     name: 'initial_identity_schema',
     sql: `
+      -- Contact policy is keyed by person_id, not DID: you trust a
+      -- person across their devices/identities, so trust/sharing
+      -- policy lives once per person (people graph hub). The DID-to-
+      -- person mapping lives in person_identities; getContact(did)
+      -- resolves did -> person_id -> contacts. See
+      -- docs/IDENTITY_HUB_REDESIGN.md §3.4.
       CREATE TABLE IF NOT EXISTS contacts (
-        did TEXT PRIMARY KEY,
+        person_id TEXT PRIMARY KEY,
         display_name TEXT NOT NULL,
         trust_level TEXT NOT NULL DEFAULT 'unknown',
         sharing_tier TEXT NOT NULL DEFAULT 'summary',
@@ -39,10 +45,10 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
 
       CREATE TABLE IF NOT EXISTS contact_aliases (
         alias_normalized TEXT PRIMARY KEY,
-        did TEXT NOT NULL REFERENCES contacts(did) ON DELETE CASCADE
+        person_id TEXT NOT NULL REFERENCES contacts(person_id) ON DELETE CASCADE
       ) WITHOUT ROWID;
 
-      CREATE INDEX IF NOT EXISTS idx_contact_aliases_did ON contact_aliases(did);
+      CREATE INDEX IF NOT EXISTS idx_contact_aliases_person ON contact_aliases(person_id);
 
       CREATE TABLE IF NOT EXISTS audit_log (
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -270,15 +276,27 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
     `,
   },
   {
-    // People-graph — port of main Dina identity v10 ("Person memory
-    // layer"). Three tables sit alongside `contacts`:
+    // People-graph — the canonical identity hub (see
+    // docs/IDENTITY_HUB_REDESIGN.md). A *person* is the stable entity;
+    // identifiers point to it (many-to-one) and facts attach to it.
+    // Four tables sit alongside `contacts`:
     //
-    //   - `people` is the canonical entity layer. `contact_did` is
-    //     OPTIONAL — covers humans the user knows about (relatives,
-    //     kids, public figures) who don't have a Dina account. The
-    //     `status` (suggested/confirmed/rejected) + `created_from`
-    //     (llm/manual/imported) fields drive the curation flow over
-    //     LLM-extracted person mentions.
+    //   - `people` is the canonical entity layer. It carries NO DID
+    //     column — a person may have zero, one, or many identities
+    //     (a DID per device, plus future email/phone/handle). Those
+    //     live in `person_identities`. This covers humans the user
+    //     knows about (relatives, kids, public figures) who don't have
+    //     a Dina account, as well as paired contacts across multiple
+    //     devices/channels. `status` (suggested/confirmed/rejected) +
+    //     `created_from` (llm/manual/imported/user) drive the curation
+    //     flow over LLM-extracted person mentions.
+    //   - `person_identities` is the canonical link layer: each row
+    //     binds one identifier `(identity_type, identity_value)` to a
+    //     `person_id`. `UNIQUE(identity_type, identity_value)` enforces
+    //     "one identifier maps to exactly one person." Identities can
+    //     rotate (new DID after key rotation) without orphaning the
+    //     person's facts. Hot path: resolve sender DID → person on
+    //     every D2D arrival before vault enrichment.
     //   - `person_surfaces` is the multi-alias index — one person can
     //     own many surfaces ("Sancho", "Sanch", "Mr. Garcia") with
     //     per-surface confidence + status. `source_item_id` records
@@ -289,16 +307,22 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
     //     LLM with the same content doesn't duplicate surfaces.
     //
     // Greenfield install — no backfill from `contacts`. New contacts
-    // get a `people` row created at pair time by the contact service;
-    // the LLM-driven extractor populates additional people from
-    // staged content.
+    // get a `people` row + a `person_identities` DID row created at
+    // pair time by the contact service; the LLM-driven extractor
+    // populates additional people from staged content.
     version: 5,
     name: 'people_graph',
     sql: `
       CREATE TABLE IF NOT EXISTS people (
         person_id         TEXT PRIMARY KEY,
+        -- Entity class so the same identity spine holds non-human
+        -- counterparts (a clinic, a bank, a service/agent DID, a
+        -- shared device) without forcing them into human-only
+        -- behaviour. Modelling hook only, NOT permission logic --
+        -- admission still depends on contact policy + message type.
+        -- One of: human | org | service | device | agent | group.
+        entity_type       TEXT NOT NULL DEFAULT 'human',
         canonical_name    TEXT NOT NULL DEFAULT '',
-        contact_did       TEXT NOT NULL DEFAULT '',
         relationship_hint TEXT NOT NULL DEFAULT '',
         status            TEXT NOT NULL DEFAULT 'suggested',
         created_from      TEXT NOT NULL DEFAULT 'llm',
@@ -306,10 +330,28 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         updated_at        INTEGER NOT NULL
       ) WITHOUT ROWID;
 
-      -- Hot path: resolve sender DID → person record (used on every
-      -- D2D arrival before vault enrichment).
-      CREATE INDEX IF NOT EXISTS idx_people_contact_did
-        ON people(contact_did) WHERE contact_did != '';
+      -- Canonical identifier to person link. Many identities map to
+      -- one person; one identifier maps to exactly one person (the
+      -- UNIQUE constraint). identity_type is one of:
+      -- did | email | phone | handle | device.
+      CREATE TABLE IF NOT EXISTS person_identities (
+        identity_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        person_id         TEXT NOT NULL,
+        identity_type     TEXT NOT NULL,
+        identity_value    TEXT NOT NULL,
+        verified          INTEGER NOT NULL DEFAULT 0,
+        primary_identity  INTEGER NOT NULL DEFAULT 0,
+        created_at        INTEGER NOT NULL,
+        updated_at        INTEGER NOT NULL,
+        UNIQUE(identity_type, identity_value)
+      );
+
+      -- Hot path: resolve (type,value) to a person record (used on
+      -- every D2D arrival before vault enrichment).
+      CREATE INDEX IF NOT EXISTS idx_person_identities_lookup
+        ON person_identities(identity_type, identity_value);
+      CREATE INDEX IF NOT EXISTS idx_person_identities_person
+        ON person_identities(person_id);
 
       CREATE TABLE IF NOT EXISTS person_surfaces (
         id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -381,6 +423,12 @@ export const PERSONA_MIGRATIONS: Migration[] = [
         contradicts TEXT NOT NULL DEFAULT '',
         enrichment_status TEXT NOT NULL DEFAULT 'pending',
         enrichment_version TEXT NOT NULL DEFAULT '',
+        -- The author/sender resolved to a canonical person_id (people
+        -- graph, identity.sqlite). Set for inbound D2D items where the
+        -- sender DID resolved to a person; '' for owner-authored items.
+        -- Cross-file reference (people live in identity.sqlite) — no
+        -- SQL FK across SQLCipher files. See IDENTITY_HUB_REDESIGN §3.5.
+        author_person_id TEXT NOT NULL DEFAULT '',
         embedding BLOB
       );
 
@@ -389,6 +437,27 @@ export const PERSONA_MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_vault_items_deleted ON vault_items(deleted);
       CREATE INDEX IF NOT EXISTS idx_vault_items_sender ON vault_items(sender);
       CREATE INDEX IF NOT EXISTS idx_vault_items_retrieval ON vault_items(retrieval_policy);
+      CREATE INDEX IF NOT EXISTS idx_vault_items_author
+        ON vault_items(author_person_id) WHERE author_person_id != '';
+
+      -- Canonical recall link: which people a vault item is *about*.
+      -- The structured replacement for name/FTS-only recall — inbound
+      -- D2D resolves sender DID → person_id → this table → the notes
+      -- remembered about that person. person_id references the people
+      -- graph in identity.sqlite (separate file — no SQL FK).
+      -- See IDENTITY_HUB_REDESIGN §3.6.
+      CREATE TABLE IF NOT EXISTS vault_item_subjects (
+        item_id    TEXT NOT NULL,
+        person_id  TEXT NOT NULL,
+        relation   TEXT NOT NULL DEFAULT 'about',
+        confidence TEXT NOT NULL DEFAULT 'medium',
+        source     TEXT NOT NULL DEFAULT 'manual',
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (item_id, person_id)
+      ) WITHOUT ROWID;
+
+      CREATE INDEX IF NOT EXISTS idx_vault_item_subjects_person
+        ON vault_item_subjects(person_id);
 
       CREATE VIRTUAL TABLE IF NOT EXISTS vault_items_fts USING fts5(
         summary, body, tags, contact_did, content_l0, content_l1,

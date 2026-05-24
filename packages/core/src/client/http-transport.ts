@@ -206,6 +206,21 @@ export class HttpCoreTransport implements CoreClient {
     }
   }
 
+  async vaultItemsForPerson(
+    persona: string,
+    personId: string,
+    limit: number,
+  ): Promise<VaultQueryItem[]> {
+    const res = await this.call<{ items?: VaultQueryItem[] }>(
+      'GET',
+      '/v1/vault/subjects',
+      { persona, person_id: personId, limit: String(limit) },
+      undefined,
+      `vaultItemsForPerson(persona=${persona}, personId=${personId})`,
+    );
+    return Array.isArray(res.items) ? res.items : [];
+  }
+
   async vaultStore(persona: string, item: VaultItemInput): Promise<VaultStoreResult> {
     return this.call<VaultStoreResult>(
       'POST',
@@ -777,12 +792,20 @@ export class HttpCoreTransport implements CoreClient {
 
   async peopleApplyExtraction(
     result: ExtractionResult,
+    persona?: string,
   ): Promise<ApplyExtractionResponse> {
+    // `persona` rides alongside the ExtractionResult so Core can write
+    // the subject-link recall edges into the right persona vault. The
+    // apply route ignores the extra field for ExtractionResult parsing.
+    const body =
+      persona !== undefined && persona !== ''
+        ? { ...(result as unknown as Record<string, unknown>), persona }
+        : (result as unknown as Record<string, unknown>);
     return this.call<ApplyExtractionResponse>(
       'POST',
       '/v1/people/apply-extraction',
       undefined,
-      result as unknown as Record<string, unknown>,
+      body,
       `peopleApplyExtraction(sourceItemId=${result.sourceItemId})`,
     );
   }
@@ -825,6 +848,20 @@ export class HttpCoreTransport implements CoreClient {
       `peopleFindByName(surface=${surface})`,
     );
     return Array.isArray(raw.people) ? (raw.people as Person[]) : [];
+  }
+
+  async peopleResolveByDid(did: string): Promise<Person | null> {
+    if (typeof did !== 'string' || did.trim() === '') {
+      throw new Error('peopleResolveByDid: did is required');
+    }
+    const raw = await this.call<{ person?: Person | null }>(
+      'GET',
+      '/v1/people/by-did',
+      { did: did.trim() },
+      undefined,
+      `peopleResolveByDid(did=${did})`,
+    );
+    return raw.person ?? null;
   }
 
   async updateContact(did: string, updates: UpdateContactParams): Promise<void> {

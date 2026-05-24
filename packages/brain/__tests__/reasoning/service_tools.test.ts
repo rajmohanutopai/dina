@@ -602,6 +602,7 @@ describe('createFindPreferredProviderTool (PC-BRAIN-07)', () => {
     overrides: Partial<Contact> & { did: string; displayName: string },
   ): Contact {
     return {
+      personId: overrides.personId ?? `person-${overrides.did}`,
       did: overrides.did,
       displayName: overrides.displayName,
       trustLevel: overrides.trustLevel ?? 'trusted',

@@ -72,6 +72,19 @@ export interface CoreClient {
   /** Paginate a persona's vault. Omit filters for "everything newest first." */
   vaultList(persona: string, opts?: VaultListOptions): Promise<VaultListResult>;
 
+  /**
+   * Items a person is a *subject* of in `persona` (`vault_item_subjects`),
+   * newest-linked first. The out-of-process counterpart of the in-process
+   * `VaultRepository.getItemsForPersonSync` — Brain's recall path uses it
+   * to surface notes about an inbound DID's person (the structured
+   * `did → person_id → subjects` edge) without name/FTS guessing.
+   */
+  vaultItemsForPerson(
+    persona: string,
+    personId: string,
+    limit: number,
+  ): Promise<VaultQueryItem[]>;
+
   /** Remove a vault item by id. No-op if the id doesn't exist. */
   vaultDelete(persona: string, itemId: string): Promise<VaultDeleteResult>;
 
@@ -464,7 +477,17 @@ export interface CoreClient {
    * `{ ok: false, reason: 'no_repo' }` style outcomes are NOT modeled
    * here; the route returns 503 in that case and the transport raises.
    */
-  peopleApplyExtraction(result: ExtractionResult): Promise<ApplyExtractionResponse>;
+  /**
+   * @param persona — when supplied, Core also writes the structured
+   *   `vault_item_subjects` recall edges (item → each resolved person)
+   *   into that persona's vault. This is the out-of-process counterpart
+   *   of the in-process post_publish subject link; omit it in-process
+   *   (the local repo handles linking).
+   */
+  peopleApplyExtraction(
+    result: ExtractionResult,
+    persona?: string,
+  ): Promise<ApplyExtractionResponse>;
 
   /**
    * List every confirmed/suggested person in the graph (rejected hidden).
@@ -483,6 +506,14 @@ export interface CoreClient {
    * Empty `surface` rejects with a 400-bound error from the transport.
    */
   peopleFindByName(surface: string): Promise<Person[]>;
+
+  /**
+   * Resolve the (non-rejected) person bound to a DID identity, or null.
+   * The out-of-process counterpart of `resolveByIdentity('did', did)` —
+   * lets Brain resolve an inbound D2D sender DID to a person for
+   * subject-linked recall seeding. Empty `did` rejects via the transport.
+   */
+  peopleResolveByDid(did: string): Promise<Person | null>;
 
   // ─── Persona registry (read-only) ──────────────────────────────────────────
 

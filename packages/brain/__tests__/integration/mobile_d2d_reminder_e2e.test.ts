@@ -41,6 +41,7 @@ import {
   configureRateLimiter,
   addContact as addDirectoryContact,
   resetContactDirectory,
+  setPeopleRepository,
   createCoreRouter,
   clearReplayCache,
   InProcessTransport,
@@ -58,7 +59,7 @@ import {
 } from '@dina/core/reminders';
 import { getThread, resetThreads } from '../../src/chat/thread';
 import { postReminderCard } from '../../src/chat/reminder_card';
-import { makeDinaMessage, resetFactoryCounters } from '@dina/test-harness';
+import { makeDinaMessage, resetFactoryCounters, makeFakePeopleRepo } from '@dina/test-harness';
 import { MSG_TYPE_SOCIAL_UPDATE } from '@dina/protocol';
 import {
   registerReminderLLM,
@@ -91,6 +92,7 @@ describe('D2D arrival → drain → auto-generated reminder', () => {
     resetStagingState();
     clearVaults();
     resetContactDirectory();
+    setPeopleRepository(makeFakePeopleRepo());
     resetReasoningProvider();
     resetReminderState();
     resetReminderLLM();

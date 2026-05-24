@@ -61,6 +61,18 @@ export function addContact(did: string): void {
   knownContacts.add(did);
 }
 
+/**
+ * Unregister a known contact — the removal path that block/delete need.
+ * Without this the egress allowlist only ever grew: blocking or
+ * deleting a contact left its DID in `knownContacts`, so outbound sends
+ * still passed the contact gate. Idempotent.
+ */
+export function removeContact(did: string): void {
+  knownContacts.delete(did);
+  scenarioDeny.delete(did);
+  sharingRestrictions.delete(did);
+}
+
 /** Set scenario deny list for a contact. */
 export function setScenarioDeny(did: string, deniedTypes: string[]): void {
   scenarioDeny.set(did, new Set(deniedTypes));

@@ -61,6 +61,15 @@ export function addKnownContact(did: string): void {
   knownContacts.add(did);
 }
 
+/**
+ * Remove a known contact — the inbound-trust mirror of the egress
+ * gate's removal path. Block/delete must prune this set or a blocked
+ * sender's D2D would still classify as `contact_ring1`. Idempotent.
+ */
+export function removeKnownContact(did: string): void {
+  knownContacts.delete(did);
+}
+
 /** Clear known contacts (for testing). */
 export function clearKnownContacts(): void {
   knownContacts.clear();

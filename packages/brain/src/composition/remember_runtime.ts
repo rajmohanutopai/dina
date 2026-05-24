@@ -62,6 +62,14 @@ export interface RememberTurnInput {
     sender?: string;
     subject?: string;
   };
+  /**
+   * Memories the inbound sender is a subject of (`vault_item_subjects`),
+   * pre-resolved by the caller via `recallSenderSubjectMemories`. Rendered
+   * into the prompt so the agent can enrich without name/FTS guessing —
+   * the structured did→person→facts recall for D2D arrivals where the
+   * message body never names the sender ("I'm coming over").
+   */
+  relatedMemories?: string[];
 }
 
 export interface RememberTurnResult {
@@ -163,6 +171,14 @@ function renderUserMessage(turn: RememberTurnInput): string {
   }
   if (meta.length > 0) {
     lines.push('', `[metadata: ${meta.join(', ')}]`);
+  }
+  // Structured recall: what we already know about the sender (from the
+  // people graph's subject links). Lets the agent enrich a terse arrival
+  // ("I'm coming over") with the sender's remembered preferences.
+  const related = (turn.relatedMemories ?? []).filter((s) => s.trim() !== '');
+  if (related.length > 0) {
+    lines.push('', 'Known facts about the sender:');
+    for (const r of related) lines.push(`- ${r}`);
   }
   return lines.join('\n');
 }

@@ -111,6 +111,8 @@ export class MockCoreClient implements CoreClient {
   };
   vaultQueryResult: VaultQueryResult = { items: [], count: 0 };
   vaultGetResult: VaultQueryItem | null = null;
+  /** Override for `vaultItemsForPerson`'s return value. */
+  vaultItemsForPersonResult: VaultQueryItem[] = [];
   vaultStoreResult: VaultStoreResult = {
     id: 'mock-item-id',
     storedAt: '2026-04-21T00:00:00Z',
@@ -280,6 +282,18 @@ export class MockCoreClient implements CoreClient {
 
   async vaultGet(persona: string, itemId: string): Promise<VaultQueryItem | null> {
     return this.dispatch('vaultGet', [persona, itemId], () => this.vaultGetResult);
+  }
+
+  async vaultItemsForPerson(
+    persona: string,
+    personId: string,
+    limit: number,
+  ): Promise<VaultQueryItem[]> {
+    return this.dispatch(
+      'vaultItemsForPerson',
+      [persona, personId, limit],
+      () => this.vaultItemsForPersonResult,
+    );
   }
 
   async vaultStore(persona: string, item: VaultItemInput): Promise<VaultStoreResult> {
@@ -670,8 +684,9 @@ export class MockCoreClient implements CoreClient {
 
   async peopleApplyExtraction(
     result: ExtractionResult,
+    persona?: string,
   ): Promise<ApplyExtractionResponse> {
-    return this.dispatch('peopleApplyExtraction', [result], () => {
+    return this.dispatch('peopleApplyExtraction', [result, persona], () => {
       this.peopleExtractions.push(result);
       // Default: report every link as a freshly created person + surface.
       // Tests that need a different shape override
@@ -706,6 +721,21 @@ export class MockCoreClient implements CoreClient {
         (p.surfaces ?? []).some(
           (s) => s.status !== 'rejected' && s.normalizedSurface === needle,
         ),
+      );
+    });
+  }
+
+  async peopleResolveByDid(did: string): Promise<Person | null> {
+    if (typeof did !== 'string' || did.trim() === '') {
+      throw new Error('peopleResolveByDid: did is required');
+    }
+    return this.dispatch('peopleResolveByDid', [did], () => {
+      const wanted = did.trim();
+      // Match against the canned people list by their contactDid.
+      return (
+        this.peopleListResult.find(
+          (p) => p.status !== 'rejected' && p.contactDid === wanted,
+        ) ?? null
       );
     });
   }

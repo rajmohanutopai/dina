@@ -34,14 +34,18 @@ import type { PeerlensQueryClient, PeerlensProfile, QueryResult } from '@dina/co
 import {
   addContact,
   resetContactDirectory,
+  setPeopleRepository,
 } from '@dina/core';
+import { makeFakePeopleRepo } from '@dina/test-harness';
 
 describe('mobile Scenario 4 — PeerLens query', () => {
   beforeEach(() => {
     resetContactDirectory();
+    setPeopleRepository(makeFakePeopleRepo());
     resetTrustQueryClient();
     resetSearchCache();
   });
+  afterEach(() => setPeopleRepository(null));
 
   /**
    * Minimal `PeerlensQueryClient`-shaped stub. Returns the canned profile

@@ -180,6 +180,25 @@ export class InProcessTransport implements CoreClient {
     return expectOk<VaultQueryItem>(res, `vaultGet(persona=${persona}, id=${itemId})`);
   }
 
+  async vaultItemsForPerson(
+    persona: string,
+    personId: string,
+    limit: number,
+  ): Promise<VaultQueryItem[]> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'GET',
+        path: '/v1/vault/subjects',
+        query: { persona, person_id: personId, limit: String(limit) },
+      }),
+    );
+    const ok = expectOk<{ items?: VaultQueryItem[] }>(
+      res,
+      `vaultItemsForPerson(persona=${persona}, personId=${personId})`,
+    );
+    return Array.isArray(ok.items) ? ok.items : [];
+  }
+
   async vaultStore(persona: string, item: VaultItemInput): Promise<VaultStoreResult> {
     const res = await this.router.handle(
       blankRequest({
@@ -807,12 +826,17 @@ export class InProcessTransport implements CoreClient {
 
   async peopleApplyExtraction(
     result: ExtractionResult,
+    persona?: string,
   ): Promise<ApplyExtractionResponse> {
+    const body =
+      persona !== undefined && persona !== ''
+        ? { ...(result as unknown as Record<string, unknown>), persona }
+        : (result as unknown as Record<string, unknown>);
     const res = await this.router.handle(
       blankRequest({
         method: 'POST',
         path: '/v1/people/apply-extraction',
-        body: result as unknown as Record<string, unknown>,
+        body,
       }),
     );
     return expectOk<ApplyExtractionResponse>(
@@ -851,6 +875,22 @@ export class InProcessTransport implements CoreClient {
     if (res.status !== 200) return [];
     const raw = (res.body ?? {}) as { people?: unknown };
     return Array.isArray(raw.people) ? (raw.people as Person[]) : [];
+  }
+
+  async peopleResolveByDid(did: string): Promise<Person | null> {
+    if (typeof did !== 'string' || did.trim() === '') {
+      throw new Error('peopleResolveByDid: did is required');
+    }
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'GET',
+        path: '/v1/people/by-did',
+        query: { did: did.trim() },
+      }),
+    );
+    if (res.status !== 200) return null;
+    const raw = (res.body ?? {}) as { person?: Person | null };
+    return raw.person ?? null;
   }
 
   async updateContact(did: string, updates: UpdateContactParams): Promise<void> {

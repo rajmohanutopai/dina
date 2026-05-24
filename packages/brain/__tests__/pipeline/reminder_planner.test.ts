@@ -10,11 +10,18 @@
  * Source: ARCHITECTURE.md Task 3.28, brain/src/service/reminder_planner.py
  */
 
-import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
+import { makeVaultItem, resetFactoryCounters, makeFakePeopleRepo } from '@dina/test-harness';
 
 import { createPersona, resetPersonaState, openPersona } from '@dina/core';
 import { resetReminderState } from '@dina/core/reminders';
-import { storeItem, clearVaults } from '@dina/core';
+import {
+  storeItem,
+  clearVaults,
+  setPeopleRepository,
+  getVaultRepository,
+  resetVaultRepositories,
+} from '@dina/core';
+import { setVaultReadBackend } from '../../src/vault_context/assembly';
 import {
   planReminders,
   consolidateReminders,
@@ -232,6 +239,106 @@ describe('Reminder Planner', () => {
       // The prompt should contain the vault context about Emma
       expect(receivedPrompt).toContain('Emma');
       expect(receivedPrompt).toContain('dinosaurs');
+    });
+
+    it('recalls a subject-linked memory by sender person with ZERO text overlap (the Quixote case)', async () => {
+      // The core Phase C proof. A remembered preference is stored with
+      // NO mention of the person's name AND no overlap with the inbound
+      // event text. FTS (which searches the person's name surfaces + the
+      // event tokens) cannot find it — only the structured
+      // did → person_id → vault_item_subjects edge can. This is exactly
+      // what made the bus/Quixote enrichment fragile before the redesign.
+      const repo = makeFakePeopleRepo();
+      setPeopleRepository(repo);
+      const did = 'did:plc:quixote-recall';
+      const personId = repo.upsertContactPerson(did, 'Don Quixote');
+      try {
+        const pref = makeVaultItem({
+          // Deliberately contains neither "Quixote" nor any token from
+          // the arrival message below.
+          summary: 'loves eggs and bacon for breakfast',
+          body: '',
+          content_l0: 'loves eggs and bacon for breakfast',
+        });
+        storeItem('general', pref);
+        const vaultRepo = getVaultRepository('general');
+        expect(vaultRepo).not.toBeNull();
+        vaultRepo!.linkSubjectSync(pref.id, personId, { source: 'manual', confidence: 'high' });
+
+        let receivedPrompt = '';
+        registerReminderLLM(async (_system, prompt) => {
+          receivedPrompt = prompt;
+          return '{"reminders":[]}';
+        });
+
+        await planReminders({
+          itemId: 'item-quixote-arrival',
+          type: 'message',
+          summary: "I'm coming over",
+          body: '',
+          timestamp: Date.now(),
+          persona: 'general',
+          senderDid: did,
+        });
+
+        // FTS would miss it (no shared tokens); the subject-link recall
+        // surfaces it into the planner's prompt.
+        expect(receivedPrompt).toContain('eggs and bacon');
+      } finally {
+        setPeopleRepository(null);
+      }
+    });
+
+    it('recalls subject-linked memory over the HTTP backend when no in-process vault (out-of-process / home-node-lite)', async () => {
+      // Lite runs Brain in a separate process from Core, so the vault
+      // SQLite repos aren't in-process. The structured did→person recall
+      // must route through the vault-read backend (Core HTTP) instead of
+      // the local repo. Mirrors the in-process Quixote case, out-of-process.
+      const repoPeople = makeFakePeopleRepo();
+      setPeopleRepository(repoPeople);
+      const did = 'did:plc:quixote-oop';
+      const personId = repoPeople.upsertContactPerson(did, 'Don Quixote');
+      // No in-process vault repos — force the backend path.
+      resetVaultRepositories();
+      // Core HTTP returns the wire shape (VaultQueryItem), not a VaultItem.
+      const subjectItem = {
+        id: 'pref-quixote-oop',
+        type: 'note',
+        persona: 'general',
+        summary: 'loves eggs and bacon for breakfast',
+        content_l0: 'loves eggs and bacon for breakfast',
+      };
+      const calls: Array<{ persona: string; personId: string }> = [];
+      setVaultReadBackend({
+        vaultQuery: async () => ({ items: [], count: 0 }),
+        vaultItemsForPerson: async (persona, pid) => {
+          calls.push({ persona, personId: pid });
+          return pid === personId ? [subjectItem] : [];
+        },
+      });
+
+      let receivedPrompt = '';
+      registerReminderLLM(async (_system, prompt) => {
+        receivedPrompt = prompt;
+        return '{"reminders":[]}';
+      });
+
+      try {
+        await planReminders({
+          itemId: 'item-quixote-oop-arrival',
+          type: 'message',
+          summary: "I'm coming over",
+          body: '',
+          timestamp: Date.now(),
+          persona: 'general',
+          senderDid: did,
+        });
+        expect(calls.length).toBeGreaterThan(0);
+        expect(receivedPrompt).toContain('eggs and bacon');
+      } finally {
+        setVaultReadBackend(null);
+        setPeopleRepository(null);
+      }
     });
 
     it('LLM receives timezone in prompt', async () => {

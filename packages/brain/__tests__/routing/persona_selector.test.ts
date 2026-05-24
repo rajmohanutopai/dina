@@ -16,7 +16,8 @@ import {
   extractMentionedNames,
 } from '../../src/routing/persona_selector';
 import { createPersona, resetPersonaState } from '@dina/core';
-import { addContact, resetContactDirectory } from '@dina/core';
+import { addContact, resetContactDirectory, setPeopleRepository } from '@dina/core';
+import { makeFakePeopleRepo } from '@dina/test-harness';
 
 describe('Persona Selector', () => {
   beforeEach(() => {
@@ -24,6 +25,7 @@ describe('Persona Selector', () => {
     resetThreshold();
     resetPersonaState();
     resetContactDirectory();
+    setPeopleRepository(makeFakePeopleRepo());
     createPersona('general', 'default');
     createPersona('health', 'sensitive');
     createPersona('financial', 'sensitive');

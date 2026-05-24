@@ -15,6 +15,11 @@ import type {
   PersonSurface,
 } from '../../../src/people/domain';
 import type { PeopleRepository } from '../../../src/people/repository';
+import {
+  InMemoryVaultRepository,
+  setVaultRepository,
+  getVaultRepository,
+} from '../../../src/vault/repository';
 
 function req(partial: Partial<CoreRequest>): CoreRequest {
   return {
@@ -84,6 +89,15 @@ class StubRepo implements PeopleRepository {
   }
   findByContactDid(_: string): Person | null {
     return null;
+  }
+  resolveByIdentity(_type: string, _value: string): Person | null {
+    return null;
+  }
+  upsertIdentity(): void {
+    /* no-op */
+  }
+  listIdentities() {
+    return [];
   }
   confirmPerson(): boolean {
     return false;
@@ -196,5 +210,49 @@ describe('GET /v1/people/find?surface=...', () => {
     const res = await find(req({ query: { surface: 'Nobody' } }));
     expect(res.status).toBe(200);
     expect((res.body as { people: Person[] }).people).toEqual([]);
+  });
+});
+
+describe('POST /v1/people/apply-extraction — out-of-process subject linking', () => {
+  it('links vault_item_subjects in the given persona for each resolved person', async () => {
+    // A repo whose applyExtraction reports the resolved person_ids (the
+    // real SQLite repo does this); the handler must then write the
+    // structured recall edge into the named persona's vault.
+    const repo = {
+      applyExtraction: (): ApplyExtractionResponse => ({
+        created: 1,
+        updated: 0,
+        conflicts: [],
+        skipped: false,
+        personIds: ['person-quixote'],
+      }),
+    } as unknown as PeopleRepository;
+
+    const vault = new InMemoryVaultRepository();
+    setVaultRepository('general', vault);
+    try {
+      const { applyExtraction } = makePeopleHandlers({ resolveRepo: () => repo });
+      const body = {
+        sourceItemId: 'item-quixote-pref',
+        extractorVersion: 'v1',
+        results: [],
+        persona: 'general',
+      };
+      const res = await applyExtraction(
+        req({
+          method: 'POST',
+          query: {},
+          body,
+          rawBody: new TextEncoder().encode(JSON.stringify(body)),
+        }),
+      );
+      expect(res.status).toBe(200);
+      // The subject edge was written into the persona vault.
+      expect(getVaultRepository('general')?.getItemIdsForPersonSync('person-quixote')).toEqual([
+        'item-quixote-pref',
+      ]);
+    } finally {
+      setVaultRepository('general', null);
+    }
   });
 });

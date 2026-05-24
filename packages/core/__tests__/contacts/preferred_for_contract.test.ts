@@ -24,7 +24,9 @@ import {
   resetContactDirectory,
 } from '../../src/contacts/directory';
 import { setContactRepository } from '../../src/contacts/repository';
+import { setPeopleRepository } from '../../src/people/repository';
 import { makeContactsHandlers } from '../../src/server/routes/contacts';
+import { makeFakePeopleRepo } from '../_support/fake_people_repo';
 
 function req(partial: Partial<CoreRequest>): CoreRequest {
   return {
@@ -47,9 +49,13 @@ function jsonBody(value: unknown): { body: unknown; rawBody: Uint8Array } {
 describe('Preferred-for contract (PC-TEST-03)', () => {
   beforeEach(() => {
     resetContactDirectory();
-    // Run against pure in-memory — no SQL write-through.
+    // Run against pure in-memory — no SQL write-through. A people repo
+    // is still required (contact policy is person-keyed); the fake
+    // provides the did→person resolution.
     setContactRepository(null);
+    setPeopleRepository(makeFakePeopleRepo());
   });
+  afterEach(() => setPeopleRepository(null));
 
   // ------------------------------------------------------------------
   // Repository surface

@@ -100,7 +100,14 @@ export interface ApplyPeopleGraphOptions {
    * repo's `ApplyExtractionResponse`) is recorded verbatim on the
    * outcome.
    */
-  apply?: (result: ExtractionResult) => Promise<ApplyExtractionResponse>;
+  apply?: (result: ExtractionResult, persona?: string) => Promise<ApplyExtractionResponse>;
+  /**
+   * The persona the source item lives in. Passed through to the `apply`
+   * callback so the out-of-process writer (Core) can write the
+   * `vault_item_subjects` recall edges into the right persona vault.
+   * Ignored by the in-process `repo` path (post_publish links locally).
+   */
+  persona?: string;
   /**
    * Override the extractor version stamp recorded on every surface +
    * the idempotency log. Tests use this to force a fresh apply on
@@ -159,7 +166,7 @@ export async function applyPeopleGraphExtraction(
   let applied: ApplyExtractionResponse;
   try {
     if (apply !== undefined) {
-      applied = await apply(result);
+      applied = await apply(result, options.persona);
     } else {
       // `repo` is non-null in this branch (gated above).
       applied = (repo as PeopleRepository).applyExtraction(result);

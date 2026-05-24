@@ -1,8 +1,18 @@
 /**
  * Contact directory — CRUD for contacts with trust levels and aliases.
  *
+ * **Person-keyed (people graph is the hub).** Contact *policy* (trust
+ * level, sharing tier, preferred-for, …) is stored once per
+ * `person_id`, shared across that person's devices/identities. The
+ * public API stays DID-facing — `getContact(did)`, `isContact(did)`,
+ * etc. — and resolves `did → person_id` through the people graph
+ * (`person_identities`). `establishContact()` is the single mutation
+ * path: it ensures the person + DID identity + confirmed name surface
+ * exist, then writes the contact policy and syncs the D2D projections.
+ * See docs/IDENTITY_HUB_REDESIGN.md §3.4 / §4.
+ *
  * Each contact has:
- *   - DID (unique identifier)
+ *   - person_id (canonical key) + a primary DID (display/back-compat)
  *   - Display name
  *   - Trust level: blocked, unknown, verified, trusted
  *   - Sharing tier: none, summary, full, locked
@@ -23,9 +33,12 @@ import {
 } from './validation';
 import { getContactRepository } from './repository';
 import { normalisePreferredForCategories, normalisePreferredForCategory } from './preferred_for';
-import { addContact as addEgressGateContact } from '../d2d/gates';
-import { getPeopleRepository } from '../people/repository';
-import { addKnownContact } from '../peerlens/source_trust';
+import {
+  addContact as addEgressGateContact,
+  removeContact as removeEgressGateContact,
+} from '../d2d/gates';
+import { getPeopleRepository, type PeopleRepository } from '../people/repository';
+import { addKnownContact, removeKnownContact } from '../peerlens/source_trust';
 
 export type TrustLevel = 'blocked' | 'unknown' | 'verified' | 'trusted';
 export type SharingTier = 'none' | 'summary' | 'full' | 'locked';
@@ -41,6 +54,13 @@ export type Relationship =
 export type DataResponsibility = 'household' | 'care' | 'financial' | 'external';
 
 export interface Contact {
+  /** Canonical key — the people-graph person this contact policy is for. */
+  personId: string;
+  /**
+   * The contact's primary DID (back-compat + display). Contacts have
+   * exactly one DID today; when a person carries multiple DIDs this is
+   * the primary one. Resolved from `person_identities`.
+   */
   did: string;
   displayName: string;
   trustLevel: TrustLevel;
@@ -74,14 +94,180 @@ export interface Contact {
   preferredFor?: string[];
 }
 
-/** In-memory contact store keyed by DID. */
-const contacts = new Map<string, Contact>();
+/** In-memory contact policy store, keyed by person_id (source of truth). */
+const contactsByPerson = new Map<string, Contact>();
 
-/** Global alias → DID index for uniqueness enforcement. */
+/** did → person_id index for O(1) DID-facing lookups (ingress fast-path). */
+const didIndex = new Map<string, string>();
+
+/** Global normalized-alias → person_id index for uniqueness enforcement. */
 const aliasIndex = new Map<string, string>();
 
+// ---------------------------------------------------------------
+// People-graph resolution helpers
+// ---------------------------------------------------------------
+
 /**
- * Add a new contact. Throws if DID already exists or alias conflicts.
+ * The people repo is a required dependency of contact policy: a
+ * contact is policy *for a person*, so we must resolve/create the
+ * person before storing policy. Throws (rather than silently using
+ * the DID as a pseudo person_id) so a missing wiring is loud, not a
+ * data-shape footgun.
+ */
+function requirePeopleRepo(): PeopleRepository {
+  const repo = getPeopleRepository();
+  if (repo === null) {
+    throw new Error('contacts: people repository is not wired (required for contact policy)');
+  }
+  return repo;
+}
+
+/** did → person_id via the people graph, or null when unknown / no repo. */
+function resolvePersonId(did: string): string | null {
+  const repo = getPeopleRepository();
+  if (repo === null) return null;
+  return repo.resolveByIdentity('did', did)?.personId ?? null;
+}
+
+/** Every DID identity bound to a person, primary first. */
+function listPersonDids(personId: string): string[] {
+  const repo = getPeopleRepository();
+  if (repo === null) return [];
+  return repo
+    .listIdentities(personId)
+    .filter((i) => i.identityType === 'did')
+    .map((i) => i.identityValue);
+}
+
+/**
+ * Sync the D2D egress gate + inbound source-trust projections for a
+ * person from its current contact policy. A person's DIDs are gate-
+ * eligible iff a non-blocked contact policy exists; otherwise they're
+ * pruned. This is the removal path block/delete were missing. Blocked
+ * contacts (and persons with no policy) are removed from both sets.
+ */
+function syncProjections(personId: string): void {
+  const contact = contactsByPerson.get(personId);
+  const eligible = contact !== undefined && contact.trustLevel !== 'blocked';
+  for (const did of listPersonDids(personId)) {
+    if (eligible) {
+      addEgressGateContact(did);
+      addKnownContact(did);
+    } else {
+      removeEgressGateContact(did);
+      removeKnownContact(did);
+    }
+  }
+}
+
+// ---------------------------------------------------------------
+// establishContact — the single contact-mutation path
+// ---------------------------------------------------------------
+
+export interface EstablishContactOptions {
+  trustLevel?: TrustLevel;
+  sharingTier?: SharingTier;
+  relationship?: Relationship;
+  dataResponsibility?: DataResponsibility;
+}
+
+/**
+ * Add-or-update a trusted person. The ONE way contact policy is
+ * mutated. Atomically (per layer): ensures the person + DID identity +
+ * confirmed name surface (people graph), writes the contact policy
+ * (SQL, by person_id), updates the in-memory caches, and syncs the
+ * D2D projections. Idempotent — calling again for the same DID updates
+ * in place. Requires a wired people repo.
+ */
+export function establishContact(
+  did: string,
+  displayName: string,
+  opts?: EstablishContactOptions,
+): Contact {
+  if (!did || did.trim().length === 0) throw new Error('contacts: DID is required');
+
+  const rel = opts?.relationship ?? 'unknown';
+  const relError = validateRelationship(rel);
+  if (relError) throw new Error(`contacts: ${relError}`);
+
+  const peopleRepo = requirePeopleRepo();
+  // People graph is the hub: this creates (or reuses) the person, the
+  // DID identity, and a confirmed display-name surface. Returns the
+  // canonical person_id the contact policy is keyed by.
+  const personId = peopleRepo.upsertContactPerson(did, displayName);
+
+  const now = Date.now();
+  const sqlRepo = getContactRepository();
+  // Decide INSERT-vs-UPDATE from the DURABLE store, not just the
+  // in-memory cache: on a cold cache (e.g. before hydration) the
+  // policy row may already exist in SQL, and an INSERT would violate
+  // the person_id PK. Fall back to the repo when the cache misses.
+  const existing = contactsByPerson.get(personId) ?? sqlRepo?.get(personId) ?? undefined;
+  const contact: Contact = {
+    personId,
+    did,
+    displayName: displayName.trim(),
+    trustLevel: opts?.trustLevel ?? existing?.trustLevel ?? 'unknown',
+    sharingTier: opts?.sharingTier ?? existing?.sharingTier ?? 'summary',
+    relationship: rel,
+    dataResponsibility:
+      opts?.dataResponsibility ?? (defaultResponsibility(rel) as DataResponsibility),
+    aliases: existing?.aliases ?? [],
+    notes: existing?.notes ?? '',
+    // Leave undefined for a brand-new contact (the domain treats
+    // undefined and [] as the same "no preferences" state); only carry
+    // an existing list forward. Matches the pre-redesign behaviour.
+    preferredFor: existing?.preferredFor,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+  };
+
+  // GAP-PERSIST-01: write-through SQL FIRST, memory second.
+  if (sqlRepo) {
+    if (existing) sqlRepo.update(personId, contact);
+    else sqlRepo.add(contact);
+  }
+  contactsByPerson.set(personId, contact);
+  didIndex.set(did, personId);
+  syncProjections(personId);
+  return contact;
+}
+
+/**
+ * Remove a contact's policy + prune its projections, but PRESERVE the
+ * person + history (surfaces, notes) in the people graph. Returns
+ * false when no policy existed. The DID→person mapping is preserved
+ * too (the person still exists), so a later re-add re-establishes
+ * policy without losing identity.
+ */
+export function removeContact(personId: string): boolean {
+  const contact = contactsByPerson.get(personId);
+  if (!contact) return false;
+
+  for (const alias of contact.aliases) {
+    aliasIndex.delete(alias.toLowerCase());
+  }
+  // Prune projections for every DID this person owns BEFORE dropping
+  // the policy row (syncProjections reads the policy to decide).
+  for (const did of listPersonDids(personId)) {
+    removeEgressGateContact(did);
+    removeKnownContact(did);
+    didIndex.delete(did);
+  }
+  contactsByPerson.delete(personId);
+
+  const sqlRepo = getContactRepository();
+  if (sqlRepo) sqlRepo.remove(personId);
+  return true;
+}
+
+// ---------------------------------------------------------------
+// DID-facing public API (resolves did -> person internally)
+// ---------------------------------------------------------------
+
+/**
+ * Add a new contact. Throws if a contact policy already exists for the
+ * resolved person, or if the alias conflicts.
  *
  * If relationship is provided, dataResponsibility is auto-derived
  * via defaultResponsibility() (matching Go domain/contact.go):
@@ -96,85 +282,19 @@ export function addContact(
   relationship?: Relationship,
 ): Contact {
   if (!did || did.trim().length === 0) throw new Error('contacts: DID is required');
-  if (contacts.has(did)) throw new Error(`contacts: "${did}" already exists`);
-
-  // Validate relationship if provided
-  const rel = relationship ?? 'unknown';
-  const relError = validateRelationship(rel);
-  if (relError) throw new Error(`contacts: ${relError}`);
-
-  const now = Date.now();
-  const contact: Contact = {
-    did,
-    displayName: displayName.trim(),
-    trustLevel: trustLevel ?? 'unknown',
-    sharingTier: sharingTier ?? 'summary',
-    relationship: rel,
-    dataResponsibility: defaultResponsibility(rel) as DataResponsibility,
-    aliases: [],
-    notes: '',
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  // GAP-PERSIST-01: write-through SQL FIRST, memory second. Previously
-  // the SQL write was try/swallow — callers got "success" for a
-  // contact that never landed in durable storage and silently
-  // disappeared on next boot. Now a repo failure bubbles up and the
-  // in-memory state stays consistent with disk.
-  const sqlRepo = getContactRepository();
-  if (sqlRepo) sqlRepo.add(contact);
-  contacts.set(did, contact);
-
-  // Propagate to the D2D egress gate + inbound-trust classifier.
-  // `d2d/gates.knownContacts` and `trust/source_trust.knownContacts`
-  // are parallel sets that Core checks on every outbound send and
-  // every inbound pipeline decision; without this sync, a user-added
-  // contact would be visible in the People UI but rejected at the
-  // egress gate ("Recipient is not a known contact") and classified
-  // as "unknown" trust on inbound. `blocked` is intentionally NOT
-  // added to the egress gate — the gate's allowlist semantics mean
-  // only non-blocked contacts should be there; the destination block-
-  // list handles blocked peers separately.
-  if (contact.trustLevel !== 'blocked') {
-    addEgressGateContact(did);
-    addKnownContact(did);
+  const existingPersonId = resolvePersonId(did);
+  if (existingPersonId !== null && contactsByPerson.has(existingPersonId)) {
+    throw new Error(`contacts: "${did}" already exists`);
   }
-
-  // Mirror this contact into the people graph so the reminder
-  // planner's `resolveSenderHint` can find a Person via
-  // `findByContactDid` on inbound D2D, and so vault facts saved
-  // under the contact's display name surface in FTS expansion.
-  // Fail-soft: when the people repo isn't wired (test harness, or
-  // a host that hasn't called `setPeopleRepository`) this is a
-  // no-op rather than blocking the contact-add. Blocked contacts
-  // are intentionally NOT mirrored — same rationale as the
-  // egress-gate skip above (the people graph is for resolution,
-  // and a blocked DID has nothing to resolve).
-  if (contact.trustLevel !== 'blocked') {
-    const peopleRepo = getPeopleRepository();
-    if (peopleRepo !== null) {
-      try {
-        peopleRepo.upsertContactPerson(did, contact.displayName);
-      } catch {
-        // People-graph mirror is enrichment, not load-bearing for
-        // contact creation — drop the error rather than fail the
-        // user-visible "save contact" action. The next D2D from
-        // this DID will still be quarantine-correct via the
-        // contacts table; only the FTS surface expansion is missed.
-      }
-    }
-  }
-
-  return contact;
+  return establishContact(did, displayName, { trustLevel, sharingTier, relationship });
 }
 
 /**
  * Add a contact if it doesn't already exist (INSERT OR IGNORE semantics).
  *
  * Returns { contact, created: true } for new contacts, or
- * { contact, created: false } for existing contacts (no throw).
- * Matching Go's INSERT OR IGNORE behavior.
+ * { contact, created: false } for existing contacts (no throw). On an
+ * existing contact the stored data is returned unchanged (no update).
  */
 export function addContactIfNotExists(
   did: string,
@@ -183,7 +303,7 @@ export function addContactIfNotExists(
   sharingTier?: SharingTier,
   relationship?: Relationship,
 ): { contact: Contact; created: boolean } {
-  const existing = contacts.get(did);
+  const existing = getContact(did);
   if (existing) {
     return { contact: existing, created: false };
   }
@@ -193,44 +313,55 @@ export function addContactIfNotExists(
 
 /** Get a contact by DID. Returns null if not found. */
 export function getContact(did: string): Contact | null {
-  const cached = contacts.get(did);
-  if (cached !== undefined) return cached;
-  // Cache miss: fall back to the SQL repo when wired. Closes the race
-  // where a JS bundle reload (Expo fast-refresh / Cmd+R) clears the
-  // in-memory Map while the underlying SQLite database — opened at
-  // the native layer — survives. Without this, an inbound D2D
-  // arriving before the next manual unlock sees `contactFound=false`,
-  // resolves to `senderTrust='unknown'`, and the receive pipeline
-  // quarantines the message even though the user has the sender as
-  // a verified contact in the People tab. The SQL fetch hydrates the
-  // single row; subsequent calls hit the cache.
+  const cachedPersonId = didIndex.get(did);
+  if (cachedPersonId !== undefined) {
+    const cached = contactsByPerson.get(cachedPersonId);
+    if (cached !== undefined) return cached;
+  }
+  // Cache miss: resolve did→person→policy from durable stores. Closes
+  // the JS-bundle reload race (Expo fast-refresh clears the in-memory
+  // Maps while SQLite survives at the native layer). The people graph
+  // (person_identities) gives us did→person_id; the contact repo gives
+  // the policy. Without this, an inbound D2D before the next unlock
+  // sees no contact and the receive pipeline quarantines a verified
+  // sender.
+  const personId = resolvePersonId(did);
+  if (personId === null) return null;
   const repo = getContactRepository();
   if (repo === null) return null;
-  const fromSql = repo.get(did);
-  if (fromSql !== null) {
-    contacts.set(did, fromSql);
-    for (const alias of fromSql.aliases ?? []) {
-      const key = alias.trim().toLowerCase();
-      if (key !== '') aliasIndex.set(key, fromSql.did);
-    }
-    if (fromSql.trustLevel !== 'blocked') {
-      addEgressGateContact(fromSql.did);
-      addKnownContact(fromSql.did);
-    }
+  const fromSql = repo.get(personId);
+  if (fromSql === null) return null;
+
+  // The SQL row is person-keyed and carries no DID — fill it with the
+  // person's primary DID (fall back to the looked-up DID).
+  const dids = listPersonDids(personId);
+  fromSql.did = dids[0] ?? did;
+  contactsByPerson.set(personId, fromSql);
+  for (const d of dids.length > 0 ? dids : [did]) {
+    didIndex.set(d, personId);
   }
+  for (const alias of fromSql.aliases ?? []) {
+    const key = alias.trim().toLowerCase();
+    if (key !== '') aliasIndex.set(key, personId);
+  }
+  // Single source of truth for projection state — adds the DIDs when
+  // non-blocked, prunes them when blocked.
+  syncProjections(personId);
   return fromSql;
 }
 
 /** List all contacts. */
 export function listContacts(): Contact[] {
-  return [...contacts.values()];
+  return [...contactsByPerson.values()];
 }
 
 /**
  * Update contact fields. Throws if not found.
  *
  * When relationship is updated, dataResponsibility is auto-re-derived
- * unless an explicit dataResponsibility override is provided.
+ * unless an explicit dataResponsibility override is provided. A
+ * trust-level change re-syncs the D2D projections (e.g. flipping to
+ * `blocked` prunes the sender from the gate + source-trust sets).
  */
 export function updateContact(
   did: string,
@@ -241,10 +372,13 @@ export function updateContact(
     >
   >,
 ): Contact {
-  const contact = contacts.get(did);
+  const contact = getContact(did);
   if (!contact) throw new Error(`contacts: "${did}" not found`);
+  const personId = contact.personId;
 
   if (updates.displayName !== undefined) contact.displayName = updates.displayName.trim();
+  const trustChanged =
+    updates.trustLevel !== undefined && updates.trustLevel !== contact.trustLevel;
   if (updates.trustLevel !== undefined) contact.trustLevel = updates.trustLevel;
   if (updates.sharingTier !== undefined) contact.sharingTier = updates.sharingTier;
   if (updates.notes !== undefined) contact.notes = updates.notes;
@@ -254,7 +388,6 @@ export function updateContact(
     const relError = validateRelationship(updates.relationship);
     if (relError) throw new Error(`contacts: ${relError}`);
     contact.relationship = updates.relationship;
-    // Auto-derive unless explicit override provided
     if (updates.dataResponsibility === undefined) {
       contact.dataResponsibility = defaultResponsibility(
         updates.relationship,
@@ -263,7 +396,6 @@ export function updateContact(
   }
 
   // Explicit dataResponsibility override (user-set vs auto-derived)
-  // Fix: Codex #20 — validate the override value
   if (updates.dataResponsibility !== undefined) {
     const drError = validateDataResponsibility(updates.dataResponsibility);
     if (drError) throw new Error(`contacts: ${drError}`);
@@ -272,38 +404,26 @@ export function updateContact(
 
   contact.updatedAt = Date.now();
 
-  // GAP-PERSIST-01 write-through (same contract as add/delete): the
-  // mutated row must reach SQL, otherwise renames + trust changes
-  // disappear on next boot. Bug #2-class — caught by the cache↔SQL
-  // parity contract test in `__tests__/contacts/directory.test.ts`.
+  // GAP-PERSIST-01 write-through (by person_id).
   const sqlRepo = getContactRepository();
-  if (sqlRepo) sqlRepo.update(did, updates);
+  if (sqlRepo) sqlRepo.update(personId, updates);
+
+  // A trust change flips gate eligibility (block prunes, unblock restores).
+  if (trustChanged) syncProjections(personId);
 
   return contact;
 }
 
-/** Delete a contact by DID. Returns true if found. */
+/** Delete a contact by DID. Returns true if found. Preserves the person. */
 export function deleteContact(did: string): boolean {
-  const contact = contacts.get(did);
-  if (!contact) return false;
-
-  // Remove all aliases from the global index
-  for (const alias of contact.aliases) {
-    aliasIndex.delete(alias.toLowerCase());
+  const personId = didIndex.get(did) ?? resolvePersonId(did);
+  if (personId === null) return false;
+  if (!contactsByPerson.has(personId)) {
+    // Cache may be cold (post-reload) — try to hydrate so removeContact
+    // has the policy + aliases to prune.
+    if (getContact(did) === null) return false;
   }
-
-  contacts.delete(did);
-
-  // Mirror of the addContact write-through (line 124): the in-memory
-  // delete is not enough — without removing the SQL row, a subsequent
-  // re-add of the same DID hits "UNIQUE constraint failed: contacts.did"
-  // because hydrateContactDirectory replays the row on next boot too.
-  // Caught on the simulator: removed contacts came back after reload,
-  // and re-adding the same DID failed with the unique-constraint error.
-  const sqlRepo = getContactRepository();
-  if (sqlRepo) sqlRepo.remove(did);
-
-  return true;
+  return removeContact(personId);
 }
 
 /**
@@ -312,10 +432,10 @@ export function deleteContact(did: string): boolean {
  * Aliases are globally unique (case-insensitive) across all contacts.
  */
 export function addAlias(did: string, alias: string): void {
-  const contact = contacts.get(did);
+  const contact = getContact(did);
   if (!contact) throw new Error(`contacts: "${did}" not found`);
+  const personId = contact.personId;
 
-  // Validate alias: min 2 chars, not a reserved pronoun
   const validationError = validateAlias(alias);
   if (validationError) throw new Error(`contacts: ${validationError}`);
 
@@ -323,24 +443,21 @@ export function addAlias(did: string, alias: string): void {
 
   const existingOwner = aliasIndex.get(normalized);
   if (existingOwner !== undefined) {
-    if (existingOwner === did) return; // already assigned to this contact
+    if (existingOwner === personId) return; // already assigned to this contact
     throw new Error(`contacts: alias "${alias}" already taken by ${existingOwner}`);
   }
 
-  aliasIndex.set(normalized, did);
+  aliasIndex.set(normalized, personId);
   contact.aliases.push(alias.trim());
   contact.updatedAt = Date.now();
 
-  // GAP-PERSIST-01 write-through: aliases live in their own SQL table
-  // (`contact_aliases`) — without this call the alias survives the
-  // current process but vanishes on hydration after restart.
   const sqlRepo = getContactRepository();
-  if (sqlRepo) sqlRepo.addAlias(did, normalized);
+  if (sqlRepo) sqlRepo.addAlias(personId, normalized);
 }
 
 /** Remove an alias from a contact. */
 export function removeAlias(did: string, alias: string): void {
-  const contact = contacts.get(did);
+  const contact = getContact(did);
   if (!contact) throw new Error(`contacts: "${did}" not found`);
 
   const normalized = alias.trim().toLowerCase();
@@ -348,26 +465,26 @@ export function removeAlias(did: string, alias: string): void {
   contact.aliases = contact.aliases.filter((a) => a.toLowerCase() !== normalized);
   contact.updatedAt = Date.now();
 
-  // GAP-PERSIST-01 write-through: same risk as addAlias — without the
-  // SQL delete, removed aliases reappear on next boot via hydration.
   const sqlRepo = getContactRepository();
   if (sqlRepo) sqlRepo.removeAlias(normalized);
 }
 
-/** Resolve a DID from an alias. Returns null if not found. */
+/** Resolve a DID from an alias. Returns the contact's primary DID, or null. */
 export function resolveAlias(alias: string): string | null {
-  return aliasIndex.get(alias.trim().toLowerCase()) ?? null;
+  const personId = aliasIndex.get(alias.trim().toLowerCase());
+  if (personId === undefined) return null;
+  return contactsByPerson.get(personId)?.did ?? null;
 }
 
 /** Lookup contact by alias. Returns null if not found. */
 export function findByAlias(alias: string): Contact | null {
-  const did = resolveAlias(alias);
-  return did ? (contacts.get(did) ?? null) : null;
+  const personId = aliasIndex.get(alias.trim().toLowerCase());
+  return personId !== undefined ? (contactsByPerson.get(personId) ?? null) : null;
 }
 
 /** Get contacts filtered by trust level. */
 export function getContactsByTrust(trustLevel: TrustLevel): Contact[] {
-  return [...contacts.values()].filter((c) => c.trustLevel === trustLevel);
+  return [...contactsByPerson.values()].filter((c) => c.trustLevel === trustLevel);
 }
 
 // ---------------------------------------------------------------
@@ -375,24 +492,18 @@ export function getContactsByTrust(trustLevel: TrustLevel): Contact[] {
 // ---------------------------------------------------------------
 
 /**
- * Check if a DID belongs to a known contact. O(1) lookup.
- *
- * Used by D2D receive pipeline for fast trust evaluation
- * without loading the full Contact object.
+ * Check if a DID belongs to a known contact. Resolves did→person and
+ * checks for a policy (hydrating from SQL on a cold cache).
  */
 export function isContact(did: string): boolean {
-  return contacts.has(did);
+  return getContact(did) !== null;
 }
 
 /**
  * Get the trust level for a DID. Returns null if not a contact.
- *
- * Fast-path for ingress trust evaluation — avoids full contact
- * deserialization when only the trust level is needed.
  */
 export function getTrustLevel(did: string): TrustLevel | null {
-  const contact = contacts.get(did);
-  return contact ? contact.trustLevel : null;
+  return getContact(did)?.trustLevel ?? null;
 }
 
 /**
@@ -401,24 +512,21 @@ export function getTrustLevel(did: string): TrustLevel | null {
  * GAP-PERSIST-04: main-dina's staging processor builds a lowercase
  * `name_or_alias → contact` map for preference binding so texts like
  * "my dentist Dr Carl" match a contact stored as "Dr Carl Jones"
- * with alias "Dr Carl". Previously this function only compared
- * `displayName`, so the mobile preference binder would miss any
- * contact not stored under the exact form the text uses.
+ * with alias "Dr Carl".
  *
- * Strategy: direct `aliasIndex` lookup first (O(1)), then
- * displayName sweep. Returns the first match; aliases are
- * guaranteed unique by `addAlias`.
+ * Strategy: direct `aliasIndex` lookup first (O(1)), then displayName
+ * sweep. Returns the first match; aliases are unique by `addAlias`.
  */
 export function resolveByName(name: string): Contact | null {
   if (!name) return null;
   const lower = name.trim().toLowerCase();
   if (lower === '') return null;
-  const aliasMatch = aliasIndex.get(lower);
-  if (aliasMatch !== undefined) {
-    const byAlias = contacts.get(aliasMatch);
+  const aliasPerson = aliasIndex.get(lower);
+  if (aliasPerson !== undefined) {
+    const byAlias = contactsByPerson.get(aliasPerson);
     if (byAlias !== undefined) return byAlias;
   }
-  for (const contact of contacts.values()) {
+  for (const contact of contactsByPerson.values()) {
     if (contact.displayName.toLowerCase() === lower) {
       return contact;
     }
@@ -431,48 +539,38 @@ export function resolveByName(name: string): Contact | null {
  * contact repository. Called at boot (after storage init) so a
  * restart doesn't drop every persisted contact. A no-op when no
  * repository is wired; a SQL read failure throws so the caller can
- * decide whether to proceed with an empty directory (risky) or
- * abort boot.
+ * decide whether to proceed with an empty directory (risky) or abort.
  *
- * Returns the number of contacts loaded so the boot sequence can
- * log it.
+ * Resolves each person's DIDs from the people graph to rebuild the
+ * did→person index and the D2D projections. Returns the number of
+ * contacts loaded.
  */
 export function hydrateContactDirectory(): number {
   const sqlRepo = getContactRepository();
   if (sqlRepo === null) return 0;
-  const rows = sqlRepo.list();
-  // Pull the people repo once — `upsertContactPerson` is idempotent,
-  // so backfilling on every boot is safe and self-healing for users
-  // who created contacts before the people-graph mirror existed.
   const peopleRepo = getPeopleRepository();
+  const rows = sqlRepo.list();
   let loaded = 0;
   for (const row of rows) {
-    contacts.set(row.did, row);
+    const personId = row.personId;
+    const dids =
+      peopleRepo === null
+        ? []
+        : peopleRepo
+            .listIdentities(personId)
+            .filter((i) => i.identityType === 'did')
+            .map((i) => i.identityValue);
+    row.did = dids[0] ?? '';
+    contactsByPerson.set(personId, row);
     for (const alias of row.aliases ?? []) {
       const key = alias.trim().toLowerCase();
-      if (key !== '') aliasIndex.set(key, row.did);
+      if (key !== '') aliasIndex.set(key, personId);
     }
-    // Mirror into the D2D egress gate + inbound trust classifier
-    // (same sync we do on addContact). Without this, persisted
-    // contacts load into `contacts` / `aliasIndex` but the egress
-    // gate stays empty across a restart, so /chat/[did].send bounces
-    // with "denied at contact" until the user re-adds them.
-    if (row.trustLevel !== 'blocked') {
-      addEgressGateContact(row.did);
-      addKnownContact(row.did);
-      // Backfill into the people graph on every boot. Idempotent —
-      // re-runs on already-mirrored contacts just refresh the row.
-      // Fail-soft: a missing people repo or a transient SQL error
-      // shouldn't break contact hydration (the egress gate above is
-      // the load-bearing piece).
-      if (peopleRepo !== null) {
-        try {
-          peopleRepo.upsertContactPerson(row.did, row.displayName);
-        } catch {
-          /* enrichment only — see comment in addContact */
-        }
-      }
-    }
+    for (const did of dids) didIndex.set(did, personId);
+    // Single projection-sync path (same as establishContact / getContact):
+    // adds non-blocked contacts to the D2D gate + inbound trust set,
+    // prunes blocked ones.
+    syncProjections(personId);
     loaded++;
   }
   return loaded;
@@ -480,7 +578,8 @@ export function hydrateContactDirectory(): number {
 
 /** Reset all contact state (for testing). */
 export function resetContactDirectory(): void {
-  contacts.clear();
+  contactsByPerson.clear();
+  didIndex.clear();
   aliasIndex.clear();
 }
 
@@ -489,51 +588,42 @@ export function resetContactDirectory(): void {
 // ---------------------------------------------------------------
 
 /**
- * Replace a contact's preferred_for category list. Input is
- * normalised (lowercased + trimmed + deduped + empties dropped) via
- * `normalisePreferredForCategories`. Empty input is a valid
- * "clear all preferences" operation.
- *
- * Throws when the contact doesn't exist.
+ * Replace a contact's preferred_for category list. Input is normalised
+ * (lowercased + trimmed + deduped + empties dropped). Empty input is a
+ * valid "clear all preferences" operation. Throws when the contact
+ * doesn't exist.
  */
 export function setPreferredFor(did: string, categories: readonly string[]): void {
-  const contact = contacts.get(did);
+  const contact = getContact(did);
   if (!contact) throw new Error(`contacts: "${did}" not found`);
   const normalised = normalisePreferredForCategories(categories);
-  // GAP-PERSIST-01: SQL write-through must succeed before we mutate
-  // in-memory state. A failed SQL write previously left memory and
-  // disk diverged.
+  // GAP-PERSIST-01: SQL write-through must succeed before in-memory mutation.
   const sqlRepo = getContactRepository();
-  if (sqlRepo) sqlRepo.setPreferredFor(did, normalised);
+  if (sqlRepo) sqlRepo.setPreferredFor(contact.personId, normalised);
   contact.preferredFor = normalised;
   contact.updatedAt = Date.now();
 }
 
 /**
  * Read a contact's preferred_for list. Returns `[]` when the contact
- * has no preferences set (never returns undefined). Throws when the
- * contact doesn't exist.
+ * has no preferences set (never undefined). Throws when the contact
+ * doesn't exist.
  */
 export function getPreferredFor(did: string): string[] {
-  const contact = contacts.get(did);
+  const contact = getContact(did);
   if (!contact) throw new Error(`contacts: "${did}" not found`);
-  // Return a fresh array — the in-memory Contact's `preferredFor` is
-  // a mutable reference; callers must not be able to append through it
-  // and surprise other readers.
   return [...(contact.preferredFor ?? [])];
 }
 
 /**
  * Return contacts whose preferred_for list contains `category`
- * (case-insensitive). Empty / whitespace-only category → `[]` (no
- * "match anything" semantics; the resolver always passes a concrete
- * intent).
+ * (case-insensitive). Empty / whitespace-only category → `[]`.
  */
 export function findByPreferredFor(category: string): Contact[] {
   const needle = normalisePreferredForCategory(category);
   if (needle === '') return [];
   const matches: Contact[] = [];
-  for (const contact of contacts.values()) {
+  for (const contact of contactsByPerson.values()) {
     if ((contact.preferredFor ?? []).includes(needle)) {
       matches.push(contact);
     }

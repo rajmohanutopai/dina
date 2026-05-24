@@ -35,13 +35,15 @@ import {
 
 import { scrubPII, rehydratePII } from '@dina/core';
 import { createReminder, type Reminder } from '@dina/core/reminders';
-import { queryVault, listPersonas } from '@dina/core';
+import { queryVault, listPersonas, getVaultRepository } from '@dina/core';
 import { generateEmbedding, isEmbeddingAvailable } from '../embedding/generation';
 import { isValidReminderPayload, isExtractedEventKind } from '../enrichment/event_extractor';
 import { parseReminderPlan } from '../llm/output_parser';
 import { REMINDER_PLAN } from '../llm/prompts';
 
 import type { ExtractedEvent, ExtractedEventKind } from '../enrichment/event_extractor';
+import type { VaultItem } from '@dina/test-harness';
+import { getVaultReadBackend } from '../vault_context/assembly';
 
 export interface PlannerInput {
   itemId: string;
@@ -536,6 +538,22 @@ async function gatherVaultContext(
     [input.summary.trim(), input.body.trim()].filter((s) => s.length > 0),
   );
 
+  // Shared item→context-line conversion (used by the structured-subject
+  // phase and the FTS phases): skip empties + the event itself, truncate
+  // to the per-item budget, dedup. Returns false once the budget is full.
+  const pushRawLine = (raw: string): boolean => {
+    if (contextItems.length >= VAULT_CONTEXT_MAX_ITEMS) return false;
+    if (raw === '') return true;
+    if (selfTexts.has(raw.trim())) return true; // the event itself isn't context
+    // Truncate to match Python's 150-char per-item cap so one long note
+    // can't blow the prompt budget.
+    const line = raw.slice(0, VAULT_CONTEXT_LINE_MAX_CHARS);
+    if (!contextItems.includes(line)) contextItems.push(line);
+    return true;
+  };
+  const pushItemLine = (item: VaultItem): boolean =>
+    pushRawLine(item.content_l0 || item.summary || '');
+
   const collectFrom = (text: string, embedding: Float32Array | undefined): void => {
     if (text.length === 0) return;
     const mode: 'fts5' | 'hybrid' = embedding !== undefined ? 'hybrid' : 'fts5';
@@ -549,14 +567,7 @@ async function gatherVaultContext(
           ...(embedding !== undefined ? { embedding } : {}),
         });
         for (const item of results) {
-          if (contextItems.length >= VAULT_CONTEXT_MAX_ITEMS) break;
-          const raw = item.content_l0 || item.summary || '';
-          if (raw === '') continue;
-          if (selfTexts.has(raw.trim())) continue; // the event itself isn't context
-          // Truncate to match Python's 150-char per-item cap so one long
-          // note can't blow the prompt budget.
-          const line = raw.slice(0, VAULT_CONTEXT_LINE_MAX_CHARS);
-          if (!contextItems.includes(line)) contextItems.push(line);
+          if (!pushItemLine(item)) break;
         }
       } catch (err) {
         // One persona missing/closed is not fatal — keep walking, but
@@ -571,6 +582,56 @@ async function gatherVaultContext(
       }
     }
   };
+
+  // Phase 0 — STRUCTURED recall: items explicitly linked to the person
+  // via `vault_item_subjects` (the canonical did→person_id→facts edge).
+  // Highest priority: added before the FTS phases so a remembered
+  // preference ("Don Quixote loves eggs and bacon") lands even though it
+  // shares no tokens with the inbound event text ("I'm coming over").
+  // FTS (phases 1-2) is the D4 fallback for notes without a subject link.
+  const subjectPersonIds = new Set<string>();
+  if (senderHint !== null && senderHint.personId !== '') subjectPersonIds.add(senderHint.personId);
+  for (const p of referencedPeople) {
+    if (p.personId !== '') subjectPersonIds.add(p.personId);
+  }
+  const vaultReadBackend = getVaultReadBackend();
+  for (const personId of subjectPersonIds) {
+    if (contextItems.length >= VAULT_CONTEXT_MAX_ITEMS) break;
+    for (const persona of searchPersonas) {
+      if (contextItems.length >= VAULT_CONTEXT_MAX_ITEMS) break;
+      try {
+        const repo = getVaultRepository(persona);
+        if (repo !== null) {
+          // In-process (mobile): read the persona vault directly.
+          for (const item of repo.getItemsForPersonSync(personId, VAULT_CONTEXT_MAX_ITEMS)) {
+            if (!pushItemLine(item)) break;
+          }
+        } else if (vaultReadBackend?.vaultItemsForPerson !== undefined) {
+          // Out-of-process (home-node-lite): vault SQLite lives in Core,
+          // so resolve subject-linked items over the HTTP backend.
+          const items = await vaultReadBackend.vaultItemsForPerson(
+            persona,
+            personId,
+            VAULT_CONTEXT_MAX_ITEMS,
+          );
+          for (const it of items) {
+            const raw =
+              (it as { content_l0?: string; summary?: string }).content_l0 ||
+              (it as { content_l0?: string; summary?: string }).summary ||
+              '';
+            if (!pushRawLine(raw)) break;
+          }
+        }
+      } catch (err) {
+        logger.warn({
+          event: 'reminder_planner.subject_recall_error',
+          itemId: input.itemId,
+          persona,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
 
   // Phase 1 — facts ABOUT the person the reminder concerns, searched on
   // their surfaces alone so their preferences land in the budget before
@@ -676,6 +737,8 @@ function resolveReferencedPeople(text: string, excludeSenderDid?: string): Resol
 }
 
 interface SenderHint {
+  /** The resolved person_id — the key for structured subject-link recall. */
+  personId: string;
   displayName: string;
   relationshipHint: string;
   /** Confirmed surface forms (name + nicknames + role phrases),
@@ -715,6 +778,7 @@ function resolveSenderHint(senderDid?: string): SenderHint | null {
     if (!surfaces.includes(trimmed)) surfaces.push(trimmed);
   }
   return {
+    personId: person.personId,
     displayName,
     relationshipHint: person.relationshipHint,
     surfaces,

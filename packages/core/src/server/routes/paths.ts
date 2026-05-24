@@ -165,6 +165,8 @@ export const PEOPLE_APPLY_EXTRACTION = '/v1/people/apply-extraction';
 export const PEOPLE_LIST = '/v1/people';
 /** GET — find people whose surfaces match a name (query: `?surface=Emma`). */
 export const PEOPLE_FIND = '/v1/people/find';
+/** GET — resolve a person by identity DID (query: `?did=did:plc:…`). */
+export const PEOPLE_BY_DID = '/v1/people/by-did';
 
 // ---------------------------------------------------------------
 // Scratchpad — cognitive checkpoints for multi-step reasoning

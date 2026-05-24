@@ -36,6 +36,7 @@ import {
   type ApplyExtractionResponse,
   type ExtractionResult,
   type Person,
+  type PersonIdentity,
   type PersonStatus,
   type PersonSurface,
   type SurfaceConfidence,
@@ -59,14 +60,21 @@ export interface PeopleRepository {
   getPerson(personId: string): Person | null;
   listPeople(): Person[];
   /**
-   * Lookup by linked contact DID — primary entry point for D2D
-   * speaker resolution. Returns the confirmed person whose
-   * `contact_did` matches, or null when no person is bound to that
-   * DID. When multiple match (shouldn't happen, but the schema
-   * doesn't enforce a unique constraint to allow merge windows),
-   * returns the most recently updated.
+   * Lookup by linked contact DID — convenience wrapper over
+   * `resolveByIdentity('did', did)`. Returns the non-rejected person
+   * the DID is bound to (via `person_identities`), or null. Retained
+   * as the primary entry point for D2D speaker resolution; new code
+   * may call `resolveByIdentity` directly for email/phone/handle.
    */
   findByContactDid(did: string): Person | null;
+  /**
+   * Resolve any identifier to its owning person. `(identity_type,
+   * identity_value)` is unique, so at most one row matches; rejected
+   * people are filtered (so a tombstoned person's stale identity does
+   * not resolve). Returns the hydrated person or null. Empty value is
+   * a no-op (null).
+   */
+  resolveByIdentity(identityType: string, identityValue: string): Person | null;
   confirmPerson(personId: string): boolean;
   rejectPerson(personId: string): boolean;
   confirmSurface(personId: string, surfaceId: number): boolean;
@@ -74,7 +82,33 @@ export interface PeopleRepository {
   detachSurface(personId: string, surfaceId: number): boolean;
   mergePeople(keepId: string, mergeId: string): void;
   deletePerson(personId: string): boolean;
+  /**
+   * Bind a DID to a person — convenience wrapper over
+   * `upsertIdentity(personId, 'did', contactDid, {verified, primary})`.
+   * Returns false when `personId` is unknown. Idempotent; re-points
+   * the DID if it was previously bound to a different (e.g. rejected)
+   * person.
+   */
   linkContact(personId: string, contactDid: string): boolean;
+  /**
+   * Upsert an identifier→person binding. `(identity_type,
+   * identity_value)` is the natural key: a second call with the same
+   * pair updates in place (re-points `person_id`, never duplicates).
+   * `verified` is monotonic (never silently downgraded). Use this for
+   * every identity channel — DID, email, phone, handle, device.
+   */
+  upsertIdentity(
+    personId: string,
+    identityType: string,
+    identityValue: string,
+    opts?: { verified?: boolean; primary?: boolean },
+  ): void;
+  /**
+   * All identities bound to a person, primary first. Used by the
+   * contact directory to build its `did → person_id` index and to
+   * enumerate a person's DIDs when syncing/removing D2D projections.
+   */
+  listIdentities(personId: string): PersonIdentity[];
   /**
    * Upsert a person directly from a contact-directory entry —
    * `(did, displayName)` come from the People UI's "Add Contact"
@@ -150,12 +184,15 @@ export class SQLitePeopleRepository implements PeopleRepository {
       updated: 0,
       conflicts: [],
       skipped: false,
+      personIds: [],
     };
+    const touchedPersonIds = new Set<string>();
     const nowSec = Math.floor(this.nowFn() / 1000);
 
     this.db.transaction(() => {
       for (const link of result.results) {
         const personId = this.findOrAssignPersonId(link);
+        touchedPersonIds.add(personId);
         const isNew = !this.personExists(personId);
         const personStatus = link.surfaces.some((s) => s.confidence === 'high')
           ? PERSON_STATUS_CONFIRMED
@@ -163,9 +200,9 @@ export class SQLitePeopleRepository implements PeopleRepository {
 
         if (isNew) {
           this.db.execute(
-            `INSERT INTO people (person_id, canonical_name, contact_did,
+            `INSERT INTO people (person_id, canonical_name,
               relationship_hint, status, created_from, created_at, updated_at)
-             VALUES (?, ?, '', ?, ?, 'llm', ?, ?)`,
+             VALUES (?, ?, ?, ?, 'llm', ?, ?)`,
             [personId, link.canonicalName, link.relationshipHint, personStatus, nowSec, nowSec],
           );
           response.created++;
@@ -240,13 +277,13 @@ export class SQLitePeopleRepository implements PeopleRepository {
       );
     });
 
+    response.personIds = [...touchedPersonIds];
     return response;
   }
 
   getPerson(personId: string): Person | null {
     const rows = this.db.query(
-      `SELECT person_id, canonical_name, contact_did, relationship_hint,
-              status, created_from, created_at, updated_at
+      `SELECT ${personSelectColumns('people')}
        FROM people WHERE person_id = ? LIMIT 1`,
       [personId],
     );
@@ -258,8 +295,7 @@ export class SQLitePeopleRepository implements PeopleRepository {
 
   listPeople(): Person[] {
     const rows = this.db.query(
-      `SELECT person_id, canonical_name, contact_did, relationship_hint,
-              status, created_from, created_at, updated_at
+      `SELECT ${personSelectColumns('people')}
        FROM people WHERE status != 'rejected'
        ORDER BY updated_at DESC`,
     );
@@ -271,15 +307,19 @@ export class SQLitePeopleRepository implements PeopleRepository {
   }
 
   findByContactDid(did: string): Person | null {
-    if (did === '') return null;
+    return this.resolveByIdentity('did', did);
+  }
+
+  resolveByIdentity(identityType: string, identityValue: string): Person | null {
+    if (identityValue === '') return null;
     const rows = this.db.query(
-      `SELECT person_id, canonical_name, contact_did, relationship_hint,
-              status, created_from, created_at, updated_at
-       FROM people
-       WHERE contact_did = ? AND status != 'rejected'
-       ORDER BY updated_at DESC
+      `SELECT ${personSelectColumns('p')}
+       FROM people p
+       JOIN person_identities pi ON pi.person_id = p.person_id
+       WHERE pi.identity_type = ? AND pi.identity_value = ? AND p.status != 'rejected'
+       ORDER BY p.updated_at DESC
        LIMIT 1`,
-      [did],
+      [identityType, identityValue],
     );
     if (rows.length === 0) return null;
     const person = rowToPerson(rows[0]);
@@ -335,6 +375,14 @@ export class SQLitePeopleRepository implements PeopleRepository {
          WHERE person_id = ?`,
         [keepId, nowSec, mergeId],
       );
+      // Re-point every identity to the survivor. `(type,value)` is
+      // globally unique, so mergeId's identities never collide with
+      // keepId's — a plain re-point is safe.
+      this.db.execute(
+        `UPDATE person_identities SET person_id = ?, updated_at = ?
+         WHERE person_id = ?`,
+        [keepId, nowSec, mergeId],
+      );
       this.db.execute(
         `UPDATE people SET status = 'rejected', updated_at = ?
          WHERE person_id = ?`,
@@ -348,17 +396,52 @@ export class SQLitePeopleRepository implements PeopleRepository {
   }
 
   linkContact(personId: string, contactDid: string): boolean {
+    if (contactDid === '') return false;
     const nowSec = Math.floor(this.nowFn() / 1000);
     const before = this.db.query(
       `SELECT 1 AS one FROM people WHERE person_id = ? LIMIT 1`,
       [personId],
     );
     if (before.length === 0) return false;
-    this.db.execute(
-      `UPDATE people SET contact_did = ?, updated_at = ? WHERE person_id = ?`,
-      [contactDid, nowSec, personId],
-    );
+    this.db.transaction(() => {
+      this.upsertIdentityRow(personId, 'did', contactDid, true, true, nowSec);
+      // Touch the person so `resolveByIdentity`'s updated_at ordering
+      // surfaces the freshly-linked person first.
+      this.db.execute(
+        `UPDATE people SET updated_at = ? WHERE person_id = ?`,
+        [nowSec, personId],
+      );
+    });
     return true;
+  }
+
+  upsertIdentity(
+    personId: string,
+    identityType: string,
+    identityValue: string,
+    opts?: { verified?: boolean; primary?: boolean },
+  ): void {
+    const nowSec = Math.floor(this.nowFn() / 1000);
+    this.upsertIdentityRow(
+      personId,
+      identityType,
+      identityValue,
+      opts?.verified ?? false,
+      opts?.primary ?? false,
+      nowSec,
+    );
+  }
+
+  listIdentities(personId: string): PersonIdentity[] {
+    const rows = this.db.query(
+      `SELECT identity_id, person_id, identity_type, identity_value,
+              verified, primary_identity, created_at, updated_at
+       FROM person_identities
+       WHERE person_id = ?
+       ORDER BY primary_identity DESC, updated_at DESC`,
+      [personId],
+    );
+    return rows.map(rowToIdentity);
   }
 
   upsertContactPerson(did: string, displayName: string): string {
@@ -372,13 +455,16 @@ export class SQLitePeopleRepository implements PeopleRepository {
 
     let personId = '';
     this.db.transaction(() => {
-      // 1. Reuse an existing row already bound to this DID (the
-      //    typical "edit display name" case + the idempotent "add
-      //    same contact twice" case both land here).
+      // 1. Reuse an existing non-rejected person already bound to this
+      //    DID (the typical "edit display name" case + the idempotent
+      //    "add same contact twice" case both land here). Resolution
+      //    is by identity, not by a column on `people`.
       const existing = this.db.query(
-        `SELECT person_id FROM people
-         WHERE contact_did = ? AND status != 'rejected'
-         ORDER BY updated_at DESC
+        `SELECT p.person_id FROM people p
+         JOIN person_identities pi ON pi.person_id = p.person_id
+         WHERE pi.identity_type = 'did' AND pi.identity_value = ?
+           AND p.status != 'rejected'
+         ORDER BY p.updated_at DESC
          LIMIT 1`,
         [did],
       );
@@ -398,19 +484,23 @@ export class SQLitePeopleRepository implements PeopleRepository {
           [trimmedName, nowSec, personId],
         );
       } else {
-        // 2. Otherwise, create a new confirmed person bound to the
-        //    DID. We do NOT try to reuse an LLM-suggested person
-        //    that happens to share the canonical name — auto-merging
-        //    on a name collision is risky and the dedicated
-        //    `mergePeople` API exists for that.
+        // 2. Otherwise, create a new confirmed person. We do NOT try
+        //    to reuse an LLM-suggested person that happens to share
+        //    the canonical name — auto-merging on a name collision is
+        //    risky and the dedicated `mergePeople` API exists for that.
         personId = newPersonId();
         this.db.execute(
-          `INSERT INTO people (person_id, canonical_name, contact_did,
+          `INSERT INTO people (person_id, canonical_name,
             relationship_hint, status, created_from, created_at, updated_at)
-           VALUES (?, ?, ?, '', 'confirmed', 'user', ?, ?)`,
-          [personId, trimmedName, did, nowSec, nowSec],
+           VALUES (?, ?, '', 'confirmed', 'user', ?, ?)`,
+          [personId, trimmedName, nowSec, nowSec],
         );
       }
+
+      // 2b. Bind the DID identity (re-points it if it previously
+      //     belonged to a rejected person — UNIQUE(type,value) means
+      //     a DID lives on exactly one row, so the upsert moves it).
+      this.upsertIdentityRow(personId, 'did', did, true, true, nowSec);
 
       // 3. Confirmed name surface — the reminder planner expands
       //    inbound D2D FTS queries with every confirmed surface, so
@@ -563,6 +653,37 @@ export class SQLitePeopleRepository implements PeopleRepository {
     return rows.length > 0;
   }
 
+  /**
+   * Insert-or-repoint an identity row. `(identity_type,
+   * identity_value)` is the conflict target: a colliding pair updates
+   * in place, re-pointing `person_id` to the caller's person. This is
+   * what makes "DID rotated to a new person after the old one was
+   * rejected" work — the DID moves rather than violating UNIQUE.
+   * `verified` is monotonic (MAX) so a re-point never silently
+   * downgrades a previously-verified identity.
+   */
+  private upsertIdentityRow(
+    personId: string,
+    identityType: string,
+    identityValue: string,
+    verified: boolean,
+    primary: boolean,
+    nowSec: number,
+  ): void {
+    this.db.execute(
+      `INSERT INTO person_identities
+         (person_id, identity_type, identity_value, verified,
+          primary_identity, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(identity_type, identity_value) DO UPDATE SET
+         person_id = excluded.person_id,
+         verified = MAX(person_identities.verified, excluded.verified),
+         primary_identity = excluded.primary_identity,
+         updated_at = excluded.updated_at`,
+      [personId, identityType, identityValue, verified ? 1 : 0, primary ? 1 : 0, nowSec, nowSec],
+    );
+  }
+
   private upsertSurface(args: {
     personId: string;
     surface: string;
@@ -681,6 +802,29 @@ export class SQLitePeopleRepository implements PeopleRepository {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Column list for a `people` row plus a correlated subquery that
+ * derives `contact_did` from the person's primary DID identity. The
+ * `people` table no longer stores a DID column — identities live in
+ * `person_identities` (many-to-one). This keeps `Person.contactDid`
+ * populated (the "primary" DID, falling back to the most recently
+ * updated) so existing consumers keep working unchanged. See
+ * IDENTITY_HUB_REDESIGN §3.1 / D5.
+ *
+ * `alias` is the table alias used in the enclosing query (`people`
+ * for unqualified reads, `p` when joining `person_identities pi`).
+ * The subquery uses its own alias `pid` to avoid clashing with an
+ * outer `pi` join.
+ */
+function personSelectColumns(alias: string): string {
+  return `${alias}.person_id, ${alias}.canonical_name, ${alias}.relationship_hint,
+          ${alias}.status, ${alias}.created_from, ${alias}.created_at, ${alias}.updated_at,
+          (SELECT pid.identity_value FROM person_identities pid
+            WHERE pid.person_id = ${alias}.person_id AND pid.identity_type = 'did'
+            ORDER BY pid.primary_identity DESC, pid.updated_at DESC
+            LIMIT 1) AS contact_did`;
+}
+
 function rowToPerson(row: DBRow): Person {
   return {
     personId: String(row.person_id ?? ''),
@@ -689,6 +833,19 @@ function rowToPerson(row: DBRow): Person {
     relationshipHint: String(row.relationship_hint ?? ''),
     status: String(row.status ?? PERSON_STATUS_SUGGESTED) as PersonStatus,
     createdFrom: String(row.created_from ?? 'llm') as Person['createdFrom'],
+    createdAt: Number(row.created_at ?? 0),
+    updatedAt: Number(row.updated_at ?? 0),
+  };
+}
+
+function rowToIdentity(row: DBRow): PersonIdentity {
+  return {
+    identityId: Number(row.identity_id ?? 0),
+    personId: String(row.person_id ?? ''),
+    identityType: String(row.identity_type ?? 'did') as PersonIdentity['identityType'],
+    identityValue: String(row.identity_value ?? ''),
+    verified: Number(row.verified ?? 0) !== 0,
+    primary: Number(row.primary_identity ?? 0) !== 0,
     createdAt: Number(row.created_at ?? 0),
     updatedAt: Number(row.updated_at ?? 0),
   };

@@ -856,6 +856,8 @@ export {
 // the reminder planner, D2D speaker naming, and recall expansion.
 export type {
   Person,
+  PersonIdentity,
+  IdentityType,
   PersonSurface,
   PersonStatus,
   SurfaceStatus,

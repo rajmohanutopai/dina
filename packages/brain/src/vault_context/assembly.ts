@@ -38,6 +38,8 @@ export interface VaultReadBackend {
   vaultQuery: CoreClient['vaultQuery'];
   vaultGet?: CoreClient['vaultGet'];
   vaultList?: CoreClient['vaultList'];
+  /** Structured recall: items a person is a subject of (out-of-process). */
+  vaultItemsForPerson?: CoreClient['vaultItemsForPerson'];
 }
 
 let vaultBackend: VaultReadBackend | null = null;
@@ -67,6 +69,8 @@ export function getVaultReadBackend(): VaultReadBackend | null {
 export interface PeopleReadBackend {
   peopleList: CoreClient['peopleList'];
   peopleFindByName: CoreClient['peopleFindByName'];
+  /** Resolve an inbound DID to a person (out-of-process subject recall). */
+  peopleResolveByDid?: CoreClient['peopleResolveByDid'];
 }
 
 let peopleBackend: PeopleReadBackend | null = null;

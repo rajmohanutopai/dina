@@ -19,7 +19,7 @@
  * which talk to Core instead of the in-memory queue.
  */
 
-import { listContacts, getContact, updateContact } from '@dina/core';
+import { listContacts, getContact, updateContact, getVaultRepository } from '@dina/core';
 import { isVaultItemType } from '@dina/core';
 import { enrichItem as enrichVaultItem } from '../enrichment/pipeline';
 import {
@@ -33,6 +33,7 @@ import { classifyDomain, classifyPersonas } from '../routing/domain';
 import { selectPersonaRich } from '../routing/persona_selector';
 import { scoreSender } from '../peerlens/scorer';
 import { getAccessiblePersonas } from '../vault_context/assembly';
+import { recallSenderSubjectMemories } from '../vault_context/subject_recall';
 import { getPeopleRepository } from '@dina/core';
 
 import type { StagingProcessResult } from './processor';
@@ -179,7 +180,10 @@ export interface StagingDrainOptions {
    * `(r) => coreClient.peopleApplyExtraction(r)`; mobile leaves this
    * undefined so the in-process repo handles the write directly.
    */
-  peopleGraphApply?: (result: ExtractionResult) => Promise<ApplyExtractionResponse>;
+  peopleGraphApply?: (
+    result: ExtractionResult,
+    persona?: string,
+  ) => Promise<ApplyExtractionResponse>;
   /**
    * [pipeline hook] The per-item agentic loop. **REQUIRED in production**;
    * `runStagingDrainTick` throws on the first item if it's missing.
@@ -335,6 +339,27 @@ export async function runStagingDrainTick(
         try {
           const memoryText =
             classifyInput.body !== '' ? classifyInput.body : classifyInput.subject;
+          // Structured recall: for a D2D arrival (originDid set), resolve
+          // the sender → person and pull their subject-linked memories so
+          // the agentic loop can enrich a terse "I'm coming over" with the
+          // sender's remembered preferences — works in-process (mobile) and
+          // out-of-process (lite, via Core HTTP backends). Fail-soft.
+          let relatedMemories: string[] = [];
+          if (originDid !== '') {
+            try {
+              relatedMemories = await recallSenderSubjectMemories(
+                originDid,
+                getAccessiblePersonas(),
+                5,
+              );
+            } catch (err) {
+              log({
+                event: 'staging.drain.subject_recall_failed',
+                item_id: itemId,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+          }
           turn = await options.rememberRuntime.run({
             memoryText,
             metadata: {
@@ -343,6 +368,7 @@ export async function runStagingDrainTick(
               sender: classifyInput.sender,
               subject: classifyInput.subject,
             },
+            ...(relatedMemories.length > 0 ? { relatedMemories } : {}),
           });
         } catch (err) {
           log({
@@ -441,6 +467,19 @@ export async function runStagingDrainTick(
       const d2dContactDid =
         ingressChannel.toLowerCase() === 'd2d' && originDid !== '' ? originDid : '';
 
+      // Resolve the inbound sender DID to a canonical person_id so the
+      // stored row records WHO authored it (people graph). Fail-soft:
+      // no people repo / unknown DID leaves it ''. See IDENTITY_HUB §3.5.
+      let d2dAuthorPersonId = '';
+      if (d2dContactDid !== '') {
+        try {
+          d2dAuthorPersonId =
+            getPeopleRepository()?.resolveByIdentity('did', d2dContactDid)?.personId ?? '';
+        } catch {
+          /* enrichment metadata, never blocks ingest */
+        }
+      }
+
       // Routing metadata — stash the classifier's primary/secondary/
       // confidence/reason in the item metadata blob. `/ask` diagnostics
       // surface this to explain why a row landed where.
@@ -503,6 +542,7 @@ export async function runStagingDrainTick(
         confidence: senderScore.confidence,
         retrieval_policy: senderScore.retrieval_policy,
         ...(d2dContactDid !== '' ? { contact_did: d2dContactDid } : {}),
+        ...(d2dAuthorPersonId !== '' ? { author_person_id: d2dAuthorPersonId } : {}),
         // Preserved original event time.
         ...(originalTimestamp > 0 ? { timestamp: originalTimestamp } : {}),
         // Routing metadata inside the metadata blob.
@@ -665,7 +705,7 @@ export async function runStagingDrainTick(
           try {
             const applyFn =
               options.peopleGraphApply ??
-              (async (r) => {
+              (async (r: ExtractionResult) => {
                 const repo = getPeopleRepository();
                 if (repo === null) {
                   return {
@@ -677,7 +717,29 @@ export async function runStagingDrainTick(
                 }
                 return repo.applyExtraction(r);
               });
-            const applied = await applyFn(extraction);
+            // Pass the target persona so the out-of-process writer (Core)
+            // links the subjects into the right vault. The in-process
+            // fallback ignores it (post-store subject linking is handled
+            // by the in-process repo path / post_publish).
+            const applyPersona = personas[0] ?? 'general';
+            const applied = await applyFn(extraction, applyPersona);
+            // In-process agentic path: Core isn't doing the linking, so
+            // write the subject edges locally for each resolved person.
+            if (options.peopleGraphApply === undefined && applied.personIds) {
+              const vaultRepo = getVaultRepository(applyPersona);
+              if (vaultRepo !== null) {
+                for (const personId of applied.personIds) {
+                  try {
+                    vaultRepo.linkSubjectSync(itemId, personId, {
+                      source: 'llm',
+                      confidence: 'medium',
+                    });
+                  } catch {
+                    /* subject link is enrichment — never fail the drain */
+                  }
+                }
+              }
+            }
             peopleGraphTelemetry = {
               applied: applied.created + applied.updated,
               created: applied.created,

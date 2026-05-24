@@ -20,9 +20,9 @@ import type { LLMMessage } from '../../src/vault_context/assembly';
 import { storeItem, clearVaults } from '@dina/core';
 import { DEFAULT_TEST_PERSONAS } from '@dina/core';
 import { createPersona, resetPersonaState, openPersona } from '@dina/core';
-import { addContact, resetContactDirectory } from '@dina/core';
+import { addContact, resetContactDirectory, setPeopleRepository } from '@dina/core';
 import { createReminder, resetReminderState } from '@dina/core/reminders';
-import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
+import { makeVaultItem, resetFactoryCounters, makeFakePeopleRepo } from '@dina/test-harness';
 
 describe('Vault Context Assembly', () => {
   beforeEach(() => {
@@ -30,7 +30,9 @@ describe('Vault Context Assembly', () => {
     clearVaults([...DEFAULT_TEST_PERSONAS, 'work']);
     setAccessiblePersonas(['general']);
     resetReasoningProvider();
+    setPeopleRepository(makeFakePeopleRepo());
   });
+  afterEach(() => setPeopleRepository(null));
 
   describe('assembleContext', () => {
     it('gathers items from accessible personas', async () => {

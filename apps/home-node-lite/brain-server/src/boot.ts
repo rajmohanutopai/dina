@@ -228,6 +228,8 @@ export async function bootServer(
       vaultQuery: (persona, query) => core.vaultQuery(persona, query),
       vaultGet: (persona, itemId) => core.vaultGet(persona, itemId),
       vaultList: (persona, opts) => core.vaultList(persona, opts),
+      vaultItemsForPerson: (persona, personId, limit) =>
+        core.vaultItemsForPerson(persona, personId, limit),
     });
 
     // People-graph read backend — parallel to the vault backend. The
@@ -238,6 +240,7 @@ export async function bootServer(
     setPeopleReadBackend({
       peopleList: () => core.peopleList(),
       peopleFindByName: (surface) => core.peopleFindByName(surface),
+      peopleResolveByDid: (did) => core.peopleResolveByDid(did),
     });
 
     // Build the LLM runtime early so the staging drain can use it
@@ -311,7 +314,7 @@ export async function bootServer(
         // Out-of-process people-graph writer. Core owns SQLite in lite;
         // Brain's post-publish extractor POSTs the structured result
         // through the signed Core HTTP surface.
-        peopleGraphApply: (result) => core.peopleApplyExtraction(result),
+        peopleGraphApply: (result, persona) => core.peopleApplyExtraction(result, persona),
         ...(rememberRuntime !== undefined ? { rememberRuntime } : {}),
       },
       logger: (entry) => logger.info(entry, 'brain-server staging drain'),

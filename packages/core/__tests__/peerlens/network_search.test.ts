@@ -12,18 +12,22 @@ import {
   type PeerlensSearchResult,
 } from '../../src/peerlens/network_search';
 import { addContact, resetContactDirectory } from '../../src/contacts/directory';
+import { setPeopleRepository } from '../../src/people/repository';
 import {
   PeerlensQueryClient,
   type PeerlensProfile,
   type QueryResult,
 } from '../../src/peerlens/query_client';
+import { makeFakePeopleRepo } from '../_support/fake_people_repo';
 
 describe('PeerLens Search', () => {
   beforeEach(() => {
     resetContactDirectory();
+    setPeopleRepository(makeFakePeopleRepo());
     resetTrustQueryClient();
     resetSearchCache();
   });
+  afterEach(() => setPeopleRepository(null));
 
   describe('local contact search', () => {
     it('finds PeerLens data for known contact by name', async () => {

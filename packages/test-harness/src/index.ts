@@ -161,6 +161,7 @@ export {
   MockCoreClient,
 } from './mocks';
 export type { RecordedCall, CoreClientMethodName } from './mocks';
+export { makeFakePeopleRepo } from './mocks/fake_people_repo';
 
 // HTTP test harnesses
 // HTTP test harnesses (real servers on localhost)

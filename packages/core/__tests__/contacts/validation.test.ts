@@ -19,6 +19,8 @@ import {
   deleteContact,
   resetContactDirectory,
 } from '../../src/contacts/directory';
+import { setPeopleRepository } from '../../src/people/repository';
+import { makeFakePeopleRepo } from '../_support/fake_people_repo';
 
 describe('Contact Validation', () => {
   describe('validation sets', () => {
@@ -130,7 +132,11 @@ describe('Contact Validation', () => {
   });
 
   describe('addAlias integration — reserved pronoun rejection', () => {
-    beforeEach(() => resetContactDirectory());
+    beforeEach(() => {
+      resetContactDirectory();
+      setPeopleRepository(makeFakePeopleRepo());
+    });
+    afterEach(() => setPeopleRepository(null));
 
     it('rejects pronoun aliases on addAlias', () => {
       addContact('did:key:z123', 'Alice');

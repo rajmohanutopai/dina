@@ -10,7 +10,7 @@
  */
 
 import type { CoreRouter } from '../router';
-import { storeItem, queryVault, getItem } from '../../vault/crud';
+import { storeItem, queryVault, getItem, getItemsForPerson } from '../../vault/crud';
 
 export function registerVaultRoutes(router: CoreRouter): void {
   router.post('/v1/vault/query', async (req) => {
@@ -45,6 +45,22 @@ export function registerVaultRoutes(router: CoreRouter): void {
     const item = getItem(persona, req.params.id);
     if (!item) return { status: 404, body: { error: 'Item not found' } };
     return { status: 200, body: item };
+  });
+
+  // Structured recall: items a person is a subject of (vault_item_subjects).
+  // GET /v1/vault/subjects?persona=…&person_id=…&limit=…
+  router.get('/v1/vault/subjects', async (req) => {
+    const persona = req.query.persona ?? 'general';
+    const personId = req.query.person_id ?? '';
+    const rawLimit = Number(req.query.limit) || 20;
+    const limit = Math.max(1, Math.min(rawLimit, 100));
+    if (personId === '') return { status: 400, body: { error: 'person_id is required' } };
+    try {
+      const results = getItemsForPerson(persona, personId, limit);
+      return { status: 200, body: { items: results, count: results.length } };
+    } catch (err) {
+      return { status: 400, body: { error: errMsg(err) } };
+    }
   });
 }
 

@@ -32,6 +32,7 @@ function jsonBody(value: unknown): { body: unknown; rawBody: Uint8Array } {
 
 function contactFixture(did: string, name: string, preferredFor: string[] = []): Contact {
   return {
+    personId: `person-${did}`,
     did,
     displayName: name,
     trustLevel: 'unknown',

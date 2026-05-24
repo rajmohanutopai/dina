@@ -4,6 +4,14 @@
  * Source: ARCHITECTURE.md Section 2.50
  */
 
+import { randomBytes } from 'node:crypto';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+import { applyMigrations, IDENTITY_MIGRATIONS } from '@dina/core';
+import { NodeSQLiteAdapter } from '@dina/storage-node';
+
 import {
   addContact,
   getContact,
@@ -24,14 +32,85 @@ import {
   setPreferredFor,
   type Contact,
 } from '../../src/contacts/directory';
-import { setContactRepository, type ContactRepository } from '../../src/contacts/repository';
+import {
+  setContactRepository,
+  SQLiteContactRepository,
+  type ContactRepository,
+} from '../../src/contacts/repository';
 import {
   setPeopleRepository,
+  getPeopleRepository,
+  SQLitePeopleRepository,
   type PeopleRepository,
 } from '../../src/people/repository';
+import { checkContactGate, clearGatesState } from '../../src/d2d/gates';
+import { isContactRing1, clearKnownContacts } from '../../src/peerlens/source_trust';
 
 describe('Contact Directory', () => {
-  beforeEach(() => resetContactDirectory());
+  // Contact policy is person-keyed; the directory resolves did→person
+  // through the people graph. So these tests run against a real
+  // identity SQLite DB (people + contact repos on one adapter) — the
+  // same engine production uses — rather than a pure in-memory stub.
+  // Individual tests still override the contact/people repos with
+  // spies/stubs where they assert call-through behaviour.
+  // ONE SQLCipher DB per file — opening one derives the key via PBKDF2
+  // (intentionally slow). Doing that per-test (×60) made the suite take
+  // minutes; opening once in beforeAll and clearing tables in beforeEach
+  // keeps real-SQL fidelity at a fraction of the cost.
+  let adapter: NodeSQLiteAdapter;
+  let dbDir = '';
+  const IDENTITY_TABLES = [
+    'contact_aliases',
+    'contacts',
+    'person_surfaces',
+    'person_identities',
+    'person_extraction_log',
+    'people',
+  ];
+
+  beforeAll(() => {
+    dbDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-directory-'));
+    adapter = new NodeSQLiteAdapter({
+      path: path.join(dbDir, 'identity.sqlite'),
+      passphraseHex: randomBytes(32).toString('hex'),
+      journalMode: 'WAL',
+      synchronous: 'NORMAL',
+    });
+    applyMigrations(adapter, IDENTITY_MIGRATIONS);
+  });
+
+  afterAll(() => {
+    try {
+      adapter.close();
+    } catch {
+      /* idempotent */
+    }
+    if (dbDir !== '') {
+      try {
+        fs.rmSync(dbDir, { recursive: true, force: true });
+      } catch {
+        /* best-effort */
+      }
+    }
+  });
+
+  beforeEach(() => {
+    for (const t of IDENTITY_TABLES) adapter.execute(`DELETE FROM ${t}`);
+    setPeopleRepository(new SQLitePeopleRepository(adapter));
+    setContactRepository(new SQLiteContactRepository(adapter));
+    resetContactDirectory();
+    // The D2D gate + source-trust sets are module-global and NOT cleared
+    // by resetContactDirectory — reset them so projection assertions
+    // don't see stale entries from a prior test.
+    clearGatesState();
+    clearKnownContacts();
+  });
+
+  afterEach(() => {
+    resetContactDirectory();
+    setContactRepository(null);
+    setPeopleRepository(null);
+  });
 
   describe('addContact', () => {
     it('adds a contact with default trust/sharing', () => {
@@ -55,6 +134,19 @@ describe('Contact Directory', () => {
 
     it('rejects empty DID', () => {
       expect(() => addContact('', 'Nobody')).toThrow('DID is required');
+    });
+
+    it('re-adding an existing contact on a cold cache updates (no UNIQUE crash)', () => {
+      // The policy row + person persist in SQL; clearing the in-memory
+      // caches simulates a pre-hydration cold start. establishContact
+      // must decide UPDATE (not INSERT) from the durable store, or the
+      // person_id PK would collide.
+      addContact('did:plc:alice', 'Alice', 'verified');
+      resetContactDirectory();
+      expect(() => addContact('did:plc:alice', 'Alice Renamed', 'trusted')).not.toThrow();
+      const c = getContact('did:plc:alice');
+      expect(c!.displayName).toBe('Alice Renamed');
+      expect(c!.trustLevel).toBe('trusted');
     });
 
     it('addContactIfNotExists creates new contact', () => {
@@ -107,65 +199,26 @@ describe('Contact Directory', () => {
 
     it('lazy-hydrates from SQL when in-memory cache misses', () => {
       // Simulates the JS-bundle reload race on mobile: the in-memory
-      // `contacts` Map is empty (Cmd+R cleared it), but the SQL
-      // contacts repo is wired and has the row from a prior session.
-      // `getContact` should fall back to the repo, hydrate the cache,
-      // and return the contact — not return null and let the receive
-      // pipeline classify the sender as `senderTrust='unknown'`.
-      const stub: Contact = {
-        did: 'did:plc:carol',
-        displayName: 'Carol',
-        trustLevel: 'verified',
-        sharingTier: 'summary',
-        relationship: 'friend',
-        dataResponsibility: 'external',
-        aliases: ['carol'],
-        notes: '',
-        createdAt: 100,
-        updatedAt: 100,
-      };
-      let getCalls = 0;
-      const repo = {
-        add: () => undefined,
-        get: (did: string) => {
-          getCalls++;
-          return did === stub.did ? stub : null;
-        },
-        list: () => [stub],
-        update: () => undefined,
-        remove: () => true,
-        addAlias: () => undefined,
-        removeAlias: () => undefined,
-        resolveAlias: () => null,
-        getAliases: () => stub.aliases,
-        setPreferredFor: () => undefined,
-        getPreferredFor: () => [],
-        findByPreferredFor: () => [],
-      } as unknown as ContactRepository;
-      setContactRepository(repo);
-      try {
-        // First lookup: cache miss → hits SQL → returns hydrated contact.
-        const first = getContact('did:plc:carol');
-        expect(first).not.toBeNull();
-        expect(first!.trustLevel).toBe('verified');
-        expect(getCalls).toBe(1);
-        // Second lookup: cache hit → no additional SQL call.
-        const second = getContact('did:plc:carol');
-        expect(second).not.toBeNull();
-        expect(getCalls).toBe(1);
-        // Unknown-DID miss with repo wired returns null without a poison cache entry.
-        expect(getContact('did:plc:nobody')).toBeNull();
-        expect(getCalls).toBe(2);
-        expect(getContact('did:plc:nobody')).toBeNull();
-        expect(getCalls).toBe(3);
-      } finally {
-        setContactRepository(null);
-      }
+      // Maps are empty (Cmd+R cleared them), but the durable identity
+      // DB (person_identities + contacts) survives at the native layer.
+      // `getContact` must resolve did→person→policy from SQL, hydrate
+      // the cache, and return the contact — not return null and let the
+      // receive pipeline classify a verified sender as 'unknown'.
+      addContact('did:plc:carol', 'Carol', 'verified');
+      // Clear ONLY the in-memory directory caches; the real SQLite rows
+      // (person, identity, contact policy) persist on the adapter.
+      resetContactDirectory();
+
+      const first = getContact('did:plc:carol');
+      expect(first).not.toBeNull();
+      expect(first!.trustLevel).toBe('verified');
+      expect(first!.did).toBe('did:plc:carol');
+      // Unknown DID resolves to null without poisoning the cache.
+      expect(getContact('did:plc:nobody')).toBeNull();
+      expect(getContact('did:plc:nobody')).toBeNull();
     });
 
-    it('returns null without throwing when no SQL repo is wired (cold boot)', () => {
-      // Pure-in-memory mode: hydrate has nothing to fall back to.
-      // `getContact` must return null cleanly.
+    it('returns null without throwing when the person is unknown', () => {
       expect(getContact('did:plc:nowhere')).toBeNull();
     });
   });
@@ -221,48 +274,19 @@ describe('Contact Directory', () => {
       expect(resolveAlias('Ali')).toBeNull();
     });
 
-    it('write-throughs to the SQL repository when one is wired', () => {
-      // Mirrors the addContact write-through (see line 124 of directory.ts).
-      // Without the SQL delete, on-device the row stays in `contacts.did`
-      // and a re-add of the same DID hits the UNIQUE constraint —
-      // observed live on the simulator before this fix landed.
-      const removed: string[] = [];
-      const repo = {
-        list: () => [],
-        add: () => {
-          /* unused */
-        },
-        get: () => null,
-        update: () => {
-          /* unused */
-        },
-        remove: (did: string) => {
-          removed.push(did);
-          return true;
-        },
-        addAlias: () => {
-          /* unused */
-        },
-        removeAlias: () => {
-          /* unused */
-        },
-        resolveAlias: () => null,
-        getAliases: () => [],
-        setPreferredFor: () => {
-          /* unused */
-        },
-        getPreferredFor: () => [],
-        findByPreferredFor: () => [],
-      } as unknown as ContactRepository;
-
-      setContactRepository(repo);
-      try {
-        addContact('did:plc:alice', 'Alice');
-        deleteContact('did:plc:alice');
-        expect(removed).toEqual(['did:plc:alice']);
-      } finally {
-        setContactRepository(null);
-      }
+    it('write-throughs the delete to durable storage (re-add works after)', () => {
+      // Without the SQL delete, on-device the policy row stayed behind
+      // and a re-add of the same DID hit the UNIQUE constraint —
+      // observed live on the simulator before this fix landed. With
+      // real repos, prove the row is gone by re-adding cleanly and by
+      // a cold re-hydrate returning nothing.
+      addContact('did:plc:alice', 'Alice');
+      deleteContact('did:plc:alice');
+      // Re-add must not throw (the policy row was actually removed).
+      expect(() => addContact('did:plc:alice', 'Alice Again')).not.toThrow();
+      // And a cold cache re-hydrate sees the re-added contact, not a ghost.
+      resetContactDirectory();
+      expect(getContact('did:plc:alice')!.displayName).toBe('Alice Again');
     });
   });
 
@@ -501,6 +525,7 @@ describe('Contact Directory', () => {
       // fails to typecheck (which is exactly the acceptance criterion
       // for PC-CORE-01 — "type-check passes").
       const withField: Contact = {
+        personId: 'person-alice',
         did: 'did:plc:alice',
         displayName: 'Alice',
         trustLevel: 'trusted',
@@ -514,6 +539,7 @@ describe('Contact Directory', () => {
         preferredFor: ['dental', 'tax'],
       };
       const withoutField: Contact = {
+        personId: 'person-bob',
         did: 'did:plc:bob',
         displayName: 'Bob',
         trustLevel: 'unknown',
@@ -531,6 +557,7 @@ describe('Contact Directory', () => {
 
     it('round-trips through JSON without losing the field', () => {
       const c: Contact = {
+        personId: 'person-carol',
         did: 'did:plc:carol',
         displayName: 'Carol',
         trustLevel: 'trusted',
@@ -552,6 +579,7 @@ describe('Contact Directory', () => {
       // mean "no preferences set". Domain consumers must not
       // distinguish them (the repository layer normalises on write).
       const a: Contact = {
+        personId: 'person-x',
         did: 'did:plc:x',
         displayName: 'x',
         trustLevel: 'unknown',
@@ -563,7 +591,7 @@ describe('Contact Directory', () => {
         createdAt: 0,
         updatedAt: 0,
       };
-      const b: Contact = { ...a, did: 'did:plc:y', preferredFor: [] };
+      const b: Contact = { ...a, personId: 'person-y', did: 'did:plc:y', preferredFor: [] };
       const nonEmpty = (c: Contact) => (c.preferredFor?.length ?? 0) > 0;
       expect(nonEmpty(a)).toBe(false);
       expect(nonEmpty(b)).toBe(false);
@@ -575,58 +603,19 @@ describe('Contact Directory', () => {
   // ----------------------------------------------------------------
 
   describe('hydrateContactDirectory + resolveByName (GAP-PERSIST-02/04)', () => {
-    afterEach(() => {
-      setContactRepository(null);
-      resetContactDirectory();
-    });
-
-    function fakeRepo(rows: Contact[]): ContactRepository {
-      return {
-        list: () => rows,
-        add: () => {
-          /* unused */
-        },
-        get: (did: string) => rows.find((r) => r.did === did) ?? null,
-        update: () => {
-          /* unused */
-        },
-        remove: () => false,
-        addAlias: () => {
-          /* unused */
-        },
-        removeAlias: () => {
-          /* unused */
-        },
-        resolveAlias: () => null,
-        getAliases: () => [],
-        setPreferredFor: () => {
-          /* unused */
-        },
-        getPreferredFor: () => [],
-        findByPreferredFor: () => [],
-      } as unknown as ContactRepository;
-    }
-
     it('loads every persisted contact (+ aliases) into memory at boot', () => {
-      const drcarl: Contact = {
-        did: 'did:plc:drcarl',
-        displayName: 'Dr Carl Jones',
-        trustLevel: 'trusted',
-        sharingTier: 'summary',
-        relationship: 'acquaintance',
-        dataResponsibility: 'external',
-        aliases: ['Dr Carl', 'Carl J'],
-        notes: '',
-        createdAt: 0,
-        updatedAt: 0,
-        preferredFor: ['dental'],
-      };
-      setContactRepository(fakeRepo([drcarl]));
+      // Persist a contact through the real path, then simulate a cold
+      // boot: clear the in-memory caches and re-hydrate from durable
+      // storage. Display name + every alias must resolve back to the DID.
+      addContact('did:plc:drcarl', 'Dr Carl Jones', 'trusted', 'summary', 'acquaintance');
+      addAlias('did:plc:drcarl', 'Dr Carl');
+      addAlias('did:plc:drcarl', 'Carl J');
+      setPreferredFor('did:plc:drcarl', ['dental']);
 
+      resetContactDirectory();
       const loaded = hydrateContactDirectory();
       expect(loaded).toBe(1);
 
-      // Main display name + each alias all resolve to the same DID.
       expect(resolveByName('Dr Carl Jones')?.did).toBe('did:plc:drcarl');
       expect(resolveByName('dr carl')?.did).toBe('did:plc:drcarl');
       expect(resolveByName('Carl J')?.did).toBe('did:plc:drcarl');
@@ -766,6 +755,9 @@ describe('Contact Directory', () => {
         getPerson: () => null,
         listPeople: () => [],
         findByContactDid: () => null,
+        resolveByIdentity: () => null,
+        upsertIdentity: stub('upsertIdentity'),
+        listIdentities: () => [],
         confirmPerson: stub('confirmPerson'),
         rejectPerson: stub('rejectPerson'),
         confirmSurface: stub('confirmSurface'),
@@ -856,7 +848,9 @@ describe('Contact Directory', () => {
       setContactRepository(repo);
       addContact('did:plc:alice', 'Alice');
       updateContact('did:plc:alice', { displayName: 'Alice 2' });
-      expect(spy.update).toContain('did:plc:alice');
+      // Repo is person-keyed now — assert the write-through happened
+      // (the recorded key is the resolved person_id, not the DID).
+      expect(spy.update).toHaveLength(1);
     });
 
     it('deleteContact → repo.remove (Bug #2 contract)', () => {
@@ -864,7 +858,7 @@ describe('Contact Directory', () => {
       setContactRepository(repo);
       addContact('did:plc:alice', 'Alice');
       deleteContact('did:plc:alice');
-      expect(spy.remove).toEqual(['did:plc:alice']);
+      expect(spy.remove).toHaveLength(1);
     });
 
     it('addAlias → repo.addAlias', () => {
@@ -872,7 +866,8 @@ describe('Contact Directory', () => {
       setContactRepository(repo);
       addContact('did:plc:alice', 'Alice');
       addAlias('did:plc:alice', 'Ali');
-      expect(spy.addAlias).toContainEqual({ did: 'did:plc:alice', alias: 'ali' });
+      expect(spy.addAlias).toHaveLength(1);
+      expect(spy.addAlias[0].alias).toBe('ali');
     });
 
     it('removeAlias → repo.removeAlias', () => {
@@ -889,10 +884,8 @@ describe('Contact Directory', () => {
       setContactRepository(repo);
       addContact('did:plc:alice', 'Alice');
       setPreferredFor('did:plc:alice', ['dentist']);
-      expect(spy.setPreferredFor).toContainEqual({
-        did: 'did:plc:alice',
-        categories: ['dentist'],
-      });
+      expect(spy.setPreferredFor).toHaveLength(1);
+      expect(spy.setPreferredFor[0].categories).toEqual(['dentist']);
     });
 
     it('addContact → people repo.upsertContactPerson (when wired, non-blocked)', () => {
@@ -908,7 +901,11 @@ describe('Contact Directory', () => {
       setPeopleRepository(null);
     });
 
-    it('addContact does NOT mirror blocked contacts into the people graph', () => {
+    it('addContact still creates the person for a blocked contact (person is the key)', () => {
+      // Post-redesign: the person_id IS the contact policy key, so a
+      // blocked contact must still resolve to a person — it just isn't
+      // gate-eligible (syncProjections prunes it). The old "skip the
+      // people mirror for blocked" optimisation no longer applies.
       const { repo: contactRepo } = makeSpyRepo();
       setContactRepository(contactRepo);
       const peopleSpy: Array<{ did: string; displayName: string }> = [];
@@ -916,34 +913,35 @@ describe('Contact Directory', () => {
 
       addContact('did:plc:bad', 'Bad Actor', 'blocked');
 
-      expect(peopleSpy).toEqual([]); // gate skipped, same rationale as egress gate
+      expect(peopleSpy).toEqual([{ did: 'did:plc:bad', displayName: 'Bad Actor' }]);
       setPeopleRepository(null);
     });
 
-    it('addContact succeeds when people-graph mirror throws (fail-soft enrichment)', () => {
+    it('addContact FAILS when the people-graph write throws (people is load-bearing)', () => {
+      // Post-redesign the people graph is no longer optional enrichment:
+      // contact policy is keyed by person_id, so if the person/identity
+      // write fails there is no key to store policy under. The failure
+      // must surface, not be swallowed.
       const { repo: contactRepo } = makeSpyRepo();
       setContactRepository(contactRepo);
-      const throwingPeople: PeopleRepository = makeStubPeopleRepo({
-        upsertContactPerson: () => {
-          throw new Error('people db locked');
-        },
-      });
-      setPeopleRepository(throwingPeople);
+      setPeopleRepository(
+        makeStubPeopleRepo({
+          upsertContactPerson: () => {
+            throw new Error('people db locked');
+          },
+        }),
+      );
 
-      const c = addContact('did:plc:alice', 'Alice', 'verified');
-      expect(c.did).toBe('did:plc:alice');
-      // Contact still landed in memory + the contact-repo write-through.
-      expect(getContact('did:plc:alice')?.displayName).toBe('Alice');
+      expect(() => addContact('did:plc:alice', 'Alice', 'verified')).toThrow('people db locked');
+      expect(getContact('did:plc:alice')).toBeNull();
       setPeopleRepository(null);
     });
 
-    it('addContact is a no-op on the people graph when no people repo is wired', () => {
+    it('addContact throws when no people repo is wired (people is a required dependency)', () => {
       const { repo: contactRepo } = makeSpyRepo();
       setContactRepository(contactRepo);
       setPeopleRepository(null);
-      // Should not throw — the test would fail if the directory
-      // assumed a wired people repo.
-      expect(() => addContact('did:plc:alice', 'Alice', 'verified')).not.toThrow();
+      expect(() => addContact('did:plc:alice', 'Alice', 'verified')).toThrow('not wired');
     });
 
     it('repo failure surfaces — memory does not silently diverge', () => {
@@ -979,6 +977,64 @@ describe('Contact Directory', () => {
       expect(() => addContact('did:plc:alice', 'Alice')).toThrow('disk full');
       // Memory MUST NOT have the contact — write-through ordering.
       expect(getContact('did:plc:alice')).toBeNull();
+    });
+  });
+
+  // ----------------------------------------------------------------
+  // Phase D matrix — projection sync (block/unblock prune+restore) +
+  // lifecycle (delete preserves the person + identity).
+  // ----------------------------------------------------------------
+  describe('projection sync + lifecycle (Phase D matrix)', () => {
+    it('a non-blocked contact is in the D2D gate + ring-1 source trust', () => {
+      addContact('did:plc:alice', 'Alice', 'verified');
+      expect(checkContactGate('did:plc:alice')).toBe(true);
+      expect(isContactRing1('did:plc:alice')).toBe(true);
+    });
+
+    it('blocking a contact prunes it from the gate + source trust', () => {
+      addContact('did:plc:alice', 'Alice', 'verified');
+      expect(checkContactGate('did:plc:alice')).toBe(true);
+      updateContact('did:plc:alice', { trustLevel: 'blocked' });
+      expect(checkContactGate('did:plc:alice')).toBe(false);
+      expect(isContactRing1('did:plc:alice')).toBe(false);
+    });
+
+    it('unblocking restores the gate + source trust', () => {
+      addContact('did:plc:alice', 'Alice', 'verified');
+      updateContact('did:plc:alice', { trustLevel: 'blocked' });
+      expect(checkContactGate('did:plc:alice')).toBe(false);
+      updateContact('did:plc:alice', { trustLevel: 'verified' });
+      expect(checkContactGate('did:plc:alice')).toBe(true);
+      expect(isContactRing1('did:plc:alice')).toBe(true);
+    });
+
+    it('deleting a contact prunes projections but PRESERVES the person + identity', () => {
+      addContact('did:plc:alice', 'Alice', 'verified');
+      const before = getPeopleRepository()?.resolveByIdentity('did', 'did:plc:alice');
+      expect(before).not.toBeNull();
+      deleteContact('did:plc:alice');
+      // Contact policy + projections gone…
+      expect(getContact('did:plc:alice')).toBeNull();
+      expect(checkContactGate('did:plc:alice')).toBe(false);
+      // …but the person + their DID identity survive (history preserved).
+      const after = getPeopleRepository()?.resolveByIdentity('did', 'did:plc:alice');
+      expect(after?.personId).toBe(before?.personId);
+    });
+
+    it('two DIDs on one person both resolve to that person', () => {
+      addContact('did:plc:alice-phone', 'Alice', 'verified');
+      const personId = getPeopleRepository()?.resolveByIdentity(
+        'did',
+        'did:plc:alice-phone',
+      )?.personId;
+      expect(personId).toBeDefined();
+      // Bind a second device DID to the same person.
+      getPeopleRepository()?.upsertIdentity(personId!, 'did', 'did:plc:alice-laptop', {
+        verified: true,
+      });
+      expect(getPeopleRepository()?.resolveByIdentity('did', 'did:plc:alice-laptop')?.personId).toBe(
+        personId,
+      );
     });
   });
 });

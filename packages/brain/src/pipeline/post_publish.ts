@@ -12,7 +12,7 @@
  * Source: ARCHITECTURE.md Task 3.29
  */
 
-import { getContact, updateContact } from '@dina/core';
+import { getContact, updateContact, getVaultRepository } from '@dina/core';
 
 import { extractIdentityLinks } from './identity_extraction';
 import {
@@ -35,7 +35,10 @@ export interface PostPublishOptions {
    * `(r) => coreClient.peopleApplyExtraction(r)`; mobile leaves it
    * `undefined` so the in-process repo handles the write directly.
    */
-  peopleGraphApply?: (result: ExtractionResult) => Promise<ApplyExtractionResponse>;
+  peopleGraphApply?: (
+    result: ExtractionResult,
+    persona?: string,
+  ) => Promise<ApplyExtractionResponse>;
 }
 
 export interface PostPublishResult {
@@ -161,6 +164,9 @@ export async function handlePostPublish(
   //    HTTP surface instead of the local repo.
   if (text.length > 0) {
     const outcome = await applyPeopleGraphExtraction(text, item.id, {
+      // The persona lets the out-of-process writer (Core) link subjects
+      // into the right vault. Harmless on the in-process path.
+      persona: item.persona,
       ...(options.peopleGraphApply !== undefined
         ? { apply: options.peopleGraphApply }
         : {}),
@@ -168,6 +174,30 @@ export async function handlePostPublish(
     result.peopleGraph = telemetryFromOutcome(outcome);
     if (!outcome.ok && (outcome.reason === 'extractor_failed' || outcome.reason === 'apply_failed')) {
       result.errors.push(`people_graph: ${outcome.reason}: ${outcome.error}`);
+    }
+
+    // 5b. Structured recall edge — link this item to every person the
+    //     extraction resolved (`vault_item_subjects`). This is what lets
+    //     an inbound D2D from a person's DID recall the notes about them
+    //     (the Quixote "loves eggs and bacon" enrichment) by person_id
+    //     instead of fragile name/FTS matching. In-process path only:
+    //     `applied.personIds` is populated by the local people repo; the
+    //     out-of-process (home-node-lite) Core-HTTP apply doesn't return
+    //     them yet (deferred — Core would write the link on its side).
+    //     Fail-soft: recall enrichment, never blocks the store.
+    if (outcome.ok && outcome.applied.personIds && outcome.applied.personIds.length > 0) {
+      const vaultRepo = getVaultRepository(item.persona);
+      if (vaultRepo) {
+        for (const personId of outcome.applied.personIds) {
+          try {
+            vaultRepo.linkSubjectSync(item.id, personId, { source: 'llm', confidence: 'medium' });
+          } catch (err) {
+            result.errors.push(
+              `subject_link: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
+      }
     }
   }
 

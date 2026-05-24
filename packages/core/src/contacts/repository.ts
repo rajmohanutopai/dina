@@ -1,6 +1,13 @@
 /**
  * Contact SQL repository — backs contact CRUD with SQLite.
  *
+ * Keyed by `person_id` (people-graph hub), not DID: contact policy is
+ * stored once per person, shared across that person's devices/
+ * identities. The DID↔person mapping lives in `person_identities`;
+ * callers that hold a DID resolve it to a `person_id` first (the
+ * `contacts/directory.ts` layer does this via the people repo). See
+ * docs/IDENTITY_HUB_REDESIGN.md §3.4.
+ *
  * Uses the identity DB's `contacts` + `contact_aliases` tables.
  * Handles camelCase ↔ snake_case mapping.
  *
@@ -30,15 +37,18 @@ import type {
 import { normalisePreferredForCategories, normalisePreferredForCategory } from './preferred_for';
 
 export interface ContactRepository {
+  /** Insert a contact policy row. `contact.personId` is the key. */
   add(contact: Contact): void;
-  get(did: string): Contact | null;
+  /** Read a contact policy by person_id. `did` is left '' for the directory to fill. */
+  get(personId: string): Contact | null;
   list(): Contact[];
-  update(did: string, updates: Partial<Contact>): void;
-  remove(did: string): boolean;
-  addAlias(did: string, aliasNormalized: string): void;
+  update(personId: string, updates: Partial<Contact>): void;
+  remove(personId: string): boolean;
+  addAlias(personId: string, aliasNormalized: string): void;
   removeAlias(aliasNormalized: string): void;
+  /** Resolve an alias to the owning person_id, or null. */
   resolveAlias(aliasNormalized: string): string | null;
-  getAliases(did: string): string[];
+  getAliases(personId: string): string[];
 
   // ---- PC-CORE-03: preferredFor surface ---------------------------------
   /**
@@ -49,20 +59,20 @@ export interface ContactRepository {
    *
    * Throws when the contact doesn't exist.
    */
-  setPreferredFor(did: string, categories: readonly string[]): void;
+  setPreferredFor(personId: string, categories: readonly string[]): void;
 
   /**
    * Read a contact's preferred_for list. Returns an empty array when
    * the contact has no preferences set (never returns undefined).
    * Throws when the contact doesn't exist.
    */
-  getPreferredFor(did: string): string[];
+  getPreferredFor(personId: string): string[];
 
   /**
    * Return contacts whose preferred_for list contains `category`
    * (case-insensitive). Empty / whitespace-only category → `[]` (no
    * "match anything" semantics; the resolver always passes a
-   * concrete intent).
+   * concrete intent). Returned contacts carry `personId`; `did` is ''.
    */
   findByPreferredFor(category: string): Contact[];
 }
@@ -80,14 +90,17 @@ export class SQLiteContactRepository implements ContactRepository {
   constructor(private readonly db: DatabaseAdapter) {}
 
   add(contact: Contact): void {
+    if (contact.personId === '') {
+      throw new Error('contacts.repository: personId is required');
+    }
     const preferredForJson = JSON.stringify(
       normalisePreferredForCategories(contact.preferredFor ?? []),
     );
     this.db.execute(
-      `INSERT INTO contacts (did, display_name, trust_level, sharing_tier, relationship, data_responsibility, notes, created_at, updated_at, preferred_for)
+      `INSERT INTO contacts (person_id, display_name, trust_level, sharing_tier, relationship, data_responsibility, notes, created_at, updated_at, preferred_for)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        contact.did,
+        contact.personId,
         contact.displayName,
         contact.trustLevel,
         contact.sharingTier,
@@ -100,26 +113,26 @@ export class SQLiteContactRepository implements ContactRepository {
       ],
     );
     for (const alias of contact.aliases) {
-      this.addAlias(contact.did, alias.toLowerCase());
+      this.addAlias(contact.personId, alias.toLowerCase());
     }
   }
 
-  get(did: string): Contact | null {
-    const rows = this.db.query('SELECT * FROM contacts WHERE did = ?', [did]);
+  get(personId: string): Contact | null {
+    const rows = this.db.query('SELECT * FROM contacts WHERE person_id = ?', [personId]);
     if (rows.length === 0) return null;
-    const aliases = this.getAliases(did);
+    const aliases = this.getAliases(personId);
     return rowToContact(rows[0], aliases);
   }
 
   list(): Contact[] {
     const rows = this.db.query('SELECT * FROM contacts ORDER BY display_name');
     return rows.map((r) => {
-      const aliases = this.getAliases(String(r.did));
+      const aliases = this.getAliases(String(r.person_id));
       return rowToContact(r, aliases);
     });
   }
 
-  update(did: string, updates: Partial<Contact>): void {
+  update(personId: string, updates: Partial<Contact>): void {
     const sets: string[] = [];
     const params: unknown[] = [];
     if (updates.displayName !== undefined) {
@@ -148,22 +161,25 @@ export class SQLiteContactRepository implements ContactRepository {
     }
     sets.push('updated_at = ?');
     params.push(Date.now());
-    params.push(did);
-    this.db.execute(`UPDATE contacts SET ${sets.join(', ')} WHERE did = ?`, params);
+    params.push(personId);
+    this.db.execute(`UPDATE contacts SET ${sets.join(', ')} WHERE person_id = ?`, params);
   }
 
-  remove(did: string): boolean {
-    const existing = this.db.query('SELECT 1 FROM contacts WHERE did = ?', [did]);
+  remove(personId: string): boolean {
+    const existing = this.db.query('SELECT 1 FROM contacts WHERE person_id = ?', [personId]);
     if (existing.length === 0) return false;
-    this.db.execute('DELETE FROM contacts WHERE did = ?', [did]);
+    // Remove aliases explicitly — we don't rely on the FK ON DELETE
+    // CASCADE firing (PRAGMA foreign_keys may be off on some adapters).
+    this.db.execute('DELETE FROM contact_aliases WHERE person_id = ?', [personId]);
+    this.db.execute('DELETE FROM contacts WHERE person_id = ?', [personId]);
     return true;
   }
 
-  addAlias(did: string, aliasNormalized: string): void {
-    this.db.execute('INSERT OR IGNORE INTO contact_aliases (alias_normalized, did) VALUES (?, ?)', [
-      aliasNormalized,
-      did,
-    ]);
+  addAlias(personId: string, aliasNormalized: string): void {
+    this.db.execute(
+      'INSERT OR IGNORE INTO contact_aliases (alias_normalized, person_id) VALUES (?, ?)',
+      [aliasNormalized, personId],
+    );
   }
 
   removeAlias(aliasNormalized: string): void {
@@ -171,36 +187,42 @@ export class SQLiteContactRepository implements ContactRepository {
   }
 
   resolveAlias(aliasNormalized: string): string | null {
-    const rows = this.db.query('SELECT did FROM contact_aliases WHERE alias_normalized = ?', [
-      aliasNormalized,
-    ]);
-    return rows.length > 0 ? String(rows[0].did) : null;
+    const rows = this.db.query(
+      'SELECT person_id FROM contact_aliases WHERE alias_normalized = ?',
+      [aliasNormalized],
+    );
+    return rows.length > 0 ? String(rows[0].person_id) : null;
   }
 
-  getAliases(did: string): string[] {
-    const rows = this.db.query('SELECT alias_normalized FROM contact_aliases WHERE did = ?', [did]);
+  getAliases(personId: string): string[] {
+    const rows = this.db.query(
+      'SELECT alias_normalized FROM contact_aliases WHERE person_id = ?',
+      [personId],
+    );
     return rows.map((r) => String(r.alias_normalized));
   }
 
   // ---- PC-CORE-03: preferredFor surface ---------------------------------
 
-  setPreferredFor(did: string, categories: readonly string[]): void {
-    const existing = this.db.query('SELECT 1 FROM contacts WHERE did = ?', [did]);
+  setPreferredFor(personId: string, categories: readonly string[]): void {
+    const existing = this.db.query('SELECT 1 FROM contacts WHERE person_id = ?', [personId]);
     if (existing.length === 0) {
-      throw new Error(`contacts.repository: "${did}" not found`);
+      throw new Error(`contacts.repository: "${personId}" not found`);
     }
     const normalised = normalisePreferredForCategories(categories);
-    this.db.execute('UPDATE contacts SET preferred_for = ?, updated_at = ? WHERE did = ?', [
+    this.db.execute('UPDATE contacts SET preferred_for = ?, updated_at = ? WHERE person_id = ?', [
       JSON.stringify(normalised),
       Date.now(),
-      did,
+      personId,
     ]);
   }
 
-  getPreferredFor(did: string): string[] {
-    const rows = this.db.query('SELECT preferred_for FROM contacts WHERE did = ?', [did]);
+  getPreferredFor(personId: string): string[] {
+    const rows = this.db.query('SELECT preferred_for FROM contacts WHERE person_id = ?', [
+      personId,
+    ]);
     if (rows.length === 0) {
-      throw new Error(`contacts.repository: "${did}" not found`);
+      throw new Error(`contacts.repository: "${personId}" not found`);
     }
     return decodePreferredFor(String(rows[0].preferred_for ?? '[]'));
   }
@@ -223,16 +245,23 @@ export class SQLiteContactRepository implements ContactRepository {
     for (const row of rows) {
       const prefs = decodePreferredFor(String(row.preferred_for ?? '[]'));
       if (!prefs.includes(needle)) continue;
-      const aliases = this.getAliases(String(row.did));
+      const aliases = this.getAliases(String(row.person_id));
       matches.push(rowToContact(row, aliases));
     }
     return matches;
   }
 }
 
+/**
+ * Map a `contacts` row to a `Contact`. `did` is intentionally left
+ * empty — the table is person-keyed and carries no DID. The
+ * `contacts/directory.ts` layer fills `did` with the person's primary
+ * DID (or the looked-up DID) after resolving through the people graph.
+ */
 function rowToContact(row: DBRow, aliases: string[]): Contact {
   return {
-    did: String(row.did ?? ''),
+    personId: String(row.person_id ?? ''),
+    did: '',
     displayName: String(row.display_name ?? ''),
     trustLevel: String(row.trust_level ?? 'unknown') as TrustLevel,
     sharingTier: String(row.sharing_tier ?? 'summary') as SharingTier,

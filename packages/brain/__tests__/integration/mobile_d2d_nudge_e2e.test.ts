@@ -44,7 +44,9 @@ import {
 import {
   addContact,
   resetContactDirectory,
+  setPeopleRepository,
 } from '@dina/core';
+import { makeFakePeopleRepo } from '@dina/test-harness';
 import { resetReminderState } from '@dina/core/reminders';
 import {
   clearCheckpoints,
@@ -68,6 +70,7 @@ describe('D2D arrival → nudge notification (Sancho Moment)', () => {
     resetStagingState();
     clearVaults();
     resetContactDirectory();
+    setPeopleRepository(makeFakePeopleRepo());
     resetReasoningProvider();
     resetReminderState();
     clearCheckpoints();

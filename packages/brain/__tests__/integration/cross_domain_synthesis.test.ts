@@ -197,6 +197,15 @@ class FixturePeopleRepository implements PeopleRepository {
   findByContactDid(): Person | null {
     return null;
   }
+  resolveByIdentity(): Person | null {
+    return null;
+  }
+  upsertIdentity(): void {
+    /* no-op */
+  }
+  listIdentities() {
+    return [];
+  }
   confirmPerson(): boolean {
     return false;
   }

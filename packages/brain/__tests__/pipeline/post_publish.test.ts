@@ -14,6 +14,10 @@ import {
   IDENTITY_MIGRATIONS,
   SQLitePeopleRepository,
   setPeopleRepository,
+  getPeopleRepository,
+  setVaultRepository,
+  getVaultRepository,
+  InMemoryVaultRepository,
 } from '@dina/core';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
@@ -23,6 +27,7 @@ import {
   resetContactDirectory,
 } from '@dina/core';
 import { resetReminderState, listByPersona } from '@dina/core/reminders';
+import { makeFakePeopleRepo } from '@dina/test-harness';
 import {
   registerPersonLinkProvider,
   resetPersonLinkProvider,
@@ -86,6 +91,11 @@ describe('Post-Publish Handler', () => {
   });
 
   describe('contact update', () => {
+    // Contact policy is person-keyed now, so seeding via addContact
+    // needs a people repo (did→person resolution).
+    beforeEach(() => setPeopleRepository(makeFakePeopleRepo()));
+    afterEach(() => setPeopleRepository(null));
+
     it('updates last_interaction for known sender', async () => {
       addContact('did:plc:alice', 'Alice');
       const before = getContact('did:plc:alice');
@@ -290,6 +300,42 @@ describe('Post-Publish Handler', () => {
       expect(result.peopleGraph?.conflicts).toBe(0);
       expect(result.peopleGraph?.skipped).toBe(false);
       expect(result.errors).toEqual([]);
+    });
+
+    it('writes a vault_item_subjects link from the item to the resolved person (Phase C)', async () => {
+      // The Quixote payoff: a /remember note that resolves to a person
+      // must create the structured recall edge so an inbound D2D from
+      // that person's DID can later recall the note by person_id.
+      installPeopleRepo();
+      setVaultRepository('general', new InMemoryVaultRepository());
+      registerPersonLinkProvider(
+        async () =>
+          JSON.stringify({
+            identity_links: [
+              { name: 'Don Quixote', confidence: 'high', evidence: 'Don Quixote loves eggs' },
+            ],
+          }),
+      );
+      try {
+        await handlePostPublish({
+          id: 'item-quixote-pref',
+          type: 'note',
+          summary: 'Don Quixote loves eggs and bacon',
+          body: '',
+          timestamp: Date.now(),
+          persona: 'general',
+        });
+        const quixote = getPeopleRepository()
+          ?.listPeople()
+          .find((p) => p.canonicalName === 'Don Quixote');
+        expect(quixote).toBeDefined();
+        const linkedIds = getVaultRepository('general')?.getItemIdsForPersonSync(
+          quixote!.personId,
+        );
+        expect(linkedIds).toContain('item-quixote-pref');
+      } finally {
+        setVaultRepository('general', null);
+      }
     });
 
     it('records a people_graph error when the LLM provider throws', async () => {
