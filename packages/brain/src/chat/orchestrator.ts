@@ -13,7 +13,7 @@
  * Source: ARCHITECTURE.md Tasks 4.7–4.9
  */
 
-import { listByPersona as listRemindersByPersona, type Reminder } from '@dina/core/reminders';
+import { listByPersona as listRemindersByPersona } from '@dina/core/reminders';
 import { CoreHttpError } from '../errors';
 import { reason } from '../pipeline/chat_reasoning';
 import { executeToolSearch } from '../vault_context/assembly';
@@ -30,6 +30,7 @@ import {
   addDinaResponse,
   addLifecycleMessage,
 } from './thread';
+import { postReminderCard } from './reminder_card';
 
 import type { ServiceQueryDispatch } from '../reasoning/ask_handler';
 import type { CoreClient } from '@dina/core';
@@ -100,7 +101,7 @@ export async function handleChat(text: string, threadId?: string): Promise<ChatR
 
   switch (parsed.intent) {
     case 'remember':
-      typed = await handleRemember(parsed.payload);
+      typed = await handleRemember(parsed.payload, thread);
       break;
 
     case 'ask':
@@ -291,30 +292,9 @@ function formatPersonaDisplayName(name: string): string {
     .join(' ');
 }
 
-const REMINDER_EMOJI: Record<string, string> = {
-  birthday: '🎂',
-  appointment: '📅',
-  payment_due: '💳',
-  deadline: '⏰',
-};
-
-function formatReminderTime(dueMs: number): string {
-  return new Date(dueMs).toLocaleString('en-US', {
-    month: 'short',
-    day: '2-digit',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  });
-}
-
-function formatReminder(r: Reminder): string {
-  const emoji = REMINDER_EMOJI[r.kind] ?? '🔔';
-  return `[${r.short_id}] ${emoji} ${formatReminderTime(r.due_at)} — ${r.message}`;
-}
 
 /** Handle /remember: store text via staging ingest. */
-async function handleRemember(text: string): Promise<BotResponse> {
+async function handleRemember(text: string, thread: string): Promise<BotResponse> {
   if (!text) return plainResponse('What would you like me to remember?');
 
   // Boot-race window: the chat surface mounts before
@@ -386,7 +366,7 @@ async function handleRemember(text: string): Promise<BotResponse> {
     return plainResponse(`Got it — I'll remember that.`);
   }
 
-  const lines: string[] = [`Stored in ${formatPersonaDisplayName(persona)} vault.`];
+  const personaName = formatPersonaDisplayName(persona);
 
   // The reminder planner uses the staging row's id as the reminder's
   // `source_item_id` (see `drain.ts` → `handlePostPublish` → `planReminders`),
@@ -395,12 +375,22 @@ async function handleRemember(text: string): Promise<BotResponse> {
   const reminders = listRemindersByPersona(persona)
     .filter((r) => r.source_item_id === itemId)
     .sort((a, b) => a.due_at - b.due_at);
-  if (reminders.length > 0) {
-    lines.push('');
-    lines.push('Reminders set:');
-    for (const r of reminders) lines.push(formatReminder(r));
+
+  if (reminders.length === 0) {
+    return plainResponse(`Stored in ${personaName} vault.`);
   }
-  return plainResponse(lines.join('\n'));
+
+  // Render created reminders as scheduled cards (InlineReminderCard in
+  // its `scheduled` state) instead of a raw "[id] 🔔 time — text" list,
+  // which read as a technical dump. Post the "Stored" line, then a card
+  // per reminder, then return empty so processMessage doesn't append
+  // another bubble (same "handler posted its own messages" contract the
+  // service-query path uses).
+  addDinaResponse(thread, `Stored in ${personaName} vault.`);
+  for (const r of reminders) {
+    postReminderCard(thread, r, { scheduled: true });
+  }
+  return plainResponse('');
 }
 
 /** Handle /ask or detected question: reason pipeline. */

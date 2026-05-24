@@ -419,17 +419,25 @@ How to compute due_at (let NOW_MS be the value above with underscores stripped):
 - A specific date+time → resolve to {{timezone}}, then to Unix milliseconds
 - For a moment that's already past in {{timezone}}, only roll forward when the event is RECURRING (birthday / anniversary) — see rule below.
 
-⚠️ TIME-OF-DAY RULE: when the user states an explicit time of day ("at 6pm", "at 9:30", "tonight at 8"), the reminder's due_at MUST use THAT time. Never silently shift it to a default morning hour (9am) just because the event is more than a few hours away. Defaulting to a morning heads-up is only appropriate when the user gave a date but NO time of day (e.g. "tomorrow", "next Tuesday", "March 15" with no clock time). For events with explicit clock times, the user-stated time is the source of truth.
+⚠️ EVENT TIME vs FIRE TIME: distinguish WHEN THE EVENT HAPPENS from WHEN THE REMINDER FIRES (due_at).
+- The event's stated clock time ("at 6pm", "at 9:30", "tonight at 8") is the source of truth for the EVENT and for what the message says — never silently shift the event to a default morning hour (9am).
+- due_at (when the reminder pops) may be AT the event time, or EARLIER when the user needs lead time to prepare or travel (see the LEAD TIME rule below). It must never default to an unrelated morning hour just because the event is hours away; a morning heads-up is only for a date given with NO clock time ("tomorrow", "next Tuesday", "March 15").
 
-  Good: Body "Pick up dry cleaning tomorrow at 6pm" → due_at is tomorrow 18:00 in {{timezone}}.
-  Bad:  Body "Pick up dry cleaning tomorrow at 6pm" → due_at is tomorrow 09:00 with message "Your pickup is scheduled for 6pm". The user asked for 6pm, give them 6pm.
+  Good: Body "Pick up dry cleaning tomorrow at 6pm" → due_at is tomorrow ~17:30 in {{timezone}} (a little lead to act); message names "6 PM".
+  Bad:  Body "Pick up dry cleaning tomorrow at 6pm" → due_at is tomorrow 09:00 with message "Your pickup is scheduled for 6pm". Don't dump it on the morning hours away from the event.
 
 Worked example — short-horizon arrival from a peer:
   Body: "I am coming in 15 minutes"
   Vault context (sender + facts): "Sender: Alonso (friend)\n- Alonso prefers matcha lattes — keep one ready when he visits"
-  → Emit ONE reminder. due_at = NOW_MS + 15 * 60000. kind = "arrival".
-    message = "Alonso is arriving in 15 minutes. He prefers matcha lattes — you may want to have one ready."
+  → Emit ONE reminder. Fire a few minutes BEFORE arrival so there's time to prepare: due_at = NOW_MS + 10 * 60000 (≈5 min lead). kind = "arrival".
+    message = "Alonso is arriving in a few minutes. He prefers matcha lattes — you may want to have one ready."  (NOT "in 15 minutes" — the message is read when it fires, ~5 min before he arrives.)
   → Do NOT return {"reminders": []} — the event is in the future, the sender is named, and the vault carries call-to-action context.
+
+Worked example — dated arrival you should prepare for:
+  RIGHT NOW IS a day before, ~noon. Body: "Don Quixote is coming over tomorrow at 4 PM"
+  Vault context: "Sender: Don Quixote (friend)\n- Don Quixote loves eggs and bacon — have some ready when he visits"
+  → Emit ONE reminder. Fire it with lead time to prepare, on the day of the visit: due_at = the visit day at 15:30 in {{timezone}} (≈30 min before 4 PM), NOT 16:00, and NOT "tomorrow morning". kind = "arrival".
+    message = "Don Quixote is coming over at 4 PM. He loves eggs and bacon — you may want to have some ready."  (Note: "at 4 PM", NOT "tomorrow at 4 PM" — the reminder pops on the day of the visit, when "tomorrow" would be wrong.)
 
 Worked example — recognising a JSON-shaped body:
   Body: \`{"text":"I am coming at 5 pm"}\`
@@ -465,7 +473,11 @@ Rules:
 - When someone is arriving or you are meeting someone, create ONE reminder that includes ALL relevant context about that person from the vault. Do not split facts across multiple reminders — combine them into one message so the user gets a single, complete briefing. Treat preferences in vault context as call-to-action context — if a vault note says "Alonso likes cold brew", the arrival reminder should suggest preparing it ("you may want to have it ready").
   Good: "Alonso is arriving in 10 minutes. He likes cold brew coffee — you may want to have one ready. His mother was unwell last week — you may want to ask how she is doing."
   Bad: two separate reminders, one about coffee and one about his mother.
-- The vault context may include a "Sender: <name> (<relationship>)" line at the top — when present, USE THAT NAME in the reminder message instead of "Someone" or the raw DID. Example: a Sender line "Sender: Sancho Garcia (brother)" with body "I am arriving in 5 minutes" → "Sancho Garcia is arriving in 5 minutes. ..."
+- The vault context may include a "Sender: <name> (<relationship>)" line at the top — when present, USE THAT NAME in the reminder message instead of "Someone" or the raw DID. Example: a Sender line "Sender: Sancho Garcia (brother)" with body "I am arriving in 5 minutes" → "Sancho Garcia is arriving shortly. ..."
+- LEAD TIME — fire early enough to act on it: when the reminder exists so the user can PREPARE for or not miss an event (a visit/arrival they'd get things ready for, a meeting, an appointment, leaving on time), set due_at BEFORE the event with enough time to act — roughly 30 minutes before a visit so there's time to prepare, about an hour before a meeting, longer if real preparation is implied. Firing at the exact event moment is too late to be useful. (A reminder that IS the action itself — "call Emma on her birthday morning" — fires at the intended moment, not before.)
+- PHRASE FOR FIRE TIME — the message is read WHEN THE REMINDER FIRES (its due_at), which may be hours or days after you create it, NOT at the moment of creation. Every time word in the message must be correct as of that fire moment. Prefer the event's concrete clock time and AVOID creation-relative words ("today", "tomorrow", "tonight", "in N minutes") for any dated/future event — they will be wrong when the reminder pops.
+  Good (visit at 4 PM; reminder fires 3:30 PM the same day): "Don Quixote is coming over at 4 PM. He loves eggs and bacon — you may want to have some ready."
+  Bad  (created the day before; read when it fires): "Don Quixote is coming over tomorrow at 4 PM."
 - NEVER fabricate events, dates, or details not mentioned in the item or vault context.
 - NEVER invent preferences, relationships, or facts — only use what is explicitly stated.
 - Never create a reminder with due_at ≤ NOW_MS. If the only candidate date is past and the event is not recurring, return {"reminders": []}.`;

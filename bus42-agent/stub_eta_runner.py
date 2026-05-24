@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import time
 import urllib.parse
 import urllib.request
@@ -159,7 +160,7 @@ class StubEtaRunner:
             )
         result_payload = {
             "status": "on_route",
-            "eta_minutes": 6,
+            "eta_minutes": random.randint(2, 14),
             "vehicle_type": "bus",
             "route_name": f"Route {params.get('route_id', '14')}",
             "stop_name": stop_name,

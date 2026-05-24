@@ -42,6 +42,7 @@ import {
   setRememberDrainHook,
   resetRememberDrainHook,
 } from '../../src/chat/orchestrator';
+import { getThread } from '../../src/chat/thread';
 import { GeminiGenaiAdapter } from '../../src/llm/adapters/gemini_genai';
 import { LLMRouter, RoutedLLMProvider } from '../../src/llm/router_dispatch';
 import { createGeminiClassifier } from '../../src/routing/gemini_classify';
@@ -200,7 +201,8 @@ describeReal('/remember reply pins persona name (real Gemini + real SQLCipher)',
   it.each(SCENARIOS)(
     '$label — Dina replies "Stored in $expectedPersona vault."',
     async (scenario: Scenario) => {
-      const resp = await handleChat(`/remember ${scenario.remember}`);
+      const threadId = `persona-test-${scenario.label}`;
+      const resp = await handleChat(`/remember ${scenario.remember}`, threadId);
 
       expect(resp.intent).toBe('remember');
 
@@ -217,13 +219,20 @@ describeReal('/remember reply pins persona name (real Gemini + real SQLCipher)',
       const displayPersona =
         scenario.expectedPersona[0]!.toUpperCase() + scenario.expectedPersona.slice(1);
       const expectedPhrase = `Stored in ${displayPersona} vault.`;
-      if (!resp.response.includes(expectedPhrase)) {
+      // The "Stored in <persona> vault." ack is in `resp.response` when no
+      // reminder was created; when the item carried a temporal event the
+      // handler posts the ack as a separate dina bubble (alongside a
+      // reminder card) and returns empty — so resolve from either.
+      const dinaMsgs = getThread(threadId).filter((m) => m.type === 'dina');
+      const replyText =
+        resp.response !== '' ? resp.response : (dinaMsgs[dinaMsgs.length - 1]?.content ?? '');
+      if (!replyText.includes(expectedPhrase)) {
         // eslint-disable-next-line no-console
         console.log(
-          `[${scenario.label}] expected "${expectedPhrase}" in reply, got:\n  ${resp.response}`,
+          `[${scenario.label}] expected "${expectedPhrase}" in reply, got:\n  ${replyText}`,
         );
       }
-      expect(resp.response).toContain(expectedPhrase);
+      expect(replyText).toContain(expectedPhrase);
     },
     60_000,
   );

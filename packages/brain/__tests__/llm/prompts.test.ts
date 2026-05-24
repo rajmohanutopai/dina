@@ -308,12 +308,22 @@ describe('Prompt Registry', () => {
       // MT-16-I1 was the case where "Pick up dry cleaning tomorrow at
       // 6pm" landed as a 9am reminder — the planner inferred a
       // morning heads-up instead of honoring the explicit clock
-      // time. The TIME-OF-DAY RULE in the prompt blocks that
-      // regression: when the user names an explicit time, the
-      // reminder MUST use it.
+      // time. The EVENT TIME vs FIRE TIME section blocks that
+      // regression: the event's named time is the source of truth and
+      // must never default to a morning hour.
       expect(REMINDER_PLAN).toMatch(/preserve HH:MM verbatim/);
-      expect(REMINDER_PLAN).toMatch(/TIME-OF-DAY RULE/);
+      expect(REMINDER_PLAN).toMatch(/EVENT TIME vs FIRE TIME/);
+      expect(REMINDER_PLAN).toMatch(/morning hour/i);
       expect(REMINDER_PLAN).toMatch(/dry cleaning tomorrow at 6pm/);
+    });
+
+    it('instructs lead time + fire-time phrasing for prep reminders', () => {
+      // (1) A "prepare for a visit" reminder must fire BEFORE the
+      // event, not at it. (2) The message is read when it pops, so it
+      // must not bake in creation-relative words like "tomorrow".
+      expect(REMINDER_PLAN).toMatch(/LEAD TIME/);
+      expect(REMINDER_PLAN).toMatch(/PHRASE FOR FIRE TIME/);
+      expect(REMINDER_PLAN).toMatch(/read WHEN THE REMINDER FIRES/i);
     });
   });
 

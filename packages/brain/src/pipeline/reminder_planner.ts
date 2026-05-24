@@ -421,8 +421,16 @@ async function gatherVaultContext(
   // body never says the canonical name — e.g. notes saved against
   // "Sanch" still match a search for "Sancho Garcia".
   const queryParts = [input.summary, input.body];
+
+  // Person surfaces (name + nicknames + role phrases) are searched on
+  // their OWN — kept out of the event query below. Folding them in let
+  // the event's scheduling phrasing ("coming over tomorrow at 4 PM")
+  // out-rank the person's actual preferences and even pull unrelated
+  // arrival notes from other contacts, crowding the real call-to-action
+  // facts out of the budget. See gatherVaultContext's two-phase search.
+  const personSurfaces: string[] = [];
   if (senderHint !== null) {
-    queryParts.push(...senderHint.surfaces);
+    personSurfaces.push(...senderHint.surfaces);
   }
 
   // Self-/remember has no senderDid — but the user's text often
@@ -445,7 +453,7 @@ async function gatherVaultContext(
   for (const p of referencedPeople) {
     for (const s of p.surfaces) {
       const trimmed = s.surface.trim();
-      if (trimmed.length > 0) queryParts.push(trimmed);
+      if (trimmed.length > 0) personSurfaces.push(trimmed);
     }
   }
 
@@ -500,64 +508,60 @@ async function gatherVaultContext(
       });
     }
   }
-  const searchMode: 'fts5' | 'hybrid' = queryEmbedding !== undefined ? 'hybrid' : 'fts5';
-
   const contextItems: string[] = [];
 
-  if (queryText.length > 0) {
-    // Walk every currently-open persona, not just `general`. The
-    // LLM-rich classifier routes family/relationship facts ("my
-    // daughter Emma loves dinosaurs") to whatever persona it judges
-    // semantically — `social`, `general`, `health`, anywhere. The
-    // older `general`-only search was a static assumption that broke
-    // once the rich classifier became the primary store-target
-    // selector, so a follow-up /remember about Emma's birthday saw
-    // an empty context and the LLM had no preferences to weave in.
-    //
-    // Dedup the persona list and always include the item's own
-    // storage persona + the default `general` even if `isOpen` is
-    // somehow false at this moment (defensive — the item was JUST
-    // stored to `input.persona`, so the repo for that persona is
-    // live).
-    const searchPersonas: string[] = [];
-    const seenPersona = new Set<string>();
-    const addPersona = (name: string): void => {
-      if (name === '' || seenPersona.has(name)) return;
-      seenPersona.add(name);
-      searchPersonas.push(name);
-    };
-    addPersona(input.persona);
-    for (const p of listPersonas()) {
-      if (p.isOpen) addPersona(p.name);
-    }
-    addPersona(VAULT_CONTEXT_DEFAULT_PERSONA);
+  // Walk every currently-open persona, not just `general`. The
+  // LLM-rich classifier routes family/relationship facts ("my daughter
+  // Emma loves dinosaurs") to whatever persona it judges semantically.
+  // Always include the item's own storage persona + the default
+  // `general` even if `isOpen` is momentarily false (the item was JUST
+  // stored to `input.persona`, so that repo is live).
+  const searchPersonas: string[] = [];
+  const seenPersona = new Set<string>();
+  const addPersona = (name: string): void => {
+    if (name === '' || seenPersona.has(name)) return;
+    seenPersona.add(name);
+    searchPersonas.push(name);
+  };
+  addPersona(input.persona);
+  for (const p of listPersonas()) {
+    if (p.isOpen) addPersona(p.name);
+  }
+  addPersona(VAULT_CONTEXT_DEFAULT_PERSONA);
 
+  // Never use the item we're planning FOR as its own context — it's the
+  // event, not background. The vault id isn't known here, so match on
+  // the freshly-stored text (summary/body).
+  const selfTexts = new Set(
+    [input.summary.trim(), input.body.trim()].filter((s) => s.length > 0),
+  );
+
+  const collectFrom = (text: string, embedding: Float32Array | undefined): void => {
+    if (text.length === 0) return;
+    const mode: 'fts5' | 'hybrid' = embedding !== undefined ? 'hybrid' : 'fts5';
     for (const persona of searchPersonas) {
       if (contextItems.length >= VAULT_CONTEXT_MAX_ITEMS) break;
       try {
         const results = queryVault(persona, {
-          mode: searchMode,
-          text: queryText,
+          mode,
+          text,
           limit: VAULT_CONTEXT_MAX_ITEMS,
-          ...(queryEmbedding !== undefined ? { embedding: queryEmbedding } : {}),
+          ...(embedding !== undefined ? { embedding } : {}),
         });
         for (const item of results) {
           if (contextItems.length >= VAULT_CONTEXT_MAX_ITEMS) break;
           const raw = item.content_l0 || item.summary || '';
           if (raw === '') continue;
-          // Truncate to match Python's 150-char per-item cap. Long
-          // summaries (full email bodies, multi-paragraph notes)
-          // would otherwise blow the prompt budget on a single item.
+          if (selfTexts.has(raw.trim())) continue; // the event itself isn't context
+          // Truncate to match Python's 150-char per-item cap so one long
+          // note can't blow the prompt budget.
           const line = raw.slice(0, VAULT_CONTEXT_LINE_MAX_CHARS);
-          if (!contextItems.includes(line)) {
-            contextItems.push(line);
-          }
+          if (!contextItems.includes(line)) contextItems.push(line);
         }
       } catch (err) {
-        // One persona missing/closed is not fatal — keep walking.
-        // Surface the failure so a misconfigured vault (missing
-        // FTS5, locked persona, etc.) doesn't silently degrade
-        // prompt quality across the board.
+        // One persona missing/closed is not fatal — keep walking, but
+        // surface it so a misconfigured vault doesn't silently degrade
+        // prompt quality.
         logger.warn({
           event: 'reminder_planner.vault_context_error',
           itemId: input.itemId,
@@ -566,7 +570,15 @@ async function gatherVaultContext(
         });
       }
     }
-  }
+  };
+
+  // Phase 1 — facts ABOUT the person the reminder concerns, searched on
+  // their surfaces alone so their preferences land in the budget before
+  // the event text can fill it with scheduling-shaped noise. Phase 2 —
+  // the event text fills any remaining slots with situational context.
+  const personQuery = [...new Set(personSurfaces)].filter((s) => s.length > 0).join(' ');
+  collectFrom(personQuery, undefined);
+  collectFrom(queryText, queryEmbedding);
 
   // No sender hint AND no referenced people AND no vault context
   // → preserve the legacy sentinel string so callers/tests detecting

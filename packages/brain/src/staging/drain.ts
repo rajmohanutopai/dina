@@ -28,6 +28,7 @@ import {
 } from '../enrichment/topic_touch_pipeline';
 import { processEvent } from '../pipeline/event_processor';
 import { handlePostPublish } from '../pipeline/post_publish';
+import { listByPersona as listRemindersByPersona, type Reminder } from '@dina/core/reminders';
 import { classifyDomain, classifyPersonas } from '../routing/domain';
 import { selectPersonaRich } from '../routing/persona_selector';
 import { scoreSender } from '../peerlens/scorer';
@@ -139,6 +140,17 @@ export interface StagingDrainOptions {
    * See module docstring (§2) for the stage + filter contract.
    */
   onD2DReceived?: (notification: D2DReceivedNotification) => Promise<void> | void;
+  /**
+   * [pipeline hook] Fires for each reminder the post-publish step
+   * planned from a D2D-channel item — so the host can surface it (e.g.
+   * a scheduled reminder card in chat) the moment the inbound message
+   * lands, rather than only when it fires. The drain stays headless:
+   * it emits the reminder; the host decides how/where to render it.
+   * (Owner-direct `/remember` reminders are surfaced inline by the chat
+   * orchestrator instead — there's a live chat turn to post into.)
+   * Fail-soft: a throwing host hook is logged, never blocks the drain.
+   */
+  onD2DReminderCreated?: (reminder: Reminder) => Promise<void> | void;
   /** [deps] Structured log sink. Defaults to no-op. */
   logger?: (entry: Record<string, unknown>) => void;
   /**
@@ -775,6 +787,28 @@ export async function runStagingDrainTick(
       // it through Core's `/v1/notify`. Silent / engagement tiers
       // don't produce a notification (Silence First — Law 1).
       if (ingressChannel.toLowerCase() === 'd2d') {
+        // Hand each reminder the post-publish step planned from this
+        // inbound message to the host's hook, so it can surface it (e.g.
+        // a scheduled card in chat) the moment the message lands. The
+        // drain stays headless — it emits; the host renders. Fail-soft:
+        // a throwing hook is logged, never blocks the tick.
+        if (options.onD2DReminderCreated !== undefined) {
+          const planned = listRemindersByPersona(personas[0] ?? 'general').filter(
+            (r) => r.source_item_id === itemId,
+          );
+          for (const r of planned) {
+            try {
+              await options.onD2DReminderCreated(r);
+            } catch (cbErr) {
+              log({
+                event: 'staging.drain.d2d_reminder_hook_failed',
+                item_id: itemId,
+                error: cbErr instanceof Error ? cbErr.message : String(cbErr),
+              });
+            }
+          }
+        }
+
         try {
           const contactForSender =
             d2dContactDid !== '' ? getContact(d2dContactDid) : null;

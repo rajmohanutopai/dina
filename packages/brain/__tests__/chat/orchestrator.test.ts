@@ -75,7 +75,7 @@ describe('Chat Orchestrator', () => {
       expect(thread[1].type).toBe('dina');
     });
 
-    it('drain-hook flow: replies "Stored in <persona> vault." with reminder list (Python parity)', async () => {
+    it('drain-hook flow: posts "Stored in <persona> vault." + a scheduled reminder card', async () => {
       // Reminder planner uses the staging row's id as `source_item_id`
       // on generated reminders, so the orchestrator can filter by the
       // staging id it already has from ingest(). We simulate the drain
@@ -95,12 +95,22 @@ describe('Chat Orchestrator', () => {
         return { persona: 'general' };
       });
 
-      const result = await handleChat("/remember Emma's birthday is on Nov 7th");
+      const result = await handleChat("/remember Emma's birthday is on Nov 7th", 'rem-thread');
       expect(result.intent).toBe('remember');
-      expect(result.response).toContain('Stored in General vault.');
-      expect(result.response).toContain('Reminders set:');
-      expect(result.response).toContain('🎂');
-      expect(result.response).toContain("Emma's birthday today");
+      // The handler posts its own messages — the "Stored" line plus a
+      // reminder card — so the returned response is empty (same contract
+      // as the service-query path). The reminder renders as a card, not
+      // a raw "[id] 🔔 time — text" list.
+      expect(result.response).toBe('');
+
+      const thread = getThread('rem-thread');
+      const ack = thread.find((m) => m.type === 'dina');
+      expect(ack?.content).toContain('Stored in General vault.');
+      const card = thread.find((m) => m.type === 'reminder');
+      expect(card).toBeDefined();
+      expect(card?.content).toContain("Emma's birthday today");
+      expect(card?.metadata?.scheduled).toBe(true);
+      expect(card?.metadata?.reminderKind).toBe('birthday');
     });
 
     it('drain-hook flow without temporal event: only the persona ack (no Reminders set: section)', async () => {

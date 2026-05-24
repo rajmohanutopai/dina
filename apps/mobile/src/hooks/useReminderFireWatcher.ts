@@ -26,7 +26,7 @@
 
 import { useEffect } from 'react';
 import { fireMissedReminders, type Reminder } from '@dina/core/reminders';
-import { addMessage } from '@dina/brain/chat';
+import { postReminderCard } from '@dina/brain/chat';
 import { appendNotification } from '@dina/brain/notifications';
 
 const DEFAULT_TICK_MS = 30_000;
@@ -98,22 +98,10 @@ export function useReminderFireWatcher(opts: UseReminderFireWatcherOptions = {})
 }
 
 function postReminder(threadId: string, r: Reminder): void {
-  // Carry structured metadata so `<InlineReminderCard>` can render a
-  // tappable "Mark done" / "Snooze" card. `kind: 'reminder'`
-  // discriminates from other `'reminder'`-typed sources if any
-  // appear in the future.
-  addMessage(threadId, 'reminder', r.message, {
-    metadata: {
-      kind: 'reminder',
-      reminderId: r.id,
-      shortId: r.short_id,
-      reminderKind: r.kind,
-      persona: r.persona,
-      dueAt: r.due_at,
-      recurring: r.recurring,
-      sourceItemId: r.source_item_id,
-    },
-  });
+  // Render the fired reminder as a chat card via the shared mapping
+  // (`postReminderCard`). Omitting `scheduled` yields the fired variant
+  // — relative-time header + Snooze / Mark-done actions.
+  postReminderCard(threadId, r);
 
   // Mirror to the unified notifications inbox (5.66). The reminder id
   // doubles as the inbox id so re-firing the same reminder (e.g. cold-

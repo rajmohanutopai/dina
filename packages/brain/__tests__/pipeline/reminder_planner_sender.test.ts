@@ -169,6 +169,60 @@ describe('Reminder planner — PersonResolver + vault facts wiring', () => {
     expect(prompt).toContain('Sender: Sancho Garcia (brother)');
   });
 
+  it("surfaces the sender's preference over crowding event notes, and excludes the self-event", async () => {
+    seedSancho(harness.repo, 'did:plc:sancho');
+
+    // The actionable fact about Sancho — what the reminder should weave in.
+    storeItem('general', {
+      id: 'pref-1',
+      type: 'note',
+      timestamp: Date.now(),
+      summary: 'Sancho loves espresso',
+      body: 'Sancho loves espresso — keep a cup ready when he visits',
+    });
+    // Crowding: event notes from OTHER people that share the arrival's
+    // scheduling phrasing ("coming over tomorrow at N PM"). Pre-fix these
+    // out-ranked the preference (more token overlap with the event query)
+    // and filled the whole 5-item budget, so the LLM saw no preference.
+    for (let i = 0; i < 6; i++) {
+      storeItem('general', {
+        id: `evt-${i}`,
+        type: 'note',
+        timestamp: Date.now(),
+        summary: `Guest ${i} is coming over tomorrow at ${i + 1} PM`,
+        body: `Guest ${i} is coming over tomorrow at ${i + 1} PM`,
+      });
+    }
+    // The just-stored event being planned — its own text must NOT come
+    // back as its own context.
+    const selfText = 'Sancho is coming over tomorrow at 4 PM';
+    storeItem('general', {
+      id: 'self-evt',
+      type: 'note',
+      timestamp: Date.now(),
+      summary: selfText,
+      body: selfText,
+    });
+
+    await planReminders({
+      itemId: 'self-evt',
+      type: 'message',
+      summary: selfText,
+      body: selfText,
+      timestamp: Date.now(),
+      persona: 'general',
+      senderDid: 'did:plc:sancho',
+    });
+
+    expect(capturedPrompts).toHaveLength(1);
+    const prompt = capturedPrompts[0]!;
+    // Person-scoped phase puts the preference in the budget before the
+    // event text can crowd it out.
+    expect(prompt).toContain('Sancho loves espresso');
+    // The event being planned is never its own context line.
+    expect(prompt).not.toContain(`- ${selfText}`);
+  });
+
   it('omits the relationship suffix when the person has no relationshipHint', async () => {
     harness.repo.applyExtraction({
       sourceItemId: 'seed-anon',

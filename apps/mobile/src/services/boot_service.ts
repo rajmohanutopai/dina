@@ -60,6 +60,7 @@ import type { IdentityKeypair } from '@dina/core';
 import { createNode, type DinaNode, type NodeRole, type CreateNodeOptions } from './bootstrap';
 import { buildStagingEnrichment } from './staging_enrichment';
 import { buildRememberRuntime } from '@dina/brain';
+import { postReminderCard } from '@dina/brain/chat';
 import { listPersonas } from '@dina/core';
 
 /**
@@ -499,6 +500,12 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
         core: coreClient,
         llm: inputs.stagingEnrichment.llm,
       }),
+      // When an inbound D2D message plans a reminder, surface it as a
+      // scheduled card in the chat the moment it lands (the drain is
+      // headless and just emits — the host decides to render it here).
+      onD2DReminderCreated: (reminder) => {
+        postReminderCard('main', reminder, { scheduled: true });
+      },
     };
     // Wire the per-item agentic /remember loop when we have an LLM in
     // hand. The drain prefers this path; the legacy

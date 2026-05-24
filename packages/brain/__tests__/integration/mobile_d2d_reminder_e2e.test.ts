@@ -56,6 +56,8 @@ import {
   listByPersona as listRemindersByPersona,
   resetReminderState,
 } from '@dina/core/reminders';
+import { getThread, resetThreads } from '../../src/chat/thread';
+import { postReminderCard } from '../../src/chat/reminder_card';
 import { makeDinaMessage, resetFactoryCounters } from '@dina/test-harness';
 import { MSG_TYPE_SOCIAL_UPDATE } from '@dina/protocol';
 import {
@@ -92,6 +94,7 @@ describe('D2D arrival → drain → auto-generated reminder', () => {
     resetReasoningProvider();
     resetReminderState();
     resetReminderLLM();
+    resetThreads();
     clearReplayCache();
     resetFactoryCounters();
     configureRateLimiter({ maxRequests: 10_000, windowSeconds: 60 });
@@ -217,6 +220,10 @@ describe('D2D arrival → drain → auto-generated reminder', () => {
         onD2DReceived: async (n) => {
           nudges.push(n);
         },
+        // Host wiring: surface D2D-planned reminders as scheduled chat
+        // cards (mirrors apps/mobile boot_service). The drain emits;
+        // the host renders.
+        onD2DReminderCreated: (r) => postReminderCard('main', r, { scheduled: true }),
       },
       intervalMs: 10_000,
       setInterval: () => 1,
@@ -253,6 +260,17 @@ describe('D2D arrival → drain → auto-generated reminder', () => {
     expect(birthday!.due_at).toBeGreaterThan(Date.now());
     expect(birthday!.message.toLowerCase()).toContain('maya');
     expect(birthday!.source_item_id).toBeTruthy();
+
+    // Surfacing: the drain emits the planned reminder via
+    // `onD2DReminderCreated`; the host hook (wired above, as
+    // boot_service does) posts it as a scheduled card into 'main' — the
+    // "Dina prepared this the moment the message arrived" beat.
+    const card = getThread('main').find(
+      (m) => m.type === 'reminder' && m.metadata?.scheduled === true,
+    );
+    expect(card).toBeDefined();
+    expect(card!.metadata?.reminderKind).toBe('birthday');
+    expect((card!.content ?? '').toLowerCase()).toContain('maya');
   });
 
   it("'I am coming in 15 minutes' D2D → arrival reminder ~10 min from now", async () => {
@@ -344,6 +362,11 @@ describe('D2D arrival → drain → auto-generated reminder', () => {
     const core = buildCoreClient();
     scheduler = new StagingDrainScheduler({
       core,
+      drain: {
+        // Hook wired (as in boot) but, with no reminder planned, it must
+        // never fire — so no scheduled card appears.
+        onD2DReminderCreated: (r) => postReminderCard('main', r, { scheduled: true }),
+      },
       intervalMs: 10_000,
       setInterval: () => 1,
       clearInterval: () => {
@@ -362,5 +385,8 @@ describe('D2D arrival → drain → auto-generated reminder', () => {
 
     const all = COVERED_PERSONAS.flatMap((p) => listRemindersByPersona(p));
     expect(all).toHaveLength(0);
+
+    // No reminder → no scheduled card posted to chat (Silence First).
+    expect(getThread('main').filter((m) => m.type === 'reminder')).toHaveLength(0);
   });
 });

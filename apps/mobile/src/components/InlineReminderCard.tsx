@@ -38,6 +38,9 @@ interface ReminderMetadata {
   persona: string;
   dueAt: number;
   recurring: string;
+  /** True for a just-created reminder (confirmation card) vs a fired one.
+   *  Scheduled cards show the set time + no Snooze/Mark-done actions. */
+  scheduled: boolean;
 }
 
 function readMetadata(m: ChatMessage): ReminderMetadata | null {
@@ -53,7 +56,21 @@ function readMetadata(m: ChatMessage): ReminderMetadata | null {
     persona: typeof md.persona === 'string' ? md.persona : '',
     dueAt: md.dueAt,
     recurring: typeof md.recurring === 'string' ? md.recurring : '',
+    scheduled: md.scheduled === true,
   };
+}
+
+/** Absolute due time for a scheduled reminder, e.g. "MAY 24, 5:00 PM". */
+function formatDueShort(dueAtMs: number): string {
+  return new Date(dueAtMs)
+    .toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    })
+    .toUpperCase();
 }
 
 function formatRelative(dueAtMs: number, nowMs: number = Date.now()): string {
@@ -108,19 +125,23 @@ export function InlineReminderCard({ message }: InlineReminderCardProps): React.
 
   const iconName: IoniconName =
     KIND_ICON[meta.reminderKind] ?? 'notifications-outline';
-  const relative = formatRelative(meta.dueAt);
+  const headerLabel = meta.scheduled
+    ? `REMINDER · ${formatDueShort(meta.dueAt)}`
+    : `REMINDER · ${formatRelative(meta.dueAt).toUpperCase()}`;
 
   return (
     <View style={styles.card}>
       <View style={styles.header}>
         <Ionicons name={iconName} size={16} color={colors.textMuted} />
-        <Text style={styles.label}>REMINDER · {relative.toUpperCase()}</Text>
+        <Text style={styles.label}>{headerLabel}</Text>
       </View>
       <Text style={styles.body}>{message.content}</Text>
       {meta.persona !== '' && meta.persona !== 'general' && (
         <Text style={styles.personaLine}>/{meta.persona}</Text>
       )}
-      {resolved === null && (
+      {/* Scheduled (just-created) reminders aren't actionable yet — no
+          Snooze / Mark done. Those appear when the reminder fires. */}
+      {!meta.scheduled && resolved === null && (
         <View style={styles.row}>
           <TouchableOpacity
             testID={`reminder-snooze-${meta.reminderId}`}
