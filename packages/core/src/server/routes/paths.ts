@@ -61,6 +61,8 @@ export const CONTACTS_ROOT = '/v1/contacts';
  * back the user's go-to dentist(s) without an AppView round-trip.
  */
 export const CONTACTS_BY_PREFERENCE = '/v1/contacts/by-preference';
+/** Look up one contact by DID / name / alias — GET ?q=… */
+export const CONTACTS_LOOKUP = '/v1/contacts/lookup';
 /** PC-CORE-11: PUT /v1/contacts/:did — update mutable contact fields. */
 export const CONTACT_UPDATE = '/v1/contacts/:did';
 
@@ -74,7 +76,9 @@ export const APPROVALS_ROOT = '/v1/approvals';
 // Reminders
 // ---------------------------------------------------------------
 
-export const REMINDER_ROOT = '/v1/reminder';
+// Collection root — POST creates, GET lists by `?persona=`.
+export const REMINDERS_ROOT = '/v1/reminders';
+// Pending sub-resource — GET lists every pending reminder due before `?now=`.
 export const REMINDERS_PENDING = '/v1/reminders/pending';
 
 // ---------------------------------------------------------------

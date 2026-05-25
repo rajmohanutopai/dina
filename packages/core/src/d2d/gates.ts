@@ -115,6 +115,16 @@ export function isDestinationTrusted(did: string): boolean {
   return trustedDestinations.has(did);
 }
 
+/**
+ * Clear ONLY the known-contact allowlist (not the blocked/trusted
+ * destination lists or scenario/sharing policy). The contact directory
+ * uses this to rebuild the projection from scratch when re-deriving from
+ * identity.sqlite, without disturbing the separate egress override lists.
+ */
+export function clearGateContacts(): void {
+  knownContacts.clear();
+}
+
 /** Clear all gates state (for testing). */
 export function clearGatesState(): void {
   knownContacts.clear();

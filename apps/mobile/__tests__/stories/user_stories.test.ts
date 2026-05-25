@@ -39,6 +39,7 @@ import { createArchive, verifyArchive, readManifest } from '../../../core/src/ex
 import { recoverFromMnemonic } from '../../../core/src/onboarding/recovery';
 import { runOnboarding } from '../../../core/src/onboarding/portable';
 import { addContact, resetContactDirectory } from '../../../core/src/contacts/directory';
+import { setPeopleRepository } from '../../../core/src/people/repository';
 import {
   classifyPriority,
   resetDNDState,
@@ -53,6 +54,7 @@ import {
   TEST_ED25519_SEED,
   TEST_PASSPHRASE,
   makeEvent,
+  makeFakePeopleRepo,
   resetFactoryCounters,
 } from '@dina/test-harness';
 
@@ -65,6 +67,11 @@ describe('User Stories', () => {
     resetBriefingState();
     resetReminderState();
     resetContactDirectory();
+    // Contact policy is person-keyed since the identity-hub redesign, so
+    // `addContact`/`establishContact` resolve did→person through the
+    // people graph. Wire a faithful in-memory people repo (production
+    // mobile boot wires SQLitePeopleRepository) so contact stories run.
+    setPeopleRepository(makeFakePeopleRepo());
     resetDNDState();
     resetEscalationState();
     resetUserOverrides();
@@ -294,33 +301,33 @@ describe('User Stories', () => {
   });
 
   describe('07: Daily Briefing', () => {
-    it('Tier 3 items collected', () => {
+    it('Tier 3 items collected', async () => {
       registerEngagementProvider(() => [
         { type: 'engagement', title: 'New RSS article', timestamp: Date.now() },
         { type: 'engagement', title: 'Social notification', timestamp: Date.now() },
       ]);
-      const briefing = assembleBriefing();
+      const briefing = await assembleBriefing();
       expect(briefing).not.toBeNull();
       expect(briefing!.sections.engagement).toHaveLength(2);
     });
 
-    it('upcoming reminders included', () => {
+    it('upcoming reminders included', async () => {
       createReminder({ message: 'Meeting tomorrow', due_at: Date.now() - 1000, persona: 'work' });
-      const briefing = assembleBriefing();
+      const briefing = await assembleBriefing();
       expect(briefing).not.toBeNull();
       expect(briefing!.sections.reminders.length).toBeGreaterThan(0);
     });
 
-    it('pending approvals surfaced', () => {
+    it('pending approvals surfaced', async () => {
       registerApprovalProvider(() => [
         { type: 'approval', title: 'Unlock health persona', timestamp: Date.now() },
       ]);
-      const briefing = assembleBriefing();
+      const briefing = await assembleBriefing();
       expect(briefing!.sections.approvals).toHaveLength(1);
     });
 
-    it('returns null when nothing to report (Silence First)', () => {
-      expect(assembleBriefing()).toBeNull();
+    it('returns null when nothing to report (Silence First)', async () => {
+      expect(await assembleBriefing()).toBeNull();
     });
   });
 

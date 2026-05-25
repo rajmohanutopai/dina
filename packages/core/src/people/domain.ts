@@ -105,6 +105,34 @@ export interface Person {
 export type IdentityType = 'did' | 'email' | 'phone' | 'handle' | 'device';
 
 /**
+ * Canonicalize an identity value for its type before it touches
+ * `person_identities` (doc D8). MUST be applied on both write and
+ * lookup so two spellings of the same identifier can't bypass the
+ * `UNIQUE(identity_type, identity_value)` index and create duplicate
+ * identities. DIDs are case-sensitive and already canonical (trim
+ * only); device ids are opaque. Today only `did` is written, so this
+ * is latent insurance for the email/phone/handle import flows.
+ */
+export function canonicalizeIdentityValue(identityType: string, value: string): string {
+  const v = value.trim();
+  switch (identityType) {
+    case 'email':
+    case 'handle':
+      return v.toLowerCase();
+    case 'phone': {
+      // Normalise to digits, preserving a leading '+'. We do NOT invent
+      // a country code — an ambiguous local number stays as given.
+      const plus = v.startsWith('+') ? '+' : '';
+      return plus + v.replace(/[^0-9]/g, '');
+    }
+    case 'did':
+    case 'device':
+    default:
+      return v;
+  }
+}
+
+/**
  * One identifier bound to a person. Many identities map to one person
  * (a DID per device, plus future email/phone/handle); the
  * `(identityType, identityValue)` pair is globally unique — an

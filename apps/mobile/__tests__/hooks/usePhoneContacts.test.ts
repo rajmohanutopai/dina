@@ -20,6 +20,8 @@ import {
   listContacts,
   resetContactDirectory,
 } from '../../../core/src/contacts/directory';
+import { setPeopleRepository } from '../../../core/src/people/repository';
+import { makeFakePeopleRepo } from '@dina/test-harness';
 
 const PHONE_CONTACTS: PhoneContact[] = [
   { id: 'p1', name: 'Alice Johnson', phones: ['+1-555-0101'], emails: ['alice@example.com'] },
@@ -32,6 +34,9 @@ describe('Phone Contacts Import Hook (6.18)', () => {
   beforeEach(() => {
     resetPhoneContacts();
     resetContactDirectory();
+    // Person-keyed contacts (identity-hub redesign) — phone import resolves
+    // did:phone:/did:email: → person through the people graph.
+    setPeopleRepository(makeFakePeopleRepo());
   });
 
   describe('permission', () => {

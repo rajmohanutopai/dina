@@ -17,7 +17,7 @@ import React, { useCallback, useState } from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { ChatMessage } from '@dina/brain/chat';
-import { completeReminder, snoozeReminder } from '@dina/core/reminders';
+import { transportComplete, transportSnooze } from '../hooks/reminder_transport';
 import { addSystemMessage } from '@dina/brain/chat';
 import { colors, radius, spacing, textStyles } from '../theme';
 import { MessageTimestamp } from './MessageTimestamp';
@@ -100,25 +100,29 @@ export function InlineReminderCard({ message }: InlineReminderCardProps): React.
 
   const onMarkDone = useCallback(() => {
     if (meta === null || resolved !== null) return;
-    try {
-      completeReminder(meta.reminderId);
-      setResolved('done');
-    } catch (err) {
+    // Optimistic: flip the card immediately, then persist through the
+    // transport (in-process on native, brain-server HTTP on web). On
+    // failure, revert + surface the error.
+    setResolved('done');
+    void transportComplete(meta.reminderId).catch((err: unknown) => {
+      setResolved(null);
       const detail = err instanceof Error ? err.message : String(err);
       addSystemMessage(message.threadId, `Couldn't mark done: ${detail}`);
-    }
+    });
   }, [meta, message.threadId, resolved]);
 
   const onSnooze = useCallback(() => {
     if (meta === null || resolved !== null) return;
-    try {
-      snoozeReminder(meta.reminderId, SNOOZE_MS);
-      addSystemMessage(message.threadId, `Snoozed for 1 hour.`);
-      setResolved('snoozed');
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
-      addSystemMessage(message.threadId, `Couldn't snooze: ${detail}`);
-    }
+    setResolved('snoozed');
+    void transportSnooze(meta.reminderId, SNOOZE_MS)
+      .then(() => {
+        addSystemMessage(message.threadId, `Snoozed for 1 hour.`);
+      })
+      .catch((err: unknown) => {
+        setResolved(null);
+        const detail = err instanceof Error ? err.message : String(err);
+        addSystemMessage(message.threadId, `Couldn't snooze: ${detail}`);
+      });
   }, [meta, message.threadId, resolved]);
 
   if (meta === null) return null;

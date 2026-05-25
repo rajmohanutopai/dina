@@ -93,7 +93,11 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         status TEXT NOT NULL DEFAULT 'pending',
         completed INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
-        UNIQUE(source_item_id, kind, due_at, persona)
+        -- message is part of the dedup identity: without it two distinct
+        -- manual reminders at the same time + persona (empty source_item_id,
+        -- kind=manual) collide and the second is dropped. Mirrors dedupKey()
+        -- in reminders/service.ts — keep the two in lockstep.
+        UNIQUE(source_item_id, kind, due_at, persona, message)
       );
 
       CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(due_at) WHERE completed=0;
@@ -386,6 +390,106 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         applied_at        INTEGER NOT NULL,
         PRIMARY KEY (source_item_id, extractor_version, fingerprint)
       ) WITHOUT ROWID
+    `,
+  },
+  {
+    // Durable D2D outbox (issues.txt §1). Mobile is not a server: an
+    // in-memory queue loses every queued outbound D2D on app kill/
+    // background, breaking service-query, approvals, and task handoff.
+    // This table is the SQLCipher-backed source of truth.
+    //
+    // Design: store the SEMANTIC payload (target_did + message_type +
+    // body_json), NOT the sealed wire bytes. The recipient's DID
+    // document / MsgBox endpoint / X25519 pubkey are re-resolved and
+    // the envelope re-sealed at retry time — so a recipient key
+    // rotation or endpoint change doesn't strand a queued message
+    // (issues.txt: "Resolve DID document / MsgBox endpoint at retry
+    // time"). See packages/core/src/transport/outbox_repository.ts.
+    //
+    // State machine: pending → sending (leased) → sent | failed → dead.
+    //   - claimDue() flips due pending/failed rows to 'sending' with a
+    //     lease_until so two drainers can't ship the same row.
+    //   - markSent/markFailed/markDead are terminal/backoff updates.
+    //   - resetStaleSending() reclaims 'sending' rows whose lease
+    //     expired (a crash mid-send) back to 'pending' on boot.
+    //
+    // The partial UNIQUE on idempotency_key (non-terminal rows only)
+    // makes enqueue idempotent on a stable message/query id while
+    // still letting a later message reuse the key once the prior one
+    // is sent/dead — mirrors idx_workflow_idem.
+    version: 6,
+    name: 'd2d_outbox',
+    sql: `
+      CREATE TABLE IF NOT EXISTS d2d_outbox (
+        id TEXT PRIMARY KEY,
+        target_did TEXT NOT NULL,
+        message_type TEXT NOT NULL,
+        body_json TEXT NOT NULL,
+        idempotency_key TEXT,
+        state TEXT NOT NULL CHECK (state IN ('pending', 'sending', 'sent', 'failed', 'dead')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at INTEGER NOT NULL,
+        last_attempt_at INTEGER,
+        lease_until INTEGER,
+        expires_at INTEGER,
+        last_error TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_d2d_outbox_due
+        ON d2d_outbox(state, next_attempt_at);
+
+      CREATE INDEX IF NOT EXISTS idx_d2d_outbox_target
+        ON d2d_outbox(target_did);
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_d2d_outbox_idem_active
+        ON d2d_outbox(idempotency_key)
+        WHERE idempotency_key IS NOT NULL
+          AND state IN ('pending', 'sending', 'failed');
+    `,
+  },
+  {
+    // Durable agent persona grants (issues.txt §2). Agent-safety critical:
+    // when an out-of-process agent (dina-agent / OpenClaw, over MsgBox)
+    // asks for locked/sensitive persona data, Dina creates an approval
+    // workflow task and returns `approval_required` WITHOUT reading the
+    // vault. On approval a row is written here — a durable, scoped grant
+    // bound to the exact (agent_did, persona, mode). The agent then
+    // retries and the deterministic `requireAgentPersonaAccess` check
+    // finds the grant and allows the read. Because the grant is in
+    // SQLCipher, the agent can resume after an app restart, and a
+    // restart while the approval is still pending preserves safety (no
+    // grant → no data).
+    //
+    // The approval workflow task (workflow_tasks) is the durable approval
+    // OBJECT; this table is the durable RESULT of approval. We deliberately
+    // do NOT add a parallel agent_sessions store (issues.txt: avoid
+    // parallel trust stores) — `session_id` is just a nullable tag so a
+    // grant can be scoped to / revoked with a named agent session.
+    //
+    // scope_json holds the REQUESTED scope (e.g. the agent's query text),
+    // never vault results. expires_at bounds the grant; revoked_at tombs
+    // it. The partial index serves the hot `findActiveGrant` lookup.
+    version: 7,
+    name: 'agent_persona_grants',
+    sql: `
+      CREATE TABLE IF NOT EXISTS agent_persona_grants (
+        id TEXT PRIMARY KEY,
+        session_id TEXT,
+        agent_did TEXT NOT NULL,
+        persona TEXT NOT NULL,
+        mode TEXT NOT NULL CHECK (mode IN ('read', 'write')),
+        scope_json TEXT NOT NULL,
+        approval_task_id TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        revoked_at INTEGER,
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_agent_grants_active
+        ON agent_persona_grants(agent_did, persona, expires_at)
+        WHERE revoked_at IS NULL;
     `,
   },
 ];

@@ -96,9 +96,24 @@ import {
   getPeopleRepository,
   hydrateContactDirectory,
   listPersonas,
+  setOutboxRedeliverFn,
+  startOutboxDrainer,
+  type DrainerHandle,
 } from '@dina/core';
-import { makeSendD2D } from '@dina/home-node';
+import { makeSendD2D, makeOutboxRedeliver } from '@dina/home-node';
 import { executeToolSearch } from '@dina/brain';
+
+/**
+ * Durable-outbox drainer handle (issues.txt §1). Held at module scope so a
+ * re-boot (dev hot-reload, re-unlock) stops the previous interval before
+ * starting a fresh one — otherwise duplicate drainers would pile up and
+ * race to claim the same rows.
+ */
+let outboxDrainer: DrainerHandle | null = null;
+function restartOutboxDrainer(): void {
+  outboxDrainer?.stop();
+  outboxDrainer = startOutboxDrainer();
+}
 
 /**
  * Dev-only seed: EXPO_PUBLIC_DINA_DEV_CONTACT=`did:method:id|Display Name`.
@@ -476,6 +491,25 @@ export async function buildBootInputs(
     resolver: didResolver,
     ...(providerServiceResolver !== undefined ? { providerServiceResolver } : {}),
   });
+
+  // issues.txt §1 — wire the durable-outbox drainer's re-delivery function
+  // from the same signing identity + resolver, then start the periodic
+  // worker. The SQL repo + stale-row recovery are installed earlier in
+  // storage init; the drainer no-ops until this re-delivery fn is set, so
+  // wiring it here (after the identity is resolved) and starting the worker
+  // immediately drains anything queued in a prior session. `makeOutboxRedeliver`
+  // re-resolves the recipient's endpoint/key per attempt and re-seals.
+  setOutboxRedeliverFn(
+    makeOutboxRedeliver({
+      senderDID: did,
+      senderPrivateKey: signingKeypair.privateKey,
+      defaultMsgboxEndpoint: msgboxURL,
+      resolver: didResolver,
+      ...(providerServiceResolver !== undefined ? { providerServiceResolver } : {}),
+    }),
+    did,
+  );
+  restartOutboxDrainer();
 
   // Provider-mode env overrides (only honoured when role is provider/both).
   // - EXPO_PUBLIC_DINA_HAS_PAIRED_AGENT=1 → declares an external dina-agent

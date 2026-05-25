@@ -283,6 +283,70 @@ describe('SQLitePeopleRepository', () => {
       expect(frank?.status).toBe('suggested');
       expect(frank?.surfaces?.[0].status).toBe('suggested');
     });
+
+    it('does NOT auto-link an ambiguous same-name mention (>1 confirmed → new person)', () => {
+      // Two distinct confirmed people both named "Don". (Medium so the
+      // confirmed-name auto-link doesn't merge them at extraction time;
+      // then confirm each surface by hand — the realistic way two
+      // confirmed same-name people arise.)
+      const a = repo.applyExtraction(
+        ext({
+          sourceItemId: 'd1',
+          results: [lc('Don', [{ surface: 'Don', surfaceType: 'name', confidence: 'medium' }])],
+        }),
+      );
+      const b = repo.applyExtraction(
+        ext({
+          sourceItemId: 'd2',
+          results: [lc('Don', [{ surface: 'Don', surfaceType: 'name', confidence: 'medium' }])],
+        }),
+      );
+      const aId = a.personIds?.[0];
+      const bId = b.personIds?.[0];
+      for (const pid of [aId, bId]) {
+        const sid = repo.getPerson(pid as string)?.surfaces?.[0].id;
+        repo.confirmSurface(pid as string, sid as number);
+      }
+      expect(repo.listPeople()).toHaveLength(2);
+
+      // A later extraction mentioning "Don likes bacon" must NOT attach
+      // to whichever Don SQLite returns first — it's ambiguous, so a fresh
+      // person is created (the LIMIT-2 guard in findOrAssignPersonId).
+      const c = repo.applyExtraction(
+        ext({
+          sourceItemId: 'd3',
+          results: [lc('Don', [{ surface: 'Don', surfaceType: 'name', confidence: 'high' }])],
+        }),
+      );
+      const cId = c.personIds?.[0];
+      expect(cId).not.toBe(aId);
+      expect(cId).not.toBe(bId);
+      expect(repo.listPeople()).toHaveLength(3);
+    });
+  });
+
+  describe('upsertIdentity — live-identity steal guard', () => {
+    it('refuses to repoint a DID held by a different ACTIVE person', () => {
+      const alice = repo.upsertContactPerson('did:plc:steal-x', 'Alice');
+      const bob = repo.upsertContactPerson('did:plc:steal-y', 'Bob');
+      // Bob trying to claim Alice's live DID must fail loud, not silently
+      // steal it (that would move the identity off an active person).
+      expect(() => repo.upsertIdentity(bob, 'did', 'did:plc:steal-x')).toThrow(
+        /already held by active/,
+      );
+      // Alice still owns it.
+      expect(repo.resolveByIdentity('did', 'did:plc:steal-x')?.personId).toBe(alice);
+      expect(repo.resolveByIdentity('did', 'did:plc:steal-y')?.personId).toBe(bob);
+    });
+
+    it('allows repoint when the prior owner was rejected (DID rotation)', () => {
+      const old = repo.upsertContactPerson('did:plc:rotate', 'OldOwner');
+      repo.deletePerson(old); // rejects the person
+      // A fresh contact can now claim the rotated DID — prior owner rejected.
+      const fresh = repo.upsertContactPerson('did:plc:rotate', 'NewOwner');
+      expect(fresh).not.toBe(old);
+      expect(repo.resolveByIdentity('did', 'did:plc:rotate')?.personId).toBe(fresh);
+    });
   });
 
   describe('getPerson / listPeople / findByContactDid', () => {
@@ -472,23 +536,90 @@ describe('SQLitePeopleRepository', () => {
       expect(() => repo.upsertContactPerson('did:plc:x', '   ')).toThrow(/displayName is required/);
     });
 
-    it('does not auto-merge with an LLM-suggested person sharing the canonical name', () => {
-      // LLM-extracted "Sancho" with no DID binding.
-      repo.applyExtraction(
+    it('connects to ONE unambiguous confirmed person sharing the name (note-before-DID, doc §4)', () => {
+      // LLM-extracted "Sancho" with no DID binding — e.g. a /remember
+      // note about Sancho stored before his DID was exchanged.
+      const llm = repo.applyExtraction(
         ext({
           sourceItemId: 'item-llm',
           results: [lc('Sancho', [{ surface: 'Sancho', surfaceType: 'name', confidence: 'high' }])],
         }),
       );
+      const llmPersonId = llm.personIds?.[0];
+      expect(llmPersonId).toBeDefined();
+
+      // Adding Sancho as a contact must REUSE that exact person (resolve
+      // by the unambiguous confirmed surface), binding the DID to it — so
+      // the earlier note connects to the contact instead of stranding on
+      // a separate person.
       const did = 'did:plc:abc123';
       const contactPersonId = repo.upsertContactPerson(did, 'Sancho');
+      expect(contactPersonId).toBe(llmPersonId);
+      expect(repo.listPeople()).toHaveLength(1);
+      expect(repo.findByContactDid(did)?.personId).toBe(llmPersonId);
+    });
 
-      const all = repo.listPeople();
-      expect(all.length).toBeGreaterThanOrEqual(2);
-      // The contact-derived person owns the DID; the LLM one stays unlinked.
-      const linked = all.filter((p) => p.contactDid === did);
-      expect(linked).toHaveLength(1);
-      expect(linked[0].personId).toBe(contactPersonId);
+    it('does NOT auto-merge when the name is ambiguous (>1 confirmed match → create new)', () => {
+      // Two distinct people both named "Sancho". Built as medium-
+      // confidence (suggested) so applyExtraction's confirmed-name match
+      // doesn't merge them, then each surface confirmed by hand — the
+      // realistic way two confirmed same-name people arise.
+      const a = repo.applyExtraction(
+        ext({
+          sourceItemId: 'i1',
+          results: [lc('Sancho', [{ surface: 'Sancho', surfaceType: 'name', confidence: 'medium' }])],
+        }),
+      );
+      const b = repo.applyExtraction(
+        ext({
+          sourceItemId: 'i2',
+          results: [lc('Sancho', [{ surface: 'Sancho', surfaceType: 'name', confidence: 'medium' }])],
+        }),
+      );
+      const aId = a.personIds?.[0];
+      const bId = b.personIds?.[0];
+      expect(aId).toBeDefined();
+      expect(bId).toBeDefined();
+      expect(aId).not.toBe(bId);
+      for (const pid of [aId, bId]) {
+        const surfaceId = repo.getPerson(pid as string)?.surfaces?.[0].id;
+        expect(surfaceId).toBeDefined();
+        repo.confirmSurface(pid as string, surfaceId as number);
+      }
+      expect(repo.listPeople()).toHaveLength(2);
+
+      // Ambiguous (two confirmed "Sancho") → don't guess; create a fresh
+      // person bound to the DID rather than mis-merging onto one.
+      const did = 'did:plc:ambiguous';
+      const contactPersonId = repo.upsertContactPerson(did, 'Sancho');
+      expect(contactPersonId).not.toBe(aId);
+      expect(contactPersonId).not.toBe(bId);
+      expect(repo.listPeople()).toHaveLength(3);
+      expect(repo.findByContactDid(did)?.personId).toBe(contactPersonId);
+    });
+
+    it('does NOT coalesce a second, different DID onto an existing same-name contact', () => {
+      // Alex #1 is already an established contact: a person with a bound
+      // DID. The name fallback must NOT hijack that identity when a NEW,
+      // different DID with the same display name arrives — otherwise two
+      // distinct "Alex"es silently merge and #2 inherits #1's policy.
+      const did1 = 'did:plc:alex-one';
+      const alex1 = repo.upsertContactPerson(did1, 'Alex');
+      expect(repo.findByContactDid(did1)?.personId).toBe(alex1);
+
+      const did2 = 'did:plc:alex-two';
+      const alex2 = repo.upsertContactPerson(did2, 'Alex');
+
+      // Distinct person, distinct binding — no coalesce.
+      expect(alex2).not.toBe(alex1);
+      expect(repo.listPeople()).toHaveLength(2);
+      expect(repo.findByContactDid(did1)?.personId).toBe(alex1);
+      expect(repo.findByContactDid(did2)?.personId).toBe(alex2);
+
+      // Re-adding the SAME DID still resolves by identity (idempotent) —
+      // the exclusion only governs the name fallback, not identity reuse.
+      expect(repo.upsertContactPerson(did1, 'Alex')).toBe(alex1);
+      expect(repo.listPeople()).toHaveLength(2);
     });
   });
 

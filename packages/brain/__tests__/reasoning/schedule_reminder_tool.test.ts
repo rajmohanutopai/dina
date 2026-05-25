@@ -77,6 +77,37 @@ describe('schedule_reminder tool', () => {
     expect(all[0]?.kind).toBe('manual');
   });
 
+  it('reports duplicate on a repeated identical call, distinct message is its own row', async () => {
+    const tool = build();
+    const dueAt = FIXED_NOW + 60 * 60_000;
+
+    const first = (await tool.execute({
+      message: 'Call mom',
+      due_at: dueAt,
+    })) as ScheduleReminderOutcome;
+    expect(first.status).toBe('scheduled');
+
+    // Same message + time + persona → the service dedups; the tool must
+    // report `duplicate` (not a second "scheduled"), and no new row.
+    const again = (await tool.execute({
+      message: 'Call mom',
+      due_at: dueAt,
+    })) as ScheduleReminderOutcome;
+    expect(again.status).toBe('duplicate');
+    expect(again.reminder_id).toBe(first.reminder_id);
+    expect(listAllReminders()).toHaveLength(1);
+
+    // A DIFFERENT message at the same instant is a distinct reminder
+    // (the #1 fix), scheduled fresh.
+    const other = (await tool.execute({
+      message: 'Take medicine',
+      due_at: dueAt,
+    })) as ScheduleReminderOutcome;
+    expect(other.status).toBe('scheduled');
+    expect(other.reminder_id).not.toBe(first.reminder_id);
+    expect(listAllReminders()).toHaveLength(2);
+  });
+
   it('accepts epoch milliseconds as a number', async () => {
     const tool = build();
     const dueAt = FIXED_NOW + 5 * 60_000;

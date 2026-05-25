@@ -66,7 +66,7 @@ function buildRouter(): CoreRouter {
   );
 
   r.delete(
-    '/v1/vault/items/:id',
+    '/v1/vault/item/:id',
     (req) => ({
       status: 200,
       body: { deleted: req.params.id === 'known' },

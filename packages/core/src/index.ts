@@ -522,6 +522,10 @@ export {
   getContactsByTrust,
   getTrustLevel,
   hydrateContactDirectory,
+  rebuildContactProjections,
+  establishContact,
+  removeContact,
+  mergeContactPersons,
   isContact,
   listContacts,
   removeAlias,
@@ -602,7 +606,15 @@ export type {
 export * from './audit/hash_chain';
 export type { AuditEntry as AuditHashEntry } from './audit/hash_chain';
 export * from './export/archive';
-export type { ArchiveHeader, ArchiveManifest } from './export/archive';
+export type {
+  ArchiveHeaderV1,
+  ArchiveManifest,
+  ArchivePayloadV1,
+  ArchivePersonaV1,
+  ArchiveDataSource,
+  ArchivePersonaSource,
+  ImportArchiveOptions,
+} from './export/archive';
 export { generateCLIKeypair, signCLIRequest, verifyCLIRequest } from './auth/cli_signing';
 export type { CLIKeypair } from './auth/cli_signing';
 export { canonicalize, signCanonical, verifyCanonical } from './identity/signing';
@@ -630,7 +642,34 @@ export type { CoreConfig } from './config/loading';
 export * from './notify/priority';
 export type { GuardianTier, NotificationPriority } from './notify/priority';
 export * from './transport/outbox';
-export type { OutboxEntry } from './transport/outbox';
+export * from './transport/outbox_repository';
+export type {
+  D2DOutboxRepository,
+  D2DOutboxRow,
+  D2DOutboxState,
+  D2DOutboxInsert,
+} from './transport/outbox_repository';
+export * from './transport/retry';
+export type {
+  OutboxRedeliverFn,
+  RedeliverOutcome,
+  DrainResult,
+  DrainerHandle,
+} from './transport/retry';
+// issues.txt §2 — durable agent persona grants + deterministic access gate.
+export * from './agent/grant_repository';
+export type {
+  AgentGrantRepository,
+  AgentPersonaGrant,
+  AgentPersonaGrantInsert,
+  GrantMode,
+} from './agent/grant_repository';
+export * from './agent/access';
+export type {
+  AgentAccessDecision,
+  RequireAgentPersonaAccessParams,
+  AgentPersonaAccessApprovalPayload,
+} from './agent/access';
 export * from './transport/delivery';
 export type { DeliveryResult } from './transport/delivery';
 export * from './transport/adversarial';
@@ -797,6 +836,9 @@ export type {
   ActionPolicyResult,
   RiskLevel,
   PersonaListEntry,
+  Reminder,
+  RecurringFrequency,
+  ReminderCreateInput,
 } from './client/core-client';
 // Relay / MsgBox RPC envelope helpers — used by the home-node-lite
 // core-server's MsgBox client to seal/unseal CoreRPCRequest +

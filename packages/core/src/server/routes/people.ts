@@ -19,6 +19,7 @@ import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
 import { PEOPLE_APPLY_EXTRACTION, PEOPLE_BY_DID, PEOPLE_FIND, PEOPLE_LIST } from './paths';
 import { getPeopleRepository, type PeopleRepository } from '../../people/repository';
 import { getVaultRepository } from '../../vault/repository';
+import { log } from '../../logging/structured';
 import type { ExtractionResult, ApplyExtractionResponse, Person } from '../../people/domain';
 
 /** Body size cap — 256 KiB is generous for a single extraction. */
@@ -123,8 +124,18 @@ async function handleApplyExtraction(
             source: 'llm',
             confidence: 'medium',
           });
-        } catch {
-          /* subject link is enrichment — never fail the apply */
+        } catch (err) {
+          // The subject link is enrichment — a failure must NOT fail the
+          // extraction apply (the people graph is already written). But
+          // it MUST be visible: a silently-dropped link means did->person
+          // recall quietly degrades while the apply reports success. Log
+          // it (metadata only — no vault content) so the degradation is
+          // observable.
+          log(
+            'warn',
+            `people.apply.subject_link_failed persona=${persona} item=${body.sourceItemId} person=${personId}`,
+            { error: err instanceof Error ? err.message : String(err) },
+          );
         }
       }
     }

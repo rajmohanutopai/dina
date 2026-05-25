@@ -109,7 +109,7 @@ describe('HttpCoreTransport (task 1.31)', () => {
     expect(calls[0]?.url).toBe('http://core:8100/healthz');
   });
 
-  it('vaultStore sends persona + item merged into a JSON body', async () => {
+  it('vaultStore sends persona in the query and the item as the body', async () => {
     const { client, calls } = makeStubClient(() =>
       ok({ id: 'item-new', storedAt: '2026-04-21T00:00:00Z' }, 201),
     );
@@ -124,9 +124,11 @@ describe('HttpCoreTransport (task 1.31)', () => {
     expect(r.id).toBe('item-new');
     expect(calls[0]?.init.method).toBe('POST');
     expect(calls[0]?.init.headers['content-type']).toBe('application/json');
+    // persona rides in the QUERY (the store route reads req.query.persona);
+    // putting it in the body would silently route every store to `general`.
+    expect(calls[0]?.url).toBe('http://core/v1/vault/store?persona=personal');
     const sent = JSON.parse(new TextDecoder().decode(calls[0]!.init.body!));
-    expect(sent).toEqual({ persona: 'personal', type: 'note', content: { text: 'hi' } });
-    // The signer got the raw body bytes with matching length.
+    expect(sent).toEqual({ type: 'note', content: { text: 'hi' } });
     expect(stub.lastArgs?.body.byteLength).toBe(calls[0]!.init.body!.byteLength);
   });
 
@@ -158,7 +160,9 @@ describe('HttpCoreTransport (task 1.31)', () => {
     await t.vaultDelete('personal', 'a/b c');
 
     expect(calls[0]?.init.method).toBe('DELETE');
-    expect(calls[0]?.url).toBe('http://core/v1/vault/items/a%2Fb%20c?persona=personal');
+    // Singular `/item/:id` — same resource the GET uses, and the path
+    // registerVaultRoutes actually registers.
+    expect(calls[0]?.url).toBe('http://core/v1/vault/item/a%2Fb%20c?persona=personal');
   });
 
   it('didSign base64-encodes the payload bytes', async () => {

@@ -35,6 +35,7 @@ import {
   bootstrapMsgBox,
   disconnectMsgBox,
   getServiceConfig,
+  hydrateServiceConfig,
   isMsgBoxAuthenticated,
   onMsgBoxAuthenticated,
   makeServiceResponseBridgeSender,
@@ -438,11 +439,12 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       );
     }
 
+    // issues.txt §4 — only REGISTER the repo here (this closure is sync).
+    // Hydration + the env/demo override happen in `createNode`'s async
+    // body right after this runs, in the precedence order: register →
+    // hydrate persisted → apply initialServiceConfig override.
     if (options.serviceConfigRepository !== undefined) {
       setServiceConfigRepository(options.serviceConfigRepository);
-    }
-    if (options.initialServiceConfig !== undefined) {
-      setServiceConfig(options.initialServiceConfig);
     }
 
     // Ed25519 public-key resolver — self is always resolvable; peers come
@@ -894,6 +896,26 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       // MsgBox starts delivering; chat globals follow.
       installCoreGlobals();
       installChatGlobals();
+
+      // issues.txt §4 — now that the service-config repo is registered,
+      // HYDRATE the persisted config into the runtime, then let an explicit
+      // env/demo `initialServiceConfig` override on top (precedence:
+      // register → hydrate → override). The gap this closes: without the
+      // hydrate, `getServiceConfig()` returned null after a mobile restart
+      // even though SQL held the provider profile — so inbound service.query
+      // was denied at the contact gate + the publisher never republished.
+      // Fails soft: a corrupt stored row leaves the runtime null, never
+      // crashes boot.
+      if (coreGlobals && options.serviceConfigRepository !== undefined) {
+        try {
+          await hydrateServiceConfig();
+        } catch (err) {
+          log({ event: 'node.service_config_hydrate_failed', error: (err as Error).message });
+        }
+      }
+      if (coreGlobals && options.initialServiceConfig !== undefined) {
+        setServiceConfig(options.initialServiceConfig);
+      }
 
       // Review #14: hydrate the in-memory chat store from the persisted
       // repository. Persistence is wired into the app's storage layer

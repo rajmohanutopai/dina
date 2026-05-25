@@ -23,7 +23,7 @@ import {
   type DeliveryResult,
   type SenderIdentity,
 } from '../transport/delivery';
-import { enqueueMessage } from '../transport/outbox';
+import { enqueueD2D, deriveIdempotencyKey } from '../transport/outbox';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import {
@@ -51,6 +51,13 @@ export interface SendRequest {
    * gated by the contact check).
    */
   providerServiceResolver?: ProviderServiceResolver;
+  /**
+   * Drainer-only flag (issues.txt §1). When the retry worker re-delivers
+   * a queued message it owns the outbox row's retry state itself, so a
+   * failed attempt must NOT re-enqueue a fresh row. With this set the
+   * failure paths skip the outbox enqueue and just report the outcome.
+   */
+  suppressEnqueue?: boolean;
 }
 
 export interface SendResult {
@@ -293,7 +300,25 @@ export async function sendD2D(req: SendRequest): Promise<SendResult> {
 
     // Delivery failed but didn't throw — queue for retry.
     releaseProviderReservation(providerReservation);
-    const queueResult = tryEnqueue(req.recipientDID, payloadBytes);
+    if (req.suppressEnqueue) {
+      // Drainer re-delivery: the outbox row already exists and the
+      // worker owns its retry state. Report the failure, don't re-queue.
+      appendAudit(
+        req.senderDID,
+        'd2d_redeliver_failed',
+        req.recipientDID,
+        `type=${req.messageType} id=${messageId} error=${delivery.error ?? 'delivery_failed'}`,
+      );
+      return {
+        sent: true,
+        messageId,
+        delivered: false,
+        buffered: false,
+        queued: false,
+        error: delivery.error ?? 'delivery_failed',
+      };
+    }
+    const queueResult = tryEnqueue(req, messageId);
     const deliveryErrorMsg = delivery.error ?? 'delivery_failed';
     appendAudit(
       req.senderDID,
@@ -324,8 +349,24 @@ export async function sendD2D(req: SendRequest): Promise<SendResult> {
   } catch (err) {
     // 6. Network failure → queue in outbox
     releaseProviderReservation(providerReservation);
-    const queueResult = tryEnqueue(req.recipientDID, payloadBytes);
     const errMsg = err instanceof Error ? err.message : String(err);
+    if (req.suppressEnqueue) {
+      appendAudit(
+        req.senderDID,
+        'd2d_redeliver_failed',
+        req.recipientDID,
+        `type=${req.messageType} id=${messageId} error=${errMsg}`,
+      );
+      return {
+        sent: true,
+        messageId,
+        delivered: false,
+        buffered: false,
+        queued: false,
+        error: errMsg,
+      };
+    }
+    const queueResult = tryEnqueue(req, messageId);
     appendAudit(
       req.senderDID,
       'd2d_send_queued',
@@ -361,11 +402,20 @@ export async function sendD2D(req: SendRequest): Promise<SendResult> {
  * #2: both failure branches used to swallow `enqueueMessage` errors).
  */
 function tryEnqueue(
-  recipientDID: string,
-  payloadBytes: Uint8Array,
+  req: SendRequest,
+  messageId: string,
 ): { queued: true } | { queued: false; error: string } {
   try {
-    enqueueMessage(recipientDID, payloadBytes);
+    // Persist the SEMANTIC message (type + JSON body), not the sealed
+    // bytes: the drainer re-resolves the recipient key + endpoint and
+    // re-seals at retry time (issues.txt §1). The idempotency key
+    // collapses a double-enqueue of the same logical message to one row.
+    enqueueD2D({
+      targetDID: req.recipientDID,
+      messageType: req.messageType,
+      bodyJson: req.body,
+      idempotencyKey: deriveIdempotencyKey(req.messageType, req.body, messageId),
+    });
     return { queued: true };
   } catch (err) {
     return {

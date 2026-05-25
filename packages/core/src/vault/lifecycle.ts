@@ -1,14 +1,29 @@
 /**
  * Vault lifecycle — persona tier enforcement for open/close/access.
  *
- * | Tier      | Boot   | Brain    | Agents              |
+ * | Tier      | Boot   | Brain    | Agents (V1)         |
  * |-----------|--------|----------|---------------------|
  * | default   | open   | free     | free                |
- * | standard  | open   | free     | session grant       |
+ * | standard  | open   | free     | free *              |
  * | sensitive | closed | approval | approval + grant    |
- * | locked    | closed | denied   | denied              |
+ * | locked    | closed | denied   | approval + grant ** |
  *
- * Source: core/test/vault_test.go
+ * The **Agents** column is the release contract enforced by the durable
+ * persona-access gate (`agent/access.ts::requireAgentPersonaAccess`,
+ * issues.txt §2), reachable only by an out-of-process dina-agent — the
+ * owner's own app reads/writes every persona freely (user-vs-agent rule).
+ *
+ *   *  `standard` is open to agents in V1. The original "per-session grant"
+ *      model is deferred (named agent sessions aren't wired to the gate
+ *      yet); the dangerous leak the §2 work closed was sensitive/locked.
+ *   ** `locked` for an agent goes through approval + a durable grant (and
+ *      approval also unlocks the persona DEK), superseding the old
+ *      "denied" — the issues.txt §2 locked-vault approve/resume flow.
+ *      Cross-persona isolation still holds: a grant is per (agent, persona,
+ *      mode); a health grant never unlocks finance. Brain access is
+ *      unchanged (free for default/standard, denied for locked).
+ *
+ * Source: core/test/vault_test.go + issues.txt §2.
  */
 
 export type PersonaTier = 'default' | 'standard' | 'sensitive' | 'locked';
@@ -34,8 +49,17 @@ export function brainCanAccess(tier: PersonaTier): boolean {
 }
 
 /** Check if agents can access this tier (may require session grant). */
+/**
+ * Pure tier policy for an out-of-process agent (issues.txt §2 V1 contract).
+ * Matches what `agent/access.ts::requireAgentPersonaAccess` enforces at
+ * runtime — kept in sync so the two can't drift:
+ *   - default / standard → open to agents (no grant needed in V1).
+ *   - sensitive / locked → require an approved durable grant.
+ * (`locked` is approval+grant, NOT a hard denial — superseding the old
+ * model; the owner's own app is never gated by this, see the user-vs-agent
+ * rule in `agent/access.ts`.)
+ */
 export function agentCanAccess(tier: PersonaTier, hasGrant: boolean): boolean {
-  if (tier === 'default') return true;
-  if (tier === 'standard' || tier === 'sensitive') return hasGrant;
-  return false;
+  if (tier === 'default' || tier === 'standard') return true;
+  return hasGrant; // sensitive + locked
 }

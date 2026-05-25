@@ -37,7 +37,9 @@ import {
   resetAskCommandHandler,
   setAccessiblePersonas,
   setAskCommandHandler,
+  setContactReadBackend,
   setPeopleReadBackend,
+  setReminderBackend,
   setVaultReadBackend,
 } from '@dina/brain';
 import { installNodeTraceScopeStorage } from '@dina/brain/node-trace-storage';
@@ -62,6 +64,7 @@ import { buildBrainServerLLMRuntime } from './llm_provider';
 import { createLogger, type Logger } from './logger';
 import { registerAskRoutes } from './routes/ask';
 import { registerChatRoutes } from './routes/chat';
+import { registerReminderApiRoutes, startReminderFireLoop } from './routes/reminders';
 import { registerWebRoutes } from './routes/web';
 
 /**
@@ -90,6 +93,7 @@ export interface BrainServerDependencyStatus {
   appView: 'configured';
   core: CoreClientStatus;
   askRoutes: 'configured' | 'disabled';
+  reminderRoutes: 'configured' | 'disabled';
   serviceRuntime: 'configured' | 'disabled';
   stagingDrain: 'running' | 'disabled';
   /**
@@ -212,6 +216,7 @@ export async function bootServer(
     appView: 'configured',
     core: coreResult.status,
     askRoutes: 'disabled',
+    reminderRoutes: 'disabled',
     serviceRuntime: 'disabled',
     stagingDrain: 'disabled',
     webUI: 'disabled',
@@ -241,6 +246,24 @@ export async function bootServer(
       peopleList: () => core.peopleList(),
       peopleFindByName: (surface) => core.peopleFindByName(surface),
       peopleResolveByDid: (did) => core.peopleResolveByDid(did),
+    });
+
+    // Contact-directory read backend — the `contact_lookup` reasoning tool
+    // resolves trust/sharing policy through Core (the directory lives in
+    // core-server's process). Mobile reads the in-process directory.
+    setContactReadBackend({
+      contactLookup: (query) => core.contactLookup(query),
+    });
+
+    // Reminder backend — the reminder service's authoritative store
+    // (in-memory Map + SQLiteReminderRepository) lives in core-server's
+    // process. Route brain's create + read through Core so reminders
+    // actually persist + fire. Mobile leaves this unset and calls the
+    // in-process reminder service directly.
+    setReminderBackend({
+      reminderCreate: (input) => core.reminderCreate(input),
+      reminderListByPersona: (persona) => core.reminderListByPersona(persona),
+      reminderListPending: (now) => core.reminderListPending(now),
     });
 
     // Build the LLM runtime early so the staging drain can use it
@@ -488,6 +511,27 @@ export async function bootServer(
   registerChatRoutes(app, {
     exposeDevUI: process.env.DINA_BRAIN_DEV_UI === '1',
   });
+
+  // Reminder data layer for the SPA — proxies to core-server (which owns
+  // the reminder store) via the CoreClient. The web reminder UI hits
+  // these; mobile calls the in-process reminder service directly.
+  if (clients.core !== undefined) {
+    const reminderHub = registerReminderApiRoutes(app, { core: clients.core });
+    // Server-side fire loop: the browser can't run a reliable background
+    // timer, so the server fires due reminders + pushes them to the SPA
+    // over the SSE stream. Mobile fires in-process and ignores all this.
+    const stopFireLoop = startReminderFireLoop({
+      core: clients.core,
+      hub: reminderHub,
+      onError: (err) =>
+        logger.warn(
+          { error: err instanceof Error ? err.message : String(err) },
+          'reminder fire loop tick failed',
+        ),
+    });
+    app.addHook('onClose', async () => stopFireLoop());
+    dependencyStatus.reminderRoutes = 'configured';
+  }
 
   // SPA bundle serving. Opt-in via `DINA_BRAIN_WEB_UI=1` — same gate
   // philosophy as `/dev`. The bundle is produced by `npx expo export

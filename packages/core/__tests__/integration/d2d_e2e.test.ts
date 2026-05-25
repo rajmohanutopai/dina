@@ -14,7 +14,7 @@ import { sealMessage, unsealMessage, type DinaMessage } from '../../src/d2d/enve
 import { signMessage, verifyMessage } from '../../src/d2d/signature';
 import { addContact, setScenarioDeny, clearGatesState } from '../../src/d2d/gates';
 import { getItem as getStagingItem, resetStagingState } from '../../src/staging/service';
-import { clearOutbox, outboxSize } from '../../src/transport/outbox';
+import { clearOutbox, outboxCount } from '../../src/transport/outbox';
 import { setDeliveryFetchFn, resetDeliveryDeps } from '../../src/transport/delivery';
 import { resetAuditState, queryAudit, auditCount } from '../../src/audit/service';
 import {
@@ -232,7 +232,7 @@ describe('D2D End-to-End Integration', () => {
       });
 
       expect(result.queued).toBe(true);
-      expect(outboxSize()).toBe(1);
+      expect(outboxCount()).toBe(1);
     });
   });
 });

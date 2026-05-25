@@ -4,6 +4,19 @@ info:
   description: |
     Internal HTTP API for the Dina Home Node Core (Go).
     Consumed by Brain's CoreHTTPClient, CLI, and paired devices.
+
+    ⚠️ LEGACY / NON-AUTHORITATIVE. This spec describes the deprecated
+    Go Core + Python Brain stack and drives ONLY their codegen
+    (core/internal/gen, brain/src/gen). The shipping product is the
+    TypeScript stack in `packages/core` (hand-written routes) +
+    `apps/home-node-lite`, which is the source of truth for the live
+    Core↔Brain contract and has intentionally diverged from this spec
+    (e.g. `/v1/reminders` collection vs the legacy `/v1/reminder`,
+    `/v1/vault/list`, `DELETE /v1/vault/item/{id}` → 200 `{deleted}`).
+    Do NOT treat this file as the runtime contract for the TS stack;
+    validate against `packages/core/src/server/routes/*` instead. It is
+    kept only so the deprecated-stack codegen + its drift gate
+    (`make check-generate`) stay internally consistent.
   version: "0.1.0"
   contact:
     name: Dina

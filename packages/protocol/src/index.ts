@@ -82,10 +82,19 @@ export { buildCanonicalPayload } from './canonical_sign';
 // re-exported here with distinctive names so consumers can write:
 //   import type { CoreAPIComponents } from '@dina/protocol';
 //   type HealthResponse = CoreAPIComponents['schemas']['HealthResponse'];
-// Regenerate via `npm run generate` at the workspace root. Hand-written
-// types in `types/*.ts` are still the source of truth for Phase 1b; the
-// generated types are additive until task 1.42 replaces the hand-written
-// ones where the spec covers them.
+// Regenerate via `npm run generate` at the workspace root.
+//
+// ⚠️ These `CoreAPI*` types are generated from `api/core-api.yaml`, which
+// is the LEGACY / deprecated Go-stack spec (see its header banner) — NOT
+// the live TS contract. They have NO production consumer; the only
+// importers are this package's own conformance tests (`__tests__/codegen`,
+// `__tests__/type_compat`), which assert the hand-written wire types still
+// match the shared COMPONENT SCHEMAS (HealthResponse, VaultStoreResponse,
+// …) the two stacks agree on. Route-level drift (e.g. `/v1/reminder` vs the
+// TS `/v1/reminders`) lives in `CoreAPIPaths` and is intentionally NOT
+// asserted against runtime — the authoritative TS routes are in
+// `packages/core/src/server/routes/*`. So this is a legacy schema-
+// conformance fixture, not a second source of runtime truth.
 export type {
   paths as CoreAPIPaths,
   components as CoreAPIComponents,

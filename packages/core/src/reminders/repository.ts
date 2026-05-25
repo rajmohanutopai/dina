@@ -43,8 +43,13 @@ export class SQLiteReminderRepository implements ReminderRepository {
   constructor(private readonly db: DatabaseAdapter) {}
 
   async create(r: Reminder): Promise<void> {
+    // Plain INSERT (not INSERT OR IGNORE): a UNIQUE conflict or write
+    // error must THROW so the durable-create path (createReminderDurable)
+    // can tell the row was genuinely persisted vs silently skipped. The
+    // best-effort path (createReminder) swallows the throw; in-process
+    // dedup means a real duplicate never reaches a second INSERT.
     this.db.execute(
-      `INSERT OR IGNORE INTO reminders (id, short_id, message, due_at, persona, kind, source_item_id, source, recurring, timezone, status, completed, created_at)
+      `INSERT INTO reminders (id, short_id, message, due_at, persona, kind, source_item_id, source, recurring, timezone, status, completed, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         r.id,
@@ -70,9 +75,15 @@ export class SQLiteReminderRepository implements ReminderRepository {
   }
 
   async listPending(nowMs: number): Promise<Reminder[]> {
+    // Mirror the service's `listPending`: a `snoozed` reminder re-fires
+    // when its new due_at arrives, so it's "pending" for firing purposes.
+    // Filtering to status='pending' alone would silently drop snoozed
+    // reminders from any cold-start/recovery path that reads the repo
+    // directly (the in-memory service is authoritative at runtime, but
+    // this keeps durable + in-memory semantics identical).
     const rows = this.db.query(
-      'SELECT * FROM reminders WHERE completed = 0 AND status = ? AND due_at <= ? ORDER BY due_at ASC',
-      ['pending', nowMs],
+      "SELECT * FROM reminders WHERE completed = 0 AND status IN ('pending', 'snoozed') AND due_at <= ? ORDER BY due_at ASC",
+      [nowMs],
     );
     return rows.map(rowToReminder);
   }

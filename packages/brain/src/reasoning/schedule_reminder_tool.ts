@@ -38,7 +38,8 @@
  *     `'reminder_planner'`).
  */
 
-import { createReminder, type Reminder } from '@dina/core/reminders';
+import { type Reminder } from '@dina/core/reminders';
+import { createReminderRouted, listRemindersByPersonaRouted } from '../reminders/backend';
 
 import type { AgentTool } from './tool_registry';
 
@@ -160,9 +161,21 @@ export function createScheduleReminderTool(
           ? args.persona
           : defaultPersona;
 
+      // Detect a true duplicate reliably + deterministically: check whether
+      // an identical manual reminder already exists BEFORE creating. The
+      // service dedupes on (source_item_id, kind, due_at, persona, message),
+      // and agentic-ask always uses source_item_id='' + kind='manual', so a
+      // match on (manual, due_at, message) in this persona is exactly the
+      // row the create would dedup onto. (The old `source`-based heuristic
+      // broke once `message` joined the dedup key — a dup returns a
+      // same-source row, so it never tripped.)
+      const alreadyExists = (await listRemindersByPersonaRouted(persona)).some(
+        (r) => r.kind === 'manual' && r.due_at === dueAtMs && r.message === message,
+      );
+
       let reminder: Reminder;
       try {
-        reminder = createReminder({
+        reminder = await createReminderRouted({
           message,
           due_at: dueAtMs,
           persona,
@@ -177,19 +190,8 @@ export function createScheduleReminderTool(
         };
       }
 
-      // `createReminder` dedupes on (source_item_id, kind, due_at,
-      // persona). Agentic-ask calls leave source_item_id empty, so the
-      // dedup essentially keys on (manual, due_at, persona): a
-      // back-to-back "/ask remind me at 5pm to X" returns the same
-      // reminder on the second call. Surface that as `duplicate` so
-      // the LLM doesn't tell the user "scheduled" twice. We detect it
-      // by the reminder's `source` — anything other than `'agentic_ask'`
-      // came from a different code path (e.g. the staging reminder
-      // planner) and is by definition a pre-existing row.
-      const isExistingFromOtherSource = reminder.source !== 'agentic_ask';
-
       return {
-        status: isExistingFromOtherSource ? 'duplicate' : 'scheduled',
+        status: alreadyExists ? 'duplicate' : 'scheduled',
         reminder_id: reminder.id,
         short_id: reminder.short_id,
         due_at_ms: reminder.due_at,

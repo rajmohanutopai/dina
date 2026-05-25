@@ -16,7 +16,7 @@ import {
   findByAlias,
   listContacts,
 } from '@dina/core';
-import { listPending } from '@dina/core/reminders';
+import { listPendingRemindersRouted } from '../reminders/backend';
 import {
   searchTrustNetwork,
   type PeerlensSearchQuery,
@@ -81,6 +81,28 @@ export function setPeopleReadBackend(backend: PeopleReadBackend | null): void {
 
 export function getPeopleReadBackend(): PeopleReadBackend | null {
   return peopleBackend;
+}
+
+/**
+ * Contact-directory read backend — the `contact_lookup` reasoning tool's
+ * seam. Contact policy (trust/sharing/relationship) lives in Core's
+ * directory; the People backend only carries graph identity, not policy,
+ * so this is a distinct surface. Mobile leaves it unset (the tool reads
+ * the in-process directory); lite's brain-server wires it to
+ * `CoreClient.contactLookup`.
+ */
+export interface ContactReadBackend {
+  contactLookup: CoreClient['contactLookup'];
+}
+
+let contactBackend: ContactReadBackend | null = null;
+
+export function setContactReadBackend(backend: ContactReadBackend | null): void {
+  contactBackend = backend;
+}
+
+export function getContactReadBackend(): ContactReadBackend | null {
+  return contactBackend;
 }
 
 export interface ContextItem {
@@ -427,8 +449,15 @@ async function executeToolCall(call: ToolCall): Promise<unknown> {
 
     case 'vault_read': {
       const itemId = String(call.args.item_id ?? '');
+      if (itemId === '') return null;
       for (const persona of getAccessiblePersonas()) {
-        const item = getItem(persona, itemId);
+        // Out-of-process (lite): vault SQLite lives in Core — read over
+        // the backend. In-process (mobile): the local repo. Same split as
+        // vault_search above.
+        const item =
+          vaultBackend?.vaultGet !== undefined
+            ? await vaultBackend.vaultGet(persona, itemId)
+            : getItem(persona, itemId);
         if (item) return item;
       }
       return null;
@@ -436,13 +465,13 @@ async function executeToolCall(call: ToolCall): Promise<unknown> {
 
     case 'contact_lookup': {
       const query = String(call.args.query ?? '');
-      return executeContactLookup(query);
+      return await executeContactLookup(query);
     }
 
     case 'reminder_check': {
       const query = String(call.args.query ?? '');
       const daysAhead = Number(call.args.days_ahead ?? 7);
-      return executeReminderCheck(query, daysAhead);
+      return await executeReminderCheck(query, daysAhead);
     }
 
     case 'search_peerlens': {
@@ -467,14 +496,22 @@ function executeListPersonas(): Array<{ name: string; tier: string; accessible: 
 }
 
 /** Browse recent items in a persona vault without a search query. */
-function executeBrowseVault(persona: string, limit: number): ContextItem[] {
+async function executeBrowseVault(persona: string, limit: number): Promise<ContextItem[]> {
   if (!getAccessiblePersonas().includes(persona)) {
     return []; // Persona not accessible — return empty
   }
 
-  const now = Date.now();
-  const oneWeek = 7 * 24 * 60 * 60 * 1000;
-  const items = browseRecent(persona, now - oneWeek, now, limit);
+  // Out-of-process (lite): list over the Core backend. In-process
+  // (mobile): the local `browseRecent`. Same split as vault_search.
+  let items: Array<{ id: string; content_l0?: string; content_l1?: string; summary?: string }>;
+  if (vaultBackend?.vaultList !== undefined) {
+    const res = await vaultBackend.vaultList(persona, { limit });
+    items = res.items as Array<{ id: string; content_l0?: string; summary?: string }>;
+  } else {
+    const now = Date.now();
+    const oneWeek = 7 * 24 * 60 * 60 * 1000;
+    items = browseRecent(persona, now - oneWeek, now, limit);
+  }
 
   return items.map((item, index) => ({
     id: item.id,
@@ -491,20 +528,26 @@ function executeBrowseVault(persona: string, limit: number): ContextItem[] {
  *
  * Returns contact details in a structured format suitable for LLM consumption.
  */
-function executeContactLookup(query: string): Record<string, unknown> | null {
+async function executeContactLookup(query: string): Promise<Record<string, unknown> | null> {
   if (!query) return null;
 
-  // Try DID lookup first
+  // Out-of-process (lite): the contact directory lives in Core — resolve
+  // through the backend so this tool isn't reading Brain's empty
+  // in-process directory (the dual-identity-path the people hub exists to
+  // avoid). Mobile leaves the backend unset and reads in-process below.
+  const backend = getContactReadBackend();
+  if (backend !== null) {
+    const contact = await backend.contactLookup(query);
+    return contact ? formatContactForLLM(contact) : null;
+  }
+
+  // In-process (mobile): DID → display name → alias, same order as Core.
   if (query.startsWith('did:')) {
     const contact = getContact(query);
     if (contact) return formatContactForLLM(contact);
   }
-
-  // Try name lookup
   const byName = resolveByName(query);
   if (byName) return formatContactForLLM(byName);
-
-  // Try alias lookup
   const byAlias = findByAlias(query);
   if (byAlias) return formatContactForLLM(byAlias);
 
@@ -536,13 +579,15 @@ function formatContactForLLM(contact: {
  *
  * Returns reminders due within the specified days-ahead window.
  */
-function executeReminderCheck(
+async function executeReminderCheck(
   query: string,
   daysAhead: number,
-): Array<{ id: string; message: string; due_at: number; persona: string; kind: string }> {
+): Promise<Array<{ id: string; message: string; due_at: number; persona: string; kind: string }>> {
   const now = Date.now();
   const windowEnd = now + daysAhead * 24 * 60 * 60 * 1000;
-  const pending = listPending(windowEnd);
+  // Out-of-process (lite): reminders live in Core's process — read over
+  // the backend. In-process (mobile): the local reminder service.
+  const pending = await listPendingRemindersRouted(windowEnd);
 
   // Filter by query if provided
   const filtered = query

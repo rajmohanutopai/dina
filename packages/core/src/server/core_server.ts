@@ -28,6 +28,7 @@ import { registerMemoryRoutes } from './routes/memory';
 import { registerPeopleRoutes } from './routes/people';
 import { registerPersonasRoutes } from './routes/personas';
 import { registerContactsRoutes } from './routes/contacts';
+import { registerReminderRoutes } from './routes/reminders';
 import { registerPairRoutes } from './routes/pair';
 import { registerScratchpadRoutes } from './routes/scratchpad';
 import { registerIntentRoutes } from './routes/intent';
@@ -98,6 +99,13 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   // module-global contact directory; no options needed at router
   // construction time.
   registerContactsRoutes(router);
+
+  // Reminders HTTP surface — out-of-process Brain (home-node-lite)
+  // creates + reads reminders through Core so writes land in Core's
+  // authoritative store (the SQLiteReminderRepository wired only in
+  // Core's process). Mobile Brain shares the process and calls the
+  // reminder service directly, so it never hits these routes.
+  registerReminderRoutes(router);
 
   // Device pairing — `/v1/pair/initiate` (admin) + `/v1/pair/complete`
   // (public, code-authenticated). Port of `dina-admin device pair`

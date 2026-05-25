@@ -81,6 +81,8 @@ import type {
   ExtractionResult,
   ApplyExtractionResponse,
   Person,
+  Reminder,
+  ReminderCreateInput,
   PersonaListEntry,
   ActionPolicyEntry,
   ActionPolicyResult,
@@ -222,11 +224,14 @@ export class HttpCoreTransport implements CoreClient {
   }
 
   async vaultStore(persona: string, item: VaultItemInput): Promise<VaultStoreResult> {
+    // persona goes in the QUERY (the store route reads `req.query.persona`,
+    // same convention as /query and /item) — NOT the body, or a
+    // non-general store silently lands in `general`.
     return this.call<VaultStoreResult>(
       'POST',
       '/v1/vault/store',
-      undefined,
-      { persona, ...item },
+      { persona },
+      item as unknown as Record<string, unknown>,
       `vaultStore(persona=${persona})`,
     );
   }
@@ -248,7 +253,7 @@ export class HttpCoreTransport implements CoreClient {
   async vaultDelete(persona: string, itemId: string): Promise<VaultDeleteResult> {
     return this.call<VaultDeleteResult>(
       'DELETE',
-      `/v1/vault/items/${encodeURIComponent(itemId)}`,
+      `/v1/vault/item/${encodeURIComponent(itemId)}`,
       { persona },
       undefined,
       `vaultDelete(persona=${persona}, id=${itemId})`,
@@ -790,6 +795,25 @@ export class HttpCoreTransport implements CoreClient {
     return Array.isArray(raw.contacts) ? (raw.contacts as Contact[]) : [];
   }
 
+  async contactLookup(query: string): Promise<Contact | null> {
+    const clean = typeof query === 'string' ? query.trim() : '';
+    if (clean === '') return null;
+    try {
+      const raw = await this.call<{ contact?: Contact | null }>(
+        'GET',
+        '/v1/contacts/lookup',
+        { q: clean },
+        undefined,
+        `contactLookup(q=${clean})`,
+      );
+      return raw.contact ?? null;
+    } catch {
+      // Fail-soft: the contact_lookup tool returns null on no-match, and a
+      // transport hiccup shouldn't push the agent into an error branch.
+      return null;
+    }
+  }
+
   async peopleApplyExtraction(
     result: ExtractionResult,
     persona?: string,
@@ -862,6 +886,95 @@ export class HttpCoreTransport implements CoreClient {
       `peopleResolveByDid(did=${did})`,
     );
     return raw.person ?? null;
+  }
+
+  async reminderCreate(input: ReminderCreateInput): Promise<Reminder> {
+    return this.call<Reminder>(
+      'POST',
+      '/v1/reminders',
+      undefined,
+      input as unknown as Record<string, unknown>,
+      `reminderCreate(persona=${input.persona})`,
+    );
+  }
+
+  async reminderListByPersona(persona: string): Promise<Reminder[]> {
+    if (typeof persona !== 'string' || persona.trim() === '') {
+      throw new Error('reminderListByPersona: persona is required');
+    }
+    const raw = await this.call<{ reminders?: Reminder[] }>(
+      'GET',
+      '/v1/reminders',
+      { persona: persona.trim() },
+      undefined,
+      `reminderListByPersona(persona=${persona})`,
+    );
+    return Array.isArray(raw.reminders) ? raw.reminders : [];
+  }
+
+  async reminderListPending(now?: number): Promise<Reminder[]> {
+    const query = now !== undefined ? { now: String(now) } : undefined;
+    const raw = await this.call<{ reminders?: Reminder[] }>(
+      'GET',
+      '/v1/reminders/pending',
+      query,
+      undefined,
+      'reminderListPending',
+    );
+    return Array.isArray(raw.reminders) ? raw.reminders : [];
+  }
+
+  async reminderComplete(id: string): Promise<Reminder | null> {
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new Error('reminderComplete: id is required');
+    }
+    const raw = await this.call<{ next?: Reminder | null }>(
+      'POST',
+      `/v1/reminders/${encodeURIComponent(id.trim())}/complete`,
+      undefined,
+      {},
+      `reminderComplete(id=${id})`,
+    );
+    return raw.next ?? null;
+  }
+
+  async reminderSnooze(id: string, snoozeMs: number): Promise<Reminder | null> {
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new Error('reminderSnooze: id is required');
+    }
+    const raw = await this.call<{ reminder?: Reminder | null }>(
+      'POST',
+      `/v1/reminders/${encodeURIComponent(id.trim())}/snooze`,
+      undefined,
+      { snooze_ms: snoozeMs },
+      `reminderSnooze(id=${id})`,
+    );
+    return raw.reminder ?? null;
+  }
+
+  async reminderDelete(id: string): Promise<boolean> {
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new Error('reminderDelete: id is required');
+    }
+    const raw = await this.call<{ deleted?: boolean }>(
+      'DELETE',
+      `/v1/reminders/${encodeURIComponent(id.trim())}`,
+      undefined,
+      undefined,
+      `reminderDelete(id=${id})`,
+    );
+    return raw.deleted === true;
+  }
+
+  async reminderFireMissed(now?: number): Promise<Reminder[]> {
+    const raw = await this.call<{ fired?: Reminder[] }>(
+      'POST',
+      '/v1/reminders/fire',
+      undefined,
+      now !== undefined ? { now } : {},
+      'reminderFireMissed',
+    );
+    return Array.isArray(raw.fired) ? raw.fired : [];
   }
 
   async updateContact(did: string, updates: UpdateContactParams): Promise<void> {

@@ -120,6 +120,18 @@ risk: BLOCKED
 [Approve] [Deny] [Approve Once]
 ✅ Approved: apr-1774423823840426930
 
+How do we test bus driver scenario
+stub_eta_runner.py
+bus42-agent
+  - What it is: Alonso asks "when does bus 42 reach Castro?" → his Dina finds a public transit service in the AppView directory, sends it a private message, and the answer comes back as an ETA card. Two separate
+  Dinas talking over MsgBox.
+  - The real path (no shortcuts): Alonso discovers the provider on test-appview → sends a service.query D2D over MsgBox → the provider Dina creates a task → its paired dina-agent daemon claims the task →
+  bus42-agent/stub_eta_runner.py answers (eta = random.randint(2,14), reverse-geocodes the location to a real stop) → service.response D2D back → ETA card. Everything inside Dina is the real signed/relayed path;
+  only the runner at the edge stands in for OpenClaw + a real transit API.
+  - To run it: start the provider lite Core on :18298 + the bus42-agent daemon (both live under bus42-agent/ — keys in keys/, vault in provider-vault/). Keep EXPO_PUBLIC_DINA_DEMO empty so the in-app demo loopback
+   stays off.
+
+
 
 Some impleemntation details
 ⏺ There are three separate identity/trust stores
@@ -140,4 +152,3 @@ Some impleemntation details
   - It published "I answer eta_query," so it accepts an eta_query from any stranger.
   - It routes it to its service desk (the service handler) and answers — because it set its policy to answer these automatically.
   - A personal message from you ("be my contact") would still be turned away — you're not in its contacts. Only the advertised service request gets in.
-

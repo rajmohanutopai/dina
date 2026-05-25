@@ -102,6 +102,11 @@ export const AllowedOrigins: readonly string[] = Object.freeze([
   'system',
   'cli',
   'dinamobile',
+  // `agent` — an approval/task originated by an out-of-process agent
+  // request (e.g. the locked-vault persona-access gate, issues.txt §2).
+  // Already permitted by the workflow_tasks CHECK in schemas.ts; this
+  // keeps the service-layer validator in sync with the DB constraint.
+  'agent',
 ]);
 
 // ---------------------------------------------------------------------------

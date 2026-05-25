@@ -20,6 +20,8 @@ import {
   unregisterDevice as unregisterDeviceAuth,
 } from '../auth/caller_type';
 import { getDeviceRepository } from './repository';
+import { getAgentGrantRepository } from '../agent/grant_repository';
+import { appendAudit } from '../audit/service';
 
 export type DeviceRole = 'rich' | 'thin' | 'cli' | 'agent';
 export type AuthType = 'ed25519' | 'token';
@@ -198,20 +200,104 @@ export function revokeDevice(deviceId: string): boolean {
     throw new Error(`devices: "${deviceId}" is already revoked`);
   }
 
-  // Step 1: Cascade to auth — unregister the device's DID so it can
-  // no longer pass caller-type resolution.
+  cutDeviceAccess(device);
+  device.revoked = true;
+
+  // SQL write-through (fire-and-forget) so a revoke survives restart even
+  // on this legacy sync path (issues.txt §5). The DURABLE guarantee — fail
+  // the call when persistence fails — is `revokeDeviceDurable`, which the
+  // release UI/routes use. Without ANY write-through, `hydrateDeviceRegistry`
+  // reloaded the row as revoked=0 on the next boot and the device became
+  // trusted again.
+  const sqlRepo = getDeviceRepository();
+  if (sqlRepo) {
+    void sqlRepo.revoke(deviceId).catch(() => {
+      /* best-effort — the durable variant is the guaranteed path */
+    });
+  }
+  notifyListeners();
+  return true;
+}
+
+/** Result of a durable revoke. `durable` is false when SQL persistence failed. */
+export interface DeviceRevokeResult {
+  found: boolean;
+  /** In-memory + auth access was cut (fail-safe, even if persistence failed). */
+  revoked: boolean;
+  /** The revocation was durably persisted to SQL. */
+  durable: boolean;
+  alreadyRevoked?: boolean;
+  error?: string;
+}
+
+/**
+ * Revoke a device DURABLY (issues.txt §5). Persists `revoked=1` to SQL
+ * BEFORE reporting durable success, so a restart can never re-trust the
+ * device. Idempotent (re-revoking a revoked device is a success no-op).
+ * If the SQL write fails, access is still cut in-memory as a fail-safe,
+ * but the result reports `durable: false` so the UI/route surfaces a
+ * persistence warning instead of claiming a durable revoke.
+ *
+ * Also cascades to the device's durable agent persona-grants (§2): a
+ * revoked agent immediately loses any locked-vault access it was granted.
+ */
+export async function revokeDeviceDurable(deviceId: string): Promise<DeviceRevokeResult> {
+  const device = devices.get(deviceId);
+  if (!device) return { found: false, revoked: false, durable: false, error: 'not_found' };
+  if (device.revoked) {
+    return { found: true, revoked: true, durable: true, alreadyRevoked: true };
+  }
+
+  // Step 1: Persist FIRST — durability is claimed only after this succeeds.
+  const sqlRepo = getDeviceRepository();
+  let durable = false;
+  let error: string | undefined;
+  if (sqlRepo === null) {
+    error = 'no_repository';
+  } else {
+    try {
+      durable = await sqlRepo.revoke(deviceId);
+      if (!durable) error = 'row_not_found';
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  // Step 2: Cut access (in-memory + auth) regardless — fail-safe deny.
+  cutDeviceAccess(device);
+  device.revoked = true;
+
+  // Step 3: Cascade — revoke this DID's durable agent grants so a revoked
+  // agent can't keep reading a locked persona with a stale grant (§2/§5).
+  try {
+    const grantRepo = getAgentGrantRepository();
+    if (grantRepo !== null && device.did !== '') {
+      grantRepo.revokeForAgent(device.did, Date.now());
+    }
+  } catch {
+    /* best-effort */
+  }
+
+  notifyListeners();
+  appendAudit(
+    device.did !== '' ? device.did : deviceId,
+    'device_revoked',
+    deviceId,
+    `durable=${durable}${error !== undefined ? ` error=${error}` : ''}`,
+  );
+
+  return { found: true, revoked: true, durable, ...(error !== undefined ? { error } : {}) };
+}
+
+/** Cut a device's auth access — unregister its DID from caller-type resolution. */
+function cutDeviceAccess(device: PairedDevice): void {
   try {
     const pubKey = multibaseToPublicKey(device.publicKeyMultibase);
     const deviceDID = deriveDIDKey(pubKey);
     unregisterDeviceAuth(deviceDID);
   } catch {
-    // If DID derivation fails (corrupted key), still proceed with revocation
+    // If DID derivation fails (corrupted key), still proceed with revocation.
   }
-
-  // Step 2: Mark revoked in device registry
-  device.revoked = true;
-  notifyListeners();
-  return true;
 }
 
 /** Check if a device is active (exists and not revoked). */

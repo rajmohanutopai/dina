@@ -6,6 +6,7 @@
 
 import {
   createReminder,
+  createReminderDurable,
   getReminder,
   getByShortId,
   listPending,
@@ -73,8 +74,95 @@ describe('Reminder Service', () => {
     });
   });
 
+  describe('createReminderDurable (HTTP-route path — durable-at-ack)', () => {
+    afterEach(() => setReminderRepository(null));
+
+    /** A ReminderRepository whose `create` outcome the test controls. */
+    function stubRepo(onCreate: (r: Reminder) => Promise<void>): ReminderRepository {
+      return {
+        create: onCreate,
+        get: async () => null,
+        listPending: async () => [],
+        listByPersona: async () => [],
+        listAll: async () => [],
+        update: async () => {},
+        remove: async () => false,
+      };
+    }
+
+    it('persists (awaits create) then returns the reminder', async () => {
+      const persisted: Reminder[] = [];
+      setReminderRepository(stubRepo(async (r) => { persisted.push(r); }));
+      const r = await createReminderDurable({
+        message: 'Pay rent',
+        due_at: Date.now() + 60_000,
+        persona: 'general',
+      });
+      // The durable write happened BEFORE the ack, and the row is live.
+      expect(persisted.map((x) => x.id)).toEqual([r.id]);
+      expect(listByPersona('general').map((x) => x.id)).toEqual([r.id]);
+    });
+
+    it('leaves nothing in memory + throws when the SQL write fails', async () => {
+      setReminderRepository(stubRepo(async () => { throw new Error('disk full'); }));
+      await expect(
+        createReminderDurable({ message: 'x', due_at: Date.now() + 1000, persona: 'general' }),
+      ).rejects.toThrow(/durable create failed: disk full/);
+      // SQL-first registration: the in-memory row is only added AFTER the
+      // write resolves, so a failed write leaves no phantom reminder.
+      expect(listByPersona('general')).toHaveLength(0);
+    });
+
+    it('coalesces concurrent identical creates onto ONE write + outcome (#2)', async () => {
+      let writes = 0;
+      let resolveWrite: (() => void) | undefined;
+      // Hold the first write open so the duplicate races while it's pending.
+      const gate = new Promise<void>((res) => {
+        resolveWrite = res;
+      });
+      setReminderRepository(
+        stubRepo(async () => {
+          writes++;
+          await gate;
+        }),
+      );
+      const input = { message: 'call mom', due_at: Date.now() + 1000, persona: 'general' };
+      const p1 = createReminderDurable(input);
+      const p2 = createReminderDurable(input); // concurrent duplicate, write still pending
+      resolveWrite!();
+      const [r1, r2] = await Promise.all([p1, p2]);
+
+      // Both callers get the SAME reminder, and only ONE SQL write happened
+      // — the duplicate never acked off a not-yet-persisted in-memory row.
+      expect(r2.id).toBe(r1.id);
+      expect(writes).toBe(1);
+      expect(listByPersona('general')).toHaveLength(1);
+    });
+
+    it('a concurrent duplicate also fails when the single shared write fails (#2)', async () => {
+      setReminderRepository(stubRepo(async () => { throw new Error('disk full'); }));
+      const input = { message: 'x', due_at: Date.now() + 1000, persona: 'general' };
+      const results = await Promise.allSettled([
+        createReminderDurable(input),
+        createReminderDurable(input),
+      ]);
+      // Neither caller gets a false success off the other's pending write.
+      for (const r of results) expect(r.status).toBe('rejected');
+      expect(listByPersona('general')).toHaveLength(0);
+    });
+
+    it('with no repo wired behaves like createReminder (in-memory IS the truth)', async () => {
+      const r = await createReminderDurable({
+        message: 'no-repo',
+        due_at: Date.now() + 1000,
+        persona: 'general',
+      });
+      expect(listByPersona('general').map((x) => x.id)).toEqual([r.id]);
+    });
+  });
+
   describe('dedup', () => {
-    it('prevents duplicate by (source_item_id, kind, due_at, persona)', () => {
+    it('prevents a true duplicate (same source_item_id, kind, due_at, persona, message)', () => {
       const dueAt = Date.now() + 60_000;
       const r1 = createReminder({
         message: 'Birthday',
@@ -84,13 +172,54 @@ describe('Reminder Service', () => {
         source_item_id: 'email-123',
       });
       const r2 = createReminder({
-        message: 'Birthday duplicate',
+        message: 'Birthday', // identical → genuine duplicate (e.g. re-ingest)
         due_at: dueAt,
         persona: 'general',
         kind: 'birthday',
         source_item_id: 'email-123',
       });
       expect(r1.id).toBe(r2.id); // same reminder returned
+    });
+
+    it('allows two DIFFERENT-message reminders from the same source at the same time', () => {
+      // One email can legitimately yield two distinct reminders ("dentist
+      // appointment" + "bring insurance card") at the same due_at. message
+      // is part of the dedup identity, so the second is NOT dropped.
+      const dueAt = Date.now() + 60_000;
+      const r1 = createReminder({
+        message: 'Dentist appointment',
+        due_at: dueAt,
+        persona: 'general',
+        kind: 'event',
+        source_item_id: 'email-9',
+      });
+      const r2 = createReminder({
+        message: 'Bring insurance card',
+        due_at: dueAt,
+        persona: 'general',
+        kind: 'event',
+        source_item_id: 'email-9',
+      });
+      expect(r1.id).not.toBe(r2.id);
+    });
+
+    it('does NOT collide two different MANUAL reminders at the same time (#1)', () => {
+      // The /ask path passes no source_item_id and kind=manual; before the
+      // fix, "call mom at 5" and "take medicine at 5" shared a dedup key and
+      // the second was silently dropped.
+      const dueAt = Date.now() + 60_000;
+      const r1 = createReminder({ message: 'call mom', due_at: dueAt, persona: 'general' });
+      const r2 = createReminder({ message: 'take medicine', due_at: dueAt, persona: 'general' });
+      expect(r1.id).not.toBe(r2.id);
+      expect(listByPersona('general')).toHaveLength(2);
+    });
+
+    it('still dedups an identical manual reminder (double-submit)', () => {
+      const dueAt = Date.now() + 60_000;
+      const r1 = createReminder({ message: 'call mom', due_at: dueAt, persona: 'general' });
+      const r2 = createReminder({ message: 'call mom', due_at: dueAt, persona: 'general' });
+      expect(r1.id).toBe(r2.id);
+      expect(listByPersona('general')).toHaveLength(1);
     });
 
     it('allows same kind+source_item_id in different persona', () => {

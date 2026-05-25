@@ -174,23 +174,23 @@ describe('Briefing Providers', () => {
   });
 
   describe('end-to-end: providers → assembly', () => {
-    it('assembleBriefing returns briefing with memories section', () => {
+    it('assembleBriefing returns briefing with memories section', async () => {
       // Store a vault item with current timestamp
       storeItem('general', makeVaultItem({ summary: 'Important meeting notes', created_at: NOW }));
 
       // Register memory provider
       registerMemoryProvider(() => collectNewMemories(NOW + 1000));
 
-      const briefing = assembleBriefing(NOW + 1000);
+      const briefing = await assembleBriefing(NOW + 1000);
       expect(briefing).not.toBeNull();
       expect(briefing!.totalItems).toBeGreaterThan(0);
       expect(briefing!.sections.memories.length).toBeGreaterThan(0);
       expect(briefing!.sections.memories[0].title).toBeTruthy();
     });
 
-    it('assembleBriefing returns null when nothing to report', () => {
+    it('assembleBriefing returns null when nothing to report', async () => {
       // No providers registered, no reminders
-      const briefing = assembleBriefing(NOW);
+      const briefing = await assembleBriefing(NOW);
       expect(briefing).toBeNull();
     });
   });

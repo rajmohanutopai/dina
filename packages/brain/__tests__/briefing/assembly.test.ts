@@ -27,48 +27,48 @@ describe('Daily Briefing Assembly', () => {
   });
 
   describe('assembleBriefing', () => {
-    it('returns null when nothing to report (Silence First)', () => {
-      expect(assembleBriefing()).toBeNull();
+    it('returns null when nothing to report (Silence First)', async () => {
+      expect(await assembleBriefing()).toBeNull();
     });
 
-    it('includes engagement items from provider', () => {
+    it('includes engagement items from provider', async () => {
       registerEngagementProvider(() => [
         { type: 'engagement', title: 'New RSS article', timestamp: Date.now() },
         { type: 'engagement', title: 'Social notification', timestamp: Date.now() },
       ]);
-      const briefing = assembleBriefing();
+      const briefing = await assembleBriefing();
       expect(briefing).not.toBeNull();
       expect(briefing!.sections.engagement).toHaveLength(2);
       expect(briefing!.totalItems).toBe(2);
     });
 
-    it('includes upcoming reminders', () => {
+    it('includes upcoming reminders', async () => {
       const now = Date.now();
       createReminder({ message: 'Team standup', due_at: now - 1000, persona: 'work' });
       createReminder({ message: 'Future reminder', due_at: now + 999_999_999, persona: 'work' });
-      const briefing = assembleBriefing(now);
+      const briefing = await assembleBriefing(now);
       expect(briefing).not.toBeNull();
       // First reminder is due, second is within 24h window
       expect(briefing!.sections.reminders.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('includes pending approvals from provider', () => {
+    it('includes pending approvals from provider', async () => {
       registerApprovalProvider(() => [
         { type: 'approval', title: 'Unlock health persona', timestamp: Date.now() },
       ]);
-      const briefing = assembleBriefing();
+      const briefing = await assembleBriefing();
       expect(briefing!.sections.approvals).toHaveLength(1);
     });
 
-    it('includes new memories from provider', () => {
+    it('includes new memories from provider', async () => {
       registerMemoryProvider(() => [
         { type: 'memory', title: 'Stored 3 emails', timestamp: Date.now() },
       ]);
-      const briefing = assembleBriefing();
+      const briefing = await assembleBriefing();
       expect(briefing!.sections.memories).toHaveLength(1);
     });
 
-    it('combines all sections with correct total', () => {
+    it('combines all sections with correct total', async () => {
       registerEngagementProvider(() => [
         { type: 'engagement', title: 'RSS', timestamp: Date.now() },
       ]);
@@ -79,16 +79,16 @@ describe('Daily Briefing Assembly', () => {
       const now = Date.now();
       createReminder({ message: 'Reminder', due_at: now - 1000, persona: 'general' });
 
-      const briefing = assembleBriefing(now);
+      const briefing = await assembleBriefing(now);
       expect(briefing!.totalItems).toBeGreaterThanOrEqual(4);
     });
 
-    it('has generatedAt timestamp', () => {
+    it('has generatedAt timestamp', async () => {
       registerEngagementProvider(() => [
         { type: 'engagement', title: 'Item', timestamp: Date.now() },
       ]);
       const before = Date.now();
-      const briefing = assembleBriefing();
+      const briefing = await assembleBriefing();
       expect(briefing!.generatedAt).toBeGreaterThanOrEqual(before);
     });
   });
@@ -179,13 +179,13 @@ describe('Daily Briefing Assembly', () => {
       expect(sorted[0].source).toBe('health');
     });
 
-    it('engagement section is sorted in assembled briefing', () => {
+    it('engagement section is sorted in assembled briefing', async () => {
       registerEngagementProvider(() => [
         { type: 'engagement', title: 'RSS feed', source: 'rss', timestamp: 1000 },
         { type: 'engagement', title: 'Bank notification', source: 'bank', timestamp: 1000 },
         { type: 'engagement', title: 'Calendar event', source: 'calendar', timestamp: 1000 },
       ]);
-      const briefing = assembleBriefing();
+      const briefing = await assembleBriefing();
       expect(briefing).not.toBeNull();
       expect(briefing!.sections.engagement[0].source).toBe('bank');
       expect(briefing!.sections.engagement[1].source).toBe('calendar');
@@ -232,13 +232,13 @@ describe('Daily Briefing Assembly', () => {
       expect(deduped).toHaveLength(2);
     });
 
-    it('dedup applied in assembled briefing', () => {
+    it('dedup applied in assembled briefing', async () => {
       registerEngagementProvider(() => [
         { type: 'engagement', title: 'Same news', source: 'rss', timestamp: 1000 },
         { type: 'engagement', title: 'Same news', source: 'feed', timestamp: 2000 },
         { type: 'engagement', title: 'Unique news', source: 'rss', timestamp: 1500 },
       ]);
-      const briefing = assembleBriefing();
+      const briefing = await assembleBriefing();
       expect(briefing).not.toBeNull();
       expect(briefing!.sections.engagement).toHaveLength(2);
       expect(briefing!.totalItems).toBe(2);

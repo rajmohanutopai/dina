@@ -33,7 +33,7 @@ import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 import {
   generatePairingCode,
   listDevices,
-  revokeDevice,
+  revokeDeviceDurable,
   type DeviceRole,
   type PairedDevice,
 } from '@dina/core/devices';
@@ -94,15 +94,24 @@ export default function PairedDevicesScreen() {
             text: 'Revoke',
             style: 'destructive',
             onPress: () => {
-              try {
-                revokeDevice(device.deviceId);
-                refreshDevices();
-              } catch (err) {
-                Alert.alert(
-                  'Revoke failed',
-                  err instanceof Error ? err.message : String(err),
-                );
-              }
+              // issues.txt §5 — durable revoke: persist revoked=1 to SQL
+              // BEFORE reporting success so a restart can't re-trust the
+              // device. If persistence fails, access is still cut in-memory
+              // but we must NOT claim a durable revoke — surface a warning.
+              void (async () => {
+                try {
+                  const result = await revokeDeviceDurable(device.deviceId);
+                  refreshDevices();
+                  if (!result.durable) {
+                    Alert.alert(
+                      'Revoke not fully saved',
+                      'Access was cut on this device, but the change could not be saved durably. It may not survive a restart — please retry.',
+                    );
+                  }
+                } catch (err) {
+                  Alert.alert('Revoke failed', err instanceof Error ? err.message : String(err));
+                }
+              })();
             },
           },
         ],

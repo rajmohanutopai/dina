@@ -43,8 +43,19 @@ import {
   SQLitePeopleRepository,
   type PeopleRepository,
 } from '../../src/people/repository';
-import { checkContactGate, clearGatesState } from '../../src/d2d/gates';
+import {
+  checkContactGate,
+  clearGatesState,
+  addContact as addEgressGateContact,
+} from '../../src/d2d/gates';
 import { isContactRing1, clearKnownContacts } from '../../src/peerlens/source_trust';
+import { rebuildContactProjections, mergeContactPersons } from '../../src/contacts/directory';
+import {
+  InMemoryVaultRepository,
+  setVaultRepository,
+  getVaultRepository,
+  resetVaultRepositories,
+} from '../../src/vault/repository';
 
 describe('Contact Directory', () => {
   // Contact policy is person-keyed; the directory resolves did→person
@@ -317,6 +328,23 @@ describe('Contact Directory', () => {
       expect(() => addAlias('did:plc:bob', 'Ali')).toThrow('already taken');
     });
 
+    it('is SQL-authoritative on a cold cache — alias owned in SQL still blocks (#3)', () => {
+      addContact('did:plc:alice', 'Alice');
+      addContact('did:plc:bob', 'Bob');
+      addAlias('did:plc:alice', 'ace'); // Alice owns "ace" in SQL + memory
+
+      // Cold cache: drop the in-memory aliasIndex (post-reload, pre-hydrate)
+      // but keep SQL. The old check trusted only the empty in-memory index.
+      resetContactDirectory();
+
+      // Bob tries to claim "ace" — SQL still says Alice owns it, so it must
+      // be rejected (not silently mis-assigned to Bob in memory while the
+      // repo's INSERT OR IGNORE drops the write).
+      expect(() => addAlias('did:plc:bob', 'ace')).toThrow('already taken');
+      // And re-claiming by the true owner is still idempotent.
+      expect(() => addAlias('did:plc:alice', 'ace')).not.toThrow();
+    });
+
     it('allows adding same alias to same contact (idempotent)', () => {
       addContact('did:plc:alice', 'Alice');
       addAlias('did:plc:alice', 'Ali');
@@ -395,6 +423,81 @@ describe('Contact Directory', () => {
       updateContact('did:plc:alice', { relationship: 'spouse' });
       expect(getContact('did:plc:alice')!.relationship).toBe('spouse');
       expect(getContact('did:plc:alice')!.dataResponsibility).toBe('household');
+    });
+
+    it('persists the relationship-derived dataResponsibility across a hydrate round-trip', () => {
+      addContact('did:plc:alice', 'Alice'); // unknown → external
+      updateContact('did:plc:alice', { relationship: 'spouse' }); // derives household
+      expect(getContact('did:plc:alice')!.dataResponsibility).toBe('household');
+
+      // The DERIVED field must reach SQL, not just the live map: update()
+      // writes exactly the fields handed to it, so persisting the raw
+      // `updates` partial (no dataResponsibility) would leave SQL on the
+      // old 'external'. Hydrate (restart proxy) proves the derived value
+      // survived.
+      resetContactDirectory();
+      hydrateContactDirectory();
+      expect(getContact('did:plc:alice')!.relationship).toBe('spouse');
+      expect(getContact('did:plc:alice')!.dataResponsibility).toBe('household');
+    });
+
+    it('updateContact is SQL-first: a failed durable write leaves memory unchanged', () => {
+      addContact('did:plc:alice', 'Alice', 'unknown');
+      // A repo whose update() throws (e.g. disk full), delegating
+      // everything else to the real one.
+      const real = new SQLiteContactRepository(adapter);
+      const failing: ContactRepository = {
+        add: (c) => real.add(c),
+        get: (id) => real.get(id),
+        list: () => real.list(),
+        update: () => {
+          throw new Error('disk full');
+        },
+        remove: (id) => real.remove(id),
+        addAlias: (p, a) => real.addAlias(p, a),
+        removeAlias: (a) => real.removeAlias(a),
+        resolveAlias: (a) => real.resolveAlias(a),
+        getAliases: (p) => real.getAliases(p),
+        setPreferredFor: (p, c) => real.setPreferredFor(p, c),
+        getPreferredFor: (p) => real.getPreferredFor(p),
+        findByPreferredFor: (c) => real.findByPreferredFor(c),
+      };
+      setContactRepository(failing);
+      try {
+        expect(() => updateContact('did:plc:alice', { trustLevel: 'trusted' })).toThrow(
+          'disk full',
+        );
+        // SQL-first: the durable write threw BEFORE the cache was touched,
+        // so the in-memory contact still reads the pre-update trust level
+        // (no divergence between memory and disk).
+        expect(getContact('did:plc:alice')!.trustLevel).toBe('unknown');
+      } finally {
+        setContactRepository(real);
+      }
+    });
+
+    it('re-add on a cold cache preserves the existing relationship + dataResponsibility (#4)', () => {
+      addContact('did:plc:alice', 'Alice', 'verified', 'summary', 'spouse');
+      expect(getContact('did:plc:alice')!.relationship).toBe('spouse');
+      expect(getContact('did:plc:alice')!.dataResponsibility).toBe('household');
+
+      // Simulate a cold cache (e.g. a phone-contact re-sync after restart,
+      // before hydration): drop the in-memory directory but keep SQL.
+      resetContactDirectory();
+
+      // Re-add WITHOUT a relationship — must NOT reset spouse→unknown /
+      // household→external just because opts omitted them.
+      addContact('did:plc:alice', 'Alice');
+      expect(getContact('did:plc:alice')!.relationship).toBe('spouse');
+      expect(getContact('did:plc:alice')!.dataResponsibility).toBe('household');
+    });
+
+    it('an explicit relationship on re-add still re-derives dataResponsibility', () => {
+      addContact('did:plc:alice', 'Alice', 'verified', 'summary', 'spouse'); // household
+      resetContactDirectory();
+      addContact('did:plc:alice', 'Alice', 'verified', 'summary', 'friend'); // → external
+      expect(getContact('did:plc:alice')!.relationship).toBe('friend');
+      expect(getContact('did:plc:alice')!.dataResponsibility).toBe('external');
     });
 
     it('updateContact rejects invalid relationship', () => {
@@ -1019,6 +1122,78 @@ describe('Contact Directory', () => {
       // …but the person + their DID identity survive (history preserved).
       const after = getPeopleRepository()?.resolveByIdentity('did', 'did:plc:alice');
       expect(after?.personId).toBe(before?.personId);
+    });
+
+    it('rebuildContactProjections prunes orphaned DIDs + restores real ones', () => {
+      addContact('did:plc:alice', 'Alice', 'verified');
+      // Simulate drift: a stale DID in the gate with no backing contact
+      // (e.g. a person rejected via the people repo without a directory
+      // removal). rebuild must prune it and keep the real contact.
+      addEgressGateContact('did:plc:ghost');
+      expect(checkContactGate('did:plc:ghost')).toBe(true);
+
+      rebuildContactProjections();
+
+      expect(checkContactGate('did:plc:ghost')).toBe(false); // orphan pruned
+      expect(checkContactGate('did:plc:alice')).toBe(true); // real contact kept
+      expect(isContactRing1('did:plc:alice')).toBe(true);
+    });
+
+    it('mergeContactPersons folds policy + re-points subject links + tombstones the loser', () => {
+      setVaultRepository('general', new InMemoryVaultRepository());
+      try {
+        const keep = addContact('did:plc:keep', 'Keeper', 'verified');
+        setPreferredFor('did:plc:keep', ['dental']);
+        const loser = addContact('did:plc:loser', 'Loser', 'verified');
+        setPreferredFor('did:plc:loser', ['tax']);
+
+        // A REAL stored memory, subject-linked to the loser person — so
+        // we can prove end-to-end recall survives the merge, not just that
+        // a synthetic id moved between subject maps.
+        const vault = getVaultRepository('general')!;
+        vault.storeItemSync({
+          id: 'item-pref',
+          type: 'note',
+          persona: 'general',
+          content_l0: 'Loser prefers oat milk',
+          timestamp: Date.now(),
+        } as unknown as Parameters<typeof vault.storeItemSync>[0]);
+        vault.linkSubjectSync('item-pref', loser.personId, { source: 'manual' });
+
+        // Sanity: the loser's note is retrievable BEFORE the merge.
+        expect(
+          vault.getItemsForPersonSync(loser.personId, 10).map((i) => i.id),
+        ).toEqual(['item-pref']);
+
+        mergeContactPersons(keep.personId, loser.personId);
+
+        // Subject link re-pointed to the survivor; none left on the loser.
+        expect(vault.getItemIdsForPersonSync(keep.personId)).toContain('item-pref');
+        expect(vault.getItemIdsForPersonSync(loser.personId)).toEqual([]);
+        // The REAL item is now recallable through the survivor — content
+        // and all — which is the actual user-visible promise of a merge.
+        const recalled = vault.getItemsForPersonSync(keep.personId, 10);
+        expect(recalled.map((i) => i.id)).toContain('item-pref');
+        expect(recalled.find((i) => i.id === 'item-pref')?.content_l0).toBe(
+          'Loser prefers oat milk',
+        );
+        // Contact policy folded: survivor now carries both preferred_for.
+        expect(getContact('did:plc:keep')?.preferredFor?.sort()).toEqual(['dental', 'tax']);
+        // …and the merged categories are PERSISTED, not just in the live
+        // map: a hydrate round-trip (proxy for restart) must still show
+        // both. `update()` ignores preferred_for, so without the explicit
+        // setPreferredFor in the merge the loser's 'tax' would vanish here.
+        resetContactDirectory();
+        hydrateContactDirectory();
+        expect(getContact('did:plc:keep')?.preferredFor?.sort()).toEqual(['dental', 'tax']);
+        // Loser tombstoned; its DID now resolves to the survivor (identity moved).
+        expect(getPeopleRepository()?.getPerson(loser.personId)?.status).toBe('rejected');
+        expect(getContact('did:plc:loser')?.personId).toBe(keep.personId);
+        // Only the survivor remains as a live person.
+        expect(getPeopleRepository()?.listPeople().map((p) => p.personId)).toEqual([keep.personId]);
+      } finally {
+        setVaultRepository('general', null);
+      }
     });
 
     it('two DIDs on one person both resolve to that person', () => {

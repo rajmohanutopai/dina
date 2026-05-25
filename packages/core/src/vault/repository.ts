@@ -73,6 +73,13 @@ export interface VaultRepository {
   getItemIdsForPersonSync(personId: string): string[];
   getItemsForPersonSync(personId: string, limit: number): VaultItem[];
   /**
+   * Re-point every subject link from `fromPersonId` to `toPersonId`
+   * (used by a people-merge). On an (item, toPerson) collision the
+   * survivor's link is kept and the loser dropped. No-op for equal/empty
+   * ids.
+   */
+  repointSubjectsSync(fromPersonId: string, toPersonId: string): void;
+  /**
    * Enumerate every **non-deleted** item (matches the API's default
    * "deleted rows are invisible" rule — same as `getItemSync`, the
    * FTS + hybrid query paths, etc.). Callers that need to see deleted
@@ -119,6 +126,11 @@ export function setVaultRepository(persona: string, r: VaultRepository | null): 
 /** Get vault repository for a persona (null = in-memory). */
 export function getVaultRepository(persona: string): VaultRepository | null {
   return repos.get(persona) ?? null;
+}
+
+/** Personas that currently have a wired vault repository. */
+export function listVaultPersonas(): string[] {
+  return [...repos.keys()];
 }
 
 /** Clear all repositories (for testing). */
@@ -326,6 +338,17 @@ export class SQLiteVaultRepository implements VaultRepository {
     );
     return rows.map(rowToVaultItem);
   }
+
+  repointSubjectsSync(fromPersonId: string, toPersonId: string): void {
+    if (fromPersonId === '' || toPersonId === '' || fromPersonId === toPersonId) return;
+    // Move links to the survivor; `OR IGNORE` skips any (item, survivor)
+    // pair that already exists (PK collision), then drop the leftovers.
+    this.db.execute(
+      `UPDATE OR IGNORE vault_item_subjects SET person_id = ? WHERE person_id = ?`,
+      [toPersonId, fromPersonId],
+    );
+    this.db.execute(`DELETE FROM vault_item_subjects WHERE person_id = ?`, [fromPersonId]);
+  }
 }
 
 /**
@@ -495,6 +518,18 @@ export class InMemoryVaultRepository implements VaultRepository {
       if (out.length >= limit) break;
     }
     return out;
+  }
+
+  repointSubjectsSync(fromPersonId: string, toPersonId: string): void {
+    if (fromPersonId === '' || toPersonId === '' || fromPersonId === toPersonId) return;
+    const fromList = this.subjects.get(fromPersonId);
+    if (fromList === undefined) return;
+    const toList = this.subjects.get(toPersonId) ?? [];
+    for (const itemId of fromList) {
+      if (!toList.includes(itemId)) toList.push(itemId);
+    }
+    this.subjects.set(toPersonId, toList);
+    this.subjects.delete(fromPersonId);
   }
 }
 

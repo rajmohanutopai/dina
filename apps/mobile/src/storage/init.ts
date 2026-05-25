@@ -42,7 +42,19 @@ import {
   shutdownPersistence,
   type DatabaseAdapter,
 } from '@dina/core/storage';
-import { hydrateContactDirectory } from '@dina/core';
+import {
+  hydrateContactDirectory,
+  SQLiteD2DOutboxRepository,
+  setD2DOutboxRepository,
+  recoverOutboxOnBoot,
+  SQLiteAgentGrantRepository,
+  setAgentGrantRepository,
+  setAgentPersonaUnlockHook,
+  setArchiveDataSource,
+  listPersonas,
+  getPersonaTier,
+  type ArchivePersonaSource,
+} from '@dina/core';
 import { hydrateNotifications } from '@dina/brain/notifications';
 // Expo 55 exposes the document-directory constant through `Paths.document` (a
 // `Directory` object exposing `.uri`). op-sqlite's `location` parameter takes a
@@ -112,6 +124,90 @@ export async function initializePersistence(
   // Sancho-specific context, even though the user had stored
   // notes about him.
   setPeopleRepository(new SQLitePeopleRepository(identityDB));
+
+  // issues.txt §1 — durable D2D outbox. Without this the outbox falls
+  // back to an in-memory Map that loses every queued outbound message on
+  // app kill/background, breaking service-query / approval / task-handoff
+  // reliability. Installing the SQL repo makes `enqueueD2D` write-through
+  // to identity.sqlite; `recoverOutboxOnBoot()` then reclaims any rows a
+  // prior crash left mid-send (state='sending', lease expired) back to
+  // 'pending'. The periodic drainer + the re-delivery function are wired
+  // in boot_capabilities once the signing identity is available.
+  setD2DOutboxRepository(new SQLiteD2DOutboxRepository(identityDB));
+  recoverOutboxOnBoot();
+
+  // issues.txt §2 — durable agent persona grants. Without this the
+  // locked-vault approval gate has nowhere to record an approved grant,
+  // so a paired agent could never resume after approval (and, worse, the
+  // in-memory fallback would lose the grant on restart). Installing the
+  // SQL repo makes `requireAgentPersonaAccess` durable end-to-end.
+  setAgentGrantRepository(new SQLiteAgentGrantRepository(identityDB));
+
+  // issues.txt §2 — approving an agent's locked-persona request also opens
+  // that persona (derives its DEK into RAM) so the agent's retry can decrypt.
+  // openPersonaDB derives the DEK from the unlocked master seed.
+  setAgentPersonaUnlockHook((persona) => openPersonaDB(persona));
+
+  // issues.txt §3 — real export/import. Wire the archive data source so a
+  // UI "export" reads actual identity + per-persona rows (not the old
+  // empty manifest) and a clean-install import restores them. Secrets are
+  // excluded inside the archive layer (table allowlist + kv key denylist).
+  setArchiveDataSource({
+    identityAdapter: () => identityAdapter,
+    personaSources: async (): Promise<ArchivePersonaSource[]> => {
+      if (!provider) throw new Error('export: persistence not initialized');
+      const out: ArchivePersonaSource[] = [];
+      for (const p of listPersonas()) {
+        // Open the vault on demand rather than skipping a not-yet-open
+        // persona — backup is a sovereignty feature, so a partial archive
+        // must not be produced silently. If a persona can't be opened the
+        // open throws and the whole export fails loudly (issues.txt §3).
+        const adapter = await openPersonaVault(provider, p.name);
+        out.push({ name: p.name, tier: getPersonaTier(p.name), adapter });
+      }
+      return out;
+    },
+    openPersonaForRestore: async (name) => {
+      if (!provider) throw new Error('archive restore: persistence not initialized');
+      const adapter = await openPersonaVault(provider, name);
+      setVaultRepository(name, new SQLiteVaultRepository(adapter));
+      setTopicRepository(name, new SQLiteTopicRepository(adapter));
+      return adapter;
+    },
+    hasExistingUserData: async (): Promise<boolean> => {
+      if (identityAdapter === null) return false;
+      // Any of these identity tables holding a row means real user content
+      // exists (clean-install import would merge/overwrite it). kv_store is
+      // deliberately EXCLUDED — it carries system rows (notification perms/
+      // mirrors) even on a fresh onboard, so it isn't a "user data" signal.
+      const idTables = [
+        'reminders',
+        'contacts',
+        'people',
+        'person_identities',
+        'chat_messages',
+        'service_config',
+      ];
+      for (const t of idTables) {
+        try {
+          if (identityAdapter.query(`SELECT 1 FROM ${t} LIMIT 1`).length > 0) return true;
+        } catch {
+          /* table absent in this DB — ignore */
+        }
+      }
+      // Persona vault content (any open persona).
+      for (const p of listPersonas()) {
+        const adapter = await (provider ? provider.getPersonaDB(p.name) : Promise.resolve(null));
+        if (adapter === null) continue;
+        try {
+          if (adapter.query('SELECT 1 FROM vault_items LIMIT 1').length > 0) return true;
+        } catch {
+          /* ignore */
+        }
+      }
+      return false;
+    },
+  });
 
   // GAP-PERSIST-02: hydrate the in-memory contact directory from
   // SQLite so persisted contacts (and their alias index) are visible

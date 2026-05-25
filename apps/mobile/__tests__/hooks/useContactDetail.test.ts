@@ -17,13 +17,18 @@ import {
   resetContactDetail,
 } from '../../src/hooks/useContactDetail';
 import { addContact, resetContactDirectory } from '../../../core/src/contacts/directory';
+import { setPeopleRepository } from '../../../core/src/people/repository';
 import { clearSharingPolicies } from '../../../core/src/gatekeeper/sharing';
+import { makeFakePeopleRepo } from '@dina/test-harness';
 
 const DID = 'did:key:z6MkAlice000000000000000000000000000000000000';
 
 describe('Contact Detail Hook (6.17)', () => {
   beforeEach(() => {
     resetContactDirectory();
+    // Person-keyed contacts (identity-hub redesign) — wire the people repo
+    // before addContact resolves did→person.
+    setPeopleRepository(makeFakePeopleRepo());
     clearSharingPolicies();
     resetContactDetail();
     addContact(DID, 'Alice', 'verified', 'summary');

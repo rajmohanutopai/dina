@@ -25,11 +25,18 @@ import {
   addContact,
   getContact,
 } from '../../../core/src/contacts/directory';
+import { setPeopleRepository } from '../../../core/src/people/repository';
+import { makeFakePeopleRepo } from '@dina/test-harness';
 
 type TestCoreClient = StagingDrainCoreClient & Pick<CoreClient, 'memoryTouch' | 'updateContact'>;
 
 describe('staging drain end-to-end — GAP-RT-02 / PC-BRAIN-13', () => {
-  beforeEach(() => resetContactDirectory());
+  beforeEach(() => {
+    resetContactDirectory();
+    // Person-keyed contacts (identity-hub redesign) — the drain's
+    // preference binder resolves did→person through the people graph.
+    setPeopleRepository(makeFakePeopleRepo());
+  });
   afterEach(() => resetContactDirectory());
 
   it('ingesting an item mentioning "my dentist Dr Carl" binds the dental preference on his contact', async () => {

@@ -13,7 +13,7 @@
  * Source: ARCHITECTURE.md Task 5.4
  */
 
-import { listPending } from '@dina/core/reminders';
+import { listPendingRemindersRouted } from '../reminders/backend';
 
 export interface BriefingItem {
   type: 'engagement' | 'reminder' | 'approval' | 'memory';
@@ -79,15 +79,17 @@ export function registerMemoryProvider(provider: () => BriefingItem[]): void {
  * Collects items from all sections. Returns null if nothing to report
  * (Silence First — don't surface an empty briefing).
  */
-export function assembleBriefing(now?: number): Briefing | null {
+export async function assembleBriefing(now?: number): Promise<Briefing | null> {
   const currentTime = now ?? Date.now();
 
   // 1. Engagement: Tier 3 items from last 24h
   const engagement = engagementProvider ? engagementProvider() : [];
 
-  // 2. Reminders: due in next 24h
+  // 2. Reminders: due in next 24h. Out-of-process (lite): reminders live
+  // in Core's process — read over the backend. In-process (mobile): the
+  // local reminder service.
   const reminderWindow = currentTime + 24 * 60 * 60 * 1000;
-  const pendingReminders = listPending(reminderWindow);
+  const pendingReminders = await listPendingRemindersRouted(reminderWindow);
   const reminders: BriefingItem[] = pendingReminders.map((r) => ({
     type: 'reminder' as const,
     title: r.message,

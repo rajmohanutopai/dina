@@ -29,7 +29,10 @@ export default function RemindersScreen() {
   const [sections, setSections] = useState<ReminderGroup[]>([]);
 
   const refresh = useCallback(() => {
-    setSections(groupByDay(getUpcomingReminders()));
+    // Async since the identity-hub work: on web the data layer round-trips
+    // to the brain-server; on mobile it resolves in-process. Fire-and-forget
+    // from the effect/handlers — failures leave the prior list in place.
+    void getUpcomingReminders().then((items) => setSections(groupByDay(items)));
   }, []);
 
   useFocusEffect(
@@ -49,8 +52,7 @@ export default function RemindersScreen() {
             text: 'Dismiss',
             style: 'destructive',
             onPress: () => {
-              dismissReminder(item.id);
-              refresh();
+              void dismissReminder(item.id).then(() => refresh());
             },
           },
         ],

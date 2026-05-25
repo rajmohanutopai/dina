@@ -47,35 +47,37 @@ function addReminder(
 describe('Reminders Tab Hook (5.6)', () => {
   beforeEach(() => resetReminders());
 
+  // The data functions are async since the identity-hub work (web routes
+  // through the brain-server; native — these tests — resolves in-process).
   describe('getUpcomingReminders', () => {
-    it('returns empty when no reminders', () => {
-      expect(getUpcomingReminders(NOW)).toHaveLength(0);
+    it('returns empty when no reminders', async () => {
+      expect(await getUpcomingReminders(NOW)).toHaveLength(0);
     });
 
-    it('returns pending reminders sorted by due date', () => {
+    it('returns pending reminders sorted by due date', async () => {
       addReminder('Later', NOW + 2 * HOUR);
       addReminder('Soon', NOW + 1 * HOUR);
 
-      const upcoming = getUpcomingReminders(NOW);
+      const upcoming = await getUpcomingReminders(NOW);
       expect(upcoming).toHaveLength(2);
       expect(upcoming[0].message).toBe('Soon');
       expect(upcoming[1].message).toBe('Later');
     });
 
-    it('includes overdue reminders', () => {
+    it('includes overdue reminders', async () => {
       addReminder('Overdue', NOW - HOUR);
-      const upcoming = getUpcomingReminders(NOW);
+      const upcoming = await getUpcomingReminders(NOW);
       expect(upcoming).toHaveLength(1);
       expect(upcoming[0].isOverdue).toBe(true);
     });
   });
 
   describe('getOverdueReminders', () => {
-    it('only returns past-due reminders', () => {
+    it('only returns past-due reminders', async () => {
       addReminder('Past', NOW - HOUR);
       addReminder('Future', NOW + HOUR);
 
-      const overdue = getOverdueReminders(NOW);
+      const overdue = await getOverdueReminders(NOW);
       expect(overdue).toHaveLength(1);
       expect(overdue[0].message).toBe('Past');
       expect(overdue[0].isOverdue).toBe(true);
@@ -83,77 +85,78 @@ describe('Reminders Tab Hook (5.6)', () => {
   });
 
   describe('getPersonaReminders', () => {
-    it('filters by persona', () => {
+    it('filters by persona', async () => {
       addReminder('Work task', NOW + HOUR, { persona: 'work' });
       addReminder('General task', NOW + HOUR, { persona: 'general' });
 
-      expect(getPersonaReminders('work', NOW)).toHaveLength(1);
-      expect(getPersonaReminders('work', NOW)[0].message).toBe('Work task');
+      expect(await getPersonaReminders('work', NOW)).toHaveLength(1);
+      expect((await getPersonaReminders('work', NOW))[0].message).toBe('Work task');
     });
   });
 
   describe('UI fields', () => {
-    it('formats due label for upcoming', () => {
+    it('formats due label for upcoming', async () => {
       addReminder('In 30 min', NOW + 30 * 60_000);
-      const items = getUpcomingReminders(NOW);
+      const items = await getUpcomingReminders(NOW);
       expect(items[0].dueLabel).toMatch(/30m/);
     });
 
-    it('formats due label for overdue', () => {
+    it('formats due label for overdue', async () => {
       addReminder('Past', NOW - HOUR);
-      const items = getUpcomingReminders(NOW);
+      const items = await getUpcomingReminders(NOW);
       expect(items[0].dueLabel).toBe('Overdue');
     });
 
-    it('shows recurring label', () => {
+    it('shows recurring label', async () => {
       addReminder('Daily standup', NOW + HOUR, { recurring: 'daily' });
-      const items = getUpcomingReminders(NOW);
+      const items = await getUpcomingReminders(NOW);
       expect(items[0].isRecurring).toBe(true);
       expect(items[0].recurringLabel).toContain('daily');
     });
 
-    it('no recurring label for one-time', () => {
+    it('no recurring label for one-time', async () => {
       addReminder('Once', NOW + HOUR);
-      expect(getUpcomingReminders(NOW)[0].isRecurring).toBe(false);
-      expect(getUpcomingReminders(NOW)[0].recurringLabel).toBe('');
+      const items = await getUpcomingReminders(NOW);
+      expect(items[0].isRecurring).toBe(false);
+      expect(items[0].recurringLabel).toBe('');
     });
 
-    it('includes persona badge', () => {
+    it('includes persona badge', async () => {
       addReminder('Health check', NOW + HOUR, { persona: 'health' });
-      expect(getUpcomingReminders(NOW)[0].persona).toBe('health');
+      expect((await getUpcomingReminders(NOW))[0].persona).toBe('health');
     });
   });
 
   describe('groupByDay', () => {
-    it('groups reminders by date', () => {
+    it('groups reminders by date', async () => {
       addReminder('Today A', NOW + HOUR);
       addReminder('Today B', NOW + 2 * HOUR);
       addReminder('Tomorrow', NOW + DAY + HOUR);
 
-      const groups = groupByDay(getUpcomingReminders(NOW));
+      const groups = groupByDay(await getUpcomingReminders(NOW));
       expect(groups.length).toBeGreaterThanOrEqual(2);
       expect(groups[0].reminders.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('labels today and tomorrow', () => {
+    it('labels today and tomorrow', async () => {
       addReminder('Now', NOW + HOUR);
-      const groups = groupByDay(getUpcomingReminders(NOW));
+      const groups = groupByDay(await getUpcomingReminders(NOW));
       expect(groups[0].label).toBe('Today');
     });
   });
 
   describe('dismissReminder', () => {
-    it('completes a reminder', () => {
+    it('completes a reminder', async () => {
       const r = addReminder('Dismiss me', NOW - HOUR);
-      const result = dismissReminder(r.id);
+      const result = await dismissReminder(r.id);
 
       expect(result.dismissed).toBe(true);
-      expect(getOverdueReminders(NOW)).toHaveLength(0);
+      expect(await getOverdueReminders(NOW)).toHaveLength(0);
     });
 
-    it('recurring reminder creates next occurrence', () => {
+    it('recurring reminder creates next occurrence', async () => {
       const r = addReminder('Weekly', NOW - HOUR, { recurring: 'weekly' });
-      const result = dismissReminder(r.id);
+      const result = await dismissReminder(r.id);
 
       expect(result.dismissed).toBe(true);
       expect(result.nextId).toBeTruthy();
@@ -161,29 +164,29 @@ describe('Reminders Tab Hook (5.6)', () => {
   });
 
   describe('snoozeReminderBy', () => {
-    it('snoozes by 1 hour', () => {
+    it('snoozes by 1 hour', async () => {
       const r = addReminder('Snooze me', NOW - HOUR);
-      expect(snoozeReminderBy(r.id, 'one_hour', undefined, NOW)).toBe(true);
+      expect(await snoozeReminderBy(r.id, 'one_hour', undefined, NOW)).toBe(true);
 
       // Should no longer be overdue
-      expect(getOverdueReminders(NOW)).toHaveLength(0);
+      expect(await getOverdueReminders(NOW)).toHaveLength(0);
     });
 
-    it('snoozes by tomorrow', () => {
+    it('snoozes by tomorrow', async () => {
       const r = addReminder('Tomorrow', NOW - HOUR);
-      expect(snoozeReminderBy(r.id, 'tomorrow', undefined, NOW)).toBe(true);
+      expect(await snoozeReminderBy(r.id, 'tomorrow', undefined, NOW)).toBe(true);
     });
 
-    it('returns false for nonexistent', () => {
-      expect(snoozeReminderBy('fake-id', 'one_hour')).toBe(false);
+    it('returns false for nonexistent', async () => {
+      expect(await snoozeReminderBy('fake-id', 'one_hour')).toBe(false);
     });
   });
 
   describe('removeReminder', () => {
-    it('permanently deletes', () => {
+    it('permanently deletes', async () => {
       const r = addReminder('Delete me', NOW + HOUR);
-      expect(removeReminder(r.id)).toBe(true);
-      expect(getUpcomingReminders(NOW)).toHaveLength(0);
+      expect(await removeReminder(r.id)).toBe(true);
+      expect(await getUpcomingReminders(NOW)).toHaveLength(0);
     });
   });
 
@@ -192,11 +195,11 @@ describe('Reminders Tab Hook (5.6)', () => {
       expect(getSnoozePresets()).toHaveLength(3);
     });
 
-    it('getReminderCounts', () => {
+    it('getReminderCounts', async () => {
       addReminder('Past', NOW - HOUR);
       addReminder('Future', NOW + HOUR);
 
-      const counts = getReminderCounts(NOW);
+      const counts = await getReminderCounts(NOW);
       expect(counts.overdue).toBe(1);
       expect(counts.upcoming).toBe(2); // includes overdue in upcoming
     });

@@ -7,7 +7,14 @@
 import { sendD2D } from '../../src/d2d/send';
 import { addContact, clearGatesState } from '../../src/d2d/gates';
 import { setDeliveryFetchFn, resetDeliveryDeps } from '../../src/transport/delivery';
-import { clearOutbox, outboxSize } from '../../src/transport/outbox';
+import { clearOutbox, outboxCount } from '../../src/transport/outbox';
+import {
+  InMemoryD2DOutboxRepository,
+  setD2DOutboxRepository,
+  type D2DOutboxInsert,
+  type D2DOutboxRepository,
+  type D2DOutboxRow,
+} from '../../src/transport/outbox_repository';
 import { resetAuditState, queryAudit } from '../../src/audit/service';
 import { getPublicKey } from '../../src/crypto/ed25519';
 import { TEST_ED25519_SEED } from '@dina/test-harness';
@@ -76,7 +83,7 @@ describe('D2D Send Pipeline', () => {
 
     it('does not queue in outbox on success', async () => {
       await sendD2D(baseReq);
-      expect(outboxSize()).toBe(0);
+      expect(outboxCount()).toBe(0);
     });
   });
 
@@ -113,7 +120,7 @@ describe('D2D Send Pipeline', () => {
       expect(result.sent).toBe(true);
       expect(result.delivered).toBe(false);
       expect(result.queued).toBe(true);
-      expect(outboxSize()).toBe(1);
+      expect(outboxCount()).toBe(1);
     });
 
     it('records error in result', async () => {
@@ -175,6 +182,64 @@ describe('D2D Send Pipeline', () => {
       // Don't add contact — V1 check should reject before gate 1
       const result = await sendD2D({ ...baseReq, messageType: 'invalid.type' });
       expect(result.deniedAt).toBe('type_enforcement');
+    });
+  });
+
+  // issues.txt §1 — durability guarantees on the failure path.
+  describe('durable outbox on failure', () => {
+    beforeEach(() => {
+      addContact(recipientDID);
+      setDeliveryFetchFn(async () => {
+        throw new Error('ECONNREFUSED');
+      });
+    });
+    afterEach(() => setD2DOutboxRepository(null));
+
+    it('routes the queued message through the INSTALLED durable repo (not just memory)', async () => {
+      const repo = new InMemoryD2DOutboxRepository();
+      setD2DOutboxRepository(repo);
+      const result = await sendD2D(baseReq);
+      expect(result.queued).toBe(true);
+      // The row landed in the installed repo with the SEMANTIC body, not
+      // sealed bytes — so a later drainer can re-resolve + re-seal.
+      const rows = repo.listAll();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].targetDID).toBe(recipientDID);
+      expect(rows[0].bodyJson).toBe(baseReq.body);
+      expect(rows[0].state).toBe('pending');
+    });
+
+    it('NEVER reports queued:true when the durable write fails', async () => {
+      // A repo whose insert throws models a full disk / SQL error.
+      const failing: D2DOutboxRepository = new InMemoryD2DOutboxRepository();
+      failing.insert = (_row: D2DOutboxInsert): D2DOutboxRow => {
+        throw new Error('disk full');
+      };
+      setD2DOutboxRepository(failing);
+      const result = await sendD2D(baseReq);
+      expect(result.queued).toBe(false);
+      expect(result.error).toContain('queue_failed');
+      // And the failure-to-queue is audited so the loss is visible.
+      const queuedAudits = queryAudit({ action: 'd2d_send_queued' });
+      expect(queuedAudits.some((a) => a.detail?.includes('queued=false'))).toBe(true);
+    });
+
+    it('service.query uses the same durable outbox path on failure', async () => {
+      const repo = new InMemoryD2DOutboxRepository();
+      setD2DOutboxRepository(repo);
+      // No providerServiceResolver → the normal contact gate applies, and
+      // the contact is allow-listed above, so the send reaches delivery
+      // (which throws) and falls into the durable queue path.
+      const result = await sendD2D({
+        ...baseReq,
+        messageType: 'service.query',
+        body: '{"query_id":"q-1","capability":"eta_query","ttl_seconds":60}',
+      });
+      expect(result.queued).toBe(true);
+      const rows = repo.listAll();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].messageType).toBe('service.query');
+      expect(rows[0].idempotencyKey).toBe('service.query:q-1'); // keyed on query_id
     });
   });
 });

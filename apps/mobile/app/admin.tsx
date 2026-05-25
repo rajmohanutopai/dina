@@ -19,7 +19,7 @@
  * and stubbed with "Coming soon" alerts where they don't.
  */
 
-import React, { useCallback, useState, useSyncExternalStore } from 'react';
+import React, { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import {
   Alert,
   Pressable,
@@ -37,6 +37,14 @@ import { getRuntimeWarnings, subscribeRuntimeWarnings } from '../src/services/ru
 import { loadPersistedDid } from '../src/services/identity_record';
 import { signOutLocal, eraseEverythingLocal } from '../src/services/local_data_wipe';
 import { sendChatMessage } from '../src/services/chat_d2d';
+import { shareArchive } from '../src/hooks/useShareExport';
+import {
+  isRestoreConfigured,
+  pickBackupBytes,
+  previewBackup,
+  restoreBackup,
+} from '../src/services/restore_import';
+import { wireNativeBackup } from '../src/services/native_backup_wiring';
 import {
   getDisplayNameOverride,
   hydrateDisplayNameOverride,
@@ -216,6 +224,11 @@ export default function AdminScreen(): React.ReactElement {
           </Pressable>
         </Section>
 
+        {/* Backup & restore (issues.txt §3) */}
+        <Section title="Backup & restore">
+          <BackupRestoreSection />
+        </Section>
+
         {/* Danger zone */}
         <Section title="Danger zone" danger>
           <View style={styles.dangerNote}>
@@ -247,6 +260,193 @@ export default function AdminScreen(): React.ReactElement {
         </Section>
       </ScrollView>
     </>
+  );
+}
+
+/**
+ * Backup & restore (issues.txt §3). Export = encrypt vault data with a
+ * passphrase → OS share sheet. Restore = pick a `.dina` file → passphrase
+ * → import into the local DBs (clean-install, or confirm-to-overwrite),
+ * then relaunch so persistence re-hydrates from the restored SQL.
+ */
+function BackupRestoreSection(): React.ReactElement {
+  const [exportPass, setExportPass] = useState('');
+  const [restorePass, setRestorePass] = useState('');
+  const [picked, setPicked] = useState<{ name: string; bytes: Uint8Array } | null>(null);
+  const [busy, setBusy] = useState<'idle' | 'export' | 'restore'>('idle');
+
+  // Idempotently wire the native file IO (expo-sharing / -file-system /
+  // -document-picker). Safe to call on every mount.
+  useEffect(() => {
+    wireNativeBackup();
+  }, []);
+
+  const onExport = useCallback(() => {
+    if (exportPass.trim().length < 8) {
+      Alert.alert('Passphrase too short', 'Use at least 8 characters to encrypt your backup.');
+      return;
+    }
+    void (async () => {
+      setBusy('export');
+      try {
+        const result = await shareArchive(exportPass);
+        if (result.status === 'failed') {
+          Alert.alert('Export failed', result.error ?? 'Unknown error');
+        } else {
+          setExportPass('');
+        }
+      } finally {
+        setBusy('idle');
+      }
+    })();
+  }, [exportPass]);
+
+  const onChooseFile = useCallback(() => {
+    void (async () => {
+      try {
+        const result = await pickBackupBytes();
+        if (result !== null) setPicked(result);
+      } catch (err) {
+        Alert.alert('Couldn’t open file', err instanceof Error ? err.message : String(err));
+      }
+    })();
+  }, []);
+
+  const onRestore = useCallback(() => {
+    if (picked === null) return;
+    void (async () => {
+      setBusy('restore');
+      try {
+        // Preflight — confirms the passphrase + that it's a real backup.
+        let preview;
+        try {
+          preview = await previewBackup(picked.bytes, restorePass);
+        } catch {
+          Alert.alert(
+            'Couldn’t read backup',
+            'Wrong passphrase, or this isn’t a valid / supported Dina backup file.',
+          );
+          return;
+        }
+
+        const finish = (): void => {
+          setPicked(null);
+          setRestorePass('');
+          Alert.alert(
+            'Restored',
+            `Restored ${preview.totalPersonas} persona(s). Close and reopen Dina to load your data.`,
+          );
+        };
+
+        try {
+          await restoreBackup(picked.bytes, restorePass);
+          finish();
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (/not a clean install/i.test(msg)) {
+            Alert.alert(
+              'This device already has data',
+              'Restoring will overwrite this device’s data with the backup. This can’t be undone.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Overwrite',
+                  style: 'destructive',
+                  onPress: () => {
+                    void (async () => {
+                      try {
+                        await restoreBackup(picked.bytes, restorePass, { force: true });
+                        finish();
+                      } catch (e) {
+                        Alert.alert('Restore failed', e instanceof Error ? e.message : String(e));
+                      }
+                    })();
+                  },
+                },
+              ],
+            );
+          } else {
+            Alert.alert('Restore failed', msg);
+          }
+        }
+      } finally {
+        setBusy('idle');
+      }
+    })();
+  }, [picked, restorePass]);
+
+  return (
+    <View>
+      <Text style={styles.backupNote}>
+        An export is an encrypted copy of your data (contacts, memories, reminders, settings) —
+        never your keys or API secrets. Restore brings it back onto a device after you’ve set up
+        your identity.
+      </Text>
+
+      {/* Export */}
+      <Text style={styles.backupLabel}>Export</Text>
+      <TextInput
+        style={styles.backupInput}
+        value={exportPass}
+        onChangeText={setExportPass}
+        placeholder="New passphrase to encrypt the backup"
+        placeholderTextColor={colors.textSecondary}
+        secureTextEntry
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
+      <Pressable
+        onPress={onExport}
+        disabled={busy !== 'idle'}
+        style={({ pressed }) => [styles.backupBtn, pressed && styles.pressed, busy === 'export' && styles.backupBtnBusy]}
+      >
+        <Text style={styles.backupBtnText}>
+          {busy === 'export' ? 'Preparing…' : 'Export encrypted backup'}
+        </Text>
+      </Pressable>
+
+      {/* Restore */}
+      <Text style={[styles.backupLabel, styles.backupLabelSpaced]}>Restore</Text>
+      {!isRestoreConfigured() ? (
+        <Text style={styles.backupNote}>
+          Restore needs the latest app build (document picker). Rebuild the dev client to enable it.
+        </Text>
+      ) : (
+        <>
+          <Pressable
+            onPress={onChooseFile}
+            style={({ pressed }) => [styles.backupBtnSecondary, pressed && styles.pressed]}
+          >
+            <Text style={styles.backupBtnSecondaryText}>
+              {picked === null ? 'Choose backup file (.dina)' : `Selected: ${picked.name}`}
+            </Text>
+          </Pressable>
+          {picked !== null && (
+            <>
+              <TextInput
+                style={styles.backupInput}
+                value={restorePass}
+                onChangeText={setRestorePass}
+                placeholder="Backup passphrase"
+                placeholderTextColor={colors.textSecondary}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <Pressable
+                onPress={onRestore}
+                disabled={busy !== 'idle'}
+                style={({ pressed }) => [styles.backupBtn, pressed && styles.pressed, busy === 'restore' && styles.backupBtnBusy]}
+              >
+                <Text style={styles.backupBtnText}>
+                  {busy === 'restore' ? 'Restoring…' : 'Restore from backup'}
+                </Text>
+              </Pressable>
+            </>
+          )}
+        </>
+      )}
+    </View>
   );
 }
 
@@ -405,7 +605,7 @@ function DisplayNameRow(): React.ReactElement {
             value={draft}
             onChangeText={setDraft}
             placeholder="e.g. Sancho"
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={colors.textSecondary}
             style={displayNameStyles.input}
             autoFocus
             autoCapitalize="words"
@@ -510,7 +710,7 @@ const displayNameStyles = StyleSheet.create({
     fontStyle: 'italic',
   },
   unset: {
-    color: colors.textMuted,
+    color: colors.textSecondary,
     fontStyle: 'italic',
   },
 });
@@ -651,7 +851,7 @@ const styles = StyleSheet.create({
   rowValueMono: textStyles.monoSmall,
   copyGlyph: {
     ...textStyles.bodyLarge,
-    color: colors.textMuted,
+    color: colors.textSecondary,
   },
   drillRow: {
     flexDirection: 'row',
@@ -665,7 +865,7 @@ const styles = StyleSheet.create({
   drillLabel: textStyles.bodyStrong,
   drillArrow: {
     ...textStyles.body,
-    color: colors.textMuted,
+    color: colors.textSecondary,
   },
   diagGroupLabel: {
     ...textStyles.label,
@@ -735,4 +935,49 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   pressed: { opacity: 0.7 },
+  // Backup & restore (issues.txt §3)
+  backupNote: {
+    ...textStyles.bodySmall,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+  },
+  backupLabel: {
+    ...textStyles.bodyLargeStrong,
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  backupLabelSpaced: { marginTop: spacing.lg },
+  backupInput: {
+    ...textStyles.body,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    backgroundColor: colors.bgPrimary,
+    marginBottom: spacing.sm,
+  },
+  backupBtn: {
+    backgroundColor: colors.accent,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    alignItems: 'center',
+  },
+  backupBtnBusy: { opacity: 0.6 },
+  backupBtnText: {
+    ...textStyles.bodyLargeStrong,
+    color: colors.white,
+  },
+  backupBtnSecondary: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  backupBtnSecondaryText: {
+    ...textStyles.body,
+    color: colors.textPrimary,
+  },
 });

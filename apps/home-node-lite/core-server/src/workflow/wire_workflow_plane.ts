@@ -31,12 +31,15 @@ import {
   getServiceConfig,
   registerPublicKeyResolver,
   registerService,
+  setOutboxRedeliverFn,
+  startOutboxDrainer,
   type CoreRouter,
   type ServiceConfig,
 } from '@dina/core';
 import type { DinaMessage } from '@dina/core/runtime';
 import {
   makeSendD2D,
+  makeOutboxRedeliver,
   wireWorkflowPlane as wireSharedWorkflowPlane,
   type WiredWorkflowPlane as SharedWiredWorkflowPlane,
 } from '@dina/home-node';
@@ -112,6 +115,22 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
     defaultMsgboxEndpoint: msgboxURL,
     providerServiceResolver,
   });
+
+  // issues.txt §1 — wire the durable-outbox drainer's re-delivery function
+  // from the same identity, then start the periodic worker. The SQL repo +
+  // crash recovery were installed in storage init; the drainer re-resolves
+  // each queued recipient and re-seals per attempt. The timer is unref'd so
+  // it never holds the process open.
+  setOutboxRedeliverFn(
+    makeOutboxRedeliver({
+      senderDID: pdsIdentity.did,
+      senderPrivateKey: signingKeypair.privateKey,
+      defaultMsgboxEndpoint: msgboxURL,
+      providerServiceResolver,
+    }),
+    pdsIdentity.did,
+  );
+  startOutboxDrainer();
 
   // AppView client — discovery surface for service.query egress.
   // Lite operates as a provider node first, so the requester path is

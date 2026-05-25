@@ -16,9 +16,16 @@ import {
   resetContacts,
 } from '../../src/hooks/useContacts';
 import { addAlias } from '../../../core/src/contacts/directory';
+import { setPeopleRepository } from '../../../core/src/people/repository';
+import { makeFakePeopleRepo } from '@dina/test-harness';
 
 describe('Contacts Tab Hook (6.16)', () => {
-  beforeEach(() => resetContacts());
+  beforeEach(() => {
+    resetContacts();
+    // Contacts are person-keyed since the identity-hub redesign; wire a
+    // faithful in-memory people repo so add/establish resolve did→person.
+    setPeopleRepository(makeFakePeopleRepo());
+  });
 
   describe('getContactList', () => {
     it('returns empty when no contacts', () => {

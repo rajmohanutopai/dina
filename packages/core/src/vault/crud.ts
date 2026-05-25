@@ -613,10 +613,13 @@ export function vaultItemCount(persona: string): number {
  * intent and returns items ordered by timestamp DESC instead. Matches
  * Python's `core.search_vault(persona, query="")` behaviour.
  */
-export function listRecentItems(persona: string, limit: number): VaultItem[] {
+export function listRecentItems(persona: string, limit: number, type?: string): VaultItem[] {
   if (limit <= 0) return [];
   const repo = requireRepo(persona);
-  const all = repo.valuesSync().filter((item) => isSearchable(item));
+  const wantType = type !== undefined && type !== '' ? type : undefined;
+  const all = repo
+    .valuesSync()
+    .filter((item) => isSearchable(item) && (wantType === undefined || item.type === wantType));
   // `valuesSync` on SQLite returns repository-insertion order; make the
   // sort explicit so both backends agree on "most recent first".
   all.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));

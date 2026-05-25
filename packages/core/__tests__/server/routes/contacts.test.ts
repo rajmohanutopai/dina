@@ -327,3 +327,44 @@ describe('PC-CORE-09: /v1/contacts/by-preference authz', () => {
     expect(isAuthorized('device', 'PUT', '/v1/contacts/did:plc:alice')).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// GET /v1/contacts/lookup
+// ---------------------------------------------------------------------------
+
+describe('GET /v1/contacts/lookup', () => {
+  const alice = contactFixture('did:plc:alice', 'Alice');
+
+  function handlers() {
+    return makeContactsHandlers({
+      getContact: (did) => (did === 'did:plc:alice' ? alice : null),
+      resolveByName: (name) => (name.toLowerCase() === 'alice' ? alice : null),
+      findByAlias: (alias) => (alias.toLowerCase() === 'ali' ? alice : null),
+    });
+  }
+
+  it('resolves by DID', async () => {
+    const res = await handlers().lookup(req({ query: { q: 'did:plc:alice' } }));
+    expect(res.status).toBe(200);
+    expect((res.body as { contact: Contact }).contact.displayName).toBe('Alice');
+  });
+
+  it('resolves by display name then alias', async () => {
+    expect((await handlers().lookup(req({ query: { q: 'Alice' } }))).body).toEqual({
+      contact: alice,
+    });
+    expect((await handlers().lookup(req({ query: { q: 'ali' } }))).body).toEqual({
+      contact: alice,
+    });
+  });
+
+  it('returns { contact: null } on no match', async () => {
+    const res = await handlers().lookup(req({ query: { q: 'nobody' } }));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ contact: null });
+  });
+
+  it('rejects an empty q', async () => {
+    expect((await handlers().lookup(req({ query: {} }))).status).toBe(400);
+  });
+});

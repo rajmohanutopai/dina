@@ -340,3 +340,11 @@ apps/home-node-lite/web/playwright-report/
 apps/home-node-lite/web/test-results/
 apps/home-node-lite/web/dist/
 
+
+# bus42-agent local provider stack — secrets + per-run artifacts (issues.txt §2/§3 test rig).
+# Private keys, master seed (keyfile), PDS creds, and the SQLCipher vault must never be committed.
+bus42-agent/keys/
+bus42-agent/provider-vault/
+
+# idb/adb manual-test screenshots — regenerable binary artifacts (the result.md reports are kept).
+apps/mobile/__chrome__/results/**/*.png

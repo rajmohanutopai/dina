@@ -19,8 +19,14 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 import { NodeDBProvider } from '@dina/storage-node';
 import {
   SQLiteServiceConfigRepository,
+  SQLiteD2DOutboxRepository,
+  SQLiteAgentGrantRepository,
   hydrateContactDirectory,
   hydrateServiceConfig,
+  recoverOutboxOnBoot,
+  setAgentGrantRepository,
+  setAgentPersonaUnlockHook,
+  setD2DOutboxRepository,
   setServiceConfigRepository,
 } from '@dina/core';
 import { hydrateDeviceRegistry } from '@dina/core/runtime';
@@ -170,6 +176,18 @@ export async function initializeStorage(
   hydrateContactDirectory();
   await hydrateRemindersFromRepo();
 
+  // issues.txt §1 — durable D2D outbox (shared egress path with mobile).
+  // Lite is a long-running process but still restarts; a queued service-
+  // query/response that couldn't deliver immediately must survive. The
+  // re-delivery fn + periodic drainer are wired in wire_workflow_plane
+  // (where the signing identity + sendD2D live); here we just install the
+  // SQL repo and reclaim crash-orphaned 'sending' rows.
+  setD2DOutboxRepository(new SQLiteD2DOutboxRepository(identityDB));
+  recoverOutboxOnBoot();
+
+  // issues.txt §2 — durable agent persona grants (locked-vault approval).
+  setAgentGrantRepository(new SQLiteAgentGrantRepository(identityDB));
+
   // Seed default personas, then open EVERY one via the shared
   // lifecycle helper. The lite stack's only client is the owner's own
   // app (SPA / mobile); locked tiers (health, finance) are protections
@@ -191,14 +209,17 @@ export async function initializeStorage(
       setPersonaDescription(spec.name, spec.description);
     }
   }
-  const opened = await openAllPersonasForInAppUser({
-    openVaultDB: async (persona: string) => {
-      const personaDB = await openPersonaVault(provider, persona);
-      setVaultRepository(persona, new SQLiteVaultRepository(personaDB));
-      setTopicRepository(persona, new SQLiteTopicRepository(personaDB));
-    },
-  });
+  const openVaultDB = async (persona: string): Promise<void> => {
+    const personaDB = await openPersonaVault(provider, persona);
+    setVaultRepository(persona, new SQLiteVaultRepository(personaDB));
+    setTopicRepository(persona, new SQLiteTopicRepository(personaDB));
+  };
+  const opened = await openAllPersonasForInAppUser({ openVaultDB });
   logger.info({ openedPersonas: opened }, 'persona vaults opened');
+
+  // issues.txt §2 — approving an agent locked-persona request also opens
+  // that persona's vault (DEK into RAM) so the agent's retry can decrypt.
+  setAgentPersonaUnlockHook(openVaultDB);
 
   return { provider, identityDB, openedPersonas: opened };
 }

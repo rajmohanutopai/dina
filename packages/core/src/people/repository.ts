@@ -33,6 +33,7 @@ import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
 import { normalizeAlias } from '../contacts/validation';
 
 import {
+  canonicalizeIdentityValue,
   type ApplyExtractionResponse,
   type ExtractionResult,
   type Person,
@@ -312,6 +313,7 @@ export class SQLitePeopleRepository implements PeopleRepository {
 
   resolveByIdentity(identityType: string, identityValue: string): Person | null {
     if (identityValue === '') return null;
+    const canonical = canonicalizeIdentityValue(identityType, identityValue);
     const rows = this.db.query(
       `SELECT ${personSelectColumns('p')}
        FROM people p
@@ -319,7 +321,7 @@ export class SQLitePeopleRepository implements PeopleRepository {
        WHERE pi.identity_type = ? AND pi.identity_value = ? AND p.status != 'rejected'
        ORDER BY p.updated_at DESC
        LIMIT 1`,
-      [identityType, identityValue],
+      [identityType, canonical],
     );
     if (rows.length === 0) return null;
     const person = rowToPerson(rows[0]);
@@ -331,6 +333,13 @@ export class SQLitePeopleRepository implements PeopleRepository {
     return this.updatePersonStatus(personId, PERSON_STATUS_CONFIRMED);
   }
 
+  // NOTE — rejecting/deleting a person does NOT touch the D2D gate or
+  // source-trust projections (those live in the contact directory layer,
+  // which this repo can't reach). If the rejected person was a contact,
+  // call the directory's `rebuildContactProjections()` afterward so its
+  // now-orphaned DID is pruned from the egress allowlist. The production
+  // delete path (`deleteContact` -> `removeContact`) already prunes; this
+  // matters only when curation rejects a person directly through the repo.
   rejectPerson(personId: string): boolean {
     const nowSec = Math.floor(this.nowFn() / 1000);
     let changed = false;
@@ -366,6 +375,17 @@ export class SQLitePeopleRepository implements PeopleRepository {
     return true;
   }
 
+  /**
+   * Merge `mergeId` into `keepId`: surfaces + identities re-point to the
+   * survivor, `mergeId` is tombstoned (status=rejected).
+   *
+   * NOTE — does NOT merge the `contacts` policy row or persona-vault
+   * `vault_item_subjects`: those live in other layers/DB files this
+   * repository can't reach. Callers should prefer the directory-level
+   * `mergeContactPersons()`, which folds in the contact policy + re-points
+   * subject links across wired personas and then calls this. Calling this
+   * directly leaves the loser's contact policy + subject links orphaned.
+   */
   mergePeople(keepId: string, mergeId: string): void {
     if (keepId === mergeId) return;
     const nowSec = Math.floor(this.nowFn() / 1000);
@@ -450,30 +470,23 @@ export class SQLitePeopleRepository implements PeopleRepository {
     if (trimmedName === '') {
       throw new Error('upsertContactPerson: displayName is required');
     }
+    // Canonicalize the DID so the identity lookup + write agree (and so a
+    // future caller can't bypass UNIQUE with a differently-spelled value).
+    const canonicalDid = canonicalizeIdentityValue('did', did);
     const nowSec = Math.floor(this.nowFn() / 1000);
     const norm = normalizeAlias(trimmedName);
 
     let personId = '';
     this.db.transaction(() => {
-      // 1. Reuse an existing non-rejected person already bound to this
-      //    DID (the typical "edit display name" case + the idempotent
-      //    "add same contact twice" case both land here). Resolution
-      //    is by identity, not by a column on `people`.
-      const existing = this.db.query(
-        `SELECT p.person_id FROM people p
-         JOIN person_identities pi ON pi.person_id = p.person_id
-         WHERE pi.identity_type = 'did' AND pi.identity_value = ?
-           AND p.status != 'rejected'
-         ORDER BY p.updated_at DESC
-         LIMIT 1`,
-        [did],
-      );
-      if (existing.length > 0 && typeof existing[0].person_id === 'string') {
-        personId = existing[0].person_id;
-        // Refresh canonical_name + status; user-driven edits should
-        // win over a stale row. Status flips to confirmed if the
-        // person was previously suggested (an LLM-extracted match
-        // the user just promoted by saving as a contact).
+      // Resolution order (doc §4): identity → exactly-one unambiguous
+      // confirmed surface → create. The surface step is what connects a
+      // note-before-DID memory ("remember Don Quixote loves eggs" created
+      // an LLM person) to the contact when the DID is added later.
+      personId = this.resolveContactPersonId(canonicalDid, norm);
+      if (personId !== '') {
+        // Reuse: refresh canonical_name + promote to confirmed (a
+        // user-driven contact-add is an explicit assertion; an
+        // LLM-suggested match the user just saved becomes confirmed).
         this.db.execute(
           `UPDATE people SET
              canonical_name = ?,
@@ -484,10 +497,9 @@ export class SQLitePeopleRepository implements PeopleRepository {
           [trimmedName, nowSec, personId],
         );
       } else {
-        // 2. Otherwise, create a new confirmed person. We do NOT try
-        //    to reuse an LLM-suggested person that happens to share
-        //    the canonical name — auto-merging on a name collision is
-        //    risky and the dedicated `mergePeople` API exists for that.
+        // Zero or ambiguous (>1) matches → don't guess; create a fresh
+        // confirmed person. The dedicated merge flow handles a later
+        // "these two are the same" correction.
         personId = newPersonId();
         this.db.execute(
           `INSERT INTO people (person_id, canonical_name,
@@ -497,15 +509,15 @@ export class SQLitePeopleRepository implements PeopleRepository {
         );
       }
 
-      // 2b. Bind the DID identity (re-points it if it previously
-      //     belonged to a rejected person — UNIQUE(type,value) means
-      //     a DID lives on exactly one row, so the upsert moves it).
-      this.upsertIdentityRow(personId, 'did', did, true, true, nowSec);
+      // Bind the DID identity (re-points it if it previously belonged to
+      // a rejected person — UNIQUE(type,value) means a DID lives on
+      // exactly one row, so the upsert moves it).
+      this.upsertIdentityRow(personId, 'did', canonicalDid, true, true, nowSec);
 
-      // 3. Confirmed name surface — the reminder planner expands
-      //    inbound D2D FTS queries with every confirmed surface, so
-      //    notes saved against the contact's display name surface
-      //    even when the message body never says the name.
+      // Confirmed name surface — the reminder planner expands inbound
+      // D2D FTS queries with every confirmed surface, so notes saved
+      // against the contact's display name surface even when the message
+      // body never says the name.
       this.upsertSurface({
         personId,
         surface: trimmedName,
@@ -513,7 +525,7 @@ export class SQLitePeopleRepository implements PeopleRepository {
         surfaceType: 'name',
         status: SURFACE_STATUS_CONFIRMED,
         confidence: 'high',
-        sourceItemId: `contact:${did}`,
+        sourceItemId: `contact:${canonicalDid}`,
         sourceExcerpt: '',
         extractorVersion: 'contact-directory',
         nowSec,
@@ -605,20 +617,28 @@ export class SQLitePeopleRepository implements PeopleRepository {
   // -------------------------------------------------------------------
 
   private findOrAssignPersonId(link: ExtractionResult['results'][number]): string {
+    // Both lookups below resolve a surface string to a person ONLY when
+    // it points at exactly one. `LIMIT 2` + a length check is the
+    // ambiguity guard: if a confirmed surface ("Don", "my brother") maps
+    // to two or more people, we must NOT attach the extracted fact to
+    // whichever row SQLite happens to return first — that silently
+    // poisons the wrong person. Ambiguous → skip the signal and fall
+    // through to a fresh person, same discipline as the contact-add path
+    // (`resolveContactPersonId`).
     // (1) Match by confirmed role_phrase first — the strongest signal
-    // that this person already exists ("my brother" → exactly one).
+    // that this person already exists ("my brother" → ideally exactly one).
     for (const entry of link.surfaces) {
       if (entry.surfaceType !== 'role_phrase') continue;
       const norm = normalizeAlias(entry.surface);
       const rows = this.db.query(
-        `SELECT person_id FROM person_surfaces
+        `SELECT DISTINCT person_id FROM person_surfaces
          WHERE normalized_surface = ?
            AND surface_type = 'role_phrase'
            AND status = 'confirmed'
-         LIMIT 1`,
+         LIMIT 2`,
         [norm],
       );
-      if (rows.length > 0 && typeof rows[0].person_id === 'string') {
+      if (rows.length === 1 && typeof rows[0].person_id === 'string') {
         return rows[0].person_id;
       }
     }
@@ -627,16 +647,16 @@ export class SQLitePeopleRepository implements PeopleRepository {
     if (link.canonicalName !== '') {
       const norm = normalizeAlias(link.canonicalName);
       const rows = this.db.query(
-        `SELECT ps.person_id FROM person_surfaces ps
+        `SELECT DISTINCT ps.person_id FROM person_surfaces ps
          JOIN people p ON ps.person_id = p.person_id
          WHERE ps.normalized_surface = ?
            AND ps.surface_type = 'name'
            AND ps.status = 'confirmed'
            AND p.status = 'confirmed'
-         LIMIT 1`,
+         LIMIT 2`,
         [norm],
       );
-      if (rows.length > 0 && typeof rows[0].person_id === 'string') {
+      if (rows.length === 1 && typeof rows[0].person_id === 'string') {
         return rows[0].person_id;
       }
     }
@@ -654,6 +674,59 @@ export class SQLitePeopleRepository implements PeopleRepository {
   }
 
   /**
+   * The doc §4 contact resolution order: (1) a non-rejected person
+   * already bound to `canonicalDid`; else (2) exactly ONE unambiguous
+   * confirmed-name person who has NO DID identity yet (this connects a
+   * note-before-DID memory to the contact when the DID arrives later);
+   * else '' (caller creates a fresh person). When the name matches two
+   * or more such people it's ambiguous — we decline to guess and return
+   * '' so the caller creates a new person rather than mis-merging.
+   *
+   * The name fallback EXCLUDES people who already carry a DID identity.
+   * A new, different DID with a colliding display name ("Alex" #2) must
+   * NOT silently coalesce onto an existing contact ("Alex" #1) and
+   * inherit its trust/sharing policy — they're distinct identities until
+   * the user explicitly merges them. Only a "floating" person (created
+   * by extraction, no DID yet) is a valid link target for an incoming
+   * DID; a DID-bearing person is already a settled identity.
+   */
+  private resolveContactPersonId(canonicalDid: string, normalizedName: string): string {
+    const byIdentity = this.db.query(
+      `SELECT p.person_id FROM people p
+       JOIN person_identities pi ON pi.person_id = p.person_id
+       WHERE pi.identity_type = 'did' AND pi.identity_value = ?
+         AND p.status != 'rejected'
+       ORDER BY p.updated_at DESC
+       LIMIT 1`,
+      [canonicalDid],
+    );
+    if (byIdentity.length > 0 && typeof byIdentity[0].person_id === 'string') {
+      return byIdentity[0].person_id;
+    }
+    if (normalizedName !== '') {
+      // LIMIT 2 so a second match flips us into the ambiguous branch.
+      // `NOT EXISTS … identity_type='did'` keeps already-identified
+      // contacts out of the name fallback (see the doc comment above).
+      const bySurface = this.db.query(
+        `SELECT DISTINCT p.person_id FROM person_surfaces ps
+         JOIN people p ON ps.person_id = p.person_id
+         WHERE ps.normalized_surface = ? AND ps.surface_type = 'name'
+           AND ps.status = 'confirmed' AND p.status != 'rejected'
+           AND NOT EXISTS (
+             SELECT 1 FROM person_identities pid
+             WHERE pid.person_id = p.person_id AND pid.identity_type = 'did'
+           )
+         LIMIT 2`,
+        [normalizedName],
+      );
+      if (bySurface.length === 1 && typeof bySurface[0].person_id === 'string') {
+        return bySurface[0].person_id;
+      }
+    }
+    return '';
+  }
+
+  /**
    * Insert-or-repoint an identity row. `(identity_type,
    * identity_value)` is the conflict target: a colliding pair updates
    * in place, re-pointing `person_id` to the caller's person. This is
@@ -661,6 +734,16 @@ export class SQLitePeopleRepository implements PeopleRepository {
    * rejected" work — the DID moves rather than violating UNIQUE.
    * `verified` is monotonic (MAX) so a re-point never silently
    * downgrades a previously-verified identity.
+   *
+   * **Repoint is gated.** `(type, value)` is globally unique, so the
+   * ON CONFLICT below would otherwise move the identity to `personId`
+   * unconditionally — silently stealing it from whoever currently holds
+   * it. That is only legitimate when the prior owner was *rejected*
+   * (the documented DID-rotation case). Moving an identity off a still-
+   * active person is a merge, which goes through `mergePeople`'s direct
+   * UPDATE and never touches this primitive. So here we refuse to repoint
+   * an identity held by a different, non-rejected person — fail loud
+   * rather than corrupt two identities.
    */
   private upsertIdentityRow(
     personId: string,
@@ -670,6 +753,25 @@ export class SQLitePeopleRepository implements PeopleRepository {
     primary: boolean,
     nowSec: number,
   ): void {
+    const canonical = canonicalizeIdentityValue(identityType, identityValue);
+    const currentOwner = this.db.query(
+      `SELECT pi.person_id, p.status FROM person_identities pi
+       JOIN people p ON p.person_id = pi.person_id
+       WHERE pi.identity_type = ? AND pi.identity_value = ?
+       LIMIT 1`,
+      [identityType, canonical],
+    );
+    if (
+      currentOwner.length > 0 &&
+      currentOwner[0].person_id !== personId &&
+      currentOwner[0].status !== 'rejected'
+    ) {
+      throw new Error(
+        `people: identity ${identityType}:${canonical} is already held by active ` +
+          `person ${String(currentOwner[0].person_id)} — repointing a live identity ` +
+          `requires an explicit merge`,
+      );
+    }
     this.db.execute(
       `INSERT INTO person_identities
          (person_id, identity_type, identity_value, verified,
@@ -680,7 +782,7 @@ export class SQLitePeopleRepository implements PeopleRepository {
          verified = MAX(person_identities.verified, excluded.verified),
          primary_identity = excluded.primary_identity,
          updated_at = excluded.updated_at`,
-      [personId, identityType, identityValue, verified ? 1 : 0, primary ? 1 : 0, nowSec, nowSec],
+      [personId, identityType, canonical, verified ? 1 : 0, primary ? 1 : 0, nowSec, nowSec],
     );
   }
 

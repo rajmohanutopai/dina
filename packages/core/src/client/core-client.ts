@@ -464,6 +464,14 @@ export interface CoreClient {
   findContactsByPreference(category: string): Promise<Contact[]>;
 
   /**
+   * Resolve a single contact by DID, display name, or alias (in that
+   * order). Returns `null` when nothing matches. Backs the reasoning
+   * agent's `contact_lookup` tool out-of-process (lite), where the
+   * contact directory lives in Core, not Brain.
+   */
+  contactLookup(query: string): Promise<Contact | null>;
+
+  /**
    * Apply a people-graph extraction result. Brain's post-publish
    * extractor invokes this after each successful vault store; Core
    * dispatches to the registered `PeopleRepository.applyExtraction`.
@@ -514,6 +522,61 @@ export interface CoreClient {
    * subject-linked recall seeding. Empty `did` rejects via the transport.
    */
   peopleResolveByDid(did: string): Promise<Person | null>;
+
+  // ─── Reminders (out-of-process create + read) ──────────────────────────────
+  //
+  // In lite, the reminder service's authoritative state (in-memory Map +
+  // SQLiteReminderRepository) lives in Core's process. Brain runs in a
+  // separate process, so it must create + read reminders through Core —
+  // a direct `@dina/core/reminders` call from Brain would write to Brain's
+  // own empty Map and never reach Core's store. On mobile Brain shares the
+  // process and skips these (no reminder backend set).
+
+  /**
+   * Create a reminder in Core's authoritative store. Dedups on
+   * `(source_item_id, kind, due_at, persona)` server-side — replaying a
+   * create returns the existing reminder. Returns the created (or
+   * deduped) row.
+   */
+  reminderCreate(input: ReminderCreateInput): Promise<Reminder>;
+
+  /**
+   * Every reminder (including completed) for `persona`, in Core's store.
+   * Used by the staging drain's D2D reminder-card hook + the chat
+   * `/remember` reply to surface reminders just planned from an item.
+   */
+  reminderListByPersona(persona: string): Promise<Reminder[]>;
+
+  /**
+   * Every pending reminder due before `now` (default: server clock).
+   * Drives the briefing's reminder section + the `reminder_check`
+   * reasoning tool.
+   */
+  reminderListPending(now?: number): Promise<Reminder[]>;
+
+  /**
+   * Mark a reminder complete. Returns the next occurrence for a recurring
+   * reminder, else `null`. Backs the UI's "Mark Done" on lite-web (where
+   * the reminder store lives in Core's process, not the browser).
+   */
+  reminderComplete(id: string): Promise<Reminder | null>;
+
+  /**
+   * Snooze a reminder by `snoozeMs`. Returns the updated reminder (its
+   * new due_at + `snoozed` status), or `null` if the id vanished.
+   */
+  reminderSnooze(id: string, snoozeMs: number): Promise<Reminder | null>;
+
+  /** Delete a reminder. Returns whether a row was removed. */
+  reminderDelete(id: string): Promise<boolean>;
+
+  /**
+   * Transition every pending reminder due before `now` to `fired`,
+   * returning the newly-fired rows. Idempotent (a reminder fires once).
+   * Drives the lite brain-server's fire loop, which fans the result to
+   * the SPA over SSE. Mobile fires in-process and never calls this.
+   */
+  reminderFireMissed(now?: number): Promise<Reminder[]>;
 
   // ─── Persona registry (read-only) ──────────────────────────────────────────
 
@@ -1112,6 +1175,28 @@ import type {
   Person,
 } from '../people/domain';
 export type { ExtractionResult, ApplyExtractionResponse, Person };
+
+/** Reminder types crossing the Core HTTP boundary. Re-exported so Brain
+ *  consumers find them on `@dina/core` without a deep import into
+ *  `reminders/service`. */
+import type { Reminder, RecurringFrequency } from '../reminders/service';
+export type { Reminder, RecurringFrequency };
+
+/**
+ * Create-reminder request shape — mirrors the `createReminder` service
+ * input. `due_at` is epoch ms. `kind`, `source_item_id`, `source`,
+ * `recurring`, and `timezone` are optional (the service defaults them).
+ */
+export interface ReminderCreateInput {
+  message: string;
+  due_at: number;
+  persona: string;
+  kind?: string;
+  source_item_id?: string;
+  source?: string;
+  recurring?: RecurringFrequency;
+  timezone?: string;
+}
 
 /** One row in the response from `personasList()`. */
 export interface PersonaListEntry {

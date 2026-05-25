@@ -13,7 +13,7 @@
  * Source: ARCHITECTURE.md Tasks 4.7–4.9
  */
 
-import { listByPersona as listRemindersByPersona } from '@dina/core/reminders';
+import { listRemindersByPersonaRouted } from '../reminders/backend';
 import { CoreHttpError } from '../errors';
 import { reason } from '../pipeline/chat_reasoning';
 import { executeToolSearch } from '../vault_context/assembly';
@@ -372,7 +372,7 @@ async function handleRemember(text: string, thread: string): Promise<BotResponse
   // `source_item_id` (see `drain.ts` → `handlePostPublish` → `planReminders`),
   // so we can filter by the staging id we already have — no need to
   // dig the published vault-item id out of the tick result.
-  const reminders = listRemindersByPersona(persona)
+  const reminders = (await listRemindersByPersonaRouted(persona))
     .filter((r) => r.source_item_id === itemId)
     .sort((a, b) => a.due_at - b.due_at);
 

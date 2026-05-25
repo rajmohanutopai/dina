@@ -21,12 +21,14 @@
  */
 
 import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
-import { CONTACTS_BY_PREFERENCE, CONTACT_UPDATE } from './paths';
+import { CONTACTS_BY_PREFERENCE, CONTACTS_LOOKUP, CONTACT_UPDATE } from './paths';
 import type { Contact } from '../../contacts/directory';
 import {
   findByPreferredFor as directoryFindByPreferredFor,
   setPreferredFor as directorySetPreferredFor,
   getContact,
+  resolveByName as directoryResolveByName,
+  findByAlias as directoryFindByAlias,
 } from '../../contacts/directory';
 
 /**
@@ -54,6 +56,11 @@ export interface ContactRoutesOptions {
    * the module-global directory function.
    */
   getContact?: (did: string) => Contact | null;
+  /** Resolve a contact by display name (case-insensitive). Defaults to
+   *  the module-global directory function. */
+  resolveByName?: (name: string) => Contact | null;
+  /** Resolve a contact by alias. Defaults to the module-global directory. */
+  findByAlias?: (alias: string) => Contact | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -68,13 +75,17 @@ export interface ContactRoutesOptions {
 export function makeContactsHandlers(options: ContactRoutesOptions = {}): {
   findByPreference: (req: CoreRequest) => Promise<CoreResponse>;
   updateContact: (req: CoreRequest) => Promise<CoreResponse>;
+  lookup: (req: CoreRequest) => Promise<CoreResponse>;
 } {
   const findFn = options.findByPreferredFor ?? directoryFindByPreferredFor;
   const setFn = options.setPreferredFor ?? directorySetPreferredFor;
   const getFn = options.getContact ?? getContact;
+  const resolveNameFn = options.resolveByName ?? directoryResolveByName;
+  const findAliasFn = options.findByAlias ?? directoryFindByAlias;
   return {
     findByPreference: (req) => handleFindByPreference(req, findFn),
     updateContact: (req) => handleUpdateContact(req, setFn, getFn),
+    lookup: (req) => handleLookup(req, getFn, resolveNameFn, findAliasFn),
   };
 }
 
@@ -82,9 +93,34 @@ export function registerContactsRoutes(
   router: CoreRouter,
   options: ContactRoutesOptions = {},
 ): void {
-  const { findByPreference, updateContact } = makeContactsHandlers(options);
+  const { findByPreference, updateContact, lookup } = makeContactsHandlers(options);
   router.get(CONTACTS_BY_PREFERENCE, findByPreference);
+  router.get(CONTACTS_LOOKUP, lookup);
   router.put(CONTACT_UPDATE, updateContact);
+}
+
+// ---------------------------------------------------------------------------
+// GET /v1/contacts/lookup?q=…  — resolve one contact by DID / name / alias
+// ---------------------------------------------------------------------------
+//
+// Backs the reasoning agent's `contact_lookup` tool out-of-process (lite),
+// where the contact directory lives in Core, not Brain. Same resolution
+// order the in-process tool uses: DID → display name → alias. Response:
+// `{ contact: Contact | null }`.
+
+async function handleLookup(
+  req: CoreRequest,
+  getFn: (did: string) => Contact | null,
+  resolveNameFn: (name: string) => Contact | null,
+  findAliasFn: (alias: string) => Contact | null,
+): Promise<CoreResponse> {
+  const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  if (q === '') {
+    return jsonError(400, 'q query parameter is required');
+  }
+  const contact =
+    (q.startsWith('did:') ? getFn(q) : null) ?? resolveNameFn(q) ?? findAliasFn(q) ?? null;
+  return { status: 200, body: { contact } };
 }
 
 // ---------------------------------------------------------------------------

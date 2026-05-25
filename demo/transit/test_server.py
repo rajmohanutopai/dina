@@ -159,25 +159,28 @@ def test_get_eta_route_not_found():
     assert "999" in result["message"]
 
 
-def test_get_eta_out_of_service_before_hours():
+def test_get_eta_in_service_early_morning():
+    # Route 42 runs 00:00–23:59 (always-on) so the Castro demo answers at
+    # any hour — 04:30 is in service.
     os.environ["TRANSIT_TIME_OVERRIDE"] = "2026-04-16T04:30:00"
     try:
         result = _get_eta_impl("42", 37.7648, -122.4322)
     finally:
         os.environ["TRANSIT_TIME_OVERRIDE"] = "2026-04-16T10:00:00"
-    assert result["status"] == "out_of_service"
+    assert result["status"] == "on_route"
     assert result["route_name"] == "Market St Express"
-    assert "06:00" in result["message"]
+    assert 0 <= result["eta_minutes"] <= 12
 
 
-def test_get_eta_out_of_service_after_hours():
+def test_get_eta_in_service_late_night():
     os.environ["TRANSIT_TIME_OVERRIDE"] = "2026-04-16T23:45:00"
     try:
         result = _get_eta_impl("42", 37.7648, -122.4322)
     finally:
         os.environ["TRANSIT_TIME_OVERRIDE"] = "2026-04-16T10:00:00"
-    # Route 42 runs 06:00–23:00 so 23:45 is out.
-    assert result["status"] == "out_of_service"
+    # Route 42 runs 00:00–23:59 so 23:45 is still in service.
+    assert result["status"] == "on_route"
+    assert 0 <= result["eta_minutes"] <= 12
 
 
 def test_get_eta_not_on_route_user_too_far():

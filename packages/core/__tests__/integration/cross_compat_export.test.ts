@@ -90,11 +90,15 @@ describe('Cross-Compat Export (10.9)', () => {
       expect(Array.isArray(manifest.personas)).toBe(true);
     });
 
-    it('manifest has identity_size_bytes', async () => {
+    it('manifest carries the identity table bag + checksums (ArchivePayloadV1)', async () => {
       const archive = await createArchive(PASSPHRASE);
       const manifest = await readManifest(archive, PASSPHRASE);
 
-      expect(typeof manifest.identity_size_bytes).toBe('number');
+      // V1 replaced the opaque `identity_size_bytes` with the real table
+      // payload + per-table checksums (issues.txt §3).
+      expect(typeof manifest.identity).toBe('object');
+      expect(typeof manifest.identity.tables).toBe('object');
+      expect(typeof manifest.header.checksums).toBe('object');
     });
   });
 

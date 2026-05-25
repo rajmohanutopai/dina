@@ -18,8 +18,16 @@ import {
 } from '../../src/service/service_config';
 import {
   InMemoryServiceConfigRepository,
+  SQLiteServiceConfigRepository,
   setServiceConfigRepository,
 } from '../../src/service/service_config_repository';
+import { randomBytes } from 'node:crypto';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { NodeSQLiteAdapter } from '@dina/storage-node';
+import { applyMigrations } from '../../src/storage/migration';
+import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
 const validConfig: ServiceConfig = {
   isDiscoverable: true,
@@ -281,5 +289,54 @@ describe('repository integration', () => {
     clearServiceConfig();
     await Promise.resolve();
     expect(await repo.get('self')).toBeNull();
+  });
+});
+
+// issues.txt §4 — the durability + precedence the mobile boot now honours.
+describe('mobile boot precedence — real SQLite restart', () => {
+  function openId(p: string, pass: string): NodeSQLiteAdapter {
+    const a = new NodeSQLiteAdapter({ path: p, passphraseHex: pass, journalMode: 'WAL', synchronous: 'NORMAL' });
+    applyMigrations(a, IDENTITY_MIGRATIONS);
+    return a;
+  }
+
+  it('provider config survives a real close+reopen restart and isCapabilityConfigured works', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-svccfg-'));
+    const dbPath = path.join(dir, 'identity.sqlite');
+    const pass = randomBytes(32).toString('hex');
+    try {
+      // Session 1: write provider config via the SQL repo.
+      const a1 = openId(dbPath, pass);
+      setServiceConfigRepository(new SQLiteServiceConfigRepository(a1));
+      setServiceConfig(validConfig);
+      await Promise.resolve(); // drain fire-and-forget write
+      a1.close();
+
+      // Session 2 (mobile boot precedence): install repo → hydrate → no env override.
+      resetServiceConfigState();
+      const a2 = openId(dbPath, pass);
+      setServiceConfigRepository(new SQLiteServiceConfigRepository(a2));
+      expect(getServiceConfig()).toBeNull(); // before hydrate
+      await hydrateServiceConfig();
+      expect(getServiceConfig()?.name).toBe('Bus 42'); // persisted config restored
+      expect(isCapabilityConfigured('eta_query')).toBe(true); // inbound service.query would be accepted
+      a2.close();
+    } finally {
+      setServiceConfigRepository(null);
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('an explicit initialServiceConfig overrides the hydrated config (env/demo precedence)', async () => {
+    const repo = new InMemoryServiceConfigRepository();
+    await repo.put('self', JSON.stringify(validConfig), Date.now());
+    setServiceConfigRepository(repo);
+    // Mobile order: hydrate first…
+    await hydrateServiceConfig();
+    expect(getServiceConfig()?.name).toBe('Bus 42');
+    // …then an explicit env/demo config overrides on top.
+    const override: ServiceConfig = { ...validConfig, name: 'Demo Override' };
+    setServiceConfig(override);
+    expect(getServiceConfig()?.name).toBe('Demo Override');
   });
 });

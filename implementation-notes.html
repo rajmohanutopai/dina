@@ -44,7 +44,946 @@
 <body>
 <h1>Identity Hub Redesign — Implementation Notes</h1>
 <p class="sub">Running log of design decisions, deviations, tradeoffs, and open questions while implementing
-<code>docs/IDENTITY_HUB_REDESIGN.md</code>. Newest notes are appended within each phase.</p>
+<code>docs/IDENTITY_HUB_REDESIGN.md</code> and now <code>issues.txt</code> (mobile release P0/P1
+durability). Newest notes are appended within each phase.</p>
+
+<h2>Release P0/P1 — <code>issues.txt</code></h2>
+<p class="sub">Principle: anything claimed sovereign/safe/durable must survive mobile app kill/restart.
+In-memory state is not enough. Each item ships with restart tests.</p>
+
+<div class="phase">
+<h3>Item 1 — Persistent D2D outbox <span class="tag t-done">done</span></h3>
+
+<div class="item decision">
+  <div class="kind">Design — semantic payload, not sealed wire bytes</div>
+  <p>The new <code>d2d_outbox</code> table (identity DB, migration <strong>v6</strong>) stores the
+  <em>semantic</em> message — <code>target_did</code> + <code>message_type</code> + <code>body_json</code> —
+  not the sealed envelope. The drainer (<code>makeOutboxRedeliver</code>) re-resolves the recipient's
+  DID document (endpoint + X25519 key) and re-seals on <em>each</em> attempt. This is what the spec
+  recommended, and it means a queued message survives a recipient key-rotation or MsgBox-endpoint move
+  between enqueue and delivery — sealed bytes would have stranded it. State machine:
+  <code>pending → sending (leased) → sent | failed → dead</code>.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Design — facade over a repository seam (SQL when installed, memory fallback)</div>
+  <p><code>transport/outbox.ts</code> is now a thin facade that delegates to
+  <code>getD2DOutboxRepository() ?? memoryRepo</code>. Production installs
+  <code>SQLiteD2DOutboxRepository</code> in mobile + lite storage init; the in-memory
+  <code>InMemoryD2DOutboxRepository</code> remains only as a dev/test fallback (per the spec). Both
+  implement one interface, asserted byte-for-byte equal in a parity test. The repository methods are
+  <strong>synchronous</strong> — this follows <code>db_adapter.ts</code>'s documented "sync on purpose"
+  decision (SQLite is CPU-bound; op-sqlite/better-sqlite3 are sync), and it lets the send path enqueue
+  inline so a failed SQL write <em>throws</em> and the caller honestly reports <code>queued:false</code>
+  rather than lying about durability.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Design — idempotency + the drainer's <code>suppressEnqueue</code></div>
+  <p>Enqueue is idempotent on a stable key (<code>deriveIdempotencyKey</code>: service traffic keys on
+  the body <code>query_id</code>, everything else on the per-send message id), enforced by a partial
+  UNIQUE index over non-terminal rows (mirrors <code>idx_workflow_idem</code>). The drainer re-runs the
+  real send pipeline via <code>coreSendD2D({ suppressEnqueue: true })</code> — the flag stops a failed
+  re-delivery from enqueueing a <em>second</em> row, since the drainer already owns the row's retry
+  state (<code>markSent</code> / backoff <code>recordFailure</code> / dead-letter). Backoff is the Go
+  policy: 30s·2ⁿ, dead-letter at 5 attempts or 24h TTL. A dead-letter writes an audit entry (body never
+  logged).</p>
+</div>
+
+<div class="item deviation">
+  <div class="kind">Deviation — replaced the old sealed-bytes outbox API wholesale</div>
+  <p>The previous in-memory API (<code>enqueueMessage(recipientDID, payloadBytes)</code>,
+  <code>getPendingForRetry</code>, <code>markDelivered</code>, <code>retryPendingOutbox</code>, …) stored
+  sealed bytes and was never wired into any production boot (the retry worker was test-only). It had no
+  production consumers beyond <code>d2d/send.ts</code> + <code>transport/retry.ts</code> + the barrel, so
+  it was replaced rather than wrapped. <code>send.ts</code> now enqueues the semantic body; the two old
+  test files were rewritten against the durable model.</p>
+</div>
+
+<div class="item tradeoff">
+  <div class="kind">Tradeoffs considered</div>
+  <p><strong>Semantic vs sealed payload:</strong> sealed avoids re-resolution cost per retry but strands
+  on key rotation — rejected. <strong>Sync vs async repo:</strong> async would match the reminder repo's
+  style but breaks the inline-throw "queued only if persisted" guarantee and contradicts
+  <code>db_adapter.ts</code> — chose sync. <strong>Drainer re-uses the send pipeline</strong> (via
+  <code>suppressEnqueue</code>) rather than a parallel deliver-only path, so all gate/seal/window logic
+  stays in one place.</p>
+</div>
+
+<div class="item open">
+  <div class="kind">Open questions</div>
+  <p>(1) <strong>Re-delivered <code>service.response</code> + provider window:</strong> the response
+  re-seal re-reserves the provider window; if the 60s window already expired, the redeliver fails and
+  the row eventually dead-letters. That's arguably correct (a stale ETA past its window shouldn't land),
+  but confirm you're happy treating an expired-window response as a dead-letter rather than a silent
+  drop. (2) Drainer interval is 30s with a 60s claim lease — fine for mobile foreground; confirm the
+  cadence. (3) The lite drainer's timer is <code>unref</code>'d and not tracked for explicit stop
+  (process-lifetime); mobile tracks a handle and restarts it per boot.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Deep review — (1) correct? (2) smells? (3) tests?</div>
+  <p><strong>(1) Correct:</strong> durability is proven against the real
+  <code>NodeSQLiteAdapter</code> (better-sqlite3-multiple-ciphers, the production identity engine), not
+  just the Map — including a close+reopen-same-file restart that drains a survivor row, and the partial
+  unique index enforced at the SQL layer. <strong>(2) No smells found:</strong> one interface, two
+  faithful impls (parity-tested); the send path's failure branches share <code>tryEnqueue</code>; the
+  drainer is error-isolated per row. <strong>(3) Tests sound:</strong> restart simulation reopens the
+  same SQLCipher file (not just a module reset) — the gap a pure in-memory test would hide.</p>
+</div>
+
+<table class="log">
+<tr><th>Change</th><th>Tests</th></tr>
+<tr><td>schema v6 <code>d2d_outbox</code> + <code>SQLiteD2DOutboxRepository</code> / <code>InMemory…</code> + facade + drainer + redeliver + mobile/lite wiring</td>
+<td><span class="ok">core 4373 ✓</span> (incl. transport 109, outbox_repository 20 SQLite+InMemory parity, send.ts durability 17, retry restart-drain); <span class="ok">home-node 23 ✓</span>; <span class="ok">lite 2351 ✓</span>; <span class="ok">typecheck ✓</span></td></tr>
+</table>
+</div>
+
+<div class="phase">
+<h3>Item 2 — Locked-vault agent approval/resume <span class="tag t-done">done</span></h3>
+
+<div class="item decision">
+  <div class="kind">Design — one deterministic gate at the Core vault boundary</div>
+  <p><code>requireAgentPersonaAccess({agentDID, persona, mode, scope})</code> is the single, non-LLM
+  check the agent-facing vault read path calls before touching the vault. Decision tree: active
+  durable grant → allow; free tier (default/standard) → allow; sensitive/locked + no grant → create an
+  idempotent approval workflow task and return <code>approval_required</code> <em>without reading the
+  vault</em>; no workflow service to record the request → <strong>denied</strong> (fail closed). The
+  gate is wired into <code>POST /v1/vault/query</code> — the only agent-reachable vault path per
+  <code>authz.ts</code>.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Design — caller-type seam (owner bypasses, only the agent is gated)</div>
+  <p>The router now threads the auth result's <code>callerType</code> + <code>callerDID</code> onto
+  <code>CoreRequest</code>. The vault route gates <strong>only</strong> <code>callerType === 'agent'</code>;
+  the owner's own app dispatches in-process (no callerType) and reads every persona freely — the
+  <em>user-vs-agent persona-access</em> rule. So the lock protects against the dina-agent / OpenClaw,
+  never against the human.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Design — durable grant = SQL row; approval object = the workflow task</div>
+  <p>On approval the workflow approve handler writes an <code>agent_persona_grants</code> row (schema
+  <strong>v7</strong>) bound to the exact <code>(agent_did, persona, mode)</code> with a 1 h TTL. The
+  out-of-process agent then retries (possibly after an app restart) and the gate finds the grant. The
+  workflow task IS the durable approval object — we deliberately added <em>no</em> parallel
+  agent_sessions store (issues.txt: avoid parallel trust stores); <code>session_id</code> is just a
+  nullable tag on the grant. A <code>write</code> grant satisfies a <code>read</code> request, not the
+  reverse.</p>
+</div>
+
+<div class="item deviation">
+  <div class="kind">Deviation — added <code>'agent'</code> to <code>AllowedOrigins</code></div>
+  <p>The <code>workflow_tasks</code> CHECK already permitted <code>origin='agent'</code> but the
+  service-layer <code>AllowedOrigins</code> validator omitted it — a latent inconsistency. Aligned the
+  validator to the DB constraint (the runtime schema is the source of truth) so an agent-originated
+  approval task validates.</p>
+</div>
+
+<div class="item open">
+  <div class="kind">Open questions</div>
+  <p>(1) <strong>Locked (passphrase) tier:</strong> the gate returns <code>approval_required</code> for
+  a locked persona, but approval alone doesn't put the persona DEK in RAM — the user must also unlock.
+  Today: approve → grant + the user's unlock action → agent reads. Confirm the intended locked-tier UX
+  (should approving the card also trigger the unlock?). (2) Grant TTL defaults to 1 h, approval card to
+  15 min — confirm. (3) Scope: the approval payload stores the agent's <em>requested query</em>
+  (allowed by the spec as "requested scope/query") but never vault results; if even the request text is
+  considered sensitive, we'd redact it.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Deep review — (1) correct? (2) smells? (3) tests?</div>
+  <p><strong>(1) Correct:</strong> the check is deterministic + at the Core boundary (not LLM-mediated),
+  and fails closed. Data cannot leave before approval (the route returns 403 and never calls
+  <code>queryVault</code>); approval + grant survive restart (real-SQLite close+reopen test);
+  deny/expire/restart-before-approval all leave no grant ⇒ no data. <strong>(2) No smells:</strong>
+  reused the existing workflow-approval object + the staging persona-access pattern rather than a new
+  subsystem; one grant interface, two parity-tested impls. <strong>(3) Tests sound:</strong> binding is
+  proven negatively (wrong DID / wrong persona / expired / revoked all return null), and the route test
+  proves the owner-vs-agent discrimination, not just the helper.</p>
+</div>
+
+<table class="log">
+<tr><th>Change</th><th>Tests</th></tr>
+<tr><td>schema v7 <code>agent_persona_grants</code> + grant repo (SQLite/InMemory) + <code>requireAgentPersonaAccess</code> gate + approval task + grant-on-approve + router callerType seam + vault-route enforcement + mobile/lite wiring + <code>'agent'</code> origin</td>
+<td><span class="ok">core 4402 ✓</span> (grant_repository 15 SQLite+InMemory parity+restart+binding, access 12 gate/idempotency/no-vault-content/approve→resume/DID+persona+expiry binding/fail-closed/audit, vault route 3 owner-vs-agent); <span class="ok">lite 2351 ✓</span>; <span class="ok">typecheck ✓</span></td></tr>
+</table>
+</div>
+
+<div class="phase">
+<h3>Item 3 — Real export/import <span class="tag t-done">done</span></h3>
+
+<div class="item decision">
+  <div class="kind">Decision — implement real export/import (portability is a selling point)</div>
+  <p>Replaced the stub <code>createArchive</code> (which wrote <code>persona_count:0</code> / empty
+  manifest) with a real <code>ArchivePayloadV1</code>: <code>{ header, identity:{tables}, personas:[{name,tier,tables}] }</code>.
+  Rows are read through a registered <code>ArchiveDataSource</code> (the storage layer's identity
+  adapter + open persona adapters). The wire format (DINA magic + Argon2id + AES-256-GCM) is unchanged,
+  so it stays cross-compatible server↔mobile.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Design — secret exclusion by allowlist + kv denylist</div>
+  <p>Exported identity tables are an explicit allowlist (contacts / people / identities / surfaces /
+  reminders / service_config / chat_messages); persona tables are vault_items / vault_item_subjects /
+  topic_salience / topic_aliases. <code>kv_store</code> is exported with sensitive keys filtered
+  (api_key / password / token / secret / seed / mnemonic / pds_ / passphrase). NEVER exported:
+  <code>paired_devices</code> (device tokens), <code>agent_persona_grants</code> (active grants),
+  master seed, and all volatile/transient tables (audit, workflow, staging, d2d_outbox, fts index).</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Design — clean-install import, transactional, checksum-validated</div>
+  <p>V1 import is clean-install-only (avoids merge complexity): it refuses a target that already holds
+  user data unless <code>force</code> is set, validates the manifest format + version + per-table
+  SHA-256 checksums BEFORE writing, and restores each table inside a transaction (identity in one,
+  each persona in its own). A data-bearing payload with <strong>no</strong> data source throws — import
+  never silently succeeds in production. Empty archives (dry-run/no source) still import as a no-op.</p>
+</div>
+
+<div class="item tradeoff">
+  <div class="kind">Tradeoffs</div>
+  <p>Generic <code>SELECT *</code> dump + <code>INSERT OR REPLACE</code> restore (vs hand-mapped
+  per-table DTOs): simpler, schema-evolution-tolerant, and the checksum guards integrity. Clean-install
+  only (vs merge): the spec's V1 scope — merge/CRDT is deferred. Kept the legacy
+  <code>setImportHandler</code> seam so older manifest-only callers/tests still run.</p>
+</div>
+
+<div class="item open">
+  <div class="kind">Open questions</div>
+  <p>(1) Mobile <em>import</em> UI: I wired the export data source (so "export" now produces real data)
+  and the core import path is fully implemented + tested, but there is no mobile <em>import</em> screen
+  yet — recovery-restore would call <code>importArchive</code> with the same data source. Confirm
+  whether an import UI is in release scope. (2) <code>chat_messages</code> is exported as user content
+  (not in the spec's explicit list but clearly the user's data) — confirm that's desired.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Deep review — (1) correct? (2) smells? (3) tests?</div>
+  <p><strong>(1) Correct:</strong> round-trips real rows across a clean install (real SQLCipher, two
+  personas), excludes secrets, fails closed on wrong-pass / corrupt / bad-version / non-clean-target /
+  no-source. <strong>(2) No smells:</strong> one data-source seam, generic dump/restore, deterministic
+  checksums; the wire format + crypto were preserved untouched. <strong>(3) Tests sound:</strong> the
+  round-trip imports into a SEPARATE DB set (not the source), proving real persistence + the
+  clean-install path, and asserts the secret key is absent from the restored target.</p>
+</div>
+
+<table class="log">
+<tr><th>Change</th><th>Tests</th></tr>
+<tr><td>real <code>ArchivePayloadV1</code> + <code>ArchiveDataSource</code> seam + table dump/restore + checksums + secret exclusion + clean-install import + mobile export wiring</td>
+<td><span class="ok">export 36 ✓</span> (archive 32 crypto/format/dry-run + archive_real 4: multi-persona round-trip, secret-excluded, clean-install guard+force, no-source-throws, wrong-pass/corrupt/version); <span class="ok">cross_compat + package_exports ✓</span>; <span class="ok">typecheck ✓</span></td></tr>
+</table>
+</div>
+
+<div class="phase">
+<h3>Item 4 — Mobile service-config hydration <span class="tag t-done">done</span></h3>
+
+<div class="item decision">
+  <div class="kind">Root cause + fix — mobile registered the repo but never hydrated</div>
+  <p>Mobile <code>createNode</code> (<code>bootstrap.ts</code>) called <code>setServiceConfigRepository</code>
+  + applied <code>initialServiceConfig</code>, but never <code>hydrateServiceConfig()</code> — so after a
+  restart <code>getServiceConfig()</code> returned null even though SQL held the provider profile, which
+  meant inbound <code>service.query</code> was denied at the contact gate and the publisher never
+  republished. Lite already hydrated in its storage init; mobile now matches.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Design — explicit precedence: register → hydrate → env/demo override</div>
+  <p>The register call stayed in the synchronous <code>installCoreGlobals</code> closure; hydration was
+  moved into <code>createNode</code>'s async <code>start()</code> right after globals install, followed
+  by the <code>initialServiceConfig</code> apply. So persisted user config survives a normal restart,
+  while an env/demo build can still deliberately override on top. (First attempt put <code>await</code>
+  in the sync closure → caught by the boot tests; relocating to <code>start()</code> is the fix.)</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Deep review — (1) correct? (2) smells? (3) tests?</div>
+  <p><strong>(1) Correct:</strong> hydration is awaited before the node serves traffic; it fails soft
+  (corrupt row → runtime null + logged, never a boot crash). Precedence verified: no override → persisted
+  wins; override present → it wins. <strong>(2) No smells:</strong> reused the existing
+  <code>hydrateServiceConfig</code> (the same primitive lite uses) — no new mechanism, just the missing
+  call at the right point. <strong>(3) Tests sound:</strong> added a real-SQLite close+reopen restart
+  (true durability, not an in-memory map) + an <code>isCapabilityConfigured</code>-after-restart check
+  (proves inbound service.query would now be accepted) + the env-override precedence.</p>
+</div>
+
+<table class="log">
+<tr><th>Change</th><th>Tests</th></tr>
+<tr><td>mobile <code>createNode</code> hydrates service config (register→hydrate→override) in async <code>start()</code></td>
+<td><span class="ok">service_config 28 ✓</span> (+ real-SQLite restart + env-override precedence); <span class="ok">mobile boot 40 ✓</span>; <span class="ok">lite 2351 ✓</span> (unchanged — already hydrated); <span class="ok">typecheck ✓</span></td></tr>
+</table>
+</div>
+
+<div class="phase">
+<h3>Item 5 — Paired-device revoke persistence <span class="tag t-done">done</span></h3>
+
+<div class="item decision">
+  <div class="kind">Root cause + fix — revoke never wrote SQL; hydrate already skipped revoked</div>
+  <p><code>revokeDevice</code> cut auth + set the in-memory <code>revoked</code> flag but never persisted
+  to SQL, so <code>hydrateDeviceRegistry</code> (which already guards <code>if (!d.revoked …)</code>)
+  reloaded the row as <em>active</em> on the next boot — a revoked OpenClaw/CLI device became trusted
+  again. Added <code>revokeDeviceDurable</code>: it writes <code>revoked=1</code> to SQL <strong>first</strong>,
+  then cuts in-memory + auth access, and only reports <code>durable: true</code> when the write
+  succeeded. The legacy sync <code>revokeDevice</code> also got a fail-safe fire-and-forget write-through
+  so even it survives restart.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Design — persist-first, fail-safe, idempotent, with grant cascade</div>
+  <p>If the SQL write fails, access is still cut in-memory (fail-safe deny) but the result is
+  <code>durable: false</code> + an error, so the UI shows "not fully saved — may not survive a restart"
+  instead of claiming a durable revoke (the mobile <code>paired-devices</code> screen now does exactly
+  this). Re-revoking a revoked device is a success no-op (idempotent); an unknown device returns a clean
+  <code>found:false</code>. Revoke also cascades to the device DID's durable <code>agent_persona_grants</code>
+  (§2) — a revoked agent immediately loses any locked-vault grant, even before it's re-paired.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Deep review — (1) correct? (2) smells? (3) tests?</div>
+  <p><strong>(1) Correct:</strong> durability is persist-then-report; the restart test proves a revoked
+  device stays revoked AND can't authenticate (<code>resolveCallerType → 'unknown'</code>, so it can't
+  claim workflow tasks) after a real close+reopen + re-hydrate. Fail-safe on persistence error.
+  <strong>(2) No smells:</strong> extracted the shared <code>cutDeviceAccess</code> helper; reused the
+  repo's existing <code>revoke()</code>; the sync path keeps back-compat. Caught my own bug — the
+  refactor briefly dropped <code>device.revoked = true</code> on the sync path; the existing
+  double-revoke test flagged it immediately (contract test earned its keep). <strong>(3) Tests sound:</strong>
+  restart uses a real SQLCipher file (not an in-memory map), and the repo-failure test injects a
+  throwing repo to prove no phantom durable success.</p>
+</div>
+
+<table class="log">
+<tr><th>Change</th><th>Tests</th></tr>
+<tr><td><code>revokeDeviceDurable</code> (persist-first, fail-safe, idempotent, agent-grant cascade) + sync write-through + mobile UI + barrel export</td>
+<td><span class="ok">devices 44 ✓</span> (registry 38 + revoke_durable 6: restart-stays-revoked + can't-auth, idempotent, unknown, repo-failure-not-durable, grant cascade, register→hydrate-active); <span class="ok">core 4415 ✓</span>; <span class="ok">mobile 2750 ✓</span>; <span class="ok">lite 2351 ✓</span>; <span class="ok">typecheck ✓</span></td></tr>
+</table>
+</div>
+
+<div class="item decision">
+  <div class="kind">All 5 items complete — full-suite green</div>
+  <p>core <strong>4415</strong> · mobile <strong>2750</strong> · lite <strong>2351</strong> · home-node
+  <strong>23</strong> · workspace typecheck ✓. Every "durable safety" claim (queued D2D, locked-vault
+  grant, exported backup, provider config, revoked device) now writes durable SQLCipher state first and
+  is proven across a real close+reopen restart, per the cross-cutting requirement. Manual release
+  checklist items map 1:1 to the restart tests added in each section.</p>
+</div>
+</div>
+
+<div class="phase">
+<h3>Follow-ups (confirmed with reviewer) <span class="tag t-done">done</span></h3>
+
+<div class="item decision">
+  <div class="kind">Item 2b — approving a locked-persona request also UNLOCKS it</div>
+  <p>Open question resolved (reviewer: yes). A locked/sensitive persona's DEK may not be resident, so a
+  grant alone wouldn't let the agent's retry decrypt. Added an injectable
+  <code>setAgentPersonaUnlockHook</code>; <code>grantAgentPersonaAccessFromApproval</code> fires it
+  (best-effort, fire-and-forget) when the grant is written. Deriving the DEK needs the master seed, so
+  Core fires the hook rather than unlocking directly — mobile wires it to <code>openPersonaDB</code>,
+  lite to its <code>openVaultDB</code>. Test: approving a locked-tier request fires the hook with the
+  persona name. <span class="ok">access 13 ✓ · lite 2351 ✓ · mobile 246 ✓</span>.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Item 3b — Backup &amp; restore UI (Settings → Admin)</div>
+  <p>Surfaced both halves (neither was wired before): <strong>Export</strong> (passphrase → archive →
+  share sheet) and <strong>Restore</strong> (pick <code>.dina</code> → passphrase → preview via
+  <code>listArchiveContents</code> → import; clean-install direct, else a destructive "overwrite"
+  confirm with <code>force</code>; then "close &amp; reopen" so persistence re-hydrates). File IO is
+  injected (<code>configureRestore</code>) so the screen + service are testable without native modules
+  — same pattern as <code>configureSharing</code>. <strong>Placement rationale:</strong> the archive
+  excludes the master seed, so import is a DATA restore into an EXISTING identity → it belongs
+  post-onboarding in Admin, not as a third onboarding branch.</p>
+</div>
+
+<div class="item open">
+  <div class="kind">Open — one dependency to activate the picker</div>
+  <p>The live file-pick needs <code>expo-document-picker</code> (a native module not yet installed).
+  The wiring uses a lazy <code>require</code>, so all code compiles + tests pass now, and the Admin
+  screen honestly shows a "rebuild the dev client" note until the module is present
+  (<code>isRestoreConfigured()</code> probes availability). To activate: <code>npx expo install
+  expo-document-picker</code> in <code>apps/mobile</code> + rebuild the dev client. Export works today
+  (uses <code>expo-sharing</code>, already a dep).</p>
+</div>
+
+<table class="log">
+<tr><th>Change</th><th>Tests</th></tr>
+<tr><td>unlock-on-approve hook (Core + mobile + lite); backup/restore service + Admin UI + native wiring (lazy-required picker)</td>
+<td><span class="ok">core agent/access 13 ✓</span>; <span class="ok">mobile restore_import 3 ✓</span> (real archive round-trip through the wrapper); <span class="ok">mobile 2753 ✓</span>; <span class="ok">lite 2351 ✓</span>; <span class="ok">typecheck ✓</span></td></tr>
+</table>
+
+<div class="phase">
+<h3>Deep review — round 2 (skeptical re-read) <span class="tag t-done">done</span></h3>
+<p class="sub">Ran a fresh-eyes adversarial pass over all changed files against the three questions. Fixed every
+substantive finding; the rest were assessed and left with rationale.</p>
+
+<div class="item decision">
+  <div class="kind">Fixed — 6 substantive findings</div>
+  <p><strong>(1) Archive import — table allowlist + column validation + parent-first order.</strong>
+  <code>importArchive</code> now iterates the EXPORT allowlists (not the payload's JSON key order), so a
+  crafted archive can't smuggle a non-exported table (<code>paired_devices</code> / <code>agent_persona_grants</code>)
+  into the DB, and parents (<code>vault_items</code>) restore before children (<code>vault_item_subjects</code>).
+  Column identifiers are validated against <code>/^[A-Za-z_][A-Za-z0-9_]*$/</code> before interpolation
+  (defence-in-depth even though the archive is GCM-encrypted). <strong>(2) Agent gate on ALL persona-read
+  routes.</strong> The §2 gate was wired only on <code>/v1/vault/query</code>; moved it into a shared
+  <code>agentReadGate</code> helper applied to <code>/v1/vault/list</code>, <code>/item/:id</code>, and
+  <code>/subjects</code> too — so the policy lives in the handler (one source of truth) and can't drift
+  from the authz matrix. Also fail-closed when an agent caller has no DID. <strong>(3) Unlock-on-approve
+  race.</strong> The persona-unlock hook was fire-and-forget — the agent could retry mid-unlock and fail
+  to decrypt. Made <code>grantAgentPersonaAccessFromApproval</code> async and <code>await</code> the
+  unlock; the approve route (<code>runAction</code> → <code>approveTask</code>) now awaits it, so the DEK
+  is resident before the approval response returns. The test was a false green (sync hook); now uses a
+  delayed async hook that would fail if the await were dropped. <strong>(4) Drainer overlap guard.</strong>
+  Added a <code>running</code> flag so a slow network drain can't overlap the next interval tick.
+  <strong>(5) Outbox insert race.</strong> A concurrent same-key insert losing to the partial unique
+  index now returns the winning row instead of throwing (which would have falsely reported a queued
+  message lost); reworded the test that overclaimed it "proved the constraint." <strong>(6) End-to-end
+  threading test.</strong> Added a router test driving a real SIGNED request through auth, asserting
+  <code>callerType</code>/<code>callerDID</code> are threaded from the auth result — and that a forged
+  inbound <code>callerType</code> is overwritten (can't be set over the wire).</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Verified safe — the in-process auth bypass</div>
+  <p>The router skips auth for <code>trustedInProcess</code> requests (and never threads
+  <code>callerType</code> for them → treated as owner). Confirmed by reading
+  <code>bind_core_router.ts:buildCoreRequest</code>: the lite Fastify adapter builds the CoreRequest with
+  only method/path/query/headers/body/rawBody/params — it NEVER sets <code>trustedInProcess</code>,
+  <code>callerType</code>, or <code>callerDID</code>. So those are set only by <code>InProcessTransport</code>
+  (owner) and the router (post-auth) — an HTTP attacker cannot forge any of them. The §2 gate is secure
+  by construction.</p>
+</div>
+
+<div class="item tradeoff">
+  <div class="kind">Assessed and intentionally left (with rationale)</div>
+  <p><strong>recordFailure attempt boundary:</strong> 5 drainer attempts before dead-letter (plus the
+  initial live send) — matches "dead-letter after 5 retries"; not off-by-one. <strong>suppressEnqueue
+  returns <code>sent:true</code> on a failed redeliver:</strong> the drainer only reads
+  <code>delivered</code>; <code>sent</code> means "pipeline ran," documented. <strong>No unique index on
+  <code>agent_persona_grants</code>:</strong> matches the spec's schema; <code>findActiveGrant</code>
+  returns one and the §5 cascade (<code>revokeForAgent</code>) revokes ALL rows for the DID, so a
+  duplicate grant is benign + fully revocable. <strong>WS-path commits the provider window without a
+  buffered/retry distinction:</strong> pre-existing delivery code, not introduced by this work — left
+  untouched to avoid changing live delivery semantics.</p>
+</div>
+
+<table class="log">
+<tr><th>Round-2 fixes</th><th>Tests</th></tr>
+<tr><td>archive allowlist+column-validation+order · gate on list/item/subjects+empty-DID · awaited unlock+async-hook test · drainer overlap guard · outbox insert-race→winner · router threading e2e test</td>
+<td><span class="ok">core 4419 ✓</span> · <span class="ok">mobile 2753 ✓</span> · <span class="ok">lite 2351 ✓</span> · <span class="ok">home-node 23 ✓</span> · <span class="ok">typecheck ✓</span></td></tr>
+</table>
+</div>
+
+<div class="phase">
+<h3>Deep review — round 3 (external reviewer, 9 findings) <span class="tag t-done">done</span></h3>
+
+<div class="item open">
+  <div class="kind">⚠ Critical infra finding — the workspace typecheck was a no-op</div>
+  <p>Root <code>tsconfig.json</code> has <code>"files": []</code> + <code>"references": []</code>, so
+  <code>npm run typecheck</code> (<code>tsc --build</code>) compiled NOTHING. Every prior "typecheck ✓"
+  in this log was hollow — jest's per-file ts-jest (isolatedModules) doesn't validate cross-module
+  export membership, which is exactly how the P0 below slipped through. <strong>I now verify with
+  per-package <code>tsc --noEmit -p</code></strong> on core / home-node / mobile / lite-core /
+  lite-brain (all clean). The workspace <code>typecheck</code> script should be wired to actually
+  build the project graph (populate <code>references</code>) or run per-package — flagging for a
+  follow-up; it's a real gap that masks type errors in CI.</p>
+</div>
+
+<div class="item deviation">
+  <div class="kind">#1 (P0, MY bug) — mobile didn't typecheck</div>
+  <p>The Item-4 change imported <code>hydrateServiceConfig</code> from <code>@dina/core/runtime</code>,
+  which didn't export it (only the main barrel did). Fixed by adding it to the runtime barrel's
+  service-config block (consistent with <code>getServiceConfig</code>/<code>setServiceConfig</code>
+  already there). Now <code>tsc -p apps/mobile</code> is clean.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">#2 (P1) — agent WRITE paths now gated</div>
+  <p>Generalised the vault gate to <code>agentGate(req, persona, mode, scope)</code> and applied
+  <code>mode:'write'</code> to <code>/v1/vault/store</code> + <code>DELETE /v1/vault/item/:id</code>
+  (reads use <code>'read'</code>). authz already denies <code>agent</code> on those routes, so this is
+  defence-in-depth + makes the gate the single source of truth; it also activates the <code>write</code>
+  grant dimension. Tests added for agent store/delete on a sensitive persona → 403.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">#3 (P1) — grants are persona-wide, now EXPLICIT</div>
+  <p>The reviewer was right that <code>scope</code> is stored but never enforced. Resolved per their
+  offered option: grants are intentionally PERSONA-WIDE (per <code>agent+persona+mode</code>) — the user
+  approves a persona, not a query; per-query approval is approval-fatigue. Documented prominently
+  (module header "GRANT GRANULARITY" + the <code>scope</code> field as informational/audit only).
+  Cross-persona isolation IS enforced (the boundary §2 actually requires) — proven by the existing
+  "health grant ≠ finance" test.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">#4 (P2) — clean-install guard broadened</div>
+  <p><code>hasExistingUserData</code> checked only reminders+contacts; now checks people /
+  person_identities / chat_messages / service_config + persona <code>vault_items</code>. Deliberately
+  EXCLUDES <code>kv_store</code> (it holds system rows — notification perms/mirrors — even on a fresh
+  onboard, so it isn't a user-content signal and would falsely flag every device non-clean).</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">#5 (P2) — export no longer silently omits a persona</div>
+  <p>The export data source skipped any persona whose DB wasn't already open. Now it OPENS each persona
+  vault on demand; an un-openable persona makes the whole export throw (loud) rather than producing a
+  partial archive — correct for a sovereignty feature.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">#6 (P2) — lifecycle contract reconciled with the gate</div>
+  <p>Updated <code>vault/lifecycle.ts</code>'s tier table to the V1 agent contract the gate enforces:
+  <code>locked</code> agents → approval+grant (superseding the old "denied", per §2 approve/resume);
+  <code>standard</code> → open in V1 with the per-session-grant model documented as deferred. Code,
+  doc, and tests now agree.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">#7 (P3) — reminder fire loop kicks off on boot</div>
+  <p>lite-brain's loop only started a <code>setInterval</code> (due reminders waited ≤30 s after boot).
+  Added a <code>setTimeout(…,0)</code> kickoff (≈immediate at runtime, unref'd) — deferred to the next
+  macrotask so it doesn't perturb the boot sequence's fetch-ordering assertions.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">#9 (P3) — stray EOF blank line</div>
+  <p>Stripped the trailing blank line in <code>dina_details.md</code> (git diff --check hygiene).</p>
+</div>
+
+<div class="item tradeoff">
+  <div class="kind">#8 (P3) — agreed-but-deferred</div>
+  <p>The stale "source of truth" wording + deleted-test references in <code>docs/core-walkthrough.md</code>
+  / <code>security-walkthrough.md</code> are real, but they describe the DEPRECATED Go stack and the
+  <code>api/core-api.yaml</code> codegen is intentionally kept-legacy (per CLAUDE.md). Out of the
+  issues.txt durability scope — recommend a separate doc-cleanup pass rather than editing
+  deprecated-stack walkthroughs now.</p>
+</div>
+
+<table class="log">
+<tr><th>Round-3 fixes</th><th>Tests</th></tr>
+<tr><td>runtime barrel export (#1) · write-gate on store/delete (#2) · persona-wide grant doc (#3) · broadened clean-install guard (#4) · open-on-demand export (#5) · lifecycle contract doc (#6) · boot reminder kickoff (#7) · EOF blank (#9)</td>
+<td><span class="ok">core 4420 ✓</span> · <span class="ok">mobile 2753 ✓</span> · <span class="ok">lite-core 2351 ✓</span> · <span class="ok">lite-brain 54 ✓</span> · <span class="ok">per-package tsc ✓</span> (core/home-node/mobile/lite — the real check, root <code>tsc --build</code> being a no-op)</td></tr>
+</table>
+</div>
+
+<div class="phase">
+<h3>Deep review — round 4 (typecheck made real + helper aligned) <span class="tag t-done">done</span></h3>
+
+<div class="item decision">
+  <div class="kind">#1 (P1) — root typecheck now actually runs (and is green)</div>
+  <p>Last round I only FLAGGED that <code>npm run typecheck</code> (root <code>tsc --build</code> with
+  empty <code>files</code>/<code>references</code>) was a no-op. Now FIXED: the root <code>typecheck</code>
+  script runs <code>npm run typecheck --workspaces --if-present</code> — all 22 workspace packages
+  already have a <code>tsc --noEmit</code> script, so this checks the real graph. It immediately
+  surfaced <strong>2 pre-existing type errors the no-op had masked</strong>, both now fixed:
+  <code>query_window.ts</code> (a <code>number→{unref}</code> cast — routed through <code>unknown</code>)
+  and <code>adapters-node/__tests__/brain_smoke.test.ts</code> (<code>VaultQuery</code> has no
+  <code>q</code> field). <code>npm run typecheck</code> is now EXIT 0 across all 22 packages.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">#2 (P2) — agentCanAccess() aligned to the V1 contract</div>
+  <p>The doc table (round 3) said one thing while the helper still returned standard=grant-required +
+  locked=denied. Aligned <code>agentCanAccess()</code> to what <code>requireAgentPersonaAccess</code>
+  enforces: default/standard → open; sensitive/locked → require grant. Updated its tests
+  (<code>lifecycle.test.ts</code> + <code>persona_wall.test.ts</code>) to the V1 contract. Helper, gate,
+  doc, and tests now agree.</p>
+</div>
+
+<div class="item deviation">
+  <div class="kind">Collateral — brain_smoke fake routes were pre-existing-broken</div>
+  <p>Fixing the <code>q</code>→<code>text</code> type error exposed that this adapters-node smoke test
+  was red at RUNTIME too (I'd never run adapters-node). Its fake vault routes read
+  <code>body.persona</code> + <code>body.q</code>, but <code>InProcessTransport</code> sends persona in
+  the query-string + <code>text</code> in the body — so it matched nothing. Fixed both fake routes to
+  mirror the real route's contract (persona from query-string, <code>text</code> from body). 3/3 green.</p>
+</div>
+
+<div class="item tradeoff">
+  <div class="kind">Pre-existing, out of scope — treeshaking "HttpClient → @noble/ed25519"</div>
+  <p>One adapters-node treeshaking test fails: importing only <code>HttpClient</code> pulls in
+  <code>@noble/ed25519</code>. This is structurally independent of this work — it bundles
+  <code>net-node</code>/<code>adapters-node</code> only, which don't depend on <code>@dina/core</code>,
+  and I touched none of their source. Pre-existing bundle-hygiene issue in the adapters/net layer;
+  recommend a separate fix (same disposition as #8).</p>
+</div>
+
+<div class="item open">
+  <div class="kind">Honesty note — my test coverage had been incomplete</div>
+  <p>These rounds kept surfacing red tests in packages I wasn't running (adapters-node). My changes are
+  verified green in every package that consumes them — core 4420, brain 3244, home-node 23, lite-core
+  2351, lite-brain 54, mobile 2753 — and the now-real per-package typecheck covers all 22. But
+  pre-existing failures may exist in low-level packages I didn't modify (e.g. the treeshaking one); they
+  are not caused by this work. The real fix for the blind spot is the now-working root typecheck +
+  running the full workspace test in CI.</p>
+</div>
+
+<table class="log">
+<tr><th>Round-4 fixes</th><th>Tests</th></tr>
+<tr><td>root typecheck wired to all workspaces (#1) + 2 masked type errors fixed · agentCanAccess aligned + tests (#2) · brain_smoke fake routes fixed</td>
+<td><span class="ok">npm run typecheck EXIT 0 (22 pkgs)</span> · <span class="ok">core 4420 ✓</span> · <span class="ok">brain 3244 ✓</span> · <span class="ok">adapters-node brain_smoke 3 ✓</span> (treeshaking pre-existing-fail, out of scope)</td></tr>
+</table>
+</div>
+
+<h2>Codex-review fixes (post-commit, uncommitted)</h2>
+<div class="item decision">
+  <div class="kind">Fixed 6.5 of 7 (groups: real / pre-existing-lite / deferred). Skipped Nuanced (#2,#5,#10).</div>
+  <p><strong>#1 (resolution order)</strong> — <code>upsertContactPerson</code> now follows doc §4:
+  identity → exactly-one unambiguous confirmed surface → create (so a note-before-DID memory connects
+  when the contact is added later). Ambiguous names still create new. Flipped the old "no auto-merge"
+  test + added an ambiguous-name test. <strong>#8</strong> — the Core apply route no longer swallows a
+  subject-link failure silently; it logs (post_publish already surfaced via result.errors).
+  <strong>#9 (D8 canonicalization)</strong> — <code>canonicalizeIdentityValue</code> (email/handle
+  lowercase, phone→digits, did trim) applied on identity write + lookup; DID-only today, future-safe
+  for email/phone import. <strong>#3 (vault routes)</strong> — <code>vaultStore</code> now sends
+  persona in the QUERY (was body → silently landed in general); registered <code>GET /v1/vault/list</code>
+  + <code>DELETE /v1/vault/item/:id</code>; corrected the fake-route tests + added a REAL-router
+  contract test (proves persona routing + route existence — the gap the fakes hid).
+  <strong>#7 (doc §4.1)</strong> — added <code>rebuildContactProjections()</code> (clears + re-derives
+  the gate/source-trust sets from contacts) for drift self-heal; documented that people-repo
+  reject/delete needs it. <strong>#6 (merge)</strong> — added <code>vaultRepo.repointSubjectsSync</code>
+  + a directory-level <code>mergeContactPersons()</code> that folds contact policy + re-points subject
+  links across wired personas + delegates to <code>peopleRepo.mergePeople</code> + rebuilds projections;
+  the repo's <code>mergePeople</code> comment now points to it. <strong>#4b</strong> — lite
+  <code>vault_read</code> + <code>browse_vault</code> route through the vault read backend (Core HTTP)
+  instead of in-process, matching <code>vault_search</code>. Each fix has a test; core 4357 + brain
+  3230 green.</p>
+</div>
+<div class="item decision">
+  <div class="kind">#4a — lite reminder-over-HTTP: DONE (complete subsystem)</div>
+  <p>Built the full Brain/Core reminder boundary for lite. <strong>Scope, narrowed to truth:</strong>
+  Brain performs exactly three reminder operations — <code>createReminder</code> (reminder_planner +
+  schedule_reminder tool), <code>listByPersona</code> (drain D2D-card hook + chat <code>/remember</code>
+  reply), <code>listPending</code> (briefing + <code>reminder_check</code> tool). Fire/complete/snooze
+  are host/UI (mobile fire-watcher, SPA actions) or Core-internal — NOT the Brain boundary — so a
+  "create+list+fire" framing over-scoped it; create+list+listPending is the whole Brain surface.
+  <strong>Build:</strong> (a) Core routes <code>POST /v1/reminders</code>, <code>GET /v1/reminders?persona</code>,
+  <code>GET /v1/reminders/pending?now</code> (<code>routes/reminders.ts</code>, deps-injectable like
+  people.ts; registered in core_server; authz allowlist already had <code>/v1/reminders</code>).
+  (b) <code>CoreClient.reminderCreate/reminderListByPersona/reminderListPending</code> + http- and
+  in-process transports + a functional <code>MockCoreClient</code> reminder store (dedups like the
+  service). (c) A <code>ReminderBackend</code> seam in Brain (<code>reminders/backend.ts</code>:
+  <code>setReminderBackend</code> + <code>create/listByPersona/listPendingRouted</code>) parallel to the
+  vault/people read backends — backend set ⇒ route through Core; unset (mobile/tests) ⇒ in-process
+  service. (d) Six consumers re-pointed at the routed wrappers; <code>assembleBriefing</code> and
+  <code>executeReminderCheck</code> became async (necessary ripple from the process split — the briefing
+  has no production caller today, so low-risk). (e) <code>brain-server/boot.ts</code> wires the backend
+  to its CoreClient. <strong>Tests:</strong> a REAL-router Core contract test (create persists + persona
+  isolation + dedup + pending cutoff) and a Brain backend-routing test that asserts the in-process
+  service is NOT touched when a backend is set — the exact split-state bug this fixes. New: core +4,
+  brain +5, all green.</p>
+</div>
+<div class="item open">
+  <div class="kind">#4a fallout — bdfff5b had left the MOBILE suite red (5 suites, 48 tests); FIXED</div>
+  <p>Running the workspace-wide suites for #4a surfaced that the committed identity-hub work
+  (<code>bdfff5b</code>) broke 5 mobile suites — <code>useContacts</code>, <code>useContactDetail</code>,
+  <code>usePhoneContacts</code>, <code>staging_enrichment</code>, <code>staging_drain_end_to_end</code>,
+  plus the contacts case in <code>stories/user_stories</code>. Single root cause: contacts are
+  person-keyed now, so <code>establishContact</code> hard-requires a wired people repo
+  (<code>requirePeopleRepo</code> throws by design — "loud, not a data-shape footgun"), and these tests
+  never wired one. The per-phase work ran only <code>cd packages/core</code> / <code>packages/brain</code>,
+  not the workspace suites, so mobile's red went unnoticed. Fix: wire <code>makeFakePeopleRepo()</code>
+  (the shared in-memory repo from #1) in each suite's setup — mirrors production mobile boot
+  (<code>SQLitePeopleRepository</code>). Mobile now 152 suites / 2741 green.
+  <strong>Lesson (logged):</strong> a cross-package schema change (contacts re-key) must be validated
+  with the workspace-wide suites before "green", not just the two packages directly edited.</p>
+</div>
+<div class="item decision">
+  <div class="kind">#4a deep review — (1) correct (2) no smells (3) tests sound</div>
+  <p><strong>(1) Correct way?</strong> The backend-seam mirrors the established
+  <code>setVaultReadBackend</code>/<code>setPeopleReadBackend</code> pattern exactly; routes use path
+  constants like every sibling route file; auth was already provisioned. The three-op surface is the
+  complete set Brain actually calls — verified by grepping every <code>@dina/core/reminders</code>
+  consumer in <code>packages/brain/src</code> (remaining imports are type-only or the backend's own
+  in-process fallback). <strong>(2) Smells?</strong> None material. The wrappers are always-async even
+  in-process (one microtask on mobile — negligible, and it's the documented async-everywhere port rule).
+  <code>cross_stack_compat</code>'s scanner under-counts the new routes (they register via constants, not
+  string literals) so the 8.60 matrix still lists <code>/v1/reminders/pending</code> as a gap — harmless
+  (conservative: claims a gap that's actually closed) and consistent with the codebase's constant-based
+  registration; not worth a literal-based regression. <strong>(3) Tests?</strong> Real-router contract
+  test catches client/route drift the per-transport fakes can't; the backend test pins the
+  no-split-state invariant. <strong>Open question (pre-existing, not mine):</strong>
+  <code>assembleBriefing</code> has no production caller — the daily briefing may be dormant/unwired.
+  Out of scope for #4a; flagged for the briefing owner.</p>
+</div>
+<div class="item decision">
+  <div class="kind">cross_stack_compat — 2 pre-existing fails FIXED (root cause, not floor-fudge)</div>
+  <p>The two red 8.61 tests weren't caused by #4a (verified: no <code>/v1/reminders</code> literal enters
+  <code>packages/brain/src</code>; that scan was byte-identical pre/post). Root cause, diagnosed:
+  <code>extractTSBrainCalls</code> scans <code>packages/brain/src</code> for <code>/v1/…</code> as a proxy
+  for "endpoints Lite Brain calls", but <strong>Lite Brain calls Core via the typed
+  <code>CoreClient</code>, not raw path literals</strong> — so every path it picks up is a
+  <em>doc/JSDoc reference</em>, and the real literals live in the client transports. Eleven of the twelve
+  referenced paths name real Core endpoints; the twelfth, <code>/v1/responses</code>, is
+  <strong>OpenAI's Responses API</strong> mentioned in the LLM-adapter docs — not a Core endpoint. It was
+  mis-counted as a "Lite-Brain→Core call with no Go-Core peer", tripping both the known-gap audit and the
+  overlap floor (10/12 = 0.833 &lt; 0.85). Fix: a documented <code>NON_CORE_V1_PATHS</code> filter drops
+  third-party API paths from the scan (the path genuinely isn't Core's), and the docstring now states the
+  TS-Brain scan is a doc-reference proxy. Resulting set = 11 real Core refs, overlap 10 (the one gap,
+  <code>/v1/ws/notify</code>, is already a KNOWN_861 entry) → ratio 0.909. <strong>Not a floor-lowering
+  band-aid</strong> — the floor stands; the false positive is removed at source. Core now
+  <strong>4363 passed / 0 failed</strong> (1 skip).</p>
+</div>
+<div class="item decision">
+  <div class="kind">#4a second deep-review pass — (1) correct (2) one smell fixed (3) one test bug fixed</div>
+  <p>Re-audited the whole #4a + cross_stack diff line-by-line.
+  <strong>(1) Correct:</strong> migration is complete — grep confirms zero direct
+  <code>createReminder</code>/<code>listByPersona</code>/<code>listPending</code> calls remain in
+  <code>packages/brain/src</code> outside the backend's own in-process fallback (the two hits are a
+  comment and the unrelated <code>listPendingProposals</code>); no dangling/unused imports
+  (<code>Reminder</code> type still referenced in every file it's imported into). Routes are registered
+  unconditionally like the sibling people routes — dead-but-harmless on mobile (Brain uses the
+  in-process service; no backend set ⇒ no double-write, single shared store per process).
+  <strong>(2) Smell — FIXED:</strong> the original mock <code>reminderListPending</code> diverged from
+  the real service: real <code>listPending</code> includes <code>'snoozed'</code> reminders (a snooze
+  re-fires at its new <code>due_at</code>) and sorts soonest-first; the mock filtered
+  <code>'pending'</code> only and didn't sort. A test double that lies about the contract is worse than
+  no double — corrected to mirror the service exactly. (Other mock ops re-verified faithful: create
+  dedups on the same 4-tuple + returns existing; listByPersona includes completed, unsorted — both
+  match.) <strong>(3) Test bug — same fix.</strong> Sole consumer of the mock's reminder methods is
+  <code>backend.test.ts</code> (the Core route test drives the REAL service via InProcessTransport), so
+  the fidelity fix is contained; both green.
+  <strong>Confirmed dead-code finding (pre-existing, flagged not fixed):</strong> exhaustive search shows
+  <code>assembleBriefing</code> has zero production callers in either runtime — Story 07's daily briefing
+  is implemented but unwired to any scheduler. Making it async is therefore safe AND forward-correct for
+  when briefing gets wired in lite. Not my regression; logged for the briefing owner.
+  <strong>cross_stack filter is root-cause, not a workaround:</strong> considered rewriting the scanner to
+  read the real transport literals (<code>packages/core/src/client</code>) instead of brain-comment
+  scraping; decided against — it's a meta-test for the <em>deprecated</em> Go/Python stacks, and a
+  source-rewrite would force re-deriving the entire 8.60/8.61 gap matrix for no product benefit. Excluding
+  a provably-non-Core path is the proportionate, correct fix; the comment-scraping methodology is a
+  pre-existing choice for a legacy gate, now documented honestly.</p>
+</div>
+<div class="item decision">
+  <div class="kind">Greenfield cleanup — cross_stack_compat RETIRED</div>
+  <p>Confirmed greenfield (no migration; dev data disposable). The only compatibility-flavoured artifact
+  was <code>cross_stack_compat.test.ts</code> — it gates interop with the <em>deprecated</em> Go/Python
+  stacks (a non-goal under TS-only greenfield). Deleted it rather than maintaining a gate (and a
+  comment-scraping scanner) for stacks being thrown away; the <code>NON_CORE_V1_PATHS</code> filter went
+  with it. The reminder implementation itself carries zero migration code (no schema versioning, no
+  legacy-format handling; the unused singular <code>REMINDER_ROOT</code> const was deleted, not kept for
+  compat).</p>
+</div>
+<div class="item decision">
+  <div class="kind">Codex round-2 — 3 findings, all real, all fixed (P1 identity, P2 persist, P3 fail-soft)</div>
+  <p><strong>[P1] same-name contact auto-merge (privacy bug, my #1 gap).</strong>
+  <code>resolveContactPersonId</code>'s name fallback matched <em>any</em> confirmed same-name person —
+  so <code>upsertContactPerson('did:2','Alex')</code> bound the new DID onto an existing "Alex" contact
+  and silently inherited its trust/sharing policy. Fix: the surface fallback now excludes people who
+  already carry a DID identity (<code>NOT EXISTS … identity_type='did'</code>) — only a "floating"
+  extraction person (no DID yet) is a valid link target; an already-identified contact is a settled
+  identity that must not absorb a second, different DID by name alone. The legit note-before-DID link
+  (floating person → DID arrives later) is preserved. New discriminating test: a second
+  <code>did:alex-two 'Alex'</code> creates a distinct person, both DIDs resolve independently, same-DID
+  re-add is still idempotent.
+  <strong>[P2] merged preferred_for not persisted (my #6 gap).</strong>
+  <code>ContactRepository.update()</code> doesn't touch <code>preferred_for</code> (it has a dedicated
+  normalising setter), so the categories folded in from a merged-away contact lived only in the in-memory
+  map and vanished on the next hydrate. Fix: <code>mergeContactPersons</code> now calls
+  <code>sqlRepo.setPreferredFor(survivor, merged.preferredFor)</code> after the row write. The merge test
+  gained a hydrate round-trip assertion (reset → hydrate → both categories still present) — it would fail
+  without the fix.
+  <strong>[P3] reminder-card read not fail-soft (my #4a regression).</strong> #4a turned the drain's
+  optional D2D reminder-card lookup into a Core HTTP call (<code>listRemindersByPersonaRouted</code>) but
+  left it OUTSIDE the fail-soft guard — so a transient lite Core failure on a purely-optional read would
+  bubble to the item catch and mark a <em>successfully-stored</em> item failed. Fix: wrapped the read +
+  emit loop in its own try/catch that logs <code>staging.drain.d2d_reminder_read_failed</code> and
+  continues. New integration test installs a reminder backend whose <code>reminderListByPersona</code>
+  throws and asserts the item still stores (<code>stored:1, failed:0</code>), the failure is logged, and
+  the reminder write path (independent of the read) still ran.
+  All suites green after: core 4352 / brain 3236 / lite-core 2351 / lite-brain 49 / mobile 2741, 0 fails.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Codex round-3 — agreed with all 7; fixed the 6 in-scope (P2b OpenAPI left as legacy)</div>
+  <p><strong>P1a (two parts).</strong> (i) <code>updateContact</code> persisted the raw <code>updates</code>
+  partial, so a relationship change that derives a new <code>dataResponsibility</code> never reached SQL —
+  same bug class as round-2's preferred_for. Now it computes the full resolved <code>next</code> state and
+  persists that. (ii) Contact writes mutated memory/D2D-projections before the SQL write, so a failed
+  durable write left memory ahead of disk. Reordered <code>updateContact</code> / <code>addAlias</code> /
+  <code>removeAlias</code> / <code>removeContact</code> to <strong>SQL-first</strong> (establishContact was
+  already correct). Tests: derived-dataResponsibility survives a hydrate round-trip; an injected
+  throwing-<code>update()</code> repo leaves the cached trust level unchanged.
+  <strong>P1b.</strong> The LLM-extraction path (<code>findOrAssignPersonId</code>) still used
+  <code>LIMIT 1</code> for confirmed role_phrase + name matches, so "Don likes bacon" could attach to
+  whichever same-name Don SQLite returned first. Now <code>LIMIT 2</code> + exactly-one check → ambiguous
+  resolves to a NEW person, mirroring the contact-add discipline. Test with two confirmed "Don"s.
+  <strong>P1c.</strong> <code>upsertIdentityRow</code> repointed a DID on any conflict — so
+  <code>linkContact</code>/<code>upsertIdentity</code> could silently steal a live DID from an active
+  person. Now it refuses to repoint an identity held by a different non-rejected person (rotation after
+  rejection still allowed; <code>mergePeople</code> bypasses this primitive via a direct UPDATE, so merge
+  is unaffected). Tests: steal throws; post-rejection rotation succeeds.
+  <strong>P2a.</strong> <code>POST /v1/reminders</code> acked through the best-effort sync
+  <code>createReminder</code> (fire-and-forget SQL). Added <code>createReminderDurable</code> (awaits the
+  write, rolls back the in-memory row + throws on failure); the route uses it, so a 200 means on-disk.
+  Mobile keeps the best-effort sync path (in-memory authoritative). Tests: persists-then-returns,
+  rollback-on-failure, no-repo passthrough.
+  <strong>P2c.</strong> <code>vaultList</code> advertised a <code>type</code> filter the server ignored.
+  <code>listRecentItems</code> + the <code>/v1/vault/list</code> route now honour it; real-router test.
+  <strong>P3.</strong> The merge test linked a synthetic id and asserted the link moved — upgraded to
+  store a REAL vault item, link it, merge, and assert the item (content and all) is recalled through the
+  survivor. The loaded-persona-only repoint limit was already documented on <code>mergeContactPersons</code>
+  (merge is unexposed).
+  <strong>P2b — agreed but deliberately NOT fixed (greenfield).</strong> The OpenAPI spec
+  (<code>api/core-api.yaml</code>) only feeds the deprecated Go/Python codegen; the TS stack is
+  hand-written + authoritative, so syncing it documents a contract for stacks being removed. Correction
+  to Codex: the deleted <code>cross_stack_compat</code> scanned route SOURCE, not the OpenAPI, so it never
+  guarded that drift (that's <code>make check-generate</code>). Flagged, not actioned.
+  Suites after: core 4361 / brain 3236 / lite-core 2351 / lite-brain 49 / mobile 2741, 0 fails; +9 Core tests.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Codex round-4 — agreed with all 7; fixed 5 in code, 2 by documented design call</div>
+  <p><strong>#1 reminder dedup by time alone.</strong> <code>dedupKey</code> + the DB
+  <code>UNIQUE(...)</code> omitted <code>message</code>, so two different manual reminders at the same
+  time/persona (empty source_item_id, kind=manual) collided and the second was dropped. Added
+  <code>message</code> to both (greenfield → schema edit, no migration). This also correctly lets ONE
+  source item yield two distinct reminders at the same instant. Updated a prior test that had enshrined
+  the buggy "same source dedups regardless of message" behaviour.
+  <strong>#2 durable-create not durable under concurrency.</strong> <code>createReminderDurable</code>
+  registered in-memory before awaiting SQL, so a concurrent duplicate could ack off a pending row;
+  <code>INSERT OR IGNORE</code> also hid insert-vs-existing. Now: register in-memory ONLY after the write
+  resolves; coalesce concurrent identical creates onto one in-flight promise (shared outcome); repo uses
+  plain <code>INSERT</code> (throws on conflict). Tests: concurrent-dup coalesces to one write + same id;
+  concurrent failure rejects both (no false success).
+  <strong>#3 alias ownership vs cold cache.</strong> <code>addAlias</code> trusted only the in-memory
+  index, so a cold/un-hydrated cache let a new contact claim an alias a persisted contact owned (repo's
+  INSERT OR IGNORE then dropped the write while memory recorded the wrong owner). Now SQL-authoritative:
+  resolve the durable owner (<code>sqlRepo.resolveAlias</code>) before mutating memory. Cold-cache test.
+  <strong>#4 establishContact clobbered relationship on re-add.</strong> A cold-cache duplicate add reset
+  relationship→unknown + dataResponsibility→external (trust/sharing already preserved existing; these
+  didn't). Now preserves existing relationship + dataResponsibility when opts omit them; an explicit
+  relationship still re-derives. Two tests.
+  <strong>#7 route stored raw persona.</strong> Validated <code>persona.trim()</code> but stored raw, so
+  " health " was missed by "health" reads. Now trims persona + message at the boundary (also stops a
+  stray-space fork of the dedup key). Test.
+  <strong>#5 merge non-atomic — documented design call, NOT a half-fix.</strong> True atomicity is
+  infeasible: contacts+people share <code>identity.sqlite</code> but each persona's vault is a SEPARATE
+  SQLite file, so no transaction spans them; and the loser's contact must be dropped before the survivor's
+  alias writes (globally-unique alias rows), which blocks the obvious survivor-first idempotency reorder.
+  An honest fix needs a cross-store tx layer or a durable merge-job queue — a project, not a patch. Since
+  merge is unexposed (no route/UI calls <code>mergeContactPersons</code>), strengthened the doc to state
+  it's NOT atomic + MUST NOT be exposed until properly backed. Implementing fake atomicity would be the
+  workaround we're told to avoid.
+  <strong>#6 OpenAPI drift — marked legacy, not chased.</strong> Under greenfield the TS stack is
+  authoritative and has intentionally diverged; the spec only feeds the deprecated Go/Python codegen.
+  Added a prominent LEGACY / NON-AUTHORITATIVE banner to <code>api/core-api.yaml</code> pointing at
+  <code>packages/core/src/server/routes/*</code> as the real contract, rather than syncing a spec for
+  stacks being removed. (Correction to Codex: the deleted cross_stack_compat scanned route SOURCE, not the
+  OpenAPI — it never guarded that drift.)
+  Suites after: core 4370 / brain 3236 / lite-core 2351 / lite-brain 49 / mobile 2741, 0 fails; +9 Core tests.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Codex round-5 — #3 fixed, #4 clarified, #5 acknowledged; #1 #2 surfaced for a decision</div>
+  <p><strong>#3 schedule_reminder_tool (FIXED).</strong> The stale comment (claimed dedup keys on
+  manual/due_at/persona) is corrected, and the unreliable <code>reminder.source !== 'agentic_ask'</code>
+  duplicate heuristic — now dead, since with <code>message</code> in the dedup key an agentic dup returns
+  a same-source row — is replaced by a deterministic pre-check: list the persona's reminders and look for
+  an existing (manual, due_at, message) match before creating. Considered a <code>created_at &lt; callStart</code>
+  signal but rejected it (would force a wall-clock-gap hack in tests — a smell). Added the missing
+  duplicate-status test (repeat identical → <code>duplicate</code>, same id, no new row; different message
+  → its own row).
+  <strong>#4 OpenAPI/protocol gen (CLARIFIED).</strong> Verified the generated <code>CoreAPI*</code> types
+  have NO production consumer — only this package's own conformance tests import them (asserting
+  hand-written wire types match the shared COMPONENT SCHEMAS, not route paths). So it isn't a second
+  runtime truth; it's a legacy schema-conformance fixture. Documented exactly that on the
+  <code>@dina/protocol</code> export so the "two truths" reading doesn't recur.
+  <strong>#5 merge atomicity (ACKNOWLEDGED).</strong> Codex agrees the round-4 documented design call is
+  acceptable while merge is unexposed; no further action.
+  <strong>#1 lite-web reminder UI — investigated; likely NOT a bug as architected.</strong>
+  <code>apps/home-node-lite/web</code> has no src — it's <code>apps/mobile</code> exported via
+  <code>expo export --platform web</code>. And <code>boot_service.ts:344</code> shows the mobile app
+  (web export included) ALWAYS boots an in-process Core (<code>new InProcessTransport</code>), with no
+  HTTP-client mode + no web/native branch. So lite-web is a standalone full node in the browser, for
+  which <code>useReminders</code> reading in-process is consistent. IF the product instead intends lite-web
+  as a thin client of the Core/Brain servers, that's a WHOLE-data-layer decision (vault, contacts, people,
+  chat all read in-process too) — reminders aren't special, and a reminder-only seam would be incoherent.
+  Surfaced for an architecture decision rather than patched.
+  <strong>#2 idempotency by display text — real, sizable; surfaced.</strong> Adding <code>message</code>
+  to the dedup key fixed the collision but ties idempotency to wording (planner re-run with different
+  phrasing → dup; identical manual reminders collapse). The correct architecture is an explicit
+  <code>idempotency_key</code>/<code>source_event_id</code> (planner dedups on a stable extracted event
+  identity, not text; manual reminders dedup only with a caller-supplied key) — a schema + planner change.
+  Surfaced for a scope decision.
+  Suites after #3/#4: brain 3237 / protocol 380, 0 fails.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Codex round-5 — all 8 agreed + fixed (P1 mock parity, planner + contact_lookup lite migrations, +5 more)</div>
+  <p><strong>P1 mock drift (FIXED + parity-gated).</strong> The MockCoreClient had drifted from real Core
+  after the round-4 service changes: dedup omitted <code>message</code>, snooze did <code>due_at += ms</code>,
+  fire was <code>pending</code>-only. Fixed all three to mirror the service, AND added a real-vs-mock
+  <code>mock_parity.test.ts</code> that drives identical ops through both and asserts the same outcome —
+  closing the drift <em>class</em> (the round-4 escape was exactly this).
+  <strong>P2 planner lite recall (FIXED).</strong> The reminder planner's FTS phase + people resolution
+  read Brain's in-process repos directly, so lite enrichment was blind. Routed
+  <code>resolveSenderHint</code> → <code>peopleResolveByDid</code>, <code>resolveReferencedPeople</code> →
+  <code>peopleList</code> (surface-map rebuilt client-side via a shared matcher so mobile + lite can't
+  diverge), and the FTS <code>collectFrom</code> → <code>vaultReadBackend.vaultQuery</code> — all when no
+  in-process repo (lite). New lite-mode tests (sender + referenced via backend).
+  <strong>P2 contact_lookup (FIXED — new surface).</strong> Built the contacts-lookup seam end-to-end:
+  Core <code>GET /v1/contacts/lookup?q=</code> (DID→name→alias) + <code>CoreClient.contactLookup</code> +
+  both transports + mock + a <code>ContactReadBackend</code> seam; <code>executeContactLookup</code> now
+  routes through the backend in lite (in-process on mobile). Wired in brain-server boot. Tests: Core route
+  + a lite-backend reasoning-agent test.
+  <strong>P2 web-transport coverage (FIXED).</strong> Direct <code>reminder_transport.web.test.ts</code>
+  (mocked fetch + EventSource): URL shapes/encoding, error surfacing, SSE frame parse, disposal, no-ES
+  fallback.
+  <strong>P3 repo listPending (FIXED).</strong> <code>SQLiteReminderRepository.listPending</code> now
+  <code>status IN ('pending','snoozed')</code>, matching the service.
+  <strong>P3 fireRemindersToThread (DOCUMENTED).</strong> Test-only in-process helper; hard "do not call
+  from web" doc + pointer to the <code>watchFiredReminders</code> seam (no production caller).
+  <strong>P3 in-process error convention (DOCUMENTED intentional).</strong> Investigation showed it's not
+  a simple inconsistency: most methods throw via <code>expectOk</code>; the handful of fail-soft reads
+  mirror HTTP's own catch / <code>200 + empty</code> routes, and consumers (drain card hook,
+  recall) rely on graceful-empty. Documented the convention on <code>InProcessTransport</code> (mutations
+  throw, a named set of reads degrade) rather than risk a transport-wide change consumers depend on.
+  <strong>P3 OpenAPI docs (FIXED).</strong> CLAUDE.md's "OpenAPI Contract" section now headed LEGACY,
+  points at <code>packages/core/src/server/routes/*</code> as the TS source of truth, notes the gen types
+  are a legacy test fixture + cross_stack_compat retired.
+  All green: core 4380 / brain 3244 / brain-server 54 / targeted mobile (web-transport 9, useReminders 20,
+  fire-watcher 7), 0 fails. Full suites run with the bounded recipe (<code>--workerIdleMemoryLimit=512MB</code>).</p>
+</div>
+
+<h2>Post-commit deep review — d4860aa + bdfff5b</h2>
+<div class="item decision">
+  <div class="kind">d4860aa (reminders) — (1) correct (2) no smells (3) tests sound</div>
+  <p>Clean. <code>reminder_card.ts</code> is a single-source reminder→card mapper used by all three
+  surfacing sites (orchestrator, fire watcher, host D2D hook); the orchestrator uses the established
+  "handler posts its own messages → return empty" contract. The drain stays headless
+  (<code>onD2DReminderCreated</code> emit → host renders), preserving UI→core direction; fail-soft.
+  The two-phase planner retrieval (person surfaces, then event text, with self-exclusion) is sound and
+  is exactly the base <code>bdfff5b</code>'s structured Phase 0 sits in front of. Tests are
+  real-fidelity (<code>reminder_planner_sender.test.ts</code> = real SQLCipher people graph +
+  prompt-capture through the full <code>planReminders</code> path). <strong>Minor, not fixed:</strong>
+  the REMINDER_PLAN prompt's lead-time examples ("~30 min before a visit, ~hour before a meeting")
+  edge toward per-scenario heuristics, but they're framed as principle+examples (prompt guidance,
+  not code if/else) and were the prior session's deliberate choice; <code>boot_service</code> renders
+  the headless D2D card to the <code>'main'</code> thread (a host choice, fine).</p>
+</div>
+<div class="item decision">
+  <div class="kind">bdfff5b (identity hub) — (1) correct (2) no smells (3) tests sound</div>
+  <p>Holistic re-pass beyond the per-phase reviews. <strong>Boot ordering verified safe:</strong>
+  the directory now requires a people repo for mutation, and <code>storage/init.ts</code> sets it
+  (line 114) BEFORE <code>hydrateContactDirectory</code> (121); the dev-peer add runs in
+  <code>boot_capabilities</code> after storage init; <code>hydrate</code> tolerates a null people repo.
+  No regression. <strong>Source scan clean:</strong> no <code>TODO/HACK/as any/@ts-ignore/eslint-disable</code>
+  in the changed source. <strong>author_person_id has no logic reader</strong> (write-then-display
+  metadata; no query filters on it) — so the lite drain not resolving it out-of-process is harmless;
+  recall rides on <code>vault_item_subjects</code>, wired in both runtimes. Full suites green
+  (core 4351 / brain 3229).</p>
+</div>
+<div class="item open">
+  <div class="kind">bdfff5b — latent finding FIXED-as-documented: mergePeople ↛ contacts</div>
+  <p><code>mergePeople</code> re-points identities + surfaces but NOT the <code>contacts</code> policy
+  row (different layer) nor cross-persona <code>vault_item_subjects</code> — so a merge would orphan
+  the merged person's contact policy. Not a live bug: <code>mergePeople</code> has zero production
+  callers (people-curation UI is deferred, §11). Building a speculative contacts-merge now would be
+  premature structure; instead made the limitation explicit in a doc comment at the
+  <code>mergePeople</code> code site so whoever wires curation handles it. (This is the one code change
+  the review produced — a comment, not behaviour.)</p>
+</div>
 
 <h2>Iteration log</h2>
 <table class="log">

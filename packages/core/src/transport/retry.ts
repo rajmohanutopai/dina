@@ -1,95 +1,169 @@
 /**
- * Outbox retry orchestrator — background retry of failed D2D deliveries.
+ * D2D outbox drainer — durable background retry (issues.txt §1).
  *
- * Runs periodically: get pending messages → attempt delivery → mark result.
- * Error isolation per message — one failure doesn't stop others.
+ * On boot: `recoverOutboxOnBoot()` reclaims rows a crash left in
+ * `sending` (lease expired) back to `pending`.
  *
- * Source: ARCHITECTURE.md Task 6.14
+ * While alive: a periodic worker (`startOutboxDrainer`) claims due
+ * messages, hands each to the boot-wired re-delivery function, and
+ * records the outcome — `markSent` on success, exponential-backoff
+ * `recordFailure` otherwise, dead-letter at max attempts / TTL.
+ *
+ * The re-delivery function (`setOutboxRedeliverFn`) re-resolves the
+ * recipient's DID document / endpoint and re-seals the semantic body —
+ * it is wired at boot from the same signing identity the live send path
+ * uses (see home-node `makeOutboxRedeliver`). Without it the drainer is
+ * a no-op (e.g. a Core with no sender identity).
  */
 
-import { getPendingForRetry, markDelivered, markFailed, deleteExpired } from './outbox';
+import { appendAudit } from '../audit/service';
+import { claimDue, markSent, recordFailure, resetStaleSending, sweepTerminal } from './outbox';
+import type { D2DOutboxRow } from './outbox_repository';
 
-export interface RetryResult {
+/** Outcome of a single re-delivery attempt. */
+export interface RedeliverOutcome {
+  delivered: boolean;
+  error?: string;
+}
+
+/** Re-delivery function: re-resolve + re-seal + deliver one queued row. */
+export type OutboxRedeliverFn = (row: D2DOutboxRow) => Promise<RedeliverOutcome>;
+
+let redeliverFn: OutboxRedeliverFn | null = null;
+/** DID used as the audit actor for dead-letter events. */
+let auditActorDID = 'system';
+
+/** Wire the re-delivery function (boot). */
+export function setOutboxRedeliverFn(fn: OutboxRedeliverFn | null, selfDID?: string): void {
+  redeliverFn = fn;
+  if (selfDID) auditActorDID = selfDID;
+}
+
+/** Reset injected state (tests). */
+export function resetRetryState(): void {
+  redeliverFn = null;
+  auditActorDID = 'system';
+}
+
+/** How long a claimed row stays leased before it's reclaimable. */
+const LEASE_MS = 60_000;
+/** Max rows drained per tick. */
+const DRAIN_BATCH = 25;
+
+export interface DrainResult {
   attempted: number;
   delivered: number;
   failed: number;
-  expired: number;
-}
-
-/** Default outbox TTL in seconds (24 hours). */
-const OUTBOX_TTL_S = 24 * 60 * 60;
-
-/** Injectable delivery function (for testing). */
-let deliveryFn: ((recipientDID: string, payload: Uint8Array) => Promise<boolean>) | null = null;
-
-/** Register a delivery function (for testing). */
-export function setRetryDeliveryFn(
-  fn: (recipientDID: string, payload: Uint8Array) => Promise<boolean>,
-): void {
-  deliveryFn = fn;
-}
-
-/** Reset (for testing). */
-export function resetRetryState(): void {
-  deliveryFn = null;
+  dead: number;
 }
 
 /**
- * Retry all pending outbox messages.
+ * Drain all currently-due outbox messages once.
  *
- * Gets messages where nextRetryAt <= now, attempts delivery,
- * marks as delivered or failed. Also sweeps expired messages.
- *
- * Error-isolated: each message is retried independently.
+ * No-op (returns zeros) when no re-delivery function is wired. Each
+ * message is attempted independently — one failure never stops the rest.
  */
-export async function retryPendingOutbox(now?: number): Promise<RetryResult> {
-  const result: RetryResult = { attempted: 0, delivered: 0, failed: 0, expired: 0 };
+export async function drainOutbox(now?: number): Promise<DrainResult> {
+  const t = now ?? Date.now();
+  const result: DrainResult = { attempted: 0, delivered: 0, failed: 0, dead: 0 };
+  if (redeliverFn === null) return result;
 
-  // 1. Sweep expired messages first
-  result.expired = deleteExpired(OUTBOX_TTL_S, now);
-
-  // 2. Get messages ready for retry
-  const pending = getPendingForRetry(now);
-
-  for (const entry of pending) {
+  const claimed = claimDue(t, LEASE_MS, DRAIN_BATCH);
+  for (const row of claimed) {
     result.attempted++;
-
+    let outcome: RedeliverOutcome;
     try {
-      const success = deliveryFn ? await deliveryFn(entry.recipientDID, entry.payload) : false;
+      outcome = await redeliverFn(row);
+    } catch (err) {
+      outcome = { delivered: false, error: err instanceof Error ? err.message : String(err) };
+    }
 
-      if (success) {
-        markDelivered(entry.id);
-        result.delivered++;
-      } else {
-        markFailed(entry.id);
-        result.failed++;
-      }
-    } catch {
-      // Delivery threw — mark as failed for backoff
-      try {
-        markFailed(entry.id);
-      } catch {
-        /* entry might have been expired/deleted */
-      }
+    if (outcome.delivered) {
+      markSent(row.id, t);
+      result.delivered++;
+      continue;
+    }
+
+    const terminal = recordFailure(row, outcome.error ?? 'delivery_failed', t);
+    if (terminal === 'dead') {
+      result.dead++;
+      appendAudit(
+        auditActorDID,
+        'd2d_outbox_dead',
+        row.targetDID,
+        `type=${row.messageType} id=${row.id} attempts=${row.attempts + 1} error=${(outcome.error ?? 'delivery_failed').slice(0, 120)}`,
+      );
+    } else {
       result.failed++;
     }
   }
-
   return result;
 }
 
 /**
- * Get the current outbox retry status.
+ * Reclaim crashed-mid-send rows on boot. Returns the count reset.
+ * Call once after storage init, before starting the periodic drainer.
  */
-export function getRetryStatus(now?: number): { pending: number; nextRetryIn?: number } {
-  const pending = getPendingForRetry(now);
-  if (pending.length === 0) {
-    return { pending: 0 };
-  }
+export function recoverOutboxOnBoot(now?: number): number {
+  return resetStaleSending(now);
+}
 
-  const nextEntry = pending[0];
-  const currentTime = now ?? Date.now();
-  const nextRetryIn = Math.max(0, nextEntry.nextRetryAt - currentTime);
+export interface DrainerHandle {
+  /** Stop the periodic worker. */
+  stop(): void;
+}
 
-  return { pending: pending.length, nextRetryIn };
+export interface StartOutboxDrainerOptions {
+  /** Drain interval in ms (default 30 s). */
+  intervalMs?: number;
+  /** Sweep terminal rows every N ticks (default every 120 ticks ≈ 1 h). */
+  sweepEveryTicks?: number;
+  /** Optional error sink for a drain that throws. */
+  onError?: (err: unknown) => void;
+}
+
+/**
+ * Start the periodic drainer. Runs an immediate drain, then every
+ * `intervalMs`. Returns a handle whose `stop()` clears the timer.
+ *
+ * Safe to call without a wired re-delivery function — it just no-ops
+ * each tick until one is set.
+ */
+export function startOutboxDrainer(opts: StartOutboxDrainerOptions = {}): DrainerHandle {
+  const intervalMs = opts.intervalMs ?? 30_000;
+  const sweepEveryTicks = opts.sweepEveryTicks ?? 120;
+  let ticks = 0;
+  let stopped = false;
+  // Re-entrancy guard: if a drain (network re-delivery) runs longer than
+  // `intervalMs`, skip the overlapping tick rather than run two drains that
+  // race on `sweepTerminal` + the counters. Lease-based claiming already
+  // prevents double-delivery; this keeps the bookkeeping clean.
+  let running = false;
+
+  const tick = async (): Promise<void> => {
+    if (stopped || running) return;
+    running = true;
+    try {
+      await drainOutbox();
+      ticks++;
+      if (ticks % sweepEveryTicks === 0) sweepTerminal();
+    } catch (err) {
+      opts.onError?.(err);
+    } finally {
+      running = false;
+    }
+  };
+
+  // Fire-and-forget the first drain; subsequent runs on the interval.
+  void tick();
+  const timer = setInterval(() => void tick(), intervalMs);
+  // Don't keep the Node event loop alive on account of the drainer.
+  (timer as { unref?: () => void }).unref?.();
+
+  return {
+    stop(): void {
+      stopped = true;
+      clearInterval(timer);
+    },
+  };
 }

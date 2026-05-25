@@ -29,6 +29,10 @@ import {
   drainForApproval,
 } from '../../staging/service';
 import { grantSessionApproval } from './intent';
+import {
+  grantAgentPersonaAccessFromApproval,
+  isAgentPersonaAccessApproval,
+} from '../../agent/access';
 
 /**
  * Lift `payload.type` to a top-level `payload_type` wire field. Go-Core
@@ -326,11 +330,11 @@ type TaskAction = (
   service: NonNullable<ReturnType<typeof getWorkflowService>>,
 ) => unknown;
 
-function approveTask(
+async function approveTask(
   id: string,
   body: Record<string, unknown> | null,
   service: NonNullable<ReturnType<typeof getWorkflowService>>,
-): WorkflowTask {
+): Promise<WorkflowTask> {
   const before = service.store().getById(id);
 
   // Session-scoped approval: if the caller passes scope='session' on an
@@ -341,6 +345,21 @@ function approveTask(
     if (payload?.type === 'intent_validation' && typeof payload.action === 'string') {
       grantSessionApproval(payload.action);
     }
+  }
+
+  // issues.txt §2 — approving an agent persona-access request writes the
+  // durable grant so the out-of-process agent's retry (even after an app
+  // restart) passes the deterministic gate. No local runner to claim it;
+  // the grant row IS the outcome.
+  if (
+    isAgentPersonaAccessApproval(before) &&
+    before?.status === WorkflowTaskState.PendingApproval
+  ) {
+    const approved = service.approve(id);
+    // Awaited so the durable grant is written AND the persona is unlocked
+    // before the approve response returns (issues.txt §2 — no resume race).
+    await grantAgentPersonaAccessFromApproval(approved, Date.now());
+    return approved;
   }
 
   if (
@@ -426,7 +445,10 @@ async function runAction(req: CoreRequest, action: TaskAction): Promise<CoreResp
     body = req.body as Record<string, unknown>;
   }
   try {
-    const task = action(id, body, service) as WorkflowTask;
+    // `await` so async actions (e.g. approveTask, which awaits the agent
+    // persona-access grant + unlock) settle before we serialise the task.
+    // Awaiting a sync return is a no-op for the other actions.
+    const task = (await action(id, body, service)) as WorkflowTask;
     return j(200, { task: withPayloadType(task) });
   } catch (err) {
     if (err instanceof WorkflowValidationError) {

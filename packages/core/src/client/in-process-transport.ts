@@ -76,6 +76,8 @@ import type {
   ExtractionResult,
   ApplyExtractionResponse,
   Person,
+  Reminder,
+  ReminderCreateInput,
   PersonaListEntry,
   ActionPolicyEntry,
   ActionPolicyResult,
@@ -140,6 +142,26 @@ function expectOk<T>(res: CoreResponse, context: string): T {
  * Implements `CoreClient` by dispatching CoreRequest objects through
  * the provided CoreRouter. No network hop; the router's handler runs
  * in the same event loop.
+ *
+ * **Error convention (intentional, mirrors `HttpCoreTransport`).** Most
+ * methods route their response through `expectOk`, which THROWS on any
+ * non-2xx — same as the HTTP transport's `call()`. A deliberate, narrow
+ * set of *reads* instead returns an empty/`null` value on a non-200:
+ *   - `findContactsByPreference`, `contactLookup` — the HTTP transport
+ *     also explicitly catches + fail-soft here (the reasoning agent's
+ *     tools are documented to fall back on an empty result, not error).
+ *   - `peopleResolveByDid` — the route returns `200 { person: null }` for
+ *     "unknown", so a non-200 is only a client-pre-validated bad input;
+ *     null-on-miss keeps recall fail-soft.
+ *   - `peopleList` / `peopleFindByName` / `personasList` /
+ *     `reminderListByPersona` / `reminderListPending` / `reminderFireMissed`
+ *     — collection reads whose consumers (briefing, drain D2D card hook,
+ *     persona mirror) degrade gracefully on an empty list rather than
+ *     erroring; the drain hook in particular wraps these fail-soft.
+ * Mutations (vaultStore, reminder complete/snooze/delete, staging resolve,
+ * workflow transitions, …) always throw, so a failed write is never
+ * silently swallowed. If you add a new method, prefer `expectOk` unless
+ * the read genuinely wants graceful-empty degradation.
  */
 export class InProcessTransport implements CoreClient {
   constructor(private readonly router: CoreRouter) {}
@@ -204,7 +226,8 @@ export class InProcessTransport implements CoreClient {
       blankRequest({
         method: 'POST',
         path: `/v1/vault/store`,
-        body: { persona, ...item },
+        query: { persona },
+        body: item as unknown as Record<string, unknown>,
       }),
     );
     return expectOk<VaultStoreResult>(res, `vaultStore(persona=${persona})`);
@@ -230,7 +253,7 @@ export class InProcessTransport implements CoreClient {
     const res = await this.router.handle(
       blankRequest({
         method: 'DELETE',
-        path: `/v1/vault/items/${encodeURIComponent(itemId)}`,
+        path: `/v1/vault/item/${encodeURIComponent(itemId)}`,
         query: { persona },
       }),
     );
@@ -824,6 +847,17 @@ export class InProcessTransport implements CoreClient {
     return Array.isArray(raw.contacts) ? (raw.contacts as Contact[]) : [];
   }
 
+  async contactLookup(query: string): Promise<Contact | null> {
+    const clean = typeof query === 'string' ? query.trim() : '';
+    if (clean === '') return null;
+    const res = await this.router.handle(
+      blankRequest({ method: 'GET', path: '/v1/contacts/lookup', query: { q: clean } }),
+    );
+    if (res.status !== 200) return null;
+    const raw = (res.body ?? {}) as { contact?: Contact | null };
+    return raw.contact ?? null;
+  }
+
   async peopleApplyExtraction(
     result: ExtractionResult,
     persona?: string,
@@ -891,6 +925,98 @@ export class InProcessTransport implements CoreClient {
     if (res.status !== 200) return null;
     const raw = (res.body ?? {}) as { person?: Person | null };
     return raw.person ?? null;
+  }
+
+  async reminderCreate(input: ReminderCreateInput): Promise<Reminder> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'POST',
+        path: '/v1/reminders',
+        body: input as unknown as Record<string, unknown>,
+      }),
+    );
+    return expectOk<Reminder>(res, `reminderCreate(persona=${input.persona})`);
+  }
+
+  async reminderListByPersona(persona: string): Promise<Reminder[]> {
+    if (typeof persona !== 'string' || persona.trim() === '') {
+      throw new Error('reminderListByPersona: persona is required');
+    }
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'GET',
+        path: '/v1/reminders',
+        query: { persona: persona.trim() },
+      }),
+    );
+    if (res.status !== 200) return [];
+    const raw = (res.body ?? {}) as { reminders?: Reminder[] };
+    return Array.isArray(raw.reminders) ? raw.reminders : [];
+  }
+
+  async reminderListPending(now?: number): Promise<Reminder[]> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'GET',
+        path: '/v1/reminders/pending',
+        query: now !== undefined ? { now: String(now) } : {},
+      }),
+    );
+    if (res.status !== 200) return [];
+    const raw = (res.body ?? {}) as { reminders?: Reminder[] };
+    return Array.isArray(raw.reminders) ? raw.reminders : [];
+  }
+
+  async reminderComplete(id: string): Promise<Reminder | null> {
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new Error('reminderComplete: id is required');
+    }
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: `/v1/reminders/${id.trim()}/complete`, body: {} }),
+    );
+    // Throw on a non-200 (404 unknown id, 5xx) to match HttpCoreTransport —
+    // `null` here means "no next occurrence", not "not found".
+    const raw = expectOk<{ next?: Reminder | null }>(res, `reminderComplete(id=${id})`);
+    return raw.next ?? null;
+  }
+
+  async reminderSnooze(id: string, snoozeMs: number): Promise<Reminder | null> {
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new Error('reminderSnooze: id is required');
+    }
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'POST',
+        path: `/v1/reminders/${id.trim()}/snooze`,
+        body: { snooze_ms: snoozeMs },
+      }),
+    );
+    const raw = expectOk<{ reminder?: Reminder | null }>(res, `reminderSnooze(id=${id})`);
+    return raw.reminder ?? null;
+  }
+
+  async reminderDelete(id: string): Promise<boolean> {
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new Error('reminderDelete: id is required');
+    }
+    const res = await this.router.handle(
+      blankRequest({ method: 'DELETE', path: `/v1/reminders/${id.trim()}` }),
+    );
+    const raw = expectOk<{ deleted?: boolean }>(res, `reminderDelete(id=${id})`);
+    return raw.deleted === true;
+  }
+
+  async reminderFireMissed(now?: number): Promise<Reminder[]> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'POST',
+        path: '/v1/reminders/fire',
+        body: now !== undefined ? { now } : {},
+      }),
+    );
+    if (res.status !== 200) return [];
+    const raw = (res.body ?? {}) as { fired?: Reminder[] };
+    return Array.isArray(raw.fired) ? raw.fired : [];
   }
 
   async updateContact(did: string, updates: UpdateContactParams): Promise<void> {

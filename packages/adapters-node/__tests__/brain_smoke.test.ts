@@ -64,10 +64,12 @@ function buildRouterWithVault(): CoreRouter {
   router.post(
     '/v1/vault/store',
     (req) => {
-      // InProcessTransport.vaultStore wire-format: `{persona, ...item}` —
-      // persona is a top-level field, item fields are spread alongside.
+      // InProcessTransport.vaultStore wire-format: persona in the
+      // query-string, the item fields in the body (matches the real route +
+      // vaultQuery). The old fake read body.persona, which is never sent —
+      // so stored items had persona=undefined and never matched a query.
+      const persona = req.query.persona ?? 'general';
       const body = req.body as {
-        persona: string;
         type?: string;
         content?: unknown;
         source?: string;
@@ -76,7 +78,7 @@ function buildRouterWithVault(): CoreRouter {
       const id = `smoke-item-${seq}`;
       items.push({
         id,
-        persona: body.persona,
+        persona,
         type: body.type ?? 'note',
         content: body.content,
       });
@@ -88,11 +90,17 @@ function buildRouterWithVault(): CoreRouter {
   router.post(
     '/v1/vault/query',
     (req) => {
-      const body = req.body as { persona: string; q?: string };
+      // Mirror the REAL vault route's contract: persona in the query-string,
+      // search params (text) in the body — which is what
+      // InProcessTransport.vaultQuery sends. (The old fake read body.persona
+      // + body.q, neither of which the transport sends, so it matched
+      // nothing.)
+      const persona = req.query.persona ?? 'general';
+      const body = req.body as { text?: string };
       const matched = items.filter((i) => {
-        if (i.persona !== body.persona) return false;
-        if (!body.q) return true;
-        return JSON.stringify(i.content).includes(body.q);
+        if (i.persona !== persona) return false;
+        if (!body.text) return true;
+        return JSON.stringify(i.content).includes(body.text);
       });
       return {
         status: 200,
@@ -129,7 +137,9 @@ describe('brain × adapters-node × InProcessTransport — Phase 3g smoke (task 
     const store = await transport.vaultStore('general', item);
     expect(store.id).toBe('smoke-item-1');
 
-    const query: VaultQuery = { q: 'Bus 42' };
+    // Real VaultQuery `text` field (the prior `{ q: … }` used a non-existent
+    // field, so it didn't typecheck AND the fake route never matched it).
+    const query: VaultQuery = { text: 'Bus 42' };
     const result = await transport.vaultQuery('general', query);
     expect(result.count).toBe(1);
     const first = result.items[0] as { id: string } | undefined;

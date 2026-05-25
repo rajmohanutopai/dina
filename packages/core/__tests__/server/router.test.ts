@@ -174,6 +174,43 @@ describe('CoreRouter — auth pipeline', () => {
     const resp = await r.handle(emptyReq({ method: 'GET', path: '/healthz' }));
     expect(resp.status).toBe(200);
   });
+
+  // issues.txt §2 — the router threads the auth-resolved caller identity onto
+  // the request so handlers (e.g. the agent persona-access gate) can read it.
+  // This proves the END-TO-END path through real auth (not an injected
+  // callerType), and that callerType/callerDID come from the auth result —
+  // never from the wire (a forged header can't set them).
+  it('threads the resolved callerType + callerDID onto a signed request', async () => {
+    const r = new CoreRouter();
+    let seen: { callerType?: string; callerDID?: string } = {};
+    r.get('/v1/workflow/tasks', async (req) => {
+      seen = { callerType: req.callerType, callerDID: req.callerDID };
+      return { status: 200, body: {} };
+    });
+    const headers = signRequest('GET', '/v1/workflow/tasks', '', new Uint8Array(0), SEED, DID);
+    const resp = await r.handle(
+      emptyReq({
+        method: 'GET',
+        path: '/v1/workflow/tasks',
+        // A forged callerType on the inbound request must be IGNORED — the
+        // router overwrites it from the auth result.
+        callerType: 'agent',
+        callerDID: 'did:key:forged',
+        headers: {
+          'x-did': headers['X-DID'],
+          'x-timestamp': headers['X-Timestamp'],
+          'x-nonce': headers['X-Nonce'],
+          'x-signature': headers['X-Signature'],
+        },
+      }),
+    );
+    expect(resp.status).toBe(200);
+    // DID is registered as a brain service → resolves to a service caller,
+    // and the DID is the authenticated one (not the forged value).
+    expect(seen.callerType).toBeDefined();
+    expect(seen.callerType).not.toBe('agent'); // forged value overwritten
+    expect(seen.callerDID).toBe(DID);
+  });
 });
 
 describe('CoreRouter — handler errors', () => {

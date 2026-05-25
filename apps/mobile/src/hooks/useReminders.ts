@@ -13,17 +13,15 @@
  * Source: ARCHITECTURE.md Task 5.6
  */
 
+import { type Reminder } from '@dina/core/reminders';
 import {
-  listPending,
-  listByPersona,
-  completeReminder,
-  snoozeReminder,
-  deleteReminder,
-  createReminder,
-  getReminder,
-  resetReminderState,
-  type Reminder,
-} from '@dina/core/reminders';
+  transportListPending,
+  transportListByPersona,
+  transportComplete,
+  transportSnooze,
+  transportDelete,
+  transportReset,
+} from './reminder_transport';
 
 export interface ReminderUIItem {
   id: string;
@@ -49,28 +47,28 @@ const MS_DAY = 86_400_000;
 /**
  * Get all upcoming reminders (pending, sorted by due date).
  */
-export function getUpcomingReminders(now?: number): ReminderUIItem[] {
+export async function getUpcomingReminders(now?: number): Promise<ReminderUIItem[]> {
   const currentTime = now ?? Date.now();
   // Get pending with a far-future cutoff to include all
-  const pending = listPending(currentTime + 365 * MS_DAY);
+  const pending = await transportListPending(currentTime + 365 * MS_DAY);
   return pending.map((r) => toUIItem(r, currentTime));
 }
 
 /**
  * Get overdue reminders only.
  */
-export function getOverdueReminders(now?: number): ReminderUIItem[] {
+export async function getOverdueReminders(now?: number): Promise<ReminderUIItem[]> {
   const currentTime = now ?? Date.now();
-  const pending = listPending(currentTime);
+  const pending = await transportListPending(currentTime);
   return pending.map((r) => toUIItem(r, currentTime));
 }
 
 /**
  * Get reminders for a specific persona.
  */
-export function getPersonaReminders(persona: string, now?: number): ReminderUIItem[] {
+export async function getPersonaReminders(persona: string, now?: number): Promise<ReminderUIItem[]> {
   const currentTime = now ?? Date.now();
-  const all = listByPersona(persona);
+  const all = await transportListByPersona(persona);
   return all
     .filter((r) => r.completed === 0)
     .sort((a, b) => a.due_at - b.due_at)
@@ -104,9 +102,11 @@ export function groupByDay(reminders: ReminderUIItem[]): ReminderGroup[] {
  * Dismiss a reminder (mark as completed).
  * If recurring, returns the next occurrence.
  */
-export function dismissReminder(id: string): { dismissed: boolean; nextId?: string } {
+export async function dismissReminder(
+  id: string,
+): Promise<{ dismissed: boolean; nextId?: string }> {
   try {
-    const next = completeReminder(id);
+    const next = await transportComplete(id);
     return { dismissed: true, nextId: next?.id };
   } catch {
     return { dismissed: false };
@@ -123,12 +123,12 @@ export function dismissReminder(id: string): { dismissed: boolean; nextId?: stri
  * after noon shifts whether `Math.max(due_at, Date.now())` selects
  * the reminder's stored due_at or the wall clock).
  */
-export function snoozeReminderBy(
+export async function snoozeReminderBy(
   id: string,
   preset: 'one_hour' | 'three_hours' | 'tomorrow' | 'custom',
   customMs?: number,
   now?: number,
-): boolean {
+): Promise<boolean> {
   const durations: Record<string, number> = {
     one_hour: MS_HOUR,
     three_hours: 3 * MS_HOUR,
@@ -138,7 +138,7 @@ export function snoozeReminderBy(
   const snoozeMs = preset === 'custom' ? (customMs ?? MS_HOUR) : durations[preset];
 
   try {
-    snoozeReminder(id, snoozeMs, now);
+    await transportSnooze(id, snoozeMs, now);
     return true;
   } catch {
     return false;
@@ -148,8 +148,8 @@ export function snoozeReminderBy(
 /**
  * Delete a reminder permanently.
  */
-export function removeReminder(id: string): boolean {
-  return deleteReminder(id);
+export async function removeReminder(id: string): Promise<boolean> {
+  return transportDelete(id);
 }
 
 /**
@@ -166,19 +166,22 @@ export function getSnoozePresets(): Array<{ value: string; label: string }> {
 /**
  * Get reminder counts for tab badge.
  */
-export function getReminderCounts(now?: number): { upcoming: number; overdue: number } {
+export async function getReminderCounts(
+  now?: number,
+): Promise<{ upcoming: number; overdue: number }> {
   const currentTime = now ?? Date.now();
-  return {
-    upcoming: getUpcomingReminders(currentTime).length,
-    overdue: getOverdueReminders(currentTime).length,
-  };
+  const [upcoming, overdue] = await Promise.all([
+    getUpcomingReminders(currentTime),
+    getOverdueReminders(currentTime),
+  ]);
+  return { upcoming: upcoming.length, overdue: overdue.length };
 }
 
 /**
  * Reset state (for testing).
  */
 export function resetReminders(): void {
-  resetReminderState();
+  transportReset();
 }
 
 /** Map a Reminder to UI item. */

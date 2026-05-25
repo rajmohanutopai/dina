@@ -78,6 +78,7 @@ export * from './resilience/degradation';
 export * from './crash/safety';
 export * from './persona/registry';
 export * from './vault_context/assembly';
+export * from './reminders/backend';
 export * from './pipeline/safety';
 export * from './person/linking';
 export * from './nudge/whisper';

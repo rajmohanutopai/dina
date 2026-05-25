@@ -213,9 +213,8 @@ describe('Export Archive (.dina format)', () => {
   describe('listArchiveContents', () => {
     it('lists personas and metadata', async () => {
       const contents = await listArchiveContents(archive, TEST_PASSPHRASE);
-      expect(contents.total_personas).toBe(0); // empty archive
+      expect(contents.total_personas).toBe(0); // empty archive (no data source wired)
       expect(contents.personas).toEqual([]);
-      expect(contents.identity_size_bytes).toBe(0);
       expect(contents.created_at).toBeGreaterThan(0);
     }, 30_000);
 

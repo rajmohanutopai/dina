@@ -74,6 +74,8 @@ import type {
   ExtractionResult,
   ApplyExtractionResponse,
   Person,
+  Reminder,
+  ReminderCreateInput,
   PersonaListEntry,
   ActionPolicyEntry,
   ActionPolicyResult,
@@ -237,7 +239,21 @@ export class MockCoreClient implements CoreClient {
    *  triggers the role-match branch. Keys are compared after
    *  trim + lowercase (matching the route's normalisation). */
   contactsByPreferenceResult: Record<string, Contact[]> = {};
+  /** Per-query canned result for `contactLookup` — keys compared after
+   *  trim + lowercase. Unmatched query → null (no contact). */
+  contactLookupResult: Record<string, Contact> = {};
   actionPolicyResult: ActionPolicyResult = { actions: [] };
+
+  /**
+   * In-memory reminder store backing `reminderCreate` /
+   * `reminderListByPersona` / `reminderListPending`. Functional enough
+   * that a create-then-read round-trip works in Brain backend-routing
+   * tests (the real Core route mutates Core's authoritative store; the
+   * mock mutates this array). Dedups on (source_item_id, kind, due_at,
+   * persona) to mirror the service.
+   */
+  readonly reminders: Reminder[] = [];
+  private reminderSeq = 0;
 
   /**
    * Per-persona override for `personaStatus`. When a tested code path
@@ -263,6 +279,8 @@ export class MockCoreClient implements CoreClient {
     this.peopleApplyExtractionResult = undefined;
     this.personasListResult.length = 0;
     this.peopleListResult.length = 0;
+    this.reminders.length = 0;
+    this.reminderSeq = 0;
   }
 
   /** Count how many times a given method was called. */
@@ -682,6 +700,12 @@ export class MockCoreClient implements CoreClient {
     });
   }
 
+  async contactLookup(query: string): Promise<Contact | null> {
+    return this.dispatch('contactLookup', [query], () => {
+      return this.contactLookupResult[query.trim().toLowerCase()] ?? null;
+    });
+  }
+
   async peopleApplyExtraction(
     result: ExtractionResult,
     persona?: string,
@@ -737,6 +761,129 @@ export class MockCoreClient implements CoreClient {
           (p) => p.status !== 'rejected' && p.contactDid === wanted,
         ) ?? null
       );
+    });
+  }
+
+  async reminderCreate(input: ReminderCreateInput): Promise<Reminder> {
+    return this.dispatch('reminderCreate', [input], () => {
+      const kind = input.kind ?? 'manual';
+      const sourceItemId = input.source_item_id ?? '';
+      // Dedup must mirror the real service EXACTLY (see reminders/service
+      // dedupKey): (source_item_id, kind, due_at, persona, MESSAGE). Without
+      // `message` the mock would collapse two distinct manual reminders at
+      // the same time — behaviour real Core no longer has.
+      const existing = this.reminders.find(
+        (r) =>
+          r.source_item_id === sourceItemId &&
+          r.kind === kind &&
+          r.due_at === input.due_at &&
+          r.persona === input.persona &&
+          r.message === input.message,
+      );
+      if (existing) return existing;
+      const seq = ++this.reminderSeq;
+      const reminder: Reminder = {
+        id: `mock-rem-${seq}`,
+        short_id: `m${seq}`,
+        message: input.message,
+        due_at: input.due_at,
+        recurring: input.recurring ?? '',
+        completed: 0,
+        created_at: Date.now(),
+        source_item_id: sourceItemId,
+        source: input.source ?? '',
+        persona: input.persona,
+        timezone: input.timezone ?? 'UTC',
+        kind,
+        status: 'pending',
+      };
+      this.reminders.push(reminder);
+      return reminder;
+    });
+  }
+
+  async reminderListByPersona(persona: string): Promise<Reminder[]> {
+    if (typeof persona !== 'string' || persona.trim() === '') {
+      throw new Error('reminderListByPersona: persona is required');
+    }
+    return this.dispatch('reminderListByPersona', [persona], () =>
+      this.reminders.filter((r) => r.persona === persona),
+    );
+  }
+
+  async reminderListPending(now?: number): Promise<Reminder[]> {
+    return this.dispatch('reminderListPending', [now], () => {
+      const cutoff = now ?? Date.now();
+      // Mirror the real service's `listPending`: not completed, due by the
+      // cutoff, status pending OR snoozed (a snooze re-fires when its new
+      // due_at arrives), sorted soonest-first.
+      return this.reminders
+        .filter(
+          (r) =>
+            r.completed === 0 &&
+            (r.status === 'pending' || r.status === 'snoozed') &&
+            r.due_at <= cutoff,
+        )
+        .sort((a, b) => a.due_at - b.due_at);
+    });
+  }
+
+  async reminderComplete(id: string): Promise<Reminder | null> {
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new Error('reminderComplete: id is required');
+    }
+    return this.dispatch('reminderComplete', [id], () => {
+      const r = this.reminders.find((x) => x.id === id);
+      if (r) {
+        r.completed = 1;
+        r.status = 'completed';
+      }
+      // Recurring next-occurrence is the real service's job; the mock
+      // doesn't synthesize one (no test relies on it).
+      return null;
+    });
+  }
+
+  async reminderSnooze(id: string, snoozeMs: number): Promise<Reminder | null> {
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new Error('reminderSnooze: id is required');
+    }
+    return this.dispatch('reminderSnooze', [id, snoozeMs], () => {
+      const r = this.reminders.find((x) => x.id === id);
+      if (!r) return null;
+      // Mirror the service: snooze from max(due_at, now), so a past-due
+      // reminder re-fires `snoozeMs` from NOW, not from its stale due_at.
+      r.due_at = Math.max(r.due_at, Date.now()) + snoozeMs;
+      r.status = 'snoozed';
+      return r;
+    });
+  }
+
+  async reminderDelete(id: string): Promise<boolean> {
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new Error('reminderDelete: id is required');
+    }
+    return this.dispatch('reminderDelete', [id], () => {
+      const i = this.reminders.findIndex((x) => x.id === id);
+      if (i < 0) return false;
+      this.reminders.splice(i, 1);
+      return true;
+    });
+  }
+
+  async reminderFireMissed(now?: number): Promise<Reminder[]> {
+    return this.dispatch('reminderFireMissed', [now], () => {
+      const cutoff = now ?? Date.now();
+      // Mirror the service: fire pending AND snoozed (a snooze re-fires
+      // when its new due_at arrives), not pending-only.
+      const fired = this.reminders.filter(
+        (r) =>
+          r.completed === 0 &&
+          (r.status === 'pending' || r.status === 'snoozed') &&
+          r.due_at <= cutoff,
+      );
+      for (const r of fired) r.status = 'fired';
+      return fired;
     });
   }
 

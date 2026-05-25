@@ -30,6 +30,7 @@ import {
   IDENTITY_MIGRATIONS,
   SQLitePeopleRepository,
   setPeopleRepository,
+  type Person,
 } from '@dina/core';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
@@ -38,6 +39,10 @@ import {
   resetPersonaState,
   openPersona,
 } from '@dina/core';
+import {
+  setPeopleReadBackend,
+  setVaultReadBackend,
+} from '../../src/vault_context/assembly';
 import { resetReminderState } from '@dina/core/reminders';
 import { storeItem, clearVaults } from '@dina/core';
 import {
@@ -523,5 +528,114 @@ describe('Reminder planner — PersonResolver + vault facts wiring', () => {
     expect(senderMatches.length).toBe(1);
     // Referenced line is NOT emitted for the sender themselves.
     expect(ctxSlice).not.toContain('Referenced: Sancho');
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────
+// Lite (home-node-lite): Brain runs out-of-process from Core, so there is
+// NO in-process people/vault repo. The planner must resolve the sender +
+// referenced people through the read backends instead of reading Brain's
+// empty in-process repos — otherwise reminder enrichment silently differs
+// from mobile. These pin the backend paths added for that parity.
+// ───────────────────────────────────────────────────────────────────────
+describe('Reminder planner — lite (out-of-process backends, no local repos)', () => {
+  let capturedPrompts: string[];
+
+  function surface(
+    s: string,
+    normalizedSurface: string,
+    surfaceType: string,
+  ): NonNullable<Person['surfaces']>[number] {
+    return {
+      id: 0,
+      personId: 'p-sancho',
+      surface: s,
+      normalizedSurface,
+      surfaceType: surfaceType as never,
+      status: 'confirmed',
+      confidence: 'high',
+      sourceItemId: '',
+      sourceExcerpt: '',
+      extractorVersion: '',
+      createdFrom: 'llm',
+      createdAt: 0,
+      updatedAt: 0,
+    };
+  }
+
+  const fakeSancho: Person = {
+    personId: 'p-sancho',
+    canonicalName: 'Sancho Garcia',
+    contactDid: 'did:plc:sancho',
+    relationshipHint: 'brother',
+    status: 'confirmed',
+    createdFrom: 'llm',
+    createdAt: 0,
+    updatedAt: 0,
+    surfaces: [
+      surface('Sancho Garcia', 'sancho garcia', 'name'),
+      surface('Sancho', 'sancho', 'nickname'),
+      surface('my brother', 'my brother', 'role_phrase'),
+    ],
+  };
+
+  beforeEach(() => {
+    resetReminderState();
+    resetReminderLLM();
+    resetPersonaState();
+    createPersona('general', 'default');
+    openPersona('general');
+
+    // Lite: NO in-process people repo — resolution must go through the backend.
+    setPeopleRepository(null);
+    setPeopleReadBackend({
+      peopleResolveByDid: async (did) => (did === 'did:plc:sancho' ? fakeSancho : null),
+      peopleFindByName: async () => [],
+      peopleList: async () => [fakeSancho],
+    });
+
+    capturedPrompts = [];
+    registerReminderLLM(async (_system, prompt) => {
+      capturedPrompts.push(prompt);
+      return JSON.stringify({ reminders: [] });
+    });
+    registerReminderLogger({ warn: () => {} });
+  });
+
+  afterEach(() => {
+    setPeopleRepository(null);
+    setPeopleReadBackend(null);
+    setVaultReadBackend(null);
+    resetReminderLLM();
+    resetReminderLogger();
+  });
+
+  it('resolves the sender via the people backend, not the empty in-process repo', async () => {
+    await planReminders({
+      itemId: 'item-1',
+      type: 'message',
+      summary: 'I am arriving in 5 minutes',
+      body: 'I am arriving in 5 minutes',
+      timestamp: Date.now(),
+      persona: 'general',
+      senderDid: 'did:plc:sancho',
+    });
+    expect(capturedPrompts).toHaveLength(1);
+    // Same "Sender:" line mobile produces — proving the backend path reaches
+    // the identical prompt rendering. (Pre-fix lite saw no sender at all.)
+    expect(capturedPrompts[0]).toContain('Sender: Sancho Garcia (brother)');
+  });
+
+  it('resolves a referenced person (no senderDid) via the people backend list', async () => {
+    await planReminders({
+      itemId: 'item-2',
+      type: 'note',
+      summary: "Sancho's birthday is Nov 7",
+      body: "Sancho's birthday is Nov 7",
+      timestamp: Date.now(),
+      persona: 'general',
+    });
+    expect(capturedPrompts).toHaveLength(1);
+    expect(capturedPrompts[0]).toContain('Referenced: Sancho Garcia');
   });
 });

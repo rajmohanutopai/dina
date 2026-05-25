@@ -32,13 +32,19 @@ import {
   defaultResponsibility,
 } from './validation';
 import { getContactRepository } from './repository';
+import { getVaultRepository, listVaultPersonas } from '../vault/repository';
 import { normalisePreferredForCategories, normalisePreferredForCategory } from './preferred_for';
 import {
   addContact as addEgressGateContact,
   removeContact as removeEgressGateContact,
+  clearGateContacts as clearEgressGateContacts,
 } from '../d2d/gates';
 import { getPeopleRepository, type PeopleRepository } from '../people/repository';
-import { addKnownContact, removeKnownContact } from '../peerlens/source_trust';
+import {
+  addKnownContact,
+  removeKnownContact,
+  clearKnownContacts as clearSourceTrustContacts,
+} from '../peerlens/source_trust';
 
 export type TrustLevel = 'blocked' | 'unknown' | 'verified' | 'trusted';
 export type SharingTier = 'none' | 'summary' | 'full' | 'locked';
@@ -186,9 +192,13 @@ export function establishContact(
 ): Contact {
   if (!did || did.trim().length === 0) throw new Error('contacts: DID is required');
 
-  const rel = opts?.relationship ?? 'unknown';
-  const relError = validateRelationship(rel);
-  if (relError) throw new Error(`contacts: ${relError}`);
+  // Validate a caller-supplied relationship up front (fail before any
+  // write). When omitted we preserve the existing value, which is already
+  // valid, so there's nothing to validate yet.
+  if (opts?.relationship !== undefined) {
+    const relError = validateRelationship(opts.relationship);
+    if (relError) throw new Error(`contacts: ${relError}`);
+  }
 
   const peopleRepo = requirePeopleRepo();
   // People graph is the hub: this creates (or reuses) the person, the
@@ -203,15 +213,27 @@ export function establishContact(
   // policy row may already exist in SQL, and an INSERT would violate
   // the person_id PK. Fall back to the repo when the cache misses.
   const existing = contactsByPerson.get(personId) ?? sqlRepo?.get(personId) ?? undefined;
+
+  // Preserve a richer existing relationship + its derived dataResponsibility
+  // on a re-add that doesn't specify them. A cold-cache duplicate add must
+  // NOT reset spouse→unknown / household→external just because opts omitted
+  // them (matches how trustLevel/sharingTier already fall back to existing).
+  const relationship: Relationship = opts?.relationship ?? existing?.relationship ?? 'unknown';
+  const dataResponsibility: DataResponsibility =
+    opts?.dataResponsibility ??
+    (opts?.relationship !== undefined
+      ? (defaultResponsibility(opts.relationship) as DataResponsibility) // caller changed relationship → re-derive
+      : (existing?.dataResponsibility ?? // caller left it alone → keep what was stored
+        (defaultResponsibility(relationship) as DataResponsibility))); // brand-new → derive from effective
+
   const contact: Contact = {
     personId,
     did,
     displayName: displayName.trim(),
     trustLevel: opts?.trustLevel ?? existing?.trustLevel ?? 'unknown',
     sharingTier: opts?.sharingTier ?? existing?.sharingTier ?? 'summary',
-    relationship: rel,
-    dataResponsibility:
-      opts?.dataResponsibility ?? (defaultResponsibility(rel) as DataResponsibility),
+    relationship,
+    dataResponsibility,
     aliases: existing?.aliases ?? [],
     notes: existing?.notes ?? '',
     // Leave undefined for a brand-new contact (the domain treats
@@ -244,20 +266,24 @@ export function removeContact(personId: string): boolean {
   const contact = contactsByPerson.get(personId);
   if (!contact) return false;
 
+  // SQL first — drop the durable policy row before mutating memory + D2D
+  // projections, so a failed delete throws here with caches/gates intact
+  // (rather than leaving a contact pruned from the gate but live on disk).
+  const sqlRepo = getContactRepository();
+  if (sqlRepo) sqlRepo.remove(personId);
+
   for (const alias of contact.aliases) {
     aliasIndex.delete(alias.toLowerCase());
   }
-  // Prune projections for every DID this person owns BEFORE dropping
-  // the policy row (syncProjections reads the policy to decide).
+  // Prune projections for every DID this person owns. (Order vs the SQL
+  // drop is safe: listPersonDids reads the people graph, not the contact
+  // row we just removed.)
   for (const did of listPersonDids(personId)) {
     removeEgressGateContact(did);
     removeKnownContact(did);
     didIndex.delete(did);
   }
   contactsByPerson.delete(personId);
-
-  const sqlRepo = getContactRepository();
-  if (sqlRepo) sqlRepo.remove(personId);
   return true;
 }
 
@@ -376,20 +402,27 @@ export function updateContact(
   if (!contact) throw new Error(`contacts: "${did}" not found`);
   const personId = contact.personId;
 
-  if (updates.displayName !== undefined) contact.displayName = updates.displayName.trim();
+  // Compute the resolved next state on a copy — validate + derive BEFORE
+  // touching either store, so a validation throw mutates nothing. `next`
+  // carries the FULL effective field set (incl. relationship-derived
+  // dataResponsibility), which is what gets persisted: `update()` writes
+  // exactly the fields handed to it, so passing the raw `updates` partial
+  // would silently drop a derived dataResponsibility from SQL.
+  const next: Contact = { ...contact };
   const trustChanged =
     updates.trustLevel !== undefined && updates.trustLevel !== contact.trustLevel;
-  if (updates.trustLevel !== undefined) contact.trustLevel = updates.trustLevel;
-  if (updates.sharingTier !== undefined) contact.sharingTier = updates.sharingTier;
-  if (updates.notes !== undefined) contact.notes = updates.notes;
+  if (updates.displayName !== undefined) next.displayName = updates.displayName.trim();
+  if (updates.trustLevel !== undefined) next.trustLevel = updates.trustLevel;
+  if (updates.sharingTier !== undefined) next.sharingTier = updates.sharingTier;
+  if (updates.notes !== undefined) next.notes = updates.notes;
 
   // Relationship update → auto-derive dataResponsibility
   if (updates.relationship !== undefined) {
     const relError = validateRelationship(updates.relationship);
     if (relError) throw new Error(`contacts: ${relError}`);
-    contact.relationship = updates.relationship;
+    next.relationship = updates.relationship;
     if (updates.dataResponsibility === undefined) {
-      contact.dataResponsibility = defaultResponsibility(
+      next.dataResponsibility = defaultResponsibility(
         updates.relationship,
       ) as DataResponsibility;
     }
@@ -399,14 +432,16 @@ export function updateContact(
   if (updates.dataResponsibility !== undefined) {
     const drError = validateDataResponsibility(updates.dataResponsibility);
     if (drError) throw new Error(`contacts: ${drError}`);
-    contact.dataResponsibility = updates.dataResponsibility;
+    next.dataResponsibility = updates.dataResponsibility;
   }
 
-  contact.updatedAt = Date.now();
+  next.updatedAt = Date.now();
 
-  // GAP-PERSIST-01 write-through (by person_id).
+  // SQL FIRST, memory second: a failed durable write throws here and the
+  // cached contact is left untouched, so memory never runs ahead of disk.
   const sqlRepo = getContactRepository();
-  if (sqlRepo) sqlRepo.update(personId, updates);
+  if (sqlRepo) sqlRepo.update(personId, next);
+  Object.assign(contact, next);
 
   // A trust change flips gate eligibility (block prunes, unblock restores).
   if (trustChanged) syncProjections(personId);
@@ -441,18 +476,31 @@ export function addAlias(did: string, alias: string): void {
 
   const normalized = alias.trim().toLowerCase();
 
-  const existingOwner = aliasIndex.get(normalized);
-  if (existingOwner !== undefined) {
-    if (existingOwner === personId) return; // already assigned to this contact
-    throw new Error(`contacts: alias "${alias}" already taken by ${existingOwner}`);
+  // SQL is authoritative for alias ownership. The in-memory `aliasIndex`
+  // can be cold/un-hydrated, so checking it alone would let a new contact
+  // "claim" an alias a persisted contact already owns — and the repo's
+  // idempotent INSERT OR IGNORE would then silently drop the write while
+  // memory recorded the wrong owner. Resolve the durable owner first.
+  const sqlRepo = getContactRepository();
+  const owner = sqlRepo ? sqlRepo.resolveAlias(normalized) : (aliasIndex.get(normalized) ?? null);
+  if (owner !== null && owner !== undefined) {
+    if (owner === personId) {
+      // Already ours — make the in-memory view consistent + no-op.
+      aliasIndex.set(normalized, personId);
+      if (!contact.aliases.some((a) => a.toLowerCase() === normalized)) {
+        contact.aliases.push(alias.trim());
+      }
+      return;
+    }
+    throw new Error(`contacts: alias "${alias}" already taken by ${owner}`);
   }
 
+  // Unowned everywhere — claim it. SQL first, then memory, so a failed
+  // durable write throws before the in-memory index diverges from disk.
+  if (sqlRepo) sqlRepo.addAlias(personId, normalized);
   aliasIndex.set(normalized, personId);
   contact.aliases.push(alias.trim());
   contact.updatedAt = Date.now();
-
-  const sqlRepo = getContactRepository();
-  if (sqlRepo) sqlRepo.addAlias(personId, normalized);
 }
 
 /** Remove an alias from a contact. */
@@ -461,12 +509,14 @@ export function removeAlias(did: string, alias: string): void {
   if (!contact) throw new Error(`contacts: "${did}" not found`);
 
   const normalized = alias.trim().toLowerCase();
+
+  // SQL first — keep the in-memory index/alias list consistent with disk
+  // even if the durable delete throws.
+  const sqlRepo = getContactRepository();
+  if (sqlRepo) sqlRepo.removeAlias(normalized);
   aliasIndex.delete(normalized);
   contact.aliases = contact.aliases.filter((a) => a.toLowerCase() !== normalized);
   contact.updatedAt = Date.now();
-
-  const sqlRepo = getContactRepository();
-  if (sqlRepo) sqlRepo.removeAlias(normalized);
 }
 
 /** Resolve a DID from an alias. Returns the contact's primary DID, or null. */
@@ -581,6 +631,126 @@ export function resetContactDirectory(): void {
   contactsByPerson.clear();
   didIndex.clear();
   aliasIndex.clear();
+}
+
+/**
+ * Re-derive the D2D egress-gate + inbound source-trust projections from
+ * the current in-memory contacts (doc §4.1). The projection sets are
+ * in-memory caches, so they can drift from the durable state when an
+ * update is missed — e.g. a person rejected/merged through the people
+ * repository without a directory-level removal leaves a now-orphaned DID
+ * in the gate. Calling this clears both contact-derived sets and rebuilds
+ * them from the (non-blocked) contacts, so the drift self-heals. Cheap;
+ * safe to call at boot and after any out-of-band identity mutation.
+ * (Only the contact allowlist is touched — the blocked/trusted egress
+ * destination lists are independent.)
+ */
+export function rebuildContactProjections(): void {
+  clearEgressGateContacts();
+  clearSourceTrustContacts();
+  for (const [personId, contact] of contactsByPerson) {
+    if (contact.trustLevel === 'blocked') continue;
+    for (const did of listPersonDids(personId)) {
+      addEgressGateContact(did);
+      addKnownContact(did);
+    }
+  }
+}
+
+/**
+ * Complete cross-layer merge of two people: fold `mergePersonId` into
+ * `keepPersonId` across ALL the layers a bare `PeopleRepository.mergePeople`
+ * can't reach. This is the safe entry point a people-curation UI should
+ * call (the repo's `mergePeople` handles only surfaces + identities).
+ *
+ * Order matters: re-point subject links + merge the contact policy
+ * BEFORE the people-graph merge tombstones the loser, then rebuild the
+ * derived projections from the survivor's now-combined identity set.
+ *
+ * ⚠️ NOT ATOMIC across stores — DO NOT EXPOSE via a route/UI as-is.
+ * The merge spans three independent persistence stores: contact policy +
+ * people graph (both in `identity.sqlite`) and the per-persona vault files
+ * (`vault/<persona>.sqlite`, one SQLite DB EACH). No single transaction can
+ * span separate DB files, so a failure mid-merge can leave partially-merged
+ * state — and the loser's contact row is dropped before the survivor write
+ * (required: alias rows are globally-unique, so the loser's must be deleted
+ * before `addAlias` can re-home them), so a crash in that window loses the
+ * unioned policy rather than being safely retryable. Implementing this
+ * honestly needs either a unified cross-store transaction layer or a durable
+ * merge-job queue that drives the steps to convergence with compensation —
+ * a deliberate project, not a patch. Until that lands, `mergeContactPersons`
+ * is an internal, run-to-completion primitive only; no caller wires it to a
+ * user-triggered surface today, and none should.
+ *
+ * Caveat (separate from the above): subject links are re-pointed only in
+ * personas with a currently wired vault repo (`listVaultPersonas()`). A
+ * persona whose vault isn't loaded keeps the loser's links until it's next
+ * opened + merged again.
+ */
+export function mergeContactPersons(keepPersonId: string, mergePersonId: string): void {
+  if (keepPersonId === '' || mergePersonId === '' || keepPersonId === mergePersonId) return;
+  const peopleRepo = requirePeopleRepo();
+  const sqlRepo = getContactRepository();
+
+  // 1. Merge contact policy. The survivor's fields win; the loser's
+  //    preferred_for + aliases are unioned in. If only the loser had a
+  //    policy, the survivor adopts it.
+  const keep = contactsByPerson.get(keepPersonId);
+  const merge = contactsByPerson.get(mergePersonId);
+  if (merge !== undefined) {
+    const now = Date.now();
+    const primaryDid =
+      peopleRepo.getPerson(keepPersonId)?.contactDid || keep?.did || merge.did;
+    const mergedPreferred = [
+      ...new Set([...(keep?.preferredFor ?? []), ...(merge.preferredFor ?? [])]),
+    ];
+    const mergedAliases = [...new Set([...(keep?.aliases ?? []), ...merge.aliases])];
+    const merged: Contact = {
+      personId: keepPersonId,
+      did: primaryDid,
+      displayName: keep?.displayName || merge.displayName,
+      trustLevel: keep?.trustLevel ?? merge.trustLevel,
+      sharingTier: keep?.sharingTier ?? merge.sharingTier,
+      relationship: keep?.relationship ?? merge.relationship,
+      dataResponsibility: keep?.dataResponsibility ?? merge.dataResponsibility,
+      aliases: mergedAliases,
+      notes: keep?.notes || merge.notes,
+      preferredFor: mergedPreferred.length > 0 ? mergedPreferred : undefined,
+      createdAt: keep?.createdAt ?? merge.createdAt,
+      updatedAt: now,
+    };
+    // Drop the loser's policy row + its alias rows + projections first.
+    removeContact(mergePersonId);
+    // Write the merged survivor policy (add if the survivor had none).
+    const hadKeep = contactsByPerson.has(keepPersonId);
+    if (sqlRepo) {
+      if (hadKeep) sqlRepo.update(keepPersonId, merged);
+      else sqlRepo.add(merged);
+      // `update()` does NOT touch preferred_for (it has a dedicated
+      // normalising setter); without this the categories folded in from
+      // the merged-away contact would live only in the in-memory map and
+      // vanish on the next hydrate. `add()` already persists them, but
+      // call it unconditionally (idempotent) so persistence never depends
+      // on which branch ran.
+      sqlRepo.setPreferredFor(keepPersonId, merged.preferredFor ?? []);
+      for (const alias of mergedAliases) sqlRepo.addAlias(keepPersonId, alias.toLowerCase());
+    }
+    contactsByPerson.set(keepPersonId, merged);
+    for (const alias of mergedAliases) aliasIndex.set(alias.trim().toLowerCase(), keepPersonId);
+  }
+
+  // 2. Re-point subject links to the survivor across every wired persona.
+  for (const persona of listVaultPersonas()) {
+    getVaultRepository(persona)?.repointSubjectsSync(mergePersonId, keepPersonId);
+  }
+
+  // 3. People-graph merge — surfaces + identities move to the survivor,
+  //    the loser is tombstoned.
+  peopleRepo.mergePeople(keepPersonId, mergePersonId);
+
+  // 4. The survivor's DID set just grew (+ the loser's are gone) — rebuild
+  //    the derived projections so the gate reflects reality.
+  rebuildContactProjections();
 }
 
 // ---------------------------------------------------------------

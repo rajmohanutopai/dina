@@ -28,15 +28,22 @@ import { useEffect } from 'react';
 import { fireMissedReminders, type Reminder } from '@dina/core/reminders';
 import { postReminderCard } from '@dina/brain/chat';
 import { appendNotification } from '@dina/brain/notifications';
+import { watchFiredReminders } from './reminder_transport';
 
 const DEFAULT_TICK_MS = 30_000;
 const FALLBACK_THREAD_ID = 'main';
 
 /**
- * Pure function — fires past-due reminders and posts each to
- * `threadId` as a `'reminder'`-typed message. Exposed for direct
- * testing (RTL isn't installed) and for callers that want to drive
- * the watcher manually (e.g. an app-foreground hook in 5.61).
+ * IN-PROCESS one-shot fire — fires past-due reminders against the local
+ * reminder service and posts each to `threadId`. **Native / test only.**
+ *
+ * ⚠️ Do NOT call this from a web/SPA path: in the browser the reminder
+ * store lives in core-server, not the page, so firing locally would hit
+ * an empty store + double-fire against the server's fire loop. The
+ * production fire path is {@link useReminderFireWatcher} →
+ * `watchFiredReminders` (native timer in-process; web subscribes to the
+ * server's SSE stream). This helper exists only because RTL isn't
+ * installed, so tests drive the fire→thread mapping directly.
  *
  * Returns the number of reminders fired this call.
  */
@@ -80,20 +87,11 @@ export function useReminderFireWatcher(opts: UseReminderFireWatcherOptions = {})
 
   useEffect(() => {
     if (!enabled) return;
-
-    const tick = (): void => {
-      try {
-        fireRemindersToThread(threadId);
-      } catch {
-        /* swallow — a misbehaving reminder shouldn't break the loop */
-      }
-    };
-
-    // Fire once immediately so a freshly opened tab catches up
-    // without a 30 s wait, then on cadence.
-    tick();
-    const handle = setInterval(tick, tickMs);
-    return () => clearInterval(handle);
+    // Platform seam: native runs an in-process foreground timer
+    // (`fireMissedReminders`); web subscribes to the brain-server's SSE
+    // stream (the server fires). Either way each fired reminder lands in
+    // the chat thread + notifications inbox via `postReminder`.
+    return watchFiredReminders((r) => postReminder(threadId, r), tickMs);
   }, [tickMs, threadId, enabled]);
 }
 

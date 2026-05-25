@@ -15,6 +15,7 @@ import {
   setAccessiblePersonas,
   registerReasoningProvider,
   resetReasoningProvider,
+  setContactReadBackend,
 } from '../../src/vault_context/assembly';
 import type { LLMMessage } from '../../src/vault_context/assembly';
 import { storeItem, clearVaults } from '@dina/core';
@@ -365,6 +366,49 @@ describe('Vault Context Assembly', () => {
       const ctx = { items: [], tokenEstimate: 0, personas: ['general'] };
       await runReasoningAgent('Look up bob', ctx);
       expect((toolResult as any).name).toBe('Bob');
+    });
+
+    it('contact_lookup uses the contact backend in lite (empty in-process directory)', async () => {
+      // Lite: the directory lives in Core. The in-process directory is
+      // EMPTY here; a wired contact backend must serve the lookup instead.
+      const carol = {
+        personId: 'p-carol',
+        did: 'did:plc:carol',
+        displayName: 'Carol',
+        trustLevel: 'verified' as const,
+        sharingTier: 'full' as const,
+        relationship: 'colleague' as const,
+        dataResponsibility: 'external' as const,
+        aliases: [],
+        notes: '',
+        createdAt: 0,
+        updatedAt: 0,
+      };
+      setContactReadBackend({
+        contactLookup: async (q) => (q.toLowerCase() === 'carol' ? carol : null),
+      });
+      try {
+        let toolResult: unknown = null;
+        registerReasoningProvider(async (messages: LLMMessage[]) => {
+          const toolMsg = messages.find((m) => m.role === 'tool');
+          if (toolMsg) {
+            toolResult = JSON.parse(toolMsg.content);
+            return { role: 'assistant' as const, content: 'Found Carol.' };
+          }
+          return {
+            role: 'assistant' as const,
+            content: '',
+            toolCalls: [{ name: 'contact_lookup', args: { query: 'Carol' } }],
+          };
+        });
+        const ctx = { items: [], tokenEstimate: 0, personas: ['general'] };
+        await runReasoningAgent('Who is Carol?', ctx);
+        expect((toolResult as any).name).toBe('Carol');
+        expect((toolResult as any).trust).toBe('verified');
+        expect((toolResult as any).relationship).toBe('colleague');
+      } finally {
+        setContactReadBackend(null);
+      }
     });
 
     it('contact_lookup returns null for unknown contact', async () => {

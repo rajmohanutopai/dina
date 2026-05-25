@@ -193,10 +193,11 @@ export class QueryWindow {
     this.cleanupTimer = setInterval(() => {
       this.cleanup();
     }, intervalMs);
-    // Do not keep the Node event loop alive solely for this sweeper.
-    if (typeof (this.cleanupTimer as { unref?: () => void }).unref === 'function') {
-      (this.cleanupTimer as { unref: () => void }).unref();
-    }
+    // Do not keep the Node event loop alive solely for this sweeper. The
+    // timer handle is `number` under DOM lib typings but `Timeout` (with
+    // `unref`) on Node — cast through `unknown` to bridge both safely.
+    const timer = this.cleanupTimer as unknown as { unref?: () => void };
+    if (typeof timer.unref === 'function') timer.unref();
     return () => this.stopCleanupLoop();
   }
 

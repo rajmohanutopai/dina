@@ -70,21 +70,33 @@ function generateShortId(fullId: string): string {
   return shortId;
 }
 
-/** Build dedup key from the compound fields. */
-function dedupKey(sourceItemId: string, kind: string, dueAt: number, persona: string): string {
-  return `${sourceItemId}|${kind}|${dueAt}|${persona}`;
+/**
+ * Build dedup key from the compound fields. `message` is part of the key:
+ * without it, two DIFFERENT manual reminders at the same time + persona
+ * ("call mom at 5", "take medicine at 5") collide — they share an empty
+ * `source_item_id` and `kind='manual'` — and the second is silently
+ * dropped. Dedup must identify a *duplicate*, not "anything at this
+ * minute". Source-derived reminders (planner) still dedup correctly on
+ * re-ingestion because the same item yields the same message + key.
+ *
+ * Mirrors the DB `UNIQUE(source_item_id, kind, due_at, persona, message)`
+ * in `schemas.ts` — the two MUST agree or a service-level dedup miss
+ * becomes a swallowed `INSERT` conflict.
+ */
+function dedupKey(
+  sourceItemId: string,
+  kind: string,
+  dueAt: number,
+  persona: string,
+  message: string,
+): string {
+  return `${sourceItemId}|${kind}|${dueAt}|${persona}|${message}`;
 }
 
 /** Subscribers fan-out registered via `subscribeReminderCreated`. */
 const createListeners = new Set<(reminder: Reminder) => void>();
 
-/**
- * Create a reminder. Returns the reminder.
- *
- * Dedup: if a reminder with the same (source_item_id, kind, due_at, persona)
- * already exists, returns the existing one without creating a duplicate.
- */
-export function createReminder(input: {
+export interface CreateReminderInput {
   message: string;
   due_at: number;
   persona: string;
@@ -93,30 +105,20 @@ export function createReminder(input: {
   source?: string;
   recurring?: RecurringFrequency;
   timezone?: string;
-}): Reminder {
-  const kind = input.kind ?? 'manual';
-  const sourceItemId = input.source_item_id ?? '';
-  const dk = dedupKey(sourceItemId, kind, input.due_at, input.persona);
+}
 
-  // Dedup check
-  const existingId = dedupIndex.get(dk);
-  if (existingId) {
-    const existing = reminders.get(existingId);
-    if (existing) return existing;
-  }
-
+/** Construct a reminder (id + short_id + defaults). No registration, no SQL. */
+function buildReminder(input: CreateReminderInput, kind: string, sourceItemId: string): Reminder {
   const id = `rem-${bytesToHex(randomBytes(16))}`;
   const shortId = generateShortId(id);
-  const now = Date.now();
-
-  const reminder: Reminder = {
+  return {
     id,
     short_id: shortId,
     message: input.message,
     due_at: input.due_at,
     recurring: input.recurring ?? '',
     completed: 0,
-    created_at: now,
+    created_at: Date.now(),
     source_item_id: sourceItemId,
     source: input.source ?? '',
     persona: input.persona,
@@ -124,16 +126,69 @@ export function createReminder(input: {
     kind,
     status: 'pending',
   };
+}
 
-  reminders.set(id, reminder);
-  shortIdIndex.set(shortId, id);
-  dedupIndex.set(dk, id);
-  // SQL write-through — fire-and-forget since Phase 2.3 (task 2.3).
-  // Double-guarded: outer try/catch handles sync-throw variants (e.g.
-  // test mocks), inner .catch handles async rejection. `reminders` Map
-  // is authoritative for reads within the process.
+/** Register a reminder in the in-memory store + indexes. */
+function registerInMemory(reminder: Reminder, dk: string): void {
+  reminders.set(reminder.id, reminder);
+  shortIdIndex.set(reminder.short_id, reminder.id);
+  dedupIndex.set(dk, reminder.id);
+}
+
+/** Look up a live reminder by dedup key, or null. */
+function dedupHit(dk: string): Reminder | null {
+  const existingId = dedupIndex.get(dk);
+  if (!existingId) return null;
+  return reminders.get(existingId) ?? null;
+}
+
+/**
+ * Fan out a freshly-created reminder to subscribers — typically the
+ * mobile-side OS-push bridge (`installReminderPushBridge`) which calls
+ * `scheduleNotification` so a banner fires when due even with the app
+ * backgrounded. Listeners get a frozen clone so a faulty observer can't
+ * mutate canonical state; errors are swallowed so a misbehaving bridge
+ * can't break reminder creation.
+ */
+function fanOutCreated(reminder: Reminder): void {
+  for (const listener of createListeners) {
+    try {
+      listener({ ...reminder });
+    } catch {
+      /* swallow */
+    }
+  }
+}
+
+/**
+ * Create a reminder, best-effort persistence. Returns synchronously; the
+ * SQL write is fire-and-forget. This is the MOBILE path: the in-memory
+ * `reminders` Map is authoritative for reads within the process, and a
+ * transient local-SQLite write loss is acceptable (the row still fires
+ * + lists this session; only a same-session crash before the async write
+ * lands loses it). Lite's HTTP route uses {@link createReminderDurable}
+ * instead so a POST never acks before the row is on disk.
+ *
+ * Dedup: a matching (source_item_id, kind, due_at, persona, message)
+ * returns the existing reminder without creating a duplicate.
+ */
+export function createReminder(input: CreateReminderInput): Reminder {
+  const kind = input.kind ?? 'manual';
+  const sourceItemId = input.source_item_id ?? '';
+  const dk = dedupKey(sourceItemId, kind, input.due_at, input.persona, input.message);
+
+  const hit = dedupHit(dk);
+  if (hit) return hit;
+
+  const reminder = buildReminder(input, kind, sourceItemId);
+  registerInMemory(reminder, dk);
+
   const sqlRepo = getReminderRepository();
   if (sqlRepo) {
+    // Double-guarded: outer try/catch handles sync-throw variants (e.g.
+    // test mocks), inner .catch handles async rejection. A UNIQUE
+    // conflict (plain INSERT) on this best-effort path is swallowed —
+    // the in-memory Map is authoritative for mobile reads.
     try {
       void sqlRepo.create(reminder).catch(() => {
         /* fail-safe — transient SQL write loss is acceptable */
@@ -143,21 +198,70 @@ export function createReminder(input: {
     }
   }
 
-  // Fan out to subscribers — typically the mobile-side OS-push bridge
-  // (`installReminderPushBridge`) listens here and calls
-  // `scheduleNotification` so a banner fires when the reminder is due
-  // even with the app backgrounded. Listeners get a frozen clone so a
-  // faulty observer can't mutate the canonical state. Errors are
-  // swallowed so a misbehaving bridge can't break reminder creation.
-  for (const listener of createListeners) {
-    try {
-      listener({ ...reminder });
-    } catch {
-      /* swallow */
-    }
-  }
-
+  fanOutCreated(reminder);
   return reminder;
+}
+
+/**
+ * In-flight durable creates, keyed by dedup key. Coalesces concurrent
+ * identical creates onto a single SQL write + outcome so a duplicate
+ * request can't ack `success` off a not-yet-persisted in-memory row.
+ */
+const inflightDurable = new Map<string, Promise<Reminder>>();
+
+/**
+ * Create a reminder, durable-at-ack. Unlike {@link createReminder}, the
+ * in-memory row is registered ONLY after the SQL write resolves — so a
+ * concurrent duplicate never sees (and acks off) a pending row, and a
+ * failed write leaves nothing behind. Concurrent identical creates are
+ * coalesced onto one in-flight write via `inflightDurable`, and the
+ * repository uses a plain `INSERT` (not `INSERT OR IGNORE`), so a real
+ * conflict surfaces as a throw rather than a silent no-op masquerading
+ * as success. This is the lite HTTP-route path, where "200 created" is a
+ * durability promise. With no SQL repo wired (tests / pure in-memory),
+ * the in-memory store IS the truth and registration happens immediately.
+ *
+ * Dedup: a matching (source_item_id, kind, due_at, persona, message)
+ * returns the existing reminder without creating a duplicate.
+ */
+export async function createReminderDurable(input: CreateReminderInput): Promise<Reminder> {
+  const kind = input.kind ?? 'manual';
+  const sourceItemId = input.source_item_id ?? '';
+  const dk = dedupKey(sourceItemId, kind, input.due_at, input.persona, input.message);
+
+  // Already durably created in this process (registered post-persist)?
+  const hit = dedupHit(dk);
+  if (hit) return hit;
+
+  // A concurrent identical create is mid-write — await its outcome rather
+  // than racing a second INSERT (which would conflict) or acking early.
+  const existingFlight = inflightDurable.get(dk);
+  if (existingFlight) return existingFlight;
+
+  const flight = (async (): Promise<Reminder> => {
+    const reminder = buildReminder(input, kind, sourceItemId);
+    const sqlRepo = getReminderRepository();
+    if (sqlRepo) {
+      // Plain INSERT — a UNIQUE conflict or write error throws here, so a
+      // 200 is only returned once the row is genuinely on disk.
+      await sqlRepo.create(reminder);
+    }
+    // Durable (or no repo wired): register + fan out only now.
+    registerInMemory(reminder, dk);
+    fanOutCreated(reminder);
+    return reminder;
+  })();
+
+  inflightDurable.set(dk, flight);
+  try {
+    return await flight;
+  } catch (err) {
+    throw new Error(
+      `reminders: durable create failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  } finally {
+    inflightDurable.delete(dk);
+  }
 }
 
 /** Subscribe to reminder-creation events. Returns a disposer. */
@@ -353,7 +457,13 @@ export function deleteReminder(id: string): boolean {
   const reminder = reminders.get(id);
   if (!reminder) return false;
 
-  const dk = dedupKey(reminder.source_item_id, reminder.kind, reminder.due_at, reminder.persona);
+  const dk = dedupKey(
+    reminder.source_item_id,
+    reminder.kind,
+    reminder.due_at,
+    reminder.persona,
+    reminder.message,
+  );
   dedupIndex.delete(dk);
   shortIdIndex.delete(reminder.short_id);
   reminders.delete(id);
@@ -380,6 +490,7 @@ export function resetReminderState(): void {
   dedupIndex.clear();
   shortIdIndex.clear();
   createListeners.clear();
+  inflightDurable.clear();
 }
 
 /**
@@ -409,7 +520,7 @@ export async function hydrateRemindersFromRepo(): Promise<number> {
     if (reminders.has(r.id)) continue;
     reminders.set(r.id, r);
     shortIdIndex.set(r.short_id, r.id);
-    const dk = dedupKey(r.source_item_id, r.kind, r.due_at, r.persona);
+    const dk = dedupKey(r.source_item_id, r.kind, r.due_at, r.persona, r.message);
     if (!dedupIndex.has(dk)) dedupIndex.set(dk, r.id);
     loaded++;
   }

@@ -55,8 +55,11 @@ import { StagingDrainScheduler } from '../../src/staging/scheduler';
 import type { D2DReceivedNotification } from '../../src/staging/drain';
 import {
   listByPersona as listRemindersByPersona,
+  createReminder,
+  listPending,
   resetReminderState,
 } from '@dina/core/reminders';
+import { setReminderBackend } from '../../src/reminders/backend';
 import { getThread, resetThreads } from '../../src/chat/thread';
 import { postReminderCard } from '../../src/chat/reminder_card';
 import { makeDinaMessage, resetFactoryCounters, makeFakePeopleRepo } from '@dina/test-harness';
@@ -154,6 +157,10 @@ describe('D2D arrival → drain → auto-generated reminder', () => {
     resetContactDirectory();
     resetReminderState();
     resetReminderLLM();
+    // A test may install a reminder backend to simulate lite's
+    // over-HTTP reminder path; clear it so the in-process default
+    // returns for the others.
+    setReminderBackend(null);
     clearReplayCache();
   });
 
@@ -273,6 +280,68 @@ describe('D2D arrival → drain → auto-generated reminder', () => {
     expect(card).toBeDefined();
     expect(card!.metadata?.reminderKind).toBe('birthday');
     expect((card!.content ?? '').toLowerCase()).toContain('maya');
+  });
+
+  it('lite reminder-card read failure (Core HTTP throws) is fail-soft — item still stored', async () => {
+    // Regression guard for the #4a boundary: in lite the drain's optional
+    // D2D reminder-card lookup goes over Core HTTP and can throw on a
+    // transient route/network failure. That read happens AFTER the item's
+    // storage + post-publish have already succeeded, so it must never
+    // flip the staging item to `failed`.
+    addContact(aliceDID);
+    addDirectoryContact(aliceDID, 'Alice', 'verified');
+
+    const nextYear = new Date().getUTCFullYear() + 1;
+    const message = makeDinaMessage({
+      from: aliceDID,
+      to: 'did:plc:bob-d2d-reminder',
+      type: MSG_TYPE_SOCIAL_UPDATE,
+      body: JSON.stringify({ text: `Maya's birthday is on Nov 7th, ${nextYear}` }),
+    });
+    const sealed = sealMessage(message, aliceSeed, bobPub);
+    const receiveResult = receiveD2D(sealed, bobPub, bobSeed, [alicePub], 'contact_ring1');
+    expect(receiveResult.action).toBe('staged');
+
+    // Simulate lite: create + listPending reach Core fine, but the
+    // reminder-card lookup hits a transient Core failure.
+    setReminderBackend({
+      reminderCreate: async (input) => createReminder(input),
+      reminderListByPersona: async () => {
+        throw new Error('core unreachable (simulated lite HTTP failure)');
+      },
+      reminderListPending: async (now) => listPending(now),
+    });
+
+    const core = buildCoreClient();
+    const logs: Array<Record<string, unknown>> = [];
+    scheduler = new StagingDrainScheduler({
+      core,
+      logger: (e) => logs.push(e),
+      drain: {
+        onD2DReminderCreated: (r) => postReminderCard('main', r, { scheduled: true }),
+      },
+      intervalMs: 10_000,
+      setInterval: () => 1,
+      clearInterval: () => {
+        /* noop */
+      },
+    });
+    const tick = await scheduler.runTick();
+
+    // Storage + post-publish succeeded; the thrown reminder-card read did
+    // NOT fail the item.
+    expect(tick.stored).toBe(1);
+    expect(tick.failed).toBe(0);
+    // The failure is observable (logged), not swallowed silently.
+    expect(
+      logs.find((e) => e.event === 'staging.drain.d2d_reminder_read_failed'),
+    ).toBeDefined();
+    // The reminder write path is independent of the failed read — the
+    // reminder was still created (proves we isolated the optional read).
+    const created = COVERED_PERSONAS.flatMap((p) => listRemindersByPersona(p));
+    expect(created.some((r) => r.kind === 'birthday')).toBe(true);
+    // No scheduled card — the read threw before it could emit one.
+    expect(getThread('main').filter((m) => m.type === 'reminder')).toHaveLength(0);
   });
 
   it("'I am coming in 15 minutes' D2D → arrival reminder ~10 min from now", async () => {

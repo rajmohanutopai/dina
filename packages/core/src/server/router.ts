@@ -71,6 +71,18 @@ export interface CoreRequest {
    * can't forge the marker over the wire.
    */
   trustedInProcess?: boolean;
+  /**
+   * Resolved caller type after the auth pipeline runs (issues.txt §2).
+   * Set by the router from the auth result for signed routes; left
+   * undefined for `public` routes and in-process (owner) dispatch.
+   * Handlers gate caller-type-specific enforcement on this — e.g. the
+   * agent persona-access gate fires only when `callerType === 'agent'`,
+   * so the owner's own app (in-process / SPA) reads every persona freely
+   * while the dina-agent CLI is gated.
+   */
+  callerType?: string;
+  /** Resolved caller DID — the agent's DID for `callerType === 'agent'`. */
+  callerDID?: string;
 }
 
 export interface CoreResponse {
@@ -210,17 +222,21 @@ export class CoreRouter {
     // For every other request (matched signed route OR unknown path),
     // auth runs first so an unauthenticated probe sees a uniform 401
     // regardless of whether the path exists.
+    let dispatchReq = req;
     if (this.shouldAuth(req.method, segments)) {
       const authResult = authenticateCore(req);
       if (!authResult.authenticated) {
         return authErrorResponse(authResult);
       }
+      // Thread the resolved identity onto the request so handlers can
+      // enforce caller-type rules (the agent persona-access gate, §2).
+      dispatchReq = { ...req, callerType: authResult.callerType, callerDID: authResult.did };
     }
 
     if (match === null) {
       return jsonResponse(404, { error: `no route for ${req.method} ${req.path}` });
     }
-    return this.runHandler(req, match.route, match.params);
+    return this.runHandler(dispatchReq, match.route, match.params);
   }
 
   /**

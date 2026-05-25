@@ -74,15 +74,14 @@ describe('Vault Persona Tier Lifecycle', () => {
     });
   });
 
-  describe('agentCanAccess', () => {
+  describe('agentCanAccess (V1 contract — issues.txt §2)', () => {
+    // default/standard are open to agents; sensitive/locked need an approved
+    // grant. Kept in sync with requireAgentPersonaAccess.
     it('default → agent can access freely (no grant needed)', () => {
       expect(agentCanAccess('default', false)).toBe(true);
     });
-    it('standard → agent without grant denied', () => {
-      expect(agentCanAccess('standard', false)).toBe(false);
-    });
-    it('standard → agent with grant can access', () => {
-      expect(agentCanAccess('standard', true)).toBe(true);
+    it('standard → agent can access freely in V1 (no grant needed)', () => {
+      expect(agentCanAccess('standard', false)).toBe(true);
     });
     it('sensitive → agent without grant denied', () => {
       expect(agentCanAccess('sensitive', false)).toBe(false);
@@ -90,8 +89,11 @@ describe('Vault Persona Tier Lifecycle', () => {
     it('sensitive → agent with grant can access', () => {
       expect(agentCanAccess('sensitive', true)).toBe(true);
     });
-    it('locked → agent is DENIED (even with grant)', () => {
-      expect(agentCanAccess('locked', true)).toBe(false);
+    it('locked → agent without grant denied', () => {
+      expect(agentCanAccess('locked', false)).toBe(false);
+    });
+    it('locked → agent WITH grant can access (approval+grant, not hard-denied)', () => {
+      expect(agentCanAccess('locked', true)).toBe(true);
     });
   });
 });

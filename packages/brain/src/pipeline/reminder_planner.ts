@@ -34,7 +34,8 @@ import {
 } from '@dina/core';
 
 import { scrubPII, rehydratePII } from '@dina/core';
-import { createReminder, type Reminder } from '@dina/core/reminders';
+import { type Reminder } from '@dina/core/reminders';
+import { createReminderRouted } from '../reminders/backend';
 import { queryVault, listPersonas, getVaultRepository } from '@dina/core';
 import { generateEmbedding, isEmbeddingAvailable } from '../embedding/generation';
 import { isValidReminderPayload, isExtractedEventKind } from '../enrichment/event_extractor';
@@ -43,7 +44,7 @@ import { REMINDER_PLAN } from '../llm/prompts';
 
 import type { ExtractedEvent, ExtractedEventKind } from '../enrichment/event_extractor';
 import type { VaultItem } from '@dina/test-harness';
-import { getVaultReadBackend } from '../vault_context/assembly';
+import { getVaultReadBackend, getPeopleReadBackend } from '../vault_context/assembly';
 
 export interface PlannerInput {
   itemId: string;
@@ -336,7 +337,7 @@ export async function planReminders(input: PlannerInput): Promise<PlannerResult>
     }
 
     try {
-      const reminder = createReminder({
+      const reminder = await createReminderRouted({
         message: event.message,
         due_at: dueAt,
         persona: input.persona,
@@ -408,7 +409,7 @@ const VAULT_CONTEXT_DEFAULT_PERSONA = 'general';
 async function gatherVaultContext(
   input: PlannerInput,
 ): Promise<{ text: string; itemCount: number }> {
-  const senderHint = resolveSenderHint(input.senderDid);
+  const senderHint = await resolveSenderHint(input.senderDid);
 
   // Hand the user's text straight to FTS5 — no JS-side keyword
   // extraction, stop-word lists, or proper-noun regex. SQLite FTS5
@@ -448,7 +449,7 @@ async function gatherVaultContext(
   // status until the user promotes them. Pulling suggested people
   // here would surface mis-extracted relationships the user never
   // sanctioned — wrong direction for a sovereign-loyalty system.
-  const referencedPeople = resolveReferencedPeople(
+  const referencedPeople = await resolveReferencedPeople(
     `${input.summary}\n${input.body}`,
     input.senderDid,
   );
@@ -554,18 +555,36 @@ async function gatherVaultContext(
   const pushItemLine = (item: VaultItem): boolean =>
     pushRawLine(item.content_l0 || item.summary || '');
 
-  const collectFrom = (text: string, embedding: Float32Array | undefined): void => {
+  const collectFrom = async (text: string, embedding: Float32Array | undefined): Promise<void> => {
     if (text.length === 0) return;
     const mode: 'fts5' | 'hybrid' = embedding !== undefined ? 'hybrid' : 'fts5';
+    const vaultBackend = getVaultReadBackend();
     for (const persona of searchPersonas) {
       if (contextItems.length >= VAULT_CONTEXT_MAX_ITEMS) break;
       try {
-        const results = queryVault(persona, {
-          mode,
-          text,
-          limit: VAULT_CONTEXT_MAX_ITEMS,
-          ...(embedding !== undefined ? { embedding } : {}),
-        });
+        // In-process (mobile): the persona vault is local. Out-of-process
+        // (lite): no local repo, so route the FTS search through the vault
+        // read backend (Core HTTP) — otherwise lite reminder enrichment is
+        // blind to Core's real vault.
+        let results: VaultItem[];
+        if (getVaultRepository(persona) !== null) {
+          results = queryVault(persona, {
+            mode,
+            text,
+            limit: VAULT_CONTEXT_MAX_ITEMS,
+            ...(embedding !== undefined ? { embedding } : {}),
+          });
+        } else if (vaultBackend?.vaultQuery !== undefined) {
+          const res = await vaultBackend.vaultQuery(persona, {
+            mode,
+            text,
+            limit: VAULT_CONTEXT_MAX_ITEMS,
+            ...(embedding !== undefined ? { embedding: Array.from(embedding) } : {}),
+          });
+          results = (res.items ?? []) as unknown as VaultItem[];
+        } else {
+          results = [];
+        }
         for (const item of results) {
           if (!pushItemLine(item)) break;
         }
@@ -638,8 +657,8 @@ async function gatherVaultContext(
   // the event text can fill it with scheduling-shaped noise. Phase 2 —
   // the event text fills any remaining slots with situational context.
   const personQuery = [...new Set(personSurfaces)].filter((s) => s.length > 0).join(' ');
-  collectFrom(personQuery, undefined);
-  collectFrom(queryText, queryEmbedding);
+  await collectFrom(personQuery, undefined);
+  await collectFrom(queryText, queryEmbedding);
 
   // No sender hint AND no referenced people AND no vault context
   // → preserve the legacy sentinel string so callers/tests detecting
@@ -690,50 +709,107 @@ async function gatherVaultContext(
  * runs in well under a millisecond — cheaper than the FTS5 search
  * that follows, certainly cheaper than the LLM call.
  */
-function resolveReferencedPeople(text: string, excludeSenderDid?: string): ResolvedPerson[] {
-  if (typeof text !== 'string' || text.trim().length === 0) return [];
-  const repo = getPeopleRepository();
-  if (repo === null) return [];
-  const resolver: PersonResolver = new RepositoryPersonResolver(repo);
-
-  const excludePersonId =
-    typeof excludeSenderDid === 'string' && excludeSenderDid !== ''
-      ? resolver.resolveByDID(excludeSenderDid)?.personId ?? ''
-      : '';
-
-  const surfacesMap = resolver.confirmedSurfacesMap();
-  if (surfacesMap.size === 0) return [];
-
+/**
+ * Word-boundary match of `text` against a normalized-surface → people
+ * map, de-duped by person and minus the excluded sender. Shared by the
+ * in-process + backend paths so the matching rule (and its false-positive
+ * guards) can't diverge between mobile and lite.
+ */
+function matchReferencedPeople(
+  text: string,
+  surfaceToPeople: Map<string, ResolvedPerson[]>,
+  excludePersonId: string,
+): ResolvedPerson[] {
   const lowered = text.toLowerCase();
-  const seenPersonIds = new Set<string>();
+  const seen = new Set<string>();
   const found: ResolvedPerson[] = [];
-
-  for (const [normalizedSurface, surfaces] of surfacesMap) {
-    // Word-boundary check to avoid false positives like "Emma"
-    // matching "gemma" or "ema" matching "cinema". The normalized
-    // surface is already whitespace-trimmed and lower-cased by
-    // `normalizeAlias`, so we only need to escape regex metas.
+  for (const [normalizedSurface, people] of surfaceToPeople) {
+    // Word-boundary check avoids false positives like "Emma" matching
+    // "gemma" or "ema" matching "cinema". The surface is already trimmed +
+    // lower-cased; only escape regex metas.
     if (normalizedSurface.length === 0) continue;
     const escaped = normalizedSurface.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp(`\\b${escaped}\\b`, 'i');
-    if (!re.test(lowered)) continue;
-    for (const s of surfaces) {
-      if (seenPersonIds.has(s.personId)) continue;
-      if (excludePersonId !== '' && s.personId === excludePersonId) continue;
-      const person = repo.getPerson(s.personId);
-      if (person === null || person.status === 'rejected') continue;
-      seenPersonIds.add(s.personId);
-      found.push({
-        personId: person.personId,
-        canonicalName: person.canonicalName,
-        contactDid: person.contactDid,
-        relationshipHint: person.relationshipHint,
-        surfaces: (person.surfaces ?? []).filter((sf) => sf.status === 'confirmed'),
-      });
+    if (!new RegExp(`\\b${escaped}\\b`, 'i').test(lowered)) continue;
+    for (const person of people) {
+      if (seen.has(person.personId)) continue;
+      if (excludePersonId !== '' && person.personId === excludePersonId) continue;
+      seen.add(person.personId);
+      found.push(person);
     }
   }
-
   return found;
+}
+
+async function resolveReferencedPeople(
+  text: string,
+  excludeSenderDid?: string,
+): Promise<ResolvedPerson[]> {
+  if (typeof text !== 'string' || text.trim().length === 0) return [];
+
+  const repo = getPeopleRepository();
+  if (repo !== null) {
+    // In-process (mobile): rich resolver over the local people graph.
+    const resolver: PersonResolver = new RepositoryPersonResolver(repo);
+    const excludePersonId =
+      typeof excludeSenderDid === 'string' && excludeSenderDid !== ''
+        ? resolver.resolveByDID(excludeSenderDid)?.personId ?? ''
+        : '';
+    const surfacesMap = resolver.confirmedSurfacesMap();
+    if (surfacesMap.size === 0) return [];
+    // Pre-resolve each surface's people to the ResolvedPerson shape.
+    const surfaceToPeople = new Map<string, ResolvedPerson[]>();
+    for (const [norm, surfaces] of surfacesMap) {
+      const people: ResolvedPerson[] = [];
+      for (const s of surfaces) {
+        const person = repo.getPerson(s.personId);
+        if (person === null || person.status === 'rejected') continue;
+        people.push({
+          personId: person.personId,
+          canonicalName: person.canonicalName,
+          contactDid: person.contactDid,
+          relationshipHint: person.relationshipHint,
+          surfaces: (person.surfaces ?? []).filter((sf) => sf.status === 'confirmed'),
+        });
+      }
+      if (people.length > 0) surfaceToPeople.set(norm, people);
+    }
+    return matchReferencedPeople(text, surfaceToPeople, excludePersonId);
+  }
+
+  // Out-of-process (lite): rebuild the confirmed-surface map from the
+  // people backend's `peopleList()` (rejected hidden by contract) so lite
+  // resolves referenced people the same way mobile does — instead of
+  // reading Brain's empty in-process people repo.
+  const backend = getPeopleReadBackend();
+  if (backend?.peopleList === undefined) return [];
+  const people = await backend.peopleList();
+  if (people.length === 0) return [];
+  const excludePersonId =
+    typeof excludeSenderDid === 'string' &&
+    excludeSenderDid !== '' &&
+    backend.peopleResolveByDid !== undefined
+      ? (await backend.peopleResolveByDid(excludeSenderDid))?.personId ?? ''
+      : '';
+  const surfaceToPeople = new Map<string, ResolvedPerson[]>();
+  for (const p of people) {
+    if (p.status === 'rejected') continue;
+    const confirmed = (p.surfaces ?? []).filter((s) => s.status === 'confirmed');
+    const resolved: ResolvedPerson = {
+      personId: p.personId,
+      canonicalName: p.canonicalName,
+      contactDid: p.contactDid,
+      relationshipHint: p.relationshipHint,
+      surfaces: confirmed,
+    };
+    for (const s of confirmed) {
+      const norm = s.normalizedSurface;
+      if (!norm) continue;
+      const arr = surfaceToPeople.get(norm) ?? [];
+      if (!arr.some((x) => x.personId === p.personId)) arr.push(resolved);
+      surfaceToPeople.set(norm, arr);
+    }
+  }
+  return matchReferencedPeople(text, surfaceToPeople, excludePersonId);
 }
 
 interface SenderHint {
@@ -762,26 +838,51 @@ interface SenderHint {
  * so caching it would just keep a stale repo handle alive across
  * tests that swap the singleton.
  */
-function resolveSenderHint(senderDid?: string): SenderHint | null {
-  if (typeof senderDid !== 'string' || senderDid === '') return null;
-  const repo = getPeopleRepository();
-  if (repo === null) return null;
-  const resolver: PersonResolver = new RepositoryPersonResolver(repo);
-  const person: ResolvedPerson | null = resolver.resolveByDID(senderDid);
-  if (person === null) return null;
-  const displayName = resolver.displayName(senderDid);
-  if (displayName === null) return null;
-  const surfaces: string[] = [];
-  for (const s of person.surfaces) {
+/** Trimmed, de-duplicated surface strings from a surface list. */
+function dedupeSurfaceStrings(surfaces: { surface: string }[]): string[] {
+  const out: string[] = [];
+  for (const s of surfaces) {
     const trimmed = s.surface.trim();
-    if (trimmed === '') continue;
-    if (!surfaces.includes(trimmed)) surfaces.push(trimmed);
+    if (trimmed !== '' && !out.includes(trimmed)) out.push(trimmed);
   }
+  return out;
+}
+
+async function resolveSenderHint(senderDid?: string): Promise<SenderHint | null> {
+  if (typeof senderDid !== 'string' || senderDid === '') return null;
+
+  const repo = getPeopleRepository();
+  if (repo !== null) {
+    // In-process (mobile): rich resolver over the local people graph.
+    const resolver: PersonResolver = new RepositoryPersonResolver(repo);
+    const person: ResolvedPerson | null = resolver.resolveByDID(senderDid);
+    if (person === null) return null;
+    const displayName = resolver.displayName(senderDid);
+    if (displayName === null) return null;
+    return {
+      personId: person.personId,
+      displayName,
+      relationshipHint: person.relationshipHint,
+      surfaces: dedupeSurfaceStrings(person.surfaces),
+    };
+  }
+
+  // Out-of-process (lite): the people graph lives in Core — resolve the
+  // DID over the backend so the planner isn't blind to the sender in
+  // home-node-lite (it was reading Brain's empty in-process repo).
+  const backend = getPeopleReadBackend();
+  if (backend?.peopleResolveByDid === undefined) return null;
+  const person = await backend.peopleResolveByDid(senderDid);
+  if (person === null || person.status === 'rejected') return null;
+  const confirmed = (person.surfaces ?? []).filter((s) => s.status === 'confirmed');
+  const displayName =
+    person.canonicalName.trim() !== '' ? person.canonicalName : (confirmed[0]?.surface.trim() ?? '');
+  if (displayName.trim() === '') return null;
   return {
     personId: person.personId,
     displayName,
     relationshipHint: person.relationshipHint,
-    surfaces,
+    surfaces: dedupeSurfaceStrings(confirmed),
   };
 }
 

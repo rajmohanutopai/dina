@@ -18,8 +18,8 @@ describe('Persona Wall (Release Verification)', () => {
     it('default tier: auto-opens, no gate', () => {
       expect(autoOpensOnBoot('default')).toBe(true);
     });
-    it('standard tier: auto-opens, session-gated', () => {
-      expect(agentCanAccess('standard', false)).toBe(false);
+    it('standard tier: auto-opens, open to agents in V1', () => {
+      expect(agentCanAccess('standard', false)).toBe(true);
     });
     it('sensitive tier: closed at boot, requires approval', () => {
       expect(requiresApproval('sensitive')).toBe(true);
@@ -29,18 +29,21 @@ describe('Persona Wall (Release Verification)', () => {
     });
   });
 
-  describe('agent access flow', () => {
-    it('agent without grant → denied for standard', () => {
-      expect(agentCanAccess('standard', false)).toBe(false);
+  describe('agent access flow (V1 contract — issues.txt §2)', () => {
+    it('agent → standard open in V1 (no grant needed)', () => {
+      expect(agentCanAccess('standard', false)).toBe(true);
     });
-    it('agent with grant → allowed for standard', () => {
-      expect(agentCanAccess('standard', true)).toBe(true);
+    it('agent without grant → denied for sensitive', () => {
+      expect(agentCanAccess('sensitive', false)).toBe(false);
     });
     it('agent with grant → allowed for sensitive', () => {
       expect(agentCanAccess('sensitive', true)).toBe(true);
     });
-    it('agent with grant → DENIED for locked', () => {
-      expect(agentCanAccess('locked', true)).toBe(false);
+    it('agent with grant → allowed for locked (approval+grant, not hard-denied)', () => {
+      expect(agentCanAccess('locked', true)).toBe(true);
+    });
+    it('agent without grant → denied for locked', () => {
+      expect(agentCanAccess('locked', false)).toBe(false);
     });
   });
 

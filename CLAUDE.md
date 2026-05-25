@@ -247,25 +247,38 @@ wire format go through `packages/protocol/docs/conformance.md` §14
 - **Rate limit:** Default 60/min; tests need `DINA_RATE_LIMIT=100000`
 - **OpenAPI codegen:** `make generate` regenerates Go + Python types from `api/core-api.yaml` and `api/brain-api.yaml`. CI drift gate: `make check-generate`. See `docs/OPENAPI_TRANSFORMATION_PLAN.md`.
 
-### OpenAPI Contract
+### OpenAPI Contract — LEGACY (deprecated Go/Python stack only)
 
-The Core↔Brain HTTP interface is defined by OpenAPI specs in `api/`:
+> ⚠️ `api/core-api.yaml` is **no longer the source of truth** for the
+> shipping TypeScript stack. It (and its codegen) describe the deprecated
+> Go Core + Python Brain. The live Core↔Brain contract for the TS product
+> is the **hand-written routes in `packages/core/src/server/routes/*`**
+> (validated by the `__tests__/server/routes/*` contract tests); the TS
+> routes have intentionally diverged from the spec (e.g. `/v1/reminders`
+> collection + actions, `/v1/contacts/lookup`, `/v1/vault/list`,
+> `DELETE /v1/vault/item/{id}` → `200 {deleted}`). The OpenAPI files are
+> kept only so the deprecated-stack codegen + its `make check-generate`
+> gate stay internally consistent; `@dina/protocol`'s generated
+> `CoreAPI*` types are a legacy schema-conformance **test fixture**, not a
+> runtime contract. (The old `cross_stack_compat` surface-drift test was
+> retired — it gated interop with those deprecated stacks.)
+
+For the legacy stacks, the specs in `api/` are:
 
 ```
 api/
-  components/schemas.yaml     # Shared enums (17) + domain types (15)
-  core-api.yaml               # Core's ~50 endpoints (hand-authored, source of truth)
-  brain-api.yaml              # Brain's 3 endpoints (extracted from FastAPI)
+  components/schemas.yaml     # Shared enums + domain types
+  core-api.yaml               # Go Core's endpoints (hand-authored)
+  brain-api.yaml              # Python Brain's endpoints (extracted from FastAPI)
 ```
 
-**Codegen outputs** (committed, regenerated via `make generate`):
-- `core/internal/gen/core_types.gen.go` — Go types for Core API (oapi-codegen)
-- `core/internal/gen/brainapi/brain_types.gen.go` — Go types for Brain client (oapi-codegen)
-- `brain/src/gen/core_types.py` — Python Pydantic models for Core client (datamodel-code-generator)
+**Legacy codegen outputs** (`make generate`): Go types under
+`core/internal/gen/`, Python models under `brain/src/gen/`. Ownership:
+Core spec hand-authored → Python client types; Brain spec extracted from
+FastAPI → Go client types. Never feed generated types back into the
+owning service.
 
-**Ownership rule:** Core spec is hand-authored → generates Python client types. Brain spec is extracted from FastAPI/Pydantic → generates Go client types. Never feed generated types back into the owning service.
-
-**Wire format:** All JSON uses `snake_case`. All domain types that cross HTTP have `json:"snake_case"` tags.
+**Wire format:** All JSON uses `snake_case` across both stacks.
 
 ### Test Infrastructure
 

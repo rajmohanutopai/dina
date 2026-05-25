@@ -14,6 +14,8 @@ import {
   addContact,
   setPreferredFor,
 } from '../../../core/src/contacts/directory';
+import { setPeopleRepository } from '../../../core/src/people/repository';
+import { makeFakePeopleRepo } from '@dina/test-harness';
 
 function fakeProvider(response: string): LLMProvider {
   return {
@@ -75,6 +77,11 @@ describe('providerToExtractorLLM', () => {
 });
 
 describe('defaultContactResolver', () => {
+  beforeEach(() => {
+    // Person-keyed contacts (identity-hub redesign) — wire the people repo
+    // before addContact resolves did→person.
+    setPeopleRepository(makeFakePeopleRepo());
+  });
   afterEach(() => resetContactDirectory());
 
   it('finds a contact by exact display name (case-insensitive)', () => {

@@ -28,7 +28,8 @@ import {
 } from '../enrichment/topic_touch_pipeline';
 import { processEvent } from '../pipeline/event_processor';
 import { handlePostPublish } from '../pipeline/post_publish';
-import { listByPersona as listRemindersByPersona, type Reminder } from '@dina/core/reminders';
+import { type Reminder } from '@dina/core/reminders';
+import { listRemindersByPersonaRouted } from '../reminders/backend';
 import { classifyDomain, classifyPersonas } from '../routing/domain';
 import { selectPersonaRich } from '../routing/persona_selector';
 import { scoreSender } from '../peerlens/scorer';
@@ -855,19 +856,33 @@ export async function runStagingDrainTick(
         // drain stays headless — it emits; the host renders. Fail-soft:
         // a throwing hook is logged, never blocks the tick.
         if (options.onD2DReminderCreated !== undefined) {
-          const planned = listRemindersByPersona(personas[0] ?? 'general').filter(
-            (r) => r.source_item_id === itemId,
-          );
-          for (const r of planned) {
-            try {
-              await options.onD2DReminderCreated(r);
-            } catch (cbErr) {
-              log({
-                event: 'staging.drain.d2d_reminder_hook_failed',
-                item_id: itemId,
-                error: cbErr instanceof Error ? cbErr.message : String(cbErr),
-              });
+          // The reminder-card read + emit is pure enrichment. In lite
+          // `listRemindersByPersonaRouted` is a Core HTTP call that can
+          // throw on a route/network blip — and the item's storage +
+          // post-publish have ALREADY succeeded by this point. Keep the
+          // whole block fail-soft (read AND each hook call) so an optional
+          // card never flips the staging item to `failed`.
+          try {
+            const planned = (
+              await listRemindersByPersonaRouted(personas[0] ?? 'general')
+            ).filter((r) => r.source_item_id === itemId);
+            for (const r of planned) {
+              try {
+                await options.onD2DReminderCreated(r);
+              } catch (cbErr) {
+                log({
+                  event: 'staging.drain.d2d_reminder_hook_failed',
+                  item_id: itemId,
+                  error: cbErr instanceof Error ? cbErr.message : String(cbErr),
+                });
+              }
             }
+          } catch (readErr) {
+            log({
+              event: 'staging.drain.d2d_reminder_read_failed',
+              item_id: itemId,
+              error: readErr instanceof Error ? readErr.message : String(readErr),
+            });
           }
         }
 

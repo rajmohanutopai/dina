@@ -65,7 +65,7 @@ describe('WorkflowTaskPriority enum values', () => {
 });
 
 describe('AllowedOrigins', () => {
-  it('contains the empty-string legacy allowance plus the 7 concrete origins', () => {
+  it('contains the empty-string legacy allowance plus the concrete origins', () => {
     expect(AllowedOrigins).toEqual([
       '',
       'telegram',
@@ -75,6 +75,9 @@ describe('AllowedOrigins', () => {
       'system',
       'cli',
       'dinamobile',
+      // issues.txt §2 — agent-originated approvals (locked-vault gate).
+      // Already permitted by the workflow_tasks CHECK in schemas.ts.
+      'agent',
     ]);
   });
 
