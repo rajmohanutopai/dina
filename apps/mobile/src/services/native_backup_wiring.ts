@@ -10,6 +10,7 @@
  */
 
 import { configureSharing } from '../hooks/useShareExport';
+
 import { configureRestore } from './restore_import';
 
 let wired = false;
@@ -64,7 +65,7 @@ export function wireNativeBackup(): void {
         type: '*/*',
         copyToCacheDirectory: true,
         multiple: false,
-      })) as { canceled?: boolean; assets?: Array<{ uri: string; name?: string }> };
+      })) as { canceled?: boolean; assets?: { uri: string; name?: string }[] };
       const asset = res.canceled === true ? undefined : res.assets?.[0];
       if (asset === undefined) return null;
       return { uri: asset.uri, name: asset.name ?? 'backup.dina' };

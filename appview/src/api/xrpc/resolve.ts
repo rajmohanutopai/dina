@@ -8,6 +8,22 @@ import { withSWR, resolveKey, CACHE_TTLS } from '../middleware/swr-cache.js'
 import { getCachedGraphContext } from '../middleware/graph-context-cache.js'
 import { CONSTANTS } from '@/config/constants.js'
 import type { ResolveResponse, GraphContext } from '@/shared/types/api-types.js'
+import type { SubjectRef } from '@/shared/types/lexicon-types.js'
+
+/**
+ * Shape of the `subject` JSON string after parsing. Validated (rather than
+ * trusted as `any`) so a malformed/hostile `subject` param fails closed into
+ * the "Invalid subject" response instead of flowing untyped into queries +
+ * deterministic-id hashing. Unknown keys are stripped (Zod default); only the
+ * SubjectRef fields are consumed downstream.
+ */
+const SubjectRefSchema = z.object({
+  type: z.enum(['did', 'content', 'product', 'dataset', 'organization', 'claim', 'place']),
+  did: z.string().optional(),
+  uri: z.string().optional(),
+  name: z.string().optional(),
+  identifier: z.string().optional(),
+})
 
 export const ResolveParams = z.object({
   subject: z.string().max(4096),
@@ -41,9 +57,14 @@ async function computeResolveResponse(
   domain?: string,
   context?: string,
 ): Promise<ResolveResponse> {
-  let subjectRef: any
+  let subjectRef: SubjectRef
   try {
-    subjectRef = JSON.parse(subjectJson)
+    const parsed: unknown = JSON.parse(subjectJson)
+    const validated = SubjectRefSchema.safeParse(parsed)
+    if (!validated.success) {
+      throw new Error('subject does not match the SubjectRef shape')
+    }
+    subjectRef = validated.data
   } catch {
     return {
       // TN-API-003 fields — null on parse failure (subject can't be resolved):

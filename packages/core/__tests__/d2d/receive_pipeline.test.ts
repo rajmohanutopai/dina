@@ -4,15 +4,16 @@
  * Source: ARCHITECTURE.md Tasks 6.8–6.12
  */
 
-import { receiveD2D } from '../../src/d2d/receive_pipeline';
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
+import { resetAuditState, queryAudit } from '../../src/audit/service';
+import { getPublicKey } from '../../src/crypto/ed25519';
 import { sealMessage, type DinaMessage } from '../../src/d2d/envelope';
 import { addContact, setScenarioDeny, clearGatesState } from '../../src/d2d/gates';
-import { resetStagingState } from '../../src/staging/service';
-import { resetAuditState, queryAudit } from '../../src/audit/service';
 import { resetQuarantineState, quarantineSize } from '../../src/d2d/quarantine';
+import { receiveD2D } from '../../src/d2d/receive_pipeline';
+import { resetStagingState } from '../../src/staging/service';
 import { clearReplayCache } from '../../src/transport/adversarial';
-import { getPublicKey } from '../../src/crypto/ed25519';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
 
 const senderPriv = TEST_ED25519_SEED;
 const senderPub = getPublicKey(senderPriv);
@@ -117,6 +118,52 @@ describe('D2D Receive Pipeline', () => {
       const wrongKey = getPublicKey(new Uint8Array(32).fill(0x77));
       receiveD2D(buildSealed(), recipientPub, recipientPriv, [wrongKey], 'trusted');
       expect(queryAudit({ action: 'd2d_recv_bad_sig' }).length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('sender binding (transport authenticity)', () => {
+    // A valid signature only proves the holder of senderVerificationKeys
+    // signed the bytes; it does NOT prove the sealed inner `from` matches the
+    // DID the transport authenticated. When the caller supplies
+    // authenticatedFromDID, the inner `from` must equal it — otherwise an
+    // attacker who signs with their OWN key can spoof a trusted peer's DID in
+    // `from` and inherit that peer's trust + vault attribution.
+    it('inner from matching the authenticated DID → proceeds (staged)', () => {
+      addContact('did:plc:sender');
+      const result = receiveD2D(
+        buildSealed(),
+        recipientPub,
+        recipientPriv,
+        [senderPub],
+        'trusted',
+        {
+          authenticatedFromDID: 'did:plc:sender',
+        },
+      );
+      expect(result.action).toBe('staged');
+      expect(result.signatureValid).toBe(true);
+    });
+
+    it('inner from spoofing a different DID → dropped (not staged) despite valid signature', () => {
+      // Exploit shape: attacker signs with their own key (senderPriv → senderPub,
+      // which the transport authenticated as did:plc:attacker), but seals
+      // from: did:plc:victim to inherit the victim's trust/attribution.
+      addContact('did:plc:victim');
+      const forged = buildSealed({ from: 'did:plc:victim' });
+      const result = receiveD2D(forged, recipientPub, recipientPriv, [senderPub], 'trusted', {
+        authenticatedFromDID: 'did:plc:attacker',
+      });
+      expect(result.action).toBe('dropped');
+      expect(result.signatureValid).toBe(true);
+      expect(result.reason).toContain('authenticated transport DID');
+      expect(quarantineSize()).toBe(0);
+      expect(queryAudit({ action: 'd2d_recv_sender_mismatch' }).length).toBe(1);
+    });
+
+    it('omitted authenticatedFromDID → no binding enforced (pure-pipeline callers)', () => {
+      addContact('did:plc:sender');
+      const result = receiveD2D(buildSealed(), recipientPub, recipientPriv, [senderPub], 'trusted');
+      expect(result.action).toBe('staged');
     });
   });
 

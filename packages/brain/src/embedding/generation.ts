@@ -50,12 +50,27 @@ export function isEmbeddingAvailable(): boolean {
   return localProvider !== null || cloudProvider !== null;
 }
 
+/** True if an on-device (local) embedding provider is registered. */
+export function hasLocalEmbeddingProvider(): boolean {
+  return localProvider !== null;
+}
+
+/** True if a cloud embedding provider is registered. */
+export function hasCloudEmbeddingProvider(): boolean {
+  return cloudProvider !== null;
+}
+
 /**
  * Generate a 768-dim embedding from text.
  *
  * Fallback order: local → cloud → throw.
- * Local is preferred because: no PII scrubbing needed, no network,
- * faster for real-time search.
+ *
+ * ⚠️ This silently falls back to the CLOUD provider. Do NOT call it with
+ * unscrubbed vault content / user data — a local-provider failure (or a
+ * cloud-only deployment) would ship raw PII to the cloud (Law 3). For any
+ * text that may contain PII, use `embedMaybeSensitive` (embedding/safe_embed.ts),
+ * which embeds real content only on-device and scrubs before the cloud path.
+ * This raw entry point is for already-safe / non-PII text.
  */
 export async function generateEmbedding(text: string): Promise<EmbeddingResult> {
   if (localProvider) {

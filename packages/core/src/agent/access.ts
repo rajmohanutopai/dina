@@ -34,16 +34,17 @@
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
+import { appendAudit } from '../audit/service';
+import { getPersonaTier } from '../persona/service';
+import { agentCanAccess } from '../vault/lifecycle';
+import { WorkflowTaskKind, WorkflowTaskState, type WorkflowTask } from '../workflow/domain';
+import { getWorkflowService } from '../workflow/service';
+
 import {
   getAgentGrantRepository,
   type AgentPersonaGrant,
   type GrantMode,
 } from './grant_repository';
-import { getWorkflowService } from '../workflow/service';
-import { WorkflowTaskKind, WorkflowTaskState, type WorkflowTask } from '../workflow/domain';
-import { getPersonaTier } from '../persona/service';
-import { requiresApproval, requiresPassphrase } from '../vault/lifecycle';
-import { appendAudit } from '../audit/service';
 
 /** Approval-task payload discriminator for an agent persona-access request. */
 export const AGENT_PERSONA_ACCESS_APPROVAL_TYPE = 'agent_persona_access';
@@ -115,11 +116,19 @@ export function requireAgentPersonaAccess(
   params: RequireAgentPersonaAccessParams,
 ): AgentAccessDecision {
   const now = params.now ?? Date.now();
+  const tier = getPersonaTier(params.persona);
 
-  // 1. Existing durable grant bound to this exact agent + persona + mode?
+  // An active durable grant bound to this exact agent + persona + mode is the
+  // only thing that unlocks a gated tier (a write grant satisfies read).
   const grantRepo = getAgentGrantRepository();
-  if (grantRepo !== null) {
-    const grant = grantRepo.findActiveGrant(params.agentDID, params.persona, params.mode, now);
+  const grant =
+    grantRepo?.findActiveGrant(params.agentDID, params.persona, params.mode, now) ?? null;
+
+  // SINGLE source of truth for the tier policy: the same pure predicate the
+  // persona-wall/lifecycle tests pin (`vault/lifecycle.ts::agentCanAccess`),
+  // so the runtime gate and the documented V1 contract cannot drift. It is
+  // exactly `hasGrant || isFreeTier(tier)`.
+  if (agentCanAccess(tier, grant !== null)) {
     if (grant !== null) {
       appendAudit(
         params.agentDID,
@@ -129,15 +138,11 @@ export function requireAgentPersonaAccess(
       );
       return { kind: 'allow', grantId: grant.id };
     }
+    return { kind: 'allow' };
   }
 
-  // 2. Free tiers (default/standard) need no grant for agents.
-  const tier = getPersonaTier(params.persona);
-  const needsApproval = requiresApproval(tier) || requiresPassphrase(tier);
-  if (!needsApproval) return { kind: 'allow' };
-
-  // 3. Sensitive/locked + no grant → require approval. Fail CLOSED if we
-  //    can't durably record an approval request.
+  // Gated tier (sensitive/locked) + no grant → require approval. Fail CLOSED
+  // if we can't durably record an approval request.
   const service = getWorkflowService();
   if (service === null) {
     return { kind: 'denied', reason: 'approval subsystem unavailable' };

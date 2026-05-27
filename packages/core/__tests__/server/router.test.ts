@@ -2,14 +2,15 @@
  * CoreRouter tests — transport-agnostic routing + auth + dispatch.
  */
 
-import { CoreRouter, type CoreRequest, type CoreResponse } from '../../src/server/router';
-import { createInProcessDispatch } from '../../src/server/in_process_dispatch';
-import { registerPublicKeyResolver, resetMiddlewareState } from '../../src/auth/middleware';
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
 import { registerService, resetCallerTypeState } from '../../src/auth/caller_type';
 import { signRequest } from '../../src/auth/canonical';
+import { registerPublicKeyResolver, resetMiddlewareState } from '../../src/auth/middleware';
 import { getPublicKey } from '../../src/crypto/ed25519';
 import { deriveDIDKey } from '../../src/identity/did';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
+import { createInProcessDispatch } from '../../src/server/in_process_dispatch';
+import { CoreRouter, type CoreRequest, type CoreResponse } from '../../src/server/router';
 
 const SEED = TEST_ED25519_SEED;
 const PUB = getPublicKey(SEED);
@@ -214,18 +215,22 @@ describe('CoreRouter — auth pipeline', () => {
 });
 
 describe('CoreRouter — handler errors', () => {
-  it('surfaces thrown errors as structured 500', async () => {
+  it('masks thrown errors as a generic 500 — never leaks the internal message', async () => {
     const r = new CoreRouter();
     r.get(
       '/v1/boom',
       async () => {
-        throw new Error('kaboom');
+        throw new Error('kaboom secret detail');
       },
       { auth: 'public' },
     );
     const resp = await r.handle(emptyReq({ method: 'GET', path: '/v1/boom' }));
     expect(resp.status).toBe(500);
-    expect((resp.body as { detail: string }).detail).toBe('kaboom');
+    const body = resp.body as { error: string; detail?: string };
+    expect(body.error).toBe('internal error');
+    // The internal exception message must NOT reach the caller.
+    expect(body.detail).toBeUndefined();
+    expect(JSON.stringify(body)).not.toContain('kaboom');
   });
 });
 

@@ -176,12 +176,12 @@ export class CoreRouter {
    * binder can invoke it via the same `CoreRouter.handle` dispatch
    * that router-internal code uses.
    */
-  list(): Array<{
+  list(): {
     method: CoreRequest['method'];
     path: string;
     handler: CoreHandler;
     auth?: AuthMode;
-  }> {
+  }[] {
     return this.routes.map((r) => ({
       method: r.method,
       path: r.path,
@@ -272,11 +272,15 @@ export class CoreRouter {
       const resp = await route.handler(enrichedReq);
       return normalise(resp);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return jsonResponse(500, {
-        error: 'handler threw',
-        detail: message,
-      });
+      // Don't leak internal exception details to the caller — a handler bug's
+      // message can carry stack / internal paths / echoed user input. Return a
+      // generic 500. This RETURNS a response (rather than re-throwing) so the
+      // Fastify adapter AND the in-process transport see the same masked error
+      // uniformly. Log only the error CLASS server-side (PII-safe — never the
+      // message, which could echo vault content / user queries).
+
+      console.error(`[router] handler threw: ${err instanceof Error ? err.name : 'unknown'}`);
+      return jsonResponse(500, { error: 'internal error' });
     }
   }
 

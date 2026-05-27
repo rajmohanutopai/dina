@@ -156,6 +156,21 @@ describe('brain-server — boot (task 5.1)', () => {
     }
   });
 
+  it('refuses to bind to a non-loopback host without explicit opt-in (SEC — unauthenticated API)', async () => {
+    // The brain HTTP surface is unauthenticated + localhost-only by design;
+    // binding it to 0.0.0.0 would expose vault-write (/remember) + the LLM to
+    // the network with no auth. Boot must fail closed when DINA_BRAIN_HOST is
+    // non-loopback and DINA_BRAIN_ALLOW_NONLOOPBACK is not set (it isn't here).
+    await expect(
+      bootServer({
+        DINA_BRAIN_HOST: '0.0.0.0',
+        DINA_BRAIN_PORT: '0',
+        DINA_BRAIN_LOG_LEVEL: 'silent',
+        DINA_BRAIN_PRETTY_LOGS: 'false',
+      }),
+    ).rejects.toThrow(/non-loopback/);
+  });
+
   it('config object is returned unchanged on the booted instance', async () => {
     const booted = await bootServer({
       DINA_BRAIN_HOST: '127.0.0.1',

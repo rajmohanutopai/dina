@@ -105,6 +105,24 @@ describe('resolve — TN-API-003 / Plan §6.3 fields', () => {
     expect(r.conflicts).toBeUndefined()
   })
 
+  it('valid JSON but invalid SubjectRef shape → rejected like a parse failure (SEC)', async () => {
+    // `subject` is Zod-validated (not trusted as `any`): well-formed JSON that
+    // isn't a SubjectRef (bad/missing `type`) fails closed into the error
+    // response instead of flowing untyped into queries + deterministic-id
+    // hashing. resolveSubject is never reached.
+    const db = stubDb({})
+
+    const bogusType = await resolve(db, { subject: '{"type":"malware","did":"did:x"}' })
+    expect(bogusType.subjectId).toBeNull()
+    expect(bogusType.recommendation).toBe('error')
+
+    const missingType = await resolve(db, { subject: '{"name":"no type field"}' })
+    expect(missingType.subjectId).toBeNull()
+    expect(missingType.recommendation).toBe('error')
+
+    expect(resolveSubjectMock).not.toHaveBeenCalled()
+  })
+
   it('subject not in index → subjectId=null, reviewCount=0, lastAttestedAt=null', async () => {
     resolveSubjectMock.mockResolvedValueOnce(null) // not found
     const db = stubDb({})

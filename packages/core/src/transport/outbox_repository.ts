@@ -193,7 +193,12 @@ export class SQLiteD2DOutboxRepository implements D2DOutboxRepository {
           [leaseUntil, now, id],
         );
       }
-      claimed = due.map((r) => ({ ...rowToOutbox(r), state: 'sending', leaseUntil, updatedAt: now }));
+      claimed = due.map((r) => ({
+        ...rowToOutbox(r),
+        state: 'sending',
+        leaseUntil,
+        updatedAt: now,
+      }));
     });
     return claimed;
   }
@@ -205,7 +210,13 @@ export class SQLiteD2DOutboxRepository implements D2DOutboxRepository {
     );
   }
 
-  markFailed(id: string, attempts: number, nextAttemptAt: number, error: string, now: number): void {
+  markFailed(
+    id: string,
+    attempts: number,
+    nextAttemptAt: number,
+    error: string,
+    now: number,
+  ): void {
     this.db.execute(
       `UPDATE d2d_outbox
           SET state = 'failed', attempts = ?, next_attempt_at = ?, last_attempt_at = ?,
@@ -234,7 +245,9 @@ export class SQLiteD2DOutboxRepository implements D2DOutboxRepository {
 
   listByState(state: D2DOutboxState): D2DOutboxRow[] {
     return this.db
-      .query(`SELECT ${ALL_COLUMNS} FROM d2d_outbox WHERE state = ? ORDER BY created_at ASC`, [state])
+      .query(`SELECT ${ALL_COLUMNS} FROM d2d_outbox WHERE state = ? ORDER BY created_at ASC`, [
+        state,
+      ])
       .map(rowToOutbox);
   }
 
@@ -349,7 +362,13 @@ export class InMemoryD2DOutboxRepository implements D2DOutboxRepository {
     r.updatedAt = now;
   }
 
-  markFailed(id: string, attempts: number, nextAttemptAt: number, error: string, now: number): void {
+  markFailed(
+    id: string,
+    attempts: number,
+    nextAttemptAt: number,
+    error: string,
+    now: number,
+  ): void {
     const r = this.rows.get(id);
     if (!r) return;
     r.state = 'failed';

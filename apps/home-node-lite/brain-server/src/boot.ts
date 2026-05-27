@@ -74,11 +74,21 @@ import { registerWebRoutes } from './routes/web';
  * money/budget vault). Add entries here as new default personas land.
  */
 const PERSONA_DESCRIPTIONS: Record<string, string> = {
-  general: 'Everyday notes — anything that doesn\'t clearly fit a more specific vault.',
+  general: "Everyday notes — anything that doesn't clearly fit a more specific vault.",
   work: 'Job, projects, colleagues, work calendar items, professional context.',
   health: 'Medical, fitness, symptoms, medications, doctors, allergies.',
   finance: 'Money, budgets, spending, income, bills, debt, investments, taxes.',
 };
+
+/**
+ * Loopback check for the bind-host guard. The brain HTTP surface is
+ * unauthenticated localhost-only by design, so it must only bind to a
+ * loopback interface unless an operator explicitly opts in.
+ */
+function isLoopbackHost(host: string): boolean {
+  const h = host.trim().toLowerCase();
+  return h === '127.0.0.1' || h === '::1' || h === 'localhost' || h.startsWith('127.');
+}
 
 import type { AskCoordinator } from '@dina/brain';
 import type { CoreClient } from '@dina/core';
@@ -211,7 +221,7 @@ export async function bootServer(
   // (which feeds them into the pre-flight retrieval planner) can
   // share one source of truth. Populated inside the
   // `clients.core !== undefined` block below.
-  let personaDescriptors: Array<{ name: string; description: string }> = [];
+  let personaDescriptors: { name: string; description: string }[] = [];
   const dependencyStatus: BrainServerDependencyStatus = {
     appView: 'configured',
     core: coreResult.status,
@@ -289,7 +299,7 @@ export async function bootServer(
     // Failure to fetch is non-fatal — the boot continues with an empty
     // persona list and the operator sees the warning. Re-mirroring on
     // a schedule (or on persona-create push) is a future polish.
-    let remotePersonas: Array<{ name: string; tier: string; isOpen: boolean }> = [];
+    let remotePersonas: { name: string; tier: string; isOpen: boolean }[] = [];
     try {
       remotePersonas = await core.personasList();
       const names = remotePersonas.map((p) => p.name);
@@ -591,6 +601,22 @@ export async function bootServer(
       checks,
     });
   });
+
+  // SECURITY: the brain HTTP surface (api / chat / ask / reminder / web) is
+  // UNAUTHENTICATED — a localhost-only analyst API by design (mobile drives it
+  // in-process; the SPA proxies through loopback). Binding it to a non-loopback
+  // interface would expose vault-write paths (e.g. /remember) + the LLM to the
+  // network with no auth. Fail closed: refuse a non-loopback bind unless an
+  // operator explicitly opts in (e.g. a trusted authenticating reverse proxy
+  // fronts it). The default host is 127.0.0.1, so normal deployments are
+  // unaffected.
+  if (!isLoopbackHost(config.network.host) && process.env.DINA_BRAIN_ALLOW_NONLOOPBACK !== '1') {
+    throw new Error(
+      `brain-server refuses to bind to non-loopback host "${config.network.host}": its HTTP API is ` +
+        `unauthenticated and localhost-only by design. Front it with an authenticating proxy and set ` +
+        `DINA_BRAIN_ALLOW_NONLOOPBACK=1 to override.`,
+    );
+  }
 
   const boundAddress = await app.listen({
     host: config.network.host,

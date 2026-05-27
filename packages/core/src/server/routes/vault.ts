@@ -9,7 +9,7 @@
  * consumer in the mobile MVP, gone.
  */
 
-import type { CoreRouter, CoreRequest, CoreResponse } from '../router';
+import { requireAgentPersonaAccess } from '../../agent/access';
 import {
   storeItem,
   queryVault,
@@ -18,8 +18,9 @@ import {
   listRecentItems,
   deleteItem,
 } from '../../vault/crud';
-import { requireAgentPersonaAccess } from '../../agent/access';
+
 import type { GrantMode } from '../../agent/grant_repository';
+import type { CoreRouter, CoreRequest, CoreResponse } from '../router';
 
 /**
  * Deterministic agent persona-access gate (issues.txt §2), shared by EVERY
@@ -50,7 +51,12 @@ function agentGate(
   if (decision.kind === 'approval_required') {
     return {
       status: 403,
-      body: { error: 'approval_required', approval_required: true, task_id: decision.taskId, persona },
+      body: {
+        error: 'approval_required',
+        approval_required: true,
+        task_id: decision.taskId,
+        persona,
+      },
     };
   }
   if (decision.kind === 'denied') {
@@ -116,7 +122,8 @@ export function registerVaultRoutes(router: CoreRouter): void {
     const offset = Math.max(0, Number(req.query.offset) || 0);
     // Optional type filter — the client (CoreClient.vaultList) advertises
     // it, so honour it here rather than silently paginating everything.
-    const type = typeof req.query.type === 'string' && req.query.type !== '' ? req.query.type : undefined;
+    const type =
+      typeof req.query.type === 'string' && req.query.type !== '' ? req.query.type : undefined;
     try {
       // Fetch one extra to report whether more pages exist without a
       // separate full count.

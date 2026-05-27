@@ -48,11 +48,12 @@ export function brainCanAccess(tier: PersonaTier): boolean {
   return tier === 'default' || tier === 'standard';
 }
 
-/** Check if agents can access this tier (may require session grant). */
 /**
- * Pure tier policy for an out-of-process agent (issues.txt §2 V1 contract).
- * Matches what `agent/access.ts::requireAgentPersonaAccess` enforces at
- * runtime — kept in sync so the two can't drift:
+ * AUTHORITATIVE pure tier policy for an out-of-process agent (issues.txt §2
+ * V1 contract). `agent/access.ts::requireAgentPersonaAccess` CALLS this — it
+ * is the single source of truth for the boolean decision, so the runtime gate
+ * and this documented contract cannot drift. It is exactly
+ * `hasGrant || isFreeTier(tier)`:
  *   - default / standard → open to agents (no grant needed in V1).
  *   - sensitive / locked → require an approved durable grant.
  * (`locked` is approval+grant, NOT a hard denial — superseding the old

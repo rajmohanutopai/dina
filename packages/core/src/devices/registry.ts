@@ -14,14 +14,16 @@
 
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { multibaseToPublicKey, deriveDIDKey } from '../identity/did';
+
+import { getAgentGrantRepository } from '../agent/grant_repository';
+import { appendAudit } from '../audit/service';
 import {
   registerDevice as registerDeviceAuth,
   unregisterDevice as unregisterDeviceAuth,
 } from '../auth/caller_type';
+import { multibaseToPublicKey, deriveDIDKey } from '../identity/did';
+
 import { getDeviceRepository } from './repository';
-import { getAgentGrantRepository } from '../agent/grant_repository';
-import { appendAudit } from '../audit/service';
 
 export type DeviceRole = 'rich' | 'thin' | 'cli' | 'agent';
 export type AuthType = 'ed25519' | 'token';
@@ -93,8 +95,8 @@ export function registerDevice(
   if (!publicKeyMultibase) throw new Error('devices: publicKeyMultibase is required');
 
   // Prevent registering duplicate keys
-  if (keyIndex.has(publicKeyMultibase)) {
-    const existingId = keyIndex.get(publicKeyMultibase)!;
+  const existingId = keyIndex.get(publicKeyMultibase);
+  if (existingId !== undefined) {
     const existing = devices.get(existingId);
     if (existing && !existing.revoked) {
       throw new Error(`devices: key already registered as "${existing.deviceName}"`);

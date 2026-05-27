@@ -13,25 +13,22 @@
  * Source: ARCHITECTURE.md Tasks 6.3–6.7
  */
 
-import { buildMessage, sealMessage, type DinaMessage, type D2DPayload } from './envelope';
-import { checkEgressGates } from './gates';
-import { isValidV1Type, MsgTypeServiceQuery, MsgTypeServiceResponse } from './families';
-import { appendAudit } from '../audit/service';
-import {
-  deliverMessage,
-  getWSDeliverFn,
-  type DeliveryResult,
-  type SenderIdentity,
-} from '../transport/delivery';
-import { enqueueD2D, deriveIdempotencyKey } from '../transport/outbox';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+
+import { appendAudit } from '../audit/service';
 import {
   evaluateServiceEgressBypass,
   type ProviderServiceResolver,
   type ServiceBypassDecision,
 } from '../service/bypass';
 import { providerWindow, setRequesterWindow } from '../service/windows';
+import { deliverMessage, getWSDeliverFn, type SenderIdentity } from '../transport/delivery';
+import { enqueueD2D, deriveIdempotencyKey } from '../transport/outbox';
+
+import { sealMessage, type DinaMessage } from './envelope';
+import { isValidV1Type, MsgTypeServiceQuery, MsgTypeServiceResponse } from './families';
+import { checkEgressGates } from './gates';
 
 export interface SendRequest {
   recipientDID: string;
@@ -426,7 +423,11 @@ function tryEnqueue(
 }
 
 /** Narrow type for the `(peerDID, queryID, capability)` triple carried through the send pipeline. */
-type ProviderReservation = { peerDID: string; queryID: string; capability: string };
+interface ProviderReservation {
+  peerDID: string;
+  queryID: string;
+  capability: string;
+}
 
 /** Commit a provider-window reservation on successful delivery. No-op when unset. */
 function commitProviderReservation(r: ProviderReservation | null): void {

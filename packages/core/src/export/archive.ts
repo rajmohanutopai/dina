@@ -25,8 +25,10 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
-import { wrapSeed, unwrapSeed } from '../crypto/aesgcm';
 import { ARGON2ID_PARAMS, DINA_FILE_MAGIC, DINA_FILE_VERSION } from '../constants';
+import { wrapSeed, unwrapSeed } from '../crypto/aesgcm';
+import { validatePersonaName } from '../persona/service';
+
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
 const ARCHIVE_MAGIC = DINA_FILE_MAGIC;
@@ -63,7 +65,12 @@ const IDENTITY_TABLES = [
 const KV_TABLE = 'kv_store';
 
 /** Persona-DB tables. `vault_items_fts` is a derived FTS index — rebuilt on insert, never exported. */
-const PERSONA_TABLES = ['vault_items', 'vault_item_subjects', 'topic_salience', 'topic_aliases'] as const;
+const PERSONA_TABLES = [
+  'vault_items',
+  'vault_item_subjects',
+  'topic_salience',
+  'topic_aliases',
+] as const;
 
 /** kv keys whose values are secrets — never exported. */
 const SENSITIVE_KV_PATTERNS: RegExp[] = [
@@ -183,9 +190,6 @@ function stableStringify(rows: DBRow[]): string {
   );
 }
 
-/** Tables an import is allowed to write — mirror of the export allowlists. */
-const RESTORE_IDENTITY_TABLES: ReadonlySet<string> = new Set([...IDENTITY_TABLES, KV_TABLE]);
-const RESTORE_PERSONA_TABLES: ReadonlySet<string> = new Set(PERSONA_TABLES);
 /** A safe SQL identifier (column name). */
 const SAFE_IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -356,6 +360,16 @@ export async function importArchive(
   // order puts `vault_items` before `vault_item_subjects` so the subject
   // links' parents exist first.
   for (const persona of payload.personas) {
+    // Trust boundary: `persona.name` comes from the decrypted manifest, which
+    // is attacker-influenced — the AES-256-GCM tag only proves the importer's
+    // passphrase, NOT authenticity (a crafted archive supplies its own
+    // passphrase + checksums). Reject any non-canonical name before it becomes
+    // a vault filename downstream (`${name}.sqlite`), closing the
+    // path-traversal class for every storage backend at the boundary.
+    const nameError = validatePersonaName(persona.name);
+    if (nameError !== null) {
+      throw new Error(`archive: refusing to restore persona — ${nameError}`);
+    }
     const adapter = await ds.openPersonaForRestore(persona.name, persona.tier);
     adapter.transaction(() => {
       for (const table of PERSONA_TABLES) {
@@ -473,7 +487,11 @@ export function checkCompatibility(archive: Uint8Array): {
   }
   const version = archive[4];
   if (version !== ARCHIVE_VERSION) {
-    return { compatible: false, version, reason: `Unsupported version ${version} (expected ${ARCHIVE_VERSION})` };
+    return {
+      compatible: false,
+      version,
+      reason: `Unsupported version ${version} (expected ${ARCHIVE_VERSION})`,
+    };
   }
   return { compatible: true, version };
 }
@@ -482,7 +500,7 @@ export async function listArchiveContents(
   archive: Uint8Array,
   passphrase: string,
 ): Promise<{
-  personas: Array<{ name: string; tier: string }>;
+  personas: { name: string; tier: string }[];
   total_personas: number;
   created_at: number;
 }> {

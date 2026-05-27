@@ -22,9 +22,10 @@
  * `dina configure --pairing-code ...`.
  */
 
-import type { CoreRouter } from '../router';
 import { generatePairingCode, completePairing, getPairingIntent } from '../../pairing/ceremony';
+
 import type { DeviceRole } from '../../devices/registry';
+import type { CoreRouter } from '../router';
 
 const VALID_ROLES = new Set<string>(['rich', 'thin', 'cli', 'agent']);
 
@@ -110,11 +111,16 @@ export function registerPairRoutes(router: CoreRouter): void {
       // that path (it also records the failed-attempt counter).
       const intent = getPairingIntent(code);
       const overrideName = typeof body.device_name === 'string' ? body.device_name.trim() : '';
-      const overrideRole = typeof body.role === 'string' ? body.role : '';
       const deviceName = overrideName !== '' ? overrideName : (intent?.deviceName ?? '');
-      const roleRaw = normaliseRole(
-        overrideRole !== '' ? overrideRole : (intent?.role ?? 'rich'),
-      );
+      // SECURITY: the role is a privilege boundary the admin fixes at
+      // /v1/pair/initiate (which ALWAYS captures a role, defaulting to 'rich').
+      // The completing device must NOT pick its own role — otherwise a code
+      // minted as 'rich'/'cli' could be completed as 'agent' (privilege
+      // escalation). The initiate-time role is authoritative; any client-sent
+      // `role` on /complete is ignored. The 'rich' fallback only covers a
+      // null/expired intent, which completePairing rejects anyway. (device_name
+      // is just a label, so an override there stays allowed above.)
+      const roleRaw = normaliseRole(intent?.role ?? 'rich');
 
       // If the intent exists but the admin didn't capture a device_name
       // AND the agent didn't supply one, reject BEFORE calling

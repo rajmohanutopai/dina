@@ -15,24 +15,26 @@
  *   POST /v1/workflow/events/:id/ack      — ack + retire from queue
  */
 
-import type { CoreRouter, CoreRequest, CoreResponse } from '../router';
+import {
+  grantAgentPersonaAccessFromApproval,
+  isAgentPersonaAccessApproval,
+} from '../../agent/access';
+import {
+  STAGING_PERSONA_ACCESS_APPROVAL_TYPE,
+  denyApproval,
+  drainForApproval,
+} from '../../staging/service';
+import { WorkflowTaskState, type WorkflowTask } from '../../workflow/domain';
 import {
   WorkflowConflictError,
   WorkflowTransitionError,
   WorkflowValidationError,
   getWorkflowService,
 } from '../../workflow/service';
-import { WorkflowTaskState, type WorkflowTask } from '../../workflow/domain';
-import {
-  STAGING_PERSONA_ACCESS_APPROVAL_TYPE,
-  denyApproval,
-  drainForApproval,
-} from '../../staging/service';
+
 import { grantSessionApproval } from './intent';
-import {
-  grantAgentPersonaAccessFromApproval,
-  isAgentPersonaAccessApproval,
-} from '../../agent/access';
+
+import type { CoreRouter, CoreRequest, CoreResponse } from '../router';
 
 /**
  * Lift `payload.type` to a top-level `payload_type` wire field. Go-Core
@@ -78,12 +80,14 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
     if (task === null) return j(404, { error: 'task not found' });
     return j(200, withPayloadType(task));
   });
-  router.post('/v1/workflow/tasks/:id/approve', (req) =>
-    runAction(req, approveTask),
-  );
-  router.post('/v1/workflow/tasks/:id/cancel', (req) =>
-    runAction(req, cancelTask),
-  );
+  router.post('/v1/workflow/tasks/:id/approve', async (req) => {
+    const guard = ownerDecisionGuard(req);
+    return guard ?? runAction(req, approveTask);
+  });
+  router.post('/v1/workflow/tasks/:id/cancel', async (req) => {
+    const guard = ownerDecisionGuard(req);
+    return guard ?? runAction(req, cancelTask);
+  });
   router.post('/v1/workflow/tasks/:id/complete', (req) =>
     runAction(req, (id, body, s) => {
       const result = strField(body?.result);
@@ -100,15 +104,11 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
       // OpenClaw runs don't 400 on every completion. Callers that
       // pass an explicit `result_summary` are honoured verbatim.
       const explicitSummary = strField(body?.result_summary);
-      const summary = explicitSummary !== ''
-        ? explicitSummary
-        : result.slice(0, 200);
+      const summary = explicitSummary !== '' ? explicitSummary : result.slice(0, 200);
       return s.complete(id, result, summary, agentDID);
     }),
   );
-  router.post('/v1/workflow/tasks/:id/fail', (req) =>
-    runAction(req, failTask),
-  );
+  router.post('/v1/workflow/tasks/:id/fail', (req) => runAction(req, failTask));
   router.get('/v1/workflow/events', listEvents);
   router.post('/v1/workflow/events/:id/ack', ackEvent);
   router.post('/v1/workflow/events/:id/fail', failEvent);
@@ -371,9 +371,7 @@ async function approveTask(
 
   const resume = drainForApproval(id);
   const approved = service.approve(id);
-  const claimed = service
-    .store()
-    .claimApprovalForExecution(id, 1, Math.floor(Date.now() / 1000));
+  const claimed = service.store().claimApprovalForExecution(id, 1, Math.floor(Date.now() / 1000));
   if (!claimed) return approved;
   return service.complete(
     id,
@@ -430,6 +428,32 @@ function failTask(
     denyApproval(id, errMsg);
   }
   return service.fail(id, errMsg, agentDID);
+}
+
+/**
+ * Approving or denying a workflow task is an OWNER decision. Approval can
+ * write a durable agent persona-access grant AND unlock the persona
+ * (`agent_persona_access`), and it clears a flagged Agent-Gateway intent
+ * proposal (`intent_validation`) — so an out-of-process `agent` caller must
+ * never reach it, or it could self-approve its own access request and bypass
+ * both the persona gate and the Agent Gateway (it receives its own task_id
+ * in the 403 it gets from `agentGate`). Agents legitimately use only
+ * claim/heartbeat/progress/running/complete/fail on the same
+ * `/v1/workflow/tasks/` sub-tree; the coarse authz prefix (authz.ts) can't
+ * express the `/approve` + `/cancel` suffixes, so the decision is enforced
+ * here. `callerType` is set from the verified auth result (router.ts), never
+ * the request body, so it can't be spoofed. `brain` (the user-driven
+ * `/service_approve` chat command) and `device`/`admin` (the app approval UI)
+ * remain authorised. Fail closed.
+ */
+function ownerDecisionGuard(req: CoreRequest): CoreResponse | null {
+  if (req.callerType === 'agent') {
+    return j(403, {
+      error: 'access_denied',
+      reason: 'agent callers cannot approve or deny tasks',
+    });
+  }
+  return null;
 }
 
 async function runAction(req: CoreRequest, action: TaskAction): Promise<CoreResponse> {

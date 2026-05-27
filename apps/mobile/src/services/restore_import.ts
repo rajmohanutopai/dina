@@ -58,7 +58,7 @@ export async function pickBackupBytes(): Promise<{ name: string; bytes: Uint8Arr
 }
 
 export interface BackupPreview {
-  personas: Array<{ name: string; tier: string }>;
+  personas: { name: string; tier: string }[];
   totalPersonas: number;
   createdAt: number;
 }

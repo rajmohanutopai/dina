@@ -17,6 +17,7 @@
 
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+
 import {
   getD2DOutboxRepository,
   InMemoryD2DOutboxRepository,
@@ -105,7 +106,8 @@ export function enqueueD2D(input: EnqueueD2DInput): D2DOutboxRow {
     targetDID: input.targetDID,
     messageType: input.messageType,
     bodyJson: input.bodyJson,
-    idempotencyKey: input.idempotencyKey ?? deriveIdempotencyKey(input.messageType, input.bodyJson, id),
+    idempotencyKey:
+      input.idempotencyKey ?? deriveIdempotencyKey(input.messageType, input.bodyJson, id),
     nextAttemptAt: now,
     expiresAt: ttl > 0 ? now + ttl : null,
     createdAt: now,
@@ -128,11 +130,7 @@ export function markSent(id: string, now?: number): void {
  * has hit `MAX_ATTEMPTS` or passed its TTL. Returns the terminal state
  * so the caller can audit dead-letters.
  */
-export function recordFailure(
-  row: D2DOutboxRow,
-  error: string,
-  now?: number,
-): 'failed' | 'dead' {
+export function recordFailure(row: D2DOutboxRow, error: string, now?: number): 'failed' | 'dead' {
   const t = now ?? Date.now();
   const attempts = row.attempts + 1;
   const expired = row.expiresAt !== null && row.expiresAt <= t;

@@ -9,11 +9,8 @@
  *      `/v1/workflow/tasks/claim` subtree.
  */
 
-import { createCoreRouter } from '../../../src/server/core_server';
-import type { CoreRequest } from '../../../src/server/router';
-import { signRequest } from '../../../src/auth/canonical';
-import { setNodeDID, clearPairingState } from '../../../src/pairing/ceremony';
-import { resetDeviceRegistry, getDeviceByDID } from '../../../src/devices/registry';
+import { randomBytes } from '@noble/ciphers/utils.js';
+
 import {
   resetCallerTypeState,
   registerService,
@@ -21,10 +18,15 @@ import {
   setDeviceRoleResolver,
   isDevice,
 } from '../../../src/auth/caller_type';
+import { signRequest } from '../../../src/auth/canonical';
 import { registerPublicKeyResolver, resetMiddlewareState } from '../../../src/auth/middleware';
-import { deriveDIDKey, publicKeyToMultibase } from '../../../src/identity/did';
 import { getPublicKey } from '../../../src/crypto/ed25519';
-import { randomBytes } from '@noble/ciphers/utils.js';
+import { resetDeviceRegistry, getDeviceByDID } from '../../../src/devices/registry';
+import { deriveDIDKey, publicKeyToMultibase } from '../../../src/identity/did';
+import { setNodeDID, clearPairingState } from '../../../src/pairing/ceremony';
+import { createCoreRouter } from '../../../src/server/core_server';
+
+import type { CoreRequest } from '../../../src/server/router';
 
 const NODE_DID = 'did:plc:test-node';
 
@@ -183,7 +185,9 @@ describe('POST /v1/pair/complete — public, code-authenticated', () => {
     expect(caller.name).toBe('openclaw-user');
   });
 
-  it('applies override device_name + role when supplied on complete', async () => {
+  it('honours a device_name override on complete but IGNORES a role override (role is fixed at initiate)', async () => {
+    // SECURITY: the role is a privilege boundary the admin fixes at /initiate.
+    // A completion-time `role` must NOT escalate a 'rich' code into 'agent'.
     const { code } = await initiate('placeholder', 'rich');
     const agent = makeActor();
 
@@ -192,13 +196,17 @@ describe('POST /v1/pair/complete — public, code-authenticated', () => {
         code,
         public_key: publicKeyToMultibase(agent.pub),
         device_name: 'openclaw-user',
-        role: 'agent',
+        role: 'agent', // attempted escalation — must be ignored
       }),
     );
 
     const caller = resolveCallerType(agent.did);
-    expect(caller.callerType).toBe('agent');
+    // The device_name override is a label, so it IS applied...
     expect(caller.name).toBe('openclaw-user');
+    // ...but the role stays what the admin captured at initiate ('rich' → device),
+    // NOT the escalated 'agent' the completer asked for.
+    expect(caller.callerType).toBe('device');
+    expect(caller.callerType).not.toBe('agent');
   });
 
   it('rejects an unknown code', async () => {

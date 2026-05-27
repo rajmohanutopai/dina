@@ -4,6 +4,7 @@
  * Source: tests/release/test_rel_009_persona_wall.py
  */
 
+import { evaluateIntent } from '../../src/gatekeeper/intent';
 import {
   autoOpensOnBoot,
   requiresApproval,
@@ -11,7 +12,6 @@ import {
   brainCanAccess,
   agentCanAccess,
 } from '../../src/vault/lifecycle';
-import { evaluateIntent } from '../../src/gatekeeper/intent';
 
 describe('Persona Wall (Release Verification)', () => {
   describe('tier enforcement', () => {

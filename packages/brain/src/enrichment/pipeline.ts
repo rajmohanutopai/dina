@@ -14,15 +14,17 @@
  * Source: brain/src/service/enrichment.py
  */
 
-import { generateL0WithMeta, type L0Input } from './l0_deterministic';
-import { EntityVault } from '../pii/entity_vault';
-import { generateEmbedding, isEmbeddingAvailable } from '../embedding/generation';
+import { isEmbeddingAvailable } from '../embedding/generation';
+import { embedMaybeSensitive } from '../embedding/safe_embed';
 import {
   renderPrompt,
   CONTENT_ENRICH,
   ENRICHMENT_LOW_TRUST_INSTRUCTION,
   PII_PRESERVE_INSTRUCTION,
 } from '../llm/prompts';
+import { EntityVault } from '../pii/entity_vault';
+
+import { generateL0WithMeta, type L0Input } from './l0_deterministic';
 import { detectSponsored, tagSponsored } from './sponsored';
 
 /** Injectable LLM call function for L1 generation. */
@@ -179,14 +181,25 @@ export async function enrichItem(
     }
   }
 
-  // Step 3: Embedding from L1 (or L0 if L1 unavailable)
+  // Step 3: Embedding from L1 (or L0 if L1 unavailable).
+  //
+  // `content_l1` is REHYDRATED (real PII) for on-device storage + local
+  // embedding, but it must never reach a cloud embedder (Law 3). The L0-only
+  // path likewise carries raw content. `embedMaybeSensitive` enforces this:
+  // local embeds the real text; the cloud path embeds a PII-scrubbed copy.
   if (isEmbeddingAvailable()) {
     try {
       const textForEmbedding = (result.content_l1 || result.content_l0).slice(0, 2000);
-      const embeddingResult = await generateEmbedding(textForEmbedding);
-      result.embedding = embeddingResult.vector;
-      result.enrichment_version.embed_model = embeddingResult.model;
-      stages.embedding = 'ready';
+      const { result: embeddingResult, scrubbedForCloud } =
+        await embedMaybeSensitive(textForEmbedding);
+      if (embeddingResult !== null) {
+        result.embedding = embeddingResult.vector;
+        result.enrichment_version.embed_model = embeddingResult.model;
+        stages.embedding = 'ready';
+        if (scrubbedForCloud) stages.pii = 'scrubbed';
+      } else {
+        stages.fallback_reasons.push('embedding_failed');
+      }
     } catch {
       // Embedding failed — continue without it
       stages.fallback_reasons.push('embedding_failed');

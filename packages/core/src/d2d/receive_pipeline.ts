@@ -12,9 +12,19 @@
  * Source: ARCHITECTURE.md Tasks 6.8–6.12
  */
 
+import { appendAudit } from '../audit/service';
+import {
+  evaluateServiceIngressBypass,
+  type ServiceBypassDecision,
+  type LocalCapabilityChecker,
+} from '../service/bypass';
+import { isCapabilityConfigured } from '../service/service_config';
+import { requesterWindow, setProviderWindow } from '../service/windows';
+import { isReplayedMessage, recordMessageId } from '../transport/adversarial';
+import { WorkflowConflictError } from '../workflow/repository';
+import { getWorkflowService } from '../workflow/service';
+
 import { unsealMessage, type D2DPayload } from './envelope';
-import { verifyMessage } from './signature';
-import { checkScenarioGate } from './gates';
 import {
   alwaysPasses,
   isValidV1Type,
@@ -22,19 +32,10 @@ import {
   MsgTypeServiceQuery,
   MsgTypeServiceResponse,
 } from './families';
-import { receiveAndStage, type ReceiveResult } from './receive';
+import { checkScenarioGate } from './gates';
 import { quarantineMessage } from './quarantine';
-import { appendAudit } from '../audit/service';
-import { isReplayedMessage, recordMessageId } from '../transport/adversarial';
-import {
-  evaluateServiceIngressBypass,
-  type ServiceBypassDecision,
-  type LocalCapabilityChecker,
-} from '../service/bypass';
-import { isCapabilityConfigured } from '../service/service_config';
-import { providerWindow, requesterWindow, setProviderWindow } from '../service/windows';
-import { WorkflowConflictError } from '../workflow/repository';
-import { getWorkflowService } from '../workflow/service';
+import { receiveAndStage } from './receive';
+import { verifyMessage } from './signature';
 
 export type ReceivePipelineAction = 'staged' | 'quarantined' | 'dropped' | 'ephemeral' | 'bypassed';
 
@@ -76,6 +77,21 @@ export interface ReceivePipelineResult {
 export interface ReceivePipelineOptions {
   /** Defaults to the live `isCapabilityConfigured` from service_config. */
   isCapabilityConfigured?: LocalCapabilityChecker;
+  /**
+   * The DID the TRANSPORT authenticated for this message — i.e. the MsgBox
+   * envelope's `from_did`, the same DID against which `senderVerificationKeys`
+   * and `senderTrust` were resolved. EVERY transport-facing caller MUST pass
+   * this (the production `handleInboundD2D` does). When set, the pipeline
+   * enforces `message.from === authenticatedFromDID` after signature
+   * verification: the signature alone only proves "the owner of the verified
+   * key signed these bytes", NOT that the sealed inner `from` matches the
+   * authenticated peer — without this binding an attacker could sign with
+   * their OWN key while claiming a trusted peer's DID in `from` and inherit
+   * that peer's trust level + vault attribution. Mirrors the RPC path's
+   * identity binding in relay/msgbox_handlers.ts. Pure-pipeline unit tests
+   * omit it (there is no transport envelope to bind to).
+   */
+  authenticatedFromDID?: string;
 }
 
 /**
@@ -121,6 +137,33 @@ export function receiveD2D(
       senderDID: message.from,
       signatureValid: false,
       reason: 'Signature verification failed',
+    };
+  }
+
+  // 2b. Sender binding (transport authenticity). A valid signature only
+  // proves the owner of `senderVerificationKeys` signed these bytes — it does
+  // NOT prove the sealed inner `message.from` is the DID the transport
+  // authenticated. The keys + trust were resolved from the envelope's
+  // `from_did`, so require the inner `from` to equal it; otherwise an attacker
+  // could sign with their OWN key while putting a trusted peer's DID in `from`
+  // and inherit that peer's trust + vault attribution (origin_did/sender_did).
+  // Drop + audit on mismatch, before the replay cache is touched. Mirrors the
+  // RPC path's binding check in relay/msgbox_handlers.ts.
+  const authedFrom = options.authenticatedFromDID;
+  if (authedFrom !== undefined && authedFrom !== '' && message.from !== authedFrom) {
+    appendAudit(
+      authedFrom,
+      'd2d_recv_sender_mismatch',
+      message.to,
+      `claimed_from=${message.from} id=${message.id}`,
+    );
+    return {
+      action: 'dropped',
+      messageId: message.id,
+      messageType: message.type,
+      senderDID: message.from,
+      signatureValid: true,
+      reason: 'Inner sender does not match the authenticated transport DID',
     };
   }
 

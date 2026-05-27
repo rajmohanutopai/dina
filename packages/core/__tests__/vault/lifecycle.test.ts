@@ -76,7 +76,8 @@ describe('Vault Persona Tier Lifecycle', () => {
 
   describe('agentCanAccess (V1 contract — issues.txt §2)', () => {
     // default/standard are open to agents; sensitive/locked need an approved
-    // grant. Kept in sync with requireAgentPersonaAccess.
+    // grant. This is the SAME predicate requireAgentPersonaAccess calls, so
+    // these cases pin the runtime gate's policy directly.
     it('default → agent can access freely (no grant needed)', () => {
       expect(agentCanAccess('default', false)).toBe(true);
     });

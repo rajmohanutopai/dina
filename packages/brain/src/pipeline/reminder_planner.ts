@@ -32,19 +32,19 @@ import {
   type PersonResolver,
   type ResolvedPerson,
 } from '@dina/core';
-
-import { scrubPII, rehydratePII } from '@dina/core';
+import { scrubPII, rehydratePII, queryVault, listPersonas, getVaultRepository } from '@dina/core';
 import { type Reminder } from '@dina/core/reminders';
-import { createReminderRouted } from '../reminders/backend';
-import { queryVault, listPersonas, getVaultRepository } from '@dina/core';
-import { generateEmbedding, isEmbeddingAvailable } from '../embedding/generation';
+
+import { isEmbeddingAvailable } from '../embedding/generation';
+import { embedMaybeSensitive } from '../embedding/safe_embed';
 import { isValidReminderPayload, isExtractedEventKind } from '../enrichment/event_extractor';
 import { parseReminderPlan } from '../llm/output_parser';
 import { REMINDER_PLAN } from '../llm/prompts';
+import { createReminderRouted } from '../reminders/backend';
+import { getVaultReadBackend, getPeopleReadBackend } from '../vault_context/assembly';
 
 import type { ExtractedEvent, ExtractedEventKind } from '../enrichment/event_extractor';
 import type { VaultItem } from '@dina/test-harness';
-import { getVaultReadBackend, getPeopleReadBackend } from '../vault_context/assembly';
 
 export interface PlannerInput {
   itemId: string;
@@ -149,7 +149,6 @@ const defaultLogger: ReminderLogger = {
   // forgot to register a logger still surfaces failures rather than
   // dropping reminders silently (the prior `catch{}` behaviour).
   warn: (record) => {
-     
     console.warn('[reminder_planner]', record);
   },
 };
@@ -501,8 +500,11 @@ async function gatherVaultContext(
   let queryEmbedding: Float32Array | undefined;
   if (isEmbeddingAvailable() && queryText.length > 0) {
     try {
-      const result = await generateEmbedding(queryText);
-      queryEmbedding = result.vector;
+      // The query text is built from vault facts (names, relationships) — it
+      // may contain PII, so route through the PII-safe embedder: real text
+      // on-device, scrubbed before any cloud embedder (Law 3).
+      const { result } = await embedMaybeSensitive(queryText);
+      queryEmbedding = result?.vector;
     } catch (err) {
       logger.warn({
         event: 'reminder_planner.query_embedding_error',
@@ -535,9 +537,7 @@ async function gatherVaultContext(
   // Never use the item we're planning FOR as its own context — it's the
   // event, not background. The vault id isn't known here, so match on
   // the freshly-stored text (summary/body).
-  const selfTexts = new Set(
-    [input.summary.trim(), input.body.trim()].filter((s) => s.length > 0),
-  );
+  const selfTexts = new Set([input.summary.trim(), input.body.trim()].filter((s) => s.length > 0));
 
   // Shared item→context-line conversion (used by the structured-subject
   // phase and the FTS phases): skip empties + the event itself, truncate
@@ -663,11 +663,7 @@ async function gatherVaultContext(
   // No sender hint AND no referenced people AND no vault context
   // → preserve the legacy sentinel string so callers/tests detecting
   // "no context" still see it.
-  if (
-    senderHint === null &&
-    referencedPeople.length === 0 &&
-    contextItems.length === 0
-  ) {
+  if (senderHint === null && referencedPeople.length === 0 && contextItems.length === 0) {
     return { text: '(no related context found)', itemCount: 0 };
   }
 
@@ -678,9 +674,8 @@ async function gatherVaultContext(
     lines.push(`Sender: ${senderHint.displayName}${relationshipSuffix}`);
   }
   for (const p of referencedPeople) {
-    const relationshipSuffix =
-      p.relationshipHint !== '' ? ` (${p.relationshipHint})` : '';
-    const name = p.canonicalName !== '' ? p.canonicalName : p.surfaces[0]?.surface ?? '';
+    const relationshipSuffix = p.relationshipHint !== '' ? ` (${p.relationshipHint})` : '';
+    const name = p.canonicalName !== '' ? p.canonicalName : (p.surfaces[0]?.surface ?? '');
     if (name !== '') lines.push(`Referenced: ${name}${relationshipSuffix}`);
   }
   for (const c of contextItems) {
@@ -752,7 +747,7 @@ async function resolveReferencedPeople(
     const resolver: PersonResolver = new RepositoryPersonResolver(repo);
     const excludePersonId =
       typeof excludeSenderDid === 'string' && excludeSenderDid !== ''
-        ? resolver.resolveByDID(excludeSenderDid)?.personId ?? ''
+        ? (resolver.resolveByDID(excludeSenderDid)?.personId ?? '')
         : '';
     const surfacesMap = resolver.confirmedSurfacesMap();
     if (surfacesMap.size === 0) return [];
@@ -788,7 +783,7 @@ async function resolveReferencedPeople(
     typeof excludeSenderDid === 'string' &&
     excludeSenderDid !== '' &&
     backend.peopleResolveByDid !== undefined
-      ? (await backend.peopleResolveByDid(excludeSenderDid))?.personId ?? ''
+      ? ((await backend.peopleResolveByDid(excludeSenderDid))?.personId ?? '')
       : '';
   const surfaceToPeople = new Map<string, ResolvedPerson[]>();
   for (const p of people) {
@@ -876,7 +871,9 @@ async function resolveSenderHint(senderDid?: string): Promise<SenderHint | null>
   if (person === null || person.status === 'rejected') return null;
   const confirmed = (person.surfaces ?? []).filter((s) => s.status === 'confirmed');
   const displayName =
-    person.canonicalName.trim() !== '' ? person.canonicalName : (confirmed[0]?.surface.trim() ?? '');
+    person.canonicalName.trim() !== ''
+      ? person.canonicalName
+      : (confirmed[0]?.surface.trim() ?? '');
   if (displayName.trim() === '') return null;
   return {
     personId: person.personId,
@@ -885,7 +882,6 @@ async function resolveSenderHint(senderDid?: string): Promise<SenderHint | null>
     surfaces: dedupeSurfaceStrings(confirmed),
   };
 }
-
 
 /**
  * Render the REMINDER_PLAN prompt template with all variables.

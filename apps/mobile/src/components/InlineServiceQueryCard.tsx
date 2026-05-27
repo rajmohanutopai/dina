@@ -16,19 +16,16 @@
  * land cleanly.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  Linking,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
 import { readLifecycle, type ChatMessage } from '@dina/brain/chat';
+
 import { colors, radius, shadows, spacing, textStyles } from '../theme';
+
 import { MessageTimestamp } from './MessageTimestamp';
+import { safeHttpsUrl } from './safe_url';
 
 export interface InlineServiceQueryCardProps {
   message: ChatMessage;
@@ -154,7 +151,7 @@ function EtaResultBody({
         : null;
   const stop = typeof result.stop_name === 'string' ? result.stop_name : null;
   const route = typeof result.route_name === 'string' ? result.route_name : null;
-  const mapUrl = typeof result.map_url === 'string' ? result.map_url : null;
+  const mapUrl = safeHttpsUrl(result.map_url);
 
   const onOpenMap = useCallback(() => {
     if (mapUrl !== null) {
@@ -432,7 +429,8 @@ function HopList({ hops, activeIndex }: { hops: Hop[]; activeIndex: number }): R
   return (
     <View>
       {hops.map((hop, i) => {
-        const state: HopState = i < activeIndex ? 'done' : i === activeIndex ? 'active' : 'upcoming';
+        const state: HopState =
+          i < activeIndex ? 'done' : i === activeIndex ? 'active' : 'upcoming';
         return (
           <React.Fragment key={i}>
             <HopCardRow hop={hop} state={state} />
@@ -529,9 +527,7 @@ function HopCardRow({ hop, state }: { hop: Hop; state: HopState }): React.JSX.El
         )}
       </View>
       <View style={styles.hopStatus}>
-        {state === 'done' && (
-          <Ionicons name="checkmark-circle" size={20} color={colors.success} />
-        )}
+        {state === 'done' && <Ionicons name="checkmark-circle" size={20} color={colors.success} />}
         {state === 'active' && <ActivityIndicator size="small" color={colors.accent} />}
         {state === 'upcoming' && (
           <Ionicons name="ellipse-outline" size={16} color={colors.textMuted} />

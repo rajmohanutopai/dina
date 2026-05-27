@@ -25,7 +25,7 @@ export type CallerType = 'brain' | 'admin' | 'connector' | 'device' | 'agent';
  *
  * More specific paths are listed first. The first matching prefix wins.
  */
-const AUTHZ_RULES: Array<{ prefix: string; allowed: Set<CallerType> }> = [
+const AUTHZ_RULES: { prefix: string; allowed: Set<CallerType> }[] = [
   // Vault — Brain reads/writes, device reads, agent reads (via grant)
   { prefix: '/v1/vault/store/batch', allowed: new Set(['brain']) },
   { prefix: '/v1/vault/store', allowed: new Set(['brain']) },
@@ -104,6 +104,11 @@ const AUTHZ_RULES: Array<{ prefix: string; allowed: Set<CallerType> }> = [
   // (role='agent') additionally claim + heartbeat + progress + complete
   // + fail delegation tasks via the /v1/workflow/tasks/ sub-tree. More
   // specific prefix listed first so agent rule wins for task endpoints.
+  // NOTE: prefix authz is path-only and can't carve out the dynamic
+  // `/:id/approve` + `/:id/cancel` suffixes, so the OWNER-only restriction
+  // on the approve/deny *decision* (an agent must never self-approve its own
+  // persona-access grant or intent proposal) is enforced in the route
+  // handler — see `ownerDecisionGuard` in server/routes/workflow.ts.
   { prefix: '/v1/workflow/tasks/', allowed: new Set(['brain', 'admin', 'agent']) },
   { prefix: '/v1/workflow/', allowed: new Set(['brain', 'admin']) },
 

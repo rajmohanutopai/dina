@@ -7,10 +7,13 @@
  * Source: ARCHITECTURE.md — op-sqlite persistence layer
  */
 
-import type { DatabaseAdapter, DBProvider } from '@dina/core/storage';
-import { OpSQLiteAdapter } from './op_sqlite_adapter';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { derivePersonaDEK, deriveDEKHash } from '@dina/core';
+
+import { derivePersonaDEK, validatePersonaName } from '@dina/core';
+
+import { OpSQLiteAdapter } from './op_sqlite_adapter';
+
+import type { DatabaseAdapter, DBProvider } from '@dina/core/storage';
 
 interface ProviderConfig {
   dbDir: string;
@@ -41,6 +44,17 @@ export class ProductionDBProvider implements DBProvider {
   }
 
   async openPersonaDB(persona: string): Promise<DatabaseAdapter> {
+    // Path-traversal guard: `persona` becomes the DB filename
+    // (`${persona}.sqlite`) which op-sqlite concatenates onto dbDir, so a name
+    // with `../` or a separator would escape the vault directory. Validate it
+    // with the canonical persona-name rule (matches createPersona →
+    // validatePersonaName, so every legitimately-created persona passes). This
+    // closes the archive-import traversal where `persona.name` comes straight
+    // from a decrypted, attacker-influenced manifest.
+    const nameError = validatePersonaName(persona);
+    if (nameError !== null) {
+      throw new Error(`storage: refusing to open persona — ${nameError}`);
+    }
     const existing = this.personaDBs.get(persona);
     if (existing?.isOpen) return existing;
 

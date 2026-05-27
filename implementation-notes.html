@@ -1463,5 +1463,195 @@ substantive finding; the rest were assessed and left with rationale.</p>
   bar exactly (Phase A: 4337 passed + same 2). Phase B fully verified.</p>
 </div>
 
+<h3>Deep review — round 5 (release-gate cleanup + codex Must-Fix re-review) <span class="tag t-done">done</span></h3>
+
+<div class="item decision">
+  <div class="kind">Codex Must-Fix #1 — "root typecheck still compiles nothing" → re-verified ALREADY FIXED</div>
+  <p>Codex re-flagged this as a release blocker, but it was resolved in round 4 — codex was reading a
+  pre-fix snapshot. I did not just assert that; I PROVED the root <code>npm run typecheck</code> is no
+  longer a no-op: injected a deliberate <code>const probe: number = 'string'</code> into a workspace's
+  <code>src/</code>, ran the root script → it caught it (<code>error TS2322</code>, <strong>exit 2</strong>);
+  removed the probe → <strong>exit 0</strong>. The script (<code>npm run typecheck --workspaces
+  --if-present</code>) compiles all 21 TS workspaces, each with a real <code>tsc&nbsp;--noEmit</code>.
+  The one workspace without a script (<code>packages/fixtures</code>) has <strong>0 .ts files</strong>
+  — pure data fixtures, correctly nothing to compile. No change needed.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Codex Must-Fix #2 — agentCanAccess() "contradictory / not authoritative" → made AUTHORITATIVE</div>
+  <p>Round 4 aligned the helper's <em>values</em> to V1 but left it a parallel policy that <strong>nothing
+  in the runtime called</strong> (only its own two tests referenced it) and whose own doc admitted it was
+  "kept in sync <em>by hand</em>." That hand-sync IS the drift risk codex named. The brilliant fix is
+  neither delete-it nor re-align-by-hand: I made <code>agentCanAccess(tier, hasGrant)</code> the SINGLE
+  source of truth and had the runtime gate <code>requireAgentPersonaAccess</code> CALL it. The gate's old
+  body (<code>requiresApproval(tier) || requiresPassphrase(tier)</code> + a separate grant branch) is
+  exactly <code>agentCanAccess === hasGrant || isFreeTier(tier)</code>, so the decision now reads
+  <code>if (agentCanAccess(tier, grant !== null)) …</code>. Behaviour is byte-identical (grant-found →
+  allow+audit; free tier → allow; gated+no-grant → approval); now the persona-wall/lifecycle tests that
+  pin the predicate pin the EXACT logic the gate runs — they cannot drift. Removed the now-unused
+  <code>requiresApproval</code>/<code>requiresPassphrase</code> imports from <code>access.ts</code>;
+  updated the helper doc + test comments to say "authoritative", not "kept in sync".</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">Release-gate hygiene — my own new files are now lint + format clean</div>
+  <p>The repo-wide <code>lint</code>/<code>format</code> gates are red (5,520 errors / 654 files) and
+  unenforced — pre-existing, out of scope, a team decision (I added no deps). But my OWN new/changed
+  source should pass them. Fixed every nit in the files this work touched: array-type
+  (<code>Array&lt;T&gt;</code>→<code>T[]</code>) and import/order auto-fixes; removed 3 imports left dead
+  by the outbox rewrite (<code>DeliveryResult</code>, <code>buildMessage</code>, <code>D2DPayload</code> in
+  <code>d2d/send.ts</code>); removed 2 unused <code>RESTORE_*</code> Sets in <code>archive.ts</code> (the
+  import path iterates the base allowlists <code>[...IDENTITY_TABLES, KV_TABLE]</code> / <code>PERSONA_TABLES</code>
+  directly, so the derived Sets were dead); replaced a forbidden non-null assertion in
+  <code>devices/registry.ts</code> with a get-once + null-check (also drops the redundant <code>.has()</code>
+  + <code>.get()!</code>). 16 touched files now pass both <code>eslint</code> and <code>prettier --check</code>.</p>
+</div>
+
+<table class="log">
+<tr><th>Round-5 changes</th><th>Verification</th></tr>
+<tr><td>#1 re-verified (no change) · #2 agentCanAccess made authoritative + gate calls it + dead imports/Sets/non-null removed · my 16 files lint+format clean</td>
+<td><span class="ok">root typecheck catches injected error (exit 2) / clean (exit 0)</span> · <span class="ok">@dina/core tsc EXIT 0</span> · <span class="ok">my files: eslint 0 / prettier clean</span> · <span class="ok">gate+predicate suites 92 ✓</span> · <span class="ok">persona_wall 16 ✓</span> · <span class="ok">touched-suite sweep 156 ✓</span> · <span class="ok">full @dina/core suite superseded by the security-fix verification below (targeted suites green; the standalone full run was cancelled to avoid two parallel jest processes)</span></td></tr>
+</table>
+
+<h2>Whole-app security review — pre-first-release (5 findings fixed)</h2>
+
+<p class="meta">A multi-agent security audit of the shipping TS stack (apps/home-node-lite, apps/mobile,
+packages/*, appview/; Go/Python excluded as deprecated) surfaced 5 findings that survived an
+independent false-positive filtering pass at ≥8/10 confidence — 3 HIGH, 2 MEDIUM. Crypto/key-mgmt
+and the AppView network surface came back clean. All 5 are now fixed with regression tests.</p>
+
+<div class="item decision">
+  <div class="kind">#1 (HIGH) — agent self-approval of workflow tasks (privilege escalation)</div>
+  <p>The authz matrix let caller-type <code>agent</code> reach the whole <code>/v1/workflow/tasks/</code>
+  sub-tree and <code>isAuthorized</code> is method-agnostic, so an agent could POST
+  <code>/v1/workflow/tasks/:id/approve</code> — which had no caller check — to APPROVE its OWN
+  <code>agent_persona_access</code> request (writing a durable grant + unlocking the persona) and clear
+  flagged <code>intent_validation</code> proposals, defeating both the persona gate and the Agent
+  Gateway. FIX: <code>ownerDecisionGuard</code> in <code>server/routes/workflow.ts</code> refuses
+  <code>callerType === 'agent'</code> on approve + cancel/deny (prefix authz can't carve out the
+  dynamic <code>/:id/approve</code> suffix, so it's enforced in-handler, mirroring vault.ts's
+  <code>agentGate</code>). brain (the user-driven <code>/service_approve</code> chat command) and
+  device/admin (app UI) stay authorised; <code>callerType</code> comes from the verified auth result,
+  not the body. Test: <code>workflow_approval_authz.test.ts</code> drives the full chain — agent
+  self-approve → 403, no grant; owner approve → grant written, agent then reads.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">#2 (HIGH) — D2D inner sender not bound to the authenticated envelope DID (impersonation)</div>
+  <p>Inbound D2D verified the signature against keys resolved from the outer MsgBox
+  <code>env.from_did</code>, but every downstream use (trust gate, replay key, vault attribution
+  <code>origin_did/sender_did</code>) took the sealed inner <code>message.from</code> with NO check the
+  two matched — so an attacker could sign with their OWN key while putting a trusted peer's DID in
+  <code>from</code> and inherit that peer's trust + attribution (amplified by <code>safety.alert</code>
+  being an always-pass type for non-contacts). The RPC path already bound identity; the D2D path
+  didn't. FIX: <code>receiveD2D</code> gained <code>options.authenticatedFromDID</code>; the production
+  <code>handleInboundD2D</code> always passes <code>env.from_did</code>, and the pipeline drops +
+  audits (<code>d2d_recv_sender_mismatch</code>) when <code>message.from</code> differs, before the
+  replay cache is touched. It's a transport-layer property, so pure-pipeline unit tests (no envelope)
+  are unaffected — zero churn across ~50 existing call sites. Tests: 3 binding cases in
+  <code>receive_pipeline.test.ts</code> (match→staged, spoof→dropped, omitted→back-compat).</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">#3 (HIGH) — rehydrated PII embedded via cloud Gemini with no scrub (Law 3 breach)</div>
+  <p>Enrichment scrubbed PII before the cloud LLM call but REHYDRATED real PII into
+  <code>content_l1</code> and then embedded it via <code>generateEmbedding</code> with no scrub; in the
+  shipping config the only embedder is cloud Gemini and the sweep covers every persona incl.
+  health/financial — so raw PII (MRN, email, card #) left the device. A second instance lived in
+  <code>reminder_planner.ts</code> (query built from names/relationships). FIX: new
+  <code>embedding/safe_embed.ts::embedMaybeSensitive</code> — a local (on-device) provider embeds the
+  real text; the cloud path (cloud-only, or a local-failure fallback) embeds a PII-SCRUBBED copy, and
+  raw text is NEVER handed to the cloud fallback. Both call sites route through it;
+  <code>generateEmbedding</code>'s doc now warns it falls back to cloud. Test:
+  <code>safe_embed.test.ts</code> asserts the cloud provider receives scrubbed text (raw email absent),
+  local receives the real text, and local-fail still scrubs before cloud.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">#4 (MEDIUM) — untrusted <code>map_url</code> opened via Linking.openURL (scheme abuse)</div>
+  <p>An ETA card opened <code>result.map_url</code> — opaque, attacker-controlled peer
+  <code>service.response</code> data — with no scheme check, so a hostile provider could return
+  <code>tel:</code>/<code>sms:</code> (premium dialer), <code>javascript:</code>, an https phishing
+  page, or an app deep-link that <code>Linking.openURL</code> launches under "Open in Maps". FIX:
+  extracted <code>components/safe_url.ts::safeHttpsUrl</code> — allows only <code>https:</code> (parsed
+  via <code>new URL</code>), used by the card. Test: <code>safe_url.test.ts</code> (https accepted;
+  tel/sms/javascript/http/file/deep-link + non-strings rejected).</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">#5 (MEDIUM) — mobile persona-name path traversal on archive import</div>
+  <p>The mobile + Expo DB providers built <code>${persona}.sqlite</code> with NO name validation (the
+  Node provider guards via <code>assertPersonaName</code>), so a crafted <code>.dina</code> archive
+  whose manifest carries a persona named <code>../../evil</code> (the AES-GCM tag only proves the
+  importer's passphrase, not authenticity) could write a SQLCipher file outside the vault dir on
+  restore. FIX (defence-in-depth): both providers' <code>openPersonaDB</code> now call
+  <code>validatePersonaName</code> (canonical <code>[a-z0-9_]+</code> rule — every legitimately-created
+  persona passes), AND <code>importArchive</code> validates <code>persona.name</code> at the trust
+  boundary before <code>openPersonaForRestore</code>. Test: <code>archive_real.test.ts</code> crafts an
+  archive with a traversal persona name and asserts import rejects it before any file open.</p>
+</div>
+
+<table class="log">
+<tr><th>Security fixes</th><th>Verification (targeted, serial, memory-safe)</th></tr>
+<tr><td>#1 ownerDecisionGuard · #2 D2D sender binding · #3 embedMaybeSensitive (enrichment + reminder) · #4 safeHttpsUrl · #5 persona-name guard (mobile+expo providers + archive boundary) — all with regression tests</td>
+<td><span class="ok">@dina/core tsc 0</span> · <span class="ok">@dina/brain tsc 0</span> · <span class="ok">storage-expo tsc 0</span> · <span class="ok">mobile tsc 0</span> · <span class="ok">core D2D/workflow/archive 62 ✓</span> · <span class="ok">relay handler suites 67 ✓</span> · <span class="ok">brain embedding/enrichment/reminder/staging 106 ✓</span> · <span class="ok">mobile safe_url 12 ✓</span> · <span class="ok">my new files: eslint 0 / prettier clean</span></td></tr>
+</table>
+
+<div class="item decision">
+  <div class="kind">Below-the-bar hardening items — ALSO fixed (defence-in-depth)</div>
+  <p>The 4 sub-severity items the review flagged are now fixed too, each with a regression test:</p>
+  <p><strong>H1 — brain-server non-loopback bind.</strong> The brain HTTP surface (api/chat/ask/
+  reminder/web) is unauthenticated + localhost-only by design; binding it to 0.0.0.0 would expose
+  vault-write (<code>/remember</code>) + the LLM with no auth. <code>boot.ts</code> now FAILS CLOSED on a
+  non-loopback host unless <code>DINA_BRAIN_ALLOW_NONLOOPBACK=1</code> (default 127.0.0.1 unaffected).
+  Test: <code>scaffold.test.ts</code> asserts boot rejects host 0.0.0.0 without the opt-in.</p>
+  <p><strong>H2 — pairing-role escalation.</strong> <code>/v1/pair/complete</code> let the completing
+  device override the role captured at <code>/initiate</code>, so a code minted as 'rich'/'cli' could be
+  completed as 'agent'. The role is now taken solely from the initiate-time intent (always captured,
+  default 'rich'); a client-sent <code>role</code> on complete is ignored. <code>device_name</code>
+  (a label) override stays. Test (<code>pair.test.ts</code>) updated: a 'rich' code + role:'agent' on
+  complete lands as 'device', not 'agent'.</p>
+  <p><strong>H3 — error-detail leak.</strong> <code>CoreRouter.runHandler</code> returned
+  <code>{error:'handler threw', detail: err.message}</code> verbatim (bypassing the Fastify 5xx mask).
+  Now returns a generic <code>{error:'internal error'}</code> to the caller and logs only the error
+  CLASS server-side (PII-safe). Test (<code>router.test.ts</code>) asserts the thrown message never
+  reaches the response.</p>
+  <p><strong>H4 — appview untyped <code>subject</code>.</strong> <code>resolve.ts</code> parsed the
+  <code>subject</code> param as <code>any</code>; now Zod-validated against the <code>SubjectRef</code>
+  shape, so a malformed/hostile subject fails closed into the error response instead of flowing untyped
+  into queries + deterministic-id hashing. Test (<code>resolve_subject_id_fields.test.ts</code>): valid
+  JSON with a bad/missing <code>type</code> is rejected and <code>resolveSubject</code> is never reached.</p>
+  <p class="meta">Pre-existing repo-wide lint debt in the touched files (a dead
+  <code>labelForCapability</code>, an <code>any</code>, a <code>for</code>→<code>for-of</code>,
+  existing-test non-null assertions, an unused import) was left alone — out of the security scope and
+  part of the team's known ~5.5k-error backlog. All NEW code (fixes + tests) is lint+format clean under
+  the governing tooling (appview follows its own no-semicolon house style).</p>
+</div>
+
+<h2>Security review round 2 — pre-first-release (1 finding fixed)</h2>
+
+<p class="meta">A second whole-app multi-agent pass (6 surfaces + an independent false-positive filter)
+re-verified all 9 round-1 fixes as complete and bypass-free, and found ONE new HIGH at ≥8/10. The
+other five surfaces (auth, crypto, injection, AppView, server/mobile) came back clean.</p>
+
+<div class="item decision">
+  <div class="kind">R2-1 (HIGH) — raw vault content logged to stdout on the routine RPC read path</div>
+  <p><code>relay/msgbox_handlers.ts</code> logged the first 200 chars of every inbound-RPC
+  <em>response body</em> to stdout, unconditionally (no debug gate). Inbound MsgBox RPC dispatches
+  through the full <code>CoreRouter</code>, so that body is raw decrypted vault content for
+  <code>/v1/vault/query</code> (<code>content_l0/l1/body/summary</code>), <code>/v1/vault/item/:id</code>,
+  and <code>/api/v1/ask</code> answers — i.e. the normal paired-device / dina-cli read path leaked PII
+  to stdout (captured outside the SQLCipher boundary by journald / container logs), breaking the
+  explicit invariant "PII must never reach stdout" + Law 3. No attacker needed — ordinary use leaked.
+  FIX: the two response-body logs (<code>[RPC] out</code>, <code>[PAIR] outbound</code>) now emit
+  <strong>metadata only</strong> — <code>status</code>, <code>path</code>, response byte
+  <code>len</code> — and the inbound-pair log drops the body too (keeps path + sender). The neighbouring
+  logs were audited: DIDs, byte counts, paths, error strings, and a public-key prefix are all
+  non-PII/non-secret and stay. Verified: <span class="ok">core tsc 0</span> · <span class="ok">relay
+  handler/rpc/identity suites 77 ✓</span> · no test asserted the old body-log format · my edit
+  lint-clean (the lone remaining error is a pre-existing <code>prefer-for-of</code> in an unrelated
+  helper).</p>
+</div>
+
 </body>
 </html>

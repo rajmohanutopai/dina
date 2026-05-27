@@ -9,17 +9,20 @@
  * Source: MsgBox Protocol — Home Node Implementation Guide
  */
 
-import { sealEncrypt, sealDecryptWithScheme } from '../crypto/nacl';
-import { sign, verify, getPublicKey } from '../crypto/ed25519';
-import { extractPublicKey } from '../identity/did';
-import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
-import { sha256 } from '@noble/hashes/sha2.js';
-import { appendAudit } from '../audit/service';
-import { sendEnvelope, getIdentity, type MsgBoxEnvelope } from './msgbox_ws';
 import { randomBytes } from '@noble/ciphers/utils.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
+
+import { appendAudit } from '../audit/service';
 import { isDevice } from '../auth/caller_type';
-import { verifyPairingIdentityBinding } from '../pairing/ceremony';
+import { sign, verify, getPublicKey } from '../crypto/ed25519';
+import { sealEncrypt, sealDecryptWithScheme } from '../crypto/nacl';
 import { receiveD2D, type ReceivePipelineResult } from '../d2d/receive_pipeline';
+import { extractPublicKey } from '../identity/did';
+import { verifyPairingIdentityBinding } from '../pairing/ceremony';
+
+import { sendEnvelope, getIdentity, type MsgBoxEnvelope } from './msgbox_ws';
+
 import type { D2DPayload } from '../d2d/envelope';
 
 /** Inner RPC paths that opt into pair-identity binding instead of the
@@ -154,13 +157,17 @@ export async function handleInboundD2D(
     const sender = await resolveSender(env.from_did);
     const myPub = getPublicKey(privateKey);
 
-    // 3. Route through receive pipeline
+    // 3. Route through receive pipeline. Bind the sealed inner `from` to the
+    //    transport-authenticated `env.from_did` (the DID we resolved
+    //    sender.keys/sender.trust against) so a peer can't sign with its own
+    //    key while spoofing a trusted peer's DID in the message body.
     const result: ReceivePipelineResult = receiveD2D(
       d2dPayload,
       myPub,
       privateKey,
       sender.keys,
       sender.trust,
+      { authenticatedFromDID: env.from_did },
     );
 
     appendAudit(
@@ -232,7 +239,6 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
       return;
     }
 
-    // eslint-disable-next-line no-console
     console.log(`[RPC] recv from=${env.from_did.slice(0, 30)}... id=${env.id.slice(0, 8)}`);
     // 1. Decrypt before any routing decision — the inner path tells
     //    us whether this is a pair-ceremony request or a normal
@@ -249,11 +255,10 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
       plaintext = decoded.plaintext;
       nonceScheme = decoded.scheme;
     } catch (decErr) {
-      // eslint-disable-next-line no-console
       console.error(`[RPC] decrypt FAILED: ${(decErr as Error).message}`);
       throw decErr;
     }
-    // eslint-disable-next-line no-console
+
     console.log(`[RPC] decrypted ${plaintext.length} bytes (nonce=${nonceScheme})`);
     const inner = JSON.parse(new TextDecoder().decode(plaintext));
 
@@ -269,15 +274,14 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
 
     const isPairPath = inner.method.toUpperCase() === 'POST' && PAIR_PATHS.has(inner.path);
 
-    // eslint-disable-next-line no-console
     console.log(
       `[RPC] in from=${env.from_did.slice(0, 30)} path=${inner.path} pair=${isPairPath} method=${inner.method}`,
     );
     if (isPairPath) {
-      // eslint-disable-next-line no-console
-      console.log(
-        `[PAIR] inbound ${inner.path} from=${env.from_did} body=${JSON.stringify(inner.body ?? {}).slice(0, 200)}`,
-      );
+      // Metadata only — never the inner body. (Pair bodies are lower
+      // sensitivity than vault reads, but the same stdout-PII rule applies and
+      // the body adds no debugging value over path + sender.)
+      console.log(`[PAIR] inbound ${inner.path} from=${env.from_did}`);
     }
 
     if (isPairPath) {
@@ -286,17 +290,15 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
       // Matches main-dina's `VerifyPairingIdentityBinding` — the
       // envelope's did:key must derive from the body's public key.
       const publicKeyMultibase = extractPairPublicKey(inner.body);
-      // eslint-disable-next-line no-console
+
       console.log(`[RPC] pair body pub=${publicKeyMultibase?.slice(0, 20)}`);
       if (publicKeyMultibase === null) {
-        // eslint-disable-next-line no-console
         console.error(`[RPC] pair reject: no public_key in body`);
         appendAudit(env.from_did, 'pair_identity_mismatch', myDID, `id=${env.id}`);
         await sendRPCError(env, myDID, privateKey, 403, 'Pair identity binding failed');
         return;
       }
       if (!verifyPairingIdentityBinding(publicKeyMultibase, env.from_did)) {
-        // eslint-disable-next-line no-console
         console.error(
           `[RPC] pair reject: binding mismatch env.from_did=${env.from_did} body.public_key=${publicKeyMultibase}`,
         );
@@ -377,14 +379,18 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
     );
 
     if (!controller.signal.aborted) {
-      // eslint-disable-next-line no-console
+      // Log metadata ONLY — never the response body. Inbound RPC dispatches
+      // through the full CoreRouter, so `response.body` is raw decrypted vault
+      // content for /v1/vault/* + /api/v1/ask (the routine paired-device read
+      // path). Emitting it to stdout would leak PII outside the SQLCipher
+      // boundary (CLAUDE.md: "PII must never reach stdout"). Status + path +
+      // byte length preserve all the debugging value.
       console.log(
-        `[RPC] out status=${response.status} nonce=${nonceScheme} body=${response.body?.slice(0, 200)}`,
+        `[RPC] out status=${response.status} nonce=${nonceScheme} path=${inner.path} len=${response.body?.length ?? 0}`,
       );
       if (isPairPath) {
-        // eslint-disable-next-line no-console
         console.log(
-          `[PAIR] outbound ${inner.path} → status=${response.status} body=${response.body?.slice(0, 200) ?? ''}`,
+          `[PAIR] outbound ${inner.path} → status=${response.status} len=${response.body?.length ?? 0}`,
         );
       }
       await sendRPCResponse(env, myDID, privateKey, response, nonceScheme);
@@ -528,7 +534,7 @@ async function sendRPCResponse(
     ciphertext: bytesToBase64(sealed),
   };
   const ok = await sendOrRetryUntilExpired(env);
-  // eslint-disable-next-line no-console
+
   console.log(
     `[RPC] sent rid=${requestEnv.id.slice(0, 8)} status=${response.status} delivered=${ok}`,
   );

@@ -198,22 +198,29 @@ export interface WorkflowEvent {
  * will silently break cross-runtime compatibility with main dina, so
  * keep these two tables synchronised.
  */
-export const ValidTransitions: Readonly<
-  Record<WorkflowTaskState, ReadonlyArray<WorkflowTaskState>>
-> = Object.freeze({
-  created: ['pending', 'queued', 'pending_approval', 'running', 'completed', 'failed', 'cancelled'],
-  pending: ['running', 'queued', 'cancelled'],
-  queued: ['claimed', 'running', 'cancelled'],
-  claimed: ['running', 'failed', 'cancelled'],
-  running: ['awaiting', 'completed', 'failed', 'cancelled', 'queued'],
-  awaiting: ['running', 'completed', 'failed', 'cancelled'],
-  pending_approval: ['pending', 'queued', 'failed', 'cancelled'],
-  scheduled: ['pending', 'running', 'cancelled'],
-  completed: ['recorded'],
-  failed: ['scheduled', 'queued', 'recorded', 'cancelled'],
-  cancelled: [],
-  recorded: [],
-}) as unknown as Readonly<Record<WorkflowTaskState, ReadonlyArray<WorkflowTaskState>>>;
+export const ValidTransitions: Readonly<Record<WorkflowTaskState, readonly WorkflowTaskState[]>> =
+  Object.freeze({
+    created: [
+      'pending',
+      'queued',
+      'pending_approval',
+      'running',
+      'completed',
+      'failed',
+      'cancelled',
+    ],
+    pending: ['running', 'queued', 'cancelled'],
+    queued: ['claimed', 'running', 'cancelled'],
+    claimed: ['running', 'failed', 'cancelled'],
+    running: ['awaiting', 'completed', 'failed', 'cancelled', 'queued'],
+    awaiting: ['running', 'completed', 'failed', 'cancelled'],
+    pending_approval: ['pending', 'queued', 'failed', 'cancelled'],
+    scheduled: ['pending', 'running', 'cancelled'],
+    completed: ['recorded'],
+    failed: ['scheduled', 'queued', 'recorded', 'cancelled'],
+    cancelled: [],
+    recorded: [],
+  }) as unknown as Readonly<Record<WorkflowTaskState, readonly WorkflowTaskState[]>>;
 
 /** Terminal states — no further transitions change the task's content. */
 const TERMINAL_STATES: ReadonlySet<WorkflowTaskState> = new Set([

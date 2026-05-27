@@ -18,10 +18,11 @@
 
 import { bytesToHex } from '@noble/hashes/utils.js';
 
-import type { DatabaseAdapter, DBProvider } from '@dina/core';
-import { derivePersonaDEK } from '@dina/core';
+import { derivePersonaDEK, validatePersonaName } from '@dina/core';
 
 import { OpSQLiteAdapter } from './op_sqlite_adapter';
+
+import type { DatabaseAdapter, DBProvider } from '@dina/core';
 
 interface ProviderConfig {
   dbDir: string;
@@ -57,6 +58,16 @@ export class ProductionDBProvider implements DBProvider {
   }
 
   async openPersonaDB(persona: string): Promise<DatabaseAdapter> {
+    // Path-traversal guard: `persona` becomes the DB filename
+    // (`${persona}.sqlite`) which op-sqlite concatenates onto dbDir, so a name
+    // with `../` or a separator would escape the vault directory. Validate it
+    // with the canonical persona-name rule (matches createPersona →
+    // validatePersonaName). Closes the archive-import traversal where
+    // `persona.name` comes from a decrypted, attacker-influenced manifest.
+    const nameError = validatePersonaName(persona);
+    if (nameError !== null) {
+      throw new Error(`storage: refusing to open persona — ${nameError}`);
+    }
     const existing = this.personaDBs.get(persona);
     if (existing?.isOpen) return existing;
 

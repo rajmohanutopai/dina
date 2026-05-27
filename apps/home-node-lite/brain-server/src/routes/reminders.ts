@@ -17,8 +17,8 @@
  *   DELETE /api/v1/reminders/:id         → CoreClient.reminderDelete
  */
 
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { CoreClient, Reminder, ReminderCreateInput } from '@dina/core';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 export interface RegisterReminderApiRoutesOptions {
   /** Brain→Core client (signed HTTP to core-server). */
@@ -177,9 +177,7 @@ export function registerReminderApiRoutes(
         due_at: body.due_at,
         persona,
         ...(typeof body.kind === 'string' ? { kind: body.kind } : {}),
-        ...(typeof body.source_item_id === 'string'
-          ? { source_item_id: body.source_item_id }
-          : {}),
+        ...(typeof body.source_item_id === 'string' ? { source_item_id: body.source_item_id } : {}),
         ...(typeof body.source === 'string' ? { source: body.source } : {}),
         ...(typeof body.recurring === 'string'
           ? { recurring: body.recurring as ReminderCreateInput['recurring'] }

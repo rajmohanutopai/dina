@@ -15,9 +15,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { NodeSQLiteAdapter } from '@dina/storage-node';
-import { applyMigrations } from '../../src/storage/migration';
-import { IDENTITY_MIGRATIONS, PERSONA_MIGRATIONS } from '../../src/storage/schemas';
-import type { DatabaseAdapter } from '../../src/storage/db_adapter';
+
 import {
   createArchive,
   importArchive,
@@ -25,6 +23,10 @@ import {
   type ArchiveDataSource,
   type ArchivePersonaSource,
 } from '../../src/export/archive';
+import { applyMigrations } from '../../src/storage/migration';
+import { IDENTITY_MIGRATIONS, PERSONA_MIGRATIONS } from '../../src/storage/schemas';
+
+import type { DatabaseAdapter } from '../../src/storage/db_adapter';
 
 const PASS = 'correct horse battery staple';
 const WRONG = 'incorrect zebra';
@@ -33,12 +35,22 @@ function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'dina-archive-'));
 }
 function openId(p: string): NodeSQLiteAdapter {
-  const a = new NodeSQLiteAdapter({ path: p, passphraseHex: PASSHEX, journalMode: 'WAL', synchronous: 'NORMAL' });
+  const a = new NodeSQLiteAdapter({
+    path: p,
+    passphraseHex: PASSHEX,
+    journalMode: 'WAL',
+    synchronous: 'NORMAL',
+  });
   applyMigrations(a, IDENTITY_MIGRATIONS);
   return a;
 }
 function openPersona(p: string): NodeSQLiteAdapter {
-  const a = new NodeSQLiteAdapter({ path: p, passphraseHex: PASSHEX, journalMode: 'WAL', synchronous: 'NORMAL' });
+  const a = new NodeSQLiteAdapter({
+    path: p,
+    passphraseHex: PASSHEX,
+    journalMode: 'WAL',
+    synchronous: 'NORMAL',
+  });
   applyMigrations(a, PERSONA_MIGRATIONS);
   return a;
 }
@@ -47,7 +59,11 @@ const PASSHEX = randomBytes(32).toString('hex');
 function seedIdentity(a: DatabaseAdapter): void {
   a.execute('INSERT INTO kv_store (key, value, updated_at) VALUES (?, ?, ?)', ['theme', 'dark', 1]);
   // A secret — must NOT appear in the archive.
-  a.execute('INSERT INTO kv_store (key, value, updated_at) VALUES (?, ?, ?)', ['gemini_api_key', 'SECRET-123', 1]);
+  a.execute('INSERT INTO kv_store (key, value, updated_at) VALUES (?, ?, ?)', [
+    'gemini_api_key',
+    'SECRET-123',
+    1,
+  ]);
   a.execute(
     `INSERT INTO reminders (id, short_id, message, due_at, persona, kind, source_item_id, source, recurring, timezone, status, completed, created_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -66,7 +82,7 @@ interface Bundle {
   personas: Map<string, { tier: string; adapter: NodeSQLiteAdapter }>;
   dir: string;
 }
-function freshBundle(personas: Array<[string, string]>): Bundle {
+function freshBundle(personas: [string, string][]): Bundle {
   const dir = tmpDir();
   const id = openId(path.join(dir, 'identity.sqlite'));
   const map = new Map<string, { tier: string; adapter: NodeSQLiteAdapter }>();
@@ -135,13 +151,27 @@ describe('real export → clean-install import', () => {
       await importArchive(archive, PASS);
 
       // Identity restored — non-secret kv + reminder.
-      expect(dest.id.query("SELECT value FROM kv_store WHERE key = 'theme'")[0]?.value).toBe('dark');
-      expect(dest.id.query('SELECT message FROM reminders WHERE id = ?', ['rem-1'])[0]?.message).toBe('call mom');
+      expect(dest.id.query("SELECT value FROM kv_store WHERE key = 'theme'")[0]?.value).toBe(
+        'dark',
+      );
+      expect(
+        dest.id.query('SELECT message FROM reminders WHERE id = ?', ['rem-1'])[0]?.message,
+      ).toBe('call mom');
       // Secret EXCLUDED — never entered the archive.
       expect(dest.id.query("SELECT 1 FROM kv_store WHERE key = 'gemini_api_key'")).toHaveLength(0);
       // Both personas restored (created on demand during import).
-      expect(dest.personas.get('general')!.adapter.query('SELECT content_l0 FROM vault_items WHERE id = ?', ['v-gen'])[0]?.content_l0).toBe('general note');
-      expect(dest.personas.get('health')!.adapter.query('SELECT content_l0 FROM vault_items WHERE id = ?', ['v-health'])[0]?.content_l0).toBe('bp 120/80');
+      expect(
+        dest.personas
+          .get('general')!
+          .adapter.query('SELECT content_l0 FROM vault_items WHERE id = ?', ['v-gen'])[0]
+          ?.content_l0,
+      ).toBe('general note');
+      expect(
+        dest.personas
+          .get('health')!
+          .adapter.query('SELECT content_l0 FROM vault_items WHERE id = ?', ['v-health'])[0]
+          ?.content_l0,
+      ).toBe('bp 120/80');
     } finally {
       closeBundle(dest);
     }
@@ -198,5 +228,57 @@ describe('real export → clean-install import', () => {
     const badVersion = archive.slice();
     badVersion[4] = 0x63; // version 99
     await expect(importArchive(badVersion, PASS)).rejects.toThrow(/unsupported version/);
+  });
+
+  // SEC — a crafted archive can carry a path-traversing persona name in its
+  // (attacker-influenced) manifest. Import must reject it BEFORE the name
+  // becomes a `${name}.sqlite` filename, so nothing is written outside the
+  // vault dir. The AES-GCM tag + checksums don't help here (the attacker chose
+  // the passphrase and computed the checksums).
+  it('refuses to restore a persona whose manifest name path-traverses', async () => {
+    // Export side: a real persona file on disk, but the manifest REPORTS a
+    // traversal name — createArchive copies persona.name verbatim into the payload.
+    const src = freshBundle([['health', 'sensitive']]);
+    let archive: Uint8Array;
+    try {
+      const health = src.personas.get('health');
+      if (!health) throw new Error('test setup: missing health persona');
+      seedVaultItem(health.adapter, 'v1', 'secret note');
+      setArchiveDataSource({
+        identityAdapter: () => src.id,
+        personaSources: async () => [
+          { name: '../../evil', tier: 'sensitive', adapter: health.adapter },
+        ],
+        openPersonaForRestore: async () => {
+          throw new Error('export path does not restore');
+        },
+        hasExistingUserData: async () => false,
+      });
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+    }
+
+    // Import side: the guard must reject the traversal name BEFORE any file open.
+    const dest = freshBundle([]);
+    const openedNames: string[] = [];
+    try {
+      setArchiveDataSource({
+        identityAdapter: () => dest.id,
+        personaSources: async () => [],
+        openPersonaForRestore: async (name, tier) => {
+          openedNames.push(name);
+          const a = openPersona(path.join(dest.dir, `${name}.sqlite`));
+          dest.personas.set(name, { tier, adapter: a });
+          return a;
+        },
+        hasExistingUserData: async () => false,
+      });
+      await expect(importArchive(archive, PASS)).rejects.toThrow(/refusing to restore persona/);
+      // Never reached the file-open — no traversal write happened.
+      expect(openedNames).toHaveLength(0);
+    } finally {
+      closeBundle(dest);
+    }
   });
 });

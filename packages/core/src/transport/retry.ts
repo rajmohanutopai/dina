@@ -17,7 +17,9 @@
  */
 
 import { appendAudit } from '../audit/service';
+
 import { claimDue, markSent, recordFailure, resetStaleSending, sweepTerminal } from './outbox';
+
 import type { D2DOutboxRow } from './outbox_repository';
 
 /** Outcome of a single re-delivery attempt. */
