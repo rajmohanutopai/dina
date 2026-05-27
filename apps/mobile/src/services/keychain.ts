@@ -22,6 +22,7 @@
  */
 
 export {
+  ACCESSIBLE,
   getGenericPassword,
   resetGenericPassword,
   setGenericPassword,

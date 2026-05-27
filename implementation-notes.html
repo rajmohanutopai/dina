@@ -1653,5 +1653,161 @@ other five surfaces (auth, crypto, injection, AppView, server/mobile) came back 
   helper).</p>
 </div>
 
+<h2>Codex P1–P3 review — fixes (whole-app, pre-first-release)</h2>
+
+<p class="meta">A 15-item Codex review (P1 blockers, P2 important, P3 hardening + 6 CLI items). After
+verifying each claim in code, 13 were fixed (each with a regression test where the stack allows), 3
+deferred with rationale, 2 skipped (deprecated/covered). Severity note: several Codex "P1 blockers"
+are durability/availability or hardening, not security vulnerabilities — fixed anyway, but reclassified.</p>
+
+<div class="item decision">
+  <div class="kind">P1.1 (HIGH) — workflow complete/fail bound to the authenticated agent</div>
+  <p>The complete/fail routes trusted <code>body.agent_did</code> and the repo guarded only on STATE
+  (no <code>agent_did</code> WHERE), so a paired agent could complete/fail (or force-terminate) ANY
+  non-terminal task by id with a forged actor. FIX: <code>agentCompletionGuard</code> requires an
+  `agent` caller to own the task (<code>kind=delegation</code> + <code>state=running</code> +
+  <code>task.agent_did === req.callerDID</code>); the recorded completer is the authenticated
+  <code>callerDID</code>, never the body. Owner/system + the internal service-query bridge are
+  unaffected. This is the completion of the round-1 approve/cancel fix I under-scoped. Test:
+  <code>workflow_completion_authz.test.ts</code> (own→200, other-agent→403, non-delegation→403,
+  forged-did-ignored, owner→200).</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">P1.3 (HIGH) — agentic loop no longer logs vault/tool content</div>
+  <p><code>agentic_loop.ts</code> logged the model content snippet + tool args + tool outputs +
+  transcript to stdout (same class as the round-2 relay leak; my PII agent had covered the relay but
+  not the brain loop). FIX: all three logs are metadata-only (content length, tool NAMES, outcome
+  kind/size, iteration counts). Test: <code>agentic_loop.test.ts</code> spies console and asserts a
+  PII sentinel placed in content/args/output never appears.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">P2.7 + P2.8 — backup clean-install guard + restore tier/registry</div>
+  <p>P2.7: <code>hasExistingUserData</code> skipped CLOSED personas (a restore could merge into a
+  device whose only data lived in a locked vault) — now opens + checks EVERY registered persona
+  (DEK derives from the master seed). P2.8: archive import IGNORED the archived persona tier and
+  didn't register the persona — a restored sensitive/locked persona could come back as the open
+  default tier (access downgrade). Now <code>openPersonaForRestore</code> registers the persona with
+  the archived tier (unknown tier → fail-safe <code>locked</code>). Tests: core archive test asserts
+  the tier is delivered to <code>openPersonaForRestore</code>.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">P2.9 / P2.11 / P2.12 / P3.13 / P3.14 / P3.15 — auth, rate-limit, deep-link, metrics, keychain</div>
+  <p><strong>P2.9:</strong> <code>authenticateCore</code> now catches parse/verify throws (malformed
+  timestamp / bad-hex signature) → uniform 401 instead of a 500 escaping the pre-dispatch step
+  (protects the MsgBox RPC path too). <strong>P2.11:</strong> the edge rate-limiter keyed on
+  unauthenticated <code>X-DID</code> (rotatable → full bypass); now keys by IP (per-identity limiting
+  stays post-verification in Core's auth layer). <strong>P2.12:</strong> notification
+  <code>deepLink</code> (peer-influenceable) is allowlisted to non-sensitive internal routes
+  (<code>safeDeepLink</code>) — external schemes + sensitive screens (recovery-phrase, admin,
+  paired-devices) refused. <strong>P3.13/14:</strong> AppView <code>/metrics</code> gated behind a
+  <code>DINA_METRICS_TOKEN</code> bearer (default-disabled, 404 on mismatch); test-inject body capped
+  at 256 KB. <strong>P3.15:</strong> the signing/rotation seeds + wrapped master seed are stored
+  <code>AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY</code> — device-bound, never iCloud/backup-migrated.
+  Each has a regression test.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">P1.4 / P2.10 — durable-first service-config + device registration</div>
+  <p>P1.4: the PUT <code>/v1/service/config</code> route now <code>await</code>s a durable write
+  (<code>setServiceConfigDurable</code>) and returns 503 on failure instead of a false 200 (config
+  could appear saved yet vanish on restart). P2.10: the pairing route <code>await</code>s
+  <code>persistDeviceDurable</code> (idempotent upsert) before the 201, so a paired device survives
+  restart. Both fail-safe; the security-critical device-REVOKE direction was already durable.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">P1.5 / P2.6 — dependency audit + EXPO_PUBLIC release guard</div>
+  <p>P1.5: <code>npm audit fix</code> cleared both HIGH advisories (<code>fast-uri</code>
+  path-traversal, <code>protobufjs</code>) + the <code>drizzle-orm</code> SQL-injection advisory + 8
+  moderate; bumped <code>@fastify/static</code> 8→9 (Fastify 5 already in use) for its 2 moderate
+  path-traversal/route-bypass advisories. Prod audit now <strong>0 high / 0 critical</strong>; the 10
+  remaining moderate are all @expo/xcode/uuid BUILD tooling (not in the shipped bundle, need a
+  breaking Expo major). P2.6: <code>scripts/check-expo-public-env.mjs</code> fails the build if a
+  secret-like <code>EXPO_PUBLIC_*</code> var is set (they inline into the bundle); gates
+  <code>web:export</code>.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">CLI.4 / CLI.5 — Python dina-agent hardening</div>
+  <p>CLI.5: <code>agent_daemon</code> no longer logs the task description, and the CLI's
+  <code>--verbose</code> request log shows <code>&lt;N bytes&gt;</code> not the body (PII class).
+  CLI.4: a loud warning when the agent private key is stored unencrypted, recommending
+  <code>DINA_CLI_KEY_PASSPHRASE</code>. Verified: py_compile + 41 CLI tests pass.</p>
+</div>
+
+<div class="item open">
+  <div class="kind">Deferred / skipped — with rationale</div>
+  <p><strong>P1.2 (deferred, #86):</strong> service-query windows are in-memory so a restart between
+  query and response denies a legitimate response. Availability, NOT a security vuln, and the fix
+  touches the security-sensitive service.response bypass-authorization (bypass.ts + receive_pipeline)
+  — needs dedicated design + a restart test rather than a rushed change at the tail of a 20-item batch.
+  <strong>CLI.2/CLI.3 (deferred, #87):</strong> disable plaintext-response fallback + default
+  transport msgbox-not-auto — both behavior changes in the Python decide-later stack that could break
+  error responses / direct-mode users; need the CLI test pass + a transport-default decision.
+  <strong>CLI.1 / CLI.6 (skipped):</strong> CLI.1 is covered server-side by P1.1; CLI.6
+  (openclaw_runner) targets the deprecated MCP/OpenClaw path.</p>
+</div>
+
+<table class="log">
+<tr><th>Codex-fix verification</th><th>Result (per-package, serial)</th></tr>
+<tr><td>13 fixed + regression tests · 3 deferred (#86/#87) · 2 skipped (deprecated/covered)</td>
+<td><span class="ok">tsc 0: core / brain / mobile / core-server / appview / brain-server</span> · <span class="ok">core 140 ✓</span> · <span class="ok">brain agentic_loop 10 ✓</span> · <span class="ok">mobile 46 ✓</span> · <span class="ok">core-server rate_limit 6 ✓</span> · <span class="ok">appview error-contract/test-inject 9 ✓</span> · <span class="ok">CLI 41 ✓ (py_compile)</span> · <span class="ok">prod npm audit: 0 high / 0 critical</span> · <span class="ok">my new code eslint+prettier clean</span></td></tr>
+</table>
+
+<h2>Codex follow-up review — 8 findings on the fixes (resolved)</h2>
+
+<p class="meta">Codex re-reviewed the P1–P3 fixes and flagged 8 items (partial/inaccurate). Result: 5 fixed,
+3 acknowledged-with-rationale. Notably #1 caught a real inaccurate claim of mine — owned + fixed.</p>
+
+<div class="item decision">
+  <div class="kind">#1 (FIXED) — AppView drizzle-orm HIGH was NOT actually cleared (my claim was wrong)</div>
+  <p>I claimed the drizzle SQL-injection advisory was cleared, but that was the ROOT audit — AppView is
+  a SEPARATE npm project (own lockfile) pinned at <code>drizzle-orm 0.38.4</code>, still HIGH. Bumped to
+  <code>0.45.2</code> (patched floor): AppView's <code>--audit-level=high</code> gate now exits 0, and
+  <strong>all 1754 AppView unit tests pass</strong> (the 0.38→0.45 minor bump didn't break query
+  building). ROOT CAUSE of the miss: CI's <code>ts-audit</code> ran only the root <code>audit:prod</code>,
+  never AppView — added a dedicated AppView audit step so it can't slip again.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">#4 + #5 (FIXED) — residual error-path log leaks</div>
+  <p>#4: <code>agentic_loop</code>'s provider-exception log now emits prop NAMES only (never values — an
+  SDK error can attach the request/prompt as a string prop), cause TYPES only (no cause messages), and a
+  200-char-truncated top message. #5: the CLI's <code>--verbose</code> error path logs
+  <code>(error body: N bytes)</code> instead of 300 chars of the response body. Verified: brain 10 ✓,
+  CLI 13 ✓.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">#6 (FIXED) — direct test for the /metrics gate; #8 native EXPO guard</div>
+  <p>#6: extracted <code>checkMetricsAuth</code> into its own module (server.ts self-starts on import, so
+  it isn't unit-testable in place) + added <code>metrics_auth.test.ts</code> (disabled-by-default,
+  correct/wrong/missing bearer). The 256 KB test-inject cap stays inline (a direct route test needs the
+  Postgres integration harness — noted). #8: added an <code>eas-build-pre-install</code> npm hook running
+  the EXPO_PUBLIC secret guard, so native/EAS builds are gated too, not just <code>web:export</code>.</p>
+</div>
+
+<div class="item open">
+  <div class="kind">#2 / #3 / #7 — acknowledged with rationale (not code-changed)</div>
+  <p><strong>#2/#3 (durability):</strong> <code>setServiceConfigDurable</code> + <code>persistDeviceDurable</code>
+  guarantee durability WHEN a repo is wired (always true in production boot); they don't fail-closed when
+  no repo exists because that's the intentional in-memory/test mode, and failing there would break
+  dev/test for a scenario that never occurs in prod. The truly-clean durable-first PAIRING ordering
+  (persist BEFORE burning the code) is a ceremony refactor that's fail-safe to leave (a lost write →
+  re-pair); deferred. <strong>#7 (restore tier of an EXISTING persona):</strong> benign for the 4 default
+  personas — seeded at boot with canonical tiers, which restore correctly keeps; only a user-customized
+  default-persona tier wouldn't be re-applied on a clean-install restore (custom personas DO get the
+  archived tier).</p>
+</div>
+
+<table class="log">
+<tr><th>Follow-up</th><th>Verification</th></tr>
+<tr><td>#1 drizzle 0.45.2 + CI gap closed · #4 provider-log hardened · #5 verbose error body · #6 metrics-gate test · #8 EAS guard hook · #2/#3/#7 acknowledged</td>
+<td><span class="ok">AppView audit high-gate exit 0</span> · <span class="ok">AppView 1754 + metrics_auth 4 ✓</span> · <span class="ok">brain tsc 0 / agentic_loop 10 ✓</span> · <span class="ok">CLI py_compile + 13 ✓</span> · <span class="ok">my new code clean (appview no-semicolon house style)</span></td></tr>
+</table>
+
 </body>
 </html>

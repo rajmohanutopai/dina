@@ -60,6 +60,23 @@ export interface BaseOptions {
 export type GetOptions = BaseOptions;
 export type SetOptions = BaseOptions;
 
+/**
+ * Web stub of react-native-keychain's `ACCESSIBLE` enum. The web shim IGNORES
+ * the `accessible` option — a browser's IndexedDB has no OS-keychain
+ * accessibility class (see the threat-model note above) — but the export must
+ * resolve so native call sites (`Keychain.ACCESSIBLE.*`) compile identically
+ * on the web target. Values mirror the native enum's raw strings.
+ */
+export const ACCESSIBLE = {
+  WHEN_UNLOCKED: 'AccessibleWhenUnlocked',
+  AFTER_FIRST_UNLOCK: 'AccessibleAfterFirstUnlock',
+  ALWAYS: 'AccessibleAlways',
+  WHEN_PASSCODE_SET_THIS_DEVICE_ONLY: 'AccessibleWhenPasscodeSetThisDeviceOnly',
+  WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'AccessibleWhenUnlockedThisDeviceOnly',
+  AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: 'AccessibleAfterFirstUnlockThisDeviceOnly',
+  ALWAYS_THIS_DEVICE_ONLY: 'AccessibleAlwaysThisDeviceOnly',
+} as const;
+
 export interface Result {
   service: string;
   storage: 'IndexedDB';
@@ -317,8 +334,9 @@ export async function __dangerouslyResetForTests(): Promise<void> {
     req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error ?? new Error('IndexedDB delete failed'));
     req.onblocked = () => {
-      // eslint-disable-next-line no-console
-      console.warn('keychain.web: IndexedDB deleteDatabase blocked — waiting for connections to drain');
+      console.warn(
+        'keychain.web: IndexedDB deleteDatabase blocked — waiting for connections to drain',
+      );
     };
   });
 }

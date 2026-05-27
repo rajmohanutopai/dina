@@ -61,9 +61,15 @@ export async function saveIdentitySeeds(seeds: NodeIdentitySeeds): Promise<void>
   await Promise.all([
     Keychain.setGenericPassword(USERNAME, bytesToHex(seeds.signingSeed), {
       service: SERVICE_SIGNING,
+      // P3.15: device-bound — the signing seed must never migrate off this
+      // device (no iCloud/encrypted-backup transfer). `AFTER_FIRST_UNLOCK`
+      // (not `WHEN_UNLOCKED`) so background tasks can still read it after the
+      // first post-boot unlock; the `THIS_DEVICE_ONLY` suffix is the key win.
+      accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
     }),
     Keychain.setGenericPassword(USERNAME, bytesToHex(seeds.rotationSeed), {
       service: SERVICE_ROTATION,
+      accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
     }),
   ]);
 }

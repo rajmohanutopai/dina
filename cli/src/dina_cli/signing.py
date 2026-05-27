@@ -65,11 +65,24 @@ class CLIIdentity:
 
         # Determine encryption scheme based on env var.
         passphrase = os.environ.get("DINA_CLI_KEY_PASSPHRASE", "").strip()
-        encryption = (
-            BestAvailableEncryption(passphrase.encode())
-            if passphrase
-            else NoEncryption()
-        )
+        if passphrase:
+            encryption = BestAvailableEncryption(passphrase.encode())
+        else:
+            # CLI.4: this private key IS the agent's delegated authority. File
+            # perms (0600) protect it at rest, but on a daemon / shared /
+            # external machine (e.g. running OpenClaw) an encrypted key is
+            # strongly preferred. Warn loudly so leaving it unencrypted is a
+            # deliberate choice, not an omission.
+            import sys
+
+            print(
+                "[dina-cli] WARNING: storing the agent private key UNENCRYPTED at "
+                f"{self._priv_path} (perms 0600 only). Set DINA_CLI_KEY_PASSPHRASE "
+                "to encrypt it at rest — strongly recommended for daemon / "
+                "shared-machine deployments.",
+                file=sys.stderr,
+            )
+            encryption = NoEncryption()
 
         # Write private key (owner read/write only).
         pem_priv = self._private_key.private_bytes(

@@ -24,7 +24,7 @@ import {
   denyApproval,
   drainForApproval,
 } from '../../staging/service';
-import { WorkflowTaskState, type WorkflowTask } from '../../workflow/domain';
+import { WorkflowTaskKind, WorkflowTaskState, type WorkflowTask } from '../../workflow/domain';
 import {
   WorkflowConflictError,
   WorkflowTransitionError,
@@ -88,27 +88,34 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
     const guard = ownerDecisionGuard(req);
     return guard ?? runAction(req, cancelTask);
   });
-  router.post('/v1/workflow/tasks/:id/complete', (req) =>
-    runAction(req, (id, body, s) => {
-      const result = strField(body?.result);
-      const agentDID = strField(body?.agent_did);
-      if (result === '') {
-        throw new WorkflowValidationError('result is required', 'result');
-      }
-      // Go-Core parity: `result_summary` is the human-readable display
-      // line on the admin/diagnostics surface; `result` is the
-      // structured payload (JSON for service-query bridging). The
-      // Python `dina-agent` MCP `dina_task_complete(task_id, result)`
-      // only sends `result` — Go-Core derives the summary from the
-      // first ~200 chars when omitted. Match that behaviour so paired
-      // OpenClaw runs don't 400 on every completion. Callers that
-      // pass an explicit `result_summary` are honoured verbatim.
-      const explicitSummary = strField(body?.result_summary);
-      const summary = explicitSummary !== '' ? explicitSummary : result.slice(0, 200);
-      return s.complete(id, result, summary, agentDID);
-    }),
-  );
-  router.post('/v1/workflow/tasks/:id/fail', (req) => runAction(req, failTask));
+  router.post('/v1/workflow/tasks/:id/complete', async (req) => {
+    const guard = agentCompletionGuard(req);
+    return (
+      guard ??
+      runAction(req, (id, body, s, ctx) => {
+        const result = strField(body?.result);
+        const agentDID = completingAgentDID(body, ctx);
+        if (result === '') {
+          throw new WorkflowValidationError('result is required', 'result');
+        }
+        // Go-Core parity: `result_summary` is the human-readable display
+        // line on the admin/diagnostics surface; `result` is the
+        // structured payload (JSON for service-query bridging). The
+        // Python `dina-agent` MCP `dina_task_complete(task_id, result)`
+        // only sends `result` — Go-Core derives the summary from the
+        // first ~200 chars when omitted. Match that behaviour so paired
+        // OpenClaw runs don't 400 on every completion. Callers that
+        // pass an explicit `result_summary` are honoured verbatim.
+        const explicitSummary = strField(body?.result_summary);
+        const summary = explicitSummary !== '' ? explicitSummary : result.slice(0, 200);
+        return s.complete(id, result, summary, agentDID);
+      })
+    );
+  });
+  router.post('/v1/workflow/tasks/:id/fail', async (req) => {
+    const guard = agentCompletionGuard(req);
+    return guard ?? runAction(req, failTask);
+  });
   router.get('/v1/workflow/events', listEvents);
   router.post('/v1/workflow/events/:id/ack', ackEvent);
   router.post('/v1/workflow/events/:id/fail', failEvent);
@@ -324,11 +331,65 @@ async function ackEvent(req: CoreRequest): Promise<CoreResponse> {
 // Shared driver for simple task-action endpoints (approve/cancel/complete/fail)
 // ---------------------------------------------------------------------------
 
+/** Caller identity resolved by the auth pipeline (router.ts), never the body. */
+interface ActionCtx {
+  callerType?: string;
+  callerDID?: string;
+}
+
 type TaskAction = (
   id: string,
   body: Record<string, unknown> | null,
   service: NonNullable<ReturnType<typeof getWorkflowService>>,
+  ctx: ActionCtx,
 ) => unknown;
+
+/**
+ * The DID recorded as the actor on a complete/fail. For an `agent` caller it
+ * is ALWAYS the authenticated `callerDID` — never `body.agent_did`, which a
+ * compromised/malicious agent could forge to misattribute the outcome. Owner/
+ * system callers (admin/brain/device) may still pass `agent_did` on behalf of
+ * a runner (e.g. the chat orchestrator recording a completion).
+ */
+function completingAgentDID(body: Record<string, unknown> | null, ctx: ActionCtx): string {
+  if (ctx.callerType === 'agent') return ctx.callerDID ?? '';
+  return strField(body?.agent_did);
+}
+
+/**
+ * Ownership gate for agent-driven complete/fail (P1.1). An out-of-process
+ * `agent` may only complete/fail a `delegation` task it is CURRENTLY holding —
+ * i.e. one it claimed (status `running`, `agent_did` === its authenticated
+ * DID). Without this an agent could complete/fail (or force-terminate) ANY
+ * non-terminal task by id, with a forged `agent_did`, since the repo only
+ * guards on state, not ownership. Owner/system callers (admin/brain/device,
+ * and the internal service-query bridge which bypasses this route) are not
+ * gated here. `callerType`/`callerDID` come from the verified auth result
+ * (router.ts), not the body. Returns a 403/404 response to short-circuit, or
+ * `null` to proceed.
+ */
+function agentCompletionGuard(req: CoreRequest): CoreResponse | null {
+  if (req.callerType !== 'agent') return null;
+  const service = getWorkflowService();
+  if (service === null) return j(503, { error: 'workflow service not wired' });
+  const id = req.params.id ?? '';
+  if (id === '') return j(400, { error: 'id required' });
+  const task = service.store().getById(id);
+  if (task === null) return j(404, { error: 'task not found' });
+  const callerDID = req.callerDID ?? '';
+  if (
+    callerDID === '' ||
+    task.kind !== WorkflowTaskKind.Delegation ||
+    task.status !== WorkflowTaskState.Running ||
+    (task.agent_did ?? '') !== callerDID
+  ) {
+    return j(403, {
+      error: 'access_denied',
+      reason: 'agent may only complete/fail a running delegation task it currently holds',
+    });
+  }
+  return null;
+}
 
 async function approveTask(
   id: string,
@@ -416,9 +477,10 @@ function failTask(
   id: string,
   body: Record<string, unknown> | null,
   service: NonNullable<ReturnType<typeof getWorkflowService>>,
+  ctx: ActionCtx,
 ): WorkflowTask {
   const errMsg = strField(body?.error);
-  const agentDID = strField(body?.agent_did);
+  const agentDID = completingAgentDID(body, ctx);
   if (errMsg === '') throw new WorkflowValidationError('error is required', 'error');
   const before = service.store().getById(id);
   if (
@@ -472,7 +534,10 @@ async function runAction(req: CoreRequest, action: TaskAction): Promise<CoreResp
     // `await` so async actions (e.g. approveTask, which awaits the agent
     // persona-access grant + unlock) settle before we serialise the task.
     // Awaiting a sync return is a no-op for the other actions.
-    const task = (await action(id, body, service)) as WorkflowTask;
+    const task = (await action(id, body, service, {
+      callerType: req.callerType,
+      callerDID: req.callerDID,
+    })) as WorkflowTask;
     return j(200, { task: withPayloadType(task) });
   } catch (err) {
     if (err instanceof WorkflowValidationError) {

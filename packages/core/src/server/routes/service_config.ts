@@ -5,13 +5,14 @@
  *   PUT /v1/service/config — upsert config (device-signed auth)
  */
 
-import type { CoreRouter } from '../router';
 import {
   type ServiceConfig,
   getServiceConfig,
-  setServiceConfig,
+  setServiceConfigDurable,
   validateServiceConfig,
 } from '../../service/service_config';
+
+import type { CoreRouter } from '../router';
 
 export function registerServiceConfigRoutes(router: CoreRouter): void {
   router.get('/v1/service/config', async () => {
@@ -31,7 +32,17 @@ export function registerServiceConfigRoutes(router: CoreRouter): void {
     } catch (err) {
       return { status: 400, body: { error: (err as Error).message } };
     }
-    setServiceConfig(req.body as ServiceConfig);
+    // Durable-first (P1.4): persist before reporting success so a provider's
+    // published config can't appear saved here yet vanish on restart. A
+    // persistence failure returns 503 rather than a false 200.
+    try {
+      await setServiceConfigDurable(req.body as ServiceConfig);
+    } catch (err) {
+      return {
+        status: 503,
+        body: { error: `service_config: persistence failed — ${(err as Error).message}` },
+      };
+    }
     return { status: 200, body: { ok: true } };
   });
 }

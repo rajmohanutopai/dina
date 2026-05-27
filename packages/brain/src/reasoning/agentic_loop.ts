@@ -43,6 +43,7 @@
  * Pattern A suspend/resume is that Phase-2 extension.
  */
 
+import type { ToolExecutionOutcome, ToolRegistry } from './tool_registry';
 import type {
   ChatMessage,
   ChatResponse,
@@ -50,7 +51,6 @@ import type {
   ToolCall,
   ToolDefinition,
 } from '../llm/adapters/provider';
-import type { ToolExecutionOutcome, ToolRegistry } from './tool_registry';
 
 export interface AgenticLoopOptions {
   /** Hard cap on LLM iterations. Default 8 (matches kernel's Dina-Mobile tier). */
@@ -118,14 +118,14 @@ export interface AgenticLoopResult {
   /** Final user-visible text from the LLM. Empty when bailed early. */
   answer: string;
   /** Every tool call made during the turn, in order. */
-  toolCalls: Array<{
+  toolCalls: {
     name: string;
     arguments: Record<string, unknown>;
     outcome:
       | { success: true; result: unknown }
       | { success: false; error: string }
       | { success: false; code: 'approval_required'; approvalId: string; persona: string };
-  }>;
+  }[];
   /** How the loop terminated. */
   finishReason: AgenticFinishReason;
   /** Total tokens used (sum across iterations). */
@@ -209,8 +209,8 @@ export async function resumeAgenticTurn(args: {
   const maxToolCalls = options.maxToolCalls ?? DEFAULT_MAX_TOOL_CALLS;
   let transcript: ChatMessage[] = [...pausedState.transcript];
   let toolCallCount = pausedState.toolCallCount;
-  let inputTokens = pausedState.usage.inputTokens;
-  let outputTokens = pausedState.usage.outputTokens;
+  const inputTokens = pausedState.usage.inputTokens;
+  const outputTokens = pausedState.usage.outputTokens;
   const toolLog: AgenticLoopResult['toolCalls'] = [];
 
   // Re-execute the bailing tool — approval is now consumed.
@@ -349,7 +349,6 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
   let answer = '';
   let providerErrorMessage: string | undefined;
 
-  // eslint-disable-next-line no-console
   console.log('[agentic_loop] start', {
     iteration,
     maxIterations,
@@ -388,19 +387,15 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
       let errProps = '';
       try {
         if (err !== null && err !== undefined && typeof err === 'object') {
-          const own: Record<string, unknown> = {};
-          for (const key of Object.getOwnPropertyNames(err)) {
-            const val = (err as Record<string, unknown>)[key];
-            if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
-              own[key] = val;
-            } else if (val !== null && typeof val === 'object') {
-              own[key] = `[${(val as object).constructor.name}]`;
-            }
-          }
-          errProps = JSON.stringify(own).slice(0, 400);
+          // Prop NAMES only — never their VALUES. An LLM-SDK error can attach
+          // the failing request (which embeds the prompt / vault-derived
+          // content) as a string prop, so logging values would leak PII. The
+          // key names give the error's shape for triage (status, code,
+          // request, headers, …) without the content (P1.3 / Codex #4).
+          errProps = Object.getOwnPropertyNames(err).join(',').slice(0, 400);
         }
       } catch {
-        errProps = '[unserializable]';
+        errProps = '[unintrospectable]';
       }
       let causeChain = '';
       let cursor: unknown = err;
@@ -414,19 +409,23 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
         depth < 4
       ) {
         const c = (cursor as { cause: unknown }).cause;
-        const cMsg = c instanceof Error ? c.message : String(c);
         const cName = c instanceof Error ? c.name : typeof c;
         const cCtor =
           c !== null && c !== undefined && typeof c === 'object'
             ? (c as object).constructor.name
             : typeof c;
-        causeChain += `\n  cause[${depth}] ${cCtor}/${cName}: ${cMsg}`;
+        // Class/name only — a cause MESSAGE can echo request content; the
+        // error TYPE chain is the useful triage signal (P1.3 / Codex #4).
+        causeChain += `\n  cause[${depth}] ${cCtor}/${cName}`;
         cursor = c;
         depth++;
       }
-      // eslint-disable-next-line no-console
+
+      // The message is truncated (an API error can echo the request) and only
+      // prop NAMES + cause TYPES are logged — enough to triage a provider
+      // failure without leaking prompt / vault content to stdout (Codex #4).
       console.warn(
-        `[agentic_loop] provider.chat threw: ${errCtor}/${errName}: ${errMessage}` +
+        `[agentic_loop] provider.chat threw: ${errCtor}/${errName}: ${errMessage.slice(0, 200)}` +
           (errProps !== '' ? `\nprops: ${errProps}` : '') +
           causeChain +
           (errStack !== '' ? `\nstack: ${errStack.slice(0, 800)}` : ''),
@@ -447,10 +446,12 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
     inputTokens += resp.usage.inputTokens;
     outputTokens += resp.usage.outputTokens;
 
-    // eslint-disable-next-line no-console
+    // Metadata ONLY — never the model's content or tool args. Both carry
+    // vault content / user queries, which must not reach stdout (CLAUDE.md).
+
     console.log('[agentic_loop] iter', iteration, {
-      contentSnippet: resp.content.slice(0, 200),
-      toolCalls: resp.toolCalls.map((c) => ({ name: c.name, args: c.arguments })),
+      contentLen: resp.content.length,
+      toolCalls: resp.toolCalls.map((c) => c.name),
     });
 
     if (resp.toolCalls.length === 0) {
@@ -496,14 +497,14 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
       }
       toolCallCount++;
       const outcome = await tools.execute(call.name, call.arguments);
-      // eslint-disable-next-line no-console
+      // Metadata ONLY — never tool args or the outcome payload. Tool args are
+      // user queries and outcomes are raw vault content (CLAUDE.md: PII must
+      // never reach stdout). Tool name + outcome kind/size are safe.
+
       console.log('[agentic_loop] tool', call.name, {
-        args: call.arguments,
         outcomeKind:
-          outcome.success === true
-            ? 'success'
-            : (outcome as { code?: string }).code ?? 'failure',
-        outcomeSnippet: JSON.stringify(outcome).slice(0, 400),
+          outcome.success === true ? 'success' : ((outcome as { code?: string }).code ?? 'failure'),
+        outcomeLen: JSON.stringify(outcome).length,
       });
       toolLog.push(buildToolLogEntry(call.name, call.arguments, outcome));
 
@@ -534,11 +535,11 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
     }
   }
 
-  // eslint-disable-next-line no-console
+  // Metadata ONLY — the transcript carries vault content + user queries.
+
   console.log('[agentic_loop] HIT max_iterations', {
     iterations: iteration,
     toolCallCount,
-    lastTranscriptSnippet: JSON.stringify(transcript.slice(-3)).slice(0, 600),
   });
   return done('max_iterations');
 

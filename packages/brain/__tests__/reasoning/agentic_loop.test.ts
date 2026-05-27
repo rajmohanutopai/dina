@@ -12,6 +12,7 @@
 
 import { runAgenticTurn } from '../../src/reasoning/agentic_loop';
 import { ToolRegistry, type AgentTool } from '../../src/reasoning/tool_registry';
+
 import type {
   ChatOptions,
   ChatResponse,
@@ -25,12 +26,12 @@ import type {
  * is either a final-answer response (tool_calls empty) or a tool-use
  * response (tool_calls non-empty).
  */
-function scriptedProvider(script: Array<Partial<ChatResponse>>): {
+function scriptedProvider(script: Partial<ChatResponse>[]): {
   provider: LLMProvider;
-  calls: Array<{ messages: number; hasTools: boolean }>;
+  calls: { messages: number; hasTools: boolean }[];
 } {
   let i = 0;
-  const calls: Array<{ messages: number; hasTools: boolean }> = [];
+  const calls: { messages: number; hasTools: boolean }[] = [];
   const provider: LLMProvider = {
     name: 'test',
     supportsStreaming: false,
@@ -359,5 +360,45 @@ describe('runAgenticTurn — error handling', () => {
       options: { signal: controller.signal },
     });
     expect(result.finishReason).toBe('cancelled');
+  });
+});
+
+describe('runAgenticTurn — never logs vault/tool content to console (SEC P1.3)', () => {
+  it('keeps PII out of console: model content, tool args, and tool outputs are not logged', async () => {
+    // A unique sentinel standing in for vault PII. It rides in the model
+    // content, the tool-call arguments, AND the tool output (echo returns it).
+    const MARKER = 'PII-SENTINEL-7f3a9c-123-45-6789';
+    const toolCall: ToolCall = { id: 'c1', name: 'echo', arguments: { text: MARKER } };
+    const { provider } = scriptedProvider([
+      { content: MARKER, toolCalls: [toolCall] },
+      { content: `the answer mentions ${MARKER}`, toolCalls: [] },
+    ]);
+    const tools = new ToolRegistry();
+    tools.register(echoTool()); // echo returns { echoed: MARKER } → output carries PII
+
+    const logged: string[] = [];
+    const sinks = ['log', 'info', 'warn', 'error', 'debug'] as const;
+    const spies = sinks.map((m) =>
+      jest.spyOn(console, m).mockImplementation((...args: unknown[]) => {
+        logged.push(args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '));
+      }),
+    );
+    try {
+      const result = await runAgenticTurn({
+        provider,
+        tools,
+        systemPrompt: '',
+        userMessage: 'echo it',
+      });
+      expect(result.finishReason).toBe('completed');
+    } finally {
+      spies.forEach((s) => s.mockRestore());
+    }
+
+    // The loop logs metadata ([agentic_loop] start/iter/tool), but none of it
+    // may contain the sentinel that appeared in content / tool args / output.
+    expect(logged.filter((line) => line.includes(MARKER))).toEqual([]);
+    // Sanity: the loop DID log (so we're actually exercising the log path).
+    expect(logged.some((l) => l.includes('[agentic_loop]'))).toBe(true);
   });
 });

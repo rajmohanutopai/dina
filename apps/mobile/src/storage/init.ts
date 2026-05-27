@@ -11,6 +11,25 @@
  * Source: ARCHITECTURE.md — op-sqlite persistence layer
  */
 
+import { Paths } from 'expo-file-system';
+
+import { hydrateNotifications } from '@dina/brain/notifications';
+import {
+  hydrateContactDirectory,
+  SQLiteD2DOutboxRepository,
+  setD2DOutboxRepository,
+  recoverOutboxOnBoot,
+  SQLiteAgentGrantRepository,
+  setAgentGrantRepository,
+  setAgentPersonaUnlockHook,
+  setArchiveDataSource,
+  listPersonas,
+  getPersonaTier,
+  createPersona,
+  personaExists,
+  type ArchivePersonaSource,
+  type PersonaTier,
+} from '@dina/core';
 import {
   SQLiteAuditRepository,
   SQLiteChatMessageRepository,
@@ -42,26 +61,30 @@ import {
   shutdownPersistence,
   type DatabaseAdapter,
 } from '@dina/core/storage';
-import {
-  hydrateContactDirectory,
-  SQLiteD2DOutboxRepository,
-  setD2DOutboxRepository,
-  recoverOutboxOnBoot,
-  SQLiteAgentGrantRepository,
-  setAgentGrantRepository,
-  setAgentPersonaUnlockHook,
-  setArchiveDataSource,
-  listPersonas,
-  getPersonaTier,
-  type ArchivePersonaSource,
-} from '@dina/core';
-import { hydrateNotifications } from '@dina/brain/notifications';
+
 // Expo 55 exposes the document-directory constant through `Paths.document` (a
 // `Directory` object exposing `.uri`). op-sqlite's `location` parameter takes a
 // raw string directory URI, so we read the path from that object directly.
-import { Paths } from 'expo-file-system';
 
 import { ProductionDBProvider } from './provider';
+
+/** Tiers a restored persona may legitimately carry. */
+const RESTORE_VALID_TIERS: ReadonlySet<string> = new Set([
+  'default',
+  'standard',
+  'sensitive',
+  'locked',
+]);
+
+/**
+ * Map an archived persona's tier string to a valid `PersonaTier`. An
+ * unrecognised value (corrupt/hostile archive) must NOT become the open
+ * `default` tier — fall back to the most restrictive `locked` so a restore can
+ * never silently downgrade a persona's access controls.
+ */
+function restoreTier(tier: string): PersonaTier {
+  return (RESTORE_VALID_TIERS.has(tier) ? tier : 'locked') as PersonaTier;
+}
 
 /** The active provider. */
 let provider: ProductionDBProvider | null = null;
@@ -167,8 +190,17 @@ export async function initializePersistence(
       }
       return out;
     },
-    openPersonaForRestore: async (name) => {
+    openPersonaForRestore: async (name, tier) => {
       if (!provider) throw new Error('archive restore: persistence not initialized');
+      // Register the persona in the registry with the ARCHIVED tier (P2.8) so
+      // (a) the restored vault is visible this session and (b) a
+      // sensitive/locked persona is never silently treated as the open default
+      // tier — an access downgrade. Default personas are re-seeded with their
+      // canonical tiers on next boot; an unknown tier from a (corrupt/hostile)
+      // archive falls back to the most restrictive tier — fail safe.
+      if (!personaExists(name)) {
+        createPersona(name, restoreTier(tier));
+      }
       const adapter = await openPersonaVault(provider, name);
       setVaultRepository(name, new SQLiteVaultRepository(adapter));
       setTopicRepository(name, new SQLiteTopicRepository(adapter));
@@ -195,14 +227,18 @@ export async function initializePersistence(
           /* table absent in this DB — ignore */
         }
       }
-      // Persona vault content (any open persona).
+      // Persona vault content — check EVERY registered persona, opening it on
+      // demand (the DEK derives from the master seed). Skipping not-yet-open
+      // personas (P2.7) was a clean-install blind spot: a restore could merge
+      // into a device whose only data lived in a closed/sensitive persona.
+      const prov = provider;
+      if (prov === null) return false;
       for (const p of listPersonas()) {
-        const adapter = await (provider ? provider.getPersonaDB(p.name) : Promise.resolve(null));
-        if (adapter === null) continue;
         try {
+          const adapter = await openPersonaVault(prov, p.name);
           if (adapter.query('SELECT 1 FROM vault_items LIMIT 1').length > 0) return true;
         } catch {
-          /* ignore */
+          /* persona file absent / unreadable — treat as empty */
         }
       }
       return false;

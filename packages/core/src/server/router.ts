@@ -328,7 +328,21 @@ export function authenticateCore(req: CoreRequest): AuthResult {
     body: req.rawBody,
     headers: withAuthHeaderAliases(req.headers),
   };
-  return authenticateRequest(authReq);
+  try {
+    return authenticateRequest(authReq);
+  } catch {
+    // Malformed auth material (an unparseable RFC3339 timestamp, a bad-hex
+    // X-Signature, etc.) must fail CLOSED as a normal rejected AuthResult —
+    // never throw out of the auth layer. A throw here would escape the
+    // pre-dispatch auth step (router.ts handle()) and surface as a 500 / crash
+    // the MsgBox RPC handler, instead of the uniform 401 every other rejection
+    // returns. Don't echo the offending value (it's attacker-controlled).
+    return {
+      authenticated: false,
+      rejectedAt: 'signature',
+      reason: 'malformed authentication material',
+    };
+  }
 }
 
 /**

@@ -54,15 +54,52 @@ describe('handleNotificationTap', () => {
   });
 
   it('ignores non-string inboxId / deepLink defensively', () => {
-    const result = handleNotificationTap(
-      { inboxId: 42, deepLink: { not: 'a string' } },
-      deps,
-    );
+    const result = handleNotificationTap({ inboxId: 42, deepLink: { not: 'a string' } }, deps);
     expect(result).toEqual({ marked: false, navigated: false });
   });
 
   it('ignores empty-string deepLink', () => {
     const result = handleNotificationTap({ deepLink: '' }, deps);
     expect(result).toEqual({ marked: false, navigated: false });
+  });
+
+  // SEC (P2.12) — `deepLink` can be influenced by remote/peer data, so it is
+  // allowlisted to internal, non-sensitive routes. External schemes and
+  // sensitive screens must be refused (no navigation).
+  it('navigates allowlisted internal routes (dina:// scheme + relative path)', () => {
+    expect(handleNotificationTap({ deepLink: 'dina://chat/main?focus=r1' }, deps).navigated).toBe(
+      true,
+    );
+    expect(handleNotificationTap({ deepLink: '/peerlens/sub123' }, deps).navigated).toBe(true);
+    expect(pushed).toEqual(['dina://chat/main?focus=r1', '/peerlens/sub123']);
+  });
+
+  it('REFUSES external schemes (https/tel/sms/javascript/other-app)', () => {
+    for (const bad of [
+      'https://evil.example/login',
+      'tel:1900555000',
+      'sms:+1900555000',
+      'javascript:alert(1)',
+      'evilapp://launch?cmd=wipe',
+    ]) {
+      const r = handleNotificationTap({ deepLink: bad }, deps);
+      expect(r.navigated).toBe(false);
+    }
+    expect(pushed).toEqual([]); // nothing was ever routed
+  });
+
+  it('REFUSES sensitive internal screens (recovery-phrase / admin / paired-devices / settings)', () => {
+    for (const bad of [
+      'dina://recovery-phrase',
+      '/recovery-phrase',
+      'dina://admin',
+      'dina://paired-devices',
+      '/settings',
+      'dina://ai-providers',
+    ]) {
+      const r = handleNotificationTap({ deepLink: bad }, deps);
+      expect(r.navigated).toBe(false);
+    }
+    expect(pushed).toEqual([]);
   });
 });

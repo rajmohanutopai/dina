@@ -234,6 +234,29 @@ describe('CoreRouter — handler errors', () => {
   });
 });
 
+describe('CoreRouter — malformed auth fails closed (P2.9)', () => {
+  it('unparseable timestamp / bad-hex signature → uniform 401, never a 500 or throw', async () => {
+    const r = new CoreRouter();
+    // Signed by default. The malformed headers make the auth layer's
+    // parse/verify throw — which must be caught into a 401, not escape to a 500.
+    r.get('/v1/secure', async () => ({ status: 200, body: { ok: true } }));
+    const resp = await r.handle(
+      emptyReq({
+        method: 'GET',
+        path: '/v1/secure',
+        headers: {
+          'x-did': 'did:key:zSomeValue',
+          'x-timestamp': 'NOT-A-TIMESTAMP', // parseRFC3339 throws on this
+          'x-nonce': 'nonce-1',
+          'x-signature': 'not-hex!!',
+        },
+      }),
+    );
+    expect(resp.status).toBe(401);
+    expect((resp.body as { rejected_at?: string }).rejected_at).toBeDefined();
+  });
+});
+
 describe('createInProcessDispatch', () => {
   it('parses query strings + JSON body before dispatch', async () => {
     const r = new CoreRouter();

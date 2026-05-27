@@ -23,6 +23,7 @@ import {
   deleteAttestation,
   checkTestInjectAuth,
 } from '@/api/xrpc/test-inject.js'
+import { checkMetricsAuth } from '@/web/metrics_auth.js'
 import { gatePeerlensNamespace } from '@/api/middleware/peerlens-flag-gate.js'
 import {
   checkPerMethodRateLimit,
@@ -91,6 +92,14 @@ const server = http.createServer(async (req, res) => {
   // state at request time. See `docs/peerlens-network/observability.md`
   // for the canonical metric list + alert thresholds.
   if (url.pathname === '/metrics') {
+    // P3.13: gate /metrics behind a bearer token (DINA_METRICS_TOKEN) so this
+    // internal operational data isn't world-readable. 404 on missing/mismatch
+    // so the surface can't be enumerated. See `checkMetricsAuth`.
+    if (!checkMetricsAuth(req.headers.authorization)) {
+      res.writeHead(404, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'NotFound' }))
+      return
+    }
     res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4' })
     res.end(aggregator.serialize())
     return
@@ -129,8 +138,21 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify(authFail.body))
       return
     }
+    // P3.14: bound the request body even though the endpoint is token-gated —
+    // an authenticated-but-buggy/hostile client shouldn't be able to stream an
+    // unbounded payload into memory.
     let raw = ''
-    for await (const chunk of req) raw += chunk
+    const MAX_INJECT_BODY = 256 * 1024 // 256 KB
+    for await (const chunk of req) {
+      raw += chunk
+      if (raw.length > MAX_INJECT_BODY) {
+        // Reuse the documented `InvalidRequest` name (a too-large body is an
+        // invalid request) to stay within the public error-name contract.
+        res.writeHead(413, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'InvalidRequest', message: 'request body too large' }))
+        return
+      }
+    }
     let body: unknown
     try {
       body = JSON.parse(raw)

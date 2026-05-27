@@ -73,6 +73,15 @@ jobs:
       - name: npm audit (omit dev, fail on high/critical)
         run: npm run audit:prod
 
+      # AppView is a SEPARATE npm project (own lockfile), so the root
+      # `audit:prod` above does NOT cover its prod deps. Audit it on its own
+      # lockfile and fail on high/critical — otherwise a high advisory in the
+      # public, network-facing AppView (e.g. the drizzle-orm SQL-injection
+      # advisory) passes the root gate undetected.
+      - name: npm audit AppView (omit dev, fail on high/critical)
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: appview
+
       # JSON artefact for triage when the gate fails — helps the on-call
       # see which package + which advisory before cloning locally.
       - name: Upload JSON audit report on failure

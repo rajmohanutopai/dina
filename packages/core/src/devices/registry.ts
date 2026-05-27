@@ -147,6 +147,22 @@ export function registerDevice(
   return device;
 }
 
+/**
+ * Durably persist an already-registered device (P2.10). `registerDevice` does
+ * the SQL write fire-and-forget (keeping its callers sync), so a paired device
+ * could be lost on restart if that write silently failed. The pairing route
+ * calls this AFTER `completePairing` to AWAIT the write before returning 201 —
+ * `register` is an idempotent upsert, so re-persisting the same row is safe,
+ * and a genuine write failure REJECTS so the route reports it instead of a
+ * false success. Throws if the device id isn't in the registry.
+ */
+export async function persistDeviceDurable(deviceId: string): Promise<void> {
+  const device = devices.get(deviceId);
+  if (!device) throw new Error(`devices: cannot persist unknown device "${deviceId}"`);
+  const sqlRepo = getDeviceRepository();
+  if (sqlRepo) await sqlRepo.register(device);
+}
+
 /** List all devices (including revoked). */
 export function listDevices(): PairedDevice[] {
   return [...devices.values()];

@@ -47,6 +47,10 @@ export async function saveWrappedSeed(seed: WrappedSeed): Promise<void> {
   };
   await Keychain.setGenericPassword(USERNAME, JSON.stringify(record), {
     service: SERVICE,
+    // P3.15: the wrapped master seed is the device's root secret — bind it to
+    // this device so it never migrates via iCloud/encrypted backup.
+    // `AFTER_FIRST_UNLOCK` keeps background reads working post-boot.
+    accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
   });
 }
 

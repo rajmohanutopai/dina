@@ -22,6 +22,7 @@
  * `dina configure --pairing-code ...`.
  */
 
+import { persistDeviceDurable } from '../../devices/registry';
 import { generatePairingCode, completePairing, getPairingIntent } from '../../pairing/ceremony';
 
 import type { DeviceRole } from '../../devices/registry';
@@ -139,8 +140,9 @@ export function registerPairRoutes(router: CoreRouter): void {
         };
       }
 
+      let result: ReturnType<typeof completePairing>;
       try {
-        const result = completePairing(
+        result = completePairing(
           code,
           // `completePairing` validates the code first; if invalid,
           // this name value is never used. Pass a benign placeholder
@@ -150,15 +152,6 @@ export function registerPairRoutes(router: CoreRouter): void {
           publicKeyMultibase,
           roleRaw as DeviceRole,
         );
-        return {
-          status: 201,
-          body: {
-            device_id: result.deviceId,
-            node_did: result.nodeDID,
-            device_name: deviceName,
-            role: roleRaw,
-          },
-        };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         // `isCodeValid` returns false for invalid / expired / burned
@@ -167,6 +160,25 @@ export function registerPairRoutes(router: CoreRouter): void {
         // sees a clean client error rather than 500.
         return { status: 400, body: { error: msg } };
       }
+      // P2.10: durable-first — `completePairing` registers the device in memory
+      // and writes SQL fire-and-forget. Await an explicit durable write before
+      // reporting success so a paired device survives a restart; a genuine
+      // persistence failure returns 503 rather than a false 201.
+      try {
+        await persistDeviceDurable(result.deviceId);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { status: 503, body: { error: `pairing: device persistence failed — ${msg}` } };
+      }
+      return {
+        status: 201,
+        body: {
+          device_id: result.deviceId,
+          node_did: result.nodeDID,
+          device_name: deviceName,
+          role: roleRaw,
+        },
+      };
     },
     { auth: 'public' },
   );

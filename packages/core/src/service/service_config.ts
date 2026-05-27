@@ -15,8 +15,8 @@
  * Source: core/internal/service/service_config.go  (Go reference)
  */
 
-import { getServiceConfigRepository } from './service_config_repository';
 import { configEventChannel } from './config_event_channel';
+import { getServiceConfigRepository } from './service_config_repository';
 
 /** Policy for how the provider responds to a `service.query`. */
 // Capability schema + service-config types moved to @dina/protocol in
@@ -105,6 +105,26 @@ export function setServiceConfig(config: ServiceConfig): void {
     } catch {
       /* fail-safe — sync-throw variant (mocked repos) */
     }
+  }
+  current = config;
+  notifyListeners(current);
+  configEventChannel().emitConfigChanged();
+}
+
+/**
+ * Durable upsert (P1.4): persist the config BEFORE reporting success, so a
+ * route that returns 200 has actually written the row (it won't vanish on
+ * restart). A failed write REJECTS and the in-memory `current` is left
+ * unchanged — the caller (the PUT route) surfaces the failure instead of
+ * falsely claiming the provider's config saved. Use this on the request path;
+ * the fire-and-forget `setServiceConfig` is for best-effort callers (boot
+ * hydration) that intentionally tolerate transient write loss.
+ */
+export async function setServiceConfigDurable(config: ServiceConfig): Promise<void> {
+  validateServiceConfig(config);
+  const repo = getServiceConfigRepository();
+  if (repo !== null) {
+    await repo.put(STORAGE_KEY, JSON.stringify(config), Date.now());
   }
   current = config;
   notifyListeners(current);

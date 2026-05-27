@@ -281,4 +281,40 @@ describe('real export → clean-install import', () => {
       closeBundle(dest);
     }
   });
+
+  // SEC (P2.8) — import must DELIVER each persona's archived tier to
+  // openPersonaForRestore so the app can re-register it at the right tier (a
+  // restored sensitive/locked persona must not silently become open). Locks
+  // the core-side enabling contract; the mobile data source consumes it.
+  it('delivers each persona archived tier to openPersonaForRestore', async () => {
+    const src = freshBundle([['health', 'sensitive']]);
+    let archive: Uint8Array;
+    try {
+      const health = src.personas.get('health');
+      if (!health) throw new Error('test setup: missing health persona');
+      seedIdentity(src.id);
+      seedVaultItem(health.adapter, 'v1', 'bp 120/80');
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+    }
+
+    const dest = freshBundle([]);
+    const captured: { name: string; tier: string }[] = [];
+    try {
+      const base = dataSourceFor(dest);
+      setArchiveDataSource({
+        ...base,
+        openPersonaForRestore: async (name, tier) => {
+          captured.push({ name, tier });
+          return base.openPersonaForRestore(name, tier);
+        },
+      });
+      await importArchive(archive, PASS);
+      expect(captured).toContainEqual({ name: 'health', tier: 'sensitive' });
+    } finally {
+      closeBundle(dest);
+    }
+  });
 });

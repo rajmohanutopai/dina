@@ -186,8 +186,9 @@ class DinaClient:
             print(f"  >> {method} {path} [via {via}]", file=sys.stderr)
             print(f"     DID: {did}", file=sys.stderr)
             if body_bytes:
-                preview = body_bytes[:200].decode("utf-8", errors="replace")
-                print(f"     Body: {preview}", file=sys.stderr)
+                # Metadata only — even in --verbose, never dump the request body:
+                # it carries vault queries / user content / PII (CLI.5).
+                print(f"     Body: <{len(body_bytes)} bytes>", file=sys.stderr)
 
         full_path = f"{path}?{query}" if query else path
         body_str = body_bytes.decode("utf-8") if body_bytes else None
@@ -217,7 +218,9 @@ class DinaClient:
                 file=sys.stderr,
             )
             if response.status_code >= 400:
-                print(f"     Response: {response.text[:300]}", file=sys.stderr)
+                # Metadata only — don't echo the error response body to logs
+                # even on failure; it may carry vault/error context (CLI.5).
+                print(f"     (error body: {len(response.content)} bytes)", file=sys.stderr)
 
         if response.status_code < 400:
             return response

@@ -9,9 +9,11 @@
  */
 
 import { pino } from 'pino';
+
 import { createServer } from '../src/server';
-import type { Logger } from '../src/logger';
+
 import type { CoreServerConfig } from '../src/config';
+import type { Logger } from '../src/logger';
 
 function configWithRateLimit(rateLimitPerMinute: number): CoreServerConfig {
   return {
@@ -59,12 +61,16 @@ describe('rate limit (task 4.30)', () => {
     await app.close();
   });
 
-  it('per-DID isolation: different X-DIDs have separate buckets', async () => {
+  it('rotating X-DID does NOT mint a fresh bucket — edge limiter keys by IP (P2.11)', async () => {
+    // The edge limiter runs before signature verification, so X-DID is
+    // unauthenticated here. Keying on it would let an attacker rotate X-DID to
+    // get a fresh budget every request; the limiter keys by IP instead. (Per-
+    // identity limiting is enforced post-verification by Core's auth layer.)
     const app = await createServer({ config: configWithRateLimit(1), logger: silentLogger() });
     app.get('/x', async () => ({ ok: true }));
     await app.ready();
 
-    // DID A: uses its 1-req budget.
+    // First request from this IP uses the 1-req budget.
     const a1 = await app.inject({
       method: 'GET',
       url: '/x',
@@ -72,21 +78,10 @@ describe('rate limit (task 4.30)', () => {
     });
     expect(a1.statusCode).toBe(200);
 
-    // DID B: different bucket, fresh 1-req budget.
-    const b1 = await app.inject({
-      method: 'GET',
-      url: '/x',
-      headers: { 'x-did': 'did:plc:bob' },
-    });
-    expect(b1.statusCode).toBe(200);
-
-    // DID A again: now throttled.
-    const a2 = await app.inject({
-      method: 'GET',
-      url: '/x',
-      headers: { 'x-did': 'did:plc:alice' },
-    });
-    expect(a2.statusCode).toBe(429);
+    // A second request with a DIFFERENT X-DID from the SAME IP is still
+    // throttled — rotating the (unauthenticated) DID cannot escape the limit.
+    const b1 = await app.inject({ method: 'GET', url: '/x', headers: { 'x-did': 'did:plc:bob' } });
+    expect(b1.statusCode).toBe(429);
 
     await app.close();
   });

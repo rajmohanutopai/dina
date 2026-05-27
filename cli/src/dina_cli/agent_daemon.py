@@ -82,9 +82,11 @@ def run_daemon(
 
         task_id = task.get("id", "")
         session_name = task.get("session_name", "")
-        description = task.get("description", "")
 
-        print(f"[agent-daemon] Claimed: {task_id} — {description[:80]}", file=sys.stderr)
+        # Log metadata only — the task description can carry user content / PII,
+        # which must not reach stderr/logs (CLI.5). The runner reads the
+        # description straight off the task; it is never logged.
+        print(f"[agent-daemon] Claimed: {task_id} (session={session_name})", file=sys.stderr)
 
         # End any orphaned session from a prior crashed attempt.
         try:

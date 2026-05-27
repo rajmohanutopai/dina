@@ -29,15 +29,17 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4a tasks 4.6 + 4.7 + 4.10.
  */
 
-import Fastify from 'fastify';
-import sensible from '@fastify/sensible';
-import rateLimit from '@fastify/rate-limit';
 import cors from '@fastify/cors';
-import type { Logger } from './logger';
-import type { CoreServerConfig } from './config';
-import { getServerVersion } from './version';
+import rateLimit from '@fastify/rate-limit';
+import sensible from '@fastify/sensible';
+import Fastify from 'fastify';
+
 import { installAgentContextDecorator } from './auth/agent_did_decorator';
 import { REQUEST_ID_HEADER, validateRequestId } from './trace/trace_context';
+import { getServerVersion } from './version';
+
+import type { CoreServerConfig } from './config';
+import type { Logger } from './logger';
 
 // ---------------------------------------------------------------------------
 // Request-log context (task 4.7)
@@ -192,10 +194,7 @@ export async function createServer(opts: CreateServerOptions) {
   // (Today there are no such routes registered; the exemption is
   // future-proofing.)
   const ENFORCED_WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH']);
-  const ALLOWED_CONTENT_TYPES = [
-    'application/json',
-    'application/octet-stream',
-  ];
+  const ALLOWED_CONTENT_TYPES = ['application/json', 'application/octet-stream'];
   app.addHook('onRequest', async (req, reply) => {
     if (!ENFORCED_WRITE_METHODS.has(req.method)) return;
     // Empty-body writes are allowed through (e.g. POST to trigger an
@@ -205,7 +204,7 @@ export async function createServer(opts: CreateServerOptions) {
       return;
     }
     const raw = req.headers['content-type'];
-    const ct = typeof raw === 'string' ? raw.split(';')[0]?.trim().toLowerCase() ?? '' : '';
+    const ct = typeof raw === 'string' ? (raw.split(';')[0]?.trim().toLowerCase() ?? '') : '';
     if (!ALLOWED_CONTENT_TYPES.some((allowed) => ct === allowed)) {
       await reply.code(415).send({ error: 'unsupported media type' });
     }
@@ -262,13 +261,18 @@ export async function createServer(opts: CreateServerOptions) {
 
   // ── Rate limit (task 4.30) ──────────────────────────────────────────
   //
-  // Per-DID budget: `config.runtime.rateLimitPerMinute` requests / 60s
+  // Per-IP budget: `config.runtime.rateLimitPerMinute` requests / 60s
   // window. Default 60 (matches Go Core); `DINA_RATE_LIMIT` env var
-  // overrides via the config layer (task 4.4). The keyGenerator
-  // prefers `X-DID` when present (signed-request identifier) so each
-  // caller gets its own bucket; falls back to IP otherwise. /healthz
-  // + /readyz are deliberately exempt so an overloaded node can still
-  // be probed by orchestrators.
+  // overrides via the config layer (task 4.4). /healthz + /readyz are
+  // deliberately exempt so an overloaded node can still be probed by
+  // orchestrators.
+  //
+  // SECURITY (P2.11): this EDGE limiter keys by IP only. It runs as an
+  // onRequest hook BEFORE signature verification, so the `X-DID` header is
+  // unauthenticated here — keying on it would let a client rotate `X-DID` to
+  // mint a fresh bucket on every request and bypass the limit entirely.
+  // Per-IDENTITY limiting is enforced AFTER verification by Core's auth
+  // middleware (nonce + per-DID rate layer), where the DID is trusted.
   //
   // **Must be awaited** — without the await, the plugin's hooks don't
   // install before downstream route definitions, so the rate-limit
@@ -277,11 +281,7 @@ export async function createServer(opts: CreateServerOptions) {
     max: config.runtime.rateLimitPerMinute,
     timeWindow: '1 minute',
     allowList: (req) => req.url === '/healthz' || req.url === '/readyz',
-    keyGenerator: (req) => {
-      const did = req.headers['x-did'];
-      if (typeof did === 'string' && did.length > 0) return `did:${did}`;
-      return `ip:${req.ip}`;
-    },
+    keyGenerator: (req) => `ip:${req.ip}`,
     // `@fastify/rate-limit` THROWS the return value of
     // errorResponseBuilder — it doesn't send it directly (see the
     // plugin's `throw params.errorResponseBuilder(...)` at
@@ -381,10 +381,7 @@ export async function createServer(opts: CreateServerOptions) {
   // `serverListening` message too, but includes the port/host in a
   // single line so ops grepping for "listening on" finds one hit.
   app.addHook('onReady', async () => {
-    logger.info(
-      { host: config.network.host, port: config.network.port },
-      'core-server ready',
-    );
+    logger.info({ host: config.network.host, port: config.network.port }, 'core-server ready');
   });
 
   return app;
