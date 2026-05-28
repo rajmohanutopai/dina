@@ -2,6 +2,19 @@
  * useServiceInbox — MOBILE-008 tests.
  */
 
+// Mock the notifications inbox before importing the hook so the
+// `markNotificationRead` re-export inside `useServiceInbox` points at
+// our spy. The hook fires it from `approvePending` / `denyPending` to
+// clear the tab-bar approval badge when the underlying workflow task
+// gets resolved by this surface (the alternative — wait for an
+// out-of-band event from the bridge — leaves the badge stuck at "1"
+// while the list shows "All caught up"; that bug surfaced live in May
+// 2026).
+jest.mock('@dina/brain/notifications', () => ({
+  markNotificationRead: jest.fn(),
+}));
+import { markNotificationRead } from '@dina/brain/notifications';
+
 import {
   InboxNotConfiguredError,
   approvePending,
@@ -86,7 +99,10 @@ function stubClient(init: {
 }
 
 describe('useServiceInbox', () => {
-  beforeEach(() => resetInboxCoreClient());
+  beforeEach(() => {
+    resetInboxCoreClient();
+    (markNotificationRead as jest.Mock).mockClear();
+  });
 
   it('throws InboxNotConfiguredError before setInboxCoreClient is called', async () => {
     await expect(listPendingApprovals()).rejects.toBeInstanceOf(InboxNotConfiguredError);
@@ -242,6 +258,12 @@ describe('useServiceInbox', () => {
     expect(calls.cancelled).toEqual([
       { id: 'prop-intent-1', reason: 'denied_by_operator' },
     ]);
+    // Badge-clear contract: resolving this task on the Approvals tab
+    // must clear the matching notification entry so the tab-bar badge
+    // doesn't stay stuck at "1" with the list showing "All caught up".
+    // The notification is keyed on the task id by the workflow inbox
+    // bridge — same id, same key.
+    expect(markNotificationRead).toHaveBeenCalledWith('prop-intent-1');
   });
 
   it('denyPending(staging_persona_access) cancels without service.respond', async () => {
@@ -256,14 +278,29 @@ describe('useServiceInbox', () => {
     expect(calls.cancelled).toEqual([
       { id: 'approval-staging-stg-1-health', reason: 'denied_by_operator' },
     ]);
+    expect(markNotificationRead).toHaveBeenCalledWith('approval-staging-stg-1-health');
   });
 
-  it('approvePending forwards to coreClient.approveWorkflowTask', async () => {
+  it('denyPending(vault_read) cancels without service.respond + clears badge', async () => {
+    // vault_read is the §13.4 agent-touches-sensitive-vault gate. Same
+    // shape as intent_validation: no D2D requester, just cancel the
+    // workflow task — the agent's `ask-status` poll observes the
+    // terminal status on its next tick.
+    const { client, calls } = stubClient({});
+    setInboxCoreClient(client);
+    await denyPending('vr-health-1', 'denied_by_operator', 'vault_read');
+    expect(calls.responded).toEqual([]);
+    expect(calls.cancelled).toEqual([{ id: 'vr-health-1', reason: 'denied_by_operator' }]);
+    expect(markNotificationRead).toHaveBeenCalledWith('vr-health-1');
+  });
+
+  it('approvePending forwards to coreClient.approveWorkflowTask + clears badge', async () => {
     const { client, calls } = stubClient({});
     setInboxCoreClient(client);
     const t = await approvePending('svc-q-1');
     expect(calls.approved).toEqual(['svc-q-1']);
     expect(t.status).toBe('queued');
+    expect(markNotificationRead).toHaveBeenCalledWith('svc-q-1');
   });
 
   it('denyPending sends unavailable and does NOT double-cancel (review #1)', async () => {
@@ -283,6 +320,10 @@ describe('useServiceInbox', () => {
     // failed — calling it unconditionally was the double-terminate
     // bug. Happy path has zero cancel calls.
     expect(calls.cancelled).toEqual([]);
+    // Both denies clear their notification entries — order doesn't
+    // matter, presence does.
+    expect(markNotificationRead).toHaveBeenCalledWith('svc-q-1');
+    expect(markNotificationRead).toHaveBeenCalledWith('svc-q-2');
   });
 
   it('denyPending still cancels when the unavailable send throws', async () => {
@@ -295,6 +336,9 @@ describe('useServiceInbox', () => {
     await denyPending('svc-q-stuck');
     expect(calls.responded).toHaveLength(1);
     expect(calls.cancelled).toEqual([{ id: 'svc-q-stuck', reason: 'denied_by_operator' }]);
+    // Even on the fallback-cancel path, the badge still clears — the
+    // resolution happened, the operator's intent was met.
+    expect(markNotificationRead).toHaveBeenCalledWith('svc-q-stuck');
   });
 
   it('propagates underlying client errors verbatim', async () => {
