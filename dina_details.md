@@ -152,3 +152,102 @@ Some impleemntation details
   - It published "I answer eta_query," so it accepts an eta_query from any stranger.
   - It routes it to its service desk (the service handler) and answers — because it set its policy to answer these automatically.
   - A personal message from you ("be my contact") would still be turned away — you're not in its contacts. Only the advertised service request gets in.
+
+Agent Safety scenarios
+  The setup: Your Dina lives on your mobile. An agent (OpenClaw / sample test agent) lives somewhere else (laptop, server, cloud). They can talk to dina only through dina-agent cli which always talks only through msgbox. Your Dina is the gatekeeper for anything sensitive.
+  
+  The principle: When YOU use the app, everything's open. When an agent acts on your behalf, sensitive stuff gates on YOUR approval.
+
+
+  Scenario 1 — "An agent tries to read my locked Health vault"
+  
+  What happens. Agent runs dina ask "what's my blood pressure". Health vault is locked. Your Dina sees the request, creates an approval, sits and waits.
+  
+  What you see on the phone.
+  - A new card pops into your chat thread: 🔐 AGENT VAULT READ — An agent wants to access /health.
+  - The same card appears on the Approvals tab.
+  - Red badge 1 on both Notifications and Approvals tabs.
+  
+  What you can do. Three buttons on the card itself (no popup):
+  - Deny — blocks it. Agent gets back denied.
+  - Approve Once — single-use grant. Next ask requires fresh approval.
+  - Approve — grants for the whole CLI session. Subsequent asks from same agent + same session + same vault pass through silently until the session ends.
+  
+  Two CLI asks against /health, two cards minted, both Denied via the chat-card. CLI saw reason: denied. Card flipped to italic "Denied." Badges cleared.
+  Approve (Session) doesn't mean "the whole time the CLI process is running." It means the specific Dina session you explicitly created and named. The flow is:
+  
+  dina session start --name "morning-tasks"
+  # → returns sess-1646bf6883414a88
+  
+  dina ask --session sess-1646bf6883414a88 "what's my blood pressure"
+  # → 1st time: approval card pops on phone. You tap Approve (Session).
+  #   Dina records grant for (agent_did, sess-1646bf6883414a88, /health).
+  
+  dina ask --session sess-1646bf6883414a88 "what was my BP last week"
+  # → same session, same vault. Passes through silently. No card.
+  
+  # Same agent, new session:
+  dina session start --name "evening-tasks"
+  # → returns sess-9b3c1f...
+  
+  dina ask --session sess-9b3c1f... "what's my blood pressure"
+  # → new sessionId → fresh approval card. Old grant doesn't apply.
+  
+  So the keying is the explicit tuple (agent_did, dina-session-id, persona) — three things, all required to match.
+  
+  What this gives you:
+  - A dina session start --name "research" is something you choose to open — a deliberate scope for related work.
+  - Different sessions get different IDs. Approving in morning-tasks doesn't carry to evening-tasks even if you start the second one 30 seconds later.
+  - The CLI requires --session on every ask — there's no implicit "default session" (tonight I saw the error: Missing option '--session' — that's the gate at work).
+
+  
+  ---
+  Scenario 2 — "I'm just chatting with my own Dina — should it ask me for approval?"
+  
+  No. When YOU use the app, the persona guard short-circuits. The owner DID always passes. You can ask about anything in any vault without approval prompts.
+  
+  Why this matters. The gate exists to protect against external agents — not to friction your own interactions. Verified earlier in the session.
+  
+  ---
+  Scenario 3 — "If I approve once, does that grant stick to other vaults too?"
+  
+  No — every vault is independently gated. Approving the agent to read /health does NOT grant /finance. The session-scope grant is keyed on the exact tuple (agent, session, persona).
+  
+  Verified. Tonight's 2nd CLI ask asked about /finance (cholesterol) — even with a session-scope approval on /health, Dina re-asked for approval on /finance. Independent gate.
+  
+  ---
+  Scenario 4 — "If I start a new CLI session, does the old session's approval still work?"
+  
+  No. Sessions are fresh slates. dina session start --name "foo" mints a new session ID. Any session-scope approval from a previous session does NOT carry over. You'll see a fresh approval card on the next
+  sensitive read.
+  
+  Why this matters. Stops "I approved that once a week ago, why is the agent still doing it" surprises.
+  
+  ---
+  Scenario 5 — "Where else does the approval show up?"
+  
+  Three surfaces, all stay in sync:
+  1. Chat thread inline card — Deny / Approve Once / Approve buttons right there.
+  2. Approvals tab — same card, three buttons (and 3-way iOS Alert for the scope picker on the Approvals-tab variant).
+  3. Tab-bar badge — red 1 until resolved.
+  
+  All three stay synced. If you approve via the Approvals tab while sitting on the chat tab, the chat-card auto-flips to "Approved." within 5 seconds — without you tapping anything. Verified earlier in the
+  session.
+  
+  ---
+  Scenario 6 — "I approved on one surface, then accidentally tapped Deny on the other — does it crash?"
+  
+  No. Cross-surface double-tap is reconciled silently. The 2nd tap sees the task is already resolved, drops its action, syncs its local UI to match. No error popup.
+  
+  ---
+  Scenario 7 — "What if the agent's request just times out (it never reaches me)?"
+  
+  Dina returns expired to the agent. Approval cards on the user side become stale and the badge clears at next sweep. Verified pre-compaction.
+  
+  ---
+  Scenario 8 — "What about non-vault-read agent actions — like send_email?"
+  
+  Same gate, different name — dina validate. Agent calls /v1/agent/validate for a moderate/high-risk action (send_email, transfer_money, etc.). Dina creates an intent_validation workflow task. Same three scopes
+  (Deny / Once / Session). Verified pre-compaction across all 4 of: approve, deny, approve-for-session, new-session-denied.
+
+- More details found in docs/SCENARIOS.md
