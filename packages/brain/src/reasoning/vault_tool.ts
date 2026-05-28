@@ -205,27 +205,48 @@ export function createVaultSearchTool(options: VaultSearchToolOptions = {}): Age
         persona: string;
       }> = [];
 
-      // When a guard is wired (agent-ask context), the fan-out also
-      // surfaces locked personas so the approval system can gate them.
-      // The guard checks each locked persona's tier:
-      //   - default / standard → null (allow; already in accessiblePersonas)
-      //   - sensitive / locked → throws ApprovalRequiredError (Pattern A)
-      // The first locked persona that fires the guard bails the agentic
-      // loop with suspend/resume. On resume, the approved persona is in
-      // accessiblePersonas and the fan-out searches it normally.
-      // Agents do NOT need to name the persona explicitly — Dina
-      // discovers the lock and requests approval automatically.
-      // Without a guard (mobile in-process), locked personas are silently
-      // skipped — the user controls persona unlocking via the app UI.
+      // Gate every sensitive / locked persona for non-owner callers.
+      //
+      // History — the previous version skipped the guard when the persona
+      // was ALREADY in `accessibleSet`. That made sense when sensitive
+      // tiers stayed closed on boot, but the mobile install auto-opens
+      // them (see apps/mobile/src/onboarding/default_personas.ts: "Without
+      // an approval gate on mobile yet, they auto-open at unlock when
+      // persona policy allows"). The net effect was an external dina-agent
+      // could vault_search any sensitive persona that Mobile had auto-
+      // opened — dina_details.md §13.4 violation. Now we gate by TIER
+      // regardless of accessibleSet membership.
+      //
+      // The owner-on-app path is protected by the guard's `ownerDid`
+      // shortcut (see `createPersonaGuard`): when `requesterDid ===
+      // ownerDid`, the guard returns null without touching workflow
+      // tasks. So this loop is a no-op for the chat tab + a real gate
+      // for the agent path.
+      //
+      // After the guard's `await` resolves (consume / approve / fresh
+      // mint), the search loop below proceeds over the now-permitted
+      // persona set. For agents bailing on a fresh mint, the agentic
+      // loop's `ApprovalRequiredError` short-circuits BEFORE we reach
+      // the search step — the agent's HTTP response is `pending_approval`.
+      const sensitivePersonasInRegistry: string[] = [];
       if (personaGuard) {
         const allPersonas = listPersonas();
         for (const p of allPersonas) {
-          if (!accessibleSet.has(p.name)) {
+          if (p.tier === 'sensitive' || p.tier === 'locked') {
+            sensitivePersonasInRegistry.push(p.name);
             await checkPersonaGuard(personaGuard, p.name);
           }
         }
       }
 
+      // Build the search set:
+      //   - For the owner-on-app (guard is no-op), this is `accessiblePersonas`
+      //     unchanged — the chat tab sees every auto-opened persona, sensitive
+      //     tiers included.
+      //   - For an agent that just got approved (guard returned null for each
+      //     sensitive persona), this is also `accessiblePersonas` — the search
+      //     proceeds over everything the registry has open.
+      //   - For an agent bailing on a fresh approval, we never reach this point.
       for (const persona of accessiblePersonas) {
         const rows = await executeToolSearch(persona, query, limit);
         merged.push(...rows);

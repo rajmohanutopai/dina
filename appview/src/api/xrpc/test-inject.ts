@@ -174,10 +174,13 @@ export function checkTestInjectAuth(
   if (!enabled || !expected || expected.length === 0) {
     return { status: 404, body: { error: 'NotFound' } }
   }
-  const provided = (authHeader ?? '').replace(/^Bearer\s+/, '')
-  if (provided !== expected) {
-    // Same 404 — an attacker scanning the network shouldn't learn the
-    // endpoint exists from a 401 response.
+  // Require the explicit `Bearer ` scheme — a bare token is rejected (P3.11).
+  // Same 404 on any mismatch — an attacker scanning the network shouldn't learn
+  // the endpoint exists from a 401 response.
+  if (typeof authHeader !== 'string' || !authHeader.startsWith('Bearer ')) {
+    return { status: 404, body: { error: 'NotFound' } }
+  }
+  if (authHeader.slice('Bearer '.length) !== expected) {
     return { status: 404, body: { error: 'NotFound' } }
   }
   return null

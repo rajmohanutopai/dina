@@ -411,7 +411,7 @@ function tryEnqueue(
       targetDID: req.recipientDID,
       messageType: req.messageType,
       bodyJson: req.body,
-      idempotencyKey: deriveIdempotencyKey(req.messageType, req.body, messageId),
+      idempotencyKey: deriveIdempotencyKey(req.messageType, req.recipientDID, req.body, messageId),
     });
     return { queued: true };
   } catch (err) {

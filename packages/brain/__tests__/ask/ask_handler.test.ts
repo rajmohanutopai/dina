@@ -92,6 +92,50 @@ describe('createAskHandler (task 5.17)', () => {
       }
     });
 
+    // R-M6-I1: the dina-agent CLI's fast-path reader pulls `result.content`
+    // (or `result.response`) — without it, a real vault-grounded answer
+    // renders as the stock "I don't have any information about that yet."
+    // We mirror `answer.text` onto `body.content` so the CLI's existing
+    // shape works against Lite Core. The structured `answer` field stays
+    // canonical for richer consumers.
+    it('also exposes `content` mirroring `answer.text` for dina-agent CLI compat (R-M6-I1)', async () => {
+      const registry = buildRegistry();
+      const handler = createAskHandler({
+        registry,
+        executeFn: async () => ({
+          kind: 'answer',
+          answer: { text: 'Emma plays soccer on Saturdays.' },
+        }),
+      });
+      const res = await handler({ question: 'sport?', requesterDid: 'did:key:zAgent' });
+      expect(res.kind).toBe('fast_path');
+      if (res.kind === 'fast_path') {
+        expect(res.body.status).toBe('complete');
+        expect(res.body.answer).toEqual({ text: 'Emma plays soccer on Saturdays.' });
+        // The new field — CLI fast-path reads this.
+        expect(res.body.content).toBe('Emma plays soccer on Saturdays.');
+      }
+    });
+
+    it('omits `content` when the answer has no text (richer answer shapes pass through)', async () => {
+      const registry = buildRegistry();
+      const handler = createAskHandler({
+        registry,
+        executeFn: async () => ({
+          kind: 'answer',
+          // No `text` — only structured fields. (Real producers always
+          // include `text`; this guards the type-coerce branch.)
+          answer: { serviceQueries: [{ taskId: 't1' }] },
+        }),
+      });
+      const res = await handler({ question: 'q', requesterDid: 'did:key:zAgent' });
+      if (res.kind === 'fast_path') {
+        expect(res.body.answer).toEqual({ serviceQueries: [{ taskId: 't1' }] });
+        // Field is OMITTED (not empty string) when nothing to mirror.
+        expect('content' in res.body).toBe(false);
+      }
+    });
+
     it('registry state is `complete` after fast-path answer', async () => {
       const registry = buildRegistry();
       const handler = createAskHandler({
@@ -370,6 +414,71 @@ describe('createAskStatusHandler (task 5.18)', () => {
       expect(res.body.status).toBe('complete');
       expect(res.body.answer).toEqual({ text: 'answer' });
       expect(res.body.created_at_ms).toBe(record.createdAtMs);
+    }
+  });
+
+  // F-2 follow-up: dina-agent's standalone `ask-status` CLI command reads
+  // `body.content`. Without the mirror it falls through to a stock
+  // "Completed but no content" even when `body.answer.text` carries the
+  // real answer. Same shape we added to the fast-path body in R-M6-I1;
+  // here we pin the status route's matching mirror so users who timed out
+  // the auto-poll loop can recover via `dina ask-status <id>`.
+  it('also exposes `content` mirroring `answer.text` for the standalone ask-status CLI', async () => {
+    const registry = buildRegistry();
+    const record = await registry.enqueue({
+      id: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+      question: 'q',
+      requesterDid: 'did:plc:u',
+    });
+    await registry.markComplete(
+      record.id,
+      JSON.stringify({ text: 'Your blood pressure typically runs around 138/88.' }),
+    );
+    const handler = createAskStatusHandler({ registry });
+    const res = await handler(record.id);
+    if (res.kind === 'found') {
+      expect(res.body.status).toBe('complete');
+      expect(res.body.answer).toEqual({
+        text: 'Your blood pressure typically runs around 138/88.',
+      });
+      // New field — same mirror as the fast-path body.
+      expect(res.body.content).toBe('Your blood pressure typically runs around 138/88.');
+    }
+  });
+
+  it('omits `content` when the answer has no text (richer answer shapes pass through)', async () => {
+    const registry = buildRegistry();
+    const record = await registry.enqueue({
+      id: 'bbbbbbbbbbbbbbbbbbbbbbbb',
+      question: 'q',
+      requesterDid: 'did:plc:u',
+    });
+    await registry.markComplete(
+      record.id,
+      JSON.stringify({ serviceQueries: [{ taskId: 't1' }] }),
+    );
+    const handler = createAskStatusHandler({ registry });
+    const res = await handler(record.id);
+    if (res.kind === 'found') {
+      expect(res.body.answer).toEqual({ serviceQueries: [{ taskId: 't1' }] });
+      // Field is OMITTED (not empty string) — keeps the body lean.
+      expect('content' in res.body).toBe(false);
+    }
+  });
+
+  it('omits `content` when answer.text is empty string', async () => {
+    const registry = buildRegistry();
+    const record = await registry.enqueue({
+      id: 'cccccccccccccccccccccccc',
+      question: 'q',
+      requesterDid: 'did:plc:u',
+    });
+    await registry.markComplete(record.id, JSON.stringify({ text: '' }));
+    const handler = createAskStatusHandler({ registry });
+    const res = await handler(record.id);
+    if (res.kind === 'found') {
+      expect(res.body.answer).toEqual({ text: '' });
+      expect('content' in res.body).toBe(false);
     }
   });
 

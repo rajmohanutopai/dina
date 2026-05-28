@@ -14,6 +14,7 @@
 export function checkMetricsAuth(authHeader: string | undefined): boolean {
   const token = process.env.DINA_METRICS_TOKEN
   if (typeof token !== 'string' || token.length === 0) return false
-  const provided = (authHeader ?? '').replace(/^Bearer\s+/, '')
-  return provided === token
+  // Require the explicit `Bearer ` scheme — a bare token is rejected (P3.11).
+  if (typeof authHeader !== 'string' || !authHeader.startsWith('Bearer ')) return false
+  return authHeader.slice('Bearer '.length) === token
 }

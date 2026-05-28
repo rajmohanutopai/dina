@@ -105,7 +105,16 @@ services:
     # persistent service key, give it a DEDICATED volume (never
     # reuse dina-core-vault) so the boundary scales from 1 key to 2.
     environment:
+      # Inside the container Brain must bind 0.0.0.0 to be reachable on the
+      # PRIVATE compose network (a 127.0.0.1 bind would be reachable only from
+      # within its own container — useless for the published port). Brain's
+      # HTTP API is unauthenticated, so the boot guard refuses a non-loopback
+      # bind unless this opt-in is set; it's safe HERE because the published
+      # port below is bound to the HOST's loopback only, so Brain is never on a
+      # public interface (it's reachable only within the compose network + the
+      # operator's localhost). Do NOT change the port mapping to 0.0.0.0.
       DINA_BRAIN_HOST: 0.0.0.0
+      DINA_BRAIN_ALLOW_NONLOOPBACK: "1"
       DINA_BRAIN_PORT: 8200
       # Brain-to-Core HTTP URL. Uses the compose service name —
       # Docker's embedded DNS resolves `core-lite` to the container IP.
@@ -126,7 +135,12 @@ services:
       DINA_BRAIN_WEB_UI: ${DINA_BRAIN_WEB_UI:-}
       DINA_BRAIN_WEB_BUNDLE_DIR: /web-dist
     ports:
-      - "${DINA_BRAIN_PORT_EXTERNAL:-8200}:8200"
+      # Host LOOPBACK only — Brain's API is unauthenticated, so it must not be
+      # published on a public interface. `127.0.0.1:8200` lets a local operator
+      # (or an SSH tunnel) reach the optional web UI without exposing the vault-
+      # write surface to the network. Core↔Brain traffic uses the compose
+      # network (service DNS), not this published port.
+      - "127.0.0.1:${DINA_BRAIN_PORT_EXTERNAL:-8200}:8200"
     volumes:
       # Web SPA bundle bind-mount. The host path is empty (so the
       # mount is harmless) when --web-ui wasn't passed; install-lite

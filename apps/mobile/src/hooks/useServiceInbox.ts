@@ -13,6 +13,7 @@
  */
 
 import type { CoreClient, WorkflowTask } from '@dina/core';
+import { markNotificationRead } from '@dina/brain/notifications';
 
 /**
  * Approval-task variants the inbox knows how to render.
@@ -111,6 +112,51 @@ export async function listPendingApprovals(limit = 50): Promise<InboxEntry[]> {
 }
 
 /**
+ * Workflow task lifecycle as the UI sees it. Three terminal-ish
+ * buckets so the chat-thread inline card can persist its resolved
+ * label across re-renders and across surfaces — if the operator
+ * approves on the Approvals tab and then comes back to the chat
+ * thread, the bubble already shows the resolved state instead of
+ * re-rendering the action buttons.
+ *
+ *   - `pending`  — still awaiting a decision
+ *   - `approved` — owner approved (queued / running / completed)
+ *   - `denied`   — owner denied OR task failed / expired
+ *   - `missing`  — task vanished (TTL swept, never existed)
+ */
+export type ApprovalLifecycleState = 'pending' | 'approved' | 'denied' | 'missing';
+
+/**
+ * Probe a workflow task's current lifecycle bucket. Used by the chat
+ * card to detect cross-surface state changes (the Approvals tab may
+ * have already resolved this approval) and to gracefully recover from
+ * "already resolved" errors when the operator double-taps across
+ * surfaces.
+ */
+export async function getApprovalLifecycle(taskId: string): Promise<ApprovalLifecycleState> {
+  const c = requireClient();
+  const task = await c.getWorkflowTask(taskId);
+  if (task === null) return 'missing';
+  switch (task.status) {
+    case 'pending_approval':
+      return 'pending';
+    case 'queued':
+    case 'running':
+    case 'completed':
+      return 'approved';
+    case 'cancelled':
+    case 'canceled':
+    case 'failed':
+    case 'expired':
+      return 'denied';
+    default:
+      // Unknown — be conservative; render as pending so the operator
+      // can take action rather than seeing a stale resolved label.
+      return 'pending';
+  }
+}
+
+/**
  * Approve a pending workflow task. All approval kinds — including
  * `vault_read` — are backed by workflow tasks, so this always calls
  * `approveWorkflowTask`.
@@ -126,7 +172,17 @@ export async function approvePending(
 ): Promise<WorkflowTask> {
   const c = requireClient();
   void kind; // all kinds are workflow tasks; kept for UI discriminator use only
-  return c.approveWorkflowTask(taskId, scope !== undefined ? { scope } : undefined);
+  const out = await c.approveWorkflowTask(taskId, scope !== undefined ? { scope } : undefined);
+  // The workflow approval inbox bridge writes a notification at task
+  // CREATE with `id === task.id`. The bridge does not (yet) listen for
+  // task RESOLUTION, so without this the tab-bar badge would still
+  // count the resolved entry as unread — "All caught up" list with a
+  // red `1` on the icon. Mark read on the same surface that resolved
+  // the task so the badge clears. `markNotificationRead` is a no-op
+  // when the id isn't found (e.g. ApprovalManager path, which uses a
+  // different id space).
+  markNotificationRead(taskId);
+  return out;
 }
 
 /**
@@ -173,7 +229,9 @@ export async function denyPending(
     // Plain cancel — no service.respond peer to notify. The agent
     // observes intent_validation through polling; staging approvals are
     // local and Core handles the pending_unlock denial.
-    return core.cancelWorkflowTask(taskId, denyReason);
+    const result = await core.cancelWorkflowTask(taskId, denyReason);
+    markNotificationRead(taskId); // see comment in approvePending
+    return result;
   }
 
   try {
@@ -182,9 +240,12 @@ export async function denyPending(
       error: denyReason,
     });
   } catch {
-    return core.cancelWorkflowTask(taskId, denyReason);
+    const result = await core.cancelWorkflowTask(taskId, denyReason);
+    markNotificationRead(taskId); // see comment in approvePending
+    return result;
   }
   const fresh = await core.getWorkflowTask(taskId);
+  markNotificationRead(taskId); // see comment in approvePending
   if (fresh === null) {
     // Task vanished — treat as canceled-equivalent so the UI can
     // drop it from the inbox.

@@ -5,6 +5,7 @@
  * `outbox_repository.test.ts` and `retry.test.ts`.
  */
 
+import { InMemoryDatabaseAdapter } from '../../src/storage/db_adapter';
 import {
   BASE_BACKOFF_MS,
   MAX_ATTEMPTS,
@@ -22,7 +23,6 @@ import {
   setD2DOutboxRepository,
   SQLiteD2DOutboxRepository,
 } from '../../src/transport/outbox_repository';
-import { InMemoryDatabaseAdapter } from '../../src/storage/db_adapter';
 
 beforeEach(() => {
   setD2DOutboxRepository(null);
@@ -40,14 +40,43 @@ describe('computeBackoff', () => {
 });
 
 describe('deriveIdempotencyKey', () => {
-  it('keys service traffic on the body query_id', () => {
-    expect(deriveIdempotencyKey('service.query', '{"query_id":"q-42"}', 'msg-x')).toBe(
-      'service.query:q-42',
+  it('keys service traffic on type:targetDID:query_id:bodyHash', () => {
+    expect(
+      deriveIdempotencyKey('service.query', 'did:plc:bus', '{"query_id":"q-42"}', 'msg-x'),
+    ).toMatch(/^service\.query:did:plc:bus:q-42:[0-9a-f]{16}$/);
+  });
+  it('does NOT collapse the same query_id sent to DIFFERENT recipients (P1.4 fan-out)', () => {
+    const body = '{"query_id":"q-42"}';
+    const a = deriveIdempotencyKey('service.query', 'did:plc:busA', body, 'm1');
+    const b = deriveIdempotencyKey('service.query', 'did:plc:busB', body, 'm2');
+    expect(a).not.toBe(b);
+  });
+  it('does NOT collapse the same query_id with DIFFERENT bodies', () => {
+    const a = deriveIdempotencyKey(
+      'service.query',
+      'did:plc:bus',
+      '{"query_id":"q","cap":"eta"}',
+      'm1',
+    );
+    const b = deriveIdempotencyKey(
+      'service.query',
+      'did:plc:bus',
+      '{"query_id":"q","cap":"price"}',
+      'm2',
+    );
+    expect(a).not.toBe(b);
+  });
+  it('DOES collapse an identical re-enqueue (same type+target+query+body)', () => {
+    const body = '{"query_id":"q-42"}';
+    expect(deriveIdempotencyKey('service.query', 'did:plc:bus', body, 'm1')).toBe(
+      deriveIdempotencyKey('service.query', 'did:plc:bus', body, 'm2'),
     );
   });
   it('falls back to the message id for non-service / non-JSON bodies', () => {
-    expect(deriveIdempotencyKey('social.update', '{"text":"hi"}', 'msg-y')).toBe('msg-y');
-    expect(deriveIdempotencyKey('social.update', 'not json', 'msg-z')).toBe('msg-z');
+    expect(deriveIdempotencyKey('social.update', 'did:plc:x', '{"text":"hi"}', 'msg-y')).toBe(
+      'msg-y',
+    );
+    expect(deriveIdempotencyKey('social.update', 'did:plc:x', 'not json', 'msg-z')).toBe('msg-z');
   });
 });
 

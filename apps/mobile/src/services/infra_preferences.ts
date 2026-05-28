@@ -48,7 +48,12 @@ async function set(service: string, value: string): Promise<void> {
     await Keychain.resetGenericPassword({ service });
     return;
   }
-  await Keychain.setGenericPassword(service, value, { service });
+  // P2.8: infra prefs include the PDS password (a secret) — keep every entry
+  // device-bound (no iCloud/backup migration), readable after first unlock.
+  await Keychain.setGenericPassword(service, value, {
+    service,
+    accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+  });
 }
 
 export async function loadInfraPreferences(): Promise<InfraPreferences> {

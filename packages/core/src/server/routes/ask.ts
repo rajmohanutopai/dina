@@ -29,6 +29,13 @@ export interface AskSubmitInput {
   question: string;
   requesterDid: string;
   requestIdHeader?: string | null;
+  /**
+   * Dina-agent CLI session id (`sess-...`) from the `X-Session`
+   * header. Used by the per-ask persona_guard to scope vault-read
+   * session approvals to a single CLI session — `dina session start`
+   * mints a fresh id and old grants are dropped.
+   */
+  sessionId?: string;
   ttlMs?: number;
 }
 
@@ -101,11 +108,19 @@ export function registerAskRoutes(router: CoreRouter, options: AskRouteOptions =
     }
     const requestIdHeader =
       typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
+    // The dina-agent CLI tags every request with `X-Session: sess-...`
+    // (see client.py:ask). Threading it through the per-ask persona_guard
+    // is how the session-scoped vault-read approval shortcut keys on
+    // (agent, session, persona) — a new `dina session start` mints a
+    // fresh id and old grants no longer match.
+    const sessionId =
+      typeof req.headers['x-session'] === 'string' ? req.headers['x-session'] : '';
     const input: AskSubmitInput = {
       question,
       requesterDid,
       requestIdHeader,
     };
+    if (sessionId !== '') input.sessionId = sessionId;
     if (typeof body.ttl_ms === 'number') input.ttlMs = body.ttl_ms;
     const result = await handler.handleAsk(input);
     return { status: result.status, body: result.body };

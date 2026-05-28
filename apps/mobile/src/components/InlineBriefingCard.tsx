@@ -24,12 +24,16 @@
  * malformed — never throws.
  */
 
+import { useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
-import { useRouter } from 'expo-router';
-import type { ChatMessage } from '@dina/brain/chat';
+
+import { resolveSafeDeepLink } from '../notifications/deep_link';
 import { colors, radius, spacing, textStyles } from '../theme';
+
 import { MessageTimestamp } from './MessageTimestamp';
+
+import type { ChatMessage } from '@dina/brain/chat';
 
 export interface InlineBriefingCardProps {
   message: ChatMessage;
@@ -86,9 +90,7 @@ function readMetadata(m: ChatMessage): BriefingMetadata | null {
   };
 }
 
-export function InlineBriefingCard({
-  message,
-}: InlineBriefingCardProps): React.JSX.Element | null {
+export function InlineBriefingCard({ message }: InlineBriefingCardProps): React.JSX.Element | null {
   const router = useRouter();
   const meta = readMetadata(message);
   const [expanded, setExpanded] = useState(false);
@@ -100,7 +102,10 @@ export function InlineBriefingCard({
   const onItemPress = useCallback(
     (item: BriefingItem) => {
       if (item.deepLink === undefined) return;
-      router.push(item.deepLink as never);
+      // P1.3: briefing items can carry D2D-sourced deep links — route through
+      // the single safe resolver (allowlist + normalise) before navigating.
+      const safe = resolveSafeDeepLink(item.deepLink);
+      if (safe !== null) router.push(safe as never);
     },
     [router],
   );
@@ -145,9 +150,7 @@ export function InlineBriefingCard({
                   disabled={item.deepLink === undefined}
                   style={styles.item}
                 >
-                  <Text
-                    style={[styles.itemText, item.deepLink !== undefined && styles.itemLink]}
-                  >
+                  <Text style={[styles.itemText, item.deepLink !== undefined && styles.itemLink]}>
                     {item.label}
                   </Text>
                 </TouchableOpacity>

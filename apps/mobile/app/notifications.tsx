@@ -12,10 +12,11 @@
  * instant.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl } from 'react-native';
+
 import {
   getUnreadCount,
   hydrateNotifications,
@@ -25,10 +26,12 @@ import {
   type NotificationItem,
   type NotificationKind,
 } from '@dina/brain/notifications';
+
+import { resolveSafeDeepLink } from '../src/notifications/deep_link';
 import { applyNotificationFilter, type FilterKey } from '../src/notifications/screen_filter';
 import { colors, radius, spacing, textStyles } from '../src/theme';
 
-const FILTERS: ReadonlyArray<{ key: FilterKey; label: string }> = [
+const FILTERS: readonly { key: FilterKey; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'unread', label: 'Unread' },
   { key: 'reminder', label: 'Reminders' },
@@ -79,17 +82,12 @@ export default function NotificationsScreen(): React.JSX.Element {
     if (item.readAt === null) markNotificationRead(item.id);
     const link = item.deepLink;
     if (link === undefined || link === '') return;
-    // Brain emits deep links of the shape `dina://approvals/<id>` (see
-    // `packages/brain/src/notifications/bridges.ts`). Mobile's router has
-    // `/approvals` as an index page that already lists all open
-    // approvals — there's no `[id].tsx` dynamic route. Without
-    // normalisation the router treats `<id>` as an unknown sub-route
-    // and lands on "Unmatched Route".
-    //
-    // Map approval-shaped links to the index; other deep links pass
-    // through unchanged.
-    const normalized = normaliseDeepLink(link);
-    router.push(normalized as never);
+    // `resolveSafeDeepLink` normalises the link (Brain emits
+    // `dina://approvals/<id>`; there's no `[id].tsx` route, so it maps to the
+    // `/approvals` index) AND allowlists it — external schemes + sensitive
+    // routes are refused (P1.3). A rejected link simply doesn't navigate.
+    const safe = resolveSafeDeepLink(link);
+    if (safe !== null) router.push(safe as never);
   };
 
   return (
@@ -196,17 +194,6 @@ export default function NotificationsScreen(): React.JSX.Element {
  * direct fix; until then this normaliser keeps the notification tap
  * from landing on "Unmatched Route". Pass-through for any other shape.
  */
-function normaliseDeepLink(link: string): string {
-  // `dina://approvals/<id>` and any sub-paths → just `/approvals`.
-  // Match both `dina://` schemed and bare `/approvals/<id>` forms.
-  const approvalMatch = link.match(/^(?:dina:\/\/)?\/?approvals\/[^/?#]+/);
-  if (approvalMatch !== null) return '/approvals';
-  // Strip the dina:// scheme but keep any path so other deep links
-  // (`/reminders/...`, `/vault/...`) reach their pages unchanged.
-  if (link.startsWith('dina://')) return `/${link.slice('dina://'.length)}`;
-  return link;
-}
-
 function formatRelative(ms: number, now: number = Date.now()): string {
   const delta = Math.round((now - ms) / 1000);
   if (delta < 60) return 'just now';

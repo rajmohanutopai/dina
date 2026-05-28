@@ -8,7 +8,7 @@
  * Refresh on mount + focus + pull-to-refresh.
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,8 @@ import {
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { subscribeNotifications } from '@dina/brain/notifications';
+
 import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 import {
   listPendingApprovals,
@@ -64,6 +66,36 @@ export default function ApprovalsScreen() {
     }, [load]),
   );
 
+  // R-M6-I2 — subscribe to the unified notifications inbox so an approval
+  // that arrives WHILE this screen is open re-fetches the list immediately.
+  // Without this, an agent's `dina validate` (or any other surface that
+  // mints an approval task) would mint the task + bump the tab-bar badge
+  // (driven by useUnreadCount('approval')), but the visible list stayed
+  // at the snapshot taken on the last focus. Verified live: tab-cycling
+  // away and back surfaced the card; this listener removes the manual step.
+  //
+  // We re-`load()` on every approval-kind `appended` event — `load()` is
+  // already idempotent + uses the existing `requireClient()` path. Same
+  // O(n) bound as the badge subscription. The hook is also tracked in a
+  // ref so we don't issue overlapping fetches if multiple events queue:
+  // a second event during an in-flight load coalesces to one refetch.
+  const reloadInFlight = useRef(false);
+  useEffect(() => {
+    const off = subscribeNotifications((event) => {
+      // Only `'appended'` carries a kind discriminator. `'marked_read'`
+      // can't add a new approval, and `'hydrated'` is a cold-start fan-in
+      // that the `useFocusEffect` already handles on mount.
+      if (event.type !== 'appended') return;
+      if (event.item.kind !== 'approval') return;
+      if (reloadInFlight.current) return;
+      reloadInFlight.current = true;
+      void load().finally(() => {
+        reloadInFlight.current = false;
+      });
+    });
+    return off;
+  }, [load]);
+
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     load();
@@ -105,44 +137,36 @@ export default function ApprovalsScreen() {
     [],
   );
 
+  /**
+   * Approval-kind classifier used by the renderer to pick between the
+   * inline 3-button card (Deny / Approve Once / Approve) and the
+   * standard 2-button card (Deny / Approve). dina_details §13.4 shows
+   * the 3-button shape for agent vault reads; we extend the same to
+   * MODERATE `dina validate` intents since they ALSO support a session
+   * grant on the server side. HIGH validates + everything else stay
+   * 2-button (no scope choice — a single confirmation is all there is).
+   */
+  const supportsSessionScope = useCallback((item: InboxEntry): boolean => {
+    if (item.kind === 'vault_read') return true;
+    if (item.kind === 'intent_validation' && item.riskLevel === 'MODERATE') return true;
+    return false;
+  }, []);
+
+  /** Direct approval driver — no popup; called from the inline buttons. */
+  const runApprove = useCallback(
+    (item: InboxEntry, scope: 'single' | 'session'): void => {
+      setPendingActionId(item.id);
+      void approvePending(item.id, item.kind, scope)
+        .then(() => setEntries((list) => list.filter((e) => e.id !== item.id)))
+        .catch((err) => Alert.alert('Error', (err as Error).message ?? 'Failed to approve'))
+        .finally(() => setPendingActionId(null));
+    },
+    [],
+  );
+
   const handleApprove = useCallback(
     (item: InboxEntry) => {
-      // MODERATE intent_validation: offer once-only vs session scope.
-      if (item.kind === 'intent_validation' && item.riskLevel === 'MODERATE') {
-        Alert.alert(
-          `Approve "${item.capability}"?`,
-          'Choose how long this approval lasts.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'This time only',
-              onPress: () => {
-                setPendingActionId(item.id);
-                void approvePending(item.id, item.kind, 'single')
-                  .then(() => setEntries((list) => list.filter((e) => e.id !== item.id)))
-                  .catch((err) =>
-                    Alert.alert('Error', (err as Error).message ?? 'Failed to approve'),
-                  )
-                  .finally(() => setPendingActionId(null));
-              },
-            },
-            {
-              text: 'Allow for this session',
-              onPress: () => {
-                setPendingActionId(item.id);
-                void approvePending(item.id, item.kind, 'session')
-                  .then(() => setEntries((list) => list.filter((e) => e.id !== item.id)))
-                  .catch((err) =>
-                    Alert.alert('Error', (err as Error).message ?? 'Failed to approve'),
-                  )
-                  .finally(() => setPendingActionId(null));
-              },
-            },
-          ],
-        );
-        return;
-      }
-      // All other kinds: standard single-confirmation flow.
+      // Kinds without a session-scope choice — single confirmation flow.
       confirmAndRun(item, 'Approve', async () => {
         if (item.kind === 'staging_persona_access' && isPersistenceReady()) {
           try {
@@ -240,6 +264,24 @@ export default function ApprovalsScreen() {
             >
               <Text style={styles.denyText}>Deny</Text>
             </Pressable>
+            {supportsSessionScope(item) && (
+              // dina_details §13.4 inline 3-button — `Approve Once`
+              // grants single-use (`scope='single'`); the right-hand
+              // `Approve` grants for the current dina session
+              // (`scope='session'`). Direct call paths — no popup.
+              <Pressable
+                style={({ pressed }) => [
+                  styles.button,
+                  styles.approveOnceButton,
+                  pressed && styles.pressed,
+                  busy && styles.disabled,
+                ]}
+                disabled={busy}
+                onPress={() => runApprove(item, 'single')}
+              >
+                <Text style={styles.approveOnceText}>Approve Once</Text>
+              </Pressable>
+            )}
             <Pressable
               style={({ pressed }) => [
                 styles.button,
@@ -248,7 +290,9 @@ export default function ApprovalsScreen() {
                 busy && styles.disabled,
               ]}
               disabled={busy}
-              onPress={() => handleApprove(item)}
+              onPress={() =>
+                supportsSessionScope(item) ? runApprove(item, 'session') : handleApprove(item)
+              }
             >
               {busy ? (
                 <ActivityIndicator size="small" color={colors.white} />
@@ -260,7 +304,7 @@ export default function ApprovalsScreen() {
         </View>
       );
     },
-    [pendingActionId, confirmAndRun, handleApprove],
+    [pendingActionId, confirmAndRun, handleApprove, supportsSessionScope, runApprove],
   );
 
   if (loading && entries.length === 0) {
@@ -289,9 +333,8 @@ export default function ApprovalsScreen() {
             />
             <Text style={styles.emptyTitle}>All caught up</Text>
             <Text style={styles.emptySubtitle}>
-              Nothing waiting for your approval right now — service queries,
-              memory writes into closed vaults, agent intents, and vault read
-              requests will appear here when they need a review.
+              Apps and agents check in here before doing anything that needs
+              your OK.
             </Text>
           </View>
         </View>
@@ -407,21 +450,42 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   button: {
+    // Equal flex share of the row width — Deny / Approve Once /
+    // Approve render as a unified segmented control regardless of
+    // label length. Avoids the content-sized 76px/110px/76px mismatch
+    // that made the buttons look different sizes.
+    flex: 1,
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.xs,
     borderRadius: radius.sm,
-    minWidth: 96,
+    // All buttons carry a 1px border for identical height. Filled
+    // Approve uses a same-color border so its outline matches.
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   approveButton: {
     backgroundColor: colors.accent,
+    borderColor: colors.accent,
   },
   approveText: textStyles.buttonSmall,
+  // "Approve Once" — single-use action. Visually weighted between
+  // Deny (destructive) and Approve (primary session) so the operator
+  // can scan the row left-to-right with intent escalating per button.
+  approveOnceButton: {
+    backgroundColor: 'transparent',
+    borderColor: colors.accent,
+  },
+  approveOnceText: {
+    ...textStyles.buttonSmall,
+    color: colors.accent,
+  },
   denyButton: {
-    backgroundColor: colors.bgSecondary,
-    borderWidth: 1,
-    borderColor: colors.border,
+    // Soft-red bg + matching red border so Deny reads as destructive
+    // alongside its red text. Pairs visually with the chat card's
+    // Deny styling.
+    backgroundColor: colors.errorBgSoft,
+    borderColor: colors.error,
   },
   denyText: {
     ...textStyles.buttonSmall,

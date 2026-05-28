@@ -10,9 +10,11 @@
 
 import {
   installApprovalInboxBridge,
+  installWorkflowApprovalChatBridge,
   installWorkflowApprovalInboxBridge,
   subscribeBriefingEvents,
 } from '../../src/notifications/bridges';
+import { deleteThread, getThread } from '../../src/chat/thread';
 import {
   appendNotification,
   listNotifications,
@@ -302,6 +304,98 @@ describe('Notifications inbox bridges (5.66)', () => {
       const listener = subscribeBriefingEvents();
       listener({ kind: 'recorded' });
       expect(listNotifications()).toHaveLength(0);
+    });
+  });
+
+  // F-AGENT-VAULT-GATE follow-up — write an inline approval bubble to
+  // the owner's main chat thread whenever a vault_read_request approval
+  // task is minted. Closes the dina_details §13.4 expectation that the
+  // approval lands in the operator's primary surface, not just in the
+  // Approvals tab. Intent_validation approvals stay out of chat.
+  describe('installWorkflowApprovalChatBridge', () => {
+    beforeEach(() => deleteThread('main'));
+
+    function vaultReadApprovalTask(
+      overrides: Partial<WorkflowTask> & {
+        payloadOverrides?: Record<string, unknown>;
+      } = {},
+    ): WorkflowTask {
+      const { payloadOverrides, ...rest } = overrides;
+      const payload = JSON.stringify({
+        type: 'vault_read_request',
+        persona: 'health',
+        source_ask_id: 'ask-1',
+        requester_did: 'did:key:z6MkAgentOpenClawAcmeAcmeAcmeAcme',
+        agent_did: 'did:key:z6MkAgentOpenClawAcmeAcmeAcmeAcme',
+        session: 'sess-abc',
+        reason: 'Agentic /ask requires read of persona "health"',
+        preview: '',
+        created_at: 1_700_000_000_000,
+        ...payloadOverrides,
+      });
+      return approvalTask({ payload, ...rest });
+    }
+
+    it('writes an approval-kind chat message when a vault_read_request task is created', () => {
+      const repo = new InMemoryWorkflowRepository();
+      installWorkflowApprovalChatBridge(repo);
+
+      repo.create(vaultReadApprovalTask({ id: 'appr-health-1' }));
+
+      const messages = getThread('main');
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatchObject({
+        type: 'approval',
+        threadId: 'main',
+      });
+      // The bubble body mentions the persona + the agent DID so the
+      // operator knows who and what.
+      expect(messages[0]!.content).toContain('/health');
+      expect(messages[0]!.content).toContain('did:key:z6MkAgentOpenClaw');
+      // Metadata carries the discriminator + the task id for the
+      // InlineApprovalCard renderer to wire Approve/Deny.
+      const meta = messages[0]!.metadata as Record<string, unknown>;
+      expect(meta.approvalKind).toBe('vault_read');
+      expect(meta.approvalTaskId).toBe('appr-health-1');
+      expect(meta.persona).toBe('health');
+      expect(meta.agentDid).toBe('did:key:z6MkAgentOpenClawAcmeAcmeAcmeAcme');
+    });
+
+    it('does NOT write a chat message for intent_validation tasks', () => {
+      // dina validate approvals belong in the Approvals tab only.
+      const repo = new InMemoryWorkflowRepository();
+      installWorkflowApprovalChatBridge(repo);
+
+      // The default approvalTask() payload is `{type: 'intent_validation'}`.
+      repo.create(approvalTask({ id: 'apr-intent-1' }));
+
+      expect(getThread('main')).toHaveLength(0);
+    });
+
+    it('does NOT write a chat message for malformed-payload approval tasks', () => {
+      const repo = new InMemoryWorkflowRepository();
+      installWorkflowApprovalChatBridge(repo);
+      repo.create(approvalTask({ id: 'apr-bad', payload: '{not-json' }));
+      expect(getThread('main')).toHaveLength(0);
+    });
+
+    it('writes to a custom thread id when configured', () => {
+      const repo = new InMemoryWorkflowRepository();
+      installWorkflowApprovalChatBridge(repo, { threadId: 'custom-thread' });
+      repo.create(vaultReadApprovalTask({ id: 'appr-custom' }));
+      expect(getThread('main')).toHaveLength(0);
+      expect(getThread('custom-thread')).toHaveLength(1);
+    });
+
+    it('disposer detaches the listener — no more chat messages after dispose', () => {
+      const repo = new InMemoryWorkflowRepository();
+      const dispose = installWorkflowApprovalChatBridge(repo);
+      repo.create(vaultReadApprovalTask({ id: 'appr-pre' }));
+      expect(getThread('main')).toHaveLength(1);
+      dispose();
+      repo.create(vaultReadApprovalTask({ id: 'appr-post' }));
+      // Still 1 — the second create didn't fire the bridge.
+      expect(getThread('main')).toHaveLength(1);
     });
   });
 });

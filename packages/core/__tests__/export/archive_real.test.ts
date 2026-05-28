@@ -317,4 +317,70 @@ describe('real export → clean-install import', () => {
       closeBundle(dest);
     }
   });
+
+  // SEC (P1.1) — a FORCE (overwrite) restore must be a TRUE overwrite: rows on
+  // the target that aren't in the backup are removed (INSERT OR REPLACE alone
+  // only overwrites matching PKs). kv_store is the exception — it holds secrets
+  // excluded from the archive, so they must SURVIVE.
+  it('force restore removes target-only rows but preserves excluded kv secrets', async () => {
+    const src = freshBundle([['general', 'default']]);
+    let archive: Uint8Array;
+    try {
+      seedIdentity(src.id); // backup has reminder rem-1 + theme=dark (gemini_api_key excluded)
+      const gen = src.personas.get('general');
+      if (!gen) throw new Error('setup');
+      seedVaultItem(gen.adapter, 'v-keep', 'from backup');
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+    }
+
+    const dest = freshBundle([['general', 'default']]);
+    try {
+      // Target has its OWN data: a reminder NOT in the backup, a vault item NOT
+      // in the backup, a secret kv key (excluded from backups), and theme=light.
+      dest.id.execute(
+        `INSERT INTO reminders (id, short_id, message, due_at, persona, kind, source_item_id, source, recurring, timezone, status, completed, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        ['rem-OLD', 'rO', 'stale', 1, 'general', 'manual', '', 'user', '', '', 'pending', 0, 1],
+      );
+      dest.id.execute('INSERT INTO kv_store (key, value, updated_at) VALUES (?,?,?)', [
+        'gemini_api_key',
+        'DEST-SECRET',
+        1,
+      ]);
+      dest.id.execute('INSERT OR REPLACE INTO kv_store (key, value, updated_at) VALUES (?,?,?)', [
+        'theme',
+        'light',
+        1,
+      ]);
+      const destGen = dest.personas.get('general');
+      if (!destGen) throw new Error('setup');
+      seedVaultItem(destGen.adapter, 'v-OLD', 'stale vault');
+
+      setArchiveDataSource(dataSourceFor(dest));
+      await importArchive(archive, PASS, { force: true });
+
+      // Backup rows present; target-only rows GONE (true overwrite).
+      expect(dest.id.query('SELECT 1 FROM reminders WHERE id = ?', ['rem-1'])).toHaveLength(1);
+      expect(dest.id.query('SELECT 1 FROM reminders WHERE id = ?', ['rem-OLD'])).toHaveLength(0);
+      expect(
+        destGen.adapter.query('SELECT 1 FROM vault_items WHERE id = ?', ['v-keep']),
+      ).toHaveLength(1);
+      expect(
+        destGen.adapter.query('SELECT 1 FROM vault_items WHERE id = ?', ['v-OLD']),
+      ).toHaveLength(0);
+      // Backup pref overwrote the target's; the target's SECRET (never in the
+      // backup) SURVIVES — kv_store is not cleared.
+      expect(dest.id.query("SELECT value FROM kv_store WHERE key = 'theme'")[0]?.value).toBe(
+        'dark',
+      );
+      expect(
+        dest.id.query("SELECT value FROM kv_store WHERE key = 'gemini_api_key'")[0]?.value,
+      ).toBe('DEST-SECRET');
+    } finally {
+      closeBundle(dest);
+    }
+  });
 });

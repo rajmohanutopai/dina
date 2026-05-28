@@ -36,8 +36,21 @@ export class SQLiteDeviceRepository implements DeviceRepository {
   constructor(private readonly db: DatabaseAdapter) {}
 
   async register(d: PairedDevice): Promise<void> {
+    // INSERT OR REPLACE — idempotent on `device_id` (the PK). The pairing
+    // route calls this TWICE for the same device by design: once
+    // fire-and-forget from `registerDevice()` (so callers stay sync) and
+    // once awaited from `persistDeviceDurable()` (so the route blocks on
+    // durability before returning 201). On a sync better-sqlite3 host the
+    // two INSERTs serialise via micro-task order and the second one would
+    // SQLITE_CONSTRAINT-fail; on op-sqlite (async-bridged on mobile) the
+    // ordering's the same end-to-end but the failure was surfacing as
+    // `UNIQUE constraint failed: paired_devices.device_id` to the agent
+    // (MT-2026-05-28-E-BUG1). The row contents are deterministic per
+    // device (no auto-updated columns), so REPLACE with identical values
+    // is a semantic no-op for the first writer and a clean upsert for
+    // any same-row retry.
     this.db.execute(
-      `INSERT INTO paired_devices (device_id, did, public_key_multibase, device_name, role, auth_type, last_seen, created_at, revoked)
+      `INSERT OR REPLACE INTO paired_devices (device_id, did, public_key_multibase, device_name, role, auth_type, last_seen, created_at, revoked)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         d.deviceId,

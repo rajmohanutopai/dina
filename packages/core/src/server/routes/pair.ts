@@ -22,6 +22,9 @@
  * `dina configure --pairing-code ...`.
  */
 
+import { bytesToHex } from '@noble/hashes/utils.js';
+import { randomBytes } from '@noble/ciphers/utils.js';
+
 import { persistDeviceDurable } from '../../devices/registry';
 import { generatePairingCode, completePairing, getPairingIntent } from '../../pairing/ceremony';
 
@@ -167,8 +170,20 @@ export function registerPairRoutes(router: CoreRouter): void {
       try {
         await persistDeviceDurable(result.deviceId);
       } catch (err) {
+        // MT-2026-05-28-E-BUG2: do NOT leak the underlying error into the
+        // response body — `${err.message}` can carry the ORM name
+        // (op-sqlite), table + column names, and the SQL constraint
+        // shape, all of which let an external probe fingerprint storage
+        // internals. Mint an uncorrelated short diag id, log the raw
+        // detail server-side only, return a generic 503 to the caller.
+        const diagId = bytesToHex(randomBytes(4));
         const msg = err instanceof Error ? err.message : String(err);
-        return { status: 503, body: { error: `pairing: device persistence failed — ${msg}` } };
+        // eslint-disable-next-line no-console -- one-line operator diag, never PII
+        console.error(`[pair] device persistence failed (diag=${diagId}): ${msg}`);
+        return {
+          status: 503,
+          body: { error: 'pairing: server error', diag_id: diagId },
+        };
       }
       return {
         status: 201,

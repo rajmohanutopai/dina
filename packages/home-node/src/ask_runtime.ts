@@ -69,6 +69,16 @@ export interface HomeNodeAskRuntimeOptions {
    */
   installedPersonas?: () => readonly InstalledPersona[];
   retrievalFetchers?: AskRetrievalFetchers;
+  /**
+   * Owner DID — the home node's own `did:plc:...`. Passed straight
+   * through to `buildAgenticAskPipeline` so the per-ask persona_guard
+   * can short-circuit for owner-on-app calls and gate dina-agent calls
+   * (dina_details.md §13.4 + `feedback_user_vs_agent_persona_access`).
+   * Omitting it falls back to "every caller untrusted" — fine for
+   * tests, wrong for production. Mobile + home-node-lite brain-server
+   * both pass it from their boot identity.
+   */
+  ownerDid?: string;
 }
 
 interface BuildHomeNodeAskRuntimeCommon extends HomeNodeAskRuntimeOptions {
@@ -197,6 +207,9 @@ export function buildHomeNodeAskRuntime(
     ...(options.logger !== undefined ? { logger: options.logger } : {}),
     ...(options.sensitivePersonas !== undefined
       ? { sensitivePersonas: options.sensitivePersonas }
+      : {}),
+    ...(options.ownerDid !== undefined && options.ownerDid !== ''
+      ? { ownerDid: options.ownerDid }
       : {}),
   });
   const systemPrompt = options.systemPrompt ?? DEFAULT_ASK_SYSTEM_PROMPT;

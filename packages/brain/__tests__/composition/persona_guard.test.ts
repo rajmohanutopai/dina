@@ -279,3 +279,237 @@ describe('createPersonaGuard — interaction with persona unlock state', () => {
     expect(await guard('health')).toBe('appr-ask-1-health');
   });
 });
+
+// F-AGENT-VAULT-GATE — `ownerDid` shortcut covers
+// dina_details.md §13.4 + `feedback_user_vs_agent_persona_access`:
+// the home node's own user is "safe space", a paired dina-agent is
+// not. The previous version gated NEITHER (the vault_tool fan-out
+// skipped the guard for any persona already in accessibleSet, which
+// on mobile auto-includes sensitive tiers) — that gap let an agent
+// vault_search Health without approval. The owner-aware guard is half
+// the fix; the vault_tool tier-based fan-out is the other half
+// (vault_tool.test.ts covers that).
+describe('createPersonaGuard — owner-aware shortcut (F-AGENT-VAULT-GATE)', () => {
+  const OWNER_DID = 'did:plc:ownerhomenode';
+  const AGENT_DID = 'did:key:z6MkAgentOpenClaw';
+
+  it('returns null for sensitive when requesterDid === ownerDid (no approval card raised)', async () => {
+    createPersona('health', 'sensitive');
+    const { client, tasks } = makeFakeWorkflowClient();
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: OWNER_DID,
+      ownerDid: OWNER_DID,
+    });
+    expect(await guard('health')).toBeNull();
+    // Critical: no workflow task created — owner-on-app must not
+    // spam its own Approvals tab with self-approvals.
+    expect(tasks.size).toBe(0);
+  });
+
+  it('returns null for locked when requesterDid === ownerDid', async () => {
+    createPersona('vault', 'locked');
+    const { client, tasks } = makeFakeWorkflowClient();
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: OWNER_DID,
+      ownerDid: OWNER_DID,
+    });
+    expect(await guard('vault')).toBeNull();
+    expect(tasks.size).toBe(0);
+  });
+
+  it('gates sensitive when requesterDid !== ownerDid (agent path)', async () => {
+    createPersona('health', 'sensitive');
+    const { client, tasks } = makeFakeWorkflowClient();
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: AGENT_DID,
+      ownerDid: OWNER_DID,
+    });
+    expect(await guard('health')).toBe(approvalIdFor(ASK_ID, 'health'));
+    expect(tasks.size).toBe(1);
+    const payload = JSON.parse([...tasks.values()][0].payload) as { requester_did: string };
+    expect(payload.requester_did).toBe(AGENT_DID);
+  });
+
+  it('still allows default/standard for non-owner (no spurious gate on open tiers)', async () => {
+    createPersona('general', 'default');
+    createPersona('work', 'standard');
+    const { client, tasks } = makeFakeWorkflowClient();
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: AGENT_DID,
+      ownerDid: OWNER_DID,
+    });
+    expect(await guard('general')).toBeNull();
+    expect(await guard('work')).toBeNull();
+    expect(tasks.size).toBe(0);
+  });
+
+  it('omitting ownerDid preserves the legacy "every caller untrusted" behaviour', async () => {
+    createPersona('health', 'sensitive');
+    const { client } = makeFakeWorkflowClient();
+    // No ownerDid passed — the OWNER's own ask would also be gated.
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: OWNER_DID,
+    });
+    expect(await guard('health')).toBe(approvalIdFor(ASK_ID, 'health'));
+  });
+
+  it('empty-string ownerDid behaves the same as omitted (treats every caller as untrusted)', async () => {
+    createPersona('health', 'sensitive');
+    const { client } = makeFakeWorkflowClient();
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: OWNER_DID,
+      ownerDid: '',
+    });
+    expect(await guard('health')).toBe(approvalIdFor(ASK_ID, 'health'));
+  });
+});
+
+// F-AGENT-VAULT-GATE session-scope — when the owner taps "Allow for
+// this session" on a vault_read card, the workflow approve route calls
+// `grantVaultReadSessionApproval(agentDid, sessionId, persona)`. The
+// guard consults that map BEFORE the workflow task path, so subsequent
+// agent asks for the same (agentDid, sessionId, persona) tuple pass
+// silently until the TTL. A new `dina session start` mints a fresh
+// sessionId so old grants don't carry over.
+describe('createPersonaGuard — session-scope vault-read shortcut', () => {
+  // These tests touch the @dina/core process-global session map.
+  // Re-importing the module guarantees we read live (post-grant) state.
+  const coreModule = jest.requireActual('@dina/core') as typeof import('@dina/core');
+  const OWNER_DID = 'did:plc:ownerhomenode';
+  const AGENT_DID = 'did:key:z6MkAgentOpenClaw';
+  const OTHER_AGENT = 'did:key:z6MkAgentOther';
+  const SESSION_ID = 'sess-abc123';
+  const OTHER_SESSION = 'sess-def456';
+
+  beforeEach(() => coreModule.resetSessionApprovals());
+
+  it('returns null for sensitive when (agentDid, sessionId, persona) has a live session grant', async () => {
+    createPersona('health', 'sensitive');
+    const { client, tasks } = makeFakeWorkflowClient();
+    coreModule.grantVaultReadSessionApproval(AGENT_DID, SESSION_ID, 'health');
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: AGENT_DID,
+      ownerDid: OWNER_DID,
+      sessionId: SESSION_ID,
+    });
+    expect(await guard('health')).toBeNull();
+    // Critical: no workflow task created — the session grant is the
+    // owner's affirmative consent for the window, no re-prompt needed.
+    expect(tasks.size).toBe(0);
+  });
+
+  it('still gates a DIFFERENT persona for the same agent (per-persona isolation)', async () => {
+    createPersona('health', 'sensitive');
+    createPersona('finance', 'sensitive');
+    const { client, tasks } = makeFakeWorkflowClient();
+    coreModule.grantVaultReadSessionApproval(AGENT_DID, SESSION_ID, 'health');
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: AGENT_DID,
+      ownerDid: OWNER_DID,
+      sessionId: SESSION_ID,
+    });
+    expect(await guard('health')).toBeNull();
+    // finance never got a session grant → still gated.
+    expect(await guard('finance')).toBe(approvalIdFor(ASK_ID, 'finance'));
+    expect(tasks.size).toBe(1);
+  });
+
+  it('still gates the SAME persona for a DIFFERENT agent (per-agent isolation)', async () => {
+    createPersona('health', 'sensitive');
+    const { client, tasks } = makeFakeWorkflowClient();
+    coreModule.grantVaultReadSessionApproval(AGENT_DID, SESSION_ID, 'health');
+    // OTHER_AGENT didn't get the grant — must still be gated.
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: OTHER_AGENT,
+      ownerDid: OWNER_DID,
+      sessionId: SESSION_ID,
+    });
+    expect(await guard('health')).toBe(approvalIdFor(ASK_ID, 'health'));
+    expect(tasks.size).toBe(1);
+  });
+
+  it('still gates the SAME (agent, persona) under a DIFFERENT sessionId (per-session isolation, new!)', async () => {
+    // The per-session tightening fix: a new `dina session start` =
+    // fresh approval state. The grant for SESSION_ID does NOT cover
+    // OTHER_SESSION even with the same agent + persona.
+    createPersona('health', 'sensitive');
+    const { client, tasks } = makeFakeWorkflowClient();
+    coreModule.grantVaultReadSessionApproval(AGENT_DID, SESSION_ID, 'health');
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: AGENT_DID,
+      ownerDid: OWNER_DID,
+      sessionId: OTHER_SESSION, // ← different session
+    });
+    expect(await guard('health')).toBe(approvalIdFor(ASK_ID, 'health'));
+    expect(tasks.size).toBe(1);
+  });
+
+  it('no-sessionId callers bypass the session-grant shortcut entirely', async () => {
+    // Older / unmodified clients that don't send X-Session fall through
+    // to the workflow-task path on every call — safe-default.
+    createPersona('health', 'sensitive');
+    const { client, tasks } = makeFakeWorkflowClient();
+    // Grant under SOME session — irrelevant to a sessionless caller.
+    coreModule.grantVaultReadSessionApproval(AGENT_DID, SESSION_ID, 'health');
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: AGENT_DID,
+      ownerDid: OWNER_DID,
+      // sessionId omitted
+    });
+    expect(await guard('health')).toBe(approvalIdFor(ASK_ID, 'health'));
+    expect(tasks.size).toBe(1);
+  });
+
+  it('expired session grant falls through to the workflow-task path', async () => {
+    createPersona('health', 'sensitive');
+    const { client, tasks } = makeFakeWorkflowClient();
+    // Grant with a 1ms duration so it's already expired before the check.
+    coreModule.grantVaultReadSessionApproval(AGENT_DID, SESSION_ID, 'health', 1);
+    await new Promise((r) => setTimeout(r, 5));
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: AGENT_DID,
+      ownerDid: OWNER_DID,
+      sessionId: SESSION_ID,
+    });
+    expect(await guard('health')).toBe(approvalIdFor(ASK_ID, 'health'));
+    expect(tasks.size).toBe(1);
+  });
+
+  it('owner-on-app shortcut takes precedence over session grant absence', async () => {
+    // Even with NO session grant, the owner still gets free access.
+    createPersona('health', 'sensitive');
+    const { client, tasks } = makeFakeWorkflowClient();
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: OWNER_DID,
+      ownerDid: OWNER_DID,
+    });
+    expect(await guard('health')).toBeNull();
+    expect(tasks.size).toBe(0);
+  });
+});

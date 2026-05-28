@@ -1809,5 +1809,249 @@ are durability/availability or hardening, not security vulnerabilities — fixed
 <td><span class="ok">AppView audit high-gate exit 0</span> · <span class="ok">AppView 1754 + metrics_auth 4 ✓</span> · <span class="ok">brain tsc 0 / agentic_loop 10 ✓</span> · <span class="ok">CLI py_compile + 13 ✓</span> · <span class="ok">my new code clean (appview no-semicolon house style)</span></td></tr>
 </table>
 
+<h2>Codex round-3 review — 8 agreed findings fixed (pre-first-release)</h2>
+<p>Third Codex pass (12 items). Verified each in code before agreeing; fixed the 8 with a concrete
+attack path (P1.1–P1.4, P2.5, P2.8, P3.9, P3.11). The other 4 were either already-correct or
+defer-with-rationale.</p>
+
+<div class="item decision">
+  <div class="kind">P1.1 (FIXED) — forced backup restore left stale target rows</div>
+  <p><code>importArchive({force:true})</code> used <code>INSERT OR REPLACE</code>, so rows present only in
+  the <em>target</em> (not the archive) survived a "restore over". Now both restore loops
+  <code>DELETE FROM</code> each table before re-inserting — but only for the FULLY-captured allowlists
+  (identity tables + persona tables). <code>kv_store</code> is deliberately excluded from the clear: it
+  holds secrets the archive intentionally never captured (API keys, PDS password), and wiping it would
+  destroy live credentials on the device being restored onto. Test asserts target-only rows vanish while
+  an excluded <code>gemini_api_key</code> survives.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">P1.2 (FIXED) — provider-exception log could carry the prompt</div>
+  <p><code>agentic_loop</code>'s provider-error <code>console.warn</code> dropped the raw error message AND
+  the stack (an SDK error can attach the request/prompt as a string property or in the stack). It now logs
+  the constructor + error name, prop NAMES only (never values), and cause TYPES only. The full message
+  still reaches the owner via the in-app <code>providerErrorMessage</code> UI card — never stdout.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">P1.3 (FIXED) — deep-link normalisation only at one tap site</div>
+  <p>The notification-tap allowlist (<code>safeDeepLink</code>) ran on <code>handleNotificationTap</code>
+  but the screen + briefing-card <code>router.push</code> sites had their own ad-hoc normalisers. Unified
+  into <code>resolveSafeDeepLink</code> (scheme strip + <code>approval→/approvals</code> rewrite, then the
+  allowlist) and routed all three tap sites (<code>handleNotificationTap</code>,
+  <code>notifications.tsx</code>, <code>InlineBriefingCard</code>) through it. External schemes and
+  out-of-allowlist routes (e.g. <code>/vault/general</code>) return null → no navigation.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">P1.4 (FIXED) — D2D outbox idempotency key collapsed distinct sends</div>
+  <p>Service traffic keyed only on <code>type:query_id</code>, so the same <code>query_id</code> fanned
+  out to two providers (or two different bodies) collapsed to one outbox row → a dropped send. Key is now
+  <code>type:targetDID:query_id:bodyHash16</code> (SHA-256, first 16 hex). Non-service / non-JSON traffic
+  keeps the <code>messageId</code> fallback so distinct messages don't merge. An identical re-enqueue
+  still collapses (idempotent retry preserved).</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">P2.5 (FIXED) — Lite Brain port published on all interfaces</div>
+  <p>The compose published <code>8200</code> as <code>0.0.0.0</code>, exposing Brain on any host interface.
+  Changed the publish to <code>127.0.0.1:…:8200</code> (host loopback only). The in-container bind stays
+  <code>0.0.0.0</code> — Docker inter-container DNS + the published mapping require it — and the existing
+  <code>DINA_BRAIN_ALLOW_NONLOOPBACK</code> opt-in gates that bind explicitly.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">P2.8 (FIXED) — keychain rows used default accessibility</div>
+  <p>The API key, infra prefs, and auto-unlock passphrase rows used react-native-keychain defaults. All
+  now set <code>ACCESSIBLE.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY</code> — device-bound (no iCloud / backup
+  migration to another device), readable after first unlock so a post-boot background unlock still works.
+  Biometric gating would defeat the auto-unlock convenience the passphrase row exists for, so it's left
+  out by design.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">P3.9 (FIXED) — nonce burned before signature verification</div>
+  <p>The auth pipeline cached the request nonce BEFORE verifying the signature, so an unauthenticated
+  caller could pre-burn a victim's nonce. Moved the nonce check to AFTER the signature-valid gate: headers
+  → timestamp → verify signature → nonce → rate-limit → caller-type → authz. An unverified request never
+  touches the nonce cache.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">P3.11 (FIXED) — appview gates accepted a bare token</div>
+  <p><code>/metrics</code> and the test-inject xRPC compared the whole <code>Authorization</code> header to
+  the token, so <code>Authorization: &lt;token&gt;</code> (no <code>Bearer </code> prefix) passed. Both now
+  require the <code>Bearer </code> prefix and compare only the suffix; a bare token is rejected (metrics
+  401, test-inject 404).</p>
+</div>
+
+<div class="item open">
+  <div class="kind">Not code-changed — verified-correct / defer-with-rationale</div>
+  <p>The remaining round-3 items were assessed and left: the service-query window durability (tracked as
+  #86) is a restart-survival refactor, fail-safe to defer; the CLI transport items (CLI.2/CLI.3, tracked as
+  #87) are decide-later per the consolidation plan. None has a live attack path the shipped defaults
+  expose.</p>
+</div>
+
+<table class="log">
+<tr><th>Round-3 fix</th><th>Verification</th></tr>
+<tr><td>P1.1 force-clear (kv preserved) · P1.2 provider-log no msg/stack · P1.3 unified resolveSafeDeepLink · P1.4 outbox key type:target:query:bodyHash · P2.5 Brain host-loopback publish · P2.8 keychain AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY · P3.9 nonce-after-verify · P3.11 strict Bearer</td>
+<td><span class="ok">tsc 0 — core / brain / mobile / appview</span> · <span class="ok">core 72 (middleware · nonce · outbox · send · archive)</span> · <span class="ok">brain agentic_loop 10</span> · <span class="ok">mobile 83 secret-store + 52 notifications</span> · <span class="ok">appview test-inject + metrics 10</span></td></tr>
+</table>
+
+<h2>Codex round-4 — 3 residual concerns on the round-3 fixes (closed)</h2>
+<p>Codex re-read the round-3 patches and surfaced three concrete gaps. Verified each in code and
+fixed; each now has a direct regression test pinning the exact behaviour.</p>
+
+<div class="item decision">
+  <div class="kind">P1.2 residual (FIXED) — raw provider err.message still reached the user</div>
+  <p>Round-3 closed the LOG path but not the user-facing one. <code>agentic_loop.ts:442</code> set
+  <code>providerErrorMessage = \`${ctor}: ${rawMessage}\`</code>, which flowed through
+  <code>ask_coordinator.ts</code> → <code>coordinator_ask_handler.ts</code>'s
+  <code>humaniseProviderError</code> — whose own fallback echoed the cleaned-raw text (URLs +
+  RetryError wrappers stripped, but PII not). Two leaks. <strong>Fix:</strong> extracted
+  <code>classifyProviderErrorMessage</code> into a shared module
+  (<code>packages/brain/src/llm/provider_error_classify.ts</code>) — sniffs the raw text for known
+  vendor signals (quota / rate-limit / API-key / timeout / network) and returns a fixed safe
+  template or null. <code>agentic_loop</code> now stores either the classified template or
+  <code>\`${ctor}: provider unavailable (see device logs for the error type)\`</code> — the raw
+  <code>errMessage</code> never leaves the catch block. <code>humaniseProviderError</code>'s
+  cleaned-raw fallback is gone; it now returns the generic apology unconditionally on no match.
+  Regression test: provider throws Error containing <code>SENTINEL_PROMPT_FRAGMENT_DO_NOT_LEAK_8a3f</code>
+  → assert sentinel does NOT appear in <code>providerErrorMessage</code>; rate-limit message
+  produces the actionable template and "project xyz" from the raw text does not leak.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">P3.9 (FIXED) — no direct regression test for "bad signature does not burn nonce"</div>
+  <p>Round-3 reordered the auth pipeline (signature verify before nonce cache) but had no test
+  pinning that specific ordering. A future refactor could re-introduce the bug without breaking
+  any existing test. <strong>Fix:</strong> added one test to <code>middleware.test.ts</code> —
+  send a request with mangled signature + nonce N → <code>rejectedAt: 'signature'</code>; replay
+  the SAME canonical (same nonce + timestamp + body) with the VALID signature →
+  <code>authenticated: true</code>; third replay → <code>rejectedAt: 'nonce'</code>. Pins all
+  three properties: bad-sig doesn't cache the nonce, good-sig with the unused nonce works, and
+  the nonce IS in fact one-shot after a successful authentication.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">P3.11 (FIXED) — no direct unit test for checkTestInjectAuth</div>
+  <p>Round-3 fixed the strict-Bearer check on both <code>/metrics</code> and the test-inject xRPC,
+  but only added a unit test for <code>checkMetricsAuth</code>. <code>checkTestInjectAuth</code>
+  had only end-to-end coverage via the integration harness. <strong>Fix:</strong> new
+  <code>appview/tests/unit/test_inject_auth.test.ts</code> mirrors <code>metrics_auth.test.ts</code>:
+  disabled-by-default (404), enabled-no-token (404), empty-token (404), correct Bearer → null
+  pass, wrong / missing / BARE token (P3.11) → 404, non-Bearer scheme (Basic / Bearer-without-space)
+  → 404. 8 cases, pins the gate logic.</p>
+</div>
+
+<table class="log">
+<tr><th>Round-4 fix</th><th>Verification</th></tr>
+<tr><td>P1.2-resid: classifier extracted, raw errMessage never reaches user · P3.9 nonce-after-verify regression test · P3.11 direct unit test for checkTestInjectAuth</td>
+<td><span class="ok">tsc 0 — brain / core / appview</span> · <span class="ok">brain agentic_loop 12 (+2 new sentinel tests) + coord_ask_handler 12</span> · <span class="ok">core middleware 15 (+1 new P3.9 regression)</span> · <span class="ok">appview test_inject_auth 8 + metrics_auth 4</span> · <span class="ok">new file (provider_error_classify.ts) lint-clean</span></td></tr>
+</table>
+
+<h2>Manual-test 2026-05-28 — both pairing bugs surfaced on the sim, fixed at source</h2>
+<p>The 5-scenario dina_details.md manual pass via idb against the iPhone 17 sim surfaced two pairing
+bugs (MT-2026-05-28-E-BUG1 + BUG2). Both fixed in <code>packages/core</code> with regression tests
+and re-verified by driving a fresh <code>dina-agent</code> pair against the live sim post-fix.</p>
+
+<div class="item decision">
+  <div class="kind">M-BUG1 (FIXED) — pair-complete double-INSERT raced on UNIQUE PRIMARY KEY</div>
+  <p>The pair route writes the device row TWICE for the same paired device by design:
+  <code>registerDevice()</code> fires <code>void sqlRepo.register(d).catch(...)</code> (so callers
+  stay sync), then <code>persistDeviceDurable()</code> <code>await</code>s a SECOND
+  <code>sqlRepo.register(d)</code> so a real persistence failure surfaces as 503 instead of a
+  false 201. <code>SQLiteDeviceRepository.register</code> used plain
+  <code>INSERT INTO paired_devices</code>; on op-sqlite (mobile, async-bridged) INSERT #1 commits
+  before #2 runs, and #2 fails with <code>SQLITE_CONSTRAINT: UNIQUE constraint failed:
+  paired_devices.device_id</code>. The CLI sees the 503 and reports failure to the user — but the
+  mobile has already persisted the row → an orphan the agent has no keypair for. Reproduced live:
+  three orphan <code>claw-agent</code> rows accumulated in the sim's Agents screen across my
+  "failed" attempts during the manual pass.
+  <strong>Fix</strong>: <code>INSERT INTO</code> →
+  <code>INSERT OR REPLACE INTO paired_devices</code>. Row contents are deterministic per device
+  (no auto-updated columns), so REPLACE with identical values is a semantic no-op for the first
+  writer and a clean upsert for any same-row retry. Matches the established pattern in
+  <code>kv</code>, <code>chat</code>, <code>archive</code>, <code>vault</code> repos. Regression:
+  new <code>packages/core/__tests__/devices/repository.test.ts</code> — 4 idempotency tests
+  (re-register same row, three back-to-back, mutable-field upsert, distinct-IDs-still-distinct).</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">M-BUG2 (FIXED) — pair-complete 503 body leaked storage internals</div>
+  <p>The 503 body was built as
+  <code>{ error: `pairing: device persistence failed — ${err.message}` }</code>. The raw
+  <code>err.message</code> from op-sqlite carried the ORM name, table, column, and SQL constraint
+  shape — a P2.9-class implementation-detail leak across the security boundary. A probe of the
+  public <code>/v1/pair/complete</code> endpoint could fingerprint mobile storage internals.
+  <strong>Fix</strong>: mint a short uncorrelated diag id, log the raw detail to
+  <code>console.error</code> server-side only, return generic
+  <code>{ error: 'pairing: server error', diag_id }</code> to the caller. Regression: new case in
+  <code>__tests__/server/routes/pair.test.ts</code> — install a throwing
+  <code>DeviceRepository</code>, drive the route, assert body matches <code>/pairing: server
+  error/</code> + <code>diag_id</code> hex-8, AND none of <code>sqlite</code>/
+  <code>paired_devices</code>/<code>UNIQUE</code>/<code>device_id</code>/the raw sentinel appears.</p>
+</div>
+
+<table class="log">
+<tr><th>Manual-test 2026-05-28 fix</th><th>Verification</th></tr>
+<tr><td>BUG1: <code>INSERT OR REPLACE</code> · BUG2: sanitised 503 + uncorrelated diag_id + sanctioned <code>console.error</code></td>
+<td><span class="ok">tsc 0 — core</span> · <span class="ok">device repo + registry + revoke + pair routes: 59 ✓ (incl. 4 new idempotency + 1 new no-leak)</span> · <span class="ok">Live sim re-verification: fresh <code>dina configure</code> against fixed mobile returned <code>Paired! Device ID: dev-28774d8b1b112403</code>; mobile CONNECTED count went 3 → 4 with <code>claw-agent-postfix</code> listed</span></td></tr>
+</table>
+
+<h2>Manual-test 2026-05-28 — R-M6-I1 + I2 fixes (post-regression-run discoveries)</h2>
+<p>After the BUG1/BUG2 pairing fix unblocked the agent-safety scenario, the regression
+re-run surfaced two more gaps that had been hidden by the pairing block. One turned out
+to be a CLI display issue with a one-line server-side fix; the other was a missing
+subscription on the Approvals screen. Both fixed + regression-tested + verified live.</p>
+
+<div class="item decision">
+  <div class="kind">R-M6-I1 (FIXED) — fast-path response shape mismatch with dina-agent CLI</div>
+  <p>Initially diagnosed as "agent ask doesn't invoke vault tools" — actually a Lite Core ↔
+  <code>dina-agent</code> CLI <strong>wire-shape mismatch</strong>. The agentic loop DID run
+  end-to-end, hit <code>vault_search</code>, and returned a real vault-grounded answer
+  ("Emma plays soccer on Saturdays."). But Lite Core's fast-path body shape was
+  <code>{request_id, status:'complete', answer:{text}}</code>, while the CLI's fast-path
+  reader (<code>dina_cli/main.py:380</code>) only checks <code>result.content</code> /
+  <code>result.response</code> — falling through to the stock
+  <code>"I don't have any information about that yet."</code> message even when
+  <code>answer.text</code> carried a real answer. (The polling path already worked because
+  the status route emits <code>answer.text</code> and the CLI's poll branch reads it
+  correctly. Only the fast-path diverged.) Verbose mode masked the bug — the explicit
+  <code>-v</code> trace took the polling branch and rendered the answer fine.
+  <strong>Fix</strong>: mirror <code>answer.text</code> onto a top-level <code>content</code>
+  field in <code>AskSubmitFastPath['body']</code> when present. Backward-compatible — the
+  structured <code>answer</code> stays as the canonical shape for richer consumers; only
+  legacy / Go-shaped readers gain a path. Regression: 2 new cases in
+  <code>__tests__/ask/ask_handler.test.ts</code> — text-bearing answer mirrors to
+  <code>content</code>; richer answer shapes (no <code>text</code> key) cleanly OMIT
+  <code>content</code> rather than emit empty string.</p>
+</div>
+
+<div class="item decision">
+  <div class="kind">R-M6-I2 (FIXED) — Approvals tab didn't refresh while open</div>
+  <p>The Approvals screen only fetched on <code>useFocusEffect</code> (tab change) +
+  pull-to-refresh. An agent's <code>dina validate</code> minted a real workflow task
+  (<code>kind:'approval' / status:'pending_approval'</code>) and bumped the tab-bar badge
+  via <code>useUnreadCount('approval')</code> — but the visible list stayed at the
+  snapshot from the last focus until the user tab-cycled away and back. Initially looked
+  like the intent wasn't surfacing; tab-cycling proved the task WAS in the store and the
+  list rendered correctly on re-focus. <strong>Fix</strong>: subscribe the screen to the
+  same <code>subscribeNotifications</code> stream the badge already uses; re-fetch on
+  every <code>'appended'</code> event whose <code>item.kind === 'approval'</code>. A
+  <code>reloadInFlight</code> ref coalesces overlapping events so a burst of validates
+  produces one re-fetch, not N. Regression: new
+  <code>apps/mobile/__tests__/approvals/screen.live_refresh.test.tsx</code> — initial focus
+  fetches once; approval-kind append triggers refetch; non-approval kinds (reminder /
+  nudge) do NOT trigger; overlapping events coalesce to one in-flight fetch.</p>
+</div>
+
+<table class="log">
+<tr><th>R-M6 follow-up fix</th><th>Verification</th></tr>
+<tr><td>R-M6-I1: <code>content</code> mirror added to fast-path body · R-M6-I2: Approvals screen subscribes to <code>subscribeNotifications</code> on <code>appended/kind:'approval'</code> with coalesce-via-ref</td>
+<td><span class="ok">tsc 0 — brain / mobile</span> · <span class="ok">brain ask_handler 30 ✓ (incl. 2 new R-M6-I1 content-mirror tests)</span> · <span class="ok">mobile approvals.screen.live_refresh 4 ✓</span> · <span class="ok">Live sim re-verification: non-verbose <code>dina ask "What sport does Emma play?"</code> returns <code>"Based on your notes, Emma plays soccer (on Saturdays)."</code></span> · <span class="ok">Live sim re-verification: with Approvals tab open + visible, <code>dina validate send_email</code> caused the screen to auto-update from <code>2 PENDING</code> to <code>3 PENDING</code> with the new "live-refresh proof email" card showing <code>0s ago</code>, no manual interaction</span></td></tr>
+</table>
+
 </body>
 </html>

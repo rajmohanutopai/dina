@@ -48,7 +48,15 @@ export async function saveAutoPassphrase(passphrase: string): Promise<void> {
   if (passphrase.length === 0) {
     throw new Error('saveAutoPassphrase: empty passphrase');
   }
-  await Keychain.setGenericPassword(PP_USERNAME, passphrase, { service: PP_SERVICE });
+  // P2.8: the auto-unlock passphrase unlocks the vault — it is the most
+  // sensitive cached secret. Keep it device-bound (no iCloud/backup migration),
+  // readable after first unlock. (`AFTER_FIRST_UNLOCK` not `WHEN_UNLOCKED` so a
+  // post-boot background unlock still works; biometric gating would defeat the
+  // auto-unlock convenience this exists for.)
+  await Keychain.setGenericPassword(PP_USERNAME, passphrase, {
+    service: PP_SERVICE,
+    accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+  });
 }
 
 export async function loadAutoPassphrase(): Promise<string | null> {
@@ -67,10 +75,7 @@ export async function clearAutoPassphrase(): Promise<void> {
  * a single call. Onboarding's provisioning step uses this once the
  * user has set their passphrase.
  */
-export async function persistStartupChoice(
-  mode: StartupMode,
-  passphrase: string,
-): Promise<void> {
+export async function persistStartupChoice(mode: StartupMode, passphrase: string): Promise<void> {
   await saveStartupMode(mode);
   if (mode === 'auto') {
     await saveAutoPassphrase(passphrase);

@@ -462,6 +462,74 @@ describe('vault tools — personaGuard (Pattern A approval bail)', () => {
     expect(result.results.length).toBeGreaterThanOrEqual(1);
   });
 
+  // F-AGENT-VAULT-GATE regression — the gap that surfaced in P2-M6:
+  // Mobile auto-opens sensitive tiers (`apps/mobile/src/onboarding/default_personas.ts`:
+  // "Without an approval gate on mobile yet, they auto-open at unlock when
+  // persona policy allows"), which put `health` into `accessibleSet` even
+  // though its tier is `sensitive`. The previous fan-out gated the guard
+  // on `!accessibleSet.has(p.name)`, so the gate was skipped → an
+  // external agent's vault_search returned the answer with no approval.
+  // The fix gates by TIER, regardless of accessibleSet membership.
+  it('vault_search fan-out gates a sensitive persona EVEN WHEN it is in accessibleSet (F-AGENT-VAULT-GATE)', async () => {
+    // Health is auto-opened (in accessibleSet) AND sensitive tier — exactly
+    // the live mobile state on the sim.
+    setAccessiblePersonas(['general', 'health']);
+    createPersona('general', 'default');
+    createPersona('health', 'sensitive');
+    storeItem('health', {
+      type: 'note',
+      summary: 'bp',
+      body: 'blood pressure 138/88',
+    });
+
+    const guardCalls: string[] = [];
+    const guard = async (persona: string): Promise<string | null> => {
+      guardCalls.push(persona);
+      return persona === 'health' ? 'appr-bp-gate' : null;
+    };
+    const tool = createVaultSearchTool({ personaGuard: guard });
+
+    // Agent's typical fan-out ask ("what is my bp?" with no persona arg).
+    // The pre-fix vault_tool would have returned the BP row directly
+    // because `accessibleSet.has('health')` was true → guard skipped.
+    // Post-fix, the tier check fires the guard and the loop bails.
+    await expect(tool.execute({ query: 'bp' })).rejects.toMatchObject({
+      name: 'ApprovalRequiredError',
+      approvalId: 'appr-bp-gate',
+      persona: 'health',
+    });
+    expect(guardCalls).toContain('health');
+  });
+
+  it('vault_search fan-out does NOT gate default/standard tiers (owner+agent both pass through)', async () => {
+    // Inverse-check: the new tier-based gate must not over-shoot.
+    // general (default) + work (standard) → guard never called for them.
+    // The beforeEach only seeds 'general'; add 'work' so the search can
+    // actually iterate it without `no repository registered` errors.
+    clearVaults(['general', 'work']);
+    setAccessiblePersonas(['general', 'work']);
+    createPersona('general', 'default');
+    createPersona('work', 'standard');
+    storeItem('general', { type: 'note', summary: 'g', body: 'general fact' });
+
+    const guardCalls: string[] = [];
+    const guard = async (persona: string): Promise<string | null> => {
+      guardCalls.push(persona);
+      return null;
+    };
+    const tool = createVaultSearchTool({ personaGuard: guard });
+
+    const result = (await tool.execute({ query: 'general' })) as {
+      persona: string;
+      results: unknown[];
+    };
+    expect(result.persona).toBe('all');
+    expect(result.results.length).toBeGreaterThanOrEqual(1);
+    // Guard was NOT called for `general` or `work` — only sensitive/locked
+    // tiers trigger the gate.
+    expect(guardCalls).toEqual([]);
+  });
+
   it('browse_vault throws ApprovalRequiredError for sensitive persona', async () => {
     const guardCalls: string[] = [];
     const guard = async (persona: string): Promise<string | null> => {

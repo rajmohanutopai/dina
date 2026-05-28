@@ -71,6 +71,7 @@ import {
 } from '@dina/core/runtime';
 import {
   installWorkflowApprovalInboxBridge,
+  installWorkflowApprovalChatBridge,
   StagingDrainScheduler,
   type StagingDrainOptions,
 } from '@dina/brain/runtime';
@@ -437,6 +438,29 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       workflowApprovalBridgeDispose = installWorkflowApprovalInboxBridge(
         options.workflowRepository,
       );
+      // Parallel chat-thread bridge — writes an inline approval bubble
+      // to the owner's main chat thread when an agent's vault_read
+      // request raises an approval task. Closes the dina_details §13.4
+      // "approval will come to dina mobile app … 🔐 claw-agent wants
+      // to access health" UX — previously only the Approvals tab +
+      // Notifications inbox got the card; the operator's primary
+      // surface (chat) showed nothing. Same disposer chain.
+      const chatBridgeDispose = installWorkflowApprovalChatBridge(
+        options.workflowRepository,
+      );
+      const inboxDispose = workflowApprovalBridgeDispose;
+      workflowApprovalBridgeDispose = (): void => {
+        try {
+          chatBridgeDispose();
+        } catch {
+          /* */
+        }
+        try {
+          inboxDispose();
+        } catch {
+          /* */
+        }
+      };
     }
 
     // issues.txt §4 — only REGISTER the repo here (this closure is sync).

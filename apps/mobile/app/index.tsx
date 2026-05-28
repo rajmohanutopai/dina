@@ -29,11 +29,13 @@ import {
 
 import { InlineApprovalCard } from '../src/components/InlineApprovalCard';
 import { InlineBriefingCard } from '../src/components/InlineBriefingCard';
+import { InlineMarkdownText } from '../src/components/InlineMarkdownText';
 import { InlineNudgeCard } from '../src/components/InlineNudgeCard';
 import { InlineReminderCard } from '../src/components/InlineReminderCard';
 import { InlineReviewDraftCard } from '../src/components/InlineReviewDraftCard';
 import { InlineServiceApprovalCard } from '../src/components/InlineServiceApprovalCard';
 import { InlineServiceQueryCard } from '../src/components/InlineServiceQueryCard';
+import { InlineVaultReadApprovalCard } from '../src/components/InlineVaultReadApprovalCard';
 import { useLiveThread } from '../src/hooks/useChatThread';
 import { useHasActiveAgent } from '../src/hooks/useHasActiveAgent';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
@@ -54,6 +56,7 @@ type UiMessage = ChatMessage & {
     | 'system'
     | 'ask-approval'
     | 'service-approval'
+    | 'vault-read-approval'
     | 'service-query'
     | 'ask-pending'
     | 'review-draft'
@@ -69,6 +72,13 @@ function toDisplayType(m: ChatMessage): UiMessage['displayType'] {
   }
   if (m.type === 'approval' && m.metadata?.kind === 'service_approval') {
     return 'service-approval';
+  }
+  // F-AGENT-VAULT-GATE round-2: agent-driven vault_read approval cards
+  // posted by `installWorkflowApprovalChatBridge`. Discriminator is
+  // `metadata.approvalKind` (not `metadata.kind`) since the bridge
+  // synthesises a richer metadata bag than the chat-tab approval flow.
+  if (m.type === 'approval' && m.metadata?.approvalKind === 'vault_read') {
+    return 'vault-read-approval';
   }
   // Lifecycle-tracked dina message — same MessageType as a plain dina
   // reply, dispatched here on the metadata block. Mirrors the
@@ -248,6 +258,14 @@ export default function ChatScreen() {
     if (item.displayType === 'service-approval') {
       return <InlineServiceApprovalCard message={item} />;
     }
+    // F-AGENT-VAULT-GATE round-2: agent-driven vault-read approval
+    // card. Posted by `installWorkflowApprovalChatBridge` when an
+    // external dina-agent hits a sensitive persona. Approve/Deny drive
+    // the same `approveWorkflowTask` / `cancelWorkflowTask` path the
+    // Approvals tab uses (via `approvePending` / `denyPending`).
+    if (item.displayType === 'vault-read-approval') {
+      return <InlineVaultReadApprovalCard message={item} />;
+    }
     // Lifecycle-tracked service-query message. Posted as a regular
     // 'dina' message tagged with `metadata.lifecycle.kind ===
     // 'service_query'` at dispatch time (`/ask` agentic OR `/service`),
@@ -328,11 +346,21 @@ export default function ChatScreen() {
             <Text style={styles.msgChipText}>{chipLabel}</Text>
           </View>
         )}
-        <Text
-          style={[styles.messageText, isUser && styles.userText, isSystem && styles.systemText]}
-        >
-          {displayContent}
-        </Text>
+        {isUser ? (
+          // User-typed bubbles render literal — never reinterpret what
+          // the user typed (typing `**foo**` should stay visible as-is,
+          // not silently bolded).
+          <Text style={[styles.messageText, styles.userText]}>{displayContent}</Text>
+        ) : (
+          // Dina + system bubbles: the LLM frequently emits `**bold**`
+          // for entity emphasis (names, numbers, dates). Render it
+          // inline instead of leaking literal asterisks into the UI.
+          <InlineMarkdownText
+            style={[styles.messageText, isSystem && styles.systemText]}
+          >
+            {displayContent}
+          </InlineMarkdownText>
+        )}
         <Text style={[styles.timestamp, isUser && styles.timestampUser]}>
           {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </Text>

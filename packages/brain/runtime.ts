@@ -11,6 +11,7 @@ export type { ProviderName } from './src/llm/router';
 export {
   installApprovalInboxBridge,
   installWorkflowApprovalInboxBridge,
+  installWorkflowApprovalChatBridge,
 } from './src/notifications/bridges';
 export { setReviewDraftStarter } from './src/reasoning/draft_review_tool';
 export { createGeminiClassifier } from './src/routing/gemini_classify';

@@ -57,6 +57,31 @@ export function safeDeepLink(raw: string): string | null {
   return ALLOWED_DEEP_LINK_ROOTS.has(root) ? raw : null;
 }
 
+/**
+ * Normalise an approval deep link to `/approvals` (Brain emits
+ * `dina://approvals/<id>`, but there is no dynamic approvals route) and strip
+ * the `dina://` scheme so a link reaches its in-app page. Pure transform — the
+ * allowlist is applied by `resolveSafeDeepLink`.
+ */
+function normaliseDeepLinkPath(link: string): string {
+  const approvalMatch = link.match(/^(?:dina:\/\/)?\/?approvals\/[^/?#]+/);
+  if (approvalMatch !== null) return '/approvals';
+  if (link.startsWith('dina://')) return `/${link.slice('dina://'.length)}`;
+  return link;
+}
+
+/**
+ * THE single safe deep-link resolver — every untrusted `deepLink` push (OS
+ * notification taps, the Notifications screen, briefing cards) MUST go through
+ * this. Normalises the link (approval → `/approvals`, scheme strip) THEN
+ * applies the allowlist (`safeDeepLink`): returns a safe internal path, or
+ * `null` to reject (external scheme, or a non-allowlisted/sensitive route such
+ * as `/vault/...`). Callers MUST no-op on `null`.
+ */
+export function resolveSafeDeepLink(raw: string): string | null {
+  return safeDeepLink(normaliseDeepLinkPath(raw));
+}
+
 export interface NotificationTapResult {
   marked: boolean;
   navigated: boolean;
@@ -73,7 +98,7 @@ export function handleNotificationTap(
   }
   let navigated = false;
   if (typeof data.deepLink === 'string' && data.deepLink !== '') {
-    const safe = safeDeepLink(data.deepLink);
+    const safe = resolveSafeDeepLink(data.deepLink);
     if (safe !== null) {
       deps.routerPush(safe);
       navigated = true;

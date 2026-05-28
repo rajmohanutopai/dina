@@ -16,13 +16,14 @@
  * Source: ARCHITECTURE.md Section 2.4
  */
 
-import { isTimestampValid } from './timestamp';
+import { extractPublicKey } from '../identity/did';
+
+import { isAuthorized, type CallerType as AuthzCallerType } from './authz';
+import { resolveCallerType } from './caller_type';
 import { verifyRequest } from './canonical';
 import { NonceCache } from './nonce';
 import { PerDIDRateLimiter } from './ratelimit';
-import { isAuthorized, type CallerType as AuthzCallerType } from './authz';
-import { resolveCallerType, type CallerType as ResolvedCallerType } from './caller_type';
-import { extractPublicKey } from '../identity/did';
+import { isTimestampValid } from './timestamp';
 
 export interface AuthRequest {
   method: string;
@@ -107,17 +108,7 @@ export function authenticateRequest(req: AuthRequest): AuthResult {
     };
   }
 
-  // 3. Check nonce replay
-  if (!nonceCache.check(nonce)) {
-    return {
-      authenticated: false,
-      did,
-      rejectedAt: 'nonce',
-      reason: 'Nonce already used (replay detected)',
-    };
-  }
-
-  // 4. Verify Ed25519 signature
+  // 3. Verify Ed25519 signature
   //
   // Resolution order:
   //   1. The host-supplied resolver, if any. This is how `did:plc:`
@@ -168,6 +159,21 @@ export function authenticateRequest(req: AuthRequest): AuthResult {
       did,
       rejectedAt: 'signature',
       reason: 'Ed25519 signature verification failed',
+    };
+  }
+
+  // 4. Nonce replay check — AFTER signature verification (P3.9). The nonce is
+  // a single-use resource recorded by `check()`; consuming it only once a
+  // request is proven authentic stops an attacker from burning a victim's
+  // future nonces (or flooding the cache) with unsigned / bad-signature
+  // requests. A genuine replay still fails here: the replayed request has a
+  // valid signature but its nonce is already recorded.
+  if (!nonceCache.check(nonce)) {
+    return {
+      authenticated: false,
+      did,
+      rejectedAt: 'nonce',
+      reason: 'Nonce already used (replay detected)',
     };
   }
 

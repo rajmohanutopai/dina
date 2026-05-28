@@ -29,7 +29,8 @@ describe('handleNotificationTap', () => {
     );
     expect(result).toEqual({ marked: true, navigated: true });
     expect(marked).toEqual(['nt-1']);
-    expect(pushed).toEqual(['dina://approvals/abc']);
+    // resolveSafeDeepLink normalises the approval link to the /approvals index.
+    expect(pushed).toEqual(['/approvals']);
   });
 
   it('only marks read when deepLink missing', () => {
@@ -42,7 +43,8 @@ describe('handleNotificationTap', () => {
     const result = handleNotificationTap({ deepLink: 'dina://chat/main' }, deps);
     expect(result).toEqual({ marked: false, navigated: true });
     expect(marked).toEqual([]);
-    expect(pushed).toEqual(['dina://chat/main']);
+    // Normalised to the scheme-stripped internal path.
+    expect(pushed).toEqual(['/chat/main']);
   });
 
   it('is a no-op for empty / null / undefined data', () => {
@@ -66,12 +68,12 @@ describe('handleNotificationTap', () => {
   // SEC (P2.12) — `deepLink` can be influenced by remote/peer data, so it is
   // allowlisted to internal, non-sensitive routes. External schemes and
   // sensitive screens must be refused (no navigation).
-  it('navigates allowlisted internal routes (dina:// scheme + relative path)', () => {
+  it('navigates allowlisted internal routes (normalised to scheme-stripped paths)', () => {
     expect(handleNotificationTap({ deepLink: 'dina://chat/main?focus=r1' }, deps).navigated).toBe(
       true,
     );
     expect(handleNotificationTap({ deepLink: '/peerlens/sub123' }, deps).navigated).toBe(true);
-    expect(pushed).toEqual(['dina://chat/main?focus=r1', '/peerlens/sub123']);
+    expect(pushed).toEqual(['/chat/main?focus=r1', '/peerlens/sub123']);
   });
 
   it('REFUSES external schemes (https/tel/sms/javascript/other-app)', () => {

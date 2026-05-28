@@ -234,6 +234,87 @@ def test_ask_202_polls_until_complete():
     assert mc.ask_status.call_count == 2
 
 
+# F-2 follow-up: an ask that starts as `in_flight` (LLM still reasoning
+# inside the fast-path window, no approval yet) but later transitions to
+# `pending_approval` (the agentic loop bailed on the persona_guard) used
+# to keep showing "Still reasoning..." for the rest of the poll. The
+# follow-up adds mid-poll state-transition detection — we re-banner to
+# "Awaiting approval..." and switch the timeout-end messaging to match
+# what we were actually waiting on.
+def test_ask_polls_transition_in_flight_to_pending_approval_rebanner():
+    """Mid-poll transition in_flight → pending_approval re-banners + finishes correctly."""
+    mc = MagicMock()
+    # Initial response: in_flight (LLM started, fast-path window expired
+    # before the agentic loop bailed).
+    mc.ask.return_value = {
+        "status": "in_flight",
+        "request_id": "trans-abc",
+    }
+    # Poll 1: still in_flight.
+    # Poll 2: transitions to pending_approval (guard bailed).
+    # Poll 3: still pending_approval (human hasn't tapped yet).
+    # Poll 4: transitions back to in_flight (resume after approve).
+    # Poll 5: complete.
+    mc.ask_status.side_effect = [
+        {"status": "in_flight", "request_id": "trans-abc"},
+        {"status": "pending_approval", "request_id": "trans-abc", "approval_id": "apr-bp"},
+        {"status": "pending_approval", "request_id": "trans-abc", "approval_id": "apr-bp"},
+        {"status": "in_flight", "request_id": "trans-abc"},
+        {"status": "complete", "request_id": "trans-abc",
+         "answer": {"text": "your blood pressure is 138/88"}},
+    ]
+
+    with patch("time.sleep"):
+        result = _invoke(["ask", "--session", "ses_test", "blood pressure"], mock_client=mc)
+
+    assert result.exit_code == 0
+    # The answer text is printed at completion.
+    assert "138/88" in result.output
+    # The transition banners surface in the stderr stream (Click merges
+    # err/out into `output` here because no separate stderr capture is
+    # wired in `_invoke`). The exact phrasing pins the UX contract:
+    #   - "Still reasoning..." printed once at start (initial in_flight).
+    #   - "Awaiting approval..." printed on the in_flight → pending_approval transition.
+    #   - "Approved — reasoning..." printed on the pending_approval → in_flight transition.
+    assert "Still reasoning" in result.output
+    assert "Awaiting approval" in result.output
+    assert "Approved" in result.output
+    # All 5 polls happened.
+    assert mc.ask_status.call_count == 5
+
+
+def test_ask_timeout_reports_last_state_not_initial():
+    """Timeout message should say 'awaiting approval' if that's where we ended up."""
+    mc = MagicMock()
+    # Initial: in_flight. All polls thereafter: pending_approval (operator never taps).
+    mc.ask.return_value = {
+        "status": "in_flight",
+        "request_id": "timeout-abc",
+    }
+    # Return pending_approval for every poll — the timeout will eventually trip.
+    mc.ask_status.return_value = {
+        "status": "pending_approval",
+        "request_id": "timeout-abc",
+        "approval_id": "apr-timeout",
+    }
+
+    with patch("time.sleep"):
+        # --timeout 30 = clamp-min, ~6 polls at the 5s slow interval after transition.
+        result = _invoke(
+            ["ask", "--session", "ses_test", "--timeout", "30", "anything"],
+            mock_client=mc,
+        )
+
+    # CLI exits 1 on timeout (existing convention) and prints a
+    # `Check later: dina ask-status <id>` hint so the operator can
+    # recover via the standalone status command.
+    assert result.exit_code == 1
+    # The exit message must reflect the LAST-seen state, not the initial.
+    assert "Timed out waiting for approval" in result.output
+    # The misleading "reasoning" wording must NOT appear in the timeout line.
+    assert "Timed out waiting for reasoning" not in result.output
+
+
 # TRACE: {"suite": "CLI", "case": "0008", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "13", "title": "ask_202_denied"}
 def test_ask_202_denied():
     """ask command prints denied when approval is rejected."""

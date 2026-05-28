@@ -16,6 +16,7 @@
  */
 
 import { randomBytes } from '@noble/ciphers/utils.js';
+import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
 import {
@@ -56,25 +57,37 @@ export function computeBackoff(attempts: number): number {
 }
 
 /**
- * Derive a stable idempotency key so a double-enqueue of the same
- * logical message collapses to one row. Service traffic keys on the
- * `query_id` carried in the body (the natural cross-Dina correlation
- * id); everything else keys on the per-send message id.
+ * Derive a stable idempotency key so a double-enqueue of the SAME logical
+ * message collapses to one row — without collapsing DISTINCT messages (P1.4).
+ *
+ * Service traffic (a body carrying `query_id`) keys on
+ * `type : targetDID : query_id : bodyHash`:
+ *   - `targetDID` so a fan-out of one `query_id` to multiple recipients enqueues
+ *     a row PER recipient instead of collapsing to the first.
+ *   - `bodyHash` (SHA-256 of the body) so two genuinely-different bodies under
+ *     the same `query_id` stay distinct rather than silently deduping.
+ * Everything else keys on the per-send message id (already unique).
  */
 export function deriveIdempotencyKey(
   messageType: string,
+  targetDID: string,
   bodyJson: string,
   messageId: string,
 ): string {
   try {
     const body = JSON.parse(bodyJson) as { query_id?: unknown };
     if (typeof body.query_id === 'string' && body.query_id !== '') {
-      return `${messageType}:${body.query_id}`;
+      return `${messageType}:${targetDID}:${body.query_id}:${shortBodyHash(bodyJson)}`;
     }
   } catch {
     /* body isn't JSON — fall through to the message id */
   }
   return messageId;
+}
+
+/** Compact body fingerprint — first 16 hex chars of SHA-256(body). */
+function shortBodyHash(body: string): string {
+  return bytesToHex(sha256(new TextEncoder().encode(body))).slice(0, 16);
 }
 
 export interface EnqueueD2DInput {
@@ -107,7 +120,8 @@ export function enqueueD2D(input: EnqueueD2DInput): D2DOutboxRow {
     messageType: input.messageType,
     bodyJson: input.bodyJson,
     idempotencyKey:
-      input.idempotencyKey ?? deriveIdempotencyKey(input.messageType, input.bodyJson, id),
+      input.idempotencyKey ??
+      deriveIdempotencyKey(input.messageType, input.targetDID, input.bodyJson, id),
     nextAttemptAt: now,
     expiresAt: ttl > 0 ? now + ttl : null,
     createdAt: now,

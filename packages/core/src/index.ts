@@ -219,6 +219,17 @@ export {
 export type { ServiceQuerySender } from './server/routes/service_query';
 export { setServiceRespondSender, getServiceRespondSender } from './server/routes/service_respond';
 export type { ServiceRespondSender } from './server/routes/service_respond';
+// Session-scoped approvals (in-memory, process-lifetime). The persona_guard
+// (in @dina/brain) consults `isVaultReadSessionApproved` before minting a
+// fresh workflow task so a vault_read_request granted scope='session' on
+// approve unlocks subsequent `dina ask` calls for the same (agent, persona)
+// pair until DEFAULT_TTL_SEC (~30 min) elapses.
+export {
+  grantSessionApproval,
+  grantVaultReadSessionApproval,
+  isVaultReadSessionApproved,
+  resetSessionApprovals,
+} from './server/routes/intent';
 export type {
   ServiceBypassDecision,
   BypassDenyReason,

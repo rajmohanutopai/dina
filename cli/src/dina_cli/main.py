@@ -305,6 +305,16 @@ def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
             import time
             timeout = min(max(timeout, 30), 1800)  # clamp: 30s min, 30min max
             elapsed = 0
+            # F-2 follow-up: track the LAST observed server-side status so
+            # we can (a) re-banner when the state transitions mid-poll
+            # (in_flight → pending_approval after the agentic loop bails,
+            # or back to in_flight after the user approves and the loop
+            # resumes), and (b) tailor the timeout message based on what
+            # the CLI was actually waiting on at the end. The old loop
+            # locked banner + timeout-message to the INITIAL status, so
+            # a slow ask that later started waiting for human approval
+            # showed "Still reasoning..." for minutes — misleading.
+            last_st = result_status
             while elapsed < timeout:
                 interval = fast_interval if elapsed < fast_window else slow_interval
                 time.sleep(interval)
@@ -341,9 +351,28 @@ def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
                     click.echo("Request expired.", err=True)
                     ctx.exit(1)
                     return
+                # Mid-poll state transition: re-banner + re-tune intervals
+                # so the operator sees an accurate "what we're waiting for"
+                # signal. The timeout budget stays as the user originally
+                # set it; if you ran `dina ask --timeout 30` and the loop
+                # transitioned to pending_approval, you still bail at 30s
+                # — but the bail message will correctly say "still
+                # awaiting approval" instead of "still reasoning".
+                if st != last_st:
+                    if st == "pending_approval":
+                        click.echo("Awaiting approval... (open the Dina app and tap Approve)", err=True)
+                        # Slow the poll: humans don't tap inside one second.
+                        fast_interval, slow_interval, fast_window = 5, 15, 30
+                    elif st == "in_flight" and last_st == "pending_approval":
+                        click.echo("Approved — reasoning...", err=True)
+                        # Tighten the poll: the LLM should resume promptly.
+                        fast_interval, slow_interval, fast_window = 1, 3, 15
+                    last_st = st
                 # else: still pending / in_flight / resuming — keep polling
 
-            if result_status == "pending_approval":
+            # Honest timeout messaging: report what we were actually waiting
+            # on when we gave up, not what the very first response said.
+            if last_st == "pending_approval":
                 click.echo("Timed out waiting for approval.", err=True)
             else:
                 click.echo("Timed out waiting for reasoning to complete.", err=True)

@@ -48,7 +48,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md task 5.21-E.
  */
 
-import { getPersona } from '@dina/core';
+import { getPersona, isVaultReadSessionApproved } from '@dina/core';
 import type { CreateWorkflowTaskInput, CreateWorkflowTaskResult, WorkflowTask } from '@dina/core';
 
 /**
@@ -75,6 +75,29 @@ export interface CreatePersonaGuardOptions {
   askId: string;
   /** DID of the original requester — written into the approval record. */
   requesterDid: string;
+  /**
+   * Owner DID — the home node's own `did:plc:...`. When set, the
+   * guard becomes a no-op for asks whose `requesterDid` matches.
+   * This implements `feedback_user_vs_agent_persona_access`: the
+   * owner's chat tab gets free access to every persona (sensitive
+   * tiers included), while external dina-agents (different DID) are
+   * gated as documented in dina_details.md §13.4.
+   *
+   * Omitting it preserves the legacy "every caller is untrusted"
+   * behaviour — useful for tests that exercise the gate path
+   * regardless of caller identity.
+   */
+  ownerDid?: string;
+  /**
+   * Dina-agent CLI session id (`sess-...`) from the `X-Session` header.
+   * Threaded through to the vault-read session-grant map so a grant
+   * minted for `(requesterDid, sessionId, persona)` is consulted on the
+   * SAME tuple. A new `dina session start` mints a fresh sessionId →
+   * fresh approval — matches dina_details §13.4. Without a sessionId
+   * (older clients), the guard never short-circuits via the session map
+   * and instead always raises a fresh workflow task.
+   */
+  sessionId?: string;
   /** Optional clock injection for tests. Defaults to `Date.now`. */
   nowMsFn?: () => number;
 }
@@ -97,9 +120,17 @@ export function createPersonaGuard(opts: CreatePersonaGuardOptions): AsyncPerson
     throw new TypeError('createPersonaGuard: requesterDid must be a non-empty string');
   }
   const { coreClient, askId, requesterDid } = opts;
+  const ownerDid = typeof opts.ownerDid === 'string' && opts.ownerDid !== '' ? opts.ownerDid : null;
+  const sessionId = typeof opts.sessionId === 'string' ? opts.sessionId : '';
+  const isOwnerCall = ownerDid !== null && requesterDid === ownerDid;
   const now = opts.nowMsFn ?? ((): number => Date.now());
 
   return async (persona: string): Promise<string | null> => {
+    // Owner-on-app shortcut: the home node's own user gets free access
+    // to every persona, sensitive tiers included. The dina-agent CLI
+    // (different DID) still takes the gated path below.
+    if (isOwnerCall) return null;
+
     const personaState = getPersona(persona);
     if (personaState === null) {
       // Unknown persona — let the vault tool's accessibility check
@@ -109,6 +140,17 @@ export function createPersonaGuard(opts: CreatePersonaGuardOptions): AsyncPerson
 
     if (personaState.tier === 'default' || personaState.tier === 'standard') {
       // Open tiers — vault is freely accessible.
+      return null;
+    }
+
+    // Session-scoped approval shortcut: when the owner taps "Allow for
+    // this session" on a vault_read card, the workflow approve route
+    // calls `grantVaultReadSessionApproval(agentDid, sessionId, persona)`.
+    // We check the SAME tuple here so the auto-pass only triggers when
+    // the requester is the same agent AND running in the same
+    // `dina session`. Without a sessionId (older clients), this branch
+    // is a no-op — the workflow-task path runs as the fallback.
+    if (sessionId !== '' && isVaultReadSessionApproved(requesterDid, sessionId, persona)) {
       return null;
     }
 
@@ -142,20 +184,26 @@ export function createPersonaGuard(opts: CreatePersonaGuardOptions): AsyncPerson
 
     // Fresh approval — create a workflow task in pending_approval state.
     // idempotencyKey prevents duplicate tasks on concurrent re-entries.
+    // `session` rides on the payload so the workflow approve route can
+    // grant a session-scoped approval to the SAME (agent, session,
+    // persona) tuple — see `intent.ts` `grantVaultReadSessionApproval`.
     try {
+      const payload: Record<string, unknown> = {
+        type: 'vault_read_request',
+        persona,
+        source_ask_id: askId,
+        requester_did: requesterDid,
+        agent_did: requesterDid,
+        reason: `Agentic /ask ${askId} requires read of persona "${persona}"`,
+        preview: '',
+        created_at: now(),
+      };
+      if (sessionId !== '') payload.session = sessionId;
       await coreClient.createWorkflowTask({
         id: approvalId,
         kind: 'approval',
         description: `Vault read: persona "${persona}" for ask ${askId}`,
-        payload: JSON.stringify({
-          type: 'vault_read_request',
-          persona,
-          source_ask_id: askId,
-          requester_did: requesterDid,
-          reason: `Agentic /ask ${askId} requires read of persona "${persona}"`,
-          preview: '',
-          created_at: now(),
-        }),
+        payload: JSON.stringify(payload),
         initialState: 'pending_approval',
         idempotencyKey: `vault-read-${approvalId}`,
       });

@@ -127,6 +127,21 @@ export interface BuildAgenticAskPipelineInput {
    * (server operators consented by running the binary).
    */
   cloudConsentGranted?: boolean;
+  /**
+   * Owner DID — the home node's own `did:plc:...`. When the per-ask
+   * `requesterDid` equals this value, the persona_guard is a no-op
+   * (owner-on-app path = "safe space" per
+   * `feedback_user_vs_agent_persona_access`); when it differs (an
+   * external dina-agent's `did:key:...`), the guard mints approval
+   * tasks for sensitive/locked personas exactly as dina_details.md
+   * §13.4 specifies.
+   *
+   * Omitting this re-enables the legacy "no owner shortcut" behaviour:
+   * every caller is treated as untrusted and gets gated on
+   * sensitive/locked tiers. Useful for tests; in production the boot
+   * always passes the owner's DID.
+   */
+  ownerDid?: string;
 }
 
 /**
@@ -146,6 +161,13 @@ export interface BuildAgenticAskPipelineInput {
 export interface AskToolContext {
   askId: string;
   requesterDid: string;
+  /**
+   * Dina-agent CLI session id (`sess-...`) from the `X-Session` header
+   * on the inbound /api/v1/ask. Wired into the per-ask persona_guard so
+   * the session-scope shortcut keys on (agent, session, persona) — a
+   * new `dina session start` requires a fresh vault-read approval.
+   */
+  sessionId?: string;
 }
 
 export interface AgenticAskPipeline {
@@ -332,12 +354,27 @@ export function buildAgenticAskPipeline(
   // vault-read approvals (sensitive/locked persona gates).
   {
     const coreClient = input.coreClient;
+    const ownerDid = input.ownerDid;
     result.buildToolsForAsk = (ctx: AskToolContext): ToolRegistry => {
-      const guard = createPersonaGuard({
+      const guardOpts: Parameters<typeof createPersonaGuard>[0] = {
         coreClient,
         askId: ctx.askId,
         requesterDid: ctx.requesterDid,
-      });
+      };
+      // Owner-on-app shortcut (R-M6 follow-up): when the requester is
+      // the home node itself, the guard becomes a no-op so the chat
+      // tab keeps its zero-friction free access. External agents
+      // (different DID) still get gated for sensitive/locked tiers.
+      if (ownerDid !== undefined && ownerDid !== '') {
+        guardOpts.ownerDid = ownerDid;
+      }
+      // Session id rides through to the guard so the session-scope
+      // shortcut keys on (agent, sessionId, persona) — see
+      // `grantVaultReadSessionApproval`.
+      if (ctx.sessionId !== undefined && ctx.sessionId !== '') {
+        guardOpts.sessionId = ctx.sessionId;
+      }
+      const guard = createPersonaGuard(guardOpts);
       return buildToolsWithGuard(guard);
     };
   }

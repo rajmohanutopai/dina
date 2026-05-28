@@ -30,10 +30,12 @@ describe('checkMetricsAuth (P3.13 /metrics gate)', () => {
     expect(checkMetricsAuth('Bearer s3cret-metrics-token')).toBe(true)
   })
 
-  it('token set + wrong / missing bearer → false', () => {
+  it('token set + wrong / missing / bare (no Bearer) → false (P3.11 strict Bearer)', () => {
     process.env.DINA_METRICS_TOKEN = 's3cret-metrics-token'
     expect(checkMetricsAuth('Bearer wrong')).toBe(false)
     expect(checkMetricsAuth(undefined)).toBe(false)
     expect(checkMetricsAuth('')).toBe(false)
+    // A bare token without the `Bearer ` scheme is now rejected.
+    expect(checkMetricsAuth('s3cret-metrics-token')).toBe(false)
   })
 })

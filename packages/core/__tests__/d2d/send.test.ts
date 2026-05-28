@@ -4,8 +4,12 @@
  * Source: ARCHITECTURE.md Tasks 6.3–6.7
  */
 
-import { sendD2D } from '../../src/d2d/send';
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
+import { resetAuditState, queryAudit } from '../../src/audit/service';
+import { getPublicKey } from '../../src/crypto/ed25519';
 import { addContact, clearGatesState } from '../../src/d2d/gates';
+import { sendD2D } from '../../src/d2d/send';
 import { setDeliveryFetchFn, resetDeliveryDeps } from '../../src/transport/delivery';
 import { clearOutbox, outboxCount } from '../../src/transport/outbox';
 import {
@@ -15,9 +19,6 @@ import {
   type D2DOutboxRepository,
   type D2DOutboxRow,
 } from '../../src/transport/outbox_repository';
-import { resetAuditState, queryAudit } from '../../src/audit/service';
-import { getPublicKey } from '../../src/crypto/ed25519';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
 
 const senderPriv = TEST_ED25519_SEED;
 const senderDID = 'did:plc:sender';
@@ -239,7 +240,9 @@ describe('D2D Send Pipeline', () => {
       const rows = repo.listAll();
       expect(rows).toHaveLength(1);
       expect(rows[0].messageType).toBe('service.query');
-      expect(rows[0].idempotencyKey).toBe('service.query:q-1'); // keyed on query_id
+      // Keyed on type:targetDID:query_id:bodyHash (P1.4) — targetDID + body
+      // hash so fan-out / different bodies don't collapse on a shared query_id.
+      expect(rows[0].idempotencyKey).toMatch(/^service\.query:did:plc:recipient:q-1:[0-9a-f]{16}$/);
     });
   });
 });

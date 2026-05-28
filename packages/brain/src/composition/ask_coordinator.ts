@@ -275,7 +275,13 @@ export function buildAgenticExecuteFn(args: {
   }
   const { pipeline, systemPrompt, preFlight } = args;
   return async (input) => {
-    const tools = buildToolsForAsk({ askId: input.id, requesterDid: input.requesterDid });
+    const tools = buildToolsForAsk({
+      askId: input.id,
+      requesterDid: input.requesterDid,
+      ...(input.sessionId !== undefined && input.sessionId !== ''
+        ? { sessionId: input.sessionId }
+        : {}),
+    });
     // MT-15-I3 — prepend the current-time block per turn so tools like
     // `schedule_reminder` can resolve relative phrases ("in 3 minutes",
     // "tomorrow at 9am") without forcing an LLM clarification round-

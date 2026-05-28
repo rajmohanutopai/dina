@@ -124,6 +124,32 @@ describe('Auth Middleware Orchestration', () => {
       expect(result.authenticated).toBe(false);
       expect(result.rejectedAt).toBe('signature');
     });
+
+    // P3.9 regression — the nonce cache must NOT be touched on requests
+    // whose signature fails to verify, otherwise an unauthenticated caller
+    // could pre-burn a victim's nonce. The pipeline order is
+    // headers → timestamp → SIGNATURE → nonce → rate-limit → authz.
+    it('a bad signature does NOT burn the nonce; the same nonce with a good signature still authenticates (P3.9)', () => {
+      const req = signedRequest('GET', '/healthz');
+      const goodSig = req.headers['X-Signature'];
+
+      // Step 1 — same canonical (path/method/body/timestamp/nonce) with
+      // a deliberately-invalid signature: must be rejected at 'signature'
+      // and must NOT cache the nonce.
+      req.headers['X-Signature'] = 'aa'.repeat(64);
+      expect(authenticateRequest(req).rejectedAt).toBe('signature');
+
+      // Step 2 — restore the valid signature on the same canonical. If
+      // step 1 had cached the nonce ahead of the verify gate, this would
+      // be rejected as a nonce replay; instead it authenticates cleanly.
+      req.headers['X-Signature'] = goodSig;
+      expect(authenticateRequest(req).authenticated).toBe(true);
+
+      // Step 3 — a true replay (third call, valid sig, same nonce) IS
+      // rejected. Confirms the nonce is in fact burned by the successful
+      // call, just not by the prior failed-signature attempt.
+      expect(authenticateRequest(req).rejectedAt).toBe('nonce');
+    });
   });
 
   describe('rate limiting', () => {

@@ -91,6 +91,13 @@ export type AskExecuteFn = (input: {
   id: string;
   question: string;
   requesterDid: string;
+  /**
+   * Dina-agent CLI session id (`sess-...`) — propagated from
+   * `POST /api/v1/ask`'s `X-Session` header. Threaded through to the
+   * per-ask `buildToolsForAsk` context so the persona_guard's
+   * session-scope shortcut keys on (agent, session, persona).
+   */
+  sessionId?: string;
   signal?: AbortSignal;
 }) => Promise<ExecuteOutcome>;
 
@@ -99,6 +106,8 @@ export interface AskSubmitRequest {
   requesterDid: string;
   /** Raw `X-Request-Id` header (validated; falls back to a fresh id if invalid). */
   requestIdHeader?: string | null;
+  /** Dina-agent `X-Session` header value — propagated through to `AskExecuteFn`. */
+  sessionId?: string;
   /** TTL override. */
   ttlMs?: number;
 }
@@ -110,6 +119,20 @@ export interface AskSubmitFastPath {
     request_id: string;
     status: 'complete' | 'failed' | 'pending_approval';
     answer?: AskAnswer;
+    /**
+     * Plain-string alias for `answer.text` (R-M6-I1 wire-compat).
+     *
+     * The dina-agent CLI's `ask` command reads `result.content` /
+     * `result.response` from a fast-path 200; without one of those, it
+     * falls through to the stock `"I don't have any information about
+     * that yet."` message even when `answer.text` carries a real
+     * vault-grounded answer. Mirroring `answer.text` here gives the
+     * CLI the field it expects without changing the canonical
+     * structured shape. (The polling status route already returns
+     * `answer.text` and the CLI's poll branch reads it correctly —
+     * fast-path is the lone divergence we're closing.)
+     */
+    content?: string;
     error?: AskFailure;
     approval_id?: string;
   };
@@ -210,6 +233,9 @@ export function createAskHandler(
           id,
           question: req.question,
           requesterDid: req.requesterDid,
+          ...(req.sessionId !== undefined && req.sessionId !== ''
+            ? { sessionId: req.sessionId }
+            : {}),
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -299,6 +325,17 @@ export interface AskStatusView {
   deadline_ms: number;
   /** Present on `complete`. */
   answer?: unknown;
+  /**
+   * Plain-string alias for `answer.text` — mirrors the same field added
+   * to the fast-path body for R-M6-I1. The dina-agent CLI's standalone
+   * `ask-status` command reads `body.content` first and falls back to
+   * showing `"Completed but no content"` when the canonical
+   * `body.answer.text` is the only field present. Mirroring lifts the
+   * text to the legacy-shape field so both the auto-poll loop (which
+   * already reads `body.answer.text`) AND the standalone status command
+   * render the actual answer.
+   */
+  content?: string;
   /** Present on `failed`. */
   error?: unknown;
   /** Present on `pending_approval`. */
@@ -358,7 +395,23 @@ export function createAskStatusHandler(
       deadline_ms: record.deadlineMs,
     };
     if (record.answerJson !== undefined) {
-      body.answer = safeJsonParse(record.answerJson);
+      const parsed = safeJsonParse(record.answerJson);
+      body.answer = parsed;
+      // F-2 follow-up: lift `answer.text` onto top-level `content`
+      // so the standalone `dina ask-status` CLI command (which reads
+      // `body.content`) renders the text instead of falling back to
+      // its stock "Completed but no content" message. Same shape the
+      // fast-path body got in R-M6-I1.
+      if (
+        parsed !== null &&
+        typeof parsed === 'object' &&
+        typeof (parsed as { text?: unknown }).text === 'string'
+      ) {
+        const text = (parsed as { text: string }).text;
+        if (text !== '') {
+          body.content = text;
+        }
+      }
     }
     if (record.errorJson !== undefined) {
       body.error = safeJsonParse(record.errorJson);
@@ -404,10 +457,18 @@ function bodyForOutcome(
   applied: AskRecord | null,
 ): AskSubmitFastPath['body'] {
   if (outcome.kind === 'answer') {
+    // R-M6-I1: also lift `answer.text` onto a top-level `content`
+    // field so the dina-agent CLI's fast-path reader (which expects
+    // `result.content` / `result.response`) renders the answer instead
+    // of falling through to its stock "no information" message. The
+    // structured `answer` object stays untouched for newer consumers.
+    const text =
+      typeof outcome.answer.text === 'string' ? outcome.answer.text : '';
     return {
       request_id: id,
       status: 'complete',
       answer: outcome.answer,
+      ...(text !== '' ? { content: text } : {}),
     };
   }
   if (outcome.kind === 'approval') {

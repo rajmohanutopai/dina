@@ -214,6 +214,20 @@ function restoreTable(adapter: DatabaseAdapter, table: string, rows: DBRow[]): v
   }
 }
 
+/**
+ * Empty a table for a force-overwrite restore (P1.1). `table` is ALWAYS a
+ * member of the constant IDENTITY_TABLES / PERSONA_TABLES allowlists — never
+ * attacker-influenced — so interpolating it is safe. Tolerates a table that's
+ * absent in an older-schema target.
+ */
+function clearTable(adapter: DatabaseAdapter, table: string): void {
+  try {
+    adapter.execute(`DELETE FROM ${table}`);
+  } catch {
+    // Table absent in this DB (older schema) — nothing to clear.
+  }
+}
+
 // ---------------------------------------------------------------
 // Build payload (export)
 // ---------------------------------------------------------------
@@ -350,6 +364,14 @@ export async function importArchive(
   if (idAdapter !== null) {
     idAdapter.transaction(() => {
       for (const table of [...IDENTITY_TABLES, KV_TABLE]) {
+        // Force = true overwrite (the UI's "Overwrite"): clear the target
+        // table first so rows that exist on the device but NOT in the backup
+        // don't survive (P1.1 — `INSERT OR REPLACE` only overwrites matching
+        // PKs, it never removes target-only rows). kv_store is the ONE
+        // exception: it holds secrets (API keys, PDS password) deliberately
+        // kept OUT of the archive, so wiping it would destroy them — kv is
+        // merged instead (backup prefs overwrite, target secrets survive).
+        if (opts.force && table !== KV_TABLE) clearTable(idAdapter, table);
         const rows = payload.identity.tables[table];
         if (rows !== undefined) restoreTable(idAdapter, table, rows);
       }
@@ -373,6 +395,10 @@ export async function importArchive(
     const adapter = await ds.openPersonaForRestore(persona.name, persona.tier);
     adapter.transaction(() => {
       for (const table of PERSONA_TABLES) {
+        // Force = true overwrite: clear each persona table first (all persona
+        // tables are fully captured in the archive — no secret-exclusion
+        // caveat like kv_store) so stale target-only vault rows don't survive.
+        if (opts.force) clearTable(adapter, table);
         const rows = persona.tables[table];
         if (rows !== undefined) restoreTable(adapter, table, rows);
       }

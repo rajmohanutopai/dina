@@ -392,6 +392,11 @@ export async function buildBootInputs(
     activeProvider: options.activeProvider,
     appViewClient,
     logger: options.logger,
+    // Owner DID — wired into the per-ask persona_guard so the chat
+    // tab stays gate-free while external dina-agents get the
+    // sensitive/locked tier prompt (dina_details.md §13.4 + the
+    // `feedback_user_vs_agent_persona_access` policy).
+    ownerDid: did,
   });
 
   // Pattern A wins over the simpler agenticAsk path when we have a
@@ -663,6 +668,9 @@ async function tryBuildAgenticAsk(opts: {
   /** Forwarded to `createQueryServiceTool` so WM-BRAIN-06d auto-fetch
    *  failures surface in production telemetry. */
   logger?: BootServiceInputs['logger'];
+  /** Owner DID — forwarded into the per-ask persona_guard. See the
+   *  call site above. */
+  ownerDid?: string;
 }): Promise<AgenticAskBundle | undefined> {
   if (opts.activeProvider === 'none') return undefined;
 
@@ -802,6 +810,9 @@ async function tryBuildAgenticAsk(opts: {
     retrievalFetchers,
     ...(opts.logger !== undefined ? { logger: opts.logger } : {}),
     ...(embedding !== undefined ? { embedding } : {}),
+    ...(opts.ownerDid !== undefined && opts.ownerDid !== ''
+      ? { ownerDid: opts.ownerDid }
+      : {}),
   });
 
   // Register the live router so Settings can hot-swap the cloud

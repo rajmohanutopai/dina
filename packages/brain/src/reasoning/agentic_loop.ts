@@ -43,6 +43,8 @@
  * Pattern A suspend/resume is that Phase-2 extension.
  */
 
+import { classifyProviderErrorMessage } from '../llm/provider_error_classify';
+
 import type { ToolExecutionOutcome, ToolRegistry } from './tool_registry';
 import type {
   ChatMessage,
@@ -372,7 +374,6 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
       });
     } catch (err) {
       const errMessage = err instanceof Error ? err.message : String(err);
-      const errStack = err instanceof Error && err.stack ? err.stack : '';
       // Capture every signal we can dig out of the thrown value so the
       // iOS "cannot parse response" / "fetch failed" branch is
       // attributable. `err.message` alone hasn't been findable in any
@@ -421,25 +422,30 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
         depth++;
       }
 
-      // The message is truncated (an API error can echo the request) and only
-      // prop NAMES + cause TYPES are logged — enough to triage a provider
-      // failure without leaking prompt / vault content to stdout (Codex #4).
+      // Log error TYPE only to stdout — NEVER the raw message or stack. An LLM
+      // SDK error can echo the request/prompt, and truncation isn't redaction
+      // (P1.2). The error CLASS + prop NAMES + cause TYPES are enough to triage
+      // a provider failure; the full message is surfaced only on the
+      // owner-facing failure card below (`providerErrorMessage`), not to logs.
       console.warn(
-        `[agentic_loop] provider.chat threw: ${errCtor}/${errName}: ${errMessage.slice(0, 200)}` +
+        `[agentic_loop] provider.chat threw: ${errCtor}/${errName}` +
           (errProps !== '' ? `\nprops: ${errProps}` : '') +
-          causeChain +
-          (errStack !== '' ? `\nstack: ${errStack.slice(0, 800)}` : ''),
+          causeChain,
       );
-      // Stash the raw provider error message on the loop result so the
-      // chat surface can display it. Keeps the generic "provider_error"
-      // failureKind unchanged for callers that already branch on it,
-      // but unblocks operator debugging on platforms where JS console
-      // output isn't reachable (iOS sim — RN console.log goes to
-      // Metro stdout which isn't surfaced through the iOS system log).
-      // Include the constructor name + cause head so the on-device
-      // failure card is self-diagnostic.
-      const causeHead = causeChain !== '' ? ` | ${causeChain.split('\n')[1]?.trim() ?? ''}` : '';
-      providerErrorMessage = `${errCtor}: ${errMessage}${causeHead}`.slice(0, 240);
+      // P1.2-residual: the user-facing card must NEVER carry raw
+      // `err.message`. An SDK error can serialise the failing request
+      // (prompt + vault content) into its message string, and there
+      // is no general way to redact arbitrary natural language. Run
+      // the raw text through the centralised classifier — if it
+      // matches a known vendor signal (quota / rate-limit / API key /
+      // timeout / network) we surface that template; otherwise the
+      // user sees only the error CONSTRUCTOR name + a generic
+      // "provider unavailable" line. The full raw message stays
+      // inside this catch block; it does NOT cross into
+      // `providerErrorMessage`, `failure.message`, or the chat thread.
+      const classified = classifyProviderErrorMessage(errMessage);
+      providerErrorMessage =
+        classified ?? `${errCtor}: provider unavailable (see device logs for the error type)`;
       return done('provider_error');
     }
 

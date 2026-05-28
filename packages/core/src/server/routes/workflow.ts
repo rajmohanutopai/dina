@@ -32,7 +32,7 @@ import {
   getWorkflowService,
 } from '../../workflow/service';
 
-import { grantSessionApproval } from './intent';
+import { grantSessionApproval, grantVaultReadSessionApproval } from './intent';
 
 import type { CoreRouter, CoreRequest, CoreResponse } from '../router';
 
@@ -398,13 +398,33 @@ async function approveTask(
 ): Promise<WorkflowTask> {
   const before = service.store().getById(id);
 
-  // Session-scoped approval: if the caller passes scope='session' on an
-  // intent_validation task, grant a module-level session approval so the
-  // next validate call for the same action auto-approves without a new card.
+  // Session-scoped approval: if the caller passes scope='session' the
+  // approve grants a session-keyed approval so the same agent's SAME
+  // `dina session` auto-passes subsequent calls for that action/persona.
+  //   - intent_validation: keyed on `(agent_did, session, action)`
+  //   - vault_read_request: keyed on `(agent_did, session, persona)`
+  // The session id rides in the task payload — `intent.ts` writes
+  // `payload.session` from the validate body's `session` field, and
+  // `persona_guard.ts` writes it via the per-ask context. A new
+  // `dina session start` mints a fresh sessionId so previously granted
+  // grants don't carry over — matches the dina_details §13.4 expectation
+  // that "that session" means the CLI session.
   if (body?.scope === 'session' && before !== null) {
     const payload = safeParseBody(before.payload);
+    const sessionId = typeof payload?.session === 'string' ? payload.session : '';
+    const agentDid =
+      typeof payload?.agent_did === 'string'
+        ? payload.agent_did
+        : typeof payload?.requester_did === 'string'
+          ? payload.requester_did
+          : '';
     if (payload?.type === 'intent_validation' && typeof payload.action === 'string') {
-      grantSessionApproval(payload.action);
+      grantSessionApproval(agentDid, sessionId, payload.action);
+    } else if (
+      payload?.type === 'vault_read_request' &&
+      typeof payload.persona === 'string'
+    ) {
+      grantVaultReadSessionApproval(agentDid, sessionId, payload.persona);
     }
   }
 

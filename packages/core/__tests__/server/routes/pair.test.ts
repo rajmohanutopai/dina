@@ -22,6 +22,10 @@ import { signRequest } from '../../../src/auth/canonical';
 import { registerPublicKeyResolver, resetMiddlewareState } from '../../../src/auth/middleware';
 import { getPublicKey } from '../../../src/crypto/ed25519';
 import { resetDeviceRegistry, getDeviceByDID } from '../../../src/devices/registry';
+import { setDeviceRepository } from '../../../src/devices/repository';
+
+import type { DeviceRepository } from '../../../src/devices/repository';
+import type { PairedDevice } from '../../../src/devices/registry';
 import { deriveDIDKey, publicKeyToMultibase } from '../../../src/identity/did';
 import { setNodeDID, clearPairingState } from '../../../src/pairing/ceremony';
 import { createCoreRouter } from '../../../src/server/core_server';
@@ -249,5 +253,58 @@ describe('POST /v1/pair/complete — public, code-authenticated', () => {
       }),
     );
     expect(again.status).toBe(400);
+  });
+
+  // MT-2026-05-28-E-BUG2 — when the durable persistence path throws, the
+  // 503 body must NOT leak the raw underlying error. A network probe of
+  // /v1/pair/complete shouldn't learn the ORM / table / column / constraint
+  // shape; that's a P2.9-class implementation-detail leak.
+  it('503 body does NOT leak storage internals when persistDeviceDurable throws (MT-2026-05-28-E-BUG2)', async () => {
+    // Stub a DeviceRepository whose register() throws with a sentinel that
+    // mirrors the real op-sqlite UNIQUE error so any echo would be obvious.
+    const SQL_SENTINEL =
+      '[op-sqlite] statement execution error: UNIQUE constraint failed: paired_devices.device_id';
+    const throwingRepo: DeviceRepository = {
+      register: () => Promise.reject(new Error(SQL_SENTINEL)),
+      get: async () => null,
+      getByPublicKey: async () => null,
+      getByDID: async () => null,
+      list: async () => [] as PairedDevice[],
+      revoke: async () => false,
+      touch: async () => undefined,
+    };
+    // Silence the operator-facing console.error in this test (it's the
+    // sanctioned server-side log path; we just don't want it in jest output).
+    const origErr = console.error;
+    console.error = (): void => {
+      /* */
+    };
+    setDeviceRepository(throwingRepo);
+    try {
+      const { code } = await initiate();
+      const actor = makeActor();
+      const resp = await router.handle(
+        unsignedReq('POST', '/v1/pair/complete', {
+          code,
+          public_key: publicKeyToMultibase(actor.pub),
+        }),
+      );
+      expect(resp.status).toBe(503);
+      const body = resp.body as { error: string; diag_id: string };
+      // Generic, fingerprint-free.
+      expect(body.error).toMatch(/pairing: server error/);
+      expect(body.diag_id).toMatch(/^[0-9a-f]{8}$/);
+      // None of the storage-internal tokens may surface.
+      const serialised = JSON.stringify(body);
+      expect(serialised).not.toContain('sqlite');
+      expect(serialised).not.toContain('paired_devices');
+      expect(serialised).not.toContain('UNIQUE');
+      expect(serialised).not.toContain('device_id');
+      // And the raw sentinel must not appear anywhere.
+      expect(serialised).not.toContain(SQL_SENTINEL);
+    } finally {
+      setDeviceRepository(null);
+      console.error = origErr;
+    }
   });
 });

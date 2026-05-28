@@ -343,6 +343,77 @@ describe('runAgenticTurn — error handling', () => {
     expect(result.finishReason).toBe('provider_error');
   });
 
+  // P1.2 residual — an SDK error's `.message` can echo the failing
+  // request body (prompt + any vault content the prompt references).
+  // The user-facing `providerErrorMessage` must never carry that raw
+  // text; only a known-safe classifier template or a ctor-only
+  // generic should escape the catch block.
+  it('does NOT echo the raw err.message into providerErrorMessage (P1.2 residual)', async () => {
+    const PROMPT_LEAK_SENTINEL = 'SENTINEL_PROMPT_FRAGMENT_DO_NOT_LEAK_8a3f';
+    const provider: LLMProvider = {
+      name: 't',
+      supportsStreaming: false,
+      supportsToolCalling: true,
+      supportsEmbedding: false,
+      chat: async () => {
+        // Simulate an SDK error whose message embeds the request body.
+        // No classifier pattern matches this string, so the unclassified
+        // path is exercised.
+        throw new Error(`request failed: ${PROMPT_LEAK_SENTINEL}`);
+      },
+      // eslint-disable-next-line require-yield -- interface-satisfying stub; the test path never iterates it
+      async *stream() {
+        throw new Error('nope');
+      },
+      async embed() {
+        throw new Error('nope');
+      },
+    };
+    const result = await runAgenticTurn({
+      provider,
+      tools: new ToolRegistry(),
+      systemPrompt: '',
+      userMessage: 'hi',
+    });
+    expect(result.finishReason).toBe('provider_error');
+    expect(result.providerErrorMessage).toBeDefined();
+    expect(result.providerErrorMessage).not.toContain(PROMPT_LEAK_SENTINEL);
+    // The unclassified-fallback should be the ctor-only line.
+    expect(result.providerErrorMessage).toContain('Error');
+    expect(result.providerErrorMessage).toContain('provider unavailable');
+  });
+
+  // Classified path — a recognised vendor signal (e.g. "rate limit")
+  // SHOULD produce the actionable template, not the generic fallback.
+  it('uses the classifier template when the err.message matches a known vendor signal', async () => {
+    const provider: LLMProvider = {
+      name: 't',
+      supportsStreaming: false,
+      supportsToolCalling: true,
+      supportsEmbedding: false,
+      chat: async () => {
+        throw new Error('429 Too Many Requests — rate limit exceeded for project xyz');
+      },
+      // eslint-disable-next-line require-yield -- interface-satisfying stub; the test path never iterates it
+      async *stream() {
+        throw new Error('nope');
+      },
+      async embed() {
+        throw new Error('nope');
+      },
+    };
+    const result = await runAgenticTurn({
+      provider,
+      tools: new ToolRegistry(),
+      systemPrompt: '',
+      userMessage: 'hi',
+    });
+    expect(result.finishReason).toBe('provider_error');
+    expect(result.providerErrorMessage).toMatch(/rate-limited/i);
+    // Project / id fragments from the raw text must not leak through.
+    expect(result.providerErrorMessage).not.toContain('project xyz');
+  });
+
   it('respects AbortSignal', async () => {
     const controller = new AbortController();
     const { provider } = scriptedProvider([

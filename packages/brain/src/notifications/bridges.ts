@@ -27,6 +27,7 @@ import type { ApprovalManager, ApprovalRequest } from '@dina/core';
 import type { WorkflowRepository } from '@dina/core';
 import type { WorkflowTask } from '@dina/core';
 import { appendNotification } from './inbox';
+import { addMessage } from '../chat/thread';
 
 /**
  * Subscribe an inbox bridge to an ApprovalManager. Every
@@ -119,6 +120,72 @@ export function installWorkflowApprovalInboxBridge(
       // `created_at` is already ms — pass through so reorders by
       // chronology pin the row at the right place.
       now: task.created_at,
+    });
+  });
+}
+
+/**
+ * Bridge: workflow approval tasks → chat-thread inline approval bubble.
+ *
+ * Closes the dina_details §13.4 expectation that an agent's vault-read
+ * request lands as an inline "🔐 claw-agent wants to access health
+ * [Approve] [Deny]" card in the owner's primary chat surface, not
+ * just in the Approvals tab + Notifications inbox. Mirrors the existing
+ * `InlineApprovalCard` rendering path the chat-tab bridge already uses
+ * for owner-initiated asks — same `MessageType: 'approval'` row, same
+ * metadata shape, same Approve/Deny button wiring.
+ *
+ * Scope: ONLY fires for `payload.type === 'vault_read_request'`. The
+ * intent_validation flow (`dina validate`) already shows up in the
+ * Approvals tab and is operator-driven, not chat-driven; surfacing
+ * those in chat would clutter the primary thread without adding signal.
+ *
+ * Defaults: writes to the `'main'` thread (the chat orchestrator's
+ * DEFAULT_THREAD constant — keep both in lockstep). Callers can
+ * override per-call via the second arg if the boot wiring chooses
+ * a different default thread per persona.
+ */
+export function installWorkflowApprovalChatBridge(
+  workflowRepo: WorkflowRepository,
+  options: {
+    /** Thread id to write inline approval cards to. Default `'main'`. */
+    threadId?: string;
+  } = {},
+): () => void {
+  const targetThread = options.threadId ?? 'main';
+  return workflowRepo.subscribeApprovalCreated((task: WorkflowTask) => {
+    // Only render vault_read_request approvals in the chat thread.
+    // Intent-validation (dina validate) approvals stay in the
+    // Approvals tab; the chat thread shouldn't surface every agent
+    // policy decision.
+    let payload: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(task.payload);
+      if (parsed !== null && typeof parsed === 'object') {
+        payload = parsed as Record<string, unknown>;
+      }
+    } catch {
+      /* malformed payload — skip */
+      return;
+    }
+    if (payload.type !== 'vault_read_request') return;
+
+    const persona = typeof payload.persona === 'string' ? payload.persona : '';
+    const agentDid = typeof payload.requester_did === 'string' ? payload.requester_did : '';
+    const shortAgent = agentDid.length > 32 ? `${agentDid.slice(0, 32)}…` : agentDid;
+    const body = `🔐 An agent wants to access /${persona}\n${shortAgent}`;
+
+    addMessage(targetThread, 'approval', body, {
+      metadata: {
+        approvalKind: 'vault_read',
+        approvalTaskId: task.id,
+        persona,
+        agentDid,
+        // `InlineApprovalCard` reads these to render the Approve/Deny
+        // buttons and to drive the same scope dialog the Approvals tab
+        // uses (This time only / Allow for this session / Cancel).
+      },
+      timestamp: task.created_at,
     });
   });
 }

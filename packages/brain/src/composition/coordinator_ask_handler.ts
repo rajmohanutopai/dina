@@ -46,10 +46,15 @@ import {
   updateAskLifecycle,
   type ServiceQueryLifecycle,
 } from '../chat/thread';
-import type { AskCommandHandler } from '../chat/orchestrator';
+import {
+  classifyProviderErrorMessage,
+  GENERIC_PROVIDER_FAILURE_MESSAGE,
+} from '../llm/provider_error_classify';
+import { resetAskApprovalGateway, setAskApprovalGateway } from './ask_gateway_registry';
+
 import type { AskCoordinator } from './ask_coordinator';
 import type { AskFailure } from '../ask/ask_handler';
-import { resetAskApprovalGateway, setAskApprovalGateway } from './ask_gateway_registry';
+import type { AskCommandHandler } from '../chat/orchestrator';
 
 export interface CreateCoordinatorAskHandlerOptions {
   coordinator: AskCoordinator;
@@ -147,13 +152,13 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
           if (detail !== '' && !detail.startsWith('agentic loop terminated with')) {
             return humaniseProviderError(detail);
           }
-          return "I ran into a problem reaching the AI provider. Please try again in a moment.";
+          return 'I ran into a problem reaching the AI provider. Please try again in a moment.';
         }
         case 'max_iterations':
         case 'max_tool_calls':
           return "I wasn't able to complete this in the available steps. Try a simpler query.";
         case 'cancelled':
-          return "Your request was cancelled.";
+          return 'Your request was cancelled.';
         default: {
           const detail =
             typeof raw === 'object' && raw !== null && 'message' in raw
@@ -478,71 +483,16 @@ function extractServiceQueries(value: unknown): Array<{
  * link to platform.openai.com docs, and use jargon the chat-bubble
  * reader will not parse.
  *
- * This helper sniffs known vendor signals (429 / quota / 401 / 403 /
- * timeout / network) and returns plain English plus an actionable
- * next step. Unrecognised errors fall through with their first
- * sentence preserved so we never lose information we don't classify.
+ * `humaniseProviderError` is the user-facing wrapper: a classified
+ * template (P1.2 — see `provider_error_classify.ts` for the patterns),
+ * otherwise a fixed generic apology. The previous "cleaned raw"
+ * fallback was a P1.2-residual leak — an LLM SDK error string can
+ * contain the failing request body (prompt + vault content), and
+ * "cleaned" regex-strips didn't redact PII, they just trimmed URLs /
+ * wrappers. The raw error is never propagated through this function.
  *
  * Exported for tests; consumers should go through `formatFailure`.
  */
 export function humaniseProviderError(raw: string): string {
-  const lower = raw.toLowerCase();
-
-  // Quota / rate-limit family — both surface as 429s but the body
-  // text distinguishes them and the action differs (top-up vs wait).
-  if (
-    lower.includes('exceeded your current quota') ||
-    lower.includes('insufficient_quota')
-  ) {
-    return "Your AI provider is out of quota. Open Settings → Manage AI providers and switch to a different one (or top up your account).";
-  }
-  if (lower.includes('rate limit') || lower.includes('429')) {
-    return 'AI provider rate-limited. Wait a minute and try again, or switch providers in Settings → Manage AI providers.';
-  }
-
-  // Invalid / revoked API key. 401/403 on every cloud provider.
-  if (
-    lower.includes('invalid_api_key') ||
-    lower.includes('invalid api key') ||
-    lower.includes('incorrect api key') ||
-    lower.includes(' 401') ||
-    lower.includes(' 403')
-  ) {
-    return 'Your API key was rejected. Update it in Settings → Manage AI providers.';
-  }
-
-  // Timeout — either from our hard cap or the SDK's `AbortError`.
-  if (
-    lower.includes('aborterror') ||
-    lower.includes('timed out') ||
-    lower.includes('took too long')
-  ) {
-    return "That took too long to come back. The provider may be slow right now — try again, or switch providers in Settings → Manage AI providers.";
-  }
-
-  // Network reachability.
-  if (
-    lower.includes('network request failed') ||
-    lower.includes('failed to fetch') ||
-    lower.includes('econnrefused') ||
-    lower.includes('enotfound')
-  ) {
-    return "Couldn't reach the AI provider. Check your connection and try again.";
-  }
-
-  // Generic fallback — strip the RetryError wrapper, docs URLs, and
-  // "For more information…" trailer so the user sees the meaningful
-  // first sentence. Prefix with "AI provider error:" so the failure
-  // category is clear even for vendor errors we haven't classified
-  // (and so callers/tests can distinguish provider failures from
-  // other failure kinds in the chat stream).
-  const cleaned = raw
-    .replace(/^AI provider error:\s*/i, '')
-    .replace(/RetryError:\s*Failed after \d+ attempts\.\s*Last error:\s*/i, '')
-    .replace(/\s*For more information.*$/i, '')
-    .replace(/\s*https?:\/\/\S+/g, '')
-    .trim();
-  return cleaned.length > 0
-    ? `AI provider error: ${cleaned}`
-    : 'I ran into a problem reaching the AI provider. Please try again in a moment.';
+  return classifyProviderErrorMessage(raw) ?? GENERIC_PROVIDER_FAILURE_MESSAGE;
 }

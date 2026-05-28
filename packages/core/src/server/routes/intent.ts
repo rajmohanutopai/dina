@@ -66,40 +66,133 @@ const MAX_VALIDATE_BODY_BYTES = 64 * 1024;
 
 // ─── Session-scoped approvals ────────────────────────────────────────────────
 //
-// Stored in-memory as `action → expiry-ms`. When the user approves a
-// MODERATE intent_validation task with scope='session', the action is
-// added here. Subsequent validate calls for the same action auto-approve
-// without showing a new card, until the TTL expires.
+// Stored in-memory keyed on `(agentDid, sessionId, action)` so the scope
+// is per-CLI-session, NOT process-wide. A new `dina session start` mints
+// a fresh sessionId and the agent must re-approve. This matches the
+// dina_details §13.4 line "further questions in that session related to
+// finance will be allowed" — "that session" is the `dina session`, not
+// the agent's process lifetime.
+//
+// Pre-tightening (the original behavior we replaced) keyed on `action`
+// only, which meant any agent could exploit any other agent's grant; and
+// the same agent across multiple `dina session start` calls kept the
+// grant. Now each (agent, session, action) tuple gets its own row.
 //
 // No persistence — session approvals are intentionally ephemeral. A cold
-// relaunch clears them, which is the right security posture: "this session"
-// means the current process lifetime, not across reboots.
+// relaunch clears them, which is the right security posture.
 
-const sessionApprovals = new Map<string, number>(); // action → expiresAtMs
+const sessionApprovals = new Map<string, number>(); // `${did}::${sessionId}::${action}` → expiresAtMs
 
-function isSessionApproved(action: string): boolean {
-  const exp = sessionApprovals.get(action);
+function intentSessionKey(agentDid: string, sessionId: string, action: string): string {
+  return `${agentDid}::${sessionId}::${action}`;
+}
+
+function isSessionApproved(agentDid: string, sessionId: string, action: string): boolean {
+  if (
+    typeof agentDid !== 'string' ||
+    agentDid === '' ||
+    typeof sessionId !== 'string' ||
+    sessionId === '' ||
+    typeof action !== 'string' ||
+    action === ''
+  ) {
+    return false;
+  }
+  const key = intentSessionKey(agentDid, sessionId, action);
+  const exp = sessionApprovals.get(key);
   if (exp === undefined) return false;
   if (Date.now() >= exp) {
-    sessionApprovals.delete(action);
+    sessionApprovals.delete(key);
     return false;
   }
   return true;
 }
 
 /**
- * Grant a session-scoped approval for the given action. Called by the
- * workflow approve handler when `scope='session'` is set on an
- * intent_validation approval task.
+ * Grant a session-scoped approval for a `(agentDid, sessionId, action)`
+ * tuple. Called by the workflow approve handler when `scope='session'`
+ * is set on an intent_validation task. Subsequent validate calls of the
+ * same action FROM THE SAME (agent, session) pair auto-approve until
+ * the TTL elapses; a different agent OR a new `dina session start` from
+ * the same agent gets a fresh approval prompt.
  */
-export function grantSessionApproval(action: string, durationMs = DEFAULT_TTL_SEC * 1000): void {
+export function grantSessionApproval(
+  agentDid: string,
+  sessionId: string,
+  action: string,
+  durationMs = DEFAULT_TTL_SEC * 1000,
+): void {
+  if (typeof agentDid !== 'string' || agentDid.trim() === '') return;
+  if (typeof sessionId !== 'string' || sessionId.trim() === '') return;
   if (typeof action !== 'string' || action.trim() === '') return;
-  sessionApprovals.set(action, Date.now() + durationMs);
+  sessionApprovals.set(intentSessionKey(agentDid, sessionId, action), Date.now() + durationMs);
 }
 
 /** Reset session approvals (for testing). */
 export function resetSessionApprovals(): void {
   sessionApprovals.clear();
+  vaultReadSessionApprovals.clear();
+}
+
+// ─── Session-scoped vault-read approvals ────────────────────────────────────
+//
+// Parallel map for `dina ask` (vault_read_request) tasks. Keyed by
+// `(agentDid, sessionId, persona)` — same tightening as the
+// intent_validation map: scope is per-CLI-session, NOT process-wide.
+// A new `dina session start` requires a fresh vault-read approval.
+
+const vaultReadSessionApprovals = new Map<string, number>(); // `${did}::${sessionId}::${persona}` → expiresAtMs
+
+function vaultReadSessionKey(agentDid: string, sessionId: string, persona: string): string {
+  return `${agentDid}::${sessionId}::${persona}`;
+}
+
+export function isVaultReadSessionApproved(
+  agentDid: string,
+  sessionId: string,
+  persona: string,
+): boolean {
+  if (
+    typeof agentDid !== 'string' ||
+    agentDid === '' ||
+    typeof sessionId !== 'string' ||
+    sessionId === '' ||
+    typeof persona !== 'string' ||
+    persona === ''
+  ) {
+    return false;
+  }
+  const key = vaultReadSessionKey(agentDid, sessionId, persona);
+  const exp = vaultReadSessionApprovals.get(key);
+  if (exp === undefined) return false;
+  if (Date.now() >= exp) {
+    vaultReadSessionApprovals.delete(key);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Grant a session-scoped vault-read approval for
+ * `(agentDid, sessionId, persona)`. Called by the workflow approve
+ * handler when `scope='session'` is set on a `vault_read_request`
+ * approval task. Subsequent agent asks IN THE SAME CLI SESSION that
+ * fan-out into the same persona auto-pass the persona_guard until the
+ * TTL expires; a new `dina session start` resets the grant.
+ */
+export function grantVaultReadSessionApproval(
+  agentDid: string,
+  sessionId: string,
+  persona: string,
+  durationMs = DEFAULT_TTL_SEC * 1000,
+): void {
+  if (typeof agentDid !== 'string' || agentDid.trim() === '') return;
+  if (typeof sessionId !== 'string' || sessionId.trim() === '') return;
+  if (typeof persona !== 'string' || persona.trim() === '') return;
+  vaultReadSessionApprovals.set(
+    vaultReadSessionKey(agentDid, sessionId, persona),
+    Date.now() + durationMs,
+  );
 }
 
 export type RiskLabel = 'SAFE' | 'MODERATE' | 'HIGH' | 'BLOCKED';
@@ -201,7 +294,10 @@ export function registerIntentRoutes(router: CoreRouter): void {
 
     // MODERATE with an active session approval — auto-approve without
     // surfacing a new card. HIGH always requires explicit approval.
-    if (decision.riskLevel === 'MODERATE' && isSessionApproved(action)) {
+    // Session approvals are now keyed on (agentDid, sessionId, action)
+    // so a new `dina session start` requires a fresh approval — see
+    // `grantSessionApproval` JSDoc.
+    if (decision.riskLevel === 'MODERATE' && isSessionApproved(agentDID, sessionRaw, action)) {
       return {
         status: 200,
         body: shapeSyncResponse('auto_approve', decision.riskLevel, 'Session approval active'),

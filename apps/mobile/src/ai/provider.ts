@@ -22,8 +22,6 @@ import { peekModelOverride } from './model_overrides';
 
 import type { LanguageModel } from 'ai';
 
-
-
 export type ProviderType = 'openai' | 'gemini' | 'claude' | 'openrouter';
 
 /** OpenRouter is OpenAI-compatible; reuse the OpenAI SDK with this baseURL. */
@@ -134,9 +132,10 @@ function resolveModelId(provider: ProviderType, opts: CreateProviderOptions): st
  * existing `model_overrides` keychain shape — a single string per
  * tier — without us needing a separate "effort" persistence field.
  */
-export function parseOpenAIModelId(
-  pseudo: string,
-): { model: string; effortOverride?: 'none' | 'low' | 'minimal' | 'medium' | 'high' | 'xhigh' } {
+export function parseOpenAIModelId(pseudo: string): {
+  model: string;
+  effortOverride?: 'none' | 'low' | 'minimal' | 'medium' | 'high' | 'xhigh';
+} {
   if (pseudo.endsWith('+thinking')) {
     return { model: pseudo.slice(0, -'+thinking'.length), effortOverride: 'high' };
   }
@@ -149,6 +148,9 @@ const KEYCHAIN_SERVICE_PREFIX = 'dina.llm.';
 export async function saveApiKey(provider: ProviderType, key: string): Promise<void> {
   await Keychain.setGenericPassword(provider, key, {
     service: `${KEYCHAIN_SERVICE_PREFIX}${provider}`,
+    // P2.8: API keys are secrets — keep them device-bound (no iCloud/backup
+    // migration), readable after first unlock. Matches the seed stores.
+    accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
   });
 }
 
@@ -301,7 +303,7 @@ export async function verifyKey(
       );
       if (res.status === 200) return null;
       if (res.status === 400 || res.status === 401 || res.status === 403) {
-        return "Google Gemini rejected this key. Check the key string and that the Gemini API is enabled on your project.";
+        return 'Google Gemini rejected this key. Check the key string and that the Gemini API is enabled on your project.';
       }
       return `Google Gemini responded HTTP ${res.status} — try again later.`;
     }
