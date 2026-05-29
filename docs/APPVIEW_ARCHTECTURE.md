@@ -4234,3 +4234,14 @@ The split is moving files + changing imports, not a rewrite.
 ```
 
 The directory structure already separates `src/app/xrpc/` from `src/app/did/`, `src/app/subject/`, etc. When splitting, the XRPC route handlers move into a Fastify app that imports the same query functions from `src/db/queries/`.
+
+
+# Question - why not ERC-8004 ?
+  1. ERC-8004 is global+immutable; your product is subjective+revocable. Adopting it means either bolting a mutable personalized layer beside the immutable chain (defeating the point of using it) or abandoning
+  per-viewer trust (abandoning your thesis). That's not a tweak — it's a fork in the road where the standard pulls against your design.
+  2. It reintroduces the crypto surface you deliberately removed. Even with gas/wallet abstracted, you'd be taking a chain dependency, paymaster infra, and permanent public exposure of every rating — into a
+  product whose entire pitch is sovereignty and privacy. The closest real competitor (Shinkai) is fading partly because of that exact surface. Walking toward it knowingly would be the unjustified choice.
+  3. It has no native sybil defense anyway. This is the decisive one. The usual reason to adopt a standard is "it solves the hard problem for me." ERC-8004 doesn't solve your hardest problem — sybil resistance is
+  left to the implementer. So you'd take on all the costs of the dependency (immutability, crypto surface, global-flattening) and still have to build the sybil-resistant trust-flow layer yourself. That's the worst
+  trade: pay the dependency tax, keep the hard work.
+The planned architecture is map based compute of scores, and that should give a better result

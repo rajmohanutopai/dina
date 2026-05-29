@@ -1,3 +1,168 @@
+# PeerView P1
+  The key finding: dimension keys are free-form, and reviews are immutable
+
+  From record-validator.ts:
+  const dimensionRatingSchema = z.object({
+    dimension: z.string().max(100),          // ← FREE-FORM string. Any text.
+    value: z.enum(['exceeded','met','below','failed']),  // ← value is constrained
+  })
+  And the explicit comment: "Closed-vocab discipline lives on the writer; AppView accepts whatever opaque tag the writer declared."
+  
+  So today, the rating scale is safe (closed enum), but the dimension name is whatever anyone types. And reviews are signed records on each user's PDS — immutable. The AppView is just an index (rebuildable via
+  Jetstream replay), but it indexes records you cannot rewrite at the source.
+
+  That's the real launch gate — and it's about data, not the endpoint
+
+  Here's the danger you correctly sensed, stated precisely:
+  
+  If you launch with no vocabulary discipline, early reviewers (and Dina drafting reviews) write fragmented keys: one says lumbar_support, another lumbar, another back support, another lower-back-comfort. Now:
+  - Dina's query lumbar_support: high silently misses every review that used back support.
+  - Your whole personalization moat — "map back pain → the right dimension" — degrades, because the dimensions don't line up across reviews.
+  - And you can't retroactively fix it at the source — those signed records are permanent. You can normalize at read-time (LLM maps synonyms), but that's lossy, costly forever, and never as clean as if the data
+  were consistent from day one.
+  
+  This is the "code is cheap, immutable data is forever" principle. The discovery endpoint is read-side code — add it anytime. The dimension vocabulary is write-side data shape — and at launch you start minting
+  permanent records in whatever shape you allow.
+
+  So, calibrated:
+
+  Is it dangerous? No — zero security/safety risk. Nobody gets hacked, no data leaks. This is a data-quality / future-usability risk, not a danger.
+
+  Does the schema-discovery endpoint gate launch? No. Defer it freely. Dina is a strong LLM — "chair + back pain → prioritize lumbar support" is well within her inference without an explicit schema. The feature
+  works at launch.
+
+  Does something gate launch? Yes — a lighter thing: write-side vocabulary discipline for the common categories, before reviews start accumulating at volume. Not the full endpoint — just a suggested/closed core 
+  dimension set per popular category in the write form (and in Dina's review-draft tool), so early reviews cluster on consistent keys instead of fragmenting.
+
+  What actually softens this (so I'm not overstating)
+
+  - Volume is low at launch. Early reviews are few — the fragmented corpus is small and bounded. You have a window before it explodes, which is exactly when to lock the core vocabulary.
+  - LLM read-time normalization is a real fallback. back support ≈ lumbar_support is trivial for a reasoning model, so fragmentation is recoverable, just lossy and a forever-cost. This means it's "expensive to get
+  wrong," not "fatal."
+  - The value enum is already disciplined — only the dimension name fragments, not the scale.
+
+  The pragmatic launch decision
+
+  ▎ Launch-gating (do before reviews accumulate): Put a curated core dimension vocabulary on the write path for the top handful of categories (chair → lumbar_support, price, material, build_quality, 
+  ▎ weight_capacity; restaurant → food_quality, service, value, noise, accessibility; etc.). Closed-ish core + optional free-form long-tail. This makes early permanent records consistent.
+  ▎
+  ▎ Defer freely (V2): The getCategorySchema discovery endpoint. It upgrades Dina from "infers dimensions well" to "fills a known form deterministically." Pure enhancement; the data it advertises is the vocabulary
+  ▎ you locked above. Not launch-blocking.
+
+  So your instinct fires correctly but lands one step upstream: it's not the endpoint that must gate launch — it's the write-side dimension vocabulary, because launch is when you start writing immutable records, 
+  and fragmented dimensions across permanent signed data is the one mistake you can't cheaply undo later. The endpoint reads that vocabulary; the vocabulary is the thing that's "forever."
+
+  For the TODO: split your item into two — (1) launch: curated core dimension vocab on write, top ~10 categories; (2) V2: getCategorySchema discovery endpoint. Item 1 gates; item 2 doesn't.
+
+
+# PeerView Fixes
+  TODO: PeerLens V2 — Graph-Rooted Personalized Trust
+  
+  Status: Design only. NOT blocking release. V1 (shipped) is a defensible web-of-trust; this converts the strongest philosophical claim ("trust is rooted in your map, not a global number") into a true technical
+  one.
+
+  The core idea (one sentence)
+  
+  A subject's trust value is not a global score — it is personalized PageRank rooted at the viewer's DID, computed over signed attestation/vouch edges. Trust flows inward from nodes the viewer already trusts;
+  nodes unreachable from the viewer's root get globally computed weight.
+
+  Why this is the correct model (keep for rationale)
+
+  - Trust is subjective, contextual, time-decaying → a global immutable scalar is a category error for social trust.
+  - Sybil resistance is a free side-effect, not a bolt-on: a fake node not reachable from the viewer's root receives ~0 PPR mass. "New accounts have no reputation" = "unreachable-from-root = zero mass." This is
+  the formal version of the V1 authorHasInboundVouch → weight 0 rule.
+  - Matches Dina's whole thesis: sovereign node = brain, network = dumb substrate. Same pattern as the bus-driver query (compute on my node, with my context). V2 makes the trust layer consistent with that.
+
+  What's shipped today (V1 — the starting point)
+
+  - appview/src/scorer/algorithms/peerlens-score.ts — viewer-independent base score, server-computed, cacheable. (This is the part that's "more global than the idea" — the seam a critic pries at.)
+  - peerlens-score.ts computeSentiment — already zeroes unvouched authors. ✅ keep the semantics.
+  - appview/src/scorer/algorithms/friend-boost.ts — 1-hop only personalization multiplier at query time. No 2-hop/n-hop.
+  - AT Protocol: signed attestations on user PDS, Jetstream ingester, AppView indexes.
+
+  Gap: V1 = mostly-global base + thin 1-hop nudge. V2 = graph-rooted, transitive (n-hop with decay), viewer-relative.
+
+  Open decisions — RESOLVE THESE BEFORE WRITING CODE
+
+  These are the real forks; the algorithm is the easy part.
+  
+  1. Where does personalized compute run? (the hard one — same "where's the brain" question)
+    - (a) Precompute per-viewer server-side — simple, but O(viewers × graph), doesn't scale.
+    - (b) Compute on-demand at query time server-side — scales better, adds latency; use approximate single-source PPR (forward-push / FORA) to keep it fast.
+    - (c) AppView serves the viewer's N-hop subgraph; Dina computes the final score on-device — most aligned with sovereignty, heaviest data transfer.
+    - Recommended default to evaluate first: (b) with forward-push approximation, with (c) as the privacy-maximal future option.
+  2. Graph-privacy tension. For the server to serve "subgraph near my root," it learns my social graph. (Bluesky has this exact problem.) Decide: accept it (document honestly), or move to on-device compute (c), or
+  PIR (heavy, probably later). Do not claim graph-privacy you haven't built.
+  3. Cold-start fallback. If no one in my map (transitively) has touched the item, PPR returns nothing → UX hole. Decision: keep the V1 global/aggregate score as a clearly-labeled, low-confidence fallback ("No one
+  in your network has reviewed this — here's the broader signal"). Demote, don't delete, the global path.
+  4. Decay + revocation in the graph. Confirm edge weights carry the existing recency half-life, tombstone, and flag multipliers into the PPR edge weights (not just the leaf sentiment). Reputation must be able to
+  fade and be revoked — that's a fundamental advantage over on-chain; don't lose it in the graph layer.
+
+  - ❌ If "globally computed weight" = the current V1 aggregate / raw count / vanilla global PageRank → you've reopened the sybil hole. A self-linked cluster of 10,000 fakes farms global rank among themselves
+  (classic PageRank link-farm attack). This is the trap, and it's tempting because the V1 base score is right there to reuse.
+  - ✅ The global weight must be a seeded trust-flow metric — TrustRank (PageRank whose teleport mass lands only on a vetted seed set) or EigenTrust with pre-trusted peers. The whole point of seeding: trust can't
+  flow into a sybil cluster without a real link from an already-trusted node. Sybils linked to nobody trusted still get ~0, globally too.
+
+  The elegant implementation (note it so you don't build two engines)
+
+  Don't run "personalized PPR" and "global TrustRank" as two systems and blend the outputs. Do it as one personalized PageRank with a composite teleport vector: mostly the viewer's trusted root + a small epsilon
+  of mass on the global vetted seed set.
+  - Reachable from you → high mass (personalized) ✓
+  - Reachable only from global seeds → small but non-zero (your "globally computed weight") ✓
+  - Reachable from neither (pure sybil cluster) → ~0 ✓
+  
+  One algorithm, one pass, sybil resistance preserved, and the in-network signal naturally dominates the global fallback (because viewer teleport mass ≫ seed teleport mass). graphology PageRank takes exactly this
+  personalization vector.
+
+  New decision this forces (add to TODO)
+
+  Who picks the global seed set? TrustRank's known weakness: the seed set is a trust anchor. If "Raj hand-picks the seeds," you've reintroduced the thumb-on-scale critique at the fallback tier — a sharp critic
+  will ask exactly this. Decide and document: published/transparent seed set, community-governed, or algorithmically derived (e.g., oldest high-corroboration nodes). It still must be verifiable-by-replication:
+  anyone recomputes the same global weights from signed data + the published seed set.
+  
+  Updated TODO language (paste over the relevant lines)
+
+  ▎ Core idea: A subject's trust value is personalized PageRank rooted at the viewer's DID over signed attestation/vouch edges. Trust flows inward from nodes the viewer trusts. Nodes unreachable from the viewer's 
+  ▎ root fall back to a globally computed weight — which MUST itself be sybil-resistant (TrustRank / seeded PageRank), never a raw aggregate or unseeded global PageRank.
+  ▎
+  ▎ Implementation: single personalized PageRank with a composite teleport vector = viewer's trusted root (dominant) + small mass on a vetted global seed set (fallback). One pass. Pure-sybil clusters linked to no 
+  ▎ trusted node → ~0 in both tiers.
+  ▎
+  ▎ New open decision (#5): global seed-set governance. Must be transparent/published (not operator-hand-picked in secret) to keep the verifiable-by-replication + credibly-neutral claim. TrustRank's seed set is 
+  ▎ the centralization risk — resolve before claiming decentralization at the fallback tier.
+  ▎
+  ▎ Supersedes open-decision #3: node-level blend replaces subject-level cold-start fallback.
+
+  What to reuse vs. build
+  
+  - Reuse (library): graphology + graphology-metrics for the PageRank engine. TypeScript-native, personalization via teleport/personalization vector (= root the walk at viewer DID). Do not hand-roll the 
+  eigenvector math.
+  - Reference for propagation shape: cblgh/appleseed-metric (local-group trust from one node's perspective).
+  - At scale: read up on forward-push / FORA approximate single-source PPR (sparse, incremental). Not a v1 install — only when scale forces it.
+  - Build (yours — this is the moat, not libraryable): edge definition (what counts as an edge + weight = sentiment × recency × evidence × cosignature), the viewer-root personalization vector, decay/revocation
+  policy, cold-start fallback labeling.
+
+  Verify-first (a real gap to confirm, not assume)
+
+  Before claiming full sybil resistance: read the SQL aggregation that populates vouchCount / inboundEdgeCount (the vouch and network score components, e.g. refresh-reviewer-stats). Confirm they apply the same
+  "author must have inbound vouch" filter as the sentiment path. If they count raw edges, a sybil swarm can pad those two components even though sentiment is protected — close that before the claim ships.
+
+  Acceptance criteria (V2 "done")
+
+  - A subject reviewed only by sybil nodes unreachable from viewer's root scores ~baseline (0 contribution), provably, in a test.
+  - Two different viewers get different scores for the same subject based on their graphs.
+  - Score is recomputable by an independent party from the same signed records (verifiable-by-replication holds).
+  - Cold-start items render the labeled fallback, not a blank/0.
+  - All four score components (sentiment, vouch, reviewer, network) respect root-reachability.
+
+  Claims this unlocks (calibrated — only after the matching stage ships)
+
+  - After V2: ✅ "Trust is computed relative to your network, not a global number." ✅ "Fake accounts can't manufacture reputation — gaming costs real social capital." (sybil-resistant, never "sybil-proof" —
+  Douceur's theorem).
+  - Still never claim "trustless." Correct phrasing: "open and independently verifiable" / "credibly neutral" (Bluesky model: AppView indexes signed truth, doesn't own it; recompute it yourself).
+
+
+
 # Major architecture review
 go through docs/MOBILE_PROCESS_SCHEMA_REVIEW.md - gives a full picture
 
@@ -2733,4 +2898,11 @@ Missing scenario:
 - How do institutional attestations differ from personal ones?
 ```
 
+
+# AppView Peerlens todo
+  The thing you SHOULD take from this (genuinely useful)
+
+  There's a real, low-cost win hiding here for the V2 TODO: NIP-32 / the Nostr Reviews NIP is your "be compatible at the edge" opportunity — the A2A-style move. You don't build on it, but if your attestation
+  lexicon can export to / import from NIP-32 labels, you get interop with the Nostr reviews ecosystem if it matures, the same way A2A Agent-Card export gets you agent-discovery interop. Adapter, not foundation.
+  Worth one line in the TODO, deprioritized until Nostr reviews actually ship.
 
