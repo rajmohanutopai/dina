@@ -20,6 +20,7 @@ import {
   approvePending,
   denyPending,
   listPendingApprovals,
+  listResolvedApprovals,
   resetInboxCoreClient,
   setInboxCoreClient,
   type InboxCoreClient,
@@ -98,6 +99,45 @@ function stubClient(init: {
   return { client, calls };
 }
 
+/**
+ * State-aware stub for the resolved-approvals fan-out. Unlike `stubClient`
+ * (which returns the same list for every query), this returns a different
+ * task set per requested `state`, so `listResolvedApprovals`' one-query-
+ * per-terminal-state fan-out can be exercised faithfully. `errorStates`
+ * makes the named state's query reject, to test the per-state `.catch()`.
+ */
+function stubResolvedClient(
+  byState: Record<string, WorkflowTask[]>,
+  opts: { errorStates?: string[] } = {},
+): {
+  client: InboxCoreClient;
+  calls: { filters: Array<{ kind: string; state: string; limit?: number }> };
+} {
+  const calls = { filters: [] as Array<{ kind: string; state: string; limit?: number }> };
+  const client = {
+    async listWorkflowTasks(filter: { kind: string; state: string; limit?: number }) {
+      calls.filters.push(filter);
+      if (opts.errorStates?.includes(filter.state)) {
+        throw new Error(`boom: ${filter.state}`);
+      }
+      return byState[filter.state] ?? [];
+    },
+    async approveWorkflowTask(id: string) {
+      return makeTask({ id, status: 'queued' });
+    },
+    async cancelWorkflowTask(id: string) {
+      return makeTask({ id, status: 'cancelled' });
+    },
+    async sendServiceRespond(id: string) {
+      return { status: 'sent', taskId: id, alreadyProcessed: false };
+    },
+    async getWorkflowTask(id: string) {
+      return makeTask({ id, status: 'completed' });
+    },
+  } as unknown as InboxCoreClient;
+  return { client, calls };
+}
+
 describe('useServiceInbox', () => {
   beforeEach(() => {
     resetInboxCoreClient();
@@ -106,6 +146,7 @@ describe('useServiceInbox', () => {
 
   it('throws InboxNotConfiguredError before setInboxCoreClient is called', async () => {
     await expect(listPendingApprovals()).rejects.toBeInstanceOf(InboxNotConfiguredError);
+    await expect(listResolvedApprovals()).rejects.toBeInstanceOf(InboxNotConfiguredError);
     await expect(approvePending('t1')).rejects.toBeInstanceOf(InboxNotConfiguredError);
     await expect(denyPending('t1')).rejects.toBeInstanceOf(InboxNotConfiguredError);
   });
@@ -345,5 +386,131 @@ describe('useServiceInbox', () => {
     const { client } = stubClient({ listError: new Error('401 unauthorized') });
     setInboxCoreClient(client);
     await expect(listPendingApprovals()).rejects.toThrow('401 unauthorized');
+  });
+
+  describe('listResolvedApprovals (Completed tab)', () => {
+    it('fans out across every terminal state and never queries pending', async () => {
+      const { client, calls } = stubResolvedClient({
+        completed: [makeTask({ id: 'c1', status: 'completed' })],
+        queued: [makeTask({ id: 'q1', status: 'queued' })],
+        running: [makeTask({ id: 'r1', status: 'running' })],
+        recorded: [makeTask({ id: 'rec1', status: 'recorded' })],
+        cancelled: [makeTask({ id: 'x1', status: 'cancelled' })],
+        failed: [makeTask({ id: 'f1', status: 'failed' })],
+      });
+      setInboxCoreClient(client);
+      const entries = await listResolvedApprovals();
+      const states = calls.filters.map((f) => f.state).sort();
+      expect(states).toEqual([
+        'cancelled',
+        'completed',
+        'failed',
+        'queued',
+        'recorded',
+        'running',
+      ]);
+      // The Completed tab is the inverse of the Pending tab — it must
+      // never re-query the pending bucket.
+      expect(states).not.toContain('pending_approval');
+      // Every fan-out query carries kind=approval.
+      expect(calls.filters.every((f) => f.kind === 'approval')).toBe(true);
+      expect(entries.map((e) => e.id).sort()).toEqual([
+        'c1',
+        'f1',
+        'q1',
+        'r1',
+        'rec1',
+        'x1',
+      ]);
+    });
+
+    it('maps each terminal state to its display outcome', async () => {
+      const { client } = stubResolvedClient({
+        completed: [makeTask({ id: 'c', status: 'completed' })],
+        queued: [makeTask({ id: 'q', status: 'queued' })],
+        running: [makeTask({ id: 'r', status: 'running' })],
+        recorded: [makeTask({ id: 'rec', status: 'recorded' })],
+        cancelled: [makeTask({ id: 'denied', status: 'cancelled' })],
+        failed: [makeTask({ id: 'errored', status: 'failed' })],
+      });
+      setInboxCoreClient(client);
+      const entries = await listResolvedApprovals();
+      const outcome = Object.fromEntries(entries.map((e) => [e.id, e.outcome]));
+      // Approved bucket — the agent's action went through (queued/running
+      // both mean "owner said yes, work is in flight").
+      expect(outcome.c).toBe('approved');
+      expect(outcome.q).toBe('approved');
+      expect(outcome.r).toBe('approved');
+      expect(outcome.rec).toBe('approved');
+      // Operator deny resolves the task as cancelled.
+      expect(outcome.denied).toBe('denied');
+      // A plain run failure (no error='expired') is also "denied" from the
+      // user's perspective — no data came back.
+      expect(outcome.errored).toBe('denied');
+    });
+
+    it("treats a TTL-lapsed task (failed + error='expired') as expired, not denied", async () => {
+      // The expiry sweeper closes a lapsed approval as state='failed' with
+      // error='expired' (repository.expireTasks). That error string is the
+      // ONLY way to tell a timeout apart from a real failure or an operator
+      // deny, so it must win over the state-based mapping.
+      const { client } = stubResolvedClient({
+        failed: [
+          makeTask({ id: 'lapsed', status: 'failed', error: 'expired' }),
+          makeTask({ id: 'crashed', status: 'failed', error: 'llm error' }),
+        ],
+      });
+      setInboxCoreClient(client);
+      const entries = await listResolvedApprovals();
+      const outcome = Object.fromEntries(entries.map((e) => [e.id, e.outcome]));
+      expect(outcome.lapsed).toBe('expired');
+      expect(outcome.crashed).toBe('denied');
+    });
+
+    it('orders resolved entries newest-first by resolvedAt (updated_at)', async () => {
+      const { client } = stubResolvedClient({
+        completed: [
+          makeTask({ id: 'old', status: 'completed', updated_at: 1_000 }),
+          makeTask({ id: 'newest', status: 'completed', updated_at: 3_000 }),
+        ],
+        cancelled: [makeTask({ id: 'mid', status: 'cancelled', updated_at: 2_000 })],
+      });
+      setInboxCoreClient(client);
+      const entries = await listResolvedApprovals();
+      expect(entries.map((e) => e.id)).toEqual(['newest', 'mid', 'old']);
+      expect(entries.map((e) => e.resolvedAt)).toEqual([3_000, 2_000, 1_000]);
+    });
+
+    it('caps the MERGED total at `limit`, keeping the newest', async () => {
+      const { client, calls } = stubResolvedClient({
+        completed: [
+          makeTask({ id: 'a', status: 'completed', updated_at: 5_000 }),
+          makeTask({ id: 'b', status: 'completed', updated_at: 1_000 }),
+        ],
+        cancelled: [makeTask({ id: 'c', status: 'cancelled', updated_at: 9_000 })],
+      });
+      setInboxCoreClient(client);
+      const entries = await listResolvedApprovals(2);
+      // 3 resolved tasks across states, capped to the 2 newest post-merge.
+      expect(entries.map((e) => e.id)).toEqual(['c', 'a']);
+      // The cap is applied AFTER merging — each per-state query still
+      // carries the caller's limit.
+      expect(calls.filters.every((f) => f.limit === 2)).toBe(true);
+    });
+
+    it('survives a per-state query failure — other states still surface', async () => {
+      // Each per-state query is independently .catch()ed, so a single 500
+      // on one bucket can't blank the whole Completed history.
+      const { client } = stubResolvedClient(
+        {
+          completed: [makeTask({ id: 'ok', status: 'completed' })],
+          failed: [makeTask({ id: 'never', status: 'failed' })],
+        },
+        { errorStates: ['failed'] },
+      );
+      setInboxCoreClient(client);
+      const entries = await listResolvedApprovals();
+      expect(entries.map((e) => e.id)).toEqual(['ok']);
+    });
   });
 });

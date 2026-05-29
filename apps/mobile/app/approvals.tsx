@@ -26,15 +26,31 @@ import { subscribeNotifications } from '@dina/brain/notifications';
 import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 import {
   listPendingApprovals,
+  listResolvedApprovals,
   approvePending,
   denyPending,
   InboxNotConfiguredError,
   type InboxEntry,
+  type ResolvedInboxEntry,
 } from '../src/hooks/useServiceInbox';
 import { openPersonaDB, isPersistenceReady } from '../src/storage/init';
 
+/**
+ * Which view is showing. `pending` is the DEFAULT and first tab — it's
+ * the actionable inbox. `completed` is a read-only history of resolved
+ * approvals (approved / denied / expired), newest-first.
+ */
+type ApprovalsTab = 'pending' | 'completed';
+
+const TABS: readonly { key: ApprovalsTab; label: string }[] = [
+  { key: 'pending', label: 'Pending' },
+  { key: 'completed', label: 'Completed' },
+];
+
 export default function ApprovalsScreen() {
+  const [tab, setTab] = useState<ApprovalsTab>('pending');
   const [entries, setEntries] = useState<InboxEntry[]>([]);
+  const [resolved, setResolved] = useState<ResolvedInboxEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
@@ -43,8 +59,15 @@ export default function ApprovalsScreen() {
   const load = useCallback(async () => {
     setErrorMessage(null);
     try {
-      const list = await listPendingApprovals(50);
-      setEntries(list);
+      // Fetch both buckets together so switching tabs is instant (no
+      // per-tab spinner) and a resolution on one surface is reflected in
+      // both lists on the next refresh. Both are cheap in-process reads.
+      const [pendingList, resolvedList] = await Promise.all([
+        listPendingApprovals(50),
+        listResolvedApprovals(50),
+      ]);
+      setEntries(pendingList);
+      setResolved(resolvedList);
     } catch (err) {
       if (err instanceof InboxNotConfiguredError) {
         setErrorMessage(
@@ -56,6 +79,18 @@ export default function ApprovalsScreen() {
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  }, []);
+
+  // Refresh ONLY the resolved bucket — used after a local approve/deny so
+  // the just-resolved task appears in the Completed tab without a full
+  // reload flicker on the Pending list (which we've already mutated
+  // optimistically). Swallows errors: a stale Completed list is harmless.
+  const refreshResolved = useCallback(async () => {
+    try {
+      setResolved(await listResolvedApprovals(50));
+    } catch {
+      // Non-fatal — Completed history will catch up on next focus/refresh.
     }
   }, []);
 
@@ -124,6 +159,8 @@ export default function ApprovalsScreen() {
               try {
                 await action();
                 setEntries((list) => list.filter((e) => e.id !== entry.id));
+                // Pull the just-resolved task into the Completed history.
+                void refreshResolved();
               } catch (err) {
                 Alert.alert('Error', (err as Error).message ?? `Failed to ${verb.toLowerCase()}`);
               } finally {
@@ -134,7 +171,7 @@ export default function ApprovalsScreen() {
         ],
       );
     },
-    [],
+    [refreshResolved],
   );
 
   /**
@@ -157,11 +194,15 @@ export default function ApprovalsScreen() {
     (item: InboxEntry, scope: 'single' | 'session'): void => {
       setPendingActionId(item.id);
       void approvePending(item.id, item.kind, scope)
-        .then(() => setEntries((list) => list.filter((e) => e.id !== item.id)))
+        .then(() => {
+          setEntries((list) => list.filter((e) => e.id !== item.id));
+          // Surface the approved task in the Completed history.
+          void refreshResolved();
+        })
         .catch((err) => Alert.alert('Error', (err as Error).message ?? 'Failed to approve'))
         .finally(() => setPendingActionId(null));
     },
-    [],
+    [refreshResolved],
   );
 
   const handleApprove = useCallback(
@@ -307,13 +348,58 @@ export default function ApprovalsScreen() {
     [pendingActionId, confirmAndRun, handleApprove, supportsSessionScope, runApprove],
   );
 
-  if (loading && entries.length === 0) {
+  // Read-only row for the Completed tab. No action buttons — just the
+  // service/action, the resolved outcome badge, and when it resolved.
+  const renderResolvedItem = useCallback(({ item }: { item: ResolvedInboxEntry }) => {
+    const isIntent = item.kind === 'intent_validation';
+    const isStagingAccess = item.kind === 'staging_persona_access';
+    const isVaultRead = item.kind === 'vault_read';
+    const headline = isIntent
+      ? 'Agent action approval'
+      : isStagingAccess
+        ? 'Memory access approval'
+        : isVaultRead
+          ? 'Vault read approval'
+          : item.serviceName || 'Unnamed service';
+    const outcomeStyle =
+      item.outcome === 'approved'
+        ? [styles.outcomeBadge, styles.outcomeApproved]
+        : item.outcome === 'expired'
+          ? [styles.outcomeBadge, styles.outcomeExpired]
+          : [styles.outcomeBadge, styles.outcomeDenied];
+    const outcomeLabel =
+      item.outcome === 'approved' ? 'Approved' : item.outcome === 'expired' ? 'Expired' : 'Denied';
+    return (
+      <View style={[styles.card, styles.cardResolved]}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.serviceName} numberOfLines={1}>
+            {headline}
+          </Text>
+          <Text style={outcomeStyle}>{outcomeLabel}</Text>
+        </View>
+        {isIntent && item.capability !== '' ? (
+          <Text style={styles.intentAction}>{item.capability}</Text>
+        ) : null}
+        {item.paramsPreview !== '' ? (
+          <Text style={styles.paramsPreview} numberOfLines={2}>
+            {item.paramsPreview}
+          </Text>
+        ) : null}
+        <Text style={styles.meta}>{formatResolvedAt(item.resolvedAt)}</Text>
+      </View>
+    );
+  }, []);
+
+  if (loading && entries.length === 0 && resolved.length === 0) {
     return (
       <View style={[styles.container, styles.centered]}>
         <ActivityIndicator size="small" color={colors.textMuted} />
       </View>
     );
   }
+
+  const showPending = tab === 'pending';
+  const listData = showPending ? entries : resolved;
 
   return (
     <View style={styles.container}>
@@ -322,23 +408,45 @@ export default function ApprovalsScreen() {
           <Text style={styles.errorText}>{errorMessage}</Text>
         </View>
       ) : null}
-      {entries.length === 0 ? (
+      <View style={styles.tabRow}>
+        {TABS.map((t) => {
+          const active = tab === t.key;
+          const count = t.key === 'pending' ? entries.length : resolved.length;
+          return (
+            <Pressable
+              key={t.key}
+              testID={`approvals-tab-${t.key}`}
+              onPress={() => setTab(t.key)}
+              style={[styles.tab, active && styles.tabActive]}
+            >
+              <Text style={[styles.tabText, active && styles.tabTextActive]}>
+                {t.label}
+                {count > 0 ? ` · ${count}` : ''}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      {listData.length === 0 ? (
         <View style={styles.emptyState}>
           <View style={styles.emptyCard}>
             <Ionicons
-              name="checkmark-circle-outline"
+              name={showPending ? 'checkmark-circle-outline' : 'time-outline'}
               size={36}
-              color={colors.success}
+              color={showPending ? colors.success : colors.textMuted}
               style={{ marginBottom: spacing.md }}
             />
-            <Text style={styles.emptyTitle}>All caught up</Text>
+            <Text style={styles.emptyTitle}>
+              {showPending ? 'All caught up' : 'No history yet'}
+            </Text>
             <Text style={styles.emptySubtitle}>
-              Apps and agents check in here before doing anything that needs
-              your OK.
+              {showPending
+                ? 'Apps and agents check in here before doing anything that needs your OK.'
+                : 'Approvals you’ve resolved will show up here for the record.'}
             </Text>
           </View>
         </View>
-      ) : (
+      ) : showPending ? (
         <FlatList
           data={entries}
           keyExtractor={(item) => item.id}
@@ -354,9 +462,34 @@ export default function ApprovalsScreen() {
             />
           }
         />
+      ) : (
+        <FlatList
+          data={resolved}
+          keyExtractor={(item) => item.id}
+          renderItem={renderResolvedItem}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={<Text style={styles.listHeader}>{resolved.length} RESOLVED</Text>}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.textMuted}
+            />
+          }
+        />
       )}
     </View>
   );
+}
+
+/** Relative timestamp for a resolved approval — "just now" / "5m ago". */
+function formatResolvedAt(ms: number, now: number = Date.now()): string {
+  const delta = Math.round((now - ms) / 1000);
+  if (delta < 60) return 'just now';
+  if (delta < 3600) return `${Math.round(delta / 60)}m ago`;
+  if (delta < 86400) return `${Math.round(delta / 3600)}h ago`;
+  return `${Math.round(delta / 86400)}d ago`;
 }
 
 function shortenDID(did: string): string {
@@ -377,6 +510,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.xl,
   },
+  tabRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xs,
+  },
+  tab: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgSecondary,
+  },
+  tabActive: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  tabText: {
+    ...textStyles.buttonSmall,
+    color: colors.textSecondary,
+  },
+  tabTextActive: {
+    color: colors.white,
+  },
   listHeader: {
     ...textStyles.eyebrow,
     letterSpacing: 1.2,
@@ -393,11 +552,36 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     ...shadows.sm,
   },
+  cardResolved: {
+    // Resolved rows are read-only history — dial back the surface so they
+    // read as past events, not actionable cards.
+    opacity: 0.92,
+    backgroundColor: colors.bgSecondary,
+  },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'baseline',
     marginBottom: spacing.xs,
+  },
+  outcomeBadge: {
+    ...textStyles.monoSmall,
+    paddingVertical: 2,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.sm,
+    overflow: 'hidden',
+  },
+  outcomeApproved: {
+    backgroundColor: colors.successBgSoft ?? colors.bgTertiary,
+    color: colors.success,
+  },
+  outcomeDenied: {
+    backgroundColor: colors.errorBgSoft,
+    color: colors.error,
+  },
+  outcomeExpired: {
+    backgroundColor: colors.bgTertiary,
+    color: colors.textSecondary,
   },
   serviceName: {
     ...textStyles.bodyLargeStrong,

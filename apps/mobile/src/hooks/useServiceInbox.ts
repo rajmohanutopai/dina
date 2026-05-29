@@ -112,6 +112,98 @@ export async function listPendingApprovals(limit = 50): Promise<InboxEntry[]> {
 }
 
 /**
+ * Outcome of a resolved approval, as the Completed tab renders it.
+ * Three buckets keep the history readable:
+ *   - `approved` — owner approved (queued / running / completed / recorded)
+ *   - `denied`   — owner denied (cancelled by operator) OR the task errored
+ *   - `expired`  — TTL lapsed before the owner decided (cancelled w/ reason)
+ */
+export type ApprovalOutcome = 'approved' | 'denied' | 'expired';
+
+/** A resolved approval row — base entry plus its terminal outcome + time. */
+export type ResolvedInboxEntry = InboxEntry & {
+  outcome: ApprovalOutcome;
+  /** When the approval reached its terminal state (task.updated_at). */
+  resolvedAt: number;
+};
+
+/**
+ * The set of `state` values that count as "no longer pending" — i.e.
+ * everything the Completed tab shows. `pending_approval` is the only
+ * state excluded (it's the Pending tab's domain).
+ *
+ * The Core route (`GET /v1/workflow/tasks`) only filters by a SINGLE
+ * state, so we fan out one query per state and merge. On mobile this is
+ * an in-process call against the local SQLCipher DB, so the fan-out is
+ * cheap — no network round-trips.
+ */
+const RESOLVED_APPROVAL_STATES: readonly string[] = [
+  'completed',
+  'queued',
+  'running',
+  'recorded',
+  'cancelled',
+  'failed',
+];
+
+/**
+ * Fetch resolved approvals across every terminal/decided state, tagged
+ * with an outcome and ordered most-recent-first (history reads newest at
+ * the top). Read-only — the Completed tab renders these without action
+ * buttons.
+ *
+ * `limit` caps the TOTAL merged result, not the per-state query.
+ */
+export async function listResolvedApprovals(limit = 50): Promise<ResolvedInboxEntry[]> {
+  const c = requireClient();
+  const batches = await Promise.all(
+    RESOLVED_APPROVAL_STATES.map((state) =>
+      c
+        .listWorkflowTasks({ kind: 'approval', state: state as WorkflowTask['status'], limit })
+        .catch(() => [] as WorkflowTask[]),
+    ),
+  );
+  const merged: ResolvedInboxEntry[] = [];
+  for (const tasks of batches) {
+    for (const task of tasks) {
+      merged.push({
+        ...toEntry(task),
+        outcome: outcomeForTask(task),
+        resolvedAt: task.updated_at ?? task.created_at,
+      });
+    }
+  }
+  // Newest first; cap the merged total.
+  merged.sort((a, b) => b.resolvedAt - a.resolvedAt);
+  return merged.slice(0, limit);
+}
+
+/**
+ * Map a resolved workflow task to its display outcome.
+ *
+ * The TTL sweeper closes a lapsed approval as `state='failed'` with
+ * `error='expired'` (see `repository.expireTasks`) — so `error==='expired'`
+ * is the ONLY way to tell an expiry apart from a genuine run failure or an
+ * explicit operator deny on the wire. Operator deny resolves the task as
+ * `cancelled`.
+ */
+function outcomeForTask(task: WorkflowTask): ApprovalOutcome {
+  if (task.error === 'expired') return 'expired';
+  switch (task.status) {
+    case 'completed':
+    case 'queued':
+    case 'running':
+    case 'recorded':
+      return 'approved';
+    case 'cancelled':
+    case 'canceled':
+    case 'failed':
+    default:
+      return 'denied';
+  }
+}
+
+/**
  * Workflow task lifecycle as the UI sees it. Three terminal-ish
  * buckets so the chat-thread inline card can persist its resolved
  * label across re-renders and across surfaces — if the operator

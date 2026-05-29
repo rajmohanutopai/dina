@@ -32,8 +32,8 @@ import { applyNotificationFilter, type FilterKey } from '../src/notifications/sc
 import { colors, radius, spacing, textStyles } from '../src/theme';
 
 const FILTERS: readonly { key: FilterKey; label: string }[] = [
-  { key: 'all', label: 'All' },
   { key: 'unread', label: 'Unread' },
+  { key: 'all', label: 'All' },
   { key: 'reminder', label: 'Reminders' },
   { key: 'approval', label: 'Approvals' },
 ];
@@ -51,7 +51,7 @@ const KIND_ICON: Record<NotificationKind, IoniconName> = {
 export default function NotificationsScreen(): React.JSX.Element {
   const router = useRouter();
   const [items, setItems] = useState<NotificationItem[]>(() => listNotifications());
-  const [filter, setFilter] = useState<FilterKey>('all');
+  const [filter, setFilter] = useState<FilterKey>('unread');
   const [refreshing, setRefreshing] = useState(false);
 
   // Live subscription — re-pull on every event.  Cheap (N typically <100).
