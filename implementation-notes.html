@@ -2,219 +2,51 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Services + PeerLens Vocabulary — Implementation Notes</title>
+<title>Services + PeerLens Vocabulary — Open Items</title>
 <style>
   body { font: 15px/1.6 -apple-system, system-ui, sans-serif; max-width: 920px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
   h1 { border-bottom: 3px solid #333; padding-bottom: .3rem; }
   h2 { margin-top: 2.4rem; border-bottom: 1px solid #ccc; padding-bottom: .2rem; }
-  h3 { margin-top: 1.6rem; color: #222; }
   .item { background: #f7f7f8; border-left: 4px solid #888; padding: .7rem 1rem; margin: .8rem 0; border-radius: 0 4px 4px 0; }
-  .decision { border-left-color: #2a7; }
-  .deviation { border-left-color: #d72; }
-  .tradeoff  { border-left-color: #58c; }
   .question  { border-left-color: #c39; }
-  .iter      { border-left-color: #999; background: #fafafa; }
+  .deferred  { border-left-color: #fb0; }
   .tag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; padding: 1px 6px; border-radius: 3px; color: #fff; }
-  .tag.decision { background: #2a7; } .tag.deviation { background: #d72; }
-  .tag.tradeoff { background: #58c; } .tag.question { background: #c39; }
-  .tag.iter { background: #999; }
+  .tag.question { background: #c39; } .tag.deferred { background: #c90; }
   code { background: #eee; padding: 1px 4px; border-radius: 3px; font-size: 13px; }
-  .green { color: #2a7; font-weight: 700; } .red { color: #d72; font-weight: 700; }
   .meta { color: #666; font-size: 13px; }
-  ul { margin: .3rem 0; }
 </style>
 </head>
 <body>
-<h1>Services + PeerLens Vocabulary — Implementation Notes</h1>
-<p class="meta">Spec: <code>docs/SERVICES_LAUNCH_ARCHITECTURE.md</code>. Records design
-decisions, intentional deviations, tradeoffs, open questions, and an iteration log.
-Correctness tests kept green after every item.</p>
+<h1>Services + PeerLens Vocabulary — Open Items</h1>
+<p class="meta">Spec: <code>docs/SERVICES_LAUNCH_ARCHITECTURE.md</code>. The full
+implementation (Services capability canonicalization, PeerLens dimension
+vocabulary, subject identity v3, service-query restart durability, CLI
+hardening) is shipped on <code>main</code> — see the git history. This file
+now tracks ONLY the post-launch deferrals + open questions that remain.</p>
 
-<h2>Build order (7 items)</h2>
-<ol>
-  <li><b>P1/L1</b> — Canonical capability registry + resolver (shared module). <span class="green">✓ done</span></li>
-  <li>P1/L2 — Ingest canonicalization (array + re-keyed schema/policy maps + drop-unknown). <span class="green">✓ done</span></li>
-  <li>P1/L3 — Search canonicalization. <span class="green">✓ done</span></li>
-  <li>P1/L4 — <code>searchCapabilities</code> xRPC + <code>search_capabilities</code> brain tool + routing prompt. <span class="green">✓ done</span></li>
-  <li>P1/L5 — Provider-ingress canonicalization (Core, sync). <span class="green">✓ done</span></li>
-  <li>P2 — Dimension vocabulary (registry, write chips, read-net, query, category alias, draft-forbid). ← next</li>
-  <li>P3 — Subject identity (type-specific precedence, identifier canonicalizer, RESOLVER_VERSION bump)</li>
-</ol>
-<p class="meta"><b>Part 1 status:</b> all 5 layers green — appview 1801, brain 904, core 1497, protocol 160+.</p>
+<h2>Deferred (post-launch, additive — not blockers)</h2>
 
-<h2>Design decisions</h2>
-
-<div class="item decision">
-  <span class="tag decision">Decision</span> <b>P1/L1 — Registry distribution = duplicated source with a byte-identical drift gate, not a shared package.</b>
-  <p>Spec says the registry is a "shared code module" (NOT a runtime fetch — Core ingress is sync), but leaves the mechanism open. <b>Chosen:</b> one authored source of truth, copied verbatim where each workspace can import it locally, with a unit test asserting the copies are byte-identical (the drift gate) — same pattern the repo already uses for OpenAPI <code>generate:check</code>. <b>Why:</b> appview is a standalone workspace (not in root <code>workspaces</code>), so a true cross-workspace import is impossible, and a published package adds release machinery we won't add the night before launch.</p>
+<div class="item deferred">
+  <span class="tag deferred">Deferred</span>
+  <p><b>Dimension query-side weighting (Part 2, Layer 4).</b> "Map user
+  context → a canonical dimension to weight a PeerLens search" has no launch
+  backend — there is no dimension-filtered search endpoint, and no dimension
+  param on <code>search_peerlens</code>. The consumer-facing half is already
+  satisfied (the resolve endpoint returns canonical-keyed
+  <code>averageDimensions</code>). Adding a tool param with nothing behind it
+  would be dead code, so it's deferred rather than stubbed. Upgrade is
+  additive (server-side), no migration. L3 (read-side canonicalization) is
+  the launch-critical layer for dimensions, not L4.</p>
 </div>
 
-<h2>Iteration log</h2>
-<!-- newest entries appended at the END of this list -->
-
-<div class="item iter">
-  <span class="tag iter">Iter 1 — P1/L1 registry + resolver</span>
-  <p><b>Built:</b> <code>appview/src/shared/capability-registry.ts</code> (source of truth) + byte-identical copy at <code>packages/protocol/src/services/capability-registry.ts</code>. Pure, dependency-free module: <code>CanonicalCapability</code> type, frozen <code>CAPABILITY_REGISTRY</code> (2 domains: <code>eta_query</code>/transit, <code>appointment_status</code>/appointments — both incumbent names, tidy names aliased), <code>resolveCanonicalCapability(raw): string|null</code>, <code>normalizeCapability</code>, <code>getCapabilityEntry</code>, <code>allCanonicalCapabilities</code>, and exported <code>buildAliasMap</code> (fail-loud on duplicate alias).</p>
-  <p><b>Tests:</b> <span class="green">17 new pass</span> (12 resolver/invariant + 3 fail-loud builder + 1 frozen + 1 drift gate). Full appview unit suite <span class="green">81 files / 1783 tests green</span>. Protocol dep-hygiene <span class="green">4/4 green</span> (pure module, zero runtime deps).</p>
-  <p><b>Deep review &amp; fixes applied (no workarounds):</b></p>
-  <ul>
-    <li><b>Tech-debt fixed:</b> <code>CAPABILITY_REGISTRY</code> was <code>readonly</code>-typed but not runtime-frozen — a caller could cast + mutate the shared source of truth. Now deeply <code>Object.freeze</code>d (array + entries + alias arrays); asserted by test.</li>
-    <li><b>Code smell fixed:</b> the duplicate-alias guard lived in an untestable IIFE. Extracted to exported pure <code>buildAliasMap()</code> so the fail-loud invariant is unit-testable against a bad fixture without touching the shipped registry. Also handles the canonical-collides-with-alias case and tolerates an identical alias repeated in one entry.</li>
-    <li><b>Correct-way check:</b> ✅ Returning <code>null</code> (not the normalized raw string) for unknowns is deliberate — it forces every downstream call site to make the drop-unknown decision explicitly (spec P1 unknown-handling), rather than silently treating an unknown as canonical.</li>
-  </ul>
-  <p><b>Next:</b> P1/L2 — ingest canonicalization in <code>ingester/handlers/service-profile.ts</code>: canonicalize the <code>capabilities</code> array, re-key the <code>capabilitySchemas</code> + <code>responsePolicy</code> maps to match (P1b), and drop+meter unknowns from the public arrays without flipping row-level <code>isDiscoverable</code> (P2).</p>
-</div>
-
-<div class="item iter">
-  <span class="tag iter">Iter 2 — P1/L2 ingest canonicalization</span>
-  <p><b>Built:</b> pure <code>canonicalizeForIndex(rawCaps, rawSchemas, rawPolicy)</code> in the shared registry — returns <code>{capabilities, capabilitySchemas, responsePolicy, unknown}</code> with all three public fields re-keyed to the SAME canonical names (P1b) and unknowns collected separately (P2). Wired into <code>ingester/handlers/service-profile.ts</code>: replaced the old trim/lowercase/dedupe with this transform; the INSERT now stores the canonical-re-keyed maps (was storing raw <code>record.responsePolicy</code> / <code>record.capabilitySchemas</code>); unknowns are dropped from public arrays + metered <code>service.capability.unknown{cap}</code>; row-level <code>isDiscoverable</code> is never touched.</p>
-  <p><b>Tests:</b> <span class="green">38 registry/handler pass</span> (9 new <code>canonicalizeForIndex</code> cases + 3 new handler P1b/P2 cases). Full appview unit suite <span class="green">81 files / 1793 green</span> (+10 net). No integration tests touch service ingest (checked) — no hidden impact.</p>
-  <p><b>Deep review:</b></p>
-  <ul>
-    <li><b>Correct way ✅</b> — one atomic pure function builds all three public fields so they can never drift; wired at the single ingest write point.</li>
-    <li><b>Edge cases covered:</b> map key differs in case from the capability string (normalized-key fallback lookup); two aliases of one canonical (first-occurrence schema/policy wins, deterministic); empty/whitespace caps skipped; <code>undefined</code> inputs; provider published no schemas → store <code>null</code> (preserves prior "no schemas" wire shape).</li>
-    <li><b>Test-case correctness:</b> the one failing pre-existing test (<code>normalizes … plumbing</code>) was asserting the OLD pass-through behavior using an arbitrary non-registry string. Replaced with a test of the NEW contract (alias→canonical convergence) + a separate explicit unknown-dropping test. Not a masked regression — the behavior change is the intended fix.</li>
-    <li><b>No workaround:</b> the <code>responsePolicy</code> validity gate still runs on the raw record BEFORE canonicalization — correct, malformed policy is rejected regardless of vocabulary.</li>
-  </ul>
-  <p><b>Next:</b> P1/L3 — search canonicalization in <code>api/xrpc/service-search.ts</code>: replace the bare <code>capability.trim().toLowerCase()</code> with <code>resolveCanonicalCapability</code>; an unknown search resolves to null → empty result (no partial-namespace hit). The <code>matchedSchema</code> lookup then resolves because L2 re-keyed the maps.</p>
-</div>
-
-<div class="item iter">
-  <span class="tag iter">Iter 3 — P1/L3 search canonicalization</span>
-  <p><b>Built:</b> in <code>api/xrpc/service-search.ts</code> — resolve the requested <code>capability</code> via the shared registry at function entry into <code>canonicalCapability</code>; an <b>unknown</b> capability resolves to <code>null</code> → early-return empty <code>{services:[], cursor:null, rankingVersion}</code> (no DB hit, no partial-namespace match). All three downstream uses now key on canonical: the GIN <code>@&gt;</code> containment query, the <code>matchedSchema</code> map lookup (resolves now that L2 re-keyed the maps), and the <code>matchedCapability</code> response field. Removed the dead <code>normalizedCapability</code> local.</p>
-  <p><b>Tests:</b> service-search <span class="green">19 pass</span>. Full appview unit suite <span class="green">81 files / 1794 green</span>.</p>
-  <p><b>Deep review:</b></p>
-  <ul>
-    <li><b>Correct way ✅</b> — one resolve at entry; unknown short-circuits before query construction; canonical name flows consistently to query + schema-lookup + response.</li>
-    <li><b>Test-case correctness:</b> the 13 failures were all the pre-registry <code>'plumbing'</code> fixture (an arbitrary valid string before the vocabulary existed). Replaced with real registry tokens (<code>eta_query</code> / alias <code>bus_eta</code>); fixed seed rows' schema/policy maps to be canonically-keyed (what L2 produces on real ingest); upgraded the case test to assert <b>alias→canonical</b> and added an explicit unknown→empty test. No behavior masked.</li>
-  </ul>
-  <p><b>Next:</b> P1/L4 — <code>searchCapabilities</code> xRPC (registry ∩ has-provider, intent-based contract) + <code>search_capabilities</code> brain tool + routing-prompt update + honest empty-state.</p>
-</div>
-
-<div class="item iter">
-  <span class="tag iter">Iter 4 — P1/L4 intent-based discovery (appview + brain)</span>
-  <p><b>Built (appview):</b> new xRPC <code>com.dina.service.searchCapabilities</code> (<code>api/xrpc/search-capabilities.ts</code>) — intent-based contract <code>{intent, lat?, lng?}</code> → canonical capabilities that are in the registry AND have ≥1 discoverable/non-tombstoned provider (the coverage ∩ via a <code>jsonb_array_elements_text</code> unnest). Registered in <code>web/server.ts</code> + rate-limit table. Launch impl returns all covered (tiny set); intent/geo accepted now for the scale-ready contract (embedding-rank is a later server-side swap).</p>
-  <p><b>Built (brain):</b> <code>AppViewClient.searchCapabilities</code> in <code>appview_client/http.ts</code>; <code>createSearchCapabilitiesTool</code> in <code>reasoning/service_tools.ts</code> (calls it FIRST, picks a real capability, honest empty-state on none); registered in <code>composition/agentic_ask.ts</code>; rewrote <code>PROVIDER_SERVICES_ROUTING_BLOCK</code> (Path 2) from "guess a capability" → "discover via search_capabilities, pick the matching canonical, say there's no service yet if empty — do NOT invent."</p>
-  <p><b>Tests:</b> appview <span class="green">82 files / 1801 green</span> (+7 searchCapabilities). Brain <span class="green">73 suites / 904 green</span> (+4 tool, +3 client, +3 routing-prompt lock-in).</p>
-  <p><b>Deep review:</b></p>
-  <ul>
-    <li><b>Correct way ✅</b> — intent-based contract built now so the scale upgrade (embedding-rank) is server-side only, no client change; coverage-filtered trivial impl for launch as spec dictates.</li>
-    <li><b>Lock-in test added:</b> <code>provider_services_routing.test.ts</code> pins the prompt contract (discover-not-guess + honest empty-state) so a future edit can't silently reintroduce Bug 1.</li>
-    <li><b>Defensive:</b> <code>searchCapabilities</code> ignores any index row whose capability is NOT in the registry (stale/unknown) — tested — so discovery never surfaces a non-canonical candidate.</li>
-    <li><b>No workaround:</b> unused <code>intent</code>/geo are documented "accepted, not yet consumed" (<code>_params</code>), not silently dropped — the contract is real today, the ranking is the deferred part.</li>
-  </ul>
-  <p><b>Next:</b> P1/L5 — provider-ingress canonicalization in Core: <code>service_config.isCapabilityConfigured</code> must resolve the inbound capability through the shared registry (sync, local — the protocol copy) so a provider configured with any alias accepts the canonical query. This is the layer that makes execution actually work end-to-end.</p>
-</div>
-
-<div class="item iter">
-  <span class="tag iter">Iter 5 — P1/L5 provider-ingress canonicalization (Core)</span>
-  <p><b>Built:</b> exported the registry from the protocol barrel (<code>packages/protocol/src/index.ts → ./services/capability-registry</code>); rewrote Core's <code>isCapabilityConfigured</code> (<code>service/service_config.ts</code>): exact-match fast path (covers canonical-configured + out-of-registry custom caps), then <b>canonical match</b> — resolve the inbound capability AND each configured key through <code>resolveCanonicalCapability</code> and accept if they share a canonical. So a provider configured under any alias accepts the canonical query the consumer's discovery now sends (and vice versa). Stays SYNC — the resolver is pure/local (no AppView fetch), preserving the documented sync-hot-path invariant.</p>
-  <p><b>Tests:</b> core <span class="green">100 suites / 1497 green</span>. service_config <span class="green">15</span> (+5 L5: canonical→alias, alias→canonical, two-aliases, cross-canonical reject, custom-cap passthrough). protocol dep-hygiene <span class="green">4/4</span>. Drift gate intact.</p>
-  <p><b>Deep review &amp; the important test fix:</b></p>
-  <ul>
-    <li><b>Test-case issue found + fixed (no workaround):</b> <code>port_async_gate.test.ts</code> guarded the sync hot path with a crude heuristic — "<code>service_config.ts</code> must not import <code>@dina/protocol</code> at all." My import is <code>resolveCanonicalCapability</code>, a verified <b>pure-sync, dependency-free</b> function, so the gate's INTENT (stay sync) is fully preserved while its heuristic was now wrong. Rewrote the gate to assert the <i>real</i> invariant (no <code>async</code>/<code>await</code>/<code>new Promise</code> in the file) PLUS pin the allowed protocol-import surface to exactly <code>['resolveCanonicalCapability']</code> — so any OTHER protocol import still trips the gate. Net: a STRONGER, more-correct guard, not a loosening.</li>
-    <li><b>Correct way ✅</b> — verified both the registry and <code>service_config.ts</code> contain zero async/await/Promise; jest maps <code>@dina/protocol</code>→<code>protocol/src</code> so no build step needed.</li>
-  </ul>
-  <p><b>Part 1 (Services) COMPLETE — all 5 layers shipped, tests green across appview + brain + core.</b></p>
-  <p><b>Next:</b> Part 2 — PeerLens dimension vocabulary (registry, write-form chips, read-aggregate net + drop-unknown, query-side, category alias, draft-forbid).</p>
-</div>
-
-<div class="item iter">
-  <span class="tag iter">Iter 6 — Part 2: PeerLens dimension vocabulary (all 5 layers)</span>
-  <p><b>Built:</b></p>
-  <ul>
-    <li><b>L1 registry+resolver</b> — <code>appview/src/shared/dimension-registry.ts</code> (source of truth) + byte-identical <code>packages/protocol/src/services/dimension-registry.ts</code> (drift gate). <code>DIMENSION_BY_CATEGORY</code> (furniture, dining), <code>GENERIC_DIMENSIONS</code> fallback, <code>CATEGORY_ALIASES</code> + <code>resolveCategoryKey</code> (the alias table — not just string surgery — so <code>home_furniture→furniture</code> resolves), <code>resolveCanonicalDimension(category, raw): string|null</code> (null = drop), deep-frozen, fail-loud <code>buildDimensionAliasMap</code>. Mirrors the proven <code>USE_CASE_BY_CATEGORY</code> shape.</li>
-    <li><b>L3 read-net</b> (the primary fix that matters at launch) — <code>sentiment-aggregation.ts</code> canonicalizes each <code>dim.dimension</code> WITHIN its category before group-by; unknown→dropped + counted (<code>droppedUnknownDimensions</code>). Caller <code>refresh-subject-scores.ts</code> emits <code>peerlens.dimension.dropped_unknown</code> so drift is visible. <code>dimensionSummaryJson</code> is now canonical-keyed (one writer).</li>
-    <li><b>L5 category-alias</b> — folded into the same registry (<code>resolveCategoryKey</code>), used by L3 before the dimension lookup.</li>
-  </ul>
-  <p><b>Important divergence from the spec (design decision — surfaced + documented, not silently skipped):</b></p>
-  <ul>
-    <li><b>L2 write-form chips → "clean by OMISSION" (stronger than chips).</b> Investigation found the mobile review form has <b>no dimension input at all</b> (<code>WriteFormState</code>/<code>AttestationV2Extras</code> carry no <code>dimensions</code>; the form never sets <code>record.dimensions</code>), and the Dina-draft LLM schema (<code>ComposeContextValues</code>) has <b>no <code>dimensions</code> field</b> — so the draft path is pollution-proof by construction, exactly satisfying decision (b) FORBID. There is no free-text dimension surface to convert to chips. Adding chip UI now would be dead code. Instead I added <b>two lock-in tests</b>: (1) mobile <code>serializeFormToV2Extras</code> never emits a <code>dimensions</code> key even on a fully-populated form; (2) the merged draft state — even when a hostile inferer return tries to smuggle <code>dimensions</code> — produces no <code>dimensions</code> in the wire extras. So if a future change adds a free-text dimension field it trips the gate, forcing the canonical-chip decision back into review.</li>
-    <li><b>L4 query-side → canonical-by-construction + honest deferral.</b> The consumer-facing half is satisfied automatically: the resolve endpoint returns <code>averageDimensions: dimensionSummaryJson</code>, which L3 made canonical-keyed. The query-<i>construction</i> half ("map user context → canonical dimension to weight a search") has <b>no launch backend</b> — there is no dimension-filtered search endpoint or dimension param on <code>search_peerlens</code>. Adding a tool param with nothing behind it would be dead code, so it's <b>deferred</b> (post-launch, additive) rather than stubbed. Dimensions enter ONLY via the wire ingester (<code>attestation.ts</code>, <code>comparison.ts</code>) from third-party/imported records — exactly the "non-Dina client writes straight to a PDS" case the spec flags as why the read-side net (L3) is the load-bearing defense. This makes L3, not L2, the launch-critical layer for dimensions.</li>
-  </ul>
-  <p><b>Tests:</b> appview unit <span class="green">84 files / 1823 green</span> (+ dimension_registry 17, dimension_aggregation_net 5). protocol <span class="green">382</span> (dep-hygiene confirms zero runtime deps from the new exports). brain <span class="green">3279</span>. core <span class="green">4447</span>. mobile peerlens <span class="green">59 files / 1566</span> (+ write-form + draft lock-ins). Both registry drift gates byte-identical.</p>
-  <p><b>Cross-cutting fixes found during this iteration (silent edit-failures from a flaky tool channel, all corrected):</b></p>
-  <ul>
-    <li>The Part 1 capability-registry + this dimension-registry were <b>never actually exported from the protocol barrel</b> (the anchor I edited against didn't exist). Core's L5 <code>resolveCanonicalCapability</code> import was therefore broken at compile. Added both <code>export * from './services/...'</code> at the true barrel end; protocol now builds with both <code>.d.ts</code>/<code>.js</code> emitted. (Appview was unaffected — it imports from its local <code>shared/</code> copy.)</li>
-    <li>Brain <code>agentic_ask</code> input <code>appViewClient</code> intersection type didn't include <code>searchCapabilities</code> → added it; updated 4 test fakes with a <code>searchCapabilities</code> stub; bumped the registered-tools assertion 13→14 (search_capabilities now registered).</li>
-    <li><code>noUncheckedIndexedAccess</code> (protocol's stricter build): <code>split('/')[0]</code> is <code>string|undefined</code> → coalesced to <code>?? trimmed</code>. Verified this is pure type-narrowing — <code>[0]</code> is always a defined string at runtime, the branch is never taken — and noted as such (no behavioral change).</li>
-  </ul>
-  <p><b>Deep review (3 checks):</b> (1) Correct way ✅ — clean-by-omission + read-net + drop-unknown metric + lock-in tests is the honest, no-dead-code shape; dimensions' silent+immutable failure mode makes L3 the right load-bearing layer. (2) No code smells/workarounds — registry mirrors the proven use-case pattern, deep-frozen, fail-loud guard, pure-function returns the count. (3) Test issues — integration failures are infra-only (no Postgres; the no-DB unit suites are the correctness gate and are green); the 2 brain snapshot bumps were legitimate (new tool).</p>
-  <p><b>Part 2 (Dimensions) COMPLETE.</b></p>
-  <p><b>Next:</b> Part 3 — Product/Subject identity (type-specific Tier-1 precedence in <code>subjects.ts</code>, <code>resolveSubjectIdentifier</code> URL platform-ID extraction, <code>RESOLVER_VERSION</code> v2→v3). Plus the cross-boundary alias-in→canonical-through→ingress-accepts end-to-end test.</p>
-</div>
-
-<div class="item iter">
-  <span class="tag iter">Iter 7 — Part 3: subject identity (type-precedence + identifier canonicalizer + v3)</span>
-  <p><b>Built:</b> new <code>appview/src/db/queries/subject_identifier.ts</code> — the fifth canonicalization instance (after capability/category/dimension), applied to the subject a review attaches to. AppView-LOCAL (hashing happens ONLY in <code>subjects.ts</code> — no cross-workspace copy, unlike the registries).</p>
-  <ul>
-    <li><b>P1b — type-specific Tier-1 precedence</b> (<code>tier1Precedence(type)</code>): <code>did</code> always first; then <b>product/dataset → <code>identifier</code> beats <code>uri</code></b> (the barcode/ASIN is the precise variant-level SKU, not a page-level store URL); <b>content/place/org/claim → <code>uri</code> beats <code>identifier</code></b> (the URL IS the content's identity). Replaces the old fixed <code>did&gt;uri&gt;identifier</code>, which silently bound products to the weaker fragmenting key.</li>
-    <li><b>Identifier canonicalizer</b>: <code>canonicalizeUri</code> extracts the YouTube video id (all 5 spellings — watch/youtu.be/embed/shorts/live, m./www./music. hosts — fold to <code>youtube:&lt;id&gt;</code>; t=/list=/utm_* dropped), else conservative RFC 3986 folding + tracking-param strip (utm_*/fbclid/gclid/ref…) <b>preserving routing query in original order</b>. <code>canonicalizeIdentifier</code> lowercases scheme, uppercases ASIN, zero-pads GTIN/UPC/EAN→GTIN-14. Unparseable → drop-don't-guess (raw fallback / Tier-2 name).</li>
-    <li><b>v3 bump</b>: <code>RESOLVER_VERSION</code> v2→v3 (both changes alter hash inputs). Greenfield at launch — no public v2 subjects to migrate; <code>v2:</code>/<code>v3:</code> disjoint-space escape hatch documented. The old <code>normalizeUriForHash</code> was SUBSUMED by <code>canonicalizeUri</code> (deleted from subjects.ts — no dead duplicate). One hasher, one read+write caller path (<code>resolveOrCreateSubject</code> + <code>resolveSubject</code> both call <code>generateDeterministicId</code>), so reads==writes under v3.</li>
-    <li>Updated the federation wire-contract doc <code>packages/protocol/docs/features/subject-id.md</code> (precedence table, v3 version section, <code>id:</code>/<code>uri:</code> canonicalizer sections, examples, constants) so a Go/Rust/Swift port mints identical ids.</li>
-  </ul>
-  <p><b>Cross-boundary end-to-end test (spec ask):</b> new <code>capability_cross_boundary.test.ts</code> exercises the full Services chain through the ONE shared registry — alias-published → L2 canonicalizes to <code>eta_query</code> in the index → consumer queries canonical → L5 ingress (modelled on Core's <code>isCapabilityConfigured</code>, same resolver) accepts even when the provider configured a DIFFERENT alias; a different canonical does NOT cross; unknowns drop at both ends.</p>
-  <p><b>Tests:</b> appview unit <span class="green">86 files / 1851 green</span> — new <code>subject_identifier.test.ts</code> (23: precedence-by-type, 5 YouTube spellings, tracking-drop, GTIN/ASIN normalize, conflation guard, name fallback) + <code>capability_cross_boundary.test.ts</code> (4). Existing <code>03-shared-utilities</code> UT-DI suite updated v2→v3 + UT-DI-007 flipped (product uri+id now resolves by id) + new UT-DI-007b (content uri beats id). <code>subject_inline_enrich</code> resolver_version stamp v2→v3. protocol <span class="green">382</span>.</p>
-  <p><b>One test-design correction during the iteration:</b> my first canonicalizer SORTED surviving query params — that broke the existing UT-DI-030 ("query order MAY be semantic; do not reorder"). Sorting would risk CONFLATING distinct resources (the query is often the routing key), which is the opposite failure from the one we're fixing. Reverted to <b>preserve query verbatim in original order</b>, dropping only KNOWN tracking params — keeps the existing safety property while still converging the tracking-noise variants the spec targets.</p>
-  <p><b>Deep review (3 checks):</b> (1) Correct way ✅ — precedence as a per-type ordered array + single loop (extensible, no scattered conditionals); canonicalizer is a sibling module mirroring the registry pattern; old normalizer subsumed not duplicated; greenfield v3 with disjoint-space escape hatch. (2) No code smells — one hasher, one read/write path; drop-don't-guess on unparseable input; verified the 13 pre-existing RFC-folding URI tests (UT-DI-024…040) all still pass, so no fragment/port/trailing-slash behavior regressed. (3) Test issues — none; the v2→v3 literal updates + the UT-DI-007 behavior flip are correct consequences of the locked P1b decision, not masked regressions.</p>
-  <p><b>Part 3 (Subject identity) COMPLETE. All three Parts of SERVICES_LAUNCH_ARCHITECTURE.md shipped, every correctness unit suite green (appview 1851, protocol 382, brain 3279, core 4447, mobile peerlens 1566).</b></p>
-</div>
-
-<div class="item iter">
-  <span class="tag iter">Iter 8 — Review-round fixes (8 findings, incl. a P0 release blocker)</span>
-  <p>An external review found 8 gaps. I verified every one against the code before fixing — all 8 confirmed real. <b>Two exposed misses in my own earlier verification, which I own:</b></p>
-  <ul>
-    <li><b>#1 (P0, release blocker) — workspace typecheck broke.</b> When I'd reported "brain tsc clean" earlier, that was <code>packages/brain</code> only — I never ran <code>npm run typecheck --workspaces</code>, so I missed that the two CONSUMING apps (<code>apps/mobile</code> <code>boot_service.ts</code>/<code>boot_capabilities.ts</code>, <code>apps/home-node-lite/brain-server</code> test fake) didn't implement the new <code>searchCapabilities</code> method. Fix: exported <code>SearchCapabilitiesParams</code>/<code>CapabilityCandidate</code> from the brain barrel; widened <code>boot_service.ts</code>'s <code>appViewClient</code> Pick; added a real <code>searchCapabilities</code> to <code>AppViewStub</code> (registry ∩ covered profiles, mirroring the live endpoint); added the stub to the lite test fake. Workspace typecheck now exits 0.</li>
-    <li><b>#2/#3 — my cross-boundary test gave false confidence.</b> <code>capability_cross_boundary.test.ts</code> modelled ingress with a LOCAL mock of <code>isCapabilityConfigured</code> — it proved registry-level convergence but never exercised the REAL execution-layer code. So the canonicalization chain had two unsealed holes exactly where execution happens: Core ingress accepted a canonical query, then Brain's <code>ServiceHandler</code> exact-indexed <code>config.capabilities[capability]</code> and rejected the alias-keyed config; and the egress <code>service_resolver</code> exact-compared <code>capabilities.includes()</code>. The "end-to-end" claim stopped one layer short of execution — a broken happy path for any alias-configured provider.</li>
-  </ul>
-  <p><b>The 8 fixes (all with regression tests + the shared exact→canonical→null pattern, exact-match fallback for out-of-registry custom caps):</b></p>
-  <ul>
-    <li><b>#1 P0</b> — searchCapabilities in mobile/lite clients+fakes (above). Tests: lite 55, mobile services 241.</li>
-    <li><b>#2 P1</b> — Brain <code>ServiceHandler</code>: new <code>resolveConfiguredKey</code> + <code>lookupPublishedSchema</code> route ALL FIVE exact-index sites (<code>findCapabilityConfig</code>, <code>checkSchemaHash</code>, <code>validateParams</code>, <code>stripUndeclaredParams</code>, <code>snapshotForCapability</code>) through alias↔canonical. The reviewer flagged 2 sites; I found + fixed all 5 (a partial fix leaves a hole). +3 Layer-5 regressions (alias-config accepts canonical query, canonical-config accepts alias, different-canonical rejected). 41 pass.</li>
-    <li><b>#3 P1</b> — Core egress <code>service_resolver.isDiscoverableService</code> → <code>capabilityMatches</code> (canonicalize both sides before <code>includes</code>). +3 regressions. 35 pass.</li>
-    <li><b>#4 P1</b> — <code>canonicalizeIdentifier</code>: <code>upc</code>/<code>ean</code>/<code>gtin</code> now UNIFY to <code>gtin:&lt;14-digit&gt;</code> (scheme collapses — the digits are identity, a UPC-A IS its zero-padded GTIN-14). Verified <code>subject_enrichment.ts</code> reads the RAW ref independently, so display metadata (<code>identifier_kind:'upc'</code>) is unaffected — the change touches only the hash input. +convergence test. 23 pass.</li>
-    <li><b>#5 P2</b> — requester schema autofetch (<code>service_tools.ts</code>): new <code>schemaForCapability</code> canonicalizes before indexing AppView's (canonical-keyed) returned schemas, so an alias request no longer skips schema-hash/TTL hydration. 36 pass.</li>
-    <li><b>#6 P2</b> — <code>search_capabilities</code> tool description + <code>PROVIDER_SERVICES_ROUTING_BLOCK</code> now warn the returned list is NOT intent-filtered (launch shortcut returns all covered) and to pick ONLY the matching capability / honest empty-state otherwise. Lock-in test updated + extended (asserts "not pre-filtered" + "do NOT pick an unrelated capability").</li>
-    <li><b>#7 P2 + #8 P3</b> — reconciled the spec doc: status header DESIGN→IMPLEMENTED (as-built reference); Layer-2 dimensions rewritten to the AS-BUILT clean-by-omission reality (no form dimension input + draft schema has no dimensions field), not the planned chips.</li>
-  </ul>
-  <p><b>Verification (the gate I should have run the first time):</b> <code>npm run typecheck --workspaces --if-present</code> exits <b>0</b>. Full suites green — brain 3283, core 4450, appview 1851, protocol 382, lite-brain-server 55, mobile services 241. (One brain degradation suite showed a transient cross-suite ordering flake on one run; passed in isolation, paired, and on full re-run — not from these changes.)</p>
-  <p><b>Lesson logged:</b> "tsc clean" must mean the WORKSPACE typecheck, and a cross-boundary claim must exercise the real execution-layer code, not a local re-implementation of the boundary. Both are now true.</p>
-</div>
-
-<div class="item iter">
-  <span class="tag iter">Iter 9 — Review-round 2 fixes (the REQUESTER egress path, 4 findings)</span>
-  <p>A second review found 4 more alias gaps. Iter 8 sealed provider-ingress (<code>ServiceHandler</code>) and the egress gate (<code>service_resolver</code>), but NOT the requester's own dispatch pipeline (<code>ServiceQueryOrchestrator</code>) — so <code>/service bus_eta …</code> still failed: AppView returns a canonical <code>eta_query</code> provider, but the orchestrator searched/ranked/sent the raw alias → spurious <code>no_candidate</code>. All 4 verified against the code before fixing.</p>
-  <ul>
-    <li><b>#1 P1 — canonicalize ONCE at the orchestrator boundary.</b> Added <code>canonicalizeRequested()</code> (resolve-or-raw-fallback for custom caps) at the top of both <code>issueQuery</code> + <code>issueQueryToDID</code>; the canonical name now drives AppView search, candidate ranking, schema-hash lookup, sender-side validation, TTL, and Core send. The reviewer's exact prescription — one canonicalization at the boundary, used everywhere downstream. Removed the now-dead <code>pickTtl</code> wrapper. +1 end-to-end regression (alias request → search/rank/Core-send all canonical). Side-benefit: the body-derived idempotency key now dedups two aliases of one capability.</li>
-    <li><b>#2 P2 — <code>AppViewStub.searchServices</code> alias-aware.</b> The stub's <code>searchCapabilities</code> (Iter 8) returned canonical, but <code>searchServices</code> still exact-matched — so <code>searchCapabilities</code>→<code>eta_query</code> then <code>searchServices('eta_query')</code> found nothing against a <code>bus_eta</code> profile. Now canonicalize-then-compare, mirroring real AppView. +alias regression.</li>
-    <li><b>#3 P2 — Brain local registry alias-aware.</b> <code>getCapability</code>/<code>getTTL</code> now resolve through the shared registry (<code>resolveLocalKey</code>: exact key, then canonical) so <code>getCapability('bus_eta')</code> returns the <code>eta_query</code> def — no-schema fallback paths no longer skip local validation for an alias. Defense-in-depth even though #1 canonicalizes upstream. +2 regressions.</li>
-    <li><b>#4 P3 — home-node-lite <code>wire_publisher</code> fallback hash.</b> The fallback hashed only <code>params</code> — a hash no other component reproduces (Brain's publisher + lite <code>profile_builder.hashCapabilitySchema</code> all hash the canonical <code>{description, params, result}</code>). Fixed to the canonical shape (canonical-JSON sorts keys, so it matches byte-for-byte). Rarely hit (schemaHash is normally pre-computed) but now correct instead of wrong.</li>
-  </ul>
-  <p><b>Why Iter 8 missed these:</b> Iter 8 fixed the two ends I'd flagged (provider ingress, egress gate) but the REQUESTER's dispatch pipeline (orchestrator → ranker → schema → validate → send) is a third surface that also exact-matched. The canonicalization theme runs through every hop that touches a capability string; this round completes the requester hop.</p>
-  <p><b>Verification:</b> <code>npm run typecheck --workspaces</code> exits <b>0</b>. Full suites green — brain 3286, core 4450, appview 1851, protocol 382, lite core-server 2351, mobile services 242. New regressions: orchestrator alias-e2e, registry alias (×2), stub alias.</p>
-  <p><b>Deep review:</b> (1) Correct way ✅ — single boundary canonicalization (not scattered per-call-site), matching the reviewer's prescription; same resolve-or-fallback pattern as Iters 8. (2) No smells — verified the only remaining raw <code>req.capability</code> uses are the non-empty presence guards (correct); no downstream consumer needs the raw alias (idempotency key is body-derived → now correctly dedups aliases). (3) Tests — regressions exercise the REAL orchestrator/stub/registry, not mocks; canonical-JSON confirmed order-independent so #4's hash matches the sibling hashers.</p>
-</div>
-
-<div class="item iter">
-  <span class="tag iter">Iter 10 — Review-round 3 (wire-shape crash + stub/ranker parity, 3 findings)</span>
-  <p>A third review found 3 more. All verified against the code; all real. One is a genuine runtime crash on real AppView data.</p>
-  <ul>
-    <li><b>#1 P2 — real crash: <code>normalizeProfile</code> on <code>capabilitySchemas: null</code>.</b> AppView's search xRPC emits <code>capabilitySchemas: r.capabilitySchemas ?? null</code> (explicit <b>null</b>, not undefined) for a provider with no published schema; the Brain client's <code>normalizeProfile</code> only guarded <code>=== undefined</code> before <code>Object.entries()</code> → <code>TypeError</code> that crashes the WHOLE <code>searchServices()</code> for ANY discoverable schemaless provider in the result set. Verified the wire <code>null</code> flows through (the coerce spread keeps it, <code>isServiceProfile</code> doesn't validate it). Fix: treat null like absent AND strip it (so downstream, typed <code>Record|undefined</code>, never sees the wire null). +test using the REAL wire shape (a profile with <code>capabilitySchemas: null</code> alongside a normal one — both returned, neither crashes).</li>
-    <li><b>#2 P3 — stub didn't mirror prod's UNKNOWN-cap drop.</b> Real AppView (service-search.ts) resolves the query to canonical and short-circuits to <code>[]</code> for an out-of-registry capability; its index holds ONLY canonical names. The stub's exact-match fallback still matched custom caps — so demos/tests passed for capabilities production would never discover. Fixed the stub to mirror EXACTLY: non-canonical query → <code>[]</code>; match a profile only when one of its caps canonicalizes to the query's canonical. Verified the demo profiles use canonical caps (eta_query, appointment_status) so nothing breaks. +2 regressions (unknown query dropped, custom-cap profile invisible).</li>
-    <li><b>#3 P3 — <code>candidate_ranker</code> exported helper exact-matched.</b> Safe today (orchestrator canonicalizes first, Iter 9) but an exported helper invites misuse. Chose to make it alias-aware (the robust option) via <code>advertisesCapability</code> — exact→canonical, the same pattern as the resolver/handler. +2 regressions (alias keeps canonical profile; alias-of-different-canonical dropped). Updated the JSDoc contract line.</li>
-  </ul>
-  <p><b>Pattern note:</b> these complete the capability-canonicalization sweep on the READ/discovery surfaces (wire-parse, demo stub, ranker), alongside the earlier ingest/search/ingress/egress/orchestrator hops. #1 also reinforces a separate lesson: wire shapes use <code>null</code>, not <code>undefined</code> — guard both at every JSON boundary.</p>
-  <p><b>Verification:</b> <code>npm run typecheck --workspaces</code> exits <b>0</b>. Suites green — brain 3289, mobile services 244, appview service-search/registry/cross-boundary 47. New regressions: http null-schema, stub unknown-cap (×2), ranker alias (×2).</p>
-  <p><b>Deep review:</b> (1) Correct way ✅ — #1 strips null to the canonical "absent" (undefined) the type already models; #2 mirrors prod's real semantics line-for-line (verified against service-search.ts), not an approximation; #3 uses the established exact→canonical pattern. (2) No smells — null-strip is localized, stub change verified against demo profiles, ranker helper now can't be misused. (3) Tests — all exercise REAL wire shapes / real stub / real ranker; #1's test uses the exact <code>capabilitySchemas: null</code> AppView emits.</p>
-</div>
-
-<div class="item iter">
-  <span class="tag iter">Iter 11 — Deferred durability + CLI hardening (tasks #86, #87)</span>
-  <p>The two long-deferred release items, done deliberately rather than rushed.</p>
-  <p><b>#86 (P1.2) — service-query response survives a Core restart.</b> The contact-gate bypass for an inbound <code>service.response</code> was authorized ONLY by an in-memory "requester window" (the <code>(peerDID, queryID, capability)</code> triple of an outbound query). That memory is lost on restart, so a legitimate response arriving after a crash/reboot was denied (<code>no_window</code>) — an availability bug, not a leak. Fix: a durable-backed <code>RequesterWindowView</code> in <code>receive_pipeline.ts</code> whose <code>peek</code> falls back to the EXISTING durable <code>service_query</code> workflow task (<code>findServiceQueryTask</code>, written by <code>/v1/service/query</code> before send). Same fallback at the consume site. Crucially: <b>the durable fallback never relaxes the gate</b> — <code>findServiceQueryTask</code> matches only a LIVE task (kind=service_query, status created/running, not expired, payload to_did+capability match the triple), i.e. the exact same authorization scope as the window. One-shot is preserved by the EXISTING durable completion: after acceptance the task goes terminal, so a replay finds no live task. Fail-closed on no-service / storage-fault / >1-match. +7 restart-recovery tests (accept-via-durable-task; drop on no-task/wrong-peer/wrong-capability/expired/terminal; one-shot across restart). A new audit action <code>d2d_recv_service_accepted_durable</code> records when auth came via the durable path. Net: the durable task also gives the restart case the replay protection the in-memory replay cache can't (it's lost on restart too) — a small security improvement, not just availability. Verified the replay-cache guard runs BEFORE the bypass block and keys on message-id, so the one-shot test (distinct ids) genuinely exercises the durable terminal-state guard, not the replay cache.</p>
-  <p><b>#87 (CLI.2/CLI.3) — plaintext gating + MsgBox-only default.</b> CLI.2: a plaintext MsgBox response is now accepted only when it's an ERROR (non-2xx, no user data — Core's best-effort error path); a plaintext SUCCESS (2xx) is rejected outside dev/test (<code>DINA_TEST_MODE</code>), since success payloads must be encrypted. CLI.3: transport default flipped <code>auto</code>→<code>msgbox</code> across config, diagnostics, headless flag, and the interactive prompt (per your call: prompt ALWAYS defaults to msgbox; a LAN user must opt into <code>direct</code>). +3 plaintext-gate tests, +1 "msgbox default requires a relay" test; updated the LAN configure test to pick <code>direct</code>. <b>Caught my own mistake:</b> first attempt shadowed an existing <code>_bare_msgbox_transport()</code> test helper (mine lacked <code>_lock</code>), breaking 6 unrelated tests — found via stash-and-test-against-HEAD, fixed by reusing the existing helper.</p>
-  <p><b>Verification:</b> <code>npm run typecheck --workspaces</code> exits <b>0</b>. Core <span class="green">4457</span> (+7), CLI <span class="green">180</span>. Both tasks closed; the only remaining open items in the tracker are now zero.</p>
-  <p><b>Iter 11b — review follow-up to the CLI.3 default flip (2 findings).</b> Flipping the transport default to <code>msgbox</code> created a fallout the reviewer caught: <b>(#1 P2, live bug)</b> the interactive <code>configure</code> connection test built <code>Config(core_url=…)</code> with no transport fields, so it inherited the new <code>msgbox</code> default with empty relay URLs → <code>DinaClient</code> raised "transport=msgbox requires msgbox_url and homenode_did", <b>falsely failing the probe even right after a valid MsgBox setup</b>. Fixed both probe sites (interactive + headless) to build the test <code>Config</code> with the SELECTED <code>transport_mode</code>/<code>msgbox_url</code>/<code>homenode_did</code> and route <code>/healthz</code> through <code>DinaClient</code>'s chosen transport (direct <code>/healthz</code> stays fine for direct mode); the success/error label now reflects MsgBox-vs-Core. The headless check also stopped probing <code>core_url/healthz</code> with raw <code>httpx</code> (which misreports a behind-relay Core as "unreachable"). +1 regression that accepts the connection test with a MsgBox config and asserts the probe is built with the msgbox transport + reports "MsgBox … Connected" (no existing test exercised the probe branch — they all answered "n"). <b>(#2 P3, footgun)</b> flipped the 5 private transport-builder helper defaults (<code>_build_pairing_transport</code>, <code>_try_unpair</code>, <code>_configure_signature</code>/<code>_noninteractive</code>, <code>_pair_with_key</code>) from <code>"auto"</code>→<code>"msgbox"</code> so no path silently re-introduces the old default. CLI <span class="green">181</span>.</p>
+<div class="item deferred">
+  <span class="tag deferred">Deferred</span>
+  <p><b><code>search_capabilities</code> intent ranking.</b> The launch
+  endpoint returns ALL covered capabilities (no intent-based ranking). The
+  routing prompt + tool description compensate by telling the LLM the list is
+  not pre-filtered and to pick only the matching capability. Real intent
+  ranking (e.g. embedding similarity) is a server-side swap with no client
+  change — the intent param is already in the contract.</p>
 </div>
 
 </body>

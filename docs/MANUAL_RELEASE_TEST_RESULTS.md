@@ -1603,3 +1603,247 @@ just a Map lookup — not a network call.
 
 The chat-card now stays in lockstep with the workflow task's authoritative
 status regardless of which surface drove the resolution.
+
+---
+
+## SLA: Services Launch Architecture (capability / dimension / subject canonicalization) — ✅ pass
+
+**Date:** 2026-05-30, iPhone 17 Pro sim (id `6D57099D-…`, iOS 26.4) via `idb` + direct AppView xRPC.
+
+**Setup:** `test-appview.dinakernel.com` redeployed from the May-30 `main`
+(`deploy_shared_infra.sh update test` — Drizzle migrations applied, 3/3 health checks
+green). New code confirmed live: `com.dina.service.searchCapabilities` route → HTTP 200.
+App: existing debug build, JS served fresh from Metro at the current working tree
+(`boot.ready`, requester DID `did:plc:aiidvbzbdvbglt5ywducnryi`). Provider rig already
+up: bus42-agent lite Core on `:18298` (`/healthz` ok), `run_daemon.py` (pid 63752),
+provider DID `did:plc:6zyy3bu2njkhdjbosxdqrzri` discoverable on test-appview for
+`eta_query`.
+
+### SLA-1: PeerLens dimensions — clean-by-omission verified live
+
+Drove the PeerLens Write-a-review form (search "Herman Miller" → "Write the first
+review"). Full field inventory via `idb ui describe-all`, including the 2-step
+"Additional details" modal:
+- subject-type chips, Name, **Identifier** (ASIN/ISBN/SKU/model#), Sentiment, Headline,
+  Body, and modal Step 1 "Your experience" = use-case chips
+  (Everyday/Professional/Travel/Family/Kids, pick ≤3) + "Last used"
+  (Today…Over a year ago) + "Other things you tried"; Step 2 = "Recommendations".
+- **No dimension input anywhere** in the form — matches the implementation's
+  "clean-by-omission" design and the `serializeFormToV2Extras` lock-in test (the app
+  cannot emit a polluting `dimensions[]`). Dimension canonicalization is a read-side
+  aggregator defense for third-party/imported wire records; that AppView code is now
+  deployed.
+
+### SLA-2: Subject identity v3 — convergence proven on the deployed resolver
+
+Injected attestations via `com.dina.test.injectAttestation` (gated endpoint, enabled on
+test-appview) and read back `subjectId` via `com.dina.peerlens.resolve`:
+- **ASIN case fold:** `asin:B0CONVTEST1` and `ASIN:b0convtest1` →
+  **same** `sub_85a1d15c0a24c8cf49e3ec8793e92cf0`. ✅
+- **GTIN-family unification:** `upc:036000291452`, `ean:0036000291452`,
+  `gtin:00036000291452` → **one** `sub_1b35d164025567d522584ef3965c480f`. ✅
+- **No over-merge (negative):** `asin:B0DIFFERENT9` → distinct
+  `sub_913da0b99e9dde092de0873c2c523b31`, ≠ the convergence subject. ✅
+- Test attestations deleted afterward (`deleteAttestation` → 200 ×4).
+This is exactly the `canonicalizeIdentifier` (v3) behavior, running server-side on real
+infra.
+
+### SLA-3: Services capability canonicalization + full bus-driver round-trip — ✅
+
+Direct AppView checks:
+- `searchCapabilities?intent=when does the bus arrive` → returns canonical `eta_query`
+  (+ description, domain `transit`). My new L4 discovery endpoint works.
+- `service.search?capability=bus_eta` (ALIAS) → returns the **same** providers as
+  `eta_query` — AppView canonicalizes `bus_eta`→`eta_query` before the `@>` match. The
+  alias-mismatch bug class is closed, verified live.
+
+Full in-app round-trip (`/ask "When does bus 42 reach Castro?"`):
+- Agentic loop registered **15 tools incl. `search_capabilities`**. Tool-call trace:
+  iter 0 `search_capabilities` + `geocode` (parallel) → iter 1
+  `search_provider_services` (1235 B) → iter 2 `query_service` → iter 3 answer.
+  The LLM picked `search_capabilities` FIRST (per the routing-prompt change), got the
+  canonical capability, found the provider, dispatched the service.query.
+- **ETA card returned in chat:** "🚌 Route 42 — **14 min** to Jane Warner Plaza
+  (Mission)" + "Open in Maps", "via Demo ETA Provider · did:plc:6zyy3b…". Full path:
+  ask → service.query D2D (MsgBox) → provider → bus42-agent daemon claim →
+  stub_eta_runner → service.response D2D → ETA card. Not a demo responder.
+
+**Findings:**
+- **SLA-I1** (cosmetic) — a transient `[WS] onerror msg=(no message)` dev-overlay banner
+  appeared during the run; WS recovered (`ws=true ready=1 auth=true`) and the round-trip
+  completed. Same transient as prior MT-24 notes; not a release blocker.
+- **SLA-I2** (note) — two "Demo ETA Provider" rows are discoverable for `eta_query` on
+  test-appview (one is a stale duplicate from a prior run). The ranker picks one
+  correctly; consider a cleanup of stale provider profiles before a release demo.
+
+**Verdict:** all three Services-Launch-Architecture features
+(capability discovery/alias canonicalization, PeerLens dimension design,
+subject-identity v3 convergence) validated end-to-end on the iOS sim + deployed
+test infra. CLI `dina-agent 0.17.0` (the alias-aware orchestrator + MsgBox-only
+default) is published to PyPI and exercised via the bus-driver provider path.
+
+---
+
+## 2026-05-30 — SLA-3 follow-up: GENUINE alias-mismatch round-trip (provider config keyed `bus_eta`) — ✅
+
+**Why this re-test.** The SLA-3 entry above proved alias canonicalization only at the
+**AppView discovery layer** (`service.search?capability=bus_eta` returns the same rows as
+`eta_query`). The full in-app round-trip it described used the provider's **canonical**
+`eta_query` config — so the *provider-side* acceptance of a canonical query against an
+**alias-keyed** ServiceConfig (`isCapabilityConfigured` exact→canonical) was **never
+actually exercised live**. This run closes that gap.
+
+**Rig (refreshed 2026-05-30):**
+- Provider = 2nd Dina on lite Core `:18298` (`DINA_VAULT_DIR=bus42-agent/provider-vault`),
+  DID `did:plc:6zyy3bu2njkhdjbosxdqrzri`, MsgBox-connected, service profile published.
+- ServiceConfig re-published via `put_service_config_alias.ts` so the capability is keyed
+  under the **alias `bus_eta`** (registry schema still looked up via the canonical
+  `eta_query` entry). AppView discovery confirms ingest canonicalized it: a
+  `search?capability=eta_query` returns this provider with `caps: ['eta_query']`.
+- `bus42-agent` daemon upgraded to **`dina-agent 0.17.0`** (the alias-aware orchestrator).
+
+**Live trace (provider Core `/tmp/provider_core.log`, requester `metro_warm.log`):**
+- Requester `/ask "When is the next 38 Geary bus at Geary and Powell?"` → agentic loop
+  `iter 0 search_capabilities → iter 1 geocode → iter 2 search_provider_services → iter 3
+  query_service` `{outcomeKind: success, outcomeLen: 260}`.
+- **Provider accepted the canonical query against its `bus_eta`-keyed config** (the fix
+  under test): `service.query.received capability="eta_query"` →
+  `service.query.execution_created task_id=svc-exec-84cc61f…` →
+  `service.query accepted (auto-execute path)`.
+- Daemon claimed + completed: `tasks/claim → 200 (1748 B)` → `GET …/svc-exec-84cc61f…` →
+  `POST …/svc-exec-84cc61f…/complete → 200`.
+- **ETA card rendered in chat:** "🚌 **Route 38 Geary** — **8 min** to Geary Street (Union
+  Square)" + "Open in Maps", attribution line reads **"via Demo ETA Provider (alias
+  bus_eta) · did:plc:6zyy3b…"**. The literal "alias bus_eta" in the card is the visual
+  proof the provider advertised under the alias yet served a canonical-keyed query.
+
+**Verdict:** the alias-mismatch path is now proven **end-to-end through the provider's
+capability gate**, not just AppView discovery. `isCapabilityConfigured`'s exact→canonical
+match (packages/core) is exercised live, matching its contract test.
+
+**Findings / honesty notes:**
+- **SLA-I3 (real, loop quality)** — the round-trip only fired once I asked about a route
+  the requester vault had **no stored card for**. Earlier re-asks about "bus 42 / Castro"
+  HIT `max_iterations` (8) **without ever calling `query_service`**: the loop kept hitting
+  the ETA card a *prior* success had stored in the vault (`vault_search ×3 → list_personas
+  → geocode`, identical sequence across two runs — deterministic, not nondeterminism). So
+  with a warm vault memory the model answers from stale state instead of issuing a fresh
+  live service query. Two implications worth a follow-up: (1) the 8-iteration budget is
+  tight for the Services flow when discovery happens early but the model spends iterations
+  re-gathering context; (2) the prompt doesn't bias toward `query_service` after a
+  successful `search_provider_services`. Both are additive prompt/loop-budget tweaks, not
+  protocol bugs — captured as an open item, not a launch blocker.
+- **SLA-I4 (test hygiene)** — two stray "Stored in General vault" notes were created in the
+  requester vault during the run because idb taps at `(210,755)` landed on the **Remember**
+  mode pill (mode tabs are `Ask 70 / Remember 180 / Task 290` at y≈755, NOT the text
+  field). Benign for C/D/E; noted so a future demo vault is reset clean. Correct drive
+  sequence: tap **Ask (70,755)** first to focus the field, then `idb ui text`, then Send
+  (366,757).
+
+---
+
+## 2026-05-30 — Two-service test: SECOND service "Dr Carl's Clinic" (appointment_status) → generic card — ✅
+
+**Goal (user's ask):** stand up a *genuinely separate* second service with a different stub
+returning a different result shape, and confirm (1) it lists separately in discovery and
+(2) a different result renders a good, visibly-distinct display card.
+
+**Second provider — a real, separate `did:plc` node (not a duplicate row):**
+- Lite Core on `:18299`, vault `bus42-agent/drcarl-vault`, MsgBox-connected.
+- PDS-provisioned identity `did:plc:uib44xwkcqkosr2hli6exsww` (handle
+  `drcarlclinic.test-pds.dinakernel.com`) — distinct from the bus ETA provider
+  `did:plc:6zyy3bu2njkhdjbosxdqrzri`.
+- Own dina-agent pairing (`drcarl-agent/.dina/cli`) + own daemon running
+  `stub_appointment_runner` (`stub_appt`), claiming tasks over MsgBox.
+- `appointment_status` ServiceConfig published (ad-hoc params/result schema; appointment_status
+  is in the canonical registry but has no brain wire-schema, so the provider supplies one).
+
+**Lists separately in discovery (test-appview):**
+- `service.search?capability=appointment_status` → returns **two** providers:
+  `Dr Carl's Clinic` (`did:plc:uib44…`) **and** a pre-existing `Dr Carl — Castro Family
+  Dentistry` (`did:plc:ozslhsj5…`). `service.search?capability=eta_query` still returns the
+  bus provider. Each capability resolves its own provider set — separate services, separate
+  listings. `isDiscoverable(did:plc:uib44…)` → `{isDiscoverable:true,
+  capabilities:["appointment_status"]}`.
+
+**Live round-trip + DISTINCT card (in-app, real discovery path):**
+- `/ask "Is my appointment with Dr Carl confirmed?"` → handoff card walked
+  "Asked the Dina service directory → **Found Dr Carl's Clinic** (`did:plc:uib44xw…`) →
+  sent query → reply".
+- Provider accepted, `stub_appt` answered `{status:"confirmed", date:"Tuesday, June 3",
+  time:"2:30 PM", note:…}`, response D2D'd back, and the **generic card** rendered:
+  title **"Dr Carl's Clinic"**, body **"📬 Reply from Dr Carl's Clinic — Your appointment on
+  Tuesday, June 3 at 2:30 PM is confirmed."**, footer **"via Dr Carl's Clinic ·
+  did:plc:uib44xw…"**.
+- **Visibly distinct from the transit card** (which shows a bus icon, a big "8 min", and an
+  Open-in-Maps button). Same handoff pipeline + `InlineServiceQueryCard`; a non-`eta_query`
+  capability falls to the generic branch whose body is `formatServiceQueryResult` →
+  `formatAppointmentStatus`. Confirms "different stub / different result → good, different
+  card."
+
+**Findings / honesty notes:**
+- **C-I1 (test infra, big time cost)** — test-appview took **~30+ min** to ingest Dr Carl's
+  *brand-new* PDS repo (the test relay/Jetstream crawls fresh repos on a slow cycle; an
+  already-known repo like bus42 indexes instantly). This is a **test-stack artifact**, not
+  product behaviour — on the real AT Proto network a new repo's records reach AppViews in
+  seconds. The profile record was correctly written to the PDS repo immediately; only the
+  AppView index lagged. Lesson: after confirming the PDS record, **park and let it
+  propagate** rather than chasing inject/requestCrawl workarounds.
+- **C-I2 (process)** — the in-app card ultimately used the **normal discovery path** once
+  ingest caught up; a preferred-provider contact (Dr Carl, `preferred_for:["medical"]`, DID
+  set) was also added in the app as a discovery-independent fallback (`find_preferred_provider`
+  → `query_service(operator_did)` → `issueQueryToDID`, no AppView lookup). Either path
+  produces the card.
+- **C-I3 (rig hygiene)** — a `dina configure` without `--config-dir` writes to the local
+  `.dina/cli` and overwrote the bus42 agent config once; fixed by always passing
+  `--config-dir`. The bus42 ETA daemon kept running on its in-memory config (Task B already
+  proven); its key file was overwritten so it would need re-pairing only if restarted.
+
+---
+
+## 2026-05-30 — D: real PeerLens product + E: YouTube review (in-app, subject-id convergence) — D ✅ verified-at-time / E ⚠️ partial
+
+Both reviews were created **through the app's Write-Review UI** (PeerLens → "Write Review") as
+real `com.dina.peerlens.review` records in the app's own already-crawled PDS repo
+(`did:plc:aiidvbzbdvbglt5ywducnryi`). **Honesty note:** the test PDS/AppView appears to have
+**reset/redeployed mid-session** — a re-check at ~13:45 returned `listRecords count=0` and
+`resolve subjectId=null` for both, and the resolve endpoint flipped from accepting `type/uri`
+query params to requiring the `subject` JSON param (a newer-code redeploy). So the results
+below are **point-in-time** (verified ~13:30) and are NOT currently re-confirmable live.
+
+**D — real product (Echo Dot 3rd Gen, real Amazon ASIN `B07FZ8S74R`).** Review submitted with
+link `https://www.amazon.com/dp/B07FZ8S74R?ref=test_share&tag=affiliate123`. Resolving via
+`com.dina.peerlens.resolve?subject={"type":"product","uri":…}` for **three** URL spellings all
+return the SAME subject + the review:
+- `…www.amazon.com/dp/B07FZ8S74R?ref=…&tag=…` → `subjectId=uri:https://amazon.com/dp/B07FZ8S74R` reviewCount=1
+- `…amazon.com/dp/B07FZ8S74R` (no www/params)  → same
+- `…www.amazon.com/dp/B07FZ8S74R?utm_source=…` → same
+→ v3 resolver stripped `www.` + `ref`/`tag`/`utm_*` tracking params; all converge to one subject.
+
+**E — real YouTube video ("Me at the zoo", real id `jNQXAC9IVRw`).** Review submitted (type
+Content) with link `https://www.youtube.com/watch?v=jNQXAC9IVRw`. Resolving **four** URL
+spellings SHOULD all resolve to `uri:youtube:jNQXAC9IVRw`:
+- `www.youtube.com/watch?v=jNQXAC9IVRw`, `youtu.be/jNQXAC9IVRw`,
+  `m.youtube.com/watch?v=…&t=42s`, `…watch?v=…&list=PLxyz123`
+
+**⚠️ E was NOT cleanly confirmed live.** The review was created in-app (it showed under My
+Reviews), but every `resolve` call for it returned `400 Bad Request` (I was using the wrong
+`type/uri` param form), and by the time I switched to the correct `subject` JSON form the test
+env had reset (`count=0`). So E's in-app round-trip → live convergence is **unverified this
+run**. What IS proven for E: the v3 YouTube id-extraction (`extractYouTubeId` handles
+`watch?v=`/`youtu.be`/`embed`/`shorts`/`live`, folds `www`/`m`/`music`, strips `t`/`list`) by
+the resolver unit tests + the earlier T2 inject-based subject-convergence proof. Re-driving E
+live needs a stable test env.
+
+**Findings:**
+- **DE-I1 (resolve param format)** — `com.dina.peerlens.resolve` takes a single `subject`
+  query param = the JSON `SubjectRef` (`{type, uri, identifier, name}`), NOT separate
+  `type`/`uri` params. The wrong format returns `400 Bad Request` (cost a round of false-alarm
+  during this run). `subjectId` is `null` only when the subject can't be parsed/has no Tier-1
+  field; with reviews present it returns the canonical key.
+- **DE-I2 (new-repo ingest)** — D/E ingested in seconds because they're records on the *app's
+  already-crawled repo*. Confirms the C-I1 diagnosis: the slow case is a *brand-new* repo
+  (Dr Carl), and the lag is upstream (relay/Jetstream crawling a fresh repo), not the AppView.
+  The AppView ingester (`appview/src/ingester/index.ts`) is a pure Jetstream consumer — it
+  indexes what the firehose delivers and does no repo discovery itself, so the onboarding lag
+  is a property of the upstream relay (env-specific), not AppView code.

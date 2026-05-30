@@ -1,3 +1,6 @@
+# CardSpec V2
+docs/CARD_SPEC_V2_DESIGN.md
+
 # PeerView P1
   The key finding: dimension keys are free-form, and reviews are immutable
 

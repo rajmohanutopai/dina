@@ -301,6 +301,8 @@ export { ConfigSync, toPublisherConfig } from './service/config_sync';
 export type { ConfigSyncOptions, ConfigChangeSource } from './service/config_sync';
 export { formatServiceQueryResult } from './service/result_formatter';
 export type { ServiceQueryEventDetails } from './service/result_formatter';
+export { buildResultCardSpec } from './service/result_card_mapper';
+export type { ResultCardInput } from './service/result_card_mapper';
 export { rankCandidates, pickTopCandidate, haversineKm } from './service/candidate_ranker';
 export type {
   RankedCandidate,

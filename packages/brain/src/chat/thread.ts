@@ -19,6 +19,7 @@
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { getChatMessageRepository } from '@dina/core';
+import type { CardSpec } from '@dina/protocol';
 
 export type MessageType =
   | 'user'
@@ -64,6 +65,15 @@ export interface ServiceQueryLifecycle {
   params?: Record<string, unknown>;
   /** Validated capability result — present iff `status === 'resolved'`. */
   result?: Record<string, unknown>;
+  /**
+   * Declarative display-card spec (the fixed-vocabulary `CardSpec` from
+   * `@dina/protocol`), present when resolved. Built by the brain
+   * (deterministically from `result`, or — later — by the LLM) so the
+   * client renders the card from data, not per-capability code. When
+   * absent, the renderer derives one from `result` on the fly, then falls
+   * back to the generic text card.
+   */
+  cardSpec?: CardSpec;
   /** Error explanation — present on `failed` / `expired`. */
   error?: string;
   /** Epoch ms when the response landed (set on the resolve/fail patch).

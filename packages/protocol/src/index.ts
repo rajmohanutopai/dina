@@ -285,3 +285,9 @@ export * from './services/capability-registry';
 // PeerLens review-dimension registry — shared canonical vocabulary +
 // resolver. Byte-identical to appview/src/shared/dimension-registry.ts.
 export * from './services/dimension-registry';
+
+// Service-result display card — the safe, fixed-vocabulary declarative
+// CardSpec the brain maps results into + the client renders. See
+// docs/CARD_SPEC_DESIGN.md. NO images, NO provider-supplied URLs (map =
+// structured coords, link = https + shown host).
+export * from './services/card-spec';

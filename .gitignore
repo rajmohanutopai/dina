@@ -348,3 +348,7 @@ bus42-agent/provider-vault/
 
 # idb/adb manual-test screenshots — regenerable binary artifacts (the result.md reports are kept).
 apps/mobile/__chrome__/results/**/*.png
+
+# Dr Carl second-service rig (test did:plc vault + paired-agent key) — never commit
+bus42-agent/drcarl-vault/
+bus42-agent/drcarl-agent/

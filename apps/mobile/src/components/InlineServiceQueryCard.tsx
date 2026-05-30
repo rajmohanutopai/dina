@@ -18,14 +18,15 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { readLifecycle, type ChatMessage } from '@dina/brain/chat';
+import { buildResultCardSpec } from '@dina/brain';
 
 import { colors, radius, shadows, spacing, textStyles } from '../theme';
 
 import { MessageTimestamp } from './MessageTimestamp';
-import { safeHttpsUrl } from './safe_url';
+import { SafeCardRenderer } from './SafeCardRenderer';
 
 export interface InlineServiceQueryCardProps {
   message: ChatMessage;
@@ -56,17 +57,26 @@ export function InlineServiceQueryCard({
       typeof lc.resolvedAt === 'number' && lc.resolvedAt > message.timestamp
         ? Math.max(1, Math.round((lc.resolvedAt - message.timestamp) / 1000))
         : undefined;
-    if (capability === 'eta_query' && result !== undefined) {
+    // Card as DATA, not per-capability code: prefer a brain-supplied
+    // CardSpec (Card-4 threads `lc.cardSpec`); else derive one
+    // deterministically from the result on the fly; else fall back to the
+    // generic text card. One render path for every capability.
+    const spec =
+      lc.cardSpec ??
+      (result !== undefined ? buildResultCardSpec({ capability, serviceName, result }) : null);
+    if (spec !== null) {
       return (
-        <EtaResultBody
-          serviceName={serviceName}
-          providerDid={lc.providerDid}
-          capability={capability}
-          params={lc.params}
-          elapsedSeconds={elapsedSeconds}
-          result={result}
-          timestamp={message.timestamp}
-        />
+        <View style={styles.card}>
+          <SafeCardRenderer spec={spec} />
+          <ProviderAttribution
+            serviceName={serviceName}
+            providerDid={lc.providerDid}
+            capability={capability}
+            params={lc.params}
+            elapsedSeconds={elapsedSeconds}
+          />
+          <MessageTimestamp timestamp={message.timestamp} />
+        </View>
       );
     }
     return (
@@ -107,91 +117,6 @@ export function InlineServiceQueryCard({
       </View>
       {error !== undefined && error !== '' && <Text style={styles.errorText}>{error}</Text>}
       <MessageTimestamp timestamp={message.timestamp} />
-    </View>
-  );
-}
-
-function labelForCapability(capability: string): string {
-  switch (capability) {
-    case 'eta_query':
-      return 'Estimated time of arrival';
-    case 'appointment_status':
-      return 'Appointment status';
-    case 'price_check':
-      return 'Price check';
-    default:
-      return capability || 'Service query';
-  }
-}
-
-interface EtaResultBodyProps {
-  serviceName: string;
-  providerDid?: string;
-  capability: string;
-  params?: Record<string, unknown>;
-  elapsedSeconds?: number;
-  result: Record<string, unknown>;
-  timestamp: number;
-}
-
-function EtaResultBody({
-  serviceName,
-  providerDid,
-  capability,
-  params,
-  elapsedSeconds,
-  result,
-  timestamp,
-}: EtaResultBodyProps): React.JSX.Element {
-  const eta =
-    typeof result.eta_minutes === 'number'
-      ? `${result.eta_minutes} min`
-      : typeof result.eta_minutes === 'string'
-        ? `${result.eta_minutes} min`
-        : null;
-  const stop = typeof result.stop_name === 'string' ? result.stop_name : null;
-  const route = typeof result.route_name === 'string' ? result.route_name : null;
-  const mapUrl = safeHttpsUrl(result.map_url);
-
-  const onOpenMap = useCallback(() => {
-    if (mapUrl !== null) {
-      void Linking.openURL(mapUrl).catch(() => {
-        /* user can ignore */
-      });
-    }
-  }, [mapUrl]);
-
-  return (
-    <View style={styles.card}>
-      <View style={styles.headerRow}>
-        <Ionicons name="bus-outline" size={20} color={colors.textPrimary} />
-        <Text style={styles.title}>{route ?? serviceName}</Text>
-      </View>
-      {eta !== null && (
-        <Text style={styles.etaPrimary}>
-          {eta}
-          {stop !== null ? <Text style={styles.etaSecondary}> to {stop}</Text> : null}
-        </Text>
-      )}
-      {mapUrl !== null && (
-        <TouchableOpacity
-          testID="service-query-map-button"
-          style={styles.mapButton}
-          onPress={onOpenMap}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="map-outline" size={16} color={colors.bgPrimary} />
-          <Text style={styles.mapButtonText}>Open in Maps</Text>
-        </TouchableOpacity>
-      )}
-      <ProviderAttribution
-        serviceName={serviceName}
-        providerDid={providerDid}
-        capability={capability}
-        params={params}
-        elapsedSeconds={elapsedSeconds}
-      />
-      <MessageTimestamp timestamp={timestamp} />
     </View>
   );
 }
