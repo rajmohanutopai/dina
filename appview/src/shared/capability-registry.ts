@@ -61,6 +61,12 @@ export const CAPABILITY_REGISTRY: readonly CanonicalCapability[] = Object.freeze
     description: 'Check the status or next availability of an appointment with a provider.',
     domain: 'appointments',
   }),
+  Object.freeze({
+    canonical: 'price_check',
+    aliases: Object.freeze(['price_lookup', 'stock_price', 'product_price', 'availability_check']),
+    description: 'Check the current price and stock availability of a product at a store.',
+    domain: 'commerce',
+  }),
 ])
 
 /**
