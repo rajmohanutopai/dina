@@ -1,12 +1,16 @@
 /**
  * Unit tests for `appview/src/ingester/handlers/service-profile.ts`.
  *
- * Focus: pin the two invariants the handler guarantees:
- *   1. Delete-then-insert runs in a single transaction so concurrent
- *      readers never see a momentary "no profiles for this operator"
- *      state.
- *   2. At most one indexed profile per operator. Re-publishing under
- *      a different rkey replaces the prior row.
+ * Focus: pin the invariants the handler guarantees:
+ *   1. select(uri) → delete(other uris) → upsert(uri) inside a single
+ *      transaction so concurrent readers never see a momentary "no
+ *      profiles for this operator" state.
+ *   2. The write is an idempotent UPSERT on `uri` — concurrency-safe
+ *      against the ingester's parallel queue + spool replay (the old
+ *      delete-then-plain-insert raced → services_pkey duplicate_key).
+ *   3. At most one indexed profile per operator: deleting the operator's
+ *      OTHER uris means re-publishing under a new rkey replaces the prior.
+ *   4. createdAt preserved across re-publishes of the same uri.
  */
 
 import { describe, it, expect, vi } from 'vitest'
@@ -16,13 +20,12 @@ import { services } from '@/db/schema/services'
 interface Captured {
   events: string[]
   insertValues: Record<string, unknown> | null
+  /** The `set` payload passed to onConflictDoUpdate. */
+  conflictSet: Record<string, unknown> | null
   txOpened: boolean
 }
 
-function stubCtx(
-  captured: Captured,
-  opts: { priorCreatedAt?: Date | null } = {},
-) {
+function stubCtx(captured: Captured, opts: { priorCreatedAt?: Date | null } = {}) {
   function makeTx(prefix: string) {
     return {
       select: () => ({
@@ -47,9 +50,19 @@ function stubCtx(
       },
       insert: (table: unknown) => {
         return {
-          values: async (v: Record<string, unknown>) => {
+          values: (v: Record<string, unknown>) => {
             captured.insertValues = v
-            captured.events.push(`${prefix}insert:${table === services ? 'services' : 'unknown'}`)
+            return {
+              // The handler now uses an idempotent upsert; the stub models
+              // the `.values().onConflictDoUpdate()` chain and treats the
+              // terminal call as the awaited write.
+              onConflictDoUpdate: async (cfg: { set: Record<string, unknown> }) => {
+                captured.conflictSet = cfg.set
+                captured.events.push(
+                  `${prefix}upsert:${table === services ? 'services' : 'unknown'}`,
+                )
+              },
+            }
           },
         }
       },
@@ -67,6 +80,10 @@ function stubCtx(
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     metrics: { incr: vi.fn(), gauge: vi.fn(), histogram: vi.fn(), counter: vi.fn() },
   } as any
+}
+
+function freshCaptured(): Captured {
+  return { events: [], insertValues: null, conflictSet: null, txOpened: false }
 }
 
 function validProfile() {
@@ -92,35 +109,34 @@ function op(record: Record<string, unknown>) {
 }
 
 describe('serviceProfileHandler.handleCreate', () => {
-  it('runs select + delete + insert inside a single transaction', async () => {
-    const captured: Captured = { events: [], insertValues: null, txOpened: false }
+  it('runs select + delete(others) + upsert inside a single transaction', async () => {
+    const captured = freshCaptured()
     const ctx = stubCtx(captured)
     await serviceProfileHandler.handleCreate(ctx, op(validProfile()))
     expect(captured.txOpened).toBe(true)
-    // SELECT first (to capture prior createdAt), then DELETE the prior
-    // row, then INSERT the new one. Read-then-write ordering is what
-    // makes the createdAt preservation safe inside the tx.
+    // SELECT first (to capture prior createdAt for this uri), then DELETE
+    // the operator's OTHER uris, then UPSERT the current uri.
     expect(captured.events).toEqual([
       'tx:begin',
       'tx:select:services',
       'tx:delete:services',
-      'tx:insert:services',
+      'tx:upsert:services',
       'tx:commit',
     ])
   })
 
-  it('delete precedes insert (operator-wide cleanup before re-index)', async () => {
-    const captured: Captured = { events: [], insertValues: null, txOpened: false }
+  it('delete precedes the upsert', async () => {
+    const captured = freshCaptured()
     const ctx = stubCtx(captured)
     await serviceProfileHandler.handleCreate(ctx, op(validProfile()))
     const di = captured.events.indexOf('tx:delete:services')
-    const ii = captured.events.indexOf('tx:insert:services')
+    const ui = captured.events.indexOf('tx:upsert:services')
     expect(di).toBeGreaterThanOrEqual(0)
-    expect(ii).toBeGreaterThan(di)
+    expect(ui).toBeGreaterThan(di)
   })
 
-  it('insert carries the canonical column set with three timestamps', async () => {
-    const captured: Captured = { events: [], insertValues: null, txOpened: false }
+  it('upsert carries the canonical column set with three timestamps', async () => {
+    const captured = freshCaptured()
     const ctx = stubCtx(captured)
     await serviceProfileHandler.handleCreate(ctx, op(validProfile()))
     expect(captured.insertValues).toMatchObject({
@@ -134,17 +150,33 @@ describe('serviceProfileHandler.handleCreate', () => {
     expect(captured.insertValues?.indexedAt).toBeInstanceOf(Date)
   })
 
-  it('preserves prior createdAt on re-publish by the same operator', async () => {
-    // First publish was 2026-01-01. A re-publish today should keep
-    // that original createdAt while bumping updatedAt (operator stamp)
-    // and indexedAt (AppView write time). Operators looking at "when
-    // did this provider first sign up" rely on createdAt stability.
+  it('is an idempotent UPSERT (onConflictDoUpdate) — concurrency-safe on `uri`', async () => {
+    // Regression: the old path was delete + plain insert with NO ON
+    // CONFLICT, relying on "the DELETE guarantees no row at this uri".
+    // Under the ingester's parallel queue + spool replay, two same-uri
+    // events interleaved → services_pkey duplicate_key → requeue storm →
+    // the row never landed (price_check never became discoverable). The
+    // write MUST be an upsert so concurrent same-uri writes converge.
+    const captured = freshCaptured()
+    const ctx = stubCtx(captured)
+    await serviceProfileHandler.handleCreate(ctx, op(validProfile()))
+    expect(captured.events).toContain('tx:upsert:services')
+    expect(captured.conflictSet).not.toBeNull()
+    // The conflict update overwrites content but NOT createdAt.
+    expect(captured.conflictSet).toMatchObject({
+      cid: 'bafytest123',
+      name: 'SF Transit',
+      isDiscoverable: true,
+    })
+    expect(captured.conflictSet).not.toHaveProperty('createdAt')
+  })
+
+  it('preserves prior createdAt on re-publish of the same uri (insert path)', async () => {
     const original = new Date('2026-01-01T00:00:00.000Z')
-    const captured: Captured = { events: [], insertValues: null, txOpened: false }
+    const captured = freshCaptured()
     const ctx = stubCtx(captured, { priorCreatedAt: original })
     await serviceProfileHandler.handleCreate(ctx, op(validProfile()))
     expect(captured.insertValues?.createdAt).toEqual(original)
-    // updatedAt + indexedAt must be a different (newer) instant.
     const u = captured.insertValues?.updatedAt as Date
     const i = captured.insertValues?.indexedAt as Date
     expect(u.getTime()).toBeGreaterThan(original.getTime())
@@ -152,25 +184,20 @@ describe('serviceProfileHandler.handleCreate', () => {
   })
 
   it('updatedAt mirrors the operator-stamped record.updatedAt (not the ingest time)', async () => {
-    // The operator's PDS record carries `updatedAt` — the moment they
-    // changed the content. Mirroring it into the index makes
-    // operator-facing audit ("when did Alice last touch her profile")
-    // accurate. Mirroring `now` would conflate that with re-ingests.
     const operatorStamp = new Date('2026-03-15T12:34:56.000Z')
-    const captured: Captured = { events: [], insertValues: null, txOpened: false }
+    const captured = freshCaptured()
     const ctx = stubCtx(captured)
     await serviceProfileHandler.handleCreate(
       ctx,
       op({ ...validProfile(), updatedAt: operatorStamp.toISOString() }),
     )
     expect(captured.insertValues?.updatedAt).toEqual(operatorStamp)
-    // indexedAt is distinct — bumped to ingest time.
     const i = captured.insertValues?.indexedAt as Date
     expect(i.getTime()).not.toBe(operatorStamp.getTime())
   })
 
   it('fresh operator (no prior row) gets createdAt = now', async () => {
-    const captured: Captured = { events: [], insertValues: null, txOpened: false }
+    const captured = freshCaptured()
     const ctx = stubCtx(captured, { priorCreatedAt: null })
     await serviceProfileHandler.handleCreate(ctx, op(validProfile()))
     const c = captured.insertValues?.createdAt as Date
@@ -179,18 +206,15 @@ describe('serviceProfileHandler.handleCreate', () => {
   })
 
   it('skips records with isDiscoverable=false (no transaction opened)', async () => {
-    const captured: Captured = { events: [], insertValues: null, txOpened: false }
+    const captured = freshCaptured()
     const ctx = stubCtx(captured)
-    await serviceProfileHandler.handleCreate(
-      ctx,
-      op({ ...validProfile(), isDiscoverable: false }),
-    )
+    await serviceProfileHandler.handleCreate(ctx, op({ ...validProfile(), isDiscoverable: false }))
     expect(captured.txOpened).toBe(false)
     expect(captured.events).toEqual([])
   })
 
   it('skips records whose responsePolicy values are outside the supported set', async () => {
-    const captured: Captured = { events: [], insertValues: null, txOpened: false }
+    const captured = freshCaptured()
     const ctx = stubCtx(captured)
     await serviceProfileHandler.handleCreate(
       ctx,
@@ -199,22 +223,8 @@ describe('serviceProfileHandler.handleCreate', () => {
     expect(captured.txOpened).toBe(false)
   })
 
-  it('does NOT use ON CONFLICT on the insert (delete already cleared the row)', async () => {
-    // The handler relies on the DELETE for idempotency; an
-    // ON CONFLICT clause on the INSERT would be dead code. This
-    // test fails if a future refactor adds one back (the stub's
-    // insert chain only exposes `.values()`, not `.onConflictDoUpdate`).
-    const captured: Captured = { events: [], insertValues: null, txOpened: false }
-    const ctx = stubCtx(captured)
-    await expect(
-      serviceProfileHandler.handleCreate(ctx, op(validProfile())),
-    ).resolves.not.toThrow()
-  })
-
   it('canonicalizes capabilities (alias→canonical, case, dedupe) before indexing', async () => {
-    // `bus_eta` is a registry alias of `eta_query`; with case + a literal
-    // duplicate, all three converge to the single canonical `eta_query`.
-    const captured: Captured = { events: [], insertValues: null, txOpened: false }
+    const captured = freshCaptured()
     const ctx = stubCtx(captured)
     await serviceProfileHandler.handleCreate(
       ctx,
@@ -228,10 +238,7 @@ describe('serviceProfileHandler.handleCreate', () => {
   })
 
   it('drops UNKNOWN capabilities from the public index + meters them (P2)', async () => {
-    // `plumbing` is NOT in the registry → excluded from public
-    // capabilitiesJson, but the profile still indexes for its known
-    // capability (`eta_query`). Row-level isDiscoverable is NOT flipped.
-    const captured: Captured = { events: [], insertValues: null, txOpened: false }
+    const captured = freshCaptured()
     const ctx = stubCtx(captured)
     const metricCalls: Array<{ name: string; tags?: Record<string, string> }> = []
     ctx.metrics.incr = (name: string, tags?: Record<string, string>) => {
@@ -245,11 +252,8 @@ describe('serviceProfileHandler.handleCreate', () => {
         responsePolicy: { plumbing: 'auto', eta_query: 'auto' },
       }),
     )
-    // Public arrays carry only the known canonical capability.
     expect(captured.insertValues?.capabilitiesJson).toEqual(['eta_query'])
-    // Profile is still discoverable for the known capability.
     expect(captured.insertValues?.isDiscoverable).toBe(true)
-    // The unknown was metered.
     expect(
       metricCalls.some(
         (m) => m.name === 'service.capability.unknown' && m.tags?.cap === 'plumbing',
@@ -258,9 +262,7 @@ describe('serviceProfileHandler.handleCreate', () => {
   })
 
   it('re-keys capabilitySchemas + responsePolicy to the canonical name (P1b)', async () => {
-    // Provider published under the alias `bus_eta`; the stored maps must
-    // be keyed by the canonical `eta_query` so search finds the schema.
-    const captured: Captured = { events: [], insertValues: null, txOpened: false }
+    const captured = freshCaptured()
     const ctx = stubCtx(captured)
     await serviceProfileHandler.handleCreate(
       ctx,
@@ -276,10 +278,12 @@ describe('serviceProfileHandler.handleCreate', () => {
     expect(captured.insertValues?.capabilitySchemasJson).toEqual({
       eta_query: { params: { type: 'object' }, schema_hash: 'abc' },
     })
+    // The re-keyed maps also flow into the conflict-update set.
+    expect(captured.conflictSet?.responsePolicyJson).toEqual({ eta_query: 'auto' })
   })
 
   it('drops empty-string capabilities after trim', async () => {
-    const captured: Captured = { events: [], insertValues: null, txOpened: false }
+    const captured = freshCaptured()
     const ctx = stubCtx(captured)
     await serviceProfileHandler.handleCreate(
       ctx,

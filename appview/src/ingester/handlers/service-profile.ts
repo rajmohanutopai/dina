@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { eq, ne, and } from 'drizzle-orm'
 import type { RecordHandler, HandlerContext, RecordOp } from './index.js'
 import type { ServiceProfile } from '@/shared/types/lexicon-types.js'
 import { services } from '@/db/schema/index.js'
@@ -87,31 +87,40 @@ export const serviceProfileHandler: RecordHandler = {
     // their latest one indexed; earlier rows by the same operator are
     // dropped from the index. The records still live on their PDS.
     //
-    // The delete + insert run in a single transaction so a concurrent
-    // service-search read can never observe the "0 profiles" gap
-    // between the two statements. Without the transaction wrapper,
-    // every publish would briefly hide all profiles by this operator
-    // from search.
+    // Runs in a single transaction so a concurrent service-search read
+    // never observes the "0 profiles" gap between the delete-others and
+    // the upsert.
     //
-    // The insert deliberately does NOT carry an ON CONFLICT clause:
-    // the preceding DELETE guarantees no row at this URI (or any URI
-    // owned by this operator) survives, so a conflict on `uri` cannot
-    // arise. Keeping ON CONFLICT around would be dead code masking
-    // the simpler invariant.
+    // Concurrency safety (the bug this replaced): the old path was
+    // `delete(operatorDid)` + plain `insert(uri)` with NO ON CONFLICT,
+    // relying on "the DELETE guarantees no row at this URI". That
+    // guarantee is FALSE under concurrency — the ingester queue runs many
+    // items in parallel and replays a spool of events for the SAME `self`
+    // URI on every Jetstream reconnect. Two same-URI events interleave,
+    // both delete, both insert, the second hits `services_pkey` →
+    // duplicate_key → requeue storm → the row never lands. Fix: an
+    // idempotent UPSERT on `uri`, plus deleting only the operator's OTHER
+    // uris (so "at most one indexed profile per operator" still holds).
     const now = new Date()
     await ctx.db.transaction(async (tx) => {
-      // Preserve `createdAt` across re-publishes by the same operator.
-      // The DELETE removes the prior row before the INSERT, so we have
-      // to capture it first. Falls back to `now` for genuinely new
-      // operators where no prior row exists.
+      // Preserve `createdAt` across re-publishes of the SAME uri. Capture
+      // it from the existing row (if any) so the upsert's createdAt is
+      // correct on first insert; on conflict we deliberately do not
+      // overwrite it (see the `set` block — createdAt is omitted).
       const prior = await tx
         .select({ createdAt: services.createdAt })
         .from(services)
-        .where(eq(services.operatorDid, op.did))
+        .where(eq(services.uri, op.uri))
         .limit(1)
       const createdAt = prior[0]?.createdAt ?? now
-      await tx.delete(services).where(eq(services.operatorDid, op.did))
-      await tx.insert(services).values({
+
+      // Drop the operator's OTHER profile rows (different rkey/uri) — NOT
+      // the uri we're about to upsert, so the upsert owns it.
+      await tx
+        .delete(services)
+        .where(and(eq(services.operatorDid, op.did), ne(services.uri, op.uri)))
+
+      const values = {
         uri: op.uri,
         operatorDid: op.did,
         cid: op.cid!,
@@ -134,22 +143,40 @@ export const serviceProfileHandler: RecordHandler = {
           Object.keys(canon.capabilitySchemas).length > 0 ? canon.capabilitySchemas : null,
         isDiscoverable: record.isDiscoverable,
         searchContent,
-        // `updatedAt` reflects the operator-driven change (new cid =
-        // new content). `indexedAt` is the AppView-side write time.
-        // For a re-ingest of identical content (same cid), both bump
-        // to `now`; production never re-ingests the same cid for the
-        // same URI, so the distinction matters at the operator layer.
         createdAt,
         // `updatedAt` mirrors the operator-stamped `record.updatedAt`
-        // (lexicon-required ISO timestamp). This is the source-of-
-        // truth for "when did the operator last touch this profile",
-        // independent of when AppView ingested or re-indexed it.
-        // Falls back to `now` only for malformed records where the
-        // field somehow slipped past the lexicon validator.
+        // (lexicon-required ISO timestamp) — the source of truth for "when
+        // did the operator last touch this profile", independent of when
+        // AppView ingested. Falls back to `now` for malformed records.
         updatedAt: record.updatedAt ? new Date(record.updatedAt) : now,
         // `indexedAt` is the AppView-side write time. Always = `now`.
         indexedAt: now,
-      })
+      }
+
+      await tx
+        .insert(services)
+        .values(values)
+        .onConflictDoUpdate({
+          target: services.uri,
+          // Overwrite everything EXCEPT createdAt (preserve the original).
+          set: {
+            operatorDid: values.operatorDid,
+            cid: values.cid,
+            name: values.name,
+            description: values.description,
+            capabilitiesJson: values.capabilitiesJson,
+            lat: values.lat,
+            lng: values.lng,
+            radiusKm: values.radiusKm,
+            hoursJson: values.hoursJson,
+            responsePolicyJson: values.responsePolicyJson,
+            capabilitySchemasJson: values.capabilitySchemasJson,
+            isDiscoverable: values.isDiscoverable,
+            searchContent: values.searchContent,
+            updatedAt: values.updatedAt,
+            indexedAt: values.indexedAt,
+          },
+        })
     })
 
     ctx.metrics.incr('ingester.service_profile.created')
