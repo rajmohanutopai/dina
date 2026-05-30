@@ -251,3 +251,8 @@ Agent Safety scenarios
   (Deny / Once / Session). Verified pre-compaction across all 4 of: approve, deny, approve-for-session, new-session-denied.
 
 - More details found in docs/SCENARIOS.md
+
+Peerlens and Services cannot sidestep appview - it has to go through the deployed appview (test-appview.dinakernel.com or appview.dinakernel.com based on test/prod) - if it skips appview and tries to connect straight, it is an anti-pattern, and is not allowed.
+
+To deploy appview or msgbox - use - ./deploy/managed/infra/deploy_shared_infra.sh
+
