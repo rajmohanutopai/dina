@@ -221,4 +221,89 @@ describe('inbound service.response → workflow completion', () => {
     const details = JSON.parse(completed!.details);
     expect(details.response_status).toBe('unavailable');
   });
+
+  // P1.2 — restart durability. These tests deliberately do NOT call
+  // `setRequesterWindow`, simulating the in-memory window being lost to a
+  // Core restart between the outbound query and the inbound response. The
+  // ONLY authorization left is the durable `service_query` workflow task.
+  describe('restart recovery (in-memory window lost)', () => {
+    it('accepts a response via the DURABLE task when the window is gone', () => {
+      // Window NOT opened (lost to restart); durable task survives.
+      seedServiceQueryTask(repo, 'sq-test-1');
+
+      const result = receiveD2D(buildSealed(), recipientPub, recipientPriv, [senderPub], 'unknown');
+
+      expect(result.action).toBe('bypassed');
+      // The durable completion ran — task is terminal, response stored.
+      const task = repo.getById('sq-test-1');
+      expect(task?.status).toBe('completed');
+      expect(task?.result).toBe(JSON.stringify(responseBody));
+      // An audit entry records that authorization came via the durable path.
+      expect(queryAudit({ action: 'd2d_recv_service_accepted_durable' })).toHaveLength(1);
+    });
+
+    it('still DROPS when neither a window nor a durable task exists (spoof guard)', () => {
+      // No window, no task → fail-closed, exactly like before P1.2.
+      const result = receiveD2D(buildSealed(), recipientPub, recipientPriv, [senderPub], 'unknown');
+      expect(result.action).toBe('dropped');
+      expect(result.reason).toMatch(/no active requester window/);
+    });
+
+    it('DROPS when the durable task is for a different peer DID', () => {
+      seedServiceQueryTask(repo, 'sq-test-1', { peerDID: 'did:plc:other' });
+      const result = receiveD2D(buildSealed(), recipientPub, recipientPriv, [senderPub], 'unknown');
+      expect(result.action).toBe('dropped');
+      // Task untouched — never matched.
+      expect(repo.getById('sq-test-1')?.status).toBe('running');
+    });
+
+    it('DROPS when the durable task is for a different capability', () => {
+      seedServiceQueryTask(repo, 'sq-test-1', { capability: 'route_info' });
+      const result = receiveD2D(buildSealed(), recipientPub, recipientPriv, [senderPub], 'unknown');
+      expect(result.action).toBe('dropped');
+    });
+
+    it('DROPS when the durable task has already expired', () => {
+      seedServiceQueryTask(repo, 'sq-test-1', {
+        expiresAtSec: Math.floor(Date.now() / 1000) - 3600,
+      });
+      const result = receiveD2D(buildSealed(), recipientPub, recipientPriv, [senderPub], 'unknown');
+      expect(result.action).toBe('dropped');
+    });
+
+    it('DROPS when the durable task is already terminal (already answered)', () => {
+      seedServiceQueryTask(repo, 'sq-test-1', { status: WorkflowTaskState.Completed });
+      const result = receiveD2D(buildSealed(), recipientPub, recipientPriv, [senderPub], 'unknown');
+      expect(result.action).toBe('dropped');
+    });
+
+    it('is ONE-SHOT across restart: a replayed response is dropped', () => {
+      seedServiceQueryTask(repo, 'sq-test-1');
+
+      // First response after restart — accepted via durable task, which is
+      // then completed (terminal). Use a distinct id so the replay cache
+      // isn't what rejects the second; we want the durable one-shot to.
+      const first = receiveD2D(
+        buildSealed({ id: 'msg-restart-1' }),
+        recipientPub,
+        recipientPriv,
+        [senderPub],
+        'unknown',
+      );
+      expect(first.action).toBe('bypassed');
+      expect(repo.getById('sq-test-1')?.status).toBe('completed');
+
+      // A second (replayed) response: the durable task is now terminal, so
+      // `findServiceQueryTask` no longer matches → dropped. The durable
+      // completion is the one-shot guard that the in-memory window used to be.
+      const second = receiveD2D(
+        buildSealed({ id: 'msg-restart-2' }),
+        recipientPub,
+        recipientPriv,
+        [senderPub],
+        'unknown',
+      );
+      expect(second.action).toBe('dropped');
+    });
+  });
 });

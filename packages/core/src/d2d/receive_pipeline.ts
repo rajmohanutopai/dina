@@ -17,6 +17,7 @@ import {
   evaluateServiceIngressBypass,
   type ServiceBypassDecision,
   type LocalCapabilityChecker,
+  type RequesterWindowView,
 } from '../service/bypass';
 import { isCapabilityConfigured } from '../service/service_config';
 import { requesterWindow, setProviderWindow } from '../service/windows';
@@ -248,7 +249,12 @@ export function receiveD2D(
     const capabilityChecker = options.isCapabilityConfigured ?? isCapabilityConfigured;
     const bypass = evaluateServiceIngressBypass(message.type, message.from, message.body, {
       isCapabilityConfigured: capabilityChecker,
-      requester: requesterWindow(),
+      // P1.2: durable-backed requester window. The in-memory window is the
+      // fast path; on a miss (e.g. Core restarted between query and
+      // response) `peek` falls back to the durable `service_query`
+      // workflow task, so a legitimate response isn't denied just because
+      // the process bounced. See `durableRequesterWindow`.
+      requester: durableRequesterWindow(),
     });
     return applyServiceIngressDecision(message.type, message, bypass);
   }
@@ -401,35 +407,69 @@ function applyServiceIngressDecision(
     );
   } else {
     // service.response — consume the requester window. `peek` in the
-    // decision layer confirmed it exists; `checkAndConsume` makes it
-    // one-shot. Racing consumers lose here.
+    // decision layer confirmed authorization (in-memory window OR a live
+    // durable service_query task); `checkAndConsume` makes the in-memory
+    // window one-shot. Racing consumers lose here.
     const consumed = requesterWindow().checkAndConsume(
       message.from,
       body.query_id,
       body.capability,
     );
     if (!consumed) {
-      // Lost the race to another handler (extremely unlikely with the
-      // single-threaded receive pipeline, but defend anyway).
+      // No in-memory window to consume. Two cases:
+      //   (a) Core restarted between query and response — the window was
+      //       lost but a live DURABLE service_query task still authorizes
+      //       this response (P1.2). The one-shot guard then becomes the
+      //       durable completion below: `completeMatchingServiceQueryTask`
+      //       transitions the task to terminal, so a replayed response
+      //       finds no live task on the next pass.
+      //   (b) A genuine race / no live task → deny (fail-closed).
+      const service = getWorkflowService();
+      let durableLive = false;
+      if (service !== null) {
+        const nowSec = Math.floor(Date.now() / 1000);
+        try {
+          durableLive =
+            service.store().findServiceQueryTask(
+              body.query_id,
+              message.from,
+              body.capability,
+              nowSec,
+            ) !== null;
+        } catch {
+          durableLive = false; // conflict / fault → do not authorize on doubt
+        }
+      }
+      if (!durableLive) {
+        appendAudit(
+          message.from,
+          'd2d_recv_service_denied',
+          message.to,
+          `type=${messageType} reason=no_window_after_peek`,
+        );
+        return {
+          action: 'dropped',
+          messageId: message.id,
+          messageType,
+          senderDID: message.from,
+          signatureValid: true,
+          reason: 'requester window consumed by another handler',
+        };
+      }
       appendAudit(
         message.from,
-        'd2d_recv_service_denied',
+        'd2d_recv_service_accepted_durable',
         message.to,
-        `type=${messageType} reason=no_window_after_peek`,
+        `type=${messageType} id=${message.id} capability=${body.capability} via=durable_task`,
       );
-      return {
-        action: 'dropped',
-        messageId: message.id,
-        messageType,
-        senderDID: message.from,
-        signatureValid: true,
-        reason: 'requester window consumed by another handler',
-      };
     }
 
     // If there's an outstanding `service_query` workflow task, complete it
     // with the response body. Completion emits a `completed` workflow_event
-    // whose details Brain consumes via the delivery scheduler.
+    // whose details Brain consumes via the delivery scheduler. It also
+    // transitions the durable task to terminal, which is the one-shot
+    // guard for the restart-recovery path above (a replay finds no live
+    // task).
     //
     // Failures here are NON-FATAL for the bypass: the response has already
     // been delivered in the ingress sense, and Brain will still observe it
@@ -452,6 +492,54 @@ function applyServiceIngressDecision(
     signatureValid: true,
     bypassedBody: body,
     reason: 'service bypass accepted',
+  };
+}
+
+/**
+ * P1.2 — durable-backed requester window for `service.response` ingress.
+ *
+ * The in-memory `requesterWindow()` authorizes a response by remembering
+ * the `(peerDID, queryID, capability)` triple of an outbound query. That
+ * memory is lost on restart, so a legitimate response that arrives after a
+ * crash/reboot was being denied (`no_window`) — an availability bug, not a
+ * security one: nothing leaked, the reply was just dropped.
+ *
+ * The fix: the SAME triple is also recorded DURABLY as a `service_query`
+ * workflow task (written by `/v1/service/query` before send, survives
+ * restart). `peek` consults the in-memory window first (fast path), then
+ * falls back to `findServiceQueryTask`, which only matches a task that is
+ * still LIVE (kind=service_query, status created/running, not expired, and
+ * the payload's `to_did`+`capability` match the triple) — i.e. exactly the
+ * same authorization scope as the window, just persisted.
+ *
+ * One-shot semantics are preserved by the EXISTING durable completion:
+ * after the response is accepted, `completeMatchingServiceQueryTask`
+ * transitions the task to a terminal status, so a second (replayed)
+ * response no longer finds a live task. The durable fallback never relaxes
+ * the gate — an unknown/expired/terminal query still yields `no_window`.
+ */
+function durableRequesterWindow(): RequesterWindowView {
+  return {
+    peek(peerDID: string, queryID: string, capability: string): boolean {
+      // Fast path: live in-memory window (same process, no restart).
+      if (requesterWindow().peek(peerDID, queryID, capability)) {
+        return true;
+      }
+      // Durable fallback: an outstanding, non-expired service_query task
+      // for this exact triple. Returns false on no workflow service
+      // (tests / minimal stacks) or any storage error — fail-closed.
+      const service = getWorkflowService();
+      if (service === null) return false;
+      const nowSec = Math.floor(Date.now() / 1000);
+      try {
+        return service.store().findServiceQueryTask(queryID, peerDID, capability, nowSec) !== null;
+      } catch {
+        // >1 live match (WorkflowConflictError) or storage fault → do not
+        // authorize on doubt. The contact gate stays closed; the
+        // legitimate caller can retry once the integrity issue clears.
+        return false;
+      }
+    },
   };
 }
 
