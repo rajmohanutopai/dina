@@ -585,6 +585,11 @@ export class WorkflowEventConsumer {
         ) {
           details.response_status = body.status;
         }
+        // Card-5: forward the provider-authored display card (untrusted —
+        // the requester re-validates it before rendering). Opaque here.
+        if (details.card === undefined && body.card !== undefined) {
+          details.card = body.card;
+        }
       } catch {
         /* malformed body — formatter falls back on details alone */
       }

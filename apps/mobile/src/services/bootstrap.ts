@@ -105,6 +105,7 @@ export type AppD2DSender = (
 import {
   createCoordinatorAskHandler,
   makeAgenticAskHandler,
+  buildResultCardSpec,
   makeServiceApproveHandler,
   makeServiceDenyHandler,
   ServicePublisher,
@@ -130,6 +131,7 @@ import {
 } from '@dina/brain';
 import { buildHomeNodeServiceRuntime } from '@dina/home-node/service-runtime';
 import type { AppViewClient } from '@dina/brain';
+import { validateCardSpec } from '@dina/protocol';
 import type { IdentityKeypair } from '@dina/core';
 import { stagingGetItem } from '@dina/core';
 import {
@@ -631,16 +633,38 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
         details.service_name !== undefined && details.service_name !== ''
           ? details.service_name
           : (lc?.kind === 'service_query' ? lc.serviceName : 'service');
+      const capability =
+        details.capability !== undefined && details.capability !== ''
+          ? details.capability
+          : extractCapabilityFromPayload(task.payload);
+
+      // Card-4 + Card-5: pre-compute the declarative display card so the
+      // renderer uses a persisted spec rather than recomputing on every
+      // render. On a resolved success, PREFER a provider-authored card
+      // (Card-5) — but re-validate it as UNTRUSTED first (drops provider
+      // trust badges, enforces https-only links, strips unknown blocks).
+      // Fall back to the deterministic mapper over `result` when the
+      // provider sent no card or it failed validation (renderer then has
+      // its own render-time fallback, then the generic text card).
+      const cardSpec =
+        status === 'resolved'
+          ? (validateCardSpec(details.card, { trusted: false }) ??
+            (resultBody !== null
+              ? buildResultCardSpec({ capability, serviceName, result: resultBody })
+              : null))
+          : null;
 
       if (lc !== null && lc.kind === 'service_query') {
         const patch: Partial<{
           status: ServiceQueryStatus;
           result: Record<string, unknown>;
+          cardSpec: NonNullable<typeof cardSpec>;
           error: string;
           serviceName: string;
           resolvedAt: number;
         }> = { status, serviceName, resolvedAt: Date.now() };
         if (resultBody !== null) patch.result = resultBody;
+        if (cardSpec !== null) patch.cardSpec = cardSpec;
         if (typeof details.error === 'string' && details.error !== '') {
           patch.error = details.error;
         }
@@ -659,13 +683,11 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
         status,
         taskId: task.id,
         queryId: extractQueryIdFromPayload(task.payload),
-        capability:
-          details.capability !== undefined && details.capability !== ''
-            ? details.capability
-            : '',
+        capability,
         serviceName,
       };
       if (resultBody !== null) lifecycle.result = resultBody;
+      if (cardSpec !== null) lifecycle.cardSpec = cardSpec;
       if (typeof details.error === 'string' && details.error !== '') {
         lifecycle.error = details.error;
       }
@@ -1317,6 +1339,22 @@ function extractQueryIdFromPayload(payload: string): string {
   try {
     const parsed = JSON.parse(payload) as { query_id?: unknown };
     return typeof parsed.query_id === 'string' ? parsed.query_id : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Recover the capability the requester stamped into the task payload at
+ * dispatch time. Mirrors `extractQueryIdFromPayload` — service-query
+ * workflow events don't always echo `capability` in `details`, but the
+ * card (and the Card-4 cardSpec mapper) wants it. Returns '' when the
+ * payload is absent or unparsable.
+ */
+function extractCapabilityFromPayload(payload: string): string {
+  try {
+    const parsed = JSON.parse(payload) as { capability?: unknown };
+    return typeof parsed.capability === 'string' ? parsed.capability : '';
   } catch {
     return '';
   }

@@ -7,6 +7,8 @@
  * Zero runtime deps — pure type declarations.
  */
 
+import type { CardSpec } from '../services/card-spec';
+
 /**
  * D2D message envelope on the wire. `c` carries the NaCl-sealed
  * ciphertext; `s` the Ed25519 signature over the plaintext JSON.
@@ -52,4 +54,15 @@ export interface ServiceResponseBody {
   error?: string;
   /** SHA-256 of the provider's schema at response time (for drift detection). */
   schema_hash?: string;
+  /**
+   * Optional provider-authored display card (the safe, fixed-vocabulary
+   * CardSpec). Lets a provider control its result presentation
+   * ("marketplace seller controls the card") WITHOUT the requester running
+   * any provider code. UNTRUSTED on the wire: the requester MUST re-run
+   * `validateCardSpec(card, { trusted: false })` before rendering — that
+   * drops provider trust badges, enforces https-only links, strips unknown
+   * blocks, etc. When absent (or it fails validation), the requester falls
+   * back to the deterministic `buildResultCardSpec` mapper over `result`.
+   */
+  card?: CardSpec;
 }

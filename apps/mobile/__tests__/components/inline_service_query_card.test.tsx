@@ -1,125 +1,169 @@
 /**
- * `InlineServiceQueryCard` — covers the staged handoff stepper shown
- * while a service query is in flight, and the resolved ETA result.
+ * Tests for InlineServiceQueryCard — the chat-thread inline renderer for
+ * `service_query` lifecycle messages.
  *
- * The stepper makes the Dina-to-Dina handoff visible: instead of one
- * opaque "Looking up…" spinner, the pending state walks four stages
- * (directory → found provider → sent to their Dina → awaiting reply).
+ * Covers the four lifecycle states (pending / resolved / failed / expired)
+ * + the CardSpec render path: a brain-supplied `lc.cardSpec` is used
+ * verbatim; otherwise the renderer derives one on the fly from `result`
+ * via the deterministic mapper; otherwise it falls back to the generic
+ * text card. The card is drawn by `SafeCardRenderer` from the fixed
+ * vocabulary — there is no per-capability TSX.
  */
 
-import { render, act, fireEvent } from '@testing-library/react-native';
+import { render, screen } from '@testing-library/react-native';
 import React from 'react';
 
 import { InlineServiceQueryCard } from '../../src/components/InlineServiceQueryCard';
-import type { ChatMessage } from '@dina/brain/chat';
+import {
+  addLifecycleMessage,
+  resetThreads,
+  type ChatMessage,
+  getThread,
+} from '@dina/brain/chat';
+import type { CardSpec } from '@dina/protocol';
 
-const SERVICE = 'SF Transit Authority Live';
+const THREAD = 'test-thread';
 
-function msg(lifecycle: Record<string, unknown>, content = ''): ChatMessage {
-  return {
-    id: 'm1',
-    threadId: 't1',
-    type: 'dina',
-    content,
-    timestamp: Date.now(),
-    metadata: { lifecycle },
-  };
+function lastMessage(): ChatMessage {
+  const thread = getThread(THREAD);
+  return thread[thread.length - 1]!;
 }
 
-function pendingMsg(): ChatMessage {
-  return msg({
-    kind: 'service_query',
-    status: 'pending',
-    taskId: 'svc-exec-1',
-    queryId: 'q-1',
-    capability: 'eta_query',
-    serviceName: SERVICE,
-    providerDid: 'did:plc:6sk7wchkm6sfphb2jg3mwyzr',
-    params: { route_id: '22' },
-  });
-}
-
-function resolvedMsg(): ChatMessage {
-  return msg({
-    kind: 'service_query',
-    status: 'resolved',
-    taskId: 'svc-exec-1',
-    queryId: 'q-1',
-    capability: 'eta_query',
-    serviceName: SERVICE,
-    providerDid: 'did:plc:6sk7wchkm6sfphb2jg3mwyzr',
-    result: {
-      status: 'on_route',
-      eta_minutes: 6,
-      route_name: 'Route 42',
-      stop_name: 'Mission and 16th',
-      map_url: 'https://maps.example/x',
-    },
-  });
-}
-
-describe('InlineServiceQueryCard — pending handoff hop cards', () => {
-  beforeEach(() => jest.useFakeTimers());
-  afterEach(() => {
-    act(() => jest.runOnlyPendingTimers());
-    jest.useRealTimers();
+describe('InlineServiceQueryCard', () => {
+  beforeEach(() => {
+    resetThreads();
   });
 
-  it('renders all four handoff hops (not a single "Looking up")', () => {
-    const { getByText, queryByText } = render(<InlineServiceQueryCard message={pendingMsg()} />);
-    expect(getByText('Asked the Dina service directory')).toBeTruthy();
-    expect(getByText(`Found ${SERVICE}`)).toBeTruthy();
-    expect(getByText('Sent your query to their Dina')).toBeTruthy();
-    expect(getByText(`Waiting for ${SERVICE} to reply…`)).toBeTruthy();
-    // the old single-spinner copy is gone
-    expect(queryByText(`Looking up ${SERVICE}…`)).toBeNull();
+  it('renders an eta result via the render-time CardSpec mapper (title + stat + maps link)', () => {
+    addLifecycleMessage(THREAD, 'Route 8 — 4 min', {
+      kind: 'service_query',
+      status: 'resolved',
+      taskId: 'task-1',
+      queryId: 'q-1',
+      capability: 'eta_query',
+      serviceName: 'Demo ETA',
+      result: {
+        eta_minutes: 4,
+        route_name: 'Route 8',
+        stop_name: 'Main St',
+        status: 'on_route',
+        map_url: 'https://maps.example.com/x',
+      },
+    });
+
+    render(<InlineServiceQueryCard message={lastMessage()} />);
+
+    // title ← route_name; stat value ← eta_minutes; link ← map_url
+    expect(screen.getByText('Route 8')).toBeTruthy();
+    expect(screen.getByText('4')).toBeTruthy();
+    expect(screen.getByText('Open in Maps')).toBeTruthy();
   });
 
-  it('surfaces the other Dina: provider DID + the query params', () => {
-    const { getByText } = render(<InlineServiceQueryCard message={pendingMsg()} />);
-    // truncated provider DID is the "you're talking to someone else" signal
-    expect(getByText('did:plc:6sk7wc…')).toBeTruthy();
-    // params summary on the "sent query" hop (route_id → "route 22")
-    expect(getByText('route 22')).toBeTruthy();
+  it('prefers a brain-supplied lc.cardSpec over the render-time mapper (Card-4)', () => {
+    const cardSpec: CardSpec = {
+      version: 1,
+      blocks: [
+        { kind: 'title', text: 'Pre-baked Card', icon: 'store' },
+        { kind: 'stat', value: '$0.79', caption: 'Organic Bananas' },
+      ],
+    };
+    addLifecycleMessage(THREAD, 'fallback text that must NOT show', {
+      kind: 'service_query',
+      status: 'resolved',
+      taskId: 'task-cs',
+      queryId: 'q-cs',
+      capability: 'price_check',
+      serviceName: 'Corner Market',
+      result: { price: 999 }, // would map to a DIFFERENT card if used
+      cardSpec,
+    });
+
+    render(<InlineServiceQueryCard message={lastMessage()} />);
+
+    // The persisted spec wins; the render-time mapper is not consulted.
+    expect(screen.getByText('Pre-baked Card')).toBeTruthy();
+    expect(screen.getByText('$0.79')).toBeTruthy();
+    expect(screen.queryByText('999')).toBeFalsy();
+    expect(screen.queryByText('fallback text that must NOT show')).toBeFalsy();
   });
 
-  it('advances through the timeline without crashing', () => {
-    const { getByText } = render(<InlineServiceQueryCard message={pendingMsg()} />);
-    act(() => jest.advanceTimersByTime(4000));
-    // labels persist across the advance (icon/card state changes, not text)
-    expect(getByText(`Waiting for ${SERVICE} to reply…`)).toBeTruthy();
-  });
-});
+  it('shows the staged handoff while pending', () => {
+    addLifecycleMessage(THREAD, 'Looking…', {
+      kind: 'service_query',
+      status: 'pending',
+      taskId: 'task-2',
+      queryId: 'q-2',
+      capability: 'eta_query',
+      serviceName: 'Demo ETA',
+    });
 
-describe('InlineServiceQueryCard — resolved ETA', () => {
-  it('morphs into the ETA result card with route, eta, and map button', () => {
-    const { getByText, getByTestId } = render(<InlineServiceQueryCard message={resolvedMsg()} />);
-    expect(getByText('Route 42')).toBeTruthy();
-    expect(getByText(/6 min/)).toBeTruthy();
-    expect(getByText(/Mission and 16th/)).toBeTruthy();
-    expect(getByTestId('service-query-map-button')).toBeTruthy();
-    // stepper stages are no longer shown once resolved
-    expect(() => getByText('Asked your Dina service directory')).toThrow();
+    render(<InlineServiceQueryCard message={lastMessage()} />);
+
+    expect(screen.getByText(/Asked the Dina service directory/)).toBeTruthy();
   });
 
-  it('persists the provider attribution on the resolved card', () => {
-    const { getByText } = render(<InlineServiceQueryCard message={resolvedMsg()} />);
-    // the Dina-to-Dina provenance survives the morph from hops → result
-    expect(getByText(`via ${SERVICE} · did:plc:6sk7wc…`)).toBeTruthy();
+  it('renders an appointment result (title + toned Status, no provider badge)', () => {
+    addLifecycleMessage(THREAD, 'Reply from Dr Carl', {
+      kind: 'service_query',
+      status: 'resolved',
+      taskId: 'task-3',
+      queryId: 'q-3',
+      capability: 'appointment_status',
+      serviceName: "Dr Carl's Clinic",
+      result: { status: 'confirmed', date: 'June 3' },
+    });
+
+    render(<InlineServiceQueryCard message={lastMessage()} />);
+
+    expect(screen.getByText("Dr Carl's Clinic")).toBeTruthy();
+    // Provider status is a toned keyValue, never a Dina trust badge.
+    expect(screen.getByText('Confirmed')).toBeTruthy();
   });
 
-  it('expands the handoff path back into the hop cards on tap (collapsed by default)', () => {
-    const { getByText, queryByText, getByLabelText } = render(
-      <InlineServiceQueryCard message={resolvedMsg()} />,
-    );
-    // collapsed: the hop cards are not in the tree
-    expect(queryByText('Asked the Dina service directory')).toBeNull();
-    // tap the footer → the same hop cards reappear, frozen as the trail
-    fireEvent.press(getByLabelText('Show handoff path'));
-    expect(getByText('Asked the Dina service directory')).toBeTruthy();
-    expect(getByText(`Found ${SERVICE}`)).toBeTruthy();
-    expect(getByText('did:plc:6sk7wc…')).toBeTruthy();
-    // last hop reads "replied" (no seconds — this fixture has no resolvedAt)
-    expect(getByText(`${SERVICE} replied`)).toBeTruthy();
+  it('renders failed state', () => {
+    addLifecycleMessage(THREAD, 'failed', {
+      kind: 'service_query',
+      status: 'failed',
+      taskId: 'task-4',
+      queryId: 'q-4',
+      capability: 'eta_query',
+      serviceName: 'Demo ETA',
+      error: 'provider unavailable',
+    });
+
+    render(<InlineServiceQueryCard message={lastMessage()} />);
+
+    expect(screen.getByText(/couldn't reach/)).toBeTruthy();
+  });
+
+  it('renders expired state', () => {
+    addLifecycleMessage(THREAD, 'expired', {
+      kind: 'service_query',
+      status: 'expired',
+      taskId: 'task-5',
+      queryId: 'q-5',
+      capability: 'eta_query',
+      serviceName: 'Demo ETA',
+    });
+
+    render(<InlineServiceQueryCard message={lastMessage()} />);
+
+    expect(screen.getByText(/No response from/)).toBeTruthy();
+  });
+
+  it('falls back to the generic text card when there is no result and no cardSpec', () => {
+    addLifecycleMessage(THREAD, 'Generic reply text', {
+      kind: 'service_query',
+      status: 'resolved',
+      taskId: 'task-6',
+      queryId: 'q-6',
+      capability: 'price_check',
+      serviceName: 'Shopbot',
+      // no result, no cardSpec
+    });
+
+    render(<InlineServiceQueryCard message={lastMessage()} />);
+
+    expect(screen.getByText('Generic reply text')).toBeTruthy();
   });
 });

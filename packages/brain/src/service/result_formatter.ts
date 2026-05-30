@@ -32,6 +32,15 @@ export interface ServiceQueryEventDetails {
   result?: unknown;
   /** Populated on status === 'error'. */
   error?: string;
+  /**
+   * Optional provider-authored display card (CardSpec), forwarded from the
+   * `service.response` body. UNTRUSTED — the requester re-validates it with
+   * `validateCardSpec(card, { trusted: false })` before rendering and falls
+   * back to the deterministic mapper when absent or invalid (Card-5).
+   * Typed `unknown` here so the formatter stays decoupled from the CardSpec
+   * type; the renderer/deliver path validates it.
+   */
+  card?: unknown;
 }
 
 /**
