@@ -463,3 +463,44 @@ def test_request_lock_is_reentrant_for_same_thread():
         transport.request("GET", "/v1/outer", {})
 
     assert seen["calls"] == 2
+
+
+# --- CLI.2: plaintext-response gating (TST-MBX-0066..0069) ---
+#
+# Core sends plaintext ONLY for error responses (best-effort encryption,
+# no user data). A SUCCESS payload must always be encrypted, so a plaintext
+# 2xx is illegitimate and is rejected outside dev/test. Plaintext errors
+# always pass through so the user still sees a genuine failure.
+# Reuses `_bare_msgbox_transport()` defined above (it already wires
+# `_cli_x25519_priv = None`, which is all `_parse_response` reads).
+
+def test_plaintext_error_response_passes_through(monkeypatch):
+    """A plaintext ERROR (non-2xx) response is always accepted — it carries
+    no user data and the user must see the failure (prod or dev)."""
+    monkeypatch.delenv("DINA_TEST_MODE", raising=False)
+    t = _bare_msgbox_transport()
+    env = {"ciphertext": json.dumps({"status": 503, "headers": {}, "body": "node busy"})}
+    resp = t._parse_response(env)
+    assert resp.status == 503
+    assert resp.body == "node busy"
+
+
+def test_plaintext_success_rejected_in_production(monkeypatch):
+    """A plaintext SUCCESS (2xx) response is rejected when not in dev/test —
+    success payloads must be encrypted (a plaintext 2xx is MITM/misconfig)."""
+    monkeypatch.delenv("DINA_TEST_MODE", raising=False)
+    t = _bare_msgbox_transport()
+    env = {"ciphertext": json.dumps({"status": 200, "headers": {}, "body": "secret"})}
+    with pytest.raises(TransportError, match="plaintext success"):
+        t._parse_response(env)
+
+
+def test_plaintext_success_allowed_in_test_mode(monkeypatch):
+    """Dev/test (DINA_TEST_MODE=1) still accepts plaintext success so the
+    existing local/test flows keep working."""
+    monkeypatch.setenv("DINA_TEST_MODE", "1")
+    t = _bare_msgbox_transport()
+    env = {"ciphertext": json.dumps({"status": 200, "headers": {}, "body": "ok"})}
+    resp = t._parse_response(env)
+    assert resp.status == 200
+    assert resp.body == "ok"

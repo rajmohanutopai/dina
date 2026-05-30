@@ -602,7 +602,11 @@ def test_missing_keypair():
 # TST-CLI-045
 # TRACE: {"suite": "CLI", "case": "0045", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "29", "title": "configure_signature_mode"}
 def test_configure_signature_mode(tmp_path):
-    """Configure generates Ed25519 keypair and attempts pairing."""
+    """Configure generates Ed25519 keypair and attempts pairing.
+
+    LAN-only setup: no MsgBox relay, so the user explicitly picks
+    `direct` transport. (CLI.3: the prompt default is now `msgbox`, which
+    requires a relay URL — a LAN user must opt into `direct`.)"""
     runner = CliRunner()
 
     with patch("dina_cli.main._configure_signature") as mock_sig, \
@@ -616,7 +620,7 @@ def test_configure_signature_mode(tmp_path):
             "",           # core_url (default)
             "",           # msgbox_url (blank — LAN only)
             "",           # homenode_did (blank)
-            "",           # transport mode (default: auto)
+            "direct",     # transport mode — LAN, no relay (default is msgbox)
             "my-laptop",  # device name
             "n",          # don't test connection
         ])
@@ -626,13 +630,108 @@ def test_configure_signature_mode(tmp_path):
     mock_sig.assert_called_once()
     saved = mock_save.call_args[0][0]
     assert saved["device_name"] == "my-laptop"
-    assert saved["transport_mode"] == "auto"
+    assert saved["transport_mode"] == "direct"
     assert saved["msgbox_url"] == ""
     assert saved["homenode_did"] == ""
     assert "client_token" not in saved
     assert "auth_mode" not in saved
     assert "brain_url" not in saved
     assert "brain_token" not in saved
+
+
+# CLI follow-up #1: the interactive connection test must honor the SELECTED
+# transport. Regression for the bug where it built `Config(core_url=...)`
+# only — which, now that the default is msgbox, falsely failed with
+# "transport=msgbox requires msgbox_url" even after a valid MsgBox setup.
+def test_configure_connection_test_uses_msgbox_transport(tmp_path):
+    """A MsgBox setup + 'test connection: yes' probes via MsgBox, not a bare
+    direct Config that would falsely fail on the msgbox-default validator."""
+    runner = CliRunner()
+
+    captured = {}
+
+    class _FakeClient:
+        def __init__(self, cfg, *a, **k):
+            # Capture the Config the probe was built with.
+            captured["transport_mode"] = cfg.transport_mode
+            captured["msgbox_url"] = cfg.msgbox_url
+            captured["homenode_did"] = cfg.homenode_did
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def _request(self, *a, **k):
+            return None  # /healthz "succeeds"
+
+        @property
+        def _core(self):
+            return None
+
+        @property
+        def _identity(self):
+            class _Id:
+                def did(self_inner):
+                    return "did:key:zTest"
+            return _Id()
+
+        def did_get(self):
+            return {"id": "did:plc:home"}
+
+    with patch("dina_cli.main._configure_signature"), \
+         patch("dina_cli.main.save_config") as mock_save, \
+         patch("dina_cli.main._load_saved", return_value={}), \
+         patch("dina_cli.main.DinaClient", _FakeClient):
+        mock_save.return_value = tmp_path / "config.json"
+        user_input = "\n".join([
+            "",                                # config_location
+            "",                                # core_url (default)
+            "wss://relay.example.com/ws",      # msgbox_url
+            "did:plc:home",                    # homenode_did
+            "",                                # transport mode — accept default (msgbox)
+            "my-laptop",                       # device name
+            "y",                               # YES, test connection
+        ])
+        result = runner.invoke(cli, ["configure"], input=user_input, env={})
+
+    assert result.exit_code == 0
+    # The probe Config carried the selected MsgBox transport, not a bare
+    # core-only config that the msgbox-default validator would reject.
+    assert captured["transport_mode"] == "msgbox"
+    assert captured["msgbox_url"] == "wss://relay.example.com/ws"
+    assert captured["homenode_did"] == "did:plc:home"
+    # The label reflects MsgBox, and the probe reported a successful connect.
+    assert "MsgBox" in result.output
+    assert "Connected" in result.output
+
+
+# CLI.3: the transport prompt now defaults to `msgbox`. Accepting that
+# default WITHOUT a MsgBox URL + Home Node DID is a dead end — the
+# configure flow must reject it rather than save an unusable config.
+def test_configure_msgbox_default_requires_relay(tmp_path):
+    """Blank MsgBox URL + accept the msgbox default → UsageError (no save)."""
+    runner = CliRunner()
+
+    with patch("dina_cli.main._configure_signature"), \
+         patch("dina_cli.main.save_config") as mock_save, \
+         patch("dina_cli.main._load_saved", return_value={}):
+        mock_save.return_value = tmp_path / "config.json"
+        user_input = "\n".join([
+            "",           # config_location
+            "",           # core_url
+            "",           # msgbox_url (blank)
+            "",           # homenode_did (blank)
+            "",           # transport mode — accept default (msgbox)
+            "my-laptop",  # device name
+            "n",
+        ])
+        result = runner.invoke(cli, ["configure"], input=user_input, env={})
+
+    # Non-zero exit (click UsageError) and nothing persisted.
+    assert result.exit_code != 0
+    mock_save.assert_not_called()
 
 
 # TST-CLI-046

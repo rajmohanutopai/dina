@@ -50,11 +50,14 @@ class Config:
     timeout: float
     device_name: str = ""
     role: str = "user"         # "user" or "agent" — set during configure
-    # MsgBox transport — required for NAT'd/mobile deployments. `auto` falls
-    # back from direct→msgbox when Core isn't reachable on core_url.
+    # MsgBox transport — the default (CLI.3). Dina is MsgBox-only: every
+    # CLI / dina-agent / cross-Dina request goes through the mailbox so a
+    # NAT'd/mobile Home Node is reachable and direct HTTP against core_url
+    # is not relied on. `direct` and `auto` remain available for explicit
+    # same-machine/dev use, but are no longer the default.
     msgbox_url: str = ""       # wss://mailbox.example.com/ws
     homenode_did: str = ""     # did:plc:... of the paired Home Node
-    transport_mode: str = "auto"  # "direct" | "msgbox" | "auto"
+    transport_mode: str = "msgbox"  # "direct" | "msgbox" (default) | "auto"
     openclaw_url: str = ""     # ws://localhost:3000 — OpenClaw Gateway
     openclaw_token: str = ""   # Gateway auth token
     openclaw_device_token: str = ""  # Cached per-device Gateway token
@@ -114,7 +117,7 @@ def load_config() -> Config:
     transport_mode = (
         os.environ.get("DINA_TRANSPORT")
         or saved.get("transport_mode")
-        or "auto"
+        or "msgbox"  # CLI.3: MsgBox-only is the default
     ).lower()
     if transport_mode not in ("direct", "msgbox", "auto"):
         raise click.UsageError(

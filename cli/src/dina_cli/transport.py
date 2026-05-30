@@ -39,6 +39,19 @@ from .signing import CLIIdentity
 _TRACE = os.environ.get("DINA_MSGBOX_TRACE", "").lower() in ("1", "true", "yes")
 
 
+def _dev_mode() -> bool:
+    """True only in explicit dev/test runs.
+
+    Read live (not cached at import) so a test can set the env var with
+    `monkeypatch.setenv` before exercising a parse. Matches the repo-wide
+    convention (`DINA_TEST_MODE` — see core/cmd/dina-core/main.go). Used to
+    gate the plaintext-success fallback in `_parse_response`: outside
+    dev/test a plaintext 2xx response is rejected (success must be
+    encrypted); plaintext error responses always pass through.
+    """
+    return os.environ.get("DINA_TEST_MODE", "").lower() in ("1", "true", "yes")
+
+
 def _trace(rid: str, step: str, **fields: object) -> None:
     """Emit a single structured trace line to stderr if trace mode is on.
 
@@ -676,11 +689,29 @@ class MsgBoxTransport:
             except Exception as e:
                 raise TransportError(f"Response decryption failed: {e}") from e
         else:
-            # Plaintext JSON response (error responses, or Core without encryption).
+            # Plaintext JSON response. Core only ever sends plaintext for
+            # ERROR responses (best-effort encryption, no user data — see
+            # core msgbox_client.go "plaintext default (no user data in
+            # errors)"). A SUCCESS payload must always be encrypted, so a
+            # plaintext 2xx is illegitimate (a MITM-injected or
+            # misconfigured success) and is rejected in production.
+            #
+            # CLI.2: gate the plaintext-success fallback to dev/test only.
+            # Plaintext ERROR responses still pass through everywhere so the
+            # user always sees a genuine failure; only plaintext SUCCESS is
+            # blocked outside dev/test.
             try:
                 inner_json = json.loads(ciphertext_raw)
             except (json.JSONDecodeError, TypeError):
-                raise TransportError(f"Invalid response: not JSON and not encrypted")
+                raise TransportError("Invalid response: not JSON and not encrypted")
+
+            status = inner_json.get("status", 200)
+            if 200 <= int(status) < 300 and not _dev_mode():
+                raise TransportError(
+                    "Refusing plaintext success response (status "
+                    f"{status}): success payloads must be encrypted. Set "
+                    "DINA_TEST_MODE=1 only in dev/test to allow plaintext."
+                )
 
         return TransportResponse(
             status=inner_json.get("status", 200),

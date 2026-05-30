@@ -113,7 +113,7 @@ def status(ctx: click.Context) -> None:
         result["did"] = ""
 
     # Connectivity + auth
-    transport_mode = os.environ.get("DINA_TRANSPORT") or saved.get("transport_mode") or "auto"
+    transport_mode = os.environ.get("DINA_TRANSPORT") or saved.get("transport_mode") or "msgbox"
     result["core_reachable"] = False
     result["authenticated"] = False
     result["home_did"] = ""
@@ -814,7 +814,7 @@ def audit(ctx: click.Context, limit: int, action_filter: str) -> None:
 @click.option(
     "--transport", "transport_mode", default=None,
     type=click.Choice(["direct", "msgbox", "auto"]),
-    help="[headless] Transport mode: direct | msgbox | auto (default: auto)",
+    help="[headless] Transport mode: direct | msgbox | auto (default: msgbox)",
 )
 @click.option("--device-name", default=None, help="[headless] Device name")
 @click.option("--pairing-code", default=None, help="[headless] Pairing code from dina-admin device pair")
@@ -859,7 +859,7 @@ def configure(
             core_url=core_url or "http://localhost:8100",
             msgbox_url=msgbox_url or "",
             homenode_did=homenode_did or "",
-            transport_mode=(transport_mode or "auto"),
+            transport_mode=(transport_mode or "msgbox"),
             device_name=device_name or _default_device_name(),
             role=role,
             pairing_code=pairing_code or "",
@@ -920,7 +920,7 @@ def configure(
         msgbox_url = cfg_input.get("msgbox_url", existing.get("msgbox_url", ""))
         homenode_did = cfg_input.get("homenode_did", existing.get("homenode_did", ""))
         transport_mode_val = cfg_input.get(
-            "transport_mode", existing.get("transport_mode", "auto"),
+            "transport_mode", existing.get("transport_mode", "msgbox"),
         )
         click.echo(f"  Core URL: {core_url}")
         click.echo(f"  MsgBox: {msgbox_url or '(none)'}")
@@ -953,7 +953,7 @@ def configure(
         transport_mode_val = click.prompt(
             "Transport mode",
             type=click.Choice(["direct", "msgbox", "auto"]),
-            default=existing.get("transport_mode", "auto"),
+            default=existing.get("transport_mode", "msgbox"),
         )
         if transport_mode_val == "msgbox" and not (msgbox_url and homenode_did):
             raise click.UsageError(
@@ -993,15 +993,31 @@ def configure(
     if test_connection:
         click.echo()
         from .config import Config
+        # Build the test config with the SELECTED transport (mode + relay
+        # fields), not just core_url. The product default is now MsgBox-only,
+        # so a bare `Config(core_url=...)` would default to transport=msgbox
+        # with no relay URL and the probe would falsely fail even after a
+        # valid MsgBox setup. DinaClient then routes the /healthz probe
+        # through whichever transport the user chose.
         cfg = Config(
             core_url=core_url,
             timeout=10.0,
             device_name=device_name,
+            msgbox_url=msgbox_url,
+            homenode_did=homenode_did,
+            transport_mode=transport_mode_val,
+        )
+        # Human-readable label for whichever transport actually carries the
+        # probe — "MsgBox" vs the direct Core URL.
+        probe_target = (
+            f"MsgBox ({msgbox_url})"
+            if transport_mode_val == "msgbox" or (transport_mode_val == "auto" and msgbox_url and not core_url)
+            else f"Core ({core_url})"
         )
         try:
             with DinaClient(cfg) as client:
                 client._request(client._core, "GET", "/healthz")
-                click.echo(f"  Core ({core_url}): Connected")
+                click.echo(f"  {probe_target}: Connected")
                 click.echo(f"  Auth: Ed25519 signing (DID: {client._identity.did()})")
                 try:
                     did_doc = client.did_get()
@@ -1011,7 +1027,7 @@ def configure(
                 except DinaClientError:
                     pass
         except DinaClientError as exc:
-            click.echo(f"  Core ({core_url}): {exc}", err=True)
+            click.echo(f"  {probe_target}: {exc}", err=True)
         click.echo()
         click.echo("Ready. Try:")
         click.echo("  dina session start --name \"my first session\"")
@@ -1168,20 +1184,37 @@ def _configure_headless(
     path = save_config(values)
     click.echo(f"  Configuration saved to {path}")
 
-    # Quick health check
+    # Quick health check — route through the SELECTED transport, not a raw
+    # direct /healthz. With MsgBox-only as the default, probing core_url
+    # directly would misreport a perfectly good MsgBox setup as "unreachable"
+    # (the Core isn't reachable directly when it's behind a relay).
+    from .config import Config
+    probe_target = (
+        f"MsgBox ({msgbox_url})"
+        if transport_mode == "msgbox" or (transport_mode == "auto" and msgbox_url and not core_url)
+        else f"Core ({core_url})"
+    )
     try:
-        resp = httpx.get(f"{core_url}/healthz", timeout=5.0)
-        if resp.status_code == 200:
-            click.echo(f"  Core: Connected")
-        else:
-            click.echo(f"  Core: {resp.status_code}", err=True)
+        cfg = Config(
+            core_url=core_url,
+            timeout=5.0,
+            device_name=device_name,
+            msgbox_url=msgbox_url,
+            homenode_did=homenode_did,
+            transport_mode=transport_mode,
+        )
+        with DinaClient(cfg) as client:
+            client._request(client._core, "GET", "/healthz")
+            click.echo(f"  {probe_target}: Connected")
+    except DinaClientError as exc:
+        click.echo(f"  {probe_target}: unreachable ({exc})", err=True)
     except Exception as exc:
-        click.echo(f"  Core: unreachable ({exc})", err=True)
+        click.echo(f"  {probe_target}: unreachable ({exc})", err=True)
 
 
 def _build_pairing_transport(
     core_url: str, msgbox_url: str = "",
-    homenode_did: str = "", transport_mode: str = "auto",
+    homenode_did: str = "", transport_mode: str = "msgbox",
     identity: Any = None,
 ):
     """Build a Transport for use during pairing/unpairing.
@@ -1223,7 +1256,7 @@ def _build_pairing_transport(
 
 def _try_unpair(
     core_url: str, identity: Any,
-    msgbox_url: str = "", homenode_did: str = "", transport_mode: str = "auto",
+    msgbox_url: str = "", homenode_did: str = "", transport_mode: str = "msgbox",
 ) -> None:
     """Best-effort unpair: revoke the current device from Core."""
     saved = _load_saved()
@@ -1262,7 +1295,7 @@ def _try_unpair(
 
 def _configure_signature_noninteractive(
     core_url: str, device_name: str, role: str, cfg: dict,
-    msgbox_url: str = "", homenode_did: str = "", transport_mode: str = "auto",
+    msgbox_url: str = "", homenode_did: str = "", transport_mode: str = "msgbox",
 ) -> None:
     """Non-interactive keypair generation and pairing from config file."""
     from .signing import CLIIdentity
@@ -1291,7 +1324,7 @@ def _configure_signature_noninteractive(
 
 def _configure_signature(
     core_url: str, device_name: str, role: str = "user",
-    msgbox_url: str = "", homenode_did: str = "", transport_mode: str = "auto",
+    msgbox_url: str = "", homenode_did: str = "", transport_mode: str = "msgbox",
 ) -> None:
     """Generate keypair and pair with Core using Ed25519 public key."""
     from .signing import CLIIdentity
@@ -1328,7 +1361,7 @@ def _configure_signature(
 def _pair_with_key(
     core_url: str, identity: Any, device_name: str,
     role: str = "user", pairing_code: str = "",
-    msgbox_url: str = "", homenode_did: str = "", transport_mode: str = "auto",
+    msgbox_url: str = "", homenode_did: str = "", transport_mode: str = "msgbox",
 ) -> None:
     """Register the public key with Core using a pairing code.
 
