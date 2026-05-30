@@ -81,6 +81,25 @@ const STALE_GENERATED_FIELDS = ['as_of', 'generated_at', 'updated_at', 'timestam
 const STALE_EXPIRES_FIELDS = ['expires_at', 'valid_until'];
 const STALE_TTL_FIELDS = ['ttl_seconds', 'ttl'];
 
+/** Numeric stat fields that are money — they get currency formatting and
+ *  NEVER a "to {destination}" caption (a price has no destination). */
+const MONEY_FIELDS = ['price', 'amount', 'cost', 'total', 'subtotal', 'fare', 'balance'];
+/** Sibling fields naming the currency of a money stat. */
+const CURRENCY_FIELDS = ['currency', 'currency_code', 'ccy'];
+/** Minimal currency → symbol map; an unknown code is appended as a unit. */
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  JPY: '¥',
+  INR: '₹',
+  KRW: '₩',
+  BRL: 'R$',
+};
+/** A destination a journey/time stat travels "to" — `stop_name`/`destination`,
+ *  NOT product/store/place `_name` fields (those are not destinations). */
+const DESTINATION_RE = /(^stop|_stop$|destination|arrival|drop_?off)/i;
+
 /** status value → tone (the color scheme). */
 function toneForStatus(value: string): CardTone {
   const v = value.toLowerCase();
@@ -253,9 +272,15 @@ export function buildResultCardSpec(input: ResultCardInput): CardSpec | null {
     used.add('dimensions');
   }
 
-  // 5) Stat — highest-priority numeric; caption from a leftover *_name/stop.
+  // 5) Stat — highest-priority numeric. Money is currency-formatted ($0.79);
+  //    a journey/time stat gets a "to {destination}" caption. Coordinates are
+  //    never a headline stat (they belong to the map block).
   const numericEntries = entries.filter(
-    ([k, v]) => !used.has(k) && typeof v === 'number' && Number.isFinite(v),
+    ([k, v]) =>
+      !used.has(k) &&
+      typeof v === 'number' &&
+      Number.isFinite(v) &&
+      !(coords !== null && (k === 'lat' || k === 'lng')),
   );
   let statKey: string | undefined;
   for (const pref of STAT_PRIORITY) {
@@ -267,21 +292,46 @@ export function buildResultCardSpec(input: ResultCardInput): CardSpec | null {
   }
   if (statKey === undefined && numericEntries.length > 0) statKey = numericEntries[0][0];
   if (statKey !== undefined) {
-    const value = String(obj[statKey]);
-    const unit = unitForNumericField(statKey);
-    let caption: string | undefined;
-    const capHit = entries.find(
-      ([k, v]) =>
-        !used.has(k) &&
-        k !== statKey &&
-        typeof v === 'string' &&
-        v.trim() !== '' &&
-        /(_name$|^stop|destination|location)/i.test(k),
-    );
-    if (capHit) {
-      caption = `to ${String(capHit[1]).trim()}`;
-      used.add(capHit[0]);
+    const isMoney = fieldMatches(statKey, MONEY_FIELDS);
+    let value = String(obj[statKey]);
+    let unit = unitForNumericField(statKey);
+
+    if (isMoney) {
+      // Fold a sibling currency into the headline ($0.79), not a separate row.
+      const curHit = entries.find(
+        ([k, v]) =>
+          !used.has(k) && typeof v === 'string' && v.trim() !== '' && fieldMatches(k, CURRENCY_FIELDS),
+      );
+      if (curHit) {
+        const code = String(curHit[1]).trim().toUpperCase();
+        const symbol = CURRENCY_SYMBOLS[code];
+        if (symbol !== undefined) {
+          value = `${symbol}${value}`;
+        } else {
+          unit = code; // unknown code → render "0.79 CHF"
+        }
+        used.add(curHit[0]);
+      }
     }
+
+    // "to {destination}" is a journey idiom — only for a non-money stat with a
+    // genuine destination sibling (so a price never reads "0.79 to <store>").
+    let caption: string | undefined;
+    if (!isMoney) {
+      const capHit = entries.find(
+        ([k, v]) =>
+          !used.has(k) &&
+          k !== statKey &&
+          typeof v === 'string' &&
+          v.trim() !== '' &&
+          DESTINATION_RE.test(k),
+      );
+      if (capHit) {
+        caption = `to ${String(capHit[1]).trim()}`;
+        used.add(capHit[0]);
+      }
+    }
+
     const stat: CardBlock = { kind: 'stat', value };
     if (unit !== undefined) (stat as { unit?: string }).unit = unit;
     if (caption !== undefined) (stat as { caption?: string }).caption = caption;

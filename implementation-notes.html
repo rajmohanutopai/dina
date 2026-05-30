@@ -24,6 +24,60 @@ vocabulary, subject identity v3, service-query restart durability, CLI
 hardening) is shipped on <code>main</code> — see the git history. This file
 now tracks ONLY the post-launch deferrals + open questions that remain.</p>
 
+<h2>Shipped after launch</h2>
+
+<div class="item">
+  <span class="tag" style="background:#2a8">Shipped</span>
+  <p><b>CardSpec — service results as DATA, not hard-coded cards.</b> Replaced
+  the per-capability hard-coded card (<code>EtaResultBody</code>) with a fixed,
+  safe declarative block vocabulary in <code>@dina/protocol</code>
+  (<code>card-spec.ts</code>: 15 block kinds, fixed icon/tone enums, caps,
+  <code>validateCardSpec(v,{trusted})</code>). Three producers: a deterministic
+  result→CardSpec mapper that ships
+  (<code>packages/brain/.../result_card_mapper.ts</code>), a provider-carried
+  card threaded on <code>ServiceResponseBody.card</code>, and an LLM-authored
+  card at response time (validated, falls back to deterministic). Rendered by
+  the mobile <code>SafeCardRenderer</code> from theme tokens. Safety: no image
+  URLs (blob-CID only, render deferred); map = structured coords/query never a
+  URL; link = https-only hardened (rejects creds/localhost/private-IP/odd-port),
+  host-only shown; badges Dina-owned (dropped on untrusted path); provider
+  status → toned keyValue, not a badge; staleness fields; additive
+  forward-compat (v1 permanent envelope, unknown blocks dropped). Commerce
+  action policy: only <code>open_url</code> ships, no silent checkout (Cart
+  Handover law). Catalogue: <code>docs/CARD_SPEC_DESIGN.md</code> (15 scenarios)
+  + <code>docs/CARD_SPEC_V2_DESIGN.md</code>. Proven live across transit (eta),
+  appointment, and commerce (price) shapes.</p>
+</div>
+
+<div class="item">
+  <span class="tag" style="background:#2a8">Shipped</span>
+  <p><b>Third service capability: <code>price_check</code> (commerce).</b>
+  Appended to the canonical capability registry
+  (<code>price_check</code> + aliases <code>price_lookup</code>/
+  <code>stock_price</code>/<code>product_price</code>/
+  <code>availability_check</code>, byte-identical in protocol + appview copies).
+  Demo provider "Corner Market" published a discoverable
+  <code>service.profile</code>; driven E2E in-app through the REAL AppView
+  discovery path (no bypass) → D2D → rich price CardSpec card. See
+  <code>docs/MANUAL_RELEASE_TEST_RESULTS.md</code> (price_check section) +
+  <code>docs/assets/price_check_card_e2e.png</code>.</p>
+</div>
+
+<div class="item">
+  <span class="tag" style="background:#2a8">Shipped</span>
+  <p><b>AppView ingester service-profile upsert race (FIXED, commit
+  <code>aa22b3b</code>).</b> Pre-existing concurrency bug surfaced while standing
+  up <code>price_check</code>: <code>service-profile.ts</code> did
+  delete-by-operator + plain <code>INSERT</code> with NO <code>ON CONFLICT</code>,
+  assuming the DELETE guaranteed no row at the uri. False under the bounded
+  parallel queue + Jetstream spool replay → <code>services_pkey</code>
+  duplicate_key → requeue storm → row never landed → capability never
+  discoverable. Fix: delete only the operator's OTHER uris, then
+  <code>insert().onConflictDoUpdate({target: uri})</code> preserving
+  <code>createdAt</code>. 2 concurrency regression tests added (close the bug
+  class). See <code>docs/APPVIEW_SERVICE_PROFILE_UPSERT_BUG.md</code>.</p>
+</div>
+
 <h2>Deferred (post-launch, additive — not blockers)</h2>
 
 <div class="item deferred">

@@ -96,13 +96,67 @@ describe('buildResultCardSpec — deterministic, capability-agnostic, no badges'
     expect((find(spec, 'title') as any).icon).toBe('price');
     const status = spec!.blocks.find((b: any) => b.kind === 'keyValue' && b.label === 'Status') as any;
     expect(status.tone).toBe('positive');
-    expect((find(spec, 'stat') as any).value).toBe('0.79');
+    // money is currency-formatted ($0.79), with the currency folded into the
+    // headline (NOT a separate "Currency" row).
+    const stat = find(spec, 'stat') as any;
+    expect(stat.value).toBe('$0.79');
+    expect(stat.unit).toBeUndefined();
+    expect(
+      spec!.blocks.some((b: any) => b.kind === 'keyValue' && /currency/i.test(b.label)),
+    ).toBe(false);
     const link = find(spec, 'link') as any;
     expect(link.label).toBe('View item');
     expect(link.url).toBe('https://store.example.com/p/bananas');
     expect(link.action).toBe('open_url');
     // staleness lifted to the card level
     expect(spec!.generatedAt).toBe('2026-05-30T08:31:00.000Z');
+  });
+
+  it('price stat with a store_name is NOT captioned "to <store>" (regression: live card showed "0.79 to Corner Market")', () => {
+    // The exact shape the live Corner Market stub returns (store_name + note).
+    // The old caption heuristic matched `store_name` via `/_name$/` and a money
+    // stat had no currency, so the card read a bare "0.79 to Corner Market" —
+    // a price is not a journey to a destination. This pins the fixed behavior.
+    const spec = buildResultCardSpec({
+      capability: 'price_check',
+      serviceName: 'Corner Market',
+      result: {
+        status: 'in_stock',
+        product_name: 'Organic Bananas (1 lb)',
+        price: 0.79,
+        currency: 'USD',
+        store_name: 'Corner Market',
+        product_url: 'https://store.example.com/p/bananas',
+        note: 'Fresh stock daily. Loyalty members save 10%.',
+        message: 'stub_price_runner (canned test data)',
+      },
+    });
+    const stat = find(spec, 'stat') as any;
+    // headline is the currency-formatted price, with NO destination caption.
+    expect(stat.value).toBe('$0.79');
+    expect(stat.caption).toBeUndefined();
+    // the store surfaces as its own keyValue, not swallowed into the stat.
+    const store = spec!.blocks.find(
+      (b: any) => b.kind === 'keyValue' && /store/i.test(b.label),
+    ) as any;
+    expect(store).toBeTruthy();
+    expect(store.value).toBe('Corner Market');
+    // provider note becomes the body; the canned stub marker is dropped.
+    expect((find(spec, 'body') as any).text).toContain('Fresh stock daily');
+    // no string anywhere reads "to Corner Market".
+    const allText = JSON.stringify(spec);
+    expect(allText).not.toContain('to Corner Market');
+  });
+
+  it('an unknown currency code is appended as a unit (no symbol map entry)', () => {
+    const spec = buildResultCardSpec({
+      capability: 'price_check',
+      serviceName: 'Shop',
+      result: { product_name: 'Widget', price: 12.5, currency: 'CHF' },
+    });
+    const stat = find(spec, 'stat') as any;
+    expect(stat.value).toBe('12.5');
+    expect(stat.unit).toBe('CHF');
   });
 
   it('restaurant place_lookup → rating + dimension bars + map (the beautiful card)', () => {

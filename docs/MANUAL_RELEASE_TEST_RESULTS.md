@@ -1847,3 +1847,82 @@ live needs a stable test env.
   The AppView ingester (`appview/src/ingester/index.ts`) is a pure Jetstream consumer — it
   indexes what the firehose delivers and does no repo discovery itself, so the onboarding lag
   is a property of the upstream relay (env-specific), not AppView code.
+
+---
+
+## price_check — 3rd service E2E + CardSpec commerce card (2026-05-30)
+
+**Scenario:** Stand up a THIRD service capability (`price_check`, commerce
+domain) end-to-end through the REAL AppView discovery path (no bypass), and
+render its result with the new declarative CardSpec system (not a hard-coded
+per-capability card). Provider = "Corner Market" on the Dr Carl lite Core
+(:18299); query driven in-app on the iPhone 17 Pro sim via `idb`.
+
+**Query:** `/ask "How much are organic bananas at Corner Market?"`
+
+**Result: PASS.** Screenshot: `docs/assets/price_check_card_e2e.png`.
+
+The in-app **SERVICE HANDOFF** path-trace container showed the correct chain:
+1. ✓ Asked the Dina service directory ("Looking for a price quote") — AppView
+   `com.dina.service.search?capability=price_check`.
+2. ✓ Found Corner Market (`did:plc:uib44x…`) — discovery returned the provider.
+3. ✓ Sent your query to their Dina (params: product=organic bananas,
+   store=Corner Market) — D2D over MsgBox.
+4. ✓ Reply rendered as the rich price **CardSpec** card.
+
+The card (3rd distinct shape, after transit/eta + appointment):
+🏷️ **organic bananas** · **Status: In stock** (green toned keyValue, not a
+badge) · **0.79** to Corner Market (price stat) · **View item →
+store.example.com** (hardened https link, host-only shown) · **Currency: USD** ·
+"Fresh stock daily. Loyalty members save 10%." (provider note body) · "via
+Corner Market · did:plc:uib44x…" attribution.
+
+**Findings:**
+- **PC-I1 (real AppView ingester concurrency bug — FIXED, commit `aa22b3b`)** —
+  `price_check` discovery returned `[]` despite a correctly-published
+  `service.profile`. Root cause: `appview/src/ingester/handlers/service-profile.ts`
+  did delete-by-operator + plain `INSERT` (NO `ON CONFLICT`), asserting "the
+  DELETE guarantees no row at this uri." False under the ingester's bounded
+  parallel queue + Jetstream spool replay: two same-`uri` events raced →
+  `services_pkey` duplicate_key → requeue storm → the row never landed. Fix:
+  delete only the operator's OTHER uris, then
+  `insert().onConflictDoUpdate({target: uri})` preserving `createdAt`. Unit suite
+  13/13 incl. 2 concurrency regression tests. After deploy + force-recreate,
+  discovery returns Corner Market immediately, ingester log shows 0 duplicate_key
+  (was 24×). See `docs/APPVIEW_SERVICE_PROFILE_UPSERT_BUG.md`.
+- **PC-I2 (provider re-pair / config-dir gotcha)** — the provider daemon failed
+  with "Response decryption failed" because its `ed25519_private.pem` had been
+  regenerated out-of-band → no longer matched Core's registered device pubkey.
+  A clean `dina configure --headless` re-pair fixed it (0 errors after).
+  Ops note: `dina configure --config-dir X` writes to `X/.dina/cli/…` (appends
+  `.dina/cli`); pointing `DINA_CONFIG_DIR` at the parent of that, not at `X`,
+  is the trap that produced the doubled-path config. Re-pair helper:
+  `bus42-agent/repair_price_agent.sh`. See `docs/PRICE_E2E_HANDOFF.md`.
+- **PC-I3 (no-bypass confirmed)** — the entire round-trip used the real
+  `search_capabilities → search_provider_services → query_service` discovery
+  path; `find_preferred_provider`/direct-DID was NOT used (it bypasses AppView =
+  anti-pattern). The handoff trace is the visible proof.
+- **PC-I4 (CardSpec, card-as-data)** — the commerce card was produced by the
+  deterministic `buildResultCardSpec` mapper from the provider's result JSON and
+  rendered by the mobile `SafeCardRenderer` from the fixed safe block vocabulary
+  — no per-capability hard-coded TSX. The same renderer also produces the
+  transit card live, confirming the vocabulary generalizes across domains.
+- **PC-I5 (price stat formatting bug — FIXED)** — the first live card read a
+  bare **"0.79 to Corner Market"**: two defects in the deterministic mapper that
+  the Jest fixture missed because it omitted `store_name`. (1) The stat caption
+  used `/_name$/`, a *transit* idiom ("8 min to <stop>"), so `store_name` got
+  rendered as a travel destination on a price. (2) Money had no currency
+  formatting, so the headline was bare `0.79` with a redundant separate
+  "Currency: USD" row. Fix in `packages/brain/src/service/result_card_mapper.ts`:
+  money fields (`price`/`amount`/…) fold a sibling `currency` into the headline
+  (`$0.79`; unknown codes → `0.79 CHF`) and never get a destination caption; the
+  caption now matches only genuine destination fields
+  (`/(^stop|_stop$|destination|arrival|drop_?off)/`); coordinates are also
+  excluded from being a headline stat. Added a regression test built from the
+  EXACT live stub payload (`store_name` + `note`) asserting `$0.79`, no
+  "to Corner Market", a `Store name` keyValue row, and no `Currency` row — plus
+  an unknown-currency case. Suite 11/11 green. Re-verified LIVE (a11y tree):
+  card now reads `$0.79` + `Store name: Corner Market`, no bad caption, no
+  Currency row. (Re-driving required re-pairing the drcarl daemon — its device
+  key had drifted again after an app terminate/relaunch — and republishing the
+  Corner Market profile, which test-appview had dropped on a reset.)

@@ -1,8 +1,18 @@
 # AppView ingester — service-profile upsert race (duplicate_key)
 
-**Status:** diagnosed, NOT yet fixed. Surfaced while standing up the
-`price_check` 3rd-service E2E (2026-05-30). Pre-existing bug, not introduced by
+**Status:** FIXED + verified live (2026-05-30, commit `aa22b3b`). Surfaced while
+standing up the `price_check` 3rd-service E2E. Pre-existing bug, not introduced by
 the CardSpec work.
+
+**Verification (live test-appview):** after deploying the `onConflictDoUpdate`
+fix and force-recreating the appview containers, re-publishing "Corner Market"
+made `service.search?capability=price_check` return the provider **immediately**
+(`[{name:"Corner Market", capabilities:["price_check"]}]`), and the
+appview-ingester log shows `Record processed` with **zero `duplicate key`**
+errors (was 24× in 8 min before the fix). The unit suite
+(`service_profile_handler.test.ts`) is 13/13 green, including two regression
+tests that drive concurrent same-uri creates and assert one row + no
+`duplicate_key`.
 
 ## Symptom
 
