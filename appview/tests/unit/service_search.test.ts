@@ -106,13 +106,13 @@ describe('ServiceSearchParams (Zod)', () => {
   })
 
   it('accepts a minimal valid request (capability only)', () => {
-    const r = ServiceSearchParams.safeParse({ capability: 'plumbing' })
+    const r = ServiceSearchParams.safeParse({ capability: 'eta_query' })
     expect(r.success).toBe(true)
   })
 
   it('rejects lat out of range', () => {
     const r = ServiceSearchParams.safeParse({
-      capability: 'plumbing',
+      capability: 'eta_query',
       lat: 91,
       lng: 0,
     })
@@ -121,7 +121,7 @@ describe('ServiceSearchParams (Zod)', () => {
 
   it('rejects lng out of range', () => {
     const r = ServiceSearchParams.safeParse({
-      capability: 'plumbing',
+      capability: 'eta_query',
       lat: 0,
       lng: -181,
     })
@@ -137,7 +137,7 @@ describe('serviceSearch — text query handling', () => {
     // the literal pattern `%50\% off%` is bound.
     const { db, cap } = stubDb([])
     await serviceSearch(db, {
-      capability: 'plumbing',
+      capability: 'eta_query',
       radiusKm: 5,
       limit: 10,
       q: '50% off',
@@ -150,7 +150,7 @@ describe('serviceSearch — text query handling', () => {
   it('escapes `_` (single-character wildcard)', async () => {
     const { db, cap } = stubDb([])
     await serviceSearch(db, {
-      capability: 'plumbing',
+      capability: 'eta_query',
       radiusKm: 5,
       limit: 10,
       q: 'a_b',
@@ -161,7 +161,7 @@ describe('serviceSearch — text query handling', () => {
   it('escapes a literal backslash so the escape character itself is preserved', async () => {
     const { db, cap } = stubDb([])
     await serviceSearch(db, {
-      capability: 'plumbing',
+      capability: 'eta_query',
       radiusKm: 5,
       limit: 10,
       q: 'a\\b',
@@ -172,7 +172,7 @@ describe('serviceSearch — text query handling', () => {
   it('passes plain text through unchanged (no false-positive escape)', async () => {
     const { db, cap } = stubDb([])
     await serviceSearch(db, {
-      capability: 'plumbing',
+      capability: 'eta_query',
       radiusKm: 5,
       limit: 10,
       q: 'plumbing services',
@@ -181,20 +181,38 @@ describe('serviceSearch — text query handling', () => {
   })
 })
 
-describe('serviceSearch — capability normalization', () => {
-  it('lowercases + trims the capability filter so it matches normalized index values', async () => {
+describe('serviceSearch — capability canonicalization (Layer 3)', () => {
+  it('resolves a mixed-case alias to the canonical name in the index query', async () => {
+    // `Bus_ETA` is a registry alias of `eta_query`; case + padding fold,
+    // and the index query binds the CANONICAL name (the index stores
+    // canonical names — the handler canonicalizes on ingest).
     const { db, cap } = stubDb([])
     await serviceSearch(db, {
-      capability: '  Plumbing  ',
+      capability: '  Bus_ETA  ',
       radiusKm: 5,
       limit: 10,
     })
     const params = allBoundStrings(cap)
-    // The JSONB containment param is the JSON-stringified normalized
-    // array. Mixed-case + padded input should be folded.
-    expect(params).toContain('["plumbing"]')
-    expect(params).not.toContain('["Plumbing"]')
-    expect(params).not.toContain('["  Plumbing  "]')
+    expect(params).toContain('["eta_query"]')
+    expect(params).not.toContain('["Bus_ETA"]')
+    expect(params).not.toContain('["bus_eta"]')
+    expect(params).not.toContain('["  Bus_ETA  "]')
+  })
+
+  it('returns an empty result for an UNKNOWN capability without querying the DB', async () => {
+    // An unknown capability resolves to null → empty result, never a
+    // partial-namespace hit. No string is bound to the DB query.
+    const { db, cap } = stubDb([])
+    const r = await serviceSearch(db, {
+      capability: 'plumbing', // not in the registry
+      radiusKm: 5,
+      limit: 10,
+    })
+    expect(r.services).toEqual([])
+    expect(r.cursor).toBeNull()
+    expect(r.rankingVersion).toBe('v1')
+    // The early return short-circuits before binding the capability.
+    expect(allBoundStrings(cap)).not.toContain('["plumbing"]')
   })
 })
 
@@ -202,7 +220,7 @@ describe('serviceSearch — response shape', () => {
   it('returns cursor=null + rankingVersion when there are no rows', async () => {
     const { db } = stubDb([])
     const r = await serviceSearch(db, {
-      capability: 'plumbing',
+      capability: 'eta_query',
       radiusKm: 5,
       limit: 10,
     })
@@ -217,14 +235,14 @@ describe('serviceSearch — response shape', () => {
       operatorDid: 'did:plc:p',
       name: 'Test',
       description: null,
-      capabilities: ['plumbing', 'eta_query'],
+      capabilities: ['eta_query', 'eta_query'],
       lat: '37.0',
       lng: '-122.0',
       radiusKm: '5',
       hours: null,
-      responsePolicy: { plumbing: 'auto' },
+      responsePolicy: { eta_query: 'auto' },
       capabilitySchemas: {
-        plumbing: {
+        eta_query: {
           description: 'Plumbing service',
           params: {},
           result: {},
@@ -238,13 +256,13 @@ describe('serviceSearch — response shape', () => {
     }
     const { db } = stubDb([fakeRow])
     const r = await serviceSearch(db, {
-      capability: 'PLUMBING',
+      capability: 'eta_query',
       lat: 37,
       lng: -122,
       radiusKm: 5,
       limit: 10,
     })
-    expect(r.services[0].matchedCapability).toBe('plumbing')
+    expect(r.services[0].matchedCapability).toBe('eta_query')
     expect(r.services[0].matchedSchemaHash).toBe(
       '0000000000000000000000000000000000000000000000000000000000000abc',
     )
@@ -260,12 +278,12 @@ describe('serviceSearch — response shape', () => {
       operatorDid: 'did:plc:p',
       name: 'Test',
       description: null,
-      capabilities: ['plumbing'],
+      capabilities: ['eta_query'],
       lat: null,
       lng: null,
       radiusKm: null,
       hours: null,
-      responsePolicy: { plumbing: 'auto' },
+      responsePolicy: { eta_query: 'auto' },
       capabilitySchemas: null,
       trustScore: null,
       score: 0,
@@ -274,7 +292,7 @@ describe('serviceSearch — response shape', () => {
     }
     const { db } = stubDb([fakeRow])
     const r = await serviceSearch(db, {
-      capability: 'plumbing',
+      capability: 'eta_query',
       radiusKm: 5,
       limit: 10,
     })
@@ -293,12 +311,12 @@ describe('serviceSearch — response shape', () => {
       operatorDid: 'did:plc:p',
       name: 'Test',
       description: null,
-      capabilities: ['plumbing'],
+      capabilities: ['eta_query'],
       lat: '37.0',
       lng: '-122.0',
       radiusKm: '5',
       hours: null,
-      responsePolicy: { plumbing: 'auto' },
+      responsePolicy: { eta_query: 'auto' },
       capabilitySchemas: null,
       trustScore: 0.5,
       score: 0.8,
@@ -306,7 +324,7 @@ describe('serviceSearch — response shape', () => {
     }
     const { db } = stubDb([fakeRow])
     const r = await serviceSearch(db, {
-      capability: 'plumbing',
+      capability: 'eta_query',
       radiusKm: 5,
       limit: 10,
     })
@@ -334,7 +352,7 @@ describe('serviceSearch — WHERE filter pins required column references', () =>
   it('WHERE references is_discoverable AND tombstoned_at AND capabilities_json', async () => {
     const { db, cap } = stubDb([])
     await serviceSearch(db, {
-      capability: 'plumbing',
+      capability: 'eta_query',
       radiusKm: 5,
       limit: 10,
     })
@@ -351,7 +369,7 @@ describe('serviceSearch — WHERE filter pins required column references', () =>
     // that drops the join surfaces in tests, not on the wire.
     const { db, cap } = stubDb([])
     await serviceSearch(db, {
-      capability: 'plumbing',
+      capability: 'eta_query',
       radiusKm: 5,
       limit: 10,
     })
@@ -371,7 +389,7 @@ describe('serviceSearch — cursor handling', () => {
     const { db } = stubDb([])
     await expect(
       serviceSearch(db, {
-        capability: 'plumbing',
+        capability: 'eta_query',
         radiusKm: 5,
         limit: 10,
         cursor: 'not-a-valid-base64-cursor',
@@ -386,7 +404,7 @@ describe('serviceSearch — cursor handling', () => {
     const { db } = stubDb([])
     await expect(
       serviceSearch(db, {
-        capability: 'plumbing',
+        capability: 'eta_query',
         radiusKm: 5,
         limit: 10,
         cursor: v99,
@@ -401,12 +419,12 @@ describe('serviceSearch — cursor handling', () => {
       operatorDid: 'did:plc:p',
       name: 'Test',
       description: null,
-      capabilities: ['plumbing'],
+      capabilities: ['eta_query'],
       lat: '37',
       lng: '-122',
       radiusKm: '5',
       hours: null,
-      responsePolicy: { plumbing: 'auto' },
+      responsePolicy: { eta_query: 'auto' },
       capabilitySchemas: null,
       trustScore: 0.5,
       score: 0.8,
@@ -418,7 +436,7 @@ describe('serviceSearch — cursor handling', () => {
       mkRow('at://did:plc:c/com.dina.service.profile/self', 700), // limit+1
     ])
     const r = await serviceSearch(db, {
-      capability: 'plumbing',
+      capability: 'eta_query',
       radiusKm: 5,
       limit: 2,
     })

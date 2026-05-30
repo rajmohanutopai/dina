@@ -1,0 +1,195 @@
+/**
+ * Unit tests for the canonical capability registry + resolver.
+ * Spec: docs/SERVICES_LAUNCH_ARCHITECTURE.md Part 1, Layer 1.
+ */
+
+import { describe, expect, it } from 'vitest'
+import {
+  resolveCanonicalCapability,
+  normalizeCapability,
+  getCapabilityEntry,
+  allCanonicalCapabilities,
+  buildAliasMap,
+  canonicalizeForIndex,
+  CAPABILITY_REGISTRY,
+  type CanonicalCapability,
+} from '../../src/shared/capability-registry.js'
+
+describe('capability-registry — resolveCanonicalCapability', () => {
+  it('resolves a canonical name to itself (idempotent)', () => {
+    expect(resolveCanonicalCapability('eta_query')).toBe('eta_query')
+    expect(resolveCanonicalCapability('appointment_status')).toBe('appointment_status')
+  })
+
+  it('resolves every alias to its canonical', () => {
+    expect(resolveCanonicalCapability('bus_eta')).toBe('eta_query')
+    expect(resolveCanonicalCapability('transit_eta')).toBe('eta_query')
+    expect(resolveCanonicalCapability('arrival_time')).toBe('eta_query')
+    expect(resolveCanonicalCapability('next_bus')).toBe('eta_query')
+    expect(resolveCanonicalCapability('appointment_query')).toBe('appointment_status')
+    expect(resolveCanonicalCapability('appt_status')).toBe('appointment_status')
+    expect(resolveCanonicalCapability('booking_status')).toBe('appointment_status')
+  })
+
+  it('normalizes case + surrounding whitespace before resolving', () => {
+    expect(resolveCanonicalCapability('  BUS_ETA  ')).toBe('eta_query')
+    expect(resolveCanonicalCapability('Eta_Query')).toBe('eta_query')
+  })
+
+  it('returns null for an unknown capability (NOT a pass-through)', () => {
+    expect(resolveCanonicalCapability('weird_thing')).toBeNull()
+    expect(resolveCanonicalCapability('order_pizza')).toBeNull()
+  })
+
+  it('returns null for empty / whitespace-only input', () => {
+    expect(resolveCanonicalCapability('')).toBeNull()
+    expect(resolveCanonicalCapability('   ')).toBeNull()
+  })
+})
+
+describe('capability-registry — normalizeCapability', () => {
+  it('trims and lowercases', () => {
+    expect(normalizeCapability('  Bus_ETA ')).toBe('bus_eta')
+  })
+})
+
+describe('capability-registry — getCapabilityEntry', () => {
+  it('returns the entry (description + domain) for a canonical', () => {
+    const e = getCapabilityEntry('eta_query')
+    expect(e?.canonical).toBe('eta_query')
+    expect(e?.domain).toBe('transit')
+    expect(e?.description).toMatch(/arrival/i)
+  })
+
+  it('returns the entry for an alias too', () => {
+    expect(getCapabilityEntry('bus_eta')?.canonical).toBe('eta_query')
+  })
+
+  it('returns null for an unknown', () => {
+    expect(getCapabilityEntry('nope')).toBeNull()
+  })
+})
+
+describe('capability-registry — invariants', () => {
+  it('every alias is unique across the registry (no double-mapping)', () => {
+    // The module throws at load on a duplicate alias; this asserts the
+    // shipped registry has none, and locks that invariant.
+    const seen = new Set<string>()
+    for (const entry of CAPABILITY_REGISTRY) {
+      for (const alias of [entry.canonical, ...entry.aliases]) {
+        expect(seen.has(alias), `duplicate vocabulary token: ${alias}`).toBe(false)
+        seen.add(alias)
+      }
+    }
+  })
+
+  it('no alias collides with any canonical of a DIFFERENT entry', () => {
+    const canonicals = new Set(CAPABILITY_REGISTRY.map((e) => e.canonical))
+    for (const entry of CAPABILITY_REGISTRY) {
+      for (const alias of entry.aliases) {
+        if (canonicals.has(alias)) {
+          expect(alias).toBe(entry.canonical) // only allowed if it IS this entry's canonical (it isn't, aliases exclude canonical)
+        }
+      }
+    }
+  })
+
+  it('allCanonicalCapabilities returns the launch set', () => {
+    const domains = allCanonicalCapabilities().map((e) => e.domain)
+    expect(domains).toContain('transit')
+    expect(domains).toContain('appointments')
+  })
+
+  it('the shipped registry is deeply frozen (shared source of truth is immutable)', () => {
+    expect(Object.isFrozen(CAPABILITY_REGISTRY)).toBe(true)
+    expect(Object.isFrozen(CAPABILITY_REGISTRY[0])).toBe(true)
+    expect(Object.isFrozen(CAPABILITY_REGISTRY[0].aliases)).toBe(true)
+  })
+})
+
+describe('capability-registry — buildAliasMap fail-loud invariant', () => {
+  it('throws when two entries claim the same alias', () => {
+    const bad: CanonicalCapability[] = [
+      { canonical: 'a', aliases: ['x'], description: '', domain: 'd' },
+      { canonical: 'b', aliases: ['x'], description: '', domain: 'd' },
+    ]
+    expect(() => buildAliasMap(bad)).toThrow(/maps to both/)
+  })
+
+  it('throws when one entry\'s alias collides with another\'s canonical', () => {
+    const bad: CanonicalCapability[] = [
+      { canonical: 'a', aliases: [], description: '', domain: 'd' },
+      { canonical: 'b', aliases: ['a'], description: '', domain: 'd' },
+    ]
+    expect(() => buildAliasMap(bad)).toThrow(/maps to both/)
+  })
+
+  it('tolerates an alias listed identically twice within one entry (no false positive)', () => {
+    const ok: CanonicalCapability[] = [
+      { canonical: 'a', aliases: ['x', 'x'], description: '', domain: 'd' },
+    ]
+    expect(buildAliasMap(ok).get('x')).toBe('a')
+  })
+})
+
+describe('capability-registry — canonicalizeForIndex (Layer 2)', () => {
+  it('canonicalizes the array (alias→canonical) and dedupes', () => {
+    const r = canonicalizeForIndex(['bus_eta', 'eta_query', 'BUS_ETA'], undefined, undefined)
+    expect(r.capabilities).toEqual(['eta_query'])
+    expect(r.unknown).toEqual([])
+  })
+
+  it('re-keys schemas + policy from the published alias to the canonical (P1b)', () => {
+    const r = canonicalizeForIndex(
+      ['bus_eta'],
+      { bus_eta: { schema_hash: 'h1' } },
+      { bus_eta: 'auto' },
+    )
+    expect(r.capabilitySchemas).toEqual({ eta_query: { schema_hash: 'h1' } })
+    expect(r.responsePolicy).toEqual({ eta_query: 'auto' })
+  })
+
+  it('re-keys when the map key differs in case from the capability string', () => {
+    const r = canonicalizeForIndex(['bus_eta'], { Bus_ETA: { schema_hash: 'h' } }, { 'BUS_eta': 'auto' })
+    expect(r.capabilitySchemas).toEqual({ eta_query: { schema_hash: 'h' } })
+    expect(r.responsePolicy).toEqual({ eta_query: 'auto' })
+  })
+
+  it('collects unknown capabilities separately and excludes them from the public array', () => {
+    const r = canonicalizeForIndex(['plumbing', 'eta_query', 'plumbing'], undefined, undefined)
+    expect(r.capabilities).toEqual(['eta_query'])
+    expect(r.unknown).toEqual(['plumbing']) // deduped
+  })
+
+  it('first occurrence wins when two aliases of the same canonical are listed', () => {
+    const r = canonicalizeForIndex(
+      ['bus_eta', 'eta_query'],
+      { bus_eta: { schema_hash: 'first' }, eta_query: { schema_hash: 'second' } },
+      { bus_eta: 'auto', eta_query: 'manual' },
+    )
+    expect(r.capabilities).toEqual(['eta_query'])
+    expect(r.capabilitySchemas).toEqual({ eta_query: { schema_hash: 'first' } })
+    expect(r.responsePolicy).toEqual({ eta_query: 'auto' })
+  })
+
+  it('skips empty/whitespace capabilities', () => {
+    const r = canonicalizeForIndex(['eta_query', '   ', ''], undefined, undefined)
+    expect(r.capabilities).toEqual(['eta_query'])
+    expect(r.unknown).toEqual([])
+  })
+
+  it('handles undefined inputs gracefully', () => {
+    const r = canonicalizeForIndex(undefined, undefined, undefined)
+    expect(r.capabilities).toEqual([])
+    expect(r.capabilitySchemas).toEqual({})
+    expect(r.responsePolicy).toEqual({})
+    expect(r.unknown).toEqual([])
+  })
+
+  it('omits a map entry when the provider published no schema/policy for that capability', () => {
+    const r = canonicalizeForIndex(['eta_query'], {}, {})
+    expect(r.capabilities).toEqual(['eta_query'])
+    expect(r.capabilitySchemas).toEqual({})
+    expect(r.responsePolicy).toEqual({})
+  })
+})

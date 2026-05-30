@@ -167,8 +167,9 @@ describe('resolveOrCreateSubject inline enrichment — TN-ING-007', () => {
     expect(params).toContain(JSON.stringify({ brand: 'IKEA' }))
     // resolver_version is stamped at INSERT time so operators can
     // query which subjects were minted under which formula without
-    // re-hashing every stored SubjectRef.
-    expect(params).toContain('v2')
+    // re-hashing every stored SubjectRef. Bumped v2→v3 for the Part-3
+    // type-precedence + identifier-canonicalizer change.
+    expect(params).toContain('v3')
   })
 
   it('passes enrichment ref BEFORE the SQL execute (no race)', async () => {

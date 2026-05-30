@@ -143,16 +143,18 @@ export interface BootServiceInputs {
    * Surface covers every mobile tool that reaches AppView:
    *   - `searchServices` — public discovery (`search_provider_services`
    *     + `query_service` auto-fetch path)
+   *   - `searchCapabilities` — intent→canonical-capability discovery
+   *     (`search_capabilities`, Services Layer 4)
    *   - `isDiscoverable` — per-capability check (`find_preferred_provider`)
    *   - `resolveTrust` + `searchTrust` — PeerLens peer data
    *     (`search_peerlens`)
    *
    * Both `AppViewClient` (real) and `AppViewStub` (demo) implement
-   * all four so either can be passed.
+   * all five so either can be passed.
    */
   appViewClient?: Pick<
     AppViewClient,
-    'searchServices' | 'isDiscoverable' | 'resolveTrust' | 'searchTrust'
+    'searchServices' | 'searchCapabilities' | 'isDiscoverable' | 'resolveTrust' | 'searchTrust'
   >;
   /**
    * PDS publisher. Required for providers that want AppView

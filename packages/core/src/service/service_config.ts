@@ -17,6 +17,11 @@
 
 import { configEventChannel } from './config_event_channel';
 import { getServiceConfigRepository } from './service_config_repository';
+// Layer 5 (SERVICES_LAUNCH_ARCHITECTURE.md Part 1) — canonicalize the
+// inbound capability so an alias-configured provider accepts the
+// canonical query. Pure/sync from the shared registry; keeps
+// `isCapabilityConfigured` synchronous (see port_async_gate test).
+import { resolveCanonicalCapability } from '@dina/protocol';
 
 /** Policy for how the provider responds to a `service.query`. */
 // Capability schema + service-config types moved to @dina/protocol in
@@ -174,11 +179,43 @@ export function onServiceConfigChanged(listener: ConfigChangeListener): () => vo
  * Return whether this home node advertises `capability` to inbound
  * `service.query` traffic. Used by D2D ingress as the contact-gate bypass
  * check.
+ *
+ * SERVICES_LAUNCH_ARCHITECTURE.md Part 1, Layer 5 (the layer that makes
+ * execution actually work): consumer discovery hands out the CANONICAL
+ * capability name, so an inbound `service.query` carries canonical
+ * `eta_query` even if THIS provider configured itself under an alias
+ * (`bus_eta`). A raw `hasOwnProperty` exact-match would then drop the
+ * provider's own query as `not_configured`. So we compare on the
+ * canonical name: resolve the inbound capability to canonical, and accept
+ * if ANY configured capability resolves to the same canonical. An
+ * unknown (non-registry) capability falls back to exact-match so
+ * out-of-registry/custom capabilities still work.
+ *
+ * Stays SYNC — `resolveCanonicalCapability` is a pure local function from
+ * the shared registry (no AppView fetch), preserving the sync-hot-path
+ * invariant this function is documented to uphold.
  */
 export function isCapabilityConfigured(capability: string): boolean {
   const cfg = getServiceConfig();
   if (cfg === null || !cfg.isDiscoverable) return false;
-  return Object.prototype.hasOwnProperty.call(cfg.capabilities, capability);
+
+  // Fast path: exact match against a configured key (covers both
+  // canonical-configured providers and out-of-registry custom keys).
+  if (Object.prototype.hasOwnProperty.call(cfg.capabilities, capability)) {
+    return true;
+  }
+
+  // Canonical match: the inbound capability and the configured keys are
+  // compared by their canonical names, so alias-vs-canonical mismatches
+  // between consumer and provider still resolve.
+  const inboundCanonical = resolveCanonicalCapability(capability);
+  if (inboundCanonical === null) return false; // not in registry, no exact hit
+  for (const configured of Object.keys(cfg.capabilities)) {
+    if (resolveCanonicalCapability(configured) === inboundCanonical) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------

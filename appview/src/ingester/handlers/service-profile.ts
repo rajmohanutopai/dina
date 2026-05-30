@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm'
 import type { RecordHandler, HandlerContext, RecordOp } from './index.js'
 import type { ServiceProfile } from '@/shared/types/lexicon-types.js'
 import { services } from '@/db/schema/index.js'
+import { canonicalizeForIndex } from '@/shared/capability-registry.js'
 
 /**
  * Handler for com.dina.service.profile records.
@@ -41,20 +42,31 @@ export const serviceProfileHandler: RecordHandler = {
       return
     }
 
-    // Normalize capability names at the index layer so they match
-    // case-insensitively at query time. The same normalization runs
-    // in `service-search.ts`; if either drifts, lookups stop hitting.
-    // Trim + lowercase per element; drop any empty strings; dedupe so
-    // the GIN index doesn't carry duplicates.
-    const normalizedCapabilities = Array.from(
-      new Set(
-        (record.capabilities ?? [])
-          .map((c) => c.trim().toLowerCase())
-          .filter((c) => c.length > 0),
-      ),
+    // Canonicalize capabilities at the index layer (SERVICES_LAUNCH_
+    // ARCHITECTURE.md Part 1, Layer 2). Each published capability →
+    // its canonical name; the capabilitySchemas + responsePolicy maps
+    // are re-keyed to match (P1b — so a search matching the canonical
+    // capability also finds its schema/hash, not a null keyed under the
+    // alias). Unknown capabilities are dropped from the PUBLIC arrays
+    // and metered (P2) — this does NOT flip row-level `isDiscoverable`,
+    // so a profile with one known + one unknown capability stays
+    // discoverable for the known one. The same `resolveCanonicalCapability`
+    // runs in `service-search.ts`; both import the one shared registry.
+    const canon = canonicalizeForIndex(
+      record.capabilities,
+      record.capabilitySchemas,
+      record.responsePolicy,
     )
+    const normalizedCapabilities = canon.capabilities
+    for (const unknown of canon.unknown) {
+      ctx.metrics.incr('service.capability.unknown', { cap: unknown })
+      ctx.logger.debug(
+        { uri: op.uri, cap: unknown },
+        '[ServiceProfile] dropping unknown capability from public index',
+      )
+    }
 
-    // Build search content from name + description + (normalized)
+    // Build search content from name + description + (canonical)
     // capabilities. Used by the ILIKE text-score branch in search.
     const searchParts: string[] = []
     searchParts.push(record.name)
@@ -110,8 +122,16 @@ export const serviceProfileHandler: RecordHandler = {
         lng: lngFloat,
         radiusKm,
         hoursJson: record.hours ?? null,
-        responsePolicyJson: record.responsePolicy,
-        capabilitySchemasJson: record.capabilitySchemas ?? null,
+        // P1b: store the canonical-re-keyed maps, NOT the raw published
+        // ones, so all three public fields (array + schemas + policy)
+        // agree on the canonical capability names. `responsePolicy` is
+        // always an object; `capabilitySchemas` is `{}` when the provider
+        // published none — store `null` in that case to preserve the
+        // "no schemas" wire shape (search treats `{}` and `null` the same,
+        // but `null` matches the prior column convention).
+        responsePolicyJson: canon.responsePolicy,
+        capabilitySchemasJson:
+          Object.keys(canon.capabilitySchemas).length > 0 ? canon.capabilitySchemas : null,
         isDiscoverable: record.isDiscoverable,
         searchContent,
         // `updatedAt` reflects the operator-driven change (new cid =

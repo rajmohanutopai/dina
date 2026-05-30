@@ -157,6 +157,8 @@ export { AppViewClient, AppViewError } from './appview_client/http';
 export type {
   AppViewClientOptions,
   SearchServicesParams,
+  SearchCapabilitiesParams,
+  CapabilityCandidate,
   ServiceProfile,
   IsDiscoverableResult,
 } from './appview_client/http';

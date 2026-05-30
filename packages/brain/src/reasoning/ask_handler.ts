@@ -136,9 +136,9 @@ export const PROVIDER_SERVICES_ROUTING_BLOCK = `Provider-services routing — pi
 
 Path 1: established service relationships ("my dentist", "my lawyer", "my accountant", etc.). Call find_preferred_provider(category) FIRST. The user has designated a go-to contact for that category and it should be honoured before re-searching AppView. Categories are lowercase single tokens: dental, legal, tax, medical, automotive, plumbing, electrical, etc. If it returns candidates, pass the contact_did + a matching capability to query_service.
 
-Path 2: public-facing services ("bus 42 to Castro", "nearest pharmacy", "weather in SF"). There is no "my X" relationship here. Skip find_preferred_provider; go directly to geocode (if a place is mentioned) + search_provider_services(capability, lat, lng, q) + query_service. One first tool turn can call geocode + search_provider_services in parallel.
+Path 2: public-facing services ("bus 42 to Castro", "is my appointment confirmed", "nearest clinic"). There is no "my X" relationship here. Skip find_preferred_provider. DISCOVER the capability — do NOT guess a capability string. Call search_capabilities(intent) with the user's question; it returns EVERY canonical capability that has a provider, each with a description. The list is NOT pre-filtered to your intent — read the descriptions and pick ONLY the capability that genuinely matches. Then geocode (if a place is mentioned) + search_provider_services(capability, lat, lng, q) + query_service. If search_capabilities returns NOTHING, or none of the returned descriptions matches the intent, tell the user there is no Dina service for that yet — do NOT pick an unrelated capability, do NOT invent one, do NOT search blind.
 
-Fall-through: if Path 1 returns no candidates, treat it as Path 2 and fall back to geocode + search_provider_services.`;
+Fall-through: if Path 1 returns no candidates, treat it as Path 2 and start with search_capabilities.`;
 
 /**
  * Render a classifier-produced `IntentClassification` as a system-prompt

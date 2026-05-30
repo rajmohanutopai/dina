@@ -13,14 +13,34 @@
  *   - Non-destructive: returns a new sorted array without mutating the input.
  *   - Defensive: entries with obviously-invalid shape (missing DID, missing
  *     capabilities) are filtered out — downstream callers get a guaranteed
- *     `isDiscoverable === true`, `capabilities[] ⊇ {capability}` contract.
+ *     `isDiscoverable === true` contract, plus the profile advertises the
+ *     requested capability (matched alias↔canonical, so a `bus_eta` query
+ *     keeps an `eta_query` provider).
  *
  * Haversine formula is used for the client-side distance calc. Accuracy is
  * ~0.5% in typical city-scale distances — well within "pick a bus service"
  * tolerance.
  */
 
+import { resolveCanonicalCapability } from '@dina/protocol';
 import type { ServiceProfile } from '../appview_client/http';
+
+/**
+ * Does `profile` advertise `capability`, folding alias↔canonical?
+ * SERVICES_LAUNCH_ARCHITECTURE.md Part 1: AppView stores capabilities
+ * canonically, so a `bus_eta` query and an `eta_query`-advertising
+ * profile must match. Exact-match fast path (covers canonical + any
+ * out-of-registry custom cap both sides spelled identically), then
+ * canonical match. Defense-in-depth — the orchestrator already
+ * canonicalizes before calling, but this exported helper must not
+ * silently mis-rank if a future caller passes an alias.
+ */
+function advertisesCapability(profile: ServiceProfile, capability: string): boolean {
+  if (profile.capabilities.includes(capability)) return true;
+  const wantCanonical = resolveCanonicalCapability(capability);
+  if (wantCanonical === null) return false;
+  return profile.capabilities.some((c) => resolveCanonicalCapability(c) === wantCanonical);
+}
 
 /** A viewer location used for proximity tie-break. */
 export interface Location {
@@ -85,7 +105,7 @@ export function rankCandidates(
   const ranked: RankedCandidate[] = [];
   for (const [index, profile] of services.entries()) {
     if (!profile.isDiscoverable) continue;
-    if (!profile.capabilities.includes(capability)) continue;
+    if (!advertisesCapability(profile, capability)) continue;
     if (!profile.did) continue;
 
     ranked.push({

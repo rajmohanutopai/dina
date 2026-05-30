@@ -31,6 +31,44 @@ describe('AppViewStub', () => {
     expect(appt.map((p) => p.did)).toEqual(['did:plc:drcarldemo']);
   });
 
+  // The stub must mirror real AppView's canonical capability matching:
+  // search_capabilities returns the canonical `eta_query`, so
+  // search_provider_services('eta_query') must still find an
+  // `eta_query`-advertising (or alias-advertising) profile. Also the
+  // inverse — an alias query finds a canonical profile.
+  it('searchServices matches on the CANONICAL capability (alias-aware)', async () => {
+    const stub = new AppViewStub({
+      profiles: [demoServiceProfile()], // advertises canonical eta_query
+    });
+    // alias `bus_eta` → finds the canonical eta_query provider.
+    const viaAlias = await stub.searchServices({ capability: 'bus_eta' });
+    expect(viaAlias.map((p) => p.did)).toEqual(['did:plc:bus42demo']);
+    // canonical query still finds it.
+    const viaCanonical = await stub.searchServices({ capability: 'eta_query' });
+    expect(viaCanonical.map((p) => p.did)).toEqual(['did:plc:bus42demo']);
+    // a different canonical does not cross.
+    const other = await stub.searchServices({ capability: 'appointment_status' });
+    expect(other).toEqual([]);
+  });
+
+  // Real AppView drops UNKNOWN (out-of-registry) capabilities — the index
+  // holds only canonical names, so a non-canonical query short-circuits
+  // to []. The stub must mirror that, else demos pass for custom
+  // capabilities production AppView will never discover.
+  it('searchServices drops an unknown (out-of-registry) capability query', async () => {
+    const stub = new AppViewStub({ profiles: [demoServiceProfile()] });
+    expect(await stub.searchServices({ capability: 'totally_made_up' })).toEqual([]);
+  });
+
+  it('searchServices does NOT match a profile advertising an unknown custom capability', async () => {
+    // A profile advertising a non-registry capability is invisible to
+    // search (real AppView only indexes canonical names). The query for
+    // that same custom string also resolves to null → [].
+    const customProfile = { ...demoServiceProfile(), capabilities: ['my_custom_cap'] };
+    const stub = new AppViewStub({ profiles: [customProfile] });
+    expect(await stub.searchServices({ capability: 'my_custom_cap' })).toEqual([]);
+  });
+
   it('isDiscoverable reports the right caps per DID', async () => {
     const stub = new AppViewStub({ profiles: [drCarlDemoProfile()] });
     expect(await stub.isDiscoverable('did:plc:drcarldemo')).toEqual({

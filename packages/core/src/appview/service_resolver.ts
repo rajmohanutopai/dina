@@ -20,6 +20,7 @@
 
 import { backoff as defaultBackoff } from '../transport/http_retry';
 import { defaultFetch } from '../runtime/fetch';
+import { resolveCanonicalCapability } from '@dina/protocol';
 
 /** Configuration for `AppViewServiceResolver`. */
 export interface AppViewServiceResolverOptions {
@@ -166,7 +167,8 @@ export class AppViewServiceResolver {
     if (capability === '') return false;
     const result = await this.lookup(did);
     if (result === null) return false;
-    return result.isDiscoverable && result.capabilities.includes(capability);
+    if (!result.isDiscoverable) return false;
+    return capabilityMatches(result.capabilities, capability);
   }
 
   /**
@@ -286,4 +288,24 @@ export class AppViewServiceResolver {
 
     return isRetryableHttpStatus(response.status) ? { kind: 'retryable' } : { kind: 'terminal' };
   }
+}
+
+
+/**
+ * Match a requested capability against the DID's advertised list, folding
+ * alias↔canonical. SERVICES_LAUNCH_ARCHITECTURE.md Part 1, Layer 5 / egress:
+ * AppView stores capabilities CANONICALLY (the ingester canonicalizes on
+ * write), but a requester may still ask by an alias (`bus_eta` for canonical
+ * `eta_query`). A raw `includes()` would deny the alias as
+ * `not_public_service`. So compare on the canonical name, with an exact-match
+ * fast path that also covers out-of-registry custom capabilities.
+ *
+ * Pure + synchronous — `resolveCanonicalCapability` is a local registry
+ * lookup, no I/O.
+ */
+function capabilityMatches(advertised: readonly string[], requested: string): boolean {
+  if (advertised.includes(requested)) return true;
+  const canonical = resolveCanonicalCapability(requested);
+  if (canonical === null) return false; // not in registry, no exact hit
+  return advertised.some((c) => resolveCanonicalCapability(c) === canonical);
 }

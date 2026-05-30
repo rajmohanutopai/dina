@@ -103,6 +103,9 @@ function fakeAppView(): BuildAgenticAskPipelineInput['appViewClient'] {
     async searchServices() {
       return [];
     },
+    async searchCapabilities() {
+      return [];
+    },
     async isDiscoverable() {
       return { isDiscoverable: false, capabilities: [] };
     },

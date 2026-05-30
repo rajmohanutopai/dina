@@ -9,6 +9,7 @@ import { getGraph, GetGraphParams } from '@/api/xrpc/get-graph.js'
 import { getProfile, GetProfileParams } from '@/api/xrpc/get-profile.js'
 import { getAttestations, GetAttestationsParams } from '@/api/xrpc/get-attestations.js'
 import { serviceSearch, ServiceSearchParams } from '@/api/xrpc/service-search.js'
+import { searchCapabilities, SearchCapabilitiesParams } from '@/api/xrpc/search-capabilities.js'
 import { serviceIsDiscoverable, ServiceIsDiscoverableParams } from '@/api/xrpc/service-is-discoverable.js'
 import { attestationStatus, AttestationStatusParams } from '@/api/xrpc/attestation-status.js'
 import { cosigList, CosigListParams } from '@/api/xrpc/cosig-list.js'
@@ -61,6 +62,7 @@ const ROUTES: Record<string, { params: any; handler: (db: any, params: any) => P
   'com.dina.peerlens.getProfile': { params: GetProfileParams, handler: getProfile },
   'com.dina.peerlens.getAttestations': { params: GetAttestationsParams, handler: getAttestations },
   'com.dina.service.search': { params: ServiceSearchParams, handler: serviceSearch },
+  'com.dina.service.searchCapabilities': { params: SearchCapabilitiesParams, handler: searchCapabilities },
   'com.dina.service.isDiscoverable': { params: ServiceIsDiscoverableParams, handler: serviceIsDiscoverable },
   'com.dina.peerlens.attestationStatus': { params: AttestationStatusParams, handler: attestationStatus },
   'com.dina.peerlens.cosigList': { params: CosigListParams, handler: cosigList },

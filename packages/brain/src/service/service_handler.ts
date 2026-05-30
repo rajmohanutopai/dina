@@ -26,11 +26,55 @@ import type { CoreClient } from '@dina/core';
 import type {
   ServiceConfig,
   ServiceCapabilityConfig,
+  ServiceCapabilitySchemas,
   ServiceQueryBody,
 } from '@dina/protocol';
-import { validateServiceQueryBody } from '@dina/protocol';
+import { validateServiceQueryBody, resolveCanonicalCapability } from '@dina/protocol';
 import { getCapability, getTTL } from './capabilities/registry';
 import { validateAgainstSchema } from './capabilities/schema_validator';
+
+/**
+ * Resolve an inbound `capability` to the config key the provider actually
+ * stored it under. SERVICES_LAUNCH_ARCHITECTURE.md Part 1, Layer 5: consumer
+ * discovery hands out the CANONICAL capability, but THIS provider may have
+ * configured itself under an alias (`bus_eta` vs canonical `eta_query`).
+ * Core's D2D ingress (`isCapabilityConfigured`) already accepts the query on
+ * a canonical match — Brain's handler must agree, else Core accepts and Brain
+ * then can't find the config (`capability_not_configured`).
+ *
+ * Returns the EXACT key present in `keys` to look up with, or `null` when
+ * nothing matches. Exact-match fast path (covers canonical-configured AND
+ * out-of-registry custom keys), then canonical match (alias↔canonical).
+ * Pure + synchronous — `resolveCanonicalCapability` is a local registry
+ * lookup, no I/O.
+ */
+function resolveConfiguredKey(keys: readonly string[], capability: string): string | null {
+  if (keys.includes(capability)) return capability;
+  const inboundCanonical = resolveCanonicalCapability(capability);
+  if (inboundCanonical === null) return null; // not in registry, no exact hit
+  for (const key of keys) {
+    if (resolveCanonicalCapability(key) === inboundCanonical) return key;
+  }
+  return null;
+}
+
+/**
+ * Look up the published JSON-Schema entry for an inbound `capability`,
+ * resolving alias↔canonical (Layer 5). All schema-driven paths
+ * (`checkSchemaHash`, `validateParams`, `stripUndeclaredParams`,
+ * `snapshotForCapability`) funnel through here so they agree on the same
+ * config key Core's ingress accepted.
+ */
+function lookupPublishedSchema(
+  config: ServiceConfig | null,
+  capability: string,
+): ServiceCapabilitySchemas | undefined {
+  const schemas = config?.capabilitySchemas;
+  if (schemas === undefined) return undefined;
+  const key = resolveConfiguredKey(Object.keys(schemas), capability);
+  if (key === null) return undefined;
+  return schemas[key];
+}
 
 /**
  * The 2-method slice of `CoreClient` the handler needs:
@@ -557,7 +601,7 @@ export class ServiceHandler {
    */
   private checkSchemaHash(config: ServiceConfig | null, query: ServiceQueryBody): string | null {
     if (config === null) return null;
-    const published = config.capabilitySchemas?.[query.capability];
+    const published = lookupPublishedSchema(config, query.capability);
     if (published === undefined) return null;
     if (published.schemaHash === '') return null;
     if (query.schema_hash === undefined || query.schema_hash === '') {
@@ -575,7 +619,7 @@ export class ServiceHandler {
    * sees on AppView rather than a separately-maintained registry.
    */
   private validateParams(config: ServiceConfig | null, query: ServiceQueryBody): string | null {
-    const published = config?.capabilitySchemas?.[query.capability];
+    const published = lookupPublishedSchema(config, query.capability);
     if (
       published !== undefined &&
       typeof published.params === 'object' &&
@@ -607,7 +651,7 @@ export class ServiceHandler {
     if (query.params === null || typeof query.params !== 'object' || Array.isArray(query.params)) {
       return query;
     }
-    const schema = config?.capabilitySchemas?.[query.capability];
+    const schema = lookupPublishedSchema(config, query.capability);
     if (schema === undefined) return query;
     const props = schema.params as { properties?: Record<string, unknown> } | undefined;
     const allowed = props?.properties;
@@ -647,7 +691,10 @@ function findCapabilityConfig(
 ): ServiceCapabilityConfig | null {
   if (config === null) return null;
   if (!config.isDiscoverable) return null;
-  return config.capabilities[capability] ?? null;
+  // Layer 5: accept a canonical query against an alias-configured key.
+  const key = resolveConfiguredKey(Object.keys(config.capabilities), capability);
+  if (key === null) return null;
+  return config.capabilities[key] ?? null;
 }
 
 /**
@@ -655,12 +702,15 @@ function findCapabilityConfig(
  * `capability`. Returns `undefined` when no schema is published, so
  * the task payload omits `schema_snapshot` and response validation uses
  * the capability registry only. Exported for tests.
+ *
+ * Resolves through the alias↔canonical map (Layer 5) so a canonical query
+ * still finds an alias-keyed published schema.
  */
 export function snapshotForCapability(
   config: ServiceConfig | null,
   capability: string,
 ): SchemaSnapshot | undefined {
-  const s = config?.capabilitySchemas?.[capability];
+  const s = lookupPublishedSchema(config, capability);
   if (s === undefined) return undefined;
   return {
     params: s.params,

@@ -4,6 +4,7 @@ import type { DrizzleDB } from '@/db/connection.js'
 import { services } from '@/db/schema/index.js'
 import { didProfiles, didRedactions } from '@/db/schema/index.js'
 import { encodeCursor, decodeCursor } from '@/util/cursor.js'
+import { resolveCanonicalCapability } from '@/shared/capability-registry.js'
 
 /**
  * Ranking-formula version. Stamped into the response so clients can
@@ -115,6 +116,18 @@ export async function serviceSearch(
   const { capability, lat, lng, radiusKm, q, limit, cursor } = params
   const hasLocation = lat !== undefined && lng !== undefined
 
+  // Layer 3 (SERVICES_LAUNCH_ARCHITECTURE.md Part 1): resolve the
+  // requested capability to its canonical name via the shared registry —
+  // the SAME registry the ingest handler used, so a search for any alias
+  // hits the canonical index entry. An UNKNOWN capability (not in the
+  // registry) resolves to null: short-circuit to an empty result rather
+  // than querying the raw string, which can only produce a
+  // partial-namespace miss (the index holds only canonical names).
+  const canonicalCapability = resolveCanonicalCapability(capability)
+  if (canonicalCapability === null) {
+    return { services: [], cursor: null, rankingVersion: RANKING_VERSION }
+  }
+
   // Haversine distance — only meaningful when the caller provided a
   // reference location. Non-geospatial searches drop the distance term
   // entirely and rank on text + trust.
@@ -157,13 +170,11 @@ export async function serviceSearch(
 
   const scoreBucketExpr = sql<number>`floor((${compositeScoreExpr}) * 1000)`
 
-  // Capability strings are normalized at the index layer (handler
-  // lowercases + trims before storing), so the lookup must do the
-  // same to stay consistent. Without this, "Plumbing" published by
-  // operator A and "plumbing" searched by user B would miss each
-  // other.
-  const normalizedCapability = capability.trim().toLowerCase()
-
+  // The index stores CANONICAL capability names (the handler resolves
+  // every published alias to canonical via the shared registry). The
+  // lookup must use the canonical name too — resolved above into
+  // `canonicalCapability` — so a search for any alias hits the canonical
+  // index entry. (The early-return already handled unknown → empty.)
   const conditions: SQL[] = [
     // Operator-side discoverability flag.
     eq(services.isDiscoverable, true),
@@ -172,7 +183,7 @@ export async function serviceSearch(
     // in search.
     isNull(services.tombstonedAt),
     // Capability match against the GIN-indexed array column.
-    sql`${services.capabilitiesJson}::jsonb @> ${JSON.stringify([normalizedCapability])}::jsonb`,
+    sql`${services.capabilitiesJson}::jsonb @> ${JSON.stringify([canonicalCapability])}::jsonb`,
   ]
   if (hasLocation) {
     conditions.push(sql`${services.lat} IS NOT NULL AND ${services.lng} IS NOT NULL`)
@@ -245,18 +256,18 @@ export async function serviceSearch(
 
   return {
     services: page.map(r => {
-      // The matched capability is what the caller asked for (already
-      // normalized into `normalizedCapability` above). The matching
-      // schema is whichever entry in `capabilitySchemas` keys off
-      // the matched capability — or `null` if the operator didn't
-      // publish a schema for it.
+      // The matched capability is the CANONICAL name (resolved into
+      // `canonicalCapability` above). The stored `capabilitySchemas` map
+      // is also keyed by canonical (the handler re-keyed it — P1b), so
+      // this lookup resolves to the right schema/hash instead of a null
+      // keyed under the alias.
       const schemasObj = (r.capabilitySchemas ?? {}) as Record<string, {
         description?: string
         params?: Record<string, unknown>
         result?: Record<string, unknown>
         schema_hash?: string
       }>
-      const matchedSchemaEntry = schemasObj[normalizedCapability] ?? null
+      const matchedSchemaEntry = schemasObj[canonicalCapability] ?? null
       return {
         uri: r.uri,
         operatorDid: r.operatorDid,
@@ -276,7 +287,7 @@ export async function serviceSearch(
         // stays stable for a future `includeTombstoned` variant.
         tombstoned: false,
         // Flat convenience fields for capability-keyed consumers.
-        matchedCapability: normalizedCapability,
+        matchedCapability: canonicalCapability,
         matchedSchema: matchedSchemaEntry,
         matchedSchemaHash: matchedSchemaEntry?.schema_hash ?? null,
         distanceKm: typeof r.distanceKm === 'number' ? r.distanceKm : null,

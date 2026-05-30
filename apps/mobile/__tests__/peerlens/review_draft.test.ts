@@ -28,7 +28,10 @@ import {
   readLifecycle,
   type ReviewDraftLifecycle,
 } from '@dina/brain/chat';
-import { emptyWriteFormState } from '../../src/peerlens/write_form_data';
+import {
+  emptyWriteFormState,
+  serializeFormToV2Extras,
+} from '../../src/peerlens/write_form_data';
 import type {
   ChatMessage,
   ChatOptions,
@@ -164,6 +167,35 @@ describe('mergeDraftIntoFormState', () => {
     });
     expect(next.headline).toBe(empty.headline);
     expect(next.body).toBe(empty.body);
+  });
+
+  // SERVICES_LAUNCH_ARCHITECTURE.md Part 2, Layer 2 — DECISION (b),
+  // FORBID at launch: the Dina-draft path must NEVER emit a structured
+  // `dimensions[]`. It's the one free-text source that could mint a
+  // polluting dimension into an immutable signed record on day one, so
+  // the draft only carries sentiment / headline / body / use-cases —
+  // dimensions come solely from the (closed-vocab) form. The
+  // `ComposeContextValues` schema has no `dimensions` field, so even an
+  // LLM that tried to return one can't get it into the merged state.
+  // This pins that end-to-end: the merged draft, serialized to the wire
+  // extras, carries no `dimensions` key.
+  it('the drafted form state never produces a `dimensions` key (draft-forbid)', () => {
+    const next = mergeDraftIntoFormState(subject, {
+      // A hostile/over-eager inferer return — `dimensions` is not in the
+      // schema, so it's structurally ignored. Cast through unknown to
+      // simulate the worst case at the type boundary.
+      values: {
+        sentiment: 'positive',
+        headline: 'Comfortable',
+        body: 'Great lumbar support.',
+        dimensions: [{ dimension: 'lumbar_support', value: 'exceeded' }],
+      } as unknown as Parameters<typeof mergeDraftIntoFormState>[1]['values'],
+      sources: {},
+    });
+    expect('dimensions' in next).toBe(false);
+    const extras = serializeFormToV2Extras(next, () => 1_777_500_000_000);
+    expect('dimensions' in extras).toBe(false);
+    expect((extras as Record<string, unknown>).dimensions).toBeUndefined();
   });
 });
 

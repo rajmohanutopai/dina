@@ -111,6 +111,37 @@ describe('AppViewServiceResolver', () => {
       expect(await r.isDiscoverableService(DID, 'route_info')).toBe(false);
     });
 
+    // SERVICES_LAUNCH_ARCHITECTURE.md Part 1 (egress / Layer 5): AppView
+    // stores capabilities CANONICALLY, but a requester may ask by an alias.
+    // The resolver must fold alias↔canonical before comparing, else an
+    // alias request is wrongly denied as not-a-public-service.
+    it('accepts an ALIAS request against a canonical-advertised capability', async () => {
+      const { fetchFn } = makeFetch([
+        jsonResponse(200, { isDiscoverable: true, capabilities: ['eta_query'] }),
+      ]);
+      const r = new AppViewServiceResolver({ appViewURL: APPVIEW, fetch: fetchFn });
+      // `bus_eta` is an alias of canonical `eta_query`.
+      expect(await r.isDiscoverableService(DID, 'bus_eta')).toBe(true);
+    });
+
+    it('does NOT accept an alias of a DIFFERENT canonical', async () => {
+      const { fetchFn } = makeFetch([
+        jsonResponse(200, { isDiscoverable: true, capabilities: ['eta_query'] }),
+      ]);
+      const r = new AppViewServiceResolver({ appViewURL: APPVIEW, fetch: fetchFn });
+      // appt_status is an alias of appointment_status, a different canonical.
+      expect(await r.isDiscoverableService(DID, 'appt_status')).toBe(false);
+    });
+
+    it('still exact-matches an out-of-registry custom capability', async () => {
+      const { fetchFn } = makeFetch([
+        jsonResponse(200, { isDiscoverable: true, capabilities: ['my_custom_cap'] }),
+      ]);
+      const r = new AppViewServiceResolver({ appViewURL: APPVIEW, fetch: fetchFn });
+      expect(await r.isDiscoverableService(DID, 'my_custom_cap')).toBe(true);
+      expect(await r.isDiscoverableService(DID, 'other_custom')).toBe(false);
+    });
+
     it('returns false on empty DID or capability without network call', async () => {
       const { fetchFn, calls } = makeFetch([]);
       const r = new AppViewServiceResolver({ appViewURL: APPVIEW, fetch: fetchFn });

@@ -72,6 +72,7 @@ export const PER_METHOD_LIMITS_RPM: Readonly<Record<string, number>> = Object.fr
   'com.dina.peerlens.getGraph': 60,           // legacy reach query
   // Service registry — separate surface, plain default:
   'com.dina.service.search': 60,
+  'com.dina.service.searchCapabilities': 60,
   'com.dina.service.isDiscoverable': 60,
 })
 

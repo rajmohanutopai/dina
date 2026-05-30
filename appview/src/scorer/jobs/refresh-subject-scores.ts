@@ -103,6 +103,17 @@ export async function refreshSubjectScores(db: DrizzleDB): Promise<void> {
 
       const result = aggregateSubjectSentiment(aggregationInput)
 
+      // Part 2, P1e — surface dimension-vocabulary drift. The aggregator
+      // drops any dimension that doesn't resolve to a canonical name in
+      // its category's list (rather than splitting the consensus under a
+      // raw string). Emitting the count here makes a recurring unknown
+      // visible so it can be promoted into the registry later.
+      if (result.droppedUnknownDimensions > 0) {
+        metrics.incr('peerlens.dimension.dropped_unknown', {
+          count: String(result.droppedUnknownDimensions),
+        })
+      }
+
       await db
         .update(subjectScores)
         .set({

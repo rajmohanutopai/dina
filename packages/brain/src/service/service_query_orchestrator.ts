@@ -16,11 +16,26 @@
 
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { MAX_SERVICE_TTL } from '@dina/protocol';
+import { MAX_SERVICE_TTL, resolveCanonicalCapability } from '@dina/protocol';
 import type { AppViewClient, SearchServicesParams } from '../appview_client/http';
 import type { CoreClient, ServiceQueryResult } from '@dina/core';
 import { pickTopCandidate, type Location, type RankOptions } from './candidate_ranker';
 import { getCapability, getTTL, computeSchemaHash } from './capabilities/registry';
+
+/**
+ * Canonicalize a requester-supplied capability ONCE at the orchestrator
+ * boundary (SERVICES_LAUNCH_ARCHITECTURE.md Part 1). AppView stores +
+ * returns capabilities CANONICALLY, and Core / the provider canonicalize
+ * inbound — so the requester pipeline (AppView search, ranking, schema
+ * lookup, sender-side validation, Core send) must ALL operate on the
+ * canonical name, else `/service bus_eta` searches for an alias AppView
+ * never indexes and the ranker exact-matches against a canonical profile
+ * → spurious `no_candidate`. Out-of-registry custom capabilities (not in
+ * the shared registry) fall back to the raw string so they still work.
+ */
+function canonicalizeRequested(capability: string): string {
+  return resolveCanonicalCapability(capability) ?? capability;
+}
 
 /** Minimal slice of `CoreClient` the orchestrator needs. */
 export type OrchestratorCoreClient = Pick<CoreClient, 'sendServiceQuery'>;
@@ -194,10 +209,13 @@ export class ServiceQueryOrchestrator {
       throw new ServiceOrchestratorError('params is required', 'params_required');
     }
 
-    const ttlSeconds = this.pickTtl(req);
+    // Canonicalize ONCE at the boundary; everything downstream uses this.
+    const capability = canonicalizeRequested(req.capability);
+
+    const ttlSeconds = this.pickTtlRaw(req.ttlSeconds, capability);
 
     const searchParams: SearchServicesParams = {
-      capability: req.capability,
+      capability,
       lat: req.viewer?.lat,
       lng: req.viewer?.lng,
       radiusKm: req.radiusKm,
@@ -205,31 +223,31 @@ export class ServiceQueryOrchestrator {
     };
     const services = await this.appView.searchServices(searchParams);
 
-    const top = pickTopCandidate(req.capability, services, {
+    const top = pickTopCandidate(capability, services, {
       viewer: req.viewer,
       coordsOf: req.coordsOf,
     });
     if (top === null) {
       throw new ServiceOrchestratorError(
-        `no service advertises "${req.capability}"`,
+        `no service advertises "${capability}"`,
         'no_candidate',
       );
     }
 
     const queryId = this.generateQueryId();
-    const schemaHash = top.profile.capabilitySchemas?.[req.capability]?.schemaHash;
+    const schemaHash = top.profile.capabilitySchemas?.[capability]?.schemaHash;
 
     // Review #2: validate only AFTER we know the provider's schema
     // hash. When the provider is on a different schema version,
     // local validation would reject payloads the provider would
     // accept — defer to them in that case.
-    validateParamsSenderSide(req.capability, req.params, schemaHash);
+    validateParamsSenderSide(capability, req.params, schemaHash);
 
     let sendResult: ServiceQueryResult;
     try {
       sendResult = await this.core.sendServiceQuery({
         toDID: top.profile.did,
-        capability: req.capability,
+        capability,
         // CoreClient narrows to Record<string, unknown>; the orchestrator's
         // caller API accepts `unknown` + defers to the capability validator
         // above. The cast is safe — validateParamsSenderSide rejected
@@ -279,6 +297,8 @@ export class ServiceQueryOrchestrator {
     if (!req.toDID) {
       throw new ServiceOrchestratorError('toDID is required', 'to_did_required');
     }
+    // Canonicalize ONCE at the boundary; validation + Core send use this.
+    const capability = canonicalizeRequested(req.capability);
     // Review #5: DO NOT use `req.schemaHash` to gate validation here.
     // In `issueQuery` the schema_hash comes from the AppView profile
     // (a trusted signal). Here the caller is the LLM `query_service`
@@ -290,16 +310,16 @@ export class ServiceQueryOrchestrator {
     // validator. Pass `undefined` so the gate always uses the
     // hashes-agree branch — i.e. validates when a local schema is
     // registered.
-    validateParamsSenderSide(req.capability, req.params, undefined);
+    validateParamsSenderSide(capability, req.params, undefined);
 
-    const ttlSeconds = this.pickTtlRaw(req.ttlSeconds, req.capability);
+    const ttlSeconds = this.pickTtlRaw(req.ttlSeconds, capability);
     const queryId = this.generateQueryId();
 
     let sendResult: ServiceQueryResult;
     try {
       sendResult = await this.core.sendServiceQuery({
         toDID: req.toDID,
-        capability: req.capability,
+        capability,
         // Same narrowing as issueQuery — sender-side validator rejected
         // non-objects already.
         params: req.params as Record<string, unknown>,
@@ -326,10 +346,6 @@ export class ServiceQueryOrchestrator {
       // optional; the orchestrator's result shape is always-boolean.
       deduped: sendResult.deduped ?? false,
     };
-  }
-
-  private pickTtl(req: IssueQueryRequest): number {
-    return this.pickTtlRaw(req.ttlSeconds, req.capability);
   }
 
   private pickTtlRaw(override: number | undefined, capability: string): number {

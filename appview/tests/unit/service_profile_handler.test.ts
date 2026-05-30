@@ -211,21 +211,71 @@ describe('serviceProfileHandler.handleCreate', () => {
     ).resolves.not.toThrow()
   })
 
-  it('normalizes capabilities (trim + lowercase + dedupe) before indexing', async () => {
+  it('canonicalizes capabilities (alias→canonical, case, dedupe) before indexing', async () => {
+    // `bus_eta` is a registry alias of `eta_query`; with case + a literal
+    // duplicate, all three converge to the single canonical `eta_query`.
     const captured: Captured = { events: [], insertValues: null, txOpened: false }
     const ctx = stubCtx(captured)
     await serviceProfileHandler.handleCreate(
       ctx,
       op({
         ...validProfile(),
-        capabilities: ['  Plumbing  ', 'plumbing', 'ETA_QUERY', 'eta_query'],
+        capabilities: ['  BUS_ETA  ', 'bus_eta', 'ETA_QUERY', 'eta_query'],
+        responsePolicy: { bus_eta: 'auto', eta_query: 'auto' },
+      }),
+    )
+    expect(captured.insertValues?.capabilitiesJson).toEqual(['eta_query'])
+  })
+
+  it('drops UNKNOWN capabilities from the public index + meters them (P2)', async () => {
+    // `plumbing` is NOT in the registry → excluded from public
+    // capabilitiesJson, but the profile still indexes for its known
+    // capability (`eta_query`). Row-level isDiscoverable is NOT flipped.
+    const captured: Captured = { events: [], insertValues: null, txOpened: false }
+    const ctx = stubCtx(captured)
+    const metricCalls: Array<{ name: string; tags?: Record<string, string> }> = []
+    ctx.metrics.incr = (name: string, tags?: Record<string, string>) => {
+      metricCalls.push({ name, tags })
+    }
+    await serviceProfileHandler.handleCreate(
+      ctx,
+      op({
+        ...validProfile(),
+        capabilities: ['plumbing', 'eta_query'],
         responsePolicy: { plumbing: 'auto', eta_query: 'auto' },
       }),
     )
-    expect(captured.insertValues?.capabilitiesJson).toEqual([
-      'plumbing',
-      'eta_query',
-    ])
+    // Public arrays carry only the known canonical capability.
+    expect(captured.insertValues?.capabilitiesJson).toEqual(['eta_query'])
+    // Profile is still discoverable for the known capability.
+    expect(captured.insertValues?.isDiscoverable).toBe(true)
+    // The unknown was metered.
+    expect(
+      metricCalls.some(
+        (m) => m.name === 'service.capability.unknown' && m.tags?.cap === 'plumbing',
+      ),
+    ).toBe(true)
+  })
+
+  it('re-keys capabilitySchemas + responsePolicy to the canonical name (P1b)', async () => {
+    // Provider published under the alias `bus_eta`; the stored maps must
+    // be keyed by the canonical `eta_query` so search finds the schema.
+    const captured: Captured = { events: [], insertValues: null, txOpened: false }
+    const ctx = stubCtx(captured)
+    await serviceProfileHandler.handleCreate(
+      ctx,
+      op({
+        ...validProfile(),
+        capabilities: ['bus_eta'],
+        responsePolicy: { bus_eta: 'auto' },
+        capabilitySchemas: { bus_eta: { params: { type: 'object' }, schema_hash: 'abc' } },
+      }),
+    )
+    expect(captured.insertValues?.capabilitiesJson).toEqual(['eta_query'])
+    expect(captured.insertValues?.responsePolicyJson).toEqual({ eta_query: 'auto' })
+    expect(captured.insertValues?.capabilitySchemasJson).toEqual({
+      eta_query: { params: { type: 'object' }, schema_hash: 'abc' },
+    })
   })
 
   it('drops empty-string capabilities after trim', async () => {

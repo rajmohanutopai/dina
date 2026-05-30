@@ -55,6 +55,9 @@ function fakeAppView(): Parameters<typeof buildAgenticAskPipeline>[0]['appViewCl
     async searchServices() {
       return [];
     },
+    async searchCapabilities() {
+      return [];
+    },
     async isDiscoverable() {
       return { isDiscoverable: false, capabilities: [] };
     },
@@ -158,12 +161,14 @@ describe('buildAgenticAskPipeline', () => {
     expect(pipeline.provider.name).toContain('reason');
   });
 
-  it('registers all 12 agentic tools on the tool registry', () => {
-    // 9 substrate / discovery tools + classify_intent (re-routing
-    // mid-loop) + draft_review (LLM-decided trigger for the inline
-    // review-draft card flow) + schedule_reminder (first-class /ask
-    // path for "remind me to X" — closes MT-15-I2). The full set is
-    // documented in composition/agentic_ask.ts.
+  it('registers all 14 agentic tools on the tool registry', () => {
+    // 10 substrate / discovery tools (incl. search_capabilities — the
+    // Layer-4 intent→canonical-capability discovery step that precedes
+    // search_provider_services) + classify_intent (re-routing mid-loop)
+    // + draft_review (LLM-decided trigger for the inline review-draft
+    // card flow) + schedule_reminder (first-class /ask path for "remind
+    // me to X" — closes MT-15-I2). The full set is documented in
+    // composition/agentic_ask.ts.
     const pipeline = buildAgenticAskPipeline(makeBuilderInput());
     const names = pipeline.tools.toDefinitions().map((t) => t.name).sort();
     expect(names).toEqual(
@@ -178,12 +183,13 @@ describe('buildAgenticAskPipeline', () => {
         'list_personas',
         'query_service',
         'schedule_reminder',
+        'search_capabilities',
         'search_peerlens',
         'search_provider_services',
         'vault_search',
       ].sort(),
     );
-    expect(pipeline.tools.size()).toBe(13);
+    expect(pipeline.tools.size()).toBe(14);
   });
 
   it('defaults sensitivePersonas to [health, financial] when omitted', () => {

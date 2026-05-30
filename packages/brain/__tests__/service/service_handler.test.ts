@@ -190,6 +190,60 @@ describe('ServiceHandler.handleQuery — auto path', () => {
     expect(core.createCalls).toHaveLength(0);
   });
 
+  // SERVICES_LAUNCH_ARCHITECTURE.md Part 1, Layer 5 — alias↔canonical at
+  // the provider. The bug this guards: consumer discovery hands out the
+  // CANONICAL capability, Core's D2D ingress (`isCapabilityConfigured`)
+  // accepts it on a canonical match against the provider's alias config,
+  // and Brain's handler must AGREE — else Core accepts and Brain then
+  // can't find the config (drops every query for an alias-configured
+  // provider).
+  it('Layer 5: ALIAS-configured provider accepts a CANONICAL inbound query', async () => {
+    // Provider configured itself under the alias `bus_eta` (+ matching
+    // alias-keyed schema); the requester's discovery sends canonical
+    // `eta_query`. Must resolve, validate, and create the task.
+    const aliasConfig: ServiceConfig = {
+      isDiscoverable: true,
+      name: 'Bus 42',
+      capabilities: {
+        bus_eta: {
+          mcpServer: 'transit',
+          mcpTool: 'get_eta',
+          responsePolicy: 'auto',
+          schemaHash: 'hash-v1',
+        },
+      },
+      capabilitySchemas: {
+        bus_eta: baseConfig.capabilitySchemas!.eta_query,
+      },
+    };
+    const core = stubCore();
+    const handler = makeHandler({ core, config: aliasConfig, uuid: 'u-alias' });
+    await handler.handleQuery(REQUESTER, { ...validQuery, capability: 'eta_query' });
+    // Accepted: a delegation task was created (not dropped).
+    expect(core.createCalls).toHaveLength(1);
+    const payload = JSON.parse(core.createCalls[0].payload as string);
+    expect(payload.service_name).toBe('Bus 42');
+  });
+
+  it('Layer 5: CANONICAL-configured provider accepts an ALIAS inbound query', async () => {
+    // Symmetric case — provider canonical, requester still holding an alias.
+    const core = stubCore();
+    const handler = makeHandler({ core, uuid: 'u-alias2' });
+    await handler.handleQuery(REQUESTER, { ...validQuery, capability: 'bus_eta' });
+    expect(core.createCalls).toHaveLength(1);
+  });
+
+  it('Layer 5: a DIFFERENT canonical does NOT cross (no accidental accept)', async () => {
+    const core = stubCore();
+    const handler = makeHandler({ core });
+    // appointment_status is a different canonical — must still drop.
+    await handler.handleQuery(REQUESTER, {
+      ...validQuery,
+      capability: 'appointment_status',
+    });
+    expect(core.createCalls).toHaveLength(0);
+  });
+
   it('drops when isDiscoverable is false', async () => {
     const core = stubCore();
     const handler = makeHandler({

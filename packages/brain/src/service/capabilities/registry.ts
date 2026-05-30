@@ -16,6 +16,7 @@
 
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+import { resolveCanonicalCapability } from '@dina/protocol';
 import {
   EtaQueryParamsSchema,
   EtaQueryResultSchema,
@@ -62,18 +63,38 @@ export const FALLBACK_TTL_SECONDS = 60;
 /** List of registered capability names. Stable across calls. */
 export const SUPPORTED_CAPABILITIES: readonly string[] = Object.freeze(Object.keys(CAPABILITIES));
 
-/** Return the capability definition, or `undefined` if not registered. */
+/**
+ * Resolve a (possibly alias) capability name to its CAPABILITIES key.
+ * Exact match first (covers canonical-keyed defs + any local-only name),
+ * then fold through the shared canonical registry so a known alias
+ * (`bus_eta`) resolves to its canonical def (`eta_query`). Returns the
+ * key to index `CAPABILITIES` with, or `undefined` when nothing matches.
+ */
+function resolveLocalKey(name: string): string | undefined {
+  if (name in CAPABILITIES) return name;
+  const canonical = resolveCanonicalCapability(name);
+  if (canonical !== null && canonical in CAPABILITIES) return canonical;
+  return undefined;
+}
+
+/**
+ * Return the capability definition, or `undefined` if not registered.
+ * Alias-aware: `getCapability('bus_eta')` returns the `eta_query` def, so
+ * sender/provider-side local validation isn't skipped for alias names.
+ */
 export function getCapability(name: string): CapabilityDef | undefined {
-  return CAPABILITIES[name];
+  const key = resolveLocalKey(name);
+  return key === undefined ? undefined : CAPABILITIES[key];
 }
 
 /**
  * Return the default TTL (seconds) for `capability`, or `FALLBACK_TTL_SECONDS`
  * when unknown. Never throws — callers routinely pass user input through
- * this path.
+ * this path. Alias-aware (same canonical resolution as `getCapability`).
  */
 export function getTTL(capability: string): number {
-  return CAPABILITIES[capability]?.defaultTtlSeconds ?? FALLBACK_TTL_SECONDS;
+  const key = resolveLocalKey(capability);
+  return key === undefined ? FALLBACK_TTL_SECONDS : CAPABILITIES[key].defaultTtlSeconds;
 }
 
 /** Return a shallow copy of every registered capability definition. */

@@ -52,6 +52,7 @@ import {
 import { REMINDER_QUERY_EXPANSION } from '../llm/prompts';
 import {
   createGeocodeTool,
+  createSearchCapabilitiesTool,
   createSearchProviderServicesTool,
   createQueryServiceTool,
   createFindPreferredProviderTool,
@@ -92,6 +93,7 @@ export interface BuildAgenticAskPipelineInput {
   providerName: ProviderName;
   /** AppView client handle — any object satisfying the tool-surface subsets. */
   appViewClient: Parameters<typeof createSearchProviderServicesTool>[0]['appViewClient'] &
+    Parameters<typeof createSearchCapabilitiesTool>[0]['appViewClient'] &
     Parameters<typeof createSearchPeerlensTool>[0]['appViewClient'] &
     Parameters<typeof createQueryServiceTool>[0]['appViewClient'] &
     Parameters<typeof createFindPreferredProviderTool>[0]['appViewClient'];
@@ -292,6 +294,7 @@ export function buildAgenticAskPipeline(
         logger: input.logger,
       }),
     );
+    reg.register(createSearchCapabilitiesTool({ appViewClient: input.appViewClient }));
     reg.register(createSearchProviderServicesTool({ appViewClient: input.appViewClient }));
     reg.register(
       createQueryServiceTool({

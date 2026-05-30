@@ -275,3 +275,13 @@ export {
   computeNetworkV1,
   computeConfidenceV1,
 } from './peerlens/score_v1';
+
+// Service capability registry — shared canonical vocabulary + resolver.
+// Byte-identical to appview/src/shared/capability-registry.ts (drift gate).
+// Core's D2D ingress (`isCapabilityConfigured`) imports
+// `resolveCanonicalCapability` from here to canonicalize inbound queries.
+export * from './services/capability-registry';
+
+// PeerLens review-dimension registry — shared canonical vocabulary +
+// resolver. Byte-identical to appview/src/shared/dimension-registry.ts.
+export * from './services/dimension-registry';

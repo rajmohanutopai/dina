@@ -1204,6 +1204,33 @@ describe('serializeFormToV2Extras — empty form', () => {
   });
 });
 
+// SERVICES_LAUNCH_ARCHITECTURE.md Part 2, Layer 2 — write-side
+// enforcement. The mobile write form is the SOLE app-side path that
+// produces a review record's structured fields, and it must NOT emit a
+// free-text `dimensions[]` (reviews are immutable signed records — a
+// stray non-canonical dimension would silently split the aggregate
+// forever). The form is clean by OMISSION: it has no dimension input,
+// so the wire extras never carry `dimensions`. This test pins that —
+// if a future change adds a free-text dimension field to the form it
+// trips here, forcing the canonical-chip decision back into review.
+describe('serializeFormToV2Extras — dimensions never emitted (Part 2 / Layer 2)', () => {
+  it('a fully-populated form produces no `dimensions` key in the wire extras', () => {
+    const state = withState({
+      useCases: ['everyday'],
+      reviewerExperience: 'expert',
+      recommendFor: ['professional'],
+      compliance: ['vegan'],
+      accessibility: ['wheelchair'],
+      compat: ['usb-c'],
+      priceLow: '29.99',
+      priceCurrency: 'usd',
+    });
+    const out = serializeFormToV2Extras(state, () => 1_777_500_000_000);
+    expect('dimensions' in out).toBe(false);
+    expect((out as Record<string, unknown>).dimensions).toBeUndefined();
+  });
+});
+
 describe('serializeFormToV2Extras — populated', () => {
   const FROZEN_NOW = 1_777_500_000_000;
   const now = () => FROZEN_NOW;

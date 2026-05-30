@@ -145,6 +145,33 @@ describe('AppViewClient', () => {
       expect(result).toHaveLength(1);
       expect(result[0].did).toBe('did:plc:demoprovider');
     });
+
+    // REAL AppView wire shape: a provider with no published schema is
+    // emitted as `capabilitySchemas: null` (NOT undefined) — see
+    // appview/src/api/xrpc/service-search.ts (`r.capabilitySchemas ??
+    // null`). normalizeProfile must treat null like absent;
+    // `Object.entries(null)` would otherwise throw and crash the whole
+    // search for any discoverable schemaless provider.
+    it('handles a real-AppView profile with capabilitySchemas: null (does not throw)', async () => {
+      const schemalessProvider = {
+        did: 'did:plc:noschema',
+        name: 'Schemaless Bus',
+        capabilities: ['eta_query'],
+        isDiscoverable: true,
+        capabilitySchemas: null,
+      };
+      const { fetchFn } = makeFetch([
+        jsonResponse(200, { services: [SERVICE_A, schemalessProvider] }),
+      ]);
+      const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
+
+      const result = await c.searchServices({ capability: 'eta_query' });
+      // BOTH providers returned — the null-schema one not dropped or crashing.
+      expect(result.map((p) => p.did)).toEqual(['did:plc:demoprovider', 'did:plc:noschema']);
+      // The null was normalized away (not left as a wire `null`).
+      const noschema = result.find((p) => p.did === 'did:plc:noschema');
+      expect(noschema?.capabilitySchemas).toBeUndefined();
+    });
   });
 
   describe('isDiscoverable', () => {

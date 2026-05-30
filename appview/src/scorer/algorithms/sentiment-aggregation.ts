@@ -1,6 +1,7 @@
 import { CONSTANTS } from '@/config/constants.js'
 import { clamp, daysSince } from './peerlens-score.js'
 import { halflifeForCategory } from './category_halflife.js'
+import { resolveCanonicalDimension } from '@/shared/dimension-registry.js'
 
 export interface AttestationForAggregation {
   sentiment: string
@@ -35,6 +36,15 @@ export interface SentimentAggregation {
   verifiedCount: number
   lastAttestationAt: Date | null
   velocity: number
+  /**
+   * Count of dimension entries DROPPED because they didn't resolve to a
+   * canonical dimension in their category's vocabulary (Part 2, P1e). The
+   * caller emits this as `peerlens.dimension.dropped_unknown` so vocabulary
+   * drift stays visible (and recurring unknowns can be promoted into the
+   * registry). The pure function returns the count rather than emitting the
+   * metric itself.
+   */
+  droppedUnknownDimensions: number
 }
 
 export function aggregateSubjectSentiment(attestations: AttestationForAggregation[]): SentimentAggregation {
@@ -43,6 +53,7 @@ export function aggregateSubjectSentiment(attestations: AttestationForAggregatio
       total: 0, positive: 0, neutral: 0, negative: 0,
       weightedScore: 0, confidence: 0,
       dimensionSummary: {},
+      droppedUnknownDimensions: 0,
       authenticityConsensus: null, authenticityConfidence: null,
       wouldRecommendRate: null, verifiedCount: 0,
       lastAttestationAt: null, velocity: 0,
@@ -53,6 +64,7 @@ export function aggregateSubjectSentiment(attestations: AttestationForAggregatio
   let weightedPositive = 0, weightedTotal = 0
   let verifiedCount = 0
   const dimensionSummary: Record<string, { exceeded: number; met: number; below: number; failed: number }> = {}
+  let droppedUnknownDimensions = 0
 
   let lastDate: Date | null = null
 
@@ -83,15 +95,28 @@ export function aggregateSubjectSentiment(attestations: AttestationForAggregatio
     else if (a.sentiment === 'neutral') weightedPositive += weight * 0.5
     weightedTotal += weight
 
-    // Dimensions
+    // Dimensions — Part 2, Layer 3 (read-side safety net). Canonicalize
+    // each dimension WITHIN this attestation's category BEFORE grouping,
+    // so a record that slipped in with an alias (a non-Dina client, an
+    // import, an old record) still merges into the canonical pile instead
+    // of silently splitting the consensus. A dimension that resolves to
+    // `null` (not in the category's vocabulary) is DROPPED — never
+    // aggregated under its raw string (P1e) — and counted so drift is
+    // visible.
     if (Array.isArray(a.dimensionsJson)) {
       for (const dim of a.dimensionsJson as { dimension: string; value: string }[]) {
-        if (!dimensionSummary[dim.dimension]) {
-          dimensionSummary[dim.dimension] = { exceeded: 0, met: 0, below: 0, failed: 0 }
+        if (!dim?.dimension) continue
+        const canonical = resolveCanonicalDimension(a.category ?? '', dim.dimension)
+        if (canonical === null) {
+          droppedUnknownDimensions++
+          continue
+        }
+        if (!dimensionSummary[canonical]) {
+          dimensionSummary[canonical] = { exceeded: 0, met: 0, below: 0, failed: 0 }
         }
         const bucket = dim.value as keyof typeof dimensionSummary[string]
-        if (bucket in dimensionSummary[dim.dimension]) {
-          dimensionSummary[dim.dimension][bucket]++
+        if (bucket in dimensionSummary[canonical]) {
+          dimensionSummary[canonical][bucket]++
         }
       }
     }
@@ -123,6 +148,7 @@ export function aggregateSubjectSentiment(attestations: AttestationForAggregatio
     weightedScore: clamp(weightedScore, 0, 1),
     confidence,
     dimensionSummary,
+    droppedUnknownDimensions,
     authenticityConsensus: null,
     authenticityConfidence: null,
     wouldRecommendRate,

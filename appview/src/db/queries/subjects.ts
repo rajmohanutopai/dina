@@ -7,6 +7,7 @@ import { CONSTANTS } from '@/config/constants.js'
 import { logger } from '@/shared/utils/logger.js'
 import { enrichSubject } from '@/util/subject_enrichment.js'
 import { detectLanguage } from '@/ingester/language-detect.js'
+import { resolveTier1Key } from '@/db/queries/subject_identifier.js'
 
 /**
  * Subject identity resolution.
@@ -54,7 +55,14 @@ import { detectLanguage } from '@/ingester/language-detect.js'
  * chair they were viewing.
  */
 
-const RESOLVER_VERSION = 'v2'
+// v3 (SERVICES_LAUNCH_ARCHITECTURE.md Part 3): type-specific Tier-1
+// precedence (product/dataset → identifier beats uri; content/place/org →
+// uri beats identifier) + the per-type identifier canonicalizer (YouTube
+// URL → `youtube:<id>`, tracking-param strip, GTIN/ASIN format-normalize).
+// Both change the hash inputs, so the version prefix moves v2→v3. At
+// launch this is a GREENFIELD bump — there are no public v2 subjects to
+// migrate. See `packages/protocol/docs/features/subject-id.md` §version.
+const RESOLVER_VERSION = 'v3'
 // Re-exported so spec docs + tests can pin the value; the source of
 // truth is `CONSTANTS.SUBJECT_REF_MAX_NAME_LEN` (matches the lexicon
 // validator so the resolver and the wire-format gate never drift).
@@ -87,109 +95,31 @@ function normalizeTypeForHash(rawType: string): string {
   return rawType.toLowerCase().trim()
 }
 
-/**
- * Conservative URI canonicalization for Tier 1 hashing.
- *
- * Without this, every typographic variant of the same URL mints a
- * distinct subject forever: `https://example.com/` vs
- * `https://example.com` vs `HTTPS://Example.com` are three different
- * subject_ids despite addressing the same resource.
- *
- * What we normalize (safe to fold per RFC 3986):
- *   - Lowercase scheme (RFC 3986 sec 3.1, case-insensitive).
- *   - Lowercase host (sec 3.2.2). IPv6 hosts stay bracketed.
- *   - Strip default ports: `:80` on http, `:443` on https,
- *     `:21` on ftp, `:22` on ssh, `:23` on telnet, `:25` on smtp.
- *   - Strip a single trailing slash when path is exactly `/`
- *     (path-empty). Trailing slashes on non-root paths are
- *     preserved (servers MAY treat `/page` and `/page/` differently).
- *
- * Fragment handling: fragments are RFC 3986 client-side anchors —
- * the server returns the same resource regardless of `#section`. We
- * strip them so `https://wiki/Python#History` and
- * `https://wiki/Python#Syntax` collapse to one subject (the same
- * Wikipedia article reviewed at different sections). Publishers
- * that genuinely want per-fragment identity (e.g. SPA routes) should
- * use the `identifier` field instead.
- *
- * What we deliberately do NOT touch (could be semantic):
- *   - Path case (case-sensitive on most servers).
- *   - Query string (order, case, percent-encoding all carry meaning).
- *   - Percent-encoding (decoding `%2F` to `/` would change route).
- *   - Userinfo (`user:pass@`) passes through.
- *
- * On malformed URIs: if `new URL(raw)` throws, fall back to hashing
- * the raw string. The lexicon validator has already bounded length;
- * we just stop trying to canonicalize.
- */
-const URI_DEFAULT_PORTS: Readonly<Record<string, string>> = {
-  'http:': '80',
-  'https:': '443',
-  'ftp:': '21',
-  'ssh:': '22',
-  'telnet:': '23',
-  'smtp:': '25',
-}
-
-function normalizeUriForHash(rawUri: string): string {
-  let parsed: URL
-  try {
-    parsed = new URL(rawUri)
-  } catch {
-    return rawUri
-  }
-
-  // URL constructor already lowercases scheme + host. Strip default
-  // port if it matches the scheme's default.
-  const defaultPort = URI_DEFAULT_PORTS[parsed.protocol]
-  if (defaultPort !== undefined && parsed.port === defaultPort) {
-    parsed.port = ''
-  }
-
-  // Strip fragment. RFC 3986 fragments are client-side anchors and
-  // don't affect resource identity — same article, different section.
-  parsed.hash = ''
-
-  // Drop a single trailing slash when path is exactly `/` (i.e. the
-  // host root). Anything more substantive is preserved verbatim.
-  let serialized = parsed.toString()
-  if (parsed.pathname === '/' && parsed.search === '') {
-    if (serialized.endsWith('/')) {
-      serialized = serialized.slice(0, -1)
-    }
-  }
-  return serialized
-}
+// Tier-1 URI / identifier canonicalization + type-specific precedence
+// moved to `subject_identifier.ts` (`resolveTier1Key`). The old
+// `normalizeUriForHash` (conservative RFC 3986 folding) is subsumed by
+// `canonicalizeUri` there, which adds platform-id extraction (YouTube)
+// and tracking-param stripping on top of the same RFC foldings.
 
 function generateDeterministicId(ref: SubjectRef): { id: string } {
   const hash = createHash('sha256')
 
-  // Tier 1 hashing follows the federation spec (subject-id.md §"Tier
-  // 1 normalization") byte-for-byte so a Go / Rust / Swift port mints
-  // identical ids:
-  //   - `did` and `identifier`: hashed VERBATIM. No trim, no
-  //     lowercase, no Unicode normalization — callers own the
-  //     canonical form. The record-validator rejects whitespace-
-  //     padded / whitespace-only Tier 1 fields up front, so the
-  //     write path never reaches here with junk; a direct caller
-  //     (e.g. resolve.ts read path) passing a malformed value hashes
-  //     it verbatim and simply resolves to nothing.
-  //   - `uri`: conservative RFC 3986 normalization via
-  //     `normalizeUriForHash` (verbatim input, no pre-trim) — the
-  //     URL constructor handles the foldings the spec enumerates.
-  // Presence = a non-empty string (length > 0); we do NOT trim before
-  // the presence check, which is what kept the old code from matching
-  // the spec.
-  if (ref.did != null && ref.did.length > 0) {
-    hash.update(`${RESOLVER_VERSION}:did:${ref.did}`)
-    return { id: `sub_${hash.digest('hex').slice(0, 32)}` }
-  }
-  if (ref.uri != null && ref.uri.length > 0) {
-    hash.update(`${RESOLVER_VERSION}:uri:${normalizeUriForHash(ref.uri)}`)
-    return { id: `sub_${hash.digest('hex').slice(0, 32)}` }
-  }
-  if (ref.identifier != null && ref.identifier.length > 0) {
-    hash.update(`${RESOLVER_VERSION}:id:${ref.identifier}`)
+  // Tier 1 (v3): type-specific precedence + per-type canonicalization,
+  // both in `resolveTier1Key` (subject_identifier.ts). For a PRODUCT the
+  // precise `identifier` (barcode/ASIN) outranks a page-level `uri`; for
+  // CONTENT the canonical `uri` (e.g. `youtube:<id>`) outranks a stray
+  // identifier. `did` always wins. The canonicalizer extracts the stable
+  // platform id (YouTube video id, GTIN-14, uppercased ASIN) and strips
+  // tracking noise before hashing, so typographic URL variants converge.
+  //
+  // `resolveTier1Key` returns null only when the ref carries NO usable
+  // Tier-1 field — then we fall through to Tier-2 name (drop-don't-guess:
+  // no Tier-1 key is invented). Presence = non-empty string, no pre-trim
+  // (matches the federation spec; the validator rejects padded fields up
+  // front).
+  const tier1 = resolveTier1Key(ref)
+  if (tier1 !== null) {
+    hash.update(`${RESOLVER_VERSION}:${tier1}`)
     return { id: `sub_${hash.digest('hex').slice(0, 32)}` }
   }
 

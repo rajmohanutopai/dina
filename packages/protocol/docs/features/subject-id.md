@@ -22,40 +22,54 @@ where `canonical_input` is one of (highest priority first):
 
 | Tier | Input ref carries | `canonical_input` |
 |---|---|---|
-| 1a | `did`        | `"v2:did:" + did` |
-| 1b | `uri`        | `"v2:uri:" + normalize_uri(uri)` |
-| 1c | `identifier` | `"v2:id:" + identifier` |
-| 2  | `name` only  | `"v2:name:" + lowercase(type) + ":" + normalize_name(name)` |
+| 1a | `did`        | `"v3:did:" + did` |
+| 1b | `uri`        | `"v3:uri:" + canonicalize_uri(uri)` |
+| 1c | `identifier` | `"v3:id:" + canonicalize_identifier(identifier)` |
+| 2  | `name` only  | `"v3:name:" + lowercase(type) + ":" + normalize_name(name)` |
 
-If multiple fields are present, Tier 1a > 1b > 1c > 2 (first match wins).
+**Tier-1 precedence is TYPE-SPECIFIC (v3).** `did` always wins. After
+that the order depends on `ref.type`:
+
+- **`product` / `dataset`** (physical goods): `identifier` (barcode /
+  ASIN / MPN — the precise SKU) **beats** `uri`. The barcode is the
+  correct variant-level key; a store page URL is weaker + fragmenting.
+- **`content` / `place` / `organization` / `claim` / `did`**: `uri`
+  (the canonical content URL/ID) **beats** `identifier`. The URL *is*
+  the content's identity.
+- `name` (Tier 2) is always the last resort.
 
 A `SubjectRef` with none of `did` / `uri` / `identifier` / non-empty
 `name` is **invalid** and the resolver throws.
 
-## The `v2:` version prefix
+## The `v3:` version prefix
 
-Every hash input is prefixed with the literal string `v2:`. This is
+Every hash input is prefixed with the literal string `v3:`. This is
 the current resolver formula version. If the formula ever evolves
-(new normalization rules, additional inputs), a `v3:` prefix on
-new inputs produces a disjoint id space; old `v2:` subjects retain
+(new normalization rules, additional inputs), a `v4:` prefix on
+new inputs produces a disjoint id space; old subjects retain
 their ids until explicitly migrated.
 
-Federated implementations MUST emit `v2:` as the prefix for now.
-A future spec update will publish `v3:` rules + a migration path.
+Federated implementations MUST emit `v3:` as the prefix.
+
+**v2 → v3 change (launch):** v3 adds (a) the type-specific Tier-1
+precedence above, and (b) the per-type identifier canonicalizer below
+(YouTube URL → `youtube:<id>`, tracking-param strip, GTIN/ASIN
+format-normalize). Both change the hash inputs, so the prefix moved
+`v2:`→`v3:`. At launch this was a **greenfield** bump — no public v2
+subjects existed to migrate.
 
 ## Tier 1 normalization
 
-### `did:` and `id:` — verbatim
+### `did:` — verbatim
 
-The DID and identifier strings are hashed **verbatim**. No
-lowercasing, no trimming, no Unicode normalization. Callers are
-responsible for the canonical form of these strings (DIDs are
-lowercase by `did:plc` method spec; identifiers should be namespaced
-e.g. `asin:B01234`, `ean:0123456789012`, `wikidata:Q28865`).
+The DID string is hashed **verbatim**. No lowercasing, no trimming, no
+Unicode normalization. Callers own the canonical form (DIDs are
+lowercase by `did:plc` method spec).
 
 **Presence + tier selection.** A Tier 1 field is *present* iff it is
-a non-empty string (length > 0). Tier selection is `did` → `uri` →
-`identifier` → name; the first present field wins. Because hashing is
+a non-empty string (length > 0). Tier selection is `did` first, then
+the **type-specific** order above (`identifier`/`uri` swap by type),
+then name; the first present field wins. Because `did` hashing is
 verbatim, surrounding whitespace is identity-significant
 (`"did:plc:x "` ≠ `"did:plc:x"`). Implementations **SHOULD** reject
 whitespace-padded or whitespace-only Tier 1 values at the
@@ -64,10 +78,43 @@ canonical input — a non-empty-but-blank value is a caller bug, not a
 distinct subject. The hash function itself does NOT trim (a verbatim
 contract can't depend on a normalization step some ports skip).
 
-### `uri:` — conservative RFC 3986 normalization
+### `id:` — per-type identifier canonicalizer (v3)
 
-`normalize_uri(uri)` applies only foldings that RFC 3986 considers
-equivalent:
+`canonicalize_identifier(identifier)` format-normalizes a namespaced
+`<scheme>:<value>` identifier (mostly passthrough):
+
+- scheme **lowercased** (`ASIN:` == `asin:`);
+- `asin` value **uppercased** (ASINs are case-insensitive alphanumerics);
+- `gtin` / `ean` / `upc` numeric value → **unified to `gtin:<value
+  left-zero-padded to 14 digits>`** (GS1 GTIN-14 canonical form). A UPC-A
+  (12), the EAN-13, and the GTIN-14 of the same product are the SAME GS1
+  code at different lengths, so the scheme collapses to `gtin` and all
+  three converge to one subject id;
+- any other scheme — or an identifier with no `:`, or a non-numeric GTIN
+  value — passes through **verbatim** (we don't guess at formats we don't
+  recognise).
+
+Namespaced examples: `asin:B01234ABCD`, `gtin:00036000291452`,
+`wikidata:Q28865`.
+
+### `uri:` — platform-ID extraction + conservative RFC 3986 normalization (v3)
+
+`canonicalize_uri(uri)` first tries to extract a **platform content
+ID**, then falls back to conservative RFC 3986 normalization:
+
+- **YouTube** links (`youtube.com/watch?v=`, `youtu.be/`,
+  `/embed/`, `/shorts/`, `/live/`, `m.`/`www.`/`music.` hosts) →
+  `youtube:<videoId>`. All spellings of one video converge; timestamp
+  (`t=`), playlist (`list=`/`index=`), and tracking params are
+  irrelevant (only the 11-char id is read).
+- **Generic URLs** → RFC 3986 foldings (below) PLUS **tracking-param
+  stripping** (`utm_*`, `fbclid`, `gclid`, `ref`, etc.). Surviving
+  query params are PRESERVED verbatim, in original order (the query is
+  often the routing key, and order MAY be semantic — reordering would
+  risk conflating distinct resources).
+
+The RFC 3986 foldings (generic path) apply only equivalences RFC 3986
+considers safe:
 
 1. **Lowercase scheme.** `HTTPS://x.test` → `https://x.test` (RFC
    3986 §3.1, scheme is case-insensitive).
@@ -133,11 +180,14 @@ hashes them, but new producers should stay within the closed set.
 
 | `SubjectRef`                                                      | `subject_id` derivation                              |
 |--------------------------------------------------------------------|-------------------------------------------------------|
-| `{type:"did", did:"did:plc:abc"}`                                  | `SHA256("v2:did:did:plc:abc")[:32]`                  |
-| `{type:"content", uri:"HTTPS://Example.COM/"}`                     | `SHA256("v2:uri:https://example.com")[:32]`          |
-| `{type:"product", identifier:"asin:B01234"}`                       | `SHA256("v2:id:asin:B01234")[:32]`                   |
-| `{type:"product", name:"  Aeron  Chair  "}`                        | `SHA256("v2:name:product:aeron chair")[:32]`         |
-| `{type:"place", name:"café"}` (decomposed `é`)                     | `SHA256("v2:name:place:café")[:32]` (composed `é`)    |
+| `{type:"did", did:"did:plc:abc"}`                                  | `SHA256("v3:did:did:plc:abc")[:32]`                  |
+| `{type:"content", uri:"HTTPS://Example.COM/"}`                     | `SHA256("v3:uri:https://example.com")[:32]`          |
+| `{type:"content", uri:"https://youtu.be/dQw4w9WgXcQ?t=42"}`        | `SHA256("v3:uri:youtube:dQw4w9WgXcQ")[:32]`          |
+| `{type:"product", identifier:"ASIN:b01234abcd"}`                   | `SHA256("v3:id:asin:B01234ABCD")[:32]`               |
+| `{type:"product", uri:"…/dp/X", identifier:"asin:X"}` (both)       | resolves by **identifier** (product: id beats uri)    |
+| `{type:"content", uri:"…", identifier:"…"}` (both)                 | resolves by **uri** (content: uri beats id)           |
+| `{type:"product", name:"  Aeron  Chair  "}`                        | `SHA256("v3:name:product:aeron chair")[:32]`         |
+| `{type:"place", name:"café"}` (decomposed `é`)                     | `SHA256("v3:name:place:café")[:32]` (composed `é`)    |
 
 ## Disambiguation policy
 
@@ -167,14 +217,19 @@ formula; see `appview/src/db/queries/subjects.ts:resolveCanonicalChain`.
 
 - Code: [`appview/src/db/queries/subjects.ts`](../../../../appview/src/db/queries/subjects.ts) —
   `generateDeterministicId`, `normalizeNameForHash`,
-  `normalizeUriForHash`, `normalizeTypeForHash`.
-- Constants: `RESOLVER_VERSION = 'v2'`,
+  `normalizeTypeForHash`; and
+  [`appview/src/db/queries/subject_identifier.ts`](../../../../appview/src/db/queries/subject_identifier.ts) —
+  `tier1Precedence`, `canonicalizeUri`, `canonicalizeIdentifier`,
+  `resolveTier1Key` (the v3 type-precedence + canonicalizer).
+- Constants: `RESOLVER_VERSION = 'v3'`,
   `CONSTANTS.SUBJECT_REF_MAX_NAME_LEN = 200`,
   `CONSTANTS.SUBJECT_REF_MAX_IDENTIFIER_LEN = 500`,
   `CONSTANTS.SUBJECT_REF_MAX_URI_LEN = 2048`,
   `CONSTANTS.SUBJECT_REF_MAX_DID_LEN = 2048`.
 - Tests: `appview/tests/unit/03-shared-utilities.test.ts` (UT-DI-001
-  through UT-DI-034) lock the formula + every normalization rule.
+  through UT-DI-034) lock the formula + every normalization rule;
+  `appview/tests/unit/subject_identifier.test.ts` locks the v3
+  type-precedence + YouTube/identifier canonicalization.
 
 ## Vectors
 

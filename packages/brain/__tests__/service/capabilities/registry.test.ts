@@ -48,11 +48,25 @@ describe('capabilities registry', () => {
       expect(getCapability('mystery')).toBeUndefined();
       expect(getCapability('')).toBeUndefined();
     });
+
+    // SERVICES_LAUNCH_ARCHITECTURE.md Part 1: the local registry must be
+    // alias-aware so `getCapability('bus_eta')` returns the `eta_query`
+    // def — else no-schema fallback paths skip local validation for an
+    // alias name.
+    it('resolves a known ALIAS to its canonical definition', () => {
+      const cap = getCapability('bus_eta'); // alias of eta_query
+      expect(cap?.name).toBe('eta_query');
+      expect(cap?.validateParams).toBe(validateEtaQueryParams);
+    });
   });
 
   describe('getTTL', () => {
     it('returns the capability default for known capabilities', () => {
       expect(getTTL('eta_query')).toBe(60);
+    });
+
+    it('resolves a known ALIAS to its canonical TTL', () => {
+      expect(getTTL('bus_eta')).toBe(60); // alias of eta_query (default 60)
     });
 
     it('returns FALLBACK_TTL_SECONDS for unknown capabilities', () => {

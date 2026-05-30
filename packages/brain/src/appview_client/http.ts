@@ -93,6 +93,21 @@ export interface IsDiscoverableResult {
   capabilities: string[];
 }
 
+/** Parameters for `searchCapabilities` (intent-based discovery). */
+export interface SearchCapabilitiesParams {
+  /** The user's intent in natural language ("when does the bus arrive"). */
+  intent: string;
+  lat?: number;
+  lng?: number;
+}
+
+/** One discovery candidate from `searchCapabilities`. */
+export interface CapabilityCandidate {
+  canonical: string;
+  description: string;
+  domain: string;
+}
+
 // ---------------------------------------------------------------------------
 // PeerLens types (mirrors `appview/src/shared/types/api-types.ts`)
 // ---------------------------------------------------------------------------
@@ -293,6 +308,44 @@ export class AppViewClient {
   }
 
   /**
+   * Intent-based capability DISCOVERY — `com.dina.service.searchCapabilities`
+   * (SERVICES_LAUNCH_ARCHITECTURE.md Part 1, Layer 4). Pass the user's
+   * intent in natural language; get back the canonical capabilities that
+   * BOTH exist in the registry AND currently have a provider. This is what
+   * lets the consumer LLM pick a real, serviceable capability instead of
+   * guessing a string. An empty list = honest "no Dina service for that
+   * yet" (not an error).
+   */
+  async searchCapabilities(params: SearchCapabilitiesParams): Promise<CapabilityCandidate[]> {
+    if (!params.intent) {
+      throw new AppViewError(
+        'searchCapabilities: intent is required',
+        null,
+        '/xrpc/com.dina.service.searchCapabilities',
+      );
+    }
+    const query: Record<string, string> = { intent: params.intent };
+    if (params.lat !== undefined) query.lat = String(params.lat);
+    if (params.lng !== undefined) query.lng = String(params.lng);
+
+    const body = await this.get('/xrpc/com.dina.service.searchCapabilities', query);
+    const arr = (body as { capabilities?: unknown }).capabilities;
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .map((c): CapabilityCandidate | null => {
+        if (!c || typeof c !== 'object') return null;
+        const r = c as Record<string, unknown>;
+        if (typeof r.canonical !== 'string') return null;
+        return {
+          canonical: r.canonical,
+          description: typeof r.description === 'string' ? r.description : '',
+          domain: typeof r.domain === 'string' ? r.domain : '',
+        };
+      })
+      .filter((c): c is CapabilityCandidate => c !== null);
+  }
+
+  /**
    * Check whether a DID is registered as a public service, and list its
    * advertised capabilities. Matches Python `is_public` tuple return as an
    * object for ergonomic destructuring: `const {isDiscoverable, capabilities} = …`.
@@ -447,7 +500,19 @@ function isServiceProfile(x: unknown): x is ServiceProfile {
  * alongside older mobile-published profiles).
  */
 function normalizeProfile(p: ServiceProfile): ServiceProfile {
-  if (p.capabilitySchemas === undefined) return p;
+  // Real AppView emits `capabilitySchemas: null` (NOT undefined) for a
+  // provider that publishes no schema — see appview service-search.ts
+  // (`r.capabilitySchemas ?? null`). `Object.entries(null)` throws, so a
+  // single discoverable schemaless provider would crash searchServices().
+  // Treat null like absent; strip it so downstream (typed
+  // `Record | undefined`) never sees the wire `null`.
+  if (p.capabilitySchemas === undefined || p.capabilitySchemas === null) {
+    if (p.capabilitySchemas === null) {
+      const { capabilitySchemas: _drop, ...rest } = p;
+      return rest;
+    }
+    return p;
+  }
   const normalized: Record<string, PublishedCapabilitySchema> = {};
   let mutated = false;
   for (const [cap, raw] of Object.entries(p.capabilitySchemas)) {

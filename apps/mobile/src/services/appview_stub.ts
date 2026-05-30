@@ -19,8 +19,14 @@ import {
   EtaQueryParamsSchema,
   EtaQueryResultSchema,
   type SearchServicesParams,
+  type SearchCapabilitiesParams,
+  type CapabilityCandidate,
   type ServiceProfile,
 } from '@dina/brain';
+import {
+  allCanonicalCapabilities,
+  resolveCanonicalCapability,
+} from '@dina/protocol';
 
 export interface AppViewStubOptions {
   /** Initial profiles to publish. Use `publish()` to add more at runtime. */
@@ -77,10 +83,24 @@ export class AppViewStub {
     if (!params.capability) {
       throw new Error('AppViewStub: capability is required');
     }
+    // Mirror real AppView (service-search.ts) EXACTLY:
+    //  1. The query capability is resolved to canonical; an UNKNOWN /
+    //     out-of-registry capability resolves to null → empty result.
+    //     The index holds only canonical names, so a non-canonical query
+    //     can never match — the stub must drop it too, or demos pass for
+    //     custom capabilities production AppView will never discover.
+    //  2. Profiles are matched on the canonical name (the ingester
+    //     canonicalizes on write), so a `bus_eta` profile is found by a
+    //     canonical `eta_query` query and vice versa.
+    const wantCanonical = resolveCanonicalCapability(params.capability);
+    if (wantCanonical === null) return [];
     const matches: ServiceProfile[] = [];
     for (const profile of this.profiles.values()) {
       if (!profile.isDiscoverable) continue;
-      if (!profile.capabilities.includes(params.capability)) continue;
+      const capMatch = profile.capabilities.some(
+        (c) => resolveCanonicalCapability(c) === wantCanonical,
+      );
+      if (!capMatch) continue;
       if (params.q !== undefined && params.q !== '') {
         const q = params.q.toLowerCase();
         if (!profile.name.toLowerCase().includes(q)) continue;
@@ -109,6 +129,35 @@ export class AppViewStub {
     const p = this.profiles.get(did);
     if (p === undefined) return { isDiscoverable: false, capabilities: [] };
     return { isDiscoverable: p.isDiscoverable, capabilities: p.capabilities };
+  }
+
+  /**
+   * `searchCapabilities` mirror (Services Layer 4). Like the real
+   * `com.dina.service.searchCapabilities` endpoint, returns the canonical
+   * capabilities that are BOTH in the registry AND covered by at least one
+   * discoverable profile. `intent` is accepted but unused at launch (the
+   * covered set is tiny), matching the real endpoint's launch shortcut.
+   */
+  async searchCapabilities(_params: SearchCapabilitiesParams): Promise<CapabilityCandidate[]> {
+    const covered = new Set<string>();
+    for (const profile of this.profiles.values()) {
+      if (!profile.isDiscoverable) continue;
+      for (const raw of profile.capabilities) {
+        const canonical = resolveCanonicalCapability(raw);
+        if (canonical !== null) covered.add(canonical);
+      }
+    }
+    const out: CapabilityCandidate[] = [];
+    for (const entry of allCanonicalCapabilities()) {
+      if (covered.has(entry.canonical)) {
+        out.push({
+          canonical: entry.canonical,
+          description: entry.description,
+          domain: entry.domain,
+        });
+      }
+    }
+    return out;
   }
 
   /**

@@ -81,6 +81,26 @@ describe('rankCandidates', () => {
     expect(out.map((r) => r.profile.did).sort()).toEqual(['did:plc:b', 'did:plc:c']);
   });
 
+  // SERVICES_LAUNCH_ARCHITECTURE.md Part 1: the ranker is exported and
+  // must not silently mis-rank if a caller passes an alias. It matches
+  // alias↔canonical, so an `eta_query`-advertising profile is kept for a
+  // `bus_eta` query, and vice versa.
+  it('matches alias↔canonical (an alias query keeps a canonical-advertised profile)', () => {
+    const profiles = [
+      profile({ did: 'did:plc:a', name: 'A', capabilities: ['eta_query'] }),
+      profile({ did: 'did:plc:b', name: 'B', capabilities: ['appointment_status'] }),
+    ];
+    // `bus_eta` is an alias of eta_query → keeps A, drops B.
+    const out = rankCandidates('bus_eta', profiles);
+    expect(out.map((r) => r.profile.did)).toEqual(['did:plc:a']);
+  });
+
+  it('does NOT match an alias of a different canonical', () => {
+    const profiles = [profile({ did: 'did:plc:a', name: 'A', capabilities: ['eta_query'] })];
+    // appt_status is an alias of appointment_status — a different canonical.
+    expect(rankCandidates('appt_status', profiles)).toEqual([]);
+  });
+
   it('returns [] when capability is empty string', () => {
     const profiles = [profile({ did: 'did:plc:a', name: 'A' })];
     expect(rankCandidates('', profiles)).toEqual([]);

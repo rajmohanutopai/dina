@@ -224,8 +224,20 @@ function buildWireServiceProfile(
     const wireEntry: Record<string, unknown> = {
       params: localSchema.params,
       result: localSchema.result,
+      // Fallback hash MUST use the canonical {description, params, result}
+      // shape — the same input Brain's ServicePublisher and the lite
+      // profile_builder.hashCapabilitySchema hash. The previous fallback
+      // hashed only `params`, producing a hash no other component would
+      // ever reproduce (so a requester's version check would always
+      // mismatch). In practice schemaHash is pre-computed; the fallback
+      // must still be the RIGHT hash, not a wrong one.
       schema_hash:
-        localSchema.schemaHash ?? computeSchemaHash(localSchema.params),
+        localSchema.schemaHash ??
+        computeSchemaHash({
+          description: localSchema.description ?? '',
+          params: localSchema.params,
+          result: localSchema.result,
+        }),
     };
     if (localSchema.description !== undefined) {
       wireEntry.description = localSchema.description;

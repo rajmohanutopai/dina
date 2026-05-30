@@ -18,8 +18,33 @@ import type { AgentTool } from './tool_registry';
 import type { AppViewClient, ServiceProfile } from '../appview_client/http';
 import type { ServiceQueryOrchestrator } from '../service/service_query_orchestrator';
 import type { Contact } from '@dina/core';
+import { resolveCanonicalCapability } from '@dina/protocol';
 import { autofillRequesterFields, type RequesterAutofillSchema } from './requester_autofill';
 import { defaultFetch } from '../runtime/fetch';
+
+/**
+ * Index a published-schema map (from an AppView service profile) by an
+ * inbound `capability`, folding alias↔canonical. AppView re-keys schemas
+ * to the CANONICAL name on ingest (Layer 2), but a requester may still
+ * hold an alias (`bus_eta` for canonical `eta_query`); a raw
+ * `schemas[capability]` would then miss the canonical-keyed entry and
+ * skip schema-hash/TTL hydration (silently dropping version safety).
+ * Exact-match fast path, then canonical match.
+ */
+function schemaForCapability<T>(
+  schemas: Record<string, T> | undefined,
+  capability: string,
+): T | undefined {
+  if (schemas === undefined) return undefined;
+  const exact = schemas[capability];
+  if (exact !== undefined) return exact;
+  const canonical = resolveCanonicalCapability(capability);
+  if (canonical === null) return undefined;
+  for (const [key, val] of Object.entries(schemas)) {
+    if (resolveCanonicalCapability(key) === canonical) return val;
+  }
+  return undefined;
+}
 
 // ---------------------------------------------------------------------------
 // geocode
@@ -141,6 +166,59 @@ export function createGeocodeTool(options: GeocodeToolOptions = {}): AgentTool {
         lng,
         display_name: top.display_name ?? address,
       };
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// search_capabilities (intent-based discovery — Layer 4)
+// ---------------------------------------------------------------------------
+
+export interface SearchCapabilitiesToolOptions {
+  appViewClient: Pick<AppViewClient, 'searchCapabilities'>;
+}
+
+/**
+ * Factory — returns the `search_capabilities` AgentTool. This is the
+ * FIRST tool the LLM calls for a public-service question
+ * (SERVICES_LAUNCH_ARCHITECTURE.md Part 1, Layer 4). It takes the user's
+ * intent verbatim and returns the canonical capabilities that BOTH exist
+ * in the registry AND currently have a provider — so the model selects a
+ * real, serviceable capability instead of inventing a string.
+ *
+ * - One match → the model proceeds to `search_provider_services(canonical)`
+ *   → `query_service`.
+ * - No match → the model returns the honest empty-state ("No Dina service
+ *   for that yet") WITHOUT inventing a capability or searching blind.
+ */
+export function createSearchCapabilitiesTool(options: SearchCapabilitiesToolOptions): AgentTool {
+  return {
+    name: 'search_capabilities',
+    description:
+      'Discover which kinds of public service Dina can answer for a given intent. Call this FIRST for a public-service question ("when does the bus arrive", "is my appointment confirmed"). Pass the user\'s intent verbatim. Returns canonical capability names + descriptions for every service that has a provider. IMPORTANT: the returned list is NOT filtered or ranked by your intent — it is the full set of available services. Read each `description` and pick ONLY the capability that genuinely matches the user\'s intent, then pass that one to search_provider_services. If NONE of the returned descriptions matches the intent (or the list is empty), tell the user there is no Dina service for that yet — do NOT pick an unrelated capability and do NOT invent one.',
+    parameters: {
+      type: 'object',
+      properties: {
+        intent: {
+          type: 'string',
+          description: "The user's intent in natural language (e.g. 'when does bus 42 reach Castro').",
+        },
+        lat: { type: 'number', description: 'Optional viewer latitude.' },
+        lng: { type: 'number', description: 'Optional viewer longitude.' },
+      },
+      required: ['intent'],
+    },
+    async execute(args): Promise<{
+      capabilities: Array<{ canonical: string; description: string; domain: string }>;
+    }> {
+      const intent = String(args.intent ?? '');
+      if (intent === '') throw new Error('search_capabilities: intent is required');
+      const capabilities = await options.appViewClient.searchCapabilities({
+        intent,
+        lat: typeof args.lat === 'number' ? args.lat : undefined,
+        lng: typeof args.lng === 'number' ? args.lng : undefined,
+      });
+      return { capabilities };
     },
   };
 }
@@ -383,7 +461,9 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
           const profiles = await options.appViewClient.searchServices({ capability });
           const match = profiles.find((p) => p.did === operatorDID);
           if (match !== undefined) {
-            const published = match.capabilitySchemas?.[capability];
+            // Resolve alias↔canonical: AppView returns canonical-keyed
+            // schemas, but `capability` may be the requester's alias.
+            const published = schemaForCapability(match.capabilitySchemas, capability);
             if (published !== undefined) {
               if (
                 schemaHash === undefined &&

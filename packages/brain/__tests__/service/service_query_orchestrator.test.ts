@@ -305,6 +305,37 @@ describe('ServiceQueryOrchestrator.issueQuery — dispatch', () => {
     expect(coreSeen[0].ttlSeconds).toBe(60);
   });
 
+  // SERVICES_LAUNCH_ARCHITECTURE.md Part 1 — the requester pipeline must
+  // canonicalize ONCE at the boundary. The bug: AppView stores/returns
+  // capabilities canonically, so requesting the ALIAS `bus_eta` searched
+  // for an alias AppView never indexes and the ranker exact-matched it
+  // against a canonical `eta_query` profile → spurious `no_candidate`.
+  it('canonicalizes an alias request end-to-end (search + rank + Core send all canonical)', async () => {
+    const appViewSeen: SearchServicesParams[] = [];
+    const coreSeen: CoreSend[] = [];
+    const orch = new ServiceQueryOrchestrator({
+      appViewClient: stubAppView([BUS_SERVICE], appViewSeen),
+      coreClient: stubCore({ seen: coreSeen }),
+      generateQueryId: () => 'q-alias',
+    });
+
+    const result = await orch.issueQuery({
+      // `bus_eta` is an alias of canonical `eta_query`.
+      capability: 'bus_eta',
+      params: { location: { lat: 37.77, lng: -122.41 } },
+      ttlSeconds: 90,
+    });
+
+    // AppView searched by the CANONICAL capability...
+    expect(appViewSeen[0].capability).toBe('eta_query');
+    // ...the ranker matched the canonical-advertised profile (not no_candidate)...
+    expect(result.toDID).toBe('did:plc:bus42');
+    // ...and Core received the CANONICAL capability + the alias-keyed schema hash.
+    expect(coreSeen).toHaveLength(1);
+    expect(coreSeen[0].capability).toBe('eta_query');
+    expect(coreSeen[0].schemaHash).toBe('hash-v1');
+  });
+
   it('forwards geo search params to AppView', async () => {
     const appViewSeen: SearchServicesParams[] = [];
     const orch = new ServiceQueryOrchestrator({

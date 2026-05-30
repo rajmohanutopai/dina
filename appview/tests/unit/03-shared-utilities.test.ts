@@ -106,7 +106,7 @@ describe('§3.2 Deterministic ID', () => {
   it('UT-DI-001: Fix 10: Tier 1 — DID produces global ID', () => {
     const ref: SubjectRef = { type: 'did', did: 'did:plc:abc' }
     const result = generateDeterministicId(ref)
-    expect(result.id).toBe(expectedId('v2:did:did:plc:abc'))
+    expect(result.id).toBe(expectedId('v3:did:did:plc:abc'))
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0170", "section": "01", "sectionName": "General", "title": "UT-DI-002: Fix 10: Tier 1 \u2014 same DID, different authors -> same ID"}
@@ -121,7 +121,7 @@ describe('§3.2 Deterministic ID', () => {
   it('UT-DI-003: Fix 10: Tier 1 — URI produces global ID', () => {
     const ref: SubjectRef = { type: 'content', uri: 'https://example.com' }
     const result = generateDeterministicId(ref)
-    expect(result.id).toBe(expectedId('v2:uri:https://example.com'))
+    expect(result.id).toBe(expectedId('v3:uri:https://example.com'))
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0172", "section": "01", "sectionName": "General", "title": "UT-DI-004: Fix 10: Tier 1 \u2014 same URI, different authors -> same ID"}
@@ -136,7 +136,7 @@ describe('§3.2 Deterministic ID', () => {
   it('UT-DI-005: Fix 10: Tier 1 — identifier produces global ID', () => {
     const ref: SubjectRef = { type: 'product', identifier: 'asin:B01234' }
     const result = generateDeterministicId(ref)
-    expect(result.id).toBe(expectedId('v2:id:asin:B01234'))
+    expect(result.id).toBe(expectedId('v3:id:asin:B01234'))
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0174", "section": "01", "sectionName": "General", "title": "UT-DI-006: Fix 10: Tier 1 \u2014 priority: DID > URI > identifier"}
@@ -148,8 +148,8 @@ describe('§3.2 Deterministic ID', () => {
       identifier: 'asin:B01234',
     }
     const result = generateDeterministicId(ref)
-    // DID takes priority — id is derived from DID, not URI or identifier
-    expect(result.id).toBe(expectedId('v2:did:did:plc:abc'))
+    // DID is the strongest global identity — wins regardless of type.
+    expect(result.id).toBe(expectedId('v3:did:did:plc:abc'))
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0175", "section": "01", "sectionName": "General", "title": "UT-DI-007: Fix 10: Tier 1 \u2014 priority: URI > identifier"}
@@ -160,15 +160,30 @@ describe('§3.2 Deterministic ID', () => {
       identifier: 'asin:B01234',
     }
     const result = generateDeterministicId(ref)
-    // URI takes priority over identifier (no DID present)
-    expect(result.id).toBe(expectedId('v2:uri:https://example.com'))
+    // SERVICES_LAUNCH_ARCHITECTURE.md Part 3, P1b: for a physical-good
+    // type the precise barcode/ASIN is the correct variant-level key and
+    // must outrank a page-level store URL. (Pre-v3 this resolved by uri,
+    // silently binding products to the weaker fragmenting key.)
+    expect(result.id).toBe(expectedId('v3:id:asin:B01234'))
+  })
+
+  it('UT-DI-007b: Tier 1 — CONTENT: uri beats identifier', () => {
+    // Twin of UT-DI-007 for content types — the URL IS the identity, so
+    // it outranks a stray identifier.
+    const ref: SubjectRef = {
+      type: 'content',
+      uri: 'https://example.com/article',
+      identifier: 'asin:B01234',
+    }
+    const result = generateDeterministicId(ref)
+    expect(result.id).toBe(expectedId('v3:uri:https://example.com/article'))
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0176", "section": "01", "sectionName": "General", "title": "UT-DI-008: Fix 10: Tier 2 \u2014 name-only -> author-scoped"}
   it('UT-DI-008: Tier 2 — name+type produces global ID', () => {
     const ref = { type: 'organization', name: 'Darshini Tiffin Center' } as SubjectRef
     const result = generateDeterministicId(ref)
-    expect(result.id).toBe(expectedId('v2:name:organization:darshini tiffin center'))
+    expect(result.id).toBe(expectedId('v3:name:organization:darshini tiffin center'))
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0177", "section": "01", "sectionName": "General", "title": "UT-DI-009: Fix 10: Tier 2 \u2014 same name, different authors -> different IDs"}
@@ -226,7 +241,7 @@ describe('§3.2 Deterministic ID', () => {
     const ref: SubjectRef = { type: 'did', did: 'did:plc:abc' }
     const result = generateDeterministicId(ref)
     // DID present -> Tier 1 (global), id derived from DID
-    expect(result.id).toBe(expectedId('v2:did:did:plc:abc'))
+    expect(result.id).toBe(expectedId('v3:did:did:plc:abc'))
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0184", "section": "01", "sectionName": "General", "title": "UT-DI-016: name fallback \u2014 "}
@@ -381,7 +396,7 @@ describe('§3.2 Deterministic ID', () => {
   // ─────────────────────────────────────────────────────────────────
   // Tier 1 defense-in-depth: trim leading/trailing whitespace BEFORE
   // the truthy check so a whitespace-only string falls through to the
-  // next tier instead of hashing `v2:did:   `. The lexicon validator
+  // next tier instead of hashing `v3:did:   `. The lexicon validator
   // catches truly empty strings; the resolver doesn't assume the
   // validator was the only entry point.
   // ─────────────────────────────────────────────────────────────────
