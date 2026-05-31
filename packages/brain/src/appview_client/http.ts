@@ -73,6 +73,14 @@ export interface ServiceProfile {
   capabilitySchemas?: Record<string, PublishedCapabilitySchema>;
   /** Distance in km from the query location, if the query supplied lat/lng. */
   distanceKm?: number;
+  /**
+   * AT-URI of THIS listing (`at://<did>/com.dina.service.profile/<rkey>`). A
+   * provider DID may publish many listings (marketplace multi-listing per DID);
+   * the uri disambiguates which one was chosen so it can ride the service.query.
+   * AppView returns it per search result; preserved opaquely by `searchServices`
+   * (the coercion spread keeps it). Optional for backward compat.
+   */
+  uri?: string;
 }
 
 /** Parameters for `searchServices`. */

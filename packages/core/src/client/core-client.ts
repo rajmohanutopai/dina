@@ -850,6 +850,13 @@ export interface ServiceQueryClientRequest {
    * capability cache before retrying.
    */
   schemaHash?: string;
+  /**
+   * Optional AT-URI of the specific listing the requester chose. A provider
+   * DID may publish many listings (marketplace multi-listing per DID); this
+   * disambiguates which one was selected. Forwarded opaquely onto the D2D
+   * `service.query` body so the provider knows which listing to answer for.
+   */
+  serviceUri?: string;
 }
 
 export interface ServiceQueryResult {

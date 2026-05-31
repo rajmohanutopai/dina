@@ -303,6 +303,9 @@ export class ServiceHandler {
        *  response bridge validates against the same contract that was
        *  agreed when the operator approved. */
       schema_snapshot?: SchemaSnapshot;
+      /** P1: chosen listing (multi-listing per DID), forwarded from the
+       *  approval task payload into the fresh delegation. */
+      service_uri?: string;
     },
   ): Promise<void> {
     if (!payload.from_did || !payload.query_id || !payload.capability) {
@@ -325,6 +328,7 @@ export class ServiceHandler {
         mcpTool: payload.mcp_tool,
         serviceName: payload.service_name,
         schemaSnapshot: payload.schema_snapshot,
+        serviceUri: payload.service_uri,
         taskId: execTaskId,
       });
     } catch (err) {
@@ -377,6 +381,7 @@ export class ServiceHandler {
       mcpTool: cap.mcpTool,
       serviceName,
       schemaSnapshot: snapshotForCapability(config, query.capability),
+      serviceUri: query.service_uri,
       taskId,
     });
     await this.fireInboundNotifier({
@@ -410,6 +415,9 @@ export class ServiceHandler {
      *  flip between dispatch + complete can't smuggle a drifted
      *  contract past the requester. */
     schemaSnapshot?: SchemaSnapshot;
+    /** AT-URI of the chosen listing (multi-listing per DID). Carried onto the
+     *  task payload so the agent knows which listing the query is for. */
+    serviceUri?: string;
     taskId: string;
   }): Promise<void> {
     const payload: Record<string, unknown> = {
@@ -425,6 +433,9 @@ export class ServiceHandler {
     };
     if (args.schemaSnapshot !== undefined) {
       payload.schema_snapshot = args.schemaSnapshot;
+    }
+    if (args.serviceUri !== undefined && args.serviceUri !== '') {
+      payload.service_uri = args.serviceUri;
     }
     const expiresAtSec = this.nowSecFn() + args.ttlSeconds;
     await this.core.createWorkflowTask({
@@ -477,6 +488,11 @@ export class ServiceHandler {
     // `executeAndRespond`.
     if (snapshot !== undefined) {
       payload.schema_snapshot = snapshot;
+    }
+    // P1: carry the chosen listing through the approval → delegation handoff
+    // so `executeAndRespond` can forward it to the fresh delegation task.
+    if (query.service_uri !== undefined && query.service_uri !== '') {
+      payload.service_uri = query.service_uri;
     }
     await this.core.createWorkflowTask({
       id: taskId,

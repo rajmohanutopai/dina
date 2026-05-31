@@ -104,6 +104,39 @@ const VALID_SERVICE_STATUSES: ReadonlySet<string> = new Set(['success', 'unavail
  * Validate a `service.query` D2D body. `null` on success, error
  * string on the first violated invariant.
  */
+/** AT-Proto NSID collection that service listings are published under. */
+export const SERVICE_PROFILE_COLLECTION = 'com.dina.service.profile'
+/** AT-Proto record-key charset; bounds rkey length so a listing uri can't
+ *  smuggle an unbounded blob into the provider's execution context. */
+const SERVICE_LISTING_RKEY_RE = /^[A-Za-z0-9._~-]{1,512}$/
+
+/**
+ * Parse + structurally validate a service-listing AT-URI of the form
+ * `at://<did>/com.dina.service.profile/<rkey>`. Returns `{ did, rkey }` on
+ * success or `null` when the uri is not a well-formed listing reference.
+ *
+ * `service_uri` is requester-supplied and flows into the provider's execution
+ * context (it selects WHICH listing the provider answers for), so it must be
+ * bound to the service-profile collection + a sane rkey rather than treated as
+ * opaque text. The caller (Core's `/v1/service/query` route) additionally
+ * binds `did` to the request's `to_did`.
+ */
+export function parseServiceListingUri(
+  uri: string,
+): { did: string; rkey: string } | null {
+  if (typeof uri !== 'string' || !uri.startsWith('at://')) return null
+  const parts = uri.slice('at://'.length).split('/')
+  if (parts.length !== 3) return null
+  const [authority, collection, rkey] = parts
+  // Narrow off `string | undefined` (noUncheckedIndexedAccess) — length===3
+  // guarantees all three, but TS doesn't infer that from `.length`.
+  if (authority === undefined || collection === undefined || rkey === undefined) return null
+  if (!authority.startsWith('did:') || authority.length < 8) return null
+  if (collection !== SERVICE_PROFILE_COLLECTION) return null
+  if (rkey === '.' || rkey === '..' || !SERVICE_LISTING_RKEY_RE.test(rkey)) return null
+  return { did: authority, rkey }
+}
+
 export function validateServiceQueryBody(body: unknown): string | null {
   if (!body || typeof body !== 'object') {
     return 'service.query: body must be a JSON object';
@@ -128,8 +161,23 @@ export function validateServiceQueryBody(body: unknown): string | null {
   if (b.schema_hash !== undefined && typeof b.schema_hash !== 'string') {
     return 'service.query: schema_hash must be a string when present';
   }
-  if (b.service_uri !== undefined && typeof b.service_uri !== 'string') {
-    return 'service.query: service_uri must be a string when present';
+  if (b.service_uri !== undefined) {
+    if (typeof b.service_uri !== 'string') {
+      return 'service.query: service_uri must be a string when present';
+    }
+    // Structural bind: a non-empty service_uri must be a well-formed
+    // com.dina.service.profile listing AT-URI (right collection + sane rkey),
+    // NOT opaque text — it flows into the provider's execution context. This is
+    // the D2D-inbound guard: a direct service.query envelope can carry a
+    // service_uri the Core HTTP route never saw, so the check belongs here too.
+    // (The cross-DID bind — authority === recipient — is enforced separately by
+    // the callers that know the recipient DID: the Core HTTP route binds it to
+    // `to_did`, and the inbound D2D path binds it via
+    // `evaluateServiceIngressBypass`'s `recipientDID`. This validator only
+    // enforces structure.) '' ⇒ absent.
+    if (b.service_uri !== '' && parseServiceListingUri(b.service_uri) === null) {
+      return 'service.query: service_uri must be an at://<did>/com.dina.service.profile/<rkey> URI';
+    }
   }
   return null;
 }

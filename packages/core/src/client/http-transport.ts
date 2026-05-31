@@ -364,6 +364,7 @@ export class HttpCoreTransport implements CoreClient {
     if (req.serviceName !== undefined) body.service_name = req.serviceName;
     if (req.originChannel !== undefined) body.origin_channel = req.originChannel;
     if (req.schemaHash !== undefined) body.schema_hash = req.schemaHash;
+    if (req.serviceUri !== undefined) body.service_uri = req.serviceUri;
 
     const raw = await this.call<{ task_id: string; query_id: string; deduped?: boolean }>(
       'POST',

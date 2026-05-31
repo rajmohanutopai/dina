@@ -24,6 +24,7 @@
  *   core/internal/domain/message.go    — MsgTypeServiceQuery / Response
  */
 
+import { parseServiceListingUri } from '@dina/protocol';
 import { MsgTypeServiceQuery, MsgTypeServiceResponse } from '../d2d/families';
 import {
   validateServiceQueryBody,
@@ -38,6 +39,7 @@ export type BypassDenyReason =
   | 'not_configured'
   | 'no_window'
   | 'body_invalid'
+  | 'service_uri_mismatch'
   | 'message_type_mismatch';
 
 /** Decision surface for every `service.*` bypass check. */
@@ -53,7 +55,13 @@ export type ServiceBypassDecision =
       body: ServiceQueryBody | ServiceResponseBody;
     }
   | {
-      /** The bypass is denied — caller must fall back to the contact gate. */
+      /**
+       * The bypass is denied. NOTE: for inbound `service.*` traffic the receive
+       * pipeline DROPS a denied message — it does NOT fall back to the contact
+       * gate (the decision layer already validated body + semantics, so a
+       * fallback would only produce a less-specific drop). The `reason` is
+       * recorded for audit. Egress callers may still choose their own fallback.
+       */
       kind: 'deny';
       reason: BypassDenyReason;
       /** Human-readable detail suitable for audit lines. */
@@ -163,6 +171,17 @@ export function evaluateServiceIngressBypass(
     isCapabilityConfigured?: LocalCapabilityChecker;
     /** Requester-side window peek. */
     requester?: RequesterWindowView;
+    /**
+     * THIS node's DID (the message recipient). When provided, a `service.query`
+     * carrying a `service_uri` is rejected unless that listing URI's authority
+     * equals `recipientDID` — i.e. the chosen listing actually belongs to us.
+     * The Core HTTP route binds `service_uri` authority to `to_did`, but a
+     * direct inbound D2D envelope never passes that route; this is the same
+     * bind on the inbound path. Body validation already enforced structure
+     * (well-formed com.dina.service.profile listing URI). Omitted ⇒ skip the
+     * cross-DID bind (back-compat for callers that don't know the recipient).
+     */
+    recipientDID?: string;
   },
 ): ServiceBypassDecision {
   if (messageType === MsgTypeServiceQuery) {
@@ -182,6 +201,23 @@ export function evaluateServiceIngressBypass(
         reason: 'not_configured',
         detail: `capability "${body.capability}" is not configured locally`,
       };
+    }
+    // Cross-DID listing bind (inbound path). `validateServiceQueryBody` already
+    // confirmed a non-empty service_uri is a well-formed listing URI, so a
+    // non-null parse is guaranteed here; we only check the authority matches us.
+    if (
+      opts.recipientDID !== undefined &&
+      typeof body.service_uri === 'string' &&
+      body.service_uri !== ''
+    ) {
+      const listing = parseServiceListingUri(body.service_uri);
+      if (listing !== null && listing.did !== opts.recipientDID) {
+        return {
+          kind: 'deny',
+          reason: 'service_uri_mismatch',
+          detail: `service_uri authority ${listing.did} does not match recipient ${opts.recipientDID}`,
+        };
+      }
     }
     return { kind: 'allow', body };
   }

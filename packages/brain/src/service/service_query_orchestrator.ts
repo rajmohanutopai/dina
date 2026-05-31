@@ -82,6 +82,12 @@ export interface IssueQueryToDIDRequest {
   serviceName?: string;
   /** Tag for telemetry — e.g. "ask", "chat", "scheduled". */
   originChannel?: string;
+  /**
+   * AT-URI of the specific listing the caller chose (from
+   * `search_provider_services`). A provider DID may publish many listings; this
+   * carries the selection to the provider. Forwarded opaquely onto the wire.
+   */
+  serviceUri?: string;
 }
 
 /**
@@ -258,6 +264,12 @@ export class ServiceQueryOrchestrator {
         serviceName: top.profile.name,
         originChannel: req.originChannel,
         schemaHash: schemaHash !== '' ? schemaHash : undefined,
+        // The ranker chose THIS listing — carry its uri so a multi-listing
+        // provider DID knows which one was selected.
+        serviceUri:
+          typeof top.profile.uri === 'string' && top.profile.uri !== ''
+            ? top.profile.uri
+            : undefined,
       });
     } catch (err) {
       throw new ServiceOrchestratorError(
@@ -329,6 +341,8 @@ export class ServiceQueryOrchestrator {
         originChannel: req.originChannel,
         schemaHash:
           req.schemaHash !== undefined && req.schemaHash !== '' ? req.schemaHash : undefined,
+        // Carry the LLM-chosen listing's uri (multi-listing per DID).
+        serviceUri: req.serviceUri !== undefined && req.serviceUri !== '' ? req.serviceUri : undefined,
       });
     } catch (err) {
       throw new ServiceOrchestratorError(

@@ -635,6 +635,190 @@ describe('CoreRouter integration', () => {
       expect(sent).toHaveLength(1);
     });
 
+    it('does NOT dedupe two requests to the same DID/cap/params but different listings (#1, P1)', async () => {
+      const sent: unknown[] = [];
+      setServiceQuerySender(async (to, type, body) => {
+        sent.push({ to, type, body });
+      });
+      const reqFor = (serviceUri: string, queryId: string) =>
+        signedReq(
+          'POST',
+          '/v1/service/query',
+          {
+            to_did: 'did:plc:market',
+            capability: 'price_check',
+            params: { sku: 'X' },
+            ttl_seconds: 60,
+            query_id: queryId,
+            service_uri: serviceUri,
+          },
+          brain,
+        );
+
+      const a = await router.handle(
+        reqFor('at://did:plc:market/com.dina.service.profile/store-2', 'q-listing-a'),
+      );
+      expect(a.status).toBe(200);
+      expect((a.body as { deduped?: boolean }).deduped ?? false).toBe(false);
+      const b = await router.handle(
+        reqFor('at://did:plc:market/com.dina.service.profile/store-3', 'q-listing-b'),
+      );
+      expect(b.status).toBe(200);
+      // Different listing → NOT a dedup → both reach the provider.
+      expect((b.body as { deduped?: boolean }).deduped ?? false).toBe(false);
+      expect(sent).toHaveLength(2);
+    });
+
+    it('DOES dedupe two requests with the same listing service_uri (#1, P1)', async () => {
+      const sent: unknown[] = [];
+      setServiceQuerySender(async (to, type, body) => {
+        sent.push({ to, type, body });
+      });
+      const req = () =>
+        signedReq(
+          'POST',
+          '/v1/service/query',
+          {
+            to_did: 'did:plc:market',
+            capability: 'price_check',
+            params: { sku: 'X' },
+            ttl_seconds: 60,
+            query_id: 'q-same-listing',
+            service_uri: 'at://did:plc:market/com.dina.service.profile/store-2',
+          },
+          brain,
+        );
+
+      const first = await router.handle(req());
+      expect(first.status).toBe(200);
+      const second = await router.handle(req());
+      expect(second.status).toBe(200);
+      expect((second.body as { deduped?: boolean }).deduped).toBe(true);
+      expect(sent).toHaveLength(1);
+    });
+
+    it('POST /v1/service/query forwards service_uri onto the D2D body (#1, chosen listing)', async () => {
+      const sent: Array<{ body: Record<string, unknown> }> = [];
+      setServiceQuerySender(async (_to, _type, body) => {
+        sent.push({ body: body as unknown as Record<string, unknown> });
+      });
+      const res = await router.handle(
+        signedReq(
+          'POST',
+          '/v1/service/query',
+          {
+            to_did: 'did:plc:bus',
+            capability: 'price_check',
+            params: { sku: 'X' },
+            ttl_seconds: 60,
+            query_id: 'q-uri-1',
+            service_uri: 'at://did:plc:bus/com.dina.service.profile/store-2',
+          },
+          brain,
+        ),
+      );
+      expect(res.status).toBe(200);
+      expect(sent).toHaveLength(1);
+      expect(sent[0].body.service_uri).toBe('at://did:plc:bus/com.dina.service.profile/store-2');
+    });
+
+    it('POST /v1/service/query omits service_uri from the D2D body when absent (#1)', async () => {
+      const sent: Array<{ body: Record<string, unknown> }> = [];
+      setServiceQuerySender(async (_to, _type, body) => {
+        sent.push({ body: body as unknown as Record<string, unknown> });
+      });
+      const res = await router.handle(
+        signedReq(
+          'POST',
+          '/v1/service/query',
+          {
+            to_did: 'did:plc:bus',
+            capability: 'eta_query',
+            params: { route: '42' },
+            ttl_seconds: 60,
+            query_id: 'q-nouri-1',
+          },
+          brain,
+        ),
+      );
+      expect(res.status).toBe(200);
+      expect(sent).toHaveLength(1);
+      expect('service_uri' in sent[0].body).toBe(false);
+    });
+
+    it('rejects a present-but-non-string service_uri (P2: not silently dropped)', async () => {
+      const sent: unknown[] = [];
+      setServiceQuerySender(async (_to, _type, body) => {
+        sent.push(body);
+      });
+      const res = await router.handle(
+        signedReq(
+          'POST',
+          '/v1/service/query',
+          {
+            to_did: 'did:plc:bus',
+            capability: 'eta_query',
+            params: { route: '42' },
+            ttl_seconds: 60,
+            query_id: 'q-nonstring-uri',
+            service_uri: 42, // number where a listing URI is expected
+          },
+          brain,
+        ),
+      );
+      expect(res.status).toBe(400);
+      expect(sent).toHaveLength(0);
+    });
+
+    it('rejects a structurally-malformed service_uri (P2: bound listing URI)', async () => {
+      const sent: unknown[] = [];
+      setServiceQuerySender(async (_to, _type, body) => {
+        sent.push(body);
+      });
+      const res = await router.handle(
+        signedReq(
+          'POST',
+          '/v1/service/query',
+          {
+            to_did: 'did:plc:bus',
+            capability: 'eta_query',
+            params: { route: '42' },
+            ttl_seconds: 60,
+            query_id: 'q-bad-uri',
+            service_uri: 'not-an-at-uri',
+          },
+          brain,
+        ),
+      );
+      expect(res.status).toBe(400);
+      expect(sent).toHaveLength(0);
+    });
+
+    it('rejects a cross-DID service_uri whose authority != to_did (P2)', async () => {
+      const sent: unknown[] = [];
+      setServiceQuerySender(async (_to, _type, body) => {
+        sent.push(body);
+      });
+      const res = await router.handle(
+        signedReq(
+          'POST',
+          '/v1/service/query',
+          {
+            to_did: 'did:plc:bus',
+            capability: 'eta_query',
+            params: { route: '42' },
+            ttl_seconds: 60,
+            query_id: 'q-cross-did',
+            // Well-formed listing URI, but for a DIFFERENT provider DID.
+            service_uri: 'at://did:plc:attacker/com.dina.service.profile/store-9',
+          },
+          brain,
+        ),
+      );
+      expect(res.status).toBe(400);
+      expect(sent).toHaveLength(0);
+    });
+
     it('POST /v1/service/respond forwards a provider-authored card onto the D2D body', async () => {
       // Regression for the main architectural gap: a provider's
       // `response_body.card` must survive `/v1/service/respond` onto the D2D

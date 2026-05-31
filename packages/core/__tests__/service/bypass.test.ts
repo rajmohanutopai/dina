@@ -225,6 +225,59 @@ describe('evaluateServiceIngressBypass', () => {
       );
       expect(seen).toEqual(['eta_query']);
     });
+
+    it('allows a service_uri whose authority matches recipientDID (P2 inbound bind)', () => {
+      const d = evaluateServiceIngressBypass(
+        MsgTypeServiceQuery,
+        'did:plc:stranger',
+        JSON.stringify({
+          ...validQueryBody,
+          service_uri: 'at://did:plc:me/com.dina.service.profile/store-2',
+        }),
+        { isCapabilityConfigured: () => true, recipientDID: 'did:plc:me' },
+      );
+      expect(d.kind).toBe('allow');
+    });
+
+    it('denies a cross-DID service_uri (authority != recipientDID) — P2 inbound bind', () => {
+      const d = evaluateServiceIngressBypass(
+        MsgTypeServiceQuery,
+        'did:plc:stranger',
+        JSON.stringify({
+          // Well-formed listing URI, but for SOMEONE ELSE's DID — a direct peer
+          // must not push a listing that doesn't belong to this recipient.
+          ...validQueryBody,
+          service_uri: 'at://did:plc:attacker/com.dina.service.profile/store-9',
+        }),
+        { isCapabilityConfigured: () => true, recipientDID: 'did:plc:me' },
+      );
+      expect(d.kind).toBe('deny');
+      if (d.kind === 'deny') expect(d.reason).toBe('service_uri_mismatch');
+    });
+
+    it('skips the cross-DID bind when recipientDID is omitted (back-compat)', () => {
+      const d = evaluateServiceIngressBypass(
+        MsgTypeServiceQuery,
+        'did:plc:stranger',
+        JSON.stringify({
+          ...validQueryBody,
+          service_uri: 'at://did:plc:attacker/com.dina.service.profile/store-9',
+        }),
+        { isCapabilityConfigured: () => true },
+      );
+      expect(d.kind).toBe('allow');
+    });
+
+    it('denies a structurally-malformed service_uri via body validation (inbound)', () => {
+      const d = evaluateServiceIngressBypass(
+        MsgTypeServiceQuery,
+        'did:plc:stranger',
+        JSON.stringify({ ...validQueryBody, service_uri: 'not-an-at-uri' }),
+        { isCapabilityConfigured: () => true, recipientDID: 'did:plc:me' },
+      );
+      expect(d.kind).toBe('deny');
+      if (d.kind === 'deny') expect(d.reason).toBe('body_invalid');
+    });
   });
 
   describe('service.response ingress', () => {

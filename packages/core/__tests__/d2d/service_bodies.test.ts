@@ -116,6 +116,46 @@ describe('D2D service body validation', () => {
         validateServiceQueryBody({ ...valid, schema_hash: 42 as unknown as string }),
       ).toContain('schema_hash must be a string');
     });
+
+    it('rejects non-string service_uri when present', () => {
+      expect(
+        validateServiceQueryBody({ ...valid, service_uri: 42 as unknown as string }),
+      ).toContain('service_uri must be a string');
+    });
+
+    it('accepts a well-formed listing service_uri (+ empty = absent)', () => {
+      expect(
+        validateServiceQueryBody({
+          ...valid,
+          service_uri: 'at://did:plc:bus42/com.dina.service.profile/store-2',
+        }),
+      ).toBeNull();
+      expect(validateServiceQueryBody({ ...valid, service_uri: '' })).toBeNull();
+    });
+
+    it('rejects a structurally-malformed service_uri (P1: inbound D2D guard)', () => {
+      // Authoritative inbound path: a direct service.query envelope reaches this
+      // validator without passing the Core HTTP route, so a malformed /
+      // wrong-collection listing URI must be rejected here too.
+      expect(validateServiceQueryBody({ ...valid, service_uri: 'https://x/y/z' })).toContain(
+        'com.dina.service.profile',
+      );
+      expect(validateServiceQueryBody({ ...valid, service_uri: 'at://x/y/z' })).toContain(
+        'com.dina.service.profile',
+      );
+      expect(
+        validateServiceQueryBody({
+          ...valid,
+          service_uri: 'at://did:plc:bus42/app.bsky.feed.post/store-2',
+        }),
+      ).toContain('com.dina.service.profile');
+      expect(
+        validateServiceQueryBody({
+          ...valid,
+          service_uri: 'at://did:plc:bus42/com.dina.service.profile',
+        }),
+      ).toContain('com.dina.service.profile');
+    });
   });
 
   describe('validateServiceResponseBody', () => {

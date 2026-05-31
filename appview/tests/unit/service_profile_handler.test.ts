@@ -70,6 +70,13 @@ function stubCtx(captured: Captured, opts: { priorCreatedAt?: Date | null } = {}
   }
   return {
     db: {
+      // Top-level delete (NOT inside a transaction) — used by the
+      // unpublish path (isDiscoverable=false removes any existing row).
+      delete: (table: unknown) => ({
+        where: async () => {
+          captured.events.push(`db:delete:${table === services ? 'services' : 'unknown'}`)
+        },
+      }),
       transaction: async (fn: (tx: unknown) => Promise<void>) => {
         captured.txOpened = true
         captured.events.push('tx:begin')
@@ -205,12 +212,17 @@ describe('serviceProfileHandler.handleCreate', () => {
     expect(Math.abs(c.getTime() - Date.now())).toBeLessThan(5000)
   })
 
-  it('skips records with isDiscoverable=false (no transaction opened)', async () => {
+  it('UNPUBLISHES on isDiscoverable=false — deletes any existing row, no upsert tx', async () => {
+    // Regression: a bare `return` left the prior discoverable row alive, so a
+    // provider re-publishing as non-discoverable still surfaced in search.
+    // The handler must delete the existing row for this uri (idempotent) and
+    // must NOT open the upsert transaction.
     const captured = freshCaptured()
     const ctx = stubCtx(captured)
     await serviceProfileHandler.handleCreate(ctx, op({ ...validProfile(), isDiscoverable: false }))
     expect(captured.txOpened).toBe(false)
-    expect(captured.events).toEqual([])
+    // The unpublish delete ran (top-level, not inside a tx).
+    expect(captured.events).toEqual(['db:delete:services'])
   })
 
   it('skips records whose responsePolicy values are outside the supported set', async () => {

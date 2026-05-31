@@ -1048,3 +1048,55 @@ describe('ServiceHandler.executeAndRespond', () => {
     ).rejects.toThrow(/incomplete payload/);
   });
 });
+
+describe('ServiceHandler — service_uri threading (P1, multi-listing per DID)', () => {
+  const LISTING = 'at://did:plc:provider/com.dina.service.profile/store-2';
+
+  it('auto-path delegation payload carries service_uri', async () => {
+    const core = stubCore();
+    const handler = makeHandler({ core, uuid: 'uuid-uri-1' });
+    await handler.handleQuery(REQUESTER, { ...validQuery, service_uri: LISTING });
+    const payload = JSON.parse(core.createCalls[0].payload as string);
+    expect(payload.service_uri).toBe(LISTING);
+  });
+
+  it('auto-path omits service_uri when the requester sent none', async () => {
+    const core = stubCore();
+    const handler = makeHandler({ core, uuid: 'uuid-uri-2' });
+    await handler.handleQuery(REQUESTER, validQuery);
+    const payload = JSON.parse(core.createCalls[0].payload as string);
+    expect(payload.service_uri).toBeUndefined();
+  });
+
+  it('approval-path payload carries service_uri so it survives to the delegation', async () => {
+    const core = stubCore();
+    const handler = makeHandler({ core, uuid: 'uuid-uri-3' });
+    await handler.handleQuery(REQUESTER, {
+      query_id: 'q-uri-review',
+      capability: 'route_info', // responsePolicy=review
+      params: { route_id: 'r-1' },
+      ttl_seconds: 60,
+      service_uri: LISTING,
+    });
+    const call = core.createCalls[0];
+    expect(call.kind).toBe('approval');
+    const payload = JSON.parse(call.payload as string);
+    expect(payload.service_uri).toBe(LISTING);
+  });
+
+  it('executeAndRespond forwards service_uri from the approval payload into the delegation', async () => {
+    const core = stubCore();
+    const handler = makeHandler({ core, uuid: 'svc-uri-approval' });
+    await handler.executeAndRespond('approval-task-uri', {
+      from_did: REQUESTER,
+      query_id: 'q-uri-exec',
+      capability: 'route_info',
+      params: { route_id: 'r-1' },
+      ttl_seconds: 60,
+      mcp_tool: 'get_route',
+      service_uri: LISTING,
+    });
+    const payload = JSON.parse(core.createCalls[0].payload as string);
+    expect(payload.service_uri).toBe(LISTING);
+  });
+});

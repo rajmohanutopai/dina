@@ -123,6 +123,50 @@ describe('validateServiceQueryBody (task 1.20)', () => {
       'service.query: schema_hash must be a string when present',
     );
   });
+
+  it('validates service_uri type when present', () => {
+    expect(validateServiceQueryBody({ ...validBody, service_uri: 42 })).toBe(
+      'service.query: service_uri must be a string when present',
+    );
+  });
+
+  it('accepts a well-formed listing service_uri (P2: bound listing URI)', () => {
+    expect(
+      validateServiceQueryBody({
+        ...validBody,
+        service_uri: 'at://did:plc:bus42/com.dina.service.profile/store-2',
+      }),
+    ).toBeNull();
+    // Empty string = "absent" → accepted.
+    expect(validateServiceQueryBody({ ...validBody, service_uri: '' })).toBeNull();
+    // Absent entirely → accepted.
+    expect(validateServiceQueryBody(validBody)).toBeNull();
+  });
+
+  it('rejects a structurally-malformed service_uri (P2)', () => {
+    const expected =
+      'service.query: service_uri must be an at://<did>/com.dina.service.profile/<rkey> URI';
+    // Wrong scheme.
+    expect(validateServiceQueryBody({ ...validBody, service_uri: 'https://x/y/z' })).toBe(
+      expected,
+    );
+    // Authority not a DID.
+    expect(validateServiceQueryBody({ ...validBody, service_uri: 'at://x/y/z' })).toBe(expected);
+    // Wrong collection.
+    expect(
+      validateServiceQueryBody({
+        ...validBody,
+        service_uri: 'at://did:plc:bus42/app.bsky.feed.post/store-2',
+      }),
+    ).toBe(expected);
+    // Missing rkey (2 segments).
+    expect(
+      validateServiceQueryBody({
+        ...validBody,
+        service_uri: 'at://did:plc:bus42/com.dina.service.profile',
+      }),
+    ).toBe(expected);
+  });
 });
 
 describe('validateServiceResponseBody (task 1.20)', () => {

@@ -25,7 +25,8 @@ import {
 } from '@dina/brain';
 import {
   allCanonicalCapabilities,
-  resolveCanonicalCapability,
+  resolveSearchableCapability,
+  isCustomCapability,
 } from '@dina/protocol';
 
 export interface AppViewStubOptions {
@@ -84,21 +85,21 @@ export class AppViewStub {
       throw new Error('AppViewStub: capability is required');
     }
     // Mirror real AppView (service-search.ts) EXACTLY:
-    //  1. The query capability is resolved to canonical; an UNKNOWN /
-    //     out-of-registry capability resolves to null → empty result.
-    //     The index holds only canonical names, so a non-canonical query
-    //     can never match — the stub must drop it too, or demos pass for
-    //     custom capabilities production AppView will never discover.
-    //  2. Profiles are matched on the canonical name (the ingester
-    //     canonicalizes on write), so a `bus_eta` profile is found by a
-    //     canonical `eta_query` query and vice versa.
-    const wantCanonical = resolveCanonicalCapability(params.capability);
+    //  1. The query capability is resolved via the OPEN vocabulary: a registry
+    //     alias folds to its canonical name AND a well-formed namespaced custom
+    //     capability (com.acme.widget_price) resolves to itself, so the stub
+    //     discovers exactly what production AppView would. An unknown (flat,
+    //     non-registry) capability resolves to null → empty result.
+    //  2. Profiles are matched on the resolved name (the ingester canonicalizes
+    //     on write), so a `bus_eta` profile is found by a canonical `eta_query`
+    //     query and vice versa, and a custom profile by its own namespaced name.
+    const wantCanonical = resolveSearchableCapability(params.capability);
     if (wantCanonical === null) return [];
     const matches: ServiceProfile[] = [];
     for (const profile of this.profiles.values()) {
       if (!profile.isDiscoverable) continue;
       const capMatch = profile.capabilities.some(
-        (c) => resolveCanonicalCapability(c) === wantCanonical,
+        (c) => resolveSearchableCapability(c) === wantCanonical,
       );
       if (!capMatch) continue;
       if (params.q !== undefined && params.q !== '') {
@@ -140,14 +141,30 @@ export class AppViewStub {
    */
   async searchCapabilities(_params: SearchCapabilitiesParams): Promise<CapabilityCandidate[]> {
     const covered = new Set<string>();
+    // Best human-readable description per CUSTOM capability key, mirroring
+    // production search-capabilities.ts: provider's per-capability schema
+    // description → the service description → (fall back to the raw name).
+    const customDescriptions = new Map<string, string>();
     for (const profile of this.profiles.values()) {
       if (!profile.isDiscoverable) continue;
       for (const raw of profile.capabilities) {
-        const canonical = resolveCanonicalCapability(raw);
-        if (canonical !== null) covered.add(canonical);
+        const canonical = resolveSearchableCapability(raw);
+        if (canonical === null) continue;
+        covered.add(canonical);
+        if (isCustomCapability(canonical) && !customDescriptions.has(canonical)) {
+          const schemaDesc = profile.capabilitySchemas?.[canonical]?.description;
+          const best =
+            typeof schemaDesc === 'string' && schemaDesc.trim() !== ''
+              ? schemaDesc.trim()
+              : typeof profile.description === 'string' && profile.description.trim() !== ''
+                ? profile.description.trim()
+                : undefined;
+          if (best !== undefined) customDescriptions.set(canonical, best);
+        }
       }
     }
     const out: CapabilityCandidate[] = [];
+    // Registry capabilities first (stable registry-defined description/domain).
     for (const entry of allCanonicalCapabilities()) {
       if (covered.has(entry.canonical)) {
         out.push({
@@ -156,6 +173,16 @@ export class AppViewStub {
           domain: entry.domain,
         });
       }
+    }
+    // Then namespaced custom capabilities — production AppView surfaces these
+    // too, so the stub must as well (description falls back to the raw name).
+    for (const name of covered) {
+      if (!isCustomCapability(name)) continue;
+      out.push({
+        canonical: name,
+        description: customDescriptions.get(name) ?? name,
+        domain: 'custom',
+      });
     }
     return out;
   }

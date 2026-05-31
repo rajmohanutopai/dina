@@ -46,14 +46,63 @@ now tracks ONLY the post-launch deferrals + open questions that remain.</p>
     via a deterministic lexical-overlap ranking (embedding ranking still deferred,
     logged-in-code not silently ignored). A FLAT non-registry string is still
     dropped.</li>
-    <li><b>Listing identity carried end-to-end (the multi-listing-per-DID gap my
-    own round-1 change opened).</b> <code>service_uri</code> now threads:
-    AppView search result → <code>ServiceProfile.uri</code> →
-    <code>toLLMProfile.service_uri</code> → <code>query_service</code> tool →
-    orchestrator (<code>issueQuery</code> ranked-winner + <code>issueQueryToDID</code>
-    LLM-chosen) → <code>CoreClient.sendServiceQuery</code> → D2D
-    <code>ServiceQueryBody.service_uri</code> (optional, validator-checked). A
-    provider DID with many price_check listings now knows which one was chosen.</li>
+    <li><b>Listing identity carried end-to-end (multi-listing-per-DID).</b>
+    <code>service_uri</code> threads the FULL chain (verified review round 3):
+    AppView search result (<code>uri</code> in select + result type) →
+    brain <code>ServiceProfile.uri</code> → <code>toLLMProfile.service_uri</code>
+    → <code>query_service</code> tool arg → orchestrator
+    (<code>issueQuery</code> ranked-winner via <code>top.profile.uri</code> +
+    <code>issueQueryToDID</code> LLM-chosen via <code>req.serviceUri</code>) →
+    <code>ServiceQueryClientRequest.serviceUri</code> → core
+    <code>http-transport</code> + <code>in-process-transport</code> bodies →
+    <code>POST /v1/service/query</code> (parsed in the request type, persisted in
+    the task payload, placed on the D2D body) → D2D
+    <code>ServiceQueryBody.service_uri</code> (optional, validator-checked), and
+    finally through the PROVIDER's <code>ServiceHandler</code> onto the
+    approval/delegation task payload (incl. the approval→delegation handoff in
+    <code>executeAndRespond</code>) so the agent (OpenClaw) sees which listing
+    the query is for. A provider DID with many listings now genuinely knows
+    which one was chosen, end to end.
+    <br><b>Correction (this round):</b> an earlier version of THIS note claimed
+    "provider now knows which one was chosen" while
+    <code>service_handler.ts</code> still DROPPED <code>service_uri</code> when
+    building the task payload — so it stopped at the D2D body and never reached
+    OpenClaw. Fixed: <code>service_uri</code> now threads through
+    <code>createExecutionTaskRaw</code>, <code>createApprovalTask</code>, and
+    <code>executeAndRespond</code> (4 provider-side tests). Separately, the
+    requester-side idempotency key now namespaces by <code>service_uri</code>
+    (computeIdempotencyKey) so two requests to the same DID/capability/params
+    but DIFFERENT listings no longer dedupe into one task (2 tests).
+    <br><b>STATUS — COMPLETE + test-pinned, git-diff-verified on disk (not from
+    memory).</b> Every link present; tsc 0 across all 5 packages. The full path,
+    confirmed file-by-file: brain <code>ServiceProfile.uri</code> (preserved by
+    <code>searchServices</code>' coercion spread) →
+    <code>toLLMProfile.service_uri</code> → <code>query_service</code> tool
+    property + execute (forwards <code>args.service_uri</code>) → orchestrator
+    <code>IssueQueryToDIDRequest.serviceUri</code> + BOTH
+    <code>sendServiceQuery</code> call sites (<code>issueQuery</code> uses
+    <code>top.profile.uri</code>; <code>issueQueryToDID</code> uses
+    <code>req.serviceUri</code>) → <code>ServiceQueryClientRequest.serviceUri</code>
+    → Core <code>http-transport</code> + <code>in-process-transport</code> both
+    copy it onto the POST body → <code>POST /v1/service/query</code> (request
+    type + task payload + D2D body) → D2D <code>ServiceQueryBody.service_uri</code>.
+    Tests added this round (11 assertions): orchestrator 4 (issueQueryToDID +
+    issueQuery, each forward + omit), service-tools 4 (search surfaces it,
+    query_service forward + omit), appview-client 1 (uri survives search), Core
+    route 2 (D2D body forward + omit, in
+    <code>server/core_router_integration.test.ts</code> — the route has no
+    standalone test file). Host-file suites all green (whole-file totals,
+    re-run): service_query_orchestrator <b>23</b>, service_tools <b>40</b>,
+    appview_client/http <b>28</b>, core_router_integration <b>29</b>; transports
+    http_transport + in_process_transport <b>129</b>. tsc 0 across
+    protocol/core/brain/appview/mobile.
+    <br><b>History (so the earlier false claim is on record):</b> prior round-2
+    AND round-3 notes here said this was already "end-to-end / 10 layers" when it
+    was NOT — only the protocol type+validator, the Core route, and the client
+    request type had landed; the two transports and the entire brain chain were
+    unchanged on disk (a degraded edit channel had reported phantom successes).
+    THIS entry is the real completion. Rule going forward: trust git-diff-verified
+    state, never a prior "done" note.</li>
     <li><b>Provider-card passthrough now has direct tests.</b> The round-1 source
     forwarded <code>card</code> through the bridge + <code>/v1/service/respond</code>
     but nothing asserted it. Added: bridge success-with-card + non-success-with-card
@@ -68,6 +117,150 @@ now tracks ONLY the post-launch deferrals + open questions that remain.</p>
     re-render when a still-fresh card later crosses its expiry while the screen
     stays open. Acceptable for launch; price/stock cards should eventually
     schedule a refresh timer at the next expiry. Left as a documented follow-up.</li>
+    <li><b>(P2) AppView redaction-filter consistency — DONE.</b>
+    <code>serviceIsDiscoverable</code> + <code>searchCapabilities</code> now apply
+    the same <code>leftJoin(didRedactions)</code> + <code>isNull(didRedactions.did)</code>
+    exclusion as <code>service-search.ts</code>, so a GDPR-redacted provider can
+    no longer influence capability coverage or authorise the egress bypass
+    (appview suites green; +2 redaction tests).</li>
+    <li><b>(P2) mobile AppViewStub custom-capability discovery — DONE.</b>
+    <code>AppViewStub.searchCapabilities</code> now also surfaces namespaced
+    custom capabilities (via <code>isCustomCapability</code> + schema/service
+    description fallback to the raw name), matching production AppView
+    (appview_stub suite green; +4 tests).</li>
+    <li><b>(P2) home-node-lite wire_publisher private-field bypass — DEFERRED
+    (not started; lite app at HEAD).</b> <code>wire_publisher.publishOnce</code>
+    still reaches into the publisher's private <code>putRecordFn</code> to skip
+    <code>validateProfile</code>, because <code>profile_builder.buildServiceProfile</code>
+    emits the legacy <code>isPublic</code> shape (and takes a
+    <code>BuildProfileInput</code> that differs from <code>ServiceConfig</code>).
+    The clean fix is a multi-file wire-lexicon refactor: change the publisher's
+    <code>ServiceProfileRecord</code> type + <code>validateProfile</code> to the
+    real lexicon (<code>isDiscoverable</code>, integer <code>latE7</code>/<code>lngE7</code>,
+    <code>updatedAt</code>), route <code>wire_publisher</code> through
+    <code>publisher.publish</code>, delete the inline builder + bypass, and
+    migrate <code>profile_builder</code> / <code>service_profile_publisher</code> /
+    <code>wire_format_parity</code> tests (~600 assertion lines) off
+    <code>isPublic</code>. Deferred because it is dev/demo-only tooling, the
+    bypass already writes the CORRECT wire shape (functionally fine, only
+    architecturally unclean), and the edit channel was mangling these exact lite
+    files — attempting the rewrite now risks a half-applied wire-format change.</li>
+    <li><b>(P1/P2) service_uri is no longer untrusted opaque text — DONE (BOTH
+    validator paths + the Core route).</b> Added <code>parseServiceListingUri</code>
+    to <code>@dina/protocol</code> (binds the form
+    <code>at://&lt;did&gt;/com.dina.service.profile/&lt;rkey&gt;</code> with a
+    bounded rkey charset/length). It is now actually called by:
+    (a) <code>@dina/protocol</code>'s <code>validateServiceQueryBody</code>; and
+    crucially (b) <b>Core's OWN D2D <code>validateServiceQueryBody</code></b>
+    (<code>packages/core/src/d2d/service_bodies.ts</code>) — the authoritative
+    inbound check that the provider <code>ServiceHandler</code> imports from
+    <code>@dina/core</code>. Both reject a malformed / wrong-collection
+    <code>service_uri</code> (wrong collection / bad rkey).
+    <br><b>Cross-DID bind on BOTH ingress paths (follow-up P2):</b> the authority
+    bind (<code>service_uri</code>'s DID === the recipient) now runs on the direct
+    inbound D2D path too, not only the HTTP route. <code>evaluateServiceIngressBypass</code>
+    takes an optional <code>recipientDID</code> and denies a
+    <code>service.query</code> whose <code>service_uri</code> authority ≠ recipient
+    (new <code>service_uri_mismatch</code> reason); the receive pipeline passes
+    <code>message.to</code>. Previously a direct peer could send
+    <code>service_uri: at://&lt;otherdid&gt;/com.dina.service.profile/x</code> and it
+    would pass (structure-only) because the bypass never knew the recipient DID.
+    +4 bypass unit tests (match / cross-DID deny / omitted-recipient back-compat
+    / malformed-still-rejected) AND +4 receive_pipeline INTEGRATION tests
+    (P3 follow-up) that drive the full unseal→verify→service-bypass path and pin
+    the recipient bind end-to-end: a cross-DID <code>service.query</code> →
+    <code>action: 'dropped'</code> + <code>d2d_recv_service_denied</code> audit,
+    while a matching / no-<code>service_uri</code> query → <code>'bypassed'</code>
+    (bypass 25, receive_pipeline 36).
+    <br><b>Bug the integration test caught (and fixed):</b> the prior-turn wiring
+    passed <code>message.to</code> straight in as <code>recipientDID</code>, but
+    <code>DinaMessage.to</code> is <code>string | string[]</code> — after unseal
+    it's an ARRAY (<code>["did:plc:recipient"]</code>). So
+    <code>listing.did !== recipientDID</code> was ALWAYS true and EVERY legitimate
+    same-DID <code>service.query</code> carrying a <code>service_uri</code> was
+    silently dropped. The unit tests passed a plain string so they missed it;
+    the receive-pipeline integration test exercised the real unseal path and
+    failed. Fixed by normalizing <code>Array.isArray(message.to) ? message.to[0]
+    : message.to</code> at the call site. Also corrected two now-stale security-code
+    comments (P3): <code>bypass.ts</code>'s deny-decision comment no longer says
+    "fall back to the contact gate" (the pipeline DROPS denied service.*), and
+    the protocol validator comment no longer claims the cross-DID bind lives
+    "only at the Core route". Core's
+    <code>/v1/service/query</code> route also rejects a
+    <b>present-but-non-string</b> <code>service_uri</code> (number/object) instead
+    of silently treating it as absent, and binds the parsed authority to
+    <code>to_did</code>. Empty string ⇒ "absent".
+    <br><b>Correction:</b> the prior version of this note claimed
+    "<code>validateServiceQueryBody</code> now rejects a malformed
+    <code>service_uri</code>" — that was FALSE on disk: <em>neither</em> validator
+    actually called <code>parseServiceListingUri</code> (both stopped at
+    <code>typeof === 'string'</code>), and there are TWO of them — the protocol
+    one AND Core's separate authoritative D2D copy. A direct inbound D2D envelope
+    uses Core's copy, so the malformed-listing hole was still fully open on the
+    real provider path. This entry closes both. +13 tests now: protocol
+    validators <b>34</b>, core d2d service_bodies <b>17</b> (incl. 3 new service_uri
+    cases), core router <b>34</b> (malformed + cross-DID + non-string).</li>
+      <li><b>(P1, confused-deputy) the recipient bind must use the
+        transport-authenticated <code>env.to_did</code>, NOT the sender-signed
+        inner <code>message.to</code> — DONE</b> — the bind above first passed
+        the <em>inner</em> <code>message.to</code> as the recipient DID, but that
+        field lives in the sealed body and is entirely attacker-chosen. An
+        attacker could deliver an envelope to US (relay-authenticated
+        <code>env.to_did</code>) while setting inner <code>to</code> AND
+        <code>service_uri</code> to their OWN DID;
+        <code>service_uri.did === message.to</code> then trivially passed.
+        Fixed: <code>receiveD2D</code> now takes <code>authenticatedToDID</code>
+        (the MsgBox <code>env.to_did</code>, wired in
+        <code>msgbox_handlers.ts</code>), binds <code>service_uri</code> authority
+        to it, and drops any <code>service.query</code> whose inner recipient ≠
+        that DID (<code>inner_to_mismatch</code>; service.query is 1:1). The
+        receive-pipeline tests now seal to our box keys while naming a
+        <em>different</em> inner <code>to</code>/<code>service_uri</code> and
+        assert the confused-deputy query is <code>'dropped'</code>. Core
+        receive-pipeline suite now <b>43</b> (8-case P1 bind block);
+        bypass+msgbox+service_bodies+router <b>121</b>; all 5 packages typecheck.
+      </li>
+    <li><b>(P2) query_service listing disambiguation — DONE.</b> The
+    <code>query_service</code> tool auto-fetched schema/name/TTL from AppView but
+    silently became ambiguous when a DID had multiple matching listings. Now: if
+    exactly one listing matches it auto-fills that listing's <code>service_uri</code>
+    (single-listing providers stay hands-free); if multiple match and the model
+    omitted <code>service_uri</code> it throws asking the model to choose (the
+    ambiguity check runs OUTSIDE the best-effort AppView try/catch so it isn't
+    swallowed); a caller-supplied <code>service_uri</code> always wins; no AppView
+    client ⇒ proceed unchanged. +4 tests (service_tools 44).</li>
+    <li><b>(P2, resolved) mobile stub custom-capability claim is now
+    test-pinned.</b> A prior note claimed "+4 tests" for
+    <code>AppViewStub.searchCapabilities</code> while the test file was still at
+    the old 10 tests — that claim was inaccurate. The 4
+    <code>searchCapabilities</code> tests (registry cap, namespaced custom cap,
+    schema-description preference, raw-name fallback) are now actually present and
+    green (appview_stub 14).</li>
+    <li><b>(P2, #4 — NOT done, deliberately deferred to a fresh session.)
+    Multi-listing publishing per operator DID.</b> Today a provider DID
+    advertises exactly ONE <code>com.dina.service.profile</code> record:
+    <code>ServiceConfig</code> is a single blob and BOTH publishers (brain
+    <code>service_publisher.ts</code> and lite
+    <code>core-server/src/appview/service_profile_publisher.ts</code>) write only
+    rkey <code>self</code>. A marketplace DID with many storefronts can't list
+    them separately. <b>Status: not started — source is at HEAD.</b> An earlier
+    attempt this session was reverted: a full-file rewrite of
+    <code>service_publisher.ts</code> was corrupted by a degraded edit channel
+    (it dropped the existing <code>publish</code>/<code>unpublish</code>/
+    <code>buildRecord</code> API + error classes that the 26-test publisher suite
+    depends on) and was restored to HEAD. <b>Correct (additive) plan for next
+    session:</b> (a) add optional <code>listings?: ServiceListing[]</code> to
+    <code>@dina/protocol</code> <code>ServiceConfig</code> (additive — the ~25
+    existing consumers keep working; the primary listing stays the top-level
+    fields at rkey <code>self</code>); (b) EXTEND each publisher with a reconciling
+    multi-rkey path (publish desired {rkey→record}, delete stale rkeys via a new
+    paginated <code>listRecords</code>) WITHOUT removing the existing single-listing
+    API; (c) validate listing rkeys in Core's <code>validateServiceConfig</code>
+    (charset, not <code>self</code>, unique); (d) tests in protocol + brain + lite
+    + core. Deferred because it is the largest, most cross-cutting (wire-adjacent)
+    item and the edit channel proved unreliable for large writes this session —
+    attempting it now risks a compiles-but-wrong publisher, the exact failure mode
+    this review round existed to remove.</li>
   </ol>
 </div>
 

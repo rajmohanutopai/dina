@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
-import { services } from '@/db/schema/index.js'
+import { services, didRedactions } from '@/db/schema/index.js'
 import { allCanonicalCapabilities, isCustomCapability } from '@/shared/capability-registry.js'
 
 /**
@@ -59,16 +59,52 @@ export async function searchCapabilities(
   // Which index keys currently have ≥1 discoverable, non-tombstoned provider?
   // The index stores canonical names for registry capabilities AND normalized
   // names for namespaced custom capabilities (the handler admits both).
+  // Unnest each service's capabilities; carry the service description +
+  // per-capability schemas alongside so we can give custom capabilities REAL
+  // descriptive text (not just their raw namespaced name) for intent matching.
   const rows = await db
     .select({
       cap: sql<string>`jsonb_array_elements_text(${services.capabilitiesJson}::jsonb)`,
+      description: services.description,
+      capabilitySchemasJson: services.capabilitySchemasJson,
     })
     .from(services)
-    .where(and(eq(services.isDiscoverable, true), isNull(services.tombstonedAt)))
+    // GDPR-shaped: exclude any operator with a `did_redactions` row, mirroring
+    // service-search.ts + service-is-discoverable.ts. Without this a redacted
+    // provider still influences capability coverage (the LLM would see a
+    // capability as "available" backed only by a taken-down provider).
+    .leftJoin(didRedactions, eq(services.operatorDid, didRedactions.did))
+    .where(
+      and(
+        eq(services.isDiscoverable, true),
+        isNull(services.tombstonedAt),
+        isNull(didRedactions.did),
+      ),
+    )
 
   const covered = new Set<string>()
+  // Best human-readable description per CUSTOM capability key. Preference:
+  // the provider's per-capability schema description → the service-level
+  // description → (fall back to the raw name later). First non-empty wins so
+  // the result is deterministic regardless of row order.
+  const customDescriptions = new Map<string, string>()
   for (const row of rows) {
-    if (typeof row.cap === 'string' && row.cap.length > 0) covered.add(row.cap)
+    const cap = row.cap
+    if (typeof cap !== 'string' || cap.length === 0) continue
+    covered.add(cap)
+    if (customDescriptions.has(cap)) continue
+    const schemas = row.capabilitySchemasJson as
+      | Record<string, { description?: unknown }>
+      | null
+      | undefined
+    const schemaDesc = schemas?.[cap]?.description
+    const desc =
+      typeof schemaDesc === 'string' && schemaDesc.trim() !== ''
+        ? schemaDesc.trim()
+        : typeof row.description === 'string' && row.description.trim() !== ''
+          ? row.description.trim()
+          : ''
+    if (desc !== '') customDescriptions.set(cap, desc)
   }
 
   // Registry capabilities first, in stable registry order, with curated copy.
@@ -93,7 +129,12 @@ export async function searchCapabilities(
     .filter((c) => !registryNames.has(c) && isCustomCapability(c))
     .sort()
   for (const name of customNames) {
-    capabilities.push({ canonical: name, description: name, domain: 'custom' })
+    // Use the provider's published description so the LLM can match this
+    // custom capability from natural language — not just when the query
+    // happens to share words with the raw namespaced name. Falls back to the
+    // name when the provider published no description.
+    const description = customDescriptions.get(name) ?? name
+    capabilities.push({ canonical: name, description, domain: 'custom' })
   }
 
   // Intent ranking: rank candidates by lexical token-overlap against each

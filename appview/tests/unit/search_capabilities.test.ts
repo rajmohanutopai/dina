@@ -14,11 +14,21 @@ import {
  * Stub the simple `select().from().where()` chain the handler uses,
  * returning the given unnested-capability rows (each `{ cap }`).
  */
-function stubDb(rows: Array<{ cap: string }>): DrizzleDB {
+function stubDb(
+  rows: Array<{
+    cap: string
+    description?: string | null
+    capabilitySchemasJson?: Record<string, unknown> | null
+  }>,
+): DrizzleDB {
+  // The handler chains `.leftJoin(didRedactions).where(...)` (GDPR redaction
+  // exclusion); resolve both the joined + unjoined shapes to `rows`.
+  const whereStep = { where: async () => rows }
   return {
     select: () => ({
       from: () => ({
-        where: async () => rows,
+        leftJoin: () => whereStep,
+        where: whereStep.where,
       }),
     }),
   } as unknown as DrizzleDB
@@ -108,5 +118,73 @@ describe('searchCapabilities — registry ∩ coverage', () => {
     const r = await searchCapabilities(db, { intent: 'zzz nomatch qqq' })
     // stable: registry capability stays before the custom one.
     expect(r.capabilities.map((c) => c.canonical)).toEqual(['eta_query', 'com.acme.widget_price'])
+  })
+
+  it("uses the provider's per-capability schema description for a custom capability (#5)", async () => {
+    // The custom cap carries a published schema description; that becomes its
+    // discovery description (NOT the raw namespaced name), so the LLM can
+    // match it from natural language.
+    const db = stubDb([
+      {
+        cap: 'com.acme.widget_price',
+        description: 'Acme storefront',
+        capabilitySchemasJson: {
+          'com.acme.widget_price': { description: 'Check the price of a widget at Acme' },
+        },
+      },
+    ])
+    const r = await searchCapabilities(db, { intent: 'anything' })
+    const custom = r.capabilities.find((c) => c.canonical === 'com.acme.widget_price')
+    expect(custom?.description).toBe('Check the price of a widget at Acme')
+  })
+
+  it('falls back to the service description for a custom capability with no schema desc (#5)', async () => {
+    const db = stubDb([
+      {
+        cap: 'com.acme.widget_price',
+        description: 'Acme storefront — widgets and gadgets',
+        capabilitySchemasJson: null,
+      },
+    ])
+    const r = await searchCapabilities(db, { intent: 'widget' })
+    const custom = r.capabilities.find((c) => c.canonical === 'com.acme.widget_price')
+    expect(custom?.description).toBe('Acme storefront — widgets and gadgets')
+    // and it ranks first because the intent token "widget" overlaps the desc
+    expect(r.capabilities[0].canonical).toBe('com.acme.widget_price')
+  })
+
+  it('falls back to the raw name when a custom capability has no description at all (#5)', async () => {
+    const db = stubDb([{ cap: 'com.acme.widget_price' }])
+    const r = await searchCapabilities(db, { intent: 'anything' })
+    const custom = r.capabilities.find((c) => c.canonical === 'com.acme.widget_price')
+    expect(custom?.description).toBe('com.acme.widget_price')
+  })
+
+  it('WHERE excludes GDPR-redacted operators (references the did_redactions join column)', async () => {
+    // P2: a redacted provider must not influence capability coverage. The
+    // `isNull(didRedactions.did)` term references the redactions table's `did`
+    // column — distinct from services' `operator_did`.
+    let captured: unknown
+    const whereStep = {
+      where: async (pred: unknown) => {
+        captured = pred
+        return [] as Array<{ cap: string }>
+      },
+    }
+    const db = {
+      select: () => ({
+        from: () => ({
+          leftJoin: () => whereStep,
+          where: whereStep.where,
+        }),
+      }),
+    } as unknown as DrizzleDB
+    await searchCapabilities(db, { intent: 'anything' })
+    const cols = JSON.stringify(captured, (_k, v) =>
+      v && typeof v === 'object' && typeof (v as { name?: unknown }).name === 'string'
+        ? `col:${(v as { name: string }).name}`
+        : v,
+    )
+    expect(cols).toContain('col:did')
   })
 })

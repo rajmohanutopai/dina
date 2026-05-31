@@ -305,6 +305,12 @@ export interface LLMProfile {
    *  TTL). Only present when the provider published schemas. */
   capability_schemas?: Record<string, LLMCapabilitySchemaBlock>;
   distance_km?: number;
+  /**
+   * AT-URI of THIS listing. A provider DID can publish many listings; the LLM
+   * passes this back to `query_service` as `service_uri` so the chosen listing
+   * is carried to the provider (multi-listing-per-DID disambiguation).
+   */
+  service_uri?: string;
 }
 
 function toLLMProfile(p: ServiceProfile): LLMProfile {
@@ -331,6 +337,8 @@ function toLLMProfile(p: ServiceProfile): LLMProfile {
     response_policy: p.responsePolicy,
     capability_schemas: Object.keys(capabilitySchemas).length > 0 ? capabilitySchemas : undefined,
     distance_km: p.distanceKm,
+    // Carry the listing uri so the LLM can pass it back as service_uri.
+    service_uri: typeof p.uri === 'string' && p.uri !== '' ? p.uri : undefined,
   };
 }
 
@@ -406,6 +414,11 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
           type: 'number',
           description: 'Optional TTL override. Default comes from the capability registry.',
         },
+        service_uri: {
+          type: 'string',
+          description:
+            "The chosen listing's service_uri from search_provider_services. Pass it when a provider has multiple listings so the query reaches the exact one you picked. Optional.",
+        },
       },
       required: ['operator_did', 'capability', 'params'],
     },
@@ -443,6 +456,17 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
       let serviceName = typeof args.service_name === 'string' ? args.service_name : undefined;
       let ttl = typeof args.ttl_seconds === 'number' ? args.ttl_seconds : undefined;
       let paramsSchema: RequesterAutofillSchema | undefined;
+      // P2: listing disambiguation inputs. `serviceUri` starts from the
+      // caller's arg; `matchedProfiles` holds every listing this DID advertises
+      // for the capability (populated by the AppView probe below). When the
+      // caller omitted service_uri we auto-fill a single match or refuse an
+      // ambiguous multi-listing one — AFTER the best-effort probe so the
+      // ambiguity error isn't swallowed by its try/catch.
+      let serviceUri =
+        typeof args.service_uri === 'string' && args.service_uri !== ''
+          ? args.service_uri
+          : undefined;
+      let matchedProfiles: ServiceProfile[] = [];
 
       // WM-BRAIN-06d: if the LLM didn't route via search_provider_services
       // first (intent-classifier SHORTCUT, cached DID, whatever), the
@@ -459,7 +483,8 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
       if (options.appViewClient !== undefined) {
         try {
           const profiles = await options.appViewClient.searchServices({ capability });
-          const match = profiles.find((p) => p.did === operatorDID);
+          matchedProfiles = profiles.filter((p) => p.did === operatorDID);
+          const match = matchedProfiles[0];
           if (match !== undefined) {
             // Resolve alias↔canonical: AppView returns canonical-keyed
             // schemas, but `capability` may be the requester's alias.
@@ -515,6 +540,27 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
         }
       }
 
+      // P2: listing disambiguation. When the model omitted service_uri and this
+      // DID advertises MULTIPLE listings for the capability, refuse + tell it to
+      // choose (silent ambiguity would send the query to whichever listing the
+      // index happened to order first). When exactly one listing matches,
+      // auto-fill its uri so a single-listing provider still works hands-free.
+      // With no AppView client (no listing data) we can't disambiguate — proceed
+      // unchanged so the cached-DID / shortcut paths keep working.
+      if (serviceUri === undefined && matchedProfiles.length > 1) {
+        const uris = matchedProfiles
+          .map((p) => p.uri)
+          .filter((u): u is string => typeof u === 'string' && u !== '');
+        throw new Error(
+          `query_service: ${operatorDID} advertises multiple listings for "${capability}"; ` +
+            `pass service_uri to choose one${uris.length > 0 ? ` of: ${uris.join(', ')}` : ''}`,
+        );
+      }
+      if (serviceUri === undefined && matchedProfiles.length === 1) {
+        const onlyUri = matchedProfiles[0]?.uri;
+        if (typeof onlyUri === 'string' && onlyUri !== '') serviceUri = onlyUri;
+      }
+
       // Issue #7: dispatch to the EXACT DID the LLM chose — after the
       // optional schema auto-fetch, not before. No AppView-driven DID
       // substitution, no ranker substitution.
@@ -529,6 +575,9 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
         schemaHash,
         serviceName,
         originChannel: 'ask',
+        // #1: forward the LLM-chosen listing uri so a multi-listing provider
+        // DID knows which one was selected. Auto-filled / validated above.
+        serviceUri,
       });
       return {
         task_id: result.taskId,

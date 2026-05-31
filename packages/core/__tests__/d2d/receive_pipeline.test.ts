@@ -401,4 +401,148 @@ describe('D2D Receive Pipeline', () => {
       expect(result.stagedBody).toBeUndefined();
     });
   });
+
+  describe('service.query ingress — recipient & service_uri binds (P1)', () => {
+    // SECURITY: the trusted recipient is the TRANSPORT-authenticated delivery
+    // DID (MsgBox env.to_did, threaded in as `authenticatedToDID`), NOT the
+    // sender-signed inner `message.to`. `buildSealed` seals to OUR box keys
+    // (`recipientPub`) regardless of the inner `to` field — so an attacker can
+    // deliver an envelope to US while naming a different inner `to`/service_uri
+    // (the confused-deputy attack). These tests pin that the bind authority is
+    // `authenticatedToDID`, never the inner body.
+    const RECIPIENT = 'did:plc:recipient';
+    const ATTACKER = 'did:plc:attacker';
+
+    function svcQuery(
+      opts: { serviceUri?: string; innerTo?: string | string[]; id?: string } = {},
+    ) {
+      const body: Record<string, unknown> = {
+        query_id: 'q-1',
+        capability: 'eta_query',
+        params: { route: '42' },
+        ttl_seconds: 60,
+      };
+      if (opts.serviceUri !== undefined) body.service_uri = opts.serviceUri;
+      // `DinaMessage.to` is typed `string` here, but the wire field is a
+      // recipient LIST and the receive pipeline defends with `Array.isArray`.
+      // We deliberately seal an array `to` in one case to exercise that runtime
+      // branch, so build the overrides untyped and cast once.
+      const overrides: Record<string, unknown> = {
+        id: opts.id ?? 'msg-svc-uri',
+        type: 'service.query',
+        body: JSON.stringify(body),
+      };
+      if (opts.innerTo !== undefined) overrides.to = opts.innerTo;
+      return buildSealed(overrides as unknown as Partial<DinaMessage>);
+    }
+
+    it('bypasses a service.query whose service_uri authority == authenticated recipient DID', () => {
+      const payload = svcQuery({
+        serviceUri: `at://${RECIPIENT}/com.dina.service.profile/store-2`,
+        innerTo: RECIPIENT,
+        id: 'msg-svc-ok',
+      });
+      const result = receiveD2D(payload, recipientPub, recipientPriv, [senderPub], 'trusted', {
+        isCapabilityConfigured: () => true,
+        authenticatedToDID: RECIPIENT,
+      });
+      expect(result.action).toBe('bypassed');
+    });
+
+    it('drops a service.query whose service_uri authority != authenticated recipient DID (cross-DID)', () => {
+      // Inner `to` matches us (passes the inner-recipient check), but the chosen
+      // listing belongs to a different provider → `service_uri_mismatch` drop.
+      const payload = svcQuery({
+        serviceUri: `at://${ATTACKER}/com.dina.service.profile/store-9`,
+        innerTo: RECIPIENT,
+        id: 'msg-svc-crossdid',
+      });
+      const result = receiveD2D(payload, recipientPub, recipientPriv, [senderPub], 'trusted', {
+        isCapabilityConfigured: () => true,
+        authenticatedToDID: RECIPIENT,
+      });
+      expect(result.action).toBe('dropped');
+      // Drop is audited (decision layer never falls back to the contact gate).
+      expect(queryAudit({ action: 'd2d_recv_service_denied' }).length).toBeGreaterThan(0);
+    });
+
+    it('drops the confused-deputy service.query: inner to + service_uri both attacker, delivered to us', () => {
+      // The attack: an attacker delivers an envelope to US (the relay
+      // authenticated env.to_did = RECIPIENT → authenticatedToDID) but sets the
+      // sender-signed inner `to` AND `service_uri` to their OWN DID. If the bind
+      // trusted the inner `to` this would pass. It MUST drop, because the
+      // authority is the transport-authenticated delivery DID.
+      const payload = svcQuery({
+        serviceUri: `at://${ATTACKER}/com.dina.service.profile/store-evil`,
+        innerTo: ATTACKER,
+        id: 'msg-svc-deputy',
+      });
+      const result = receiveD2D(payload, recipientPub, recipientPriv, [senderPub], 'trusted', {
+        isCapabilityConfigured: () => true,
+        authenticatedToDID: RECIPIENT,
+      });
+      expect(result.action).toBe('dropped');
+    });
+
+    it('drops a service.query whose inner recipient is not the authenticated delivery DID', () => {
+      // Inner `to` names a different DID than the envelope was delivered to —
+      // even with no service_uri at all → `inner_to_mismatch` drop.
+      const payload = svcQuery({ innerTo: ATTACKER, id: 'msg-svc-innerto' });
+      const result = receiveD2D(payload, recipientPub, recipientPriv, [senderPub], 'trusted', {
+        isCapabilityConfigured: () => true,
+        authenticatedToDID: RECIPIENT,
+      });
+      expect(result.action).toBe('dropped');
+    });
+
+    it('drops a service.query addressed to multiple inner recipients', () => {
+      // service.query is 1:1; a fan-out inner `to` (even one that includes us)
+      // is rejected — exactly one recipient must equal the authenticated DID.
+      const payload = svcQuery({ innerTo: [RECIPIENT, ATTACKER], id: 'msg-svc-multi' });
+      const result = receiveD2D(payload, recipientPub, recipientPriv, [senderPub], 'trusted', {
+        isCapabilityConfigured: () => true,
+        authenticatedToDID: RECIPIENT,
+      });
+      expect(result.action).toBe('dropped');
+    });
+
+    it('drops a service.query with a structurally-malformed service_uri', () => {
+      const payload = svcQuery({
+        serviceUri: 'not-an-at-uri',
+        innerTo: RECIPIENT,
+        id: 'msg-svc-malformed',
+      });
+      const result = receiveD2D(payload, recipientPub, recipientPriv, [senderPub], 'trusted', {
+        isCapabilityConfigured: () => true,
+        authenticatedToDID: RECIPIENT,
+      });
+      expect(result.action).toBe('dropped');
+    });
+
+    it('bypasses a service.query with no service_uri (single-listing provider)', () => {
+      const payload = svcQuery({ innerTo: RECIPIENT, id: 'msg-svc-nouri' });
+      const result = receiveD2D(payload, recipientPub, recipientPriv, [senderPub], 'trusted', {
+        isCapabilityConfigured: () => true,
+        authenticatedToDID: RECIPIENT,
+      });
+      expect(result.action).toBe('bypassed');
+    });
+
+    it('skips the recipient/service_uri binds when authenticatedToDID is omitted (back-compat)', () => {
+      // Pure-pipeline callers with no transport envelope don't know the
+      // authenticated delivery DID, so the binds are skipped (mirrors
+      // `authenticatedFromDID`). A cross-DID service_uri then bypasses — which
+      // is ONLY safe because the sole real caller (`msgbox_handlers`) ALWAYS
+      // supplies `env.to_did`.
+      const payload = svcQuery({
+        serviceUri: `at://${ATTACKER}/com.dina.service.profile/store-x`,
+        innerTo: ATTACKER,
+        id: 'msg-svc-nobind',
+      });
+      const result = receiveD2D(payload, recipientPub, recipientPriv, [senderPub], 'trusted', {
+        isCapabilityConfigured: () => true,
+      });
+      expect(result.action).toBe('bypassed');
+    });
+  });
 });

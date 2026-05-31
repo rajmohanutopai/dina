@@ -382,6 +382,7 @@ export class InProcessTransport implements CoreClient {
     if (req.serviceName !== undefined) body.service_name = req.serviceName;
     if (req.originChannel !== undefined) body.origin_channel = req.originChannel;
     if (req.schemaHash !== undefined) body.schema_hash = req.schemaHash;
+    if (req.serviceUri !== undefined) body.service_uri = req.serviceUri;
 
     const res = await this.router.handle(
       blankRequest({ method: 'POST', path: '/v1/service/query', body }),

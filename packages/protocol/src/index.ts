@@ -119,6 +119,8 @@ export {
   validateServiceResponseBody,
   validateFutureSkew,
   verifyMessageSignature,
+  parseServiceListingUri,
+  SERVICE_PROFILE_COLLECTION,
 } from './validators';
 export type {
   ParsedMessage,

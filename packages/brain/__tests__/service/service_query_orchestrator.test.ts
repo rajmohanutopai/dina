@@ -48,6 +48,7 @@ interface CoreSend {
   serviceName?: string;
   originChannel?: string;
   schemaHash?: string;
+  serviceUri?: string;
 }
 
 function stubCore(overrides?: {
@@ -457,5 +458,64 @@ describe('ServiceQueryOrchestrator.issueQuery — dispatch', () => {
       params: { location: { lat: 0, lng: 0 } },
     });
     expect(result.queryId).toBe('q-local');
+  });
+});
+
+describe('ServiceQueryOrchestrator — listing identity (service_uri, #1)', () => {
+  it('issueQueryToDID forwards a caller-supplied service_uri to Core (chosen listing)', async () => {
+    const coreSeen: CoreSend[] = [];
+    const orch = new ServiceQueryOrchestrator({
+      appViewClient: stubAppView([BUS_SERVICE]),
+      coreClient: stubCore({ seen: coreSeen }),
+    });
+    await orch.issueQueryToDID({
+      toDID: 'did:plc:bus42',
+      capability: 'eta_query',
+      params: { route_id: '42', location: { lat: 1, lng: 2 } },
+      serviceUri: 'at://did:plc:bus42/com.dina.service.profile/route-42',
+    });
+    expect(coreSeen[0].serviceUri).toBe('at://did:plc:bus42/com.dina.service.profile/route-42');
+  });
+
+  it('issueQueryToDID omits service_uri when the caller did not supply one', async () => {
+    const coreSeen: CoreSend[] = [];
+    const orch = new ServiceQueryOrchestrator({
+      appViewClient: stubAppView([BUS_SERVICE]),
+      coreClient: stubCore({ seen: coreSeen }),
+    });
+    await orch.issueQueryToDID({
+      toDID: 'did:plc:bus42',
+      capability: 'eta_query',
+      params: { route_id: '42', location: { lat: 1, lng: 2 } },
+    });
+    expect(coreSeen[0].serviceUri).toBeUndefined();
+  });
+
+  it("issueQuery carries the ranked winner's listing uri to Core (multi-listing per DID)", async () => {
+    const coreSeen: CoreSend[] = [];
+    const orch = new ServiceQueryOrchestrator({
+      appViewClient: stubAppView([
+        { ...BUS_SERVICE, uri: 'at://did:plc:bus42/com.dina.service.profile/route-42' },
+      ]),
+      coreClient: stubCore({ seen: coreSeen }),
+    });
+    await orch.issueQuery({
+      capability: 'eta_query',
+      params: { location: { lat: 0, lng: 0 } },
+    });
+    expect(coreSeen[0].serviceUri).toBe('at://did:plc:bus42/com.dina.service.profile/route-42');
+  });
+
+  it('issueQuery omits service_uri when the winning profile carries no uri', async () => {
+    const coreSeen: CoreSend[] = [];
+    const orch = new ServiceQueryOrchestrator({
+      appViewClient: stubAppView([BUS_SERVICE]),
+      coreClient: stubCore({ seen: coreSeen }),
+    });
+    await orch.issueQuery({
+      capability: 'eta_query',
+      params: { location: { lat: 0, lng: 0 } },
+    });
+    expect(coreSeen[0].serviceUri).toBeUndefined();
   });
 });

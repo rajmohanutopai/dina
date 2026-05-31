@@ -93,6 +93,19 @@ export interface ReceivePipelineOptions {
    * omit it (there is no transport envelope to bind to).
    */
   authenticatedFromDID?: string;
+  /**
+   * The DID the TRANSPORT authenticated as the DELIVERY RECIPIENT — i.e. the
+   * MsgBox envelope's `to_did` (the relay routed this frame to us). This is the
+   * ONLY trustworthy "who is this addressed to" signal: the inner
+   * `message.to` lives inside the sender-signed body and is entirely
+   * sender-chosen, so it must NEVER be used as an authorization authority.
+   * Used for the `service.query` chosen-listing bind (service_uri authority
+   * must equal this) and the inner-recipient consistency check. EVERY
+   * transport-facing caller MUST pass it (production `handleInboundD2D` passes
+   * `env.to_did`). Omitted ⇒ those binds are skipped (pure-pipeline unit tests
+   * with no transport envelope), mirroring `authenticatedFromDID`.
+   */
+  authenticatedToDID?: string;
 }
 
 /**
@@ -247,6 +260,42 @@ export function receiveD2D(
   // same drop with less specific audit.
   if (message.type === MsgTypeServiceQuery || message.type === MsgTypeServiceResponse) {
     const capabilityChecker = options.isCapabilityConfigured ?? isCapabilityConfigured;
+    // SECURITY (the chosen-listing bind authority): use the TRANSPORT-
+    // authenticated delivery recipient — the MsgBox envelope's `to_did`,
+    // threaded in as `authenticatedToDID` — NOT the inner `message.to`. The
+    // inner `to` lives in the sender-signed body and is entirely sender-chosen,
+    // so binding `service_uri` to it is no bind at all: an attacker delivers an
+    // envelope to US but sets inner `to` == `service_uri.did` (their own DID)
+    // and it would pass (confused deputy). When `authenticatedToDID` is omitted
+    // (pure-pipeline unit tests with no transport envelope) the binds below are
+    // skipped, mirroring `authenticatedFromDID`.
+    const authedTo = options.authenticatedToDID;
+
+    // Inner-recipient consistency (service.query): an envelope the relay
+    // delivered to US must carry an inner message addressed to exactly US —
+    // a single recipient equal to `authedTo`. An inner `to` naming a different
+    // (or additional) DID is a routing/spoof attempt → drop. Only enforced when
+    // we actually know the authenticated delivery target.
+    if (message.type === MsgTypeServiceQuery && authedTo !== undefined) {
+      const innerTo = Array.isArray(message.to) ? message.to : [message.to];
+      if (innerTo.length !== 1 || innerTo[0] !== authedTo) {
+        appendAudit(
+          message.from,
+          'd2d_recv_service_denied',
+          authedTo,
+          `type=${message.type} reason=inner_to_mismatch id=${message.id}`,
+        );
+        return {
+          action: 'dropped',
+          messageId: message.id,
+          messageType: message.type,
+          senderDID: message.from,
+          signatureValid: true,
+          reason: `service.query inner recipient does not match authenticated delivery DID ${authedTo}`,
+        };
+      }
+    }
+
     const bypass = evaluateServiceIngressBypass(message.type, message.from, message.body, {
       isCapabilityConfigured: capabilityChecker,
       // P1.2: durable-backed requester window. The in-memory window is the
@@ -255,6 +304,10 @@ export function receiveD2D(
       // workflow task, so a legitimate response isn't denied just because
       // the process bounced. See `durableRequesterWindow`.
       requester: durableRequesterWindow(),
+      // Bind a service.query's chosen listing to the AUTHENTICATED delivery
+      // recipient — a direct peer must not send service_uri: at://<otherdid>/…
+      // and have it pass. Same authority bind as the Core HTTP route's to_did.
+      recipientDID: authedTo,
     });
     return applyServiceIngressDecision(message.type, message, bypass);
   }

@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, isNull } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
-import { services } from '@/db/schema/index.js'
+import { services, didRedactions } from '@/db/schema/index.js'
 
 /**
  * xRPC endpoint: com.dina.service.isDiscoverable
@@ -30,9 +30,21 @@ export async function serviceIsDiscoverable(
     capabilitiesJson: services.capabilitiesJson,
   })
     .from(services)
+    // GDPR-shaped: a DID with a `did_redactions` row is excluded entirely.
+    // Mirrors service-search.ts so a redacted provider can NEITHER surface in
+    // search NOR authorise the D2D egress bypass via this endpoint. The LEFT
+    // JOIN keeps non-redacted operators eligible; the IS NULL check drops the
+    // redacted ones.
+    .leftJoin(didRedactions, eq(services.operatorDid, didRedactions.did))
     .where(and(
       eq(services.operatorDid, params.did),
       eq(services.isDiscoverable, true),
+      // Exclude moderator-tombstoned rows. A tombstoned service must NOT
+      // pass the public-service egress bypass even though its row still
+      // carries isDiscoverable=true. Mirrors service-search.ts's filter —
+      // without it a taken-down service could still authorise D2D egress.
+      isNull(services.tombstonedAt),
+      isNull(didRedactions.did),
     ))
 
   if (rows.length === 0) {

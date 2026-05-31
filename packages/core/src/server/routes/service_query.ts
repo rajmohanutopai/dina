@@ -13,6 +13,7 @@
 
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+import { parseServiceListingUri } from '@dina/protocol';
 import type { CoreRouter } from '../router';
 import { MAX_SERVICE_TTL } from '../../d2d/families';
 import type { ServiceQueryBody } from '../../d2d/service_bodies';
@@ -77,6 +78,7 @@ export function computeIdempotencyKey(
   capability: string,
   params: unknown,
   schemaHash?: string,
+  serviceUri?: string,
 ): string {
   // Namespace the dedupe key by `schema_hash` when present (review #8).
   // Two requests targeting the same (to_did, capability, params) but
@@ -86,9 +88,16 @@ export function computeIdempotencyKey(
   // request pinned to the new one, silently producing the wrong
   // response shape. Unpinned requests (schema_hash omitted) keep the
   // prior dedupe identity so existing callers don't regress.
+  //
+  // Also namespace by `service_uri` (the chosen listing) when present: a
+  // provider DID may publish many listings, so two requests with the same
+  // (to_did, capability, params) but DIFFERENT listings are NOT equivalent
+  // and must not dedupe into one task. Requests without a service_uri keep
+  // the prior dedupe identity.
   const canonical = canonicalJSON(params);
   const schemaFragment = schemaHash !== undefined && schemaHash !== '' ? `|${schemaHash}` : '';
-  const input = `${toDID}|${capability}|${canonical}${schemaFragment}`;
+  const uriFragment = serviceUri !== undefined && serviceUri !== '' ? `|uri=${serviceUri}` : '';
+  const input = `${toDID}|${capability}|${canonical}${schemaFragment}${uriFragment}`;
   return bytesToHex(sha256(new TextEncoder().encode(input)));
 }
 
@@ -108,6 +117,13 @@ interface ServiceQueryRequest {
   query_id: string;
   origin_channel?: string;
   schema_hash?: string;
+  /**
+   * AT-URI of the specific listing the requester chose. A provider DID may
+   * publish many listings (marketplace multi-listing per DID); `to_did` +
+   * `capability` alone can't disambiguate. Carried opaquely onto the D2D
+   * `service.query` body so the provider knows which listing was selected.
+   */
+  service_uri?: string;
 }
 
 function validateRequest(
@@ -138,6 +154,32 @@ function validateRequest(
   ) {
     return { ok: false, error: 'params must be a non-null JSON object' };
   }
+  // service_uri (optional): when present it selects WHICH listing the provider
+  // answers for and flows into the provider's execution context — so bind it to
+  // a well-formed com.dina.service.profile listing AT-URI whose authority is the
+  // SAME DID as `to_did`. Reject a malformed or cross-DID listing so a requester
+  // can't push a mismatched listing reference at the provider. '' ⇒ absent.
+  let serviceUri: string | undefined;
+  if (b.service_uri !== undefined) {
+    // Reject present-but-non-string rather than silently treating it as absent
+    // — a number/object service_uri is a malformed request, not "no listing".
+    if (typeof b.service_uri !== 'string') {
+      return { ok: false, error: 'service_uri must be a string when present' };
+    }
+    if (b.service_uri !== '') {
+      const parsed = parseServiceListingUri(b.service_uri);
+      if (parsed === null) {
+        return {
+          ok: false,
+          error: 'service_uri must be an at://<did>/com.dina.service.profile/<rkey> URI',
+        };
+      }
+      if (parsed.did !== toDID) {
+        return { ok: false, error: 'service_uri must reference the same DID as to_did' };
+      }
+      serviceUri = b.service_uri;
+    }
+  }
   return {
     ok: true,
     req: {
@@ -149,6 +191,7 @@ function validateRequest(
       service_name: typeof b.service_name === 'string' ? b.service_name : undefined,
       origin_channel: typeof b.origin_channel === 'string' ? b.origin_channel : undefined,
       schema_hash: typeof b.schema_hash === 'string' ? b.schema_hash : undefined,
+      service_uri: serviceUri,
     },
   };
 }
@@ -176,7 +219,13 @@ export function registerServiceQueryRoutes(
     if (!v.ok) return { status: 400, body: { error: v.error } };
     const q = v.req;
 
-    const idemKey = computeIdempotencyKey(q.to_did, q.capability, q.params, q.schema_hash);
+    const idemKey = computeIdempotencyKey(
+      q.to_did,
+      q.capability,
+      q.params,
+      q.schema_hash,
+      q.service_uri,
+    );
     const repo: WorkflowRepository = service.store();
     const existing = repo.getActiveByIdempotencyKey(idemKey);
     if (existing !== null) {
@@ -208,6 +257,7 @@ export function registerServiceQueryRoutes(
       ttl_seconds: q.ttl_seconds,
       origin_channel: q.origin_channel ?? '',
       schema_hash: q.schema_hash ?? '',
+      service_uri: q.service_uri ?? '',
     };
 
     try {
@@ -247,6 +297,7 @@ export function registerServiceQueryRoutes(
       ttl_seconds: q.ttl_seconds,
     };
     if (q.schema_hash !== undefined) d2dBody.schema_hash = q.schema_hash;
+    if (q.service_uri !== undefined) d2dBody.service_uri = q.service_uri;
 
     try {
       await sender(q.to_did, 'service.query', d2dBody);

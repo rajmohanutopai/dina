@@ -158,6 +158,49 @@ describe('createSearchProviderServicesTool', () => {
     });
   });
 
+  it('surfaces service_uri on the LLM profile so the model can pick a listing (#1)', async () => {
+    const tool = createSearchProviderServicesTool({
+      appViewClient: {
+        async searchServices(): Promise<ServiceProfile[]> {
+          return [
+            {
+              name: 'Bus 42',
+              did: 'did:plc:demoprovider',
+              capabilities: ['eta_query'],
+              isDiscoverable: true,
+              uri: 'at://did:plc:demoprovider/com.dina.service.profile/route-42',
+            },
+          ];
+        },
+      },
+    });
+    const [profile] = (await tool.execute({ capability: 'eta_query' })) as Array<
+      Record<string, unknown>
+    >;
+    expect(profile.service_uri).toBe('at://did:plc:demoprovider/com.dina.service.profile/route-42');
+  });
+
+  it('omits service_uri when the profile carries no uri (#1)', async () => {
+    const tool = createSearchProviderServicesTool({
+      appViewClient: {
+        async searchServices(): Promise<ServiceProfile[]> {
+          return [
+            {
+              name: 'Bus 42',
+              did: 'did:plc:demoprovider',
+              capabilities: ['eta_query'],
+              isDiscoverable: true,
+            },
+          ];
+        },
+      },
+    });
+    const [profile] = (await tool.execute({ capability: 'eta_query' })) as Array<
+      Record<string, unknown>
+    >;
+    expect(profile.service_uri).toBeUndefined();
+  });
+
   it('throws on missing capability', async () => {
     const tool = createSearchProviderServicesTool({
       appViewClient: { searchServices: async () => [] },
@@ -269,6 +312,55 @@ describe('createQueryServiceTool', () => {
       schemaHash: 'sha256:abc',
       originChannel: 'ask',
     });
+  });
+
+  it('forwards a chosen service_uri to the orchestrator (#1, multi-listing per DID)', async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const tool = createQueryServiceTool({
+      orchestrator: {
+        async issueQueryToDID(req) {
+          calls.push(req as unknown as Record<string, unknown>);
+          return {
+            queryId: 'q-1',
+            taskId: 'svc-q-1',
+            toDID: req.toDID,
+            serviceName: req.serviceName ?? req.toDID,
+            deduped: false,
+          };
+        },
+      },
+    });
+    await tool.execute({
+      operator_did: 'did:plc:demoprovider',
+      capability: 'eta_query',
+      params: { route: '42' },
+      service_uri: 'at://did:plc:demoprovider/com.dina.service.profile/route-42',
+    });
+    expect(calls[0].serviceUri).toBe('at://did:plc:demoprovider/com.dina.service.profile/route-42');
+  });
+
+  it('omits service_uri when the model did not pass one (#1)', async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const tool = createQueryServiceTool({
+      orchestrator: {
+        async issueQueryToDID(req) {
+          calls.push(req as unknown as Record<string, unknown>);
+          return {
+            queryId: 'q-1',
+            taskId: 'svc-q-1',
+            toDID: req.toDID,
+            serviceName: req.serviceName ?? req.toDID,
+            deduped: false,
+          };
+        },
+      },
+    });
+    await tool.execute({
+      operator_did: 'did:plc:demoprovider',
+      capability: 'eta_query',
+      params: { route: '42' },
+    });
+    expect(calls[0].serviceUri).toBeUndefined();
   });
 
   it('throws when operator_did or capability is empty', async () => {
@@ -836,5 +928,126 @@ describe('createFindPreferredProviderTool (PC-BRAIN-07)', () => {
       'appointment_status',
       'billing',
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P2 — query_service listing disambiguation (auto-fill / ambiguity)
+// ---------------------------------------------------------------------------
+
+describe('createQueryServiceTool — listing disambiguation (P2)', () => {
+  function captureOrch() {
+    const calls: Array<Record<string, unknown>> = [];
+    const orchestrator: Pick<ServiceQueryOrchestrator, 'issueQueryToDID'> = {
+      async issueQueryToDID(req) {
+        calls.push(req as unknown as Record<string, unknown>);
+        return {
+          queryId: 'q-1',
+          taskId: 'svc-q-1',
+          toDID: req.toDID,
+          serviceName: req.serviceName ?? req.toDID,
+          deduped: false,
+        };
+      },
+    };
+    return { orchestrator, calls };
+  }
+
+  function listing(uri: string): ServiceProfile {
+    return {
+      did: 'did:plc:market',
+      name: 'Corner Market',
+      capabilities: ['price_check'],
+      isDiscoverable: true,
+      uri,
+    };
+  }
+
+  it('auto-fills service_uri when exactly one listing matches the DID+capability', async () => {
+    const { orchestrator, calls } = captureOrch();
+    const tool = createQueryServiceTool({
+      orchestrator,
+      appViewClient: {
+        async searchServices() {
+          return [listing('at://did:plc:market/com.dina.service.profile/store-2')];
+        },
+      },
+    });
+    await tool.execute({
+      operator_did: 'did:plc:market',
+      capability: 'price_check',
+      params: { sku: 'X' },
+    });
+    expect(calls[0].serviceUri).toBe('at://did:plc:market/com.dina.service.profile/store-2');
+  });
+
+  it('throws when multiple listings match and the model omitted service_uri', async () => {
+    const { orchestrator, calls } = captureOrch();
+    const tool = createQueryServiceTool({
+      orchestrator,
+      appViewClient: {
+        async searchServices() {
+          return [
+            listing('at://did:plc:market/com.dina.service.profile/store-2'),
+            listing('at://did:plc:market/com.dina.service.profile/store-3'),
+          ];
+        },
+      },
+    });
+    await expect(
+      tool.execute({
+        operator_did: 'did:plc:market',
+        capability: 'price_check',
+        params: { sku: 'X' },
+      }),
+    ).rejects.toThrow(/multiple listings/);
+    expect(calls).toHaveLength(0); // never dispatched
+  });
+
+  it('uses a caller-supplied service_uri even when multiple listings match (no throw)', async () => {
+    const { orchestrator, calls } = captureOrch();
+    const tool = createQueryServiceTool({
+      orchestrator,
+      appViewClient: {
+        async searchServices() {
+          return [
+            listing('at://did:plc:market/com.dina.service.profile/store-2'),
+            listing('at://did:plc:market/com.dina.service.profile/store-3'),
+          ];
+        },
+      },
+    });
+    await tool.execute({
+      operator_did: 'did:plc:market',
+      capability: 'price_check',
+      params: { sku: 'X' },
+      service_uri: 'at://did:plc:market/com.dina.service.profile/store-3',
+    });
+    expect(calls[0].serviceUri).toBe('at://did:plc:market/com.dina.service.profile/store-3');
+  });
+
+  it('proceeds without service_uri when a single match carries no uri', async () => {
+    const { orchestrator, calls } = captureOrch();
+    const tool = createQueryServiceTool({
+      orchestrator,
+      appViewClient: {
+        async searchServices() {
+          return [
+            {
+              did: 'did:plc:market',
+              name: 'Corner Market',
+              capabilities: ['price_check'],
+              isDiscoverable: true,
+            },
+          ];
+        },
+      },
+    });
+    await tool.execute({
+      operator_did: 'did:plc:market',
+      capability: 'price_check',
+      params: { sku: 'X' },
+    });
+    expect(calls[0].serviceUri).toBeUndefined();
   });
 });

@@ -20,9 +20,18 @@ export const serviceProfileHandler: RecordHandler = {
   async handleCreate(ctx: HandlerContext, op: RecordOp) {
     const record = op.record as unknown as ServiceProfile
 
-    // Phase 1: only index provider services with fully automatic response policies
+    // A provider can UNPUBLISH a listing by re-publishing the same record with
+    // isDiscoverable=false. We must remove any existing indexed row for this
+    // uri — a bare `return` would leave the prior discoverable row alive, so
+    // the service would still surface in search after the provider unpublished
+    // it. Idempotent: deleting a non-existent uri is a no-op.
     if (!record.isDiscoverable) {
-      ctx.logger.debug({ uri: op.uri }, '[ServiceProfile] Skipping non-provider service')
+      await ctx.db.delete(services).where(eq(services.uri, op.uri))
+      ctx.logger.debug(
+        { uri: op.uri },
+        '[ServiceProfile] non-discoverable — removed any existing indexed row (unpublish)',
+      )
+      ctx.metrics.incr('ingester.service_profile.unpublished')
       return
     }
 

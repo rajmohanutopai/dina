@@ -167,7 +167,13 @@ export async function handleInboundD2D(
       privateKey,
       sender.keys,
       sender.trust,
-      { authenticatedFromDID: env.from_did },
+      {
+        authenticatedFromDID: env.from_did,
+        // The relay-authenticated DELIVERY recipient. The pipeline binds a
+        // service.query's `service_uri` authority + inner recipient to THIS,
+        // never to the sender-signed inner `message.to`.
+        authenticatedToDID: env.to_did,
+      },
     );
 
     appendAudit(
