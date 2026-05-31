@@ -133,6 +133,61 @@ export function resolveCanonicalCapability(raw: string): string | null {
   return ALIAS_TO_CANONICAL.get(normalized) ?? null
 }
 
+/**
+ * A provider-owned (namespaced) custom capability — the OPEN half of the
+ * vocabulary. The closed registry above is for SHARED, promoted capabilities
+ * many providers compete on; a single seller who wants a bespoke capability
+ * ("any customer can create their own service") publishes a NAMESPACED one
+ * instead of polluting the shared flat namespace.
+ *
+ * Format: reverse-DNS-style dotted — at least one `.`, each segment
+ * `[a-z0-9_]+`, first segment `[a-z0-9]+`, e.g. `com.acme.widget_price`. The
+ * dot is the discriminator: registry canonical names are flat (`eta_query`,
+ * `appointment_status`) and never contain a dot, so a dotted string is
+ * unambiguously a custom capability and can never collide with a promoted
+ * one. A custom capability is its own canonical key (no alias folding) — the
+ * namespace owner controls its meaning.
+ */
+const CUSTOM_CAPABILITY_RE = /^[a-z0-9]+(?:\.[a-z0-9_]+)+$/
+
+/** Whether a normalized string is a well-formed namespaced custom capability. */
+export function isCustomCapability(normalized: string): boolean {
+  return CUSTOM_CAPABILITY_RE.test(normalized)
+}
+
+/** The three admissible outcomes of classifying a raw capability string. */
+export type CapabilityClass =
+  | { readonly kind: 'canonical'; readonly canonical: string }
+  | { readonly kind: 'custom'; readonly canonical: string }
+  | { readonly kind: 'unknown' }
+
+/**
+ * Classify a raw capability into the open vocabulary: a registry alias/
+ * canonical (shared, promoted), a well-formed namespaced custom capability
+ * (provider-owned), or genuinely unknown (dropped from the public index).
+ */
+export function classifyCapability(raw: string): CapabilityClass {
+  const normalized = normalizeCapability(raw)
+  if (normalized.length === 0) return { kind: 'unknown' }
+  const canonical = ALIAS_TO_CANONICAL.get(normalized)
+  if (canonical !== undefined) return { kind: 'canonical', canonical }
+  if (isCustomCapability(normalized)) return { kind: 'custom', canonical: normalized }
+  return { kind: 'unknown' }
+}
+
+/**
+ * Resolve a raw capability to the index key a SEARCH should match — the
+ * canonical name for a registry capability, the normalized namespaced name
+ * for a custom one, or `null` for an unknown. Use this (not
+ * `resolveCanonicalCapability`) wherever a search must also match
+ * provider-owned capabilities; `resolveCanonicalCapability` stays for code
+ * that is intentionally registry-only.
+ */
+export function resolveSearchableCapability(raw: string): string | null {
+  const c = classifyCapability(raw)
+  return c.kind === 'unknown' ? null : c.canonical
+}
+
 /** The canonical entry (description/domain) for a raw or canonical string. */
 export function getCapabilityEntry(raw: string): CanonicalCapability | null {
   const canonical = resolveCanonicalCapability(raw)
@@ -198,15 +253,19 @@ export function canonicalizeForIndex(
   for (const raw of rawCapabilities ?? []) {
     const normalized = normalizeCapability(raw)
     if (normalized.length === 0) continue
-    const canonical = resolveCanonicalCapability(normalized)
-    if (canonical === null) {
-      // Unknown: not surfaced publicly. Dedupe the unknown report too.
+    // Open vocabulary: a registry alias folds to its canonical name; a
+    // well-formed namespaced custom capability is admitted under its own
+    // name (provider-owned); anything else is genuinely unknown.
+    const cls = classifyCapability(normalized)
+    if (cls.kind === 'unknown') {
+      // Not surfaced publicly. Dedupe the unknown report too.
       if (!unknown.includes(normalized)) unknown.push(normalized)
       continue
     }
+    const canonical = cls.canonical
     if (seen.has(canonical)) {
-      // Already have this canonical (e.g. provider listed two aliases of
-      // the same thing). Keep the first schema/policy; skip the rest.
+      // Already have this key (e.g. provider listed two aliases of the same
+      // thing). Keep the first schema/policy; skip the rest.
       continue
     }
     seen.add(canonical)

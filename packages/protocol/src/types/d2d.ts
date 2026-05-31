@@ -42,9 +42,26 @@ export interface ServiceQueryBody {
   schema_hash?: string;
   /** Time-to-live in seconds; bounded by `MAX_SERVICE_TTL`. */
   ttl_seconds: number;
+  /**
+   * AT-URI of the SPECIFIC service.profile listing the requester chose
+   * (`at://did:plc:…/com.dina.service.profile/<rkey>`). A provider DID may
+   * publish many listings (marketplace multi-listing per DID); `to`/DID +
+   * `capability` alone can't disambiguate which one the requester picked, so
+   * the chosen listing's uri rides the query. Optional + advisory: a
+   * single-listing provider can ignore it; the capability+params remain the
+   * functional contract. Carried end-to-end from the AppView search result.
+   */
+  service_uri?: string;
 }
 
-/** `service.response` body schema — the provider's reply. */
+/**
+ * `service.response` body schema — the provider's reply.
+ *
+ * SINGLE SOURCE OF TRUTH for the wire contract. Core re-exports this type
+ * (see `packages/core/src/d2d/service_bodies.ts`) rather than maintaining a
+ * divergent copy, and `validateServiceResponseBody` (in `../validators`)
+ * enforces these invariants. Third-party implementers target THIS shape.
+ */
 export interface ServiceResponseBody {
   query_id: string;
   capability: string;
@@ -52,6 +69,12 @@ export interface ServiceResponseBody {
   /** Opaque result on success; typed error-shape on failure. */
   result?: unknown;
   error?: string;
+  /**
+   * Time-to-live in seconds; bounded by `MAX_SERVICE_TTL`. Carried back on
+   * the response so the requester's Core can size the provider window and
+   * mark the result's freshness window. Required (the validator enforces it).
+   */
+  ttl_seconds: number;
   /** SHA-256 of the provider's schema at response time (for drift detection). */
   schema_hash?: string;
   /**

@@ -110,13 +110,20 @@ describe('@dina/protocol type ↔ fixture compatibility (task 1.27)', () => {
       capability: 'eta_query',
       status: 'success',
       result: { eta_minutes: 12 },
+      // `ttl_seconds` is REQUIRED on the unified contract (the protocol type
+      // used to omit it while the validator required it — that split is fixed).
+      ttl_seconds: 60,
       schema_hash: 'a1b2c3d4',
+      // optional provider-authored display card (CardSpec), opaque on the wire
+      card: { version: 1, blocks: [{ kind: 'title', text: 'Route 42' }] },
     };
 
     // Type is string-literal; values narrow correctly.
     expect(MSG_TYPE_SERVICE_QUERY).toBe('service.query');
     expect(MSG_TYPE_SERVICE_RESPONSE).toBe('service.response');
     expect(query.ttl_seconds).toBeLessThanOrEqual(MAX_SERVICE_TTL);
+    expect(response.ttl_seconds).toBe(60);
+    expect(response.card?.blocks).toHaveLength(1);
 
     expect(roundTrip(query)).toEqual(query);
     expect(roundTrip(response)).toEqual(response);

@@ -109,30 +109,30 @@ function op(record: Record<string, unknown>) {
 }
 
 describe('serviceProfileHandler.handleCreate', () => {
-  it('runs select + delete(others) + upsert inside a single transaction', async () => {
+  it('runs select + upsert inside a single transaction (NO cross-uri delete)', async () => {
     const captured = freshCaptured()
     const ctx = stubCtx(captured)
     await serviceProfileHandler.handleCreate(ctx, op(validProfile()))
     expect(captured.txOpened).toBe(true)
-    // SELECT first (to capture prior createdAt for this uri), then DELETE
-    // the operator's OTHER uris, then UPSERT the current uri.
+    // SELECT first (to preserve createdAt for this uri), then UPSERT the
+    // current uri. The handler does NOT delete the operator's other uris —
+    // each published profile is its own listing (multi-listing per DID).
     expect(captured.events).toEqual([
       'tx:begin',
       'tx:select:services',
-      'tx:delete:services',
       'tx:upsert:services',
       'tx:commit',
     ])
   })
 
-  it('delete precedes the upsert', async () => {
+  it('does NOT delete the operator other listings (marketplace multi-listing)', async () => {
+    // Regression for the one-profile-per-DID limitation: a provider with
+    // many products lists many profiles, each under its own rkey/uri. The
+    // ingester must NOT wipe an operator's other rows when one is published.
     const captured = freshCaptured()
     const ctx = stubCtx(captured)
     await serviceProfileHandler.handleCreate(ctx, op(validProfile()))
-    const di = captured.events.indexOf('tx:delete:services')
-    const ui = captured.events.indexOf('tx:upsert:services')
-    expect(di).toBeGreaterThanOrEqual(0)
-    expect(ui).toBeGreaterThan(di)
+    expect(captured.events).not.toContain('tx:delete:services')
   })
 
   it('upsert carries the canonical column set with three timestamps', async () => {

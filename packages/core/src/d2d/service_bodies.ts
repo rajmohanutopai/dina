@@ -28,45 +28,29 @@ import {
   validateServiceResponseBody as protocolValidateServiceResponseBody,
   validateFutureSkew as protocolValidateFutureSkew,
 } from '@dina/protocol';
+import type {
+  ServiceResponseStatus as ProtocolServiceResponseStatus,
+  ServiceQueryBody as ProtocolServiceQueryBody,
+  ServiceResponseBody as ProtocolServiceResponseBody,
+} from '@dina/protocol';
+
+// `@dina/protocol` is the SINGLE SOURCE OF TRUTH for these wire types
+// (task 1.20 + the card/ttl_seconds unification). Core re-exports them under
+// the historical names so every existing call-site keeps compiling AND
+// automatically picks up `card?` / `schema_hash?` on the response body —
+// the divergent Core copy that dropped `card` is gone. Third-party
+// implementers and Core now agree byte-for-byte.
 
 /** Valid response statuses on the wire. */
-export type ServiceResponseStatus = 'success' | 'unavailable' | 'error';
+export type ServiceResponseStatus = ProtocolServiceResponseStatus;
 
-/**
- * Body of a `service.query` D2D message.
- *
- * `params` is a capability-specific JSON-serialisable value. Core does not
- * inspect its shape — schema validation is the Brain's responsibility (and is
- * gated by `schema_hash` when both sides agree on a published schema).
- */
-export interface ServiceQueryBody {
-  query_id: string;
-  capability: string;
-  params: unknown;
-  ttl_seconds: number;
-  /**
-   * Optional SHA-256 of the provider's published capability schema. When both
-   * sides supply this field, a mismatch produces an `error` response with
-   * `schema_version_mismatch` rather than reaching the capability handler.
-   * (Introduced in commit 9b1c4a4.)
-   */
-  schema_hash?: string;
-}
+/** Body of a `service.query` D2D message. Re-exported from `@dina/protocol`. */
+export type ServiceQueryBody = ProtocolServiceQueryBody;
 
-/**
- * Body of a `service.response` D2D message. Sent by the provider back to the
- * requester (or by the requester's Core on behalf of an internal failure).
- */
-export interface ServiceResponseBody {
-  query_id: string;
-  capability: string;
-  status: ServiceResponseStatus;
-  /** Capability-specific result payload. Present iff `status === 'success'`. */
-  result?: unknown;
-  /** Human-readable error detail. Present iff `status !== 'success'`. */
-  error?: string;
-  ttl_seconds: number;
-}
+/** Body of a `service.response` D2D message. Re-exported from `@dina/protocol`.
+ *  Carries `result`, `error`, `ttl_seconds`, optional `schema_hash`, and the
+ *  optional provider-authored `card` (CardSpec). */
+export type ServiceResponseBody = ProtocolServiceResponseBody;
 
 // Validators delegate to @dina/protocol (task 1.20) — protocol is the
 // single source of truth for wire-format invariants. Re-exported under

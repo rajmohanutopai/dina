@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import { services } from '@/db/schema/index.js'
-import { allCanonicalCapabilities } from '@/shared/capability-registry.js'
+import { allCanonicalCapabilities, isCustomCapability } from '@/shared/capability-registry.js'
 
 /**
  * xRPC endpoint: com.dina.service.searchCapabilities
@@ -54,20 +54,13 @@ export interface SearchCapabilitiesResponse {
 
 export async function searchCapabilities(
   db: DrizzleDB,
-  // `intent` (+ geo) are part of the contract but unused at launch — the
-  // coverage set is tiny so we return all covered capabilities. Prefixed
-  // with `_` to document "accepted, not yet consumed" without an unused-
-  // var lint error.
-  _params: SearchCapabilitiesParamsType,
+  params: SearchCapabilitiesParamsType,
 ): Promise<SearchCapabilitiesResponse> {
-  // Which canonical capabilities currently have ≥1 discoverable,
-  // non-tombstoned provider? One grouped query over the index. The index
-  // stores CANONICAL names (the handler canonicalizes on ingest), so a
-  // capability appearing here is already canonical.
+  // Which index keys currently have ≥1 discoverable, non-tombstoned provider?
+  // The index stores canonical names for registry capabilities AND normalized
+  // names for namespaced custom capabilities (the handler admits both).
   const rows = await db
     .select({
-      // jsonb_array_elements_text unnests the capabilities array so we can
-      // DISTINCT the individual canonical capability strings.
       cap: sql<string>`jsonb_array_elements_text(${services.capabilitiesJson}::jsonb)`,
     })
     .from(services)
@@ -78,10 +71,11 @@ export async function searchCapabilities(
     if (typeof row.cap === 'string' && row.cap.length > 0) covered.add(row.cap)
   }
 
-  // Intersect registry × coverage. Registry order is stable + intentional
-  // (domain grouping), so the response order is deterministic.
+  // Registry capabilities first, in stable registry order, with curated copy.
   const capabilities: CapabilityCandidate[] = []
+  const registryNames = new Set<string>()
   for (const entry of allCanonicalCapabilities()) {
+    registryNames.add(entry.canonical)
     if (covered.has(entry.canonical)) {
       capabilities.push({
         canonical: entry.canonical,
@@ -91,5 +85,48 @@ export async function searchCapabilities(
     }
   }
 
+  // Open vocabulary: a covered key that is NOT a registry capability but IS a
+  // well-formed namespaced custom capability is a provider-owned listing —
+  // surface it (sorted) so "any customer can create their own service" is
+  // discoverable. A FLAT non-registry key is dropped (defensive).
+  const customNames = [...covered]
+    .filter((c) => !registryNames.has(c) && isCustomCapability(c))
+    .sort()
+  for (const name of customNames) {
+    capabilities.push({ canonical: name, description: name, domain: 'custom' })
+  }
+
+  // Intent ranking: rank candidates by lexical token-overlap against each
+  // candidate's (name + description + domain). Stable sort preserves the
+  // registry/custom order for equal scores. Deterministic, dependency-free —
+  // NOT semantic similarity. Embedding-based ranking is deferred (no pipeline
+  // yet); see SERVICES_LAUNCH_ARCHITECTURE follow-up.
+  const intent = params.intent
+  if (typeof intent === 'string' && intent.trim() !== '') {
+    const intentTokens = tokenize(intent)
+    if (intentTokens.size > 0) {
+      const scored = capabilities.map((c, i) => ({ c, i, score: overlapScore(intentTokens, c) }))
+      scored.sort((a, b) => b.score - a.score || a.i - b.i)
+      return { capabilities: scored.map((s) => s.c) }
+    }
+  }
+
   return { capabilities }
+}
+
+/** Lowercased alnum word tokens, deduped. Pure. */
+function tokenize(text: string): Set<string> {
+  const out = new Set<string>()
+  for (const tok of text.toLowerCase().split(/[^a-z0-9]+/)) {
+    if (tok.length > 0) out.add(tok)
+  }
+  return out
+}
+
+/** Count of intent tokens present in a candidate's searchable text. */
+function overlapScore(intentTokens: Set<string>, c: CapabilityCandidate): number {
+  const hay = tokenize(`${c.canonical} ${c.description} ${c.domain}`)
+  let score = 0
+  for (const t of intentTokens) if (hay.has(t)) score++
+  return score
 }

@@ -27,6 +27,7 @@ import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 
 import {
   linkDisplayHost,
+  isCardStale,
   type CardBlock,
   type CardIcon,
   type CardSpec,
@@ -135,12 +136,23 @@ function staleLabel(spec: CardSpec): string | null {
 
 export function SafeCardRenderer({ spec }: SafeCardRendererProps): React.JSX.Element {
   const stale = staleLabel(spec);
+  // Mark a card whose freshness window has passed (expiresAt in the past, or
+  // generatedAt + ttlSeconds elapsed). For price/product cards this matters —
+  // a $0.79 from an hour ago shouldn't read as live. The whole card is dimmed
+  // and an explicit "Expired" line replaces the plain "as of" caption.
+  const expired = isCardStale(spec, Date.now());
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, expired && styles.containerStale]}>
       {spec.blocks.map((block, i) => (
         <BlockView key={i} block={block} />
       ))}
-      {stale !== null && <Text style={styles.staleLabel}>{stale}</Text>}
+      {expired ? (
+        <Text style={styles.expiredLabel}>
+          {stale !== null ? `Expired · ${stale}` : 'Expired'}
+        </Text>
+      ) : (
+        stale !== null && <Text style={styles.staleLabel}>{stale}</Text>
+      )}
     </View>
   );
 }
@@ -553,5 +565,15 @@ const styles = StyleSheet.create({
   staleLabel: {
     ...textStyles.caption,
     marginTop: spacing.xs,
+  },
+  // Whole-card treatment when the result's freshness window has passed.
+  containerStale: {
+    opacity: 0.6,
+  },
+  expiredLabel: {
+    ...textStyles.caption,
+    color: colors.warning,
+    marginTop: spacing.xs,
+    fontWeight: '600',
   },
 });

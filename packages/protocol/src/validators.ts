@@ -128,6 +128,9 @@ export function validateServiceQueryBody(body: unknown): string | null {
   if (b.schema_hash !== undefined && typeof b.schema_hash !== 'string') {
     return 'service.query: schema_hash must be a string when present';
   }
+  if (b.service_uri !== undefined && typeof b.service_uri !== 'string') {
+    return 'service.query: service_uri must be a string when present';
+  }
   return null;
 }
 
@@ -158,6 +161,20 @@ export function validateServiceResponseBody(body: unknown): string | null {
   }
   if (b.ttl_seconds <= 0 || b.ttl_seconds > MAX_SERVICE_TTL) {
     return `service.response: ttl_seconds must be 1-${MAX_SERVICE_TTL}, got ${b.ttl_seconds}`;
+  }
+  if (b.schema_hash !== undefined && typeof b.schema_hash !== 'string') {
+    return 'service.response: schema_hash must be a string when present';
+  }
+  // `card` is optional and OPAQUE at the wire layer — a coarse shape check
+  // only (non-null, non-array object). Deep CardSpec validation (badges,
+  // https-only links, size caps) is the requester's job via
+  // `validateCardSpec(card, { trusted: false })`; duplicating it here would
+  // couple the wire validator to the whole card vocabulary.
+  if (
+    b.card !== undefined &&
+    (b.card === null || typeof b.card !== 'object' || Array.isArray(b.card))
+  ) {
+    return 'service.response: card must be an object when present';
   }
   return null;
 }

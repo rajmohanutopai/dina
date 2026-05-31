@@ -4,7 +4,7 @@ import type { DrizzleDB } from '@/db/connection.js'
 import { services } from '@/db/schema/index.js'
 import { didProfiles, didRedactions } from '@/db/schema/index.js'
 import { encodeCursor, decodeCursor } from '@/util/cursor.js'
-import { resolveCanonicalCapability } from '@/shared/capability-registry.js'
+import { resolveSearchableCapability } from '@/shared/capability-registry.js'
 
 /**
  * Ranking-formula version. Stamped into the response so clients can
@@ -116,14 +116,14 @@ export async function serviceSearch(
   const { capability, lat, lng, radiusKm, q, limit, cursor } = params
   const hasLocation = lat !== undefined && lng !== undefined
 
-  // Layer 3 (SERVICES_LAUNCH_ARCHITECTURE.md Part 1): resolve the
-  // requested capability to its canonical name via the shared registry —
-  // the SAME registry the ingest handler used, so a search for any alias
-  // hits the canonical index entry. An UNKNOWN capability (not in the
-  // registry) resolves to null: short-circuit to an empty result rather
-  // than querying the raw string, which can only produce a
-  // partial-namespace miss (the index holds only canonical names).
-  const canonicalCapability = resolveCanonicalCapability(capability)
+  // Layer 3 (SERVICES_LAUNCH_ARCHITECTURE.md Part 1): resolve the requested
+  // capability to the index key via the shared registry — the SAME registry
+  // the ingest handler used. Open vocabulary: a registry alias folds to its
+  // canonical name; a well-formed namespaced custom capability
+  // (`com.acme.widget_price`) resolves to itself so provider-owned services
+  // are searchable too; anything else is UNKNOWN → short-circuit to empty
+  // rather than querying a raw string the index can't hold.
+  const canonicalCapability = resolveSearchableCapability(capability)
   if (canonicalCapability === null) {
     return { services: [], cursor: null, rankingVersion: RANKING_VERSION }
   }

@@ -43,6 +43,13 @@ interface ServiceRespondRequest {
     status?: string;
     result?: unknown;
     error?: string;
+    /**
+     * Optional provider-authored display card (CardSpec). Forwarded opaquely
+     * onto the D2D `service.response`; the requester re-validates it as
+     * untrusted before rendering. Mirrors the bridge path
+     * (`response_bridge_sender.deriveResponseBody`).
+     */
+    card?: unknown;
   };
 }
 
@@ -204,6 +211,16 @@ export function registerServiceRespondRoutes(
     }
     if (status !== 'success' && typeof response_body.error === 'string') {
       d2dBody.error = response_body.error;
+    }
+    // Carry an optional provider-authored card OPAQUELY (requester
+    // re-validates as untrusted). Only when it's a non-null, non-array
+    // object — never a garbage scalar on the wire. Same guard as the bridge.
+    if (
+      response_body.card !== null &&
+      typeof response_body.card === 'object' &&
+      !Array.isArray(response_body.card)
+    ) {
+      d2dBody.card = response_body.card as ServiceResponseBody['card'];
     }
 
     // 6. Send.

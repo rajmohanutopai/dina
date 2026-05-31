@@ -27,6 +27,105 @@ now tracks ONLY the post-launch deferrals + open questions that remain.</p>
 <h2>Shipped after launch</h2>
 
 <div class="item">
+  <span class="tag" style="background:#2a8;color:#fff">Shipped</span>
+  <p><b>Services P2/P3 review round 2 — open vocabulary, listing identity,
+  card-passthrough tests.</b> A second review pass; all fixed (tests + typecheck
+  green across protocol / core / brain / appview / mobile). NOTE: the first
+  round's open-vocabulary work had silently reverted between sessions — this
+  re-did it from a verified-clean base and pinned it with tests so it can't
+  vanish unnoticed again.</p>
+  <ol>
+    <li><b>Open capability vocabulary (was still closed-registry).</b> Provider
+    can publish a NAMESPACED custom capability (<code>com.acme.widget_price</code>,
+    reverse-DNS dotted). New <code>classifyCapability</code> /
+    <code>resolveSearchableCapability</code> / <code>isCustomCapability</code> in
+    the shared registry (byte-identical protocol + appview copies, drift-gated).
+    The ingester (<code>canonicalizeForIndex</code>) admits customs; service-search
+    matches them (<code>resolveSearchableCapability</code>); searchCapabilities
+    surfaces them (<code>domain:'custom'</code>) AND now honours <code>intent</code>
+    via a deterministic lexical-overlap ranking (embedding ranking still deferred,
+    logged-in-code not silently ignored). A FLAT non-registry string is still
+    dropped.</li>
+    <li><b>Listing identity carried end-to-end (the multi-listing-per-DID gap my
+    own round-1 change opened).</b> <code>service_uri</code> now threads:
+    AppView search result → <code>ServiceProfile.uri</code> →
+    <code>toLLMProfile.service_uri</code> → <code>query_service</code> tool →
+    orchestrator (<code>issueQuery</code> ranked-winner + <code>issueQueryToDID</code>
+    LLM-chosen) → <code>CoreClient.sendServiceQuery</code> → D2D
+    <code>ServiceQueryBody.service_uri</code> (optional, validator-checked). A
+    provider DID with many price_check listings now knows which one was chosen.</li>
+    <li><b>Provider-card passthrough now has direct tests.</b> The round-1 source
+    forwarded <code>card</code> through the bridge + <code>/v1/service/respond</code>
+    but nothing asserted it. Added: bridge success-with-card + non-success-with-card
+    + scalar-card-drop + no-card (response_bridge_sender.test), the inline
+    <code>/v1/service/respond</code> route card-forward + scalar-drop
+    (core_router_integration.test — the route builds its body inline, a separate
+    path from the bridge), and validator object/scalar card behavior
+    (validators.test).</li>
+    <li><b>(P3, deferred — launch-acceptable) Card expiry is render-time only.</b>
+    <code>SafeCardRenderer</code> marks expired cards correctly using
+    <code>isCardStale(spec, Date.now())</code> at render, but does not schedule a
+    re-render when a still-fresh card later crosses its expiry while the screen
+    stays open. Acceptable for launch; price/stock cards should eventually
+    schedule a refresh timer at the next expiry. Left as a documented follow-up.</li>
+  </ol>
+</div>
+
+<div class="item">
+  <span class="tag" style="background:#2a8">Shipped</span>
+  <p><b>CardSpec + Services design-review — 6 findings fixed.</b> A review of the
+  provider-card path turned up six issues; all fixed (tests + typecheck green
+  across protocol / core / brain / mobile / appview).</p>
+  <ol>
+    <li><b>Provider-authored cards now survive the normal response path.</b>
+    Core's response bridge (<code>response_bridge_sender.deriveResponseBody</code>)
+    and <code>POST /v1/service/respond</code> both DROPPED the runner's
+    <code>card</code> field, so only the requester-side deterministic mapper ever
+    ran. Both now forward an optional provider <code>card</code> OPAQUELY (non-null
+    object guard; the requester re-validates it untrusted before render). This is
+    the generalized "marketplace seller controls the card" path.</li>
+    <li><b>Unified the <code>ServiceResponseBody</code> wire contract.</b> It was
+    split three ways: the protocol type had <code>card</code> but no
+    <code>ttl_seconds</code>; the protocol validator REQUIRED
+    <code>ttl_seconds</code>; Core kept a divergent copy with
+    <code>ttl_seconds</code> but no <code>card</code>/<code>schema_hash</code>.
+    <code>@dina/protocol</code> is now the single source of truth
+    (<code>ttl_seconds</code> required, <code>card</code> + <code>schema_hash</code>
+    optional); Core re-exports it instead of redefining. The validator now also
+    shape-checks the optional <code>card</code> (opaque object) and
+    <code>schema_hash</code>.</li>
+    <li><b>Open capability vocabulary (provider-namespaced capabilities).</b> The
+    closed registry stays for shared/promoted capabilities, but a provider can now
+    publish a NAMESPACED custom capability (<code>com.acme.widget_price</code> —
+    reverse-DNS, dotted). New <code>classifyCapability</code> /
+    <code>resolveSearchableCapability</code> / <code>isCustomCapability</code> in the
+    shared registry (byte-identical protocol + appview copies). The ingester admits
+    custom capabilities (no longer dropped as "unknown"); service-search matches
+    them; searchCapabilities surfaces them (<code>domain: 'custom'</code>) AND now
+    honours <code>intent</code> via a deterministic lexical-overlap ranking
+    (embedding-based ranking still deferred — logged in code, not silently
+    ignored).</li>
+    <li><b>Multi-listing per DID.</b> The ingester no longer deletes an operator's
+    other profile rows on publish (that capped a DID at one listing). One indexed
+    row per <code>uri</code>; each published <code>service.profile</code> record is
+    its own listing; removal is per-record via <code>handleDelete</code>. The
+    concurrency-safe <code>onConflictDoUpdate</code>-on-<code>uri</code> fix
+    stays.</li>
+    <li><b>Render-boundary re-validation.</b> <code>InlineServiceQueryCard</code>
+    rendered <code>lc.cardSpec</code> raw (<code>readLifecycle</code> only checks the
+    discriminator then casts), so a corrupt / imported / legacy chat row could
+    bypass the safety rules. It now re-runs
+    <code>validateCardSpec(lc.cardSpec, {trusted:false})</code> at render — a corrupt
+    card falls back to the generic text card; a stray badge is dropped.</li>
+    <li><b>Staleness now affects the UI.</b> <code>SafeCardRenderer</code> used
+    <code>isCardStale</code> nowhere — it only showed an "as of" label. Expired
+    cards (past <code>expiresAt</code>, or <code>generatedAt + ttlSeconds</code>
+    elapsed) are now dimmed and labelled "Expired". Matters for price/product
+    cards.</li>
+  </ol>
+</div>
+
+<div class="item">
   <span class="tag" style="background:#2a8">Shipped</span>
   <p><b>CardSpec — service results as DATA, not hard-coded cards.</b> Replaced
   the per-capability hard-coded card (<code>EtaResultBody</code>) with a fixed,

@@ -73,4 +73,40 @@ describe('searchCapabilities — registry ∩ coverage', () => {
     const r = await searchCapabilities(db, { intent: 'x' })
     expect(r.capabilities.map((c) => c.canonical)).toEqual(['eta_query'])
   })
+
+  it('surfaces a provider-owned namespaced custom capability (open vocabulary)', async () => {
+    const db = stubDb([{ cap: 'eta_query' }, { cap: 'com.acme.widget_price' }])
+    const r = await searchCapabilities(db, { intent: 'zzz' })
+    const byName = new Map(r.capabilities.map((c) => [c.canonical, c]))
+    // registry one keeps its curated copy; the custom one is surfaced as `custom`.
+    expect(byName.get('eta_query')?.domain).toBe('transit')
+    expect(byName.get('com.acme.widget_price')).toEqual({
+      canonical: 'com.acme.widget_price',
+      description: 'com.acme.widget_price',
+      domain: 'custom',
+    })
+  })
+
+  it('still drops a FLAT non-registry capability (only namespaced customs are open)', async () => {
+    // `mystery_capability` has no dot → not a well-formed custom capability →
+    // never surfaced, even under the open vocabulary.
+    const db = stubDb([{ cap: 'eta_query' }, { cap: 'mystery_capability' }])
+    const r = await searchCapabilities(db, { intent: 'zzz' })
+    expect(r.capabilities.map((c) => c.canonical)).toEqual(['eta_query'])
+  })
+
+  it('ranks candidates by lexical overlap with intent', async () => {
+    const db = stubDb([{ cap: 'eta_query' }, { cap: 'appointment_status' }])
+    // "appointment" overlaps the appointment_status name/description, so it
+    // ranks ahead of the transit capability.
+    const r = await searchCapabilities(db, { intent: 'check my appointment booking' })
+    expect(r.capabilities[0].canonical).toBe('appointment_status')
+  })
+
+  it('intent with no overlap preserves the default (registry-first) order', async () => {
+    const db = stubDb([{ cap: 'eta_query' }, { cap: 'com.acme.widget_price' }])
+    const r = await searchCapabilities(db, { intent: 'zzz nomatch qqq' })
+    // stable: registry capability stays before the custom one.
+    expect(r.capabilities.map((c) => c.canonical)).toEqual(['eta_query', 'com.acme.widget_price'])
+  })
 })

@@ -6,6 +6,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   resolveCanonicalCapability,
+  resolveSearchableCapability,
+  classifyCapability,
+  isCustomCapability,
   normalizeCapability,
   getCapabilityEntry,
   allCanonicalCapabilities,
@@ -191,5 +194,54 @@ describe('capability-registry — canonicalizeForIndex (Layer 2)', () => {
     expect(r.capabilities).toEqual(['eta_query'])
     expect(r.capabilitySchemas).toEqual({})
     expect(r.responsePolicy).toEqual({})
+  })
+})
+
+describe('capability-registry — open vocabulary (namespaced custom capabilities)', () => {
+  it('isCustomCapability accepts dotted names, rejects flat / malformed', () => {
+    expect(isCustomCapability('com.acme.widget_price')).toBe(true)
+    expect(isCustomCapability('acme.widget')).toBe(true)
+    // flat registry-style names are NOT custom (no dot)
+    expect(isCustomCapability('eta_query')).toBe(false)
+    expect(isCustomCapability('plumbing')).toBe(false)
+    // malformed: leading/trailing dot, empty segment, illegal chars
+    expect(isCustomCapability('.acme.widget')).toBe(false)
+    expect(isCustomCapability('acme..widget')).toBe(false)
+    expect(isCustomCapability('acme.widget.')).toBe(false)
+    expect(isCustomCapability('acme.wid get')).toBe(false)
+  })
+
+  it('classifyCapability splits canonical / custom / unknown', () => {
+    expect(classifyCapability('bus_eta')).toEqual({ kind: 'canonical', canonical: 'eta_query' })
+    expect(classifyCapability('com.acme.widget_price')).toEqual({
+      kind: 'custom',
+      canonical: 'com.acme.widget_price',
+    })
+    expect(classifyCapability('plumbing')).toEqual({ kind: 'unknown' })
+    expect(classifyCapability('  COM.Acme.Widget  ')).toEqual({
+      kind: 'custom',
+      canonical: 'com.acme.widget',
+    })
+  })
+
+  it('resolveSearchableCapability resolves canonical AND custom, null on unknown', () => {
+    expect(resolveSearchableCapability('bus_eta')).toBe('eta_query')
+    expect(resolveSearchableCapability('com.acme.widget_price')).toBe('com.acme.widget_price')
+    expect(resolveSearchableCapability('plumbing')).toBeNull()
+    // resolveCanonicalCapability stays registry-only (custom → null there)
+    expect(resolveCanonicalCapability('com.acme.widget_price')).toBeNull()
+  })
+
+  it('canonicalizeForIndex ADMITS a namespaced custom capability (not unknown)', () => {
+    const out = canonicalizeForIndex(
+      ['eta_query', 'com.acme.widget_price', 'plumbing'],
+      { 'com.acme.widget_price': { schema_hash: 'cw' } },
+      { 'com.acme.widget_price': 'auto', eta_query: 'auto' },
+    )
+    expect(out.capabilities).toEqual(['eta_query', 'com.acme.widget_price'])
+    expect(out.capabilitySchemas).toEqual({ 'com.acme.widget_price': { schema_hash: 'cw' } })
+    expect(out.responsePolicy).toEqual({ eta_query: 'auto', 'com.acme.widget_price': 'auto' })
+    // truly-unknown (flat, non-registry) still dropped + reported
+    expect(out.unknown).toEqual(['plumbing'])
   })
 })

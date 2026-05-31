@@ -152,6 +152,56 @@ describe('makeServiceResponseBridgeSender — status derivation (issue #11)', ()
   });
 });
 
+describe('makeServiceResponseBridgeSender — provider-authored card passthrough', () => {
+  // Regression: the bridge used to DROP `card`, so a provider could never ship
+  // its own display card — only the requester-side deterministic mapper ran.
+  // The card rides inside the runner's `{ status, result, card }` wrapper and
+  // must survive opaquely (the requester re-validates it untrusted).
+  const CARD = { version: 1, blocks: [{ kind: 'title', text: 'Organic Bananas' }] };
+
+  it('forwards a provider card on a success wrapper (opaque, verbatim)', async () => {
+    const calls: SendCall[] = [];
+    const bridge = makeServiceResponseBridgeSender({ sendResponse: makeSender({ calls }) });
+    await bridge({
+      ...SAMPLE_CTX,
+      resultJSON: JSON.stringify({ status: 'success', result: { price: 0.79 }, card: CARD }),
+    });
+    expect(calls[0].body.status).toBe('success');
+    expect(calls[0].body.result).toEqual({ price: 0.79 });
+    // Carried verbatim — the bridge does NOT validate/transform the card.
+    expect(calls[0].body.card).toEqual(CARD);
+  });
+
+  it('forwards a provider card on a non-success wrapper too', async () => {
+    const calls: SendCall[] = [];
+    const bridge = makeServiceResponseBridgeSender({ sendResponse: makeSender({ calls }) });
+    await bridge({
+      ...SAMPLE_CTX,
+      resultJSON: JSON.stringify({ status: 'unavailable', error: 'sold out', card: CARD }),
+    });
+    expect(calls[0].body.status).toBe('unavailable');
+    expect(calls[0].body.error).toBe('sold out');
+    expect(calls[0].body.card).toEqual(CARD);
+  });
+
+  it('drops a non-object (scalar / array) card — never puts garbage on the wire', async () => {
+    const calls: SendCall[] = [];
+    const bridge = makeServiceResponseBridgeSender({ sendResponse: makeSender({ calls }) });
+    await bridge({
+      ...SAMPLE_CTX,
+      resultJSON: JSON.stringify({ status: 'success', result: { price: 1 }, card: 'not-a-card' }),
+    });
+    expect(calls[0].body.card).toBeUndefined();
+  });
+
+  it('omits card entirely when the runner sent none (plain result)', async () => {
+    const calls: SendCall[] = [];
+    const bridge = makeServiceResponseBridgeSender({ sendResponse: makeSender({ calls }) });
+    await bridge({ ...SAMPLE_CTX, resultJSON: JSON.stringify({ eta_minutes: 8 }) });
+    expect('card' in calls[0].body).toBe(false);
+  });
+});
+
 describe('makeServiceResponseBridgeSender — error paths', () => {
   it('on unparseable JSON: fires onMalformedResult AND sends an error service.response (issue #16)', async () => {
     const calls: SendCall[] = [];

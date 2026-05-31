@@ -1,4 +1,4 @@
-import { eq, ne, and } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import type { RecordHandler, HandlerContext, RecordOp } from './index.js'
 import type { ServiceProfile } from '@/shared/types/lexicon-types.js'
 import { services } from '@/db/schema/index.js'
@@ -82,25 +82,23 @@ export const serviceProfileHandler: RecordHandler = {
     const lngFloat = area?.lngE7 != null ? (area.lngE7 / 1e7).toString() : null
     const radiusKm = area?.radiusKm != null ? area.radiusKm.toString() : null
 
-    // Convention: at most one indexed profile per operator. An operator
-    // who publishes multiple service.profile records (any rkey) sees
-    // their latest one indexed; earlier rows by the same operator are
-    // dropped from the index. The records still live on their PDS.
-    //
-    // Runs in a single transaction so a concurrent service-search read
-    // never observes the "0 profiles" gap between the delete-others and
-    // the upsert.
+    // ONE INDEXED ROW PER `uri` (per published profile record), NOT per
+    // operator. A provider may publish many independent listings under the
+    // same DID — each service.profile record (its own rkey -> its own uri)
+    // is its own discoverable row. This is the marketplace model: a seller
+    // with ten products lists ten profiles. A listing is removed by deleting
+    // its record (-> handleDelete), never by publishing a sibling.
     //
     // Concurrency safety (the bug this replaced): the old path was
     // `delete(operatorDid)` + plain `insert(uri)` with NO ON CONFLICT,
     // relying on "the DELETE guarantees no row at this URI". That
     // guarantee is FALSE under concurrency — the ingester queue runs many
-    // items in parallel and replays a spool of events for the SAME `self`
-    // URI on every Jetstream reconnect. Two same-URI events interleave,
-    // both delete, both insert, the second hits `services_pkey` →
-    // duplicate_key → requeue storm → the row never lands. Fix: an
-    // idempotent UPSERT on `uri`, plus deleting only the operator's OTHER
-    // uris (so "at most one indexed profile per operator" still holds).
+    // items in parallel and replays a spool of events for the SAME uri on
+    // every Jetstream reconnect. Two same-uri events interleave, both
+    // insert, the second hits `services_pkey` duplicate_key -> requeue
+    // storm -> the row never lands. Fix: an idempotent UPSERT on `uri`. We
+    // do NOT delete the operator's other uris (that would cap them at one
+    // listing); each uri is independent.
     const now = new Date()
     await ctx.db.transaction(async (tx) => {
       // Preserve `createdAt` across re-publishes of the SAME uri. Capture
@@ -113,12 +111,6 @@ export const serviceProfileHandler: RecordHandler = {
         .where(eq(services.uri, op.uri))
         .limit(1)
       const createdAt = prior[0]?.createdAt ?? now
-
-      // Drop the operator's OTHER profile rows (different rkey/uri) — NOT
-      // the uri we're about to upsert, so the upsert owns it.
-      await tx
-        .delete(services)
-        .where(and(eq(services.operatorDid, op.did), ne(services.uri, op.uri)))
 
       const values = {
         uri: op.uri,

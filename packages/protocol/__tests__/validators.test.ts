@@ -148,6 +148,37 @@ describe('validateServiceResponseBody (task 1.20)', () => {
       'service.response: status must be success|unavailable|error, got "ok"',
     );
   });
+
+  it('requires ttl_seconds (the unified-contract invariant)', () => {
+    const { ttl_seconds, ...noTtl } = validBody;
+    void ttl_seconds;
+    expect(validateServiceResponseBody(noTtl)).toMatch(/ttl_seconds is required/);
+  });
+
+  it('rejects ttl_seconds outside (0, MAX_SERVICE_TTL]', () => {
+    expect(validateServiceResponseBody({ ...validBody, ttl_seconds: 0 })).toMatch(
+      /ttl_seconds must be 1-/,
+    );
+    expect(validateServiceResponseBody({ ...validBody, ttl_seconds: 99_999_999 })).toMatch(
+      /ttl_seconds must be 1-/,
+    );
+  });
+
+  it('validates schema_hash type when present', () => {
+    expect(validateServiceResponseBody({ ...validBody, schema_hash: 42 })).toMatch(/schema_hash/);
+    expect(validateServiceResponseBody({ ...validBody, schema_hash: 'abc' })).toBeNull();
+  });
+
+  it('accepts an optional card object (opaque at the wire layer)', () => {
+    const card = { version: 1, blocks: [{ kind: 'title', text: 'X' }] };
+    expect(validateServiceResponseBody({ ...validBody, card })).toBeNull();
+  });
+
+  it('rejects a non-object card (scalar / array / null)', () => {
+    expect(validateServiceResponseBody({ ...validBody, card: 'nope' })).toMatch(/card/);
+    expect(validateServiceResponseBody({ ...validBody, card: [] })).toMatch(/card/);
+    expect(validateServiceResponseBody({ ...validBody, card: null })).toMatch(/card/);
+  });
 });
 
 describe('validateFutureSkew (task 1.20)', () => {

@@ -225,9 +225,17 @@ function deriveResponseBody(ctx: ServiceQueryBridgeContext, parsed: unknown): Se
   if (parsed !== null && typeof parsed === 'object') {
     const obj = parsed as Record<string, unknown>;
     const status = obj.status;
+    // Provider-authored display card (the wrapper form
+    // `{ status, result, card }`). Forwarded OPAQUELY: Core does not run
+    // CardSpec code or trust it — the requester re-validates it as untrusted
+    // (apps/mobile/src/services/bootstrap.ts) before rendering. We only carry
+    // it when it's a non-null object so we never put a garbage scalar on the
+    // wire. This is the generalized "marketplace seller controls the card"
+    // path; without it only the requester-side deterministic mapper runs.
+    const card = carriedCard(obj.card);
     if (status === 'unavailable' || status === 'error') {
       const errField = typeof obj.error === 'string' ? obj.error : undefined;
-      return {
+      const body: ServiceResponseBody = {
         query_id: ctx.queryId,
         capability: ctx.capability,
         status,
@@ -237,15 +245,19 @@ function deriveResponseBody(ctx: ServiceQueryBridgeContext, parsed: unknown): Se
         error: errField,
         ttl_seconds: ctx.ttlSeconds,
       };
+      if (card !== undefined) body.card = card;
+      return body;
     }
     if (status === 'success' && 'result' in obj) {
-      return {
+      const body: ServiceResponseBody = {
         query_id: ctx.queryId,
         capability: ctx.capability,
         status: 'success',
         result: obj.result,
         ttl_seconds: ctx.ttlSeconds,
       };
+      if (card !== undefined) body.card = card;
+      return body;
     }
   }
   return {
@@ -255,4 +267,18 @@ function deriveResponseBody(ctx: ServiceQueryBridgeContext, parsed: unknown): Se
     result: parsed,
     ttl_seconds: ctx.ttlSeconds,
   };
+}
+
+/**
+ * Narrow a runner-supplied `card` field for opaque forwarding. We require a
+ * non-null, non-array object (a CardSpec is `{ version, blocks, … }`); a
+ * scalar/array is rejected so only a plausibly-structured card rides the wire.
+ * Deep validation (badges, https-only links, size caps) is the requester's
+ * job via `validateCardSpec(card, { trusted: false })`.
+ */
+function carriedCard(card: unknown): ServiceResponseBody['card'] | undefined {
+  if (card !== null && typeof card === 'object' && !Array.isArray(card)) {
+    return card as ServiceResponseBody['card'];
+  }
+  return undefined;
 }

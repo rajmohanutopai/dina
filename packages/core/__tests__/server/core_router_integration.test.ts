@@ -31,8 +31,9 @@ import {
   setDeviceRoleResolver,
 } from '../../src/auth/caller_type';
 import { InMemoryWorkflowRepository, setWorkflowRepository } from '../../src/workflow/repository';
-import { WorkflowService, setWorkflowService } from '../../src/workflow/service';
+import { WorkflowService, setWorkflowService, getWorkflowService } from '../../src/workflow/service';
 import type { WorkflowTask } from '../../src/workflow/domain';
+import { WorkflowTaskState } from '../../src/workflow/domain';
 import { setServiceQuerySender } from '../../src/server/routes/service_query';
 import { setServiceRespondSender } from '../../src/server/routes/service_respond';
 import { clearServiceConfig, resetServiceConfigState } from '../../src/service/service_config';
@@ -632,6 +633,88 @@ describe('CoreRouter integration', () => {
       expect((second.body as { deduped?: boolean }).deduped).toBe(true);
       // Sender called once — second request was a dedup.
       expect(sent).toHaveLength(1);
+    });
+
+    it('POST /v1/service/respond forwards a provider-authored card onto the D2D body', async () => {
+      // Regression for the main architectural gap: a provider's
+      // `response_body.card` must survive `/v1/service/respond` onto the D2D
+      // `service.response` body (the requester re-validates it untrusted).
+      // The route builds the D2D body INLINE — a separate path from the
+      // bridge's deriveResponseBody — so it needs its own coverage.
+      const sent: Array<{ to: string; body: Record<string, unknown> }> = [];
+      setServiceRespondSender(async (to, _type, body) => {
+        sent.push({ to, body: body as unknown as Record<string, unknown> });
+      });
+      // A claimable approval task carrying the service-query payload the route
+      // extracts from_did/query_id/capability/ttl out of.
+      getWorkflowService()!.create({
+        id: 'svc-resp-card',
+        kind: 'approval',
+        description: '',
+        payload: JSON.stringify({
+          type: 'service_query_execution',
+          from_did: 'did:plc:requester',
+          query_id: 'q-card-1',
+          capability: 'price_check',
+          ttl_seconds: 60,
+          service_name: 'Corner Market',
+        }),
+        initialState: WorkflowTaskState.Queued,
+      });
+      const card = { version: 1, blocks: [{ kind: 'title', text: 'Organic Bananas' }] };
+      const resp = await router.handle(
+        signedReq(
+          'POST',
+          '/v1/service/respond',
+          {
+            task_id: 'svc-resp-card',
+            response_body: { status: 'success', result: { price: 0.79 }, card },
+          },
+          brain,
+        ),
+      );
+      expect(resp.status).toBe(200);
+      expect(sent).toHaveLength(1);
+      expect(sent[0].to).toBe('did:plc:requester');
+      expect(sent[0].body.status).toBe('success');
+      expect(sent[0].body.result).toEqual({ price: 0.79 });
+      // The card survived onto the D2D body — verbatim, opaque.
+      expect(sent[0].body.card).toEqual(card);
+    });
+
+    it('POST /v1/service/respond drops a non-object card (never garbage on the wire)', async () => {
+      const sent: Array<{ body: Record<string, unknown> }> = [];
+      setServiceRespondSender(async (_to, _type, body) => {
+        sent.push({ body: body as unknown as Record<string, unknown> });
+      });
+      getWorkflowService()!.create({
+        id: 'svc-resp-badcard',
+        kind: 'approval',
+        description: '',
+        payload: JSON.stringify({
+          type: 'service_query_execution',
+          from_did: 'did:plc:requester',
+          query_id: 'q-card-2',
+          capability: 'price_check',
+          ttl_seconds: 60,
+          service_name: 'Corner Market',
+        }),
+        initialState: WorkflowTaskState.Queued,
+      });
+      const resp = await router.handle(
+        signedReq(
+          'POST',
+          '/v1/service/respond',
+          {
+            task_id: 'svc-resp-badcard',
+            response_body: { status: 'success', result: { price: 1 }, card: 'not-a-card' },
+          },
+          brain,
+        ),
+      );
+      expect(resp.status).toBe(200);
+      expect(sent).toHaveLength(1);
+      expect(sent[0].body.card).toBeUndefined();
     });
   });
 });

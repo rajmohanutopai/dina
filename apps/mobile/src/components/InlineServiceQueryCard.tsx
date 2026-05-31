@@ -22,6 +22,7 @@ import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'rea
 
 import { readLifecycle, type ChatMessage } from '@dina/brain/chat';
 import { buildResultCardSpec } from '@dina/brain';
+import { validateCardSpec } from '@dina/protocol';
 
 import { colors, radius, shadows, spacing, textStyles } from '../theme';
 
@@ -61,8 +62,14 @@ export function InlineServiceQueryCard({
     // CardSpec (Card-4 threads `lc.cardSpec`); else derive one
     // deterministically from the result on the fly; else fall back to the
     // generic text card. One render path for every capability.
+    //
+    // Re-validate `lc.cardSpec` as UNTRUSTED at the render boundary even
+    // though the delivery path already validated before persisting: a
+    // corrupt / imported / legacy chat row (readLifecycle only checks the
+    // discriminator, then casts) must not bypass the safety rules. Invalid
+    // or absent → null, so we fall through to the deterministic mapper.
     const spec =
-      lc.cardSpec ??
+      validateCardSpec(lc.cardSpec, { trusted: false }) ??
       (result !== undefined ? buildResultCardSpec({ capability, serviceName, result }) : null);
     if (spec !== null) {
       return (

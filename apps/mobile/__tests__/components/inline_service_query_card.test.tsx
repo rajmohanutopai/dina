@@ -166,4 +166,95 @@ describe('InlineServiceQueryCard', () => {
 
     expect(screen.getByText('Generic reply text')).toBeTruthy();
   });
+
+  it('re-validates lc.cardSpec at the render boundary — a corrupt persisted card falls back', () => {
+    // readLifecycle only checks the discriminator then casts, so a corrupt /
+    // imported / legacy row reaches the renderer unvalidated. The boundary
+    // re-validation (validateCardSpec → null) must reject a bad-version /
+    // non-array-blocks card and fall back to the generic text card.
+    addLifecycleMessage(THREAD, 'fallback text body', {
+      kind: 'service_query',
+      status: 'resolved',
+      taskId: 'task-corrupt',
+      queryId: 'q-corrupt',
+      capability: 'price_check',
+      serviceName: 'Corner Market',
+      // deliberately corrupt: bad version + non-array blocks
+      cardSpec: { version: 99, blocks: 'not-an-array' } as unknown as CardSpec,
+    });
+
+    render(<InlineServiceQueryCard message={lastMessage()} />);
+
+    expect(screen.getByText('Corner Market')).toBeTruthy();
+    expect(screen.getByText('fallback text body')).toBeTruthy();
+    expect(screen.queryByText('not-an-array')).toBeFalsy();
+  });
+
+  it('drops a stray provider trust badge from a persisted card at the render boundary', () => {
+    // Untrusted re-validation strips a Dina-owned badge even if one was
+    // somehow persisted into the lifecycle row.
+    addLifecycleMessage(THREAD, 'reply', {
+      kind: 'service_query',
+      status: 'resolved',
+      taskId: 'task-badge',
+      queryId: 'q-badge',
+      capability: 'price_check',
+      serviceName: 'Sketchy Seller',
+      cardSpec: {
+        version: 1,
+        blocks: [
+          { kind: 'title', text: 'Gadget' },
+          { kind: 'badge', text: 'VERIFIED SELLER', tone: 'positive' },
+        ],
+      } as CardSpec,
+    });
+
+    render(<InlineServiceQueryCard message={lastMessage()} />);
+
+    expect(screen.getByText('Gadget')).toBeTruthy();
+    expect(screen.queryByText('VERIFIED SELLER')).toBeFalsy();
+  });
+
+  it('marks an expired persisted card (past expiresAt) as Expired (#6)', () => {
+    addLifecycleMessage(THREAD, 'reply', {
+      kind: 'service_query',
+      status: 'resolved',
+      taskId: 'task-exp',
+      queryId: 'q-exp',
+      capability: 'price_check',
+      serviceName: 'Corner Market',
+      cardSpec: {
+        version: 1,
+        blocks: [{ kind: 'title', text: 'Old Price' }],
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      } as CardSpec,
+    });
+
+    render(<InlineServiceQueryCard message={lastMessage()} />);
+
+    expect(screen.getByText('Old Price')).toBeTruthy();
+    expect(screen.getByText('Expired', { exact: false })).toBeTruthy();
+  });
+
+  it('does NOT mark a fresh persisted card (ttl window still open) as Expired (#6)', () => {
+    addLifecycleMessage(THREAD, 'reply', {
+      kind: 'service_query',
+      status: 'resolved',
+      taskId: 'task-fresh',
+      queryId: 'q-fresh',
+      capability: 'price_check',
+      serviceName: 'Corner Market',
+      cardSpec: {
+        version: 1,
+        blocks: [{ kind: 'title', text: 'Fresh Price' }],
+        generatedAt: new Date().toISOString(),
+        ttlSeconds: 3600,
+      } as CardSpec,
+    });
+
+    render(<InlineServiceQueryCard message={lastMessage()} />);
+
+    expect(screen.getByText('Fresh Price')).toBeTruthy();
+    expect(screen.queryByText('Expired', { exact: false })).toBeNull();
+  });
 });
