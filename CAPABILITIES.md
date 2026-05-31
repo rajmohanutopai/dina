@@ -209,7 +209,7 @@ OpenClaw connects to Dina via MCP (Model Context Protocol). Dina runs as an MCP 
 pip install dina-agent
 
 # Pair with your Dina Home Node
-./dina-admin device pair          # generates pairing code
+legacy/bin/dina-admin device pair # generates pairing code
 dina configure --role agent       # pairs the device
 
 # OpenClaw config (openclaw.json)
@@ -538,9 +538,9 @@ Per-persona vault keys:
 ### Import to a new machine
 
 ```
-(.venv) ~/new-machine % ./install.sh
+(.venv) ~/new-machine % legacy/bin/install.sh
 Enter recovery phrase: word1 word2 ... word24
-(.venv) ~/new-machine % dina-admin import dina-export.dina --passphrase "my-export-passphrase"
+(.venv) ~/new-machine % legacy/bin/dina-admin import dina-export.dina --passphrase "my-export-passphrase"
 Imported
 ```
 

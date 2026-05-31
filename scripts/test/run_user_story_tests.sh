@@ -27,7 +27,7 @@
 #   SYSTEM_RESTART=0 ./run_user_story_tests.sh         # reuse containers
 # ============================================================================
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/../.."
 
 # Activate venv if present and not already active
 if [ -z "${VIRTUAL_ENV:-}" ] && [ -f .venv/bin/activate ]; then

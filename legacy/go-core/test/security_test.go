@@ -208,7 +208,7 @@ func TestSecurity_17_6_TLSEnforcement(t *testing.T) {
 		"server source must implement HTTP server infrastructure (ListenAndServe)")
 
 	// Verify docker-compose uses secrets mount (not plain env vars) for token security.
-	compose, err := os.ReadFile("../../../docker-compose.yml")
+	compose, err := os.ReadFile("../../../legacy/compose/docker-compose.yml")
 	if err != nil {
 		t.Log("docker-compose.yml not found — skipping deployment TLS check")
 		return
@@ -239,9 +239,9 @@ func TestSecurity_17_7_DockerNetworkIsolation(t *testing.T) {
 	testutil.RequireFalse(t, brainInternal, "dina-brain-net must NOT be internal — brain needs outbound for LLM APIs")
 
 	// Cross-validate against the real docker-compose.yml on disk.
-	composeData, readErr := os.ReadFile(filepath.Join("..", "..", "..", "docker-compose.yml"))
+	composeData, readErr := os.ReadFile(filepath.Join("..", "..", "..", "legacy/compose/docker-compose.yml"))
 	if readErr != nil {
-		composeData, readErr = os.ReadFile(filepath.Join("..", "docker-compose.yml"))
+		composeData, readErr = os.ReadFile(filepath.Join("..", "legacy/compose/docker-compose.yml"))
 	}
 	if readErr == nil {
 		compose := string(composeData)
@@ -881,7 +881,7 @@ func TestSecurity_17_23_SecretsNeverInEnvVars(t *testing.T) {
 // TST-CORE-634
 func TestSecurity_17_24_SecretsTmpfsMount(t *testing.T) {
 	// Config audit: verify docker-compose.yml uses file-based secrets (tmpfs in Docker).
-	compose, err := os.ReadFile("../../../docker-compose.yml")
+	compose, err := os.ReadFile("../../../legacy/compose/docker-compose.yml")
 	if err != nil {
 		t.Fatalf("failed to read docker-compose.yml: %v", err)
 	}
@@ -1007,9 +1007,9 @@ func TestSecurity_17_27_BrainNetStandard(t *testing.T) {
 	// If custom networks are defined in docker-compose.yml, verify the brain
 	// service is NOT attached to an internal-only network (internal: true).
 	// If no custom networks exist, the default bridge provides outbound — that's fine.
-	compose, err := os.ReadFile("../../../docker-compose.yml")
+	compose, err := os.ReadFile("../../../legacy/compose/docker-compose.yml")
 	if err != nil {
-		compose, err = os.ReadFile("../docker-compose.yml")
+		compose, err = os.ReadFile("../compose/docker-compose.yml")
 	}
 	if err != nil {
 		t.Skip("docker-compose.yml not found — skipping Docker network check")

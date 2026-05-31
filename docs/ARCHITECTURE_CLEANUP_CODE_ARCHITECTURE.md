@@ -1031,7 +1031,7 @@ Evidence:
 - Replaced Brain enrichment deep imports in
   `apps/mobile/src/services/staging_enrichment.ts`.
 - Replaced AppView-client and service-capability deep imports in
-  `apps/mobile/src/services/appview_stub.ts` and
+  `apps/mobile/src/appview_stub.ts` and
   `apps/mobile/src/services/demo_bus_driver_responder.ts` with public
   `@dina/brain` imports.
 - Added a mobile architecture guard that rejects those deep imports.

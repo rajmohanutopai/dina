@@ -444,7 +444,7 @@ Evidence:
   `touchTopicsForItem`.
 - Updated `apps/mobile/src/services/staging_enrichment.ts` to import enrichment
   APIs from `@dina/brain/enrichment`.
-- Updated `apps/mobile/src/services/appview_stub.ts` and
+- Updated `apps/mobile/src/appview_stub.ts` and
   `apps/mobile/src/services/demo_bus_driver_responder.ts` to use public
   `@dina/brain` exports for AppView service profiles, ETA schemas/results, and
   `computeSchemaHash`.
@@ -464,7 +464,7 @@ Validation:
 
 - `npm run typecheck --workspace @dina/brain`
 - `npm run typecheck --workspace @dina/app`
-- `npm test --workspace @dina/app -- architecture/package_boundary.test.ts services/staging_enrichment.test.ts services/appview_stub.test.ts services/boot_capabilities.test.ts services/boot_service.test.ts integration/staging_drain_end_to_end.test.ts --runInBand`
+- `npm test --workspace @dina/app -- architecture/package_boundary.test.ts services/staging_enrichment.test.ts appview_stub.test.ts services/boot_capabilities.test.ts services/boot_service.test.ts integration/staging_drain_end_to_end.test.ts --runInBand`
 - `npm test --workspace @dina/brain -- enrichment/topic_touch_pipeline.test.ts enrichment/topic_extractor.test.ts enrichment/preference_extractor.test.ts service/capabilities/registry.test.ts --runInBand`
 
 Review:
@@ -557,7 +557,7 @@ Evidence:
 - Added `packages/core/d2d.ts` as the public `@dina/core/d2d` subpath for D2D
   message-family constants, DID resolver types, quarantine APIs, installed D2D
   sender accessors, and MsgBox WebSocket factory types.
-- Updated `apps/mobile/src/services/msgbox_wiring.ts`,
+- Updated `apps/mobile/src/msgbox_wiring.ts`,
   `apps/mobile/src/services/chat_d2d.ts`, and
   `apps/mobile/src/hooks/useD2DMessages.ts` to import from `@dina/core/d2d`.
 - Extended `apps/mobile/__tests__/architecture/package_boundary.test.ts` so
@@ -1134,7 +1134,7 @@ Evidence:
 
 - `packages/core/src/relay/msgbox_boot.ts` explicitly sets `setWSDeliverFn(null)`.
 - The same file says the shared Dina MsgBox relay drops `type: 'd2d'` WS frames, so D2D send uses HTTP `/forward` fallback while RPC remains on WS.
-- `apps/mobile/src/services/msgbox_wiring.ts` now resolves MsgBox through `@dina/home-node`; the default remains `wss://test-mailbox.dinakernel.com/ws` in test mode.
+- `apps/mobile/src/msgbox_wiring.ts` now resolves MsgBox through `@dina/home-node`; the default remains `wss://test-mailbox.dinakernel.com/ws` in test mode.
 
 Impact:
 

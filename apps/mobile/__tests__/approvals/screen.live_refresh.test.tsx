@@ -37,6 +37,8 @@ import {
 
 import type { WorkflowTask } from '@dina/core';
 
+const CALLS_PER_SCREEN_LOAD = 7; // pending + six resolved-history states
+
 // Routes the screen uses for the menu / confirm flows.
 jest.mock('expo-router', () => ({
   useFocusEffect: (cb: () => void) => {
@@ -111,15 +113,14 @@ describe('Approvals screen — live refresh on appendNotification (R-M6-I2)', ()
     const { client, listCalls } = stubClient([task('t-1', 1_000)]);
     setInboxCoreClient(client);
     render(<ApprovalsScreen />);
-    await waitFor(() => expect(listCalls.value).toBeGreaterThanOrEqual(1));
-    expect(listCalls.value).toBe(1);
+    await waitFor(() => expect(listCalls.value).toBe(CALLS_PER_SCREEN_LOAD));
   });
 
   it('refetches when an approval-kind notification is appended', async () => {
     const stub = stubClient([task('t-1', 1_000)]);
     setInboxCoreClient(stub.client);
     render(<ApprovalsScreen />);
-    await waitFor(() => expect(stub.listCalls.value).toBe(1));
+    await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_SCREEN_LOAD));
 
     // Simulate an agent's `dina validate` minting a new approval card,
     // which fires `appendNotification({kind:'approval', ...})` via the
@@ -134,14 +135,14 @@ describe('Approvals screen — live refresh on appendNotification (R-M6-I2)', ()
       });
     });
 
-    await waitFor(() => expect(stub.listCalls.value).toBe(2));
+    await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_SCREEN_LOAD * 2));
   });
 
   it('does NOT refetch when a non-approval kind is appended', async () => {
     const stub = stubClient([]);
     setInboxCoreClient(stub.client);
     render(<ApprovalsScreen />);
-    await waitFor(() => expect(stub.listCalls.value).toBe(1));
+    await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_SCREEN_LOAD));
 
     await act(async () => {
       appendNotification({
@@ -159,7 +160,7 @@ describe('Approvals screen — live refresh on appendNotification (R-M6-I2)', ()
     });
 
     // No additional fetches — kinds were filtered out.
-    expect(stub.listCalls.value).toBe(1);
+    expect(stub.listCalls.value).toBe(CALLS_PER_SCREEN_LOAD);
   });
 
   it('coalesces overlapping events while a refetch is in flight', async () => {
@@ -173,8 +174,8 @@ describe('Approvals screen — live refresh on appendNotification (R-M6-I2)', ()
     const client: InboxCoreClient = {
       async listWorkflowTasks() {
         listCalls++;
-        if (listCalls === 1) return []; // initial focus — resolves immediately
-        await slowFetch; // second + subsequent calls block until released
+        if (listCalls <= CALLS_PER_SCREEN_LOAD) return [];
+        await slowFetch; // notification-triggered reload blocks until released
         return [];
       },
       approveWorkflowTask: jest.fn(),
@@ -184,9 +185,9 @@ describe('Approvals screen — live refresh on appendNotification (R-M6-I2)', ()
     };
     setInboxCoreClient(client);
     render(<ApprovalsScreen />);
-    await waitFor(() => expect(listCalls).toBe(1));
+    await waitFor(() => expect(listCalls).toBe(CALLS_PER_SCREEN_LOAD));
 
-    // First event → fetch #2 starts but blocks on slowFetch.
+    // First event → second screen load starts but blocks on slowFetch.
     await act(async () => {
       appendNotification({ kind: 'approval', title: 'a', body: '', sourceId: 's1' });
     });
@@ -202,8 +203,8 @@ describe('Approvals screen — live refresh on appendNotification (R-M6-I2)', ()
       release?.();
     });
 
-    // Two total fetches: initial focus + one coalesced refetch.
-    // (Without the ref guard this would be 4.)
-    await waitFor(() => expect(listCalls).toBe(2));
+    // Two total screen loads: initial focus + one coalesced refetch.
+    // (Without the ref guard this would be four full loads.)
+    await waitFor(() => expect(listCalls).toBe(CALLS_PER_SCREEN_LOAD * 2));
   });
 });

@@ -140,8 +140,8 @@ export const fonts = {
  *   headline: { ...textStyles.screenHeadline, fontSize: 36 },
  *
  * This keeps the display font, colour, and letter-spacing consistent
- * across infra_setup, welcome, help, unlock_gate, and any future
- * informational screen without repeating the Platform.OS conditional.
+ * across welcome, help, unlock_gate, and any future informational
+ * screen without repeating the Platform.OS conditional.
  */
 import type { TextStyle } from 'react-native';
 
@@ -169,16 +169,14 @@ export const textStyles = {
   // Brand-continuation only — welcome / choose / splash. Hero copy.
   // Don't use on task-focused functional screens; those want h1/h2.
   display: {
-    fontFamily: Platform.OS === 'ios' ? fonts.display : undefined,
-    fontStyle: 'italic' as TextStyle['fontStyle'],
+    fontFamily: fonts.display,
     fontSize: 40,
     lineHeight: 48,
     color: colors.textPrimary,
     letterSpacing: -0.4,
   } as TextStyle,
   displaySmall: {
-    fontFamily: Platform.OS === 'ios' ? fonts.display : undefined,
-    fontStyle: 'italic' as TextStyle['fontStyle'],
+    fontFamily: fonts.display,
     fontSize: 32,
     lineHeight: 40,
     color: colors.textPrimary,
@@ -189,8 +187,7 @@ export const textStyles = {
   // AI" above the chat greeting) so the brand statement carries
   // through without out-shouting an actionable heading.
   tagline: {
-    fontFamily: Platform.OS === 'ios' ? fonts.display : undefined,
-    fontStyle: 'italic' as TextStyle['fontStyle'],
+    fontFamily: fonts.display,
     fontSize: 18,
     lineHeight: 24,
     color: colors.textSecondary,

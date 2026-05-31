@@ -79,21 +79,21 @@ class TestScriptsExist:
     # TRACE: {"suite": "REL", "case": "0012", "section": "12", "sectionName": "Doc Claims", "subsection": "02", "scenario": "01", "title": "rel_012_install_script_exists"}
     def test_rel_012_install_script_exists(self) -> None:
         """install.sh exists and is executable."""
-        install = PROJECT_ROOT / "install.sh"
+        install = PROJECT_ROOT / "legacy/bin/install.sh"
         assert install.exists(), "Missing install.sh"
 
     # REL-012
     # TRACE: {"suite": "REL", "case": "0012", "section": "12", "sectionName": "Doc Claims", "subsection": "02", "scenario": "02", "title": "rel_012_run_script_exists"}
     def test_rel_012_run_script_exists(self) -> None:
         """run.sh exists."""
-        run_sh = PROJECT_ROOT / "run.sh"
+        run_sh = PROJECT_ROOT / "legacy/bin/run.sh"
         assert run_sh.exists(), "Missing run.sh"
 
     # REL-012
     # TRACE: {"suite": "REL", "case": "0012", "section": "12", "sectionName": "Doc Claims", "subsection": "02", "scenario": "03", "title": "rel_012_docker_compose_exists"}
     def test_rel_012_docker_compose_exists(self) -> None:
         """docker-compose.yml exists."""
-        compose = PROJECT_ROOT / "docker-compose.yml"
+        compose = PROJECT_ROOT / "legacy/compose/docker-compose.yml"
         assert compose.exists(), "Missing docker-compose.yml"
 
     # REL-012

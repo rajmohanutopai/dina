@@ -5,7 +5,7 @@
 #   - Community PDS firehose → Jetstream → AppView (PeerLens)
 #
 # Usage:
-#   docker compose -f docker-compose.pipeline.yml up -d
+#   docker compose -f docker/compose/pipeline.yml up -d
 #
 # Requires:
 #   - A community PDS running on the host (default: port 2583)
@@ -19,7 +19,7 @@ services:
   # ── D2D MsgBox (encrypted mailbox) ──
   msgbox:
     build:
-      context: ./msgbox
+      context: ../../msgbox
       dockerfile: Dockerfile
     ports:
       - "${MSGBOX_PORT:-7700}:7700"
@@ -75,7 +75,7 @@ services:
   # ── AppView Ingester (Jetstream → PostgreSQL) ──
   appview-ingester:
     build:
-      context: ./appview
+      context: ../../appview
     command: ["node", "dist/src/ingester/main.js"]  # rootDir: "." → dist/src/
     environment:
       DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@appview-postgres:5432/dina_trust
@@ -91,7 +91,7 @@ services:
   # ── AppView Scorer (background PeerLens rating jobs) ──
   appview-scorer:
     build:
-      context: ./appview
+      context: ../../appview
     command: ["node", "dist/src/scorer/main.js"]
     environment:
       DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@appview-postgres:5432/dina_trust
@@ -104,7 +104,7 @@ services:
   # ── AppView Web (5 xRPC trust endpoints) ──
   appview-web:
     build:
-      context: ./appview
+      context: ../../appview
     command: ["node", "dist/src/web/server.js"]
     ports:
       - "${APPVIEW_PORT:-3000}:3000"

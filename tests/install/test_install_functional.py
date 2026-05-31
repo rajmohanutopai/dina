@@ -35,7 +35,7 @@ class TestRunShBehavior:
     def test_bare_shows_usage(self, installed_dir: Path) -> None:
         """run.sh with no args shows usage, doesn't start."""
         result = subprocess.run(
-            ["bash", str(installed_dir / "run.sh")],
+            ["bash", str(installed_dir / "legacy/bin/run.sh")],
             cwd=str(installed_dir),
             capture_output=True, text=True, timeout=10,
             env={**os.environ, "DINA_DIR": str(installed_dir)},
@@ -49,7 +49,7 @@ class TestRunShBehavior:
     # TRACE: {"suite": "INST", "case": "0015", "section": "03", "sectionName": "Functional", "subsection": "01", "scenario": "02", "title": "unknown_flag_rejected"}
     def test_unknown_flag_rejected(self, installed_dir: Path) -> None:
         result = subprocess.run(
-            ["bash", str(installed_dir / "run.sh"), "--bogus"],
+            ["bash", str(installed_dir / "legacy/bin/run.sh"), "--bogus"],
             cwd=str(installed_dir),
             capture_output=True, text=True, timeout=10,
             env={**os.environ, "DINA_DIR": str(installed_dir)},
@@ -59,7 +59,7 @@ class TestRunShBehavior:
     # TRACE: {"suite": "INST", "case": "0016", "section": "03", "sectionName": "Functional", "subsection": "01", "scenario": "03", "title": "status_shows_healthy"}
     def test_status_shows_healthy(self, installed_dir: Path) -> None:
         result = subprocess.run(
-            ["bash", str(installed_dir / "run.sh"), "--status"],
+            ["bash", str(installed_dir / "legacy/bin/run.sh"), "--status"],
             cwd=str(installed_dir),
             capture_output=True, text=True, timeout=30,
             env={**os.environ, "DINA_DIR": str(installed_dir)},
@@ -70,7 +70,7 @@ class TestRunShBehavior:
     # TRACE: {"suite": "INST", "case": "0017", "section": "03", "sectionName": "Functional", "subsection": "01", "scenario": "04", "title": "status_shows_did"}
     def test_status_shows_did(self, installed_dir: Path) -> None:
         result = subprocess.run(
-            ["bash", str(installed_dir / "run.sh"), "--status"],
+            ["bash", str(installed_dir / "legacy/bin/run.sh"), "--status"],
             cwd=str(installed_dir),
             capture_output=True, text=True, timeout=30,
             env={**os.environ, "DINA_DIR": str(installed_dir)},
@@ -89,7 +89,7 @@ class TestDinaAdminPostInstall:
     # TRACE: {"suite": "INST", "case": "0018", "section": "03", "sectionName": "Functional", "subsection": "02", "scenario": "01", "title": "persona_list"}
     def test_persona_list(self, installed_dir: Path) -> None:
         result = subprocess.run(
-            ["bash", str(installed_dir / "dina-admin"), "--json", "persona", "list"],
+            ["bash", str(installed_dir / "legacy/bin/dina-admin"), "--json", "persona", "list"],
             cwd=str(installed_dir),
             capture_output=True, text=True, timeout=30,
         )
@@ -102,7 +102,7 @@ class TestDinaAdminPostInstall:
     # TRACE: {"suite": "INST", "case": "0019", "section": "03", "sectionName": "Functional", "subsection": "02", "scenario": "02", "title": "device_list"}
     def test_device_list(self, installed_dir: Path) -> None:
         result = subprocess.run(
-            ["bash", str(installed_dir / "dina-admin"), "--json", "device", "list"],
+            ["bash", str(installed_dir / "legacy/bin/dina-admin"), "--json", "device", "list"],
             cwd=str(installed_dir),
             capture_output=True, text=True, timeout=30,
         )
@@ -111,7 +111,7 @@ class TestDinaAdminPostInstall:
     # TRACE: {"suite": "INST", "case": "0020", "section": "03", "sectionName": "Functional", "subsection": "02", "scenario": "03", "title": "approvals_list"}
     def test_approvals_list(self, installed_dir: Path) -> None:
         result = subprocess.run(
-            ["bash", str(installed_dir / "dina-admin"), "--json", "approvals", "list"],
+            ["bash", str(installed_dir / "legacy/bin/dina-admin"), "--json", "approvals", "list"],
             cwd=str(installed_dir),
             capture_output=True, text=True, timeout=30,
         )
@@ -120,7 +120,7 @@ class TestDinaAdminPostInstall:
     # TRACE: {"suite": "INST", "case": "0021", "section": "03", "sectionName": "Functional", "subsection": "02", "scenario": "04", "title": "model_list"}
     def test_model_list(self, installed_dir: Path) -> None:
         result = subprocess.run(
-            ["bash", str(installed_dir / "dina-admin"), "model", "list"],
+            ["bash", str(installed_dir / "legacy/bin/dina-admin"), "model", "list"],
             cwd=str(installed_dir),
             capture_output=True, text=True, timeout=30,
         )
@@ -175,7 +175,7 @@ class TestInputValidation:
     # TRACE: {"suite": "INST", "case": "0025", "section": "03", "sectionName": "Functional", "subsection": "05", "scenario": "01", "title": "invalid_identity_choice"}
     def test_invalid_identity_choice(self, install_dir: Path) -> None:
         child = pexpect.spawn(
-            "bash", [str(install_dir / "install.sh")],
+            "bash", [str(install_dir / "legacy/bin/install.sh")],
             cwd=str(install_dir), timeout=180, encoding="utf-8",
             env={**os.environ, "DINA_DIR": str(install_dir), "DINA_SKIP_MNEMONIC_VERIFY": "1"},
         )
@@ -192,7 +192,7 @@ class TestInputValidation:
     # TRACE: {"suite": "INST", "case": "0026", "section": "03", "sectionName": "Functional", "subsection": "05", "scenario": "02", "title": "api_key_at_llm_menu"}
     def test_api_key_at_llm_menu(self, install_dir: Path) -> None:
         child = pexpect.spawn(
-            "bash", [str(install_dir / "install.sh")],
+            "bash", [str(install_dir / "legacy/bin/install.sh")],
             cwd=str(install_dir), timeout=300, encoding="utf-8",
             env={**os.environ, "DINA_DIR": str(install_dir), "DINA_SKIP_MNEMONIC_VERIFY": "1"},
         )
@@ -224,7 +224,7 @@ class TestInputValidation:
     # TRACE: {"suite": "INST", "case": "0027", "section": "03", "sectionName": "Functional", "subsection": "05", "scenario": "03", "title": "invalid_security_mode"}
     def test_invalid_security_mode(self, install_dir: Path) -> None:
         child = pexpect.spawn(
-            "bash", [str(install_dir / "install.sh")],
+            "bash", [str(install_dir / "legacy/bin/install.sh")],
             cwd=str(install_dir), timeout=180, encoding="utf-8",
             env={**os.environ, "DINA_DIR": str(install_dir), "DINA_SKIP_MNEMONIC_VERIFY": "1"},
         )
@@ -251,7 +251,7 @@ class TestInputValidation:
     def test_invalid_telegram_choice(self, install_dir: Path) -> None:
         """Invalid Telegram choice re-prompts."""
         child = pexpect.spawn(
-            "bash", [str(install_dir / "install.sh")],
+            "bash", [str(install_dir / "legacy/bin/install.sh")],
             cwd=str(install_dir), timeout=300, encoding="utf-8",
             env={**os.environ, "DINA_DIR": str(install_dir), "DINA_SKIP_MNEMONIC_VERIFY": "1"},
         )

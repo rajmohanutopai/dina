@@ -236,6 +236,16 @@ export default function SettingsScreen() {
           <Text style={styles.rowLabel}>PeerLens preferences</Text>
           <Text style={styles.rowValue}>{'›'}</Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/infrastructure')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Infrastructure settings"
+          testID="settings-row-infrastructure"
+        >
+          <Text style={styles.rowLabel}>Infrastructure</Text>
+          <Text style={styles.rowValue}>{'\u203A'}</Text>
+        </TouchableOpacity>
         {/* Service sharing row. The label adapts to whether the
             node is already running as a provider; a non-provider
             node can still tap through to /service-settings where

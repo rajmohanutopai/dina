@@ -3,7 +3,7 @@
 
 Called by run_all_tests.sh after all suites complete. Reads per-phase JSON
 files (produced by test_status.py --json-file), and generates a standalone
-HTML report at all_test_results.html.
+HTML report at docs/site/all_test_results.html.
 
 Usage:
     python3 scripts/generate_test_report.py <json_file> [<json_file>...] [--elapsed <seconds>]
@@ -852,7 +852,8 @@ def main() -> None:
         print("No test results found.", file=sys.stderr)
         return
 
-    html_path = Path.cwd() / "all_test_results.html"
+    html_path = Path.cwd() / "docs" / "site" / "all_test_results.html"
+    html_path.parent.mkdir(parents=True, exist_ok=True)
     generate_html(suites, elapsed, html_path)
 
     print(f"  HTML report: {html_path}")

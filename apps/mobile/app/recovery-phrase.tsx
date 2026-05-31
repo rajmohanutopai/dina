@@ -250,7 +250,6 @@ const styles = StyleSheet.create({
   title: {
     ...textStyles.h2,
     fontFamily: fonts.display,
-    fontStyle: 'italic',
     letterSpacing: -0.3,
     marginBottom: spacing.sm,
   },

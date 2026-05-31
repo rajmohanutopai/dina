@@ -23,7 +23,7 @@ class TestAutoStartMode:
     def test_auto_start_run_no_prompt(self, installed_dir: Path) -> None:
         """run.sh starts without prompting and reaches healthy state."""
         subprocess.run(
-            ["bash", str(installed_dir / "run.sh"), "--stop"],
+            ["bash", str(installed_dir / "legacy/bin/run.sh"), "--stop"],
             cwd=str(installed_dir),
             capture_output=True,
             timeout=60,
@@ -31,7 +31,7 @@ class TestAutoStartMode:
 
         child = pexpect.spawn(
             "bash",
-            [str(installed_dir / "run.sh"), "--start"],
+            [str(installed_dir / "legacy/bin/run.sh"), "--start"],
             cwd=str(installed_dir),
             timeout=180,
             encoding="utf-8",
@@ -60,7 +60,7 @@ class TestManualStartMode:
         """Install with manual-start (maximum security) mode."""
         child = pexpect.spawn(
             "bash",
-            [str(install_dir / "install.sh")],
+            [str(install_dir / "legacy/bin/install.sh")],
             cwd=str(install_dir),
             timeout=300,
             encoding="utf-8",
@@ -100,7 +100,7 @@ class TestManualStartMode:
     def test_manual_start_run_prompts_and_clears(self, manual_start_dir: Path) -> None:
         """run.sh prompts for passphrase, starts, and clears it from disk."""
         subprocess.run(
-            ["bash", str(manual_start_dir / "run.sh"), "--stop"],
+            ["bash", str(manual_start_dir / "legacy/bin/run.sh"), "--stop"],
             cwd=str(manual_start_dir),
             capture_output=True,
             timeout=60,
@@ -108,7 +108,7 @@ class TestManualStartMode:
 
         child = pexpect.spawn(
             "bash",
-            [str(manual_start_dir / "run.sh"), "--start"],
+            [str(manual_start_dir / "legacy/bin/run.sh"), "--start"],
             cwd=str(manual_start_dir),
             timeout=180,
             encoding="utf-8",

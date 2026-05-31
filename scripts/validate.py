@@ -277,7 +277,7 @@ def main() -> int:
     token = _load_token("client_token")
     if not token:
         fail("No secrets/client_token found.")
-        fail("Run ./install.sh first.")
+        fail("Run legacy/bin/install.sh first.")
         return 1
 
     print()

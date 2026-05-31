@@ -1,7 +1,7 @@
 """Telegram Sanity Suite — End-to-end regression through real Telegram.
 
 Two modes:
-  --new:       Fresh install (new DID, new instances via install.sh --instance)
+  --new:       Fresh install (new DID, new instances via legacy/bin/install.sh --instance)
   --existing:  Reuse running instances (same DIDs, same bots)
 
 Run via wrapper:
@@ -91,13 +91,13 @@ def _require_instances():
     if not _core_healthy(ALONSO_PORT):
         pytest.fail(
             "Regression Alonso not running on port 18100. Install with:\n"
-            "  ./install.sh --instance regression-alonso --port 18100 "
+            "  legacy/bin/install.sh --instance regression-alonso --port 18100 "
             "--config tests/sanity/config-alonso.json"
         )
     if not _core_healthy(SANCHO_PORT):
         pytest.fail(
             "Regression Sancho not running on port 18300. Install with:\n"
-            "  ./install.sh --instance regression-sancho --port 18300 "
+            "  legacy/bin/install.sh --instance regression-sancho --port 18300 "
             "--config tests/sanity/config-sancho.json"
         )
 

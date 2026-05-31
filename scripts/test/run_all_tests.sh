@@ -9,13 +9,13 @@ set -euo pipefail
 # report (terminal + HTML).
 #
 # Usage:
-#   ./run_all_tests.sh                                  # unit + lite + default non-unit
-#   ./run_all_tests.sh --all                            # include install-pexpect
-#   ./run_all_tests.sh --run integration,e2e            # unit + lite + specific non-unit
-#   ./run_all_tests.sh --continue                       # don't stop on first failure
-#   ./run_all_tests.sh --unit-only                      # unit + lite tests only (no Docker)
-#   ./run_all_tests.sh --skip-unit                      # non-unit only (skips unit + lite)
-#   ./run_all_tests.sh --skip-prepare                   # reuse running stack (no down/up)
+#   scripts/test/run_all_tests.sh                       # unit + lite + default non-unit
+#   scripts/test/run_all_tests.sh --all                 # include install-pexpect
+#   scripts/test/run_all_tests.sh --run integration,e2e # unit + lite + specific non-unit
+#   scripts/test/run_all_tests.sh --continue            # don't stop on first failure
+#   scripts/test/run_all_tests.sh --unit-only           # unit + lite tests only (no Docker)
+#   scripts/test/run_all_tests.sh --skip-unit           # non-unit only (skips unit + lite)
+#   scripts/test/run_all_tests.sh --skip-prepare        # reuse running stack (no down/up)
 #
 # Phases:
 #   Phase 1   — Go/Python unit suites (test_status.py --unit --mock)
@@ -31,6 +31,8 @@ set -euo pipefail
 # Available non-unit suites:
 #   integration, e2e, release, install, user_stories, appview_integration, install-pexpect
 # ============================================================================
+
+cd "$(dirname "$0")/../.."
 
 CONTINUE=false
 SKIP_UNIT=false
@@ -146,14 +148,14 @@ if [ "$UNIT_ONLY" = false ] && [ "$SKIP_PREPARE" = false ]; then
 
   # Clean tear-down first, then fresh start
   echo "  Tearing down old stack..."
-  ./prepare_non_unit_env.sh down 2>&1 | sed 's/^/  /' || true
+  ./scripts/test/prepare_non_unit_env.sh down 2>&1 | sed 's/^/  /' || true
   echo ""
 
   echo "  Building and starting fresh stack..."
   echo ""
-  if ! ./prepare_non_unit_env.sh up 2>&1 | sed 's/^/  /'; then
+  if ! ./scripts/test/prepare_non_unit_env.sh up 2>&1 | sed 's/^/  /'; then
     echo ""
-    echo "ERROR: Docker stack preparation failed. Run ./prepare_non_unit_env.sh up manually for details."
+    echo "ERROR: Docker stack preparation failed. Run ./scripts/test/prepare_non_unit_env.sh up manually for details."
     rm -rf "$TMPDIR_BASE"
     exit 1
   fi
@@ -179,7 +181,7 @@ if [ "$UNIT_ONLY" = false ]; then
   fi
 
   NONUNIT_RC=0
-  ./run_non_unit_tests.sh ${NONUNIT_ARGS[@]+"${NONUNIT_ARGS[@]}"} \
+  ./scripts/test/run_non_unit_tests.sh ${NONUNIT_ARGS[@]+"${NONUNIT_ARGS[@]}"} \
     --json-file "$NONUNIT_JSON" \
     ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} || NONUNIT_RC=$?
 

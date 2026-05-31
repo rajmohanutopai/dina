@@ -15,13 +15,13 @@ import (
 )
 
 // readCompose reads the real docker-compose.yml from the project root.
-// It tries ../../../docker-compose.yml first (when running from legacy/go-core/test/),
-// then ../docker-compose.yml as a fallback.
+// It tries ../../../legacy/compose/docker-compose.yml first (when running from legacy/go-core/test/),
+// then ../compose/docker-compose.yml as a fallback.
 func readCompose(t *testing.T) string {
 	t.Helper()
-	data, err := os.ReadFile("../../../docker-compose.yml")
+	data, err := os.ReadFile("../../../legacy/compose/docker-compose.yml")
 	if err != nil {
-		data, err = os.ReadFile("../docker-compose.yml")
+		data, err = os.ReadFile("../compose/docker-compose.yml")
 	}
 	if err != nil {
 		t.Skip("docker-compose.yml not found — skipping compose file assertion")
@@ -282,7 +282,7 @@ func TestObservability_20_2_2_CoreHealthcheckInterval(t *testing.T) {
 	impl := realDockerComposeParser
 	testutil.RequireImplementation(t, impl, "DockerComposeParser")
 
-	cfg, err := impl.ParseService("docker-compose.yml", "core")
+	cfg, err := impl.ParseService("legacy/compose/docker-compose.yml", "core")
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, cfg.Interval, "60s")
 }
@@ -295,7 +295,7 @@ func TestObservability_20_2_3_CoreHealthcheckTimeout(t *testing.T) {
 	impl := realDockerComposeParser
 	testutil.RequireImplementation(t, impl, "DockerComposeParser")
 
-	cfg, err := impl.ParseService("docker-compose.yml", "core")
+	cfg, err := impl.ParseService("legacy/compose/docker-compose.yml", "core")
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, cfg.Timeout, "3s")
 }
@@ -327,7 +327,7 @@ func TestObservability_20_2_5_CoreHealthcheckStartPeriod(t *testing.T) {
 	impl := realDockerComposeParser
 	testutil.RequireImplementation(t, impl, "DockerComposeParser")
 
-	cfg, err := impl.ParseService("docker-compose.yml", "core")
+	cfg, err := impl.ParseService("legacy/compose/docker-compose.yml", "core")
 	testutil.RequireNoError(t, err)
 
 	// Parser returns a start_period value — verify it is non-empty and reasonable.
@@ -348,7 +348,7 @@ func TestObservability_20_2_6_BrainHealthcheck(t *testing.T) {
 	impl := realDockerComposeParser
 	testutil.RequireImplementation(t, impl, "DockerComposeParser")
 
-	cfg, err := impl.ParseService("docker-compose.yml", "brain")
+	cfg, err := impl.ParseService("legacy/compose/docker-compose.yml", "brain")
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, cfg.Test[4], "http://localhost:8200/healthz")
 	testutil.RequireEqual(t, cfg.Interval, "30s")
@@ -365,7 +365,7 @@ func TestObservability_20_2_6_BrainHealthcheck(t *testing.T) {
 	testutil.RequireEqual(t, cfg.Restart, "always")
 
 	// Negative: non-existent service must return an error.
-	_, err = impl.ParseService("docker-compose.yml", "nonexistent-svc")
+	_, err = impl.ParseService("legacy/compose/docker-compose.yml", "nonexistent-svc")
 	testutil.RequireError(t, err)
 }
 
@@ -377,7 +377,7 @@ func TestObservability_20_2_7_PDSHealthcheck(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "DockerComposeParser")
 
 	// Positive: PDS service has correct healthcheck config.
-	cfg, err := impl.ParseService("docker-compose.yml", "pds")
+	cfg, err := impl.ParseService("legacy/compose/docker-compose.yml", "pds")
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, cfg.ServiceName, "pds")
 	testutil.RequireEqual(t, cfg.Test[4], "http://localhost:2583/xrpc/_health")
@@ -388,7 +388,7 @@ func TestObservability_20_2_7_PDSHealthcheck(t *testing.T) {
 	testutil.RequireEqual(t, cfg.Restart, "always")
 
 	// Negative: non-existent service returns error.
-	_, err = impl.ParseService("docker-compose.yml", "nonexistent")
+	_, err = impl.ParseService("legacy/compose/docker-compose.yml", "nonexistent")
 	testutil.RequireTrue(t, err != nil, "non-existent service must return error")
 }
 
@@ -400,7 +400,7 @@ func TestObservability_20_2_8_LlamaHealthcheck(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "DockerComposeParser")
 
 	// Positive: llama service has correct healthcheck config.
-	cfg, err := impl.ParseService("docker-compose.yml", "llama")
+	cfg, err := impl.ParseService("legacy/compose/docker-compose.yml", "llama")
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, cfg.ServiceName, "llama")
 	testutil.RequireEqual(t, cfg.Test[4], "http://localhost:8080/health")
@@ -415,7 +415,7 @@ func TestObservability_20_2_8_LlamaHealthcheck(t *testing.T) {
 	testutil.RequireEqual(t, cfg.Profiles[0], "local-llm")
 
 	// Negative: non-existent service returns error.
-	_, err = impl.ParseService("docker-compose.yml", "nonexistent")
+	_, err = impl.ParseService("legacy/compose/docker-compose.yml", "nonexistent")
 	testutil.RequireTrue(t, err != nil, "non-existent service must return error")
 }
 
@@ -428,7 +428,7 @@ func TestObservability_20_2_9_WgetNotCurl(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "DockerComposeParser")
 
 	for _, svc := range []string{"core", "brain", "pds", "llama"} {
-		cfg, err := impl.ParseService("docker-compose.yml", svc)
+		cfg, err := impl.ParseService("legacy/compose/docker-compose.yml", svc)
 		testutil.RequireNoError(t, err)
 		testutil.RequireEqual(t, cfg.Test[1], "wget")
 	}
@@ -444,7 +444,7 @@ func TestObservability_20_2_10_RestartAlways(t *testing.T) {
 
 	services := []string{"core", "brain", "pds", "llama"}
 	for _, svc := range services {
-		cfg, err := impl.ParseService("docker-compose.yml", svc)
+		cfg, err := impl.ParseService("legacy/compose/docker-compose.yml", svc)
 		testutil.RequireNoError(t, err)
 		testutil.RequireEqual(t, cfg.Restart, "always")
 		// Verify the service name is correctly set.
@@ -452,7 +452,7 @@ func TestObservability_20_2_10_RestartAlways(t *testing.T) {
 	}
 
 	// Negative: non-existent service must error.
-	_, err := impl.ParseService("docker-compose.yml", "nonexistent")
+	_, err := impl.ParseService("legacy/compose/docker-compose.yml", "nonexistent")
 	testutil.RequireError(t, err)
 }
 
@@ -464,7 +464,7 @@ func TestObservability_20_2_11_BrainDependsOnCoreHealthy(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "DockerComposeParser")
 
 	// Positive: brain depends on core with condition "service_healthy".
-	cfg, err := impl.ParseService("docker-compose.yml", "brain")
+	cfg, err := impl.ParseService("legacy/compose/docker-compose.yml", "brain")
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, cfg.ServiceName, "brain")
 	condition, ok := cfg.DependsOn["core"]
@@ -476,7 +476,7 @@ func TestObservability_20_2_11_BrainDependsOnCoreHealthy(t *testing.T) {
 	testutil.RequireFalse(t, hasLlama, "brain must not depend on optional llama service")
 
 	// Negative: non-existent service returns error.
-	_, err = impl.ParseService("docker-compose.yml", "nonexistent")
+	_, err = impl.ParseService("legacy/compose/docker-compose.yml", "nonexistent")
 	testutil.RequireTrue(t, err != nil, "non-existent service must return error")
 }
 
@@ -488,7 +488,7 @@ func TestObservability_20_2_12_CoreDependsOnPDSStarted(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "DockerComposeParser")
 
 	// Positive: core depends on pds with condition "service_started".
-	cfg, err := impl.ParseService("docker-compose.yml", "core")
+	cfg, err := impl.ParseService("legacy/compose/docker-compose.yml", "core")
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, cfg.ServiceName, "core")
 	condition, ok := cfg.DependsOn["pds"]
@@ -500,7 +500,7 @@ func TestObservability_20_2_12_CoreDependsOnPDSStarted(t *testing.T) {
 	testutil.RequireFalse(t, hasLlama, "core must not depend on optional llama service")
 
 	// Negative: non-existent service returns error.
-	_, err = impl.ParseService("docker-compose.yml", "nonexistent")
+	_, err = impl.ParseService("legacy/compose/docker-compose.yml", "nonexistent")
 	testutil.RequireTrue(t, err != nil, "non-existent service must return error")
 }
 
@@ -512,19 +512,19 @@ func TestObservability_20_2_13_LlamaProfileLocalLLM(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "DockerComposeParser")
 
 	// Positive: llama must have "local-llm" profile (conditional service).
-	cfg, err := impl.ParseService("docker-compose.yml", "llama")
+	cfg, err := impl.ParseService("legacy/compose/docker-compose.yml", "llama")
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, cfg.ServiceName, "llama")
 	testutil.RequireTrue(t, len(cfg.Profiles) > 0, "llama must have profiles")
 	testutil.RequireEqual(t, cfg.Profiles[0], "local-llm")
 
 	// Negative: core service must NOT have profiles (always runs).
-	coreCfg, err := impl.ParseService("docker-compose.yml", "core")
+	coreCfg, err := impl.ParseService("legacy/compose/docker-compose.yml", "core")
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, len(coreCfg.Profiles), 0)
 
 	// Negative: brain service must NOT have profiles (always runs).
-	brainCfg, err := impl.ParseService("docker-compose.yml", "brain")
+	brainCfg, err := impl.ParseService("legacy/compose/docker-compose.yml", "brain")
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, len(brainCfg.Profiles), 0)
 }
@@ -761,7 +761,7 @@ func TestObservability_20_3_8_DockerComposeLoggingRotationConfig(t *testing.T) {
 
 	// Positive: all 4 services must have restart="always" (crash recovery).
 	for _, svc := range []string{"core", "brain", "pds", "llama"} {
-		cfg, err := parser.ParseService("docker-compose.yml", svc)
+		cfg, err := parser.ParseService("legacy/compose/docker-compose.yml", svc)
 		testutil.RequireNoError(t, err)
 		testutil.RequireEqual(t, cfg.Restart, "always")
 		testutil.RequireEqual(t, cfg.ServiceName, svc)
@@ -771,7 +771,7 @@ func TestObservability_20_3_8_DockerComposeLoggingRotationConfig(t *testing.T) {
 	}
 
 	// Negative: non-existent service must error.
-	_, err := parser.ParseService("docker-compose.yml", "nonexistent")
+	_, err := parser.ParseService("legacy/compose/docker-compose.yml", "nonexistent")
 	testutil.RequireTrue(t, err != nil, "non-existent service must return error")
 }
 

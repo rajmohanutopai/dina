@@ -24,14 +24,14 @@
  * whose `new File(...)` throws `this.validatePath is not a function`
  * — and `writeInstallMarker` calls `markerFile()` OUTSIDE its
  * try/catch, so that throw escapes the function and propagates into
- * `unlock_gate`'s outer catch, which sets mode to `'infra-setup'`
- * with a generic "Couldn't read vault state" error.
+ * `unlock_gate`'s outer catch, which drops into onboarding with a
+ * generic "Couldn't read vault state" error.
  *
- * Symptom that drove this: even though both PDS URL and AppView URL
- * were correctly persisted to IndexedDB (verified via the
- * keychain.web shim's encryption-at-rest test) the page kept
- * re-mounting on `infra-setup` after every reload because of this
- * cross-platform crash, not because of the keychain shim.
+ * Symptom that drove this: even though keychain values were correctly
+ * persisted to IndexedDB (verified via the keychain.web shim's
+ * encryption-at-rest test), the app kept falling back to onboarding
+ * after every reload because of this cross-platform crash, not because
+ * of the keychain shim.
  *
  * Keeping the contract IDENTICAL to the native file means callers
  * (currently `unlock_gate.tsx` + `local_data_wipe.ts`) compile

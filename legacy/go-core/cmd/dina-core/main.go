@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/mr-tron/base58"
+	appviewAdapter "github.com/rajmohanutopai/dina/core/internal/adapter/appview"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/auth"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/brainclient"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/clock"
@@ -33,14 +34,13 @@ import (
 	"github.com/rajmohanutopai/dina/core/internal/adapter/observability"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/pairing"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/pds"
+	peerlensadapter "github.com/rajmohanutopai/dina/core/internal/adapter/peerlens"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/pii"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/portability"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/server"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/servicekey"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/taskqueue"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/transport"
-	peerlensadapter "github.com/rajmohanutopai/dina/core/internal/adapter/peerlens"
-	appviewAdapter "github.com/rajmohanutopai/dina/core/internal/adapter/appview"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/ws"
 	"github.com/rajmohanutopai/dina/core/internal/config"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
@@ -122,7 +122,7 @@ func main() {
 	if seedPassword == "" && os.Getenv("DINA_MASTER_SEED") == "" {
 		// Maximum Security mode: wait for passphrase instead of crash-looping.
 		// Expose a minimal /healthz (returning 503) and /unlock endpoint while waiting.
-		slog.Info("Waiting for passphrase — provide via ./run.sh --start or POST /unlock")
+		slog.Info("Waiting for passphrase — provide via legacy/bin/run.sh --start or POST /unlock")
 		slog.Info("Health endpoint available at /healthz (returns 503 until unlocked)")
 		seedPassword = waitForPassphrase(cfg.ListenAddr, wrappedSeedPath)
 		if seedPassword == "" {
@@ -365,7 +365,6 @@ func main() {
 			}
 		}
 	}
-
 
 	personaMgr := identity.NewPersonaManager()
 	// CRITICAL-01/02: Enable file-based persona persistence.
@@ -1464,7 +1463,6 @@ func main() {
 		}
 	}()
 
-
 	pendingReasonStore := newPendingReasonStore(vaultMgr)
 
 	// Pending reason sweep: expire old entries.
@@ -1927,7 +1925,7 @@ func main() {
 	rememberH := &handler.RememberHandler{StagingHandler: stagingH, Staging: stagingInbox, Brain: brain, ValidateSession: validateSession}
 	mux.HandleFunc("/api/v1/remember", rememberH.HandleRemember)
 	mux.HandleFunc("/api/v1/remember/", rememberH.HandleRememberStatus) // GET /api/v1/remember/{id}
-	mux.HandleFunc("/v1/reason/", reasonH.HandleReasonResult)     // POST /v1/reason/{id}/result (Brain callback)
+	mux.HandleFunc("/v1/reason/", reasonH.HandleReasonResult)           // POST /v1/reason/{id}/result (Brain callback)
 
 	// Admin proxy
 	// CXH6: sync-status moved to /v1/ prefix so it goes through auth middleware.
@@ -2019,7 +2017,7 @@ func main() {
 	chain = authMW.Handler(chain)
 	chain = rateLimitMW.Handler(chain)
 	chain = recovery.Handler(chain)
-	chain = middleware.BodyLimit(1 << 20)(chain) // 1 MB default body limit
+	chain = middleware.BodyLimit(1 << 20)(chain)  // 1 MB default body limit
 	chain = middleware.RequestIDMiddleware(chain) // cross-service audit correlation
 	chain = cors.Handler(chain)
 
@@ -2171,8 +2169,8 @@ func main() {
 // parseCIDRs parses a comma-separated list of CIDR strings into net.IPNet slices.
 // Invalid CIDRs are logged and skipped.
 // waitForPassphrase blocks until the passphrase is provided via:
-//   1. POST /unlock with {"passphrase": "..."} body
-//   2. The seed_password file appearing on disk (written by run.sh --start)
+//  1. POST /unlock with {"passphrase": "..."} body
+//  2. The seed_password file appearing on disk (written by run.sh --start)
 //
 // While waiting, /healthz returns 503 so monitoring knows Core is alive but locked.
 // Returns the passphrase string, or "" if interrupted by signal.
@@ -2184,14 +2182,14 @@ func waitForPassphrase(listenAddr string, wrappedSeedPath string) string {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte(`{"status":"locked","error":"core_locked","message":"Core is waiting for passphrase. Run: ./run.sh --start"}`))
+		w.Write([]byte(`{"status":"locked","error":"core_locked","message":"Core is waiting for passphrase. Run: legacy/bin/run.sh --start"}`))
 	})
 	// Catch-all: any other request gets a clear "locked" message.
 	// This ensures Brain, dina-admin, CLI all get a useful response.
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte(`{"error":"core_locked","message":"Core is waiting for passphrase. Run: ./run.sh --start"}`))
+		w.Write([]byte(`{"error":"core_locked","message":"Core is waiting for passphrase. Run: legacy/bin/run.sh --start"}`))
 	})
 	mux.HandleFunc("/unlock", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

@@ -31,7 +31,9 @@ _TIMEOUT = 15
 
 # Load validation models from models.json (same file Brain uses).
 _VALIDATION_MODELS: dict[str, str] = {}
-_MODELS_JSON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models.json")
+_MODELS_JSON = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "config", "models.json"
+)
 try:
     with open(_MODELS_JSON) as _f:
         _cfg = json.load(_f)

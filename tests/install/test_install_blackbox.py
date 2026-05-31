@@ -79,7 +79,7 @@ class TestFullLifecycle:
 
         # 2. Stop
         result = subprocess.run(
-            ["bash", str(installed_dir / "run.sh"), "--stop"],
+            ["bash", str(installed_dir / "legacy/bin/run.sh"), "--stop"],
             cwd=str(installed_dir),
             capture_output=True,
             timeout=60,
@@ -94,7 +94,7 @@ class TestFullLifecycle:
         # 4. Start via run.sh --start
         child = pexpect.spawn(
             "bash",
-            [str(installed_dir / "run.sh"), "--start"],
+            [str(installed_dir / "legacy/bin/run.sh"), "--start"],
             cwd=str(installed_dir),
             timeout=180,
             encoding="utf-8",
@@ -194,7 +194,7 @@ class TestDevicePairingSurvivesRestart:
 
         # 5. Restart Core
         result = subprocess.run(
-            ["bash", str(installed_dir / "run.sh"), "--stop"],
+            ["bash", str(installed_dir / "legacy/bin/run.sh"), "--stop"],
             cwd=str(installed_dir),
             capture_output=True,
             timeout=60,
@@ -204,7 +204,7 @@ class TestDevicePairingSurvivesRestart:
 
         child = pexpect.spawn(
             "bash",
-            [str(installed_dir / "run.sh"), "--start"],
+            [str(installed_dir / "legacy/bin/run.sh"), "--start"],
             cwd=str(installed_dir),
             timeout=180,
             encoding="utf-8",
@@ -259,7 +259,7 @@ class TestInstallRerun:
 
         # Rerun install with --skip-build
         result = subprocess.run(
-            [str(installed_dir / "install.sh"), "--skip-build"],
+            [str(installed_dir / "legacy/bin/install.sh"), "--skip-build"],
             cwd=str(installed_dir),
             capture_output=True,
             text=True,
@@ -290,7 +290,7 @@ class TestInstallRerun:
         ).read_bytes()
 
         result = subprocess.run(
-            [str(installed_dir / "install.sh"), "--skip-build"],
+            [str(installed_dir / "legacy/bin/install.sh"), "--skip-build"],
             cwd=str(installed_dir),
             capture_output=True,
             timeout=120,
@@ -314,7 +314,7 @@ class TestInstallPrompts:
         """Selecting skip (6) results in no LLM keys in .env."""
         child = pexpect.spawn(
             "bash",
-            [str(install_dir / "install.sh")],
+            [str(install_dir / "legacy/bin/install.sh")],
             cwd=str(install_dir),
             timeout=300,
             encoding="utf-8",

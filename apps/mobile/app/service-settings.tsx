@@ -36,15 +36,6 @@ import {
 import { getBootDegradations, getBootedNode } from '../src/hooks/useNodeBootstrap';
 import { subscribeRuntimeWarnings, getRuntimeWarnings } from '../src/services/runtime_warnings';
 import { saveRolePreference } from '../src/services/role_preference';
-import {
-  loadInfraPreferences,
-  savePdsUrl,
-  savePdsHandle,
-  savePdsPassword,
-  savePdsEmail,
-  saveAppViewURL,
-  saveServicesAppViewURL,
-} from '../src/services/infra_preferences';
 import type { NodeRole } from '../src/services/bootstrap';
 import type { ServiceConfig } from '@dina/core';
 // Local capability registry — every capability the brain knows how to
@@ -125,27 +116,6 @@ export default function ServiceSettingsScreen() {
   const [role, setRole] = useState<NodeRole>(
     bootedNode !== null ? (bootedNode.role as NodeRole) : 'requester',
   );
-
-  // Infra URLs (PDS / AppView). Loaded from preferences once per mount;
-  // saved field-by-field on blur via the corresponding setters below.
-  const [pdsUrl, setPdsUrlState] = useState('');
-  const [pdsHandle, setPdsHandleState] = useState('');
-  const [pdsPassword, setPdsPasswordState] = useState('');
-  const [pdsEmail, setPdsEmailState] = useState('');
-  const [appViewURLState, setAppViewURLState] = useState('');
-  const [servicesAppViewURLState, setServicesAppViewURLState] = useState('');
-
-  useEffect(() => {
-    (async () => {
-      const infra = await loadInfraPreferences();
-      setPdsUrlState(infra.pdsUrl ?? '');
-      setPdsHandleState(infra.pdsHandle ?? '');
-      setPdsPasswordState(infra.pdsPassword ?? '');
-      setPdsEmailState(infra.pdsEmail ?? '');
-      setAppViewURLState(infra.appViewURL ?? '');
-      setServicesAppViewURLState(infra.servicesAppViewURL ?? '');
-    })();
-  }, []);
 
   const onChangeRole = useCallback(async (next: NodeRole) => {
     setRole(next);
@@ -372,101 +342,6 @@ export default function ServiceSettingsScreen() {
               </Pressable>
             ))}
           </View>
-        </View>
-
-        {/* INFRA — user-editable PDS + AppView endpoints. Persisted via
-            infra_preferences (Keychain) so a fresh boot reads the user's
-            choice over env defaults. PDS handle + password become the
-            account this node publishes its service-profile under. The
-            "Save" button below commits all five fields atomically; we
-            don't auto-save on blur because adb-driven keyboard input
-            doesn't always emit a reliable blur event. */}
-        <View style={styles.section}>
-          <Text style={styles.sectionHeader}>INFRASTRUCTURE</Text>
-          <View style={styles.card}>
-            <Text style={styles.label}>PeerLens AppView URL</Text>
-            <TextInput
-              value={appViewURLState}
-              onChangeText={setAppViewURLState}
-              placeholder="https://test-appview.dinakernel.com"
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={styles.input}
-            />
-            <View style={styles.inputDivider} />
-            <Text style={styles.label}>Service Discovery AppView URL</Text>
-            <TextInput
-              value={servicesAppViewURLState}
-              onChangeText={setServicesAppViewURLState}
-              placeholder="Leave blank to use PeerLens AppView"
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={styles.input}
-            />
-            <View style={styles.inputDivider} />
-            <Text style={styles.label}>PDS URL</Text>
-            <TextInput
-              value={pdsUrl}
-              onChangeText={setPdsUrlState}
-              placeholder="https://test-pds.dinakernel.com"
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={styles.input}
-            />
-            <View style={styles.inputDivider} />
-            <Text style={styles.label}>PDS handle</Text>
-            <TextInput
-              value={pdsHandle}
-              onChangeText={setPdsHandleState}
-              placeholder="yourhandle.test-pds.dinakernel.com"
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={styles.input}
-            />
-            <View style={styles.inputDivider} />
-            <Text style={styles.label}>PDS password</Text>
-            <TextInput
-              value={pdsPassword}
-              onChangeText={setPdsPasswordState}
-              placeholder="account password"
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry
-              style={styles.input}
-            />
-            <View style={styles.inputDivider} />
-            <Text style={styles.label}>PDS email (optional)</Text>
-            <TextInput
-              value={pdsEmail}
-              onChangeText={setPdsEmailState}
-              placeholder="you@example.com"
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="email-address"
-              style={styles.input}
-            />
-          </View>
-          <Pressable
-            style={styles.infraSaveButton}
-            onPress={async () => {
-              await Promise.all([
-                saveAppViewURL(appViewURLState),
-                saveServicesAppViewURL(servicesAppViewURLState),
-                savePdsUrl(pdsUrl),
-                savePdsHandle(pdsHandle),
-                savePdsPassword(pdsPassword),
-                savePdsEmail(pdsEmail),
-              ]);
-              Alert.alert(
-                'Infrastructure saved',
-                'Force-quit and reopen Dina to apply (boot wires AppView client + PDS publisher from these values).',
-              );
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Save infrastructure URLs"
-          >
-            <Text style={styles.infraSaveButtonText}>Save infrastructure</Text>
-          </Pressable>
         </View>
 
         <View style={styles.section}>
@@ -835,26 +710,10 @@ const styles = StyleSheet.create({
     minHeight: 48,
     textAlignVertical: 'top',
   },
-  inputDivider: {
-    height: 1,
-    backgroundColor: colors.borderLight,
-    marginVertical: spacing.sm,
-  },
   helpText: {
     ...textStyles.caption,
     marginTop: spacing.xs,
     paddingHorizontal: spacing.xs,
-  },
-  infraSaveButton: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-    marginTop: spacing.md,
-  },
-  infraSaveButtonText: {
-    ...textStyles.bodyStrong,
-    color: colors.white,
   },
   capabilityRow: {
     flexDirection: 'row',

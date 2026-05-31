@@ -40,7 +40,7 @@ class TestOwnershipRepair:
 
         child = pexpect.spawn(
             "bash",
-            [str(install_dir / "install.sh")],
+            [str(install_dir / "legacy/bin/install.sh")],
             cwd=str(install_dir),
             timeout=300,
             encoding="utf-8",
@@ -77,7 +77,7 @@ class TestRunWithoutInstall:
         """run.sh shows what is missing when install is incomplete."""
         child = pexpect.spawn(
             "bash",
-            [str(install_dir / "run.sh")],
+            [str(install_dir / "legacy/bin/run.sh")],
             cwd=str(install_dir),
             timeout=30,
             encoding="utf-8",
@@ -109,7 +109,7 @@ class TestRunWithoutInstall:
 
         child = pexpect.spawn(
             "bash",
-            [str(install_dir / "run.sh")],
+            [str(install_dir / "legacy/bin/run.sh")],
             cwd=str(install_dir),
             timeout=30,
             encoding="utf-8",
@@ -148,7 +148,7 @@ class TestCorruptSeedArtifacts:
 
             # Restart containers to pick up the corrupt file
             subprocess.run(
-                ["bash", str(installed_dir / "run.sh"), "--stop"],
+                ["bash", str(installed_dir / "legacy/bin/run.sh"), "--stop"],
                 cwd=str(installed_dir),
                 capture_output=True,
                 timeout=60,
@@ -161,7 +161,7 @@ class TestCorruptSeedArtifacts:
 
             child = pexpect.spawn(
                 "bash",
-                [str(installed_dir / "run.sh"), "--start"],
+                [str(installed_dir / "legacy/bin/run.sh"), "--start"],
                 cwd=str(installed_dir),
                 timeout=180,
                 encoding="utf-8",
@@ -193,7 +193,7 @@ class TestCorruptSeedArtifacts:
             seed_path.write_bytes(original)
             # Restart with good seed to leave healthy state for subsequent tests
             subprocess.run(
-                ["bash", str(installed_dir / "run.sh"), "--stop"],
+                ["bash", str(installed_dir / "legacy/bin/run.sh"), "--stop"],
                 cwd=str(installed_dir),
                 capture_output=True,
                 timeout=60,
@@ -205,7 +205,7 @@ class TestCorruptSeedArtifacts:
             )
             child = pexpect.spawn(
                 "bash",
-                [str(installed_dir / "run.sh"), "--start"],
+                [str(installed_dir / "legacy/bin/run.sh"), "--start"],
                 cwd=str(installed_dir),
                 timeout=180,
                 encoding="utf-8",
@@ -245,7 +245,7 @@ class TestDockerNotRunning:
 
             child = pexpect.spawn(
                 bash_path,
-                [str(install_dir / "install.sh")],
+                [str(install_dir / "legacy/bin/install.sh")],
                 cwd=str(install_dir),
                 timeout=30,
                 encoding="utf-8",
@@ -294,7 +294,7 @@ class TestDockerNotRunning:
 
             child = pexpect.spawn(
                 "bash",
-                [str(install_dir / "install.sh")],
+                [str(install_dir / "legacy/bin/install.sh")],
                 cwd=str(install_dir),
                 timeout=30,
                 encoding="utf-8",

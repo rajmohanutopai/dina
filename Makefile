@@ -1,48 +1,76 @@
 # Dina — build, test, run targets
 
-.PHONY: build test lint run docker-up docker-down clean check-tests test-integration generate check-generate
+.PHONY: build test lint typecheck run legacy-build legacy-test legacy-lint legacy-run legacy-docker-up legacy-docker-down legacy-docker-dev pipeline-up pipeline-down clean check-tests test-integration generate check-generate
 
 LEGACY_GO_CORE := legacy/go-core
 LEGACY_PY_BRAIN := legacy/python-brain
+LEGACY_COMPOSE := legacy/compose/docker-compose.yml
+LEGACY_COMPOSE_DEV := legacy/compose/docker-compose.dev.yml
+PIPELINE_COMPOSE := docker/compose/pipeline.yml
 
 # --- Build ---
 build:
+	npm run build
+
+legacy-build:
 	cd $(LEGACY_GO_CORE) && go build ./...
 	cd $(LEGACY_PY_BRAIN) && pip install -e .
 
 # --- Test ---
 test:
+	npm test
+
+legacy-test:
 	cd $(LEGACY_GO_CORE) && go test ./...
 	cd $(LEGACY_PY_BRAIN) && pytest tests/ -m 'not legacy'
 
 # --- Lint ---
 lint:
+	npm run lint
+
+typecheck:
+	npm run typecheck
+
+legacy-lint:
 	cd $(LEGACY_GO_CORE) && go vet ./...
 	cd $(LEGACY_PY_BRAIN) && ruff check src/ tests/
 
 # --- Run (local, no Docker) ---
 run:
+	@echo "Active TypeScript workspace:"
+	@echo "  npm run build"
+	@echo "  npm test"
+	@echo "  apps/home-node-lite/install-lite.sh"
+
+legacy-run:
 	@echo "Start core and brain in separate terminals:"
 	@echo "  Terminal 1: cd $(LEGACY_GO_CORE) && go run ./cmd/dina-core"
 	@echo "  Terminal 2: cd $(LEGACY_PY_BRAIN) && uvicorn src.main:app --port 8200"
 
-# --- Docker ---
-docker-up:
-	docker compose up --build -d
+# --- Legacy Docker ---
+legacy-docker-up:
+	docker compose -f $(LEGACY_COMPOSE) up --build -d
 
-docker-down:
-	docker compose down
+legacy-docker-down:
+	docker compose -f $(LEGACY_COMPOSE) down
 
-docker-dev:
-	docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+legacy-docker-dev:
+	docker compose -f $(LEGACY_COMPOSE) -f $(LEGACY_COMPOSE_DEV) up --build
+
+# --- Shared Infrastructure ---
+pipeline-up:
+	docker compose -f $(PIPELINE_COMPOSE) up --build -d
+
+pipeline-down:
+	docker compose -f $(PIPELINE_COMPOSE) down
 
 # --- Integration Tests (Docker) ---
 test-integration:
-	./install.sh
-	docker compose -f docker-compose.test.yml up --build -d
+	legacy/bin/install.sh
+	docker compose -f $(LEGACY_COMPOSE) up --build -d
 	DINA_INTEGRATION=docker python -m pytest tests/integration/ -v --tb=short; \
 	EXIT_CODE=$$?; \
-	docker compose -f docker-compose.test.yml down -v; \
+	docker compose -f $(LEGACY_COMPOSE) down -v; \
 	exit $$EXIT_CODE
 
 # --- Test Traceability ---
@@ -74,5 +102,6 @@ check-generate: generate
 
 # --- Clean ---
 clean:
+	npm run clean
 	cd $(LEGACY_GO_CORE) && go clean ./...
 	rm -rf $(LEGACY_PY_BRAIN)/src/*.egg-info

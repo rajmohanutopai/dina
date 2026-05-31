@@ -1,23 +1,23 @@
 # Dev overrides — mount source code, enable hot reload, verbose logging.
-# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# Usage: docker compose -f legacy/compose/docker-compose.yml -f legacy/compose/docker-compose.dev.yml up
 
 services:
   core:
     build:
-      context: ./legacy/go-core
+      context: ../go-core
       dockerfile: Dockerfile
     volumes:
-      - ./legacy/go-core:/src
-      - ./data:/data
+      - ../go-core:/src
+      - ../../data:/data
     environment:
       - DINA_LOG_LEVEL=debug
 
   brain:
     build:
-      context: ./legacy/python-brain
+      context: ../python-brain
       dockerfile: Dockerfile
     volumes:
-      - ./legacy/python-brain/src:/app/src
+      - ../python-brain/src:/app/src
     environment:
       - DINA_LOG_LEVEL=debug
     command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8200", "--reload"]

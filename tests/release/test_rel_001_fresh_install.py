@@ -24,7 +24,7 @@ class TestFreshInstall:
     # TRACE: {"suite": "REL", "case": "0001", "section": "01", "sectionName": "Fresh Install", "subsection": "01", "scenario": "01", "title": "rel_001_install_script_exists_and_executable"}
     def test_rel_001_install_script_exists_and_executable(self) -> None:
         """install.sh exists and is executable."""
-        install = PROJECT_ROOT / "install.sh"
+        install = PROJECT_ROOT / "legacy/bin/install.sh"
         assert install.exists(), "install.sh missing"
         assert install.stat().st_mode & 0o111, "install.sh not executable"
 
@@ -32,7 +32,7 @@ class TestFreshInstall:
     # TRACE: {"suite": "REL", "case": "0001", "section": "01", "sectionName": "Fresh Install", "subsection": "01", "scenario": "02", "title": "rel_001_run_script_exists"}
     def test_rel_001_run_script_exists(self) -> None:
         """run.sh exists."""
-        run_sh = PROJECT_ROOT / "run.sh"
+        run_sh = PROJECT_ROOT / "legacy/bin/run.sh"
         assert run_sh.exists(), "run.sh missing"
 
     # REL-001
@@ -40,7 +40,7 @@ class TestFreshInstall:
     def test_rel_001_docker_compose_valid(self) -> None:
         """docker-compose.yml parses without errors."""
         result = subprocess.run(
-            ["docker", "compose", "config", "--quiet"],
+            ["docker", "compose", "-f", "legacy/compose/docker-compose.yml", "config", "--quiet"],
             capture_output=True, text=True, timeout=30,
             cwd=str(PROJECT_ROOT),
         )

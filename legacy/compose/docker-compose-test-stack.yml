@@ -14,9 +14,9 @@
 # DINA_TEST_MODE=true / DINA_RATE_LIMIT=100000. Do NOT deploy in production.
 #
 # Usage:
-#   docker compose -f docker-compose-test-stack.yml up --build -d
+#   docker compose -f legacy/compose/docker-compose-test-stack.yml up --build -d
 #   <run tests>
-#   docker compose -f docker-compose-test-stack.yml down -v
+#   docker compose -f legacy/compose/docker-compose-test-stack.yml down -v
 
 # ============================================================================
 # YAML Anchors — shared config blocks reused across services
@@ -25,10 +25,10 @@
 # -- Core service base (Go vault keeper) --
 x-core-base: &core-base
   build:
-    context: ./legacy/go-core
+    context: ../go-core
     dockerfile: Dockerfile
     additional_contexts:
-      admin-cli: ./admin-cli
+      admin-cli: ../admin-cli
   healthcheck: &core-healthcheck
     test: ["CMD", "wget", "--spider", "-q", "http://localhost:8100/healthz"]
     interval: 5s
@@ -57,7 +57,7 @@ x-core-env: &core-env
 # -- Brain service base (Python sidecar) --
 x-brain-base: &brain-base
   build:
-    context: ./legacy/python-brain
+    context: ../python-brain
     dockerfile: Dockerfile
   healthcheck: &brain-healthcheck
     test: ["CMD", "python", "-c", "import sys; from urllib.request import urlopen; r = urlopen('http://localhost:8200/healthz', timeout=2); sys.exit(0 if r.status == 200 else 1)"]
@@ -81,7 +81,7 @@ x-brain-env: &brain-env
 # -- Keygen init container base (derives SLIP-0010 service keys from seed) --
 x-keygen-base: &keygen-base
   build:
-    context: ./scripts
+    context: ../../scripts
     dockerfile: Dockerfile.keygen
   entrypoint: ["sh", "-c"]
   command:
@@ -109,7 +109,7 @@ services:
     environment:
       DINA_SEED_HEX: "0101010101010101010101010101010101010101010101010101010101010101"
     volumes:
-      - ./scripts/provision_derived_service_keys.py:/tmp/provision.py:ro
+      - ../../scripts/provision_derived_service_keys.py:/tmp/provision.py:ro
       - alonso-keys-core-priv:/keys-core-priv
       - alonso-keys-brain-priv:/keys-brain-priv
       - alonso-keys-pub:/keys-pub
@@ -119,7 +119,7 @@ services:
     environment:
       DINA_SEED_HEX: "0202020202020202020202020202020202020202020202020202020202020202"
     volumes:
-      - ./scripts/provision_derived_service_keys.py:/tmp/provision.py:ro
+      - ../../scripts/provision_derived_service_keys.py:/tmp/provision.py:ro
       - sancho-keys-core-priv:/keys-core-priv
       - sancho-keys-brain-priv:/keys-brain-priv
       - sancho-keys-pub:/keys-pub
@@ -129,7 +129,7 @@ services:
     environment:
       DINA_SEED_HEX: "0303030303030303030303030303030303030303030303030303030303030303"
     volumes:
-      - ./scripts/provision_derived_service_keys.py:/tmp/provision.py:ro
+      - ../../scripts/provision_derived_service_keys.py:/tmp/provision.py:ro
       - chairmaker-keys-core-priv:/keys-core-priv
       - chairmaker-keys-brain-priv:/keys-brain-priv
       - chairmaker-keys-pub:/keys-pub
@@ -139,7 +139,7 @@ services:
   #   environment:
   #     DINA_SEED_HEX: "0404040404040404040404040404040404040404040404040404040404040404"
   #   volumes:
-  #     - ./scripts/provision_derived_service_keys.py:/tmp/provision.py:ro
+  #     - ../../scripts/provision_derived_service_keys.py:/tmp/provision.py:ro
   #     - albert-keys-core-priv:/keys-core-priv
   #     - albert-keys-brain-priv:/keys-brain-priv
   #     - albert-keys-pub:/keys-pub
@@ -149,7 +149,7 @@ services:
     environment:
       DINA_SEED_HEX: "0505050505050505050505050505050505050505050505050505050505050505"
     volumes:
-      - ./scripts/provision_derived_service_keys.py:/tmp/provision.py:ro
+      - ../../scripts/provision_derived_service_keys.py:/tmp/provision.py:ro
       - busdriver-keys-core-priv:/keys-core-priv
       - busdriver-keys-brain-priv:/keys-brain-priv
       - busdriver-keys-pub:/keys-pub
@@ -159,7 +159,7 @@ services:
     environment:
       DINA_SEED_HEX: "0606060606060606060606060606060606060606060606060606060606060606"
     volumes:
-      - ./scripts/provision_derived_service_keys.py:/tmp/provision.py:ro
+      - ../../scripts/provision_derived_service_keys.py:/tmp/provision.py:ro
       - drcarl-keys-core-priv:/keys-core-priv
       - drcarl-keys-brain-priv:/keys-brain-priv
       - drcarl-keys-pub:/keys-pub
@@ -184,7 +184,7 @@ services:
       - alonso-data:/data
       - alonso-keys-core-priv:/run/secrets/service_keys/private:ro
       - alonso-keys-pub:/run/secrets/service_keys/public:ro
-      - ./secrets/client_token:/run/secrets/client_token:ro
+      - ../../secrets/client_token:/run/secrets/client_token:ro
     depends_on:
       alonso-brain:
         condition: service_healthy
@@ -208,7 +208,7 @@ services:
       - alonso-data:/data
       - alonso-keys-brain-priv:/run/secrets/service_keys/private:ro
       - alonso-keys-pub:/run/secrets/service_keys/public:ro
-      - ./models.json:/app/models.json:ro
+      - ../../config/models.json:/app/models.json:ro
     depends_on:
       keygen-alonso:
         condition: service_completed_successfully
@@ -233,7 +233,7 @@ services:
       - sancho-data:/data
       - sancho-keys-core-priv:/run/secrets/service_keys/private:ro
       - sancho-keys-pub:/run/secrets/service_keys/public:ro
-      - ./secrets/client_token:/run/secrets/client_token:ro
+      - ../../secrets/client_token:/run/secrets/client_token:ro
     depends_on:
       sancho-brain:
         condition: service_healthy
@@ -251,7 +251,7 @@ services:
       - sancho-data:/data
       - sancho-keys-brain-priv:/run/secrets/service_keys/private:ro
       - sancho-keys-pub:/run/secrets/service_keys/public:ro
-      - ./models.json:/app/models.json:ro
+      - ../../config/models.json:/app/models.json:ro
     depends_on:
       keygen-sancho:
         condition: service_completed_successfully
@@ -276,7 +276,7 @@ services:
       - chairmaker-data:/data
       - chairmaker-keys-core-priv:/run/secrets/service_keys/private:ro
       - chairmaker-keys-pub:/run/secrets/service_keys/public:ro
-      - ./secrets/client_token:/run/secrets/client_token:ro
+      - ../../secrets/client_token:/run/secrets/client_token:ro
     depends_on:
       chairmaker-brain:
         condition: service_healthy
@@ -294,7 +294,7 @@ services:
       - chairmaker-data:/data
       - chairmaker-keys-brain-priv:/run/secrets/service_keys/private:ro
       - chairmaker-keys-pub:/run/secrets/service_keys/public:ro
-      - ./models.json:/app/models.json:ro
+      - ../../config/models.json:/app/models.json:ro
     depends_on:
       keygen-chairmaker:
         condition: service_completed_successfully
@@ -324,7 +324,7 @@ services:
   #     - albert-data:/data
   #     - albert-keys-core-priv:/run/secrets/service_keys/private:ro
   #     - albert-keys-pub:/run/secrets/service_keys/public:ro
-  #     - ./secrets/client_token:/run/secrets/client_token:ro
+  #     - ../../secrets/client_token:/run/secrets/client_token:ro
   #   depends_on:
   #     albert-brain:
   #       condition: service_healthy
@@ -342,7 +342,7 @@ services:
   #     - albert-data:/data
   #     - albert-keys-brain-priv:/run/secrets/service_keys/private:ro
   #     - albert-keys-pub:/run/secrets/service_keys/public:ro
-  #     - ./models.json:/app/models.json:ro
+  #     - ../../config/models.json:/app/models.json:ro
   #   depends_on:
   #     keygen-albert:
   #       condition: service_completed_successfully
@@ -368,7 +368,7 @@ services:
       - busdriver-data:/data
       - busdriver-keys-core-priv:/run/secrets/service_keys/private:ro
       - busdriver-keys-pub:/run/secrets/service_keys/public:ro
-      - ./secrets/client_token:/run/secrets/client_token:ro
+      - ../../secrets/client_token:/run/secrets/client_token:ro
     depends_on:
       busdriver-brain:
         condition: service_healthy
@@ -391,7 +391,7 @@ services:
       - busdriver-data:/data
       - busdriver-keys-brain-priv:/run/secrets/service_keys/private:ro
       - busdriver-keys-pub:/run/secrets/service_keys/public:ro
-      - ./models.json:/app/models.json:ro
+      - ../../config/models.json:/app/models.json:ro
     depends_on:
       keygen-busdriver:
         condition: service_completed_successfully
@@ -401,12 +401,12 @@ services:
   # ==========================================================================
   # NOTE: Requires manual pairing step after Core is running:
   #   1. Get pairing code: curl -s -X POST http://localhost:19900/v1/pair/initiate -H "Authorization: Bearer <client_token>" -d '{"device_name":"busdriver-openclaw","role":"agent"}'
-  #   2. Set DINA_PAIRING_CODE env and restart: docker compose -f docker-compose-test-stack.yml up -d busdriver-openclaw
+  #   2. Set DINA_PAIRING_CODE env and restart: docker compose -f legacy/compose/docker-compose-test-stack.yml up -d busdriver-openclaw
 
   busdriver-openclaw:
     image: dina-openclaw-provider:latest
     build:
-      context: .
+      context: ../..
       dockerfile: docker/openclaw/Dockerfile.provider
     environment:
       OPENCLAW_ROLE: provider
@@ -422,7 +422,7 @@ services:
       OPENCLAW_MCP_PYTHONPATH: /app
       PYTHONPATH: /app
     volumes:
-      - ./demo/transit:/app/demo/transit:ro
+      - ../../demo/transit:/app/demo/transit:ro
     networks:
       - test-net
     depends_on:
@@ -454,7 +454,7 @@ services:
       - drcarl-data:/data
       - drcarl-keys-core-priv:/run/secrets/service_keys/private:ro
       - drcarl-keys-pub:/run/secrets/service_keys/public:ro
-      - ./secrets/client_token:/run/secrets/client_token:ro
+      - ../../secrets/client_token:/run/secrets/client_token:ro
     depends_on:
       drcarl-brain:
         condition: service_healthy
@@ -475,7 +475,7 @@ services:
       - drcarl-data:/data
       - drcarl-keys-brain-priv:/run/secrets/service_keys/private:ro
       - drcarl-keys-pub:/run/secrets/service_keys/public:ro
-      - ./models.json:/app/models.json:ro
+      - ../../config/models.json:/app/models.json:ro
     depends_on:
       keygen-drcarl:
         condition: service_completed_successfully
@@ -483,7 +483,7 @@ services:
   drcarl-openclaw:
     image: dina-openclaw-provider:latest
     build:
-      context: .
+      context: ../..
       dockerfile: docker/openclaw/Dockerfile.provider
     environment:
       OPENCLAW_ROLE: provider
@@ -499,7 +499,7 @@ services:
       OPENCLAW_MCP_PYTHONPATH: /app
       PYTHONPATH: /app
     volumes:
-      - ./demo/appointment:/app/demo/appointment:ro
+      - ../../demo/appointment:/app/demo/appointment:ro
     networks:
       - test-net
     depends_on:
@@ -512,11 +512,11 @@ services:
 
   dummy-agent:
     build:
-      context: ./cli
+      context: ../../cli
       dockerfile: Dockerfile
     command: ["sleep", "infinity"]
     volumes:
-      - ./secrets/client_token:/run/secrets/client_token:ro
+      - ../../secrets/client_token:/run/secrets/client_token:ro
       - alonso-keys-pub:/keys-pub:ro
     environment:
       DINA_CORE_URL: http://alonso-core:8100
@@ -529,7 +529,7 @@ services:
   # `up` keeps the Go/Python footprint unchanged.
   #
   # Usage:
-  #   docker compose -f docker-compose-test-stack.yml --profile lite up -d
+  #   docker compose -f legacy/compose/docker-compose-test-stack.yml --profile lite up -d
   #
   # Actor coverage at M1 scope: **don-alonso only** (single actor, proves the
   # profile pattern + unblocks tasks 9.2–9.3). Sancho / ChairMaker / Albert /

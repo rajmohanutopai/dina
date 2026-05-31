@@ -595,10 +595,10 @@ export default function RootLayout() {
     getRuntimeWarnings,
   );
 
-  // Block render until fonts are loaded so every screen — including the
-  // very first InfraSetupForm — gets Cormorant Garamond / Figtree on
-  // first paint instead of flashing to system font. The blank off-white
-  // view is invisible behind the native splash screen on first launch.
+  // Block render until fonts are loaded so the first app screen uses
+  // Dina's shared type scale on first paint instead of flashing to a
+  // fallback face. The blank off-white view is invisible behind the
+  // native splash screen on first launch.
   if (!iconsFontLoaded) {
     return <View style={{ flex: 1, backgroundColor: colors.bgPrimary }} />;
   }
@@ -876,6 +876,17 @@ export default function RootLayout() {
                 // Hidden from the tab bar — reached via drill-down from Settings.
                 // Also hidden entirely when the node isn't provider-capable so
                 // the drill-down target doesn't expose a dead-end flow.
+                href: null,
+
+                headerLeft: renderHeaderBackButton,
+              }}
+            />
+            <Tabs.Screen
+              name="infrastructure"
+              options={{
+                title: 'Infrastructure',
+                // Advanced endpoint configuration. Hidden from the
+                // tab bar and reached from Settings → More.
                 href: null,
 
                 headerLeft: renderHeaderBackButton,

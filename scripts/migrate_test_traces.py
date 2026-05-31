@@ -199,7 +199,7 @@ TAG_PATTERNS = {
 SUITES = {
     "BRAIN": ("legacy/python-brain/tests", "python"),
     "CLI": ("cli/tests", "python"),
-    "ADMIN": ("admin-cli/tests", "python"),
+    "ADMIN": ("legacy/admin-cli/tests", "python"),
     "INT": ("tests/integration", "python"),
     "E2E": ("tests/e2e", "python"),
     "INST": ("tests/install", "python"),

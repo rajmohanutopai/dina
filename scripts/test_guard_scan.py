@@ -76,7 +76,7 @@ print()
 import urllib.request
 
 # Try the model from models.json defaults
-models_json = Path(__file__).parent.parent / "models.json"
+models_json = Path(__file__).parent.parent / "config" / "models.json"
 model = "gemini-3.1-flash-lite-preview"
 if models_json.exists():
     cfg = json.loads(models_json.read_text())
