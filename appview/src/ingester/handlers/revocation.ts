@@ -7,7 +7,7 @@ import { deletionHandler } from '../deletion-handler.js'
 import { markDirty } from '@/db/queries/dirty-flags.js'
 
 /**
- * Handler for com.dina.peerlens.revocation records.
+ * Handler for com.dinakernel.peerlens.revocation records.
  *
  * A revocation allows an author to formally retract a previous attestation.
  * In addition to inserting the revocation record, we mark the target

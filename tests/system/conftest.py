@@ -251,8 +251,8 @@ def _seed_appview(dsn: str, alonso_did: str, sancho_did: str) -> dict:
         )
 
     # Attestations
-    att1_uri = f"at://{alonso_did}/com.dina.peerlens.attestation/{uuid.uuid4().hex[:12]}"
-    att2_uri = f"at://{sancho_did}/com.dina.peerlens.attestation/{uuid.uuid4().hex[:12]}"
+    att1_uri = f"at://{alonso_did}/com.dinakernel.peerlens.attestation/{uuid.uuid4().hex[:12]}"
+    att2_uri = f"at://{sancho_did}/com.dinakernel.peerlens.attestation/{uuid.uuid4().hex[:12]}"
     ids["attestation_1"] = att1_uri
     ids["attestation_2"] = att2_uri
 

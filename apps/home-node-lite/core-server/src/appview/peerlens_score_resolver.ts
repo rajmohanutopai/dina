@@ -1,7 +1,7 @@
 /**
  * Task 6.21 — `getTrustScore(did)` + cache.
  *
- * Brain calls AppView's `com.dina.peerlens.resolve` to get a subject's
+ * Brain calls AppView's `com.dinakernel.peerlens.resolve` to get a subject's
  * PeerLens rating before:
  *   - Sending a `service.query` to a newly-discovered provider.
  *   - Ranking candidate contacts for a nudge.

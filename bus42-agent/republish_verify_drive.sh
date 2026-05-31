@@ -9,7 +9,7 @@ SIM=6D57099D-48DA-430D-B4BB-1A2BF1EBACB7
 Q="How much are organic bananas at Corner Market?"
 
 echo "### STEP A: raw discovery BEFORE republish"
-curl -s -m 8 "https://test-appview.dinakernel.com/xrpc/com.dina.service.search?capability=price_check" 2>/dev/null | head -c 400
+curl -s -m 8 "https://test-appview.dinakernel.com/xrpc/com.dinakernel.service.search?capability=price_check" 2>/dev/null | head -c 400
 echo
 
 echo
@@ -21,7 +21,7 @@ echo
 echo "### STEP C: poll discovery until Corner Market appears (max ~120s)"
 FOUND=0
 for i in $(seq 1 24); do
-  body=$(curl -s -m 8 "https://test-appview.dinakernel.com/xrpc/com.dina.service.search?capability=price_check" 2>/dev/null)
+  body=$(curl -s -m 8 "https://test-appview.dinakernel.com/xrpc/com.dinakernel.service.search?capability=price_check" 2>/dev/null)
   n=$(printf '%s' "$body" | python3 -c "import sys,json;print(len(json.load(sys.stdin).get('services',[])))" 2>/dev/null)
   if [ -n "$n" ] && [ "$n" != "0" ]; then
     echo "  discovery returns $n provider(s) at attempt $i:"

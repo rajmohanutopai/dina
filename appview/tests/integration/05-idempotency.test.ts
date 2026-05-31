@@ -43,7 +43,7 @@ beforeEach(async () => {
 describe('§5 Idempotency (Fix 1)', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0404", "section": "01", "sectionName": "General", "title": "IT-IDP-001: Fix 1: replay attestation 10 times \u2192 1 row"}
   it('IT-IDP-001: Fix 1: replay attestation 10 times → 1 row', async () => {
-    const collection = 'com.dina.peerlens.attestation'
+    const collection = 'com.dinakernel.peerlens.attestation'
     const rkey = 'idp001'
     const uri = makeUri(collection, rkey)
 
@@ -74,7 +74,7 @@ describe('§5 Idempotency (Fix 1)', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0405", "section": "01", "sectionName": "General", "title": "IT-IDP-002: Fix 1: replay vouch 10 times \u2192 1 row"}
   it('IT-IDP-002: Fix 1: replay vouch 10 times → 1 row', async () => {
-    const collection = 'com.dina.peerlens.vouch'
+    const collection = 'com.dinakernel.peerlens.vouch'
     const rkey = 'idp002'
     const uri = makeUri(collection, rkey)
 
@@ -109,7 +109,7 @@ describe('§5 Idempotency (Fix 1)', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0406", "section": "01", "sectionName": "General", "title": "IT-IDP-003: Fix 1: replay reaction \u2192 onConflictDoNothing"}
   it('IT-IDP-003: Fix 1: replay reaction → onConflictDoNothing', async () => {
-    const collection = 'com.dina.peerlens.reaction'
+    const collection = 'com.dinakernel.peerlens.reaction'
     const rkey = 'idp003'
     const uri = makeUri(collection, rkey)
 
@@ -121,7 +121,7 @@ describe('§5 Idempotency (Fix 1)', () => {
       rkey,
       cid: 'cid-idp003',
       record: {
-        targetUri: 'at://did:plc:someone/com.dina.peerlens.attestation/target001',
+        targetUri: 'at://did:plc:someone/com.dinakernel.peerlens.attestation/target001',
         reaction: 'helpful',
         createdAt: now,
       },
@@ -141,7 +141,7 @@ describe('§5 Idempotency (Fix 1)', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0407", "section": "01", "sectionName": "General", "title": "IT-IDP-004: Fix 1: replay with changed data \u2192 updated"}
   it('IT-IDP-004: Fix 1: replay with changed data → updated', async () => {
-    const collection = 'com.dina.peerlens.attestation'
+    const collection = 'com.dinakernel.peerlens.attestation'
     const rkey = 'idp004'
     const uri = makeUri(collection, rkey)
 
@@ -192,7 +192,7 @@ describe('§5 Idempotency (Fix 1)', () => {
     // One record per handler type, each replayed twice
     const handlerConfigs = [
       {
-        collection: 'com.dina.peerlens.attestation',
+        collection: 'com.dinakernel.peerlens.attestation',
         rkey: 'idp005-att',
         record: {
           subject: { type: 'did', did: SUBJECT_DID, name: 'Test' },
@@ -203,7 +203,7 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.attestations,
       },
       {
-        collection: 'com.dina.peerlens.vouch',
+        collection: 'com.dinakernel.peerlens.vouch',
         rkey: 'idp005-vouch',
         record: {
           subject: SUBJECT_DID,
@@ -214,7 +214,7 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.vouches,
       },
       {
-        collection: 'com.dina.peerlens.endorsement',
+        collection: 'com.dinakernel.peerlens.endorsement',
         rkey: 'idp005-end',
         record: {
           subject: SUBJECT_DID,
@@ -225,7 +225,7 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.endorsements,
       },
       {
-        collection: 'com.dina.peerlens.flag',
+        collection: 'com.dinakernel.peerlens.flag',
         rkey: 'idp005-flag',
         record: {
           subject: { type: 'did', did: SUBJECT_DID, name: 'Flagged' },
@@ -236,11 +236,11 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.flags,
       },
       {
-        collection: 'com.dina.peerlens.reply',
+        collection: 'com.dinakernel.peerlens.reply',
         rkey: 'idp005-reply',
         record: {
-          rootUri: 'at://did:plc:root/com.dina.peerlens.attestation/root001',
-          parentUri: 'at://did:plc:root/com.dina.peerlens.attestation/root001',
+          rootUri: 'at://did:plc:root/com.dinakernel.peerlens.attestation/root001',
+          parentUri: 'at://did:plc:root/com.dinakernel.peerlens.attestation/root001',
           intent: 'agree',
           text: 'Agreed',
           createdAt: now,
@@ -248,37 +248,37 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.replies,
       },
       {
-        collection: 'com.dina.peerlens.reaction',
+        collection: 'com.dinakernel.peerlens.reaction',
         rkey: 'idp005-rxn',
         record: {
-          targetUri: 'at://did:plc:root/com.dina.peerlens.attestation/root001',
+          targetUri: 'at://did:plc:root/com.dinakernel.peerlens.attestation/root001',
           reaction: 'helpful',
           createdAt: now,
         },
         table: schema.reactions,
       },
       {
-        collection: 'com.dina.peerlens.reportRecord',
+        collection: 'com.dinakernel.peerlens.reportRecord',
         rkey: 'idp005-rpt',
         record: {
-          targetUri: 'at://did:plc:root/com.dina.peerlens.attestation/root001',
+          targetUri: 'at://did:plc:root/com.dinakernel.peerlens.attestation/root001',
           reportType: 'spam',
           createdAt: now,
         },
         table: schema.reportRecords,
       },
       {
-        collection: 'com.dina.peerlens.revocation',
+        collection: 'com.dinakernel.peerlens.revocation',
         rkey: 'idp005-rev',
         record: {
-          targetUri: 'at://did:plc:root/com.dina.peerlens.attestation/nonexistent',
+          targetUri: 'at://did:plc:root/com.dinakernel.peerlens.attestation/nonexistent',
           reason: 'Changed my mind',
           createdAt: now,
         },
         table: schema.revocations,
       },
       {
-        collection: 'com.dina.peerlens.delegation',
+        collection: 'com.dinakernel.peerlens.delegation',
         rkey: 'idp005-del',
         record: {
           subject: SUBJECT_DID,
@@ -289,21 +289,21 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.delegations,
       },
       {
-        collection: 'com.dina.peerlens.collection',
+        collection: 'com.dinakernel.peerlens.collection',
         rkey: 'idp005-col',
         record: {
           name: 'My Collection',
-          items: ['at://did:plc:item/com.dina.peerlens.attestation/item1'],
+          items: ['at://did:plc:item/com.dinakernel.peerlens.attestation/item1'],
           isDiscoverable: true,
           createdAt: now,
         },
         table: schema.collections,
       },
       {
-        collection: 'com.dina.peerlens.media',
+        collection: 'com.dinakernel.peerlens.media',
         rkey: 'idp005-med',
         record: {
-          parentUri: 'at://did:plc:root/com.dina.peerlens.attestation/root001',
+          parentUri: 'at://did:plc:root/com.dinakernel.peerlens.attestation/root001',
           mediaType: 'image',
           url: 'https://example.com/photo.jpg',
           createdAt: now,
@@ -311,10 +311,10 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.media,
       },
       {
-        collection: 'com.dina.peerlens.amendment',
+        collection: 'com.dinakernel.peerlens.amendment',
         rkey: 'idp005-amd',
         record: {
-          targetUri: 'at://did:plc:root/com.dina.peerlens.attestation/nonexistent',
+          targetUri: 'at://did:plc:root/com.dinakernel.peerlens.attestation/nonexistent',
           amendmentType: 'correction',
           text: 'Correction here',
           createdAt: now,
@@ -322,10 +322,10 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.amendments,
       },
       {
-        collection: 'com.dina.peerlens.verification',
+        collection: 'com.dinakernel.peerlens.verification',
         rkey: 'idp005-ver',
         record: {
-          targetUri: 'at://did:plc:root/com.dina.peerlens.attestation/nonexistent',
+          targetUri: 'at://did:plc:root/com.dinakernel.peerlens.attestation/nonexistent',
           verificationType: 'purchase',
           result: 'inconclusive',
           createdAt: now,
@@ -333,7 +333,7 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.verifications,
       },
       {
-        collection: 'com.dina.peerlens.reviewRequest',
+        collection: 'com.dinakernel.peerlens.reviewRequest',
         rkey: 'idp005-rr',
         record: {
           subject: { type: 'did', did: SUBJECT_DID, name: 'Review Request Subject' },
@@ -343,7 +343,7 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.reviewRequests,
       },
       {
-        collection: 'com.dina.peerlens.comparison',
+        collection: 'com.dinakernel.peerlens.comparison',
         rkey: 'idp005-cmp',
         record: {
           subjects: [
@@ -356,7 +356,7 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.comparisons,
       },
       {
-        collection: 'com.dina.peerlens.subjectClaim',
+        collection: 'com.dinakernel.peerlens.subjectClaim',
         rkey: 'idp005-sc',
         record: {
           sourceSubjectId: 'sub_source001',
@@ -367,7 +367,7 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.subjectClaims,
       },
       {
-        collection: 'com.dina.peerlens.trustPolicy',
+        collection: 'com.dinakernel.peerlens.trustPolicy',
         rkey: 'idp005-tp',
         record: {
           maxGraphDepth: 3,
@@ -377,7 +377,7 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.peerlensPolicies,
       },
       {
-        collection: 'com.dina.peerlens.notificationPrefs',
+        collection: 'com.dinakernel.peerlens.notificationPrefs',
         rkey: 'idp005-np',
         record: {
           enableMentions: true,
@@ -418,7 +418,7 @@ describe('§5 Idempotency (Fix 1)', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0409", "section": "01", "sectionName": "General", "title": "IT-IDP-006: Fix 1: crash simulation \u2014 cursor replay"}
   it('IT-IDP-006: Fix 1: crash simulation — cursor replay', async () => {
-    const collection = 'com.dina.peerlens.attestation'
+    const collection = 'com.dinakernel.peerlens.attestation'
     const handler = routeHandler(collection)!
 
     // Insert 100 unique events
@@ -470,7 +470,7 @@ describe('§5 Idempotency (Fix 1)', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0410", "section": "01", "sectionName": "General", "title": "IT-IDP-007: Fix 1: concurrent replay \u2014 same event from two workers"}
   it('IT-IDP-007: Fix 1: concurrent replay — same event from two workers', async () => {
-    const collection = 'com.dina.peerlens.attestation'
+    const collection = 'com.dinakernel.peerlens.attestation'
     const rkey = 'idp007'
     const uri = makeUri(collection, rkey)
 

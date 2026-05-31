@@ -1229,7 +1229,7 @@ describe('§9.6+ Additional Tombstone Tests (AppView Fixes)', () => {
     // Insert 3 tombstones for this author
     for (let i = 0; i < 3; i++) {
       await db.insert(schema.tombstones).values({
-        originalUri: `at://did:plc:tomb1/com.dina.peerlens.attestation/del${i}`,
+        originalUri: `at://did:plc:tomb1/com.dinakernel.peerlens.attestation/del${i}`,
         authorDid: 'did:plc:tomb1',
         recordType: 'attestation',
         subjectId: 'sub-tomb1',
@@ -1267,7 +1267,7 @@ describe('§9.5+ Additional Sybil Detection Tests (AppView Fixes)', () => {
     // Create a flag targeting a subject (not a DID directly)
     await insertSubject('sub-sybil1', { did: 'did:plc:target1', name: 'Sybil Target' })
     await db.insert(schema.flags).values({
-      uri: 'at://did:plc:flagger/com.dina.peerlens.flag/f1',
+      uri: 'at://did:plc:flagger/com.dinakernel.peerlens.flag/f1',
       authorDid: 'did:plc:flagger',
       cid: 'cid-f1',
       subjectId: 'sub-sybil1',
@@ -1297,12 +1297,12 @@ describe('§9.1+ Additional Profile Tests (AppView Fixes)', () => {
     // Create a DID profile and attestation
     await insertProfile('did:plc:verified', { needsRecalc: true })
     await insertSubject('sub-v1', { did: 'did:plc:verified' })
-    const attUri = 'at://did:plc:verified/com.dina.peerlens.attestation/tid1'
+    const attUri = 'at://did:plc:verified/com.dinakernel.peerlens.attestation/tid1'
     await insertAttestation(attUri, 'did:plc:verified', { subjectId: 'sub-v1' })
 
     // Insert a verification record confirming this attestation (HIGH-10)
     await db.insert(schema.verifications).values({
-      uri: 'at://did:plc:verifier/com.dina.peerlens.verification/v1',
+      uri: 'at://did:plc:verifier/com.dinakernel.peerlens.verification/v1',
       authorDid: 'did:plc:verifier',
       cid: 'cid-v1',
       targetUri: attUri,

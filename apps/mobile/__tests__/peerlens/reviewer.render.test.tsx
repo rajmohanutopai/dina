@@ -450,7 +450,7 @@ describe('ReviewerProfileScreen — Reviews written list', () => {
 
 describe('ReviewerProfileScreen — Edit affordance on own reviews', () => {
   const ROW = {
-    uri: 'at://did:plc:owner/com.dina.peerlens.attestation/1',
+    uri: 'at://did:plc:owner/com.dinakernel.peerlens.attestation/1',
     subjectId: 'sub-aeron',
     subjectKind: 'product' as const,
     subjectUri: null,

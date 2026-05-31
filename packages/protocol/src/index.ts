@@ -129,7 +129,7 @@ export type {
 } from './validators';
 
 // PeerLens wire types (TN-PROTO-001). Pure type declarations
-// for the `com.dina.peerlens.*` AT Protocol record family — Lite, Brain
+// for the `com.dinakernel.peerlens.*` AT Protocol record family — Lite, Brain
 // and mobile all consume from here so the workspace has one
 // definition. AppView's parallel `lexicon-types.ts` mirrors this
 // file until cross-workspace publish is set up.

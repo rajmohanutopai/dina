@@ -1,6 +1,6 @@
 // service_resolver.go — AppView client for provider service lookup.
 //
-// Calls com.dina.service.isDiscoverable to check if a remote DID is a published
+// Calls com.dinakernel.service.isDiscoverable to check if a remote DID is a published
 // provider service with a given capability. Results are cached with a 5-minute
 // TTL. Fails closed: if AppView is unreachable, returns (false, error).
 package appview
@@ -82,7 +82,7 @@ func (r *ServiceResolver) putCache(did string, isDiscoverable bool, caps []strin
 }
 
 func (r *ServiceResolver) fetch(did string) (bool, []string, error) {
-	u := fmt.Sprintf("%s/xrpc/com.dina.service.isDiscoverable?did=%s",
+	u := fmt.Sprintf("%s/xrpc/com.dinakernel.service.isDiscoverable?did=%s",
 		r.appViewURL, url.QueryEscape(did))
 
 	resp, err := r.client.Get(u)

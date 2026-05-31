@@ -2794,7 +2794,7 @@ class MockAppView:
     def __init__(self) -> None:
         self.indexed_records: list[dict[str, Any]] = []
         self.cursor: int = 0
-        self.lexicon_filter = "com.dina.peerlens."
+        self.lexicon_filter = "com.dinakernel.peerlens."
 
     def consume_firehose(
         self, records: list[dict[str, Any]]
@@ -2804,7 +2804,7 @@ class MockAppView:
         for record in records:
             lexicon = record.get("lexicon", "")
             if lexicon.startswith(self.lexicon_filter) or \
-               lexicon == "com.dina.identity.attestation":
+               lexicon == "com.dinakernel.identity.attestation":
                 self.indexed_records.append(record)
                 indexed += 1
             self.cursor += 1
@@ -3038,7 +3038,7 @@ class MockSSSManager:
         Manifest contains ONLY custodian DIDs — never the actual shares.
         """
         manifest = {
-            "type": "com.dina.recovery.manifest",
+            "type": "com.dinakernel.recovery.manifest",
             "owner_did": self._identity.root_did,
             "custodian_dids": custodian_dids,
             "threshold": self.threshold,

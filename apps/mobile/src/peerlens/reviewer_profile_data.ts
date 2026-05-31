@@ -2,7 +2,7 @@
  * Display data layer for the reviewer profile screen (TN-MOB-015 / Plan §8.5).
  *
  * Derives display-ready fields from the raw `PeerlensProfile` (the
- * AppView `com.dina.peerlens.getProfile` response shape, owned by
+ * AppView `com.dinakernel.peerlens.getProfile` response shape, owned by
  * `@dina/core`'s `PeerlensQueryClient`). The screen layer
  * (`app/peerlens/reviewer/[did].tsx`) renders these values directly;
  * keeping the derivation here means both the screen AND the

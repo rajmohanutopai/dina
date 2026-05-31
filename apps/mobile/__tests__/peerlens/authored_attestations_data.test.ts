@@ -12,7 +12,7 @@ import type { SearchAttestationHit } from '../../src/peerlens/appview_runtime';
 
 function makeHit(overrides: Partial<SearchAttestationHit> = {}): SearchAttestationHit {
   return {
-    uri: 'at://did:plc:author/com.dina.peerlens.attestation/1',
+    uri: 'at://did:plc:author/com.dinakernel.peerlens.attestation/1',
     authorDid: 'did:plc:author',
     authorHandle: null,
     cid: 'bafy123',
@@ -32,7 +32,7 @@ describe('deriveAuthoredAttestationRows', () => {
     const rows = deriveAuthoredAttestationRows([makeHit()]);
     expect(rows).toHaveLength(1);
     const r = rows[0];
-    expect(r.uri).toBe('at://did:plc:author/com.dina.peerlens.attestation/1');
+    expect(r.uri).toBe('at://did:plc:author/com.dinakernel.peerlens.attestation/1');
     expect(r.subjectId).toBe('sub-1');
     expect(r.subjectTitle).toBe('Aeron Chair');
     expect(r.category).toBe('office_furniture/chair');

@@ -622,11 +622,11 @@
 
 | # | Scenario | Setup | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-INT-297]** Publish expert attestation | Brain creates attestation → core signs with persona key → writes to PDS | Record in AT Protocol PDS with valid `com.dina.peerlens.attestation` Lexicon |
-| 2 | **[TST-INT-298]** Publish outcome report | Dina records purchase outcome → anonymized → signed → PDS | `com.dina.peerlens.outcome` record — no user identity, only category + outcome |
+| 1 | **[TST-INT-297]** Publish expert attestation | Brain creates attestation → core signs with persona key → writes to PDS | Record in AT Protocol PDS with valid `com.dinakernel.peerlens.attestation` Lexicon |
+| 2 | **[TST-INT-298]** Publish outcome report | Dina records purchase outcome → anonymized → signed → PDS | `com.dinakernel.peerlens.outcome` record — no user identity, only category + outcome |
 | 3 | **[TST-INT-299]** Record signature valid | Fetch published record from PDS | Ed25519 signature verifies against author's DID Document public key |
 | 4 | **[TST-INT-300]** PDS cannot forge records | Inspect PDS data | PDS has no signing keys — stores signed Merkle repo, cannot create/modify records |
-| 5 | **[TST-INT-301]** Type B: bundled PDS in docker-compose | `docker compose up` | PDS container runs alongside core + brain, serves `com.dina.peerlens.*` records |
+| 5 | **[TST-INT-301]** Type B: bundled PDS in docker-compose | `docker compose up` | PDS container runs alongside core + brain, serves `com.dinakernel.peerlens.*` records |
 | 6 | **[TST-INT-302]** Type A: external PDS push | Home Node behind CGNAT (no inbound traffic) | Core pushes signed commits to external PDS via outbound HTTPS — zero inbound traffic to home node |
 | 7 | **[TST-INT-303]** Custom Lexicon validation | Publish record with wrong schema | PDS or core rejects — all 5 required fields enforced (`expertDid`, `productCategory`, `productId`, `rating`, `verdict`) |
 
@@ -637,10 +637,10 @@
 | 1 | **[TST-INT-304]** Trust tampering detected | Modify published record bytes | Signature verification fails — Merkle tree integrity broken |
 | 2 | **[TST-INT-305]** Author deletes own review (signed tombstone) | User sends deletion signed by same key | `Tombstone {target, author, sig}` — record removed from PDS, tombstone propagates |
 | 3 | **[TST-INT-306]** Non-author cannot delete review | Chair Company sends deletion for user's review | Signature doesn't match author → rejection — only keyholder can delete |
-| 4 | **[TST-INT-307]** Outcome data exact anonymized fields — no PII | Inspect published outcome record | Exact fields per Section 08 `com.dina.peerlens.outcome` Lexicon: `{type: "outcome_report", reporter_trust_ring, reporter_age_days, product_category, product_id, purchase_verified, purchase_amount_range, time_since_purchase_days, outcome, satisfaction, issues, timestamp, signature}` — 13 fields total. Zero user identity (no DID, no name). Zero seller identity (only trust ring). reporter_trust_ring/age_days are the submitting Dina's ring level and age. purchase_amount_range uses bucketed format (e.g. "50000-100000_INR"). satisfaction is categorical (positive/negative/neutral). issues is an array (empty if none) |
+| 4 | **[TST-INT-307]** Outcome data exact anonymized fields — no PII | Inspect published outcome record | Exact fields per Section 08 `com.dinakernel.peerlens.outcome` Lexicon: `{type: "outcome_report", reporter_trust_ring, reporter_age_days, product_category, product_id, purchase_verified, purchase_amount_range, time_since_purchase_days, outcome, satisfaction, issues, timestamp, signature}` — 13 fields total. Zero user identity (no DID, no name). Zero seller identity (only trust ring). reporter_trust_ring/age_days are the submitting Dina's ring level and age. purchase_amount_range uses bucketed format (e.g. "50000-100000_INR"). satisfaction is categorical (positive/negative/neutral). issues is an array (empty if none) |
 | 5 | **[TST-INT-308]** Aggregate scores computed not stored | Query product trust | Score computed from individual signed records — any AppView computes same score deterministically |
 | 6 | **[TST-INT-309]** Outcome data lifecycle E2E | Cart handover → weeks → follow-up → anonymized record → PDS | Full flow: (1) purchase via cart handover — Brain records `{product_category, seller_dina_id, price, timestamp}`, (2) weeks/months later Brain asks "How's that chair?", (3) user responds or Brain infers (still using? returned?), (4) anonymized outcome record created with Section 08 Lexicon fields (13 fields: type, reporter_trust_ring, reporter_age_days, product_category, product_id, purchase_verified, purchase_amount_range, time_since_purchase_days, outcome, satisfaction, issues, timestamp, signature), (5) signed with Trust Signing Key (HKDF "dina:trust:v1"), (6) submitted to PeerLens via PDS |
-| 7 | **[TST-INT-310]** Outcome report full Lexicon field validation | Inspect each field of published outcome record | Validate every field matches `com.dina.peerlens.outcome` Lexicon constraints: `type` = "outcome_report" (string literal), `reporter_trust_ring` = integer (1-3), `reporter_age_days` = integer (≥0), `product_category` = string, `product_id` = string, `purchase_verified` = boolean, `purchase_amount_range` = string (bucketed format e.g. "50000-100000_INR"), `time_since_purchase_days` = integer (≥0), `outcome` = string enum (still_using/returned/broken/gifted), `satisfaction` = string enum (positive/negative/neutral), `issues` = array of strings (may be empty), `timestamp` = datetime ISO-8601, `signature` = Ed25519 hex string |
+| 7 | **[TST-INT-310]** Outcome report full Lexicon field validation | Inspect each field of published outcome record | Validate every field matches `com.dinakernel.peerlens.outcome` Lexicon constraints: `type` = "outcome_report" (string literal), `reporter_trust_ring` = integer (1-3), `reporter_age_days` = integer (≥0), `product_category` = string, `product_id` = string, `purchase_verified` = boolean, `purchase_amount_range` = string (bucketed format e.g. "50000-100000_INR"), `time_since_purchase_days` = integer (≥0), `outcome` = string enum (still_using/returned/broken/gifted), `satisfaction` = string enum (positive/negative/neutral), `issues` = array of strings (may be empty), `timestamp` = datetime ISO-8601, `signature` = Ed25519 hex string |
 
 ### 11.3 Trust in Agent Decisions
 
@@ -658,7 +658,7 @@
 |---|----------|-------|----------|
 | 1 | **[TST-INT-316]** PDS down: records already replicated | Bundled PDS container stops | Records already crawled by relay — PeerLens data still queryable via AppView |
 | 2 | **[TST-INT-317]** PDS migration (account portability) | User migrates from pds.dina.host to self-hosted PDS | `did:plc` rotation points to new PDS — all records transferred, identity preserved |
-| 3 | **[TST-INT-318]** Foundation PDS stores only PeerLens data | Inspect `pds.dina.host` content | Only `com.dina.peerlens.*` records — no private vault data ever touches it |
+| 3 | **[TST-INT-318]** Foundation PDS stores only PeerLens data | Inspect `pds.dina.host` content | Only `com.dinakernel.peerlens.*` records — no private vault data ever touches it |
 | 4 | **[TST-INT-319]** Relay crawls PDS via delta sync | PDS publishes new record → relay crawls | Merkle Search Tree diff — only new records transferred (few KB), not entire repo |
 
 ### 11.5 AT Protocol Discovery (E2E)
@@ -834,11 +834,11 @@
 ### 16.7 PeerLens AppView (Phase 2+)
 
 > The AppView is a read-only indexer that consumes the AT Protocol firehose,
-> filters for `com.dina.peerlens.*` records, and serves a query API.
+> filters for `com.dinakernel.peerlens.*` records, and serves a query API.
 
 | # | Scenario | Setup | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-INT-404]** Firehose consumer filters correctly | AppView connected to relay | Only `com.dina.peerlens.*` and `com.dina.identity.attestation` records indexed — all other Lexicons discarded |
+| 1 | **[TST-INT-404]** Firehose consumer filters correctly | AppView connected to relay | Only `com.dinakernel.peerlens.*` and `com.dinakernel.identity.attestation` records indexed — all other Lexicons discarded |
 | 2 | **[TST-INT-405]** Cryptographic verification on every record | Signed record arrives in firehose | AppView verifies Ed25519 signature against author's DID Document — unsigned/invalid records rejected |
 | 3 | **[TST-INT-406]** Query API: trust by DID | `GET /v1/trust?did=did:plc:abc` | Returns aggregate score + individual signed records |
 | 4 | **[TST-INT-407]** Query API: product trust | `GET /v1/product?id=herman_miller_aeron_2025` | Returns product score, review count, individual signed reviews |

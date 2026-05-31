@@ -2,7 +2,7 @@
  * Mobile-side AppView runtime.
  *
  * Resolves AppView through the shared TypeScript Home Node endpoint
- * policy and exposes typed fetchers for the `com.dina.peerlens.*` xRPC
+ * policy and exposes typed fetchers for the `com.dinakernel.peerlens.*` xRPC
  * surface the Trust screens consume.
  *
  * Why a focused fetcher rather than `PeerlensQueryClient` from
@@ -132,7 +132,7 @@ export interface PeerlensProfile {
 // ─── Fetchers ─────────────────────────────────────────────────────────────
 
 export async function searchAttestations(q: string, limit = 25): Promise<SearchResponse> {
-  return getJSON<SearchResponse>('/xrpc/com.dina.peerlens.search', {
+  return getJSON<SearchResponse>('/xrpc/com.dinakernel.peerlens.search', {
     q,
     limit: String(limit),
   });
@@ -142,7 +142,7 @@ export async function searchAttestations(q: string, limit = 25): Promise<SearchR
  * Fetch attestations authored by `authorDid` — the "reviews I (or
  * they) wrote" surface used by the reviewer profile screen.
  *
- * Reuses the same `com.dina.peerlens.search` xRPC: `q` is optional on
+ * Reuses the same `com.dinakernel.peerlens.search` xRPC: `q` is optional on
  * that endpoint, and supplying `authorDid` alone returns every
  * (non-revoked) attestation by the author. Sort defaults to `recent`
  * because there's no FTS query to rank against — the natural
@@ -152,7 +152,7 @@ export async function searchAttestationsByAuthor(
   authorDid: string,
   limit = 25,
 ): Promise<SearchResponse> {
-  return getJSON<SearchResponse>('/xrpc/com.dina.peerlens.search', {
+  return getJSON<SearchResponse>('/xrpc/com.dinakernel.peerlens.search', {
     authorDid,
     sort: 'recent',
     limit: String(limit),
@@ -162,7 +162,7 @@ export async function searchAttestationsByAuthor(
 export async function getProfile(did: string): Promise<PeerlensProfile | null> {
   // AppView returns 200 OK + literal `null` body for DIDs without a
   // `did_profiles` row — caller must handle null (no profile yet).
-  return getJSON<PeerlensProfile | null>('/xrpc/com.dina.peerlens.getProfile', { did });
+  return getJSON<PeerlensProfile | null>('/xrpc/com.dinakernel.peerlens.getProfile', { did });
 }
 
 // ─── Subject detail wire types ────────────────────────────────────────────
@@ -227,7 +227,7 @@ export async function subjectGet(
   subjectId: string,
   viewerDid: string,
 ): Promise<SubjectGetResponse> {
-  return getJSON<SubjectGetResponse>('/xrpc/com.dina.peerlens.subjectGet', {
+  return getJSON<SubjectGetResponse>('/xrpc/com.dinakernel.peerlens.subjectGet', {
     subjectId,
     viewerDid,
   });
@@ -236,7 +236,7 @@ export async function subjectGet(
 // ─── Network feed wire types ──────────────────────────────────────────────
 
 /**
- * Wire shape of `com.dina.peerlens.networkFeed` rows. The server returns
+ * Wire shape of `com.dinakernel.peerlens.networkFeed` rows. The server returns
  * the raw `attestations` table row with snake_case → camelCase via
  * Drizzle, so most fields land here unchanged. We only consume the
  * subset the trust feed surface needs (subject + author + headline);
@@ -284,12 +284,12 @@ export async function networkFeed(
     limit: String(limit),
   };
   if (cursor !== undefined && cursor.length > 0) params.cursor = cursor;
-  return getJSON<NetworkFeedResponse>('/xrpc/com.dina.peerlens.networkFeed', params);
+  return getJSON<NetworkFeedResponse>('/xrpc/com.dinakernel.peerlens.networkFeed', params);
 }
 
 // ─── Test-mode write endpoints ────────────────────────────────────────────
 //
-// These talk to the AppView's `com.dina.test.*` test-inject surface.
+// These talk to the AppView's `com.dinakernel.test.*` test-inject surface.
 // Production publish flows through the user's PDS + Jetstream; the
 // test endpoints are a DEV-only shortcut that lets the mobile UI write
 // to AppView without standing up real PDS auth. Gated server-side on
@@ -388,7 +388,7 @@ export async function injectAttestation(
   body: InjectAttestationRequest,
 ): Promise<InjectAttestationResponse> {
   return postJSON<InjectAttestationResponse>(
-    '/xrpc/com.dina.test.injectAttestation',
+    '/xrpc/com.dinakernel.test.injectAttestation',
     body,
   );
 }
@@ -398,7 +398,7 @@ export async function deleteAttestation(
   uri: string,
 ): Promise<DeleteAttestationResponse> {
   return postJSON<DeleteAttestationResponse>(
-    '/xrpc/com.dina.test.deleteAttestation',
+    '/xrpc/com.dinakernel.test.deleteAttestation',
     { authorDid, uri },
   );
 }

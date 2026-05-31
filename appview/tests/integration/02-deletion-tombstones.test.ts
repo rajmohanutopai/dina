@@ -46,7 +46,7 @@ describe('§2.1 Deletion — Undisputed Clean Delete', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0357", "section": "01", "sectionName": "General", "title": "IT-DEL-001: clean delete \u2014 no disputes, no tombstone"}
   it('IT-DEL-001: clean delete — no disputes, no tombstone', async () => {
     // Create an attestation
-    const collection = 'com.dina.peerlens.attestation'
+    const collection = 'com.dinakernel.peerlens.attestation'
     const rkey = 'del001'
     const uri = makeUri(collection, rkey)
 
@@ -88,7 +88,7 @@ describe('§2.1 Deletion — Undisputed Clean Delete', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0358", "section": "01", "sectionName": "General", "title": "IT-DEL-002: clean delete \u2014 trust edge removed"}
   it('IT-DEL-002: clean delete — trust edge removed', async () => {
     // Create a vouch (which creates a trust edge)
-    const collection = 'com.dina.peerlens.vouch'
+    const collection = 'com.dinakernel.peerlens.vouch'
     const rkey = 'del002'
     const uri = makeUri(collection, rkey)
 
@@ -122,7 +122,7 @@ describe('§2.1 Deletion — Undisputed Clean Delete', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0359", "section": "01", "sectionName": "General", "title": "IT-DEL-003: clean delete metrics"}
   it('IT-DEL-003: clean delete metrics', async () => {
     // Create an attestation and delete it (undisputed)
-    const collection = 'com.dina.peerlens.attestation'
+    const collection = 'com.dinakernel.peerlens.attestation'
     const rkey = 'del003'
     const uri = makeUri(collection, rkey)
 
@@ -164,7 +164,7 @@ describe('§2.1 Deletion — Undisputed Clean Delete', () => {
 describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0360", "section": "01", "sectionName": "General", "title": "IT-DEL-004: disputed \u2014 has report \u2192 tombstone"}
   it('IT-DEL-004: disputed — has report → tombstone', async () => {
-    const collection = 'com.dina.peerlens.attestation'
+    const collection = 'com.dinakernel.peerlens.attestation'
     const rkey = 'del004'
     const uri = makeUri(collection, rkey)
 
@@ -185,11 +185,11 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     })
 
     // Insert a report targeting this attestation URI
-    const reportHandler = routeHandler('com.dina.peerlens.reportRecord')!
+    const reportHandler = routeHandler('com.dinakernel.peerlens.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.peerlens.reportRecord', 'report004'),
+      uri: makeUri('com.dinakernel.peerlens.reportRecord', 'report004'),
       did: REPORTER_DID,
-      collection: 'com.dina.peerlens.reportRecord',
+      collection: 'com.dinakernel.peerlens.reportRecord',
       rkey: 'report004',
       cid: 'cid-report004',
       record: {
@@ -211,7 +211,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0361", "section": "01", "sectionName": "General", "title": "IT-DEL-005: disputed \u2014 has dispute reply \u2192 tombstone"}
   it('IT-DEL-005: disputed — has dispute reply → tombstone', async () => {
-    const collection = 'com.dina.peerlens.attestation'
+    const collection = 'com.dinakernel.peerlens.attestation'
     const rkey = 'del005'
     const uri = makeUri(collection, rkey)
 
@@ -232,11 +232,11 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     })
 
     // Insert a reply with intent = 'dispute' targeting this attestation
-    const replyHandler = routeHandler('com.dina.peerlens.reply')!
+    const replyHandler = routeHandler('com.dinakernel.peerlens.reply')!
     await replyHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.peerlens.reply', 'reply005'),
+      uri: makeUri('com.dinakernel.peerlens.reply', 'reply005'),
       did: REPORTER_DID,
-      collection: 'com.dina.peerlens.reply',
+      collection: 'com.dinakernel.peerlens.reply',
       rkey: 'reply005',
       cid: 'cid-reply005',
       record: {
@@ -259,7 +259,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0362", "section": "01", "sectionName": "General", "title": "IT-DEL-006: disputed \u2014 has suspicious reaction \u2192 tombstone"}
   it('IT-DEL-006: disputed — has suspicious reaction → tombstone', async () => {
-    const collection = 'com.dina.peerlens.attestation'
+    const collection = 'com.dinakernel.peerlens.attestation'
     const rkey = 'del006'
     const uri = makeUri(collection, rkey)
 
@@ -280,11 +280,11 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     })
 
     // Insert a suspicious reaction
-    const reactionHandler = routeHandler('com.dina.peerlens.reaction')!
+    const reactionHandler = routeHandler('com.dinakernel.peerlens.reaction')!
     await reactionHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.peerlens.reaction', 'rxn006'),
+      uri: makeUri('com.dinakernel.peerlens.reaction', 'rxn006'),
       did: REPORTER_DID,
-      collection: 'com.dina.peerlens.reaction',
+      collection: 'com.dinakernel.peerlens.reaction',
       rkey: 'rxn006',
       cid: 'cid-rxn006',
       record: {
@@ -305,7 +305,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0363", "section": "01", "sectionName": "General", "title": "IT-DEL-007: tombstone preserves metadata"}
   it('IT-DEL-007: tombstone preserves metadata', async () => {
-    const collection = 'com.dina.peerlens.attestation'
+    const collection = 'com.dinakernel.peerlens.attestation'
     const rkey = 'del007'
     const uri = makeUri(collection, rkey)
 
@@ -327,11 +327,11 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     })
 
     // Insert a report to make it disputed
-    const reportHandler = routeHandler('com.dina.peerlens.reportRecord')!
+    const reportHandler = routeHandler('com.dinakernel.peerlens.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.peerlens.reportRecord', 'report007'),
+      uri: makeUri('com.dinakernel.peerlens.reportRecord', 'report007'),
       did: REPORTER_DID,
-      collection: 'com.dina.peerlens.reportRecord',
+      collection: 'com.dinakernel.peerlens.reportRecord',
       rkey: 'report007',
       cid: 'cid-report007',
       record: {
@@ -357,7 +357,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0364", "section": "01", "sectionName": "General", "title": "IT-DEL-008: tombstone \u2014 durationDays calculated"}
   it('IT-DEL-008: tombstone — durationDays calculated', async () => {
-    const collection = 'com.dina.peerlens.attestation'
+    const collection = 'com.dinakernel.peerlens.attestation'
     const rkey = 'del008'
     const uri = makeUri(collection, rkey)
 
@@ -380,11 +380,11 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     })
 
     // Add report to make it disputed
-    const reportHandler = routeHandler('com.dina.peerlens.reportRecord')!
+    const reportHandler = routeHandler('com.dinakernel.peerlens.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.peerlens.reportRecord', 'report008'),
+      uri: makeUri('com.dinakernel.peerlens.reportRecord', 'report008'),
       did: REPORTER_DID,
-      collection: 'com.dina.peerlens.reportRecord',
+      collection: 'com.dinakernel.peerlens.reportRecord',
       rkey: 'report008',
       cid: 'cid-report008',
       record: {
@@ -406,7 +406,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0365", "section": "01", "sectionName": "General", "title": "IT-DEL-009: tombstone \u2014 hadEvidence flag"}
   it('IT-DEL-009: tombstone — hadEvidence flag', async () => {
-    const collection = 'com.dina.peerlens.attestation'
+    const collection = 'com.dinakernel.peerlens.attestation'
     const rkey = 'del009'
     const uri = makeUri(collection, rkey)
 
@@ -428,11 +428,11 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     })
 
     // Add report to make it disputed
-    const reportHandler = routeHandler('com.dina.peerlens.reportRecord')!
+    const reportHandler = routeHandler('com.dinakernel.peerlens.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.peerlens.reportRecord', 'report009'),
+      uri: makeUri('com.dinakernel.peerlens.reportRecord', 'report009'),
       did: REPORTER_DID,
-      collection: 'com.dina.peerlens.reportRecord',
+      collection: 'com.dinakernel.peerlens.reportRecord',
       rkey: 'report009',
       cid: 'cid-report009',
       record: {
@@ -453,7 +453,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0366", "section": "01", "sectionName": "General", "title": "IT-DEL-010: tombstone \u2014 hadCosignature flag"}
   it('IT-DEL-010: tombstone — hadCosignature flag', async () => {
-    const collection = 'com.dina.peerlens.attestation'
+    const collection = 'com.dinakernel.peerlens.attestation'
     const rkey = 'del010'
     const uri = makeUri(collection, rkey)
 
@@ -475,11 +475,11 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     })
 
     // Add report to make it disputed
-    const reportHandler = routeHandler('com.dina.peerlens.reportRecord')!
+    const reportHandler = routeHandler('com.dinakernel.peerlens.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.peerlens.reportRecord', 'report010'),
+      uri: makeUri('com.dinakernel.peerlens.reportRecord', 'report010'),
       did: REPORTER_DID,
-      collection: 'com.dina.peerlens.reportRecord',
+      collection: 'com.dinakernel.peerlens.reportRecord',
       rkey: 'report010',
       cid: 'cid-report010',
       record: {
@@ -500,7 +500,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0367", "section": "01", "sectionName": "General", "title": "IT-DEL-011: tombstone \u2014 record still deleted"}
   it('IT-DEL-011: tombstone — record still deleted', async () => {
-    const collection = 'com.dina.peerlens.attestation'
+    const collection = 'com.dinakernel.peerlens.attestation'
     const rkey = 'del011'
     const uri = makeUri(collection, rkey)
 
@@ -521,11 +521,11 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     })
 
     // Add report to make it disputed
-    const reportHandler = routeHandler('com.dina.peerlens.reportRecord')!
+    const reportHandler = routeHandler('com.dinakernel.peerlens.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.peerlens.reportRecord', 'report011'),
+      uri: makeUri('com.dinakernel.peerlens.reportRecord', 'report011'),
       did: REPORTER_DID,
-      collection: 'com.dina.peerlens.reportRecord',
+      collection: 'com.dinakernel.peerlens.reportRecord',
       rkey: 'report011',
       cid: 'cid-report011',
       record: {
@@ -549,7 +549,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0368", "section": "01", "sectionName": "General", "title": "IT-DEL-012: tombstone metrics"}
   it('IT-DEL-012: tombstone metrics', async () => {
-    const collection = 'com.dina.peerlens.attestation'
+    const collection = 'com.dinakernel.peerlens.attestation'
     const rkey = 'del012'
     const uri = makeUri(collection, rkey)
 
@@ -579,11 +579,11 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     })
 
     // Add report to make it disputed — use real ctx so metric tracking doesn't interfere
-    const reportHandler = routeHandler('com.dina.peerlens.reportRecord')!
+    const reportHandler = routeHandler('com.dinakernel.peerlens.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.peerlens.reportRecord', 'report012'),
+      uri: makeUri('com.dinakernel.peerlens.reportRecord', 'report012'),
       did: REPORTER_DID,
-      collection: 'com.dina.peerlens.reportRecord',
+      collection: 'com.dinakernel.peerlens.reportRecord',
       rkey: 'report012',
       cid: 'cid-report012',
       record: {
@@ -611,7 +611,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
 describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0369", "section": "01", "sectionName": "General", "title": "IT-DEL-013: Fix 13: delete vouch \u2192 queries vouches table"}
   it('IT-DEL-013: Fix 13: delete vouch → queries vouches table', async () => {
-    const collection = 'com.dina.peerlens.vouch'
+    const collection = 'com.dinakernel.peerlens.vouch'
     const rkey = 'del013'
     const uri = makeUri(collection, rkey)
 
@@ -632,11 +632,11 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     })
 
     // Add report targeting the vouch URI to make it disputed
-    const reportHandler = routeHandler('com.dina.peerlens.reportRecord')!
+    const reportHandler = routeHandler('com.dinakernel.peerlens.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.peerlens.reportRecord', 'report013'),
+      uri: makeUri('com.dinakernel.peerlens.reportRecord', 'report013'),
       did: REPORTER_DID,
-      collection: 'com.dina.peerlens.reportRecord',
+      collection: 'com.dinakernel.peerlens.reportRecord',
       rkey: 'report013',
       cid: 'cid-report013',
       record: {
@@ -661,7 +661,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0370", "section": "01", "sectionName": "General", "title": "IT-DEL-014: Fix 13: delete flag \u2192 queries flags table"}
   it('IT-DEL-014: Fix 13: delete flag → queries flags table', async () => {
-    const collection = 'com.dina.peerlens.flag'
+    const collection = 'com.dinakernel.peerlens.flag'
     const rkey = 'del014'
     const uri = makeUri(collection, rkey)
 
@@ -682,11 +682,11 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     })
 
     // Add report to make it disputed
-    const reportHandler = routeHandler('com.dina.peerlens.reportRecord')!
+    const reportHandler = routeHandler('com.dinakernel.peerlens.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.peerlens.reportRecord', 'report014'),
+      uri: makeUri('com.dinakernel.peerlens.reportRecord', 'report014'),
       did: REPORTER_DID,
-      collection: 'com.dina.peerlens.reportRecord',
+      collection: 'com.dinakernel.peerlens.reportRecord',
       rkey: 'report014',
       cid: 'cid-report014',
       record: {
@@ -711,7 +711,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0371", "section": "01", "sectionName": "General", "title": "IT-DEL-015: Fix 13: delete endorsement \u2192 queries endorsements table"}
   it('IT-DEL-015: Fix 13: delete endorsement → queries endorsements table', async () => {
-    const collection = 'com.dina.peerlens.endorsement'
+    const collection = 'com.dinakernel.peerlens.endorsement'
     const rkey = 'del015'
     const uri = makeUri(collection, rkey)
 
@@ -732,11 +732,11 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     })
 
     // Add report to make it disputed
-    const reportHandler = routeHandler('com.dina.peerlens.reportRecord')!
+    const reportHandler = routeHandler('com.dinakernel.peerlens.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.peerlens.reportRecord', 'report015'),
+      uri: makeUri('com.dinakernel.peerlens.reportRecord', 'report015'),
       did: REPORTER_DID,
-      collection: 'com.dina.peerlens.reportRecord',
+      collection: 'com.dinakernel.peerlens.reportRecord',
       rkey: 'report015',
       cid: 'cid-report015',
       record: {
@@ -761,7 +761,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0372", "section": "01", "sectionName": "General", "title": "IT-DEL-016: Fix 13: delete reply \u2192 queries replies table"}
   it('IT-DEL-016: Fix 13: delete reply → queries replies table', async () => {
-    const collection = 'com.dina.peerlens.reply'
+    const collection = 'com.dinakernel.peerlens.reply'
     const rkey = 'del016'
     const uri = makeUri(collection, rkey)
 
@@ -774,8 +774,8 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
       rkey,
       cid: 'cid-del016',
       record: {
-        rootUri: 'at://did:plc:root/com.dina.peerlens.attestation/root001',
-        parentUri: 'at://did:plc:root/com.dina.peerlens.attestation/root001',
+        rootUri: 'at://did:plc:root/com.dinakernel.peerlens.attestation/root001',
+        parentUri: 'at://did:plc:root/com.dinakernel.peerlens.attestation/root001',
         intent: 'agree',
         text: 'I agree with this',
         createdAt: now,
@@ -783,11 +783,11 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     })
 
     // Add report to make it disputed
-    const reportHandler = routeHandler('com.dina.peerlens.reportRecord')!
+    const reportHandler = routeHandler('com.dinakernel.peerlens.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.peerlens.reportRecord', 'report016'),
+      uri: makeUri('com.dinakernel.peerlens.reportRecord', 'report016'),
       did: REPORTER_DID,
-      collection: 'com.dina.peerlens.reportRecord',
+      collection: 'com.dinakernel.peerlens.reportRecord',
       rkey: 'report016',
       cid: 'cid-report016',
       record: {
@@ -812,7 +812,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0373", "section": "01", "sectionName": "General", "title": "IT-DEL-017: Fix 13: delete delegation \u2192 queries delegations table"}
   it('IT-DEL-017: Fix 13: delete delegation → queries delegations table', async () => {
-    const collection = 'com.dina.peerlens.delegation'
+    const collection = 'com.dinakernel.peerlens.delegation'
     const rkey = 'del017'
     const uri = makeUri(collection, rkey)
 
@@ -837,11 +837,11 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     expect(edgesBefore).toHaveLength(1)
 
     // Add report to make it disputed
-    const reportHandler = routeHandler('com.dina.peerlens.reportRecord')!
+    const reportHandler = routeHandler('com.dinakernel.peerlens.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.peerlens.reportRecord', 'report017'),
+      uri: makeUri('com.dinakernel.peerlens.reportRecord', 'report017'),
       did: REPORTER_DID,
-      collection: 'com.dina.peerlens.reportRecord',
+      collection: 'com.dinakernel.peerlens.reportRecord',
       rkey: 'report017',
       cid: 'cid-report017',
       record: {
@@ -870,7 +870,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0374", "section": "01", "sectionName": "General", "title": "IT-DEL-018: Fix 13: delete report \u2192 queries report_records table"}
   it('IT-DEL-018: Fix 13: delete report → queries report_records table', async () => {
-    const collection = 'com.dina.peerlens.reportRecord'
+    const collection = 'com.dinakernel.peerlens.reportRecord'
     const rkey = 'del018'
     const uri = makeUri(collection, rkey)
 
@@ -883,7 +883,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
       rkey,
       cid: 'cid-del018',
       record: {
-        targetUri: 'at://did:plc:someone/com.dina.peerlens.attestation/some-att',
+        targetUri: 'at://did:plc:someone/com.dinakernel.peerlens.attestation/some-att',
         reportType: 'spam',
         text: 'This is spam',
         createdAt: now,
@@ -891,11 +891,11 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     })
 
     // Add another report targeting this report to make it disputed
-    const reportHandler2 = routeHandler('com.dina.peerlens.reportRecord')!
+    const reportHandler2 = routeHandler('com.dinakernel.peerlens.reportRecord')!
     await reportHandler2.handleCreate(ctx, {
-      uri: makeUri('com.dina.peerlens.reportRecord', 'report018-meta'),
+      uri: makeUri('com.dinakernel.peerlens.reportRecord', 'report018-meta'),
       did: REPORTER_DID,
-      collection: 'com.dina.peerlens.reportRecord',
+      collection: 'com.dinakernel.peerlens.reportRecord',
       rkey: 'report018-meta',
       cid: 'cid-report018-meta',
       record: {
@@ -923,7 +923,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     // Create one record of each type and delete it
     const recordTypes = [
       {
-        collection: 'com.dina.peerlens.attestation',
+        collection: 'com.dinakernel.peerlens.attestation',
         rkey: 'del019-att',
         record: {
           subject: { type: 'did', did: SUBJECT_DID, name: 'Test' },
@@ -934,7 +934,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
         table: schema.attestations,
       },
       {
-        collection: 'com.dina.peerlens.vouch',
+        collection: 'com.dinakernel.peerlens.vouch',
         rkey: 'del019-vouch',
         record: {
           subject: SUBJECT_DID,
@@ -945,7 +945,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
         table: schema.vouches,
       },
       {
-        collection: 'com.dina.peerlens.endorsement',
+        collection: 'com.dinakernel.peerlens.endorsement',
         rkey: 'del019-end',
         record: {
           subject: SUBJECT_DID,
@@ -956,11 +956,11 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
         table: schema.endorsements,
       },
       {
-        collection: 'com.dina.peerlens.reply',
+        collection: 'com.dinakernel.peerlens.reply',
         rkey: 'del019-reply',
         record: {
-          rootUri: 'at://did:plc:root/com.dina.peerlens.attestation/root001',
-          parentUri: 'at://did:plc:root/com.dina.peerlens.attestation/root001',
+          rootUri: 'at://did:plc:root/com.dinakernel.peerlens.attestation/root001',
+          parentUri: 'at://did:plc:root/com.dinakernel.peerlens.attestation/root001',
           intent: 'agree',
           text: 'I agree',
           createdAt: now,
@@ -1008,7 +1008,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     // which specifically queries attestations. For vouches, the tombstone won't have
     // attestation-specific metadata, but it should still be created when disputed.
 
-    const vouchCollection = 'com.dina.peerlens.vouch'
+    const vouchCollection = 'com.dinakernel.peerlens.vouch'
     const rkey = 'del020'
     const uri = makeUri(vouchCollection, rkey)
 
@@ -1029,11 +1029,11 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     })
 
     // Add report to make it disputed
-    const reportHandler = routeHandler('com.dina.peerlens.reportRecord')!
+    const reportHandler = routeHandler('com.dinakernel.peerlens.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.peerlens.reportRecord', 'report020'),
+      uri: makeUri('com.dinakernel.peerlens.reportRecord', 'report020'),
       did: REPORTER_DID,
-      collection: 'com.dina.peerlens.reportRecord',
+      collection: 'com.dinakernel.peerlens.reportRecord',
       rkey: 'report020',
       cid: 'cid-report020',
       record: {

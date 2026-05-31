@@ -39,7 +39,7 @@ function match(overrides: Partial<ServiceMatch> = {}): ServiceMatch {
  */
 function toAppviewServiceRow(m: ServiceMatch): Record<string, unknown> {
   return {
-    uri: `at://${m.operatorDid}/com.dina.service.profile/self`,
+    uri: `at://${m.operatorDid}/com.dinakernel.service.profile/self`,
     operatorDid: m.operatorDid,
     name: m.name,
     description: null,

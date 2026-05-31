@@ -26,7 +26,7 @@ const ServiceSearchCursor = z.object({
 })
 
 /**
- * xRPC endpoint: com.dina.service.search
+ * xRPC endpoint: com.dinakernel.service.search
  *
  * Ranked service discovery. Combines distance, text relevance, and trust
  * score into a composite ranking.

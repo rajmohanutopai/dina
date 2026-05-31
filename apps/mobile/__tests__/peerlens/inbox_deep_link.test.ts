@@ -27,25 +27,25 @@ import {
   type ParsedAtUri,
 } from '../../src/peerlens/inbox_deep_link';
 
-const VALID_AT_URI = 'at://did:plc:author/com.dina.peerlens.attestation/abc123';
+const VALID_AT_URI = 'at://did:plc:author/com.dinakernel.peerlens.attestation/abc123';
 
 // ─── parseAtUri ───────────────────────────────────────────────────────────
 
 describe('parseAtUri', () => {
   it('returns the three components for a well-formed AT-URI', () => {
-    const out = parseAtUri('at://did:plc:abc/com.dina.peerlens.attestation/3kxxxxx');
+    const out = parseAtUri('at://did:plc:abc/com.dinakernel.peerlens.attestation/3kxxxxx');
     expect(out).toEqual<ParsedAtUri>({
       did: 'did:plc:abc',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '3kxxxxx',
     });
   });
 
   it('accepts did:web (the spec admits both DID methods)', () => {
-    const out = parseAtUri('at://did:web:example.com/com.dina.peerlens.vouch/r-1');
+    const out = parseAtUri('at://did:web:example.com/com.dinakernel.peerlens.vouch/r-1');
     expect(out).toEqual<ParsedAtUri>({
       did: 'did:web:example.com',
-      collection: 'com.dina.peerlens.vouch',
+      collection: 'com.dinakernel.peerlens.vouch',
       rkey: 'r-1',
     });
   });
@@ -103,7 +103,7 @@ describe('buildAttestationDeepLink — anchored', () => {
       attestationUri: VALID_AT_URI,
     });
     expect(out).toBe(
-      '/peerlens/subj-aeron?attestation=at%3A%2F%2Fdid%3Aplc%3Aauthor%2Fcom.dina.peerlens.attestation%2Fabc123',
+      '/peerlens/subj-aeron?attestation=at%3A%2F%2Fdid%3Aplc%3Aauthor%2Fcom.dinakernel.peerlens.attestation%2Fabc123',
     );
   });
 
@@ -190,7 +190,7 @@ describe('parseAttestationDeepLink — happy paths', () => {
     // predictable across ill-formed deep links.
     const url =
       `/peerlens/x?attestation=${encodeURIComponent(VALID_AT_URI)}` +
-      `&attestation=${encodeURIComponent('at://did:plc:other/com.dina.peerlens.attestation/zzz')}`;
+      `&attestation=${encodeURIComponent('at://did:plc:other/com.dinakernel.peerlens.attestation/zzz')}`;
     expect(parseAttestationDeepLink(url)?.attestationUri).toBe(VALID_AT_URI);
   });
 
@@ -292,7 +292,7 @@ describe('buildAttestationDeepLink ↔ parseAttestationDeepLink — round trip',
     { subjectId: '日本語', attestationUri: null },
     {
       subjectId: 'unicode-✅',
-      attestationUri: 'at://did:web:example.com/com.dina.peerlens.vouch/r-1',
+      attestationUri: 'at://did:web:example.com/com.dinakernel.peerlens.vouch/r-1',
     },
   ];
 

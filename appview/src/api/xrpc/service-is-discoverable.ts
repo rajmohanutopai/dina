@@ -4,7 +4,7 @@ import type { DrizzleDB } from '@/db/connection.js'
 import { services, didRedactions } from '@/db/schema/index.js'
 
 /**
- * xRPC endpoint: com.dina.service.isDiscoverable
+ * xRPC endpoint: com.dinakernel.service.isDiscoverable
  *
  * Simple boolean check: does this DID have any provider service profiles?
  * Used by Core's ProviderServiceResolver to decide whether to bypass

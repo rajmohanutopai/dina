@@ -30,7 +30,7 @@
 
 | # | Section | Gap | Suggested Test | Status |
 |---|---------|-----|----------------|--------|
-| H5 | §8 | `com.dina.peerlens.bot` and `com.dina.peerlens.membership` Lexicons untested | `TestPDS_BotLexiconValidation` | CLOSED |
+| H5 | §8 | `com.dinakernel.peerlens.bot` and `com.dinakernel.peerlens.membership` Lexicons untested | `TestPDS_BotLexiconValidation` | CLOSED |
 | H6 | §9 | Egress audit 90-day rolling retention policy (auto-purge old entries) | `TestAuditLog_90DayRollingRetention` | CLOSED |
 | H7 | §9 | Contact `updated_at` refreshed on sharing policy mutation | `TestContacts_UpdatedAtRefreshedOnPolicyChange` | CLOSED |
 | H8 | §10 | Bot query sanitization: no DID, no medical, no financial in outbound queries | `TestBotInterface_QuerySanitizationNoDIDNoMedical` | CLOSED |

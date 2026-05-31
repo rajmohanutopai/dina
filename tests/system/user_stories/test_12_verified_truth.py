@@ -110,7 +110,7 @@ class TestVerifiedTruth:
         """
         # Query AppView directly for trust resolution.
         r = httpx.get(
-            f"{appview}/xrpc/com.dina.peerlens.resolve",
+            f"{appview}/xrpc/com.dinakernel.peerlens.resolve",
             params={"did": sancho_did},
             timeout=15,
         )

@@ -12,7 +12,7 @@ const DID = 'did:plc:abcdefghijklmnopqrstuvwx';
 
 function validProfile(did: string = DID): Record<string, unknown> {
   return {
-    $type: 'com.dina.service.profile',
+    $type: 'com.dinakernel.service.profile',
     name: 'SF Transit Authority',
     isPublic: true,
     capabilities: ['eta_query'],

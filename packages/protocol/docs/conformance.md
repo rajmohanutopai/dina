@@ -388,6 +388,19 @@ describe the network-level exchange but require a live loopback.
   `d2d_envelope_round_trip.json`); removed stale claim that a
   wire-carried version header would land in task 10.14.
 
+- **2026-05-31** — **public NSID namespace rename + protocol minor
+  bump (0.0.1 → 0.1.0).** All ATProto record collections and xRPC
+  method IDs moved from `com.dina.*` to `com.dinakernel.*` (the org
+  segment only — the `peerlens` / `service` / `trust` / `identity`
+  sub-namespaces and all field shapes are unchanged). Reason:
+  ATProto NSIDs are reverse-DNS; `com.dina.*` implies control of
+  `dina.com`, but the project controls `dinakernel.com`. This is a
+  wire-format change (collection names are on the wire), hence the
+  minor bump — done pre-release, so no compatibility aliases or
+  migration are shipped. The frozen conformance vectors under
+  `conformance/vectors/` are unaffected (none referenced a
+  `com.dina.*` NSID).
+
 ## 16. See also
 
 - [`README.md`](../README.md) — `@dina/protocol` implementer

@@ -28,7 +28,7 @@ import { pgTable, text, timestamp, bigserial, index, uniqueIndex, check } from '
  * expired when `now() > expires_at`.
  *
  * **endorsement_uri** is set ONLY on `accepted` — the AT-URI of the
- * `com.dina.peerlens.endorsement` record the recipient published.
+ * `com.dinakernel.peerlens.endorsement` record the recipient published.
  * **reject_reason** is set on `rejected` (`'declined' | 'unknown'`)
  * AND on `expired` (`'expired'`) so consumers can render uniform UX
  * for "did not endorse".

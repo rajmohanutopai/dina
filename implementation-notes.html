@@ -28,6 +28,47 @@ now tracks ONLY the post-launch deferrals + open questions that remain.</p>
 
 <div class="item">
   <span class="tag" style="background:#2a8;color:#fff">Shipped</span>
+  <p><b>Public NSID namespace rename: <code>com.dina.*</code> &rarr;
+  <code>com.dinakernel.*</code>.</b> ATProto NSIDs are reverse-DNS, so
+  <code>com.dina.*</code> claims control of <code>dina.com</code>; the project
+  controls <code>dinakernel.com</code>, making <code>com.dinakernel.*</code> the
+  correct authority. Fixed pre-release &mdash; changing public record collections
+  after launch forces republish, reindex, compat aliases, and migration.</p>
+  <ul>
+    <li><b>Scope:</b> only the org segment changed (the <code>peerlens</code> /
+    <code>service</code> / <code>trust</code> / <code>identity</code>
+    sub-namespaces, record shapes, and fields are untouched). Applied to
+    <b>177</b> source files + 5 non-source (incl.
+    <code>appview/docker-compose.yml</code>'s Jetstream
+    <code>JETSTREAM_WANTED_COLLECTIONS</code>) + 2 functional scripts
+    (<code>validate_appview.py</code>, <code>cleanup_test_trust.sh</code>) + 27
+    docs. Repo-wide grep: <b>0</b> remaining <code>com.dina.</code> outside
+    gitignored <code>dist/</code>. <code>@dina/*</code> npm scope,
+    <code>did:plc:*</code>, and Docker service names are a different syntax and
+    were correctly untouched.</li>
+    <li><b>One test the literal sweep missed (a regex caught it):</b>
+    <code>appview/tests/unit/04-configuration.test.ts</code> asserted
+    <code>toMatch(/^com\.dina\.(peerlens|service)\./)</code> &mdash; a regex,
+    not the literal string, so the sed skipped it and the test correctly went red
+    against the renamed collections. Fixed to <code>com\.dinakernel\.</code>.</li>
+    <li><b>Wire contract:</b> collection names are on the wire, so this is a
+    wire-format change. Added a <code>conformance.md</code> &sect;15 changelog
+    entry and bumped <code>@dina/protocol</code> <code>0.0.1 &rarr; 0.1.0</code>
+    (pre-release minor &mdash; no compat aliases/migration shipped). Frozen
+    conformance vectors unaffected (none referenced a <code>com.dina.*</code>
+    NSID). Protocol <code>dist</code> rebuilt.</li>
+    <li><b>Verification:</b> tsc 0 errors across protocol / core / brain / mobile
+    / appview / home-node-lite. Suites green: protocol 438, core 938, mobile
+    1580, home-node-lite 319, appview unit 1867 (incl. the fixed lexicon test).
+    Excluded pre-existing/environmental: appview integration needs Postgres
+    (ECONNREFUSED:5432) and brain <code>checkMemoryHealth</code> is a
+    heap-threshold flake &mdash; both namespace-independent (verified
+    namespace-only diffs vs HEAD).</li>
+  </ul>
+</div>
+
+<div class="item">
+  <span class="tag" style="background:#2a8;color:#fff">Shipped</span>
   <p><b>Services P2/P3 review round 2 — open vocabulary, listing identity,
   card-passthrough tests.</b> A second review pass; all fixed (tests + typecheck
   green across protocol / core / brain / appview / mobile). NOTE: the first
@@ -148,7 +189,7 @@ now tracks ONLY the post-launch deferrals + open questions that remain.</p>
     <li><b>(P1/P2) service_uri is no longer untrusted opaque text — DONE (BOTH
     validator paths + the Core route).</b> Added <code>parseServiceListingUri</code>
     to <code>@dina/protocol</code> (binds the form
-    <code>at://&lt;did&gt;/com.dina.service.profile/&lt;rkey&gt;</code> with a
+    <code>at://&lt;did&gt;/com.dinakernel.service.profile/&lt;rkey&gt;</code> with a
     bounded rkey charset/length). It is now actually called by:
     (a) <code>@dina/protocol</code>'s <code>validateServiceQueryBody</code>; and
     crucially (b) <b>Core's OWN D2D <code>validateServiceQueryBody</code></b>
@@ -163,7 +204,7 @@ now tracks ONLY the post-launch deferrals + open questions that remain.</p>
     <code>service.query</code> whose <code>service_uri</code> authority ≠ recipient
     (new <code>service_uri_mismatch</code> reason); the receive pipeline passes
     <code>message.to</code>. Previously a direct peer could send
-    <code>service_uri: at://&lt;otherdid&gt;/com.dina.service.profile/x</code> and it
+    <code>service_uri: at://&lt;otherdid&gt;/com.dinakernel.service.profile/x</code> and it
     would pass (structure-only) because the bypass never knew the recipient DID.
     +4 bypass unit tests (match / cross-DID deny / omitted-recipient back-compat
     / malformed-still-rejected) AND +4 receive_pipeline INTEGRATION tests
@@ -238,7 +279,7 @@ now tracks ONLY the post-launch deferrals + open questions that remain.</p>
     green (appview_stub 14).</li>
     <li><b>(P2, #4 — NOT done, deliberately deferred to a fresh session.)
     Multi-listing publishing per operator DID.</b> Today a provider DID
-    advertises exactly ONE <code>com.dina.service.profile</code> record:
+    advertises exactly ONE <code>com.dinakernel.service.profile</code> record:
     <code>ServiceConfig</code> is a single blob and BOTH publishers (brain
     <code>service_publisher.ts</code> and lite
     <code>core-server/src/appview/service_profile_publisher.ts</code>) write only

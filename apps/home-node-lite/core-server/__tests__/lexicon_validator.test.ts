@@ -13,7 +13,7 @@ const PROFILE_SCHEMA: LexiconSchema = {
   required: ['$type', 'name', 'isPublic', 'capabilities'],
   additionalProperties: false,
   properties: {
-    $type: { const: 'com.dina.service.profile' },
+    $type: { const: 'com.dinakernel.service.profile' },
     name: { type: 'string', minLength: 1, maxLength: 200 },
     isPublic: { type: 'boolean' },
     capabilities: {
@@ -55,23 +55,23 @@ describe('LexiconValidator (task 6.5)', () => {
   describe('collection lookup', () => {
     it('has + collections reports registered schemas', () => {
       const v = new LexiconValidator({
-        'com.dina.service.profile': PROFILE_SCHEMA,
-        'com.dina.contact.card': { type: 'object' },
+        'com.dinakernel.service.profile': PROFILE_SCHEMA,
+        'com.dinakernel.contact.card': { type: 'object' },
       });
-      expect(v.has('com.dina.service.profile')).toBe(true);
+      expect(v.has('com.dinakernel.service.profile')).toBe(true);
       expect(v.has('unknown')).toBe(false);
       expect(v.collections().sort()).toEqual([
-        'com.dina.contact.card',
-        'com.dina.service.profile',
+        'com.dinakernel.contact.card',
+        'com.dinakernel.service.profile',
       ]);
     });
 
     it('uses $type from record when collection argument omitted', () => {
       const v = new LexiconValidator({
-        'com.dina.service.profile': PROFILE_SCHEMA,
+        'com.dinakernel.service.profile': PROFILE_SCHEMA,
       });
       const result = v.validate({
-        $type: 'com.dina.service.profile',
+        $type: 'com.dinakernel.service.profile',
         name: 'SF Transit',
         isPublic: true,
         capabilities: ['eta_query'],
@@ -147,7 +147,7 @@ describe('LexiconValidator (task 6.5)', () => {
       expect(
         v.validate(
           {
-            $type: 'com.dina.service.profile',
+            $type: 'com.dinakernel.service.profile',
             name: 'SF Transit',
             isPublic: true,
             capabilities: ['eta_query'],
@@ -160,7 +160,7 @@ describe('LexiconValidator (task 6.5)', () => {
     it('required property missing → required_missing with path', () => {
       const r = v.validate(
         {
-          $type: 'com.dina.service.profile',
+          $type: 'com.dinakernel.service.profile',
           isPublic: true,
           capabilities: ['eta_query'],
         },
@@ -176,7 +176,7 @@ describe('LexiconValidator (task 6.5)', () => {
     it('additionalProperties: false rejects unknown keys', () => {
       const r = v.validate(
         {
-          $type: 'com.dina.service.profile',
+          $type: 'com.dinakernel.service.profile',
           name: 'x',
           isPublic: true,
           capabilities: ['y'],
@@ -194,7 +194,7 @@ describe('LexiconValidator (task 6.5)', () => {
     it('wrong type on nested property → type_mismatch with nested path', () => {
       const r = v.validate(
         {
-          $type: 'com.dina.service.profile',
+          $type: 'com.dinakernel.service.profile',
           name: 'x',
           isPublic: 'yes', // wrong type
           capabilities: ['y'],
@@ -211,7 +211,7 @@ describe('LexiconValidator (task 6.5)', () => {
     it('deeply nested path encoded', () => {
       const r = v.validate(
         {
-          $type: 'com.dina.service.profile',
+          $type: 'com.dinakernel.service.profile',
           name: 'x',
           isPublic: true,
           capabilities: ['y'],

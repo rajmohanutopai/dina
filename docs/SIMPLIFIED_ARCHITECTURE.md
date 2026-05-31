@@ -565,7 +565,7 @@ sequenceDiagram
     participant MsgBox as MsgBox
 
     Provider->>Provider: Configure service capability and schema
-    Provider->>PDS: Publish com.dina.service.profile
+    Provider->>PDS: Publish com.dinakernel.service.profile
     PDS-->>AppView: Repo/firehose update
     AppView->>AppView: Index provider profile
 

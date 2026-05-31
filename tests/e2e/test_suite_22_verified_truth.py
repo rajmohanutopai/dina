@@ -180,7 +180,7 @@ class TestVerifiedTruth:
         # ------------------------------------------------------------------
         # Step 1: Seed AppView with sparse, conflicting PeerLens data.
         # ------------------------------------------------------------------
-        product_did = "at://did:plc:maker/com.dina.peerlens.product/ergodesk"
+        product_did = "at://did:plc:maker/com.dinakernel.peerlens.product/ergodesk"
 
         appview.seed_attestations(product_did, [
             {
@@ -370,7 +370,7 @@ class TestVerifiedTruth:
 
         Requirement: E2E_TEST_PLAN §22.3.
         """
-        product_did = "at://did:plc:maker/com.dina.peerlens.product/ultradesk-pro"
+        product_did = "at://did:plc:maker/com.dinakernel.peerlens.product/ultradesk-pro"
 
         # ------------------------------------------------------------------
         # Step 1: Seed AppView with 50+ reviews — 90% positive, Ring 2.
@@ -639,7 +639,7 @@ class TestVerifiedTruth:
 
         Requirement: E2E_TEST_PLAN §22.4.
         """
-        product_did = "at://did:plc:maker/com.dina.peerlens.product/classicchair"
+        product_did = "at://did:plc:maker/com.dinakernel.peerlens.product/classicchair"
 
         # ------------------------------------------------------------------
         # Step 1: Seed AppView with 20 reviews, all >1 year old.
@@ -863,7 +863,7 @@ class TestVerifiedTruth:
 
         Requirement: E2E_TEST_PLAN §22.5.
         """
-        product_did = "at://did:plc:maker/com.dina.peerlens.product/quickblend-pro"
+        product_did = "at://did:plc:maker/com.dinakernel.peerlens.product/quickblend-pro"
 
         # ------------------------------------------------------------------
         # Step 1: Seed AppView with mixed-ring data.

@@ -78,8 +78,8 @@ describe('RecordCrudClient (task 6.4)', () => {
         },
       });
       const out = (await c.createRecord({
-        collection: 'com.dina.service.profile',
-        record: { $type: 'com.dina.service.profile' },
+        collection: 'com.dinakernel.service.profile',
+        record: { $type: 'com.dinakernel.service.profile' },
       })) as Extract<WriteOutcome, { ok: true }>;
       expect(out.ok).toBe(true);
       expect(out.result.uri).toBe('at://did/coll/key');
@@ -94,11 +94,11 @@ describe('RecordCrudClient (task 6.4)', () => {
       };
       const c = new RecordCrudClient({ pdsClient, did: DID, bearer: BEARER });
       await c.createRecord({
-        collection: 'com.dina.service.profile',
+        collection: 'com.dinakernel.service.profile',
         record: { a: 1 },
       });
       expect(seenPayload!.repo).toBe(DID);
-      expect(seenPayload!.collection).toBe('com.dina.service.profile');
+      expect(seenPayload!.collection).toBe('com.dinakernel.service.profile');
       expect(seenPayload!.record).toEqual({ a: 1 });
     });
 
@@ -110,7 +110,7 @@ describe('RecordCrudClient (task 6.4)', () => {
       };
       const c = new RecordCrudClient({ pdsClient, did: DID, bearer: BEARER });
       await c.createRecord({
-        collection: 'com.dina.service.profile',
+        collection: 'com.dinakernel.service.profile',
         rkey: 'self',
         record: {},
       });

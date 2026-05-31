@@ -12,7 +12,7 @@
  * This test composes the exact same pieces the mobile stack uses:
  *   - the contacts directory (ring-1 weight)
  *   - an injected `PeerlensQueryClient`-shaped stub standing in for
- *     `com.dina.peerlens.getProfile` (what the mobile app would hit
+ *     `com.dinakernel.peerlens.getProfile` (what the mobile app would hit
  *     via the real AppView HTTP client)
  *
  * What this catches vs the simulator:

@@ -109,11 +109,11 @@ async function publishAttestation(opts: {
   domain?: string
   createdAtMs?: number
 }) {
-  const handler = routeHandler('com.dina.peerlens.attestation')!
+  const handler = routeHandler('com.dinakernel.peerlens.attestation')!
   await handler.handleCreate(ctx, {
-    uri: `at://${opts.authorDid}/com.dina.peerlens.attestation/${opts.rkey}`,
+    uri: `at://${opts.authorDid}/com.dinakernel.peerlens.attestation/${opts.rkey}`,
     did: opts.authorDid,
-    collection: 'com.dina.peerlens.attestation',
+    collection: 'com.dinakernel.peerlens.attestation',
     rkey: opts.rkey,
     cid: `cid-${opts.authorDid.slice(-8)}-${opts.rkey}`,
     record: {
@@ -133,11 +133,11 @@ async function publishVouch(opts: {
   rkey: string
   confidence?: 'low' | 'medium' | 'high'
 }) {
-  const handler = routeHandler('com.dina.peerlens.vouch')!
+  const handler = routeHandler('com.dinakernel.peerlens.vouch')!
   await handler.handleCreate(ctx, {
-    uri: `at://${opts.authorDid}/com.dina.peerlens.vouch/${opts.rkey}`,
+    uri: `at://${opts.authorDid}/com.dinakernel.peerlens.vouch/${opts.rkey}`,
     did: opts.authorDid,
-    collection: 'com.dina.peerlens.vouch',
+    collection: 'com.dinakernel.peerlens.vouch',
     rkey: opts.rkey,
     cid: `cid-vouch-${opts.authorDid.slice(-8)}-${opts.rkey}`,
     record: {
@@ -150,11 +150,11 @@ async function publishVouch(opts: {
 }
 
 async function deleteAttestation(authorDid: string, rkey: string) {
-  const handler = routeHandler('com.dina.peerlens.attestation')!
+  const handler = routeHandler('com.dinakernel.peerlens.attestation')!
   await handler.handleDelete(ctx, {
-    uri: `at://${authorDid}/com.dina.peerlens.attestation/${rkey}`,
+    uri: `at://${authorDid}/com.dinakernel.peerlens.attestation/${rkey}`,
     did: authorDid,
-    collection: 'com.dina.peerlens.attestation',
+    collection: 'com.dinakernel.peerlens.attestation',
     rkey,
   })
 }
@@ -425,7 +425,7 @@ describe('TN-TEST-040 §4: independent deletion', () => {
     expect(afterDelete.attestations.length).toBe(1)
     expect(afterDelete.attestations[0]?.authorDid).toBe(NODE_SANCHO)
     expect(afterDelete.attestations[0]?.uri).toBe(
-      `at://${NODE_SANCHO}/com.dina.peerlens.attestation/sancho-att`,
+      `at://${NODE_SANCHO}/com.dinakernel.peerlens.attestation/sancho-att`,
     )
   })
 })

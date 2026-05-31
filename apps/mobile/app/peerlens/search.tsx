@@ -2,7 +2,7 @@
  * PeerLens — search results screen (TN-MOB-016 / Plan §8.3).
  *
  * Renders a list of `SubjectCardDisplay` results (from
- * `com.dina.peerlens.search`) with a horizontal facet bar above (from
+ * `com.dinakernel.peerlens.search`) with a horizontal facet bar above (from
  * `deriveFacets`). Tapping a card drills into the subject detail;
  * tapping a facet refines the query.
  *

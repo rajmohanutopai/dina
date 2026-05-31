@@ -901,7 +901,7 @@
 | 857 | `TST-CORE-721` | Non-author deletion rejected | §22.2 Signed Tombstones (Deletion) | Yes | `core/test/pds_test.go:547` |
 | 858 | `TST-CORE-722` | Tombstone propagation | §22.2 Signed Tombstones (Deletion) | Yes | `core/test/pds_test.go:589` |
 | 859 | `TST-CORE-723` | Deleted record absent from queries | §22.2 Signed Tombstones (Deletion) | Yes | `core/test/pds_test.go:644` |
-| 860 | `TST-CORE-918` | `com.dina.peerlens.bot` and `com.dina.peerlens.membership` Lexicons validated | §22.2 Signed Tombstones (Deletion) | Yes | `core/test/pds_test.go:711` |
+| 860 | `TST-CORE-918` | `com.dinakernel.peerlens.bot` and `com.dinakernel.peerlens.membership` Lexicons validated | §22.2 Signed Tombstones (Deletion) | Yes | `core/test/pds_test.go:711` |
 | 861 | `TST-CORE-919` | Outcome data schema validation (reporter_trust_ring, outcome, satisfaction) | §22.2 Signed Tombstones (Deletion) | Yes | `core/test/pds_test.go:727` |
 | 862 | `TST-CORE-920` | Attestation optional fields URI format (sourceUrl, deepLink) | §22.2 Signed Tombstones (Deletion) | Yes | `core/test/pds_test.go:786` |
 | 863 | `TST-CORE-921` | Trust query response includes signed payloads | §22.2 Signed Tombstones (Deletion) | Yes | `core/test/pds_test.go:856` |
@@ -2912,7 +2912,7 @@
 | 217 | `UT-CON-004` | tombstone threshold positive | §4.2 Constants (`config/constants.test.ts`) | Yes | `appview/tests/unit/04-configuration.test.ts:143` |
 | 218 | `UT-CON-005` | halflife positive | §4.2 Constants (`config/constants.test.ts`) | Yes | `appview/tests/unit/04-configuration.test.ts:147` |
 | 219 | `UT-LEX-001` | TRUST_COLLECTIONS has 19 entries | §4.3 Lexicons (`config/lexicons.test.ts`) | Yes | `appview/tests/unit/04-configuration.test.ts:156` |
-| 220 | `UT-LEX-002` | all entries prefixed with "com.dina.peerlens." | §4.3 Lexicons (`config/lexicons.test.ts`) | Yes | `appview/tests/unit/04-configuration.test.ts:160` |
+| 220 | `UT-LEX-002` | all entries prefixed with "com.dinakernel.peerlens." | §4.3 Lexicons (`config/lexicons.test.ts`) | Yes | `appview/tests/unit/04-configuration.test.ts:160` |
 | 221 | `UT-LEX-003` | no duplicate entries | §4.3 Lexicons (`config/lexicons.test.ts`) | Yes | `appview/tests/unit/04-configuration.test.ts:166` |
 | 222 | `UT-LEX-004` | expected collections present | §4.3 Lexicons (`config/lexicons.test.ts`) | Yes | `appview/tests/unit/04-configuration.test.ts:171` |
 | 223 | `UT-LEX-005` | type safety — TrustCollection type | §4.3 Lexicons (`config/lexicons.test.ts`) | Yes | `appview/tests/unit/04-configuration.test.ts:198` |

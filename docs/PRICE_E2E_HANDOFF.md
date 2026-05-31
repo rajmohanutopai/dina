@@ -16,7 +16,7 @@ everything upstream of it is confirmed working. Resume by driving the sim query.
    Unit suite 13/13 incl. 2 concurrency regression tests. Deployed + appview
    containers force-recreated on dina-test-infra.
 2. **Discovery verified LIVE:** re-published "Corner Market" →
-   `GET …/xrpc/com.dina.service.search?capability=price_check` returns
+   `GET …/xrpc/com.dinakernel.service.search?capability=price_check` returns
    `[{name:"Corner Market", capabilities:["price_check"]}]` immediately;
    ingester log `Record processed` with **zero `duplicate key`** (was 24×).
 3. **Provider agent RE-PAIRED cleanly** (this fixed the earlier
@@ -49,7 +49,7 @@ screenshot (`/tmp/sim_price_result.png`) shows the **SERVICE HANDOFF**
 path-trace container rendering the REAL discovery path — no bypass:
 
 1. ✓ **Asked the Dina service directory** — "Looking for a price quote"
-   (= AppView `com.dina.service.search`)
+   (= AppView `com.dinakernel.service.search`)
 2. ✓ **Found Corner Market** — `did:plc:uib44x…` (= discovery returned the
    `price_check` provider through AppView)
 3. ✓ **Sent your query to their Dina** — "product name organic bananas ·

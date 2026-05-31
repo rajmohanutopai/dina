@@ -89,7 +89,7 @@ Once the cohort is selected:
    ```bash
    npx tsx src/admin/trust-flag-cli.ts enable
    ```
-   Effect: AppView begins indexing `com.dina.peerlens.*` events; the
+   Effect: AppView begins indexing `com.dinakernel.peerlens.*` events; the
    xRPC trust-namespace gate opens. Mobile clients still see the
    tab hidden until the next bootstrap cycle hits the
    `loadTrustV1Enabled` fetcher (≤ 5 min by default — TN-FLAG-005's

@@ -438,7 +438,7 @@ describe('D2D Receive Pipeline', () => {
 
     it('bypasses a service.query whose service_uri authority == authenticated recipient DID', () => {
       const payload = svcQuery({
-        serviceUri: `at://${RECIPIENT}/com.dina.service.profile/store-2`,
+        serviceUri: `at://${RECIPIENT}/com.dinakernel.service.profile/store-2`,
         innerTo: RECIPIENT,
         id: 'msg-svc-ok',
       });
@@ -453,7 +453,7 @@ describe('D2D Receive Pipeline', () => {
       // Inner `to` matches us (passes the inner-recipient check), but the chosen
       // listing belongs to a different provider → `service_uri_mismatch` drop.
       const payload = svcQuery({
-        serviceUri: `at://${ATTACKER}/com.dina.service.profile/store-9`,
+        serviceUri: `at://${ATTACKER}/com.dinakernel.service.profile/store-9`,
         innerTo: RECIPIENT,
         id: 'msg-svc-crossdid',
       });
@@ -473,7 +473,7 @@ describe('D2D Receive Pipeline', () => {
       // trusted the inner `to` this would pass. It MUST drop, because the
       // authority is the transport-authenticated delivery DID.
       const payload = svcQuery({
-        serviceUri: `at://${ATTACKER}/com.dina.service.profile/store-evil`,
+        serviceUri: `at://${ATTACKER}/com.dinakernel.service.profile/store-evil`,
         innerTo: ATTACKER,
         id: 'msg-svc-deputy',
       });
@@ -535,7 +535,7 @@ describe('D2D Receive Pipeline', () => {
       // is ONLY safe because the sole real caller (`msgbox_handlers`) ALWAYS
       // supplies `env.to_did`.
       const payload = svcQuery({
-        serviceUri: `at://${ATTACKER}/com.dina.service.profile/store-x`,
+        serviceUri: `at://${ATTACKER}/com.dinakernel.service.profile/store-x`,
         innerTo: ATTACKER,
         id: 'msg-svc-nobind',
       });

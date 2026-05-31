@@ -950,13 +950,13 @@ class TestAppViewIndexer:
         self,
         mock_app_view: MockAppView,
     ) -> None:
-        """Only com.dina.peerlens.* lexicons are indexed from the
+        """Only com.dinakernel.peerlens.* lexicons are indexed from the
         firehose."""
         records = [
-            {"lexicon": "com.dina.peerlens.verdict", "data": "good"},
-            {"lexicon": "com.dina.peerlens.outcome", "data": "positive"},
+            {"lexicon": "com.dinakernel.peerlens.verdict", "data": "good"},
+            {"lexicon": "com.dinakernel.peerlens.outcome", "data": "positive"},
             {"lexicon": "com.bsky.feed.post", "data": "irrelevant"},
-            {"lexicon": "com.dina.identity.attestation", "data": "ident"},
+            {"lexicon": "com.dinakernel.identity.attestation", "data": "ident"},
             {"lexicon": "com.other.app.record", "data": "noise"},
         ]
 
@@ -996,11 +996,11 @@ class TestAppViewIndexer:
     ) -> None:
         """Query returns all trust records by author DID."""
         records = [
-            {"lexicon": "com.dina.peerlens.verdict",
+            {"lexicon": "com.dinakernel.peerlens.verdict",
              "author_did": "did:plc:Alice", "rating": 90},
-            {"lexicon": "com.dina.peerlens.verdict",
+            {"lexicon": "com.dinakernel.peerlens.verdict",
              "author_did": "did:plc:Alice", "rating": 85},
-            {"lexicon": "com.dina.peerlens.verdict",
+            {"lexicon": "com.dinakernel.peerlens.verdict",
              "author_did": "did:plc:Bob", "rating": 70},
         ]
         mock_app_view.consume_firehose(records)
@@ -1019,13 +1019,13 @@ class TestAppViewIndexer:
     ) -> None:
         """Query returns all reviews for a given product."""
         records = [
-            {"lexicon": "com.dina.peerlens.verdict",
+            {"lexicon": "com.dinakernel.peerlens.verdict",
              "product_id": "thinkpad_x1", "rating": 92,
              "author_did": "did:plc:Expert1"},
-            {"lexicon": "com.dina.peerlens.verdict",
+            {"lexicon": "com.dinakernel.peerlens.verdict",
              "product_id": "thinkpad_x1", "rating": 88,
              "author_did": "did:plc:Expert2"},
-            {"lexicon": "com.dina.peerlens.verdict",
+            {"lexicon": "com.dinakernel.peerlens.verdict",
              "product_id": "aeron_chair", "rating": 91,
              "author_did": "did:plc:Expert3"},
         ]
@@ -1081,7 +1081,7 @@ class TestAppViewIndexer:
             **record_data,
             "signature": signature,
             "author_did": mock_identity.root_did,
-            "lexicon": "com.dina.peerlens.verdict",
+            "lexicon": "com.dinakernel.peerlens.verdict",
         }
 
         mock_app_view.consume_firehose([signed_record])
@@ -1106,13 +1106,13 @@ class TestAppViewIndexer:
     ) -> None:
         """Same input always produces the same aggregate score."""
         records = [
-            {"lexicon": "com.dina.peerlens.verdict",
+            {"lexicon": "com.dinakernel.peerlens.verdict",
              "product_id": "laptop_x", "rating": 90,
              "author_did": "did:plc:A"},
-            {"lexicon": "com.dina.peerlens.verdict",
+            {"lexicon": "com.dinakernel.peerlens.verdict",
              "product_id": "laptop_x", "rating": 80,
              "author_did": "did:plc:B"},
-            {"lexicon": "com.dina.peerlens.verdict",
+            {"lexicon": "com.dinakernel.peerlens.verdict",
              "product_id": "laptop_x", "rating": 70,
              "author_did": "did:plc:C"},
         ]
@@ -1134,7 +1134,7 @@ class TestAppViewIndexer:
         """Cursor persists across batches; after simulated crash the
         firehose can resume from the last cursor position."""
         batch_1 = [
-            {"lexicon": "com.dina.peerlens.verdict", "rating": 90},
+            {"lexicon": "com.dinakernel.peerlens.verdict", "rating": 90},
             {"lexicon": "com.bsky.feed.post", "data": "skip"},
         ]
         mock_app_view.consume_firehose(batch_1)
@@ -1148,7 +1148,7 @@ class TestAppViewIndexer:
 
         # Resume from cursor position
         batch_2 = [
-            {"lexicon": "com.dina.peerlens.outcome", "rating": 85},
+            {"lexicon": "com.dinakernel.peerlens.outcome", "rating": 85},
         ]
         recovered_view.consume_firehose(batch_2)
 

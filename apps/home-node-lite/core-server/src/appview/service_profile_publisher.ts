@@ -1,8 +1,8 @@
 /**
- * Task 6.19 — Publish to `com.dina.service.profile`.
+ * Task 6.19 — Publish to `com.dinakernel.service.profile`.
  *
  * When a Home Node exposes a D2D capability, it publishes a
- * `com.dina.service.profile` record to its AT Protocol PDS. The
+ * `com.dinakernel.service.profile` record to its AT Protocol PDS. The
  * AppView (`appview/src/ingester/handlers/service-profile.ts`)
  * picks it up from the firehose + indexes the capabilities so
  * requesters can discover the provider via `service.search`.
@@ -42,7 +42,7 @@
 
 import type { ServiceProfileRecord } from './profile_builder';
 
-export const SERVICE_PROFILE_COLLECTION = 'com.dina.service.profile' as const;
+export const SERVICE_PROFILE_COLLECTION = 'com.dinakernel.service.profile' as const;
 /** Every actor has exactly one service profile. */
 export const SERVICE_PROFILE_RKEY = 'self' as const;
 
@@ -55,7 +55,7 @@ export interface PutRecordInput {
 export interface PutRecordResult {
   /** AT Protocol CID of the committed record. */
   cid: string;
-  /** Full AT URI (e.g. `at://did:plc:…/com.dina.service.profile/self`). */
+  /** Full AT URI (e.g. `at://did:plc:…/com.dinakernel.service.profile/self`). */
   uri: string;
 }
 
@@ -102,7 +102,7 @@ export class ServiceProfilePublisher {
 
   /**
    * Publish `profile` to the actor's PDS at
-   * `com.dina.service.profile/self`. Never throws — every failure
+   * `com.dinakernel.service.profile/self`. Never throws — every failure
    * path returns a structured outcome.
    */
   async publish(profile: ServiceProfileRecord): Promise<PublishOutcome> {

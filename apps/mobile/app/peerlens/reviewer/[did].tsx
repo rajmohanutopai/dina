@@ -69,7 +69,7 @@ import type { PeerlensProfile } from '@dina/core';
 
 export interface ReviewerProfileScreenProps {
   /**
-   * The reviewer's profile from `com.dina.peerlens.getProfile`. `null`
+   * The reviewer's profile from `com.dinakernel.peerlens.getProfile`. `null`
    * while loading. Defaults to `null` so the screen mounts as a
    * routable Expo Router default export with the loading state
    * showing — the runner that resolves the profile slots in later.

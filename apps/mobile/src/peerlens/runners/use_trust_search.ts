@@ -1,5 +1,5 @@
 /**
- * Search runner — wraps `com.dina.peerlens.search` for the search screen.
+ * Search runner — wraps `com.dinakernel.peerlens.search` for the search screen.
  *
  * Maps the AppView attestation hits into the per-subject card model the
  * presentational `<SearchScreen />` expects. One subject = one card,

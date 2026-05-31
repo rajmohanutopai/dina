@@ -4,7 +4,7 @@ import { peerlensPolicies } from '@/db/schema/index.js'
 import { deletionHandler } from '../deletion-handler.js'
 
 /**
- * Handler for com.dina.peerlens.trustPolicy records.
+ * Handler for com.dinakernel.peerlens.trustPolicy records.
  *
  * Trust policies define per-user PeerLens graph parameters: how deep to
  * traverse the graph, which domains to trust, which DIDs to block,

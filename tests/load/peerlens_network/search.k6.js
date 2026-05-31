@@ -67,7 +67,7 @@ export default function () {
   const params = pickSearchParams(vu, iter)
   const viewerDid = (iter % 3) === 0 ? pickViewerDid(vu, iter) : undefined
   const qs = buildSearchQuery({ ...params, viewerDid })
-  const url = `${APPVIEW_URL}${XRPC_PREFIX}/com.dina.peerview.search?${qs}`
+  const url = `${APPVIEW_URL}${XRPC_PREFIX}/com.dinakernel.peerview.search?${qs}`
 
   const res = http.get(url, {
     tags: { name: 'search.xrpc' },

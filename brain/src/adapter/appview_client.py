@@ -3,8 +3,8 @@
 Implements the requester-side lookups against PeerLens
 service registry:
 
-    GET /xrpc/com.dina.service.search   — find services by capability + geo
-    GET /xrpc/com.dina.service.isDiscoverable  — check if a DID is a provider service
+    GET /xrpc/com.dinakernel.service.search   — find services by capability + geo
+    GET /xrpc/com.dinakernel.service.isDiscoverable  — check if a DID is a provider service
 
 Third-party imports: httpx.
 """
@@ -45,7 +45,7 @@ class AppViewClient:
         if q:
             params["q"] = q
         resp = await self._client.get(
-            f"{self._url}/xrpc/com.dina.service.search", params=params,
+            f"{self._url}/xrpc/com.dinakernel.service.search", params=params,
         )
         resp.raise_for_status()
         return resp.json().get("services", [])
@@ -56,7 +56,7 @@ class AppViewClient:
         Returns (is_discoverable, capabilities) tuple.
         """
         resp = await self._client.get(
-            f"{self._url}/xrpc/com.dina.service.isDiscoverable", params={"did": did},
+            f"{self._url}/xrpc/com.dinakernel.service.isDiscoverable", params={"did": did},
         )
         resp.raise_for_status()
         data = resp.json()

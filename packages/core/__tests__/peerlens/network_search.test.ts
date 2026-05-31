@@ -237,7 +237,7 @@ describe('PeerLens Search', () => {
         success: true,
         results: [
           {
-            uri: 'at://did:plc:author/com.dina.peerlens.attestation/1',
+            uri: 'at://did:plc:author/com.dinakernel.peerlens.attestation/1',
             authorDid: 'did:plc:author',
             category: 'product',
             sentiment: 'positive' as const,

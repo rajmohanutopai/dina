@@ -147,7 +147,7 @@ const tArrival = Date.now()
 logger.info({
   ev: 'ingest.record.arrival',
   did: event.did,                 // author repo DID
-  collection: commit.collection,  // e.g. com.dina.peerlens.review
+  collection: commit.collection,  // e.g. com.dinakernel.peerlens.review
   rkey: commit.rkey,
   op: commit.operation,           // create/update/delete
   time_us: event.time_us,         // jetstream event time (relay clock)

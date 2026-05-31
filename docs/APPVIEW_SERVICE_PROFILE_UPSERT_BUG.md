@@ -17,7 +17,7 @@ tests that drive concurrent same-uri creates and assert one row + no
 ## Symptom
 
 `price_check` provider ("Corner Market", `did:plc:uib44…`) publishes its
-`com.dina.service.profile/self` correctly (confirmed on test-pds), the deployed
+`com.dinakernel.service.profile/self` correctly (confirmed on test-pds), the deployed
 test-appview *accepts* the `price_check` capability, but
 `service.search?capability=price_check` keeps returning `{"services":[]}`.
 

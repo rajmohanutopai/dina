@@ -277,7 +277,7 @@ def test_sss_recovery_manifest_on_pds(
 
     # Manifest published to PDS
     assert manifest["pds_url"] == "https://pds.dina.host"
-    assert manifest["type"] == "com.dina.recovery.manifest"
+    assert manifest["type"] == "com.dinakernel.recovery.manifest"
 
     # Threshold info for recovery
     assert manifest["threshold"] == 3
@@ -525,14 +525,14 @@ def test_appview_phase1_single_go_binary_postgresql():
         "AppView must support query by product"
 
     # Lexicon filter — only trust records
-    assert app_view.lexicon_filter == "com.dina.peerlens."
+    assert app_view.lexicon_filter == "com.dinakernel.peerlens."
 
     # Firehose consumption works
     records = [
-        {"lexicon": "com.dina.peerlens.review", "author_did": "did:plc:a",
+        {"lexicon": "com.dinakernel.peerlens.review", "author_did": "did:plc:a",
          "product_id": "aeron_2025", "rating": 90},
         {"lexicon": "app.bsky.feed.post", "content": "hello"},  # Ignored
-        {"lexicon": "com.dina.identity.attestation", "did": "did:plc:b"},
+        {"lexicon": "com.dinakernel.identity.attestation", "did": "did:plc:b"},
     ]
     indexed = app_view.consume_firehose(records)
     assert indexed == 2, "Only trust + attestation records indexed"

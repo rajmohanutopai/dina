@@ -248,7 +248,7 @@
   1. Identity: How to create a DID, derive keys (SLIP-0010 paths), publish DID documents
   2. Auth: Ed25519 canonical signing format ({METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{NONCE}\n{SHA256(BODY)})
   3. Messaging: NaCl sealed box envelope format, dead drop semantics
-  4. Trust: AT Protocol record schemas (the 19 com.dina.peerlens.* lexicons)
+  4. Trust: AT Protocol record schemas (the 19 com.dinakernel.peerlens.* lexicons)
   5. Agent safety: Intent submission format, risk classification tiers, approval flow
 
   The Docker Home Node is the reference implementation — the complete, sovereign version. But a mobile app could implement just layers 1-2-5 (identity + auth + agent safety) and still be "Dina protocol

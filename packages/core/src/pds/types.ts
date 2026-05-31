@@ -45,7 +45,7 @@ export interface PDSAccountInput {
 export interface PDSRecord<T = unknown> {
   /** The did:plc of the repo-owner. */
   repo: string;
-  /** Lexicon collection (e.g. `com.dina.peerlens.attestation`). */
+  /** Lexicon collection (e.g. `com.dinakernel.peerlens.attestation`). */
   collection: string;
   /** Record key. Either caller-supplied or server-minted. */
   rkey: string;

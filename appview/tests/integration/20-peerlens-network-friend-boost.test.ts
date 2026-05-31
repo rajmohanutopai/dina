@@ -113,11 +113,11 @@ async function publishAttestation(opts: {
   category?: string
   createdAtMs: number
 }) {
-  const handler = routeHandler('com.dina.peerlens.attestation')!
+  const handler = routeHandler('com.dinakernel.peerlens.attestation')!
   await handler.handleCreate(ctx, {
-    uri: `at://${opts.authorDid}/com.dina.peerlens.attestation/${opts.rkey}`,
+    uri: `at://${opts.authorDid}/com.dinakernel.peerlens.attestation/${opts.rkey}`,
     did: opts.authorDid,
-    collection: 'com.dina.peerlens.attestation',
+    collection: 'com.dinakernel.peerlens.attestation',
     rkey: opts.rkey,
     cid: `cid-${opts.authorDid.slice(-8)}-${opts.rkey}`,
     record: {
@@ -140,11 +140,11 @@ async function publishVouch(opts: {
   subjectDid: string
   rkey: string
 }) {
-  const handler = routeHandler('com.dina.peerlens.vouch')!
+  const handler = routeHandler('com.dinakernel.peerlens.vouch')!
   await handler.handleCreate(ctx, {
-    uri: `at://${opts.authorDid}/com.dina.peerlens.vouch/${opts.rkey}`,
+    uri: `at://${opts.authorDid}/com.dinakernel.peerlens.vouch/${opts.rkey}`,
     did: opts.authorDid,
-    collection: 'com.dina.peerlens.vouch',
+    collection: 'com.dinakernel.peerlens.vouch',
     rkey: opts.rkey,
     cid: `cid-vouch-${opts.authorDid.slice(-8)}-${opts.rkey}`,
     record: {

@@ -1050,7 +1050,7 @@ describe('ServiceHandler.executeAndRespond', () => {
 });
 
 describe('ServiceHandler — service_uri threading (P1, multi-listing per DID)', () => {
-  const LISTING = 'at://did:plc:provider/com.dina.service.profile/store-2';
+  const LISTING = 'at://did:plc:provider/com.dinakernel.service.profile/store-2';
 
   it('auto-path delegation payload carries service_uri', async () => {
     const core = stubCore();

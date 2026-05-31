@@ -1,5 +1,5 @@
 /**
- * Task 6.12 — `com.dina.service.search` xRPC client.
+ * Task 6.12 — `com.dinakernel.service.search` xRPC client.
  *
  * AppView's service-search endpoint returns providers ranked by
  * (capability match, geographic distance, PeerLens rating). Brain

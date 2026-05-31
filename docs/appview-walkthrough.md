@@ -56,7 +56,7 @@ Every environment variable is validated through a Zod schema at startup (line 5-
 
 ### Lexicons (config/lexicons.ts)
 
-19 trust record collection NSIDs plus `com.dina.service.profile` — the vocabulary of the trust and service networks. The trust records map to `com.dina.peerlens.*` collections in the AT Protocol namespace. These are the 20 record types that the ingester subscribes to on the Jetstream firehose.
+19 trust record collection NSIDs plus `com.dinakernel.service.profile` — the vocabulary of the trust and service networks. The trust records map to `com.dinakernel.peerlens.*` collections in the AT Protocol namespace. These are the 20 record types that the ingester subscribes to on the Jetstream firehose.
 
 ---
 
@@ -280,7 +280,7 @@ If the subject only has a name (no DID, no URI), the subject ID is scoped to the
 
 ### Tier 3: Canonical Chains (lines 120-145)
 
-Subject Claims (`com.dina.peerlens.subjectClaim`) allow users to assert that two subjects are the same entity. When approved, a `canonical_subject_id` pointer is set, creating a merge chain. `resolveCanonicalChain()` follows these pointers (with cycle detection at line 128 and depth limiting at line 127) to find the root canonical subject. All future attestations resolve to the canonical subject.
+Subject Claims (`com.dinakernel.peerlens.subjectClaim`) allow users to assert that two subjects are the same entity. When approved, a `canonical_subject_id` pointer is set, creating a merge chain. `resolveCanonicalChain()` follows these pointers (with cycle detection at line 128 and depth limiting at line 127) to find the root canonical subject. All future attestations resolve to the canonical subject.
 
 <details>
 <summary><strong>Design Decision — Why three tiers instead of fuzzy name matching?</strong></summary>
@@ -369,19 +369,19 @@ The AppView serves 7 read-only endpoints (5 trust + 2 service discovery). Expres
 
 ### The Seven Endpoints
 
-1. **com.dina.peerlens.resolve** (`api/xrpc/resolve.ts`) — The primary endpoint. Given a subject reference (DID, URI, or name), returns: trust level, confidence, attestation summary, active flags, authenticity assessment, graph context (if requester DID is provided), and a recommendation (proceed/caution/verify/avoid) with reasoning.
+1. **com.dinakernel.peerlens.resolve** (`api/xrpc/resolve.ts`) — The primary endpoint. Given a subject reference (DID, URI, or name), returns: trust level, confidence, attestation summary, active flags, authenticity assessment, graph context (if requester DID is provided), and a recommendation (proceed/caution/verify/avoid) with reasoning.
 
-2. **com.dina.peerlens.getProfile** — DID PeerLens profile with PeerLens ratings, vouch count, flag count, and component breakdown.
+2. **com.dinakernel.peerlens.getProfile** — DID PeerLens profile with PeerLens ratings, vouch count, flag count, and component breakdown.
 
-3. **com.dina.peerlens.getGraph** — PeerLens graph visualization data (nodes and edges) around a DID.
+3. **com.dinakernel.peerlens.getGraph** — PeerLens graph visualization data (nodes and edges) around a DID.
 
-4. **com.dina.peerlens.search** — Full-text search across attestations with filters for sentiment, domain, tags, and confidence.
+4. **com.dinakernel.peerlens.search** — Full-text search across attestations with filters for sentiment, domain, tags, and confidence.
 
-5. **com.dina.peerlens.getAttestations** — Paginated attestation list for a subject or author.
+5. **com.dinakernel.peerlens.getAttestations** — Paginated attestation list for a subject or author.
 
-6. **com.dina.service.search** — Ranked service discovery by capability, location, and text query. Ranking: distance (40%) + text (30%) + trust (30%). Composite cursor pagination.
+6. **com.dinakernel.service.search** — Ranked service discovery by capability, location, and text query. Ranking: distance (40%) + text (30%) + trust (30%). Composite cursor pagination.
 
-7. **com.dina.service.isDiscoverable** — Deterministic boolean check: is this DID a provider service provider? Returns `{isDiscoverable, capabilities[]}`. Cached 5 min by Core.
+7. **com.dinakernel.service.isDiscoverable** — Deterministic boolean check: is this DID a provider service provider? Returns `{isDiscoverable, capabilities[]}`. Cached 5 min by Core.
 
 ### SWR Caching (api/middleware/swr-cache.ts)
 
@@ -431,17 +431,17 @@ Each of the 20 AT Protocol record types has a corresponding PostgreSQL table:
 
 ### Service Discovery Records
 
-**`com.dina.service.profile`** — Provider service capability advertisement.
+**`com.dinakernel.service.profile`** — Provider service capability advertisement.
 - Published by service providers (bus operators, shops, etc.)
 - DID binding: author DID = service operator DID (no delegation in Phase 1)
 - Fields: name, description, capabilities[], serviceArea, hours, responsePolicy, isDiscoverable
 - Phase 1: only `isDiscoverable: true` and `responsePolicy: "auto"` accepted
 
 **New xRPC endpoints:**
-- `com.dina.service.search` — ranked retrieval by capability + location + text
+- `com.dinakernel.service.search` — ranked retrieval by capability + location + text
   - Ranking: distance (40%) + text (30%) + trust (30%)
   - Cursor: composite (score_bucket, uri) for pagination
-- `com.dina.service.isDiscoverable` — deterministic boolean check by DID
+- `com.dinakernel.service.isDiscoverable` — deterministic boolean check by DID
   - Returns `{isDiscoverable, capabilities[]}`, cached 5 min by Core
 
 ### System Tables

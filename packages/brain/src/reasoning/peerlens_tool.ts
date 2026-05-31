@@ -6,11 +6,11 @@
  * the user asks about buying, comparing, or evaluating a product or
  * vendor. Under the hood this does TWO complementary AppView calls:
  *
- *   1. `com.dina.peerlens.search` — full-text / faceted search across
+ *   1. `com.dinakernel.peerlens.search` — full-text / faceted search across
  *      attestation records. Returns raw rows (sentiment, confidence,
  *      author DID, tags, timestamp). Good for "what do people say
  *      about X".
- *   2. `com.dina.peerlens.resolve` — aggregate trust level + recommendation
+ *   2. `com.dinakernel.peerlens.resolve` — aggregate trust level + recommendation
  *      for a subject (DID / product / domain / organization). Good
  *      for "is this vendor trustworthy?"
  *
@@ -72,12 +72,12 @@ export function createSearchPeerlensTool(
         subject: {
           type: 'string',
           description:
-            'JSON-stringified subject reference — triggers com.dina.peerlens.resolve. Examples: `{"type":"did","did":"did:plc:xyz"}`, `{"type":"product","domain":"amazon.com","productId":"B0CNYXFWDL"}`, `{"type":"organization","domain":"nytimes.com"}`.',
+            'JSON-stringified subject reference — triggers com.dinakernel.peerlens.resolve. Examples: `{"type":"did","did":"did:plc:xyz"}`, `{"type":"product","domain":"amazon.com","productId":"B0CNYXFWDL"}`, `{"type":"organization","domain":"nytimes.com"}`.',
         },
         query: {
           type: 'string',
           description:
-            'Free-text search against attestation content — triggers com.dina.peerlens.search.',
+            'Free-text search against attestation content — triggers com.dinakernel.peerlens.search.',
         },
         subjectType: {
           type: 'string',

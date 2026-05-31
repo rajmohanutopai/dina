@@ -1,5 +1,5 @@
 /**
- * Reviewer profile runner — wraps `com.dina.peerlens.getProfile` for the
+ * Reviewer profile runner — wraps `com.dinakernel.peerlens.getProfile` for the
  * reviewer screen. Returns either `{ profile }` to render the loaded
  * card, or `{ error }` to render the friendly error panel. Tests pass
  * `enabled: false` to keep the screen presentational.

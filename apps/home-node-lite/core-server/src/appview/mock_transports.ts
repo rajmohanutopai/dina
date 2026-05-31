@@ -12,7 +12,7 @@
  *     invoked createSession once with handle=X".
  *   - **MockPlcTransport** — `resolveDid` lookups backed by a DID
  *     → doc map.
- *   - **MockAppViewTransport** — `com.dina.*` xRPC calls backed
+ *   - **MockAppViewTransport** — `com.dinakernel.*` xRPC calls backed
  *     by method-keyed handler map.
  *
  * **Pattern**: each mock produces a fetcher function that matches

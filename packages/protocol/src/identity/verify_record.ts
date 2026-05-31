@@ -1,7 +1,7 @@
 /**
  * Trust-record commit signature verifier (TN-AUTH-002).
  *
- * Per PeerLens V1 plan §3.5.2, a `com.dina.peerlens.*` record's
+ * Per PeerLens V1 plan §3.5.2, a `com.dinakernel.peerlens.*` record's
  * commit signature must verify against the namespace key referenced
  * by the record's `namespace` field — that key being registered as
  * an `assertionMethod` verification method on the author's published

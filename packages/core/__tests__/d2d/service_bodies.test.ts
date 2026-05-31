@@ -127,7 +127,7 @@ describe('D2D service body validation', () => {
       expect(
         validateServiceQueryBody({
           ...valid,
-          service_uri: 'at://did:plc:bus42/com.dina.service.profile/store-2',
+          service_uri: 'at://did:plc:bus42/com.dinakernel.service.profile/store-2',
         }),
       ).toBeNull();
       expect(validateServiceQueryBody({ ...valid, service_uri: '' })).toBeNull();
@@ -138,23 +138,23 @@ describe('D2D service body validation', () => {
       // validator without passing the Core HTTP route, so a malformed /
       // wrong-collection listing URI must be rejected here too.
       expect(validateServiceQueryBody({ ...valid, service_uri: 'https://x/y/z' })).toContain(
-        'com.dina.service.profile',
+        'com.dinakernel.service.profile',
       );
       expect(validateServiceQueryBody({ ...valid, service_uri: 'at://x/y/z' })).toContain(
-        'com.dina.service.profile',
+        'com.dinakernel.service.profile',
       );
       expect(
         validateServiceQueryBody({
           ...valid,
           service_uri: 'at://did:plc:bus42/app.bsky.feed.post/store-2',
         }),
-      ).toContain('com.dina.service.profile');
+      ).toContain('com.dinakernel.service.profile');
       expect(
         validateServiceQueryBody({
           ...valid,
-          service_uri: 'at://did:plc:bus42/com.dina.service.profile',
+          service_uri: 'at://did:plc:bus42/com.dinakernel.service.profile',
         }),
-      ).toContain('com.dina.service.profile');
+      ).toContain('com.dinakernel.service.profile');
     });
   });
 

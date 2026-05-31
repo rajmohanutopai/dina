@@ -60,7 +60,7 @@ func (r *Resolver) ResolveProfile(did string) (*domain.TrustEntry, error) {
 		return nil, nil
 	}
 
-	u := fmt.Sprintf("%s/xrpc/com.dina.peerlens.getProfile?did=%s", r.baseURL, url.QueryEscape(did))
+	u := fmt.Sprintf("%s/xrpc/com.dinakernel.peerlens.getProfile?did=%s", r.baseURL, url.QueryEscape(did))
 	resp, err := r.client.Get(u)
 	if err != nil {
 		slog.Warn("trust_resolver: getProfile request failed", "did", did, "error", err)
@@ -110,7 +110,7 @@ func (r *Resolver) ResolveFullProfile(did string) (json.RawMessage, error) {
 		return nil, domain.ErrAppViewNotConfigured
 	}
 
-	u := fmt.Sprintf("%s/xrpc/com.dina.peerlens.getProfile?did=%s", r.baseURL, url.QueryEscape(did))
+	u := fmt.Sprintf("%s/xrpc/com.dinakernel.peerlens.getProfile?did=%s", r.baseURL, url.QueryEscape(did))
 	resp, err := r.client.Get(u)
 	if err != nil {
 		slog.Warn("trust_resolver: getFullProfile request failed", "did", did, "error", err)
@@ -148,7 +148,7 @@ func (r *Resolver) ResolveNeighborhood(centerDID string, hops int, limit int) ([
 		return nil, nil
 	}
 
-	u := fmt.Sprintf("%s/xrpc/com.dina.peerlens.getGraph?did=%s&depth=%d&limit=%d",
+	u := fmt.Sprintf("%s/xrpc/com.dinakernel.peerlens.getGraph?did=%s&depth=%d&limit=%d",
 		r.baseURL, url.QueryEscape(centerDID), hops, limit)
 	resp, err := r.client.Get(u)
 	if err != nil {
@@ -220,7 +220,7 @@ func (r *Resolver) SearchPeerlens(query, category, subjectType string, limit int
 	params.Set("limit", fmt.Sprintf("%d", limit))
 	params.Set("sort", "relevant")
 
-	u := fmt.Sprintf("%s/xrpc/com.dina.peerlens.search?%s", r.baseURL, params.Encode())
+	u := fmt.Sprintf("%s/xrpc/com.dinakernel.peerlens.search?%s", r.baseURL, params.Encode())
 	resp, err := r.client.Get(u)
 	if err != nil {
 		slog.Warn("trust_resolver: search request failed", "query", query, "error", err)

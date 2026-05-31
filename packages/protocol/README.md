@@ -33,7 +33,7 @@ Wire-format contracts, and nothing else:
 | D2D envelopes | Peer-to-peer message payload, service query/response bodies, response-status enum | `types/d2d.ts` |
 | Auth frames | MsgBox WebSocket handshake frames (`auth_challenge` / `auth_response` / `auth_success`) | `types/auth_frames.ts` |
 | Core RPC | Envelope shape for Core API requests tunnelled through MsgBox | `types/core_rpc.ts` |
-| Capability schema | `com.dina.service.profile` publish record + `schema_hash` contract | `types/capability.ts` |
+| Capability schema | `com.dinakernel.service.profile` publish record + `schema_hash` contract | `types/capability.ts` |
 | Wire constants | DID-doc contexts, service-type literals, frame-type strings, port defaults, `MSG_TYPE_*` strings, size limits, notify-priority literals | `constants.ts` |
 | Canonical signing | Pure helper that builds the request-signing canonical string | `canonical_sign.ts` |
 | Envelope builders | Deterministic constructors for DinaMessage JSON + `CoreRPCRequest` | `envelope_builder.ts` |

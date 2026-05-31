@@ -56,20 +56,20 @@ const rateLimitEnvOverride = parseInt(process.env.RATE_LIMIT_RPM ?? '0', 10)
 const rateLimitCache = createRateLimitCache()
 
 const ROUTES: Record<string, { params: any; handler: (db: any, params: any) => Promise<any> }> = {
-  'com.dina.peerlens.resolve': { params: ResolveParams, handler: resolve },
-  'com.dina.peerlens.search': { params: SearchParams, handler: search },
-  'com.dina.peerlens.getGraph': { params: GetGraphParams, handler: getGraph },
-  'com.dina.peerlens.getProfile': { params: GetProfileParams, handler: getProfile },
-  'com.dina.peerlens.getAttestations': { params: GetAttestationsParams, handler: getAttestations },
-  'com.dina.service.search': { params: ServiceSearchParams, handler: serviceSearch },
-  'com.dina.service.searchCapabilities': { params: SearchCapabilitiesParams, handler: searchCapabilities },
-  'com.dina.service.isDiscoverable': { params: ServiceIsDiscoverableParams, handler: serviceIsDiscoverable },
-  'com.dina.peerlens.attestationStatus': { params: AttestationStatusParams, handler: attestationStatus },
-  'com.dina.peerlens.cosigList': { params: CosigListParams, handler: cosigList },
-  'com.dina.peerlens.networkFeed': { params: NetworkFeedParams, handler: networkFeed },
-  'com.dina.peerlens.subjectGet': { params: SubjectGetParams, handler: subjectGet },
-  'com.dina.peerlens.getAlternatives': { params: GetAlternativesParams, handler: getAlternatives },
-  'com.dina.peerlens.getNegativeSpace': { params: GetNegativeSpaceParams, handler: getNegativeSpace },
+  'com.dinakernel.peerlens.resolve': { params: ResolveParams, handler: resolve },
+  'com.dinakernel.peerlens.search': { params: SearchParams, handler: search },
+  'com.dinakernel.peerlens.getGraph': { params: GetGraphParams, handler: getGraph },
+  'com.dinakernel.peerlens.getProfile': { params: GetProfileParams, handler: getProfile },
+  'com.dinakernel.peerlens.getAttestations': { params: GetAttestationsParams, handler: getAttestations },
+  'com.dinakernel.service.search': { params: ServiceSearchParams, handler: serviceSearch },
+  'com.dinakernel.service.searchCapabilities': { params: SearchCapabilitiesParams, handler: searchCapabilities },
+  'com.dinakernel.service.isDiscoverable': { params: ServiceIsDiscoverableParams, handler: serviceIsDiscoverable },
+  'com.dinakernel.peerlens.attestationStatus': { params: AttestationStatusParams, handler: attestationStatus },
+  'com.dinakernel.peerlens.cosigList': { params: CosigListParams, handler: cosigList },
+  'com.dinakernel.peerlens.networkFeed': { params: NetworkFeedParams, handler: networkFeed },
+  'com.dinakernel.peerlens.subjectGet': { params: SubjectGetParams, handler: subjectGet },
+  'com.dinakernel.peerlens.getAlternatives': { params: GetAlternativesParams, handler: getAlternatives },
+  'com.dinakernel.peerlens.getNegativeSpace': { params: GetNegativeSpaceParams, handler: getNegativeSpace },
 }
 
 const server = http.createServer(async (req, res) => {
@@ -131,8 +131,8 @@ const server = http.createServer(async (req, res) => {
   // found" so probes can't enumerate the surface.
   if (
     req.method === 'POST' &&
-    (url.pathname === '/xrpc/com.dina.test.injectAttestation' ||
-      url.pathname === '/xrpc/com.dina.test.deleteAttestation')
+    (url.pathname === '/xrpc/com.dinakernel.test.injectAttestation' ||
+      url.pathname === '/xrpc/com.dinakernel.test.deleteAttestation')
   ) {
     const authFail = checkTestInjectAuth(req.headers.authorization)
     if (authFail !== null) {
@@ -225,7 +225,7 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
-    // TN-FLAG-003: kill-switch gate for `com.dina.peerlens.*`. Service
+    // TN-FLAG-003: kill-switch gate for `com.dinakernel.peerlens.*`. Service
     // namespaces pass through; trust-namespace methods 503 when the
     // operator has disabled the V1 surface (or when the flag read
     // itself fails — closed-default).

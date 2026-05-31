@@ -175,11 +175,11 @@ describe('outboxStepRow — submitted event', () => {
     const next = outboxStepRow(r, {
       kind: 'submitted',
       clientId: 'cid-1',
-      atUri: 'at://did:plc:author/com.dina.peerlens.attestation/abc',
+      atUri: 'at://did:plc:author/com.dinakernel.peerlens.attestation/abc',
       submittedAt: T0_ISO,
     });
     expect(next.status).toBe('submitted-pending');
-    expect(next.atUri).toBe('at://did:plc:author/com.dina.peerlens.attestation/abc');
+    expect(next.atUri).toBe('at://did:plc:author/com.dinakernel.peerlens.attestation/abc');
     expect(next.submittedAt).toBe(T0_ISO);
   });
 

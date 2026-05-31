@@ -18,7 +18,7 @@
  *
  * Render contract — same presentational pattern as the other trust
  * screens (TN-MOB-011/014/015/016/017): the runner subscribes to
- * `com.dina.peerlens.subjectGet` + the per-attestation enrichment, and
+ * `com.dinakernel.peerlens.subjectGet` + the per-attestation enrichment, and
  * passes the resulting `SubjectDetailInput` to this component.
  *
  * Three render states pinned by tests:

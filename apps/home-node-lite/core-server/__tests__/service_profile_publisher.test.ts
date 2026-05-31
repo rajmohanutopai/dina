@@ -41,13 +41,13 @@ describe('ServiceProfilePublisher (task 6.19)', () => {
   });
 
   describe('happy path', () => {
-    it('publishes to {collection: com.dina.service.profile, rkey: self}', async () => {
+    it('publishes to {collection: com.dinakernel.service.profile, rkey: self}', async () => {
       let putInput: unknown = null;
       const putRecordFn: PutRecordFn = async (input) => {
         putInput = input;
         return {
           cid: 'bafy123abc',
-          uri: 'at://did:plc:self/com.dina.service.profile/self',
+          uri: 'at://did:plc:self/com.dinakernel.service.profile/self',
         };
       };
       const pub = new ServiceProfilePublisher({ putRecordFn });
@@ -55,7 +55,7 @@ describe('ServiceProfilePublisher (task 6.19)', () => {
       expect(out.ok).toBe(true);
       if (out.ok) {
         expect(out.cid).toBe('bafy123abc');
-        expect(out.uri).toMatch(/com.dina.service.profile\/self$/);
+        expect(out.uri).toMatch(/com.dinakernel.service.profile\/self$/);
       }
       const ctx = putInput as { collection: string; rkey: string; record: unknown };
       expect(ctx.collection).toBe(SERVICE_PROFILE_COLLECTION);
@@ -67,7 +67,7 @@ describe('ServiceProfilePublisher (task 6.19)', () => {
       const events: ServiceProfilePublisherEvent[] = [];
       const putRecordFn: PutRecordFn = async () => ({
         cid: 'cid-1',
-        uri: 'at://x/com.dina.service.profile/self',
+        uri: 'at://x/com.dinakernel.service.profile/self',
       });
       const pub = new ServiceProfilePublisher({
         putRecordFn,
@@ -226,7 +226,7 @@ describe('ServiceProfilePublisher (task 6.19)', () => {
     it('roundtrips a full profile + returns AT URI', async () => {
       const putRecordFn: PutRecordFn = async ({ rkey }) => ({
         cid: 'bafyreib',
-        uri: `at://did:plc:sftransit/com.dina.service.profile/${rkey}`,
+        uri: `at://did:plc:sftransit/com.dinakernel.service.profile/${rkey}`,
       });
       const pub = new ServiceProfilePublisher({ putRecordFn });
       const profile = buildServiceProfile({
@@ -249,7 +249,7 @@ describe('ServiceProfilePublisher (task 6.19)', () => {
       const out = (await pub.publish(profile)) as Extract<PublishOutcome, { ok: true }>;
       expect(out.ok).toBe(true);
       expect(out.uri).toBe(
-        'at://did:plc:sftransit/com.dina.service.profile/self',
+        'at://did:plc:sftransit/com.dinakernel.service.profile/self',
       );
     });
   });

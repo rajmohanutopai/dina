@@ -2,7 +2,7 @@
  * Task 6.18 — `schema_hash` canonical SHA-256.
  *
  * Providers of D2D capabilities publish a `capability_schemas` block
- * to their AT Protocol `com.dina.service.profile` record; requesters
+ * to their AT Protocol `com.dinakernel.service.profile` record; requesters
  * pull that block from AppView and send a `schema_hash` alongside
  * each `service.query`. The provider compares the inbound hash to
  * the hash of its currently-published schema and rejects mismatches

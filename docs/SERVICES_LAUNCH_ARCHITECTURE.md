@@ -3,7 +3,7 @@
 **Status: IMPLEMENTED.** All three Parts have landed. The shared
 `capability-registry.ts` (+ byte-identical `@dina/protocol` copy),
 `dimension-registry.ts`, and `subject_identifier.ts` exist; the
-`com.dina.service.searchCapabilities` endpoint + `search_capabilities`
+`com.dinakernel.service.searchCapabilities` endpoint + `search_capabilities`
 brain tool are wired; ingest/search/discovery/provider-ingress/egress all
 canonicalize capabilities (alias↔canonical); PeerLens dimensions
 canonicalize on the read/aggregate side with drop-unknown metering;
@@ -323,7 +323,7 @@ The contract is **intent-based**, not "dump the list" — Dina passes what
 the user *wants*, the AppView returns the real capabilities that can
 serve it. This is what removes the guessing AND scales.
 
-- **New xRPC `com.dina.service.searchCapabilities`**: input is a free
+- **New xRPC `com.dinakernel.service.searchCapabilities`**: input is a free
   `intent` query (+ optional geo); output is the canonical capabilities
   that (a) are in the registry AND (b) currently have ≥1 discoverable,
   non-tombstoned provider — each with `{canonical, description, domain}`.

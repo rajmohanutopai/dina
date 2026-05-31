@@ -36,7 +36,7 @@ function request(partial: Partial<CosigRequest> = {}): CosigRequest {
   return {
     type: 'peerlens.cosig.request',
     requestId: 'req-1',
-    attestationUri: 'at://did:plc:author/com.dina.peerlens.attestation/abc',
+    attestationUri: 'at://did:plc:author/com.dinakernel.peerlens.attestation/abc',
     attestationCid: 'bafy...',
     expiresAt: '2026-05-06T12:00:00Z', // 7 days after T0
     createdAt: '2026-04-29T12:00:00Z',
@@ -207,11 +207,11 @@ describe('buildCosigInboxRow — deep link', () => {
     const r = buildCosigInboxRow(
       input({
         subjectId: 'subj-aeron',
-        request: request({ attestationUri: 'at://did:plc:author/com.dina.peerlens.attestation/abc' }),
+        request: request({ attestationUri: 'at://did:plc:author/com.dinakernel.peerlens.attestation/abc' }),
       }),
     );
     expect(r.deepLink).toBe(
-      '/peerlens/subj-aeron?attestation=at%3A%2F%2Fdid%3Aplc%3Aauthor%2Fcom.dina.peerlens.attestation%2Fabc',
+      '/peerlens/subj-aeron?attestation=at%3A%2F%2Fdid%3Aplc%3Aauthor%2Fcom.dinakernel.peerlens.attestation%2Fabc',
     );
   });
 

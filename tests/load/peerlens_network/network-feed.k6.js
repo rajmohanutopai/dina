@@ -41,7 +41,7 @@ export const options = {
 
 export default function () {
   const viewerDid = pickViewerDid(__VU, __ITER)
-  const url = `${APPVIEW_URL}${XRPC_PREFIX}/com.dina.peerview.networkFeed?viewerDid=${encodeURIComponent(viewerDid)}&limit=25`
+  const url = `${APPVIEW_URL}${XRPC_PREFIX}/com.dinakernel.peerview.networkFeed?viewerDid=${encodeURIComponent(viewerDid)}&limit=25`
 
   const res = http.get(url, {
     tags: { name: 'networkFeed.xrpc' },

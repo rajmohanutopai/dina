@@ -8,7 +8,7 @@
  *
  *   1. A `cosig_requests` row in `accepted` state with `endorsement_uri`
  *      pointing at B's published endorsement record.
- *   2. The endorsement record itself (`com.dina.peerlens.endorsement`),
+ *   2. The endorsement record itself (`com.dinakernel.peerlens.endorsement`),
  *      which is the load-bearing AT-protocol artifact — durable,
  *      independently auditable, and the source of B's trust-edge
  *      contribution to A's reviewer profile.
@@ -33,7 +33,7 @@
  * `trust.cosig.reject`, see `packages/protocol/src/d2d/cosig.ts`)
  * and the DB write lives on the home-node Core side, not in any
  * `appview/src/ingester/handlers/*` path. AppView's role is the
- * READ surface (`com.dina.peerlens.cosigList`) plus the hourly
+ * READ surface (`com.dinakernel.peerlens.cosigList`) plus the hourly
  * expiry sweep (`cosigExpirySweep`). This test pins exactly that
  * surface — the same shape that production fires when Core pushes
  * a row in via the operator's admin path. No fake handler is
@@ -105,10 +105,10 @@ const NODE_SANCHO = 'did:plc:sancho041cosig'
 const SUBJECT_CHAIR_DID = 'did:plc:chairmaker041cosig'
 
 const ATT_RKEY = 'alonso-att-cosig-1'
-const ATT_URI = `at://${NODE_ALONSO}/com.dina.peerlens.attestation/${ATT_RKEY}`
+const ATT_URI = `at://${NODE_ALONSO}/com.dinakernel.peerlens.attestation/${ATT_RKEY}`
 
 const ENDORSE_RKEY = 'sancho-endorse-cosig-1'
-const ENDORSE_URI = `at://${NODE_SANCHO}/com.dina.peerlens.endorsement/${ENDORSE_RKEY}`
+const ENDORSE_URI = `at://${NODE_SANCHO}/com.dinakernel.peerlens.endorsement/${ENDORSE_RKEY}`
 
 const CATEGORY = 'office_furniture'
 
@@ -137,7 +137,7 @@ async function publishAttestation(opts: {
   cosignerSigCreatedAtMs?: number
   createdAtMs?: number
 }) {
-  const handler = routeHandler('com.dina.peerlens.attestation')!
+  const handler = routeHandler('com.dinakernel.peerlens.attestation')!
   const record: Record<string, unknown> = {
     subject: { type: 'did', did: SUBJECT_CHAIR_DID, name: 'ChairMaker' },
     category: CATEGORY,
@@ -153,9 +153,9 @@ async function publishAttestation(opts: {
     }
   }
   await handler.handleCreate(ctx, {
-    uri: `at://${opts.authorDid}/com.dina.peerlens.attestation/${opts.rkey}`,
+    uri: `at://${opts.authorDid}/com.dinakernel.peerlens.attestation/${opts.rkey}`,
     did: opts.authorDid,
-    collection: 'com.dina.peerlens.attestation',
+    collection: 'com.dinakernel.peerlens.attestation',
     rkey: opts.rkey,
     cid: `cid-att-${opts.rkey}-${(opts.cosignerDid ?? 'none').slice(-6)}`,
     record,
@@ -176,11 +176,11 @@ async function publishEndorsement(opts: {
   endorsementType?: string
   createdAtMs?: number
 }) {
-  const handler = routeHandler('com.dina.peerlens.endorsement')!
+  const handler = routeHandler('com.dinakernel.peerlens.endorsement')!
   await handler.handleCreate(ctx, {
-    uri: `at://${opts.authorDid}/com.dina.peerlens.endorsement/${opts.rkey}`,
+    uri: `at://${opts.authorDid}/com.dinakernel.peerlens.endorsement/${opts.rkey}`,
     did: opts.authorDid,
-    collection: 'com.dina.peerlens.endorsement',
+    collection: 'com.dinakernel.peerlens.endorsement',
     rkey: opts.rkey,
     cid: `cid-endorse-${opts.rkey}`,
     record: {

@@ -1,5 +1,5 @@
 /**
- * Network feed runner — wraps `com.dina.peerlens.networkFeed` for the
+ * Network feed runner — wraps `com.dinakernel.peerlens.networkFeed` for the
  * the PeerLens tab landing screen. Returns `{ feed, isLoading, error }`
  * for the screen to consume; tests pass `enabled: false` to keep the
  * screen presentational.

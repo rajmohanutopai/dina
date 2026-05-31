@@ -232,7 +232,7 @@ describe('evaluateServiceIngressBypass', () => {
         'did:plc:stranger',
         JSON.stringify({
           ...validQueryBody,
-          service_uri: 'at://did:plc:me/com.dina.service.profile/store-2',
+          service_uri: 'at://did:plc:me/com.dinakernel.service.profile/store-2',
         }),
         { isCapabilityConfigured: () => true, recipientDID: 'did:plc:me' },
       );
@@ -247,7 +247,7 @@ describe('evaluateServiceIngressBypass', () => {
           // Well-formed listing URI, but for SOMEONE ELSE's DID — a direct peer
           // must not push a listing that doesn't belong to this recipient.
           ...validQueryBody,
-          service_uri: 'at://did:plc:attacker/com.dina.service.profile/store-9',
+          service_uri: 'at://did:plc:attacker/com.dinakernel.service.profile/store-9',
         }),
         { isCapabilityConfigured: () => true, recipientDID: 'did:plc:me' },
       );
@@ -261,7 +261,7 @@ describe('evaluateServiceIngressBypass', () => {
         'did:plc:stranger',
         JSON.stringify({
           ...validQueryBody,
-          service_uri: 'at://did:plc:attacker/com.dina.service.profile/store-9',
+          service_uri: 'at://did:plc:attacker/com.dinakernel.service.profile/store-9',
         }),
         { isCapabilityConfigured: () => true },
       );

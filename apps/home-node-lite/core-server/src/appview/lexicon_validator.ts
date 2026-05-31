@@ -1,8 +1,8 @@
 /**
  * Task 6.5 — Lexicon validation per Dina collection.
  *
- * AT Protocol records (`com.dina.service.profile`,
- * `com.dina.contact.card`, `com.dina.peerlens.attestation`, …) must
+ * AT Protocol records (`com.dinakernel.service.profile`,
+ * `com.dinakernel.contact.card`, `com.dinakernel.peerlens.attestation`, …) must
  * conform to per-collection Lexicon schemas before publishing OR
  * accepting from the firehose. This primitive is the structural
  * validator — give it a collection name + record + its registered

@@ -106,9 +106,9 @@ function validProfile() {
 
 function op(record: Record<string, unknown>) {
   return {
-    uri: 'at://did:plc:provider/com.dina.service.profile/self',
+    uri: 'at://did:plc:provider/com.dinakernel.service.profile/self',
     did: 'did:plc:provider',
-    collection: 'com.dina.service.profile',
+    collection: 'com.dinakernel.service.profile',
     rkey: 'self',
     cid: 'bafytest123',
     record,
@@ -147,7 +147,7 @@ describe('serviceProfileHandler.handleCreate', () => {
     const ctx = stubCtx(captured)
     await serviceProfileHandler.handleCreate(ctx, op(validProfile()))
     expect(captured.insertValues).toMatchObject({
-      uri: 'at://did:plc:provider/com.dina.service.profile/self',
+      uri: 'at://did:plc:provider/com.dinakernel.service.profile/self',
       operatorDid: 'did:plc:provider',
       name: 'SF Transit',
       isDiscoverable: true,

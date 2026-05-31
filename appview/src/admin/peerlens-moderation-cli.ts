@@ -153,7 +153,7 @@ EXIT CODES
 EXAMPLES
   subject tombstone sub_5a76e31bf... --actor did:plc:op1 --reason "ToS violation"
   subject untombstone sub_5a76e31bf... --actor did:plc:op1 --reason "appeal granted"
-  attestation takedown at://did:plc:author/com.dina.peerlens.attestation/abc \\
+  attestation takedown at://did:plc:author/com.dinakernel.peerlens.attestation/abc \\
                       --actor did:plc:op1 --reason "spam"
   audit-log --action tombstone_subject --limit 20
   audit-log --target sub_5a76e31bf...

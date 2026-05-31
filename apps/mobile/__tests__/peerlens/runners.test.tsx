@@ -464,7 +464,7 @@ describe('useNetworkFeed', () => {
     feedMock.mockResolvedValueOnce({
       attestations: [
         {
-          uri: 'at://did:plc:r1/com.dina.peerlens.attestation/A',
+          uri: 'at://did:plc:r1/com.dinakernel.peerlens.attestation/A',
           authorDid: 'did:plc:r1',
           subjectId: 'sub_a',
           subjectRefRaw: { type: 'product', name: 'Aeron Chair' },
@@ -498,7 +498,7 @@ describe('useNetworkFeed', () => {
     feedMock.mockResolvedValueOnce({
       attestations: [
         {
-          uri: 'at://did:plc:r1/com.dina.peerlens.attestation/B',
+          uri: 'at://did:plc:r1/com.dinakernel.peerlens.attestation/B',
           authorDid: 'did:plc:r1',
           subjectId: null, // unresolved subject — mid-ingestion
           subjectRefRaw: { type: 'product', name: 'Pending' },

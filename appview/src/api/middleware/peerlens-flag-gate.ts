@@ -8,7 +8,7 @@ import { readBoolFlag } from '@/db/queries/appview-config.js'
  * The trust feature ships ON by default; an operator flips OFF with
  * `dina-admin trust disable` (TN-FLAG-002) to roll back a problematic
  * deploy. When OFF:
- *   - Ingester drops `com.dina.peerlens.*` records (TN-FLAG-004 / TN-ING-004)
+ *   - Ingester drops `com.dinakernel.peerlens.*` records (TN-FLAG-004 / TN-ING-004)
  *   - Scorer cron jobs become no-ops (TN-SCORE-010)
  *   - **xRPC handlers return 503** (this module)
  *
@@ -17,7 +17,7 @@ import { readBoolFlag } from '@/db/queries/appview-config.js'
  * defeats the kill-switch. The 503 forces clients to back off and
  * surfaces the disabled state to ops dashboards (5xx error rate spikes).
  *
- * **Scope = trust namespace only**. `com.dina.service.*` is the service
+ * **Scope = trust namespace only**. `com.dinakernel.service.*` is the service
  * registry (provider discovery, capability schemas) — independent of
  * the trust V1 ramp and should keep working when trust is disabled.
  * The gate is a prefix check on the methodId, not a global block.
@@ -37,7 +37,7 @@ import { readBoolFlag } from '@/db/queries/appview-config.js'
  * during a deliberate disable. Asymmetric — pick the safer side.
  */
 
-const PEERLENS_NAMESPACE_PREFIX = 'com.dina.peerlens.'
+const PEERLENS_NAMESPACE_PREFIX = 'com.dinakernel.peerlens.'
 
 export interface GateAllowed {
   readonly ok: true
@@ -53,7 +53,7 @@ export type GateResult = GateAllowed | GateDenied
 
 /**
  * Check whether the given xRPC method is permitted under the current
- * `trust_v1_enabled` flag state. Methods outside `com.dina.peerlens.*` are
+ * `trust_v1_enabled` flag state. Methods outside `com.dinakernel.peerlens.*` are
  * always permitted — this gate only applies to the trust surface.
  *
  * Returns `{ ok: true }` if the request should proceed to the handler;

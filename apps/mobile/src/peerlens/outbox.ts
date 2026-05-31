@@ -6,7 +6,7 @@
  *   > Mobile-side polling: `apps/mobile/src/trust/outbox.ts` keeps a
  *   > small in-memory + persisted set of `{at_uri, draft_body,
  *   > submitted_at}` rows. A 5 s timer polls
- *   > `com.dina.peerlens.attestationStatus` for each pending AT-URI
+ *   > `com.dinakernel.peerlens.attestationStatus` for each pending AT-URI
  *   > until the response transitions from `pending` → `indexed`
  *   > (success) or `rejected` (surface inbox failure row), or the
  *   > 60 s budget elapses (surface "stuck — retry?" inbox row).
@@ -66,7 +66,7 @@
  *   - `queued-offline`: created locally; not yet submitted to the
  *     PDS. The runner submits when the network is reachable.
  *   - `submitted-pending`: submitted to PDS (AT-URI assigned); the
- *     runner is polling `com.dina.peerlens.attestationStatus` to learn
+ *     runner is polling `com.dinakernel.peerlens.attestationStatus` to learn
  *     whether AppView has indexed or rejected it.
  *   - `indexed`: terminal — record successfully ingested.
  *   - `rejected`: terminal — AppView rejected (rate limit, sig
@@ -86,7 +86,7 @@ export type OutboxStatus =
 
 /**
  * Reasons AppView's ingester can reject a record. Mirrors
- * `com.dina.peerlens.attestationStatus`'s response shape (plan §6.5).
+ * `com.dinakernel.peerlens.attestationStatus`'s response shape (plan §6.5).
  */
 export type OutboxRejectReason =
   | 'rate_limit'
@@ -136,7 +136,7 @@ export interface OutboxRow<DraftBody = unknown> {
 
 /**
  * The success/rejection/pending shape returned by
- * `com.dina.peerlens.attestationStatus` (plan §6.5).
+ * `com.dinakernel.peerlens.attestationStatus` (plan §6.5).
  */
 export interface AttestationStatusResponse {
   readonly state: 'indexed' | 'rejected' | 'pending';

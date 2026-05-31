@@ -5,7 +5,7 @@ import { services } from '@/db/schema/index.js'
 import { canonicalizeForIndex } from '@/shared/capability-registry.js'
 
 /**
- * Handler for com.dina.service.profile records.
+ * Handler for com.dinakernel.service.profile records.
  *
  * Service profiles allow operators (e.g., bus drivers, plumbers) to publish
  * discoverable service descriptions via AT Protocol. The AppView ingests

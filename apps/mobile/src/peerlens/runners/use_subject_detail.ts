@@ -1,5 +1,5 @@
 /**
- * Subject detail runner — wraps `com.dina.peerlens.subjectGet` for the
+ * Subject detail runner — wraps `com.dinakernel.peerlens.subjectGet` for the
  * subject detail screen. Returns `{ data, error, isLoading }` for the
  * screen to consume; tests pass `enabled: false` to keep the screen
  * presentational.

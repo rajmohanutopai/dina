@@ -132,7 +132,7 @@ parallel systems:
 | **768-dim embeddings** | EmbeddingGemma / gemini-embedding-001 pipeline, already generates per-vault-item embeddings at enrichment time | Embed topic strings on extraction with the same model — ensures alias-matching operates in the same vector space as the rest of the vault. |
 | **Staging enrichment LLM call** | Runs today during `staging_processor.py`; produces `content_l0` summaries | Extend the same call to also emit `entities: []` and `themes: []`. One call per ingest, no new LLM touchpoint. |
 | **Contacts table (DID → name)** | In Core, Tier 0 `identity.sqlite` | Entity → DID resolution for the `live_capability` marker (§6.1). |
-| **AppView service-profile lookup** | `GET /xrpc/com.dina.service.search` | DID → capability discovery for the `live_capability` marker (§6.1). |
+| **AppView service-profile lookup** | `GET /xrpc/com.dinakernel.service.search` | DID → capability discovery for the `live_capability` marker (§6.1). |
 | **Per-service auth allowlist** | `brainAllowed` in `core/internal/adapter/auth/auth.go`; exposes `/v1/service/*` and a handful of others to Brain | Add `/v1/memory/*` as a new prefix (narrow, read-only for ToC; POST-touch for ingest). |
 
 Net new code: the `topic_salience` table, the touch/salience math

@@ -40,7 +40,7 @@ Pipeline
 
   AppView (Postgres)
     → did_profiles, trust_edges, attestations
-    → XRPC com.dina.peerlens.getProfile
+    → XRPC com.dinakernel.peerlens.getProfile
                     ↓
   Core (Go)
     → GET /v1/trust/resolve?did={did}
@@ -166,7 +166,7 @@ class TestDeadInternetFilter:
         for i in range(3):
             peer_did = f"did:plc:peer{i}"
             edge_id = f"edge_elena_{uuid.uuid4().hex[:8]}"
-            vouch_uri = f"at://{peer_did}/com.dina.peerlens.attestation/{uuid.uuid4().hex[:12]}"
+            vouch_uri = f"at://{peer_did}/com.dinakernel.peerlens.attestation/{uuid.uuid4().hex[:12]}"
             cur.execute(
                 """INSERT INTO trust_edges (id, from_did, to_did, edge_type, weight, source_uri, created_at)
                    VALUES (%s, %s, %s, 'vouch', 1.0, %s, %s)
@@ -243,7 +243,7 @@ class TestDeadInternetFilter:
         with high PeerLens rating, 200+ attestations, and vouch data.
         """
         r = httpx.get(
-            f"{appview}/xrpc/com.dina.peerlens.getProfile?did=did:plc:elena",
+            f"{appview}/xrpc/com.dinakernel.peerlens.getProfile?did=did:plc:elena",
             timeout=10,
         )
         assert r.status_code == 200, (
@@ -281,7 +281,7 @@ class TestDeadInternetFilter:
         PeerLens rating, zero attestations about, and no vouch history.
         """
         r = httpx.get(
-            f"{appview}/xrpc/com.dina.peerlens.getProfile?did=did:plc:botfarm",
+            f"{appview}/xrpc/com.dinakernel.peerlens.getProfile?did=did:plc:botfarm",
             timeout=10,
         )
         assert r.status_code == 200, (

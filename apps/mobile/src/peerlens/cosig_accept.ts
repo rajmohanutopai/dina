@@ -4,7 +4,7 @@
  * Per plan §10:
  *
  *   > Action choice "Endorse" emits `trust.cosig.accept` — the
- *   > recipient publishes a `com.dina.peerlens.endorsement` record
+ *   > recipient publishes a `com.dinakernel.peerlens.endorsement` record
  *   > then sends the D2D `trust.cosig.accept` carrying the
  *   > endorsement's AT-URI + CID back to the requester.
  *
@@ -68,7 +68,7 @@ import {
 // ─── Public types ─────────────────────────────────────────────────────────
 
 /**
- * Endorsement record body for `com.dina.peerlens.endorsement`. Mirrors
+ * Endorsement record body for `com.dinakernel.peerlens.endorsement`. Mirrors
  * the protocol `Endorsement` type with all the cosig-specific
  * defaults applied. The result is ready to hand to a PDS publish
  * primitive — type-shape exactly matches AppView's `endorsementSchema`.
@@ -144,7 +144,7 @@ export const MAX_NAMESPACE_LEN = 255;
 // ─── Public API ───────────────────────────────────────────────────────────
 
 /**
- * Build the `com.dina.peerlens.endorsement` record body for a cosig
+ * Build the `com.dinakernel.peerlens.endorsement` record body for a cosig
  * accept. Pure data; the caller is responsible for publishing it
  * via the PDS primitive.
  *

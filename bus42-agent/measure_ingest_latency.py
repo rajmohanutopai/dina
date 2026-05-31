@@ -88,7 +88,7 @@ def appview_has_provider(appview_url: str, capability: str, did: str) -> bool:
     """True once the AppView's service.search for `capability` lists `did`."""
     qs = urllib.parse.urlencode({"capability": capability})
     code, body = _get(
-        f"{appview_url.rstrip('/')}/xrpc/com.dina.service.search?{qs}"
+        f"{appview_url.rstrip('/')}/xrpc/com.dinakernel.service.search?{qs}"
     )
     if code != 200:
         return False
@@ -106,7 +106,7 @@ def appview_resolve(appview_url: str, subject: dict) -> tuple[int, dict]:
     """One-shot resolve of a subject ref (the {type,uri,...} JSON form)."""
     qs = urllib.parse.urlencode({"subject": json.dumps(subject)})
     code, body = _get(
-        f"{appview_url.rstrip('/')}/xrpc/com.dina.peerlens.resolve?{qs}"
+        f"{appview_url.rstrip('/')}/xrpc/com.dinakernel.peerlens.resolve?{qs}"
     )
     try:
         return code, json.loads(body)

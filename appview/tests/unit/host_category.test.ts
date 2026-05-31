@@ -40,7 +40,7 @@ describe('normalizeHost', () => {
   })
 
   it('strips at:// scheme (and other custom schemes)', () => {
-    expect(normalizeHost('at://did:plc:author/com.dina.peerlens.attestation/abc')).toBe(
+    expect(normalizeHost('at://did:plc:author/com.dinakernel.peerlens.attestation/abc')).toBe(
       'did:plc:author',
     )
   })

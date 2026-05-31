@@ -70,7 +70,7 @@ prefixes.
 | Mock PLC Directory | DID resolution for all test actors | In-memory Go server, pre-loaded with test DIDs |
 | Mock Gmail/Calendar API | Email and calendar ingestion | Python Flask returning canned responses per cursor |
 | Mock OpenClaw MCP | Task agent delegation | Express server implementing MCP protocol |
-| Mock ReviewBot | Specialist review bot (rep 94) | Responds with structured `com.dina.peerlens.attestation` |
+| Mock ReviewBot | Specialist review bot (rep 94) | Responds with structured `com.dinakernel.peerlens.attestation` |
 | Mock MaliciousBot | Untrusted bot (rep 12) | Sends malformed/oversized/injection payloads |
 | Mock Payment Gateway | UPI/crypto deep link target | Records intent URIs without processing payment |
 | Mock FCM/APNs | Push notification capture | Records push payloads for assertion |
@@ -461,9 +461,9 @@ prefixes.
 |------|-------|--------|--------------------|------------------|
 | 1 | — | 3 months after purchase, Brain asks: "How's the Aeron?" | Don Alonso's Brain → Don Alonso's Phone WS | Follow-up prompt delivered |
 | 2 | Don Alonso | "Great, my back pain is much better" | Don Alonso's Phone WS → Don Alonso's Brain | Satisfaction recorded |
-| 3 | — | Brain creates anonymized outcome record | Don Alonso's Brain | 13 fields per `com.dina.peerlens.outcome` Lexicon: `{type:"outcome_report", reporter_trust_ring:3, reporter_age_days:730, product_category:"office_chairs", product_id:"herman_miller_aeron_2025", purchase_verified:true, purchase_amount_range:"50000-100000_INR", time_since_purchase_days:90, outcome:"still_using", satisfaction:"positive", issues:[], timestamp:"...", signature:"..."}` |
+| 3 | — | Brain creates anonymized outcome record | Don Alonso's Brain | 13 fields per `com.dinakernel.peerlens.outcome` Lexicon: `{type:"outcome_report", reporter_trust_ring:3, reporter_age_days:730, product_category:"office_chairs", product_id:"herman_miller_aeron_2025", purchase_verified:true, purchase_amount_range:"50000-100000_INR", time_since_purchase_days:90, outcome:"still_using", satisfaction:"positive", issues:[], timestamp:"...", signature:"..."}` |
 | 4 | — | Core signs with Trust Signing Key (HKDF `dina:trust:v1`) | Don Alonso's Core (crypto) | Ed25519 signature appended |
-| 5 | — | Core publishes to PDS | Don Alonso's Core → Don Alonso's PDS | `com.dina.peerlens.outcome` record in AT Protocol repo |
+| 5 | — | Core publishes to PDS | Don Alonso's Core → Don Alonso's PDS | `com.dinakernel.peerlens.outcome` record in AT Protocol repo |
 | 6 | — | Relay crawls PDS | Don Alonso's PDS → Relay | Merkle Search Tree diff — only new record transferred |
 
 **Verification:**
@@ -1153,7 +1153,7 @@ prefixes.
 |------|-------|--------|--------------------|------------------|
 | 1 | ReviewBot | Creates expert attestation for Herman Miller Aeron | ReviewBot | `{type:"expert_attestation", expert_did:"did:plc:reviewbot", product_id:"herman_miller_aeron_2025", rating:92, verdict:{build_quality:95, lumbar_support:90}}` |
 | 2 | — | Core signs with persona signing key (Ed25519) | ReviewBot's Core | Signature appended to record |
-| 3 | — | Core publishes to PDS | ReviewBot's Core → PDS | `com.dina.peerlens.attestation` record in AT Protocol repo |
+| 3 | — | Core publishes to PDS | ReviewBot's Core → PDS | `com.dinakernel.peerlens.attestation` record in AT Protocol repo |
 | 4 | — | Relay crawls PDS via Merkle Search Tree diff | PDS → Relay | Only new records transferred (delta sync) |
 | 5 | — | AppView indexes record after verifying signature | Relay → AppView | Record verified, indexed |
 | 6 | Don Alonso | "What's the PeerLens rating of the Herman Miller Aeron?" | Don Alonso's Brain → AppView | `GET /v1/product?id=herman_miller_aeron_2025` returns aggregate score |
@@ -1171,7 +1171,7 @@ prefixes.
 | 2 | ReviewBot | Next 5 queries return inaccurate/low-quality responses | Don Alonso's Brain → ReviewBot | User rates poorly, accuracy drops |
 | 3 | — | Brain recalculates bot trust | Don Alonso's Brain | Score drops below threshold |
 | 4 | — | Brain auto-routes next query to alternative bot | Don Alonso's Brain | Query goes to next-best bot — no manual intervention |
-| 5 | — | Original bot's degraded score published | Don Alonso's Core → PDS | `com.dina.peerlens.bot` record updated |
+| 5 | — | Original bot's degraded score published | Don Alonso's Core → PDS | `com.dinakernel.peerlens.bot` record updated |
 
 **Verification:**
 - Bot trust is dynamic (changes with observed quality)

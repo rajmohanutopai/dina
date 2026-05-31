@@ -352,7 +352,7 @@ So `media` is **never a URL**:
 media: { kind:'media', did, cid, alt, aspect?:'1:1'|'4:3'|'16:9' }
 ```
 - **AT Proto blob CID + provider DID only** — content-addressed (tamper-
-  evident), the native pattern (a `com.dina.peerlens.media` record already
+  evident), the native pattern (a `com.dinakernel.peerlens.media` record already
   carries blobs). The client builds `https://img.dinakernel.com/blob/{did}/{cid}`
   — provider supplies neither host nor clickable link.
 - **v1: the renderer IGNORES `media`.** v2 turns it on once the Dina image

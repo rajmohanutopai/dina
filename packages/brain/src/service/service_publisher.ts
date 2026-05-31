@@ -1,9 +1,9 @@
 /**
- * Service Publisher — publishes `com.dina.service.profile` to the PDS.
+ * Service Publisher — publishes `com.dinakernel.service.profile` to the PDS.
  *
  * The service profile is the public face of this home node's capability
  * offering. Requesters find this record via the AppView's index
- * (`com.dina.service.search`) which ingests it.
+ * (`com.dinakernel.service.search`) which ingests it.
  *
  * The publisher is **idempotent** at every edge:
  *   - `publish()` uses `putRecord` with a fixed rkey (`self`), so repeat
@@ -25,7 +25,7 @@ import type { PDSPublisher, PutRecordResult } from '../pds/publisher';
 import { computeSchemaHash } from './capabilities/registry';
 
 /** AT-Proto NSID collection the profile record is published under. */
-export const SERVICE_PROFILE_COLLECTION = 'com.dina.service.profile';
+export const SERVICE_PROFILE_COLLECTION = 'com.dinakernel.service.profile';
 /** Stable record key — one profile per account, key = 'self'. */
 export const SERVICE_PROFILE_RKEY = 'self';
 
@@ -189,13 +189,13 @@ export class ServicePublisher {
 // ---------------------------------------------------------------------------
 
 /**
- * Build the `com.dina.service.profile` record shape from the publisher's
+ * Build the `com.dinakernel.service.profile` record shape from the publisher's
  * config input. Returns a plain JSON-serialisable object that PDS XRPC will
  * accept without further transformation.
  *
  * The shape mirrors the Python reference:
  *   {
- *     "$type": "com.dina.service.profile",
+ *     "$type": "com.dinakernel.service.profile",
  *     "name": ..., "description"?: ...,
  *     "capabilities": [...],
  *     "responsePolicy": {cap: "auto"|"review", ...},

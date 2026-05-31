@@ -5,8 +5,8 @@
  * via PDS (`packages/brain/src/pds/publisher.ts`); the requester reads the
  * indexed view via AppView:
  *
- *   GET /xrpc/com.dina.service.search    — find services by capability + geo
- *   GET /xrpc/com.dina.service.isDiscoverable  — check whether a DID is discoverable
+ *   GET /xrpc/com.dinakernel.service.search    — find services by capability + geo
+ *   GET /xrpc/com.dinakernel.service.isDiscoverable  — check whether a DID is discoverable
  *
  * The Core-side `AppViewServiceResolver` (`packages/core/src/appview/`) exists
  * for egress-gate bypass decisions and caches `isDiscoverable` results. It is a
@@ -38,7 +38,7 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_MAX_RETRIES = 3;
 
 /**
- * One service profile entry from `com.dina.service.search` results.
+ * One service profile entry from `com.dinakernel.service.search` results.
  * Field naming is camelCase — this matches AppView's lexicon on the wire.
  */
 /**
@@ -74,7 +74,7 @@ export interface ServiceProfile {
   /** Distance in km from the query location, if the query supplied lat/lng. */
   distanceKm?: number;
   /**
-   * AT-URI of THIS listing (`at://<did>/com.dina.service.profile/<rkey>`). A
+   * AT-URI of THIS listing (`at://<did>/com.dinakernel.service.profile/<rkey>`). A
    * provider DID may publish many listings (marketplace multi-listing per DID);
    * the uri disambiguates which one was chosen so it can ride the service.query.
    * AppView returns it per search result; preserved opaquely by `searchServices`
@@ -149,7 +149,7 @@ export interface PeerlensGraphContext {
 }
 
 /**
- * `com.dina.peerlens.resolve` response — trust level + recommendation
+ * `com.dinakernel.peerlens.resolve` response — trust level + recommendation
  * for a subject (DID / product / content / etc.). `subject` must be a
  * JSON-stringified subject reference: `{"type":"did","did":"did:plc:..."}`
  * or `{"type":"product","domain":"amazon.com","productId":"B0..."}`.
@@ -166,7 +166,7 @@ export interface ResolvePeerlensResponse {
   reasoning: string;
 }
 
-/** `com.dina.peerlens.resolve` params. `subject` is JSON-stringified. */
+/** `com.dinakernel.peerlens.resolve` params. `subject` is JSON-stringified. */
 export interface ResolvePeerlensParams {
   subject: string;
   requesterDid?: string;
@@ -179,7 +179,7 @@ export interface ResolvePeerlensParams {
     | 'general-lookup';
 }
 
-/** `com.dina.peerlens.search` result — raw attestation rows (AppView sends
+/** `com.dinakernel.peerlens.search` result — raw attestation rows (AppView sends
  *  them as `Attestation` records, not normalised further here). */
 export interface PeerlensAttestation {
   uri?: string;
@@ -195,14 +195,14 @@ export interface PeerlensAttestation {
   [key: string]: unknown;
 }
 
-/** `com.dina.peerlens.search` response — attestation rows + pagination cursor. */
+/** `com.dinakernel.peerlens.search` response — attestation rows + pagination cursor. */
 export interface SearchPeerlensResponse {
   results: PeerlensAttestation[];
   cursor?: string;
   totalEstimate: number | null;
 }
 
-/** `com.dina.peerlens.search` params (subset of AppView's surface — we
+/** `com.dinakernel.peerlens.search` params (subset of AppView's surface — we
  *  don't expose the full date / cursor / tag-array knobs to the agent
  *  yet, just the fields a product-vendor query needs). */
 export interface SearchPeerlensParams {
@@ -287,7 +287,7 @@ export class AppViewClient {
       throw new AppViewError(
         'searchServices: capability is required',
         null,
-        '/xrpc/com.dina.service.search',
+        '/xrpc/com.dinakernel.service.search',
       );
     }
     const query: Record<string, string> = { capability: params.capability };
@@ -297,7 +297,7 @@ export class AppViewClient {
     if (params.q !== undefined && params.q !== '') query.q = params.q;
     if (params.limit !== undefined) query.limit = String(params.limit);
 
-    const body = await this.get('/xrpc/com.dina.service.search', query);
+    const body = await this.get('/xrpc/com.dinakernel.service.search', query);
     const services = (body as { services?: unknown }).services;
     if (!Array.isArray(services)) return [];
     // AppView's search xRPC publishes `operatorDid` (matches the AT-Proto
@@ -316,7 +316,7 @@ export class AppViewClient {
   }
 
   /**
-   * Intent-based capability DISCOVERY — `com.dina.service.searchCapabilities`
+   * Intent-based capability DISCOVERY — `com.dinakernel.service.searchCapabilities`
    * (SERVICES_LAUNCH_ARCHITECTURE.md Part 1, Layer 4). Pass the user's
    * intent in natural language; get back the canonical capabilities that
    * BOTH exist in the registry AND currently have a provider. This is what
@@ -329,14 +329,14 @@ export class AppViewClient {
       throw new AppViewError(
         'searchCapabilities: intent is required',
         null,
-        '/xrpc/com.dina.service.searchCapabilities',
+        '/xrpc/com.dinakernel.service.searchCapabilities',
       );
     }
     const query: Record<string, string> = { intent: params.intent };
     if (params.lat !== undefined) query.lat = String(params.lat);
     if (params.lng !== undefined) query.lng = String(params.lng);
 
-    const body = await this.get('/xrpc/com.dina.service.searchCapabilities', query);
+    const body = await this.get('/xrpc/com.dinakernel.service.searchCapabilities', query);
     const arr = (body as { capabilities?: unknown }).capabilities;
     if (!Array.isArray(arr)) return [];
     return arr
@@ -363,10 +363,10 @@ export class AppViewClient {
       throw new AppViewError(
         'isDiscoverable: did is required',
         null,
-        '/xrpc/com.dina.service.isDiscoverable',
+        '/xrpc/com.dinakernel.service.isDiscoverable',
       );
     }
-    const body = await this.get('/xrpc/com.dina.service.isDiscoverable', { did });
+    const body = await this.get('/xrpc/com.dinakernel.service.isDiscoverable', { did });
     const r = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
     return {
       isDiscoverable: typeof r.isDiscoverable === 'boolean' ? r.isDiscoverable : false,
@@ -377,12 +377,12 @@ export class AppViewClient {
   }
 
   // -------------------------------------------------------------------------
-  // PeerLens — `com.dina.peerlens.*`
+  // PeerLens — `com.dinakernel.peerlens.*`
   // -------------------------------------------------------------------------
 
   /**
    * Resolve the trust level of a subject (DID / product / content /
-   * etc.). Maps to AppView `com.dina.peerlens.resolve`. Returns
+   * etc.). Maps to AppView `com.dinakernel.peerlens.resolve`. Returns
    * `trustLevel` + `recommendation` + `attestationSummary` so the
    * caller can decide whether to proceed / warn / block.
    *
@@ -398,7 +398,7 @@ export class AppViewClient {
       throw new AppViewError(
         'resolveTrust: subject is required',
         null,
-        '/xrpc/com.dina.peerlens.resolve',
+        '/xrpc/com.dinakernel.peerlens.resolve',
       );
     }
     const query: Record<string, string> = { subject: params.subject };
@@ -406,13 +406,13 @@ export class AppViewClient {
     if (params.domain !== undefined) query.domain = params.domain;
     if (params.context !== undefined) query.context = params.context;
 
-    const body = await this.get('/xrpc/com.dina.peerlens.resolve', query);
+    const body = await this.get('/xrpc/com.dinakernel.peerlens.resolve', query);
     return body as ResolvePeerlensResponse;
   }
 
   /**
    * Free-text / faceted search over trust attestations. Maps to
-   * AppView `com.dina.peerlens.search`. Returns attestation rows (not
+   * AppView `com.dinakernel.peerlens.search`. Returns attestation rows (not
    * subject aggregates — use `resolveTrust` for that). Pagination via
    * the returned `cursor`.
    */
@@ -431,7 +431,7 @@ export class AppViewClient {
     if (params.sort !== undefined) query.sort = params.sort;
     if (params.limit !== undefined) query.limit = String(params.limit);
 
-    const body = await this.get('/xrpc/com.dina.peerlens.search', query);
+    const body = await this.get('/xrpc/com.dinakernel.peerlens.search', query);
     const r = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
     return {
       results: Array.isArray(r.results) ? (r.results as PeerlensAttestation[]) : [],

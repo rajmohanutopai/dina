@@ -105,14 +105,14 @@ const VALID_SERVICE_STATUSES: ReadonlySet<string> = new Set(['success', 'unavail
  * string on the first violated invariant.
  */
 /** AT-Proto NSID collection that service listings are published under. */
-export const SERVICE_PROFILE_COLLECTION = 'com.dina.service.profile'
+export const SERVICE_PROFILE_COLLECTION = 'com.dinakernel.service.profile'
 /** AT-Proto record-key charset; bounds rkey length so a listing uri can't
  *  smuggle an unbounded blob into the provider's execution context. */
 const SERVICE_LISTING_RKEY_RE = /^[A-Za-z0-9._~-]{1,512}$/
 
 /**
  * Parse + structurally validate a service-listing AT-URI of the form
- * `at://<did>/com.dina.service.profile/<rkey>`. Returns `{ did, rkey }` on
+ * `at://<did>/com.dinakernel.service.profile/<rkey>`. Returns `{ did, rkey }` on
  * success or `null` when the uri is not a well-formed listing reference.
  *
  * `service_uri` is requester-supplied and flows into the provider's execution
@@ -166,7 +166,7 @@ export function validateServiceQueryBody(body: unknown): string | null {
       return 'service.query: service_uri must be a string when present';
     }
     // Structural bind: a non-empty service_uri must be a well-formed
-    // com.dina.service.profile listing AT-URI (right collection + sane rkey),
+    // com.dinakernel.service.profile listing AT-URI (right collection + sane rkey),
     // NOT opaque text — it flows into the provider's execution context. This is
     // the D2D-inbound guard: a direct service.query envelope can carry a
     // service_uri the Core HTTP route never saw, so the check belongs here too.
@@ -176,7 +176,7 @@ export function validateServiceQueryBody(body: unknown): string | null {
     // `evaluateServiceIngressBypass`'s `recipientDID`. This validator only
     // enforces structure.) '' ⇒ absent.
     if (b.service_uri !== '' && parseServiceListingUri(b.service_uri) === null) {
-      return 'service.query: service_uri must be an at://<did>/com.dina.service.profile/<rkey> URI';
+      return 'service.query: service_uri must be an at://<did>/com.dinakernel.service.profile/<rkey> URI';
     }
   }
   return null;

@@ -7,7 +7,7 @@ import { addTrustEdge } from '../peerlens-edge-sync.js'
 import { markDirty } from '@/db/queries/dirty-flags.js'
 
 /**
- * Handler for com.dina.peerlens.vouch records.
+ * Handler for com.dinakernel.peerlens.vouch records.
  *
  * A vouch is a trust signal from one DID to another — "I trust this person."
  * The trust edge weight is derived from the confidence level.

@@ -22,28 +22,28 @@ import {
 
 describe('PER_METHOD_LIMITS_RPM — Plan §6 tier table', () => {
   it('matches Plan §6: search/resolve/networkFeed/cosigList = 60', () => {
-    expect(PER_METHOD_LIMITS_RPM['com.dina.peerlens.search']).toBe(60)
-    expect(PER_METHOD_LIMITS_RPM['com.dina.peerlens.resolve']).toBe(60)
-    expect(PER_METHOD_LIMITS_RPM['com.dina.peerlens.networkFeed']).toBe(60)
-    expect(PER_METHOD_LIMITS_RPM['com.dina.peerlens.cosigList']).toBe(60)
+    expect(PER_METHOD_LIMITS_RPM['com.dinakernel.peerlens.search']).toBe(60)
+    expect(PER_METHOD_LIMITS_RPM['com.dinakernel.peerlens.resolve']).toBe(60)
+    expect(PER_METHOD_LIMITS_RPM['com.dinakernel.peerlens.networkFeed']).toBe(60)
+    expect(PER_METHOD_LIMITS_RPM['com.dinakernel.peerlens.cosigList']).toBe(60)
   })
 
   it('matches Plan §6: subjectGet = 120 (richer payload tier)', () => {
-    expect(PER_METHOD_LIMITS_RPM['com.dina.peerlens.subjectGet']).toBe(120)
+    expect(PER_METHOD_LIMITS_RPM['com.dinakernel.peerlens.subjectGet']).toBe(120)
   })
 
   it('matches Plan §6: attestationStatus = 600 (outbox polling tier)', () => {
     // Mobile outbox watcher polls every 5s = 12 reqs/min minimum at idle;
     // a user with multiple pending attestations multiplies that. 600
     // gives 50× headroom for legitimate polling traffic.
-    expect(PER_METHOD_LIMITS_RPM['com.dina.peerlens.attestationStatus']).toBe(600)
+    expect(PER_METHOD_LIMITS_RPM['com.dinakernel.peerlens.attestationStatus']).toBe(600)
   })
 
   it('table is frozen — runtime mutation throws', () => {
     expect(Object.isFrozen(PER_METHOD_LIMITS_RPM)).toBe(true)
     expect(() => {
       // @ts-expect-error — runtime mutation guard
-      PER_METHOD_LIMITS_RPM['com.dina.peerlens.search'] = 9999
+      PER_METHOD_LIMITS_RPM['com.dinakernel.peerlens.search'] = 9999
     }).toThrow()
   })
 
@@ -54,9 +54,9 @@ describe('PER_METHOD_LIMITS_RPM — Plan §6 tier table', () => {
 
 describe('getMethodLimit — TN-API-007', () => {
   it('returns the tier value for mapped methods', () => {
-    expect(getMethodLimit('com.dina.peerlens.search')).toBe(60)
-    expect(getMethodLimit('com.dina.peerlens.subjectGet')).toBe(120)
-    expect(getMethodLimit('com.dina.peerlens.attestationStatus')).toBe(600)
+    expect(getMethodLimit('com.dinakernel.peerlens.search')).toBe(60)
+    expect(getMethodLimit('com.dinakernel.peerlens.subjectGet')).toBe(120)
+    expect(getMethodLimit('com.dinakernel.peerlens.attestationStatus')).toBe(600)
   })
 
   it('falls back to DEFAULT_LIMIT_RPM for unmapped methods', () => {
@@ -64,7 +64,7 @@ describe('getMethodLimit — TN-API-007', () => {
     // routed without being added to PER_METHOD_LIMITS_RPM gets the
     // conservative default rather than silently inheriting some
     // unrelated higher tier.
-    expect(getMethodLimit('com.dina.peerlens.somethingNew')).toBe(60)
+    expect(getMethodLimit('com.dinakernel.peerlens.somethingNew')).toBe(60)
     expect(getMethodLimit('app.bsky.feed.getTimeline')).toBe(60)
   })
 
@@ -73,8 +73,8 @@ describe('getMethodLimit — TN-API-007', () => {
     // CLAUDE.md). It must not silently neuter strict tiers; instead,
     // it raises every tier's ceiling, so all buckets become
     // effectively unbounded.
-    expect(getMethodLimit('com.dina.peerlens.search', 100_000)).toBe(100_000)
-    expect(getMethodLimit('com.dina.peerlens.attestationStatus', 100_000)).toBe(100_000)
+    expect(getMethodLimit('com.dinakernel.peerlens.search', 100_000)).toBe(100_000)
+    expect(getMethodLimit('com.dinakernel.peerlens.attestationStatus', 100_000)).toBe(100_000)
   })
 
   it('env override below tier does NOT lower the cap', () => {
@@ -82,13 +82,13 @@ describe('getMethodLimit — TN-API-007', () => {
     // not drop attestationStatus from 600 to 30 — that would break
     // the outbox polling contract. Ops emergencies that need lower
     // limits should patch the constant table, not flip an env var.
-    expect(getMethodLimit('com.dina.peerlens.attestationStatus', 30)).toBe(600)
-    expect(getMethodLimit('com.dina.peerlens.search', 30)).toBe(60)
+    expect(getMethodLimit('com.dinakernel.peerlens.attestationStatus', 30)).toBe(600)
+    expect(getMethodLimit('com.dinakernel.peerlens.search', 30)).toBe(60)
   })
 
   it('env override of 0 / undefined ignored (legacy default)', () => {
-    expect(getMethodLimit('com.dina.peerlens.search', 0)).toBe(60)
-    expect(getMethodLimit('com.dina.peerlens.search', undefined)).toBe(60)
+    expect(getMethodLimit('com.dinakernel.peerlens.search', 0)).toBe(60)
+    expect(getMethodLimit('com.dinakernel.peerlens.search', undefined)).toBe(60)
   })
 })
 
@@ -98,7 +98,7 @@ describe('checkPerMethodRateLimit — TN-API-007', () => {
     const result = checkPerMethodRateLimit(
       cache,
       '203.0.113.1',
-      'com.dina.peerlens.search',
+      'com.dinakernel.peerlens.search',
       1_000_000,
     )
     expect(result.ok).toBe(true)
@@ -109,7 +109,7 @@ describe('checkPerMethodRateLimit — TN-API-007', () => {
   it('within-cap requests stay allowed', () => {
     const cache = createRateLimitCache()
     const ip = '203.0.113.2'
-    const method = 'com.dina.peerlens.search'
+    const method = 'com.dinakernel.peerlens.search'
     let allowed = 0
     for (let i = 0; i < 60; i++) {
       const r = checkPerMethodRateLimit(cache, ip, method, 1_000_000)
@@ -121,7 +121,7 @@ describe('checkPerMethodRateLimit — TN-API-007', () => {
   it('over-cap requests are denied', () => {
     const cache = createRateLimitCache()
     const ip = '203.0.113.3'
-    const method = 'com.dina.peerlens.search'
+    const method = 'com.dinakernel.peerlens.search'
     for (let i = 0; i < 60; i++) {
       checkPerMethodRateLimit(cache, ip, method, 1_000_000)
     }
@@ -136,13 +136,13 @@ describe('checkPerMethodRateLimit — TN-API-007', () => {
     const cache = createRateLimitCache()
     const ip = '203.0.113.4'
     for (let i = 0; i < 60; i++) {
-      checkPerMethodRateLimit(cache, ip, 'com.dina.peerlens.search', 1_000_000)
+      checkPerMethodRateLimit(cache, ip, 'com.dinakernel.peerlens.search', 1_000_000)
     }
     // search exhausted; attestationStatus must still allow.
     const r = checkPerMethodRateLimit(
       cache,
       ip,
-      'com.dina.peerlens.attestationStatus',
+      'com.dinakernel.peerlens.attestationStatus',
       1_000_000,
     )
     expect(r.ok).toBe(true)
@@ -151,7 +151,7 @@ describe('checkPerMethodRateLimit — TN-API-007', () => {
 
   it('per-IP buckets are independent', () => {
     const cache = createRateLimitCache()
-    const method = 'com.dina.peerlens.search'
+    const method = 'com.dinakernel.peerlens.search'
     for (let i = 0; i < 60; i++) {
       checkPerMethodRateLimit(cache, '203.0.113.5', method, 1_000_000)
     }
@@ -163,7 +163,7 @@ describe('checkPerMethodRateLimit — TN-API-007', () => {
   it('window rolls over after 60 seconds', () => {
     const cache = createRateLimitCache()
     const ip = '203.0.113.7'
-    const method = 'com.dina.peerlens.search'
+    const method = 'com.dinakernel.peerlens.search'
     for (let i = 0; i < 60; i++) {
       checkPerMethodRateLimit(cache, ip, method, 1_000_000)
     }
@@ -177,7 +177,7 @@ describe('checkPerMethodRateLimit — TN-API-007', () => {
   it('env override bypasses limits when set high (test mode)', () => {
     const cache = createRateLimitCache()
     const ip = '203.0.113.8'
-    const method = 'com.dina.peerlens.search'
+    const method = 'com.dinakernel.peerlens.search'
     let allowed = 0
     for (let i = 0; i < 100_000; i++) {
       const r = checkPerMethodRateLimit(cache, ip, method, 1_000_000, 100_000)
@@ -191,7 +191,7 @@ describe('checkPerMethodRateLimit — TN-API-007', () => {
     // would let clients hammer instantly. The middleware clamps to ≥1.
     const cache = createRateLimitCache()
     const ip = '203.0.113.9'
-    const method = 'com.dina.peerlens.search'
+    const method = 'com.dinakernel.peerlens.search'
     for (let i = 0; i < 60; i++) {
       checkPerMethodRateLimit(cache, ip, method, 1_000_000)
     }
@@ -206,7 +206,7 @@ describe('checkPerMethodRateLimit — TN-API-007', () => {
     // the true attack volume, not just the successful requests.
     const cache = createRateLimitCache()
     const ip = '203.0.113.10'
-    const method = 'com.dina.peerlens.search'
+    const method = 'com.dinakernel.peerlens.search'
     for (let i = 0; i < 200; i++) {
       checkPerMethodRateLimit(cache, ip, method, 1_000_000)
     }

@@ -13,14 +13,14 @@
  *      that the lite-side `ServiceProfilePublisher` (task 6.19)
  *      expects, and binds the two together. From here on, calling
  *      `serviceProfilePublisher.publish(record)` actually writes
- *      `com.dina.service.profile/self` to the PDS.
+ *      `com.dinakernel.service.profile/self` to the PDS.
  *
  *   3. Subscribes the publisher to `onServiceConfigChanged` from
  *      `@dina/core`. Every successful `PUT /v1/service/config` (or
  *      `setServiceConfig` write from anywhere) rebuilds the profile
  *      and republishes to the PDS. AppView's Jetstream ingester sees
  *      the record + indexes the new capabilities, making the node
- *      discoverable via `com.dina.service.search?capability=…`.
+ *      discoverable via `com.dinakernel.service.search?capability=…`.
  *
  * **Why this is its own module.** boot.ts orchestrates a lot already;
  * keeping the publish-pipeline wiring here makes the boot diff small
@@ -179,7 +179,7 @@ export async function publishOnce(
     .putRecordFn;
   try {
     const result = await putRecord({
-      collection: 'com.dina.service.profile',
+      collection: 'com.dinakernel.service.profile',
       rkey: 'self',
       record: record as unknown as ServiceProfileRecord,
     });
@@ -196,7 +196,7 @@ export async function publishOnce(
 }
 
 /**
- * Build a `com.dina.service.profile` record that matches the live
+ * Build a `com.dinakernel.service.profile` record that matches the live
  * lexicon (verified against test-pds existing provider records).
  *
  * Returns the record on success, or an error string on validation
@@ -255,7 +255,7 @@ function buildWireServiceProfile(
   }
 
   const record: Record<string, unknown> = {
-    $type: 'com.dina.service.profile',
+    $type: 'com.dinakernel.service.profile',
     name: config.name,
     isDiscoverable: config.isDiscoverable,
     capabilities,

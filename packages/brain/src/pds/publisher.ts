@@ -1,7 +1,7 @@
 /**
  * AT Protocol PDS publisher — minimal surface for service-profile records.
  *
- * Publishes `com.dina.service.profile` (and in future other `com.dina.*`)
+ * Publishes `com.dinakernel.service.profile` (and in future other `com.dinakernel.*`)
  * records to the community PDS using standard AT Protocol XRPC endpoints:
  *
  *   POST /xrpc/com.atproto.server.createSession   — JWT auth

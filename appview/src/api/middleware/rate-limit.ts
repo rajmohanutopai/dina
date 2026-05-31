@@ -52,35 +52,35 @@ export const DEFAULT_LIMIT_RPM = 60
  */
 export const PER_METHOD_LIMITS_RPM: Readonly<Record<string, number>> = Object.freeze({
   // Per Plan §6:
-  'com.dina.peerlens.search': 60,
-  'com.dina.peerlens.resolve': 60,
-  'com.dina.peerlens.subjectGet': 120,
+  'com.dinakernel.peerlens.search': 60,
+  'com.dinakernel.peerlens.resolve': 60,
+  'com.dinakernel.peerlens.subjectGet': 120,
   // TN-V2-RANK-009: detail-page strip — rendered alongside subjectGet
   // so the tier matches.
-  'com.dina.peerlens.getAlternatives': 120,
+  'com.dinakernel.peerlens.getAlternatives': 120,
   // TN-V2-RANK-010: negative-space surface — typically rendered once
   // per category browse, not per detail view, so a lower tier than
   // subjectGet is fine. Same tier as search since usage frequency is
   // similar.
-  'com.dina.peerlens.getNegativeSpace': 60,
-  'com.dina.peerlens.networkFeed': 60,
-  'com.dina.peerlens.attestationStatus': 600, // outbox polls every 5s = 12/min minimum
-  'com.dina.peerlens.cosigList': 60,
+  'com.dinakernel.peerlens.getNegativeSpace': 60,
+  'com.dinakernel.peerlens.networkFeed': 60,
+  'com.dinakernel.peerlens.attestationStatus': 600, // outbox polls every 5s = 12/min minimum
+  'com.dinakernel.peerlens.cosigList': 60,
   // Legacy methods (pre-§6 spec) — same tier as their semantic siblings:
-  'com.dina.peerlens.getProfile': 120,        // sibling of subjectGet
-  'com.dina.peerlens.getAttestations': 120,   // sibling of subjectGet
-  'com.dina.peerlens.getGraph': 60,           // legacy reach query
+  'com.dinakernel.peerlens.getProfile': 120,        // sibling of subjectGet
+  'com.dinakernel.peerlens.getAttestations': 120,   // sibling of subjectGet
+  'com.dinakernel.peerlens.getGraph': 60,           // legacy reach query
   // Service registry — separate surface, plain default:
-  'com.dina.service.search': 60,
-  'com.dina.service.searchCapabilities': 60,
-  'com.dina.service.isDiscoverable': 60,
+  'com.dinakernel.service.search': 60,
+  'com.dinakernel.service.searchCapabilities': 60,
+  'com.dinakernel.service.isDiscoverable': 60,
 })
 
 /**
  * Resolve the effective per-minute cap for a given method, honouring
  * the `RATE_LIMIT_RPM` env override.
  *
- * @param methodId  Full xRPC method ID (e.g. `com.dina.peerlens.search`).
+ * @param methodId  Full xRPC method ID (e.g. `com.dinakernel.peerlens.search`).
  *                  Methods absent from `PER_METHOD_LIMITS_RPM` fall back
  *                  to `DEFAULT_LIMIT_RPM`.
  * @param envOverride The numeric value of `process.env.RATE_LIMIT_RPM`,

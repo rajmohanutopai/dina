@@ -17,7 +17,7 @@ const AUTHOR = 'did:plc:bcdefghijklmnopqrstuvwxy';
 
 function review(overrides: Partial<Review> = {}): Review {
   return {
-    id: 'at://did:plc:abc/com.dina.review/r1',
+    id: 'at://did:plc:abc/com.dinakernel.review/r1',
     subject: SUBJECT,
     author: AUTHOR,
     rating: 5,
@@ -108,7 +108,7 @@ describe('createReviewListClient (task 6.15)', () => {
           review({ rating: 0 }), // rating out of range
           review({ rating: 6 }), // rating out of range
           review({ subject: 'did:web:' }), // invalid DID
-          review({ id: 'at://did:plc/com.dina.review/r2', rating: 3 }),
+          review({ id: 'at://did:plc/com.dinakernel.review/r2', rating: 3 }),
         ],
       };
       const list = createReviewListClient({ fetchFn: stubFetch(body) });

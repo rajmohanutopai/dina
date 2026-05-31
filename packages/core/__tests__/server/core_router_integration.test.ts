@@ -656,12 +656,12 @@ describe('CoreRouter integration', () => {
         );
 
       const a = await router.handle(
-        reqFor('at://did:plc:market/com.dina.service.profile/store-2', 'q-listing-a'),
+        reqFor('at://did:plc:market/com.dinakernel.service.profile/store-2', 'q-listing-a'),
       );
       expect(a.status).toBe(200);
       expect((a.body as { deduped?: boolean }).deduped ?? false).toBe(false);
       const b = await router.handle(
-        reqFor('at://did:plc:market/com.dina.service.profile/store-3', 'q-listing-b'),
+        reqFor('at://did:plc:market/com.dinakernel.service.profile/store-3', 'q-listing-b'),
       );
       expect(b.status).toBe(200);
       // Different listing → NOT a dedup → both reach the provider.
@@ -684,7 +684,7 @@ describe('CoreRouter integration', () => {
             params: { sku: 'X' },
             ttl_seconds: 60,
             query_id: 'q-same-listing',
-            service_uri: 'at://did:plc:market/com.dina.service.profile/store-2',
+            service_uri: 'at://did:plc:market/com.dinakernel.service.profile/store-2',
           },
           brain,
         );
@@ -712,14 +712,14 @@ describe('CoreRouter integration', () => {
             params: { sku: 'X' },
             ttl_seconds: 60,
             query_id: 'q-uri-1',
-            service_uri: 'at://did:plc:bus/com.dina.service.profile/store-2',
+            service_uri: 'at://did:plc:bus/com.dinakernel.service.profile/store-2',
           },
           brain,
         ),
       );
       expect(res.status).toBe(200);
       expect(sent).toHaveLength(1);
-      expect(sent[0].body.service_uri).toBe('at://did:plc:bus/com.dina.service.profile/store-2');
+      expect(sent[0].body.service_uri).toBe('at://did:plc:bus/com.dinakernel.service.profile/store-2');
     });
 
     it('POST /v1/service/query omits service_uri from the D2D body when absent (#1)', async () => {
@@ -810,7 +810,7 @@ describe('CoreRouter integration', () => {
             ttl_seconds: 60,
             query_id: 'q-cross-did',
             // Well-formed listing URI, but for a DIFFERENT provider DID.
-            service_uri: 'at://did:plc:attacker/com.dina.service.profile/store-9',
+            service_uri: 'at://did:plc:attacker/com.dinakernel.service.profile/store-9',
           },
           brain,
         ),

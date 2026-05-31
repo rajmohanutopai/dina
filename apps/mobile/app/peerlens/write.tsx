@@ -1,7 +1,7 @@
 /**
  * PeerLens — compose / edit attestation flow (TN-MOB-013 / Plan §8.6).
  *
- * Captures the fields needed to publish a `com.dina.peerlens.attestation`:
+ * Captures the fields needed to publish a `com.dinakernel.peerlens.attestation`:
  *   - subject (already known — passed in by the caller)
  *   - sentiment (positive / neutral / negative)
  *   - headline (≤ 140 chars per Plan §8.5)

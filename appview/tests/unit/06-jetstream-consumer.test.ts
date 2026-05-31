@@ -35,8 +35,8 @@ const mockHandler = {
 
 vi.mock('@/ingester/handlers/index.js', () => ({
   routeHandler: vi.fn((collection: string) => {
-    if (collection.startsWith('com.dina.peerlens.')) {
-      const shortName = collection.replace('com.dina.peerlens.', '')
+    if (collection.startsWith('com.dinakernel.peerlens.')) {
+      const shortName = collection.replace('com.dinakernel.peerlens.', '')
       // Return null for truly unknown short names
       const known = [
         'attestation', 'vouch', 'endorsement', 'flag', 'reply', 'reaction',
@@ -107,25 +107,25 @@ vi.mock('@/shared/utils/logger.js', () => ({
 // Mock TRUST_COLLECTIONS
 vi.mock('@/config/lexicons.js', () => ({
   TRUST_COLLECTIONS: [
-    'com.dina.peerlens.attestation',
-    'com.dina.peerlens.vouch',
-    'com.dina.peerlens.endorsement',
-    'com.dina.peerlens.flag',
-    'com.dina.peerlens.reply',
-    'com.dina.peerlens.reaction',
-    'com.dina.peerlens.reportRecord',
-    'com.dina.peerlens.revocation',
-    'com.dina.peerlens.delegation',
-    'com.dina.peerlens.collection',
-    'com.dina.peerlens.media',
-    'com.dina.peerlens.subject',
-    'com.dina.peerlens.amendment',
-    'com.dina.peerlens.verification',
-    'com.dina.peerlens.reviewRequest',
-    'com.dina.peerlens.comparison',
-    'com.dina.peerlens.subjectClaim',
-    'com.dina.peerlens.trustPolicy',
-    'com.dina.peerlens.notificationPrefs',
+    'com.dinakernel.peerlens.attestation',
+    'com.dinakernel.peerlens.vouch',
+    'com.dinakernel.peerlens.endorsement',
+    'com.dinakernel.peerlens.flag',
+    'com.dinakernel.peerlens.reply',
+    'com.dinakernel.peerlens.reaction',
+    'com.dinakernel.peerlens.reportRecord',
+    'com.dinakernel.peerlens.revocation',
+    'com.dinakernel.peerlens.delegation',
+    'com.dinakernel.peerlens.collection',
+    'com.dinakernel.peerlens.media',
+    'com.dinakernel.peerlens.subject',
+    'com.dinakernel.peerlens.amendment',
+    'com.dinakernel.peerlens.verification',
+    'com.dinakernel.peerlens.reviewRequest',
+    'com.dinakernel.peerlens.comparison',
+    'com.dinakernel.peerlens.subjectClaim',
+    'com.dinakernel.peerlens.trustPolicy',
+    'com.dinakernel.peerlens.notificationPrefs',
   ],
 }))
 
@@ -185,7 +185,7 @@ function makeCommitCreate(overrides: Partial<JetstreamCommitCreate> = {}): Jetst
     commit: {
       rev: 'rev1',
       operation: 'create',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'tid1',
       record: { subject: { type: 'did', did: 'did:plc:abc' }, category: 'quality', sentiment: 'positive', createdAt: now },
       cid: 'bafyreib2rxk3rybhqbqkrhkpm3ic6e3p4dkkbjxhvcsg3kbygpjlmmzb6aaa',
@@ -202,7 +202,7 @@ function makeCommitUpdate(): JetstreamCommitCreate {
     commit: {
       rev: 'rev2',
       operation: 'update',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'tid1',
       record: { subject: { type: 'did', did: 'did:plc:abc' }, category: 'quality', sentiment: 'positive', createdAt: now },
       cid: 'bafyreib2rxk3rybhqbqkrhkpm3ic6e3p4dkkbjxhvcsg3kbygpjlmmzb6bbb',
@@ -218,7 +218,7 @@ function makeCommitDelete(): JetstreamCommitDelete {
     commit: {
       rev: 'rev3',
       operation: 'delete',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'tid1',
     },
   }
@@ -503,7 +503,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
       commit: {
         rev: 'rev1',
         operation: 'create',
-        collection: 'com.dina.peerlens.nonexistent',
+        collection: 'com.dinakernel.peerlens.nonexistent',
         rkey: 'tid1',
         record: {},
         cid: 'cid1',

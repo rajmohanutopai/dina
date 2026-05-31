@@ -3,7 +3,7 @@
  *
  * The Dina community trust system uses AT Protocol AppView as the
  * source of truth for PeerLens ratings. The xRPC endpoint
- * `com.dina.peerlens.getProfile` returns the shape defined by
+ * `com.dinakernel.peerlens.getProfile` returns the shape defined by
  * `appview/src/shared/types/api-types.ts.GetProfileResponse`:
  *
  *   {
@@ -63,7 +63,7 @@ export interface ReviewerStats {
 
 /**
  * PeerLens profile of a DID, as returned by AppView's
- * `com.dina.peerlens.getProfile`. Mirrors `GetProfileResponse` from
+ * `com.dinakernel.peerlens.getProfile`. Mirrors `GetProfileResponse` from
  * `appview/src/shared/types/api-types.ts` byte-for-byte except for
  * `lastActive`, which is normalised from ISO string → ms timestamp.
  *
@@ -103,7 +103,7 @@ export interface QueryResult {
 }
 
 /**
- * Subset of `com.dina.peerlens.search` filters that AppView already
+ * Subset of `com.dinakernel.peerlens.search` filters that AppView already
  * accepts on the wire. Mirrors `appview/src/api/xrpc/search.ts`
  * `SearchParams`. Plan §6.1 calls for additional `language` and
  * `location` filters; those land with TN-API-001 and will be added
@@ -130,7 +130,7 @@ export interface AttestationSearchParams {
 }
 
 /**
- * One attestation row from `com.dina.peerlens.search`. Mirrors
+ * One attestation row from `com.dinakernel.peerlens.search`. Mirrors
  * `appview/src/db/schema/attestations.ts` rows projected through
  * the search endpoint.
  *
@@ -181,7 +181,7 @@ export class PeerlensQueryClient {
     }
 
     try {
-      const url = `${this.appviewURL}/xrpc/com.dina.peerlens.getProfile?did=${encodeURIComponent(did)}`;
+      const url = `${this.appviewURL}/xrpc/com.dinakernel.peerlens.getProfile?did=${encodeURIComponent(did)}`;
 
       const response = await this.fetchFn(url, {
         headers: { Accept: 'application/json' },
@@ -229,13 +229,13 @@ export class PeerlensQueryClient {
     // Try the batch endpoint first.
     //
     // NOTE: AppView's xRPC dispatcher does not currently register
-    // `com.dina.peerlens.getProfiles` (see `appview/src/web/server.ts`).
+    // `com.dinakernel.peerlens.getProfiles` (see `appview/src/web/server.ts`).
     // The batch attempt 404s on every call and the catch below falls
     // through to per-DID queries. The path is kept on the wire-format-
     // ready side so adding the server endpoint later requires no
     // client change.
     try {
-      const url = `${this.appviewURL}/xrpc/com.dina.peerlens.getProfiles`;
+      const url = `${this.appviewURL}/xrpc/com.dinakernel.peerlens.getProfiles`;
       const response = await this.fetchFn(url, {
         method: 'POST',
         headers: {
@@ -280,7 +280,7 @@ export class PeerlensQueryClient {
   }
 
   /**
-   * Run a filtered search against AppView's `com.dina.peerlens.search`
+   * Run a filtered search against AppView's `com.dinakernel.peerlens.search`
    * xRPC. Each filter passed here is a Lite-side reflection of an
    * AppView wire param — see `AttestationSearchParams`.
    *
@@ -290,7 +290,7 @@ export class PeerlensQueryClient {
    */
   async searchAttestations(params: AttestationSearchParams): Promise<SearchResult> {
     try {
-      const url = `${this.appviewURL}/xrpc/com.dina.peerlens.search${buildSearchQueryString(params)}`;
+      const url = `${this.appviewURL}/xrpc/com.dinakernel.peerlens.search${buildSearchQueryString(params)}`;
 
       const response = await this.fetchFn(url, {
         headers: { Accept: 'application/json' },
@@ -482,7 +482,7 @@ function buildSearchQueryString(params: AttestationSearchParams): string {
 }
 
 /**
- * Parse a raw `com.dina.peerlens.search` response into `SearchResult`.
+ * Parse a raw `com.dinakernel.peerlens.search` response into `SearchResult`.
  * AppView returns `{ results, cursor?, totalEstimate }`. Unknown
  * fields on individual rows are preserved — see `AttestationSearchHit`.
  */

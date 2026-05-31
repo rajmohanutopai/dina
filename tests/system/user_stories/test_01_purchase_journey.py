@@ -227,9 +227,9 @@ class TestPurchaseJourney:
                 f"{pds_url}/xrpc/com.atproto.repo.createRecord",
                 json={
                     "repo": src_did,
-                    "collection": "com.dina.peerlens.attestation",
+                    "collection": "com.dinakernel.peerlens.attestation",
                     "record": {
-                        "$type": "com.dina.peerlens.attestation",
+                        "$type": "com.dinakernel.peerlens.attestation",
                         "subject": {"type": "did", "did": tgt_did},
                         "category": "trust",
                         "sentiment": "positive",
@@ -281,9 +281,9 @@ class TestPurchaseJourney:
                 f"{pds_url}/xrpc/com.atproto.repo.createRecord",
                 json={
                     "repo": did,
-                    "collection": "com.dina.peerlens.attestation",
+                    "collection": "com.dinakernel.peerlens.attestation",
                     "record": {
-                        "$type": "com.dina.peerlens.attestation",
+                        "$type": "com.dinakernel.peerlens.attestation",
                         "subject": {"type": "product", "name": product},
                         "category": "quality",
                         "sentiment": sentiment,
@@ -318,9 +318,9 @@ class TestPurchaseJourney:
                 f"{pds_url}/xrpc/com.atproto.repo.createRecord",
                 json={
                     "repo": did,
-                    "collection": "com.dina.peerlens.attestation",
+                    "collection": "com.dinakernel.peerlens.attestation",
                     "record": {
-                        "$type": "com.dina.peerlens.attestation",
+                        "$type": "com.dinakernel.peerlens.attestation",
                         "subject": {"type": "product", "name": product},
                         "category": "quality",
                         "sentiment": sentiment,
@@ -355,9 +355,9 @@ class TestPurchaseJourney:
                 f"{pds_url}/xrpc/com.atproto.repo.createRecord",
                 json={
                     "repo": did,
-                    "collection": "com.dina.peerlens.attestation",
+                    "collection": "com.dinakernel.peerlens.attestation",
                     "record": {
-                        "$type": "com.dina.peerlens.attestation",
+                        "$type": "com.dinakernel.peerlens.attestation",
                         "subject": {"type": "product", "name": product},
                         "category": "quality",
                         "sentiment": sentiment,
@@ -397,9 +397,9 @@ class TestPurchaseJourney:
                 f"{pds_url}/xrpc/com.atproto.repo.createRecord",
                 json={
                     "repo": did,
-                    "collection": "com.dina.peerlens.attestation",
+                    "collection": "com.dinakernel.peerlens.attestation",
                     "record": {
-                        "$type": "com.dina.peerlens.attestation",
+                        "$type": "com.dinakernel.peerlens.attestation",
                         "subject": {"type": "product", "name": "CheapChair Pro 3000"},
                         "category": "quality",
                         "sentiment": "positive",

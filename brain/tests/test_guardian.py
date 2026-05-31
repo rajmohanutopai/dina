@@ -2756,7 +2756,7 @@ async def test_guardian_19_2_reviews_exist_no_outcome_data(guardian) -> None:
     """SS19.2: Reviews exist but no outcome data.
 
     Requirement: When attestations (expert reviews) are present but no
-    `com.dina.peerlens.outcome` records exist, the Brain must:
+    `com.dinakernel.peerlens.outcome` records exist, the Brain must:
     1. Use the attestations in its reasoning
     2. Explicitly note: "No verified purchase outcomes yet"
     3. Not fabricate outcome data or confidence levels

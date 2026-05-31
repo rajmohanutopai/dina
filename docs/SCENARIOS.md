@@ -810,7 +810,7 @@ history, peer attestations, time-decay, and trust ring.
 You ──tap PeerLens──▶ Search "ergonomic chair" ──▶ Send
                                                       │
                                                       ▼
-                                            POST /xrpc/com.dina.peerlens.search
+                                            POST /xrpc/com.dinakernel.peerlens.search
                                             to test-appview.dinakernel.com
                                                       │
                                                       ▼

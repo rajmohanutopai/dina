@@ -3,7 +3,7 @@
  *
  * Per plan §13.9, AppView's `appview_config.trust_v1_enabled` boolean
  * gates the V1 rollout. When `false`:
- *   - All `com.dina.*` xRPC endpoints return 503.
+ *   - All `com.dinakernel.*` xRPC endpoints return 503.
  *   - The firehose ingester skips trust-network records.
  *   - Mobile UI hides the PeerLens tab.
  *

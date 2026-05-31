@@ -1,5 +1,5 @@
 /**
- * Task 6.13 — `com.dina.service.getProfile` xRPC client.
+ * Task 6.13 — `com.dinakernel.service.getProfile` xRPC client.
  *
  * Where `service.search` (6.12) returns many services ranked by
  * distance / trust, `service.getProfile` fetches a SINGLE service
@@ -13,7 +13,7 @@
  *     + hash to retry the D2D query.
  *   - Admin UI "inspect service" pages that show the full record.
  *
- * **Response shape** — the full `com.dina.service.profile` record
+ * **Response shape** — the full `com.dinakernel.service.profile` record
  * plus AppView-computed trust context:
  *
  *   {
@@ -44,7 +44,7 @@ import type {
 
 /** Profile record with the full capability set — matches 6.17's ProfileBuilder output. */
 export interface ServiceProfileView {
-  $type: 'com.dina.service.profile';
+  $type: 'com.dinakernel.service.profile';
   operatorDid: string;
   name: string;
   isPublic: boolean;
@@ -259,11 +259,11 @@ function parseProfile(
     };
   }
   const p = raw as Record<string, unknown>;
-  if (p.$type !== 'com.dina.service.profile') {
+  if (p.$type !== 'com.dinakernel.service.profile') {
     return {
       ok: false,
       reason: 'malformed_response',
-      detail: `profile.$type must be "com.dina.service.profile" (got ${JSON.stringify(p.$type)})`,
+      detail: `profile.$type must be "com.dinakernel.service.profile" (got ${JSON.stringify(p.$type)})`,
     };
   }
   if (typeof p.name !== 'string' || p.name.trim() === '') {
@@ -337,7 +337,7 @@ function parseProfile(
     responsePolicy[cap] = policy as ResponsePolicy;
   }
   const view: ServiceProfileView = {
-    $type: 'com.dina.service.profile',
+    $type: 'com.dinakernel.service.profile',
     operatorDid,
     name: p.name,
     isPublic: p.isPublic,

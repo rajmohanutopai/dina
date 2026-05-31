@@ -612,14 +612,14 @@ def test_backfill_to_live_no_duplicates(
     """consume_firehose with backfill records, then live records,
     no duplicate indexed_records."""
     backfill_records = [
-        {"lexicon": "com.dina.peerlens.attestation", "author_did": "did:plc:A",
+        {"lexicon": "com.dinakernel.peerlens.attestation", "author_did": "did:plc:A",
          "product_id": "prod_1", "rating": 90, "record_id": "rec_1"},
-        {"lexicon": "com.dina.peerlens.attestation", "author_did": "did:plc:B",
+        {"lexicon": "com.dinakernel.peerlens.attestation", "author_did": "did:plc:B",
          "product_id": "prod_1", "rating": 85, "record_id": "rec_2"},
     ]
 
     live_records = [
-        {"lexicon": "com.dina.peerlens.attestation", "author_did": "did:plc:C",
+        {"lexicon": "com.dinakernel.peerlens.attestation", "author_did": "did:plc:C",
          "product_id": "prod_2", "rating": 88, "record_id": "rec_3"},
     ]
 
@@ -651,11 +651,11 @@ def test_subject_canonicalization(
     }
 
     records = [
-        {"lexicon": "com.dina.peerlens.attestation", "author_did": "did:plc:A",
+        {"lexicon": "com.dinakernel.peerlens.attestation", "author_did": "did:plc:A",
          "product_id": "thinkpad-x1-2025", "rating": 90},
-        {"lexicon": "com.dina.peerlens.attestation", "author_did": "did:plc:B",
+        {"lexicon": "com.dinakernel.peerlens.attestation", "author_did": "did:plc:B",
          "product_id": "thinkpad_x1_carbon_2025", "rating": 85},
-        {"lexicon": "com.dina.peerlens.attestation", "author_did": "did:plc:C",
+        {"lexicon": "com.dinakernel.peerlens.attestation", "author_did": "did:plc:C",
          "product_id": "thinkpad_x1_2025", "rating": 88},
     ]
 
@@ -681,11 +681,11 @@ def test_aggregate_recomputes_after_amendment(
     """Index records, compute aggregate, remove one, recompute,
     scores differ."""
     records = [
-        {"lexicon": "com.dina.peerlens.attestation", "author_did": "did:plc:A",
+        {"lexicon": "com.dinakernel.peerlens.attestation", "author_did": "did:plc:A",
          "product_id": "aeron_2025", "rating": 90},
-        {"lexicon": "com.dina.peerlens.attestation", "author_did": "did:plc:B",
+        {"lexicon": "com.dinakernel.peerlens.attestation", "author_did": "did:plc:B",
          "product_id": "aeron_2025", "rating": 80},
-        {"lexicon": "com.dina.peerlens.attestation", "author_did": "did:plc:C",
+        {"lexicon": "com.dinakernel.peerlens.attestation", "author_did": "did:plc:C",
          "product_id": "aeron_2025", "rating": 70},
     ]
 
@@ -715,9 +715,9 @@ def test_tombstone_removes_from_query(
     """Index records, delete one (remove from indexed_records), query
     no longer returns it."""
     records = [
-        {"lexicon": "com.dina.peerlens.attestation", "author_did": "did:plc:A",
+        {"lexicon": "com.dinakernel.peerlens.attestation", "author_did": "did:plc:A",
          "product_id": "chair_x", "rating": 92},
-        {"lexicon": "com.dina.peerlens.attestation", "author_did": "did:plc:B",
+        {"lexicon": "com.dinakernel.peerlens.attestation", "author_did": "did:plc:B",
          "product_id": "chair_x", "rating": 78},
     ]
 

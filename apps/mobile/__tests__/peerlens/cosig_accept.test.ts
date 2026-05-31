@@ -31,7 +31,7 @@ import {
 
 const T0 = Date.parse('2026-04-30T12:00:00Z');
 const SANCHO_DID = 'did:plc:sancho123';
-const ATT_URI = 'at://did:plc:alonso/com.dina.peerlens.endorsement/abc';
+const ATT_URI = 'at://did:plc:alonso/com.dinakernel.peerlens.endorsement/abc';
 const ATT_CID = 'bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku';
 
 // ─── buildCosigEndorsement — happy path ──────────────────────────────────
@@ -406,7 +406,7 @@ describe('two-phase orchestration (phase 1 → publish stub → phase 2)', () =>
     // Stub publish — in real code this is `publishToPDS` returning
     // an AT-URI + the record's CID.
     const publishResult = {
-      uri: 'at://did:plc:alonso/com.dina.peerlens.endorsement/abc',
+      uri: 'at://did:plc:alonso/com.dinakernel.peerlens.endorsement/abc',
       cid: 'bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku',
     };
 

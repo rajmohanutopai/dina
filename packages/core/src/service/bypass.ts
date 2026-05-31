@@ -178,7 +178,7 @@ export function evaluateServiceIngressBypass(
      * The Core HTTP route binds `service_uri` authority to `to_did`, but a
      * direct inbound D2D envelope never passes that route; this is the same
      * bind on the inbound path. Body validation already enforced structure
-     * (well-formed com.dina.service.profile listing URI). Omitted ⇒ skip the
+     * (well-formed com.dinakernel.service.profile listing URI). Omitted ⇒ skip the
      * cross-DID bind (back-compat for callers that don't know the recipient).
      */
     recipientDID?: string;

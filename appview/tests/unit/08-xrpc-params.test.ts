@@ -267,7 +267,7 @@ describe('SS8.2 Search Params', () => {
 })
 
 // ---------------------------------------------------------------------------
-// SS8.3 Service Search Params (com.dina.service.search)
+// SS8.3 Service Search Params (com.dinakernel.service.search)
 // WS2 schema-driven discovery — lat/lng optional for non-geospatial queries.
 // ---------------------------------------------------------------------------
 describe('SS8.3 Service Search Params', () => {
@@ -355,7 +355,7 @@ describe('SS8.3 Service Search Params', () => {
 
   it('UT-SSP-009: cursor passthrough', () => {
     const result = ServiceSearchParams.safeParse({
-      capability: 'eta_query', cursor: '820::at://did:plc:x/com.dina.service.profile/self',
+      capability: 'eta_query', cursor: '820::at://did:plc:x/com.dinakernel.service.profile/self',
     })
     expect(result.success).toBe(true)
   })

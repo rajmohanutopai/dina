@@ -52,14 +52,14 @@ describe('recordRejection — TN-ING-005', () => {
   it('inserts row with at_uri, did, reason, and detail', async () => {
     const { ctx, captures } = stubCtx()
     await recordRejection(ctx, {
-      atUri: 'at://did:plc:test/com.dina.peerlens.attestation/abc',
+      atUri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/abc',
       did: 'did:plc:test',
       reason: 'rate_limit',
       detail: { limit_remaining: 0 },
     })
     expect(captures).toHaveLength(1)
     expect(captures[0]).toEqual({
-      atUri: 'at://did:plc:test/com.dina.peerlens.attestation/abc',
+      atUri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/abc',
       did: 'did:plc:test',
       reason: 'rate_limit',
       detail: { limit_remaining: 0 },

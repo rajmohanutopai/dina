@@ -7,7 +7,7 @@
  *   3. Mobile composes the PLC `assertionMethod` update       ← here
  *   4. Mobile signs the op with the rotation key              ← here
  *   5. Mobile POSTs the signed op to the PLC directory        ← here
- *   6. Mobile publishes `com.dina.peerlens.namespaceProfile`     ← caller
+ *   6. Mobile publishes `com.dinakernel.peerlens.namespaceProfile`     ← caller
  *   7. UI confirms once AppView surfaces the profile record   ← caller
  *
  * This module owns steps 2–5 — the deterministic, runtime-agnostic

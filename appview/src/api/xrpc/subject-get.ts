@@ -13,7 +13,7 @@ import { normalizeHandle } from '@/util/handle_normalize.js'
 import { resolveCanonicalChain } from '@/db/queries/subjects.js'
 
 /**
- * `com.dina.peerlens.subjectGet` (TN-API-002 / Plan §6.2).
+ * `com.dinakernel.peerlens.subjectGet` (TN-API-002 / Plan §6.2).
  *
  * Returns a subject's full reviewer roster grouped by network position
  * relative to the viewer. Backs the `app/trust/[subjectId].tsx` mobile

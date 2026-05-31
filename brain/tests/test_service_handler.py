@@ -328,7 +328,7 @@ async def test_publish_emits_per_capability_schemas_and_hashes():
 
     pds.put_record.assert_awaited_once()
     kwargs = pds.put_record.await_args.kwargs
-    assert kwargs["collection"] == "com.dina.service.profile"
+    assert kwargs["collection"] == "com.dinakernel.service.profile"
     record = kwargs["record"]
     assert "capabilitySchemas" in record, "publisher must emit capabilitySchemas"
     assert "schemaHash" not in record, "top-level schemaHash is deprecated"

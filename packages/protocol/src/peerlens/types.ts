@@ -1,6 +1,6 @@
 /**
  * PeerLens wire types — the canonical TS shape for the
- * `com.dina.peerlens.*` AT Protocol record family.
+ * `com.dinakernel.peerlens.*` AT Protocol record family.
  *
  * AppView's Zod validators (in `appview/src/ingester/record-validator.ts`)
  * are the runtime source of truth: any record that fails AppView's
@@ -87,9 +87,9 @@ export interface RelatedAttestation {
   relation: string;
 }
 
-// ── Record types (one per com.dina.peerlens.* lexicon) ────────────────
+// ── Record types (one per com.dinakernel.peerlens.* lexicon) ────────────────
 
-/** `com.dina.peerlens.attestation` — a structured review of a subject. */
+/** `com.dinakernel.peerlens.attestation` — a structured review of a subject. */
 export interface Attestation {
   subject: SubjectRef;
   category: string;
@@ -113,7 +113,7 @@ export interface Attestation {
 
 export type VouchConfidence = 'high' | 'moderate' | 'low';
 
-/** `com.dina.peerlens.vouch` — vouch for the identity/character of a DID. */
+/** `com.dinakernel.peerlens.vouch` — vouch for the identity/character of a DID. */
 export interface Vouch {
   subject: string;
   vouchType: string;
@@ -124,7 +124,7 @@ export interface Vouch {
   createdAt: string;
 }
 
-/** `com.dina.peerlens.endorsement` — endorsement of a skill/competency. */
+/** `com.dinakernel.peerlens.endorsement` — endorsement of a skill/competency. */
 export interface Endorsement {
   subject: string;
   skill: string;
@@ -136,7 +136,7 @@ export interface Endorsement {
 
 export type FlagSeverity = 'critical' | 'serious' | 'warning' | 'informational';
 
-/** `com.dina.peerlens.flag` — flag a subject for problematic behaviour. */
+/** `com.dinakernel.peerlens.flag` — flag a subject for problematic behaviour. */
 export interface Flag {
   subject: SubjectRef;
   flagType: string;
@@ -155,7 +155,7 @@ export type ReplyIntent =
   | 'add-context'
   | 'thank';
 
-/** `com.dina.peerlens.reply` — reply to an attestation/flag. */
+/** `com.dinakernel.peerlens.reply` — reply to an attestation/flag. */
 export interface Reply {
   rootUri: string;
   parentUri: string;
@@ -175,7 +175,7 @@ export type ReactionType =
   | 'suspicious'
   | 'outdated';
 
-/** `com.dina.peerlens.reaction` — lightweight reaction on a target record. */
+/** `com.dinakernel.peerlens.reaction` — lightweight reaction on a target record. */
 export interface Reaction {
   targetUri: string;
   reaction: ReactionType;
@@ -197,7 +197,7 @@ export type ReportType =
   | 'conflict-of-interest'
   | 'brigading';
 
-/** `com.dina.peerlens.reportRecord` — moderation report on a target record. */
+/** `com.dinakernel.peerlens.reportRecord` — moderation report on a target record. */
 export interface ReportRecord {
   targetUri: string;
   reportType: ReportType;
@@ -207,14 +207,14 @@ export interface ReportRecord {
   createdAt: string;
 }
 
-/** `com.dina.peerlens.revocation` — author-driven revocation of an earlier record. */
+/** `com.dinakernel.peerlens.revocation` — author-driven revocation of an earlier record. */
 export interface Revocation {
   targetUri: string;
   reason: string;
   createdAt: string;
 }
 
-/** `com.dina.peerlens.delegation` — author delegates a scope to another DID. */
+/** `com.dinakernel.peerlens.delegation` — author delegates a scope to another DID. */
 export interface Delegation {
   subject: string;
   scope: string;
@@ -223,7 +223,7 @@ export interface Delegation {
   createdAt: string;
 }
 
-/** `com.dina.peerlens.collection` — curated group of records. */
+/** `com.dinakernel.peerlens.collection` — curated group of records. */
 export interface Collection {
   name: string;
   description?: string;
@@ -232,7 +232,7 @@ export interface Collection {
   createdAt: string;
 }
 
-/** `com.dina.peerlens.media` — media attachment to a parent record. */
+/** `com.dinakernel.peerlens.media` — media attachment to a parent record. */
 export interface Media {
   parentUri: string;
   mediaType: string;
@@ -241,7 +241,7 @@ export interface Media {
   createdAt: string;
 }
 
-/** `com.dina.peerlens.subject` — first-class subject record. */
+/** `com.dinakernel.peerlens.subject` — first-class subject record. */
 export interface SubjectRecord {
   name: string;
   subjectType: string;
@@ -250,7 +250,7 @@ export interface SubjectRecord {
   createdAt: string;
 }
 
-/** `com.dina.peerlens.amendment` — corrective amendment to an earlier record. */
+/** `com.dinakernel.peerlens.amendment` — corrective amendment to an earlier record. */
 export interface Amendment {
   targetUri: string;
   amendmentType: string;
@@ -261,7 +261,7 @@ export interface Amendment {
 
 export type VerificationResult = 'confirmed' | 'denied' | 'inconclusive';
 
-/** `com.dina.peerlens.verification` — verification of an earlier record. */
+/** `com.dinakernel.peerlens.verification` — verification of an earlier record. */
 export interface Verification {
   targetUri: string;
   verificationType: string;
@@ -271,7 +271,7 @@ export interface Verification {
   createdAt: string;
 }
 
-/** `com.dina.peerlens.reviewRequest` — request peers to review a subject. */
+/** `com.dinakernel.peerlens.reviewRequest` — request peers to review a subject. */
 export interface ReviewRequest {
   subject: SubjectRef;
   requestType: string;
@@ -280,7 +280,7 @@ export interface ReviewRequest {
   createdAt: string;
 }
 
-/** `com.dina.peerlens.comparison` — head-to-head comparison of subjects. */
+/** `com.dinakernel.peerlens.comparison` — head-to-head comparison of subjects. */
 export interface Comparison {
   subjects: SubjectRef[];
   category: string;
@@ -291,7 +291,7 @@ export interface Comparison {
 
 export type SubjectClaimType = 'same-entity' | 'related' | 'part-of';
 
-/** `com.dina.peerlens.subjectClaim` — claim about subject identity/relations. */
+/** `com.dinakernel.peerlens.subjectClaim` — claim about subject identity/relations. */
 export interface SubjectClaim {
   sourceSubjectId: string;
   targetSubjectId: string;
@@ -301,7 +301,7 @@ export interface SubjectClaim {
   createdAt: string;
 }
 
-/** `com.dina.peerlens.trustPolicy` — author's policy preferences for PeerLens rating. */
+/** `com.dinakernel.peerlens.trustPolicy` — author's policy preferences for PeerLens rating. */
 export interface PeerlensPolicy {
   maxGraphDepth?: number;
   trustedDomains?: string[];
@@ -310,7 +310,7 @@ export interface PeerlensPolicy {
   createdAt: string;
 }
 
-/** `com.dina.peerlens.notificationPrefs` — notification preferences for trust events. */
+/** `com.dinakernel.peerlens.notificationPrefs` — notification preferences for trust events. */
 export interface NotificationPrefs {
   enableMentions: boolean;
   enableReactions: boolean;
@@ -322,32 +322,32 @@ export interface NotificationPrefs {
 // ── NSIDs ───────────────────────────────────────────────────────────
 
 /**
- * AT Protocol lexicon NSIDs for the `com.dina.peerlens.*` record family.
+ * AT Protocol lexicon NSIDs for the `com.dinakernel.peerlens.*` record family.
  *
  * Must match the collections registered in AppView's ingester
  * (`appview/src/ingester/handlers/index.ts`). Records published
  * under any other NSID will not be indexed.
  */
 export const PEERLENS_NSIDS = {
-  attestation: 'com.dina.peerlens.attestation',
-  vouch: 'com.dina.peerlens.vouch',
-  endorsement: 'com.dina.peerlens.endorsement',
-  flag: 'com.dina.peerlens.flag',
-  reply: 'com.dina.peerlens.reply',
-  reaction: 'com.dina.peerlens.reaction',
-  reportRecord: 'com.dina.peerlens.reportRecord',
-  revocation: 'com.dina.peerlens.revocation',
-  delegation: 'com.dina.peerlens.delegation',
-  collection: 'com.dina.peerlens.collection',
-  media: 'com.dina.peerlens.media',
-  subject: 'com.dina.peerlens.subject',
-  amendment: 'com.dina.peerlens.amendment',
-  verification: 'com.dina.peerlens.verification',
-  reviewRequest: 'com.dina.peerlens.reviewRequest',
-  comparison: 'com.dina.peerlens.comparison',
-  subjectClaim: 'com.dina.peerlens.subjectClaim',
-  trustPolicy: 'com.dina.peerlens.trustPolicy',
-  notificationPrefs: 'com.dina.peerlens.notificationPrefs',
+  attestation: 'com.dinakernel.peerlens.attestation',
+  vouch: 'com.dinakernel.peerlens.vouch',
+  endorsement: 'com.dinakernel.peerlens.endorsement',
+  flag: 'com.dinakernel.peerlens.flag',
+  reply: 'com.dinakernel.peerlens.reply',
+  reaction: 'com.dinakernel.peerlens.reaction',
+  reportRecord: 'com.dinakernel.peerlens.reportRecord',
+  revocation: 'com.dinakernel.peerlens.revocation',
+  delegation: 'com.dinakernel.peerlens.delegation',
+  collection: 'com.dinakernel.peerlens.collection',
+  media: 'com.dinakernel.peerlens.media',
+  subject: 'com.dinakernel.peerlens.subject',
+  amendment: 'com.dinakernel.peerlens.amendment',
+  verification: 'com.dinakernel.peerlens.verification',
+  reviewRequest: 'com.dinakernel.peerlens.reviewRequest',
+  comparison: 'com.dinakernel.peerlens.comparison',
+  subjectClaim: 'com.dinakernel.peerlens.subjectClaim',
+  trustPolicy: 'com.dinakernel.peerlens.trustPolicy',
+  notificationPrefs: 'com.dinakernel.peerlens.notificationPrefs',
 } as const;
 
 export type PeerlensNsid = (typeof PEERLENS_NSIDS)[keyof typeof PEERLENS_NSIDS];

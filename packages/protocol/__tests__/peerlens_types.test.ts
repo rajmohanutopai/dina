@@ -51,18 +51,18 @@ import {
 const ISO = '2026-01-15T12:00:00.000Z';
 
 describe('@dina/protocol/peerlens types (TN-PROTO-001)', () => {
-  it('PEERLENS_NSIDS spans every com.dina.peerlens.* record handled by AppView', () => {
+  it('PEERLENS_NSIDS spans every com.dinakernel.peerlens.* record handled by AppView', () => {
     // 19 record types per the AppView Zod ingester. If a new lexicon
     // is added or removed, this count + the keys here must be kept in
     // lockstep — otherwise consumers can't reference it by name.
     expect(Object.keys(PEERLENS_NSIDS).length).toBe(19);
-    expect(PEERLENS_NSIDS.attestation).toBe('com.dina.peerlens.attestation');
-    expect(PEERLENS_NSIDS.vouch).toBe('com.dina.peerlens.vouch');
-    expect(PEERLENS_NSIDS.endorsement).toBe('com.dina.peerlens.endorsement');
-    expect(PEERLENS_NSIDS.flag).toBe('com.dina.peerlens.flag');
+    expect(PEERLENS_NSIDS.attestation).toBe('com.dinakernel.peerlens.attestation');
+    expect(PEERLENS_NSIDS.vouch).toBe('com.dinakernel.peerlens.vouch');
+    expect(PEERLENS_NSIDS.endorsement).toBe('com.dinakernel.peerlens.endorsement');
+    expect(PEERLENS_NSIDS.flag).toBe('com.dinakernel.peerlens.flag');
     // Every value must start with the canonical namespace prefix.
     for (const id of Object.values(PEERLENS_NSIDS)) {
-      expect(id.startsWith('com.dina.peerlens.')).toBe(true);
+      expect(id.startsWith('com.dinakernel.peerlens.')).toBe(true);
     }
   });
 

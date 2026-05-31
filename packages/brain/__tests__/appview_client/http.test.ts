@@ -91,7 +91,7 @@ describe('AppViewClient', () => {
         jsonResponse(200, {
           services: [
             {
-              uri: 'at://did:plc:bus42/com.dina.service.profile/route-42',
+              uri: 'at://did:plc:bus42/com.dinakernel.service.profile/route-42',
               operatorDid: 'did:plc:bus42',
               name: 'Bus 42',
               capabilities: ['eta_query'],
@@ -103,7 +103,7 @@ describe('AppViewClient', () => {
       const [profile] = await c.searchServices({ capability: 'eta_query' });
       // The chosen listing's uri must survive onto ServiceProfile so it can
       // ride the service.query (disambiguates which listing under this DID).
-      expect(profile.uri).toBe('at://did:plc:bus42/com.dina.service.profile/route-42');
+      expect(profile.uri).toBe('at://did:plc:bus42/com.dinakernel.service.profile/route-42');
     });
 
     it('passes all query params', async () => {
@@ -120,7 +120,7 @@ describe('AppViewClient', () => {
       });
 
       const url = new URL(calls[0]);
-      expect(url.pathname).toBe('/xrpc/com.dina.service.search');
+      expect(url.pathname).toBe('/xrpc/com.dinakernel.service.search');
       expect(url.searchParams.get('capability')).toBe('eta_query');
       expect(url.searchParams.get('lat')).toBe('37.77');
       expect(url.searchParams.get('lng')).toBe('-122.41');

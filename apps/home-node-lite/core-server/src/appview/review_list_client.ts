@@ -1,5 +1,5 @@
 /**
- * Task 6.15 — `com.dina.review.list` xRPC client.
+ * Task 6.15 — `com.dinakernel.review.list` xRPC client.
  *
  * Reviews are signed claims in PeerLens — one actor
  * attesting to another actor's reliability, behaviour, or
@@ -12,11 +12,11 @@
  *   - Populating the "review this service after you used it"
  *     prompt (the counterpart list: reviews I've left).
  *
- * **Response shape** (`com.dina.review.list`):
+ * **Response shape** (`com.dinakernel.review.list`):
  *
  *   {
  *     "reviews": [{
- *       "id": "at://…/com.dina.review/<rkey>",
+ *       "id": "at://…/com.dinakernel.review/<rkey>",
  *       "subject": "did:plc:…",
  *       "author": "did:plc:…",
  *       "rating": 5,

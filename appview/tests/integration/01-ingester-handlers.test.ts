@@ -39,11 +39,11 @@ beforeEach(async () => {
 describe('§1.1 Attestation Handler', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0296", "section": "01", "sectionName": "General", "title": "IT-ATT-001: create attestation \u2014 basic insert"}
   it('IT-ATT-001: create attestation — basic insert', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/1',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/1',
       did: 'did:plc:author1',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '1',
       cid: 'bafytest1',
       record: {
@@ -53,7 +53,7 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/1'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].authorDid).toBe('did:plc:author1')
     expect(rows[0].sentiment).toBe('positive')
@@ -64,11 +64,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0297", "section": "01", "sectionName": "General", "title": "IT-ATT-002: create attestation \u2014 all optional fields"}
   it('IT-ATT-002: create attestation — all optional fields', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/2',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/2',
       did: 'did:plc:author2',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '2',
       cid: 'bafytest2',
       record: {
@@ -88,14 +88,14 @@ describe('§1.1 Attestation Handler', () => {
           { did: 'did:plc:mentioned1', role: 'witness' },
           { did: 'did:plc:mentioned2', role: 'expert' },
         ],
-        relatedAttestations: ['at://did:plc:other/com.dina.peerlens.attestation/99'],
+        relatedAttestations: ['at://did:plc:other/com.dinakernel.peerlens.attestation/99'],
         bilateralReview: { counterpartyDid: 'did:plc:subj2', status: 'pending' },
         tags: ['electronics', 'laptop'],
         text: 'Great laptop with excellent battery life',
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/2'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/2'))
     expect(rows).toHaveLength(1)
     const row = rows[0]
     expect(row.domain).toBe('electronics')
@@ -112,7 +112,7 @@ describe('§1.1 Attestation Handler', () => {
       { did: 'did:plc:mentioned1', role: 'witness' },
       { did: 'did:plc:mentioned2', role: 'expert' },
     ])
-    expect(row.relatedAttestationsJson).toEqual(['at://did:plc:other/com.dina.peerlens.attestation/99'])
+    expect(row.relatedAttestationsJson).toEqual(['at://did:plc:other/com.dinakernel.peerlens.attestation/99'])
     expect(row.bilateralReviewJson).toEqual({ counterpartyDid: 'did:plc:subj2', status: 'pending' })
     expect(row.tags).toEqual(['electronics', 'laptop'])
     expect(row.text).toBe('Great laptop with excellent battery life')
@@ -120,12 +120,12 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-USECASES", "section": "01", "sectionName": "General", "title": "IT-ATT-002b: persists useCases + lastUsedMs (TN-V2-REV-001 / REV-003)"}
   it('IT-ATT-002b: persists useCases + lastUsedMs (TN-V2-REV-001 / REV-003)', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     const lastUsedMs = Date.now() - 30 * 24 * 60 * 60 * 1000  // 30 days ago
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/v2-rev',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-rev',
       did: 'did:plc:authorV2',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-rev',
       cid: 'bafyv2rev',
       record: {
@@ -137,7 +137,7 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/v2-rev'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-rev'))
     expect(rows).toHaveLength(1)
     const row = rows[0]
     expect(row.useCases).toEqual(['everyday', 'travel'])
@@ -148,11 +148,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-EMPTY", "section": "01", "sectionName": "General", "title": "IT-ATT-002c: empty useCases collapses to NULL; absent lastUsedMs stays NULL"}
   it('IT-ATT-002c: empty useCases collapses to NULL; absent lastUsedMs stays NULL', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/v2-empty',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-empty',
       did: 'did:plc:authorV2e',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-empty',
       cid: 'bafyv2empty',
       record: {
@@ -164,7 +164,7 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/v2-empty'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-empty'))
     expect(rows).toHaveLength(1)
     const row = rows[0]
     expect(row.useCases).toBeNull()
@@ -173,11 +173,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-EXP", "section": "01", "sectionName": "General", "title": "IT-ATT-002e: persists reviewerExperience + recommendFor/notRecommendFor (TN-V2-REV-002 / REV-004)"}
   it('IT-ATT-002e: persists reviewerExperience + recommendFor/notRecommendFor (TN-V2-REV-002 / REV-004)', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/v2-exp',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-exp',
       did: 'did:plc:authorV2x',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-exp',
       cid: 'bafyv2exp',
       record: {
@@ -190,7 +190,7 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/v2-exp'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-exp'))
     expect(rows).toHaveLength(1)
     const row = rows[0]
     expect(row.reviewerExperience).toBe('expert')
@@ -200,11 +200,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-EXP-EMPTY", "section": "01", "sectionName": "General", "title": "IT-ATT-002f: absent reviewerExperience stays NULL; empty recommend lists collapse to NULL"}
   it('IT-ATT-002f: absent reviewerExperience stays NULL; empty recommend lists collapse to NULL', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/v2-exp-empty',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-exp-empty',
       did: 'did:plc:authorV2xe',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-exp-empty',
       cid: 'bafyv2expempty',
       record: {
@@ -217,7 +217,7 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/v2-exp-empty'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-exp-empty'))
     expect(rows).toHaveLength(1)
     const row = rows[0]
     expect(row.reviewerExperience).toBeNull()
@@ -227,11 +227,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-COMPLIANCE", "section": "01", "sectionName": "General", "title": "IT-ATT-002n: META-005/006 — persists compliance + accessibility tags"}
   it('IT-ATT-002n: META-005/006 — persists compliance + accessibility tags', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/v2-tags',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-tags',
       did: 'did:plc:authorTags',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-tags',
       cid: 'bafytags',
       record: {
@@ -243,7 +243,7 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/v2-tags'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-tags'))
     expect(rows).toHaveLength(1)
     expect(rows[0].compliance).toEqual(['halal', 'vegan', 'gluten-free'])
     expect(rows[0].accessibility).toEqual(['wheelchair', 'captions'])
@@ -251,11 +251,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-COMPLIANCE-EMPTY", "section": "01", "sectionName": "General", "title": "IT-ATT-002o: META-005/006 — empty arrays collapse to NULL"}
   it('IT-ATT-002o: META-005/006 — empty arrays collapse to NULL (sparse GIN)', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/v2-tags-empty',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-tags-empty',
       did: 'did:plc:authorTagsE',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-tags-empty',
       cid: 'bafytagse',
       record: {
@@ -267,7 +267,7 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/v2-tags-empty'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-tags-empty'))
     expect(rows).toHaveLength(1)
     expect(rows[0].compliance).toBeNull()
     expect(rows[0].accessibility).toBeNull()
@@ -275,11 +275,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-COMPLIANCE-UPDATE", "section": "01", "sectionName": "General", "title": "IT-ATT-002p: META-005/006 — idempotent upsert overwrites tag arrays"}
   it('IT-ATT-002p: META-005/006 — idempotent upsert overwrites tag arrays (reviewer can amend)', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
-    const uri = 'at://did:plc:test/com.dina.peerlens.attestation/v2-tags-update'
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
+    const uri = 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-tags-update'
     await handler.handleCreate(ctx, {
       uri, did: 'did:plc:authorTagsU',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-tags-update', cid: 'bafytagsu1',
       record: {
         subject: { type: 'product', name: 'Updateable Tagged' },
@@ -292,7 +292,7 @@ describe('§1.1 Attestation Handler', () => {
     // Reviewer realised they were wrong about kosher; updated review.
     await handler.handleCreate(ctx, {
       uri, did: 'did:plc:authorTagsU',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-tags-update', cid: 'bafytagsu2',
       record: {
         subject: { type: 'product', name: 'Updateable Tagged' },
@@ -310,12 +310,12 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-PRICE", "section": "01", "sectionName": "General", "title": "IT-ATT-002q: META-002 — persists price range as 4 columns (low_e7/high_e7/currency/last_seen_at)"}
   it('IT-ATT-002q: META-002 — persists price range as 4 columns (low_e7/high_e7/currency/last_seen_at)', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     const lastSeenMs = Date.now() - 2 * 24 * 60 * 60 * 1000 // 2 days ago
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/v2-price',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-price',
       did: 'did:plc:authorPrice',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-price',
       cid: 'bafyprice',
       record: {
@@ -331,7 +331,7 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/v2-price'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-price'))
     expect(rows).toHaveLength(1)
     const row = rows[0]
     // bigint mode 'number' returns the e7 value as a JS number — within
@@ -345,11 +345,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-PRICE-ABSENT", "section": "01", "sectionName": "General", "title": "IT-ATT-002r: META-002 — absent price stays NULL across all 4 columns"}
   it('IT-ATT-002r: META-002 — absent price stays NULL across all 4 columns', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/v2-price-absent',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-price-absent',
       did: 'did:plc:authorPriceA',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-price-absent',
       cid: 'bafypricea',
       record: {
@@ -360,7 +360,7 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/v2-price-absent'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-price-absent'))
     expect(rows).toHaveLength(1)
     expect(rows[0].priceLowE7).toBeNull()
     expect(rows[0].priceHighE7).toBeNull()
@@ -370,11 +370,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-PRICE-UPDATE", "section": "01", "sectionName": "General", "title": "IT-ATT-002s: META-002 — idempotent upsert overwrites price (reviewer can amend)"}
   it('IT-ATT-002s: META-002 — idempotent upsert overwrites price (reviewer can amend)', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
-    const uri = 'at://did:plc:test/com.dina.peerlens.attestation/v2-price-update'
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
+    const uri = 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-price-update'
     await handler.handleCreate(ctx, {
       uri, did: 'did:plc:authorPriceU',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-price-update', cid: 'bafypriceu1',
       record: {
         subject: { type: 'product', name: 'Repriced Product' },
@@ -388,7 +388,7 @@ describe('§1.1 Attestation Handler', () => {
     // the columns reflecting the latest declared range.
     await handler.handleCreate(ctx, {
       uri, did: 'did:plc:authorPriceU',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-price-update', cid: 'bafypriceu2',
       record: {
         subject: { type: 'product', name: 'Repriced Product' },
@@ -406,11 +406,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-AVAIL", "section": "01", "sectionName": "General", "title": "IT-ATT-002t: META-001 — persists availability triple as 3 columns"}
   it('IT-ATT-002t: META-001 — persists availability triple as 3 text[] columns', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/v2-avail',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-avail',
       did: 'did:plc:authorAvail',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-avail',
       cid: 'bafyavail',
       record: {
@@ -425,7 +425,7 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/v2-avail'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-avail'))
     expect(rows).toHaveLength(1)
     expect(rows[0].availabilityRegions).toEqual(['US', 'GB'])
     expect(rows[0].availabilityShipsTo).toEqual(['US', 'GB', 'CA'])
@@ -434,11 +434,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-AVAIL-PARTIAL", "section": "01", "sectionName": "General", "title": "IT-ATT-002u: META-001 — partial availability persists declared sub-fields, leaves others NULL"}
   it('IT-ATT-002u: META-001 — partial availability persists declared sub-fields, leaves others NULL', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/v2-avail-partial',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-avail-partial',
       did: 'did:plc:authorAvailP',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-avail-partial', cid: 'bafyavailp',
       record: {
         subject: { type: 'product', name: 'Partial Avail' },
@@ -448,7 +448,7 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/v2-avail-partial'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-avail-partial'))
     expect(rows).toHaveLength(1)
     expect(rows[0].availabilityRegions).toEqual(['IN'])
     expect(rows[0].availabilityShipsTo).toBeNull()
@@ -457,11 +457,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-AVAIL-EMPTY", "section": "01", "sectionName": "General", "title": "IT-ATT-002v: META-001 — empty arrays collapse to NULL (sparse GIN)"}
   it('IT-ATT-002v: META-001 — empty arrays in availability collapse to NULL', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/v2-avail-empty',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-avail-empty',
       did: 'did:plc:authorAvailE',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-avail-empty', cid: 'bafyavaile',
       record: {
         subject: { type: 'product', name: 'Empty Avail' },
@@ -470,7 +470,7 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/v2-avail-empty'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-avail-empty'))
     expect(rows).toHaveLength(1)
     expect(rows[0].availabilityRegions).toBeNull()
     expect(rows[0].availabilityShipsTo).toBeNull()
@@ -479,7 +479,7 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-SCHED", "section": "01", "sectionName": "General", "title": "IT-ATT-002w: META-004 — persists schedule as JSONB"}
   it('IT-ATT-002w: META-004 — persists schedule as JSONB blob (heterogeneous shape)', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     const schedule = {
       hours: {
         mon: { open: '09:00', close: '17:00' },
@@ -490,9 +490,9 @@ describe('§1.1 Attestation Handler', () => {
       seasonal: [3, 4, 5, 6, 7, 8, 9, 10],
     }
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/v2-sched',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-sched',
       did: 'did:plc:authorSched',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-sched', cid: 'bafysched',
       record: {
         subject: { type: 'place', name: 'Scheduled Place' },
@@ -501,7 +501,7 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/v2-sched'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-sched'))
     expect(rows).toHaveLength(1)
     // JSONB round-trips structurally — Postgres preserves the
     // object shape; key ordering inside JSONB is normalised but
@@ -511,11 +511,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-SCHED-EMPTY", "section": "01", "sectionName": "General", "title": "IT-ATT-002x: META-004 — empty schedule object collapses to NULL"}
   it('IT-ATT-002x: META-004 — empty schedule object collapses to NULL (no information stored)', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/v2-sched-empty',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-sched-empty',
       did: 'did:plc:authorSchedE',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-sched-empty', cid: 'bafyschede',
       record: {
         subject: { type: 'place', name: 'Empty Schedule' },
@@ -524,18 +524,18 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/v2-sched-empty'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-sched-empty'))
     expect(rows).toHaveLength(1)
     expect(rows[0].scheduleJson).toBeNull()
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-SCHED-PARTIAL", "section": "01", "sectionName": "General", "title": "IT-ATT-002y: META-004 — partial schedule (only leadDays) preserved, not collapsed"}
   it('IT-ATT-002y: META-004 — partial schedule preserved (only leadDays declared)', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/v2-sched-partial',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-sched-partial',
       did: 'did:plc:authorSchedP',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-sched-partial', cid: 'bafyschedp',
       record: {
         subject: { type: 'place', name: 'Lead-Only Service' },
@@ -544,18 +544,18 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/v2-sched-partial'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-sched-partial'))
     expect(rows).toHaveLength(1)
     expect(rows[0].scheduleJson).toEqual({ leadDays: 14 })
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-AVAIL-UPDATE", "section": "01", "sectionName": "General", "title": "IT-ATT-002z: META-001/004 — idempotent upsert overwrites availability + schedule"}
   it('IT-ATT-002z: META-001/004 — idempotent upsert overwrites availability + schedule (reviewer can amend)', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
-    const uri = 'at://did:plc:test/com.dina.peerlens.attestation/v2-meta-update'
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
+    const uri = 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-meta-update'
     await handler.handleCreate(ctx, {
       uri, did: 'did:plc:authorMU',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-meta-update', cid: 'bafymu1',
       record: {
         subject: { type: 'product', name: 'Updateable Meta' },
@@ -569,7 +569,7 @@ describe('§1.1 Attestation Handler', () => {
     // and the schedule's leadDays changed.
     await handler.handleCreate(ctx, {
       uri, did: 'did:plc:authorMU',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-meta-update', cid: 'bafymu2',
       record: {
         subject: { type: 'product', name: 'Updateable Meta' },
@@ -595,14 +595,14 @@ describe('§1.1 Attestation Handler', () => {
     // would silently keep the FIRST write's value forever — invisible
     // bug. The single-row before/after diff here catches it for every
     // V2 field at once.
-    const handler = routeHandler('com.dina.peerlens.attestation')!
-    const uri = 'at://did:plc:test/com.dina.peerlens.attestation/v2-all-upsert'
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
+    const uri = 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-all-upsert'
     const did = 'did:plc:authorAllU'
 
     // First write — populate every V2 field with VALUE_A.
     await handler.handleCreate(ctx, {
       uri, did,
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-all-upsert', cid: 'bafyallu1',
       record: {
         subject: { type: 'product', name: 'All-Field Subject' },
@@ -629,7 +629,7 @@ describe('§1.1 Attestation Handler', () => {
     // Every field must overwrite, none stick on VALUE_A.
     await handler.handleCreate(ctx, {
       uri, did,
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-all-upsert', cid: 'bafyallu2',
       record: {
         subject: { type: 'product', name: 'All-Field Subject' },
@@ -682,12 +682,12 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-LASTACTIVE", "section": "01", "sectionName": "General", "title": "IT-ATT-002j: META-011 — first attestation populates subject.last_active_at"}
   it('IT-ATT-002j: META-011 — first attestation populates subject.last_active_at', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     const created = new Date('2026-04-01T12:00:00.000Z')
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/v2-active-1',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-active-1',
       did: 'did:plc:authorActive1',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-active-1',
       cid: 'bafyactive1',
       record: {
@@ -705,15 +705,15 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-LASTACTIVE-FORWARD", "section": "01", "sectionName": "General", "title": "IT-ATT-002k: META-011 — newer attestation bumps subject.last_active_at forward"}
   it('IT-ATT-002k: META-011 — newer attestation bumps subject.last_active_at forward', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     const olderCreated = new Date('2025-12-01T00:00:00.000Z')
     const newerCreated = new Date('2026-04-01T00:00:00.000Z')
 
     // Author A: older attestation
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/v2-active-2a',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-active-2a',
       did: 'did:plc:authorActiveA',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-active-2a',
       cid: 'bafyactive2a',
       record: {
@@ -727,9 +727,9 @@ describe('§1.1 Attestation Handler', () => {
     // resolution would normally split — using `did` subject to share).
     // Use `did:plc:fwd-shared-subject` so resolver matches Tier 1 by DID.
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/v2-active-2b',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-active-2b',
       did: 'did:plc:authorActiveB',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-active-2b',
       cid: 'bafyactive2b',
       record: {
@@ -740,9 +740,9 @@ describe('§1.1 Attestation Handler', () => {
       },
     })
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/v2-active-2c',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-active-2c',
       did: 'did:plc:authorActiveC',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-active-2c',
       cid: 'bafyactive2c',
       record: {
@@ -759,15 +759,15 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-LASTACTIVE-BACKDATED", "section": "01", "sectionName": "General", "title": "IT-ATT-002l: META-011 — backdated attestation does NOT roll subject.last_active_at backward"}
   it('IT-ATT-002l: META-011 — backdated attestation does NOT roll subject.last_active_at backward', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     const newerCreated = new Date('2026-04-01T00:00:00.000Z')
     const olderCreated = new Date('2024-01-01T00:00:00.000Z')
 
     // First: newer attestation establishes lastActiveAt
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/v2-back-1',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-back-1',
       did: 'did:plc:authorBack1',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-back-1',
       cid: 'bafyback1',
       record: {
@@ -780,9 +780,9 @@ describe('§1.1 Attestation Handler', () => {
     // Second: backdated replay (e.g. firehose backfill) — should NOT
     // roll the freshness clock backward.
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/v2-back-2',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-back-2',
       did: 'did:plc:authorBack2',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-back-2',
       cid: 'bafyback2',
       record: {
@@ -799,13 +799,13 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-LASTACTIVE-DELETE", "section": "01", "sectionName": "General", "title": "IT-ATT-002m: META-011 — delete does NOT reset subject.last_active_at"}
   it('IT-ATT-002m: META-011 — delete does NOT reset subject.last_active_at', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     const created = new Date('2026-04-01T12:00:00.000Z')
-    const uri = 'at://did:plc:test/com.dina.peerlens.attestation/v2-active-del'
+    const uri = 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-active-del'
     await handler.handleCreate(ctx, {
       uri,
       did: 'did:plc:authorActiveDel',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-active-del',
       cid: 'bafyactivedel',
       record: {
@@ -818,7 +818,7 @@ describe('§1.1 Attestation Handler', () => {
     await handler.handleDelete(ctx, {
       uri,
       did: 'did:plc:authorActiveDel',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-active-del',
       cid: 'bafyactivedel',
       record: {},
@@ -833,15 +833,15 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-ALT", "section": "01", "sectionName": "General", "title": "IT-ATT-002h: persists alternatives JSONB (TN-V2-REV-005)"}
   it('IT-ATT-002h: persists alternatives JSONB (TN-V2-REV-005)', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     const alternatives = [
       { type: 'product', name: 'Steelcase Leap' },
       { type: 'product', name: 'Herman Miller Mirra', identifier: 'asin:B07ABC1234' },
     ]
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/v2-alt',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-alt',
       did: 'did:plc:authorV2a',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-alt',
       cid: 'bafyv2alt',
       record: {
@@ -852,18 +852,18 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/v2-alt'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-alt'))
     expect(rows).toHaveLength(1)
     expect(rows[0].alternativesJson).toEqual(alternatives)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-ALT-EMPTY", "section": "01", "sectionName": "General", "title": "IT-ATT-002i: empty alternatives collapses to NULL"}
   it('IT-ATT-002i: empty alternatives collapses to NULL', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/v2-alt-empty',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-alt-empty',
       did: 'did:plc:authorV2ae',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-alt-empty',
       cid: 'bafyv2altempty',
       record: {
@@ -874,18 +874,18 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/v2-alt-empty'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-alt-empty'))
     expect(rows).toHaveLength(1)
     expect(rows[0].alternativesJson).toBeNull()
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-EXP-UPDATE", "section": "01", "sectionName": "General", "title": "IT-ATT-002g: idempotent upsert overwrites reviewerExperience + recommend lists"}
   it('IT-ATT-002g: idempotent upsert overwrites reviewerExperience + recommend lists', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
-    const uri = 'at://did:plc:test/com.dina.peerlens.attestation/v2-exp-update'
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
+    const uri = 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-exp-update'
     await handler.handleCreate(ctx, {
       uri, did: 'did:plc:authorV2xu',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-exp-update', cid: 'bafyv2expu1',
       record: {
         subject: { type: 'product', name: 'Updateable Exp' },
@@ -898,7 +898,7 @@ describe('§1.1 Attestation Handler', () => {
     })
     await handler.handleCreate(ctx, {
       uri, did: 'did:plc:authorV2xu',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-exp-update', cid: 'bafyv2expu2',
       record: {
         subject: { type: 'product', name: 'Updateable Exp' },
@@ -918,13 +918,13 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "ATT-V2-UPDATE", "section": "01", "sectionName": "General", "title": "IT-ATT-002d: idempotent upsert overwrites useCases + lastUsedMs"}
   it('IT-ATT-002d: idempotent upsert overwrites useCases + lastUsedMs', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
-    const uri = 'at://did:plc:test/com.dina.peerlens.attestation/v2-update'
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
+    const uri = 'at://did:plc:test/com.dinakernel.peerlens.attestation/v2-update'
     const firstLastUsed = Date.now() - 365 * 24 * 60 * 60 * 1000
     const secondLastUsed = Date.now() - 1 * 24 * 60 * 60 * 1000
     await handler.handleCreate(ctx, {
       uri, did: 'did:plc:authorV2u',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-update', cid: 'bafyv2u1',
       record: {
         subject: { type: 'product', name: 'Updateable' },
@@ -938,7 +938,7 @@ describe('§1.1 Attestation Handler', () => {
     // on amendments).
     await handler.handleCreate(ctx, {
       uri, did: 'did:plc:authorV2u',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'v2-update', cid: 'bafyv2u2',
       record: {
         subject: { type: 'product', name: 'Updateable' },
@@ -955,11 +955,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0298", "section": "01", "sectionName": "General", "title": "IT-ATT-003: subject resolved via Tier 1 (DID)"}
   it('IT-ATT-003: subject resolved via Tier 1 (DID)', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/3',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/3',
       did: 'did:plc:author3',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '3',
       cid: 'bafytest3',
       record: {
@@ -978,11 +978,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0299", "section": "01", "sectionName": "General", "title": "IT-ATT-004: subject resolved via Tier 1 (URI)"}
   it('IT-ATT-004: subject resolved via Tier 1 (URI)', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/4',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/4',
       did: 'did:plc:author4',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '4',
       cid: 'bafytest4',
       record: {
@@ -1000,11 +1000,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0300", "section": "01", "sectionName": "General", "title": "IT-ATT-005: subject resolved via Tier 1 (identifier)"}
   it('IT-ATT-005: subject resolved via Tier 1 (identifier)', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/5',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/5',
       did: 'did:plc:author5',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '5',
       cid: 'bafytest5',
       record: {
@@ -1022,11 +1022,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0301", "section": "01", "sectionName": "General", "title": "IT-ATT-006: Fix 10: subject resolved via Tier 2 (name-only)"}
   it('IT-ATT-006: Fix 10: subject resolved via Tier 2 (name-only)', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/6',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/6',
       did: 'did:plc:author6',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '6',
       cid: 'bafytest6',
       record: {
@@ -1043,11 +1043,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0302", "section": "01", "sectionName": "General", "title": "IT-ATT-007: Fix 10: same name, different authors \u2014 different subjects"}
   it('IT-ATT-007: same name, different authors converge to one subject', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/7a',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/7a',
       did: 'did:plc:authorA',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '7a',
       cid: 'bafytest7a',
       record: {
@@ -1058,9 +1058,9 @@ describe('§1.1 Attestation Handler', () => {
       },
     })
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/7b',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/7b',
       did: 'did:plc:authorB',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '7b',
       cid: 'bafytest7b',
       record: {
@@ -1079,11 +1079,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0303", "section": "01", "sectionName": "General", "title": "IT-ATT-008: Fix 10: same name, same author \u2014 same subject"}
   it('IT-ATT-008: same author republishing same name → one subject', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/8a',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/8a',
       did: 'did:plc:authorC',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '8a',
       cid: 'bafytest8a',
       record: {
@@ -1094,9 +1094,9 @@ describe('§1.1 Attestation Handler', () => {
       },
     })
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/8b',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/8b',
       did: 'did:plc:authorC',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '8b',
       cid: 'bafytest8b',
       record: {
@@ -1112,11 +1112,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0304", "section": "01", "sectionName": "General", "title": "IT-ATT-009: Fix 10: same DID, different authors \u2014 same subject (Tier 1)"}
   it('IT-ATT-009: Fix 10: same DID, different authors — same subject (Tier 1)', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/9a',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/9a',
       did: 'did:plc:authorD',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '9a',
       cid: 'bafytest9a',
       record: {
@@ -1127,9 +1127,9 @@ describe('§1.1 Attestation Handler', () => {
       },
     })
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/9b',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/9b',
       did: 'did:plc:authorE',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '9b',
       cid: 'bafytest9b',
       record: {
@@ -1146,11 +1146,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0305", "section": "01", "sectionName": "General", "title": "IT-ATT-010: mention edges created"}
   it('IT-ATT-010: mention edges created', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/10',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/10',
       did: 'did:plc:author10',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '10',
       cid: 'bafytest10',
       record: {
@@ -1173,11 +1173,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0306", "section": "01", "sectionName": "General", "title": "IT-ATT-011: mention edges idempotent on replay"}
   it('IT-ATT-011: mention edges idempotent on replay', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/11',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/11',
       did: 'did:plc:author11',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '11',
       cid: 'bafytest11',
       record: {
@@ -1200,11 +1200,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0307", "section": "01", "sectionName": "General", "title": "IT-ATT-012: Fix 9: dirty flags set \u2014 subject"}
   it('IT-ATT-012: Fix 9: dirty flags set — subject', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/12',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/12',
       did: 'did:plc:author12',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '12',
       cid: 'bafytest12',
       record: {
@@ -1221,11 +1221,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0308", "section": "01", "sectionName": "General", "title": "IT-ATT-013: Fix 9: dirty flags set \u2014 author profile"}
   it('IT-ATT-013: Fix 9: dirty flags set — author profile', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/13',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/13',
       did: 'did:plc:author13',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '13',
       cid: 'bafytest13',
       record: {
@@ -1242,11 +1242,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0309", "section": "01", "sectionName": "General", "title": "IT-ATT-014: Fix 9: dirty flags set \u2014 mentioned DIDs"}
   it('IT-ATT-014: Fix 9: dirty flags set — mentioned DIDs', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/14',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/14',
       did: 'did:plc:author14',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '14',
       cid: 'bafytest14',
       record: {
@@ -1270,11 +1270,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0310", "section": "01", "sectionName": "General", "title": "IT-ATT-015: Fix 9: dirty flags set \u2014 subject DID"}
   it('IT-ATT-015: Fix 9: dirty flags set — subject DID', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/15',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/15',
       did: 'did:plc:author15',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '15',
       cid: 'bafytest15',
       record: {
@@ -1291,11 +1291,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0311", "section": "01", "sectionName": "General", "title": "IT-ATT-016: search content populated"}
   it('IT-ATT-016: search content populated', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/16',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/16',
       did: 'did:plc:author16',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '16',
       cid: 'bafytest16',
       record: {
@@ -1307,7 +1307,7 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/16'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/16'))
     expect(rows).toHaveLength(1)
     const sc = rows[0].searchContent!
     expect(sc).toContain('Absolutely love this widget')
@@ -1319,11 +1319,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0312", "section": "01", "sectionName": "General", "title": "IT-ATT-017: tsvector index functional"}
   it('IT-ATT-017: tsvector index functional', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/17',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/17',
       did: 'did:plc:author17',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '17',
       cid: 'bafytest17',
       record: {
@@ -1340,16 +1340,16 @@ describe('§1.1 Attestation Handler', () => {
     `)
     const rows = (result as any).rows
     expect(rows).toHaveLength(1)
-    expect(rows[0].uri).toBe('at://did:plc:test/com.dina.peerlens.attestation/17')
+    expect(rows[0].uri).toBe('at://did:plc:test/com.dinakernel.peerlens.attestation/17')
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0313", "section": "01", "sectionName": "General", "title": "IT-ATT-018: Fix 1: idempotent upsert \u2014 replay same event"}
   it('IT-ATT-018: Fix 1: idempotent upsert — replay same event', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/18',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/18',
       did: 'did:plc:author18',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '18',
       cid: 'bafytest18',
       record: {
@@ -1362,18 +1362,18 @@ describe('§1.1 Attestation Handler', () => {
     await handler.handleCreate(ctx, op)
     // Replay the same event
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/18'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/18'))
     expect(rows).toHaveLength(1)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0314", "section": "01", "sectionName": "General", "title": "IT-ATT-019: Fix 1: upsert updates changed fields"}
   it('IT-ATT-019: Fix 1: upsert updates changed fields', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     const createdAt = new Date().toISOString()
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/19',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/19',
       did: 'did:plc:author19',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '19',
       cid: 'bafytest19a',
       record: {
@@ -1385,9 +1385,9 @@ describe('§1.1 Attestation Handler', () => {
     })
     // Update same URI with different sentiment
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/19',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/19',
       did: 'did:plc:author19',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '19',
       cid: 'bafytest19b',
       record: {
@@ -1397,7 +1397,7 @@ describe('§1.1 Attestation Handler', () => {
         createdAt,
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/19'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/19'))
     expect(rows).toHaveLength(1)
     expect(rows[0].sentiment).toBe('negative')
     expect(rows[0].cid).toBe('bafytest19b')
@@ -1405,11 +1405,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0315", "section": "01", "sectionName": "General", "title": "IT-ATT-020: cosigner DID extracted"}
   it('IT-ATT-020: cosigner DID extracted', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/20',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/20',
       did: 'did:plc:author20',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '20',
       cid: 'bafytest20',
       record: {
@@ -1420,7 +1420,7 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/20'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/20'))
     expect(rows).toHaveLength(1)
     expect(rows[0].hasCosignature).toBe(true)
     expect(rows[0].cosignerDid).toBe('did:plc:cosignerX')
@@ -1428,11 +1428,11 @@ describe('§1.1 Attestation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0316", "section": "01", "sectionName": "General", "title": "IT-ATT-021: agent-generated flag"}
   it('IT-ATT-021: agent-generated flag', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/21',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/21',
       did: 'did:plc:author21',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '21',
       cid: 'bafytest21',
       record: {
@@ -1443,18 +1443,18 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/21'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/21'))
     expect(rows).toHaveLength(1)
     expect(rows[0].isAgentGenerated).toBe(true)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0317", "section": "01", "sectionName": "General", "title": "IT-ATT-022: tags stored as array"}
   it('IT-ATT-022: tags stored as array', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/22',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/22',
       did: 'did:plc:author22',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '22',
       cid: 'bafytest22',
       record: {
@@ -1465,18 +1465,18 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/22'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/22'))
     expect(rows).toHaveLength(1)
     expect(rows[0].tags).toEqual(['food', 'quality'])
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0318", "section": "01", "sectionName": "General", "title": "IT-ATT-023: domain nullable"}
   it('IT-ATT-023: domain nullable', async () => {
-    const handler = routeHandler('com.dina.peerlens.attestation')!
+    const handler = routeHandler('com.dinakernel.peerlens.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.attestation/23',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.attestation/23',
       did: 'did:plc:author23',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '23',
       cid: 'bafytest23',
       record: {
@@ -1486,7 +1486,7 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.peerlens.attestation/23'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dinakernel.peerlens.attestation/23'))
     expect(rows).toHaveLength(1)
     expect(rows[0].domain).toBeNull()
   })
@@ -1498,11 +1498,11 @@ describe('§1.1 Attestation Handler', () => {
 describe('§1.2 Vouch Handler', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0319", "section": "01", "sectionName": "General", "title": "IT-VCH-001: create vouch \u2014 basic insert"}
   it('IT-VCH-001: create vouch — basic insert', async () => {
-    const handler = routeHandler('com.dina.peerlens.vouch')!
+    const handler = routeHandler('com.dinakernel.peerlens.vouch')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.vouch/1',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.vouch/1',
       did: 'did:plc:vouchAuthor1',
-      collection: 'com.dina.peerlens.vouch',
+      collection: 'com.dinakernel.peerlens.vouch',
       rkey: '1',
       cid: 'bafyvouch1',
       record: {
@@ -1515,7 +1515,7 @@ describe('§1.2 Vouch Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.vouches).where(eq(schema.vouches.uri, 'at://did:plc:test/com.dina.peerlens.vouch/1'))
+    const rows = await db.select().from(schema.vouches).where(eq(schema.vouches.uri, 'at://did:plc:test/com.dinakernel.peerlens.vouch/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].authorDid).toBe('did:plc:vouchAuthor1')
     expect(rows[0].subjectDid).toBe('did:plc:vouchSubj1')
@@ -1527,11 +1527,11 @@ describe('§1.2 Vouch Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0320", "section": "01", "sectionName": "General", "title": "IT-VCH-002: Fix 1: idempotent upsert"}
   it('IT-VCH-002: Fix 1: idempotent upsert', async () => {
-    const handler = routeHandler('com.dina.peerlens.vouch')!
+    const handler = routeHandler('com.dinakernel.peerlens.vouch')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.peerlens.vouch/2',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.vouch/2',
       did: 'did:plc:vouchAuthor2',
-      collection: 'com.dina.peerlens.vouch',
+      collection: 'com.dinakernel.peerlens.vouch',
       rkey: '2',
       cid: 'bafyvouch2',
       record: {
@@ -1543,17 +1543,17 @@ describe('§1.2 Vouch Handler', () => {
     }
     await handler.handleCreate(ctx, op)
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.vouches).where(eq(schema.vouches.uri, 'at://did:plc:test/com.dina.peerlens.vouch/2'))
+    const rows = await db.select().from(schema.vouches).where(eq(schema.vouches.uri, 'at://did:plc:test/com.dinakernel.peerlens.vouch/2'))
     expect(rows).toHaveLength(1)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0321", "section": "01", "sectionName": "General", "title": "IT-VCH-003: trust edge created"}
   it('IT-VCH-003: trust edge created', async () => {
-    const handler = routeHandler('com.dina.peerlens.vouch')!
+    const handler = routeHandler('com.dinakernel.peerlens.vouch')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.vouch/3',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.vouch/3',
       did: 'did:plc:vouchAuthor3',
-      collection: 'com.dina.peerlens.vouch',
+      collection: 'com.dinakernel.peerlens.vouch',
       rkey: '3',
       cid: 'bafyvouch3',
       record: {
@@ -1563,7 +1563,7 @@ describe('§1.2 Vouch Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const edges = await db.select().from(schema.peerlensEdges).where(eq(schema.peerlensEdges.sourceUri, 'at://did:plc:test/com.dina.peerlens.vouch/3'))
+    const edges = await db.select().from(schema.peerlensEdges).where(eq(schema.peerlensEdges.sourceUri, 'at://did:plc:test/com.dinakernel.peerlens.vouch/3'))
     expect(edges).toHaveLength(1)
     expect(edges[0].fromDid).toBe('did:plc:vouchAuthor3')
     expect(edges[0].toDid).toBe('did:plc:vouchSubj3')
@@ -1573,7 +1573,7 @@ describe('§1.2 Vouch Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0322", "section": "01", "sectionName": "General", "title": "IT-VCH-004: trust edge weight varies by confidence"}
   it('IT-VCH-004: trust edge weight varies by confidence', async () => {
-    const handler = routeHandler('com.dina.peerlens.vouch')!
+    const handler = routeHandler('com.dinakernel.peerlens.vouch')!
     const confidences = [
       { level: 'high', expected: 1.0, rkey: '4a' },
       { level: 'moderate', expected: 0.6, rkey: '4b' },
@@ -1581,9 +1581,9 @@ describe('§1.2 Vouch Handler', () => {
     ]
     for (const { level, expected, rkey } of confidences) {
       await handler.handleCreate(ctx, {
-        uri: `at://did:plc:test/com.dina.peerlens.vouch/${rkey}`,
+        uri: `at://did:plc:test/com.dinakernel.peerlens.vouch/${rkey}`,
         did: `did:plc:vouchAuthor${rkey}`,
-        collection: 'com.dina.peerlens.vouch',
+        collection: 'com.dinakernel.peerlens.vouch',
         rkey,
         cid: `bafyvouch${rkey}`,
         record: {
@@ -1593,7 +1593,7 @@ describe('§1.2 Vouch Handler', () => {
           createdAt: new Date().toISOString(),
         },
       })
-      const edges = await db.select().from(schema.peerlensEdges).where(eq(schema.peerlensEdges.sourceUri, `at://did:plc:test/com.dina.peerlens.vouch/${rkey}`))
+      const edges = await db.select().from(schema.peerlensEdges).where(eq(schema.peerlensEdges.sourceUri, `at://did:plc:test/com.dinakernel.peerlens.vouch/${rkey}`))
       expect(edges).toHaveLength(1)
       expect(edges[0].weight).toBeCloseTo(expected)
     }
@@ -1601,11 +1601,11 @@ describe('§1.2 Vouch Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0323", "section": "01", "sectionName": "General", "title": "IT-VCH-005: dirty flags set \u2014 subject DID"}
   it('IT-VCH-005: dirty flags set — subject DID', async () => {
-    const handler = routeHandler('com.dina.peerlens.vouch')!
+    const handler = routeHandler('com.dinakernel.peerlens.vouch')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.vouch/5',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.vouch/5',
       did: 'did:plc:vouchAuthor5',
-      collection: 'com.dina.peerlens.vouch',
+      collection: 'com.dinakernel.peerlens.vouch',
       rkey: '5',
       cid: 'bafyvouch5',
       record: {
@@ -1622,11 +1622,11 @@ describe('§1.2 Vouch Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0324", "section": "01", "sectionName": "General", "title": "IT-VCH-006: dirty flags set \u2014 author DID"}
   it('IT-VCH-006: dirty flags set — author DID', async () => {
-    const handler = routeHandler('com.dina.peerlens.vouch')!
+    const handler = routeHandler('com.dinakernel.peerlens.vouch')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.vouch/6',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.vouch/6',
       did: 'did:plc:vouchAuthor6',
-      collection: 'com.dina.peerlens.vouch',
+      collection: 'com.dinakernel.peerlens.vouch',
       rkey: '6',
       cid: 'bafyvouch6',
       record: {
@@ -1648,11 +1648,11 @@ describe('§1.2 Vouch Handler', () => {
 describe('§1.3 Endorsement Handler', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0325", "section": "01", "sectionName": "General", "title": "IT-END-001: create endorsement \u2014 basic insert"}
   it('IT-END-001: create endorsement — basic insert', async () => {
-    const handler = routeHandler('com.dina.peerlens.endorsement')!
+    const handler = routeHandler('com.dinakernel.peerlens.endorsement')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.endorsement/1',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.endorsement/1',
       did: 'did:plc:endAuthor1',
-      collection: 'com.dina.peerlens.endorsement',
+      collection: 'com.dinakernel.peerlens.endorsement',
       rkey: '1',
       cid: 'bafyend1',
       record: {
@@ -1664,7 +1664,7 @@ describe('§1.3 Endorsement Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.endorsements).where(eq(schema.endorsements.uri, 'at://did:plc:test/com.dina.peerlens.endorsement/1'))
+    const rows = await db.select().from(schema.endorsements).where(eq(schema.endorsements.uri, 'at://did:plc:test/com.dinakernel.peerlens.endorsement/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].authorDid).toBe('did:plc:endAuthor1')
     expect(rows[0].subjectDid).toBe('did:plc:endSubj1')
@@ -1676,11 +1676,11 @@ describe('§1.3 Endorsement Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0326", "section": "01", "sectionName": "General", "title": "IT-END-002: Fix 1: idempotent upsert"}
   it('IT-END-002: Fix 1: idempotent upsert', async () => {
-    const handler = routeHandler('com.dina.peerlens.endorsement')!
+    const handler = routeHandler('com.dinakernel.peerlens.endorsement')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.peerlens.endorsement/2',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.endorsement/2',
       did: 'did:plc:endAuthor2',
-      collection: 'com.dina.peerlens.endorsement',
+      collection: 'com.dinakernel.peerlens.endorsement',
       rkey: '2',
       cid: 'bafyend2',
       record: {
@@ -1692,17 +1692,17 @@ describe('§1.3 Endorsement Handler', () => {
     }
     await handler.handleCreate(ctx, op)
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.endorsements).where(eq(schema.endorsements.uri, 'at://did:plc:test/com.dina.peerlens.endorsement/2'))
+    const rows = await db.select().from(schema.endorsements).where(eq(schema.endorsements.uri, 'at://did:plc:test/com.dinakernel.peerlens.endorsement/2'))
     expect(rows).toHaveLength(1)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0327", "section": "01", "sectionName": "General", "title": "IT-END-003: trust edge created"}
   it('IT-END-003: trust edge created', async () => {
-    const handler = routeHandler('com.dina.peerlens.endorsement')!
+    const handler = routeHandler('com.dinakernel.peerlens.endorsement')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.endorsement/3',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.endorsement/3',
       did: 'did:plc:endAuthor3',
-      collection: 'com.dina.peerlens.endorsement',
+      collection: 'com.dinakernel.peerlens.endorsement',
       rkey: '3',
       cid: 'bafyend3',
       record: {
@@ -1712,7 +1712,7 @@ describe('§1.3 Endorsement Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const edges = await db.select().from(schema.peerlensEdges).where(eq(schema.peerlensEdges.sourceUri, 'at://did:plc:test/com.dina.peerlens.endorsement/3'))
+    const edges = await db.select().from(schema.peerlensEdges).where(eq(schema.peerlensEdges.sourceUri, 'at://did:plc:test/com.dinakernel.peerlens.endorsement/3'))
     expect(edges).toHaveLength(1)
     expect(edges[0].edgeType).toBe('endorsement')
     expect(edges[0].domain).toBe('go')
@@ -1721,11 +1721,11 @@ describe('§1.3 Endorsement Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0328", "section": "01", "sectionName": "General", "title": "IT-END-004: dirty flags set"}
   it('IT-END-004: dirty flags set', async () => {
-    const handler = routeHandler('com.dina.peerlens.endorsement')!
+    const handler = routeHandler('com.dinakernel.peerlens.endorsement')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.endorsement/4',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.endorsement/4',
       did: 'did:plc:endAuthor4',
-      collection: 'com.dina.peerlens.endorsement',
+      collection: 'com.dinakernel.peerlens.endorsement',
       rkey: '4',
       cid: 'bafyend4',
       record: {
@@ -1750,11 +1750,11 @@ describe('§1.3 Endorsement Handler', () => {
 describe('§1.4 Flag Handler', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0329", "section": "01", "sectionName": "General", "title": "IT-FLG-001: create flag \u2014 basic insert"}
   it('IT-FLG-001: create flag — basic insert', async () => {
-    const handler = routeHandler('com.dina.peerlens.flag')!
+    const handler = routeHandler('com.dinakernel.peerlens.flag')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.flag/1',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.flag/1',
       did: 'did:plc:flagAuthor1',
-      collection: 'com.dina.peerlens.flag',
+      collection: 'com.dinakernel.peerlens.flag',
       rkey: '1',
       cid: 'bafyflag1',
       record: {
@@ -1766,7 +1766,7 @@ describe('§1.4 Flag Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.flags).where(eq(schema.flags.uri, 'at://did:plc:test/com.dina.peerlens.flag/1'))
+    const rows = await db.select().from(schema.flags).where(eq(schema.flags.uri, 'at://did:plc:test/com.dinakernel.peerlens.flag/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].authorDid).toBe('did:plc:flagAuthor1')
     expect(rows[0].flagType).toBe('spam')
@@ -1777,11 +1777,11 @@ describe('§1.4 Flag Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0330", "section": "01", "sectionName": "General", "title": "IT-FLG-002: Fix 1: idempotent upsert"}
   it('IT-FLG-002: Fix 1: idempotent upsert', async () => {
-    const handler = routeHandler('com.dina.peerlens.flag')!
+    const handler = routeHandler('com.dinakernel.peerlens.flag')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.peerlens.flag/2',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.flag/2',
       did: 'did:plc:flagAuthor2',
-      collection: 'com.dina.peerlens.flag',
+      collection: 'com.dinakernel.peerlens.flag',
       rkey: '2',
       cid: 'bafyflag2',
       record: {
@@ -1793,17 +1793,17 @@ describe('§1.4 Flag Handler', () => {
     }
     await handler.handleCreate(ctx, op)
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.flags).where(eq(schema.flags.uri, 'at://did:plc:test/com.dina.peerlens.flag/2'))
+    const rows = await db.select().from(schema.flags).where(eq(schema.flags.uri, 'at://did:plc:test/com.dinakernel.peerlens.flag/2'))
     expect(rows).toHaveLength(1)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0331", "section": "01", "sectionName": "General", "title": "IT-FLG-003: dirty flags set"}
   it('IT-FLG-003: dirty flags set', async () => {
-    const handler = routeHandler('com.dina.peerlens.flag')!
+    const handler = routeHandler('com.dinakernel.peerlens.flag')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.flag/3',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.flag/3',
       did: 'did:plc:flagAuthor3',
-      collection: 'com.dina.peerlens.flag',
+      collection: 'com.dinakernel.peerlens.flag',
       rkey: '3',
       cid: 'bafyflag3',
       record: {
@@ -1831,49 +1831,49 @@ describe('§1.4 Flag Handler', () => {
 describe('§1.5 Reply Handler', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0332", "section": "01", "sectionName": "General", "title": "IT-RPL-001: create reply \u2014 basic insert"}
   it('IT-RPL-001: create reply — basic insert', async () => {
-    const handler = routeHandler('com.dina.peerlens.reply')!
+    const handler = routeHandler('com.dinakernel.peerlens.reply')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.reply/1',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.reply/1',
       did: 'did:plc:replyAuthor1',
-      collection: 'com.dina.peerlens.reply',
+      collection: 'com.dinakernel.peerlens.reply',
       rkey: '1',
       cid: 'bafyreply1',
       record: {
-        rootUri: 'at://did:plc:other/com.dina.peerlens.attestation/100',
-        parentUri: 'at://did:plc:other/com.dina.peerlens.attestation/100',
+        rootUri: 'at://did:plc:other/com.dinakernel.peerlens.attestation/100',
+        parentUri: 'at://did:plc:other/com.dinakernel.peerlens.attestation/100',
         intent: 'agree',
         text: 'I completely agree with this assessment',
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.replies).where(eq(schema.replies.uri, 'at://did:plc:test/com.dina.peerlens.reply/1'))
+    const rows = await db.select().from(schema.replies).where(eq(schema.replies.uri, 'at://did:plc:test/com.dinakernel.peerlens.reply/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].authorDid).toBe('did:plc:replyAuthor1')
-    expect(rows[0].rootUri).toBe('at://did:plc:other/com.dina.peerlens.attestation/100')
-    expect(rows[0].parentUri).toBe('at://did:plc:other/com.dina.peerlens.attestation/100')
+    expect(rows[0].rootUri).toBe('at://did:plc:other/com.dinakernel.peerlens.attestation/100')
+    expect(rows[0].parentUri).toBe('at://did:plc:other/com.dinakernel.peerlens.attestation/100')
     expect(rows[0].intent).toBe('agree')
     expect(rows[0].text).toBe('I completely agree with this assessment')
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0333", "section": "01", "sectionName": "General", "title": "IT-RPL-002: reply with intent "}
   it('IT-RPL-002: reply with intent "dispute"', async () => {
-    const handler = routeHandler('com.dina.peerlens.reply')!
+    const handler = routeHandler('com.dinakernel.peerlens.reply')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.reply/2',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.reply/2',
       did: 'did:plc:replyAuthor2',
-      collection: 'com.dina.peerlens.reply',
+      collection: 'com.dinakernel.peerlens.reply',
       rkey: '2',
       cid: 'bafyreply2',
       record: {
-        rootUri: 'at://did:plc:other/com.dina.peerlens.attestation/200',
-        parentUri: 'at://did:plc:other/com.dina.peerlens.attestation/200',
+        rootUri: 'at://did:plc:other/com.dinakernel.peerlens.attestation/200',
+        parentUri: 'at://did:plc:other/com.dinakernel.peerlens.attestation/200',
         intent: 'dispute',
         text: 'I dispute the claims made here',
         evidence: [{ type: 'link', url: 'https://counter-evidence.example.com' }],
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.replies).where(eq(schema.replies.uri, 'at://did:plc:test/com.dina.peerlens.reply/2'))
+    const rows = await db.select().from(schema.replies).where(eq(schema.replies.uri, 'at://did:plc:test/com.dinakernel.peerlens.reply/2'))
     expect(rows).toHaveLength(1)
     expect(rows[0].intent).toBe('dispute')
     expect(rows[0].evidenceJson).toEqual([{ type: 'link', url: 'https://counter-evidence.example.com' }])
@@ -1881,16 +1881,16 @@ describe('§1.5 Reply Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0334", "section": "01", "sectionName": "General", "title": "IT-RPL-003: Fix 1: idempotent upsert"}
   it('IT-RPL-003: Fix 1: idempotent upsert', async () => {
-    const handler = routeHandler('com.dina.peerlens.reply')!
+    const handler = routeHandler('com.dinakernel.peerlens.reply')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.peerlens.reply/3',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.reply/3',
       did: 'did:plc:replyAuthor3',
-      collection: 'com.dina.peerlens.reply',
+      collection: 'com.dinakernel.peerlens.reply',
       rkey: '3',
       cid: 'bafyreply3',
       record: {
-        rootUri: 'at://did:plc:other/com.dina.peerlens.attestation/300',
-        parentUri: 'at://did:plc:other/com.dina.peerlens.attestation/300',
+        rootUri: 'at://did:plc:other/com.dinakernel.peerlens.attestation/300',
+        parentUri: 'at://did:plc:other/com.dinakernel.peerlens.attestation/300',
         intent: 'agree',
         text: 'Replaying this reply',
         createdAt: new Date().toISOString(),
@@ -1898,7 +1898,7 @@ describe('§1.5 Reply Handler', () => {
     }
     await handler.handleCreate(ctx, op)
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.replies).where(eq(schema.replies.uri, 'at://did:plc:test/com.dina.peerlens.reply/3'))
+    const rows = await db.select().from(schema.replies).where(eq(schema.replies.uri, 'at://did:plc:test/com.dinakernel.peerlens.reply/3'))
     expect(rows).toHaveLength(1)
   })
 })
@@ -1909,37 +1909,37 @@ describe('§1.5 Reply Handler', () => {
 describe('§1.6 Reaction Handler', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0335", "section": "01", "sectionName": "General", "title": "IT-RXN-001: create reaction \u2014 basic insert"}
   it('IT-RXN-001: create reaction — basic insert', async () => {
-    const handler = routeHandler('com.dina.peerlens.reaction')!
+    const handler = routeHandler('com.dinakernel.peerlens.reaction')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.reaction/1',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.reaction/1',
       did: 'did:plc:rxnAuthor1',
-      collection: 'com.dina.peerlens.reaction',
+      collection: 'com.dinakernel.peerlens.reaction',
       rkey: '1',
       cid: 'bafyrxn1',
       record: {
-        targetUri: 'at://did:plc:other/com.dina.peerlens.attestation/500',
+        targetUri: 'at://did:plc:other/com.dinakernel.peerlens.attestation/500',
         reaction: 'helpful',
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.reactions).where(eq(schema.reactions.uri, 'at://did:plc:test/com.dina.peerlens.reaction/1'))
+    const rows = await db.select().from(schema.reactions).where(eq(schema.reactions.uri, 'at://did:plc:test/com.dinakernel.peerlens.reaction/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].authorDid).toBe('did:plc:rxnAuthor1')
-    expect(rows[0].targetUri).toBe('at://did:plc:other/com.dina.peerlens.attestation/500')
+    expect(rows[0].targetUri).toBe('at://did:plc:other/com.dinakernel.peerlens.attestation/500')
     expect(rows[0].reaction).toBe('helpful')
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0336", "section": "01", "sectionName": "General", "title": "IT-RXN-002: Fix 1: idempotent \u2014 onConflictDoNothing"}
   it('IT-RXN-002: Fix 1: idempotent — onConflictDoNothing', async () => {
-    const handler = routeHandler('com.dina.peerlens.reaction')!
+    const handler = routeHandler('com.dinakernel.peerlens.reaction')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.peerlens.reaction/2',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.reaction/2',
       did: 'did:plc:rxnAuthor2',
-      collection: 'com.dina.peerlens.reaction',
+      collection: 'com.dinakernel.peerlens.reaction',
       rkey: '2',
       cid: 'bafyrxn2',
       record: {
-        targetUri: 'at://did:plc:other/com.dina.peerlens.attestation/501',
+        targetUri: 'at://did:plc:other/com.dinakernel.peerlens.attestation/501',
         reaction: 'agree',
         createdAt: new Date().toISOString(),
       },
@@ -1947,7 +1947,7 @@ describe('§1.6 Reaction Handler', () => {
     await handler.handleCreate(ctx, op)
     // Replay: should silently skip
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.reactions).where(eq(schema.reactions.uri, 'at://did:plc:test/com.dina.peerlens.reaction/2'))
+    const rows = await db.select().from(schema.reactions).where(eq(schema.reactions.uri, 'at://did:plc:test/com.dinakernel.peerlens.reaction/2'))
     expect(rows).toHaveLength(1)
     // Verify reaction was not updated (immutable)
     expect(rows[0].reaction).toBe('agree')
@@ -1955,17 +1955,17 @@ describe('§1.6 Reaction Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0337", "section": "01", "sectionName": "General", "title": "IT-RXN-003: all reaction types"}
   it('IT-RXN-003: all reaction types', async () => {
-    const handler = routeHandler('com.dina.peerlens.reaction')!
+    const handler = routeHandler('com.dinakernel.peerlens.reaction')!
     const reactionTypes = ['helpful', 'unhelpful', 'agree', 'disagree', 'verified', 'can-confirm', 'suspicious', 'outdated']
     for (let i = 0; i < reactionTypes.length; i++) {
       await handler.handleCreate(ctx, {
-        uri: `at://did:plc:test/com.dina.peerlens.reaction/rt${i}`,
+        uri: `at://did:plc:test/com.dinakernel.peerlens.reaction/rt${i}`,
         did: `did:plc:rxnAuthor_rt${i}`,
-        collection: 'com.dina.peerlens.reaction',
+        collection: 'com.dinakernel.peerlens.reaction',
         rkey: `rt${i}`,
         cid: `bafyrxn_rt${i}`,
         record: {
-          targetUri: `at://did:plc:other/com.dina.peerlens.attestation/rt${i}`,
+          targetUri: `at://did:plc:other/com.dinakernel.peerlens.attestation/rt${i}`,
           reaction: reactionTypes[i],
           createdAt: new Date().toISOString(),
         },
@@ -1984,53 +1984,53 @@ describe('§1.6 Reaction Handler', () => {
 describe('§1.7 Report Record Handler', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0338", "section": "01", "sectionName": "General", "title": "IT-RPT-001: create report \u2014 basic insert"}
   it('IT-RPT-001: create report — basic insert', async () => {
-    const handler = routeHandler('com.dina.peerlens.reportRecord')!
+    const handler = routeHandler('com.dinakernel.peerlens.reportRecord')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.reportRecord/1',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.reportRecord/1',
       did: 'did:plc:rptAuthor1',
-      collection: 'com.dina.peerlens.reportRecord',
+      collection: 'com.dinakernel.peerlens.reportRecord',
       rkey: '1',
       cid: 'bafyrpt1',
       record: {
-        targetUri: 'at://did:plc:other/com.dina.peerlens.attestation/600',
+        targetUri: 'at://did:plc:other/com.dinakernel.peerlens.attestation/600',
         reportType: 'spam',
         text: 'This is spam content',
         evidence: [{ type: 'screenshot', url: 'https://proof.example.com/spam.png' }],
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.reportRecords).where(eq(schema.reportRecords.uri, 'at://did:plc:test/com.dina.peerlens.reportRecord/1'))
+    const rows = await db.select().from(schema.reportRecords).where(eq(schema.reportRecords.uri, 'at://did:plc:test/com.dinakernel.peerlens.reportRecord/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].authorDid).toBe('did:plc:rptAuthor1')
     expect(rows[0].reportType).toBe('spam')
-    expect(rows[0].targetUri).toBe('at://did:plc:other/com.dina.peerlens.attestation/600')
+    expect(rows[0].targetUri).toBe('at://did:plc:other/com.dinakernel.peerlens.attestation/600')
     expect(rows[0].text).toBe('This is spam content')
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0339", "section": "01", "sectionName": "General", "title": "IT-RPT-002: Fix 1: idempotent upsert"}
   it('IT-RPT-002: Fix 1: idempotent upsert', async () => {
-    const handler = routeHandler('com.dina.peerlens.reportRecord')!
+    const handler = routeHandler('com.dinakernel.peerlens.reportRecord')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.peerlens.reportRecord/2',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.reportRecord/2',
       did: 'did:plc:rptAuthor2',
-      collection: 'com.dina.peerlens.reportRecord',
+      collection: 'com.dinakernel.peerlens.reportRecord',
       rkey: '2',
       cid: 'bafyrpt2',
       record: {
-        targetUri: 'at://did:plc:other/com.dina.peerlens.attestation/601',
+        targetUri: 'at://did:plc:other/com.dinakernel.peerlens.attestation/601',
         reportType: 'fake-review',
         createdAt: new Date().toISOString(),
       },
     }
     await handler.handleCreate(ctx, op)
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.reportRecords).where(eq(schema.reportRecords.uri, 'at://did:plc:test/com.dina.peerlens.reportRecord/2'))
+    const rows = await db.select().from(schema.reportRecords).where(eq(schema.reportRecords.uri, 'at://did:plc:test/com.dinakernel.peerlens.reportRecord/2'))
     expect(rows).toHaveLength(1)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0340", "section": "01", "sectionName": "General", "title": "IT-RPT-003: all report types stored"}
   it('IT-RPT-003: all report types stored', async () => {
-    const handler = routeHandler('com.dina.peerlens.reportRecord')!
+    const handler = routeHandler('com.dinakernel.peerlens.reportRecord')!
     const reportTypes = [
       'spam', 'fake-review', 'competitor-attack', 'conflict-of-interest',
       'harassment', 'misleading', 'plagiarism', 'privacy-violation',
@@ -2038,13 +2038,13 @@ describe('§1.7 Report Record Handler', () => {
     ]
     for (let i = 0; i < reportTypes.length; i++) {
       await handler.handleCreate(ctx, {
-        uri: `at://did:plc:test/com.dina.peerlens.reportRecord/rpt${i}`,
+        uri: `at://did:plc:test/com.dinakernel.peerlens.reportRecord/rpt${i}`,
         did: `did:plc:rptAuthor_rpt${i}`,
-        collection: 'com.dina.peerlens.reportRecord',
+        collection: 'com.dinakernel.peerlens.reportRecord',
         rkey: `rpt${i}`,
         cid: `bafyrpt_rpt${i}`,
         record: {
-          targetUri: `at://did:plc:other/com.dina.peerlens.attestation/rpt${i}`,
+          targetUri: `at://did:plc:other/com.dinakernel.peerlens.attestation/rpt${i}`,
           reportType: reportTypes[i],
           createdAt: new Date().toISOString(),
         },
@@ -2064,12 +2064,12 @@ describe('§1.8 Revocation Handler', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0341", "section": "01", "sectionName": "General", "title": "IT-REV-001: create revocation \u2014 marks attestation as revoked"}
   it('IT-REV-001: create revocation — marks attestation as revoked', async () => {
     // First create an attestation to revoke
-    const attHandler = routeHandler('com.dina.peerlens.attestation')!
-    const attestationUri = 'at://did:plc:revAuthor1/com.dina.peerlens.attestation/target1'
+    const attHandler = routeHandler('com.dinakernel.peerlens.attestation')!
+    const attestationUri = 'at://did:plc:revAuthor1/com.dinakernel.peerlens.attestation/target1'
     await attHandler.handleCreate(ctx, {
       uri: attestationUri,
       did: 'did:plc:revAuthor1',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'target1',
       cid: 'bafyatt_target1',
       record: {
@@ -2081,12 +2081,12 @@ describe('§1.8 Revocation Handler', () => {
     })
 
     // Now revoke it
-    const revHandler = routeHandler('com.dina.peerlens.revocation')!
-    const revocationUri = 'at://did:plc:revAuthor1/com.dina.peerlens.revocation/rev1'
+    const revHandler = routeHandler('com.dinakernel.peerlens.revocation')!
+    const revocationUri = 'at://did:plc:revAuthor1/com.dinakernel.peerlens.revocation/rev1'
     await revHandler.handleCreate(ctx, {
       uri: revocationUri,
       did: 'did:plc:revAuthor1',
-      collection: 'com.dina.peerlens.revocation',
+      collection: 'com.dinakernel.peerlens.revocation',
       rkey: 'rev1',
       cid: 'bafyrev1',
       record: {
@@ -2112,34 +2112,34 @@ describe('§1.8 Revocation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0342", "section": "01", "sectionName": "General", "title": "IT-REV-002: Fix 1: idempotent upsert"}
   it('IT-REV-002: Fix 1: idempotent upsert', async () => {
-    const revHandler = routeHandler('com.dina.peerlens.revocation')!
+    const revHandler = routeHandler('com.dinakernel.peerlens.revocation')!
     const op = {
-      uri: 'at://did:plc:revAuthor2/com.dina.peerlens.revocation/rev2',
+      uri: 'at://did:plc:revAuthor2/com.dinakernel.peerlens.revocation/rev2',
       did: 'did:plc:revAuthor2',
-      collection: 'com.dina.peerlens.revocation',
+      collection: 'com.dinakernel.peerlens.revocation',
       rkey: 'rev2',
       cid: 'bafyrev2',
       record: {
-        targetUri: 'at://did:plc:revAuthor2/com.dina.peerlens.attestation/nonexistent',
+        targetUri: 'at://did:plc:revAuthor2/com.dinakernel.peerlens.attestation/nonexistent',
         reason: 'Duplicate revocation test',
         createdAt: new Date().toISOString(),
       },
     }
     await revHandler.handleCreate(ctx, op)
     await revHandler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.revocations).where(eq(schema.revocations.uri, 'at://did:plc:revAuthor2/com.dina.peerlens.revocation/rev2'))
+    const rows = await db.select().from(schema.revocations).where(eq(schema.revocations.uri, 'at://did:plc:revAuthor2/com.dinakernel.peerlens.revocation/rev2'))
     expect(rows).toHaveLength(1)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0343", "section": "01", "sectionName": "General", "title": "IT-REV-003: dirty flags set for revoked attestation\\"}
   it('IT-REV-003: dirty flags set for revoked attestation\'s subject', async () => {
     // Create attestation first
-    const attHandler = routeHandler('com.dina.peerlens.attestation')!
-    const attestationUri = 'at://did:plc:revAuthor3/com.dina.peerlens.attestation/target3'
+    const attHandler = routeHandler('com.dinakernel.peerlens.attestation')!
+    const attestationUri = 'at://did:plc:revAuthor3/com.dinakernel.peerlens.attestation/target3'
     await attHandler.handleCreate(ctx, {
       uri: attestationUri,
       did: 'did:plc:revAuthor3',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'target3',
       cid: 'bafyatt_target3',
       record: {
@@ -2175,11 +2175,11 @@ describe('§1.8 Revocation Handler', () => {
 describe('§1.9 Delegation Handler', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0344", "section": "01", "sectionName": "General", "title": "IT-DLG-001: create delegation \u2014 basic insert"}
   it('IT-DLG-001: create delegation — basic insert', async () => {
-    const handler = routeHandler('com.dina.peerlens.delegation')!
+    const handler = routeHandler('com.dinakernel.peerlens.delegation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.delegation/1',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.delegation/1',
       did: 'did:plc:dlgAuthor1',
-      collection: 'com.dina.peerlens.delegation',
+      collection: 'com.dinakernel.peerlens.delegation',
       rkey: '1',
       cid: 'bafydlg1',
       record: {
@@ -2190,7 +2190,7 @@ describe('§1.9 Delegation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.delegations).where(eq(schema.delegations.uri, 'at://did:plc:test/com.dina.peerlens.delegation/1'))
+    const rows = await db.select().from(schema.delegations).where(eq(schema.delegations.uri, 'at://did:plc:test/com.dinakernel.peerlens.delegation/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].authorDid).toBe('did:plc:dlgAuthor1')
     expect(rows[0].subjectDid).toBe('did:plc:dlgSubj1')
@@ -2201,11 +2201,11 @@ describe('§1.9 Delegation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0345", "section": "01", "sectionName": "General", "title": "IT-DLG-002: trust edge created"}
   it('IT-DLG-002: trust edge created', async () => {
-    const handler = routeHandler('com.dina.peerlens.delegation')!
+    const handler = routeHandler('com.dinakernel.peerlens.delegation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.peerlens.delegation/2',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.delegation/2',
       did: 'did:plc:dlgAuthor2',
-      collection: 'com.dina.peerlens.delegation',
+      collection: 'com.dinakernel.peerlens.delegation',
       rkey: '2',
       cid: 'bafydlg2',
       record: {
@@ -2215,7 +2215,7 @@ describe('§1.9 Delegation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const edges = await db.select().from(schema.peerlensEdges).where(eq(schema.peerlensEdges.sourceUri, 'at://did:plc:test/com.dina.peerlens.delegation/2'))
+    const edges = await db.select().from(schema.peerlensEdges).where(eq(schema.peerlensEdges.sourceUri, 'at://did:plc:test/com.dinakernel.peerlens.delegation/2'))
     expect(edges).toHaveLength(1)
     expect(edges[0].edgeType).toBe('delegation')
     expect(edges[0].weight).toBeCloseTo(0.9)
@@ -2226,11 +2226,11 @@ describe('§1.9 Delegation Handler', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0346", "section": "01", "sectionName": "General", "title": "IT-DLG-003: Fix 1: idempotent upsert"}
   it('IT-DLG-003: Fix 1: idempotent upsert', async () => {
-    const handler = routeHandler('com.dina.peerlens.delegation')!
+    const handler = routeHandler('com.dinakernel.peerlens.delegation')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.peerlens.delegation/3',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.delegation/3',
       did: 'did:plc:dlgAuthor3',
-      collection: 'com.dina.peerlens.delegation',
+      collection: 'com.dinakernel.peerlens.delegation',
       rkey: '3',
       cid: 'bafydlg3',
       record: {
@@ -2242,7 +2242,7 @@ describe('§1.9 Delegation Handler', () => {
     }
     await handler.handleCreate(ctx, op)
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.delegations).where(eq(schema.delegations.uri, 'at://did:plc:test/com.dina.peerlens.delegation/3'))
+    const rows = await db.select().from(schema.delegations).where(eq(schema.delegations.uri, 'at://did:plc:test/com.dinakernel.peerlens.delegation/3'))
     expect(rows).toHaveLength(1)
   })
 })
@@ -2253,51 +2253,51 @@ describe('§1.9 Delegation Handler', () => {
 describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0347", "section": "01", "sectionName": "General", "title": "IT-HND-001: collection handler \u2014 create + idempotent"}
   it('IT-HND-001: collection handler — create + idempotent', async () => {
-    const handler = routeHandler('com.dina.peerlens.collection')!
+    const handler = routeHandler('com.dinakernel.peerlens.collection')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.peerlens.collection/1',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.collection/1',
       did: 'did:plc:collAuthor1',
-      collection: 'com.dina.peerlens.collection',
+      collection: 'com.dinakernel.peerlens.collection',
       rkey: '1',
       cid: 'bafycoll1',
       record: {
         name: 'My Trusted Reviews',
         description: 'Collection of reviews I trust',
         items: [
-          'at://did:plc:other/com.dina.peerlens.attestation/1',
-          'at://did:plc:other/com.dina.peerlens.attestation/2',
+          'at://did:plc:other/com.dinakernel.peerlens.attestation/1',
+          'at://did:plc:other/com.dinakernel.peerlens.attestation/2',
         ],
         isDiscoverable: true,
         createdAt: new Date().toISOString(),
       },
     }
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.collections).where(eq(schema.collections.uri, 'at://did:plc:test/com.dina.peerlens.collection/1'))
+    const rows = await db.select().from(schema.collections).where(eq(schema.collections.uri, 'at://did:plc:test/com.dinakernel.peerlens.collection/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].name).toBe('My Trusted Reviews')
     expect(rows[0].isDiscoverable).toBe(true)
     expect(rows[0].itemsJson).toEqual([
-      'at://did:plc:other/com.dina.peerlens.attestation/1',
-      'at://did:plc:other/com.dina.peerlens.attestation/2',
+      'at://did:plc:other/com.dinakernel.peerlens.attestation/1',
+      'at://did:plc:other/com.dinakernel.peerlens.attestation/2',
     ])
 
     // Replay: idempotent
     await handler.handleCreate(ctx, op)
-    const rows2 = await db.select().from(schema.collections).where(eq(schema.collections.uri, 'at://did:plc:test/com.dina.peerlens.collection/1'))
+    const rows2 = await db.select().from(schema.collections).where(eq(schema.collections.uri, 'at://did:plc:test/com.dinakernel.peerlens.collection/1'))
     expect(rows2).toHaveLength(1)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0348", "section": "01", "sectionName": "General", "title": "IT-HND-002: media handler \u2014 create + idempotent"}
   it('IT-HND-002: media handler — create + idempotent', async () => {
-    const handler = routeHandler('com.dina.peerlens.media')!
+    const handler = routeHandler('com.dinakernel.peerlens.media')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.peerlens.media/1',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.media/1',
       did: 'did:plc:mediaAuthor1',
-      collection: 'com.dina.peerlens.media',
+      collection: 'com.dinakernel.peerlens.media',
       rkey: '1',
       cid: 'bafymedia1',
       record: {
-        parentUri: 'at://did:plc:other/com.dina.peerlens.attestation/1',
+        parentUri: 'at://did:plc:other/com.dinakernel.peerlens.attestation/1',
         mediaType: 'image',
         url: 'https://example.com/photo.jpg',
         alt: 'Product photo',
@@ -2305,7 +2305,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
       },
     }
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.media).where(eq(schema.media.uri, 'at://did:plc:test/com.dina.peerlens.media/1'))
+    const rows = await db.select().from(schema.media).where(eq(schema.media.uri, 'at://did:plc:test/com.dinakernel.peerlens.media/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].mediaType).toBe('image')
     expect(rows[0].url).toBe('https://example.com/photo.jpg')
@@ -2313,17 +2313,17 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
 
     // Replay: idempotent
     await handler.handleCreate(ctx, op)
-    const rows2 = await db.select().from(schema.media).where(eq(schema.media.uri, 'at://did:plc:test/com.dina.peerlens.media/1'))
+    const rows2 = await db.select().from(schema.media).where(eq(schema.media.uri, 'at://did:plc:test/com.dinakernel.peerlens.media/1'))
     expect(rows2).toHaveLength(1)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0349", "section": "01", "sectionName": "General", "title": "IT-HND-003: subject handler \u2014 create + idempotent"}
   it('IT-HND-003: subject handler — create + idempotent', async () => {
-    const handler = routeHandler('com.dina.peerlens.subject')!
+    const handler = routeHandler('com.dinakernel.peerlens.subject')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.peerlens.subject/1',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.subject/1',
       did: 'did:plc:subjAuthor1',
-      collection: 'com.dina.peerlens.subject',
+      collection: 'com.dinakernel.peerlens.subject',
       rkey: '1',
       cid: 'bafysubj1',
       record: {
@@ -2347,12 +2347,12 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0350", "section": "01", "sectionName": "General", "title": "IT-HND-004: amendment handler \u2014 create + marks original"}
   it('IT-HND-004: amendment handler — create + marks original', async () => {
     // First create an attestation to amend
-    const attHandler = routeHandler('com.dina.peerlens.attestation')!
-    const attestationUri = 'at://did:plc:amendAuthor1/com.dina.peerlens.attestation/orig1'
+    const attHandler = routeHandler('com.dinakernel.peerlens.attestation')!
+    const attestationUri = 'at://did:plc:amendAuthor1/com.dinakernel.peerlens.attestation/orig1'
     await attHandler.handleCreate(ctx, {
       uri: attestationUri,
       did: 'did:plc:amendAuthor1',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: 'orig1',
       cid: 'bafyatt_orig1',
       record: {
@@ -2364,12 +2364,12 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
     })
 
     // Now amend it
-    const amendHandler = routeHandler('com.dina.peerlens.amendment')!
-    const amendmentUri = 'at://did:plc:amendAuthor1/com.dina.peerlens.amendment/amend1'
+    const amendHandler = routeHandler('com.dinakernel.peerlens.amendment')!
+    const amendmentUri = 'at://did:plc:amendAuthor1/com.dinakernel.peerlens.amendment/amend1'
     await amendHandler.handleCreate(ctx, {
       uri: amendmentUri,
       did: 'did:plc:amendAuthor1',
-      collection: 'com.dina.peerlens.amendment',
+      collection: 'com.dinakernel.peerlens.amendment',
       rkey: 'amend1',
       cid: 'bafyamend1',
       record: {
@@ -2396,18 +2396,18 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0351", "section": "01", "sectionName": "General", "title": "IT-HND-005: verification handler \u2014 create + idempotent"}
   it('IT-HND-005: verification handler — create + idempotent', async () => {
-    const handler = routeHandler('com.dina.peerlens.verification')!
+    const handler = routeHandler('com.dinakernel.peerlens.verification')!
     // Use 'inconclusive' result to avoid the raw SQL UPDATE path that references
     // attestations.is_verified (a column added via a later migration that may
     // not yet exist in the test database).
     const op = {
-      uri: 'at://did:plc:test/com.dina.peerlens.verification/1',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.verification/1',
       did: 'did:plc:verAuthor1',
-      collection: 'com.dina.peerlens.verification',
+      collection: 'com.dinakernel.peerlens.verification',
       rkey: '1',
       cid: 'bafyver1',
       record: {
-        targetUri: 'at://did:plc:other/com.dina.peerlens.attestation/800',
+        targetUri: 'at://did:plc:other/com.dinakernel.peerlens.attestation/800',
         verificationType: 'purchase-confirmation',
         result: 'inconclusive',
         text: 'Could not conclusively verify',
@@ -2415,7 +2415,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
       },
     }
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.verifications).where(eq(schema.verifications.uri, 'at://did:plc:test/com.dina.peerlens.verification/1'))
+    const rows = await db.select().from(schema.verifications).where(eq(schema.verifications.uri, 'at://did:plc:test/com.dinakernel.peerlens.verification/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].verificationType).toBe('purchase-confirmation')
     expect(rows[0].result).toBe('inconclusive')
@@ -2423,17 +2423,17 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
 
     // Replay: idempotent
     await handler.handleCreate(ctx, op)
-    const rows2 = await db.select().from(schema.verifications).where(eq(schema.verifications.uri, 'at://did:plc:test/com.dina.peerlens.verification/1'))
+    const rows2 = await db.select().from(schema.verifications).where(eq(schema.verifications.uri, 'at://did:plc:test/com.dinakernel.peerlens.verification/1'))
     expect(rows2).toHaveLength(1)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0352", "section": "01", "sectionName": "General", "title": "IT-HND-006: review-request handler \u2014 create + idempotent"}
   it('IT-HND-006: review-request handler — create + idempotent', async () => {
-    const handler = routeHandler('com.dina.peerlens.reviewRequest')!
+    const handler = routeHandler('com.dinakernel.peerlens.reviewRequest')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.peerlens.reviewRequest/1',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.reviewRequest/1',
       did: 'did:plc:rrAuthor1',
-      collection: 'com.dina.peerlens.reviewRequest',
+      collection: 'com.dinakernel.peerlens.reviewRequest',
       rkey: '1',
       cid: 'bafyrr1',
       record: {
@@ -2444,24 +2444,24 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
       },
     }
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.reviewRequests).where(eq(schema.reviewRequests.uri, 'at://did:plc:test/com.dina.peerlens.reviewRequest/1'))
+    const rows = await db.select().from(schema.reviewRequests).where(eq(schema.reviewRequests.uri, 'at://did:plc:test/com.dinakernel.peerlens.reviewRequest/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].requestType).toBe('initial-review')
     expect(rows[0].subjectId).toBeTruthy()
 
     // Replay: idempotent
     await handler.handleCreate(ctx, op)
-    const rows2 = await db.select().from(schema.reviewRequests).where(eq(schema.reviewRequests.uri, 'at://did:plc:test/com.dina.peerlens.reviewRequest/1'))
+    const rows2 = await db.select().from(schema.reviewRequests).where(eq(schema.reviewRequests.uri, 'at://did:plc:test/com.dinakernel.peerlens.reviewRequest/1'))
     expect(rows2).toHaveLength(1)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0353", "section": "01", "sectionName": "General", "title": "IT-HND-007: comparison handler \u2014 create + idempotent"}
   it('IT-HND-007: comparison handler — create + idempotent', async () => {
-    const handler = routeHandler('com.dina.peerlens.comparison')!
+    const handler = routeHandler('com.dinakernel.peerlens.comparison')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.peerlens.comparison/1',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.comparison/1',
       did: 'did:plc:cmpAuthor1',
-      collection: 'com.dina.peerlens.comparison',
+      collection: 'com.dinakernel.peerlens.comparison',
       rkey: '1',
       cid: 'bafycmp1',
       record: {
@@ -2476,7 +2476,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
       },
     }
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.comparisons).where(eq(schema.comparisons.uri, 'at://did:plc:test/com.dina.peerlens.comparison/1'))
+    const rows = await db.select().from(schema.comparisons).where(eq(schema.comparisons.uri, 'at://did:plc:test/com.dinakernel.peerlens.comparison/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].category).toBe('electronics')
     expect(rows[0].subjectsJson).toEqual([
@@ -2486,17 +2486,17 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
 
     // Replay: idempotent
     await handler.handleCreate(ctx, op)
-    const rows2 = await db.select().from(schema.comparisons).where(eq(schema.comparisons.uri, 'at://did:plc:test/com.dina.peerlens.comparison/1'))
+    const rows2 = await db.select().from(schema.comparisons).where(eq(schema.comparisons.uri, 'at://did:plc:test/com.dinakernel.peerlens.comparison/1'))
     expect(rows2).toHaveLength(1)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0354", "section": "01", "sectionName": "General", "title": "IT-HND-008: subject-claim handler \u2014 create + idempotent"}
   it('IT-HND-008: subject-claim handler — create + idempotent', async () => {
-    const handler = routeHandler('com.dina.peerlens.subjectClaim')!
+    const handler = routeHandler('com.dinakernel.peerlens.subjectClaim')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.peerlens.subjectClaim/1',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.subjectClaim/1',
       did: 'did:plc:scAuthor1',
-      collection: 'com.dina.peerlens.subjectClaim',
+      collection: 'com.dinakernel.peerlens.subjectClaim',
       rkey: '1',
       cid: 'bafysc1',
       record: {
@@ -2508,7 +2508,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
       },
     }
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.subjectClaims).where(eq(schema.subjectClaims.uri, 'at://did:plc:test/com.dina.peerlens.subjectClaim/1'))
+    const rows = await db.select().from(schema.subjectClaims).where(eq(schema.subjectClaims.uri, 'at://did:plc:test/com.dinakernel.peerlens.subjectClaim/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].claimType).toBe('same-entity')
     expect(rows[0].sourceSubjectId).toBe('sub_aaaaaaaaaaaaaaaaaaaaaaaaaaaa0001')
@@ -2516,17 +2516,17 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
 
     // Replay: idempotent
     await handler.handleCreate(ctx, op)
-    const rows2 = await db.select().from(schema.subjectClaims).where(eq(schema.subjectClaims.uri, 'at://did:plc:test/com.dina.peerlens.subjectClaim/1'))
+    const rows2 = await db.select().from(schema.subjectClaims).where(eq(schema.subjectClaims.uri, 'at://did:plc:test/com.dinakernel.peerlens.subjectClaim/1'))
     expect(rows2).toHaveLength(1)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0355", "section": "01", "sectionName": "General", "title": "IT-HND-009: peerlens-policy handler \u2014 create + idempotent"}
   it('IT-HND-009: peerlens-policy handler — create + idempotent', async () => {
-    const handler = routeHandler('com.dina.peerlens.trustPolicy')!
+    const handler = routeHandler('com.dinakernel.peerlens.trustPolicy')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.peerlens.trustPolicy/1',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.trustPolicy/1',
       did: 'did:plc:tpAuthor1',
-      collection: 'com.dina.peerlens.trustPolicy',
+      collection: 'com.dinakernel.peerlens.trustPolicy',
       rkey: '1',
       cid: 'bafytp1',
       record: {
@@ -2538,7 +2538,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
       },
     }
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.peerlensPolicies).where(eq(schema.peerlensPolicies.uri, 'at://did:plc:test/com.dina.peerlens.trustPolicy/1'))
+    const rows = await db.select().from(schema.peerlensPolicies).where(eq(schema.peerlensPolicies.uri, 'at://did:plc:test/com.dinakernel.peerlens.trustPolicy/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].maxGraphDepth).toBe(3)
     expect(rows[0].requireVouch).toBe(true)
@@ -2547,17 +2547,17 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
 
     // Replay: idempotent
     await handler.handleCreate(ctx, op)
-    const rows2 = await db.select().from(schema.peerlensPolicies).where(eq(schema.peerlensPolicies.uri, 'at://did:plc:test/com.dina.peerlens.trustPolicy/1'))
+    const rows2 = await db.select().from(schema.peerlensPolicies).where(eq(schema.peerlensPolicies.uri, 'at://did:plc:test/com.dinakernel.peerlens.trustPolicy/1'))
     expect(rows2).toHaveLength(1)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0356", "section": "01", "sectionName": "General", "title": "IT-HND-010: notification-prefs handler \u2014 create + idempotent"}
   it('IT-HND-010: notification-prefs handler — create + idempotent', async () => {
-    const handler = routeHandler('com.dina.peerlens.notificationPrefs')!
+    const handler = routeHandler('com.dinakernel.peerlens.notificationPrefs')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.peerlens.notificationPrefs/1',
+      uri: 'at://did:plc:test/com.dinakernel.peerlens.notificationPrefs/1',
       did: 'did:plc:npAuthor1',
-      collection: 'com.dina.peerlens.notificationPrefs',
+      collection: 'com.dinakernel.peerlens.notificationPrefs',
       rkey: '1',
       cid: 'bafynp1',
       record: {
@@ -2569,7 +2569,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
       },
     }
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.notificationPrefs).where(eq(schema.notificationPrefs.uri, 'at://did:plc:test/com.dina.peerlens.notificationPrefs/1'))
+    const rows = await db.select().from(schema.notificationPrefs).where(eq(schema.notificationPrefs.uri, 'at://did:plc:test/com.dinakernel.peerlens.notificationPrefs/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].enableMentions).toBe(true)
     expect(rows[0].enableReactions).toBe(false)
@@ -2578,7 +2578,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
 
     // Replay: idempotent
     await handler.handleCreate(ctx, op)
-    const rows2 = await db.select().from(schema.notificationPrefs).where(eq(schema.notificationPrefs.uri, 'at://did:plc:test/com.dina.peerlens.notificationPrefs/1'))
+    const rows2 = await db.select().from(schema.notificationPrefs).where(eq(schema.notificationPrefs.uri, 'at://did:plc:test/com.dinakernel.peerlens.notificationPrefs/1'))
     expect(rows2).toHaveLength(1)
   })
 })

@@ -134,7 +134,7 @@ export class AppViewStub {
 
   /**
    * `searchCapabilities` mirror (Services Layer 4). Like the real
-   * `com.dina.service.searchCapabilities` endpoint, returns the canonical
+   * `com.dinakernel.service.searchCapabilities` endpoint, returns the canonical
    * capabilities that are BOTH in the registry AND covered by at least one
    * discoverable profile. `intent` is accepted but unused at launch (the
    * covered set is tiny), matching the real endpoint's launch shortcut.
@@ -193,7 +193,7 @@ export class AppViewStub {
    * subject. The `search_peerlens` tool surfaces this as a
    * graceful "no verified peer data" note instead of throwing.
    * Production swaps in `AppViewClient` whose implementations actually
-   * hit `com.dina.peerlens.resolve` / `com.dina.peerlens.search`.
+   * hit `com.dinakernel.peerlens.resolve` / `com.dinakernel.peerlens.search`.
    */
   async resolveTrust(): Promise<{
     subjectType: string;

@@ -285,7 +285,7 @@ describe('PDS Attestation Publishing', () => {
         return {
           ok: true,
           json: async () => ({
-            uri: 'at://did:key:z6MkTest/com.dina.peerlens.attestation/rkey1',
+            uri: 'at://did:key:z6MkTest/com.dinakernel.peerlens.attestation/rkey1',
           }),
         } as Response;
       });
@@ -293,12 +293,12 @@ describe('PDS Attestation Publishing', () => {
       const uri = await publishToPDS(signed, 'https://pds.dinakernel.com');
       expect(capturedURL).toBe('https://pds.dinakernel.com/xrpc/com.atproto.repo.createRecord');
       expect(capturedBody.repo).toBe(signerDID);
-      expect(capturedBody.collection).toBe('com.dina.peerlens.attestation');
+      expect(capturedBody.collection).toBe('com.dinakernel.peerlens.attestation');
       expect(uri).toContain('at://');
     });
 
     it('returns the AT-URI from the PDS response', async () => {
-      const expectedURI = 'at://did:key:z6MkTest/com.dina.peerlens.attestation/abc';
+      const expectedURI = 'at://did:key:z6MkTest/com.dinakernel.peerlens.attestation/abc';
       setPDSFetchFn(
         async () =>
           ({
@@ -363,7 +363,7 @@ describe('PDS Attestation Publishing', () => {
       await publishToPDS(signed, 'https://pds.example.com');
       expect(capturedRecord.signature_hex).toBe(signed.signature_hex);
       expect(capturedRecord.signer_did).toBe(signerDID);
-      expect(capturedRecord.$type).toBe('com.dina.peerlens.attestation');
+      expect(capturedRecord.$type).toBe('com.dinakernel.peerlens.attestation');
     });
 
     it('strips a trailing slash from the PDS URL', async () => {

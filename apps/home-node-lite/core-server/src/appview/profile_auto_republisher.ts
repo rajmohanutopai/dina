@@ -3,7 +3,7 @@
  *
  * When the operator edits `service_config` (adds a capability,
  * tweaks a schema, adjusts `isPublic`), the published
- * `com.dina.service.profile` record must update so AppView indexes
+ * `com.dinakernel.service.profile` record must update so AppView indexes
  * the new shape. The `ConfigReloader` (task 5.13) detects the
  * change + fires a `changed` event; this module hooks into that
  * event + triggers a re-publish via `ServiceProfilePublisher`

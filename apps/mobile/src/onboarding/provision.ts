@@ -40,7 +40,7 @@
  * Why PDS-first matters:
  *   - AppView discovery requires PDS-published records. With PDS
  *     bound to our DID, the AppView's Jetstream firehose picks up
- *     `com.dina.service.profile` records we put there.
+ *     `com.dinakernel.service.profile` records we put there.
  *   - We retain sovereign key authority via the recovery K256 — we
  *     can rotate signing keys, change handle, add services without
  *     PDS cooperation.

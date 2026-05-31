@@ -44,7 +44,7 @@ function validConfig(): BuildProfileInput {
 
 function okProfile(): ServiceProfileRecord {
   return {
-    $type: 'com.dina.service.profile',
+    $type: 'com.dinakernel.service.profile',
     name: 'SF Transit',
     isPublic: true,
     capabilities: ['eta_query'],

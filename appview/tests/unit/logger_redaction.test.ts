@@ -70,18 +70,18 @@ describe('logger — TN-OBS-003 structured JSON output', () => {
     log.info(
       {
         did: 'did:plc:alice',
-        uri: 'at://did:plc:alice/com.dina.peerlens.attestation/3kfx',
+        uri: 'at://did:plc:alice/com.dinakernel.peerlens.attestation/3kfx',
         subjectId: 'subj-abc',
-        method: 'com.dina.peerlens.search',
+        method: 'com.dinakernel.peerlens.search',
         durationMs: 42,
       },
       'request handled',
     )
     const parsed = lastLog(buffer)
     expect(parsed.did).toBe('did:plc:alice')
-    expect(parsed.uri).toBe('at://did:plc:alice/com.dina.peerlens.attestation/3kfx')
+    expect(parsed.uri).toBe('at://did:plc:alice/com.dinakernel.peerlens.attestation/3kfx')
     expect(parsed.subjectId).toBe('subj-abc')
-    expect(parsed.method).toBe('com.dina.peerlens.search')
+    expect(parsed.method).toBe('com.dinakernel.peerlens.search')
     expect(parsed.durationMs).toBe(42)
   })
 })
@@ -178,16 +178,16 @@ describe('logger — TN-OBS-003 field redaction', () => {
     log.info(
       {
         did: 'did:plc:alice',
-        uri: 'at://did:plc:alice/com.dina.peerlens.attestation/3kfx',
-        method: 'com.dina.peerlens.search',
+        uri: 'at://did:plc:alice/com.dinakernel.peerlens.attestation/3kfx',
+        method: 'com.dinakernel.peerlens.search',
         err: { message: 'subject not found' },
       },
       'lookup failed',
     )
     const parsed = lastLog(buffer)
     expect(parsed.did).toBe('did:plc:alice')
-    expect(parsed.uri).toBe('at://did:plc:alice/com.dina.peerlens.attestation/3kfx')
-    expect(parsed.method).toBe('com.dina.peerlens.search')
+    expect(parsed.uri).toBe('at://did:plc:alice/com.dinakernel.peerlens.attestation/3kfx')
+    expect(parsed.method).toBe('com.dinakernel.peerlens.search')
     expect((parsed.err as Record<string, unknown>).message).toBe(
       'subject not found',
     )

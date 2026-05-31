@@ -35,7 +35,7 @@ import { TRUST_CACHE_TTL_MS } from '../constants';
 export type SearchType = 'entity_reviews' | 'identity_attestations' | 'topic_trust';
 
 /**
- * Filter overlay matching AppView's `com.dina.peerlens.search`. Pass
+ * Filter overlay matching AppView's `com.dinakernel.peerlens.search`. Pass
  * any combination — they're AND-ed at the AppView side.
  *
  * Plan §6.1 also calls for `language` and `location` filters; those

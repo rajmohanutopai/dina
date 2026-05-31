@@ -29,12 +29,12 @@ if [ -z "$ACTION" ] || [ -z "$EMAIL" ] || [ -z "$PASSWORD" ]; then
 fi
 
 COLLECTIONS=(
-    "com.dina.trust.attestation"
-    "com.dina.trust.vouch"
-    "com.dina.trust.endorsement"
-    "com.dina.trust.flag"
-    "com.dina.trust.reaction"
-    "com.dina.trust.reply"
+    "com.dinakernel.trust.attestation"
+    "com.dinakernel.trust.vouch"
+    "com.dinakernel.trust.endorsement"
+    "com.dinakernel.trust.flag"
+    "com.dinakernel.trust.reaction"
+    "com.dinakernel.trust.reply"
 )
 
 # Authenticate

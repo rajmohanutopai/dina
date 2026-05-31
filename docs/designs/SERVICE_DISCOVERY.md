@@ -2,12 +2,12 @@
 
 ## Overview
 
-Dina supports provider service discovery. Service providers publish capabilities via AT Protocol records (`com.dina.service.profile`). Other Dinas discover them via AppView search and send D2D `service.query` messages. The provider's agent (OpenClaw via MCP) auto-responds with structured results.
+Dina supports provider service discovery. Service providers publish capabilities via AT Protocol records (`com.dinakernel.service.profile`). Other Dinas discover them via AppView search and send D2D `service.query` messages. The provider's agent (OpenClaw via MCP) auto-responds with structured results.
 
 ## Example: Bus ETA
 
 1. User asks "when does bus 42 arrive?"
-2. Brain searches AppView: `com.dina.service.search?capability=eta_query&lat=12.93&lng=77.68`
+2. Brain searches AppView: `com.dinakernel.service.search?capability=eta_query&lat=12.93&lng=77.68`
 3. Gets: `[{operatorDid: "did:plc:bus42", name: "Route 42 Hosur AC", trustScore: 92}]`
 4. Sends D2D `service.query` to `did:plc:bus42`
 5. Bus Driver's Brain validates, calls OpenClaw via MCP

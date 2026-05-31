@@ -2,7 +2,7 @@
  * Compose-flow conflict-disambiguation chooser (TN-MOB-024).
  *
  * Per plan §6.3 + §8.5 step 1, the compose flow calls
- * `com.dina.peerlens.resolve` before publishing. AppView returns one of:
+ * `com.dinakernel.peerlens.resolve` before publishing. AppView returns one of:
  *
  *   - `subjectId !== null`        — exact canonical match. The compose
  *                                   form pre-fills "Reviewing **<name>**
@@ -49,7 +49,7 @@ import type { SubjectRef } from '@dina/protocol';
 /**
  * One candidate the AppView resolver suggests as a possible match.
  * Mirrors plan §6.3 — the wire shape comes from
- * `com.dina.peerlens.resolve` and is byte-stable across this module.
+ * `com.dinakernel.peerlens.resolve` and is byte-stable across this module.
  */
 export interface ConflictCandidate {
   readonly subjectId: string;
@@ -58,7 +58,7 @@ export interface ConflictCandidate {
 }
 
 /**
- * The wire response from `com.dina.peerlens.resolve`. Mirrors plan §6.3
+ * The wire response from `com.dinakernel.peerlens.resolve`. Mirrors plan §6.3
  * one-for-one — `lastAttestedAt` is included even though the chooser
  * doesn't read it directly so callers can pass the full response
  * through this module without losing fields the auto-match UX

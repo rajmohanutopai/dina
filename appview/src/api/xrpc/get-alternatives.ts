@@ -4,7 +4,7 @@ import type { DrizzleDB } from '@/db/connection.js'
 import { subjects, subjectScores } from '@/db/schema/index.js'
 
 /**
- * `com.dina.peerlens.getAlternatives` (TN-V2-RANK-009 / Plan §6.X).
+ * `com.dinakernel.peerlens.getAlternatives` (TN-V2-RANK-009 / Plan §6.X).
  *
  * Returns top-N trusted alternatives for a given subject, drawn from
  * the same category. Powers the "3 trusted alternatives" strip on

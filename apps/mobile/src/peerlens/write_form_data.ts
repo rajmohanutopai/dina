@@ -1238,7 +1238,7 @@ export function describeWriteFormError(error: WriteFormError): string {
 
 /**
  * **TN-V2-MOBILE-WIRE.** Wire-shape extras the mobile compose form
- * adds to the base `com.dina.peerlens.attestation` record. Every field
+ * adds to the base `com.dinakernel.peerlens.attestation` record. Every field
  * is optional — only fields the reviewer actually populated travel
  * to the wire so AppView's empty-array → NULL collapse stays a
  * cheap server-side pass.

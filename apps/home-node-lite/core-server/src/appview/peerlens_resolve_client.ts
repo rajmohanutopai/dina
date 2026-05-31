@@ -1,5 +1,5 @@
 /**
- * Task 6.11 — `com.dina.peerlens.resolve` xRPC client.
+ * Task 6.11 — `com.dinakernel.peerlens.resolve` xRPC client.
  *
  * AppView's trust endpoint returns the weighted trust picture for a
  * subject DID:
@@ -101,7 +101,7 @@ const DID_RE = /^did:(plc:[a-z2-7]{24}|web:[a-zA-Z0-9.:-]+)$/;
 
 /**
  * Raw xRPC fetcher shape. Production wires to the signed-HTTP
- * client's `xrpc.query('com.dina.peerlens.resolve', ...)`. Throws on
+ * client's `xrpc.query('com.dinakernel.peerlens.resolve', ...)`. Throws on
  * network failure; returns `{body: null, status: 404}` for not-found.
  */
 export interface XrpcFetchResult {

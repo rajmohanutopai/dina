@@ -263,7 +263,7 @@ describe('parseOpenGraphPrice — priority + integration', () => {
     // validator — i.e. the auto-fill matches the wire contract for
     // reviewer-declared price. This is the hard-pin against schema
     // drift between the enricher and reviewer paths.
-    const r = validateRecord('com.dina.peerlens.attestation', {
+    const r = validateRecord('com.dinakernel.peerlens.attestation', {
       subject: { type: 'product', name: 'Product' },
       category: 'product',
       sentiment: 'positive',

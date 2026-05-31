@@ -208,9 +208,9 @@ describe('attestationHandler.handleCreate — transaction wrapper', () => {
   it('opens a transaction', async () => {
     const { ctx, captured } = stubCtx()
     await attestationHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:a/com.dina.peerlens.attestation/1',
+      uri: 'at://did:plc:a/com.dinakernel.peerlens.attestation/1',
       did: 'did:plc:a',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '1',
       cid: 'cid1',
       record: {
@@ -226,9 +226,9 @@ describe('attestationHandler.handleCreate — transaction wrapper', () => {
   it('routes resolveOrCreateSubject + markDirty + addTrustEdge through the tx-scoped db', async () => {
     const { ctx } = stubCtx()
     await attestationHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:a/com.dina.peerlens.attestation/2',
+      uri: 'at://did:plc:a/com.dinakernel.peerlens.attestation/2',
       did: 'did:plc:a',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '2',
       cid: 'cid2',
       record: {
@@ -257,9 +257,9 @@ describe('attestationHandler.handleCreate — transaction wrapper', () => {
     // for the positive-DID case) fires.
     const { ctx } = stubCtx()
     await attestationHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:a/com.dina.peerlens.attestation/3',
+      uri: 'at://did:plc:a/com.dinakernel.peerlens.attestation/3',
       did: 'did:plc:a',
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: '3',
       cid: 'cid3',
       record: {
@@ -291,9 +291,9 @@ describe('vouchHandler.handleCreate — transaction wrapper', () => {
   it('opens a transaction and routes addTrustEdge + markDirty through it', async () => {
     const { ctx, captured } = stubCtx()
     await vouchHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:a/com.dina.peerlens.vouch/1',
+      uri: 'at://did:plc:a/com.dinakernel.peerlens.vouch/1',
       did: 'did:plc:a',
-      collection: 'com.dina.peerlens.vouch',
+      collection: 'com.dinakernel.peerlens.vouch',
       rkey: '1',
       cid: 'cid1',
       record: {
@@ -315,9 +315,9 @@ describe('endorsementHandler.handleCreate — transaction wrapper', () => {
   it('opens a transaction and routes addTrustEdge + markDirty through it', async () => {
     const { ctx, captured } = stubCtx()
     await endorsementHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:a/com.dina.peerlens.endorsement/1',
+      uri: 'at://did:plc:a/com.dinakernel.peerlens.endorsement/1',
       did: 'did:plc:a',
-      collection: 'com.dina.peerlens.endorsement',
+      collection: 'com.dinakernel.peerlens.endorsement',
       rkey: '1',
       cid: 'cid1',
       record: {
@@ -339,9 +339,9 @@ describe('flagHandler.handleCreate — transaction wrapper', () => {
   it('opens a transaction and routes resolveOrCreateSubject + markDirty through it', async () => {
     const { ctx, captured } = stubCtx()
     await flagHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:a/com.dina.peerlens.flag/1',
+      uri: 'at://did:plc:a/com.dinakernel.peerlens.flag/1',
       did: 'did:plc:a',
-      collection: 'com.dina.peerlens.flag',
+      collection: 'com.dinakernel.peerlens.flag',
       rkey: '1',
       cid: 'cid1',
       record: {
@@ -363,13 +363,13 @@ describe('revocationHandler — transaction wrapper', () => {
   it('handleCreate opens a transaction and routes markDirty through it', async () => {
     const { ctx, captured } = stubCtx()
     await revocationHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:a/com.dina.peerlens.revocation/1',
+      uri: 'at://did:plc:a/com.dinakernel.peerlens.revocation/1',
       did: 'did:plc:a',
-      collection: 'com.dina.peerlens.revocation',
+      collection: 'com.dinakernel.peerlens.revocation',
       rkey: '1',
       cid: 'cid1',
       record: {
-        targetUri: 'at://did:plc:a/com.dina.peerlens.attestation/target',
+        targetUri: 'at://did:plc:a/com.dinakernel.peerlens.attestation/target',
         reason: 'changed-my-mind',
         createdAt: now,
       },
@@ -384,9 +384,9 @@ describe('revocationHandler — transaction wrapper', () => {
   it('handleDelete opens a transaction and routes deletionHandler + markDirty through it', async () => {
     const { ctx, captured } = stubCtx()
     await revocationHandler.handleDelete(ctx, {
-      uri: 'at://did:plc:a/com.dina.peerlens.revocation/1',
+      uri: 'at://did:plc:a/com.dinakernel.peerlens.revocation/1',
       did: 'did:plc:a',
-      collection: 'com.dina.peerlens.revocation',
+      collection: 'com.dinakernel.peerlens.revocation',
       rkey: '1',
       cid: 'cid1',
       record: {},

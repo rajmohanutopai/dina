@@ -1,6 +1,6 @@
 /**
  * Authored-attestations runner — fetches the list of reviews a given
- * DID has written via `com.dina.peerlens.search` (with `authorDid`
+ * DID has written via `com.dinakernel.peerlens.search` (with `authorDid`
  * filter). Powers the "Reviews written" section on the reviewer
  * profile screen. Tests pass `enabled: false` to keep the screen
  * presentational.

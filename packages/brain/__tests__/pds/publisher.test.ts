@@ -99,7 +99,7 @@ describe('PDSPublisher', () => {
         password: PASSWORD,
         fetch: fetchFn,
       });
-      await p.putRecord('com.dina.service.profile', 'self', {});
+      await p.putRecord('com.dinakernel.service.profile', 'self', {});
       expect(calls[0].url.startsWith('https://pds.test/xrpc/')).toBe(true);
       expect(calls[0].url.startsWith('https://pds.test//xrpc/')).toBe(false);
     });
@@ -255,8 +255,8 @@ describe('PDSPublisher', () => {
         fetch: fetchFn,
       });
 
-      const result = await p.putRecord('com.dina.service.profile', 'self', {
-        $type: 'com.dina.service.profile',
+      const result = await p.putRecord('com.dinakernel.service.profile', 'self', {
+        $type: 'com.dinakernel.service.profile',
         name: 'Bus 42',
       });
 
@@ -265,9 +265,9 @@ describe('PDSPublisher', () => {
       expect(calls[1].headers['authorization']).toBe(`Bearer ${JWT}`);
       expect(calls[1].body).toEqual({
         repo: DID,
-        collection: 'com.dina.service.profile',
+        collection: 'com.dinakernel.service.profile',
         rkey: 'self',
-        record: { $type: 'com.dina.service.profile', name: 'Bus 42' },
+        record: { $type: 'com.dinakernel.service.profile', name: 'Bus 42' },
       });
     });
 

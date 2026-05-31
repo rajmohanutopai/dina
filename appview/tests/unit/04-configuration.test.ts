@@ -179,12 +179,12 @@ describe('§4.3 Lexicons', () => {
     expect(TRUST_COLLECTIONS).toHaveLength(20)
   })
 
-  // TRACE: {"suite": "APPVIEW", "case": "0220", "section": "01", "sectionName": "General", "title": "UT-LEX-002: entries live under com.dina.*"}
-  it('UT-LEX-002: entries live under com.dina.*', () => {
-    // Most are com.dina.peerlens.*; com.dina.service.profile is the
+  // TRACE: {"suite": "APPVIEW", "case": "0220", "section": "01", "sectionName": "General", "title": "UT-LEX-002: entries live under com.dinakernel.*"}
+  it('UT-LEX-002: entries live under com.dinakernel.*', () => {
+    // Most are com.dinakernel.peerlens.*; com.dinakernel.service.profile is the
     // service-discovery record published alongside trust records.
     for (const collection of TRUST_COLLECTIONS) {
-      expect(collection).toMatch(/^com\.dina\.(peerlens|service)\./)
+      expect(collection).toMatch(/^com\.dinakernel\.(peerlens|service)\./)
     }
   })
 
@@ -197,25 +197,25 @@ describe('§4.3 Lexicons', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0222", "section": "01", "sectionName": "General", "title": "UT-LEX-004: expected collections present"}
   it('UT-LEX-004: expected collections present', () => {
     const expected = [
-      'com.dina.peerlens.attestation',
-      'com.dina.peerlens.vouch',
-      'com.dina.peerlens.endorsement',
-      'com.dina.peerlens.flag',
-      'com.dina.peerlens.reply',
-      'com.dina.peerlens.reaction',
-      'com.dina.peerlens.reportRecord',
-      'com.dina.peerlens.revocation',
-      'com.dina.peerlens.delegation',
-      'com.dina.peerlens.collection',
-      'com.dina.peerlens.media',
-      'com.dina.peerlens.subject',
-      'com.dina.peerlens.amendment',
-      'com.dina.peerlens.verification',
-      'com.dina.peerlens.reviewRequest',
-      'com.dina.peerlens.comparison',
-      'com.dina.peerlens.subjectClaim',
-      'com.dina.peerlens.trustPolicy',
-      'com.dina.peerlens.notificationPrefs',
+      'com.dinakernel.peerlens.attestation',
+      'com.dinakernel.peerlens.vouch',
+      'com.dinakernel.peerlens.endorsement',
+      'com.dinakernel.peerlens.flag',
+      'com.dinakernel.peerlens.reply',
+      'com.dinakernel.peerlens.reaction',
+      'com.dinakernel.peerlens.reportRecord',
+      'com.dinakernel.peerlens.revocation',
+      'com.dinakernel.peerlens.delegation',
+      'com.dinakernel.peerlens.collection',
+      'com.dinakernel.peerlens.media',
+      'com.dinakernel.peerlens.subject',
+      'com.dinakernel.peerlens.amendment',
+      'com.dinakernel.peerlens.verification',
+      'com.dinakernel.peerlens.reviewRequest',
+      'com.dinakernel.peerlens.comparison',
+      'com.dinakernel.peerlens.subjectClaim',
+      'com.dinakernel.peerlens.trustPolicy',
+      'com.dinakernel.peerlens.notificationPrefs',
     ]
     for (const entry of expected) {
       expect(TRUST_COLLECTIONS).toContain(entry)
@@ -227,7 +227,7 @@ describe('§4.3 Lexicons', () => {
     // Verify the type is correctly derived from the const array.
     // If the type were wrong, this assignment would fail at compile time.
     const first: TrustCollection = TRUST_COLLECTIONS[0]
-    expect(first).toBe('com.dina.peerlens.attestation')
+    expect(first).toBe('com.dinakernel.peerlens.attestation')
 
     // Also verify that the type is a union of string literals, not just `string`
     // by checking that every element satisfies the type

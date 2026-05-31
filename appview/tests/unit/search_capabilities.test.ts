@@ -1,5 +1,5 @@
 /**
- * Unit tests for com.dina.service.searchCapabilities (Layer 4 discovery).
+ * Unit tests for com.dinakernel.service.searchCapabilities (Layer 4 discovery).
  * Spec: docs/SERVICES_LAUNCH_ARCHITECTURE.md Part 1, Layer 4.
  */
 

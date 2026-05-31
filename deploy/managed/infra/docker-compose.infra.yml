@@ -147,7 +147,7 @@ services:
       PORT: "3000"
       NODE_ENV: production
       RATE_LIMIT_RPM: "60"
-      # Test-inject endpoints (`com.dina.test.injectAttestation` /
+      # Test-inject endpoints (`com.dinakernel.test.injectAttestation` /
       # `deleteAttestation`) — enabled only when BOTH env vars are
       # set + non-empty. Test environments wire them; prod leaves them
       # unset so the endpoints 404. The token is a deploy-time secret

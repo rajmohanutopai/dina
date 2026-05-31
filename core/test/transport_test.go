@@ -2831,7 +2831,7 @@ func TestTransport_7_6_MessageCategoryNamespaceValidation(t *testing.T) {
 	// Positive: valid message with proper namespace enqueues successfully.
 	msg1 := testutil.OutboxMessage{
 		ToDID:   "did:key:z6MkRecipient",
-		Payload: []byte(`{"type":"com.dina.message.text"}`),
+		Payload: []byte(`{"type":"com.dinakernel.message.text"}`),
 		Status:  "pending",
 	}
 	id1, err := om.Enqueue(ctx, msg1)
@@ -2846,9 +2846,9 @@ func TestTransport_7_6_MessageCategoryNamespaceValidation(t *testing.T) {
 
 	// Positive: different valid namespaces all succeed.
 	namespaces := []string{
-		`{"type":"com.dina.message.cart_handover"}`,
-		`{"type":"com.dina.message.contact_share"}`,
-		`{"type":"com.dina.attestation.outcome"}`,
+		`{"type":"com.dinakernel.message.cart_handover"}`,
+		`{"type":"com.dinakernel.message.contact_share"}`,
+		`{"type":"com.dinakernel.attestation.outcome"}`,
 	}
 	for i, ns := range namespaces {
 		msg := testutil.OutboxMessage{
@@ -2869,7 +2869,7 @@ func TestTransport_7_6_MessageCategoryNamespaceValidation(t *testing.T) {
 	for i := 0; i < 6; i++ {
 		msg := testutil.OutboxMessage{
 			ToDID:   "did:key:z6MkFillQueue",
-			Payload: []byte(`{"type":"com.dina.message.fill"}`),
+			Payload: []byte(`{"type":"com.dinakernel.message.fill"}`),
 			Status:  "pending",
 		}
 		_, err := om.Enqueue(ctx, msg)
@@ -2879,7 +2879,7 @@ func TestTransport_7_6_MessageCategoryNamespaceValidation(t *testing.T) {
 	// 11th message should fail — queue is full.
 	overflow := testutil.OutboxMessage{
 		ToDID:   "did:key:z6MkOverflow",
-		Payload: []byte(`{"type":"com.dina.message.overflow"}`),
+		Payload: []byte(`{"type":"com.dinakernel.message.overflow"}`),
 		Status:  "pending",
 	}
 	_, err = om.Enqueue(ctx, overflow)

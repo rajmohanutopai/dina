@@ -67,7 +67,7 @@ describe('PeerlensQueryClient (9.1)', () => {
       expect(result.profile!.endorsementCount).toBe(5);
       expect(result.profile!.activeDomains).toEqual(['example.com', 'review.org']);
       expect(result.profile!.lastActive).toBe(SAMPLE_LAST_ACTIVE_MS);
-      expect(calls[0].url).toContain('com.dina.peerlens.getProfile');
+      expect(calls[0].url).toContain('com.dinakernel.peerlens.getProfile');
       expect(calls[0].url).toContain('did=did%3Aplc%3Aalice123');
     });
 
@@ -216,7 +216,7 @@ describe('PeerlensQueryClient (9.1)', () => {
       // canonical NSID. AppView does not yet register `getProfiles`
       // (see comment in `query_client.ts.queryBatch`), but if/when it
       // does, the path must already be on the wire.
-      expect(calls[0].url).toContain('com.dina.peerlens.getProfiles');
+      expect(calls[0].url).toContain('com.dinakernel.peerlens.getProfiles');
       expect(calls[0].method).toBe('POST');
     });
 
@@ -315,7 +315,7 @@ describe('PeerlensQueryClient (9.1)', () => {
 
   describe('searchAttestations (TN-LITE-005)', () => {
     const SAMPLE_HIT = {
-      uri: 'at://did:plc:author/com.dina.peerlens.attestation/3k8',
+      uri: 'at://did:plc:author/com.dinakernel.peerlens.attestation/3k8',
       cid: 'bafy...',
       authorDid: 'did:plc:author',
       subjectId: 'subj-1',
@@ -344,7 +344,7 @@ describe('PeerlensQueryClient (9.1)', () => {
       expect(r.results[0]?.uri).toBe(SAMPLE_HIT.uri);
       expect(r.cursor).toBe('2026-01-15T12:00:00.000Z::at://x/y');
       expect(r.totalEstimate).toBe(1);
-      expect(calls[0]?.url).toContain('com.dina.peerlens.search');
+      expect(calls[0]?.url).toContain('com.dinakernel.peerlens.search');
     });
 
     it('serialises params alphabetically for cache stability', async () => {

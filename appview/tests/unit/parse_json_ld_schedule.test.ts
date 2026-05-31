@@ -295,7 +295,7 @@ describe('parseJsonLdSchedule — JSON-LD envelope shapes', () => {
     // META-004 validator — i.e. the enricher's auto-fill matches the
     // wire contract for reviewer-declared schedules. This is the
     // hard-pin against schema drift between the two paths.
-    const r = validateRecord('com.dina.peerlens.attestation', {
+    const r = validateRecord('com.dinakernel.peerlens.attestation', {
       subject: { type: 'place', name: 'Place' },
       category: 'place',
       sentiment: 'positive',

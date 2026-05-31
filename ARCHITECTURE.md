@@ -3908,12 +3908,12 @@ These types bypass the contact gate and scenario policy system. Instead, they us
 **Service config (single local authority):**
 - Stored in `service_config` table in identity.sqlite
 - Exposed via `GET/PUT /v1/service/config`
-- Brain reads config, publishes to PDS as `com.dina.service.profile` AT record
+- Brain reads config, publishes to PDS as `com.dinakernel.service.profile` AT record
 - AppView indexes the record for discovery
 
 **AppView endpoints:**
-- `com.dina.service.search` — ranked retrieval (distance 40% + text 30% + trust 30%)
-- `com.dina.service.isDiscoverable` — deterministic boolean check (cached 5 min by Core)
+- `com.dinakernel.service.search` — ranked retrieval (distance 40% + text 30% + trust 30%)
+- `com.dinakernel.service.isDiscoverable` — deterministic boolean check (cached 5 min by Core)
 
 **Security properties:**
 - IngressDrop always wins (trust blocklist checked before service bypass)
@@ -4280,7 +4280,7 @@ PeerLens is NOT a single database. It's a distributed system built on AT Protoco
 │           Sovereignty model, see section below)               │
 │           Records stored in signed Merkle repos               │
 │           Federated via AT Protocol Relay + AppView           │
-│           Custom Lexicons: com.dina.peerlens.*                   │
+│           Custom Lexicons: com.dinakernel.peerlens.*                   │
 │           Signed tombstones for deletion                      │
 │           L2 Merkle root anchoring for timestamps (Phase 3)   │
 │                                                               │
@@ -4305,7 +4305,7 @@ PeerLens is NOT a single database. It's a distributed system built on AT Protoco
 | **Public data** | PeerLens data is inherently public — AT Protocol repos are public by design |
 | **Signed records** | AT Protocol repos are Merkle trees of signed CBOR records — tamper-evident by default |
 | **Federation** | Relays aggregate data from all PDSes — no single point of failure or censorship |
-| **Custom schemas** | Lexicons let us define `com.dina.peerlens.attestation`, `com.dina.peerlens.outcome`, etc. |
+| **Custom schemas** | Lexicons let us define `com.dinakernel.peerlens.attestation`, `com.dinakernel.peerlens.outcome`, etc. |
 | **Identity** | `did:plc` is native to AT Protocol — zero integration work |
 | **Deletion** | Users can delete records from their repo. Signed tombstones prevent unauthorized deletion. |
 | **Ecosystem** | Any AT Protocol AppView can index Dina's PeerLens. Handles (`alice.dina.host`) provide human-readable discovery. |
@@ -4316,7 +4316,7 @@ PeerLens is NOT a single database. It's a distributed system built on AT Protoco
 ```json
 {
   "lexicon": 1,
-  "id": "com.dina.peerlens.attestation",
+  "id": "com.dinakernel.peerlens.attestation",
   "defs": {
     "main": {
       "type": "record",
@@ -4341,7 +4341,7 @@ PeerLens is NOT a single database. It's a distributed system built on AT Protoco
 }
 ```
 
-Additional Lexicons: `com.dina.peerlens.outcome` (anonymized purchase outcomes), `com.dina.peerlens.bot` (bot registration and scores), `com.dina.peerlens.membership` (trust ring public info), `com.dina.service.profile` (provider service capabilities and location for service discovery).
+Additional Lexicons: `com.dinakernel.peerlens.outcome` (anonymized purchase outcomes), `com.dinakernel.peerlens.bot` (bot registration and scores), `com.dinakernel.peerlens.membership` (trust ring public info), `com.dinakernel.service.profile` (provider service capabilities and location for service discovery).
 
 ### Expert Attestations
 
@@ -4446,7 +4446,7 @@ Community PDS (pds.dinakernel.com or any AT Protocol PDS)
 AT Protocol Relay (firehose aggregation)
     │
     ▼
-PeerLens AppView (indexes com.dina.peerlens.* records)
+PeerLens AppView (indexes com.dinakernel.peerlens.* records)
 ```
 
 The Home Node never receives inbound trust traffic. The community PDS absorbs all read load. The Home Node only makes outbound pushes when it has new records to publish — a few requests per day for a typical user.
@@ -4486,7 +4486,7 @@ review                  │                │
 
 The Dina project operates community PDS instances at `pds.dinakernel.com` (production) and `test-pds.dinakernel.com` (development). Users get a handle and a PDS that's always online.
 
-- **What it stores:** Only `com.dina.peerlens.*` records (attestations, outcomes, bot scores) and the DID identity. No private data ever touches it.
+- **What it stores:** Only `com.dinakernel.peerlens.*` records (attestations, outcomes, bot scores) and the DID identity. No private data ever touches it.
 - **What it can do:** Serve your signed repo to relays. That's it.
 - **What it cannot do:** Forge records (no signing keys), read private vault data (different protocol entirely), prevent you from leaving (AT Protocol account portability).
 - **If it goes down:** Your records are already replicated to relays. You migrate to another PDS. Zero data loss.
@@ -4502,7 +4502,7 @@ The AppView does not hold user keys or create data. It is a **read-only indexer*
 
 #### Phase 1: The Monolith (0–1M users)
 
-**Philosophy: keep it simple.** Dina filters for a specific Lexicon (`com.dina.peerlens.*`), so the data volume is <1% of the full AT Protocol firehose. A single optimized node handles this for years.
+**Philosophy: keep it simple.** Dina filters for a specific Lexicon (`com.dinakernel.peerlens.*`), so the data volume is <1% of the full AT Protocol firehose. A single optimized node handles this for years.
 
 **Stack:**
 
@@ -4530,9 +4530,9 @@ AT Protocol Relay (bsky.network)
 │                                         │
 │  2. Filter                              │
 │     └─ Discards all events except       │
-│        com.dina.peerlens.*                 │
-│        com.dina.identity.attestation    │
-│        com.dina.service.profile         │
+│        com.dinakernel.peerlens.*                 │
+│        com.dinakernel.identity.attestation    │
+│        com.dinakernel.service.profile         │
 │                                         │
 │  3. Verifier                            │
 │     └─ Cryptographically verifies       │
@@ -5449,7 +5449,7 @@ PeerLens is inherently public data — expert attestations, anonymized outcome r
 - **Signed Merkle repos.** Every record is part of a cryptographically signed tree. Operators can censor but not forge. Replication defeats censorship.
 - **Federation for free.** Relays replicate data across the network. No need to build custom federation, sync, or discovery.
 - **`did:plc` native.** Dina's identity method is AT Protocol's identity method. Zero integration work.
-- **Custom Lexicons.** Schema-enforced records: `com.dina.peerlens.attestation`, `com.dina.peerlens.outcome`, `com.dina.peerlens.bot`.
+- **Custom Lexicons.** Schema-enforced records: `com.dinakernel.peerlens.attestation`, `com.dinakernel.peerlens.outcome`, `com.dinakernel.peerlens.bot`.
 - **Ecosystem.** Any AT Protocol AppView can index Dina's PeerLens. Handles (`alice.dina.host`) provide human-readable discovery.
 
 ### Where it doesn't fit: Messaging and Vault
@@ -5557,7 +5557,7 @@ Brain code (in `@dina/brain`) imports the interface only. The app that assembles
 ### What *doesn't* differ between the stacks
 
 - **Protocol on the wire.** Dina-to-Dina D2D envelope, PDS records, AppView search xRPC, PLC identity — byte-identical formats. A Lite Home Node talking to a Go Home Node just works.
-- **Lexicons.** AT Protocol records (`com.dina.service.profile`, `com.dina.peerlens.attestation`, etc.) are shared lexicons validated the same way in both.
+- **Lexicons.** AT Protocol records (`com.dinakernel.service.profile`, `com.dinakernel.peerlens.attestation`, etc.) are shared lexicons validated the same way in both.
 - **Four Laws semantics.** Silence First, Verified Truth, Absolute Loyalty, Never Replace a Human are enforced identically.
 - **Persona model.** 4-tier access tiers + per-persona DEKs + audit log all run the same.
 - **Test infrastructure.** The integration test suite (`tests/integration/`) runs against either stack via a `DINA_LITE=docker` branch (task 8.1); a Dina is a Dina regardless of runtime.
@@ -5629,7 +5629,7 @@ Long-term, one of the two may retire. Phase 13.5 of the Lite task plan is an exp
 | DID resolution | PLC Directory (`did:plc`), `did:web` escape hatch | `did:plc`: proven at 30M+ scale, key rotation, Go implementation (`bluesky-social/indigo`). `did:web`: sovereignty escape if PLC Directory becomes adversarial — rotation op transitions transparently. |
 | Push to clients | FCM/APNs (Phase 1), UnifiedPush (Phase 2) | Wake clients when Home Node has updates |
 | Backup | Any blob storage (S3, Backblaze, NAS) | Encrypted snapshots of Home Node vault |
-| PeerLens (PDS) | Community PDS (`pds.dinakernel.com`) — Split Sovereignty. Custom Lexicons (`com.dina.peerlens.*`). Signed tombstones for deletion. | Core creates PDS account on first boot (K256 recovery key in PLC genesis). Trust records pushed via outbound HTTPS. No sidecar PDS container. See Layer 3 "PDS Hosting: Split Sovereignty". |
+| PeerLens (PDS) | Community PDS (`pds.dinakernel.com`) — Split Sovereignty. Custom Lexicons (`com.dinakernel.peerlens.*`). Signed tombstones for deletion. | Core creates PDS account on first boot (K256 recovery key in PLC genesis). Trust records pushed via outbound HTTPS. No sidecar PDS container. See Layer 3 "PDS Hosting: Split Sovereignty". |
 | PeerLens (AppView) | Go + PostgreSQL 16 (`pg_trgm`). `indigo` firehose consumer. Phase 1: single monolith (0–1M users). Phase 3: sharded cluster (ScyllaDB + Kafka + K8s). | Read-only indexer. Signature verification on every record. Three-layer trust-but-verify: cryptographic proof, consensus check, direct PDS spot-check. AppView is a commodity — anyone can run one. See Layer 3 "PeerLens AppView". |
 | PeerLens (timestamps) | L2 Merkle root anchoring (Phase 3). Base or Polygon. | Provable "this existed before this date" for dispute resolution. Not needed until real money flows through the system. |
 | ZKP | Semaphore V4 (PSE/Ethereum Foundation) | Production-proven (World ID), off-chain proof generation |

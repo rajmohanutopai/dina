@@ -5157,7 +5157,7 @@
     "TST-CORE-918": {
       "path": "22.2",
       "row": 5,
-      "scenario": "`com.dina.peerlens.bot` and `com.dina.peerlens.membership` Lexicons validated",
+      "scenario": "`com.dinakernel.peerlens.bot` and `com.dinakernel.peerlens.membership` Lexicons validated",
       "line": 1458
     },
     "TST-CORE-919": {

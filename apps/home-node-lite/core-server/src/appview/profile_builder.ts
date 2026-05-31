@@ -2,7 +2,7 @@
  * Task 6.17 — service profile builder.
  *
  * When a Home Node exposes a D2D capability (bus schedule, recipe
- * lookup, transit ETA, …), it publishes a `com.dina.service.profile`
+ * lookup, transit ETA, …), it publishes a `com.dinakernel.service.profile`
  * record to its AT Protocol PDS (task 6.19 handles the actual
  * publish; this module just builds the record body). The record is
  * indexed by AppView (`appview/src/ingester/handlers/service-profile.ts`)
@@ -12,7 +12,7 @@
  * ("Service Profile with JSON Schema"):
  *
  *   {
- *     "$type": "com.dina.service.profile",
+ *     "$type": "com.dinakernel.service.profile",
  *     "name": "…",
  *     "isPublic": true,
  *     "capabilities": ["eta_query", …],
@@ -102,7 +102,7 @@ export interface CapabilitySchemaRecord {
 }
 
 export interface ServiceProfileRecord {
-  $type: 'com.dina.service.profile';
+  $type: 'com.dinakernel.service.profile';
   name: string;
   isPublic: boolean;
   capabilities: string[];
@@ -111,7 +111,7 @@ export interface ServiceProfileRecord {
   serviceArea?: ServiceAreaInput;
 }
 
-export const SERVICE_PROFILE_TYPE = 'com.dina.service.profile' as const;
+export const SERVICE_PROFILE_TYPE = 'com.dinakernel.service.profile' as const;
 const VALID_POLICIES: ReadonlySet<ResponsePolicy> = new Set([
   'auto',
   'review',
@@ -119,7 +119,7 @@ const VALID_POLICIES: ReadonlySet<ResponsePolicy> = new Set([
 ]);
 
 /**
- * Build a `com.dina.service.profile` record ready to be written via
+ * Build a `com.dinakernel.service.profile` record ready to be written via
  * `PDSClient.putRecord` (task 6.4). Throws a `RangeError` or
  * `TypeError` with a descriptive message on invalid input — the
  * caller (admin UI "publish profile" button) surfaces this directly.

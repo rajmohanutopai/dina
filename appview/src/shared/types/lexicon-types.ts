@@ -36,7 +36,7 @@ export interface RelatedAttestation {
   relation: string
 }
 
-/** com.dina.peerlens.attestation */
+/** com.dinakernel.peerlens.attestation */
 export interface Attestation {
   subject: SubjectRef
   category: string
@@ -229,7 +229,7 @@ export interface Attestation {
   createdAt: string
 }
 
-/** com.dina.peerlens.vouch */
+/** com.dinakernel.peerlens.vouch */
 export interface Vouch {
   subject: string
   vouchType: string
@@ -240,7 +240,7 @@ export interface Vouch {
   createdAt: string
 }
 
-/** com.dina.peerlens.endorsement */
+/** com.dinakernel.peerlens.endorsement */
 export interface Endorsement {
   subject: string
   skill: string
@@ -258,7 +258,7 @@ export interface Endorsement {
   createdAt: string
 }
 
-/** com.dina.peerlens.flag */
+/** com.dinakernel.peerlens.flag */
 export interface Flag {
   subject: SubjectRef
   flagType: string
@@ -268,7 +268,7 @@ export interface Flag {
   createdAt: string
 }
 
-/** com.dina.peerlens.reply */
+/** com.dinakernel.peerlens.reply */
 export interface Reply {
   rootUri: string
   parentUri: string
@@ -278,14 +278,14 @@ export interface Reply {
   createdAt: string
 }
 
-/** com.dina.peerlens.reaction */
+/** com.dinakernel.peerlens.reaction */
 export interface Reaction {
   targetUri: string
   reaction: 'helpful' | 'unhelpful' | 'agree' | 'disagree' | 'verified' | 'can-confirm' | 'suspicious' | 'outdated'
   createdAt: string
 }
 
-/** com.dina.peerlens.reportRecord */
+/** com.dinakernel.peerlens.reportRecord */
 export interface ReportRecord {
   targetUri: string
   reportType: 'spam' | 'fake-review' | 'incentivized-undisclosed' | 'self-review' |
@@ -298,14 +298,14 @@ export interface ReportRecord {
   createdAt: string
 }
 
-/** com.dina.peerlens.revocation */
+/** com.dinakernel.peerlens.revocation */
 export interface Revocation {
   targetUri: string
   reason: string
   createdAt: string
 }
 
-/** com.dina.peerlens.delegation */
+/** com.dinakernel.peerlens.delegation */
 export interface Delegation {
   subject: string
   scope: string
@@ -314,7 +314,7 @@ export interface Delegation {
   createdAt: string
 }
 
-/** com.dina.peerlens.collection */
+/** com.dinakernel.peerlens.collection */
 export interface Collection {
   name: string
   description?: string
@@ -323,7 +323,7 @@ export interface Collection {
   createdAt: string
 }
 
-/** com.dina.peerlens.media */
+/** com.dinakernel.peerlens.media */
 export interface Media {
   parentUri: string
   mediaType: string
@@ -332,7 +332,7 @@ export interface Media {
   createdAt: string
 }
 
-/** com.dina.peerlens.subject */
+/** com.dinakernel.peerlens.subject */
 export interface SubjectRecord {
   name: string
   subjectType: string
@@ -341,7 +341,7 @@ export interface SubjectRecord {
   createdAt: string
 }
 
-/** com.dina.peerlens.amendment */
+/** com.dinakernel.peerlens.amendment */
 export interface Amendment {
   targetUri: string
   amendmentType: string
@@ -350,7 +350,7 @@ export interface Amendment {
   createdAt: string
 }
 
-/** com.dina.peerlens.verification */
+/** com.dinakernel.peerlens.verification */
 export interface Verification {
   targetUri: string
   verificationType: string
@@ -360,7 +360,7 @@ export interface Verification {
   createdAt: string
 }
 
-/** com.dina.peerlens.reviewRequest */
+/** com.dinakernel.peerlens.reviewRequest */
 export interface ReviewRequest {
   subject: SubjectRef
   requestType: string
@@ -369,7 +369,7 @@ export interface ReviewRequest {
   createdAt: string
 }
 
-/** com.dina.peerlens.comparison */
+/** com.dinakernel.peerlens.comparison */
 export interface Comparison {
   subjects: SubjectRef[]
   category: string
@@ -378,7 +378,7 @@ export interface Comparison {
   createdAt: string
 }
 
-/** com.dina.peerlens.subjectClaim */
+/** com.dinakernel.peerlens.subjectClaim */
 export interface SubjectClaim {
   sourceSubjectId: string
   targetSubjectId: string
@@ -388,7 +388,7 @@ export interface SubjectClaim {
   createdAt: string
 }
 
-/** com.dina.peerlens.trustPolicy */
+/** com.dinakernel.peerlens.trustPolicy */
 export interface PeerlensPolicy {
   maxGraphDepth?: number
   trustedDomains?: string[]
@@ -397,7 +397,7 @@ export interface PeerlensPolicy {
   createdAt: string
 }
 
-/** com.dina.service.profile */
+/** com.dinakernel.service.profile */
 export interface ServiceProfile {
   name: string
   description: string
@@ -411,7 +411,7 @@ export interface ServiceProfile {
   updatedAt: string
 }
 
-/** com.dina.peerlens.notificationPrefs */
+/** com.dinakernel.peerlens.notificationPrefs */
 export interface NotificationPrefs {
   enableMentions: boolean
   enableReactions: boolean

@@ -7,7 +7,7 @@ import { addTrustEdge } from '../peerlens-edge-sync.js'
 import { markDirty } from '@/db/queries/dirty-flags.js'
 
 /**
- * Handler for com.dina.peerlens.endorsement records.
+ * Handler for com.dinakernel.peerlens.endorsement records.
  *
  * An endorsement is a skill-specific trust signal — "This person is good at X."
  * The trust edge weight is higher for first-hand experience (worked-together).

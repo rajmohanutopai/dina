@@ -72,12 +72,12 @@ function stubDb(opts: {
 describe('AttestationStatusParams — TN-API-005 schema', () => {
   it('parses a single URI', () => {
     const r = AttestationStatusParams.safeParse({
-      uris: 'at://did:plc:alice/com.dina.peerlens.attestation/3kfx',
+      uris: 'at://did:plc:alice/com.dinakernel.peerlens.attestation/3kfx',
     })
     expect(r.success).toBe(true)
     if (r.success) {
       expect(r.data.uris).toEqual([
-        'at://did:plc:alice/com.dina.peerlens.attestation/3kfx',
+        'at://did:plc:alice/com.dinakernel.peerlens.attestation/3kfx',
       ])
     }
   })

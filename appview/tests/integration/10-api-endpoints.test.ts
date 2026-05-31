@@ -2020,7 +2020,7 @@ describe('§10+ API Endpoint Fixes (AppView Issues)', () => {
     const baseDate = new Date('2026-01-15T12:00:00Z')
     for (let i = 0; i < 5; i++) {
       await insertAttestation(
-        `at://did:plc:auth/com.dina.peerlens.attestation/cursor${i}`,
+        `at://did:plc:auth/com.dinakernel.peerlens.attestation/cursor${i}`,
         'did:plc:auth',
         { subjectId: 'sub-cursor', recordCreatedAt: baseDate },
       )
@@ -2042,7 +2042,7 @@ describe('§10+ API Endpoint Fixes (AppView Issues)', () => {
     await insertSubject('sub-ga', { name: 'GA Test' })
     for (let i = 0; i < 5; i++) {
       await insertAttestation(
-        `at://did:plc:auth/com.dina.peerlens.attestation/ga${i}`,
+        `at://did:plc:auth/com.dinakernel.peerlens.attestation/ga${i}`,
         'did:plc:auth',
         { subjectId: 'sub-ga', recordCreatedAt: new Date(Date.now() - i * 60000) },
       )

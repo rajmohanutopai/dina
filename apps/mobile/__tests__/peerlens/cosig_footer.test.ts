@@ -270,7 +270,7 @@ describe('deriveCosigFooter — closed-non-success states excluded', () => {
 describe('deriveCosigFooter — accepted detail', () => {
   it('carries endorsementUri through for tap → endorsement-detail navigation', () => {
     const r = deriveCosigFooter({
-      states: [accepted('r1', 'at://did:plc:sancho/com.dina.peerlens.endorsement/abc')],
+      states: [accepted('r1', 'at://did:plc:sancho/com.dinakernel.peerlens.endorsement/abc')],
       recipientNames: { r1: 'Sancho' },
     });
     expect(r.accepted).toHaveLength(1);
@@ -278,7 +278,7 @@ describe('deriveCosigFooter — accepted detail', () => {
     if (first === undefined) throw new Error('expected one accepted');
     expect(first.requestId).toBe('r1');
     expect(first.name).toBe('Sancho');
-    expect(first.endorsementUri).toBe('at://did:plc:sancho/com.dina.peerlens.endorsement/abc');
+    expect(first.endorsementUri).toBe('at://did:plc:sancho/com.dinakernel.peerlens.endorsement/abc');
   });
 
   it('accepted entries follow input order regardless of acceptedAt timestamp', () => {

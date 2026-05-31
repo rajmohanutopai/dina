@@ -3,9 +3,9 @@
  * (TN-FLAG-003).
  *
  * Contract:
- *   - `com.dina.peerlens.*` methods pass when flag = true
- *   - `com.dina.peerlens.*` methods 503 when flag = false
- *   - `com.dina.service.*` methods always pass (separate namespace,
+ *   - `com.dinakernel.peerlens.*` methods pass when flag = true
+ *   - `com.dinakernel.peerlens.*` methods 503 when flag = false
+ *   - `com.dinakernel.service.*` methods always pass (separate namespace,
  *     not gated by trust V1 ramp)
  *   - DB error => 503 (closed-default)
  *   - Methods outside both namespaces (e.g. `app.bsky.foo`) pass
@@ -43,7 +43,7 @@ function stubDb(state: FlagState): DrizzleDB {
 describe('gateTrustNamespace — TN-FLAG-003', () => {
   it('trust method with flag=true → ok', async () => {
     const db = stubDb({ value: true })
-    const result = await gateTrustNamespace(db, 'com.dina.peerlens.resolve')
+    const result = await gateTrustNamespace(db, 'com.dinakernel.peerlens.resolve')
     expect(result.ok).toBe(true)
   })
 
@@ -55,7 +55,7 @@ describe('gateTrustNamespace — TN-FLAG-003', () => {
     // until an operator manually flipped the flag on, which is
     // backwards from the V1 ramp.
     const db = stubDb({ value: null })
-    const result = await gateTrustNamespace(db, 'com.dina.peerlens.resolve')
+    const result = await gateTrustNamespace(db, 'com.dinakernel.peerlens.resolve')
     expect(result.ok).toBe(true)
   })
 
@@ -64,7 +64,7 @@ describe('gateTrustNamespace — TN-FLAG-003', () => {
     // call must surface as a 5xx so client backoff kicks in and ops
     // dashboards see the disabled state.
     const db = stubDb({ value: false })
-    const result = await gateTrustNamespace(db, 'com.dina.peerlens.search')
+    const result = await gateTrustNamespace(db, 'com.dinakernel.peerlens.search')
     expect(result.ok).toBe(false)
     if (!result.ok) {
       expect(result.status).toBe(503)
@@ -78,7 +78,7 @@ describe('gateTrustNamespace — TN-FLAG-003', () => {
     // risk serving data the operator just disabled — safer to 503 and
     // let the client retry once the DB recovers.
     const db = stubDb({ value: true, throws: new Error('connection refused') })
-    const result = await gateTrustNamespace(db, 'com.dina.peerlens.getProfile')
+    const result = await gateTrustNamespace(db, 'com.dinakernel.peerlens.getProfile')
     expect(result.ok).toBe(false)
     if (!result.ok) {
       expect(result.status).toBe(503)
@@ -93,7 +93,7 @@ describe('gateTrustNamespace — TN-FLAG-003', () => {
     // are independent and operators rely on them during incident
     // response.
     const db = stubDb({ value: false })
-    const result = await gateTrustNamespace(db, 'com.dina.service.search')
+    const result = await gateTrustNamespace(db, 'com.dinakernel.service.search')
     expect(result.ok).toBe(true)
   })
 
@@ -101,7 +101,7 @@ describe('gateTrustNamespace — TN-FLAG-003', () => {
     // Service path must NOT even read the flag — it's not gated. A
     // DB error on the flag table should not block service traffic.
     const db = stubDb({ value: true, throws: new Error('connection refused') })
-    const result = await gateTrustNamespace(db, 'com.dina.service.isDiscoverable')
+    const result = await gateTrustNamespace(db, 'com.dinakernel.service.isDiscoverable')
     expect(result.ok).toBe(true)
   })
 
@@ -120,18 +120,18 @@ describe('gateTrustNamespace — TN-FLAG-003', () => {
     // before any DB access.
     const select = vi.fn()
     const db = { select } as unknown as DrizzleDB
-    const result = await gateTrustNamespace(db, 'com.dina.service.search')
+    const result = await gateTrustNamespace(db, 'com.dinakernel.service.search')
     expect(result.ok).toBe(true)
     expect(select).not.toHaveBeenCalled()
   })
 
-  it('exact prefix match — `com.dina.trustNotReally` is NOT gated', async () => {
+  it('exact prefix match — `com.dinakernel.trustNotReally` is NOT gated', async () => {
     // Defense against a future method whose name happens to share a
-    // prefix substring. The gate matches `com.dina.peerlens.` (with the
-    // trailing dot), not `com.dina.trust` — so a hypothetical
-    // `com.dina.trustNotReally.foo` won't be misclassified.
+    // prefix substring. The gate matches `com.dinakernel.peerlens.` (with the
+    // trailing dot), not `com.dinakernel.trust` — so a hypothetical
+    // `com.dinakernel.trustNotReally.foo` won't be misclassified.
     const db = stubDb({ value: false })
-    const result = await gateTrustNamespace(db, 'com.dina.trustNotReally.foo')
+    const result = await gateTrustNamespace(db, 'com.dinakernel.trustNotReally.foo')
     expect(result.ok).toBe(true)
   })
 
@@ -148,7 +148,7 @@ describe('gateTrustNamespace — TN-FLAG-003', () => {
     async function fetchDisabled(): Promise<{ status: number; message: string }> {
       const result = await gateTrustNamespace(
         stubDb({ value: false }),
-        'com.dina.peerlens.search',
+        'com.dinakernel.peerlens.search',
       )
       if (result.ok) throw new Error('expected denied')
       return { status: result.status, message: result.body.message }
@@ -157,7 +157,7 @@ describe('gateTrustNamespace — TN-FLAG-003', () => {
     async function fetchDbError(): Promise<{ status: number; message: string }> {
       const result = await gateTrustNamespace(
         stubDb({ value: true, throws: new Error('boom') }),
-        'com.dina.peerlens.search',
+        'com.dinakernel.peerlens.search',
       )
       if (result.ok) throw new Error('expected denied')
       return { status: result.status, message: result.body.message }

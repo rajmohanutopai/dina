@@ -54,7 +54,7 @@ The AppView does not connect directly to individual Dina PDS nodes. The AT Proto
 
 1. **Dina Core (PDS)** — Each user's node stores trust records in their personal data repository (signed, content-addressed Merkle tree). On first boot, the PDS sends `com.atproto.sync.requestCrawl` to the configured relay URL, registering itself for crawling.
 
-2. **Relay (BGS)** — Crawls all registered PDS repositories, verifies signatures, and merges all commits into a single firehose stream. The relay is lexicon-agnostic — it carries ALL record types from ALL PDS nodes, including custom `com.dina.peerlens.*` records.
+2. **Relay (BGS)** — Crawls all registered PDS repositories, verifies signatures, and merges all commits into a single firehose stream. The relay is lexicon-agnostic — it carries ALL record types from ALL PDS nodes, including custom `com.dinakernel.peerlens.*` records.
 
 3. **Jetstream (Go binary)** — Self-hosted container that connects to the relay firehose, does the heavy CBOR/MST decoding in Go, and exposes a lightweight JSON WebSocket stream. Subscribes with `wantedCollections` to filter for only trust records.
 
@@ -64,7 +64,7 @@ The AppView does not connect directly to individual Dina PDS nodes. The AT Proto
 
 **v1 (two-month sprint): Piggyback on Bluesky's global relay.**
 
-Configure the Jetstream binary to connect to `wss://bgs.bsky.network`. Bluesky's relay is lexicon-agnostic — it will crawl any PDS that sends `requestCrawl`, including Dina nodes with custom trust records. Your Jetstream filters out the millions of Bluesky posts and feeds only `com.dina.peerlens.*` events to the Ingester.
+Configure the Jetstream binary to connect to `wss://bgs.bsky.network`. Bluesky's relay is lexicon-agnostic — it will crawl any PDS that sends `requestCrawl`, including Dina nodes with custom trust records. Your Jetstream filters out the millions of Bluesky posts and feeds only `com.dinakernel.peerlens.*` events to the Ingester.
 
 Pros: Zero relay infrastructure. Works immediately. Cons: Dependency on Bluesky's infrastructure.
 
@@ -116,7 +116,7 @@ The AT Proto relay firehose (`com.atproto.sync.subscribeRepos`) sends CBOR-encod
 - Ed25519 signature verification per commit
 - Filtering (99.9%+ of commits are Bluesky posts, not trust records)
 
-All of this in single-threaded Node.js is a CPU bottleneck at scale. Bluesky built **Jetstream** specifically for AppViews — a Go intermediary that handles the cryptographic heavy lifting and emits a lightweight JSON WebSocket stream. The Ingester subscribes with `wantedCollections` and receives only `com.dina.peerlens.*` records, already decoded to JSON.
+All of this in single-threaded Node.js is a CPU bottleneck at scale. Bluesky built **Jetstream** specifically for AppViews — a Go intermediary that handles the cryptographic heavy lifting and emits a lightweight JSON WebSocket stream. The Ingester subscribes with `wantedCollections` and receives only `com.dinakernel.peerlens.*` records, already decoded to JSON.
 
 This eliminates: `@atproto/repo` dependency, MST walking code, CBOR decoding, signature verification. The Ingester becomes a JSON validator + Postgres writer.
 
@@ -253,15 +253,15 @@ dina-appview/
 │   │   │
 │   │   │  # ── XRPC API endpoints (agents consume these) ──
 │   │   ├── xrpc/
-│   │   │   ├── com.dina.peerlens.resolve/
+│   │   │   ├── com.dinakernel.peerlens.resolve/
 │   │   │   │   └── route.ts
-│   │   │   ├── com.dina.peerlens.getProfile/
+│   │   │   ├── com.dinakernel.peerlens.getProfile/
 │   │   │   │   └── route.ts
-│   │   │   ├── com.dina.peerlens.getAttestations/
+│   │   │   ├── com.dinakernel.peerlens.getAttestations/
 │   │   │   │   └── route.ts
-│   │   │   ├── com.dina.peerlens.getGraph/
+│   │   │   ├── com.dinakernel.peerlens.getGraph/
 │   │   │   │   └── route.ts
-│   │   │   └── com.dina.peerlens.search/
+│   │   │   └── com.dinakernel.peerlens.search/
 │   │   │       └── route.ts
 │   │   │
 │   │   │  # ── API middleware ──
@@ -426,7 +426,7 @@ export interface JetstreamCommitCreate {
   commit: {
     rev: string                            // Repo revision
     operation: 'create' | 'update'
-    collection: string                     // e.g. "com.dina.peerlens.attestation"
+    collection: string                     // e.g. "com.dinakernel.peerlens.attestation"
     rkey: string                           // Record key (TID)
     record: Record<string, unknown>        // The actual record — already JSON
     cid: string                            // Content hash
@@ -1002,25 +1002,25 @@ export class JetstreamConsumer {
 
 /** All trust record collection NSIDs */
 export const TRUST_COLLECTIONS = [
-  'com.dina.peerlens.attestation',
-  'com.dina.peerlens.vouch',
-  'com.dina.peerlens.endorsement',
-  'com.dina.peerlens.flag',
-  'com.dina.peerlens.reply',
-  'com.dina.peerlens.reaction',
-  'com.dina.peerlens.reportRecord',
-  'com.dina.peerlens.revocation',
-  'com.dina.peerlens.delegation',
-  'com.dina.peerlens.collection',
-  'com.dina.peerlens.media',
-  'com.dina.peerlens.subject',
-  'com.dina.peerlens.amendment',
-  'com.dina.peerlens.verification',
-  'com.dina.peerlens.reviewRequest',
-  'com.dina.peerlens.comparison',
-  'com.dina.peerlens.subjectClaim',
-  'com.dina.peerlens.trustPolicy',
-  'com.dina.peerlens.notificationPrefs',
+  'com.dinakernel.peerlens.attestation',
+  'com.dinakernel.peerlens.vouch',
+  'com.dinakernel.peerlens.endorsement',
+  'com.dinakernel.peerlens.flag',
+  'com.dinakernel.peerlens.reply',
+  'com.dinakernel.peerlens.reaction',
+  'com.dinakernel.peerlens.reportRecord',
+  'com.dinakernel.peerlens.revocation',
+  'com.dinakernel.peerlens.delegation',
+  'com.dinakernel.peerlens.collection',
+  'com.dinakernel.peerlens.media',
+  'com.dinakernel.peerlens.subject',
+  'com.dinakernel.peerlens.amendment',
+  'com.dinakernel.peerlens.verification',
+  'com.dinakernel.peerlens.reviewRequest',
+  'com.dinakernel.peerlens.comparison',
+  'com.dinakernel.peerlens.subjectClaim',
+  'com.dinakernel.peerlens.trustPolicy',
+  'com.dinakernel.peerlens.notificationPrefs',
 ] as const
 
 export type TrustCollection = typeof TRUST_COLLECTIONS[number]
@@ -1130,10 +1130,10 @@ const reportRecordSchema = z.object({
 // ── Validator map ──
 
 const schemas: Record<string, z.ZodSchema> = {
-  'com.dina.peerlens.attestation': attestationSchema,
-  'com.dina.peerlens.vouch': vouchSchema,
-  'com.dina.peerlens.reaction': reactionSchema,
-  'com.dina.peerlens.reportRecord': reportRecordSchema,
+  'com.dinakernel.peerlens.attestation': attestationSchema,
+  'com.dinakernel.peerlens.vouch': vouchSchema,
+  'com.dinakernel.peerlens.reaction': reactionSchema,
+  'com.dinakernel.peerlens.reportRecord': reportRecordSchema,
   // ... all 19 record types
 }
 
@@ -1176,9 +1176,9 @@ export interface HandlerContext {
 }
 
 export interface RecordOp {
-  uri: string             // at://did:plc:abc/com.dina.peerlens.attestation/tid
+  uri: string             // at://did:plc:abc/com.dinakernel.peerlens.attestation/tid
   did: string             // Author DID
-  collection: string      // com.dina.peerlens.attestation
+  collection: string      // com.dinakernel.peerlens.attestation
   rkey: string            // Record key
   cid?: string            // Content hash (present on create/update, absent on delete)
   record?: unknown        // Validated record (present on create/update, absent on delete)
@@ -1250,25 +1250,25 @@ import { trustPolicyHandler } from './trust-policy'
 import { notificationPrefsHandler } from './notification-prefs'
 
 const handlers: Record<string, RecordHandler> = {
-  'com.dina.peerlens.attestation': attestationHandler,
-  'com.dina.peerlens.vouch': vouchHandler,
-  'com.dina.peerlens.endorsement': endorsementHandler,
-  'com.dina.peerlens.flag': flagHandler,
-  'com.dina.peerlens.reply': replyHandler,
-  'com.dina.peerlens.reaction': reactionHandler,
-  'com.dina.peerlens.reportRecord': reportRecordHandler,
-  'com.dina.peerlens.revocation': revocationHandler,
-  'com.dina.peerlens.delegation': delegationHandler,
-  'com.dina.peerlens.collection': collectionHandler,
-  'com.dina.peerlens.media': mediaHandler,
-  'com.dina.peerlens.subject': subjectHandler,
-  'com.dina.peerlens.amendment': amendmentHandler,
-  'com.dina.peerlens.verification': verificationHandler,
-  'com.dina.peerlens.reviewRequest': reviewRequestHandler,
-  'com.dina.peerlens.comparison': comparisonHandler,
-  'com.dina.peerlens.subjectClaim': subjectClaimHandler,
-  'com.dina.peerlens.trustPolicy': trustPolicyHandler,
-  'com.dina.peerlens.notificationPrefs': notificationPrefsHandler,
+  'com.dinakernel.peerlens.attestation': attestationHandler,
+  'com.dinakernel.peerlens.vouch': vouchHandler,
+  'com.dinakernel.peerlens.endorsement': endorsementHandler,
+  'com.dinakernel.peerlens.flag': flagHandler,
+  'com.dinakernel.peerlens.reply': replyHandler,
+  'com.dinakernel.peerlens.reaction': reactionHandler,
+  'com.dinakernel.peerlens.reportRecord': reportRecordHandler,
+  'com.dinakernel.peerlens.revocation': revocationHandler,
+  'com.dinakernel.peerlens.delegation': delegationHandler,
+  'com.dinakernel.peerlens.collection': collectionHandler,
+  'com.dinakernel.peerlens.media': mediaHandler,
+  'com.dinakernel.peerlens.subject': subjectHandler,
+  'com.dinakernel.peerlens.amendment': amendmentHandler,
+  'com.dinakernel.peerlens.verification': verificationHandler,
+  'com.dinakernel.peerlens.reviewRequest': reviewRequestHandler,
+  'com.dinakernel.peerlens.comparison': comparisonHandler,
+  'com.dinakernel.peerlens.subjectClaim': subjectClaimHandler,
+  'com.dinakernel.peerlens.trustPolicy': trustPolicyHandler,
+  'com.dinakernel.peerlens.notificationPrefs': notificationPrefsHandler,
 }
 
 export function routeHandler(collection: string): RecordHandler | null {
@@ -1499,23 +1499,23 @@ import { removeTrustEdge } from './trust-edge-sync'
  * uses that table for both the tombstone metadata query and the delete.
  */
 const COLLECTION_TABLE_MAP: Record<string, PgTable> = {
-  'com.dina.peerlens.attestation':       attestations,
-  'com.dina.peerlens.vouch':             vouches,
-  'com.dina.peerlens.endorsement':       endorsements,
-  'com.dina.peerlens.flag':              flags,
-  'com.dina.peerlens.reportRecord':      reportRecords,
-  'com.dina.peerlens.reply':             replies,
-  'com.dina.peerlens.reaction':          reactions,
-  'com.dina.peerlens.revocation':        revocations,
-  'com.dina.peerlens.delegation':        delegations,
-  'com.dina.peerlens.comparison':        comparisons,
-  'com.dina.peerlens.reviewRequest':     reviewRequests,
-  'com.dina.peerlens.collection':        collectionsTable,
-  'com.dina.peerlens.amendment':         amendments,
-  'com.dina.peerlens.verification':      verifications,
-  'com.dina.peerlens.subjectClaim':      subjectClaims,
-  'com.dina.peerlens.trustPolicy':       trustPolicies,
-  'com.dina.peerlens.notificationPrefs': notificationPrefs,
+  'com.dinakernel.peerlens.attestation':       attestations,
+  'com.dinakernel.peerlens.vouch':             vouches,
+  'com.dinakernel.peerlens.endorsement':       endorsements,
+  'com.dinakernel.peerlens.flag':              flags,
+  'com.dinakernel.peerlens.reportRecord':      reportRecords,
+  'com.dinakernel.peerlens.reply':             replies,
+  'com.dinakernel.peerlens.reaction':          reactions,
+  'com.dinakernel.peerlens.revocation':        revocations,
+  'com.dinakernel.peerlens.delegation':        delegations,
+  'com.dinakernel.peerlens.comparison':        comparisons,
+  'com.dinakernel.peerlens.reviewRequest':     reviewRequests,
+  'com.dinakernel.peerlens.collection':        collectionsTable,
+  'com.dinakernel.peerlens.amendment':         amendments,
+  'com.dinakernel.peerlens.verification':      verifications,
+  'com.dinakernel.peerlens.subjectClaim':      subjectClaims,
+  'com.dinakernel.peerlens.trustPolicy':       trustPolicies,
+  'com.dinakernel.peerlens.notificationPrefs': notificationPrefs,
 }
 
 /**
@@ -1892,11 +1892,11 @@ The fix isn't to weaken Tier 2 isolation — it's to make Tier 1 the overwhelmin
 
 Now the attestation hits Tier 1 deterministically — same hash as every other attestation with that Place ID. Name-only Tier 2 attestations should be the rare exception (offline users, API-only clients without agent assistance), not the default path.
 
-This means the `com.dina.peerlens.attestation` lexicon's `subject` field should **strongly prefer** structured identifiers. The agent documentation should emphasize that providing a bare name is a degraded experience.
+This means the `com.dinakernel.peerlens.attestation` lexicon's `subject` field should **strongly prefer** structured identifiers. The agent documentation should emphasize that providing a bare name is a degraded experience.
 
 ### Community Merge (Tier 3)
 
-When orphaned Tier 2 subjects accumulate around the same real-world entity, they can be merged using the existing `com.dina.peerlens.amendment` lexicon (or a future `subjectMerge` lexicon). A trusted labeler or community moderator asserts "Subject A is the same as Subject B."
+When orphaned Tier 2 subjects accumulate around the same real-world entity, they can be merged using the existing `com.dinakernel.peerlens.amendment` lexicon (or a future `subjectMerge` lexicon). A trusted labeler or community moderator asserts "Subject A is the same as Subject B."
 
 The Scorer processes the merge:
 
@@ -1956,7 +1956,7 @@ export async function processMerge(
 The `/resolve` XRPC endpoint must follow the canonical chain when looking up subject scores:
 
 ```typescript
-// In computeResolveResponse (src/app/xrpc/com.dina.peerlens.resolve/route.ts)
+// In computeResolveResponse (src/app/xrpc/com.dinakernel.peerlens.resolve/route.ts)
 
 // 1. Parse the subject reference
 const subjectRef = JSON.parse(subjectJson)
@@ -3169,7 +3169,7 @@ export const CACHE_TTLS = {
 ### Resolve (The Money Endpoint)
 
 ```typescript
-// src/app/xrpc/com.dina.peerlens.resolve/route.ts
+// src/app/xrpc/com.dinakernel.peerlens.resolve/route.ts
 
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -3293,7 +3293,7 @@ async function computeResolveResponse(
 ### Search
 
 ```typescript
-// src/app/xrpc/com.dina.peerlens.search/route.ts
+// src/app/xrpc/com.dinakernel.peerlens.search/route.ts
 
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -3409,7 +3409,7 @@ services:
   # ── Jetstream (Go binary) ──
   # Bridges the AT Proto relay firehose to lightweight JSON WebSocket.
   # Handles CBOR decoding, MST traversal, signature verification in Go.
-  # Filters for only com.dina.peerlens.* collections.
+  # Filters for only com.dinakernel.peerlens.* collections.
   #
   # v1: Connects to Bluesky's global relay (bgs.bsky.network).
   #     Switch RELAY_URL to relay.dina.foundation for sovereign operation.
@@ -3426,25 +3426,25 @@ services:
       # Only emit events for trust records — filters out
       # millions of Bluesky posts, likes, follows, etc.
       JETSTREAM_WANTED_COLLECTIONS: >-
-        com.dina.peerlens.attestation,
-        com.dina.peerlens.vouch,
-        com.dina.peerlens.endorsement,
-        com.dina.peerlens.flag,
-        com.dina.peerlens.reply,
-        com.dina.peerlens.reaction,
-        com.dina.peerlens.reportRecord,
-        com.dina.peerlens.revocation,
-        com.dina.peerlens.delegation,
-        com.dina.peerlens.collection,
-        com.dina.peerlens.media,
-        com.dina.peerlens.subject,
-        com.dina.peerlens.amendment,
-        com.dina.peerlens.verification,
-        com.dina.peerlens.reviewRequest,
-        com.dina.peerlens.comparison,
-        com.dina.peerlens.subjectClaim,
-        com.dina.peerlens.trustPolicy,
-        com.dina.peerlens.notificationPrefs
+        com.dinakernel.peerlens.attestation,
+        com.dinakernel.peerlens.vouch,
+        com.dinakernel.peerlens.endorsement,
+        com.dinakernel.peerlens.flag,
+        com.dinakernel.peerlens.reply,
+        com.dinakernel.peerlens.reaction,
+        com.dinakernel.peerlens.reportRecord,
+        com.dinakernel.peerlens.revocation,
+        com.dinakernel.peerlens.delegation,
+        com.dinakernel.peerlens.collection,
+        com.dinakernel.peerlens.media,
+        com.dinakernel.peerlens.subject,
+        com.dinakernel.peerlens.amendment,
+        com.dinakernel.peerlens.verification,
+        com.dinakernel.peerlens.reviewRequest,
+        com.dinakernel.peerlens.comparison,
+        com.dinakernel.peerlens.subjectClaim,
+        com.dinakernel.peerlens.trustPolicy,
+        com.dinakernel.peerlens.notificationPrefs
 
       # WebSocket listen port (internal to Docker network)
       JETSTREAM_PORT: 6008
@@ -3885,7 +3885,7 @@ func (s *TrustService) Publish(ctx context.Context, intent Intent) error {
 
     // 2. Assemble the full AT Protocol record with required fields
     record := map[string]interface{}{
-        "$type":     "com.dina.peerlens.attestation",  // Lexicon type identifier
+        "$type":     "com.dinakernel.peerlens.attestation",  // Lexicon type identifier
         "subject":   intent.Subject,
         "category":  intent.Category,
         "sentiment": intent.Sentiment,
@@ -3899,7 +3899,7 @@ func (s *TrustService) Publish(ctx context.Context, intent Intent) error {
     // signs it with the user's key, and broadcasts to the relay.
     _, err := s.pdsClient.CreateRecord(ctx, &atproto.RepoCreateRecord_Input{
         Repo:       s.userDID,                              // User's DID
-        Collection: "com.dina.peerlens.attestation",      // Lexicon NSID
+        Collection: "com.dinakernel.peerlens.attestation",      // Lexicon NSID
         Record:     &lexutil.LexiconTypeDecoder{Val: record},
     })
     if err != nil {
@@ -3925,7 +3925,7 @@ The AppView never needs to know about the Brain, the Core, or the PDS. It only s
 
 AT Protocol PDS implementations accept ANY collection NSID in `createRecord` — they do not validate against a known set of lexicons. The PDS stores the record as an opaque CBOR blob in the user's repository. Validation is the AppView's responsibility, not the PDS's.
 
-This means Dina's custom `com.dina.peerlens.*` collections work on any AT Protocol PDS (including Bluesky's hosted PDS) without any PDS modifications. The PDS doesn't need to "know about" Dina's lexicons.
+This means Dina's custom `com.dinakernel.peerlens.*` collections work on any AT Protocol PDS (including Bluesky's hosted PDS) without any PDS modifications. The PDS doesn't need to "know about" Dina's lexicons.
 
 ---
 
@@ -3951,25 +3951,25 @@ import { createDb } from '@/db/connection'
 import { logger } from '@/shared/utils/logger'
 
 const TRUST_COLLECTIONS = [
-  'com.dina.peerlens.attestation',
-  'com.dina.peerlens.vouch',
-  'com.dina.peerlens.endorsement',
-  'com.dina.peerlens.flag',
-  'com.dina.peerlens.reply',
-  'com.dina.peerlens.reaction',
-  'com.dina.peerlens.reportRecord',
-  'com.dina.peerlens.revocation',
-  'com.dina.peerlens.delegation',
-  'com.dina.peerlens.collection',
-  'com.dina.peerlens.media',
-  'com.dina.peerlens.subject',
-  'com.dina.peerlens.amendment',
-  'com.dina.peerlens.verification',
-  'com.dina.peerlens.reviewRequest',
-  'com.dina.peerlens.comparison',
-  'com.dina.peerlens.subjectClaim',
-  'com.dina.peerlens.trustPolicy',
-  'com.dina.peerlens.notificationPrefs',
+  'com.dinakernel.peerlens.attestation',
+  'com.dinakernel.peerlens.vouch',
+  'com.dinakernel.peerlens.endorsement',
+  'com.dinakernel.peerlens.flag',
+  'com.dinakernel.peerlens.reply',
+  'com.dinakernel.peerlens.reaction',
+  'com.dinakernel.peerlens.reportRecord',
+  'com.dinakernel.peerlens.revocation',
+  'com.dinakernel.peerlens.delegation',
+  'com.dinakernel.peerlens.collection',
+  'com.dinakernel.peerlens.media',
+  'com.dinakernel.peerlens.subject',
+  'com.dinakernel.peerlens.amendment',
+  'com.dinakernel.peerlens.verification',
+  'com.dinakernel.peerlens.reviewRequest',
+  'com.dinakernel.peerlens.comparison',
+  'com.dinakernel.peerlens.subjectClaim',
+  'com.dinakernel.peerlens.trustPolicy',
+  'com.dinakernel.peerlens.notificationPrefs',
 ]
 
 /**

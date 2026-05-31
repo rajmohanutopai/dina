@@ -3,7 +3,7 @@
  * discoverable provider service offering a given capability.
  *
  * Behaviour (matches main dina `core/internal/adapter/appview/service_resolver.go`):
- *   - Calls `{appViewURL}/xrpc/com.dina.service.isDiscoverable?did=<did>`
+ *   - Calls `{appViewURL}/xrpc/com.dinakernel.service.isDiscoverable?did=<did>`
  *     (wire path renamed from `isPublic` in WM-CORE-12).
  *   - Caches the answer for `cacheTtlMs` (default 5 min) keyed by DID
  *   - Retries on transient failures (5xx / 408 / 429 / network) up to
@@ -53,7 +53,7 @@ export interface AppViewServiceResolverOptions {
   sleepFn?: (attemptZeroIndexed: number) => Promise<void>;
 }
 
-/** AppView response shape for `com.dina.service.isDiscoverable`. */
+/** AppView response shape for `com.dinakernel.service.isDiscoverable`. */
 export interface IsDiscoverableResult {
   isDiscoverable: boolean;
   capabilities: string[];
@@ -222,7 +222,7 @@ export class AppViewServiceResolver {
   }
 
   private async fetch(did: string): Promise<IsDiscoverableResult | null> {
-    const url = `${this.appViewURL}/xrpc/com.dina.service.isDiscoverable?did=${encodeURIComponent(did)}`;
+    const url = `${this.appViewURL}/xrpc/com.dinakernel.service.isDiscoverable?did=${encodeURIComponent(did)}`;
 
     // `attempt` is 0-indexed. We run at most `maxRetries + 1` attempts total.
     for (let attempt = 0; ; attempt++) {

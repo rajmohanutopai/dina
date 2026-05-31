@@ -37,7 +37,7 @@ func TestPDS_22_1_1_SignAttestationRecord(t *testing.T) {
 
 	// Positive: valid attestation record → signed and published, returns AT URI.
 	record := testutil.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "attestation-001",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -58,12 +58,12 @@ func TestPDS_22_1_1_SignAttestationRecord(t *testing.T) {
 	testutil.RequireTrue(t, uri != "", "AT URI must be returned after publish")
 	// Verify AT URI format: at://authorDID/collection/recordKey
 	testutil.RequireTrue(t, strings.Contains(uri, "did:key:z6MkAuthor"), "URI must contain author DID")
-	testutil.RequireTrue(t, strings.Contains(uri, "com.dina.peerlens.attestation"), "URI must contain collection")
+	testutil.RequireTrue(t, strings.Contains(uri, "com.dinakernel.peerlens.attestation"), "URI must contain collection")
 	testutil.RequireTrue(t, strings.Contains(uri, "attestation-001"), "URI must contain record key")
 
 	// Negative: missing required field (no "verdict") → lexicon validation fails.
 	badRecord := testutil.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "attestation-bad",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -79,7 +79,7 @@ func TestPDS_22_1_1_SignAttestationRecord(t *testing.T) {
 
 	// Negative: rating out of range (>100) → must fail.
 	outOfRange := testutil.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "attestation-range",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -103,7 +103,7 @@ func TestPDS_22_1_2_SignOutcomeReport(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "PDSPublisher")
 
 	record := testutil.PDSRecord{
-		Collection: "com.dina.peerlens.outcome",
+		Collection: "com.dinakernel.peerlens.outcome",
 		RecordKey:  "outcome-001",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -124,7 +124,7 @@ func TestPDS_22_1_2_SignOutcomeReport(t *testing.T) {
 	testutil.RequireTrue(t, recordID != "", "outcome record ID must be returned")
 
 	// AT URI must contain the collection and record key.
-	testutil.RequireContains(t, recordID, "com.dina.peerlens.outcome")
+	testutil.RequireContains(t, recordID, "com.dinakernel.peerlens.outcome")
 	testutil.RequireContains(t, recordID, "outcome-001")
 
 	// Idempotent re-publish must return the same URI.
@@ -141,7 +141,7 @@ func TestPDS_22_1_3_LexiconValidation(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "PDSPublisher")
 
 	record := testutil.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "attestation-invalid-001",
 		Payload: map[string]interface{}{
 			"expertDid": "did:key:z6MkExpert",
@@ -172,7 +172,7 @@ func TestPDS_22_1_4_RecordInMerkleRepo(t *testing.T) {
 
 	// Positive: publish a record — stored in repo.
 	record := domain.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "attestation-merkle-001",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -231,7 +231,7 @@ func TestPDS_22_1_5_PDSConnectionFailure(t *testing.T) {
 
 	// Positive: when PDS is down, QueueForRetry accepts the record for outbox retry.
 	record := testutil.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "attestation-retry-001",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -249,7 +249,7 @@ func TestPDS_22_1_5_PDSConnectionFailure(t *testing.T) {
 
 	// Positive: queuing multiple records must succeed (outbox can hold >1).
 	record2 := testutil.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "attestation-retry-002",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert2",
@@ -278,7 +278,7 @@ func TestPDS_22_1_6_TypeBBundledPDS(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "PDSPublisher")
 
 	record := testutil.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "attestation-bundled-001",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -310,7 +310,7 @@ func TestPDS_22_1_7_TypeAExternalPDS(t *testing.T) {
 
 	// Positive: publish an attestation to external PDS.
 	record := domain.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "attestation-external-001",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -328,7 +328,7 @@ func TestPDS_22_1_7_TypeAExternalPDS(t *testing.T) {
 	testutil.RequireTrue(t, strings.HasPrefix(uri, "at://"),
 		"URI must be AT protocol format for external PDS")
 	testutil.RequireContains(t, uri, authorDID)
-	testutil.RequireContains(t, uri, "com.dina.peerlens.attestation")
+	testutil.RequireContains(t, uri, "com.dinakernel.peerlens.attestation")
 	testutil.RequireContains(t, uri, "attestation-external-001")
 
 	// Idempotent re-publish to same record key produces same URI.
@@ -338,7 +338,7 @@ func TestPDS_22_1_7_TypeAExternalPDS(t *testing.T) {
 
 	// Negative: missing required fields must be rejected before push.
 	badRecord := domain.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "bad-external",
 		Payload:    map[string]interface{}{"expertDid": "did:key:z6MkExpert"},
 		AuthorDID:  authorDID,
@@ -349,7 +349,7 @@ func TestPDS_22_1_7_TypeAExternalPDS(t *testing.T) {
 	// Negative: empty author DID should still produce a valid URI
 	// (publisher falls back to its own DID).
 	noAuthor := domain.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "no-author-001",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -374,7 +374,7 @@ func TestPDS_22_1_8_RatingRangeEnforcement(t *testing.T) {
 
 	makeRecord := func(rating int) testutil.PDSRecord {
 		return testutil.PDSRecord{
-			Collection: "com.dina.peerlens.attestation",
+			Collection: "com.dinakernel.peerlens.attestation",
 			RecordKey:  "attestation-rating-test",
 			Payload: map[string]interface{}{
 				"expertDid":       "did:key:z6MkExpert",
@@ -415,7 +415,7 @@ func TestPDS_22_1_9_VerdictIsStructuredObject(t *testing.T) {
 
 	// Plain string verdict -> rejected
 	badRecord := testutil.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "attestation-verdict-string",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -431,7 +431,7 @@ func TestPDS_22_1_9_VerdictIsStructuredObject(t *testing.T) {
 
 	// Valid object verdict -> accepted
 	goodRecord := testutil.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "attestation-verdict-object",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -469,7 +469,7 @@ func TestPDS_22_1_10_AllRequiredFieldsValidated(t *testing.T) {
 
 	// Positive: all fields present → validation passes.
 	completeRecord := testutil.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "attestation-complete",
 		Payload:    basePayload,
 		AuthorDID:  "did:key:z6MkAuthor",
@@ -487,7 +487,7 @@ func TestPDS_22_1_10_AllRequiredFieldsValidated(t *testing.T) {
 		delete(payload, field)
 
 		record := testutil.PDSRecord{
-			Collection: "com.dina.peerlens.attestation",
+			Collection: "com.dinakernel.peerlens.attestation",
 			RecordKey:  "attestation-missing-" + field,
 			Payload:    payload,
 			AuthorDID:  "did:key:z6MkAuthor",
@@ -514,7 +514,7 @@ func TestPDS_22_2_1_AuthorDeletesOwnRecord(t *testing.T) {
 
 	// Step 1: Publish a record so there's something to delete.
 	record := testutil.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "attestation-del-001",
 		Payload: map[string]interface{}{
 			"expertDid":       authorDID,
@@ -564,7 +564,7 @@ func TestPDS_22_2_2_NonAuthorDeletionRejected(t *testing.T) {
 
 	// First, publish a record as the legitimate author.
 	record := testutil.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "non-author-del-001",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -610,7 +610,7 @@ func TestPDS_22_2_3_TombstonePropagation(t *testing.T) {
 
 	// Publish a record first so tombstone has something to propagate.
 	record := testutil.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "attestation-propagation-001",
 		Payload: map[string]interface{}{
 			"expertDid":       authorDID,
@@ -668,7 +668,7 @@ func TestPDS_22_2_4_DeletedRecordAbsentFromQueries(t *testing.T) {
 
 	// Publish a record.
 	record := testutil.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "attestation-delete-query-001",
 		Payload: map[string]interface{}{
 			"expertDid":       authorDID,
@@ -695,7 +695,7 @@ func TestPDS_22_2_4_DeletedRecordAbsentFromQueries(t *testing.T) {
 	// Verify record is absent: re-publishing to the same key succeeds
 	// (the old record was deleted, so the slot is free for a new record).
 	newRecord := testutil.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "attestation-delete-query-001",
 		Payload: map[string]interface{}{
 			"expertDid":       authorDID,
@@ -724,12 +724,12 @@ func TestPDS_22_2_4_DeletedRecordAbsentFromQueries(t *testing.T) {
 // TST-CORE-918
 // TRACE: {"suite": "CORE", "case": "1095", "section": "22", "sectionName": "PDS Integration (AT Protocol)", "subsection": "02", "scenario": "05", "title": "BotLexiconValidation"}
 func TestPDS_22_2_5_BotLexiconValidation(t *testing.T) {
-	// com.dina.peerlens.bot and com.dina.peerlens.membership Lexicons validated.
+	// com.dinakernel.peerlens.bot and com.dinakernel.peerlens.membership Lexicons validated.
 	impl := realPDSPublisher
 	testutil.RequireImplementation(t, impl, "PDSPublisher")
 
 	botRecord := testutil.PDSRecord{
-		Collection: "com.dina.peerlens.bot",
+		Collection: "com.dinakernel.peerlens.bot",
 		RecordKey:  "bot-lexicon-001",
 		Payload:    map[string]interface{}{"botDid": "did:key:z6MkBot", "score": 85},
 		AuthorDID:  "did:key:z6MkAuthor",
@@ -750,7 +750,7 @@ func TestPDS_22_2_6_OutcomeDataSchemaValidation(t *testing.T) {
 
 	// Positive: valid outcome record with all required fields.
 	validOutcome := domain.PDSRecord{
-		Collection: "com.dina.peerlens.outcome",
+		Collection: "com.dinakernel.peerlens.outcome",
 		RecordKey:  "outcome-valid-001",
 		Payload: map[string]interface{}{
 			"reporter_trust_ring": 2,
@@ -764,14 +764,14 @@ func TestPDS_22_2_6_OutcomeDataSchemaValidation(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, strings.HasPrefix(uri, "at://"),
 		"outcome URI must be AT protocol format")
-	testutil.RequireContains(t, uri, "com.dina.peerlens.outcome")
+	testutil.RequireContains(t, uri, "com.dinakernel.peerlens.outcome")
 	testutil.RequireContains(t, uri, "outcome-valid-001")
 
 	// Negative: empty payload should be rejected — outcome schema requires fields.
 	// NOTE: If this passes (no error), it indicates a production bug where
 	// validateOutcome() is a no-op and doesn't enforce the schema.
 	emptyOutcome := domain.PDSRecord{
-		Collection: "com.dina.peerlens.outcome",
+		Collection: "com.dinakernel.peerlens.outcome",
 		RecordKey:  "outcome-empty",
 		Payload:    map[string]interface{}{},
 		AuthorDID:  authorDID,
@@ -784,7 +784,7 @@ func TestPDS_22_2_6_OutcomeDataSchemaValidation(t *testing.T) {
 
 	// Negative: satisfaction out of range (>100) should be rejected.
 	badSatisfaction := domain.PDSRecord{
-		Collection: "com.dina.peerlens.outcome",
+		Collection: "com.dinakernel.peerlens.outcome",
 		RecordKey:  "outcome-bad-sat",
 		Payload: map[string]interface{}{
 			"reporter_trust_ring": 2,
@@ -811,7 +811,7 @@ func TestPDS_22_2_7_AttestationOptionalFieldsURIFormat(t *testing.T) {
 
 	// Positive: attestation with valid optional URI fields.
 	record := domain.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "att-uri-001",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -833,7 +833,7 @@ func TestPDS_22_2_7_AttestationOptionalFieldsURIFormat(t *testing.T) {
 
 	// Positive: attestation WITHOUT optional fields must also succeed.
 	recordNoOpt := domain.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "att-no-opt-001",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -851,7 +851,7 @@ func TestPDS_22_2_7_AttestationOptionalFieldsURIFormat(t *testing.T) {
 	// Negative: non-URI sourceUrl should be rejected.
 	// Per spec, sourceUrl and deepLink must be valid URI format when present.
 	badSourceUrl := domain.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "att-bad-url",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -884,7 +884,7 @@ func TestPDS_22_2_8_TrustQueryResponseIncludesSignedPayloads(t *testing.T) {
 
 	// Positive: publish a valid attestation and verify the signed payload.
 	record := domain.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "signed-payload-001",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -902,12 +902,12 @@ func TestPDS_22_2_8_TrustQueryResponseIncludesSignedPayloads(t *testing.T) {
 	testutil.RequireTrue(t, strings.HasPrefix(uri, "at://"),
 		"URI must be an AT protocol URI (at://...)")
 	testutil.RequireContains(t, uri, authorDID)
-	testutil.RequireContains(t, uri, "com.dina.peerlens.attestation")
+	testutil.RequireContains(t, uri, "com.dinakernel.peerlens.attestation")
 	testutil.RequireContains(t, uri, "signed-payload-001")
 
 	// Second record with different key must produce distinct URI.
 	record2 := domain.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "signed-payload-002",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert2",
@@ -925,7 +925,7 @@ func TestPDS_22_2_8_TrustQueryResponseIncludesSignedPayloads(t *testing.T) {
 
 	// Negative: missing required field must be rejected (payload not signed).
 	badRecord := domain.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "bad-payload",
 		Payload: map[string]interface{}{
 			"expertDid": "did:key:z6MkExpert",
@@ -938,7 +938,7 @@ func TestPDS_22_2_8_TrustQueryResponseIncludesSignedPayloads(t *testing.T) {
 
 	// Negative: rating out of range must be rejected.
 	outOfRange := domain.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "bad-rating",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -1027,7 +1027,7 @@ func TestPDS_22_2_10_OutcomeRecordSigning(t *testing.T) {
 
 	// Positive: outcome record signed and published.
 	outcomeRecord := domain.PDSRecord{
-		Collection: "com.dina.peerlens.outcome",
+		Collection: "com.dinakernel.peerlens.outcome",
 		RecordKey:  "signed-outcome-001",
 		Payload: map[string]interface{}{
 			"reporter_trust_ring": 2,
@@ -1042,12 +1042,12 @@ func TestPDS_22_2_10_OutcomeRecordSigning(t *testing.T) {
 	testutil.RequireTrue(t, strings.HasPrefix(uri, "at://"),
 		"outcome URI must be AT protocol format")
 	testutil.RequireContains(t, uri, authorDID)
-	testutil.RequireContains(t, uri, "com.dina.peerlens.outcome")
+	testutil.RequireContains(t, uri, "com.dinakernel.peerlens.outcome")
 	testutil.RequireContains(t, uri, "signed-outcome-001")
 
 	// Positive: bot lexicon record signed and published.
 	botRecord := domain.PDSRecord{
-		Collection: "com.dina.peerlens.bot",
+		Collection: "com.dinakernel.peerlens.bot",
 		RecordKey:  "bot-review-001",
 		Payload: map[string]interface{}{
 			"botDid":      "did:key:z6MkBot",
@@ -1060,7 +1060,7 @@ func TestPDS_22_2_10_OutcomeRecordSigning(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, strings.HasPrefix(botURI, "at://"),
 		"bot URI must be AT protocol format")
-	testutil.RequireContains(t, botURI, "com.dina.peerlens.bot")
+	testutil.RequireContains(t, botURI, "com.dinakernel.peerlens.bot")
 
 	// Distinct records must produce distinct URIs.
 	testutil.RequireTrue(t, uri != botURI,
@@ -1068,14 +1068,14 @@ func TestPDS_22_2_10_OutcomeRecordSigning(t *testing.T) {
 
 	// Negative: unknown collection still gets signed (extensibility).
 	unknownRecord := domain.PDSRecord{
-		Collection: "com.dina.custom.data",
+		Collection: "com.dinakernel.custom.data",
 		RecordKey:  "custom-001",
 		Payload:    map[string]interface{}{"data": "test"},
 		AuthorDID:  authorDID,
 	}
 	customURI, err := impl.SignAndPublish(ctx, unknownRecord)
 	testutil.RequireNoError(t, err)
-	testutil.RequireContains(t, customURI, "com.dina.custom.data")
+	testutil.RequireContains(t, customURI, "com.dinakernel.custom.data")
 }
 
 // TST-CORE-924
@@ -1087,7 +1087,7 @@ func TestPDS_22_2_11_TypeA_FallbackToExternalHTTPS(t *testing.T) {
 
 	// When PDS is unreachable, record should be queued for retry.
 	record := testutil.PDSRecord{
-		Collection: "com.dina.peerlens.attestation",
+		Collection: "com.dinakernel.peerlens.attestation",
 		RecordKey:  "fallback-001",
 		Payload:    map[string]interface{}{"expertDid": "did:key:z6Mk", "productCategory": "test", "productId": "test", "rating": 50, "verdict": map[string]interface{}{"quality": 50}},
 		AuthorDID:  "did:key:z6MkAuthor",

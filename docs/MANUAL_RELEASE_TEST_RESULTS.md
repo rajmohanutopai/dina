@@ -461,7 +461,7 @@ Tapped Publish → form dismissed → Outbox screen showed "Nothing in your outb
 Verified end-to-end on AppView via direct xRPC:
 
 ```
-curl https://test-appview.dinakernel.com/xrpc/com.dina.peerlens.search?q=tMT
+curl https://test-appview.dinakernel.com/xrpc/com.dinakernel.peerlens.search?q=tMT
 → results[0]: authorDid=did:plc:bipda2…gmfq (Sancho), subjectRefRaw={name: "tMT-22 test subject", type: "product"},
    text="MT-22 review headline", category="commerce/product", sentiment="positive"
 ```
@@ -1612,7 +1612,7 @@ status regardless of which surface drove the resolution.
 
 **Setup:** `test-appview.dinakernel.com` redeployed from the May-30 `main`
 (`deploy_shared_infra.sh update test` — Drizzle migrations applied, 3/3 health checks
-green). New code confirmed live: `com.dina.service.searchCapabilities` route → HTTP 200.
+green). New code confirmed live: `com.dinakernel.service.searchCapabilities` route → HTTP 200.
 App: existing debug build, JS served fresh from Metro at the current working tree
 (`boot.ready`, requester DID `did:plc:aiidvbzbdvbglt5ywducnryi`). Provider rig already
 up: bus42-agent lite Core on `:18298` (`/healthz` ok), `run_daemon.py` (pid 63752),
@@ -1636,8 +1636,8 @@ review"). Full field inventory via `idb ui describe-all`, including the 2-step
 
 ### SLA-2: Subject identity v3 — convergence proven on the deployed resolver
 
-Injected attestations via `com.dina.test.injectAttestation` (gated endpoint, enabled on
-test-appview) and read back `subjectId` via `com.dina.peerlens.resolve`:
+Injected attestations via `com.dinakernel.test.injectAttestation` (gated endpoint, enabled on
+test-appview) and read back `subjectId` via `com.dinakernel.peerlens.resolve`:
 - **ASIN case fold:** `asin:B0CONVTEST1` and `ASIN:b0convtest1` →
   **same** `sub_85a1d15c0a24c8cf49e3ec8793e92cf0`. ✅
 - **GTIN-family unification:** `upc:036000291452`, `ean:0036000291452`,
@@ -1804,7 +1804,7 @@ returning a different result shape, and confirm (1) it lists separately in disco
 ## 2026-05-30 — D: real PeerLens product + E: YouTube review (in-app, subject-id convergence) — D ✅ verified-at-time / E ⚠️ partial
 
 Both reviews were created **through the app's Write-Review UI** (PeerLens → "Write Review") as
-real `com.dina.peerlens.review` records in the app's own already-crawled PDS repo
+real `com.dinakernel.peerlens.review` records in the app's own already-crawled PDS repo
 (`did:plc:aiidvbzbdvbglt5ywducnryi`). **Honesty note:** the test PDS/AppView appears to have
 **reset/redeployed mid-session** — a re-check at ~13:45 returned `listRecords count=0` and
 `resolve subjectId=null` for both, and the resolve endpoint flipped from accepting `type/uri`
@@ -1813,7 +1813,7 @@ below are **point-in-time** (verified ~13:30) and are NOT currently re-confirmab
 
 **D — real product (Echo Dot 3rd Gen, real Amazon ASIN `B07FZ8S74R`).** Review submitted with
 link `https://www.amazon.com/dp/B07FZ8S74R?ref=test_share&tag=affiliate123`. Resolving via
-`com.dina.peerlens.resolve?subject={"type":"product","uri":…}` for **three** URL spellings all
+`com.dinakernel.peerlens.resolve?subject={"type":"product","uri":…}` for **three** URL spellings all
 return the SAME subject + the review:
 - `…www.amazon.com/dp/B07FZ8S74R?ref=…&tag=…` → `subjectId=uri:https://amazon.com/dp/B07FZ8S74R` reviewCount=1
 - `…amazon.com/dp/B07FZ8S74R` (no www/params)  → same
@@ -1836,7 +1836,7 @@ the resolver unit tests + the earlier T2 inject-based subject-convergence proof.
 live needs a stable test env.
 
 **Findings:**
-- **DE-I1 (resolve param format)** — `com.dina.peerlens.resolve` takes a single `subject`
+- **DE-I1 (resolve param format)** — `com.dinakernel.peerlens.resolve` takes a single `subject`
   query param = the JSON `SubjectRef` (`{type, uri, identifier, name}`), NOT separate
   `type`/`uri` params. The wrong format returns `400 Bad Request` (cost a round of false-alarm
   during this run). `subjectId` is `null` only when the subject can't be parsed/has no Tier-1
@@ -1864,7 +1864,7 @@ per-capability card). Provider = "Corner Market" on the Dr Carl lite Core
 
 The in-app **SERVICE HANDOFF** path-trace container showed the correct chain:
 1. ✓ Asked the Dina service directory ("Looking for a price quote") — AppView
-   `com.dina.service.search?capability=price_check`.
+   `com.dinakernel.service.search?capability=price_check`.
 2. ✓ Found Corner Market (`did:plc:uib44x…`) — discovery returned the provider.
 3. ✓ Sent your query to their Dina (params: product=organic bananas,
    store=Corner Market) — D2D over MsgBox.

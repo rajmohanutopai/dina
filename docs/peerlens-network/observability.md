@@ -35,7 +35,7 @@ Sample output:
 
 ```
 # TYPE ingester.events.received counter
-ingester.events.received{collection="com.dina.peerlens.attestation",operation="create"} 12345
+ingester.events.received{collection="com.dinakernel.peerlens.attestation",operation="create"} 12345
 # TYPE ingester.queue.depth gauge
 ingester.queue.depth 42
 # TYPE ingester.queue.process_duration_ms histogram

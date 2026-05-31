@@ -217,7 +217,7 @@ describe('parseArgs', () => {
     const a = parseArgs([
       'node', 'cli',
       'attestation', 'takedown',
-      'at://did:plc:author/com.dina.peerlens.attestation/xyz',
+      'at://did:plc:author/com.dinakernel.peerlens.attestation/xyz',
       '--actor', 'did:plc:op',
       '--reason', 'hate',
     ])
@@ -480,7 +480,7 @@ describe('takedownAttestation', () => {
       attestationRow: { isTakedown: false, reason: null },
     })
     await takedownAttestation(db, {
-      uri: 'at://did:plc:author/com.dina.peerlens.attestation/x',
+      uri: 'at://did:plc:author/com.dinakernel.peerlens.attestation/x',
       actorDid: 'did:plc:op',
       reason: 'spam',
     })
@@ -496,7 +496,7 @@ describe('takedownAttestation', () => {
     const { db } = stubDb({})
     await expect(
       takedownAttestation(db, {
-        uri: 'at://did:plc:x/com.dina.peerlens.attestation/missing',
+        uri: 'at://did:plc:x/com.dinakernel.peerlens.attestation/missing',
         actorDid: 'did:plc:op',
         reason: 'x',
       }),
@@ -509,7 +509,7 @@ describe('takedownAttestation', () => {
       attestationRow: { isTakedown: false, reason: null, subjectId: 'sub_x', authorDid: 'did:plc:author' },
     })
     await takedownAttestation(db, {
-      uri: 'at://did:plc:author/com.dina.peerlens.attestation/x',
+      uri: 'at://did:plc:author/com.dinakernel.peerlens.attestation/x',
       actorDid: 'did:plc:op',
       reason: 'spam',
     })
@@ -521,7 +521,7 @@ describe('takedownAttestation', () => {
       attestationRow: { isTakedown: false, reason: null, subjectId: 'sub_x', authorDid: 'did:plc:author' },
     })
     await takedownAttestation(db, {
-      uri: 'at://did:plc:author/com.dina.peerlens.attestation/x',
+      uri: 'at://did:plc:author/com.dinakernel.peerlens.attestation/x',
       actorDid: 'did:plc:op',
       reason: 'spam',
     })
@@ -539,7 +539,7 @@ describe('tombstoneService', () => {
       serviceRow: { tombstonedAt: null, tombstoneReason: null },
     })
     await tombstoneService(db, {
-      serviceUri: 'at://did:plc:p/com.dina.service.profile/self',
+      serviceUri: 'at://did:plc:p/com.dinakernel.service.profile/self',
       actorDid: 'did:plc:op',
       reason: 'ToS - misrepresentation of capability',
     })
@@ -552,7 +552,7 @@ describe('tombstoneService', () => {
       expect.anything(),
       expect.objectContaining({
         action: 'tombstone_service',
-        targetId: 'at://did:plc:p/com.dina.service.profile/self',
+        targetId: 'at://did:plc:p/com.dinakernel.service.profile/self',
         reason: 'ToS - misrepresentation of capability',
       }),
     )
@@ -562,7 +562,7 @@ describe('tombstoneService', () => {
     const { db } = stubDb({})
     await expect(
       tombstoneService(db, {
-        serviceUri: 'at://did:plc:missing/com.dina.service.profile/self',
+        serviceUri: 'at://did:plc:missing/com.dinakernel.service.profile/self',
         actorDid: 'did:plc:op',
         reason: 'x',
       }),
@@ -580,7 +580,7 @@ describe('untombstoneService', () => {
       },
     })
     await untombstoneService(db, {
-      serviceUri: 'at://did:plc:p/com.dina.service.profile/self',
+      serviceUri: 'at://did:plc:p/com.dinakernel.service.profile/self',
       actorDid: 'did:plc:op',
       reason: 'restored after operator appeal',
     })
@@ -604,7 +604,7 @@ describe('restoreAttestation', () => {
       attestationRow: { isTakedown: true, reason: 'spam' },
     })
     await restoreAttestation(db, {
-      uri: 'at://did:plc:author/com.dina.peerlens.attestation/x',
+      uri: 'at://did:plc:author/com.dinakernel.peerlens.attestation/x',
       actorDid: 'did:plc:op',
       reason: 'mistaken takedown',
     })
@@ -622,7 +622,7 @@ describe('restoreAttestation', () => {
       attestationRow: { isTakedown: true, reason: 'spam' },
     })
     await restoreAttestation(db, {
-      uri: 'at://did:plc:author/com.dina.peerlens.attestation/x',
+      uri: 'at://did:plc:author/com.dinakernel.peerlens.attestation/x',
       actorDid: 'did:plc:op',
       reason: 'mistaken',
     })
@@ -638,7 +638,7 @@ describe('restoreAttestation', () => {
       attestationRow: { isTakedown: true, reason: 'spam', subjectId: 'sub_x', authorDid: 'did:plc:author' },
     })
     await restoreAttestation(db, {
-      uri: 'at://did:plc:author/com.dina.peerlens.attestation/x',
+      uri: 'at://did:plc:author/com.dinakernel.peerlens.attestation/x',
       actorDid: 'did:plc:op',
       reason: 'mistaken',
     })
@@ -734,7 +734,7 @@ describe('dispatch', () => {
       dispatch(db, {
         command: 'attestation',
         subcommand: 'restore',
-        positional: ['at://did:plc:x/com.dina.peerlens.attestation/y'],
+        positional: ['at://did:plc:x/com.dinakernel.peerlens.attestation/y'],
         flags: { actor: 'did:plc:op' },
       }),
     ).rejects.toThrow(/reason/)
@@ -747,7 +747,7 @@ describe('dispatch', () => {
     await dispatch(db, {
       command: 'service',
       subcommand: 'tombstone',
-      positional: ['at://did:plc:p/com.dina.service.profile/self'],
+      positional: ['at://did:plc:p/com.dinakernel.service.profile/self'],
       flags: { actor: 'did:plc:op', reason: 'policy' },
     })
     expect(recordAdminActionMock).toHaveBeenCalledOnce()
@@ -763,7 +763,7 @@ describe('dispatch', () => {
       dispatch(db, {
         command: 'service',
         subcommand: 'untombstone',
-        positional: ['at://did:plc:p/com.dina.service.profile/self'],
+        positional: ['at://did:plc:p/com.dinakernel.service.profile/self'],
         flags: { actor: 'did:plc:op' },
       }),
     ).rejects.toThrow(/reason/)

@@ -168,7 +168,7 @@ describe('createSearchProviderServicesTool', () => {
               did: 'did:plc:demoprovider',
               capabilities: ['eta_query'],
               isDiscoverable: true,
-              uri: 'at://did:plc:demoprovider/com.dina.service.profile/route-42',
+              uri: 'at://did:plc:demoprovider/com.dinakernel.service.profile/route-42',
             },
           ];
         },
@@ -177,7 +177,7 @@ describe('createSearchProviderServicesTool', () => {
     const [profile] = (await tool.execute({ capability: 'eta_query' })) as Array<
       Record<string, unknown>
     >;
-    expect(profile.service_uri).toBe('at://did:plc:demoprovider/com.dina.service.profile/route-42');
+    expect(profile.service_uri).toBe('at://did:plc:demoprovider/com.dinakernel.service.profile/route-42');
   });
 
   it('omits service_uri when the profile carries no uri (#1)', async () => {
@@ -334,9 +334,9 @@ describe('createQueryServiceTool', () => {
       operator_did: 'did:plc:demoprovider',
       capability: 'eta_query',
       params: { route: '42' },
-      service_uri: 'at://did:plc:demoprovider/com.dina.service.profile/route-42',
+      service_uri: 'at://did:plc:demoprovider/com.dinakernel.service.profile/route-42',
     });
-    expect(calls[0].serviceUri).toBe('at://did:plc:demoprovider/com.dina.service.profile/route-42');
+    expect(calls[0].serviceUri).toBe('at://did:plc:demoprovider/com.dinakernel.service.profile/route-42');
   });
 
   it('omits service_uri when the model did not pass one (#1)', async () => {
@@ -969,7 +969,7 @@ describe('createQueryServiceTool — listing disambiguation (P2)', () => {
       orchestrator,
       appViewClient: {
         async searchServices() {
-          return [listing('at://did:plc:market/com.dina.service.profile/store-2')];
+          return [listing('at://did:plc:market/com.dinakernel.service.profile/store-2')];
         },
       },
     });
@@ -978,7 +978,7 @@ describe('createQueryServiceTool — listing disambiguation (P2)', () => {
       capability: 'price_check',
       params: { sku: 'X' },
     });
-    expect(calls[0].serviceUri).toBe('at://did:plc:market/com.dina.service.profile/store-2');
+    expect(calls[0].serviceUri).toBe('at://did:plc:market/com.dinakernel.service.profile/store-2');
   });
 
   it('throws when multiple listings match and the model omitted service_uri', async () => {
@@ -988,8 +988,8 @@ describe('createQueryServiceTool — listing disambiguation (P2)', () => {
       appViewClient: {
         async searchServices() {
           return [
-            listing('at://did:plc:market/com.dina.service.profile/store-2'),
-            listing('at://did:plc:market/com.dina.service.profile/store-3'),
+            listing('at://did:plc:market/com.dinakernel.service.profile/store-2'),
+            listing('at://did:plc:market/com.dinakernel.service.profile/store-3'),
           ];
         },
       },
@@ -1011,8 +1011,8 @@ describe('createQueryServiceTool — listing disambiguation (P2)', () => {
       appViewClient: {
         async searchServices() {
           return [
-            listing('at://did:plc:market/com.dina.service.profile/store-2'),
-            listing('at://did:plc:market/com.dina.service.profile/store-3'),
+            listing('at://did:plc:market/com.dinakernel.service.profile/store-2'),
+            listing('at://did:plc:market/com.dinakernel.service.profile/store-3'),
           ];
         },
       },
@@ -1021,9 +1021,9 @@ describe('createQueryServiceTool — listing disambiguation (P2)', () => {
       operator_did: 'did:plc:market',
       capability: 'price_check',
       params: { sku: 'X' },
-      service_uri: 'at://did:plc:market/com.dina.service.profile/store-3',
+      service_uri: 'at://did:plc:market/com.dinakernel.service.profile/store-3',
     });
-    expect(calls[0].serviceUri).toBe('at://did:plc:market/com.dina.service.profile/store-3');
+    expect(calls[0].serviceUri).toBe('at://did:plc:market/com.dinakernel.service.profile/store-3');
   });
 
   it('proceeds without service_uri when a single match carries no uri', async () => {

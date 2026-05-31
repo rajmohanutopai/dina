@@ -2,7 +2,7 @@
  * Capability schema + service-config types — the data shape a Dina home
  * node publishes to advertise public services it backs.
  *
- * Published via the AT Protocol `com.dina.service.profile` record on the
+ * Published via the AT Protocol `com.dinakernel.service.profile` record on the
  * node's PDS. Requesters read it to discover services, then fire a
  * `service.query` D2D to the advertised capability. The `schemaHash`
  * contract lets them detect version skew.
@@ -68,7 +68,7 @@ export interface ServiceConfig {
   /** JSON Schemas per capability. Omit to leave params unvalidated. */
   capabilitySchemas?: Record<string, ServiceCapabilitySchemas>;
   /**
-   * Geographic service area. AppView's `com.dina.service.search` filters
+   * Geographic service area. AppView's `com.dinakernel.service.search` filters
    * candidates by `lat/lng` against this area before returning hits;
    * profiles without it are invisible to geo-scoped searches.
    */

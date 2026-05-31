@@ -26,7 +26,7 @@
  * **Why the FULL AT-URI, not just the rkey**: rkeys are author-
  * scoped, not globally unique. Two different reviewers can have an
  * attestation with rkey `'3kxxxxx'` on the same subject. The full
- * AT-URI (`at://did:plc:abc/com.dina.peerlens.attestation/3kxxxxx`)
+ * AT-URI (`at://did:plc:abc/com.dinakernel.peerlens.attestation/3kxxxxx`)
  * disambiguates. URL-encoded it's ~80 chars — well within URL length
  * budgets across iOS/Android.
  *
@@ -53,7 +53,7 @@
 export interface ParsedAtUri {
   /** Author DID — e.g. `'did:plc:abc'`. */
   readonly did: string;
-  /** Collection NSID — e.g. `'com.dina.peerlens.attestation'`. */
+  /** Collection NSID — e.g. `'com.dinakernel.peerlens.attestation'`. */
   readonly collection: string;
   /** Record key — e.g. `'3kxxxxxxxxxxxxxxxxxxxxxxx'`. */
   readonly rkey: string;

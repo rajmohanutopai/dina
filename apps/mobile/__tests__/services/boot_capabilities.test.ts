@@ -104,7 +104,7 @@ describe('buildBootInputs — AppView seeding (#1, #6, #15, #18)', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
     const [url] = fetchFn.mock.calls[0] as [string];
     expect(url).toBe(
-      'https://test-appview.dinakernel.com/xrpc/com.dina.service.search?capability=eta_query',
+      'https://test-appview.dinakernel.com/xrpc/com.dinakernel.service.search?capability=eta_query',
     );
   });
 

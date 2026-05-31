@@ -134,7 +134,7 @@ describe('validateServiceQueryBody (task 1.20)', () => {
     expect(
       validateServiceQueryBody({
         ...validBody,
-        service_uri: 'at://did:plc:bus42/com.dina.service.profile/store-2',
+        service_uri: 'at://did:plc:bus42/com.dinakernel.service.profile/store-2',
       }),
     ).toBeNull();
     // Empty string = "absent" → accepted.
@@ -145,7 +145,7 @@ describe('validateServiceQueryBody (task 1.20)', () => {
 
   it('rejects a structurally-malformed service_uri (P2)', () => {
     const expected =
-      'service.query: service_uri must be an at://<did>/com.dina.service.profile/<rkey> URI';
+      'service.query: service_uri must be an at://<did>/com.dinakernel.service.profile/<rkey> URI';
     // Wrong scheme.
     expect(validateServiceQueryBody({ ...validBody, service_uri: 'https://x/y/z' })).toBe(
       expected,
@@ -163,7 +163,7 @@ describe('validateServiceQueryBody (task 1.20)', () => {
     expect(
       validateServiceQueryBody({
         ...validBody,
-        service_uri: 'at://did:plc:bus42/com.dina.service.profile',
+        service_uri: 'at://did:plc:bus42/com.dinakernel.service.profile',
       }),
     ).toBe(expected);
   });

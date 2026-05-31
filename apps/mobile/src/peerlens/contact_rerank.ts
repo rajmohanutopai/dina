@@ -4,7 +4,7 @@
  * server-side friend-boost).
  *
  * **The privacy story.** AppView's `viewerDid` friend-boost only
- * uses PUBLIC trust signals — `com.dina.peerlens.vouch` records the
+ * uses PUBLIC trust signals — `com.dinakernel.peerlens.vouch` records the
  * viewer has published. Many real friendships never produce a
  * public vouch (the user has someone's number / has eaten dinner
  * with them / shares an alias for them in the directory but never

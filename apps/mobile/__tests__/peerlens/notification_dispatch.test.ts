@@ -43,7 +43,7 @@ function request(partial: Partial<CosigRequest> = {}): CosigRequest {
   return {
     type: 'peerlens.cosig.request',
     requestId: 'req-1',
-    attestationUri: 'at://did:plc:author/com.dina.peerlens.attestation/abc',
+    attestationUri: 'at://did:plc:author/com.dinakernel.peerlens.attestation/abc',
     attestationCid: 'bafy...',
     expiresAt: FUTURE_EXPIRY,
     createdAt: '2026-04-29T12:00:00Z',
@@ -276,14 +276,14 @@ describe('decideCosigNotification — fire body deep link + data', () => {
       input({
         request: request({
           requestId: 'req-7',
-          attestationUri: 'at://did:plc:author/com.dina.peerlens.attestation/xyz',
+          attestationUri: 'at://did:plc:author/com.dinakernel.peerlens.attestation/xyz',
         }),
       }),
     );
     if (r.kind !== 'fire') throw new Error('expected fire');
     expect(r.body.data.requestId).toBe('req-7');
     expect(r.body.data.attestationUri).toBe(
-      'at://did:plc:author/com.dina.peerlens.attestation/xyz',
+      'at://did:plc:author/com.dinakernel.peerlens.attestation/xyz',
     );
   });
 

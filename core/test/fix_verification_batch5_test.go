@@ -170,7 +170,7 @@ func TestSecFix_32_2_1_InboundCapEnforced(t *testing.T) {
 	// Fill the inbox to exactly the cap.
 	for i := 0; i < cap; i++ {
 		msg := &domain.DinaMessage{
-			Type: "com.dina.test",
+			Type: "com.dinakernel.test",
 			ID:   fmt.Sprintf("msg-%d", i),
 			Body: []byte(fmt.Sprintf("body-%d", i)),
 		}
@@ -187,7 +187,7 @@ func TestSecFix_32_2_1_InboundCapEnforced(t *testing.T) {
 	// Store one more message beyond the cap — should trigger FIFO eviction
 	// of the oldest message (msg-0), keeping total at cap.
 	env.svc.StoreInbound(&domain.DinaMessage{
-		Type: "com.dina.test",
+		Type: "com.dinakernel.test",
 		ID:   "msg-overflow",
 		Body: []byte("overflow"),
 	})
@@ -208,7 +208,7 @@ func TestSecFix_32_2_2_InboundClearWorks(t *testing.T) {
 	env := newTransportTestEnv(t)
 
 	for i := 0; i < 10; i++ {
-		msg := &domain.DinaMessage{Type: "com.dina.test", ID: fmt.Sprintf("msg-%d", i)}
+		msg := &domain.DinaMessage{Type: "com.dinakernel.test", ID: fmt.Sprintf("msg-%d", i)}
 		env.svc.StoreInbound(msg)
 	}
 

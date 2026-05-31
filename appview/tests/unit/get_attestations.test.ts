@@ -123,19 +123,19 @@ describe('getAttestations — opaque cursor', () => {
     // row of the page (i.e. row B at index 1, not row C at index 2).
     const rows: AttRow[] = [
       {
-        uri: 'at://did:plc:r/com.dina.peerlens.attestation/A',
+        uri: 'at://did:plc:r/com.dinakernel.peerlens.attestation/A',
         authorDid: 'did:plc:r',
         recordCreatedAt: new Date('2026-05-23T10:00:00Z'),
         isRevoked: false,
       },
       {
-        uri: 'at://did:plc:r/com.dina.peerlens.attestation/B',
+        uri: 'at://did:plc:r/com.dinakernel.peerlens.attestation/B',
         authorDid: 'did:plc:r',
         recordCreatedAt: new Date('2026-05-23T09:00:00Z'),
         isRevoked: false,
       },
       {
-        uri: 'at://did:plc:r/com.dina.peerlens.attestation/C',
+        uri: 'at://did:plc:r/com.dinakernel.peerlens.attestation/C',
         authorDid: 'did:plc:r',
         recordCreatedAt: new Date('2026-05-23T08:00:00Z'),
         isRevoked: false,
@@ -154,7 +154,7 @@ describe('getAttestations — opaque cursor', () => {
     expect(decoded).toMatchObject({
       v: 1,
       ts: '2026-05-23T09:00:00.000Z',
-      uri: 'at://did:plc:r/com.dina.peerlens.attestation/B',
+      uri: 'at://did:plc:r/com.dinakernel.peerlens.attestation/B',
     })
   })
 })

@@ -5,7 +5,7 @@ import { services, didRedactions } from '@/db/schema/index.js'
 import { allCanonicalCapabilities, isCustomCapability } from '@/shared/capability-registry.js'
 
 /**
- * xRPC endpoint: com.dina.service.searchCapabilities
+ * xRPC endpoint: com.dinakernel.service.searchCapabilities
  *
  * Consumer-side capability DISCOVERY (SERVICES_LAUNCH_ARCHITECTURE.md
  * Part 1, Layer 4). The contract is INTENT-BASED, not "dump the

@@ -11,7 +11,7 @@ import { markDirty } from '@/db/queries/dirty-flags.js'
 import { readCachedTrustV1Params } from '@/scorer/peerlens-v1-params-reader.js'
 
 /**
- * Handler for com.dina.peerlens.attestation records.
+ * Handler for com.dinakernel.peerlens.attestation records.
  *
  * Attestations are the core trust primitive — a structured review
  * of a subject (person, product, content, etc.). This is the most complex

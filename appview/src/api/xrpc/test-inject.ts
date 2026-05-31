@@ -1,5 +1,5 @@
 /**
- * `com.dina.test.injectAttestation` and `com.dina.test.deleteAttestation`
+ * `com.dinakernel.test.injectAttestation` and `com.dinakernel.test.deleteAttestation`
  * — TEST-MODE-ONLY admin endpoints.
  *
  * These bypass the normal Jetstream/PDS pipeline and run the ingester
@@ -108,13 +108,13 @@ export async function injectAttestation(
   db: DrizzleDB,
   body: InjectAttestationBodyType,
 ): Promise<InjectAttestationResult> {
-  const uri = `at://${body.authorDid}/com.dina.peerlens.attestation/${body.rkey}`
+  const uri = `at://${body.authorDid}/com.dinakernel.peerlens.attestation/${body.rkey}`
   await attestationHandler.handleCreate(
     { db, logger, metrics },
     {
       uri,
       did: body.authorDid,
-      collection: 'com.dina.peerlens.attestation',
+      collection: 'com.dinakernel.peerlens.attestation',
       rkey: body.rkey,
       cid: body.cid,
       record: body.record as unknown as Record<string, unknown>,
@@ -125,7 +125,7 @@ export async function injectAttestation(
 }
 
 /**
- * Run the revocation handler — emits a `com.dina.peerlens.revocation`
+ * Run the revocation handler — emits a `com.dinakernel.peerlens.revocation`
  * record and the existing handler chain marks the original
  * attestation as revoked. Mirrors the production flow: a delete via
  * PeerLens is a SOFT delete (revocation), not a tombstone.
@@ -138,13 +138,13 @@ export async function deleteAttestation(
   // no-op rather than creating a flock of duplicate revocations.
   const targetRkey = body.uri.split('/').pop() ?? 'unknown'
   const rkey = `rev-${targetRkey}`
-  const revUri = `at://${body.authorDid}/com.dina.peerlens.revocation/${rkey}`
+  const revUri = `at://${body.authorDid}/com.dinakernel.peerlens.revocation/${rkey}`
   await revocationHandler.handleCreate(
     { db, logger, metrics },
     {
       uri: revUri,
       did: body.authorDid,
-      collection: 'com.dina.peerlens.revocation',
+      collection: 'com.dinakernel.peerlens.revocation',
       rkey,
       cid: `bafyrev${Date.now().toString(36)}`,
       record: {

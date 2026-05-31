@@ -86,7 +86,7 @@ function stubDb(rows: AttestationRow[], handles?: Map<string, string | null>): D
 
 function row(overrides: Partial<AttestationRow> = {}): AttestationRow {
   return {
-    uri: 'at://did:plc:reviewer/com.dina.peerlens.attestation/3kfx',
+    uri: 'at://did:plc:reviewer/com.dinakernel.peerlens.attestation/3kfx',
     authorDid: 'did:plc:reviewer',
     recordCreatedAt: new Date('2026-04-29T10:00:00Z'),
     isRevoked: false,
@@ -209,7 +209,7 @@ describe('networkFeed handler — TN-API-004', () => {
     })
     const db = stubDb([
       row({
-        uri: 'at://did:plc:r1/com.dina.peerlens.attestation/A',
+        uri: 'at://did:plc:r1/com.dinakernel.peerlens.attestation/A',
         authorDid: 'did:plc:r1',
       }),
     ])

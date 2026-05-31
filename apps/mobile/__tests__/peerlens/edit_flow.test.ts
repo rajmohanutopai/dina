@@ -89,7 +89,7 @@ describe('deriveEditWarning', () => {
 // ─── buildEditPlan ────────────────────────────────────────────────────────
 
 describe('buildEditPlan', () => {
-  const baseUri = 'at://did:plc:author/com.dina.peerlens.attestation/abc123';
+  const baseUri = 'at://did:plc:author/com.dinakernel.peerlens.attestation/abc123';
 
   it('returns the delete URI + new record + warning bundle', () => {
     const updated = attestation({ text: 'I changed my mind' });

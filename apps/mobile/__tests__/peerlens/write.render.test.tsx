@@ -296,7 +296,7 @@ describe('WriteScreen — URL-param-driven edit mode', () => {
 
   it('flips into edit mode when editingUri is in URL params', () => {
     mockParams({
-      editingUri: 'at://did:plc:author/com.dina.peerlens.attestation/abc',
+      editingUri: 'at://did:plc:author/com.dinakernel.peerlens.attestation/abc',
       editingCosigCount: '0',
       editingSentiment: 'positive',
       editingConfidence: 'high',

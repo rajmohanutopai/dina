@@ -3,7 +3,7 @@
 > **Audience**: implementers, integrators, operators, and researchers
 > evaluating Dina's PeerLens for production use.
 >
-> **Scope**: V1 (Plan §0–§17, lexicons `com.dina.peerlens.*` × 19 + `com.dina.service.profile`).
+> **Scope**: V1 (Plan §0–§17, lexicons `com.dinakernel.peerlens.*` × 19 + `com.dinakernel.service.profile`).
 > V2 work that closes specific gaps is referenced inline.
 >
 > **Status**: this document enumerates the V1 attack surface and the

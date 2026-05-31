@@ -1,5 +1,5 @@
 /**
- * §unit — `com.dina.test.injectAttestation` Zod-passthrough regression
+ * §unit — `com.dinakernel.test.injectAttestation` Zod-passthrough regression
  * (TN-V2-MOBILE-WIRE).
  *
  * The dev-shortcut test-inject endpoint validates the inbound body

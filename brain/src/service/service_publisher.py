@@ -1,7 +1,7 @@
 """Publish/unpublish this node's service profile on the AT Protocol PDS.
 
 Reads the local service config from Core and publishes a
-``com.dina.service.profile`` record to the community PDS so that
+``com.dinakernel.service.profile`` record to the community PDS so that
 other Dinas can discover this node via AppView search.
 
 Uses a stable rkey ``"self"`` so repeated publishes are upserts, not
@@ -94,7 +94,7 @@ class ServicePublisher:
             }
 
         record: dict[str, Any] = {
-            "$type": "com.dina.service.profile",
+            "$type": "com.dinakernel.service.profile",
             "name": config.get("name", ""),
             "description": config.get("description", ""),
             "capabilities": list(capabilities.keys()),
@@ -129,7 +129,7 @@ class ServicePublisher:
 
         try:
             await self._pds.put_record(
-                collection="com.dina.service.profile",
+                collection="com.dinakernel.service.profile",
                 rkey="self",
                 record=record,
             )
@@ -150,7 +150,7 @@ class ServicePublisher:
         """Delete the service profile from PDS (idempotent)."""
         try:
             await self._pds.delete_record(
-                collection="com.dina.service.profile",
+                collection="com.dinakernel.service.profile",
                 rkey="self",
             )
             log.info("service_publisher.unpublished")

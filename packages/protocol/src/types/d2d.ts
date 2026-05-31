@@ -44,7 +44,7 @@ export interface ServiceQueryBody {
   ttl_seconds: number;
   /**
    * AT-URI of the SPECIFIC service.profile listing the requester chose
-   * (`at://did:plc:…/com.dina.service.profile/<rkey>`). A provider DID may
+   * (`at://did:plc:…/com.dinakernel.service.profile/<rkey>`). A provider DID may
    * publish many listings (marketplace multi-listing per DID); `to`/DID +
    * `capability` alone can't disambiguate which one the requester picked, so
    * the chosen listing's uri rides the query. Optional + advisory: a

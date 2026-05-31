@@ -1,5 +1,5 @@
 /**
- * Task 6.14 — `com.dina.contact.resolve` xRPC client.
+ * Task 6.14 — `com.dinakernel.contact.resolve` xRPC client.
  *
  * Brain uses `contact.resolve` to turn a human-readable handle
  * (`alice.bsky.social`) or display name into a canonical DID with

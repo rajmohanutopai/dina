@@ -843,7 +843,7 @@ describe('SubjectDetailScreen — own review row tappable (F2 fix)', () => {
               reviewerDid: null,
               reviewerName: 'You',
               headline: 'Comfortable',
-              attestationUri: 'at://did:plc:viewer/com.dina.peerlens.attestation/abc',
+              attestationUri: 'at://did:plc:viewer/com.dinakernel.peerlens.attestation/abc',
               body: 'Long form body text',
               sentiment: 'positive',
             }),
@@ -861,7 +861,7 @@ describe('SubjectDetailScreen — own review row tappable (F2 fix)', () => {
     // editing fields the route handler needs to seed /trust/write).
     const call = onPressOwnReviewEdit.mock.calls[0][0];
     expect(call.attestationUri).toBe(
-      'at://did:plc:viewer/com.dina.peerlens.attestation/abc',
+      'at://did:plc:viewer/com.dinakernel.peerlens.attestation/abc',
     );
     expect(call.headline).toBe('Comfortable');
     expect(call.body).toBe('Long form body text');

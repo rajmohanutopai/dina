@@ -2,7 +2,7 @@
  * Service-candidate ranker — selects the best match from AppView search
  * results for a given capability.
  *
- * AppView's `com.dina.service.search` already returns a ranked list (trust
+ * AppView's `com.dinakernel.service.search` already returns a ranked list (trust
  * score + proximity), but the requester still has to (a) pick the top match
  * and (b) compute a client-side proximity when the server hasn't (or when
  * the user wants a different tie-break). This module owns that logic so the

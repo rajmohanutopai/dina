@@ -1,7 +1,7 @@
 # Feature: service search (services AppView)
 
-**What it is.** The wire contract for `com.dina.service.search`, the
-xRPC endpoint that ranks `com.dina.service.profile` records by
+**What it is.** The wire contract for `com.dinakernel.service.search`, the
+xRPC endpoint that ranks `com.dinakernel.service.profile` records by
 capability, distance, text relevance, and operator trust. Federated
 AppView implementations indexing the same firehose MUST produce
 identical responses; otherwise users on different Dinas see
@@ -16,7 +16,7 @@ pagination shape).
 ## Request
 
 ```
-GET /xrpc/com.dina.service.search
+GET /xrpc/com.dinakernel.service.search
     ?capability=<string, 1..200>          (required)
     [&lat=<number, -90..90>]              (optional)
     [&lng=<number, -180..180>]            (optional)
@@ -46,7 +46,7 @@ layer.
 
 ```
 {
-  "uri": "at://<did>/com.dina.service.profile/<rkey>",
+  "uri": "at://<did>/com.dinakernel.service.profile/<rkey>",
   "operatorDid": "did:plc:...",
   "name": string,
   "description": string | null,

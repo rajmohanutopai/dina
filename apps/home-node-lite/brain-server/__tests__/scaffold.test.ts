@@ -205,7 +205,7 @@ describe('brain-server — boot (task 5.1)', () => {
       expect(fetchFn).toHaveBeenCalledTimes(1);
       const [url] = fetchFn.mock.calls[0] as unknown as [string];
       expect(url).toBe(
-        'https://brain-appview.example/xrpc/com.dina.service.search?capability=eta_query',
+        'https://brain-appview.example/xrpc/com.dinakernel.service.search?capability=eta_query',
       );
     } finally {
       await booted?.app.close();

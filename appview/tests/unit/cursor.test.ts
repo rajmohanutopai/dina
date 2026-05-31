@@ -16,7 +16,7 @@ describe('opaque cursor helper', () => {
   it('round-trips a ts/uri payload through encode → decode', () => {
     const payload = {
       ts: '2026-05-23T12:34:56.000Z',
-      uri: 'at://did:plc:alice/com.dina.peerlens.attestation/3kxy',
+      uri: 'at://did:plc:alice/com.dinakernel.peerlens.attestation/3kxy',
     }
     const encoded = encodeCursor(payload)
     expect(typeof encoded).toBe('string')
@@ -25,7 +25,7 @@ describe('opaque cursor helper', () => {
   })
 
   it('round-trips a bucket/uri payload through encode → decode', () => {
-    const payload = { bucket: 800, uri: 'at://did:plc:b/com.dina.service.profile/self' }
+    const payload = { bucket: 800, uri: 'at://did:plc:b/com.dinakernel.service.profile/self' }
     const decoded = decodeCursor(encodeCursor(payload), BucketUriPayload)
     expect(decoded).toEqual(payload)
   })
@@ -81,7 +81,7 @@ describe('opaque cursor helper', () => {
     // non-opaque input a caller might construct by hand. Confirm
     // the envelope discipline rejects it — only opaque base64url
     // envelopes are accepted.
-    const plaintext = '2026-05-23T00:00:00.000Z::at://did:plc:alice/com.dina.peerlens.attestation/3kxy'
+    const plaintext = '2026-05-23T00:00:00.000Z::at://did:plc:alice/com.dinakernel.peerlens.attestation/3kxy'
     expect(() => decodeCursor(plaintext, TsUriPayload)).toThrow(InvalidCursorError)
   })
 

@@ -50,7 +50,7 @@ export const options = {
 
 export default function () {
   const did = PROFILE_DIDS[(__VU + __ITER) % PROFILE_DIDS.length]
-  const url = `${APPVIEW_URL}${XRPC_PREFIX}/com.dina.peerview.getProfile?did=${encodeURIComponent(did)}`
+  const url = `${APPVIEW_URL}${XRPC_PREFIX}/com.dinakernel.peerview.getProfile?did=${encodeURIComponent(did)}`
 
   const res = http.get(url, {
     tags: { name: 'getProfile.xrpc' },

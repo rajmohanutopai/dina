@@ -161,7 +161,7 @@ curl -fsS http://localhost:3000/health
 
 # 2. xRPC dispatcher is responsive (any GET that doesn't need
 #    auth — service registry methods are 60/min unauth).
-curl -fsS 'http://localhost:3000/xrpc/com.dina.peerlens.search?q=hello'
+curl -fsS 'http://localhost:3000/xrpc/com.dinakernel.peerlens.search?q=hello'
 # expect: 200, JSON body with `results` (possibly empty), no 5xx
 
 # 3. Postgres has the post-V1 schema
@@ -237,9 +237,9 @@ npx tsx src/admin/trust-flag-cli.ts disable
 ```
 
 Effect within ≤ 60s for cached readers, immediate for per-
-request readers. The Ingester drops `com.dina.peerlens.*` events,
+request readers. The Ingester drops `com.dinakernel.peerlens.*` events,
 the Scorer skips trust jobs, the Web returns 503 for trust
-xRPCs. `com.dina.service.*` traffic is untouched (provider
+xRPCs. `com.dinakernel.service.*` traffic is untouched (provider
 discovery survives). See TN-FLAG-002/003.
 
 ---

@@ -53,7 +53,7 @@ function row(overrides: Partial<CosigRow> = {}): CosigRow {
     id: 1n,
     requesterDid: 'did:plc:requester',
     recipientDid: 'did:plc:recipient',
-    attestationUri: 'at://did:plc:requester/com.dina.peerlens.attestation/3kfx',
+    attestationUri: 'at://did:plc:requester/com.dinakernel.peerlens.attestation/3kfx',
     status: 'pending',
     endorsementUri: null,
     rejectReason: null,

@@ -231,7 +231,7 @@ describe('serviceSearch — response shape', () => {
 
   it('every result carries matched-capability flat fields', async () => {
     const fakeRow = {
-      uri: 'at://did:plc:p/com.dina.service.profile/self',
+      uri: 'at://did:plc:p/com.dinakernel.service.profile/self',
       operatorDid: 'did:plc:p',
       name: 'Test',
       description: null,
@@ -274,7 +274,7 @@ describe('serviceSearch — response shape', () => {
 
   it('matchedSchema is null when the operator did not publish one for the matched capability', async () => {
     const fakeRow = {
-      uri: 'at://did:plc:p/com.dina.service.profile/self',
+      uri: 'at://did:plc:p/com.dinakernel.service.profile/self',
       operatorDid: 'did:plc:p',
       name: 'Test',
       description: null,
@@ -307,7 +307,7 @@ describe('serviceSearch — response shape', () => {
     // tombstoned. The field is reserved in the wire shape for a
     // future includeTombstoned variant.
     const fakeRow = {
-      uri: 'at://did:plc:p/com.dina.service.profile/self',
+      uri: 'at://did:plc:p/com.dinakernel.service.profile/self',
       operatorDid: 'did:plc:p',
       name: 'Test',
       description: null,
@@ -431,9 +431,9 @@ describe('serviceSearch — cursor handling', () => {
       scoreBucket,
     })
     const { db } = stubDb([
-      mkRow('at://did:plc:a/com.dina.service.profile/self', 900),
-      mkRow('at://did:plc:b/com.dina.service.profile/self', 800),
-      mkRow('at://did:plc:c/com.dina.service.profile/self', 700), // limit+1
+      mkRow('at://did:plc:a/com.dinakernel.service.profile/self', 900),
+      mkRow('at://did:plc:b/com.dinakernel.service.profile/self', 800),
+      mkRow('at://did:plc:c/com.dinakernel.service.profile/self', 700), // limit+1
     ])
     const r = await serviceSearch(db, {
       capability: 'eta_query',
@@ -448,7 +448,7 @@ describe('serviceSearch — cursor handling', () => {
     expect(decoded).toMatchObject({
       v: 1,
       bucket: 800,
-      uri: 'at://did:plc:b/com.dina.service.profile/self',
+      uri: 'at://did:plc:b/com.dinakernel.service.profile/self',
     })
   })
 })

@@ -23,7 +23,7 @@ function stubClient(overrides?: Partial<PeerlensAppViewClient>): PeerlensAppView
     searchTrust: jest.fn(async () => ({
       results: [
         {
-          uri: 'at://did:plc:alice/com.dina.peerlens.attestation/1',
+          uri: 'at://did:plc:alice/com.dinakernel.peerlens.attestation/1',
           authorDid: 'did:plc:alice',
           sentiment: 'positive' as const,
           confidence: 'high' as const,

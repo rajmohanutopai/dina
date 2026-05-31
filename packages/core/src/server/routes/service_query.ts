@@ -156,7 +156,7 @@ function validateRequest(
   }
   // service_uri (optional): when present it selects WHICH listing the provider
   // answers for and flows into the provider's execution context — so bind it to
-  // a well-formed com.dina.service.profile listing AT-URI whose authority is the
+  // a well-formed com.dinakernel.service.profile listing AT-URI whose authority is the
   // SAME DID as `to_did`. Reject a malformed or cross-DID listing so a requester
   // can't push a mismatched listing reference at the provider. '' ⇒ absent.
   let serviceUri: string | undefined;
@@ -171,7 +171,7 @@ function validateRequest(
       if (parsed === null) {
         return {
           ok: false,
-          error: 'service_uri must be an at://<did>/com.dina.service.profile/<rkey> URI',
+          error: 'service_uri must be an at://<did>/com.dinakernel.service.profile/<rkey> URI',
         };
       }
       if (parsed.did !== toDID) {
