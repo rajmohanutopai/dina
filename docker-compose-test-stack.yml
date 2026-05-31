@@ -25,7 +25,7 @@
 # -- Core service base (Go vault keeper) --
 x-core-base: &core-base
   build:
-    context: ./core
+    context: ./legacy/go-core
     dockerfile: Dockerfile
     additional_contexts:
       admin-cli: ./admin-cli
@@ -57,7 +57,7 @@ x-core-env: &core-env
 # -- Brain service base (Python sidecar) --
 x-brain-base: &brain-base
   build:
-    context: ./brain
+    context: ./legacy/python-brain
     dockerfile: Dockerfile
   healthcheck: &brain-healthcheck
     test: ["CMD", "python", "-c", "import sys; from urllib.request import urlopen; r = urlopen('http://localhost:8200/healthz', timeout=2); sys.exit(0 if r.status == 200 else 1)"]

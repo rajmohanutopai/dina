@@ -1273,25 +1273,25 @@ func TestInfra_30_1_AllFallbackLocationsAuditedStrict(t *testing.T) {
 
 	files := []fallbackFile{
 		{
-			relPath:          "../../tests/integration/real_clients.py",
+			relPath:          "../../../tests/integration/real_clients.py",
 			description:      "Integration Real* clients (17 locations)",
 			maxSuperCalls:    22, // Real* classes extend Mock*, call super()
 			maxTryExcepts:    15, // try/except blocks that fall back to mock
 			maxMockFallbacks: 20, // _mock_* or mock_state references
 		},
 		{
-			relPath:          "../../tests/e2e/real_nodes.py",
+			relPath:          "../../../tests/e2e/real_nodes.py",
 			description:      "E2E Real* nodes (22 locations)",
 			maxSuperCalls:    20, // Real* extends Mock*, call super()
 			maxTryExcepts:    10, // try/except blocks that fall back
 			maxMockFallbacks: 20, // _mock_* references
 		},
 		{
-			relPath:          "../../tests/e2e/real_d2d.py",
+			relPath:          "../../../tests/e2e/real_d2d.py",
 			description:      "E2E Real D2D transport (1 location)",
-			maxSuperCalls:    5,  // Minimal super() delegation
-			maxTryExcepts:    3,  // Few try/except blocks
-			maxMockFallbacks: 5,  // Few mock references
+			maxSuperCalls:    5, // Minimal super() delegation
+			maxTryExcepts:    3, // Few try/except blocks
+			maxMockFallbacks: 5, // Few mock references
 		},
 	}
 
@@ -1299,7 +1299,7 @@ func TestInfra_30_1_AllFallbackLocationsAuditedStrict(t *testing.T) {
 		t.Run(ff.description, func(t *testing.T) {
 			content, err := os.ReadFile(filepath.Clean(ff.relPath))
 			if err != nil {
-				t.Fatalf("cannot read %s: %v (test must run from core/test/)", ff.relPath, err)
+				t.Fatalf("cannot read %s: %v (test must run from legacy/go-core/test/)", ff.relPath, err)
 			}
 
 			src := string(content)
@@ -1643,7 +1643,7 @@ func (w *noopVaultWriter) Delete(_ context.Context, _ domain.PersonaName, _ stri
 type simpleClock struct{}
 
 func (c *simpleClock) Now() time.Time                         { return time.Now() }
-func (c *simpleClock) After(d time.Duration) <-chan time.Time  { return time.After(d) }
+func (c *simpleClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
 func (c *simpleClock) NewTicker(d time.Duration) *time.Ticker { return time.NewTicker(d) }
 
 // deleteTrackingWriter records every Delete call for verifying physical removal.
@@ -3403,7 +3403,7 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 			PersonaID:  "general",
 			TrustLevel: "verified",
 			Constraints: map[string]bool{
-				"draft_only":            true,
+				"draft_only":           true,
 				"persona_general_only": true,
 			},
 		})
@@ -3419,7 +3419,7 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 			PersonaID:  "financial",
 			TrustLevel: "verified",
 			Constraints: map[string]bool{
-				"draft_only":            true,
+				"draft_only":           true,
 				"persona_general_only": true,
 			},
 		})
@@ -3435,7 +3435,7 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 			PersonaID:  "general",
 			TrustLevel: "verified",
 			Constraints: map[string]bool{
-				"draft_only":            true,
+				"draft_only":           true,
 				"persona_general_only": true,
 			},
 		})

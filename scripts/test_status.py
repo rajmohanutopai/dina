@@ -479,8 +479,8 @@ def _start_local() -> float:
     }
 
     # Skip Go rebuild if binary exists and source hasn't changed.
-    core_binary = PROJECT_ROOT / "core" / "dina-core"
-    core_src_dir = PROJECT_ROOT / "core"
+    core_binary = PROJECT_ROOT / "legacy" / "go-core" / "dina-core"
+    core_src_dir = PROJECT_ROOT / "legacy" / "go-core"
     need_build = True
     if core_binary.exists():
         binary_mtime = core_binary.stat().st_mtime
@@ -499,7 +499,7 @@ def _start_local() -> float:
         build_t0 = _time.monotonic()
         subprocess.run(
             ["go", "build", "-tags", "fts5", "-o", "dina-core", "./cmd/dina-core"],
-            cwd=str(PROJECT_ROOT / "core"),
+            cwd=str(PROJECT_ROOT / "legacy" / "go-core"),
             capture_output=True,
             timeout=120,
             check=True,
@@ -512,8 +512,8 @@ def _start_local() -> float:
 
     print("  Starting Go Core...", file=sys.stderr, flush=True)
     core_proc = subprocess.Popen(
-        [str(PROJECT_ROOT / "core" / "dina-core")],
-        cwd=str(PROJECT_ROOT / "core"),
+        [str(PROJECT_ROOT / "legacy" / "go-core" / "dina-core")],
+        cwd=str(PROJECT_ROOT / "legacy" / "go-core"),
         env=core_env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -527,7 +527,7 @@ def _start_local() -> float:
             "--host", "0.0.0.0",
             "--port", str(LOCAL_BRAIN_PORT),
         ],
-        cwd=str(PROJECT_ROOT / "brain"),
+        cwd=str(PROJECT_ROOT / "legacy" / "python-brain"),
         env=brain_env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -877,7 +877,7 @@ class SectionStats:
 # First number group after subject: TestAuth_1_... → 1
 _GO_SECTION_RE = re.compile(r"^Test\w+?_(\d+)_")
 
-# pytest verbose: "brain/tests/test_auth.py::test_auth_1_1_1_valid PASSED [0%]"
+# pytest verbose: "legacy/python-brain/tests/test_auth.py::test_auth_1_1_1_valid PASSED [0%]"
 # also handles classes: "tests/...py::TestClass::test_func PASSED"
 # also handles parametrize: "...::test_func[param-A desc] PASSED"
 # Standard format:  file::test PASSED  [ N%]
@@ -1176,20 +1176,20 @@ SUITES = {
     "core": {
         "name": "Core (Go)",
         "cmd": ["go", "test", "-json", "-count=1", "./test/..."],
-        "cwd": "core",
-        "plan": "core/test/TEST_PLAN.md",
+        "cwd": "legacy/go-core",
+        "plan": "legacy/go-core/test/TEST_PLAN.md",
         "parser": "go",
-        "test_dir": "core/test",
+        "test_dir": "legacy/go-core/test",
         "lang": "go",
     },
     "brain": {
         "name": "Brain (Py)",
         "cmd": ["python", "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
-                "brain/tests/"],
+                "legacy/python-brain/tests/"],
         "cwd": None,
-        "plan": "brain/tests/TEST_PLAN.md",
+        "plan": "legacy/python-brain/tests/TEST_PLAN.md",
         "parser": "pytest",
-        "test_dir": "brain/tests",
+        "test_dir": "legacy/python-brain/tests",
     },
     "integration": {
         "name": "Integration",

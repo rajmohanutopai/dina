@@ -338,7 +338,7 @@ func TestTraceability_30_7_3_GoTestFunctionsMappedToPlanIDs(t *testing.T) {
 // It walks up from the current directory looking for CLAUDE.md as an anchor.
 func findProjectRoot(t *testing.T) string {
 	t.Helper()
-	// Start from the test directory (core/test/) and walk up.
+	// Start from the test directory (legacy/go-core/test/) and walk up.
 	dir, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("cannot get working directory: %v", err)
@@ -383,7 +383,7 @@ func TestCompliance_30_5_4_NoTokenFallbackInAnyConftest(t *testing.T) {
 		"tests/integration/conftest.py",
 		"tests/release/conftest.py",
 		"tests/system/conftest.py",
-		"brain/tests/conftest.py",
+		"legacy/python-brain/tests/conftest.py",
 		"admin-cli/tests/conftest.py",
 		"cli/tests/conftest.py",
 	}
@@ -433,7 +433,7 @@ func TestCompliance_30_5_4_NoTokenFallbackInAnyConftest(t *testing.T) {
 	t.Run("no_brain_token_in_admin_operations", func(t *testing.T) {
 		// brain_token must NEVER be used for admin operations (persona create,
 		// unlock, device management, etc.). Only CLIENT_TOKEN is valid for admin.
-		// The brain/tests/conftest.py is excluded because brain legitimately uses
+		// The legacy/python-brain/tests/conftest.py is excluded because brain legitimately uses
 		// its own token for brain-internal endpoints.
 		adminConfests := []string{
 			"tests/conftest.py",
@@ -653,7 +653,7 @@ func TestTraceability_30_7_4_PytestCollectOnlyMapsToPlanIDs(t *testing.T) {
 	suites := []pythonSuite{
 		{"tests/integration", "TST-INT-", "Integration"},
 		{"tests/e2e", "TST-E2E-", "E2E"},
-		{"brain/tests", "TST-BRAIN-", "Brain"},
+		{"legacy/python-brain/tests", "TST-BRAIN-", "Brain"},
 	}
 
 	// Regex to find Python test function definitions.
@@ -723,9 +723,9 @@ func TestTraceability_30_7_4_PytestCollectOnlyMapsToPlanIDs(t *testing.T) {
 		// All TST-* tags must follow the format TST-{SUITE}-{NUMBER}.
 		// Mixed formats (TST-INT vs TST-INTEGRATION) would break tooling.
 		validPrefixes := map[string]*regexp.Regexp{
-			"tests/integration": regexp.MustCompile(`#\s*TST-INT-\d+`),
-			"tests/e2e":         regexp.MustCompile(`#\s*TST-E2E-\d+`),
-			"brain/tests":       regexp.MustCompile(`#\s*TST-BRAIN-\d+`),
+			"tests/integration":         regexp.MustCompile(`#\s*TST-INT-\d+`),
+			"tests/e2e":                 regexp.MustCompile(`#\s*TST-E2E-\d+`),
+			"legacy/python-brain/tests": regexp.MustCompile(`#\s*TST-BRAIN-\d+`),
 		}
 		invalidTagRe := regexp.MustCompile(`#\s*TST-[A-Z]+-\d+`)
 
@@ -1130,7 +1130,7 @@ func TestBIP39_2_1_5_MnemonicExtraWhitespace(t *testing.T) {
 		// This is a deliberate design choice — the API accepts a list, not a string.
 		sigRe := regexp.MustCompile(`def\s+mnemonic_to_seed\s*\(\s*mnemonic\s*:\s*list\[str\]`)
 		if !sigRe.MatchString(seedWrap) {
-			t.Fatal("seed_wrap.py mnemonic_to_seed must accept list[str] — "+
+			t.Fatal("seed_wrap.py mnemonic_to_seed must accept list[str] — " +
 				"list input naturally handles whitespace normalization")
 		}
 	})
@@ -1433,7 +1433,7 @@ func TestBIP39_29_8_1_RecoveryRejectsInvalidChecksum(t *testing.T) {
 		// not a mnemonic processor. But this means the Python validation gate
 		// is the ONLY defense. The test plan entry exists to ensure this
 		// single-point-of-validation is robust.
-		goFixtures := readProjectFile(t, root, "core/test/testutil/fixtures.go")
+		goFixtures := readProjectFile(t, root, "legacy/go-core/test/testutil/fixtures.go")
 
 		// The fixtures file should document that mnemonic handling is Python-side.
 		if !strings.Contains(goFixtures, "BIP-39") && !strings.Contains(goFixtures, "mnemonic") {
@@ -1592,7 +1592,7 @@ func TestBIP39_29_8_2_RecoveryRejectsWrongWordCount(t *testing.T) {
 func TestComposition_30_4_1_CreateAppBootSmokeMinimalEnv(t *testing.T) {
 	root := findProjectRoot(t)
 
-	mainPy := readProjectFile(t, root, "brain/src/main.py")
+	mainPy := readProjectFile(t, root, "legacy/python-brain/src/main.py")
 
 	// TRACE: {"suite": "CORE", "case": "1490", "section": "30", "sectionName": "Test System Quality", "title": "create_app_function_exists_and_returns_fastapi"}
 	t.Run("create_app_function_exists_and_returns_fastapi", func(t *testing.T) {
@@ -1600,7 +1600,7 @@ func TestComposition_30_4_1_CreateAppBootSmokeMinimalEnv(t *testing.T) {
 		// This is the ONLY entry point for constructing the Brain application.
 		createAppRe := regexp.MustCompile(`def\s+create_app\s*\(\s*\)\s*->\s*FastAPI`)
 		if !createAppRe.MatchString(mainPy) {
-			t.Fatal("brain/src/main.py must define `create_app() -> FastAPI`")
+			t.Fatal("legacy/python-brain/src/main.py must define `create_app() -> FastAPI`")
 		}
 	})
 
@@ -1619,7 +1619,7 @@ func TestComposition_30_4_1_CreateAppBootSmokeMinimalEnv(t *testing.T) {
 		}
 		for _, pattern := range diFrameworks {
 			if strings.Contains(mainPy, pattern) {
-				t.Fatalf("brain/src/main.py must NOT use DI framework — found: %q. "+
+				t.Fatalf("legacy/python-brain/src/main.py must NOT use DI framework — found: %q. "+
 					"Explicit construction is a design principle", pattern)
 			}
 		}
@@ -1824,15 +1824,15 @@ func TestCleanup_30_6_1_HardCleanupPerTestClassInRealSuites(t *testing.T) {
 		// The per-test reset must clear ALL categories of mutable state.
 		// Missing even one category can cause subtle test interference.
 		requiredClears := map[string]string{
-			"notifications":     "notification state leaks between tests",
-			"briefing_queue":    "queued briefings from prior test visible in next",
-			"dnd_active":        "DND from one test blocks notifications in next",
-			"audit_log":         "audit entries from prior test visible in assertions",
-			"kv_store":          "KV settings from one test affect behavior in next",
-			"tasks":             "queued tasks from prior test execute in next",
-			"outbox":            "outbox messages from prior test sent in next",
-			"spool":             "dead drop spool from prior test processed in next",
-			"scratchpad":        "scratchpad entries from prior test visible in next",
+			"notifications":  "notification state leaks between tests",
+			"briefing_queue": "queued briefings from prior test visible in next",
+			"dnd_active":     "DND from one test blocks notifications in next",
+			"audit_log":      "audit entries from prior test visible in assertions",
+			"kv_store":       "KV settings from one test affect behavior in next",
+			"tasks":          "queued tasks from prior test execute in next",
+			"outbox":         "outbox messages from prior test sent in next",
+			"spool":          "dead drop spool from prior test processed in next",
+			"scratchpad":     "scratchpad entries from prior test visible in next",
 		}
 
 		for stateKey, failReason := range requiredClears {
@@ -1906,7 +1906,7 @@ func TestCleanup_30_6_1_HardCleanupPerTestClassInRealSuites(t *testing.T) {
 func TestComposition_30_4_2_DegradedStartupMissingSpacyModel(t *testing.T) {
 	root := findProjectRoot(t)
 
-	mainPy := readProjectFile(t, root, "brain/src/main.py")
+	mainPy := readProjectFile(t, root, "legacy/python-brain/src/main.py")
 
 	// TRACE: {"suite": "CORE", "case": "1507", "section": "30", "sectionName": "Test System Quality", "title": "no_spacy_fallback_presidio_or_none"}
 	t.Run("no_spacy_fallback_presidio_or_none", func(t *testing.T) {
@@ -1915,7 +1915,7 @@ func TestComposition_30_4_2_DegradedStartupMissingSpacyModel(t *testing.T) {
 		// govt IDs. Without Presidio, scrubber is None and Go Core Tier 1
 		// regex handles basic PII.
 		if strings.Contains(mainPy, "_SpacyScrubber") {
-			t.Fatal("brain/src/main.py must NOT define _SpacyScrubber — " +
+			t.Fatal("legacy/python-brain/src/main.py must NOT define _SpacyScrubber — " +
 				"no spaCy-only fallback (it cannot detect structured PII)")
 		}
 	})
@@ -1983,7 +1983,7 @@ func TestComposition_30_4_2_DegradedStartupMissingSpacyModel(t *testing.T) {
 		// it's safe to send data to cloud LLMs. Without a scrubber, PII
 		// might leak to external providers. The config must include tier info.
 		if !strings.Contains(mainPy, `"scrubber_tier"`) {
-			t.Fatal("scrubber_tier must be passed to LLM router config — "+
+			t.Fatal("scrubber_tier must be passed to LLM router config — " +
 				"router needs this to decide if cloud LLM calls are PII-safe")
 		}
 	})
@@ -2003,7 +2003,7 @@ func TestComposition_30_4_2_DegradedStartupMissingSpacyModel(t *testing.T) {
 func TestComposition_30_4_3_HealthzComponentStatusCorrectness(t *testing.T) {
 	root := findProjectRoot(t)
 
-	mainPy := readProjectFile(t, root, "brain/src/main.py")
+	mainPy := readProjectFile(t, root, "legacy/python-brain/src/main.py")
 
 	// TRACE: {"suite": "CORE", "case": "1515", "section": "30", "sectionName": "Test System Quality", "title": "healthz_registered_on_master_app_not_subapp"}
 	t.Run("healthz_registered_on_master_app_not_subapp", func(t *testing.T) {
@@ -2056,7 +2056,7 @@ func TestComposition_30_4_3_HealthzComponentStatusCorrectness(t *testing.T) {
 		// if the healthz handler blocks for 60s on a Core retry loop, the
 		// container appears hung. A sub-second timeout is ideal.
 		if !strings.Contains(mainPy, "wait_for") && !strings.Contains(mainPy, "timeout") {
-			t.Fatal("/healthz must have a timeout on Core health probe — "+
+			t.Fatal("/healthz must have a timeout on Core health probe — " +
 				"blocking indefinitely causes Docker health check failures")
 		}
 		// Verify asyncio.wait_for is used with a timeout.
@@ -2238,7 +2238,7 @@ func TestCleanup_30_6_2_DirtyStateDetectorFailsOnPriorRunArtifacts(t *testing.T)
 		// Verify the conftest creates a new RealVault per test.
 		realVaultCreationRe := regexp.MustCompile(`RealVault\(\s*\n?\s*docker_services\.core_url`)
 		if !realVaultCreationRe.MatchString(integrationConftest) {
-			t.Fatal("conftest must create a new RealVault instance per test — "+
+			t.Fatal("conftest must create a new RealVault instance per test — " +
 				"shared instances would leak _item_map across tests")
 		}
 	})
@@ -2882,18 +2882,19 @@ func TestLegacyTestSeparation_30_9_3_CompatTestsLabeledExplicitly(t *testing.T) 
 //     (crypto, vault, auth, identity, transport, handlers, config, etc.).
 //   - The Makefile must have a target that runs Go unit tests.
 //   - The master test runner (run_all_tests.sh) must include Go tests in its pipeline.
+//
 // TRACE: {"suite": "CORE", "case": "1562", "section": "30", "sectionName": "Test System Quality", "subsection": "08", "scenario": "01", "title": "UnitCoreStage"}
 func TestCI_30_8_1_UnitCoreStage(t *testing.T) {
 	root := findProjectRoot(t)
-	coreTestDir := filepath.Join(root, "core", "test")
+	coreTestDir := filepath.Join(root, "legacy", "go-core", "test")
 
 	// TRACE: {"suite": "CORE", "case": "1563", "section": "30", "sectionName": "Test System Quality", "title": "go_test_files_exist_and_follow_convention"}
 	t.Run("go_test_files_exist_and_follow_convention", func(t *testing.T) {
-		// Go test files must exist in core/test/ and follow the _test.go naming
+		// Go test files must exist in legacy/go-core/test/ and follow the _test.go naming
 		// convention. Without test files, `go test ./...` passes vacuously.
 		entries, err := os.ReadDir(coreTestDir)
 		if err != nil {
-			t.Fatalf("cannot read core/test/: %v", err)
+			t.Fatalf("cannot read legacy/go-core/test/: %v", err)
 		}
 
 		testFiles := []string{}
@@ -2909,7 +2910,7 @@ func TestCI_30_8_1_UnitCoreStage(t *testing.T) {
 		if len(testFiles) < 20 {
 			t.Fatalf("unit-core requires at least 20 Go test files, found %d", len(testFiles))
 		}
-		t.Logf("found %d Go test files in core/test/", len(testFiles))
+		t.Logf("found %d Go test files in legacy/go-core/test/", len(testFiles))
 	})
 
 	// TRACE: {"suite": "CORE", "case": "1564", "section": "30", "sectionName": "Test System Quality", "title": "all_test_files_have_package_declaration"}
@@ -2919,7 +2920,7 @@ func TestCI_30_8_1_UnitCoreStage(t *testing.T) {
 		// declaration causes build failures in the CI pipeline.
 		entries, err := os.ReadDir(coreTestDir)
 		if err != nil {
-			t.Fatalf("cannot read core/test/: %v", err)
+			t.Fatalf("cannot read legacy/go-core/test/: %v", err)
 		}
 
 		for _, e := range entries {
@@ -2945,7 +2946,7 @@ func TestCI_30_8_1_UnitCoreStage(t *testing.T) {
 		// subsystem has no test file, it silently passes CI with zero coverage.
 		entries, err := os.ReadDir(coreTestDir)
 		if err != nil {
-			t.Fatalf("cannot read core/test/: %v", err)
+			t.Fatalf("cannot read legacy/go-core/test/: %v", err)
 		}
 
 		fileNames := make(map[string]bool)
@@ -2982,7 +2983,7 @@ func TestCI_30_8_1_UnitCoreStage(t *testing.T) {
 		// to the CI pipeline, creating a false sense of coverage.
 		entries, err := os.ReadDir(coreTestDir)
 		if err != nil {
-			t.Fatalf("cannot read core/test/: %v", err)
+			t.Fatalf("cannot read legacy/go-core/test/: %v", err)
 		}
 
 		testFuncPattern := regexp.MustCompile(`(?m)^func Test\w+\(t \*testing\.T\)`)
@@ -3021,19 +3022,20 @@ func TestCI_30_8_1_UnitCoreStage(t *testing.T) {
 		if !strings.Contains(makefile, "go test") {
 			t.Fatal("Makefile must include 'go test' in test target for CI pipeline")
 		}
-		// Verify it runs from the core directory.
-		if !strings.Contains(makefile, "cd core") {
-			t.Fatal("Makefile go test must run from core/ directory (cd core && go test)")
+		// Verify it runs from the legacy Go Core directory.
+		if !strings.Contains(makefile, "cd $(LEGACY_GO_CORE)") &&
+			!strings.Contains(makefile, "cd legacy/go-core") {
+			t.Fatal("Makefile go test must run from legacy/go-core directory")
 		}
 	})
 
 	// TRACE: {"suite": "CORE", "case": "1568", "section": "30", "sectionName": "Test System Quality", "title": "total_test_function_count_is_substantial"}
 	t.Run("total_test_function_count_is_substantial", func(t *testing.T) {
 		// A meaningful CI gate needs a substantial number of test functions.
-		// Count all Test* function declarations across core/test/.
+		// Count all Test* function declarations across legacy/go-core/test/.
 		entries, err := os.ReadDir(coreTestDir)
 		if err != nil {
-			t.Fatalf("cannot read core/test/: %v", err)
+			t.Fatalf("cannot read legacy/go-core/test/: %v", err)
 		}
 
 		testFuncPattern := regexp.MustCompile(`(?m)^func Test\w+\(t \*testing\.T\)`)
@@ -3113,25 +3115,26 @@ func TestCI_30_8_1_UnitCoreStage(t *testing.T) {
 // §30.8 CI Pipeline Gates (test_issues #9)
 //
 // Requirements:
-//   - The `unit-brain` CI stage runs `pytest brain/tests/` to execute all Brain unit tests.
+//   - The `unit-brain` CI stage runs `pytest legacy/python-brain/tests/` to execute all Brain unit tests.
 //   - Brain test files must follow pytest conventions (test_*.py prefix).
 //   - The test suite must be comprehensive: covering API, auth, admin, PII, guardian,
 //     LLM, embedding, config, routing, silence classification, and other subsystems.
 //   - A conftest.py must exist with fixtures for brain test infrastructure.
 //   - The Makefile must have a target that runs brain unit tests.
 //   - Brain tests must NOT import from core (brain is an untrusted tenant — no Go code access).
+//
 // TRACE: {"suite": "CORE", "case": "1571", "section": "30", "sectionName": "Test System Quality", "subsection": "08", "scenario": "02", "title": "UnitBrainStage"}
 func TestCI_30_8_2_UnitBrainStage(t *testing.T) {
 	root := findProjectRoot(t)
-	brainTestDir := filepath.Join(root, "brain", "tests")
+	brainTestDir := filepath.Join(root, "legacy", "python-brain", "tests")
 
 	// TRACE: {"suite": "CORE", "case": "1572", "section": "30", "sectionName": "Test System Quality", "title": "brain_test_files_exist_and_follow_convention"}
 	t.Run("brain_test_files_exist_and_follow_convention", func(t *testing.T) {
-		// Python test files must exist in brain/tests/ and follow the test_*.py
+		// Python test files must exist in legacy/python-brain/tests/ and follow the test_*.py
 		// naming convention. pytest discovers tests via this naming pattern.
 		entries, err := os.ReadDir(brainTestDir)
 		if err != nil {
-			t.Fatalf("cannot read brain/tests/: %v", err)
+			t.Fatalf("cannot read legacy/python-brain/tests/: %v", err)
 		}
 
 		testFiles := []string{}
@@ -3146,29 +3149,29 @@ func TestCI_30_8_2_UnitBrainStage(t *testing.T) {
 		if len(testFiles) < 15 {
 			t.Fatalf("unit-brain requires at least 15 Python test files, found %d", len(testFiles))
 		}
-		t.Logf("found %d Python test files in brain/tests/", len(testFiles))
+		t.Logf("found %d Python test files in legacy/python-brain/tests/", len(testFiles))
 	})
 
 	// TRACE: {"suite": "CORE", "case": "1573", "section": "30", "sectionName": "Test System Quality", "title": "conftest_exists_with_fixtures"}
 	t.Run("conftest_exists_with_fixtures", func(t *testing.T) {
-		// brain/tests/conftest.py must exist and provide shared test fixtures.
+		// legacy/python-brain/tests/conftest.py must exist and provide shared test fixtures.
 		// Without conftest.py, tests would lack mock factories, auth tokens,
 		// and other shared setup — causing widespread test failures.
-		conftest := readProjectFile(t, root, filepath.Join("brain", "tests", "conftest.py"))
+		conftest := readProjectFile(t, root, filepath.Join("legacy", "python-brain", "tests", "conftest.py"))
 
 		// Must import pytest (fundamental to fixture definitions).
 		if !strings.Contains(conftest, "import pytest") {
-			t.Fatal("brain/tests/conftest.py must import pytest for fixture definitions")
+			t.Fatal("legacy/python-brain/tests/conftest.py must import pytest for fixture definitions")
 		}
 
 		// Must define at least one @pytest.fixture.
 		if !strings.Contains(conftest, "@pytest.fixture") {
-			t.Fatal("brain/tests/conftest.py must define at least one @pytest.fixture")
+			t.Fatal("legacy/python-brain/tests/conftest.py must define at least one @pytest.fixture")
 		}
 
 		// Must provide auth fixtures — the brain's Ed25519 auth is fundamental.
 		if !strings.Contains(conftest, "brain_token") && !strings.Contains(conftest, "client_token") {
-			t.Fatal("brain/tests/conftest.py must provide auth token fixtures " +
+			t.Fatal("legacy/python-brain/tests/conftest.py must provide auth token fixtures " +
 				"(brain_token and/or client_token)")
 		}
 	})
@@ -3179,7 +3182,7 @@ func TestCI_30_8_2_UnitBrainStage(t *testing.T) {
 		// Each subsystem needs at least one dedicated test file.
 		entries, err := os.ReadDir(brainTestDir)
 		if err != nil {
-			t.Fatalf("cannot read brain/tests/: %v", err)
+			t.Fatalf("cannot read legacy/python-brain/tests/: %v", err)
 		}
 
 		fileNames := make(map[string]bool)
@@ -3191,16 +3194,16 @@ func TestCI_30_8_2_UnitBrainStage(t *testing.T) {
 
 		// These subsystems are core to the Brain's functionality.
 		requiredSubsystems := map[string]string{
-			"API endpoints":        "test_api.py",
-			"authentication":       "test_auth.py",
-			"admin interface":      "test_admin.py",
-			"PII scrubbing":        "test_pii.py",
-			"guardian loop":        "test_guardian.py",
-			"LLM integration":     "test_llm.py",
-			"embedding":            "test_embedding.py",
-			"configuration":        "test_config.py",
-			"silence classifier":   "test_silence.py",
-			"routing":              "test_routing.py",
+			"API endpoints":      "test_api.py",
+			"authentication":     "test_auth.py",
+			"admin interface":    "test_admin.py",
+			"PII scrubbing":      "test_pii.py",
+			"guardian loop":      "test_guardian.py",
+			"LLM integration":    "test_llm.py",
+			"embedding":          "test_embedding.py",
+			"configuration":      "test_config.py",
+			"silence classifier": "test_silence.py",
+			"routing":            "test_routing.py",
 		}
 
 		for subsystem, expectedFile := range requiredSubsystems {
@@ -3216,7 +3219,7 @@ func TestCI_30_8_2_UnitBrainStage(t *testing.T) {
 		// test classes (class Test*). Files with only helpers contribute no tests.
 		entries, err := os.ReadDir(brainTestDir)
 		if err != nil {
-			t.Fatalf("cannot read brain/tests/: %v", err)
+			t.Fatalf("cannot read legacy/python-brain/tests/: %v", err)
 		}
 
 		// Python test functions can be at top level (def test_*) or indented
@@ -3260,10 +3263,10 @@ func TestCI_30_8_2_UnitBrainStage(t *testing.T) {
 	// TRACE: {"suite": "CORE", "case": "1577", "section": "30", "sectionName": "Test System Quality", "title": "total_test_function_count_is_substantial"}
 	t.Run("total_test_function_count_is_substantial", func(t *testing.T) {
 		// A meaningful CI gate needs a substantial number of test functions.
-		// Count all test function/class declarations across brain/tests/.
+		// Count all test function/class declarations across legacy/python-brain/tests/.
 		entries, err := os.ReadDir(brainTestDir)
 		if err != nil {
-			t.Fatalf("cannot read brain/tests/: %v", err)
+			t.Fatalf("cannot read legacy/python-brain/tests/: %v", err)
 		}
 
 		testFuncPattern := regexp.MustCompile(`(?m)^(?:\s*def test_|\s*async def test_)`)
@@ -3297,7 +3300,7 @@ func TestCI_30_8_2_UnitBrainStage(t *testing.T) {
 		// (testing internal state rather than the API contract).
 		entries, err := os.ReadDir(brainTestDir)
 		if err != nil {
-			t.Fatalf("cannot read brain/tests/: %v", err)
+			t.Fatalf("cannot read legacy/python-brain/tests/: %v", err)
 		}
 
 		// Patterns that would indicate direct Go/core imports.
@@ -3346,10 +3349,10 @@ func TestCI_30_8_2_UnitBrainStage(t *testing.T) {
 		factoriesPath := filepath.Join(brainTestDir, "factories.py")
 		info, err := os.Stat(factoriesPath)
 		if err != nil {
-			t.Fatalf("brain/tests/factories.py must exist for test data factories: %v", err)
+			t.Fatalf("legacy/python-brain/tests/factories.py must exist for test data factories: %v", err)
 		}
 		if info.Size() == 0 {
-			t.Fatal("brain/tests/factories.py must not be empty")
+			t.Fatal("legacy/python-brain/tests/factories.py must not be empty")
 		}
 
 		data, err := os.ReadFile(factoriesPath)
@@ -3360,7 +3363,7 @@ func TestCI_30_8_2_UnitBrainStage(t *testing.T) {
 
 		// Factories should define reusable test data builders.
 		if !strings.Contains(content, "def ") && !strings.Contains(content, "class ") {
-			t.Fatal("brain/tests/factories.py must define factory functions or classes")
+			t.Fatal("legacy/python-brain/tests/factories.py must define factory functions or classes")
 		}
 	})
 }
@@ -3379,6 +3382,7 @@ func TestCI_30_8_2_UnitBrainStage(t *testing.T) {
 //   - Files in the top-level tests/ directory that target legacy dina.* modules
 //     should be marked as legacy or compat (not unmarked).
 //   - The `-m legacy` flag must be valid (not trigger PytestUnknownMarkWarning).
+//
 // TRACE: {"suite": "CORE", "case": "1580", "section": "30", "sectionName": "Test System Quality", "subsection": "09", "scenario": "01", "title": "LegacyTestsInExplicitProfile"}
 func TestLegacyTestSeparation_30_9_1_LegacyTestsInExplicitProfile(t *testing.T) {
 	root := findProjectRoot(t)
@@ -3593,6 +3597,7 @@ func TestLegacyTestSeparation_30_9_1_LegacyTestsInExplicitProfile(t *testing.T) 
 //     mock fallback when real API calls fail.
 //   - The Makefile must have a test-integration target that activates Docker mode.
 //   - Health check infrastructure must exist so tests wait for services.
+//
 // TRACE: {"suite": "CORE", "case": "1588", "section": "30", "sectionName": "Test System Quality", "subsection": "08", "scenario": "04", "title": "IntegrationRealStage"}
 func TestCI_30_8_4_IntegrationRealStage(t *testing.T) {
 	root := findProjectRoot(t)
@@ -3825,6 +3830,7 @@ func TestCI_30_8_4_IntegrationRealStage(t *testing.T) {
 //   - E2E test suites must cover all 3 critical paths mentioned in the requirement.
 //   - Init containers (keygen-*) must provision SLIP-0010 derived service keys.
 //   - E2E conftest.py must skip the entire suite when Docker is not available.
+//
 // TRACE: {"suite": "CORE", "case": "1598", "section": "30", "sectionName": "Test System Quality", "subsection": "08", "scenario": "05", "title": "E2ESmokeRealStage"}
 func TestCI_30_8_5_E2ESmokeRealStage(t *testing.T) {
 	root := findProjectRoot(t)
@@ -4096,6 +4102,7 @@ func TestCI_30_8_5_E2ESmokeRealStage(t *testing.T) {
 //     the legacy exclusion.
 //   - Integration, E2E, and system test directories must NOT contain unmarked
 //     legacy tests (tests importing from dina.* without a legacy marker).
+//
 // TRACE: {"suite": "CORE", "case": "1610", "section": "30", "sectionName": "Test System Quality", "subsection": "09", "scenario": "02", "title": "DefaultPipelineExcludesLegacy"}
 func TestLegacyTestSeparation_30_9_2_DefaultPipelineExcludesLegacy(t *testing.T) {
 	root := findProjectRoot(t)

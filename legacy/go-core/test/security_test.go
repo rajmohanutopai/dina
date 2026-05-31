@@ -208,7 +208,7 @@ func TestSecurity_17_6_TLSEnforcement(t *testing.T) {
 		"server source must implement HTTP server infrastructure (ListenAndServe)")
 
 	// Verify docker-compose uses secrets mount (not plain env vars) for token security.
-	compose, err := os.ReadFile("../../docker-compose.yml")
+	compose, err := os.ReadFile("../../../docker-compose.yml")
 	if err != nil {
 		t.Log("docker-compose.yml not found — skipping deployment TLS check")
 		return
@@ -239,7 +239,7 @@ func TestSecurity_17_7_DockerNetworkIsolation(t *testing.T) {
 	testutil.RequireFalse(t, brainInternal, "dina-brain-net must NOT be internal — brain needs outbound for LLM APIs")
 
 	// Cross-validate against the real docker-compose.yml on disk.
-	composeData, readErr := os.ReadFile(filepath.Join("..", "..", "docker-compose.yml"))
+	composeData, readErr := os.ReadFile(filepath.Join("..", "..", "..", "docker-compose.yml"))
 	if readErr != nil {
 		composeData, readErr = os.ReadFile(filepath.Join("..", "docker-compose.yml"))
 	}
@@ -407,7 +407,7 @@ func TestSecurity_17_11_NoPluginLoading(t *testing.T) {
 	// walk the actual source tree.
 	forbiddenPatterns := []string{"plugin.Open", "dlopen", "\"plugin\""}
 
-	// Directories containing production Go code (relative to core/test/).
+	// Directories containing production Go code (relative to legacy/go-core/test/).
 	sourceDirs := []string{"../internal", "../cmd"}
 
 	var goFiles []string
@@ -780,7 +780,7 @@ func TestSecurity_17_20_DigestPinning(t *testing.T) {
 func TestSecurity_17_21_CosignSignature(t *testing.T) {
 	// CI pipeline must include cosign signing. Verify Dockerfile or CI config references cosign.
 	// Check for cosign in Dockerfile or docker-compose.yml comments/labels.
-	dockerfile, err := os.ReadFile("../../Dockerfile")
+	dockerfile, err := os.ReadFile("../Dockerfile")
 	if err != nil {
 		// Dockerfile may be at project root or in core/
 		dockerfile, err = os.ReadFile("../Dockerfile")
@@ -802,7 +802,7 @@ func TestSecurity_17_21_CosignSignature(t *testing.T) {
 // TST-CORE-632
 func TestSecurity_17_22_SBOMGenerated(t *testing.T) {
 	// CI pipeline must generate SBOM using syft. Check for configuration.
-	dockerfile, err := os.ReadFile("../../Dockerfile")
+	dockerfile, err := os.ReadFile("../Dockerfile")
 	if err != nil {
 		dockerfile, err = os.ReadFile("../Dockerfile")
 	}
@@ -881,7 +881,7 @@ func TestSecurity_17_23_SecretsNeverInEnvVars(t *testing.T) {
 // TST-CORE-634
 func TestSecurity_17_24_SecretsTmpfsMount(t *testing.T) {
 	// Config audit: verify docker-compose.yml uses file-based secrets (tmpfs in Docker).
-	compose, err := os.ReadFile("../../docker-compose.yml")
+	compose, err := os.ReadFile("../../../docker-compose.yml")
 	if err != nil {
 		t.Fatalf("failed to read docker-compose.yml: %v", err)
 	}
@@ -1007,7 +1007,7 @@ func TestSecurity_17_27_BrainNetStandard(t *testing.T) {
 	// If custom networks are defined in docker-compose.yml, verify the brain
 	// service is NOT attached to an internal-only network (internal: true).
 	// If no custom networks exist, the default bridge provides outbound — that's fine.
-	compose, err := os.ReadFile("../../docker-compose.yml")
+	compose, err := os.ReadFile("../../../docker-compose.yml")
 	if err != nil {
 		compose, err = os.ReadFile("../docker-compose.yml")
 	}

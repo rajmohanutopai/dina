@@ -998,7 +998,7 @@ func createTestServiceKey(t *testing.T) (*servicekey.ServiceKey, string) {
 // TRACE: {"suite": "CORE", "case": "0212", "section": "30", "sectionName": "Test System Quality", "subsection": "02", "scenario": "04", "title": "ClientTokenDeniedOnBrainInternalEndpoints"}
 func TestContract_30_2_4_ClientTokenDeniedOnBrainInternalEndpoints(t *testing.T) {
 	// --- Mock Brain server that enforces Ed25519-only auth ---
-	// This server mirrors the real Brain's auth policy (brain/src/dina_brain/app.py):
+	// This server mirrors the real Brain's auth policy (legacy/python-brain/src/dina_brain/app.py):
 	// Accept requests with X-DID+X-Timestamp+X-Signature, reject Bearer tokens.
 	authLog := struct {
 		sync.Mutex
@@ -1205,7 +1205,7 @@ func TestContract_30_3_2_RealBrainFastAPIAppContract(t *testing.T) {
 		// The composition root must define create_app() → FastAPI and mount
 		// the brain API sub-app at /api and admin at /admin.
 		if !strings.Contains(mainPy, "def create_app()") {
-			t.Fatal("brain/src/main.py must define create_app() factory")
+			t.Fatal("legacy/python-brain/src/main.py must define create_app() factory")
 		}
 		if !strings.Contains(mainPy, `mount("/api"`) {
 			t.Fatal("create_app must mount brain API at /api")
@@ -1389,13 +1389,13 @@ func TestContract_30_3_2_RealBrainFastAPIAppContract(t *testing.T) {
 	})
 }
 
-// findBrainRoot returns the path to the brain/ directory.
+// findBrainRoot returns the path to the python-brain directory.
 func findBrainRoot(t *testing.T) string {
 	t.Helper()
 	root := findProjectRoot(t)
-	brainDir := filepath.Join(root, "brain")
+	brainDir := filepath.Join(root, "legacy", "python-brain")
 	if _, err := os.Stat(brainDir); err != nil {
-		t.Fatalf("brain/ directory not found at %s", brainDir)
+		t.Fatalf("python-brain directory not found at %s", brainDir)
 	}
 	return brainDir
 }

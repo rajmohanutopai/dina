@@ -31,8 +31,8 @@ CONFIGS = [
         "name": "Core",
         "key": "core",
         "prefix": "TST-CORE",
-        "plan": PROJECT_ROOT / "core" / "test" / "TEST_PLAN.md",
-        "test_dir": PROJECT_ROOT / "core" / "test",
+        "plan": PROJECT_ROOT / "legacy" / "go-core" / "test" / "TEST_PLAN.md",
+        "test_dir": PROJECT_ROOT / "legacy" / "go-core" / "test",
         "file_glob": "*_test.go",
         "manifest": None,  # uses plan scanning
         "lang": "go",
@@ -41,8 +41,8 @@ CONFIGS = [
         "name": "Brain",
         "key": "brain",
         "prefix": "TST-BRAIN",
-        "plan": PROJECT_ROOT / "brain" / "tests" / "TEST_PLAN.md",
-        "test_dir": PROJECT_ROOT / "brain" / "tests",
+        "plan": PROJECT_ROOT / "legacy" / "python-brain" / "tests" / "TEST_PLAN.md",
+        "test_dir": PROJECT_ROOT / "legacy" / "python-brain" / "tests",
         "file_glob": "test_*.py",
         "manifest": None,
         "lang": "python",
@@ -335,7 +335,7 @@ def _print_run_commands(results, summary):
         for funcs in funcs_by_file.values():
             all_funcs.update(funcs)
         pattern = "|".join(sorted(all_funcs))
-        print(f"    cd core && go test ./test/... -run '{pattern}' -v")
+        print(f"    cd legacy/go-core && go test ./test/... -run '{pattern}' -v")
     elif lang == "python":
         # Group by file, show pytest -k for function names
         for filepath, funcs in sorted(funcs_by_file.items()):

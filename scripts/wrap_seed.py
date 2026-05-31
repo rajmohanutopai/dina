@@ -27,7 +27,7 @@ from __future__ import annotations
 import os
 import sys
 
-# Argon2id parameters — must match core/internal/adapter/crypto/argon2.go
+# Argon2id parameters — must match legacy/go-core/internal/adapter/crypto/argon2.go
 ARGON2_MEMORY_KIB = 128 * 1024   # 131072 KiB = 128 MB
 ARGON2_TIME_COST  = 3
 ARGON2_PARALLELISM = 4

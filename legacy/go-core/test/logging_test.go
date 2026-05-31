@@ -64,7 +64,7 @@ func TestLogging_21_1_2_PythonBrainStructlogJSON(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
 	// --- Part 1: Verify Python brain configures structlog with JSONRenderer ---
-	src, err := os.ReadFile("../../brain/src/infra/logging.py")
+	src, err := os.ReadFile("../../python-brain/src/infra/logging.py")
 	if err != nil {
 		t.Fatalf("failed to read brain logging source: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestLogging_21_1_3_NoFileLogs(t *testing.T) {
 	}
 
 	// Also verify brain logging goes to stdout (structlog + StreamHandler).
-	brainSrc, err := os.ReadFile("../../brain/src/infra/logging.py")
+	brainSrc, err := os.ReadFile("../../python-brain/src/infra/logging.py")
 	if err != nil {
 		t.Skipf("brain logging.py not found — skipping brain stdout audit: %v", err)
 	}

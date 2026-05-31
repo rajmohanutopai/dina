@@ -243,7 +243,7 @@ secrets/*
 .install-venv/
 
 # Go build artifacts
-core/dina-core
+legacy/go-core/dina-core
 
 # Swap files
 *.swp

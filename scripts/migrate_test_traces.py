@@ -197,7 +197,7 @@ TAG_PATTERNS = {
 
 # Suite directories and languages.
 SUITES = {
-    "BRAIN": ("brain/tests", "python"),
+    "BRAIN": ("legacy/python-brain/tests", "python"),
     "CLI": ("cli/tests", "python"),
     "ADMIN": ("admin-cli/tests", "python"),
     "INT": ("tests/integration", "python"),
@@ -205,7 +205,7 @@ SUITES = {
     "INST": ("tests/install", "python"),
     "REL": ("tests/release", "python"),
     "SYSTEM": ("tests/system", "python"),
-    "CORE": ("core/test", "go"),
+    "CORE": ("legacy/go-core/test", "go"),
     "APPVIEW": ("appview/tests", "typescript"),
 }
 

@@ -10,7 +10,8 @@ modules, with only platform adapters changing per form factor.
 Go and Python are behavior references while the TypeScript runtime is being
 completed. They are not target runtime surfaces for the mobile or server apps.
 This is greenfield: no old-runtime compatibility layer and no migration plan are
-required for the TS target.
+required for the TS target. The legacy source trees live under
+`legacy/go-core/` and `legacy/python-brain/`.
 
 Related docs:
 

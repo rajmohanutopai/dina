@@ -15,11 +15,11 @@ import (
 )
 
 // readCompose reads the real docker-compose.yml from the project root.
-// It tries ../../docker-compose.yml first (when running from core/test/),
+// It tries ../../../docker-compose.yml first (when running from legacy/go-core/test/),
 // then ../docker-compose.yml as a fallback.
 func readCompose(t *testing.T) string {
 	t.Helper()
-	data, err := os.ReadFile("../../docker-compose.yml")
+	data, err := os.ReadFile("../../../docker-compose.yml")
 	if err != nil {
 		data, err = os.ReadFile("../docker-compose.yml")
 	}
@@ -792,7 +792,7 @@ func TestObservability_20_3_11_DataVolumeLayout(t *testing.T) {
 	compose := readCompose(t)
 
 	// Extract the core service block.
-	coreBlock := extractServiceBlock(compose,"core")
+	coreBlock := extractServiceBlock(compose, "core")
 
 	// Core must mount dina-data volume at /data.
 	testutil.RequireTrue(t, strings.Contains(coreBlock, "dina-data:/data"),
@@ -809,7 +809,7 @@ func TestObservability_20_3_11_DataVolumeLayout(t *testing.T) {
 		"core must mount shared public key directory")
 
 	// Extract the brain service block.
-	brainBlock := extractServiceBlock(compose,"brain")
+	brainBlock := extractServiceBlock(compose, "brain")
 
 	// Brain must mount dina-data volume at /data.
 	testutil.RequireTrue(t, strings.Contains(brainBlock, "dina-data:/data"),

@@ -170,14 +170,14 @@ func TestIdentity_3_DeterministicPLCBranchIsolated(t *testing.T) {
 // Key rotation tested with real persistence + restart.
 // §30.11 Requirement: Rotate key, restart core, verify → New key active,
 // old key rejected. This test exercises the FULL rotation lifecycle:
-//   1. Create a DID at generation 0 with real SLIP-0010 derivation
-//   2. Persist metadata to disk (real file I/O, not mocks)
-//   3. Rotate to generation 1 (signed with current private key)
-//   4. Verify metadata persisted with new generation
-//   5. Simulate restart: create a fresh DIDManager, load metadata from disk
-//   6. Verify the restarted manager recovers the correct generation
-//   7. Verify the old key (gen 0) cannot sign valid rotations
-//   8. Verify the new key (gen 1) can proceed to rotate to gen 2
+//  1. Create a DID at generation 0 with real SLIP-0010 derivation
+//  2. Persist metadata to disk (real file I/O, not mocks)
+//  3. Rotate to generation 1 (signed with current private key)
+//  4. Verify metadata persisted with new generation
+//  5. Simulate restart: create a fresh DIDManager, load metadata from disk
+//  6. Verify the restarted manager recovers the correct generation
+//  7. Verify the old key (gen 0) cannot sign valid rotations
+//  8. Verify the new key (gen 1) can proceed to rotate to gen 2
 //
 // This is NOT a tautological test — it exercises real cryptographic operations
 // (SLIP-0010 derivation, Ed25519 signing/verification), real file I/O
@@ -501,7 +501,7 @@ func TestSecurity_17_VectorRestartRebuildsFromSQLCipher(t *testing.T) {
 func TestInfra_30_StaticAuditNoLatestTags(t *testing.T) {
 	// Read docker-compose*.yml files, scan for :latest in image references,
 	// assert none found.
-	projectRoot := filepath.Join("..", "..")
+	projectRoot := filepath.Join("..", "..", "..")
 
 	composeFiles, err := filepath.Glob(filepath.Join(projectRoot, "docker-compose*.yml"))
 	if err != nil {
@@ -553,34 +553,34 @@ func TestInfra_30_StaticAuditNoUnexpectedPublicRoutes(t *testing.T) {
 
 	// The documented API surface: all routes that should exist.
 	documentedRoutes := map[string]bool{
-		"/healthz":                    true,
-		"/readyz":                     true,
-		"/.well-known/atproto-did":    true,
-		"/metrics":                    true,
-		"/admin/sync-status":          true,
-		"/v1/vault/query":             true,
-		"/v1/vault/store":             true,
-		"/v1/vault/store/batch":       true,
-		"/v1/vault/item/:id":          true,
-		"/v1/vault/crash":             true,
-		"/v1/vault/kv/:key":           true,
-		"/v1/task/ack":                true,
-		"/v1/did":                     true,
-		"/v1/did/sign":                true,
-		"/v1/did/verify":              true,
-		"/v1/did/rotate":              true,
-		"/v1/personas":                true,
-		"/v1/contacts":                true,
-		"/v1/devices":                 true,
-		"/v1/msg/send":                true,
-		"/v1/msg/inbox":               true,
-		"/v1/msg/:id/ack":             true,
-		"/v1/pair/initiate":           true,
-		"/v1/pair/complete":           true,
-		"/v1/pii/scrub":              true,
-		"/v1/notify":                  true,
-		"/v1/peerlens/query":             true,
-		"/v1/peerlens/publish":           true,
+		"/healthz":                 true,
+		"/readyz":                  true,
+		"/.well-known/atproto-did": true,
+		"/metrics":                 true,
+		"/admin/sync-status":       true,
+		"/v1/vault/query":          true,
+		"/v1/vault/store":          true,
+		"/v1/vault/store/batch":    true,
+		"/v1/vault/item/:id":       true,
+		"/v1/vault/crash":          true,
+		"/v1/vault/kv/:key":        true,
+		"/v1/task/ack":             true,
+		"/v1/did":                  true,
+		"/v1/did/sign":             true,
+		"/v1/did/verify":           true,
+		"/v1/did/rotate":           true,
+		"/v1/personas":             true,
+		"/v1/contacts":             true,
+		"/v1/devices":              true,
+		"/v1/msg/send":             true,
+		"/v1/msg/inbox":            true,
+		"/v1/msg/:id/ack":          true,
+		"/v1/pair/initiate":        true,
+		"/v1/pair/complete":        true,
+		"/v1/pii/scrub":            true,
+		"/v1/notify":               true,
+		"/v1/peerlens/query":       true,
+		"/v1/peerlens/publish":     true,
 	}
 
 	// Extract route strings from source code — look for quoted route patterns.

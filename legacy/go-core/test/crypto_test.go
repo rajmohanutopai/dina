@@ -325,7 +325,7 @@ func TestCrypto_2_2_CanonicalPersonaIndexes(t *testing.T) {
 	//   m/9999'/0'/0' = root signing gen 0
 	//   m/9999'/1'/N'/0' = persona N gen 0 (N=0..5 for built-in personas)
 	expectedPaths := map[int]string{
-		0: "m/9999'/0'/0'",   // root signing key gen 0
+		0: "m/9999'/0'/0'",    // root signing key gen 0
 		1: "m/9999'/1'/0'/0'", // consumer gen 0
 		2: "m/9999'/1'/1'/0'", // professional gen 0
 		3: "m/9999'/1'/2'/0'", // social gen 0
@@ -2817,7 +2817,7 @@ func TestCrypto_30_11_1_RealCrossNodeD2DSignEncryptDecryptVerify(t *testing.T) {
 			Sig        string `json:"s"`
 		}{
 			Ciphertext: fmt.Sprintf("%x", message), // hex encoding of plaintext
-			Sig:        fmt.Sprintf("%x", sig),      // hex encoding of signature
+			Sig:        fmt.Sprintf("%x", sig),     // hex encoding of signature
 		}
 		envelopeJSON, err := json.Marshal(envelope)
 		if err != nil {
@@ -3313,13 +3313,13 @@ func TestCrypto_29_8_3_DeterministicSeedDerivation(t *testing.T) {
 	t.Run("slip0010_determinism_all_paths", func(t *testing.T) {
 		// SLIP-0010 derivation at EVERY standard path must be deterministic.
 		paths := []string{
-			"m/9999'/0'/0'",  // root signing key
-			"m/9999'/1'/0'",  // purpose 1 (persona signing)
+			"m/9999'/0'/0'",    // root signing key
+			"m/9999'/1'/0'",    // purpose 1 (persona signing)
 			"m/9999'/1'/0'/0'", // consumer persona gen 0
 			"m/9999'/1'/3'/0'", // health persona gen 0
-			"m/9999'/2'/0'",  // PLC rotation key path
-			"m/9999'/3'/0'",  // core service key
-			"m/9999'/3'/1'",  // brain service key
+			"m/9999'/2'/0'",    // PLC rotation key path
+			"m/9999'/3'/0'",    // core service key
+			"m/9999'/3'/1'",    // brain service key
 		}
 		for _, path := range paths {
 			pub1, priv1, err := slip.DerivePath(seed, path)
@@ -3439,7 +3439,7 @@ func TestCrypto_2_1_2_MnemonicToSeedDerivation(t *testing.T) {
 		// The fixtures file must explicitly document that the seed comes from
 		// PBKDF2-HMAC-SHA512 with 2048 iterations and salt = "mnemonic".
 		// This ensures future developers don't confuse raw entropy with derived seed.
-		content := readProjectFile(t, root, "core/test/testutil/fixtures.go")
+		content := readProjectFile(t, root, "legacy/go-core/test/testutil/fixtures.go")
 
 		if !strings.Contains(content, "PBKDF2") {
 			t.Fatal("fixtures.go must document PBKDF2 derivation method for TestMnemonicSeed")

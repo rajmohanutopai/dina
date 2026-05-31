@@ -1651,8 +1651,8 @@ Verify that an external agent can send a schema-driven `service.query` from Dina
 
 This plan should reuse and extend existing test assets where possible:
 
-1. [core/test/TEST_PLAN.md](../core/test/TEST_PLAN.md)
-2. [brain/tests/TEST_PLAN.md](../brain/tests/TEST_PLAN.md)
+1. [legacy/go-core/test/TEST_PLAN.md](../legacy/go-core/test/TEST_PLAN.md)
+2. [legacy/python-brain/tests/TEST_PLAN.md](../legacy/python-brain/tests/TEST_PLAN.md)
 3. [tests/INTEGRATION_TEST_PLAN.md](../tests/INTEGRATION_TEST_PLAN.md)
 4. [tests/E2E_TEST_PLAN.md](../tests/E2E_TEST_PLAN.md)
 5. [MANUAL_TEST_GUIDE.md](./MANUAL_TEST_GUIDE.md)

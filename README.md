@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tests: 4500+ passing](https://img.shields.io/badge/Tests-4%2C500+%20passing-brightgreen)]()
 [![Status: Technical Preview](https://img.shields.io/badge/Status-Technical%20Preview-orange)]()
-[![Stack: Go + Python](https://img.shields.io/badge/Stack-Go%20%7C%20Python-blue)]()
+[![Stack: TypeScript + legacy Go/Python](https://img.shields.io/badge/Stack-TypeScript%20%2B%20legacy%20Go%2FPython-blue)]()
 
 > **Dina is a personal AI with its own identity, encrypted memory boundaries, and a simple rule: she works for you and nobody else.** She can talk to other Dinas over encrypted channels. When many Dinas connect, they can form PeerLens through signed attestations, so decisions are guided by trust rather than ads.
 
@@ -18,7 +18,7 @@
 * **Test Results:** [Detailed Test Results](https://rajmohanutopai.github.io/dina/all_test_results.html)
 * **The Architecture:** [Read the Engineering Spec](./ARCHITECTURE.md), [Flow Diagrams](./docs/FLOW_DIAGRAMS.md)
 * **For dina-mobile / NAT'd clients:** see [`docker/openclaw/`](./docker/openclaw/README.md) — standalone OpenClaw container stack that talks to your Home Node through the MsgBox relay (no port forwarding). Pins `dina-agent==0.13.0` from PyPI; copies cleanly into `dina-mobile`.
-* **The Stack:** Go Core + Python Brain + Python CLI ([`dina-agent` on PyPI](https://pypi.org/project/dina-agent/)) + SQLite/SQLCipher.
+* **The Stack:** shared TypeScript Home Node work in `packages/` and `apps/`; legacy Go Core + Python Brain references under `legacy/`; Python CLI as [`dina-agent` on PyPI](https://pypi.org/project/dina-agent/).
 
 ---
 
@@ -33,6 +33,29 @@ cd dina
 ./install.sh
 ./dina-admin status
 ```
+
+## Repository Layout
+
+Active Home Node work should normally happen in the shared TypeScript tree:
+
+| Path | Purpose |
+|---|---|
+| [`packages/core/`](./packages/core/) | Core domain behavior, vault/staging/workflow/D2D/trust logic. |
+| [`packages/brain/`](./packages/brain/) | Ask/remember orchestration, routing, service reasoning, LLM/tool coordination. |
+| [`packages/protocol/`](./packages/protocol/) | Wire contracts, canonical payloads, conformance vectors, generated API types. |
+| [`packages/home-node/`](./packages/home-node/) | Shared Home Node runtime composition. |
+| [`apps/mobile/`](./apps/mobile/) | Full mobile Home Node on Expo/React Native. |
+| [`apps/home-node-lite/`](./apps/home-node-lite/) | Server/Home Node build using the shared TypeScript runtime. |
+
+Legacy runtime references live under [`legacy/`](./legacy/):
+
+| Path | Purpose |
+|---|---|
+| [`legacy/go-core/`](./legacy/go-core/) | Original Go `dina-core`, kept as a behavior oracle and runnable reference. |
+| [`legacy/python-brain/`](./legacy/python-brain/) | Original Python `dina-brain`, kept as a behavior oracle and runnable reference. |
+
+Do not add new product behavior to `legacy/` unless the work is explicitly
+maintaining the reference stack or a parity test.
 
 ---
 
@@ -385,28 +408,27 @@ Dina is for everyone. If you believe your digital companion should work for you,
 
 ---
 
-## Two stacks, one protocol
+## Runtime Shape
 
-Dina ships two implementations of the Home Node in parallel. The wire
-protocol is the same — a Dina is a Dina regardless of runtime — but
-the environments they target are different.
+Dina currently has a mature Go/Python reference stack and an active
+TypeScript Home Node target. The wire protocol is the same - a Dina is a Dina
+regardless of runtime - but new product work should move toward the shared
+TypeScript runtime.
 
-**Production stack (Go + Python).** The mature, load-bearing
-implementation. Go Core owns the SQLCipher vault and signing keys;
-Python Brain runs Google ADK agents, LLM routing, and the admin UI.
+**Legacy Go/Python reference.** The mature, load-bearing reference
+implementation lives under `legacy/go-core/` and `legacy/python-brain/`.
+Go Core owns the SQLCipher vault and signing keys; Python Brain runs Google ADK
+agents, LLM routing, and the admin UI.
 Two Docker containers with separately bind-mounted keys. This is
 what `./install.sh` at the repo root gives you today — the path
-recommended for anyone deploying Dina on a VPS, Raspberry Pi, or
-home mini-PC right now.
+recommended for anyone deploying Dina on a VPS, Raspberry Pi, or home mini-PC
+right now. Treat this as a reference/runtime compatibility surface, not the
+place for new product architecture.
 
-**Lite stack (TypeScript).** A pure-TypeScript implementation
-built alongside. A Fastify Core + Fastify Brain on the server;
-the same `@dina/core` + `@dina/brain` packages power a React
-Native / Expo mobile app running in a single JS VM. The server
-layout is identical (two processes, bind-mounted keys) so the
-security model carries over unchanged. Status: **pre-M1** — the
-storage, crypto, and protocol primitives are done, the servers
-boot, route binding + LLM + D2D land through milestones M1–M5.
+**TypeScript Home Node target.** The shared TypeScript implementation is the
+direction of travel. The same `@dina/core`, `@dina/brain`, `@dina/protocol`,
+and `@dina/home-node` packages should power mobile and server builds, with only
+platform adapters changing. Mobile is a full Home Node, not a wrapper.
 
 See [`apps/home-node-lite/README.md`](./apps/home-node-lite/README.md)
 for the Lite quickstart and [`docs/try-lite.md`](./docs/try-lite.md)
@@ -416,12 +438,12 @@ decision lives in
 The milestone plan is in
 [`docs/HOME_NODE_LITE_TASKS.md`](./docs/HOME_NODE_LITE_TASKS.md).
 
-| What you're doing                                              | Use          |
-|----------------------------------------------------------------|--------------|
-| Running Dina on a server today, backed by the full test matrix | **Production** |
-| Running Dina on a phone (iOS/Android)                          | **Lite**       |
-| Hacking on Dina in TypeScript / JS                             | **Lite**       |
-| Contributing to PeerLens + AT Protocol integration    | either — both speak the same protocol |
+| What you're doing | Work in |
+|---|---|
+| Running Dina on a server today, backed by the mature runtime | `legacy/go-core/`, `legacy/python-brain/`, Docker Compose |
+| Building the future mobile/server Home Node | `packages/`, `apps/mobile/`, `apps/home-node-lite/` |
+| Hacking on protocol or conformance | `packages/protocol/` |
+| Contributing to PeerLens + AT Protocol integration | `appview/`, `packages/core/`, `packages/brain/` as appropriate |
 
 ### Implementing Dina in another language
 
@@ -485,7 +507,7 @@ Security is fundamental for Dina. She stores your most important data, so she ha
 
 ## What Works Today (Developer Alpha)
 
-- **Home Node:** Go Core + Python Brain sidecar, running via Docker Compose
+- **Home Node:** legacy Go Core + Python Brain sidecar, running via Docker Compose from the root compose files with source under `legacy/`
 - **Vault:** SQLCipher encrypted per-persona files, hybrid search (FTS5 keyword + HNSW vector, `0.4 x FTS5 + 0.6 x cosine`)
 - **Identity:** `did:plc`, Ed25519 signing, BIP-39 24-word mnemonic, SLIP-0010 key derivation under `m/9999'`
 - **Auth:** Ed25519 device keys (pairing ceremony), Ed25519 service keys (SLIP-0010 derived), CLIENT_TOKEN for admin UI
@@ -512,7 +534,7 @@ Security is fundamental for Dina. She stores your most important data, so she ha
 - **CLIENT_TOKEN** is a static bearer token for admin UI authentication, not a per-session credential. It does not rotate automatically.
 - **Admin sessions** are held in-memory by the Brain process and are lost on restart.
 - **Single-worker Brain** — the Python Brain runs as a single uvicorn worker. No horizontal scaling yet.
-- **No Android or iOS clients** — interaction is via CLI, Telegram bot, or admin web UI only.
+- **No production Android or iOS release client yet** — the TypeScript mobile app exists, but the currently documented alpha interaction path is still CLI, Telegram bot, or admin web UI.
 - **Prompt injection defense is Tier 1 only** (regex PII scrubbing + guard scan). Layers 1, 3, 4, 5, and 7 of the 7-layer defense described in `docs/architecture/19-prompt-injection-defense.md` are not yet built. The Entity Vault pattern provides defense-in-depth for cloud LLM calls by scrubbing identifying entities before they leave the Home Node.
 
 ---

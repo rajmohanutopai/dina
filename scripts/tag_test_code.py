@@ -28,15 +28,15 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 CONFIGS = [
     {
-        "manifest": PROJECT_ROOT / "core" / "test" / "test_manifest.json",
-        "test_dir": PROJECT_ROOT / "core" / "test",
+        "manifest": PROJECT_ROOT / "legacy" / "go-core" / "test" / "test_manifest.json",
+        "test_dir": PROJECT_ROOT / "legacy" / "go-core" / "test",
         "prefix": "TST-CORE",
         "lang": "go",
         "file_glob": "*_test.go",
     },
     {
-        "manifest": PROJECT_ROOT / "brain" / "tests" / "test_manifest.json",
-        "test_dir": PROJECT_ROOT / "brain" / "tests",
+        "manifest": PROJECT_ROOT / "legacy" / "python-brain" / "tests" / "test_manifest.json",
+        "test_dir": PROJECT_ROOT / "legacy" / "python-brain" / "tests",
         "prefix": "TST-BRAIN",
         "lang": "python",
         "file_glob": "test_*.py",

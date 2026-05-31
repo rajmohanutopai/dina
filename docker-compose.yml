@@ -1,4 +1,5 @@
 # Dina Home Node — Docker Compose
+# Legacy Go/Python service stack. Active TypeScript work lives under packages/ and apps/.
 # 4 services: core (Go), brain (Python), pds (AT Protocol), llm (optional)
 # + plc (fake PLC directory, test-only profile)
 #
@@ -21,7 +22,7 @@ services:
   core:
     container_name: core-${DINA_SESSION:-dna}
     build:
-      context: ./core
+      context: ./legacy/go-core
       dockerfile: Dockerfile
       args:
         DINA_VERSION: "${DINA_VERSION:-dev}"
@@ -84,7 +85,7 @@ services:
   brain:
     container_name: brain-${DINA_SESSION:-dna}
     build:
-      context: ./brain
+      context: ./legacy/python-brain
       dockerfile: Dockerfile
       args:
         DINA_VERSION: "${DINA_VERSION:-dev}"

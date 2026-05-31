@@ -2,26 +2,29 @@
 
 .PHONY: build test lint run docker-up docker-down clean check-tests test-integration generate check-generate
 
+LEGACY_GO_CORE := legacy/go-core
+LEGACY_PY_BRAIN := legacy/python-brain
+
 # --- Build ---
 build:
-	cd core && go build ./...
-	cd brain && pip install -e .
+	cd $(LEGACY_GO_CORE) && go build ./...
+	cd $(LEGACY_PY_BRAIN) && pip install -e .
 
 # --- Test ---
 test:
-	cd core && go test ./...
-	cd brain && pytest tests/ -m 'not legacy'
+	cd $(LEGACY_GO_CORE) && go test ./...
+	cd $(LEGACY_PY_BRAIN) && pytest tests/ -m 'not legacy'
 
 # --- Lint ---
 lint:
-	cd core && go vet ./...
-	cd brain && ruff check src/ tests/
+	cd $(LEGACY_GO_CORE) && go vet ./...
+	cd $(LEGACY_PY_BRAIN) && ruff check src/ tests/
 
 # --- Run (local, no Docker) ---
 run:
 	@echo "Start core and brain in separate terminals:"
-	@echo "  Terminal 1: cd core && go run ./cmd/core"
-	@echo "  Terminal 2: cd brain && uvicorn dina_brain.main:app --port 8200"
+	@echo "  Terminal 1: cd $(LEGACY_GO_CORE) && go run ./cmd/dina-core"
+	@echo "  Terminal 2: cd $(LEGACY_PY_BRAIN) && uvicorn src.main:app --port 8200"
 
 # --- Docker ---
 docker-up:
@@ -48,28 +51,28 @@ check-tests:
 
 # --- OpenAPI codegen ---
 # Three codegen pipelines share the same YAML specs in api/:
-#   Go  (oapi-codegen)       → core/internal/gen/*                (Core + Brain-client types)
-#   Python (datamodel-codegen) → brain/src/gen/core_types.py        (Brain's view of Core)
+#   Go  (oapi-codegen)       -> legacy/go-core/internal/gen/*       (Core + Brain-client types)
+#   Python (datamodel-codegen) -> legacy/python-brain/src/gen/core_types.py (Brain's view of Core)
 #   TypeScript (openapi-typescript) → packages/protocol/src/gen/*.d.ts (TS workspace view of both)
 generate:
 	python3 scripts/bundle_openapi.py
-	$(HOME)/go/bin/oapi-codegen -config api/oapi-codegen.yaml -o core/internal/gen/core_types.gen.go api/core-api.bundled.yaml
-	$(HOME)/go/bin/oapi-codegen -config api/oapi-brain-codegen.yaml -o core/internal/gen/brainapi/brain_types.gen.go api/brain-api.yaml
-	datamodel-codegen --input api/core-api.bundled.yaml --output brain/src/gen/core_types.py --output-model-type pydantic_v2.BaseModel --snake-case-field --target-python-version 3.11
+	$(HOME)/go/bin/oapi-codegen -config api/oapi-codegen.yaml -o $(LEGACY_GO_CORE)/internal/gen/core_types.gen.go api/core-api.bundled.yaml
+	$(HOME)/go/bin/oapi-codegen -config api/oapi-brain-codegen.yaml -o $(LEGACY_GO_CORE)/internal/gen/brainapi/brain_types.gen.go api/brain-api.yaml
+	datamodel-codegen --input api/core-api.bundled.yaml --output $(LEGACY_PY_BRAIN)/src/gen/core_types.py --output-model-type pydantic_v2.BaseModel --snake-case-field --target-python-version 3.11
 	npm run generate --silent
-	@echo "Generated: core/internal/gen/core_types.gen.go (Go Core API types)"
-	@echo "Generated: core/internal/gen/brainapi/brain_types.gen.go (Go Brain client types)"
-	@echo "Generated: brain/src/gen/core_types.py (Python Core client types)"
+	@echo "Generated: $(LEGACY_GO_CORE)/internal/gen/core_types.gen.go (Go Core API types)"
+	@echo "Generated: $(LEGACY_GO_CORE)/internal/gen/brainapi/brain_types.gen.go (Go Brain client types)"
+	@echo "Generated: $(LEGACY_PY_BRAIN)/src/gen/core_types.py (Python Core client types)"
 	@echo "Generated: packages/protocol/src/gen/core-api.d.ts (TS Core API types)"
 	@echo "Generated: packages/protocol/src/gen/brain-api.d.ts (TS Brain API types)"
 
 # --- CI drift gate: verify generated code matches spec ---
 # Covers all three codegen pipelines; any drift in any of them fails the gate.
 check-generate: generate
-	@git diff --ignore-matching-lines='timestamp:' --ignore-matching-lines='version:' --exit-code core/internal/gen/ brain/src/gen/ packages/protocol/src/gen/ || \
+	@git diff --ignore-matching-lines='timestamp:' --ignore-matching-lines='version:' --exit-code $(LEGACY_GO_CORE)/internal/gen/ $(LEGACY_PY_BRAIN)/src/gen/ packages/protocol/src/gen/ || \
 		(echo "ERROR: Generated code is out of date. Run 'make generate' and commit." && exit 1)
 
 # --- Clean ---
 clean:
-	cd core && go clean ./...
-	rm -rf brain/src/*.egg-info
+	cd $(LEGACY_GO_CORE) && go clean ./...
+	rm -rf $(LEGACY_PY_BRAIN)/src/*.egg-info
