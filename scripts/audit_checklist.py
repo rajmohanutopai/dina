@@ -31,8 +31,8 @@ SECTIONS = [
     # (section_name, runner, directory, file_glob, lang)
     ("Integration Tests", "test_status.py", "tests/integration", "test_*.py", "py"),
     ("E2E Tests", "test_status.py", "tests/e2e", "test_suite_*.py", "py"),
-    ("Core Go Unit Tests", "test_status.py", "core/test", "*_test.go", "go"),
-    ("Brain Python Unit Tests", "test_status.py", "brain/tests", "test_*.py", "py"),
+    ("Core Go Unit Tests", "test_status.py", "legacy/go-core/test", "*_test.go", "go"),
+    ("Brain Python Unit Tests", "test_status.py", "legacy/python-brain/tests", "test_*.py", "py"),
     ("User Story Tests", "run_user_story_tests.sh", "tests/system/user_stories", "test_*.py", "py"),
     ("Release Tests", "test_release.py", "tests/release", "test_*.py", "py"),
 ]

@@ -6,12 +6,12 @@ set -euo pipefail
 echo "=== Dina Dev Setup ==="
 
 # Go
-echo "Installing Go dependencies..."
-(cd core && go mod download)
+echo "Installing legacy Go Core dependencies..."
+(cd legacy/go-core && go mod download)
 
 # Python
-echo "Installing Python dependencies..."
-(cd brain && pip install -e ".[dev]")
+echo "Installing legacy Python Brain dependencies..."
+(cd legacy/python-brain && pip install -e ".[dev]")
 echo "Downloading spaCy model..."
 python -m spacy download en_core_web_sm
 

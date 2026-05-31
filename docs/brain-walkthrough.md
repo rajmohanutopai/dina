@@ -12,7 +12,7 @@ Go excels at I/O-bound, low-latency work: HTTP routing, crypto operations, datab
 
 </details>
 
-When the brain starts, `create_app()` in `brain/src/main.py:118` runs the same pattern as Go's `main.go`: explicit, top-to-bottom dependency construction. No dependency injection framework, no service locator, no magic. The docstring at lines 1-18 makes this law visible:
+When the brain starts, `create_app()` in `legacy/python-brain/src/main.py:118` runs the same pattern as Go's `main.go`: explicit, top-to-bottom dependency construction. No dependency injection framework, no service locator, no magic. The docstring at lines 1-18 makes this law visible:
 
 > *"This is the ONLY file that imports from `adapter/`. Services and routes depend only on port protocols and domain types."*
 
@@ -64,7 +64,7 @@ The V1 scrubber follows a two-tier fallback chain: **Presidio patterns** (best, 
 <summary><strong>Design Decision — Why two tiers of PII scrubbing (Go regex + Python patterns) instead of one?</strong></summary>
 <br>
 
-Tier 1 (Go regex in core, `POST /v1/pii/scrub`) catches structured PII with deterministic patterns: email addresses, phone numbers, credit card numbers, Aadhaar/PAN numbers, IP addresses. These are fast, accurate, and have near-zero false positives. Tier 2 (Presidio pattern recognizers — EmailRecognizer, PhoneRecognizer, CreditCardRecognizer, SSN, Aadhaar, PAN, IFSC, UPI, EU IDs) catches additional structured patterns that Go regex may miss, with an allow-list (`brain/config/pii_allowlist.yaml`) post-filtering false positives from medical terms, food names, and technical acronyms. Running Tier 1 first means Tier 2 sees `[EMAIL_1]` instead of `rajmohan@example.com`, avoiding duplicate detection and keeping entity numbering consistent (`entity_vault.py:245-286`). The two tiers are complementary, not redundant. **V1 known gap:** names and addresses in free text are NOT detected — accepted trade-off until V2 (GLiNER local model for contextual NER).
+Tier 1 (Go regex in core, `POST /v1/pii/scrub`) catches structured PII with deterministic patterns: email addresses, phone numbers, credit card numbers, Aadhaar/PAN numbers, IP addresses. These are fast, accurate, and have near-zero false positives. Tier 2 (Presidio pattern recognizers — EmailRecognizer, PhoneRecognizer, CreditCardRecognizer, SSN, Aadhaar, PAN, IFSC, UPI, EU IDs) catches additional structured patterns that Go regex may miss, with an allow-list (`legacy/python-brain/config/pii_allowlist.yaml`) post-filtering false positives from medical terms, food names, and technical acronyms. Running Tier 1 first means Tier 2 sees `[EMAIL_1]` instead of `rajmohan@example.com`, avoiding duplicate detection and keeping entity numbering consistent (`entity_vault.py:245-286`). The two tiers are complementary, not redundant. **V1 known gap:** names and addresses in free text are NOT detected — accepted trade-off until V2 (GLiNER local model for contextual NER).
 
 </details>
 
@@ -419,7 +419,7 @@ Guardian dispatches `service.*` messages via `_DIDCOMM_HANDLERS`:
 5. On response: notifies user ("Route 42 AC Bus — 45 minutes away")
 6. On timeout: notifies user ("No response yet from Route 42.")
 
-**Capability models** (`brain/src/service/capabilities/eta_query.py`):
+**Capability models** (`legacy/python-brain/src/service/capabilities/eta_query.py`):
 - `EtaQueryParams`: `{location: {lat, lng}}`
 - `EtaQueryResult`: `{eta_minutes, vehicle_type, route_name, current_location?}`
 
@@ -472,7 +472,7 @@ At 622 lines, this is the largest adapter. In V1, it wraps Microsoft Presidio's 
 
 1. **SAFE_ENTITIES whitelist** (lines 46-64) — DATE, TIME, MONEY, PERCENT, CARDINAL, etc. are never scrubbed. These are essential for LLM reasoning ("the payment of $500 is due on March 15") and don't identify anyone.
 
-2. **Allow-list post-filter** (`brain/config/pii_allowlist.yaml`) — All Presidio results are filtered against an allow-list of medical terms (B12, A1C, HbA1c, CBC...), financial abbreviations, immigration codes, technical acronyms, and food names. This eliminates the false positives that made NER unusable in V1 (B12 tagged as ORG, biryani as PERSON, Raju as ORG, pet names as PERSON).
+2. **Allow-list post-filter** (`legacy/python-brain/config/pii_allowlist.yaml`) — All Presidio results are filtered against an allow-list of medical terms (B12, A1C, HbA1c, CBC...), financial abbreviations, immigration codes, technical acronyms, and food names. This eliminates the false positives that made NER unusable in V1 (B12 tagged as ORG, biryani as PERSON, Raju as ORG, pet names as PERSON).
 
 3. **India-specific recognizers** — Aadhaar numbers, PAN card numbers, IFSC codes, UPI IDs. Plus EU recognizers for German Steuer-ID, French NIR/NIF, Dutch BSN, SWIFT/BIC.
 
@@ -746,7 +746,7 @@ After approval, the guardian runs `_classify_sentence_medical()` on the approved
 <summary><strong>Design Decision — Why deterministic patterns + allow-list in V1 instead of GLiNER?</strong></summary>
 <br>
 
-spaCy NER produced too many false positives on real data: B12 tagged as ORG, biryani as PERSON, Raju as ORG, pet names as PERSON. V1 uses deterministic Presidio pattern recognizers plus an allow-list (`brain/config/pii_allowlist.yaml`) for medical terms, food names, and technical acronyms. The regex fallback (`_MEDICAL_PII_REGEX_FALLBACK`) catches terms we thought to list: "herniation", "ibuprofen", "MRI", etc. V1 known gap: names and addresses in free text are NOT detected. V2 plan: GLiNER (`urchade/gliner_multi_pii-v1`, ~300M params, local CPU) for contextual NER with an LLM adjudicator for ambiguous cases.
+spaCy NER produced too many false positives on real data: B12 tagged as ORG, biryani as PERSON, Raju as ORG, pet names as PERSON. V1 uses deterministic Presidio pattern recognizers plus an allow-list (`legacy/python-brain/config/pii_allowlist.yaml`) for medical terms, food names, and technical acronyms. The regex fallback (`_MEDICAL_PII_REGEX_FALLBACK`) catches terms we thought to list: "herniation", "ibuprofen", "MRI", etc. V1 known gap: names and addresses in free text are NOT detected. V2 plan: GLiNER (`urchade/gliner_multi_pii-v1`, ~300M params, local CPU) for contextual NER with an LLM adjudicator for ambiguous cases.
 
 </details>
 
@@ -756,7 +756,7 @@ spaCy NER produced too many false positives on real data: B12 tagged as ORG, bir
 
 **Brain capability:** Guardian's deterministic intent classification — the decision tree that routes agent intents to auto_approve, flag_for_review, or deny.
 
-An external agent (OpenClaw, Claude, or any custom bot) pairs with the Home Node via `dina configure` (Ed25519 keypair + 6-digit code → `POST /v1/pair/complete`) and submits every intended action via `dina validate`, which calls Core's `POST /v1/agent/validate`. Core authenticates the device (Ed25519 or bearer token) and proxies to brain's guardian via `BrainClient.ProcessEvent()` — no shared brain secret on the client. This follows the same pattern used for admin traffic (`core/internal/handler/admin.go`).
+An external agent (OpenClaw, Claude, or any custom bot) pairs with the Home Node via `dina configure` (Ed25519 keypair + 6-digit code → `POST /v1/pair/complete`) and submits every intended action via `dina validate`, which calls Core's `POST /v1/agent/validate`. Core authenticates the device (Ed25519 or bearer token) and proxies to brain's guardian via `BrainClient.ProcessEvent()` — no shared brain secret on the client. This follows the same pattern used for admin traffic (`legacy/go-core/internal/handler/admin.go`).
 
 **Intent Classification Pipeline** (`service/guardian.py → review_intent()`):
 

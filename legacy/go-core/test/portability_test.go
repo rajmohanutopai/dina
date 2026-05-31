@@ -60,10 +60,10 @@ func TestPortability_23_1_1_ExportProducesEncryptedArchive(t *testing.T) {
 
 	// --- Primary path: exercise real crypto via BuildTestArchive ---
 	files := map[string][]byte{
-		"identity.sqlite":        []byte("test-identity-data"),
-		"config.json":            []byte(`{"version":"2"}`),
-		"manifest.json":          []byte(`{}`),
-		"personal.sqlite":  []byte("test-vault-data"),
+		"identity.sqlite": []byte("test-identity-data"),
+		"config.json":     []byte(`{"version":"2"}`),
+		"manifest.json":   []byte(`{}`),
+		"personal.sqlite": []byte("test-vault-data"),
 	}
 	archivePath, err := portability.BuildTestArchive(files, testutil.TestPassphrase, dir)
 	testutil.RequireNoError(t, err)
@@ -300,10 +300,10 @@ func TestPortability_23_1_6_ExportExcludesClientTokenHashes(t *testing.T) {
 
 	// Build a synthetic archive WITHOUT device_tokens — the correct behavior.
 	correctFiles := map[string][]byte{
-		"identity.sqlite":  []byte("identity-db-data"),
-		"personal.sqlite":  []byte("personal-vault-data"),
-		"config.json":      []byte(`{"version":"2"}`),
-		"manifest.json":    []byte(`{}`),
+		"identity.sqlite": []byte("identity-db-data"),
+		"personal.sqlite": []byte("personal-vault-data"),
+		"config.json":     []byte(`{"version":"2"}`),
+		"manifest.json":   []byte(`{}`),
 	}
 	archivePath, err := portability.BuildTestArchive(correctFiles, "export-pass-729", dir)
 	testutil.RequireNoError(t, err)
@@ -326,8 +326,8 @@ func TestPortability_23_1_6_ExportExcludesClientTokenHashes(t *testing.T) {
 	// Canary: build an archive that includes device_tokens to prove
 	// ListArchiveContents would surface it if present.
 	canaryFiles := map[string][]byte{
-		"identity.sqlite":  []byte("identity-db-data"),
-		"device_tokens":    []byte("LEAKED-TOKEN-HASHES"),
+		"identity.sqlite": []byte("identity-db-data"),
+		"device_tokens":   []byte("LEAKED-TOKEN-HASHES"),
 	}
 	canaryDir, err := os.MkdirTemp("", "dina-export-canary-")
 	testutil.RequireNoError(t, err)
@@ -883,9 +883,9 @@ func TestPortability_23_2_10_ImportOnFreshInstance(t *testing.T) {
 	// Build a real encrypted archive via production crypto pipeline.
 	dir := testutil.TempDir(t)
 	files := map[string][]byte{
-		"identity.sqlite":       []byte("fresh-identity-data"),
-		"config.json":           []byte(`{"version":"2"}`),
-		"manifest.json":        []byte(`{}`),
+		"identity.sqlite": []byte("fresh-identity-data"),
+		"config.json":     []byte(`{"version":"2"}`),
+		"manifest.json":   []byte(`{}`),
 		"personal.sqlite": []byte("fresh-vault-data"),
 	}
 	archivePath, err := portability.BuildTestArchive(files, testutil.TestPassphrase, dir)
@@ -1064,7 +1064,7 @@ func TestPortability_23_3_3_SameDockerImageAcrossHostingLevels(t *testing.T) {
 	devContent := readCompose(t)
 
 	// Read the managed/prod compose file.
-	prodData, err := os.ReadFile("../../deploy/managed/docker-compose.prod.yml")
+	prodData, err := os.ReadFile("../../../deploy/managed/docker-compose.prod.yml")
 	if err != nil {
 		prodData, err = os.ReadFile("../deploy/managed/docker-compose.prod.yml")
 	}

@@ -7,8 +7,9 @@ The direction is:
 - `apps/mobile` is a full Home Node on Android and iPhone. It is not a wrapper.
 - `apps/home-node-lite` is the server/Home Node build of the same TypeScript node.
 - Shared behavior belongs in `packages/core`, `packages/brain`, and `packages/protocol`.
-- Go `core/` and Python `brain/` are behavior references only. There is no
-  legacy runtime support or migration layer in the greenfield TS target.
+- Go `legacy/go-core/` and Python `legacy/python-brain/` are behavior
+  references only. There is no legacy runtime support or migration layer in the
+  greenfield TS target.
 - Mobile trust publish is the best current reference for trust publishing behavior.
 - Home Nodes do not need public inbound ports. They connect out to MsgBox.
 - Trust/public data goes through the shared PDS and AppView.

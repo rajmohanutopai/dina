@@ -310,8 +310,8 @@ func TestMemory_AliasStemMatch(t *testing.T) {
 // live on contacts via preferred_for. The columns remain in the
 // schema as dead storage (SQLite 3.33 lacks DROP COLUMN) but are
 // neither read nor written. Coverage for the replacement path lives
-// in brain/tests/test_preference_extractor.py and
-// core/test/contact_preferred_for_test.go.
+// in legacy/python-brain/tests/test_preference_extractor.py and
+// legacy/go-core/test/contact_preferred_for_test.go.
 
 // ---------------------------------------------------------------------------
 // Cross-persona ToC merge (MemoryService)
@@ -377,6 +377,6 @@ func TestMemoryService_MergesAcrossPersonas(t *testing.T) {
 // memoryTestClock — tiny port.Clock for deterministic test timing.
 type memoryTestClock struct{ now time.Time }
 
-func (c memoryTestClock) Now() time.Time                            { return c.now }
-func (c memoryTestClock) After(d time.Duration) <-chan time.Time    { return time.After(d) }
-func (c memoryTestClock) NewTicker(d time.Duration) *time.Ticker    { return time.NewTicker(d) }
+func (c memoryTestClock) Now() time.Time                         { return c.now }
+func (c memoryTestClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
+func (c memoryTestClock) NewTicker(d time.Duration) *time.Ticker { return time.NewTicker(d) }

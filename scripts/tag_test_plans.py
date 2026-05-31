@@ -17,14 +17,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 PLANS = [
     {
-        "file": PROJECT_ROOT / "core" / "test" / "TEST_PLAN.md",
+        "file": PROJECT_ROOT / "legacy" / "go-core" / "test" / "TEST_PLAN.md",
         "prefix": "TST-CORE",
-        "manifest": PROJECT_ROOT / "core" / "test" / "test_manifest.json",
+        "manifest": PROJECT_ROOT / "legacy" / "go-core" / "test" / "test_manifest.json",
     },
     {
-        "file": PROJECT_ROOT / "brain" / "tests" / "TEST_PLAN.md",
+        "file": PROJECT_ROOT / "legacy" / "python-brain" / "tests" / "TEST_PLAN.md",
         "prefix": "TST-BRAIN",
-        "manifest": PROJECT_ROOT / "brain" / "tests" / "test_manifest.json",
+        "manifest": PROJECT_ROOT / "legacy" / "python-brain" / "tests" / "test_manifest.json",
     },
 ]
 

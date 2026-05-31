@@ -71,14 +71,14 @@ def extract_plan_entries() -> list[PlanEntry]:
 
     # Core
     entries.extend(_extract_tst_entries(
-        ROOT / "core" / "test" / "TEST_PLAN.md",
-        "core/test/TEST_PLAN.md", r"TST-CORE-\d+", "core"
+        ROOT / "legacy" / "go-core" / "test" / "TEST_PLAN.md",
+        "legacy/go-core/test/TEST_PLAN.md", r"TST-CORE-\d+", "core"
     ))
 
     # Brain
     entries.extend(_extract_tst_entries(
-        ROOT / "brain" / "tests" / "TEST_PLAN.md",
-        "brain/tests/TEST_PLAN.md", r"TST-BRAIN-\d+", "brain"
+        ROOT / "legacy" / "python-brain" / "tests" / "TEST_PLAN.md",
+        "legacy/python-brain/tests/TEST_PLAN.md", r"TST-BRAIN-\d+", "brain"
     ))
 
     # Integration
@@ -282,7 +282,7 @@ def extract_code_tests() -> list[CodeTest]:
     tests.extend(_extract_go_tests())
 
     # Python tests (brain, integration, e2e, release, cli)
-    tests.extend(_extract_python_tests(ROOT / "brain" / "tests", "brain"))
+    tests.extend(_extract_python_tests(ROOT / "legacy" / "python-brain" / "tests", "brain"))
     tests.extend(_extract_python_tests(ROOT / "tests" / "integration", "integration"))
     tests.extend(_extract_python_tests(ROOT / "tests" / "e2e", "e2e"))
     tests.extend(_extract_python_tests(ROOT / "tests" / "release", "release"))
@@ -297,9 +297,9 @@ def extract_code_tests() -> list[CodeTest]:
 
 
 def _extract_go_tests() -> list[CodeTest]:
-    """Extract Go test functions and t.Run() subtests from core/."""
+    """Extract Go test functions and t.Run() subtests from legacy/go-core/."""
     tests = []
-    go_test_files = list((ROOT / "core").rglob("*_test.go"))
+    go_test_files = list((ROOT / "legacy" / "go-core").rglob("*_test.go"))
 
     for fpath in go_test_files:
         rel = str(fpath.relative_to(ROOT))
@@ -602,8 +602,8 @@ def print_summary(result: dict):
             t["unimplemented"] += 1
 
     plan_files = {
-        "core": "core/test/TEST_PLAN.md",
-        "brain": "brain/tests/TEST_PLAN.md",
+        "core": "legacy/go-core/test/TEST_PLAN.md",
+        "brain": "legacy/python-brain/tests/TEST_PLAN.md",
         "integration": "tests/INTEGRATION_TEST_PLAN.md",
         "e2e": "tests/E2E_TEST_PLAN.md",
         "release": "RELEASE_TEST_PLAN.md",
@@ -750,8 +750,8 @@ def generate_listing(result: dict):
             t["unimplemented"] += 1
 
     plan_files = {
-        "core": "`core/test/TEST_PLAN.md`",
-        "brain": "`brain/tests/TEST_PLAN.md`",
+        "core": "`legacy/go-core/test/TEST_PLAN.md`",
+        "brain": "`legacy/python-brain/tests/TEST_PLAN.md`",
         "integration": "`tests/INTEGRATION_TEST_PLAN.md`",
         "e2e": "`tests/E2E_TEST_PLAN.md`",
         "release": "`RELEASE_TEST_PLAN.md`",

@@ -1448,7 +1448,7 @@ Legacy tiers are auto-migrated: `open` → `default`/`standard`, `restricted` �
 |---|----------|-------|----------|
 | 1 | **[TST-CORE-705]** Brain crash: stdout gets sanitized one-liner | Brain crashes with PII in local vars | Docker logs show: `guardian crash: RuntimeError at line 142` — no traceback, no variable values |
 | 2 | **[TST-CORE-706]** Brain crash: full traceback to vault | Same crash | Full `traceback.format_exc()` sent to `POST core:8100/api/v1/vault/crash` — encrypted at rest |
-| 3 | **[TST-CORE-707]** Brain catch-all wraps main loop | Inspect `brain/src/main.py` | `try: await guardian_loop() except Exception as e:` — logs type + line to stdout, full trace to vault |
+| 3 | **[TST-CORE-707]** Brain catch-all wraps main loop | Inspect `legacy/python-brain/src/main.py` | `try: await guardian_loop() except Exception as e:` — logs type + line to stdout, full trace to vault |
 | 4 | **[TST-CORE-708]** Crash handler sends task_id | Brain crashes during task | `current_task_id` included in crash report — correlates with `dina_tasks` for debugging |
 | 5 | **[TST-CORE-709]** Crash handler re-raises | After logging + vault write | `raise` called — lets Docker restart policy trigger |
 | 6 | **[TST-CORE-929]** Spool file naming uses ULID format | Inspect spool directory after message spool | Files named with ULID — sortable, unique, timestamp-embedded |
@@ -1885,7 +1885,7 @@ Legacy tiers are auto-migrated: `open` → `default`/`standard`, `restricted` �
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
 | 1 | **[TST-CORE-1014]** CI stage: `unit-core` | `go test ./...` | All Go unit tests pass |
-| 2 | **[TST-CORE-1015]** CI stage: `unit-brain` | `pytest brain/tests/` | All Python unit tests pass |
+| 2 | **[TST-CORE-1015]** CI stage: `unit-brain` | `pytest legacy/python-brain/tests/` | All Python unit tests pass |
 | 3 | **[TST-CORE-1016]** CI stage: `contract-core-brain` | Strict real contract tests | Core↔Brain API contracts verified |
 | 4 | **[TST-CORE-1017]** CI stage: `integration-real` | Docker-based strict real | Integration tests pass with no mock fallback |
 | 5 | **[TST-CORE-1018]** CI stage: `e2e-smoke-real` | Critical path E2E | D2D messaging, vault CRUD, PII scrub verified |

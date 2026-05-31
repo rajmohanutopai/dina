@@ -4,23 +4,23 @@
 services:
   core:
     build:
-      context: ./core
+      context: ./legacy/go-core
       dockerfile: Dockerfile
     volumes:
-      - ./core:/src
+      - ./legacy/go-core:/src
       - ./data:/data
     environment:
       - DINA_LOG_LEVEL=debug
 
   brain:
     build:
-      context: ./brain
+      context: ./legacy/python-brain
       dockerfile: Dockerfile
     volumes:
-      - ./brain/src:/app/src
+      - ./legacy/python-brain/src:/app/src
     environment:
       - DINA_LOG_LEVEL=debug
-    command: ["uvicorn", "dina_brain.main:app", "--host", "0.0.0.0", "--port", "8200", "--reload"]
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8200", "--reload"]
 
   llm:
     ports:

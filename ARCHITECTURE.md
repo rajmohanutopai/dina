@@ -2,6 +2,11 @@
 
 This is the engineering blueprint for Dina. It defines the current system shape, the Phase 1 target, and the longer-horizon protocol direction. Where choices are locked, they are stated plainly. Where work is deferred, it is marked explicitly.
 
+**Repository layout note:** historical Go/Python runtime source now lives under
+`legacy/go-core/` and `legacy/python-brain/`. Older sections of this document
+may still describe the services as `core` and `brain` because those are the
+runtime service names.
+
 **Status labels used in this document**
 
 - **Implemented**: already present in the repository in meaningful form
@@ -1024,9 +1029,9 @@ api/
 ```
 
 **Codegen outputs** (committed, regenerated via `make generate`):
-- `core/internal/gen/core_types.gen.go` — Go types for Core API (oapi-codegen)
-- `core/internal/gen/brainapi/brain_types.gen.go` — Go types for Brain client (oapi-codegen)
-- `brain/src/gen/core_types.py` — Python Pydantic models for Core client (datamodel-code-generator)
+- `legacy/go-core/internal/gen/core_types.gen.go` — Go types for Core API (oapi-codegen)
+- `legacy/go-core/internal/gen/brainapi/brain_types.gen.go` — Go types for Brain client (oapi-codegen)
+- `legacy/python-brain/src/gen/core_types.py` — Python Pydantic models for Core client (datamodel-code-generator)
 
 **Ownership rule:** Core spec is hand-authored → generates Python client types. Brain spec is extracted from FastAPI/Pydantic → generates Go client types. Never feed generated types back into the owning service.
 
@@ -1196,7 +1201,7 @@ Brain receives retried task from core:
 ```
 
 ```python
-# brain/src/guardian.py — checkpoint during multi-step reasoning
+# legacy/python-brain/src/guardian.py — checkpoint during multi-step reasoning
 async def assemble_nudge(task_id: str, event: dict):
     # Step 1: Get relationship context
     scratchpad = await core.vault_query(type="scratchpad", task_id=task_id)
@@ -1227,7 +1232,7 @@ Scratchpad entries are stored in identity.sqlite (Tier 4 staging tables) and aut
 
 ### Task Queue (Implementation Detail)
 
-The outbox pattern described above is implemented in `core/internal/adapter/taskqueue/TaskQueue`. This section documents the full lifecycle, retry mechanics, and watchdog recovery.
+The outbox pattern described above is implemented in `legacy/go-core/internal/adapter/taskqueue/TaskQueue`. This section documents the full lifecycle, retry mechanics, and watchdog recovery.
 
 **Task lifecycle:**
 
@@ -1368,7 +1373,7 @@ CREATE TABLE crash_log (
 ```
 
 ```python
-# brain/src/main.py — safe crash handler
+# legacy/python-brain/src/main.py — safe crash handler
 try:
     await guardian_loop()
 except Exception as e:
@@ -1622,7 +1627,7 @@ Persona isolation is enforced by **cryptographic separation** — each persona i
 
 Brain makes separate API calls per persona: `POST /v1/vault/query {persona: "persona-general", ...}`. Core routes the query to the correct open database. If the persona is locked, core returns `403 Persona Locked`.
 
-**The model: personas have access tiers, enforced by which databases are open.** Each persona is created with a tier at bootstrap time (`core/cmd/dina-core/main.go`). The tier determines boot behavior and access control. Brain discovers available personas dynamically via `PersonaRegistry` (see [PersonaRegistry](#personaregistry-dynamic-persona-metadata-cache)).
+**The model: personas have access tiers, enforced by which databases are open.** Each persona is created with a tier at bootstrap time (`legacy/go-core/cmd/dina-core/main.go`). The tier determines boot behavior and access control. Brain discovers available personas dynamically via `PersonaRegistry` (see [PersonaRegistry](#personaregistry-dynamic-persona-metadata-cache)).
 
 ```
 Bootstrap Personas (created on first run, canonical names from Core):
@@ -1653,7 +1658,7 @@ Brain never invents persona names. The `PersonaRegistry` queries Core's `GET /v1
 **"Which personas have data about Dr. Patel?"** — derived, never cached:
 
 ```go
-// core/internal/vault/roster.go
+// legacy/go-core/internal/vault/roster.go
 func (v *VaultManager) GetPersonasForContact(contactDID string) []string {
     var personas []string
     for name, db := range v.openDatabases {
@@ -1697,9 +1702,9 @@ dina session start --name "chair-research"
 #   Session: ses_a3kx7m2pw4qr (chair-research) active
 ```
 
-The CLI calls `POST /v1/session/start` with the agent's Ed25519-signed request. Core creates an `AgentSession` record (`core/internal/domain/session.go`) with status `active`, an empty grants list, and a generated session ID.
+The CLI calls `POST /v1/session/start` with the agent's Ed25519-signed request. Core creates an `AgentSession` record (`legacy/go-core/internal/domain/session.go`) with status `active`, an empty grants list, and a generated session ID.
 
-**Session ID format:** `ses_<12 chars>` — 12 characters from the lowercase base32 alphabet (`a-z`, `2-7`), generated from 8 random bytes (`crypto/rand`). Each character is `alphabet[b[i%8] % 32]`, so the last 4 positions reuse the first 4 bytes' entropy. Example: `ses_a3kx7m2pw4qr`. URL-safe, human-readable, easy to copy-paste. Generated by `generateSessionID()` in `core/internal/adapter/identity/identity.go`.
+**Session ID format:** `ses_<12 chars>` — 12 characters from the lowercase base32 alphabet (`a-z`, `2-7`), generated from 8 random bytes (`crypto/rand`). Each character is `alphabet[b[i%8] % 32]`, so the last 4 positions reuse the first 4 bytes' entropy. Example: `ses_a3kx7m2pw4qr`. URL-safe, human-readable, easy to copy-paste. Generated by `generateSessionID()` in `legacy/go-core/internal/adapter/identity/identity.go`.
 
 **End a session:**
 
@@ -1708,11 +1713,11 @@ dina session end ses_a3kx7m2pw4qr
 #   Session 'ses_a3kx7m2pw4qr' ended. All grants revoked.
 ```
 
-`EndSession()` in `core/internal/adapter/identity/identity.go` sets the session status to `ended`, clears all grants, and closes any sensitive persona vaults that were opened via approval (not via manual user unlock). Vault closure only happens if no other active session holds a grant for the same persona — a safety check that prevents one session's cleanup from disrupting another session's work.
+`EndSession()` in `legacy/go-core/internal/adapter/identity/identity.go` sets the session status to `ended`, clears all grants, and closes any sensitive persona vaults that were opened via approval (not via manual user unlock). Vault closure only happens if no other active session holds a grant for the same persona — a safety check that prevents one session's cleanup from disrupting another session's work.
 
 **Reconnection:** If an agent calls `StartSession()` with a name that already has an active session for the same agent DID, Core returns the existing session rather than creating a duplicate. This handles agent restarts and network reconnects gracefully.
 
-**Persistence:** Sessions persist across Core process restarts. The `PersonaManager` serializes sessions (along with personas, contacts, and approvals) to a JSON state file via atomic `.tmp` → `os.Rename` writes (`core/internal/adapter/identity/identity.go`, `persistState()`). On boot, active sessions are reloaded. This means a Core crash does not orphan active sessions or lose granted approvals.
+**Persistence:** Sessions persist across Core process restarts. The `PersonaManager` serializes sessions (along with personas, contacts, and approvals) to a JSON state file via atomic `.tmp` → `os.Rename` writes (`legacy/go-core/internal/adapter/identity/identity.go`, `persistState()`). On boot, active sessions are reloaded. This means a Core crash does not orphan active sessions or lose granted approvals.
 
 #### Session Grants
 
@@ -1723,7 +1728,7 @@ Grants are the mechanism by which sessions acquire persona access. A grant is a 
 1. Agent attempts to access a persona that requires approval (sensitive tier for agents/brain, standard tier for agents).
 2. Core's `AccessPersona()` checks for an active grant via `hasActiveGrant(personaID, sessionID, agentDID)`.
 3. If no grant exists, Core returns `ErrApprovalRequired` with the persona ID.
-4. An approval request is created (`RequestApproval()` in `core/internal/adapter/identity/identity.go`) and the user is notified (Telegram, admin UI).
+4. An approval request is created (`RequestApproval()` in `legacy/go-core/internal/adapter/identity/identity.go`) and the user is notified (Telegram, admin UI).
 5. User approves via `POST /v1/persona/approve` with a scope (`session` or `single`).
 6. `ApproveRequest()` creates an `AccessGrant` record inside the session's grants list, binding `ClientDID + PersonaID + SessionID + Scope`.
 
@@ -1740,7 +1745,7 @@ Grants are the mechanism by which sessions acquire persona access. A grant is a 
 **The triple binding — `hasActiveGrant(personaID, sessionID, agentDID)`:**
 
 ```go
-// core/internal/adapter/identity/identity.go
+// legacy/go-core/internal/adapter/identity/identity.go
 func (pm *PersonaManager) hasActiveGrant(personaID, sessionID, agentDID string) bool {
     if sessionID == "" {
         return false  // no session → no grant, period
@@ -1785,12 +1790,12 @@ Brain (StagingProcessor.process_pending)
   │  4. Brain extracts session + agent DID from item provenance:
   │     item_session = json.loads(item.metadata).get("session", "")
   │     item_agent_did = item.origin_did
-  │     (brain/src/service/staging_processor.py)
+  │     (legacy/python-brain/src/service/staging_processor.py)
   │
   │  5. Brain forwards both as HTTP headers on staging_resolve:
   │     X-Session: ses_abc123
   │     X-Agent-DID: did:key:z6Mk...
-  │     (brain/src/adapter/core_http.py, staging_resolve method)
+  │     (legacy/python-brain/src/adapter/core_http.py, staging_resolve method)
   │
   ▼
 Core (Auth Middleware → PersonaManager.AccessPersona)
@@ -1798,7 +1803,7 @@ Core (Auth Middleware → PersonaManager.AccessPersona)
   │  6. Auth middleware extracts headers into context:
   │     ctx = context.WithValue(ctx, SessionNameKey, "ses_abc123")
   │     ctx = context.WithValue(ctx, AgentDIDKey, "did:key:z6Mk...")
-  │     (core/internal/middleware/auth.go)
+  │     (legacy/go-core/internal/middleware/auth.go)
   │
   │  7. When Brain's request touches a standard/sensitive persona,
   │     Core reads session + agent DID from context:
@@ -1808,7 +1813,7 @@ Core (Auth Middleware → PersonaManager.AccessPersona)
   │  8. AccessPersona calls hasActiveGrant(personaID, sessionID, agentDID)
   │     Grant found → access permitted → vault operation proceeds
   │     No grant → ErrApprovalRequired → approval flow triggered
-  │     (core/internal/adapter/identity/identity.go)
+  │     (legacy/go-core/internal/adapter/identity/identity.go)
 ```
 
 The same header flow applies to `dina ask --session <id>` (vault queries) and `dina validate --session <id>` (action gating). Brain's `core_http.py` attaches `X-Session` and `X-Agent-DID` headers on every `staging_resolve`, `staging_resolve_multi`, and `vault_query` call that originates from a session-bearing request.
@@ -1835,13 +1840,13 @@ Core distinguishes between vaults opened by user action (manual unlock via passp
 - **User-unlocked vaults** are never auto-closed by session lifecycle. The user explicitly opened them and controls when they close (via `POST /v1/persona/lock` or TTL expiry).
 - **Grant-opened vaults** are closed when the session that triggered their opening ends, provided no other active session holds a grant for the same persona.
 
-`MarkGrantOpened()` in `core/internal/adapter/identity/identity.go` records which persona vaults were opened via the approval path. `EndSession()` iterates the session's grants, identifies sensitive personas, and calls `OnLock()` (which closes the vault and zeroes the DEK from memory) for each grant-opened persona that has no remaining active grants across any session.
+`MarkGrantOpened()` in `legacy/go-core/internal/adapter/identity/identity.go` records which persona vaults were opened via the approval path. `EndSession()` iterates the session's grants, identifies sensitive personas, and calls `OnLock()` (which closes the vault and zeroes the DEK from memory) for each grant-opened persona that has no remaining active grants across any session.
 
 This prevents a common security footgun: an agent session opens `/health` for a legitimate query, the session ends, but the health vault stays open because nobody remembered to lock it. With grant-opened tracking, the vault closes automatically.
 
 #### Approval-to-Grant Bridge
 
-When a user approves an access request, `ApproveRequest()` in `core/internal/adapter/identity/identity.go` does not just mark the approval as approved — it creates a concrete `AccessGrant` inside the requesting session:
+When a user approves an access request, `ApproveRequest()` in `legacy/go-core/internal/adapter/identity/identity.go` does not just mark the approval as approved — it creates a concrete `AccessGrant` inside the requesting session:
 
 ```go
 // Simplified from ApproveRequest()
@@ -1862,7 +1867,7 @@ if a.SessionID != "" {
 }
 ```
 
-After the grant is created, `completeApproval()` in `core/internal/handler/persona.go` opens the persona vault (if not already open), drains any staging items that were marked `pending_unlock` while waiting for approval, and triggers resume for any pending reason requests linked to the approval. This ensures the agent's workflow continues seamlessly after the user grants access.
+After the grant is created, `completeApproval()` in `legacy/go-core/internal/handler/persona.go` opens the persona vault (if not already open), drains any staging items that were marked `pending_unlock` while waiting for approval, and triggers resume for any pending reason requests linked to the approval. This ensures the agent's workflow continues seamlessly after the user grants access.
 
 #### Approval API Surface
 
@@ -1877,7 +1882,7 @@ Two sets of endpoints expose approval management. Both call the same `completeAp
 | `POST /v1/persona/deny` | `PersonaHandler.HandleDeny` | Telegram bot, admin UI (legacy) |
 | `GET /v1/persona/approvals` | `PersonaHandler.HandleListApprovals` | Telegram bot, admin UI (legacy) |
 
-The `/v1/approvals/` routes (`core/internal/handler/approval.go`) are the canonical API. The `/v1/persona/{approve,deny,approvals}` routes remain as aliases for backward compatibility. Both delegate to `PersonaHandler` for the actual approve/deny/list logic, and both call `completeApproval()` after approval — so staging drain and vault open happen identically regardless of which path is used.
+The `/v1/approvals/` routes (`legacy/go-core/internal/handler/approval.go`) are the canonical API. The `/v1/persona/{approve,deny,approvals}` routes remain as aliases for backward compatibility. Both delegate to `PersonaHandler` for the actual approve/deny/list logic, and both call `completeApproval()` after approval — so staging drain and vault open happen identically regardless of which path is used.
 
 **Device callers are blocked from approval mutations.** `ApprovalHandler.HandleApprove` and `HandleDeny` check `CallerTypeKey` and reject `agent`-type callers with 403. A paired device cannot approve its own access requests — only admin-scoped callers (CLIENT_TOKEN or admin service key) can mutate approvals. This prevents a compromised agent from self-granting access to sensitive personas.
 
@@ -2708,7 +2713,7 @@ The health monitoring above describes the observable state machine. This section
 
 Both implement the `MCPClient` protocol: `call_tool(server, tool, args)`, `list_tools(server)`, `disconnect(server)`. Brain's sync engine and guardian are transport-agnostic.
 
-**Sync engine (`brain/src/service/sync_engine.py`):** Orchestrates periodic ingestion for each registered source. A sync cycle runs six steps: (1) read cursor from Core KV, (2) fetch new items via `mcp.call_tool(source, f"{source}_fetch", {since: cursor})`, (3) triage each item (Pass 1 category filter, Pass 2a regex, fiduciary override), (4) push PRIMARY items to Core's staging inbox in batches of 100, (5) update the cursor in Core KV, (6) return stats `{fetched, stored, skipped, cursor}`.
+**Sync engine (`legacy/python-brain/src/service/sync_engine.py`):** Orchestrates periodic ingestion for each registered source. A sync cycle runs six steps: (1) read cursor from Core KV, (2) fetch new items via `mcp.call_tool(source, f"{source}_fetch", {since: cursor})`, (3) triage each item (Pass 1 category filter, Pass 2a regex, fiduciary override), (4) push PRIMARY items to Core's staging inbox in batches of 100, (5) update the cursor in Core KV, (6) return stats `{fetched, stored, skipped, cursor}`.
 
 **Deduplication:** Two-tier. Fast path: in-memory `OrderedDict` per source (bounded at 10,000 IDs with 10% LRU eviction). Cold path: FTS5 search by `source_id` against Core vault. If the item exists in either tier, it is skipped.
 
@@ -2744,11 +2749,11 @@ Three files implement the Telegram admin channel, following the hexagonal patter
 
 | File | Role |
 |------|------|
-| `brain/src/port/telegram.py` | Port protocol — `TelegramBot` with `send_message`, `start`, `stop`, `bot_username` |
-| `brain/src/adapter/telegram_bot.py` | Adapter — wraps `python-telegram-bot` v22.x, owns transport lifecycle (polling, sending), zero business logic |
-| `brain/src/service/telegram.py` | Service — access control, Guardian routing, vault storage, approval workflow |
+| `legacy/python-brain/src/port/telegram.py` | Port protocol — `TelegramBot` with `send_message`, `start`, `stop`, `bot_username` |
+| `legacy/python-brain/src/adapter/telegram_bot.py` | Adapter — wraps `python-telegram-bot` v22.x, owns transport lifecycle (polling, sending), zero business logic |
+| `legacy/python-brain/src/service/telegram.py` | Service — access control, Guardian routing, vault storage, approval workflow |
 
-The composition root (`brain/src/main.py`) wires these together when `DINA_TELEGRAM_TOKEN` is set. If the `python-telegram-bot` package is missing, the import fails gracefully and Telegram is disabled — no crash, no degraded startup.
+The composition root (`legacy/python-brain/src/main.py`) wires these together when `DINA_TELEGRAM_TOKEN` is set. If the `python-telegram-bot` package is missing, the import fails gracefully and Telegram is disabled — no crash, no degraded startup.
 
 #### Setup and Configuration
 
@@ -2949,13 +2954,13 @@ Every memory-producing flow — CLI, connectors, Telegram, Dina-to-Dina, admin i
 The staging inbox lives in `identity.sqlite` (Tier 0), not inside any persona vault. Items arrive as raw content, get claimed and classified by Brain, then resolve into the correct persona vault or pend for unlock/approval. The raw body is cleared after classification — the staging table holds only metadata and routing state long-term.
 
 **Source files:**
-- Domain types and constants: `core/internal/domain/staging.go`
-- Port interface (12 methods): `core/internal/port/staging.go`
-- SQLite implementation: `core/internal/adapter/sqlite/staging_inbox.go`
-- HTTP handlers: `core/internal/handler/staging.go`
-- Remember wrapper: `core/internal/handler/remember.go`
-- Brain-side processor: `brain/src/service/staging_processor.py`
-- Guardian drain handler: `brain/src/service/guardian.py`
+- Domain types and constants: `legacy/go-core/internal/domain/staging.go`
+- Port interface (12 methods): `legacy/go-core/internal/port/staging.go`
+- SQLite implementation: `legacy/go-core/internal/adapter/sqlite/staging_inbox.go`
+- HTTP handlers: `legacy/go-core/internal/handler/staging.go`
+- Remember wrapper: `legacy/go-core/internal/handler/remember.go`
+- Brain-side processor: `legacy/python-brain/src/service/staging_processor.py`
+- Guardian drain handler: `legacy/python-brain/src/service/guardian.py`
 
 #### Table Schema
 
@@ -3189,7 +3194,7 @@ Raw text from Vault
 │  - EU IDs (Steuer-ID, NIR, BSN)    │
 │                                     │
 │  Allow-list post-filter:            │
-│  (brain/config/pii_allowlist.yaml)  │
+│  (legacy/python-brain/config/pii_allowlist.yaml)  │
 │  - Medical: B12, A1C, HbA1c, CBC   │
 │  - Food: biryani, roti, dal...      │
 │  - Technical: API, SDK, DNS...      │
@@ -3223,7 +3228,7 @@ Final response with real values restored
 
 **Tier 1 — Regex (Go core, always available):** Fast pattern matching in Go. Catches structured PII: credit cards, phone numbers, Aadhaar/SSN, emails, bank accounts. Sub-millisecond. Runs as `POST /v1/pii/scrub` endpoint.
 
-**Tier 2 — Presidio pattern recognizers (Python brain, always available):** Deterministic pattern matchers: EmailRecognizer, PhoneRecognizer, CreditCardRecognizer, SSN, Aadhaar, PAN, IFSC, UPI, EU IDs (Steuer-ID, NIR/NIF, BSN, SWIFT/BIC). All results are post-filtered against an allow-list (`brain/config/pii_allowlist.yaml`) containing medical terms (B12, A1C, HbA1c, CBC...), financial abbreviations, immigration codes, technical acronyms, and food names. spaCy NER is **disabled** in V1 — it produced too many false positives on real data (B12 tagged as ORG, biryani as PERSON, Raju as ORG, pet names as PERSON).
+**Tier 2 — Presidio pattern recognizers (Python brain, always available):** Deterministic pattern matchers: EmailRecognizer, PhoneRecognizer, CreditCardRecognizer, SSN, Aadhaar, PAN, IFSC, UPI, EU IDs (Steuer-ID, NIR/NIF, BSN, SWIFT/BIC). All results are post-filtered against an allow-list (`legacy/python-brain/config/pii_allowlist.yaml`) containing medical terms (B12, A1C, HbA1c, CBC...), financial abbreviations, immigration codes, technical acronyms, and food names. spaCy NER is **disabled** in V1 — it produced too many false positives on real data (B12 tagged as ORG, biryani as PERSON, Raju as ORG, pet names as PERSON).
 
 **V1 known gap:** Names and addresses in free text are NOT detected. "Dr. Sharma prescribed insulin" — neither regex nor pattern recognizers see anything suspicious. This is an accepted trade-off: deterministic patterns with zero false positives are preferred over NER with frequent false positives on Indian names, medical terms, and food.
 
@@ -3431,7 +3436,7 @@ The daily briefing summarizes queued Priority 3 items. Optional — user can dis
 
 ### Staging Processor (Ingestion Classification Pipeline)
 
-After data lands in Core's staging inbox (via connectors or Brain's MCP sync), the **Staging Processor** (`brain/src/service/staging_processor.py`) claims pending items, classifies them into personas, enriches them, and resolves them into the vault. This is Brain's half of the staging handshake — Core owns the staging table and atomically decides stored vs. pending\_unlock; Brain owns the classification and enrichment intelligence.
+After data lands in Core's staging inbox (via connectors or Brain's MCP sync), the **Staging Processor** (`legacy/python-brain/src/service/staging_processor.py`) claims pending items, classifies them into personas, enriches them, and resolves them into the vault. This is Brain's half of the staging handshake — Core owns the staging table and atomically decides stored vs. pending\_unlock; Brain owns the classification and enrichment intelligence.
 
 ```
                          STAGING PROCESSOR PIPELINE
@@ -3526,7 +3531,7 @@ The Guardian loop (`guardian.py`) scans `brief:routing_ambiguous_index` before a
 
 ### PersonaRegistry (Dynamic Persona Metadata Cache)
 
-The **PersonaRegistry** (`brain/src/service/persona_registry.py`) is Brain's cached view of what personas exist in Core, what tier each has, and whether it is currently locked. It answers "what personas are installed?" — it does not answer "where should this content go?" (that is PersonaSelector's job).
+The **PersonaRegistry** (`legacy/python-brain/src/service/persona_registry.py`) is Brain's cached view of what personas exist in Core, what tier each has, and whether it is currently locked. It answers "what personas are installed?" — it does not answer "where should this content go?" (that is PersonaSelector's job).
 
 ```
 Startup                     Runtime
@@ -3570,7 +3575,7 @@ GET core:8100/v1/personas   GET core:8100/v1/personas
 
 ### PersonaSelector (Constrained LLM Persona Selection)
 
-The **PersonaSelector** (`brain/src/service/persona_selector.py`) uses an LLM to choose which persona an incoming item belongs to — but only from the set of actually installed personas. It never invents persona names.
+The **PersonaSelector** (`legacy/python-brain/src/service/persona_selector.py`) uses an LLM to choose which persona an incoming item belongs to — but only from the set of actually installed personas. It never invents persona names.
 
 **Resolution order:**
 1. **Explicit valid hint** — if the domain classifier already produced a valid persona name, use it (confidence 1.0). No LLM call needed.
@@ -3598,7 +3603,7 @@ The user message includes the full persona list with tiers plus a scrubbed item 
 }
 ```
 
-**Wiring.** Constructed once in `brain/src/main.py` with the shared PersonaRegistry and LLMRouter, then injected into the StagingProcessor:
+**Wiring.** Constructed once in `legacy/python-brain/src/main.py` with the shared PersonaRegistry and LLMRouter, then injected into the StagingProcessor:
 
 ```python
 persona_registry = PersonaRegistry()
@@ -3611,7 +3616,7 @@ staging_processor = StagingProcessor(
 
 ### Domain Classifier (4-Layer Sensitivity Classification)
 
-The **DomainClassifier** (`brain/src/service/domain_classifier.py`) determines the sensitivity domain of text through a 4-layer pipeline. It serves two purposes: (1) hint for PersonaSelector, and (2) PII scrub intensity control. Higher sensitivity means more aggressive scrubbing.
+The **DomainClassifier** (`legacy/python-brain/src/service/domain_classifier.py`) determines the sensitivity domain of text through a 4-layer pipeline. It serves two purposes: (1) hint for PersonaSelector, and (2) PII scrub intensity control. Higher sensitivity means more aggressive scrubbing.
 
 **Pipeline (short-circuits on SENSITIVE/LOCAL\_ONLY):**
 
@@ -3658,7 +3663,7 @@ SELECT: highest confidence wins.
 
 ### Guardian Loop — Staging Drain Handler
 
-The **Guardian loop** (`brain/src/service/guardian.py`) is Brain's central event processor. Among its ~15 event handlers, `_handle_staging_drain` connects the staging pipeline to the real-time event flow.
+The **Guardian loop** (`legacy/python-brain/src/service/guardian.py`) is Brain's central event processor. Among its ~15 event handlers, `_handle_staging_drain` connects the staging pipeline to the real-time event flow.
 
 **Trigger mechanism.** When Core receives a staging ingest (connector push or MCP sync), it fires a `staging_drain` event to Brain as a background goroutine. This is non-blocking — Core does not wait for the drain to complete. The event includes a `trigger` field indicating the source (e.g., `"connector"`, `"sync"`).
 
@@ -3691,7 +3696,7 @@ Connector/MCP ──► Core staging_ingest() ──► Core fires goroutine:
 
 The event-driven path ensures items are classified immediately after ingestion — the user does not wait for the next 5-minute sync cycle. The periodic path is a safety net that catches any items missed due to transient failures, race conditions, or Brain restarts. Both paths call the same `staging_processor.process_pending()` method.
 
-**Sync loop integration.** The background `_sync_loop` in `brain/src/main.py` runs every 300 seconds and performs, in order: (1) refresh contacts for PeerLens rating, (2) refresh PersonaRegistry, (3) run MCP sync cycles per registered source, (4) legacy enrichment sweep, (5) `staging_processor.process_pending(limit=20)`. The staging drain at step 5 is the safety net — most items will already have been processed by the event-driven path.
+**Sync loop integration.** The background `_sync_loop` in `legacy/python-brain/src/main.py` runs every 300 seconds and performs, in order: (1) refresh contacts for PeerLens rating, (2) refresh PersonaRegistry, (3) run MCP sync cycles per registered source, (4) legacy enrichment sweep, (5) `staging_processor.process_pending(limit=20)`. The staging drain at step 5 is the safety net — most items will already have been processed by the event-driven path.
 
 **Failure isolation.** If `_staging_processor` is `None` (no enrichment service configured), the handler returns `{"action": "staging_drain", "skipped": true}` — a no-op, not an error. If `process_pending()` raises, the handler catches and logs the error without propagating it — one failed drain does not crash the Guardian loop or block other event processing.
 
@@ -4837,7 +4842,7 @@ On reboot, the loop starts, finds the next reminder, sleeps until it's due. If t
 
 ### Reminder Service (Implementation Detail)
 
-The reminder loop outlined above is implemented in `core/internal/reminder/Loop` with persistence in `core/internal/adapter/sqlite/reminders.go`. This section documents the concrete design.
+The reminder loop outlined above is implemented in `legacy/go-core/internal/reminder/Loop` with persistence in `legacy/go-core/internal/adapter/sqlite/reminders.go`. This section documents the concrete design.
 
 **Reminder domain model:**
 
@@ -5324,7 +5329,7 @@ The estate planning subsystem is implemented today as a three-layer stack: domai
 
 #### Domain Type
 
-`core/internal/domain/config.go` defines `EstatePlan`:
+`legacy/go-core/internal/domain/config.go` defines `EstatePlan`:
 
 ```go
 type EstatePlan struct {
@@ -5344,7 +5349,7 @@ The `Beneficiaries` map uses DID strings as keys, mapping each beneficiary to th
 
 #### Port Interface
 
-`core/internal/port/estate.go` defines the `EstateManager` interface:
+`legacy/go-core/internal/port/estate.go` defines the `EstateManager` interface:
 
 | Method | Purpose |
 |--------|---------|
@@ -5356,7 +5361,7 @@ The `Beneficiaries` map uses DID strings as keys, mapping each beneficiary to th
 
 #### Adapter — In-Memory Estate Manager
 
-`core/internal/adapter/estate/estate.go` provides two implementations:
+`legacy/go-core/internal/adapter/estate/estate.go` provides two implementations:
 
 1. **`PortEstateManager`** — satisfies `port.EstateManager` (context-accepting methods). Used by the service layer in production. Stores the plan in a mutex-protected in-memory struct. The current implementation is in-memory only; persisting to Tier 0 (`identity.sqlite`) is deferred to when HTTP endpoints are exposed.
 
@@ -5366,7 +5371,7 @@ Both implementations enforce the same validation: only `custodian_threshold` is 
 
 #### Service Layer
 
-`core/internal/service/estate.go` implements `EstateService` with five port dependencies:
+`legacy/go-core/internal/service/estate.go` implements `EstateService` with five port dependencies:
 
 | Dependency | Role |
 |------------|------|
@@ -5400,7 +5405,7 @@ The service is fully constructed and dependency-injected, ready for handler wiri
 #### What Remains for HTTP Exposure
 
 The implementation is complete at the service layer. Exposing it requires:
-1. An `EstateHandler` in `core/internal/handler/` with routes for `GET/POST /v1/estate/plan`, `POST /v1/estate/activate`, `POST /v1/estate/deliver-keys`
+1. An `EstateHandler` in `legacy/go-core/internal/handler/` with routes for `GET/POST /v1/estate/plan`, `POST /v1/estate/activate`, `POST /v1/estate/deliver-keys`
 2. Admin-only auth scoping (estate plan mutations are owner-only operations)
 3. Persistence migration from in-memory to Tier 0 (`identity.sqlite`)
 
@@ -5502,8 +5507,8 @@ The Home Node runs in two very different environments — a headless server (Ras
 
 | Attribute                  | Production (Go/Python)                               | Lite (TypeScript)                                       |
 |---------------------------|------------------------------------------------------|---------------------------------------------------------|
-| Core runtime               | Go 1.22+ (`core/`)                                   | Node ≥ 22 Fastify server (`apps/home-node-lite/core-server`) |
-| Brain runtime              | Python + Google ADK (`brain/`)                       | Node Fastify (`apps/home-node-lite/brain-server`)       |
+| Core runtime               | Go 1.22+ (`legacy/go-core/`)                         | Node ≥ 22 Fastify server (`apps/home-node-lite/core-server`) |
+| Brain runtime              | Python + Google ADK (`legacy/python-brain/`)         | Node Fastify (`apps/home-node-lite/brain-server`)       |
 | Shared pure domain         | N/A (per-language)                                   | `@dina/core` + `@dina/brain` + `@dina/protocol`         |
 | Storage                    | `mutecomm/go-sqlcipher`                              | `better-sqlite3-multiple-ciphers` (SQLCipher v4 compat) |
 | Crypto                     | Go `crypto/*` stdlib + `mutecomm/go-sqlcipher`       | `@noble/curves`, `@noble/ed25519`, `@noble/hashes`      |
@@ -5594,7 +5599,7 @@ Long-term, one of the two may retire. Phase 13.5 of the Lite task plan is an exp
 | Home Node ↔ Home Node | Phase 1: libsodium `crypto_box_seal` (ephemeral sender keys) + DIDComm-shaped plaintext. Phase 2: full JWE (ECDH-1PU). Phase 3: Noise XX sessions for full forward secrecy. | Sender FS from day one. Full FS in Phase 3. Plaintext format is DIDComm-compatible throughout — migration is encryption-layer only. |
 | **Home Node (dina-brain)** | | |
 | Brain runtime | Python + Google ADK (v1.25+, Apache 2.0) | Model-agnostic agent framework, multi-agent orchestration |
-| PII scrubbing (Tier 2) | Presidio pattern recognizers + allow-list (`brain/config/pii_allowlist.yaml`) | Deterministic pattern matchers (emails, phones, credit cards, SSN, Aadhaar, PAN, IFSC, UPI, EU IDs). NER disabled in V1. Allow-list filters false positives from medical terms, food, acronyms. |
+| PII scrubbing (Tier 2) | Presidio pattern recognizers + allow-list (`legacy/python-brain/config/pii_allowlist.yaml`) | Deterministic pattern matchers (emails, phones, credit cards, SSN, Aadhaar, PAN, IFSC, UPI, EU IDs). NER disabled in V1. Allow-list filters false positives from medical terms, food, acronyms. |
 | Text LLM (Online) | Gemini 2.5 Flash Lite API ($0.10/$0.40 per 1M tokens) | Cheapest Gemini model, 1M context, native function calling + JSON mode, 305+ t/s |
 | Text LLM (Local) | llama (llama.cpp) + Gemma 3n E4B GGUF (~3GB RAM) | OpenAI-compatible API on port 8080, CPU/Apple Silicon inference. Optional via `--profile local-llm`. |
 | Voice STT (Online) | Deepgram Nova-3 ($0.0077/min, WebSocket streaming) | ~150-300ms latency, purpose-built real-time STT. Fallback: Gemini Flash Lite Live API. |
@@ -6192,7 +6197,7 @@ For browser-admin sessions:
 
 ### Device Pairing Ceremony (Implementation Detail)
 
-The pairing ceremony described above is implemented as a two-phase state machine in `core/internal/adapter/pairing/PairingManager`. This section documents the internal mechanics.
+The pairing ceremony described above is implemented as a two-phase state machine in `legacy/go-core/internal/adapter/pairing/PairingManager`. This section documents the internal mechanics.
 
 **State machine:**
 
@@ -6455,8 +6460,8 @@ The architecture described above is now the active implementation in this reposi
 
 | Component | Path | Role |
 |-----------|------|------|
-| dina-core | `core/` | Go sovereign kernel: vault, keys, auth, gatekeeper, transport. Creates PDS account on community PDS at first boot. |
-| dina-brain | `brain/` | Python intelligence/orchestration: reasoning, sync, admin API/UI |
+| dina-core | `legacy/go-core/` | Go sovereign kernel: vault, keys, auth, gatekeeper, transport. Creates PDS account on community PDS at first boot. |
+| dina-brain | `legacy/python-brain/` | Python intelligence/orchestration: reasoning, sync, admin API/UI |
 | appview | `appview/` | PeerLens AppView implementation |
 | cli | `cli/` | Client interface for interacting with running services |
 

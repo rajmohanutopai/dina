@@ -15,7 +15,7 @@ The result: every new consumer re-discovers the same bugs. The field-name guessi
 
 ### The Casing Problem is Real but Narrow
 
-A full audit of `core/internal/domain/` reveals a clear split:
+A full audit of `legacy/go-core/internal/domain/` reveals a clear split:
 
 | Category | json Tags? | Casing | Examples |
 |----------|-----------|--------|----------|
@@ -50,7 +50,7 @@ Brain has proper Python enums (`IntentRisk`, `Priority`, `Sensitivity`, `Silence
 
 ### Brain's CoreHTTPClient Returns Raw Dicts
 
-~30 methods in `brain/src/adapter/core_http.py` call Core endpoints and return untyped `dict`. Examples:
+~30 methods in `legacy/python-brain/src/adapter/core_http.py` call Core endpoints and return untyped `dict`. Examples:
 
 ```python
 # No type safety — caller must know the field names
@@ -117,8 +117,8 @@ api/
   core-api.yaml          # Core's HTTP API (~50 routes, port 8100) — hand-authored
   brain-api.yaml         # Brain's HTTP API (3 routes, port 8200) — extracted from FastAPI
 
-core/internal/gen/       # Generated Go types from both specs
-brain/src/gen/           # Generated Python types from core-api.yaml
+legacy/go-core/internal/gen/       # Generated Go types from both specs
+legacy/python-brain/src/gen/           # Generated Python types from core-api.yaml
 ```
 
 ### Key Design Rules
@@ -213,9 +213,9 @@ Already true for 90%+ of Core. The untagged types (`PairedDevice`, `ImportResult
 
 | Side | Tool | Output | What It Generates |
 |------|------|--------|-------------------|
-| **Go** (Core) | `oapi-codegen` v2 | `core/internal/gen/types.gen.go` | Types + enum constants. No server stubs (handlers stay hand-written). |
-| **Python** (Brain) | `datamodel-code-generator` | `brain/src/gen/core_types.py` | Pydantic v2 BaseModel classes from Core spec. |
-| **Go** (BrainClient) | `oapi-codegen` v2 | `core/internal/gen/brain_types.gen.go` | Request/response types for Brain's 3 endpoints. |
+| **Go** (Core) | `oapi-codegen` v2 | `legacy/go-core/internal/gen/types.gen.go` | Types + enum constants. No server stubs (handlers stay hand-written). |
+| **Python** (Brain) | `datamodel-code-generator` | `legacy/python-brain/src/gen/core_types.py` | Pydantic v2 BaseModel classes from Core spec. |
+| **Go** (BrainClient) | `oapi-codegen` v2 | `legacy/go-core/internal/gen/brain_types.gen.go` | Request/response types for Brain's 3 endpoints. |
 
 Note: `datamodel-code-generator` has known issues with cross-file `$ref` resolution. If `schemas.yaml` + `core-api.yaml` causes problems, use a bundling step (`swagger-cli bundle core-api.yaml -o core-api.bundled.yaml`) before Python codegen.
 
@@ -304,8 +304,8 @@ POST   /v1/staging/fail          — {id, error} → StagingItem
 
 #### 1d: Generate types and migrate
 
-- Generate `core/internal/gen/types.gen.go` — vault/staging request/response types
-- Generate `brain/src/gen/core_types.py` — Pydantic models for vault/staging responses
+- Generate `legacy/go-core/internal/gen/types.gen.go` — vault/staging request/response types
+- Generate `legacy/python-brain/src/gen/core_types.py` — Pydantic models for vault/staging responses
 - Update `CoreHTTPClient` vault methods to return generated Pydantic models instead of `dict`
 - Update Core vault handlers to use generated request types (replacing inline `queryRequest` etc.)
 - Remove Brain's defensive `isinstance(data, dict)` checks — the generated model validates shape
@@ -417,7 +417,7 @@ Each event type gets its own schema with explicit required fields.
 
 #### 3c: Generate Go types for BrainClient
 
-Generate `core/internal/gen/brain_types.gen.go` from the extracted+cleaned Brain spec. Update `BrainClient.Reason*` methods to use generated `ReasonRequest`/`ReasonResponse` types instead of `map[string]string`.
+Generate `legacy/go-core/internal/gen/brain_types.gen.go` from the extracted+cleaned Brain spec. Update `BrainClient.Reason*` methods to use generated `ReasonRequest`/`ReasonResponse` types instead of `map[string]string`.
 
 #### 3d: Update Brain's ProcessEventRequest
 
@@ -480,8 +480,8 @@ Replace boundary types following the ownership rule:
 
 | Hand-written | Generated replacement |
 |-------------|----------------------|
-| `brain/adapter/core_http.py` → returns `dict` | Returns `gen.core_types.VaultItem`, `gen.core_types.StoreResponse`, etc. |
-| `brain/domain/types.py::VaultItem` | `gen.core_types.VaultItem` (for Core API responses) |
+| `legacy/python-brain/src/adapter/core_http.py` → returns `dict` | Returns `gen.core_types.VaultItem`, `gen.core_types.StoreResponse`, etc. |
+| `legacy/python-brain/src/domain/types.py::VaultItem` | `gen.core_types.VaultItem` (for Core API responses) |
 
 Domain types (`domain.VaultItem` in Go) remain for internal/service use. Translation happens at the handler/client boundary.
 
@@ -512,12 +512,12 @@ Adding `json:"snake_case"` tags to `PairedDevice`, `Device`, `ImportResult`, `Sc
 | **System** | `tests/system/user_stories/test_05_*.py`, `test_08_*.py` | `result["FilesRestored"]`, `device.get("TokenID")` | Story 05 (device list), Story 08 (import result) |
 | **Integration** | `tests/integration/test_*.py` | `item.get("ID")`, dual-casing fallbacks | Vault item assertions, device pairing |
 | **Release** | `tests/release/test_*.py` | Device listing assertions | REL scenarios with paired agents |
-| **Go unit** | `core/test/*_test.go` | May use raw JSON with PascalCase expectations | PII, device, export tests |
+| **Go unit** | `legacy/go-core/test/*_test.go` | May use raw JSON with PascalCase expectations | PII, device, export tests |
 
 **Migration approach:**
 
 1. `grep -rn "TokenID\|FilesRestored\|PersonaCount\|RequiresRepair\|RequiresRestart\|PIIEntity\|ScrubResult" tests/` — find every PascalCase reference to the affected types
-2. Also grep Go tests: `grep -rn "TokenID\|FilesRestored" core/test/`
+2. Also grep Go tests: `grep -rn "TokenID\|FilesRestored" legacy/go-core/test/`
 3. Bulk-rename all field access to snake_case
 4. For tests that use both cases (`item.get("Summary", item.get("summary", ""))`), simplify to snake_case only
 5. Run all 5 tiers: `./run_all_tests.sh --continue`
