@@ -1184,7 +1184,7 @@ SUITES = {
     },
     "brain": {
         "name": "Brain (Py)",
-        "cmd": ["python", "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
+        "cmd": [sys.executable, "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
                 "legacy/python-brain/tests/"],
         "cwd": None,
         "plan": "legacy/python-brain/tests/TEST_PLAN.md",
@@ -1193,7 +1193,7 @@ SUITES = {
     },
     "integration": {
         "name": "Integration",
-        "cmd": ["python", "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
+        "cmd": [sys.executable, "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
                 "tests/integration/"],
         "cwd": None,
         "plan": "tests/INTEGRATION_TEST_PLAN.md",
@@ -1206,7 +1206,7 @@ SUITES = {
     },
     "e2e": {
         "name": "E2E (Docker)",
-        "cmd": ["python", "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
+        "cmd": [sys.executable, "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
                 "tests/e2e/"],
         "cwd": None,
         "parser": "pytest",
@@ -1216,7 +1216,7 @@ SUITES = {
     },
     "cli": {
         "name": "CLI (Py)",
-        "cmd": ["python", "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
+        "cmd": [sys.executable, "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
                 "cli/tests/"],
         "cwd": None,
         "parser": "pytest",
@@ -1224,15 +1224,15 @@ SUITES = {
     },
     "admin_cli": {
         "name": "Admin CLI (Py)",
-        "cmd": ["python", "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
-                "admin-cli/tests/"],
+        "cmd": [sys.executable, "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
+                "legacy/admin-cli/tests/"],
         "cwd": None,
         "parser": "pytest",
-        "test_dir": "admin-cli/tests",
+        "test_dir": "legacy/admin-cli/tests",
     },
     "prompt": {
         "name": "Prompt (LLM)",
-        "cmd": ["python", "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
+        "cmd": [sys.executable, "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
                 "tests/prompt/"],
         "cwd": None,
         "parser": "pytest",
@@ -1259,7 +1259,7 @@ SUITES = {
     },
     "release": {
         "name": "Release",
-        "cmd": ["python", "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
+        "cmd": [sys.executable, "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
                 "tests/release/"],
         "cwd": None,
         "parser": "pytest",
@@ -1296,7 +1296,7 @@ SUITES = {
     },
     "user_stories": {
         "name": "User Stories",
-        "cmd": ["python", "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
+        "cmd": [sys.executable, "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
                 "tests/system/user_stories/"],
         "cwd": None,
         "parser": "pytest",
@@ -1321,7 +1321,7 @@ SUITES = {
     },
     "install": {
         "name": "Install",
-        "cmd": ["python", "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
+        "cmd": [sys.executable, "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
                 "tests/install/test_installer_core.py",
                 "tests/install/test_installer_wizard.py",
                 "tests/install/test_model_set.py",
@@ -1359,7 +1359,7 @@ SUITES = {
     },
     "install-pexpect": {
         "name": "Install Lifecycle (pexpect)",
-        "cmd": ["python", "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
+        "cmd": [sys.executable, "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
                 "tests/install/test_install_blackbox.py",
                 "tests/install/test_install_failures.py",
                 "tests/install/test_install_functional.py",

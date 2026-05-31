@@ -5,7 +5,7 @@
 ```bash
 git clone https://github.com/rajmohanutopai/dina.git
 cd dina
-./install.sh # --quick  to avoid repeating the backup phrases
+legacy/bin/install.sh # --quick to avoid repeating the backup phrases
 ```
 
 The installer asks your name, picks a messaging channel (Telegram or Bluesky), and sets up your AI provider (Gemini, OpenAI, or Claude). Everything else is automatic — keys, containers, identity, PeerLens account.
@@ -19,7 +19,7 @@ Seeing how Dina works will give a really good picture of what Dina is.
 ## Verify
 
 ```bash
-./dina-admin status
+legacy/bin/dina-admin status
 ```
 
 ## Talk to your Dina
@@ -44,19 +44,19 @@ dina ask "what kind of tea do I like?"
 
 **Admin** — on the Home Node:
 ```bash
-./dina-admin ask "what do I know about Sancho?"
-./dina-admin inbox
-./dina-admin trace <request_id>
+legacy/bin/dina-admin ask "what do I know about Sancho?"
+legacy/bin/dina-admin inbox
+legacy/bin/dina-admin trace <request_id>
 ```
 
 ## Manage
 
 ```bash
-./run.sh --start     # start (rebuilds from latest code)
-./run.sh --stop      # stop
-./run.sh --status    # health check
-./run.sh --logs      # tail logs
-./dina-admin export  # decrypted backup
+legacy/bin/run.sh --start     # start (rebuilds from latest code)
+legacy/bin/run.sh --stop      # stop
+legacy/bin/run.sh --status    # health check
+legacy/bin/run.sh --logs      # tail logs
+legacy/bin/dina-admin export  # decrypted backup
 ```
 
 ## Requirements

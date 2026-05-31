@@ -123,13 +123,10 @@ function scenarios(name: string, build: () => KeychainKit): void {
     });
 
     it('concurrent writes preserve every value (wrap-key race regression)', async () => {
-      // Regression: `infra_setup.tsx`'s Continue handler fires
-      // `Promise.all([savePdsUrl, saveAppViewURL])` on the FIRST run
-      // (before any wrap key exists). Without single-flighting the
-      // bootstrap, both saves used to generate different CryptoKeys
-      // and one row's ciphertext became permanently undecryptable.
-      // Caught only when the user reloaded the page and the
-      // unlock-gate's `loadInfraPreferences` returned partial state.
+      // Regression: settings flows can write multiple Keychain values
+      // concurrently before any wrap key exists. Without single-flighting
+      // the bootstrap, writes used to generate different CryptoKeys and
+      // one row's ciphertext became permanently undecryptable.
       const pairs = Array.from({ length: 8 }, (_, i) => [
         `svc-${i}`,
         `value-${i}-${'pad'.repeat(20)}`,

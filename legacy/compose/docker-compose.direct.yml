@@ -5,7 +5,7 @@
 # the Home Node has a public IP / tunnel.
 #
 # Usage:
-#   docker compose -f docker-compose.yml -f docker-compose.direct.yml up
+#   docker compose -f legacy/compose/docker-compose.yml -f legacy/compose/docker-compose.direct.yml up
 #
 # Or copy this into docker-compose.override.yml for automatic inclusion:
 #   cp docker-compose.direct.yml docker-compose.override.yml

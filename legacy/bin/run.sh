@@ -2,18 +2,20 @@
 # run.sh — Manage the Dina Home Node
 #
 # Usage:
-#   ./run.sh              # show usage
-#   ./run.sh --start      # start containers (prompts for passphrase if manual-start)
-#   ./run.sh --stop       # stop containers
-#   ./run.sh --status     # show container status
-#   ./run.sh --logs       # tail container logs
+#   legacy/bin/run.sh              # show usage
+#   legacy/bin/run.sh --start      # start containers (prompts for passphrase if manual-start)
+#   legacy/bin/run.sh --stop       # stop containers
+#   legacy/bin/run.sh --status     # show container status
+#   legacy/bin/run.sh --logs       # tail container logs
 
 set -euo pipefail
-cd "$(dirname "$0")"
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$REPO_ROOT"
 
 DINA_DIR="${DINA_DIR:-$(pwd)}"
 SECRETS_DIR="${DINA_DIR}/secrets"
 ENV_FILE="${DINA_DIR}/.env"
+COMPOSE_FILE="${DINA_DIR}/legacy/compose/docker-compose.yml"
 HEALTH_TIMEOUT=90
 HEALTH_INTERVAL=3
 
@@ -31,10 +33,15 @@ source scripts/setup/telegram.sh
 # ---------------------------------------------------------------------------
 
 detect_compose() {
+    _env_args=""
+    if [ -f "${ENV_FILE}" ]; then
+        _env_args="--env-file ${ENV_FILE}"
+    fi
+
     if docker compose version >/dev/null 2>&1; then
-        COMPOSE="docker compose"
+        COMPOSE="docker compose --project-directory ${DINA_DIR} ${_env_args} -f ${COMPOSE_FILE}"
     elif command -v docker-compose >/dev/null 2>&1; then
-        COMPOSE="docker-compose"
+        COMPOSE="docker-compose --project-directory ${DINA_DIR} ${_env_args} -f ${COMPOSE_FILE}"
     else
         fail "Docker Compose not found. Install from https://docs.docker.com/compose/install/"
     fi
@@ -49,7 +56,7 @@ case "${1:-}" in
         echo ""
         echo -e "  ${BOLD}Dina Home Node${RESET}"
         echo ""
-        echo -e "  Usage:  ${CYAN}./run.sh${RESET} <command>"
+        echo -e "  Usage:  ${CYAN}legacy/bin/run.sh${RESET} <command>"
         echo ""
         echo -e "    ${CYAN}--start${RESET}    Start the Home Node"
         echo -e "    ${CYAN}--stop${RESET}     Stop all containers"
@@ -116,7 +123,7 @@ case "${1:-}" in
                 _primary=$(echo "$_brain_health" | jq -r '.llm_models.primary // "?"' 2>/dev/null || echo "?")
                 _heavy=$(echo "$_brain_health" | jq -r '.llm_models.heavy // "?"' 2>/dev/null || echo "?")
 
-                echo -e "  LLM:       ${DIM}use ${CYAN}./dina-admin status${RESET}${DIM} for details${RESET}"
+                echo -e "  LLM:       ${DIM}use ${CYAN}legacy/bin/dina-admin status${RESET}${DIM} for details${RESET}"
             else
                 echo -e "  LLM:       ${YELLOW}not configured${RESET}"
             fi
@@ -151,7 +158,7 @@ case "${1:-}" in
     --*)
         echo -e "  ${RED}Unknown option: $1${RESET}" >&2
         echo ""
-        echo -e "  Usage: ${CYAN}./run.sh${RESET} [--start|--stop|--status|--logs]"
+        echo -e "  Usage: ${CYAN}legacy/bin/run.sh${RESET} [--start|--stop|--status|--logs]"
         exit 1
         ;;
 esac
@@ -172,7 +179,7 @@ if ! check_install_complete "${DINA_DIR}"; then
         echo -e "  ${DIM}Missing:${INSTALL_MISSING}${RESET}"
     fi
     echo ""
-    echo -e "  Run:  ${CYAN}./install.sh${RESET}"
+    echo -e "  Run:  ${CYAN}legacy/bin/install.sh${RESET}"
     echo ""
     exit 1
 fi
@@ -194,7 +201,7 @@ ensure_required_env "${ENV_FILE}"
 if has_llm_provider "${ENV_FILE}"; then
     ok "LLM provider configured"
 else
-    warn "No LLM provider configured — run ${CYAN}./dina-admin model set${RESET} to add one"
+    warn "No LLM provider configured — run ${CYAN}legacy/bin/dina-admin model set${RESET} to add one"
 fi
 
 # Check Telegram (optional — just show status, don't prompt)
@@ -210,7 +217,7 @@ echo ""
 
 command -v docker >/dev/null 2>&1 || fail "Docker not found. Please install Docker first."
 if ! docker info >/dev/null 2>&1; then
-    fail "Cannot connect to Docker.\n\n  Make sure these commands work:\n\n    ${REVERSE} docker run hello-world ${RESET}\n    ${REVERSE} docker compose version ${RESET}\n\n  Then run ./run.sh again."
+    fail "Cannot connect to Docker.\n\n  Make sure these commands work:\n\n    ${REVERSE} docker run hello-world ${RESET}\n    ${REVERSE} docker compose version ${RESET}\n\n  Then run legacy/bin/run.sh again."
 fi
 detect_compose
 
@@ -222,10 +229,10 @@ SEED_PASSWORD_FILE="${SECRETS_DIR}/seed_password"
 if [ -f "${SEED_PASSWORD_FILE}" ] && [ ! -s "${SEED_PASSWORD_FILE}" ]; then
     # Empty seed_password = manual-start mode. Core needs it to start.
     if [ ! -t 0 ]; then
-        fail "Passphrase required but running non-interactively.\n  Switch to auto-start: ${CYAN}./dina-admin security auto-start${RESET}"
+        fail "Passphrase required but running non-interactively.\n  Switch to auto-start: ${CYAN}legacy/bin/dina-admin security auto-start${RESET}"
     fi
     while true; do
-        printf "  ${BOLD}Enter passphrase${RESET} ${DIM}(${CYAN}dina-admin security auto-start${RESET}${DIM} to skip this):${RESET} "
+        printf "  ${BOLD}Enter passphrase${RESET} ${DIM}(${CYAN}legacy/bin/dina-admin security auto-start${RESET}${DIM} to skip this):${RESET} "
         read -rs _run_passphrase
         echo ""
         if [ -z "${_run_passphrase}" ]; then
@@ -268,7 +275,7 @@ CORE_PORT=$(sed -n 's/^DINA_CORE_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null ||
 RUNNING=$($COMPOSE ps --format "{{.Name}}" 2>/dev/null | head -1 || true)
 if [ -n "${RUNNING}" ]; then
     ok "Containers already running"
-    echo -e "  ${DIM}Use ${CYAN}./run.sh --stop${RESET}${DIM} then ${CYAN}./run.sh --start${RESET}${DIM} to restart.${RESET}"
+    echo -e "  ${DIM}Use ${CYAN}legacy/bin/run.sh --stop${RESET}${DIM} then ${CYAN}legacy/bin/run.sh --start${RESET}${DIM} to restart.${RESET}"
 else
     $COMPOSE up -d --build 2>&1 | while IFS= read -r line; do
         echo -e "  ${DIM}${line}${RESET}"
@@ -380,7 +387,7 @@ if [ -n "${_brain_health}" ]; then
 fi
 echo ""
 echo -e "  ${BOLD}Commands:${RESET}"
-echo -e "    ${CYAN}./run.sh --status${RESET}   Show status"
-echo -e "    ${CYAN}./run.sh --logs${RESET}     Tail logs"
-echo -e "    ${CYAN}./run.sh --stop${RESET}     Stop"
+echo -e "    ${CYAN}legacy/bin/run.sh --status${RESET}   Show status"
+echo -e "    ${CYAN}legacy/bin/run.sh --logs${RESET}     Tail logs"
+echo -e "    ${CYAN}legacy/bin/run.sh --stop${RESET}     Stop"
 echo ""

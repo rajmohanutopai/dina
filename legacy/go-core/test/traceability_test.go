@@ -384,7 +384,7 @@ func TestCompliance_30_5_4_NoTokenFallbackInAnyConftest(t *testing.T) {
 		"tests/release/conftest.py",
 		"tests/system/conftest.py",
 		"legacy/python-brain/tests/conftest.py",
-		"admin-cli/tests/conftest.py",
+		"legacy/admin-cli/tests/conftest.py",
 		"cli/tests/conftest.py",
 	}
 
@@ -408,7 +408,7 @@ func TestCompliance_30_5_4_NoTokenFallbackInAnyConftest(t *testing.T) {
 			fullPath := filepath.Join(root, relPath)
 			data, err := os.ReadFile(fullPath)
 			if err != nil {
-				// File may not exist (e.g., admin-cli/tests/conftest.py might not exist).
+				// File may not exist (e.g., legacy/admin-cli/tests/conftest.py might not exist).
 				continue
 			}
 			content := string(data)
@@ -2881,7 +2881,7 @@ func TestLegacyTestSeparation_30_9_3_CompatTestsLabeledExplicitly(t *testing.T) 
 //   - The test suite must be comprehensive: covering all major subsystems
 //     (crypto, vault, auth, identity, transport, handlers, config, etc.).
 //   - The Makefile must have a target that runs Go unit tests.
-//   - The master test runner (run_all_tests.sh) must include Go tests in its pipeline.
+//   - The master test runner (scripts/test/run_all_tests.sh) must include Go tests in its pipeline.
 //
 // TRACE: {"suite": "CORE", "case": "1562", "section": "30", "sectionName": "Test System Quality", "subsection": "08", "scenario": "01", "title": "UnitCoreStage"}
 func TestCI_30_8_1_UnitCoreStage(t *testing.T) {
@@ -3062,22 +3062,22 @@ func TestCI_30_8_1_UnitCoreStage(t *testing.T) {
 
 	// TRACE: {"suite": "CORE", "case": "1569", "section": "30", "sectionName": "Test System Quality", "title": "master_runner_includes_integration_tests"}
 	t.Run("master_runner_includes_integration_tests", func(t *testing.T) {
-		// The master test runner (run_all_tests.sh) must exist and include
+		// The master test runner (scripts/test/run_all_tests.sh) must exist and include
 		// Go-related test execution in its pipeline. Without this, the CI
 		// pipeline has no orchestration script.
-		runnerPath := filepath.Join(root, "run_all_tests.sh")
+		runnerPath := filepath.Join(root, "scripts/test/run_all_tests.sh")
 		info, err := os.Stat(runnerPath)
 		if err != nil {
-			t.Fatalf("run_all_tests.sh must exist at project root: %v", err)
+			t.Fatalf("scripts/test/run_all_tests.sh must exist at project root: %v", err)
 		}
 		// Must be executable.
 		if info.Mode()&0111 == 0 {
-			t.Fatal("run_all_tests.sh must be executable (chmod +x)")
+			t.Fatal("scripts/test/run_all_tests.sh must be executable (chmod +x)")
 		}
 
 		data, err := os.ReadFile(runnerPath)
 		if err != nil {
-			t.Fatalf("cannot read run_all_tests.sh: %v", err)
+			t.Fatalf("cannot read scripts/test/run_all_tests.sh: %v", err)
 		}
 		content := string(data)
 
@@ -3087,7 +3087,7 @@ func TestCI_30_8_1_UnitCoreStage(t *testing.T) {
 			strings.Contains(content, "run_unit_tests") ||
 			strings.Contains(content, "run_non_unit_tests")
 		if !hasTestRef {
-			t.Fatal("run_all_tests.sh must invoke test runners for CI pipeline")
+			t.Fatal("scripts/test/run_all_tests.sh must invoke test runners for CI pipeline")
 		}
 	})
 
@@ -3692,21 +3692,21 @@ func TestCI_30_8_4_IntegrationRealStage(t *testing.T) {
 	t.Run("union_compose_exists_with_isolation", func(t *testing.T) {
 		// The union Docker Compose file must exist with fixed ports
 		// and all actors for integration + E2E + release + system tests.
-		composePath := filepath.Join(root, "docker-compose-test-stack.yml")
+		composePath := filepath.Join(root, "legacy/compose/docker-compose-test-stack.yml")
 		if _, err := os.Stat(composePath); err != nil {
-			t.Fatalf("docker-compose-test-stack.yml must exist: %v", err)
+			t.Fatalf("legacy/compose/docker-compose-test-stack.yml must exist: %v", err)
 		}
 
-		compose := readProjectFile(t, root, "docker-compose-test-stack.yml")
+		compose := readProjectFile(t, root, "legacy/compose/docker-compose-test-stack.yml")
 
 		if !strings.Contains(compose, "core") || !strings.Contains(compose, "brain") {
-			t.Fatal("docker-compose-test-stack.yml must define core and brain services")
+			t.Fatal("legacy/compose/docker-compose-test-stack.yml must define core and brain services")
 		}
 		if !strings.Contains(compose, "healthcheck") {
-			t.Fatal("docker-compose-test-stack.yml must define health checks")
+			t.Fatal("legacy/compose/docker-compose-test-stack.yml must define health checks")
 		}
 		if !strings.Contains(compose, "DINA_RATE_LIMIT") {
-			t.Fatal("docker-compose-test-stack.yml must set DINA_RATE_LIMIT")
+			t.Fatal("legacy/compose/docker-compose-test-stack.yml must set DINA_RATE_LIMIT")
 		}
 	})
 
@@ -3838,7 +3838,7 @@ func TestCI_30_8_5_E2ESmokeRealStage(t *testing.T) {
 	// TRACE: {"suite": "CORE", "case": "1599", "section": "30", "sectionName": "Test System Quality", "title": "multi_node_compose_has_4_actors"}
 	t.Run("multi_node_compose_has_4_actors", func(t *testing.T) {
 		// The union Docker Compose file must define 4 actor pairs (Core+Brain each).
-		compose := readProjectFile(t, root, "docker-compose-test-stack.yml")
+		compose := readProjectFile(t, root, "legacy/compose/docker-compose-test-stack.yml")
 
 		actors := []string{"alonso", "sancho", "chairmaker", "albert"}
 		for _, actor := range actors {
@@ -3846,10 +3846,10 @@ func TestCI_30_8_5_E2ESmokeRealStage(t *testing.T) {
 			brainService := actor + "-brain"
 
 			if !strings.Contains(compose, coreService) {
-				t.Errorf("docker-compose-test-stack.yml must define %s service", coreService)
+				t.Errorf("legacy/compose/docker-compose-test-stack.yml must define %s service", coreService)
 			}
 			if !strings.Contains(compose, brainService) {
-				t.Errorf("docker-compose-test-stack.yml must define %s service", brainService)
+				t.Errorf("legacy/compose/docker-compose-test-stack.yml must define %s service", brainService)
 			}
 		}
 	})
@@ -3858,18 +3858,18 @@ func TestCI_30_8_5_E2ESmokeRealStage(t *testing.T) {
 	t.Run("keygen_init_containers_provision_keys", func(t *testing.T) {
 		// Each actor must have a keygen init container that derives SLIP-0010
 		// service keys from its master seed BEFORE Core/Brain start.
-		compose := readProjectFile(t, root, "docker-compose-test-stack.yml")
+		compose := readProjectFile(t, root, "legacy/compose/docker-compose-test-stack.yml")
 
 		actors := []string{"alonso", "sancho", "chairmaker", "albert"}
 		for _, actor := range actors {
 			keygenService := "keygen-" + actor
 			if !strings.Contains(compose, keygenService) {
-				t.Errorf("docker-compose-test-stack.yml must define %s init container", keygenService)
+				t.Errorf("legacy/compose/docker-compose-test-stack.yml must define %s init container", keygenService)
 			}
 		}
 
 		if !strings.Contains(compose, "keygen") {
-			t.Fatal("docker-compose-test-stack.yml must define keygen infrastructure")
+			t.Fatal("legacy/compose/docker-compose-test-stack.yml must define keygen infrastructure")
 		}
 	})
 
@@ -4073,10 +4073,10 @@ func TestCI_30_8_5_E2ESmokeRealStage(t *testing.T) {
 	// TRACE: {"suite": "CORE", "case": "1609", "section": "30", "sectionName": "Test System Quality", "title": "allowed_endpoints_include_all_actors"}
 	t.Run("allowed_endpoints_include_all_actors", func(t *testing.T) {
 		// The union compose must configure DINA_ALLOWED_ENDPOINTS for cross-node D2D.
-		compose := readProjectFile(t, root, "docker-compose-test-stack.yml")
+		compose := readProjectFile(t, root, "legacy/compose/docker-compose-test-stack.yml")
 
 		if !strings.Contains(compose, "DINA_ALLOWED_ENDPOINTS") {
-			t.Fatal("docker-compose-test-stack.yml must set DINA_ALLOWED_ENDPOINTS")
+			t.Fatal("legacy/compose/docker-compose-test-stack.yml must set DINA_ALLOWED_ENDPOINTS")
 		}
 
 		actors := []string{"alonso-core", "sancho-core", "chairmaker-core", "albert-core"}
@@ -4302,20 +4302,20 @@ func TestLegacyTestSeparation_30_9_2_DefaultPipelineExcludesLegacy(t *testing.T)
 
 	// TRACE: {"suite": "CORE", "case": "1616", "section": "30", "sectionName": "Test System Quality", "title": "run_all_tests_does_not_run_legacy"}
 	t.Run("run_all_tests_does_not_run_legacy", func(t *testing.T) {
-		// The master test runner (run_all_tests.sh) must not bypass the legacy
+		// The master test runner (scripts/test/run_all_tests.sh) must not bypass the legacy
 		// exclusion. It chains 3 suites (integration, user stories, release) —
 		// none of which should run legacy tests.
-		runner := readProjectFile(t, root, "run_all_tests.sh")
+		runner := readProjectFile(t, root, "scripts/test/run_all_tests.sh")
 
 		// The runner must not have a `-m legacy` flag that would include them.
 		if strings.Contains(runner, "-m legacy") && !strings.Contains(runner, "not legacy") {
-			t.Fatal("run_all_tests.sh must not include -m legacy (which would run legacy tests) — " +
+			t.Fatal("scripts/test/run_all_tests.sh must not include -m legacy (which would run legacy tests) — " +
 				"only -m 'not legacy' is acceptable")
 		}
 
 		// The runner should not directly invoke top-level test files where legacy tests live.
 		if strings.Contains(runner, "tests/test_") {
-			t.Fatal("run_all_tests.sh must not invoke top-level tests/test_* files — " +
+			t.Fatal("scripts/test/run_all_tests.sh must not invoke top-level tests/test_* files — " +
 				"these may contain legacy tests")
 		}
 	})

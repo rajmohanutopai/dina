@@ -1,6 +1,6 @@
-"""Load centralized model defaults from models.json.
+"""Load centralized model defaults from config/models.json.
 
-models.json lives at the repo root and is bind-mounted into the Brain
+config/models.json lives in the repo and is bind-mounted into the Brain
 container at /app/models.json.  Every consumer reads from the same file.
 
 Model references use ``provider/model`` format (e.g. ``gemini/gemini-3.1-pro-preview``).
@@ -15,12 +15,12 @@ from pathlib import Path
 from typing import Any
 
 def _local_dev_path() -> Path:
-    """Resolve repo root models.json for local dev (outside Docker).
+    """Resolve repo config/models.json for local dev (outside Docker).
 
-    Path: brain/src/infra/model_config.py → parents[3] = repo root.
+    Path: legacy/python-brain/src/infra/model_config.py -> parents[4] = repo root.
     """
     try:
-        return Path(__file__).resolve().parents[3] / "models.json"
+        return Path(__file__).resolve().parents[4] / "config" / "models.json"
     except IndexError:
         return Path("/app/models.json")  # fallback
 

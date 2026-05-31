@@ -1,5 +1,5 @@
 /**
- * Mobile-side accessor for the repo-root `models.json` catalogue.
+ * Mobile-side accessor for the repo `config/models.json` catalogue.
  *
  * `models.json` is the single source of truth for known provider /
  * model pairs — the same file `install.sh` validates against and
@@ -16,7 +16,7 @@
  * set`'s "not in models.json, setting anyway" behaviour).
  */
 
-import catalog from '../../../../models.json';
+import catalog from '../../../../config/models.json';
 
 import type { ProviderType } from './provider';
 

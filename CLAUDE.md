@@ -38,28 +38,30 @@ Dina runs on a **Home Node** — a small, always-on server (VPS, Raspberry Pi, o
 ### Three Pillars
 
 ```
-core/               Go Core — sovereign cryptographic kernel
+legacy/go-core/     Go Core — legacy sovereign cryptographic kernel
                     Identity, encrypted vault, crypto, DIDComm, WebSocket, PII scrubber, gatekeeper
                     Port 443 (external HTTPS), Port 8100 (internal API for brain)
 
-brain/              Python Brain (sidecar) — intelligence & orchestration
+legacy/python-brain/
+                    Python Brain (sidecar) — legacy intelligence & orchestration
                     Guardian angel loop (Google ADK), silence classification, nudge assembly,
                     agent orchestration (MCP → OpenClaw), admin UI, PII scrubber (Presidio patterns)
                     Port 8200 (internal: /api/* brain API, /admin/* admin UI)
 
-appview/            TypeScript AppView — decentralized PeerLens
+appview/   TypeScript AppView — decentralized PeerLens
                     Ingester (Jetstream firehose), Scorer (9 background jobs), Web (5 xRPC endpoints)
                     PostgreSQL backend, 19 AT Protocol record types
                     Port 3000 (xRPC API)
 
-cli/                Python CLI — Ed25519 signed requests, device pairing, MCP server, OpenClaw skill
-admin-cli/          Admin CLI tool (dina-admin)
+cli/   Python CLI — Ed25519 signed requests, device pairing, MCP server, OpenClaw skill
+legacy/admin-cli/   Admin CLI tool bundled into the legacy runtime
+legacy/bin/         Legacy installer, runtime wrapper, and dina-admin host wrapper
 ```
 
 ### Docker Containers (Production)
 
 ```
-docker-compose.yml:
+legacy/compose/docker-compose.yml:
   dina-core       Go + net/http          Vault keeper. Only process that opens SQLite files.
   dina-brain      Python + FastAPI        Analyst. Thinks, never holds keys.
   llama           llama.cpp (optional)    Local LLM (Gemma 3n). --profile local-llm.
@@ -138,14 +140,14 @@ Agents work within named sessions (`dina session start --name "task"`). Grants a
 ```bash
 git clone https://github.com/rajmohanutopai/dina.git
 cd dina
-./install.sh    # generates secrets, picks LLM provider, builds containers, shows DID + recovery phrase
+legacy/bin/install.sh    # generates secrets, picks LLM provider, builds containers, shows DID + recovery phrase
 ```
 
 ### Development (Local)
 
 ```bash
-# Go Core (must build from core/ directory)
-cd core && go build -tags fts5 ./cmd/dina-core/
+# Go Core (must build from legacy/go-core/ directory)
+cd legacy/go-core && go build -tags fts5 ./cmd/dina-core/
 
 # Python Brain
 cd brain && pip install -e .
@@ -188,8 +190,8 @@ npm run format                                        # prettier check
 npm run audit:prod                                    # npm audit --omit=dev --audit-level=high
 
 # Full-suite runner now includes the Lite suite (Phase 1b)
-./run_all_tests.sh --unit-only                        # Go/Py unit + TS Lite, no Docker
-./run_all_tests.sh                                    # unit + Lite + Docker non-unit
+scripts/test/run_all_tests.sh --unit-only             # Go/Py unit + TS Lite, no Docker
+scripts/test/run_all_tests.sh                         # unit + Lite + Docker non-unit
 ```
 
 Layout:
@@ -197,7 +199,7 @@ Layout:
 ```
 packages/                    shared workspace (pure — runtime-agnostic)
   protocol/                  wire types + canonical signing + validators
-  core/ brain/               pure domain
+  core/ brain/               pure TypeScript domain
   storage-node/ crypto-node/ fs-node/ net-node/ keystore-node/
   adapters-node/             meta-package (one-dep convenience)
   storage-expo/ crypto-expo/ …  mobile-side counterparts
@@ -273,7 +275,8 @@ api/
 ```
 
 **Legacy codegen outputs** (`make generate`): Go types under
-`core/internal/gen/`, Python models under `brain/src/gen/`. Ownership:
+`legacy/go-core/internal/gen/`, Python models under
+`legacy/python-brain/src/gen/`. Ownership:
 Core spec hand-authored → Python client types; Brain spec extracted from
 FastAPI → Go client types. Never feed generated types back into the
 owning service.
@@ -286,7 +289,7 @@ owning service.
 
 | Tier | Location | Env Var | Docker Containers | What it validates |
 |------|----------|---------|--------------------|-------------------|
-| **Unit** | `core/test/`, `brain/` | — | None | Pure logic, no I/O |
+| **Unit** | `legacy/go-core/test/`, `legacy/python-brain/tests/` | — | None | Pure logic, no I/O |
 | **Integration** | `tests/integration/` (714 tests) | `DINA_INTEGRATION=docker` | 1× Core + 1× Brain | Core↔Brain contract, vault ops, persona isolation |
 | **E2E** | `tests/e2e/` (110 tests) | `DINA_E2E=docker` | 4× Core+Brain (multi-node) | Cross-node scenarios: Don Alonso, Sancho, ChairMaker, Albert |
 | **System** | `tests/system/` | via `run_user_story_tests.sh` | 2× Core+Brain + AppView + Postgres + PLC + Jetstream | 10 user stories, full stack end-to-end |
@@ -397,7 +400,7 @@ Full stack: 2× Core+Brain + PLC + Jetstream + AppView + Postgres via `docker-co
 ## Project Structure
 
 ```
-core/                   Go Home Node
+legacy/go-core/         Go Home Node reference
   cmd/dina-core/          Composition root (main.go — single file, all wiring explicit)
   internal/
     adapter/              External adapters (SQLCipher, HTTP clients)
@@ -412,7 +415,7 @@ core/                   Go Home Node
     reminder/             Notification/reminder service
   test/                   Go test files
 
-brain/                  Python Brain (sidecar)
+legacy/python-brain/    Python Brain sidecar reference
   src/
     main.py               Master FastAPI app (sub-mounts brain + admin)
     dina_brain/            Brain API sub-app (/api/*, Ed25519 service key auth)
@@ -423,7 +426,7 @@ brain/                  Python Brain (sidecar)
     service/               Business logic
     infra/                 Infrastructure (LLM routing, embedding)
 
-appview/                TypeScript AppView (PeerLens)
+appview/       TypeScript AppView (PeerLens)
   src/
     ingester/              Jetstream firehose consumer
     scorer/                9 background scoring jobs
@@ -432,8 +435,8 @@ appview/                TypeScript AppView (PeerLens)
     db/                    Drizzle ORM, PostgreSQL queries
     config/                Zod-validated config, constants, lexicons
 
-cli/                    Python CLI (Ed25519 signed requests, pairing, MCP server)
-admin-cli/              Admin CLI (dina-admin)
+cli/       Python CLI (Ed25519 signed requests, pairing, MCP server)
+legacy/admin-cli/       Admin CLI (dina-admin)
 scripts/                Test runner, utilities
 tests/                  Integration + E2E tests
   integration/            714 integration tests (dual-mode: mock/docker)
@@ -485,19 +488,19 @@ docs/                   Architecture docs, walkthroughs
 - **`WITHOUT ROWID` + FTS5:** Incompatible — FTS5 content tables need rowid
 - **Rate limit:** Default 60/min; tests need `DINA_RATE_LIMIT=100000`
 - **Go context keys:** Use typed `contextKey("agent_did")` not bare string — Go interface equality
-- **Go build must run from `core/` directory:** `cd core && go build ./cmd/dina-core/`
-- **Brain starts via:** `python -m uvicorn brain.src.main:app --port 18200`
+- **Go build must run from `legacy/go-core/` directory:** `cd legacy/go-core && go build ./cmd/dina-core/`
+- **Brain starts via:** `cd legacy/python-brain && python -m uvicorn src.main:app --port 18200`
 - **PII must never reach stdout:** Log metadata only (persona, type, count, latency), never vault content or user queries
 - **Service keys are load-only at runtime:** `EnsureExistingKey()` only — no `EnsureKey()` (generate-capable) exists
-- **Sealed-box nonce = BLAKE2b(24).** NOT SHA-512. Go's Dina implementation used to truncate SHA-512 to 24 bytes; that was Go-only and broke interop with every libsodium binding (Python PyNaCl, mobile native sodium, JS tweetnacl). Switched in #9. If you add a new encrypted-envelope flow, use `blake2b.New(24, nil)` — see `core/internal/adapter/crypto/nacl.go:sealNonce`.
+- **Sealed-box nonce = BLAKE2b(24).** NOT SHA-512. Go's Dina implementation used to truncate SHA-512 to 24 bytes; that was Go-only and broke interop with every libsodium binding (Python PyNaCl, mobile native sodium, JS tweetnacl). Switched in #9. If you add a new encrypted-envelope flow, use `blake2b.New(24, nil)` — see `legacy/go-core/internal/adapter/crypto/nacl.go:sealNonce`.
 - **MsgBox transport is mandatory for mobile/NAT'd clients.** The Python CLI reads `DINA_MSGBOX_URL`, `DINA_HOMENODE_DID`, and `DINA_TRANSPORT` (`direct` / `msgbox` / `auto`). `DinaClient` routes every request through `transport.select_transport(...)` — do not add raw `httpx.Client` calls against `config.core_url`. `transport.py` handles both the direct HTTP and MsgBox WebSocket paths.
 - **`NewRPCBridge(chain)` not `NewRPCBridge(mux)`.** The RPC bridge forwards MsgBox-tunnelled requests back through the full HTTP handler chain so auth/logging/rate-limit/body-limit all run. Passing the raw `mux` is the ancient bug where signed requests landed without `AgentDIDKey` in context → handler 401s.
 - **Python `websockets` client needs `compression=None`.** Default permessage-deflate sets RSV1; Go's `coder/websocket` closes with 1002 protocol error. Already set in `cli/src/dina_cli/transport.py`; replicate in any new sync-WebSocket call site.
 - **`plc_probe` fails startup on DID drift.** In test/dev mode, Core resolves its restored DID against the configured PLC directory on boot. If the DID isn't registered (fixture out of sync with PDS), Core `log.Fatalf`s with a pointer at `scripts/seed_test_identities.py`. Fix: delete the stale PDS account, wipe the volume, let Core `createAccount` fresh, run `--save`.
 - **`/api/v1/ask` is now async.** Core returns 202 with `status: in_flight` + `request_id` after a 3-second fast-path wait. The CLI polls `/api/v1/ask/<id>/status` until a terminal status (`complete`, `failed`, `expired`, or `pending_approval`). If you're writing new Core-API consumers, handle 202 the same way the CLI does in `cli/src/dina_cli/main.py`.
 - **Working Memory / Topic store = ToC.** Brain runs a topic extractor on ingested content + maintains an EWMA-weighted Table of Contents. Short-term spike (1h half-life) vs long-term salience (30d) are combined per topic. The ToC is rendered into Brain's prompts before vault queries — don't bypass it. See `docs/WORKING_MEMORY_DESIGN.md`.
-- **Contact preference model.** `live_capability` on topics is retired. Users assert preferences on contacts via `preferred_for: ["dentist", "transit", …]`. The resolver matches an utterance's role to a contact before falling back to public service discovery. Don't re-introduce live_capability fields — see `core/internal/domain/contact.go`.
-- **Provider-side Brain reloads `service_config` periodically.** A background loader retries with exponential backoff until Core is reachable, then polls every 60s. An in-place `PUT /v1/service/config` propagates without a Brain restart. Don't wire single-shot config loads in new services — copy the retry pattern in `brain/src/main.py`.
+- **Contact preference model.** `live_capability` on topics is retired. Users assert preferences on contacts via `preferred_for: ["dentist", "transit", …]`. The resolver matches an utterance's role to a contact before falling back to public service discovery. Don't re-introduce live_capability fields — see `legacy/go-core/internal/domain/contact.go`.
+- **Provider-side Brain reloads `service_config` periodically.** A background loader retries with exponential backoff until Core is reachable, then polls every 60s. An in-place `PUT /v1/service/config` propagates without a Brain restart. Don't wire single-shot config loads in new services — copy the retry pattern in `legacy/python-brain/src/main.py`.
 
 ## Rules
 

@@ -43,7 +43,6 @@ import {
   clearForcePromptOnUnlock,
 } from '../hooks/useUnlock';
 import { loadWrappedSeed } from '../services/wrapped_seed_store';
-import { loadInfraPreferences } from '../services/infra_preferences';
 import { loadAutoPassphrase, loadStartupMode } from '../services/startup_preferences';
 import { loadBackgroundTimeoutPreference } from '../services/security_preferences';
 import { setBackgroundTimeout } from '@dina/core';
@@ -55,17 +54,9 @@ import {
 } from '../services/install_marker';
 import { colors, fonts, radius, spacing, textStyles } from '../theme';
 import { OnboardingFlow } from './onboarding/onboarding_flow';
-import { InfraSetupForm } from './onboarding/infra_setup';
 
 type Mode =
   | 'loading'
-  /**
-   * First-run state: no wrapped seed AND no persisted PDS URL. We
-   * want the operator to confirm or override the infrastructure
-   * endpoints (PDS + AppView) BEFORE we attempt PDS createAccount in
-   * the onboarding wizard.
-   */
-  | 'infra-setup'
   | 'onboarding'
   | 'locked'
   | 'unlocking'
@@ -88,10 +79,14 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
   const [error, setError] = useState('');
   const autoRanRef = useRef<Mode | null>(null);
 
-  // On mount, probe keychain for a wrapped seed AND infra prefs:
+  // On mount, probe keychain for a wrapped seed:
   //   - existing wrapped seed → returning user → `locked`
-  //   - no wrapped seed + no PDS URL pref → first run → `infra-setup`
-  //   - no wrapped seed + PDS URL set    → restart of partial onboard → `onboarding`
+  //   - no wrapped seed       → normal onboarding
+  //
+  // Infrastructure defaults are intentionally not a first-run gate.
+  // A new user should not have to understand PDS/AppView before they
+  // can create an identity; advanced endpoint overrides live under
+  // Settings → Infrastructure.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -119,9 +114,8 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
           }
           writeInstallMarker();
         }
-        const [existing, infra, bgTimeout] = await Promise.all([
+        const [existing, bgTimeout] = await Promise.all([
           loadWrappedSeed(),
-          loadInfraPreferences(),
           loadBackgroundTimeoutPreference(),
         ]);
         if (cancelled) return;
@@ -135,14 +129,12 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
         }
         if (existing !== null) {
           setMode('locked');
-        } else if (infra.pdsUrl === null) {
-          setMode('infra-setup');
         } else {
           setMode('onboarding');
         }
       } catch (err) {
         if (cancelled) return;
-        setMode('infra-setup');
+        setMode('onboarding');
         setError(`Couldn't read vault state: ${err instanceof Error ? err.message : String(err)}`);
       }
     })();
@@ -259,10 +251,6 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
         <ActivityIndicator color={colors.accent} />
       </View>
     );
-  }
-
-  if (mode === 'infra-setup') {
-    return <InfraSetupForm onDone={() => setMode('onboarding')} />;
   }
 
   if (mode === 'onboarding') {

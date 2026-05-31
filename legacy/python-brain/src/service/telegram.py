@@ -45,7 +45,7 @@ def _core_error_message(exc: Exception) -> str:
     """Return a user-friendly message when Core is unreachable or locked."""
     msg = str(exc)
     if "locked" in msg.lower() or "passphrase" in msg.lower():
-        return "🔒 Core is locked — waiting for passphrase.\nRun `./run.sh --start` on the server to unlock."
+        return "🔒 Core is locked — waiting for passphrase.\nRun `legacy/bin/run.sh --start` on the server to unlock."
     return "Core is currently unavailable. Please try again in a moment."
 
 

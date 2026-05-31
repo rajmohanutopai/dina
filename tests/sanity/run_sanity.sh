@@ -9,7 +9,7 @@
 # Prerequisites:
 #   - tests/sanity/.env.sanity with Telethon API credentials
 #   - Telethon session created (one-time: python tests/sanity/create_session.py)
-#   - For --new: install.sh must be available, config files in tests/sanity/
+#   - For --new: legacy/bin/install.sh must be available, config files in tests/sanity/
 
 set -euo pipefail
 
@@ -58,7 +58,8 @@ stop_instance() {
     local name=$1
     info "Stopping ${name}..."
     cd "${PROJECT_ROOT}"
-    docker compose -p "dina-${name}" down --remove-orphans 2>/dev/null || true
+    docker compose -p "dina-${name}" --project-directory "${PROJECT_ROOT}" \
+        -f legacy/compose/docker-compose.yml down --remove-orphans 2>/dev/null || true
 }
 
 start_instance() {
@@ -69,7 +70,8 @@ start_instance() {
     if [ ! -f "${env_file}" ]; then
         fail "Instance ${name} not installed. Run with --new first."
     fi
-    docker compose -p "dina-${name}" --env-file "${env_file}" up -d
+    docker compose -p "dina-${name}" --project-directory "${PROJECT_ROOT}" \
+        --env-file "${env_file}" -f legacy/compose/docker-compose.yml up -d
 }
 
 install_instance() {
@@ -78,7 +80,7 @@ install_instance() {
     local config=$3
     info "Installing ${name} on port ${port}..."
     cd "${PROJECT_ROOT}"
-    ./install.sh --test --instance "${name}" --port "${port}" --config "${config}"
+    legacy/bin/install.sh --test --instance "${name}" --port "${port}" --config "${config}"
 }
 
 # ---------------------------------------------------------------------------
@@ -108,6 +110,8 @@ start_openclaw() {
 
     # Get pairing code from Alonso's Core
     local pair_output=$(docker compose -p "dina-${ALONSO_INSTANCE}" \
+        --project-directory "${PROJECT_ROOT}" \
+        -f legacy/compose/docker-compose.yml \
         exec -T core dina-admin device pair 2>&1 || true)
     local pair_code=$(echo "$pair_output" | grep -oE '[0-9]{6}' | head -1)
 

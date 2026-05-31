@@ -21,6 +21,7 @@ on:
     paths:
       - "packages/**/package.json"
       - "apps/**/package.json"
+      - "appview/package.json"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/ts-audit.yml"
@@ -28,6 +29,7 @@ on:
     paths:
       - "packages/**/package.json"
       - "apps/**/package.json"
+      - "appview/package.json"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/ts-audit.yml"

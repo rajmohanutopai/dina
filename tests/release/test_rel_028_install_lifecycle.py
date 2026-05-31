@@ -24,13 +24,11 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 _INSTALL_FILES = [
-    "install.sh", "run.sh", "dina-admin", "docker-compose.yml",
-    "docker-compose.dev.yml", "models.json", "CLAUDE.md",
-    ".gitignore", "pyproject.toml", "requirements.txt",
+    "CLAUDE.md", ".gitignore", "pyproject.toml", "requirements.txt",
 ]
 _INSTALL_DIRS = [
-    "scripts", "core", "brain", "cli", "admin-cli",
-    "appview", "plc", "deploy", "docs/images",
+    "scripts", "legacy", "cli", "appview",
+    "services/plc", "config", "deploy", "docs/images", "docs/site",
 ]
 
 
@@ -46,9 +44,7 @@ def _copy_repo(dest: Path) -> None:
         src = PROJECT_ROOT / d
         if src.is_dir():
             shutil.copytree(src, dest / d, dirs_exist_ok=True)
-    dina_html = PROJECT_ROOT / "dina.html"
-    if dina_html.exists():
-        shutil.copy2(dina_html, dest / "dina.html")
+    # docs/site/dina.html is copied above and mounted by the legacy compose file.
 
 
 @pytest.fixture(scope="module")
@@ -99,7 +95,7 @@ class TestInstallLifecycle:
 
         # --- Step 1: Install ---
         child = pexpect.spawn(
-            "bash", [str(lifecycle_dir / "install.sh")],
+            "bash", [str(lifecycle_dir / "legacy/bin/install.sh")],
             cwd=str(lifecycle_dir), timeout=600, encoding="utf-8", env=env,
         )
         child.expect("Enter choice \\[1-3\\]:", timeout=300)
@@ -140,7 +136,7 @@ class TestInstallLifecycle:
 
         # --- Step 3: Stop ---
         result = subprocess.run(
-            ["bash", str(lifecycle_dir / "run.sh"), "--stop"],
+            ["bash", str(lifecycle_dir / "legacy/bin/run.sh"), "--stop"],
             cwd=str(lifecycle_dir), capture_output=True, timeout=60, env=env,
         )
         assert result.returncode == 0, f"Stop failed: {result.stderr}"
@@ -151,7 +147,7 @@ class TestInstallLifecycle:
 
         # --- Step 5: Restart ---
         child = pexpect.spawn(
-            "bash", [str(lifecycle_dir / "run.sh")],
+            "bash", [str(lifecycle_dir / "legacy/bin/run.sh")],
             cwd=str(lifecycle_dir), timeout=180, encoding="utf-8", env=env,
         )
         idx = child.expect(

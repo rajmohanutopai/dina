@@ -2,12 +2,16 @@
 # uninstall.sh — Stop and remove Dina Home Node containers
 #
 # Usage:
-#   ./uninstall.sh           # stop containers, preserve data
-#   ./uninstall.sh --purge   # stop containers AND remove all data
+#   legacy/bin/uninstall.sh           # stop containers, preserve data
+#   legacy/bin/uninstall.sh --purge   # stop containers AND remove all data
 
 set -euo pipefail
 
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$REPO_ROOT"
+
 DINA_DIR="${DINA_DIR:-$(pwd)}"
+COMPOSE_FILE="${DINA_DIR}/legacy/compose/docker-compose.yml"
 PURGE=false
 
 for arg in "$@"; do
@@ -33,9 +37,9 @@ echo ""
 
 # Detect compose command
 if docker compose version >/dev/null 2>&1; then
-    COMPOSE="docker compose"
+    COMPOSE="docker compose --project-directory ${DINA_DIR} -f ${COMPOSE_FILE}"
 elif command -v docker-compose >/dev/null 2>&1; then
-    COMPOSE="docker-compose"
+    COMPOSE="docker-compose --project-directory ${DINA_DIR} -f ${COMPOSE_FILE}"
 else
     echo -e "  ${YELLOW}[warn]${RESET} Docker Compose not found — skipping container cleanup"
     COMPOSE=""
@@ -71,8 +75,8 @@ if [ "${PURGE}" = true ]; then
 else
     echo ""
     echo -e "  ${GREEN}Data preserved.${RESET} Docker volumes and secrets are intact."
-    echo -e "  To restart: ${GREEN}docker compose up -d${RESET}"
-    echo -e "  To remove everything: ${YELLOW}./uninstall.sh --purge${RESET}"
+    echo -e "  To restart: ${GREEN}legacy/bin/run.sh --start${RESET}"
+    echo -e "  To remove everything: ${YELLOW}legacy/bin/uninstall.sh --purge${RESET}"
 fi
 
 echo ""

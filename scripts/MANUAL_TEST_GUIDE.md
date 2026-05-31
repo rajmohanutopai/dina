@@ -4,7 +4,7 @@ A step-by-step walkthrough to verify the full Dina experience using the CLI tool
 
 **Time:** ~20 minutes
 **Requires:** Two terminal tabs, Docker running, internet connection
-**CLI reference:** `dina --help` and `dina-admin --help` list all commands
+**CLI reference:** `dina --help` and `legacy/bin/dina-admin --help` list all commands
 
 ---
 
@@ -17,7 +17,7 @@ A step-by-step walkthrough to verify the full Dina experience using the CLI tool
 cd ~/test-dina-manual
 git clone https://github.com/rajmohanutopai/dina.git
 cd dina
-./install.sh
+legacy/bin/install.sh
 ```
 
 **Expected:**
@@ -30,7 +30,7 @@ cd dina
 ### 1.2 Verify everything is running
 
 ```bash
-dina-admin status
+legacy/bin/dina-admin status
 ```
 
 **Expected:** Shows Core healthy, Brain healthy, DID, personas, LLM models (Lite/Primary/Heavy).
@@ -38,7 +38,7 @@ dina-admin status
 ### 1.3 See what models are configured
 
 ```bash
-dina-admin model status
+legacy/bin/dina-admin model status
 ```
 
 **Expected:** Shows active models — Lite, Primary, Heavy assignments.
@@ -53,14 +53,14 @@ dina-admin model status
 # Tab 2
 cd ~/test-dina-manual/dina
 pip install -e cli/
-pip install -e admin-cli/
+pip install -e legacy/admin-cli/
 ```
 
 ### 2.2 Pair the CLI as a device
 
 ```bash
 # Tab 1: Generate pairing code
-dina-admin device pair
+legacy/bin/dina-admin device pair
 ```
 
 **Expected:** Shows a pairing code `XXXX-XXXX`.
@@ -76,7 +76,7 @@ dina pair --code XXXX-XXXX --name "test-laptop"
 
 ```bash
 # Tab 1
-dina-admin device list
+legacy/bin/dina-admin device list
 ```
 
 **Expected:** Shows `test-laptop` in the device list.
@@ -146,7 +146,7 @@ dina ask --session ses_XXXX "what do I need to buy for my daughter?"
 
 ```bash
 # Tab 1
-dina-admin persona list
+legacy/bin/dina-admin persona list
 ```
 
 **Expected:** Lists `general` (default) and any others created during install.
@@ -156,7 +156,7 @@ dina-admin persona list
 The installer creates 4 bootstrap personas automatically: `general` (default), `work` (standard), `health` (sensitive), `finance` (sensitive). Sensitive personas auto-open on authorized access (v1 model) — no passphrase needed.
 
 ```bash
-dina-admin persona list
+legacy/bin/dina-admin persona list
 ```
 
 **Expected:** Shows `general` (default), `work` (standard), `health` (sensitive), `finance` (sensitive).
@@ -167,7 +167,7 @@ dina-admin persona list
 dina remember --session ses_XXXX "Dr. Sharma said my B12 is low at 180 pg/mL"
 ```
 
-**Expected:** If the session has a grant for health → `{"status": "stored"}`. If not → `{"status": "needs_approval"}` with an approval ID. Approve via `dina-admin approve <id>`.
+**Expected:** If the session has a grant for health → `{"status": "stored"}`. If not → `{"status": "needs_approval"}` with an approval ID. Approve via `legacy/bin/dina-admin approve <id>`.
 
 ---
 
@@ -202,19 +202,19 @@ dina validate-status <approval-id>
 
 ## Part 6: Approvals
 
-The unified approval system. When an agent needs access to a sensitive persona or wants to perform a risky action, Dina queues an approval request. You review and approve/deny via `dina-admin`.
+The unified approval system. When an agent needs access to a sensitive persona or wants to perform a risky action, Dina queues an approval request. You review and approve/deny via `legacy/bin/dina-admin`.
 
 ### 6.1 Verify sensitive personas exist
 
 ```bash
 # Tab 1 — health and finance are created at install (sensitive tier, v1 auto-open)
-dina-admin persona list
+legacy/bin/dina-admin persona list
 ```
 
 ### 6.2 List pending approvals (should be empty)
 
 ```bash
-dina-admin approvals
+legacy/bin/dina-admin approvals
 ```
 
 **Expected:** "No pending approvals."
@@ -232,7 +232,7 @@ dina validate send_email "draft to boss@company.com"
 
 ```bash
 # Tab 1
-dina-admin approvals
+legacy/bin/dina-admin approvals
 ```
 
 **Expected:** Shows the pending approval with action, persona, and agent DID.
@@ -240,7 +240,7 @@ dina-admin approvals
 ### 6.5 Approve it
 
 ```bash
-dina-admin approvals approve <approval-id>
+legacy/bin/dina-admin approvals approve <approval-id>
 ```
 
 **Expected:** "Approved: apr-..."
@@ -252,8 +252,8 @@ dina-admin approvals approve <approval-id>
 dina validate transfer_money "send 500 to merchant"
 
 # Tab 1: deny it
-dina-admin approvals
-dina-admin approvals deny <approval-id>
+legacy/bin/dina-admin approvals
+legacy/bin/dina-admin approvals deny <approval-id>
 ```
 
 **Expected:** "Denied: apr-..."
@@ -265,7 +265,7 @@ dina-admin approvals deny <approval-id>
 dina ask "What are my vitamin levels?"
 ```
 
-**Expected:** If health persona is locked, CLI shows "Awaiting approval..." and polls. In Tab 1, approve via `dina-admin approvals approve <id>`. Tab 2 should then show the answer.
+**Expected:** If health persona is locked, CLI shows "Awaiting approval..." and polls. In Tab 1, approve via `legacy/bin/dina-admin approvals approve <id>`. Tab 2 should then show the answer.
 
 ---
 
@@ -275,10 +275,10 @@ dina ask "What are my vitamin levels?"
 
 ```bash
 # Tab 1: Get the device ID
-dina-admin device list
+legacy/bin/dina-admin device list
 
 # Revoke it
-dina-admin device revoke <device-id>
+legacy/bin/dina-admin device revoke <device-id>
 ```
 
 **Expected:** Device revoked.
@@ -294,7 +294,7 @@ dina ask "test"
 
 ```bash
 # Tab 1: New pairing code
-dina-admin device pair
+legacy/bin/dina-admin device pair
 
 # Tab 2: Re-pair
 dina pair --code XXXX-XXXX --name "test-laptop-v2"
@@ -313,7 +313,7 @@ dina ask "Sancho"
 
 ```bash
 # Tab 1
-dina-admin identity show
+legacy/bin/dina-admin identity show
 ```
 
 **Expected:** Shows your DID document.
@@ -321,7 +321,7 @@ dina-admin identity show
 ### 8.2 Sign something
 
 ```bash
-dina-admin identity sign "hello world"
+legacy/bin/dina-admin identity sign "hello world"
 ```
 
 **Expected:** Returns an Ed25519 signature.
@@ -330,14 +330,14 @@ dina-admin identity sign "hello world"
 
 ```bash
 # Note the DID
-dina-admin status
+legacy/bin/dina-admin status
 
 # Restart Core
-docker compose restart dina-core
+docker compose -f legacy/compose/docker-compose.yml restart core
 sleep 5
 
 # Same DID?
-dina-admin status
+legacy/bin/dina-admin status
 ```
 
 **Expected:** Same DID before and after restart. Identity derived from seed is immutable.
@@ -392,7 +392,7 @@ dina rehydrate <session-id>
 
 ```bash
 cd ~/test-dina-manual/dina
-docker compose down -v
+docker compose -f legacy/compose/docker-compose.yml down -v
 cd ~ && rm -rf ~/test-dina-manual
 ```
 
@@ -412,7 +412,7 @@ If all parts show expected results:
 | Personas | Multiple tiers, sensitive starts locked |
 | CLI Pairing | Device pair, revoke, re-pair |
 | Agent Safety | Safe actions auto-approved, risky actions flagged |
-| Approvals | List, approve, deny via dina-admin; async approval-wait-resume |
+| Approvals | List, approve, deny via legacy/bin/dina-admin; async approval-wait-resume |
 | Security | Revocation works, re-pair required |
 | Anti-Her | Never simulates emotional intimacy |
 | PII | Scrub + rehydrate round-trip |

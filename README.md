@@ -13,9 +13,9 @@
 
 * **What Works Now:** [Usage Guide](./CAPABILITIES.md)
 * **Quick Start:** [3 commands to get Dina running](./QUICKSTART.md)
-* **Start Here:** [Open dina.html](https://rajmohanutopai.github.io/dina/dina.html) — Interactive visual guide to everything Dina.
+* **Start Here:** [Open dina.html](./docs/site/dina.html) — Interactive visual guide to everything Dina.
 * **The Protocol:** [Dina Protocol Specification](https://rajmohanutopai.github.io/dina-protocol/index.html) — high-level design. For the byte-exact wire contract + 9 frozen conformance test vectors + runnable self-check suite, see [`packages/protocol/`](./packages/protocol/) and [`packages/protocol/docs/conformance.md`](./packages/protocol/docs/conformance.md).
-* **Test Results:** [Detailed Test Results](https://rajmohanutopai.github.io/dina/all_test_results.html)
+* **Test Results:** [Detailed Test Results](./docs/site/all_test_results.html)
 * **The Architecture:** [Read the Engineering Spec](./ARCHITECTURE.md), [Flow Diagrams](./docs/FLOW_DIAGRAMS.md)
 * **For dina-mobile / NAT'd clients:** see [`docker/openclaw/`](./docker/openclaw/README.md) — standalone OpenClaw container stack that talks to your Home Node through the MsgBox relay (no port forwarding). Pins `dina-agent==0.13.0` from PyPI; copies cleanly into `dina-mobile`.
 * **The Stack:** shared TypeScript Home Node work in `packages/` and `apps/`; legacy Go Core + Python Brain references under `legacy/`; Python CLI as [`dina-agent` on PyPI](https://pypi.org/project/dina-agent/).
@@ -30,8 +30,8 @@ See [`QUICKSTART.md`](./QUICKSTART.md) for the full guide including networking s
 # home node
 git clone https://github.com/rajmohanutopai/dina.git
 cd dina
-./install.sh
-./dina-admin status
+legacy/bin/install.sh
+legacy/bin/dina-admin status
 ```
 
 ## Repository Layout
@@ -46,6 +46,11 @@ Active Home Node work should normally happen in the shared TypeScript tree:
 | [`packages/home-node/`](./packages/home-node/) | Shared Home Node runtime composition. |
 | [`apps/mobile/`](./apps/mobile/) | Full mobile Home Node on Expo/React Native. |
 | [`apps/home-node-lite/`](./apps/home-node-lite/) | Server/Home Node build using the shared TypeScript runtime. |
+| [`appview/`](./appview/) | PeerLens/AppView indexer, scorer, and XRPC service. |
+| [`msgbox/`](./msgbox/) | MsgBox relay service. |
+| [`services/plc/`](./services/plc/) | Local PLC helper service for tests/dev. |
+| [`cli/`](./cli/) | Python `dina-agent` source used for agent/CLI compatibility work. |
+| [`config/`](./config/) | Shared repo-level runtime configuration, including model defaults. |
 
 Legacy runtime references live under [`legacy/`](./legacy/):
 
@@ -53,6 +58,9 @@ Legacy runtime references live under [`legacy/`](./legacy/):
 |---|---|
 | [`legacy/go-core/`](./legacy/go-core/) | Original Go `dina-core`, kept as a behavior oracle and runnable reference. |
 | [`legacy/python-brain/`](./legacy/python-brain/) | Original Python `dina-brain`, kept as a behavior oracle and runnable reference. |
+| [`legacy/bin/`](./legacy/bin/) | Legacy installer, runtime wrapper, and `dina-admin` wrapper. |
+| [`legacy/admin-cli/`](./legacy/admin-cli/) | Legacy admin CLI package bundled into the Go/Python stack. |
+| [`legacy/compose/`](./legacy/compose/) | Docker Compose files for the legacy stack. |
 
 Do not add new product behavior to `legacy/` unless the work is explicitly
 maintaining the reference stack or a parity test.
@@ -420,7 +428,7 @@ implementation lives under `legacy/go-core/` and `legacy/python-brain/`.
 Go Core owns the SQLCipher vault and signing keys; Python Brain runs Google ADK
 agents, LLM routing, and the admin UI.
 Two Docker containers with separately bind-mounted keys. This is
-what `./install.sh` at the repo root gives you today — the path
+what `legacy/bin/install.sh` gives you today — the path
 recommended for anyone deploying Dina on a VPS, Raspberry Pi, or home mini-PC
 right now. Treat this as a reference/runtime compatibility surface, not the
 place for new product architecture.

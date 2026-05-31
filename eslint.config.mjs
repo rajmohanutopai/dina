@@ -1,9 +1,9 @@
 // ESLint flat config (ESLint 9+).
 //
 // Scope: TS sources under packages/ and apps/home-node-lite/ (and later
-// apps/mobile/). The existing polyglot tree (core/, brain/, cli/, msgbox/,
-// appview/, tests/, scripts/) is ignored — those services have their own
-// linters or are non-TS.
+// apps/mobile/). The existing polyglot tree (legacy/, cli/, msgbox/,
+// appview/, services/, tests/, scripts/) is ignored — those services have
+// their own linters or are non-TS.
 //
 // Phase 2 will add a custom rule `dina/port-async-only` that enforces the
 // async-everywhere port rule. Hook is wired below under `local` so the rule
@@ -24,12 +24,11 @@ export default tseslint.config(
       '**/*.tsbuildinfo',
       '**/.turbo/**',
       // Non-TS services (polyglot repo).
-      'core/**',
-      'brain/**',
+      'legacy/**',
       'cli/**',
-      'admin-cli/**',
       'msgbox/**',
       'appview/**',
+      'services/**',
       'tests/**',
       'scripts/**',
       'docs/**',

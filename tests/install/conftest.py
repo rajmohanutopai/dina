@@ -24,12 +24,6 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 # Files/dirs to copy into the temp install directory.
 # We copy only what install.sh needs — not the full repo.
 _INSTALL_FILES = [
-    "install.sh",
-    "run.sh",
-    "dina-admin",
-    "docker-compose.yml",
-    "docker-compose.dev.yml",
-    "models.json",
     "CLAUDE.md",
     ".gitignore",
     "pyproject.toml",
@@ -38,14 +32,14 @@ _INSTALL_FILES = [
 
 _INSTALL_DIRS = [
     "scripts",
-    "core",
-    "brain",
+    "legacy",
     "cli",
-    "admin-cli",
     "appview",
-    "plc",
+    "services/plc",
+    "config",
     "deploy",
     "docs/images",
+    "docs/site",
 ]
 
 
@@ -64,10 +58,7 @@ def _copy_repo_subset(dest: Path) -> None:
             dst = dest / d
             shutil.copytree(src, dst, dirs_exist_ok=True)
 
-    # Ensure dina.html exists (referenced by docker-compose.yml)
-    dina_html = PROJECT_ROOT / "dina.html"
-    if dina_html.exists():
-        shutil.copy2(dina_html, dest / "dina.html")
+    # docs/site/dina.html is referenced by the legacy compose file.
 
 
 def _cleanup_containers(dest: Path) -> None:
@@ -138,7 +129,7 @@ def installed_dir(docker_available, tmp_path_factory):
 
     child = pexpect.spawn(
         "bash",
-        [str(dest / "install.sh")],
+        [str(dest / "legacy/bin/install.sh")],
         cwd=str(dest),
         timeout=600,
         encoding="utf-8",

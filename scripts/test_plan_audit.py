@@ -101,7 +101,7 @@ def extract_plan_entries() -> list[PlanEntry]:
 
     # CLI
     entries.extend(_extract_tst_entries(
-        ROOT / "cli" / "tests" / "TEST_PLAN.md",
+        ROOT / "tools" / "dina-agent" / "tests" / "TEST_PLAN.md",
         "cli/tests/TEST_PLAN.md", r"TST-CLI-\d+", "cli"
     ))
 
@@ -113,13 +113,13 @@ def extract_plan_entries() -> list[PlanEntry]:
 
     # AppView Unit
     entries.extend(_extract_appview_plan_entries(
-        ROOT / "appview" / "UNIT_TEST_PLAN.md",
+        ROOT / "services" / "appview" / "UNIT_TEST_PLAN.md",
         "appview/UNIT_TEST_PLAN.md", r"UT-[A-Z]+-\d+", "appview_unit"
     ))
 
     # AppView Integration (section codes may include digits like E2E, and IDs may have letter suffixes like 010a)
     entries.extend(_extract_appview_plan_entries(
-        ROOT / "appview" / "INTEGRATION_TEST_PLAN.md",
+        ROOT / "services" / "appview" / "INTEGRATION_TEST_PLAN.md",
         "appview/INTEGRATION_TEST_PLAN.md", r"IT-[A-Z0-9]+-\d+[a-z]?", "appview_int"
     ))
 
@@ -286,12 +286,12 @@ def extract_code_tests() -> list[CodeTest]:
     tests.extend(_extract_python_tests(ROOT / "tests" / "integration", "integration"))
     tests.extend(_extract_python_tests(ROOT / "tests" / "e2e", "e2e"))
     tests.extend(_extract_python_tests(ROOT / "tests" / "release", "release"))
-    tests.extend(_extract_python_tests(ROOT / "cli" / "tests", "cli"))
+    tests.extend(_extract_python_tests(ROOT / "tools" / "dina-agent" / "tests", "cli"))
     tests.extend(_extract_python_tests(ROOT / "tests" / "system" / "user_stories", "user_story"))
 
     # TypeScript AppView tests (Vitest — IDs embedded in it() name strings)
-    tests.extend(_extract_typescript_tests(ROOT / "appview" / "tests" / "unit", "appview_unit"))
-    tests.extend(_extract_typescript_tests(ROOT / "appview" / "tests" / "integration", "appview_int"))
+    tests.extend(_extract_typescript_tests(ROOT / "services" / "appview" / "tests" / "unit", "appview_unit"))
+    tests.extend(_extract_typescript_tests(ROOT / "services" / "appview" / "tests" / "integration", "appview_int"))
 
     return tests
 

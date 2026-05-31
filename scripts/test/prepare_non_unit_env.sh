@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-COMPOSE_FILE="docker-compose-test-stack.yml"
+cd "$(dirname "$0")/../.."
+
+COMPOSE_FILE="legacy/compose/docker-compose-test-stack.yml"
 PROJECT="dina-test"
 MANIFEST=".test-stack.json"
 KEY_DIR=".test-stack-keys"

@@ -13,6 +13,9 @@
 
 import * as Keychain from './keychain';
 
+export const DEFAULT_PDS_URL = 'https://test-pds.dinakernel.com';
+export const DEFAULT_APPVIEW_URL = 'https://test-appview.dinakernel.com';
+
 const SERVICE_PDS_URL = 'dina.infra.pds_url';
 const SERVICE_PDS_HANDLE = 'dina.infra.pds_handle';
 const SERVICE_PDS_PASSWORD = 'dina.infra.pds_password';

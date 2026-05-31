@@ -1034,14 +1034,15 @@ def create_app() -> FastAPI:
         guardian, sync_engine, scrubber=scrubber,
         core_public_key=_get_core_public_key,
     )
-    # Resolve dina.html path (architecture visualization)
-    # Local dev: project_root/dina.html (3 dirs up from src/main.py)
-    # Docker:    /app/dina.html (mounted volume, 2 dirs up)
+    # Resolve dina.html path (architecture visualization).
+    # Local dev: repo_root/docs/site/dina.html.
+    # Docker:    /app/dina.html (mounted volume).
     _dina_html = None
     _images_dir = None
+    _repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
     for _candidate in [
-        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "dina.html"),
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), "dina.html"),
+        os.path.join(_repo_root, "docs", "site", "dina.html"),
+        "/app/dina.html",
     ]:
         if os.path.isfile(_candidate):
             _dina_html = _candidate

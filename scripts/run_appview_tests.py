@@ -28,7 +28,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-APPVIEW_DIR = PROJECT_ROOT / "appview"
+APPVIEW_DIR = PROJECT_ROOT / "services" / "appview"
 
 # ---------------------------------------------------------------------------
 # Section maps — source of truth from test plans

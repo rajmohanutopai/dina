@@ -273,7 +273,7 @@ class CoreHTTPClient:
                         body = {}
                     if body.get("error") == "core_locked":
                         raise CoreUnreachableError(
-                            body.get("message", "Core is locked — waiting for passphrase. Run: ./run.sh --start")
+                            body.get("message", "Core is locked — waiting for passphrase. Run: legacy/bin/run.sh --start")
                         )
 
                 # --- Retryable server errors ---

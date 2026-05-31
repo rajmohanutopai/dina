@@ -2,19 +2,19 @@
 # install.sh — One-command Dina Home Node setup
 #
 # Usage:
-#   ./install.sh                       # first-time setup (interactive, production infra)
-#   ./install.sh --stack production    # Go/Python stack (default — same as omitting the flag)
-#   ./install.sh --stack lite          # TypeScript Home Node Lite stack (task 13.3 — delegates to apps/home-node-lite/install-lite.sh)
-#   ./install.sh --test                # use test infrastructure (test-*.dinakernel.com)
-#   ./install.sh --port 9100           # use specific Core port
-#   ./install.sh --instance alice      # named instance (isolated data + containers)
-#   ./install.sh --skip-build          # skip Docker build (use existing images)
-#   ./install.sh --config FILE         # non-interactive (read config from JSON file)
-#   ./install.sh --verbose             # show detailed internal output
+#   legacy/bin/install.sh                       # first-time setup (interactive, production infra)
+#   legacy/bin/install.sh --stack production    # Go/Python stack (default — same as omitting the flag)
+#   legacy/bin/install.sh --stack lite          # TypeScript Home Node Lite stack (task 13.3 — delegates to apps/home-node-lite/install-lite.sh)
+#   legacy/bin/install.sh --test                # use test infrastructure (test-*.dinakernel.com)
+#   legacy/bin/install.sh --port 9100           # use specific Core port
+#   legacy/bin/install.sh --instance alice      # named instance (isolated data + containers)
+#   legacy/bin/install.sh --skip-build          # skip Docker build (use existing images)
+#   legacy/bin/install.sh --config FILE         # non-interactive (read config from JSON file)
+#   legacy/bin/install.sh --verbose             # show detailed internal output
 #
 # Multi-instance:
-#   ./install.sh --instance alice --port 8100    # Alice's Dina on 8100
-#   ./install.sh --instance bob   --port 9100    # Bob's Dina on 9100
+#   legacy/bin/install.sh --instance alice --port 8100    # Alice's Dina on 8100
+#   legacy/bin/install.sh --instance bob   --port 9100    # Bob's Dina on 9100
 #   Each instance gets isolated containers (dina-alice-*), data, and secrets.
 #
 # Architecture:
@@ -31,7 +31,8 @@
 # passphrase (Argon2id + AES-256-GCM), and only the encrypted form exits.
 
 set -euo pipefail
-cd "$(dirname "$0")"
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$REPO_ROOT"
 
 # ---------------------------------------------------------------------------
 # Task 13.3 — stack selection (production vs Lite)
@@ -193,10 +194,11 @@ else
 fi
 
 # For instances, pass --env-file so compose reads the instance .env.
+COMPOSE_FILE="${DINA_DIR}/legacy/compose/docker-compose.yml"
 if [ -n "${INSTANCE_NAME}" ]; then
-    COMPOSE="${_COMPOSE_BIN} --env-file ${ENV_FILE}"
+    COMPOSE="${_COMPOSE_BIN} --project-directory ${DINA_DIR} --env-file ${ENV_FILE} -f ${COMPOSE_FILE}"
 else
-    COMPOSE="${_COMPOSE_BIN}"
+    COMPOSE="${_COMPOSE_BIN} --project-directory ${DINA_DIR} -f ${COMPOSE_FILE}"
 fi
 
 # ---------------------------------------------------------------------------
@@ -670,7 +672,7 @@ echo ""
 if [ "${CONFIG_ONLY}" = true ]; then
     ok "Configuration complete (--config-only)"
     echo ""
-    echo -e "  ${DIM}To build and start: ${CYAN}./install.sh${RESET}"
+    echo -e "  ${DIM}To build and start: ${CYAN}legacy/bin/install.sh${RESET}"
     exit 0
 fi
 
@@ -841,7 +843,7 @@ if [ $ELAPSED -ge $HEALTH_TIMEOUT ]; then
     echo -e "  Full logs: ${CYAN}${COMPOSE} logs${RESET}"
     echo ""
     echo -e "  Containers may still be starting."
-    echo -e "  Re-run ${CYAN}./install.sh --skip-build${RESET} once services are ready."
+    echo -e "  Re-run ${CYAN}legacy/bin/install.sh --skip-build${RESET} once services are ready."
     exit 1
 fi
 
@@ -880,7 +882,7 @@ if [ -f "${TOKEN_FILE}" ]; then
             echo -e "${YELLOW}✗${RESET}"
             echo ""
             echo -e "  ${YELLOW}LLM is not working:${RESET} ${_smoke_msg}"
-            echo -e "  ${DIM}Fix: check your API key in .env, then ${CYAN}./run.sh --stop && ./run.sh --start${RESET}"
+            echo -e "  ${DIM}Fix: check your API key in .env, then ${CYAN}legacy/bin/run.sh --stop && legacy/bin/run.sh --start${RESET}"
         elif [ -n "${_smoke_content}" ]; then
             echo -e "${GREEN}✓${RESET}"
         else
@@ -895,7 +897,7 @@ echo ""
 # Step 8a: Shared infrastructure defaults (MsgBox, AppView, Timezone)
 # ---------------------------------------------------------------------------
 # Write production defaults so fresh installs connect to shared services.
-# Users can override later via dina-admin or docker-compose.override.yml.
+# Users can override later via legacy/bin/dina-admin or docker-compose.override.yml.
 
 if ! grep -q '^DINA_MSGBOX_URL=' "${ENV_FILE}" 2>/dev/null; then
     echo "" >> "${ENV_FILE}"
@@ -1054,15 +1056,15 @@ if [ -n "${_brain_health}" ]; then
         echo -e "             ${DIM}Primary: ${_primary}${RESET}"
         echo -e "             ${DIM}Heavy:   ${_heavy}${RESET}"
     else
-        echo -e "  LLM:       ${YELLOW}not configured${RESET} ${DIM}run ./dina-admin model set${RESET}"
+        echo -e "  LLM:       ${YELLOW}not configured${RESET} ${DIM}run legacy/bin/dina-admin model set${RESET}"
     fi
 fi
 echo ""
 echo -e "  ${BOLD}Commands:${RESET}"
-echo -e "    ${CYAN}./run.sh --start${RESET}    Start"
-echo -e "    ${CYAN}./run.sh --stop${RESET}     Stop"
-echo -e "    ${CYAN}./run.sh --status${RESET}   Status"
-echo -e "    ${CYAN}./run.sh --logs${RESET}     Logs"
+echo -e "    ${CYAN}legacy/bin/run.sh --start${RESET}    Start"
+echo -e "    ${CYAN}legacy/bin/run.sh --stop${RESET}     Stop"
+echo -e "    ${CYAN}legacy/bin/run.sh --status${RESET}   Status"
+echo -e "    ${CYAN}legacy/bin/run.sh --logs${RESET}     Logs"
 
 if [ "${VERBOSE}" = true ]; then
     echo ""

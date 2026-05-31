@@ -411,9 +411,9 @@ def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
     except DinaClientError as exc:
         if "approval_required" in str(exc).lower():
             click.echo("Access to sensitive data requires approval.", err=True)
-            click.echo("A notification has been sent. Approve via Telegram or dina-admin.", err=True)
+            click.echo("A notification has been sent. Approve via Telegram or legacy/bin/dina-admin.", err=True)
         elif "persona locked" in str(exc).lower():
-            click.echo("Some data is locked. Unlock on your Home Node: ./dina-admin persona unlock", err=True)
+            click.echo("Some data is locked. Unlock on your Home Node: legacy/bin/dina-admin persona unlock", err=True)
         else:
             print_error_with_trace(str(exc), json_mode, client.req_id)
         click.echo(f"  req_id: {client.req_id}", err=True)
@@ -1380,7 +1380,7 @@ def _pair_with_key(
     for attempt in range(1, max_attempts + 1):
         if not pairing_code:
             click.echo("  Enter the pairing code from your Home Node.")
-            click.echo("  (Generate one by running: ./dina-admin device pair)")
+            click.echo("  (Generate one by running: legacy/bin/dina-admin device pair)")
             pairing_code = click.prompt("  Pairing code")
 
         click.echo("  Registering device...")

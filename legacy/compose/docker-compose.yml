@@ -4,12 +4,12 @@
 # + plc (fake PLC directory, test-only profile)
 #
 # Usage:
-#   ./install.sh              # first-time setup (creates secrets, .env, builds, starts)
-#   docker compose up -d      # restart after install (requires ./install.sh first)
-#   docker compose logs -f    # tail logs
+#   legacy/bin/install.sh     # first-time setup (creates secrets, .env, builds, starts)
+#   legacy/bin/run.sh --start # restart after install
+#   legacy/bin/run.sh --logs  # tail logs
 #
 # If you see "bind source path does not exist: .../secrets/service_keys",
-# run ./install.sh first — it generates the required secrets and key directories.
+# run legacy/bin/install.sh first — it generates the required secrets and key directories.
 #
 # Service key isolation: each service's private key directory is bind-mounted
 # separately (core/ and brain/). Public keys share a common directory (public/).
@@ -22,12 +22,12 @@ services:
   core:
     container_name: core-${DINA_SESSION:-dna}
     build:
-      context: ./legacy/go-core
+      context: ../go-core
       dockerfile: Dockerfile
       args:
         DINA_VERSION: "${DINA_VERSION:-dev}"
       additional_contexts:
-        admin-cli: ./admin-cli
+        admin-cli: ../admin-cli
     # MBX-057: Core needs zero public ports for MsgBox transport.
     # CLI devices reach Core via MsgBox relay (wss://mailbox.dinakernel.com).
     # Port 8100 is internal (Brain↔Core on Docker network only).
@@ -38,13 +38,13 @@ services:
     #     core:
     #       ports:
     #         - "8100:8100"
-    # Or use: docker compose -f docker-compose.yml -f docker-compose.direct.yml up
+    # Or use: docker compose -f legacy/compose/docker-compose.yml -f legacy/compose/docker-compose.direct.yml up
     expose:
       - "8100"
     volumes:
       - dina-data:/data
-      - ${DINA_SECRETS_DIR:-./secrets}/service_keys/core:/run/secrets/service_keys/private
-      - ${DINA_SECRETS_DIR:-./secrets}/service_keys/public:/run/secrets/service_keys/public:ro
+      - ${DINA_SECRETS_DIR:-../../secrets}/service_keys/core:/run/secrets/service_keys/private
+      - ${DINA_SECRETS_DIR:-../../secrets}/service_keys/public:/run/secrets/service_keys/public:ro
     environment:
       - DINA_ENV=${DINA_ENV:-development}
       - DINA_VAULT_PATH=/data/vault
@@ -85,7 +85,7 @@ services:
   brain:
     container_name: brain-${DINA_SESSION:-dna}
     build:
-      context: ./legacy/python-brain
+      context: ../python-brain
       dockerfile: Dockerfile
       args:
         DINA_VERSION: "${DINA_VERSION:-dev}"
@@ -94,11 +94,11 @@ services:
       - dina-brain-net
     volumes:
       - dina-data:/data
-      - ./dina.html:/app/dina.html:ro
-      - ./docs/images:/app/images:ro
-      - ./models.json:/app/models.json:ro
-      - ${DINA_SECRETS_DIR:-./secrets}/service_keys/brain:/run/secrets/service_keys/private
-      - ${DINA_SECRETS_DIR:-./secrets}/service_keys/public:/run/secrets/service_keys/public:ro
+      - ../../docs/site/dina.html:/app/dina.html:ro
+      - ../../docs/images:/app/images:ro
+      - ../../config/models.json:/app/models.json:ro
+      - ${DINA_SECRETS_DIR:-../../secrets}/service_keys/brain:/run/secrets/service_keys/private
+      - ${DINA_SECRETS_DIR:-../../secrets}/service_keys/public:/run/secrets/service_keys/public:ro
     environment:
       - DINA_CORE_URL=http://core:8100
       - DINA_SERVICE_KEY_DIR=/run/secrets/service_keys
@@ -160,8 +160,8 @@ volumes:
 
 secrets:
   wrapped_seed:
-    file: ${DINA_SECRETS_DIR:-./secrets}/wrapped_seed.bin
+    file: ${DINA_SECRETS_DIR:-../../secrets}/wrapped_seed.bin
   identity_salt:
-    file: ${DINA_SECRETS_DIR:-./secrets}/master_seed.salt
+    file: ${DINA_SECRETS_DIR:-../../secrets}/master_seed.salt
   seed_password:
-    file: ${DINA_SECRETS_DIR:-./secrets}/seed_password
+    file: ${DINA_SECRETS_DIR:-../../secrets}/seed_password

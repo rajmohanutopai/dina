@@ -6,7 +6,7 @@ identity {show,sign}, policy {list,set,reset}.
 
 Runs inside the Core container via Unix socket.
 Usage: docker compose exec core dina-admin ...
-   or: ./dina-admin ...  (wrapper script)
+   or: legacy/bin/dina-admin ...  (wrapper script)
 """
 
 from __future__ import annotations
@@ -772,10 +772,10 @@ def security_auto_start() -> None:
     """Store passphrase locally — Dina starts without prompting.
 
     This command is handled by the host-side dina-admin wrapper.
-    Run: ./dina-admin security auto-start
+    Run: legacy/bin/dina-admin security auto-start
     """
     click.echo("This command must be run from the host (not inside the container).")
-    click.echo("Run: ./dina-admin security auto-start")
+    click.echo("Run: legacy/bin/dina-admin security auto-start")
 
 
 @security.command("manual-start")
@@ -783,10 +783,10 @@ def security_manual_start() -> None:
     """Require passphrase on each start (most secure).
 
     This command is handled by the host-side dina-admin wrapper.
-    Run: ./dina-admin security manual-start
+    Run: legacy/bin/dina-admin security manual-start
     """
     click.echo("This command must be run from the host (not inside the container).")
-    click.echo("Run: ./dina-admin security manual-start")
+    click.echo("Run: legacy/bin/dina-admin security manual-start")
 
 
 @security.command("status")
@@ -794,10 +794,10 @@ def security_status() -> None:
     """Show current startup security mode.
 
     This command is handled by the host-side dina-admin wrapper.
-    Run: ./dina-admin security status
+    Run: legacy/bin/dina-admin security status
     """
     click.echo("This command must be run from the host (not inside the container).")
-    click.echo("Run: ./dina-admin security status")
+    click.echo("Run: legacy/bin/dina-admin security status")
 
 
 # ── model ────────────────────────────────────────────────────────────────────
@@ -813,10 +813,10 @@ def model_list() -> None:
     """Show available LLM models and providers.
 
     This command is handled by the host-side dina-admin wrapper.
-    Run: ./dina-admin model list
+    Run: legacy/bin/dina-admin model list
     """
     click.echo("This command must be run from the host (not inside the container).")
-    click.echo("Run: ./dina-admin model list")
+    click.echo("Run: legacy/bin/dina-admin model list")
 
 
 @model.command("status")
@@ -824,10 +824,10 @@ def model_status() -> None:
     """Show which models are currently active.
 
     This command is handled by the host-side dina-admin wrapper.
-    Run: ./dina-admin model status
+    Run: legacy/bin/dina-admin model status
     """
     click.echo("This command must be run from the host (not inside the container).")
-    click.echo("Run: ./dina-admin model status")
+    click.echo("Run: legacy/bin/dina-admin model status")
 
 
 @model.command("set")
@@ -837,10 +837,10 @@ def model_set(env_var: str, model_id: str) -> None:
     """Set a model override (e.g. GEMINI_MODEL gemini-2.5-flash).
 
     This command is handled by the host-side dina-admin wrapper.
-    Run: ./dina-admin model set <ENV_VAR> <model_id>
+    Run: legacy/bin/dina-admin model set <ENV_VAR> <model_id>
     """
     click.echo("This command must be run from the host (not inside the container).")
-    click.echo(f"Run: ./dina-admin model set {env_var} {model_id}")
+    click.echo(f"Run: legacy/bin/dina-admin model set {env_var} {model_id}")
 
 
 # ── trace ────────────────────────────────────────────────────────────────────

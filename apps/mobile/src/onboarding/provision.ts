@@ -70,6 +70,7 @@ import { saveWrappedSeed } from '../services/wrapped_seed_store';
 import { saveIdentitySeeds } from '../services/identity_store';
 import { savePersistedDid, loadPersistedDid } from '../services/identity_record';
 import {
+  DEFAULT_PDS_URL,
   loadInfraPreferences,
   savePdsHandle,
   savePdsPassword,
@@ -114,8 +115,8 @@ export interface ProvisionOptions {
   handle?: string;
   /**
    * Override the PDS URL. Defaults to the persisted infra preference
-   * (set by the first-run setup gate) → `EXPO_PUBLIC_DINA_PDS_URL`
-   * env var → `https://test-pds.dinakernel.com`.
+   * (Settings → Infrastructure) → `EXPO_PUBLIC_DINA_PDS_URL` env var
+   * → `https://test-pds.dinakernel.com`.
    */
   pdsURL?: string;
   /** Override the PLC directory URL. Defaults to `https://plc.directory`. */
@@ -156,13 +157,6 @@ export const PROVISION_LABELS: Record<ProvisionStage, string> = {
 function progress(cb: ProvisionOptions['onProgress'], stage: ProvisionStage): void {
   cb?.({ stage, label: PROVISION_LABELS[stage] });
 }
-
-/**
- * Default PDS host. Picked from infra prefs > env > built-in.
- * The first-run setup gate writes the persisted preference; dev
- * builds can override via `EXPO_PUBLIC_DINA_PDS_URL`.
- */
-const DEFAULT_PDS_URL = 'https://test-pds.dinakernel.com';
 
 /**
  * Deterministic PDS password from the master seed. Survives a

@@ -167,13 +167,11 @@ interface WrapKeyRow {
  * the FIRST caller starts the read-or-generate flow, every subsequent
  * caller awaits the same promise.
  *
- * Why this matters: `infra_setup.tsx` fires
- * `Promise.all([savePdsUrl, saveAppViewURL])` on the Continue press.
- * Without single-flighting, both calls reach `loadOrCreateWrapKey`
- * concurrently, both see no key in IndexedDB, both call
- * `crypto.subtle.generateKey` (producing DIFFERENT keys), both PUT
- * their key under the same row — one wins persistence. The losing
- * call has already encrypted its row's ciphertext under the now-orphan
+ * Why this matters: settings screens can persist several keychain
+ * values concurrently with `Promise.all(...)`. Without single-flighting,
+ * each write can reach `loadOrCreateWrapKey` at the same time, see no
+ * key in IndexedDB, generate a different key, and race to persist it.
+ * The losing write has already encrypted its row under the now-orphan
  * key; that row is permanently undecryptable.
  *
  * Resetting the cache (`__dangerouslyResetForTests`) drops this so

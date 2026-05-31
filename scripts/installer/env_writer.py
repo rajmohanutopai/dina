@@ -81,7 +81,7 @@ def write_env(
 
     lines += [
         "",
-        "# Add more providers: see models.json or run ./dina-admin model list",
+        "# Add more providers: see models.json or run legacy/bin/dina-admin model list",
         "",
     ]
 

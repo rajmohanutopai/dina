@@ -19,6 +19,8 @@ set -euo pipefail
 # Use --run to select a subset for faster development cycles.
 # ---------------------------------------------------------------------------
 
+cd "$(dirname "$0")/../.."
+
 DEFAULT_SUITES="integration,e2e,release,install,user_stories,appview_integration"
 ALL_SUITES="integration,e2e,release,install,user_stories,appview_integration,install-pexpect"
 SUITES=""
@@ -61,7 +63,7 @@ try:
     print('Test stack verified.')
 except Exception as e:
     print(f'ERROR: Test stack not ready: {e}')
-    print('Run: ./prepare_non_unit_env.sh up')
+    print('Run: ./scripts/test/prepare_non_unit_env.sh up')
     sys.exit(1)
 "
 

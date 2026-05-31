@@ -18,14 +18,16 @@ import pytest
 
 @pytest.fixture
 def model_dir(tmp_path):
-    """Create a minimal dina-admin + models.json setup for testing."""
+    """Create a minimal legacy/bin/dina-admin + config/models.json setup."""
     project_root = Path(__file__).resolve().parent.parent.parent
 
     # Copy dina-admin script
-    shutil.copy2(project_root / "dina-admin", tmp_path / "dina-admin")
+    (tmp_path / "legacy/bin").mkdir(parents=True)
+    shutil.copy2(project_root / "legacy/bin/dina-admin", tmp_path / "legacy/bin/dina-admin")
 
     # Copy models.json
-    shutil.copy2(project_root / "models.json", tmp_path / "models.json")
+    (tmp_path / "config").mkdir()
+    shutil.copy2(project_root / "config/models.json", tmp_path / "config/models.json")
 
     # Create .env with a test API key so interactive mode doesn't prompt for keys
     (tmp_path / ".env").write_text(
@@ -36,15 +38,16 @@ def model_dir(tmp_path):
         "OPENROUTER_API_KEY=test-key-for-testing\n"
     )
 
-    # Create docker-compose.yml stub (dina-admin checks for compose)
-    (tmp_path / "docker-compose.yml").write_text("version: '3'\nservices: {}\n")
+    # Create compose stub (dina-admin can invoke docker compose restart)
+    (tmp_path / "legacy/compose").mkdir(parents=True)
+    (tmp_path / "legacy/compose/docker-compose.yml").write_text("services: {}\n")
 
     return tmp_path
 
 
 def _read_defaults(model_dir: Path) -> dict:
     """Read defaults from models.json."""
-    return json.loads((model_dir / "models.json").read_text())["defaults"]
+    return json.loads((model_dir / "config/models.json").read_text())["defaults"]
 
 
 # ==========================================================================
@@ -59,7 +62,7 @@ class TestModelSetDirect:
     def test_set_lite(self, model_dir: Path) -> None:
         """Set lite model directly."""
         result = subprocess.run(
-            ["bash", str(model_dir / "dina-admin"), "model", "set",
+            ["bash", str(model_dir / "legacy/bin/dina-admin"), "model", "set",
              "lite", "gemini/gemini-2.5-flash"],
             cwd=str(model_dir),
             capture_output=True, text=True, timeout=10,
@@ -73,7 +76,7 @@ class TestModelSetDirect:
     def test_set_primary(self, model_dir: Path) -> None:
         """Set primary model directly."""
         result = subprocess.run(
-            ["bash", str(model_dir / "dina-admin"), "model", "set",
+            ["bash", str(model_dir / "legacy/bin/dina-admin"), "model", "set",
              "primary", "claude/claude-sonnet-4-6"],
             cwd=str(model_dir),
             capture_output=True, text=True, timeout=10,
@@ -86,7 +89,7 @@ class TestModelSetDirect:
     def test_set_heavy(self, model_dir: Path) -> None:
         """Set heavy model directly."""
         result = subprocess.run(
-            ["bash", str(model_dir / "dina-admin"), "model", "set",
+            ["bash", str(model_dir / "legacy/bin/dina-admin"), "model", "set",
              "heavy", "openai/gpt-5.4"],
             cwd=str(model_dir),
             capture_output=True, text=True, timeout=10,
@@ -99,7 +102,7 @@ class TestModelSetDirect:
     def test_set_invalid_role(self, model_dir: Path) -> None:
         """Invalid role name is rejected."""
         result = subprocess.run(
-            ["bash", str(model_dir / "dina-admin"), "model", "set",
+            ["bash", str(model_dir / "legacy/bin/dina-admin"), "model", "set",
              "turbo", "gemini/gemini-2.5-flash"],
             cwd=str(model_dir),
             capture_output=True, text=True, timeout=10,
@@ -112,7 +115,7 @@ class TestModelSetDirect:
         """Setting lite doesn't change primary or heavy."""
         before = _read_defaults(model_dir)
         subprocess.run(
-            ["bash", str(model_dir / "dina-admin"), "model", "set",
+            ["bash", str(model_dir / "legacy/bin/dina-admin"), "model", "set",
              "lite", "openai/gpt-5-mini"],
             cwd=str(model_dir),
             capture_output=True, timeout=10,
@@ -126,7 +129,7 @@ class TestModelSetDirect:
     def test_set_unknown_model_warns(self, model_dir: Path) -> None:
         """Setting a model not in models.json warns but proceeds."""
         result = subprocess.run(
-            ["bash", str(model_dir / "dina-admin"), "model", "set",
+            ["bash", str(model_dir / "legacy/bin/dina-admin"), "model", "set",
              "lite", "custom/my-model-v1"],
             cwd=str(model_dir),
             capture_output=True, text=True, timeout=10,
@@ -151,7 +154,7 @@ class TestModelSetInteractive:
         import pexpect
 
         child = pexpect.spawn(
-            "bash", [str(model_dir / "dina-admin"), "model", "set"],
+            "bash", [str(model_dir / "legacy/bin/dina-admin"), "model", "set"],
             cwd=str(model_dir), timeout=15, encoding="utf-8",
         )
 
@@ -185,7 +188,7 @@ class TestModelSetInteractive:
         import pexpect
 
         child = pexpect.spawn(
-            "bash", [str(model_dir / "dina-admin"), "model", "set"],
+            "bash", [str(model_dir / "legacy/bin/dina-admin"), "model", "set"],
             cwd=str(model_dir), timeout=15, encoding="utf-8",
         )
 
@@ -217,7 +220,7 @@ class TestModelSetInteractive:
         before = _read_defaults(model_dir)
 
         child = pexpect.spawn(
-            "bash", [str(model_dir / "dina-admin"), "model", "set"],
+            "bash", [str(model_dir / "legacy/bin/dina-admin"), "model", "set"],
             cwd=str(model_dir), timeout=15, encoding="utf-8",
         )
 
@@ -244,14 +247,17 @@ class TestModelSetInteractive:
         import pexpect
 
         project_root = Path(__file__).resolve().parent.parent.parent
-        shutil.copy2(project_root / "dina-admin", tmp_path / "dina-admin")
-        shutil.copy2(project_root / "models.json", tmp_path / "models.json")
-        (tmp_path / "docker-compose.yml").write_text("version: '3'\nservices: {}\n")
+        (tmp_path / "legacy/bin").mkdir(parents=True)
+        shutil.copy2(project_root / "legacy/bin/dina-admin", tmp_path / "legacy/bin/dina-admin")
+        (tmp_path / "config").mkdir()
+        shutil.copy2(project_root / "config/models.json", tmp_path / "config/models.json")
+        (tmp_path / "legacy/compose").mkdir(parents=True)
+        (tmp_path / "legacy/compose/docker-compose.yml").write_text("services: {}\n")
         # .env with NO API keys
         (tmp_path / ".env").write_text("DINA_SESSION=test\n")
 
         child = pexpect.spawn(
-            "bash", [str(tmp_path / "dina-admin"), "model", "set"],
+            "bash", [str(tmp_path / "legacy/bin/dina-admin"), "model", "set"],
             cwd=str(tmp_path), timeout=15, encoding="utf-8",
         )
 
@@ -285,7 +291,7 @@ class TestModelSetInteractive:
         import pexpect
 
         child = pexpect.spawn(
-            "bash", [str(model_dir / "dina-admin"), "model", "set"],
+            "bash", [str(model_dir / "legacy/bin/dina-admin"), "model", "set"],
             cwd=str(model_dir), timeout=15, encoding="utf-8",
         )
 

@@ -63,10 +63,11 @@ func agentDID(r *http.Request) string {
 // alone is not sufficient — Core validates the exact set.
 //
 // All three values represent the human acting in person:
-//   telegram   — bot-channel typing
-//   admin      — admin web UI session
-//   dinamobile — iOS/Android app (NAT'd, reaches Core via msgbox).
-//                Same privilege tier — locked-vault access, full agency.
+//
+//	telegram   — bot-channel typing
+//	admin      — admin web UI session
+//	dinamobile — iOS/Android app (NAT'd, reaches Core via msgbox).
+//	             Same privilege tier — locked-vault access, full agency.
 var validUserOrigins = map[string]bool{
 	"telegram":   true,
 	"admin":      true,
@@ -176,7 +177,7 @@ func (h *VaultHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 					"error":       "approval_required",
 					"approval_id": reqID,
 					"persona":     string(persona),
-					"message":     "Access requires approval. Run: ./dina-admin persona approve " + reqID,
+					"message":     "Access requires approval. Run: legacy/bin/dina-admin persona approve " + reqID,
 				})
 				return
 			}
@@ -267,7 +268,7 @@ func (h *VaultHandler) HandleStore(w http.ResponseWriter, r *http.Request) {
 					"error":       "approval_required",
 					"approval_id": reqID,
 					"persona":     string(persona),
-					"message":     "Access requires approval. Run: ./dina-admin persona approve " + reqID,
+					"message":     "Access requires approval. Run: legacy/bin/dina-admin persona approve " + reqID,
 				})
 				return
 			}

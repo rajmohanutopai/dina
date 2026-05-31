@@ -2,18 +2,19 @@
 # dina-admin — thin wrapper that runs dina-admin inside the Core container.
 #
 # Usage:
-#   ./dina-admin status
-#   ./dina-admin --json persona list
-#   ./dina-admin device pair
-#   ./dina-admin security auto-start    # store passphrase locally
-#   ./dina-admin security manual-start  # require passphrase on each start
+#   legacy/bin/dina-admin status
+#   legacy/bin/dina-admin --json persona list
+#   legacy/bin/dina-admin device pair
+#   legacy/bin/dina-admin security auto-start    # store passphrase locally
+#   legacy/bin/dina-admin security manual-start  # require passphrase on each start
 #
 # Most commands are forwarded to the container's dina-admin CLI.
 # The "security" subcommand runs on the host (manages secrets/seed_password).
 
 set -euo pipefail
 
-COMPOSE_DIR="$(cd "$(dirname "$0")" && pwd)"
+COMPOSE_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+COMPOSE_FILE="${COMPOSE_DIR}/legacy/compose/docker-compose.yml"
 SECRETS_DIR="${COMPOSE_DIR}/secrets"
 SEED_PASSWORD_FILE="${SECRETS_DIR}/seed_password"
 
@@ -67,11 +68,11 @@ elif ls "${COMPOSE_DIR}"/instances/*/.env >/dev/null 2>&1; then
 fi
 
 if [ -n "${_ENV_FILE}" ] && [ -f "${_ENV_FILE}" ]; then
-    COMPOSE="${_COMPOSE_BIN} --env-file ${_ENV_FILE}"
+    COMPOSE="${_COMPOSE_BIN} --project-directory ${COMPOSE_DIR} --env-file ${_ENV_FILE}"
     SECRETS_DIR="${COMPOSE_DIR}/instances/${_INSTANCE}/secrets"
     SEED_PASSWORD_FILE="${SECRETS_DIR}/seed_password"
 else
-    COMPOSE="${_COMPOSE_BIN}"
+    COMPOSE="${_COMPOSE_BIN} --project-directory ${COMPOSE_DIR}"
 fi
 
 # ---------------------------------------------------------------------------
@@ -79,7 +80,7 @@ fi
 # ---------------------------------------------------------------------------
 
 _security_usage() {
-    echo -e "  ${BOLD}Usage:${RESET} dina-admin security <command>"
+    echo -e "  ${BOLD}Usage:${RESET} legacy/bin/dina-admin security <command>"
     echo ""
     echo "  Commands:"
     echo -e "    ${CYAN}auto-start${RESET}      Store passphrase locally (Dina starts without prompting)"
@@ -89,7 +90,7 @@ _security_usage() {
 
 _security_status() {
     if [ ! -f "${SEED_PASSWORD_FILE}" ]; then
-        echo -e "  ${YELLOW}unknown${RESET} — seed_password file not found (run install.sh first)"
+        echo -e "  ${YELLOW}unknown${RESET} — seed_password file not found (run legacy/bin/install.sh first)"
         return
     fi
     if [ -s "${SEED_PASSWORD_FILE}" ]; then
@@ -101,7 +102,7 @@ _security_status() {
 
 _security_auto_start() {
     if [ ! -f "${SEED_PASSWORD_FILE}" ]; then
-        echo -e "  ${RED}Error:${RESET} seed_password file not found. Run install.sh first." >&2
+        echo -e "  ${RED}Error:${RESET} seed_password file not found. Run legacy/bin/install.sh first." >&2
         exit 1
     fi
     if [ -s "${SEED_PASSWORD_FILE}" ]; then
@@ -121,12 +122,12 @@ _security_auto_start() {
     printf '%s' "${passphrase}" > "${SEED_PASSWORD_FILE}"
     chmod 600 "${SEED_PASSWORD_FILE}"
     echo -e "  ${GREEN}✓${RESET} Passphrase stored. Dina will start automatically."
-    echo -e "  ${DIM}Switch back: ${CYAN}dina-admin security manual-start${RESET}"
+    echo -e "  ${DIM}Switch back: ${CYAN}legacy/bin/dina-admin security manual-start${RESET}"
 }
 
 _security_manual_start() {
     if [ ! -f "${SEED_PASSWORD_FILE}" ]; then
-        echo -e "  ${RED}Error:${RESET} seed_password file not found. Run install.sh first." >&2
+        echo -e "  ${RED}Error:${RESET} seed_password file not found. Run legacy/bin/install.sh first." >&2
         exit 1
     fi
     if [ ! -s "${SEED_PASSWORD_FILE}" ]; then
@@ -136,7 +137,7 @@ _security_manual_start() {
     : > "${SEED_PASSWORD_FILE}"
     chmod 600 "${SEED_PASSWORD_FILE}"
     echo -e "  ${GREEN}✓${RESET} Passphrase removed. You will be prompted on each start."
-    echo -e "  ${DIM}Switch back: ${CYAN}dina-admin security auto-start${RESET}"
+    echo -e "  ${DIM}Switch back: ${CYAN}legacy/bin/dina-admin security auto-start${RESET}"
 }
 
 # Handle "security" subcommand on the host side
@@ -155,7 +156,7 @@ fi
 # ---------------------------------------------------------------------------
 
 _model_usage() {
-    echo -e "  ${BOLD}Usage:${RESET} dina-admin model <command>"
+    echo -e "  ${BOLD}Usage:${RESET} legacy/bin/dina-admin model <command>"
     echo ""
     echo "  Commands:"
     echo -e "    ${CYAN}list${RESET}                          Show active and available models"
@@ -164,14 +165,14 @@ _model_usage() {
     echo -e "    ${CYAN}set${RESET} <role> <model>            Set directly (role: lite, primary, heavy, embed)"
     echo ""
     echo -e "  ${DIM}Examples:${RESET}"
-    echo -e "    ${CYAN}dina-admin model set${RESET}                                      ${DIM}(interactive)${RESET}"
-    echo -e "    ${CYAN}dina-admin model set lite gemini/gemini-2.5-flash${RESET}         ${DIM}(direct)${RESET}"
-    echo -e "    ${CYAN}dina-admin model set heavy claude/claude-sonnet-4-6${RESET}       ${DIM}(direct)${RESET}"
-    echo -e "    ${CYAN}dina-admin model set embed gemini/models/gemini-embedding-001${RESET}  ${DIM}(embed)${RESET}"
+    echo -e "    ${CYAN}legacy/bin/dina-admin model set${RESET}                                      ${DIM}(interactive)${RESET}"
+    echo -e "    ${CYAN}legacy/bin/dina-admin model set lite gemini/gemini-2.5-flash${RESET}         ${DIM}(direct)${RESET}"
+    echo -e "    ${CYAN}legacy/bin/dina-admin model set heavy claude/claude-sonnet-4-6${RESET}       ${DIM}(direct)${RESET}"
+    echo -e "    ${CYAN}legacy/bin/dina-admin model set embed gemini/models/gemini-embedding-001${RESET}  ${DIM}(embed)${RESET}"
 }
 
 _brain_healthz() {
-    $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" exec -T brain \
+    $COMPOSE -f "$COMPOSE_FILE" exec -T brain \
         python -c "import httpx,json; print(json.dumps(httpx.get('http://localhost:8200/healthz',timeout=5).json()))" \
         2>/dev/null
 }
@@ -201,7 +202,7 @@ _model_list() {
     fi
 
     # Show available models from models.json
-    local json_file="$COMPOSE_DIR/models.json"
+    local json_file="$COMPOSE_DIR/config/models.json"
     if [ -f "$json_file" ]; then
         echo ""
         echo -e "  ${BOLD}Available models:${RESET}"
@@ -221,7 +222,7 @@ _model_list() {
     fi
 
     echo ""
-    echo -e "  ${BOLD}To change:${RESET}  ${CYAN}dina-admin model set${RESET}  ${DIM}(interactive)${RESET}"
+    echo -e "  ${BOLD}To change:${RESET}  ${CYAN}legacy/bin/dina-admin model set${RESET}  ${DIM}(interactive)${RESET}"
 }
 
 _model_status() {
@@ -229,14 +230,14 @@ _model_status() {
 }
 
 _model_set() {
-    local json_file="$COMPOSE_DIR/models.json"
+    local json_file="$COMPOSE_DIR/config/models.json"
 
     if [ ! -f "$json_file" ]; then
-        echo -e "  ${RED}models.json not found.${RESET} Run ./install.sh first." >&2
+        echo -e "  ${RED}models.json not found.${RESET} Run legacy/bin/install.sh first." >&2
         exit 1
     fi
 
-    # Non-interactive: dina-admin model set <role> <model>
+    # Non-interactive: legacy/bin/dina-admin model set <role> <model>
     if [ -n "${1:-}" ] && [ -n "${2:-}" ]; then
         local role="$1" model="$2"
         case "$role" in
@@ -278,15 +279,15 @@ _model_set() {
                 ;;
         esac
         echo ""
-        echo -e "  ${DIM}Restart to apply: ${CYAN}./run.sh --stop${RESET}${DIM} then ${CYAN}./run.sh --start${RESET}"
+        echo -e "  ${DIM}Restart to apply: ${CYAN}legacy/bin/run.sh --stop${RESET}${DIM} then ${CYAN}legacy/bin/run.sh --start${RESET}"
         return
     fi
 
     # Interactive mode
     if [ ! -t 0 ]; then
-        echo -e "  ${RED}Usage:${RESET} dina-admin model set <role> <model>" >&2
+        echo -e "  ${RED}Usage:${RESET} legacy/bin/dina-admin model set <role> <model>" >&2
         echo -e "  ${DIM}Roles: lite, primary, heavy${RESET}"
-        echo -e "  ${DIM}Example: dina-admin model set lite gemini/gemini-2.5-flash${RESET}"
+        echo -e "  ${DIM}Example: legacy/bin/dina-admin model set lite gemini/gemini-2.5-flash${RESET}"
         exit 1
     fi
 
@@ -467,7 +468,7 @@ _model_set() {
 
     if [ "$changed" = true ]; then
         echo ""
-        echo -e "  ${DIM}Restart to apply: ${CYAN}./run.sh --stop${RESET}${DIM} then ${CYAN}./run.sh --start${RESET}"
+        echo -e "  ${DIM}Restart to apply: ${CYAN}legacy/bin/run.sh --stop${RESET}${DIM} then ${CYAN}legacy/bin/run.sh --start${RESET}"
     else
         echo ""
         echo -e "  ${DIM}No changes made.${RESET}"
@@ -502,7 +503,7 @@ if [ "${1:-}" = "logs" ]; then
             clear)
                 # Restart containers to get fresh logs (least-privilege approach).
                 echo "Restarting containers to clear logs..."
-                $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" restart >/dev/null 2>&1
+                $COMPOSE -f "$COMPOSE_FILE" restart >/dev/null 2>&1
                 echo "Logs cleared (containers restarted)."
                 exit 0
                 ;;
@@ -518,15 +519,15 @@ if [ "${1:-}" = "logs" ]; then
 
     if [ -n "$service" ]; then
         if [ "$follow" = true ]; then
-            exec $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" logs -f --tail="$tail_lines" ${_since_flag} "$service"
+            exec $COMPOSE -f "$COMPOSE_FILE" logs -f --tail="$tail_lines" ${_since_flag} "$service"
         else
-            $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" logs --tail="$tail_lines" ${_since_flag} "$service"
+            $COMPOSE -f "$COMPOSE_FILE" logs --tail="$tail_lines" ${_since_flag} "$service"
         fi
     else
         if [ "$follow" = true ]; then
-            exec $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" logs -f --tail="$tail_lines" ${_since_flag}
+            exec $COMPOSE -f "$COMPOSE_FILE" logs -f --tail="$tail_lines" ${_since_flag}
         else
-            $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" logs --tail="$tail_lines" ${_since_flag}
+            $COMPOSE -f "$COMPOSE_FILE" logs --tail="$tail_lines" ${_since_flag}
         fi
     fi
     exit 0
@@ -538,7 +539,7 @@ fi
 
 if [ "${1:-}" = "channel" ] && [ "${2:-}" = "add" ]; then
     # Forward to container first
-    $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" exec -T core dina-admin "$@"
+    $COMPOSE -f "$COMPOSE_FILE" exec -T core dina-admin "$@"
     _exit_code=$?
 
     if [ $_exit_code -eq 0 ]; then
@@ -581,7 +582,7 @@ if [ "${1:-}" = "channel" ] && [ "${2:-}" = "add" ]; then
     exit $_exit_code
 
 elif [ "${1:-}" = "channel" ] && [ "${2:-}" = "remove" ]; then
-    $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" exec -T core dina-admin "$@"
+    $COMPOSE -f "$COMPOSE_FILE" exec -T core dina-admin "$@"
     _exit_code=$?
 
     if [ $_exit_code -eq 0 ]; then
@@ -602,4 +603,4 @@ elif [ "${1:-}" = "channel" ] && [ "${2:-}" = "remove" ]; then
 fi
 
 # All other commands: forward to the container
-exec $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" exec -T core dina-admin "$@"
+exec $COMPOSE -f "$COMPOSE_FILE" exec -T core dina-admin "$@"
