@@ -1,20 +1,29 @@
 /**
  * Root layout — Expo Router file-based routing.
  *
- * Tab navigator: Chat, People, PeerLens, Approvals (provider-only)
- * Hamburger: Vault, Reminders, Notifications, Settings, Help
+ * Tab navigator: Chat, People, Network, Activity
+ * Hamburger: Vault, Reminders, Settings, Help, Sign out
+ * Hidden/deep-link routes: Approvals, Service settings, Vault drill-downs,
+ *   Settings family, etc. (all `href: null`)
  *
- * Reminders + Notifications moved off the bottom bar — both are
- * secondary surfaces (reminders fan out into the unified inbox
- * already), so they live in the menu sheet instead. PeerLens
- * takes the freed-up bottom-bar slot.
+ * Four primary surfaces (product IA, not implementation concepts):
+ *   - Chat     — ask / remember / task / service answers / Dina conversation
+ *   - People   — contacts, identities, people graph, relationships
+ *   - Network  — services, providers, PeerLens reviews, trust discovery
+ *                (the `/peerlens` index, reframed; route folder unchanged)
+ *   - Activity — notifications, approvals, reminders, nudges, service results,
+ *                safety prompts (the unified inbox)
+ *
+ * Reminders moved off the bottom bar (it fans out into the unified inbox
+ * already) and lives in the menu sheet. Approvals is no longer a bottom
+ * tab — it's an action bucket inside Activity, reachable as a hidden
+ * deep-link route (`/approvals`).
  */
 
 import '../src/polyfills';
 import { Ionicons } from '@expo/vector-icons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FEATURES, FeatureIcon, type FeatureKey } from '../src/features';
-import { FEATURE_NAMES } from '@dina/core';
 import { CormorantGaramond_600SemiBold_Italic } from '@expo-google-fonts/cormorant-garamond';
 import {
   Figtree_400Regular,
@@ -42,7 +51,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { markNotificationRead } from '@dina/brain/notifications';
 import { UnlockGate } from '../src/components/unlock_gate';
 import { useAutoLock } from '../src/hooks/useAutoLock';
-import { useHasActiveAgent } from '../src/hooks/useHasActiveAgent';
 import { useNodeBootstrap } from '../src/hooks/useNodeBootstrap';
 import { useUnreadBadge } from '../src/hooks/useNotificationsBadge';
 import { useReminderFireWatcher } from '../src/hooks/useReminderFireWatcher';
@@ -326,51 +334,45 @@ const navMenuStyles = StyleSheet.create({
   rowText: textStyles.bodyLargeStrong,
 });
 
-/**
- * Degradation codes that mean "this node cannot serve provider-role
- * traffic yet."
- *
- * Review #7 removed `discovery.no_appview` — it's a REQUESTER-side
- * problem ("my /service searches come back empty"), not a provider
- * one. A node can publish + serve without local AppView lookup.
- *
- * Review #8 added `transport.sendd2d.noop` — without a real D2D
- * sender, service.response envelopes go to /dev/null, so a provider
- * profile that looks healthy is actually silently dropping every
- * reply.
- */
-const PROVIDER_BLOCKERS: ReadonlySet<string> = new Set([
-  'publisher.stub',
-  'transport.msgbox.missing',
-  'identity.did_key',
-  'execution.no_runner',
-  'persistence.in_memory',
-  'transport.sendd2d.noop',
-]);
-
 type TabName =
   | 'Chat'
   | 'People'
-  | 'PeerLens'
-  | 'Notifications'
-  | 'Approvals';
+  | 'Network'
+  | 'Activity';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
-// Maps each tab to its feature key — icons and labels come from the registry.
+// Maps each tab to its feature key — icons come from the registry, the
+// user-facing label is the `title` on each Tabs.Screen below. Network is
+// the `peerlens` surface (reframed) and Activity is the `notifications`
+// inbox; the feature keys stay canonical (see FEATURE_NAMES).
 const TAB_FEATURE: Record<TabName, FeatureKey> = {
-  Chat:          'chat',
-  People:        'people',
-  PeerLens:      'peerlens',
-  Notifications: 'notifications',
-  Approvals:     'security',
+  Chat:     'chat',
+  People:   'people',
+  Network:  'peerlens',
+  Activity: 'notifications',
+};
+
+// Per-tab icon override for SURFACES whose tab glyph should differ from the
+// underlying feature's icon. Network is the `peerlens` surface, but PeerLens's
+// glasses icon connotes "reviews/lens" specifically — wrong for the broader
+// external-network surface (services + providers + trust discovery). A globe
+// reads as "the outside network." PeerLens keeps its glasses icon everywhere
+// else (help screen, feature lists) since the SUBSYSTEM identity is unchanged.
+const TAB_ICON_OVERRIDE: Partial<Record<TabName, { outline: IoniconName; filled: IoniconName }>> = {
+  Network: { outline: 'globe-outline', filled: 'globe' },
 };
 
 function TabIcon({ name, focused }: { name: TabName; focused: boolean }) {
   const tint = focused ? colors.tabActive : colors.tabInactive;
+  const override = TAB_ICON_OVERRIDE[name];
   return (
     <View style={tabIconStyles.container}>
-      <FeatureIcon feature={TAB_FEATURE[name]} size={22} color={tint} focused={focused} />
+      {override !== undefined ? (
+        <Ionicons name={focused ? override.filled : override.outline} size={22} color={tint} />
+      ) : (
+        <FeatureIcon feature={TAB_FEATURE[name]} size={22} color={tint} focused={focused} />
+      )}
     </View>
   );
 }
@@ -436,35 +438,16 @@ export default function RootLayout() {
   // throws a fresh error per tab. Issue #15.
   const showTabs = bootState.status !== 'error' && iconsFontLoaded;
 
-  // Gate the provider-facing tabs (Approvals + Service Sharing) on
-  // BOTH role AND blockers (review #16). A requester-only node is
-  // deliberately not a provider, so inviting the user into Approvals
-  // is a dead-end flow.
-  const runningAsProvider =
-    bootState.node !== null &&
-    (bootState.node.role === 'provider' || bootState.node.role === 'both');
-  const providerBlocked = bootState.degradations.some((d) => PROVIDER_BLOCKERS.has(d.code));
-  const showProviderTabs = runningAsProvider && !providerBlocked;
-
-  // The Approvals tab serves three approval kinds — provider-mode
-  // service queries, paired-agent intent validations (`dina validate`
-  // from OpenClaw / dina-cli-agent), and locked-vault staging access.
-  // The latter two fire from any paired `agent`-role device, not just
-  // when this node publishes services. Without an OR'd agent gate, a
-  // user with OpenClaw paired but no provider profile can never see
-  // their pending intent-validation approvals.
-  const hasActiveAgent = useHasActiveAgent();
-  const showApprovalsTab = showProviderTabs || hasActiveAgent;
-
-  // Two badge-bearing bottom tabs:
-  //   - Approvals: provider-only inbound service queries that need a
-  //     human decision (gated on provider role + readiness).
-  //   - Notifications: unified inbox of every kind (reminder / approval
-  //     / nudge / briefing / ask_approval). Pinned to the bar because
-  //     it's where the user looks for "what's new" — the hamburger-menu
-  //     version was easy to miss and led to stale unread counts.
+  // Activity tab badge — action-first (spec 5.4). Pending approvals take
+  // priority so a safety decision never hides behind a chronological
+  // unread count; when there are none, fall back to the total unread.
+  // `useUnreadBadge` returns `string | undefined`, so `??` yields exactly
+  // one count (never double-counted: approvals ARE a subset of unread, so
+  // we show one OR the other, not their sum). Approvals is no longer its
+  // own bottom tab — it's an action bucket inside Activity (spec 5.3).
   const approvalBadge = useUnreadBadge('approval');
   const notificationsBadge = useUnreadBadge();
+  const activityBadge = approvalBadge ?? notificationsBadge;
 
   // Fire watcher mounted at the root so reminders post into the chat
   // thread + inbox regardless of which tab is currently visible.
@@ -745,9 +728,14 @@ export default function RootLayout() {
                 const focused = getFocusedRouteNameFromRoute(route);
                 const hideTabBar = focused === 'write' || focused === 'outbox';
                 return {
-                  title: FEATURE_NAMES.peerlens,
+                  // Bottom-tab label is "Network" — the top-level surface that
+                  // CONTAINS PeerLens (trust) + Services. The route folder stays
+                  // `/peerlens` (no pre-release route migration); the canonical
+                  // `FEATURE_NAMES.peerlens` is unchanged. The header title is
+                  // set to "Network" inside the PeerLens Stack layout.
+                  title: 'Network',
                   tabBarIcon: ({ focused: f }: { focused: boolean }) => (
-                    <TabIcon name="PeerLens" focused={f} />
+                    <TabIcon name="Network" focused={f} />
                   ),
                   // The trust folder has its own Stack layout
                   // (`app/peerlens/_layout.tsx`) that scopes back-navigation
@@ -828,25 +816,27 @@ export default function RootLayout() {
             <Tabs.Screen
               name="notifications"
               options={{
-                title: 'Notifications',
+                title: 'Activity',
                 tabBarIcon: ({ focused }) => (
-                  <TabIcon name="Notifications" focused={focused} />
+                  <TabIcon name="Activity" focused={focused} />
                 ),
-                tabBarBadge: notificationsBadge,
+                // Action-first badge: pending approvals first, else unread.
+                tabBarBadge: activityBadge,
               }}
             />
             <Tabs.Screen
               name="approvals"
               options={{
                 title: 'Approvals',
-                tabBarIcon: ({ focused }) => <TabIcon name="Approvals" focused={focused} />,
-                // Hide when the node can't actually handle inbound provider
-                // traffic yet (finding #12). `href: null` removes it from the
-                // tab bar without unmounting the route. Also visible whenever
-                // a delegation-claiming agent is paired so intent-validation
-                // approvals from OpenClaw / dina-cli-agent have a surface.
-                href: showApprovalsTab ? undefined : null,
-                tabBarBadge: approvalBadge,
+                // Approvals is no longer a bottom tab (spec 5.3) — it's an
+                // action bucket inside Activity. `href: null` removes it from
+                // the bar UNCONDITIONALLY (even with provider/agent enabled —
+                // spec 7.1) without unmounting the route, so notification taps
+                // and `dina://approvals/<id>` deep links still resolve. As a
+                // focused deep-link target it gets a back chevron whose logical
+                // parent is Activity (see parent_route.ts).
+                href: null,
+                headerLeft: renderHeaderBackButton,
               }}
             />
             <Tabs.Screen

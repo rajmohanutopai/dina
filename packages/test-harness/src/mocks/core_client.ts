@@ -42,6 +42,7 @@ import type {
   PersonaStatusResult,
   PersonaUnlockResult,
   ServiceConfig,
+  ServiceListing,
   ServiceQueryClientRequest,
   ServiceQueryResult,
   MemoryToCOptions,
@@ -154,7 +155,13 @@ export class MockCoreClient implements CoreClient {
     unlocked: true,
     dekFingerprint: 'mockfpAB',
   };
+  /** The default `self` listing. Authoritative for `serviceConfig()` /
+   *  `serviceConfig('self')` and the `self` row of `listServiceConfigs()`. */
   serviceConfigResult: ServiceConfig | null = null;
+  /** Non-`self` listings, keyed by rkey (multi-listing per DID). Kept
+   *  separate from `serviceConfigResult` so there's exactly one source of
+   *  truth per rkey — `self` lives in the field, everything else here. */
+  serviceListingsByRkey = new Map<string, ServiceConfig>();
   serviceQueryResult: ServiceQueryResult = {
     taskId: 'mock-task-id',
     queryId: 'mock-query-id',
@@ -267,6 +274,7 @@ export class MockCoreClient implements CoreClient {
     this.calls.length = 0;
     this.throwOn = {};
     this.personaStatusByName = {};
+    this.serviceListingsByRkey.clear();
     this.scratchpadStore.clear();
     this.workflowEvents = [];
     this.ackedEventIds.length = 0;
@@ -375,14 +383,45 @@ export class MockCoreClient implements CoreClient {
     }));
   }
 
-  async putServiceConfig(config: ServiceConfig): Promise<void> {
-    await this.dispatch('putServiceConfig', [config], () => {
-      this.serviceConfigResult = config;
+  async putServiceConfig(config: ServiceConfig, rkey?: string): Promise<void> {
+    await this.dispatch('putServiceConfig', [config, rkey], () => {
+      if (rkey === undefined || rkey === 'self') {
+        this.serviceConfigResult = config;
+      } else {
+        this.serviceListingsByRkey.set(rkey, config);
+      }
     });
   }
 
-  async serviceConfig(): Promise<ServiceConfig | null> {
-    return this.dispatch('serviceConfig', [], () => this.serviceConfigResult);
+  async serviceConfig(rkey?: string): Promise<ServiceConfig | null> {
+    return this.dispatch('serviceConfig', [rkey], () =>
+      rkey === undefined || rkey === 'self'
+        ? this.serviceConfigResult
+        : (this.serviceListingsByRkey.get(rkey) ?? null),
+    );
+  }
+
+  async listServiceConfigs(): Promise<ServiceListing[]> {
+    return this.dispatch('listServiceConfigs', [], () => {
+      const listings: ServiceListing[] = [];
+      if (this.serviceConfigResult !== null) {
+        listings.push({ rkey: 'self', config: this.serviceConfigResult });
+      }
+      for (const [rkey, config] of this.serviceListingsByRkey) {
+        listings.push({ rkey, config });
+      }
+      return listings;
+    });
+  }
+
+  async deleteServiceConfig(rkey: string): Promise<void> {
+    await this.dispatch('deleteServiceConfig', [rkey], () => {
+      if (rkey === 'self') {
+        this.serviceConfigResult = null;
+      } else {
+        this.serviceListingsByRkey.delete(rkey);
+      }
+    });
   }
 
   async sendServiceQuery(req: ServiceQueryClientRequest): Promise<ServiceQueryResult> {

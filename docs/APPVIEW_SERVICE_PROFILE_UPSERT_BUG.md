@@ -117,7 +117,7 @@ delete-then-insert silently violated.
    build cached → `up -d` saw no change). Force it:
    `ssh dina-test-infra "cd /opt/dina-test-infra/deploy && COMPOSE_PROJECT_NAME=dina-infra-test docker compose -f docker-compose.infra.yml up -d --force-recreate --build appview-web appview-ingester appview-scorer"`
 4. Re-publish Corner Market:
-   `cd bus42-agent && DINA_CORE_URL=http://127.0.0.1:18299 DINA_SERVICE_KEY_DIR=/tmp/drcarl-key-dir DINA_SERVICE_NAME="Corner Market" npx tsx put_service_config_price.ts`
+   `cd dina-services-demo && DINA_CORE_URL=http://127.0.0.1:18299 DINA_SERVICE_KEY_DIR=/tmp/drcarl-key-dir DINA_SERVICE_NAME="Corner Market" npx tsx put_service_config_price.ts`
 5. Poll `service.search?capability=price_check` → should now return Corner
    Market (and `?capability=price_lookup` via alias canonicalization).
 6. Re-pair the price daemon (config was lost):

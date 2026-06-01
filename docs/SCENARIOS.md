@@ -906,21 +906,21 @@ You ──tap Ask──▶ "When does bus 42 reach Castro" ──▶ Send
                                                           │
                                                           ▼
                                                 AppView directory lookup:
-                                                bus42-agent registered as
+                                                dina-services-demo registered as
                                                 service answering eta_query
                                                 for route 42 / Castro stop
                                                           │
                                                           ▼
                                                 Your Dina ranks candidates,
-                                                picks bus42-agent
+                                                picks dina-services-demo
                                                           │
                                                           ▼
                                                 D2D service.query sent
-                                                via MsgBox to bus42-agent's
+                                                via MsgBox to dina-services-demo's
                                                 Home Node
                                                           │
                                                           ▼
-                                                bus42-agent's Home Node:
+                                                dina-services-demo's Home Node:
                                                 "I advertised eta_query.
                                                  Policy: auto-accept from
                                                  strangers for advertised
@@ -931,7 +931,7 @@ You ──tap Ask──▶ "When does bus 42 reach Castro" ──▶ Send
                                                 with kind=service_query
                                                           │
                                                           ▼
-                                                bus42-agent's paired
+                                                dina-services-demo's paired
                                                 dina-agent daemon polls
                                                 /v1/workflow/tasks/claim
                                                           │
@@ -960,7 +960,7 @@ You ──tap Ask──▶ "When does bus 42 reach Castro" ──▶ Send
 ### The Trust Gate (how strangers can talk safely)
 
 Per Feature 5, D2D requires both sides to have each other in
-`knownContacts` — otherwise messages get quarantined. But bus42-agent
+`knownContacts` — otherwise messages get quarantined. But dina-services-demo
 is a stranger to you, and vice versa. Two mechanisms make Services
 work without permanently opening either side's door:
 
@@ -968,16 +968,16 @@ work without permanently opening either side's door:
 
 ```
 When YOUR Dina SENDS the service.query, it leaves a note:
-  "I'm expecting ONE reply from bus42-agent's DID,
+  "I'm expecting ONE reply from dina-services-demo's DID,
    about request_id=abc, within 60 seconds."
 
-When bus42-agent's REPLY arrives, your Dina checks:
-  - From bus42-agent's DID?     YES
+When dina-services-demo's REPLY arrives, your Dina checks:
+  - From dina-services-demo's DID?     YES
   - For request_id=abc?         YES
   - Within 60s?                 YES
   → Let it in. Tear up the note.
 
-A personal message from bus42-agent NEXT day:
+A personal message from dina-services-demo NEXT day:
   "Hey, want to be friends?"
   → QUARANTINED. No matching note. Stranger.
 ```
@@ -985,7 +985,7 @@ A personal message from bus42-agent NEXT day:
 **On THEIR side — "advertised service" policy:**
 
 ```
-- bus42-agent published eta_query in test-appview's directory.
+- dina-services-demo published eta_query in test-appview's directory.
 - Policy: auto-accept eta_query D2D from ANY DID for that capability.
 - A personal message ("be my contact") from a stranger?
   → QUARANTINED. Personal messages still gate on contacts.
@@ -1000,8 +1000,8 @@ This entire flow was verified live:
 - Discovery via `test-appview.dinakernel.com`
 - D2D over `test-mailbox.dinakernel.com` (real MsgBox)
 - Provider Dina is a separate lite Core process on `:18298`
-- bus42-agent daemon polls via the actual dina-agent claim loop
-- ETA from `bus42-agent/stub_eta_runner.py` (the only stand-in — it
+- dina-services-demo daemon polls via the actual dina-agent claim loop
+- ETA from `dina-services-demo/stub_eta_runner.py` (the only stand-in — it
   replaces a real transit-API integration)
 
 The Demo ETA Provider DID and `via Demo ETA Provider · did:plc:6zyy3b…`
@@ -1041,7 +1041,7 @@ Every interaction is signed, end-to-end. No ads. No middlemen.
 | PeerLens scorer | `appview/src/scorer/` |
 | Services directory lookup | `apps/mobile/src/services/` |
 | D2D send/receive pipeline | `packages/core/src/d2d/` |
-| bus42-agent demo runner | `bus42-agent/stub_eta_runner.py` |
+| dina-services-demo demo runner | `dina-services-demo/stub_eta_runner.py` |
 
 ---
 

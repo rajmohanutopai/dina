@@ -2909,3 +2909,330 @@ Missing scenario:
   lexicon can export to / import from NIP-32 labels, you get interop with the Nostr reviews ecosystem if it matures, the same way A2A Agent-Card export gets you agent-discovery interop. Adapter, not foundation.
   Worth one line in the TODO, deprioritized until Nostr reviews actually ship.
 
+
+# Deferred
+  Deferred item (#188): the HNL publisher's validator bypass
+     
+  What the code literally does
+  
+  In wire_publisher.ts, the publishOnce() function is supposed to publish a service profile by calling ServiceProfilePublisher.publish(record) — which runs a validateProfile() safety check, then writes to the PDS.
+  
+  Instead it does two things to skip that:
+  
+  1. Line 181 — builds the record with a local helper buildWireServiceProfile(config) instead of the shared buildServiceProfile() from profile_builder.ts.
+  2. Lines 191-192 — reaches into the publisher's private field via a type cast:
+  const putRecord = (publisher as unknown as { putRecordFn: PutRecordFn }).putRecordFn;
+  2. and calls that raw PDS-write directly — deliberately skipping validateProfile(). The log message even says so: 'service profile published to PDS (bypass validator)'.
+  
+  The root cause (lines 172-180, the comment spells it out)
+  
+  There are two record shapes in conflict:
+  
+  ┌─────────────┬───────────────────────────────────┬──────────────────────────────┐
+  │    field    │ profile_builder.ts emits (legacy) │    live PDS lexicon wants    │
+  ├─────────────┼───────────────────────────────────┼──────────────────────────────┤
+  │ public flag │ isPublic (×6 refs in the builder) │ isDiscoverable               │
+  ├─────────────┼───────────────────────────────────┼──────────────────────────────┤
+  │ coordinates │ float lat / lng                   │ integer latE7 / lngE7 (×1e7) │
+  ├─────────────┼───────────────────────────────────┼──────────────────────────────┤
+  │ timestamp   │ (missing)                         │ updatedAt required           │
+  └─────────────┴───────────────────────────────────┴──────────────────────────────┘
+  
+  buildServiceProfile() produces the legacy shape, and validateProfile() validates against that legacy shape. But the real PDS wants the new shape. So publishOnce builds the correct new-shape record locally and
+  skips the validator — because the validator would reject the (correct) new-shape record.
+  
+  Why it's only P2, not a bug
+  
+  - It works correctly today. The record it publishes is the right shape — verified against a real provider's repo on test-pds.
+  - The cost is maintainability, not correctness: poking a private field via as unknown as {...} defeats encapsulation, and validateProfile() is silently dead on this path. If the wire shape drifts again, nothing
+  catches it before it hits the PDS.
+  
+  Why it's a multi-file refactor (why I deferred it)
+  
+  A clean fix touches 4 areas, and the comment at line 179 names the real risk — "avoids cascading test breakage in the builder's own suite":
+  
+  1. profile_builder.ts (313 lines) — change buildServiceProfile() + its ServiceProfileRecord type + BuildProfileInput to the new lexicon (isDiscoverable, latE7/lngE7, updatedAt). isPublic appears 6 times.
+  2. service_profile_publisher.ts — update validateProfile() to validate the new shape.
+  3. wire_publisher.ts — delete buildWireServiceProfile + the private-field cast, route publishOnce back through publisher.publish(record, rkey).
+  4. Two test suites — profile_builder.test.ts and service_profile_publisher.test.ts, both pinned to the legacy shape.
+  
+  So it's a contained but genuinely multi-file change with real test fallout — not something to half-do, and exactly the kind of thing I didn't want to start on the flaky channel mid-session.
+  
+  My recommendation
+  
+  It's a legitimate cleanup worth doing eventually, but it's not blocking and carries no functional risk today. If/when you want it, it's a focused ~1-2 hour pass on a stable channel: builder → validator → rewire
+  → fix the two suites → verify green. Want me to take it on now, or leave it parked?
+
+# Locally saved services
+
+Locally saved services need not be called through appview - especially for custom services
+For example custom services like my com.rajschool.homework_services 
+you save it once - it will be shown on google maps, and you select and save. 
+then, you can use it everytime 
+it wont be in contacts, so they cannot contact you (privacy)
+but you can ping service and ask
+  Service protocol and service discovery are separate.
+
+  - AppView is for discovering unknown services.
+  - Known services can skip AppView discovery.
+  - Known services should still use `service.query`, not normal D2D, when the user is invoking a service.
+  - Normal D2D is for conversation: "message Emma", "ask RajSchool", "tell Quixote".
+  - `service.query` is for scoped service invocation: typed params, schema validation, one-shot response window, no contact relationship.
+
+  ## Why this matters
+
+  Example:
+
+  > What homework does Emma have today?
+
+  Dina may have several possible paths:
+
+  - Local vault: maybe Emma's homework is already known.
+  - Person D2D: maybe the user wants to message Emma.
+  - Known service: maybe Emma is linked to RajSchool's homework service.
+  - AppView discovery: maybe Dina does not know the school service yet.
+
+  This needs a deterministic routing policy. The LLM can interpret intent, but the product should enforce the correct order.
+
+  ## Routing Priority
+
+  1. Check local/private context first.
+  2. Check known service bindings second.
+  3. Use AppView discovery only if no known service binding exists.
+  4. Use normal D2D only for conversational fallback.
+  5. Ask clarification if multiple paths are materially plausible.
+
+  ## Known Service Binding
+
+  Dina needs a local binding such as:
+
+  ```ts
+  type KnownServiceBinding = {
+    subject_person_id?: string;       // Emma
+    organization_person_id?: string;  // RajSchool
+    provider_did: string;
+    service_uri: string;
+    capability: string;               // e.g. com.rajschool.homework_status
+    schema_hash: string;
+    params_schema?: unknown;
+    result_schema?: unknown;
+    relationship: string;             // school, doctor, shop, etc.
+    source: 'manual' | 'appview' | 'pairing' | 'import' | 'llm_confirmed';
+    trust_state: 'trusted' | 'unverified' | 'blocked';
+    last_verified_at?: string;
+  };
+
+  Example binding:
+
+  Emma -> school -> RajSchool
+  RajSchool -> service_uri
+  RajSchool -> capability: com.rajschool.homework_status
+  RajSchool -> schema_hash
+
+  Once this exists, Dina should call the known service directly:
+
+  query_service({
+    operator_did: binding.provider_did,
+    service_uri: binding.service_uri,
+    capability: binding.capability,
+    schema_hash: binding.schema_hash,
+    params,
+  });
+
+  If the provider rejects with schema_version_mismatch, Dina should refresh the service profile and retry once.
+
+  ## AppView Privacy Rule
+
+  AppView should not receive private local facts unless explicitly needed.
+
+  For:
+
+  > What homework does Emma have today?
+
+  Dina should not search AppView for "Emma homework".
+
+  Instead:
+
+  - Resolve Emma locally.
+  - If no known binding exists, search AppView for a generic service intent such as "school homework status".
+  - After choosing the provider, fill private params locally.
+
+  Current service.query is not anonymous. The provider still sees requester identity. But it is still better than personal D2D because it does not create contact permission, does not open a personal channel, and
+  allows only a scoped response.
+
+  Future stronger privacy would require brokered/blinded service queries, reply tokens, or pseudonymous service DIDs.
+
+  ## D2D vs Service Query
+
+  Use D2D when:
+
+  - The user wants to talk to a person or known identity.
+  - The request is conversational.
+  - No typed service contract exists.
+  - The user explicitly approves conversational fallback.
+
+  Use service.query when:
+
+  - The user wants a function/service result.
+  - The provider has a published capability.
+  - The interaction should not create a contact relationship.
+  - The response should be typed, validated, or rendered as a card.
+
+  Important rule:
+
+  Knowing the provider DID is not a reason to use D2D. If the intent is service invocation, use service.query against the known provider.
+
+  ## Common vs Custom Capabilities
+
+  Common capability:
+
+  - Best when many providers implement the same contract.
+  - Example: eta_query, product_price, appointment_status.
+  - Enables marketplace ranking and comparison.
+
+  Custom capability:
+
+  - Best for provider-specific service endpoints.
+  - Example: com.rajschool.homework_status, com.acme.banana_inventory.
+  - Useful even for known providers because it gives schema validation, typed params, typed results, and service-level privacy boundary.
+  - Weak for marketplace comparison if every provider invents incompatible names.
+
+  Promotion path:
+
+  - Start with custom capabilities for provider-specific workflows.
+  - Promote to common capability when many providers expose the same function.
+  - Keep custom capabilities so new providers can publish functions without waiting for Dina standardization.
+
+  ## Required Work
+
+  - Add local known-service binding storage.
+  - Add Brain resolver/tool: find_known_service(subject, intent).
+  - Update service router priority: local context -> known service -> AppView discovery -> D2D fallback -> clarification.
+  - Add schema mismatch refresh-and-retry-once.
+  - Update mobile custom service UI to encourage reverse-DNS capability names.
+  - Require or strongly encourage schemas for public custom services.
+  - Add tests that known service invocation does not call AppView.
+  - Add tests that AppView discovery does not leak private subject names.
+  - Add tests that service invocation uses service.query, not personal D2D.
+  - Add tests that D2D is used only for explicit conversational intent.
+
+  ## Acceptance Criteria
+
+  - "What homework does Emma have today?" answers locally if the vault already has the answer.
+  - If Emma has a known RajSchool service binding, Dina invokes RajSchool directly via service.query.
+  - If no known binding exists, Dina searches AppView with generic service intent only.
+  - If the user says "message Emma and ask", Dina uses D2D conversation.
+  - Service invocation never grants personal messaging/contact access.
+  - Stale schema causes profile refresh and one retry.
+  - Custom capabilities work, but common capabilities are preferred for shared marketplace categories.
+
+
+# UI Improvements
+  What I'm not fully happy with (honest):
+  - The Network screen reads as "a Services card bolted on top of the old PeerLens screen," because that's literally what it is. Look at screenshot 2: Services card → search bar → a big "Your network is quiet"
+  empty state with a lot of dead space. The two modules are stacked, not integrated. It's functional and it's within the spec's "reuse existing code paths" constraint — but a designer would want a follow-up pass
+  to make Network feel like one coherent surface (e.g. Services as a section in a unified scroll, or visually tying Services + trust together) rather than two things sharing a screen. 
+  - "Find a service" punts you to Chat. Tapping it context-switches to Chat to type, with no in-Network service search. That's deliberate (a marketplace UI was an explicit non-goal), but it's the least intuitive
+  affordance on the screen — a user tapping "Find a service" half-expects a search field, not a jump to another tab.
+  - Minor: the globe is readable but generic (could also say "web/language"); a node-graph glyph would be more specifically "Dina network." And the Activity empty state still says "No notifications yet" while the
+  tab says "Activity" (my open question #1). Both small. 
+  
+   The honest caveat is that the Network screen's 
+  composition is the obvious candidate for a real design polish pass (Services + PeerLens integration, and a better "Find a service" affordance). That's a follow-up, not a blocker — and it's squarely in the spec's
+  non-goals for this task. If you want, I can sketch a more integrated Network layout as a separate proposal.
+
+
+  ## 1. Network Feeling Bolted Together
+
+  Valid criticism.
+
+  The Network screen should not feel like:
+
+  Services card
+  Old PeerLens screen
+
+  It should feel like:
+
+  Network = how Dina reaches and trusts the outside world
+
+  Better structure:
+
+  Network
+
+  Services
+  - Services Dina can use
+  - Services you provide
+  - Ask Dina to find a service
+
+  Trust
+  - PeerLens / trusted sources
+  - Reviews, attestations, network signals
+
+  Recent
+  - Recent service lookups / trust events
+
+  But I would not do a big redesign now. If the current screen is functional, keep it. Just make the copy tie the two modules together.
+
+  Example header copy:
+
+  Dina uses services and trust signals from your network.
+
+  That makes Services + PeerLens feel connected.
+
+  ## 2. “Find a service” Going to Chat
+
+  This is acceptable because Chat is Dina’s intent box.
+
+  But the wording must be honest.
+
+  Bad:
+
+  Find a service
+
+  This sounds like it opens an in-screen marketplace/search page.
+
+  Better:
+
+  Ask Dina to find a service
+
+  or:
+
+  Ask in Chat
+
+  or:
+
+  Search with Dina
+
+  So I would not build an in-Network service search now. That can become a marketplace later. For V1, Chat-driven discovery is aligned with the product.
+
+  ## 3. Globe Icon
+
+  Minor.
+
+  Globe is understandable, but generic. If you have a node/network icon available, I would use it.
+
+  Better icons:
+
+  Network / nodes / share graph
+
+  But this is not worth delaying anything.
+
+  ## 4. Activity Empty State
+
+  This one I would fix before release because it is cheap and visible.
+
+  If the tab is Activity, the empty state should not say:
+
+  No notifications yet
+
+  Better:
+
+  No activity yet
+
+  or:
+
+  Nothing needs your attention
+
+  Activity includes more than notifications: approvals, service results, tasks, alerts.
+
+

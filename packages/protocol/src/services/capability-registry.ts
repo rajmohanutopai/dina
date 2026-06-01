@@ -40,13 +40,24 @@ export interface CanonicalCapability {
 }
 
 /**
- * The closed launch vocabulary. Two domains, both backed by real
- * provider+responder demo code (transit = bus42-agent, appointments =
- * Dr Carl demo) so they are actually seedable — no aspirational entries.
+ * The official common capability vocabulary — the SYNC, dependency-free mirror
+ * of the AppView-served capability catalog (`capability-catalog.ts`). It exists
+ * because AppView + Core must resolve official capabilities LOCALLY: AppView
+ * cannot import `@dina/protocol`, and Core's D2D ingress check is sync and
+ * cannot await a catalog fetch. The §79 consistency gate
+ * (`capability_catalog.test.ts`) asserts every entry here exists in the catalog
+ * with IDENTICAL aliases, so the two never drift — a provider that picks an
+ * official capability in the mobile catalog picker resolves + searches through
+ * THIS registry.
  *
- * To add a capability later: append an entry (additive, zero pollution —
- * existing canonical names never change). NEVER rename a `canonical`
- * (that fragments the index); add an alias instead.
+ * The first three (transit / appointments / commerce) are the demo-backed seed;
+ * the rest mirror the curated catalog so every pickable official capability is
+ * actually routable.
+ *
+ * To add a capability later: append an entry here (additive, zero pollution —
+ * existing canonical names never change) AND add the matching catalog entry
+ * (same id + aliases, or the §79 gate fails). NEVER rename a `canonical` (that
+ * fragments the index); add an alias instead.
  */
 export const CAPABILITY_REGISTRY: readonly CanonicalCapability[] = Object.freeze([
   Object.freeze({
@@ -66,6 +77,69 @@ export const CAPABILITY_REGISTRY: readonly CanonicalCapability[] = Object.freeze
     aliases: Object.freeze(['price_lookup', 'stock_price', 'product_price', 'availability_check']),
     description: 'Check the current price and stock availability of a product at a store.',
     domain: 'commerce',
+  }),
+  // ── Catalog-mirrored official capabilities (§79 gate keeps aliases in sync
+  // with capability-catalog.ts). These are pickable in the mobile catalog
+  // picker, so they MUST resolve + search through this registry. ──
+  Object.freeze({
+    canonical: 'appointment_availability',
+    aliases: Object.freeze(['appointment_slots', 'appt_availability']),
+    description: 'Available appointment/consultation slots for a provider.',
+    domain: 'appointments',
+  }),
+  Object.freeze({
+    canonical: 'appointment_book',
+    aliases: Object.freeze(['book_appointment', 'appointment_booking']),
+    description: 'Book an appointment slot. Requires explicit approval.',
+    domain: 'appointments',
+  }),
+  Object.freeze({
+    canonical: 'order_status',
+    aliases: Object.freeze(['order_state']),
+    description: 'Status of an existing merchant order.',
+    domain: 'commerce',
+  }),
+  Object.freeze({
+    canonical: 'package_tracking',
+    aliases: Object.freeze(['shipment_tracking', 'parcel_tracking']),
+    description: 'Track a shipment/parcel by tracking number.',
+    domain: 'logistics',
+  }),
+  Object.freeze({
+    canonical: 'delivery_eta',
+    aliases: Object.freeze(['delivery_time']),
+    description: 'Estimated arrival time for an active delivery.',
+    domain: 'logistics',
+  }),
+  Object.freeze({
+    canonical: 'service_health_status',
+    aliases: Object.freeze(['health_status', 'api_health']),
+    description: 'Health of an API/service/system.',
+    domain: 'developer_ops',
+  }),
+  Object.freeze({
+    canonical: 'deploy_status',
+    aliases: Object.freeze(['deployment_status']),
+    description: 'Status of a deployment.',
+    domain: 'developer_ops',
+  }),
+  Object.freeze({
+    canonical: 'school_homework_status',
+    aliases: Object.freeze(['homework_status']),
+    description: 'Homework/assignments for a student.',
+    domain: 'school',
+  }),
+  Object.freeze({
+    canonical: 'service_quote',
+    aliases: Object.freeze(['repair_quote', 'job_quote']),
+    description: 'Quote for a requested repair/service job.',
+    domain: 'home_local',
+  }),
+  Object.freeze({
+    canonical: 'device_status',
+    aliases: Object.freeze(['device_state']),
+    description: 'Status of a device/sensor on a personal node.',
+    domain: 'home_iot',
   }),
 ])
 

@@ -10,9 +10,15 @@ Method: Static analysis of all router calls, `parentRouteFor` map, and Tabs/Stac
 ```
 Root: <Tabs> (flat — no per-tab Stack except for peerlens/ and vault/)
 
-Bottom bar tabs:
-  Chat (/)          People (/people)     PeerLens (/peerlens)
-  Notifications     Approvals (provider/agent only)
+Bottom bar tabs (4 — same even with provider/agent enabled):
+  Chat (/)          People (/people)
+  Network (/peerlens)   Activity (/notifications)
+
+  Network  = Services + PeerLens trust/reviews (route folder unchanged)
+  Activity = unified inbox: notifications + approvals + reminders + nudges
+
+Hidden / deep-link routes (href: null): Approvals (/approvals),
+  Service settings (/service-settings), Vault drill-downs, Settings family.
 
 Hamburger menu (header-left on every top-level tab):
   → /vault          → /reminders        → /settings
@@ -168,8 +174,8 @@ Under bare `<Tabs>` without a per-tab Stack, `router.back()` pops the previously
 - **Hamburger menu** items (vault, reminders, settings, help) all push correctly.
 - **`help.tsx` `?from` param** — the `from` query param mechanism in `HeaderBackButton` works. PeerLens and Vault both pass `?from=<section>` when opening Help, so back from Help returns to the correct section.
 - **NavMenu hides current route** — the menu filters out the entry matching the current path, so no self-navigation.
-- **Tab bar Approvals gating** — hidden correctly when `!showApprovalsTab`.
-- **PeerLens tab gating** — hidden when `isTrustTabHidden()`.
+- **Approvals is not a bottom tab** — `/approvals` is `href: null` unconditionally (reached via notification tap / `dina://approvals/<id>` deep link). Its back chevron's logical parent is Activity (`parentRouteFor('/approvals') → /notifications`). The former `showApprovalsTab` provider/agent gate was retired.
+- **Network (PeerLens) tab gating** — hidden when `isTrustTabHidden()`.
 
 ---
 

@@ -123,7 +123,12 @@ Shared chrome:
 
 ## 3. Bottom-tab navigation (post-unlock)
 
-Root layout: `app/_layout.tsx`. Five tabs, each with its own Stack:
+Root layout: `app/_layout.tsx`. Four visible bottom tabs — **Chat | People |
+Network | Activity** — plus hidden/deep-link routes (`href: null`: Vault,
+Reminders, Settings family, Approvals, Service settings, …) reached via the
+hamburger menu or deep links. Section numbers below follow registration order
+(so hidden routes like Vault keep a "tab N" tag even though they're not on the
+bar):
 
 ### 3.1 Chat (tab 1) — `/` — `app/index.tsx`
 
@@ -163,7 +168,13 @@ Two sub-views switched via an in-page `SubTabBar`:
   - List of `Person` rows derived from messaging + PeerLens history (people you've interacted with but not added as contacts).
   - Rows render via `RelationRow`.
 
-### 3.4 PeerLens (tab 4) — `/peerlens` — Stack with its own `_layout.tsx`
+### 3.4 Network (tab 4) — `/peerlens` — Stack with its own `_layout.tsx`
+
+> Bottom-tab + header label is **Network** (the external discovery/trust surface).
+> The route folder stays `/peerlens` and `FEATURE_NAMES.peerlens` is unchanged —
+> PeerLens is the trust subsystem *inside* Network. The screen now leads with a
+> **Services** module (`NetworkServicesCard`: Find a service → Chat; Publish/My
+> services → `/service-settings`) above the PeerLens self-profile + feed.
 
 Trust-network surface. Heavy stack.
 
@@ -211,13 +222,22 @@ Trust-network surface. Heavy stack.
   - Loading / empty states.
 - **Co-signature inbox row** — `src/peerlens/components/cosig_inbox_row_view.tsx` (rendered inside the feed). Endorse / decline actions.
 
-### 3.5 Notifications (tab 5) — `/notifications` — `app/notifications.tsx`
+### 3.5 Activity (tab 5) — `/notifications` — `app/notifications.tsx`
 
-- Filter chips (All / Unread / Briefings / Reminders / Approvals).
+> Bottom-tab + header label is **Activity** (the event/action/safety surface).
+> Same unified inbox; action-first framing.
+
+- Filter chips (**Needs action** / Unread / All / Reminders). "Needs action"
+  surfaces every item that asks for a decision (`approval` + `ask_approval`
+  kinds: service approvals, agent validations, locked-vault prompts).
 - List of notification rows with icon, title, subtitle, meta line, unread dot.
 - Empty state.
 
-### 3.6 Approvals (tab 6) — `/approvals` — `app/approvals.tsx`
+### 3.6 Approvals (tab 6 — hidden / deep-link route, not on the bar) — `/approvals` — `app/approvals.tsx`
+
+> No longer a bottom tab (spec 5.3). `href: null` unconditionally; reached by
+> tapping an approval notification or a `dina://approvals/<id>` deep link. Back
+> chevron returns to Activity (`parentRouteFor('/approvals') → /notifications`).
 
 - List of pending agent-intent approvals.
 - Per-row approve/deny actions (each fires an `Alert` confirmation).
@@ -252,8 +272,8 @@ Trust-network surface. Heavy stack.
 | `/paired-devices` | `paired-devices.tsx` | Two sections rendered as in-page `<Section>` blocks: **Devices** (list of paired devices with role + last-seen, per-row unpair) and **Generate pairing code** (device-name input + role chips + Generate button → reveals live code card with mono display, countdown timer, copy button). Per-device unpair `Alert`. Code-generation error `Alert`. |
 | `/service-settings` | `service-settings.tsx` | Service-sharing role config (requester / provider / both / off), capabilities (skills) list, policy chips, save button. **Add-capability modal** (`<Modal>`) — capability name input + add/cancel. Save/validation `Alert`s. |
 | `/policy` | `policy.tsx` | Agent action policies — list of action names with risk dots + tier toggles, grouped by risk. **Add-action modal** (`<Modal>`) — action-name input + confirm. Remove confirmation + error `Alert`s. |
-| `/notifications` | `notifications.tsx` | (also reachable via tab 5) |
-| `/approvals` | `approvals.tsx` | (also reachable via tab 6) |
+| `/notifications` | `notifications.tsx` | (the Activity bottom tab) |
+| `/approvals` | `approvals.tsx` | (hidden — notification tap / `dina://approvals/<id>` deep link) |
 
 ### 5.1 PeerLens preference sub-pages (linked from `/settings`)
 
@@ -351,7 +371,7 @@ Not routable — used as building blocks inside `/peerlens/*` pages.
 ## Quick totals
 
 - **Onboarding steps**: 14 distinct state kinds (12 screens; 2 shared chrome).
-- **Tab routes**: up to 5 visible (Chat always, People always, PeerLens conditional on `!isTrustTabHidden()`, Notifications always, Approvals conditional on `showApprovalsTab`). Vault, Reminders, Settings, Help, etc. are routes with `href: null` — registered but reached only via the hamburger menu, not the tab bar.
+- **Tab routes**: 4 visible (Chat always, People always, Network conditional on `!isTrustTabHidden()`, Activity always). Approvals, Vault, Reminders, Settings, Help, etc. are routes with `href: null` — registered but reached only via the hamburger menu or deep links, not the tab bar.
 - **Secondary routes (reachable but not in tab bar)**: 12 — Reminders, Settings, Help, Add-Contact, Chat detail, Admin, Recovery phrase, Confirm recovery phrase, Paired devices, Service settings, Policy, plus 6 PeerLens preference sub-pages.
 - **PeerLens stack sub-routes**: 7 (feed, search, subject detail, reviewer detail, write, outbox, namespace).
 - **Vault stack sub-routes**: 2 (list + detail).
@@ -498,7 +518,7 @@ Screenshot: `08-provisioning.png` (showed the post-onboarding chat tab).
 - **copy** · Hero: "Your sovereign personal AI" is repeated **verbatim** from the Welcome screen. After full onboarding the user just saw this hero 7+ steps ago — feels like Welcome leaked into the post-signup state. Replace with greeting-style copy: "Hi Sancho. Ask me, remember a fact, or hand off a task."
 - **copy** · "Everything stays on your device. Zero personal data on any server." — strong on-brand line ✓.
 - **copy** · "What can Dina do?" action card body: "Tour the capabilities — your vault, working with agents, coordinating with people, and queries to the Dina network." — clipped, comma-spliced. Rewrite: "Tour Dina's capabilities — your vault, agents, people, and network services."
-- **info-arch** · Tab bar shows 4 tabs (Chat, People, PeerLens, Notifications). The Approvals tab is conditional on `showApprovalsTab` (paired agent OR provider role). Could surface a quiet placeholder ("Connect an agent to see approvals here") in Settings rather than leaving users guessing why the count fluctuates.
+- **info-arch** · Tab bar shows 4 tabs (Chat, People, Network, Activity) — stable even with provider/agent enabled. Approvals is no longer a tab; it's an action bucket inside Activity (the "Needs action" filter + action-first badge) reachable as a deep-link route.
 - **info-arch** · "Ask" and "Remember" chips appear in the composer with `Talk` and `Task` missing. Per FEATURES the canonical talk feature lives at `/chat/[did]` — but a first-time user on the chat tab doesn't know that. Consider a small affordance ("→ Talk to someone" link) that routes to People.
 - **a11y** · **Major bug** — bottom tab bar AX reports "Chat, tab, **1 of 23**" / "People, tab, **3 of 23**" etc. iOS counts all 23 registered Tabs.Screen entries (including every `href: null` hidden route). A VoiceOver user gets a confusing "1 of 23" prompt. Either remove the `href: null` routes from the tabs registry (declare them under a separate Stack) or set `tabBarItemStyle: { display: 'none' }` so AX excludes them.
 - **a11y** · Header buttons: "Open menu" + "Open help" labels are explicit ✓.

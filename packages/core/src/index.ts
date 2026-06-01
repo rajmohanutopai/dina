@@ -819,6 +819,7 @@ export type {
   PersonaTier,
   PersonaStatusResult,
   PersonaUnlockResult,
+  ServiceListing,
   ServiceQueryClientRequest,
   ServiceQueryResult,
   MemoryToCOptions,

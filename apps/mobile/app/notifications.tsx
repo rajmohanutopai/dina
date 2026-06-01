@@ -1,15 +1,18 @@
 /**
- * Notifications tab — unified inbox of every surface (5.67).
+ * Activity tab — unified inbox of every surface (5.67).
  *
- * Shows reminders + approvals + nudges + briefings + ask-approval
- * cards in one chronological feed.  Source of truth is the
- * brain-side inbox store (5.66).  Each row deep-links back to the
- * originating surface via the item's `deepLink` field; rows with no
- * deep link stay inert.
+ * The bottom-tab + header label is "Activity"; this screen is the
+ * event/action/safety surface (notifications, approvals, reminders,
+ * nudges, service results). Shows reminders + approvals + nudges +
+ * briefings + ask-approval cards in one chronological feed. Source of
+ * truth is the brain-side inbox store (5.66). Each row deep-links back
+ * to the originating surface via the item's `deepLink` field; rows
+ * with no deep link stay inert.
  *
- * Filter chips: All / Unread / Reminders / Approvals.  The filter is
+ * Filter chips: Needs action / Unread / All / Reminders. The filter is
  * applied in-memory against the live subscription so flipping is
- * instant.
+ * instant. "Needs action" surfaces pending safety decisions first so
+ * Activity isn't just passive notifications (spec 5.2 / 14.4).
  */
 
 import { Ionicons } from '@expo/vector-icons';
@@ -32,10 +35,11 @@ import { applyNotificationFilter, type FilterKey } from '../src/notifications/sc
 import { colors, radius, spacing, textStyles } from '../src/theme';
 
 const FILTERS: readonly { key: FilterKey; label: string }[] = [
+  // Action-first order (spec 5.2): pending safety decisions lead.
+  { key: 'needs_action', label: 'Needs action' },
   { key: 'unread', label: 'Unread' },
   { key: 'all', label: 'All' },
   { key: 'reminder', label: 'Reminders' },
-  { key: 'approval', label: 'Approvals' },
 ];
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -73,8 +77,8 @@ export default function NotificationsScreen(): React.JSX.Element {
         ? 'You’ve read everything in this view.'
         : filter === 'reminder'
           ? 'Reminders Dina sets from your Remember notes will appear here.'
-          : filter === 'approval'
-            ? 'Approval requests from agents and services will appear here.'
+          : filter === 'needs_action'
+            ? 'Approvals and safety prompts from agents and services will appear here.'
             : 'Reminders, approvals, and chat events will appear here.';
 
   const onRefresh = async (): Promise<void> => {

@@ -152,25 +152,56 @@ export interface CoreClient {
   // ─── Service config + query (task 1.29f) ──────────────────────────────
 
   /**
-   * Read the current local service configuration — capabilities this
-   * node publishes, their schemas + schema-hashes, response policy.
-   * Brain reloads this periodically (see CLAUDE.md "Provider-side
-   * Brain reloads `service_config` periodically") and reads it at
-   * ingest time to know which capabilities to validate against.
+   * Read a local service-listing configuration — capabilities this
+   * node publishes under one listing, their schemas + schema-hashes,
+   * response policy. Brain reloads this periodically (see CLAUDE.md
+   * "Provider-side Brain reloads `service_config` periodically") and
+   * reads it at ingest time to know which capabilities to validate
+   * against.
    *
-   * Returns `null` when no config is set (Core responds 404). Callers
-   * can treat that as "this node publishes no services yet" rather
-   * than an error.
+   * `rkey` selects WHICH listing (multi-listing per DID — one local
+   * listing row == one published `com.dinakernel.service.profile/<rkey>`
+   * record). Omit it to read the default `self` listing via Core's
+   * compat route.
+   *
+   * Returns `null` when that listing isn't set (Core responds 404).
+   * Callers can treat that as "this node publishes no such service
+   * yet" rather than an error.
    */
-  serviceConfig(): Promise<ServiceConfig | null>;
+  serviceConfig(rkey?: string): Promise<ServiceConfig | null>;
 
   /**
-   * Upsert the local service configuration. Core validates the full
-   * payload server-side + notifies subscribers via the
+   * List every service listing this node publishes — each entry pairs
+   * the listing's `rkey` (the join key to its
+   * `com.dinakernel.service.profile/<rkey>` record) with its full
+   * config. Always resolves (empty array when no listings exist);
+   * throws only on a genuine transport / server error.
+   */
+  listServiceConfigs(): Promise<ServiceListing[]>;
+
+  /**
+   * Upsert a local service-listing configuration. Core validates the
+   * full payload server-side + notifies subscribers via the
    * `config_changed` event channel on success. Throws on validation
    * failure so the UI can surface the exact error string.
+   *
+   * `rkey` selects WHICH listing to write (multi-listing per DID).
+   * Omit it to upsert the default `self` listing via Core's compat
+   * route — backwards-compatible with every single-listing caller.
+   * Pass a distinct rkey to publish a *second* listing on the same DID
+   * (e.g. a market's `price_check` alongside `self`'s `eta_query`),
+   * minting a separate profile record.
    */
-  putServiceConfig(config: ServiceConfig): Promise<void>;
+  putServiceConfig(config: ServiceConfig, rkey?: string): Promise<void>;
+
+  /**
+   * Remove a service listing by `rkey`. Idempotent — deleting an
+   * absent listing still resolves (Core returns 200). Unpublishes the
+   * matching `com.dinakernel.service.profile/<rkey>` record. `rkey` is
+   * required (no implicit `self` default) so a stray call can't wipe
+   * the primary listing.
+   */
+  deleteServiceConfig(rkey: string): Promise<void>;
 
   /**
    * Initiate a typed service query to a remote Dina. Creates a
@@ -823,6 +854,20 @@ export interface PersonaUnlockResult {
 
 import type { ServiceConfig } from '@dina/protocol';
 export type { ServiceConfig };
+
+/**
+ * One row from `listServiceConfigs()` — a published service listing
+ * keyed by its AT-Proto record `rkey`. `rkey` is the join key: this
+ * config is published as `com.dinakernel.service.profile/<rkey>`, and
+ * an inbound query's `service_uri` carries the same rkey so the
+ * provider answers for the right listing.
+ */
+export interface ServiceListing {
+  /** Record key — `self` for the default listing, else a custom slug. */
+  rkey: string;
+  /** The full listing config (capabilities, schemas, response policy). */
+  config: ServiceConfig;
+}
 
 /**
  * Outbound service-query request shape Brain hands to Core's

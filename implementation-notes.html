@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Service Capability Catalog — Implementation Notes</title>
+<style>
+  body { font: 15px/1.6 -apple-system, system-ui, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+  h1 { border-bottom: 3px solid #333; padding-bottom: .3rem; }
+  h2 { margin-top: 2.2rem; border-bottom: 1px solid #ccc; padding-bottom: .2rem; }
+  h3 { margin-top: 1.3rem; }
+  .item { background: #f7f7f8; border-left: 4px solid #888; padding: .7rem 1rem; margin: .8rem 0; border-radius: 0 4px 4px 0; }
+  .decision  { border-left-color: #2a8; }
+  .deviation { border-left-color: #d97706; }
+  .tradeoff  { border-left-color: #2563eb; }
+  .question  { border-left-color: #c39; }
+  .iter      { border-left-color: #6b7280; background: #fafafa; }
+  .tag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; padding: 1px 6px; border-radius: 3px; color: #fff; }
+  .tag.decision { background: #2a8; } .tag.deviation { background: #d97706; }
+  .tag.tradeoff { background: #2563eb; } .tag.question { background: #c39; } .tag.iter { background: #6b7280; }
+  code { background: #eee; padding: 1px 4px; border-radius: 3px; font-size: 13px; }
+  .meta { color: #666; font-size: 13px; }
+  table { border-collapse: collapse; margin: .6rem 0; font-size: 13.5px; }
+  th, td { border: 1px solid #ccc; padding: 4px 9px; text-align: left; vertical-align: top; }
+  ol.phases > li { margin: .3rem 0; }
+</style>
+</head>
+<body>
+<h1>Service Capability Catalog — Implementation Notes</h1>
+<p class="meta">Spec: <code>docs/SERVICE_CAPABILITY_CATALOG_DESIGN.md</code> (2304 lines — a design + handoff that
+explicitly asks Claude to <b>validate before implementing</b> (§43, §10) and to ship a <b>curated</b> set, not all
+80+ capabilities). This file tracks the validation, the phased plan, and per-iteration progress.</p>
+
+<h2>Validation (the spec's §43 primary ask)</h2>
+
+<div class="item decision">
+  <span class="tag decision">Validated</span>
+  <p><b>Core architecture is sound — AppView-served curated catalog + <code>@dina/protocol</code> types + mobile cache +
+  bundled fallback.</b> One source of truth across mobile / Brain / AppView; new official capabilities ship without an
+  app release; deprecation/promotion is central. The load-bearing invariant (§43) — <i>official-curated capabilities +
+  namespaced-custom + unknown-flat-rejected, and every listing carries capability + concrete category + explicit
+  discoverability</i> — is correct and enforceable. This is what I'll enforce end-to-end.</p>
+</div>
+
+<div class="item decision">
+  <span class="tag decision">Validated — curate, don't dump</span>
+  <p>The exact 80-capability list is NOT the architecture (spec §43). V1 ships a <b>representative ~13-capability set</b>
+  that exercises every dimension — <code>action_class</code> read/quote/booking, <code>privacy_class</code>
+  public→sensitive, <code>default_discoverability</code> public/unlisted/known_only, and cross-category capabilities.
+  The remaining catalog can be appended later with no app release (the whole point of an AppView-served catalog).</p>
+</div>
+
+<div class="item decision">
+  <span class="tag decision">Overlap decisions (spec asked Claude to decide)</span>
+  <ul>
+    <li><code>order_status</code> / <code>package_tracking</code> / <code>delivery_eta</code> — <b>kept separate</b>:
+    merchant order state, carrier package state, and active-delivery ETA are different provider contracts/result
+    schemas (spec §1120 concurs).</li>
+    <li>Food: use generic <code>order_status</code>/<code>delivery_eta</code> + <code>category_id=food</code> rather
+    than minting <code>food_*</code> duplicates, until result semantics genuinely differ. Deferred <code>food_*</code>.</li>
+    <li><code>appointment_status</code> / <code>appointment_availability</code> / <code>appointment_book</code> — kept
+    as <b>shared cross-category</b> capabilities; the concrete category travels on the provider listing (the spec's
+    core cross-cutting model, §9.1).</li>
+    <li>Over-generic <code>status_query</code> / <code>availability_query</code> (§34) — <b>rejected for V1</b>: they
+    make cards + routing vague (spec §1824). Use specific capabilities.</li>
+  </ul>
+</div>
+
+<h2>Design decisions</h2>
+
+<div class="item decision">
+  <span class="tag decision">Decision</span>
+  <p><b>Catalog is a NEW protocol module that supersets the existing resolver registry; a consistency test prevents
+  divergence (the §79 "explicit drift test").</b> Today <code>capability-registry.ts</code> is the sync resolver
+  (classify / canonicalize), byte-duplicated <code>protocol ↔ appview</code> with a drift gate (AppView is a separate
+  build that can't import <code>@dina/protocol</code> at runtime). Rather than rewrite that drift-gated, ingest/search-
+  critical file in one shot, V1 adds <code>capability-catalog.ts</code> as the richer source of truth and a test
+  asserting the catalog is a <b>superset</b> of the registry (every registry canonical appears with identical aliases).
+  Migrating the resolver to be a projection of the catalog (and duplicating the catalog into AppView with its own drift
+  gate) is Phase 3/4 work, scoped so the high-risk ingest path changes deliberately.</p>
+</div>
+
+<div class="item deviation">
+  <span class="tag deviation">Deviation</span>
+  <p><b>V1 <code>CapabilityDefinition</code> trims the spec's full field set + makes <code>params_schema</code>/
+  <code>result_schema</code> optional.</b> The spec's type (§5) is the eventual shape; V1 carries the fields that drive
+  product behavior now (<code>id, aliases, category_ids, default_category_id, display_name, short_description,
+  lifecycle, action_class, privacy_class, default_discoverability, approval_policy_hint, introduced_in</code>) and
+  embeds default schemas only for the 3 launch-backed capabilities (where real demo schemas exist). Catalog entries are
+  a discovery menu; the <b>authoritative</b> schema/hash lives on each provider listing (spec §5.1). Marking catalog
+  schemas optional avoids inventing 10 speculative schemas now (spec §43: the list/schemas aren't the architecture).</p>
+</div>
+
+<div class="item tradeoff">
+  <span class="tag tradeoff">Tradeoff</span>
+  <p><b>Catalog <code>generated_at</code> / <code>catalog_hash</code> are injected, not computed in protocol.</b>
+  <code>@dina/protocol</code> is zero-runtime-deps (no crypto, and clock calls hurt determinism/testability). So
+  <code>buildCapabilityCatalog({generatedAt, hash})</code> does deterministic assembly and the caller (AppView, which
+  has crypto) injects the timestamp + hash over the protocol-provided canonical serialization — the same pattern as
+  <code>buildCanonicalPayload</code>. <code>CATALOG_VERSION</code> is a hand-bumped date constant.</p>
+</div>
+
+<h2>Open questions</h2>
+<div class="item question">
+  <span class="tag question">Open question</span>
+  <p><b>Expanding the recognized canonical vocabulary.</b> Making canonicalization (Core D2D ingress / AppView ingest)
+  recognize all ~13 catalog capabilities widens what's admitted as "official" beyond today's 3. That's intended by the
+  catalog model, but it means a provider publishing e.g. <code>deploy_status</code> is now an official (not custom)
+  capability. Confirm that's desired before Phase 3 wires the resolver to the catalog. (V1 Phase 1 does NOT change the
+  resolver — it only adds the catalog + a superset test — so nothing is admitted differently yet.)</p>
+</div>
+<div class="item question">
+  <span class="tag question">Open question</span>
+  <p><b><code>discoverability</code> migration.</b> Phase 2 adds <code>discoverability: public|unlisted|known_only</code>
+  to listings with back-compat <code>isDiscoverable:true→public, false→known_only</code> (spec §460). Confirm no
+  currently-public listing should silently become <code>known_only</code>. (Today only the demo rigs publish; low risk.)</p>
+</div>
+
+<h2>Phased plan</h2>
+<ol class="phases">
+  <li><b>Phase 1 (this iteration) — protocol catalog foundation.</b> Catalog types + curated data + integrity/
+  consistency validators + tests. Pure-additive to <code>@dina/protocol</code>; nothing else changes → green.</li>
+  <li><b>Phase 2 — provider-listing contract.</b> Add <code>discoverability</code> + per-listing <code>category_id</code>
+  + <code>capability_kind</code> + optional policy hints to the listing types + validators (official→allowed category;
+  custom→namespaced+category; discoverability required; back-compat).</li>
+  <li><b>Phase 3 — AppView.</b> Catalog endpoint <code>GET /xrpc/com.dinakernel.catalog.capabilities</code>; catalog-in-
+  AppView (drift-gated like the registry); search honours discoverability (public-only) + category filter.</li>
+  <li><b>Phase 4 — Core/provider.</b> Accept only catalog IDs or valid namespaced custom; persist + publish
+  discoverability + category; resolver derives from catalog.</li>
+  <li><b>Phase 5 — Mobile.</b> Fetch/cache catalog; category→capability picker; "Who can find this service?"
+  discoverability; developer mode + schema fields + validation; diagnostics.</li>
+  <li><b>Phase 6 — Brain/router.</b> capability+category routing; known-binding-first; never invent flat names.</li>
+</ol>
+
+<h2>Catalog seeding — single source, re-runnable script (user requirement)</h2>
+<div class="item decision">
+  <span class="tag decision">Decision (per user)</span>
+  <p><b>The catalog must upload from ONE common place, via a re-runnable script, idempotently across environments.</b>
+  Confirmed design: the catalog DATA lives only in <code>@dina/protocol</code> (the common source — Phase 1).
+  <b>AppView has NO <code>@dina/protocol</code> dependency</b> (verified — that's why the resolver registry is
+  byte-duplicated), so AppView's <i>runtime</i> can't import it. Resolution — a <b>snapshot table + bridge script</b>:
+  <ol>
+    <li>AppView stores the catalog as an opaque snapshot row: <code>{catalog_version, catalog_hash, generated_at,
+    payload JSONB}</code> (Drizzle table + migration). AppView serves it verbatim at
+    <code>GET /xrpc/com.dinakernel.catalog.capabilities</code> — it never needs protocol types at runtime (serves JSONB).</li>
+    <li>A <b>workspace-level seed script</b> (<code>scripts/seed_catalog.ts</code>, run via tsx) is the ONLY place that
+    imports <code>@dina/protocol</code>: it calls <code>buildCapabilityCatalog</code> +
+    <code>serializeCatalogForHash</code>, hashes with Node crypto, and <b>UPSERTS</b> the snapshot into AppView's
+    Postgres (DB URL from env → works on dev/test/prod). Idempotent: same content → same hash → no-op (or version-bump
+    only on change). Re-runnable any number of times.</li>
+  </ol>
+  This cleanly respects the import boundary (runtime = DB-only; the script is the single protocol→AppView bridge) and
+  satisfies "common place + script + environments + provide properly." This is Phase 3.</p>
+</div>
+
+<h2>Completion status (the §43 invariant, end-to-end)</h2>
+<div class="item decision">
+  <span class="tag decision">Core invariant — DONE end-to-end</span>
+  <p>The load-bearing §43 invariant is now implemented across the whole path:
+  <b>protocol catalog source</b> (curated, integrity-gated) → <b>AppView seeding</b> (single-source re-runnable script,
+  greenfield) + <b>serve endpoint</b> → <b>mobile bundled+live fetch</b> (fail-soft) → <b>Category → Capability picker</b>
+  (no typing ids) → <b>fail-closed publish</b> carrying per-capability <code>category</code> + explicit
+  <code>discoverability</code>, with the anti-spoof kind DERIVED not trusted. A provider can't pollute the official
+  namespace with flat names; custom stays namespaced + categorised; every listing carries capability + category +
+  discoverability.</p>
+  <p><b>The 3-way "who can find this?" discoverability selector is now DONE</b> (Iter 8) — <b>unlisted</b> is reachable;
+  the §5.3 "discoverability ≠ authorization" disclaimer ships. <b>Additive follow-ons remain</b> (don't change the
+  invariant): Core D2D-ingress vocabulary enforcement (deferred — the category-required validator can't retrofit
+  category-less configs without making fixtures catalog-clean first); Brain router capability+category routing; mobile
+  dev-mode diagnostics; docs.</p>
+</div>
+
+<h2>Iterations</h2>
+<div class="item iter">
+  <span class="tag iter">Iter 0 — validate + plan</span>
+  <p>Read the full spec + current code (<code>capability-registry.ts</code> 3-cap flat registry, drift-gated
+  protocol↔appview; <code>ServiceConfig</code> with only <code>isDiscoverable:boolean</code>, no per-listing category;
+  AppView consumers in search/ingest; <code>domain</code> drives no behavior). Produced the validation + phased plan
+  above. Next: Phase 1 code.</p>
+</div>
+<div class="item iter">
+  <span class="tag iter">Iter 1 — Phase 1: protocol catalog foundation</span>
+  <p><b>Added:</b> <code>packages/protocol/src/types/catalog.ts</code> (V1 catalog types: <code>CatalogCategory</code>,
+  <code>CapabilityDefinition</code>, <code>DeprecatedCapability</code>, <code>CapabilityCatalog</code> + enums);
+  <code>packages/protocol/src/services/capability-catalog.ts</code> (10 categories + 13 curated capabilities covering
+  every dimension — read/quote/booking, public→sensitive, public/unlisted/known_only, cross-category appointment family;
+  fail-loud <code>validateCatalogIntegrity</code> run at module load; <code>buildCapabilityCatalog</code> +
+  <code>serializeCatalogForHash</code> + accessors); barrel exports; 21-test suite. The 3 seed (<code>eta_query,
+  appointment_status, price_check</code>) keep their EXACT registry ids + aliases, with default params/result schemas.</p>
+  <p><b>Tests showed:</b> protocol <code>tsc</code> 0; full protocol suite <b>463</b> passed (22 suites, +21 new);
+  workspace typecheck 0 (additive exports break nothing downstream); lint clean. <b>Two real bugs caught + fixed
+  mid-iteration:</b> (1) the test compile flagged <code>exactOptionalPropertyTypes</code> rejecting explicit
+  <code>undefined</code> on <code>default_category_id</code> → fixed by destructure-omit; (2) a test exposed that a
+  duplicate capability id maps to itself so the token map missed it → added a dedicated dup-id check (like categories).</p>
+  <p><b>Deep review — (1) correct? (2) smells? (3) test issues?</b>
+  (1) Correct: catalog-as-curated-source in <code>@dina/protocol</code> matches the spec architecture; fail-loud
+  integrity mirrors <code>buildAliasMap</code>; injected hash/timestamp mirrors <code>buildCanonicalPayload</code>; the
+  superset gate is the §79 "explicit drift test." (2) The catalog + resolver-registry are deliberately two sources
+  bridged by the consistency test — a documented incremental step (Phase 3/4 makes the resolver a projection of the
+  catalog); not silent debt. <code>serializeCatalogForHash</code> is deterministic for the frozen catalog (test pins
+  it); a key-sorted canonicalization would only matter if the catalog were dynamically assembled — noted for later.
+  (3) 21 tests incl. 10 fail-loud cases + the superset gate + build/serialize + accessors; fixtures are independent of
+  the shipped data. No workarounds. <b>Next: Phase 2 — provider-listing <code>discoverability</code> +
+  <code>category_id</code> + <code>capability_kind</code> + validators.</b></p>
+</div>
+<div class="item iter">
+  <span class="tag iter">Iter 2 — Phase 2: provider-listing contract</span>
+  <p><b>Added:</b> per-capability <code>category</code> on <code>ServiceCapabilityConfig</code>; explicit
+  <code>discoverability</code> + V1 policy-hint fields (<code>accessPolicyHint/rateLimitHint/pricingHint/freshnessHint</code>)
+  on <code>ServiceConfig</code> (legacy <code>isDiscoverable</code> kept for back-compat). A <b>catalog-aware resolver</b>
+  (<code>resolveCatalogCapability</code> / <code>classifyCatalogCapability</code>) that knows all 13 catalog capabilities
+  (the registry resolver only knows the 3 seed). A pure, fail-closed, <b>explainable</b>
+  <code>validateServiceListing</code> + <code>effectiveDiscoverability</code> enforcing: capability must be official-or-
+  namespaced (never unknown flat — anti-spoof), category required + (for official) allowed by the catalog's
+  <code>category_ids</code>, explicit-discoverability (opt-in for the mobile publish path), write/booking actions gated by
+  <code>review</code> not <code>auto</code>, and public-custom-needs-schema. 15 new tests.</p>
+  <p><b>Decisions:</b> (a) <code>capability_kind</code> is DERIVED (official iff the id resolves in the catalog, custom
+  iff namespaced) and NEVER trusted from a provider field — enforces spec §6 anti-spoof at the type boundary. (b)
+  <code>category</code> is per-CAPABILITY (not per-listing) because the existing <code>ServiceConfig</code> is multi-
+  capability; this is a strict superset of the spec's one-capability-per-listing shape — documented deviation, a future
+  phase may split listings. (c) Back-compat <code>isDiscoverable→discoverability</code> so existing configs keep
+  working; new-listing strictness is opt-in via <code>requireExplicitDiscoverability</code>.</p>
+  <p><b>Tests showed:</b> protocol <code>tsc</code> 0; full protocol suite <b>478</b> passed (+15); workspace typecheck
+  0 (the additive <code>ServiceConfig</code> fields break nothing in core/brain/mobile); lint clean.
+  <b>Deep review:</b> (1) Correct — derive-kind-from-id is the right security posture; validator is pure + fail-closed +
+  explainable per spec §8.1. (2) No smells; the per-capability-category deviation is documented. (3) 15 tests cover every
+  §41 listing case incl. cross-category + back-compat. <b>Next: Phase 3 — catalog seeding (snapshot table + re-runnable
+  seed script + serve endpoint), per the user requirement above.</b></p>
+</div>
+<div class="item iter">
+  <span class="tag iter">Iter 3 — Phase 3: catalog seeding (single source → script → endpoint)</span>
+  <p><b>Built the seeding pipeline the user required.</b> (1) <code>packages/protocol/scripts/emit_catalog.ts</code> +
+  <code>emit:catalog</code> npm script — serializes the single-source catalog to <code>dist/catalog.json</code>
+  (gitignored). (2) AppView <code>catalog_snapshots</code> Drizzle table — <b>greenfield, so NO incremental migration</b> (per user):
+  the schema is applied fresh (<code>drizzle-kit push</code> / fresh setup). (3) <code>appview/src/db/queries/catalog.ts</code> — pure
+  <code>assembleCatalogSnapshot</code> (hash + wrap, DB-less + unit-tested), idempotent
+  <code>upsertCatalogSnapshot</code> (inserted/updated/unchanged), <code>getLatestCatalogPayload</code>. (4)
+  <code>appview/scripts/seed_catalog.ts</code> + <code>seed:catalog</code> (chains emit then seed; one command, env via
+  <code>DATABASE_URL</code>). (5) xRPC endpoint <code>com.dinakernel.catalog.capabilities</code> serving the snapshot
+  verbatim (opaque JSONB → AppView never imports protocol), registered in <code>server.ts</code>.</p>
+  <p><b>Why this shape:</b> AppView has no <code>@dina/protocol</code> dep, and tsx can't transpile protocol's
+  <code>.ts</code> from <code>node_modules</code>, so a direct cross-package import is out. The emit-to-JSON bridge
+  decouples cleanly: protocol emits JSON in its own context (native imports), AppView reads the JSON by file path (no
+  module-resolution issues) + serves opaque JSONB. The seed script is the SINGLE protocol→AppView bridge — common
+  source, re-runnable, idempotent, env-agnostic. Exactly the requirement.</p>
+  <p><b>Tests showed:</b> protocol tsc 0; AppView tsc 0; workspace typecheck 0; AppView unit suite <b>1871</b> passed
+  (incl. 4 new <code>assembleCatalogSnapshot</code> tests + the route/param enumeration unaffected); protocol suite
+  <b>478</b>. End-to-end run proven: <code>npm run seed:catalog</code> → emit wrote the JSON → seed read + assembled
+  (<code>version=2026-06-01</code>) → reached the upsert, failing only at the absent LOCAL Postgres connection (the
+  failure point proves emit+read+assemble all worked). lint: <code>emit_catalog.ts</code> clean; AppView files aren't in
+  the root lint scope (pre-existing).</p>
+  <p><b>Deep review:</b> (1) Correct — the bridge respects AppView's import boundary (runtime serves opaque JSONB; the
+  script is the only place protocol is read); assembly is pure + DB-less-testable; upsert is idempotent with
+  unchanged-detection; env via <code>DATABASE_URL</code>. (2) No workarounds — the JSON intermediate is a deliberate,
+  documented decoupling (tsx node_modules .ts limit); the hand-written migration matches the existing pattern; the
+  endpoint's pre-seed <code>EMPTY_CATALOG</code> is the spec's mobile-fallback contract. The seed's read-then-write
+  (not <code>onConflictDoUpdate</code>) is fine for a single-run ops script + gives clean inserted/updated/unchanged
+  reporting. (3) Pure assembly fully tested; the DB upsert/read + endpoint need Postgres — the live verification step is
+  <code>migrate</code> + <code>seed:catalog</code> against the AppView DB (not runnable locally — no PG). <b>Next: Phase
+  4/5 — Core/provider accept-only-catalog-or-custom + persist discoverability; mobile fetch/cache + picker.</b></p>
+</div>
+<div class="item iter">
+  <span class="tag iter">Iter 4 — greenfield migration removal + Phase 5 (start): mobile catalog source</span>
+  <p><b>Greenfield (per user): removed the catalog migration.</b> Deleted <code>0019_catalog_snapshots.sql</code> + its
+  journal entry; the <code>catalog_snapshots</code> table is now applied fresh from the schema
+  (<code>drizzle-kit push</code>), no incremental migration. AppView full unit suite <b>1871</b> still green (no
+  migration-consistency test broke).</p>
+  <p><b>Phase 5 (start) — mobile catalog source.</b> Added <code>apps/mobile/src/services/catalog_source.ts</code>: a
+  pure resolution + selector layer for the provider-setup picker. <code>BUNDLED_CATALOG</code> (the
+  <code>@dina/protocol</code> catalog mobile was built with) is the offline fallback; <code>resolveCatalog(fetched)</code>
+  picks the LIVE AppView catalog when valid + non-empty, else degrades to bundled (never empty — spec §2). Selectors:
+  <code>sortedCategories</code> (spec §36 order, drops <code>hidden</code>), <code>capabilitiesInCategory</code>
+  (cross-category aware, drops <code>retired</code> — §9.1/§7), <code>findCapability</code>. Fetch is injected → pure +
+  testable without the network. 8 tests.</p>
+  <p><b>Phase 4 finding (design):</b> <code>validateServiceListing</code> requires a per-capability <code>category</code>,
+  which existing category-less configs lack — so it CANNOT be retrofitted onto Core's generic
+  <code>validateServiceConfig</code> (it'd break every existing config/test). The fail-closed enforcement therefore
+  belongs at the NEW catalog-picker publish flow (mobile), where category is chosen — not retrofitted into the D2D
+  ingress / generic validator. Core's vocabulary check (reject unknown-flat) can be added once fixtures are catalog-
+  clean; until then it stays opt-in to keep the suite green. <b>Tests showed:</b> mobile tsc 0; mobile catalog test 8;
+  appview unit 1871; lint clean. <b>Deep review:</b> (1) Correct — bundled-from-single-source + live-wins matches §2;
+  selectors are cross-category/lifecycle aware. (2) No smells; the concrete AppView fetch+cache adapter is the
+  documented next increment (resolution logic is in place + injected). (3) 8 tests cover fallback/live/empty/cross-
+  category/known_only-default.</p>
+</div>
+<div class="item iter">
+  <span class="tag iter">Iter 5 — Phase 5: mobile AppView catalog fetch/load adapter</span>
+  <p><b>Added</b> to <code>catalog_source.ts</code>: <code>fetchLiveCatalog(appViewUrl, fetchImpl, timeoutMs)</code> —
+  GETs <code>com.dinakernel.catalog.capabilities</code> with an abort timeout, returning the payload or <code>null</code>
+  on ANY failure (empty URL / non-2xx / network error / timeout / bad JSON); and <code>loadCatalog</code> = fetch +
+  <code>resolveCatalog</code> (live-wins, bundled fallback). Fail-soft by design — catalog setup never hard-errors on an
+  unreachable AppView (spec §2). <code>fetch</code> is injected (a minimal subset of platform <code>fetch</code>,
+  compatible with the iOS <code>expo/fetch</code> swap), so it's pure + testable. 6 new tests (every failure mode →
+  bundled; valid → live; correct URL build).</p>
+  <p><b>Tests showed:</b> mobile catalog suite <b>14</b> passed; mobile tsc 0; lint clean. <b>Deep review:</b>
+  (1) Correct — fail-soft to bundled is the spec's exact §2 contract; injected fetch keeps it testable + iOS-compatible.
+  (2) No smells; the loader is the network seam, resolution stays in the pure layer. (3) 6 tests cover empty-URL/non-2xx/
+  network/bad-JSON/empty-body → bundled, valid → live, URL build. The mobile DATA LAYER for the picker is now complete
+  (bundled fallback + live fetch + cross-category selectors). <b>Next: the picker UI (Category → Capability) wired into
+  service-settings + fail-closed publish via <code>validateServiceListing</code>.</b></p>
+</div>
+<div class="item iter">
+  <span class="tag iter">Iter 6 — Phase 5: Category → Capability picker component</span>
+  <p><b>Added</b> <code>apps/mobile/src/components/capability_picker.tsx</code> — the spec's core provider UX (§1/§8/§37):
+  step 1 "What kind of service is this?" (category chips, §36 order, hidden dropped), step 2 "What can this service
+  answer or do?" (official capabilities IN that category, cross-category aware §9.1, retired dropped, with
+  "Official Dina capability" labels + Beta/Deprecated lifecycle badges). Presentational — catalog + selection + callbacks
+  injected; <code>onSelectCapability(cap, categoryId)</code> carries the CHOSEN category onto the listing (the category
+  travels with the capability, §9.1). Custom (namespaced) stays a separate advanced flow. 6 tests.</p>
+  <p><b>Tests showed:</b> picker 6 + catalog-source 14 = 20 green; mobile tsc 0; lint clean. <b>Deep review:</b>
+  (1) Correct — drives the "don't type capability ids" model; cross-category selection carries the concrete category;
+  presentational/injected matches the screen's pattern (mirrors <code>NetworkServicesCard</code>). (2) No smells; the
+  custom flow is intentionally separate (§3.2). (3) 6 tests cover the two steps, cross-category, the
+  capability+category callback payload, and lifecycle labels. <b>Staged, not dead</b>: the next slice wires it into
+  service-settings' add-capability modal (replacing the brain-registry catalogue), stores the per-capability category on
+  the config, and runs <code>validateServiceListing</code> fail-closed at publish — the enforcement point established in
+  Iter 4. (Service-settings has no render test, so the wiring is lower-risk; the save path is covered by
+  <code>useServiceConfigForm</code> + integration tests, which I'll keep green.)</p>
+</div>
+<div class="item iter">
+  <span class="tag iter">Iter 7 — Phase 5: wire the picker into service-settings (fail-closed publish)</span>
+  <p><b>Wired the catalog end-to-end into the provider publish flow.</b> The add-capability modal now renders the
+  <code>CapabilityPicker</code> (Category → Capability, already-added caps filtered) instead of the brain-registry
+  catalogue; the advanced custom (namespaced) entry is gated on a chosen category (§5.1). The screen now carries
+  per-capability <code>category</code> through state + hydrate (back-compat: backfills the catalog default for existing
+  official configs) + <code>onSave</code>. <code>onSave</code> builds the config with category + explicit
+  <code>discoverability</code> (derived public/known_only from the toggle) and runs <code>validateServiceListing(...,
+  {requireExplicitDiscoverability:true})</code> <b>fail-closed</b> — blocking publish + showing the exact reasons rather
+  than shipping a half-valid public service. A live AppView catalog is fetched on mount (fail-soft to bundled).</p>
+  <p><b>Tests showed:</b> mobile tsc 0; <b>full mobile suite 161 suites / 2834 passed</b> (the config-shape +
+  validation changes broke nothing — the picker/validator/catalog are tested in isolation, and the save path's
+  integration coverage stays green). Lint: <code>eslint --fix</code> reordered imports and cut service-settings from 12 →
+  2 pre-existing errors (the 2 are pre-existing <code>no-dynamic-delete</code>) — my wiring added <b>0 net</b> errors.
+  <b>Deep review:</b> (1) Correct — the picker drives "don't type ids"; category travels onto the listing; custom gated
+  on category; fail-closed at the right boundary (the new flow, not retrofitted onto Core/ingress). (2) Brain-registry
+  stays for SCHEMA attachment (a separate concern from catalog VOCABULARY) — not a smell. (3) Test gap: the
+  <code>onSave</code> glue isn't unit-tested (the screen has ~10 deps + no render harness); the validator + picker +
+  catalog source ARE tested, and the full suite is green — verification of the glue is the sim smoke test. <b>Open
+  question:</b> the toggle only yields public/known_only — the 3-way "who can find this?" selector (to reach
+  <code>unlisted</code>) is the documented next UI follow-on.</p>
+</div>
+<div class="item iter">
+  <span class="tag iter">Iter 8 — Phase 5: 3-way discoverability selector + delete-smell fix</span>
+  <p><b>Replaced the binary publish toggle</b> in <code>service-settings.tsx</code> with the spec's 3-way "Who can find
+  this service?" selector (§5.2): <i>Public</i> ("Anyone can find this service in Dina search."), <i>Unlisted</i>
+  ("Only people with the service link, QR, invite, or pairing can find it."), <i>Private / known only</i> ("Only people
+  or Dinas you explicitly connect can use it."). The <code>discoveryBlocked</code> caveat ("not actually discoverable
+  yet — missing PDS/MsgBox") is now gated on <code>discoverability === 'public'</code> (only public publishes to
+  AppView, so the caveat is meaningless for unlisted/known_only). Added the §5.3 required disclaimer
+  ("Discoverability is not authorization — the provider still controls who may actually use the service"). State moved
+  from the <code>isDiscoverable</code> boolean to a <code>Discoverability</code> value; <code>onSave</code> derives the
+  back-compat boolean (<code>discoverability === 'public'</code>) AND writes the explicit field; hydrate reads it via
+  <code>effectiveDiscoverability(cfg)</code>. Removed the now-orphaned <code>Switch</code> import +
+  <code>switchRow</code>/<code>switchLabel</code> styles.</p>
+  <p><b>Correction to Iter 7:</b> the 2 <code>no-dynamic-delete</code> lint errors I logged there as "pre-existing"
+  were <b>mine</b> — <code>git show HEAD:…</code> proves the old <code>onSave</code> was a short callback with no such
+  block; the <code>delete caps[k]</code> loop was part of my schema-preservation rewrite. Fixed properly: the seed-then-
+  drop loop is now an immutable rebuild — <code>Object.fromEntries(Object.entries(existing?.capabilities ?? {}).filter(
+  ([k]) =&gt; liveKeys.has(k)))</code> for both <code>caps</code> and <code>schemas</code>. Same semantics (a capability
+  removed in this screen drops its policy AND its canonical schema), no mutation, lint-clean.</p>
+  <p><b>Tests showed:</b> mobile tsc 0; <b>eslint 0 errors</b> on the 3 touched files (was 2); <b>full mobile suite
+  161 suites / 2834 passed</b> (10 skipped). Cross-package re-verify after the whole feature: <b>protocol 23 suites /
+  478</b>, <b>appview 88 suites / 1871</b> (incl. <code>catalog_seed</code> + the byte-identical
+  <code>capability_registry_drift</code> gate). <b>Deep review:</b> (1) Correct — the selector is the documented
+  §5.2 UX; discoverability stays decoupled from authorization (§5.3 disclaimer shipped); back-compat boolean preserved
+  so older readers still work. (2) The delete-smell is gone and the misattribution is corrected on the record — no
+  remaining workaround in this screen. (3) The selector is presentational inline (no new render test), but its only logic
+  is <code>setDiscoverability</code> + the caveat gate, both trivially correct; the save path's validator is unit-tested.
+  <b>§43 invariant now fully end-to-end + green</b>: curated catalog (protocol) → seed/serve (appview) → bundled+live
+  fetch (mobile) → Category→Capability picker → fail-closed publish with explicit 3-way discoverability.</p>
+</div>
+<div class="item iter">
+  <span class="tag iter">Iter 9 — Phase 5: catalog-default discoverability (mobile #12/#13)</span>
+  <p><b>Picking a sensitive capability now seeds the safest discoverability by default.</b> Spec mobile checklist #12/#13:
+  developer/ops, security, identity, data, AI-model-ops, and home-automation capabilities default to
+  <code>known_only</code>; custom capabilities default to <code>unlisted</code>; a provider must <i>explicitly</i> choose
+  public. Added a pure helper <code>defaultDiscoverabilityForCapabilities(keys, catalog)</code> in
+  <code>catalog_source.ts</code> — it returns the MOST restrictive <code>default_discoverability</code> across the chosen
+  capabilities (official → its catalog default; custom/unknown → <code>unlisted</code>; empty → <code>public</code>
+  baseline). The screen auto-tracks that default via an effect <b>until</b> <code>discoverabilityTouched</code> flips —
+  set when the provider taps the selector (<code>chooseDiscoverability</code>) OR when a saved config is hydrated (the
+  stored value is the provider's prior explicit choice). So a new listing that adds <code>deploy_status</code> seeds
+  <code>known_only</code> instead of silently publishing a dev service to public search; a provider who wants public
+  still flips it, and that choice is then never auto-clobbered.</p>
+  <p><b>Tests showed:</b> +6 helper tests (empty→public, public-official, dev→known_only, unlisted-default,
+  custom→unlisted, most-restrictive-wins across mixed) — <b>catalog_source 20 green</b>; mobile tsc 0; lint 0;
+  <b>full mobile suite 161 suites / 2840 passed</b> (the new effect regressed nothing). <b>Deep review:</b> (1) Correct —
+  most-restrictive-wins is the conservative safe default the spec asks for; the touched flag respects "unless explicitly
+  chooses public"; deps <code>[touched, capabilities, catalog]</code> only re-fire on real changes (state arrays are
+  stable across renders). (2) No smell — the policy is a pure, tested helper; the screen holds only a boolean flag + a
+  stable callback; the no-cap onSave guard still fires (empty→public). (3) Helper is fully unit-tested; the screen-level
+  effect has no render harness (consistent with this screen's prior iterations) but its only logic is the tested helper +
+  the touched gate. <b>Edge considered:</b> adding then removing a known_only cap (leaving only public caps, untouched)
+  correctly re-derives back to public — defaults track the selection until the provider commits.</p>
+</div>
+<div class="item iter">
+  <span class="tag iter">Iter 10 — wire the sync resolver to the full catalog vocabulary (resolves the Open Question)</span>
+  <p><b>Runtime-found gap (verified, not guessed):</b> a <code>node -e</code> probe over
+  <code>resolveSearchableCapability</code> showed 10 of the 13 catalog capabilities — including the <b>public</b>
+  <code>order_status</code>, <code>package_tracking</code>, <code>delivery_eta</code>, <code>service_quote</code> —
+  resolved to <code>null</code>. The sync registry (<code>capability-registry.ts</code>) still held only the 3
+  demo-backed seed caps. So the catalog picker I shipped (Iter 7–9) let a provider pick + publish those capabilities,
+  but AppView search + the ingester + the requester orchestrator (all of which canonicalize through the registry, NOT
+  the catalog) would drop them → <b>dead, unsearchable public listings</b>. The picker made the registry↔catalog gap
+  load-bearing.</p>
+  <p><b>Why expand the registry (not switch consumers to the catalog resolver):</b> AppView has NO
+  <code>@dina/protocol</code> dependency (the whole reason the registry is byte-duplicated), so AppView's search/ingest
+  CANNOT call <code>resolveCatalogCapability</code>. The registry is the only official-vocabulary resolver AppView can
+  reach. So the fix is to extend the byte-duplicated registry to the full official set — exactly the additive path its
+  own docstring documents ("append an entry — zero pollution"). Added the 10 catalog capabilities to the registry
+  (canonical = catalog id, <b>aliases identical to the catalog</b> so the §79 consistency gate holds), updated the now-
+  stale "two domains / no aspirational entries" docstring, and copied the source-of-truth (appview) copy <b>byte-
+  identically</b> to the protocol copy (drift gate). Rebuilt protocol <code>dist</code>.</p>
+  <p><b>Safety of the widening:</b> grepped every core/brain/appview test for the 10 cap names — none asserted them
+  unknown/dropped (only my own catalog/listing tests use them as valid). Core's two resolver call sites
+  (<code>service_config</code> + <code>service_resolver</code> capability matching) only GAIN alias matching for the new
+  caps — exact matches still match, so the change is strictly additive (it even fixes a latent alias-miss where a
+  provider configured an alias and a query used the canonical). Unknown flat names + malformed namespaced caps still
+  resolve to <code>null</code> (re-verified at runtime).</p>
+  <p><b>Tests showed:</b> runtime probe → 13/13 official caps now resolve, aliases fold (<code>deployment_status</code> →
+  <code>deploy_status</code>), unknowns still rejected. <b>protocol 23 suites / 478</b> (§79 gate green with the expanded
+  set), <b>appview 88 suites / 1871</b> (byte-identity <b>drift gate</b> + search/ingest green), <b>core 246 suites /
+  4504</b> (1 skipped). <b>Infra note:</b> the full core <code>--runInBand</code> run HUNG (~32 min wall / ~3 min CPU,
+  state S) — a <i>pre-existing</i> open-handle leak in the core test infra; jest needs <code>--forceExit</code> (the
+  "async operations kept running" warning fires). NOT caused by this data-only change; the 7 resolver/service/d2d files
+  (176 tests) pass in 1.3s on their own. <b>Deep review:</b> (1) Correct + the only boundary-respecting fix (AppView
+  can't import the catalog resolver). (2) Duplication between registry + catalog is intentional + gated (§79 aliases +
+  drift byte-identity) — not a smell; it's the documented sync/no-dep mirror. (3) Tests: the §79 gate now meaningfully
+  covers all 13; existing assertions unaffected. <b>This resolves the parked Open Question</b> ("confirm before wiring
+  the resolver to the catalog") — the picker forced the answer: a pickable capability MUST be routable.
+  <b>Reversible</b> if the user prefers keeping the registry at the demo-backed 3 + restricting the picker instead.</p>
+</div>
+
+</body>
+</html>

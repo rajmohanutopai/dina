@@ -227,7 +227,7 @@ rename of every config/schema/test/demo path the night before launch, the
 
 **The 2 launch domains are LOCKED to what is actually seedable (P2 —
 corrected; "dining" was aspirational).** The existing demo paths are
-transit (`eta_query`, bus42-agent) and a clinic appointment check
+transit (`eta_query`, dina-services-demo) and a clinic appointment check
 (`appointment_status`, Dr Carl demo — `appview_stub.ts`). Building a
 fresh dining provider the night before launch is a shortcut we are NOT
 taking; we use the two that already have working provider+responder code:

@@ -10,11 +10,22 @@
  * the provider's isCapabilityConfigured accepts price_check because it's
  * keyed here and canonicalized via the registry.
  *
+ * MULTI-LISTING: this publishes under a DISTINCT rkey (default `corner-market`),
+ * NOT `self`. When pointed at the SAME Core that already holds the eta_query
+ * `self` listing (put_service_config.ts), the provider's single DID then carries
+ * TWO listings — `self` → eta_query and `corner-market` → price_check — each
+ * minting its own `com.dinakernel.service.profile/<rkey>` record. That's the
+ * scenario that actually exercises per-rkey publish + `service_uri`
+ * disambiguation end-to-end (the requester must pick the right listing). Set
+ * DINA_SERVICE_RKEY=self to fall back to the old single-listing (clobbering)
+ * behaviour.
+ *
  * Env knobs (so it works against whichever warm node hosts the provider):
  *   DINA_SERVICE_KEY_DIR        dir holding brain.ed25519  (default /tmp/price-key-dir)
  *   DINA_BRAIN_SERVICE_KEY_FILE key file name              (default brain.ed25519)
  *   DINA_CORE_URL               target Core                (default http://127.0.0.1:18298)
  *   DINA_SERVICE_NAME           display name               (default "Corner Market")
+ *   DINA_SERVICE_RKEY           listing record key         (default "corner-market")
  *
  * Run: `npx tsx put_service_config_price.ts` from this directory.
  */
@@ -78,6 +89,10 @@ async function main(): Promise<void> {
 
   const schemaHash = computeSchemaHash(priceParamsSchema);
   const name = process.env.DINA_SERVICE_NAME ?? 'Corner Market';
+  // Publish as a 2nd listing on this DID (distinct rkey ⇒ distinct
+  // service.profile record). DINA_SERVICE_RKEY=self reverts to the old
+  // single-listing clobber.
+  const rkey = process.env.DINA_SERVICE_RKEY ?? 'corner-market';
 
   const config: ServiceConfig = {
     isDiscoverable: true,
@@ -103,9 +118,9 @@ async function main(): Promise<void> {
     serviceArea: { lat: 37.77, lng: -122.43, radiusKm: 25 },
   };
 
-  console.log('[put_service_config_price] sending config:', JSON.stringify(config, null, 2).slice(0, 500));
-  await core.putServiceConfig(config);
-  console.log('[put_service_config_price] PUT succeeded');
+  console.log(`[put_service_config_price] sending config (rkey=${rkey}):`, JSON.stringify(config, null, 2).slice(0, 500));
+  await core.putServiceConfig(config, rkey);
+  console.log(`[put_service_config_price] PUT succeeded (listing rkey=${rkey})`);
 }
 
 main().catch((err) => {

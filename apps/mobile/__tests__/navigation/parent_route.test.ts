@@ -62,6 +62,14 @@ describe('parentRouteFor', () => {
     });
   });
 
+  describe('Activity family', () => {
+    it('approvals → /notifications (Activity sub-screen, not a bottom tab)', () => {
+      // Approvals is hidden from the bottom bar (spec 5.3) and reached as
+      // a deep-link/focused review screen; back returns to Activity.
+      expect(parentRouteFor('/approvals')).toBe('/notifications');
+    });
+  });
+
   describe('People family', () => {
     it('chat thread → /people', () => {
       // Chat threads are reached by tapping a peer in the People tab,

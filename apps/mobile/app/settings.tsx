@@ -39,10 +39,12 @@ import {
 import { saveBackgroundTimeoutPreference } from '../src/services/security_preferences';
 
 /**
- * Mirror of the provider-blocker set in `_layout.tsx`. Kept local to
- * avoid a circular import; out-of-sync entries are caught by the
- * review process rather than runtime. Reviews #7, #8, #17 — the
- * canonical list lives in `_layout.tsx`, keep these in sync.
+ * Degradation codes that mean "this node cannot serve provider-role
+ * traffic yet" — gate the Service Sharing row's "saved locally but not
+ * discoverable" warning (spec 5.5). This is the sole definition now that
+ * the bottom-bar Approvals tab (the other former consumer) is hidden
+ * unconditionally and its provider-readiness gate was retired from
+ * `_layout.tsx`. Reviews #7, #8, #17.
  */
 const PROVIDER_BLOCKERS: ReadonlySet<string> = new Set([
   'publisher.stub',

@@ -257,6 +257,55 @@ function buildRouter(): CoreRouter {
     { auth: 'public' },
   );
 
+  // Multi-listing per-rkey service config routes. The transport must
+  // route `serviceConfig()` / `putServiceConfig(config)` to the bare
+  // `self` compat path above, and the `(…, rkey)` overloads to these.
+  // Handlers echo `req.params.rkey` so the test proves path-param
+  // extraction reached the right listing.
+  r.get(
+    '/v1/service/configs',
+    () => ({
+      status: 200,
+      body: {
+        listings: [
+          { rkey: 'self', config: { isDiscoverable: true, name: 'SF Transit Authority', capabilities: {} } },
+          { rkey: 'corner-market', config: { isDiscoverable: true, name: 'Corner Market', capabilities: {} } },
+        ],
+      },
+    }),
+    { auth: 'public' },
+  );
+
+  r.get(
+    '/v1/service/config/:rkey',
+    (req) =>
+      req.params.rkey === 'corner-market'
+        ? {
+            status: 200,
+            body: { isDiscoverable: true, name: 'Corner Market', capabilities: {}, rkeyEcho: req.params.rkey },
+          }
+        : { status: 404, body: { error: 'service_config: not set' } },
+    { auth: 'public' },
+  );
+
+  r.put(
+    '/v1/service/config/:rkey',
+    (req) => ({ status: 200, body: { ok: true, rkeyEcho: req.params.rkey, bodyEcho: req.body } }),
+    { auth: 'public' },
+  );
+
+  r.put(
+    '/v1/service/config',
+    (req) => ({ status: 200, body: { ok: true, rkeyEcho: 'self', bodyEcho: req.body } }),
+    { auth: 'public' },
+  );
+
+  r.delete(
+    '/v1/service/config/:rkey',
+    (req) => ({ status: 200, body: { ok: true, rkeyEcho: req.params.rkey } }),
+    { auth: 'public' },
+  );
+
   r.post(
     '/v1/service/query',
     (req) => {
@@ -961,6 +1010,71 @@ describe('InProcessTransport (task 1.30)', () => {
     );
     const t = new InProcessTransport(r);
     await expect(t.serviceConfig()).resolves.toBeNull();
+  });
+
+  // ─── Multi-listing per DID (per-rkey service config) ──────────────────
+
+  it('putServiceConfig routes `self` compat vs per-rkey + forwards the config body', async () => {
+    const hits: { path: 'self' | 'rkey'; rkey?: string; body: unknown }[] = [];
+    const r = new CoreRouter();
+    r.put(
+      '/v1/service/config',
+      (req) => {
+        hits.push({ path: 'self', body: req.body });
+        return { status: 200, body: { ok: true } };
+      },
+      { auth: 'public' },
+    );
+    r.put(
+      '/v1/service/config/:rkey',
+      (req) => {
+        hits.push({ path: 'rkey', rkey: req.params.rkey, body: req.body });
+        return { status: 200, body: { ok: true } };
+      },
+      { auth: 'public' },
+    );
+    const t = new InProcessTransport(r);
+
+    const cfg = { isDiscoverable: true, name: 'Corner Market', capabilities: {} };
+    await t.putServiceConfig(cfg); // omit rkey ⇒ self compat route
+    await t.putServiceConfig(cfg, 'corner-market'); // per-listing route
+
+    expect(hits).toEqual([
+      { path: 'self', body: cfg },
+      { path: 'rkey', rkey: 'corner-market', body: cfg },
+    ]);
+  });
+
+  it('serviceConfig(rkey) reads the per-listing route (param extracted); 404 → null', async () => {
+    const t = new InProcessTransport(buildRouter());
+    const cfg = await t.serviceConfig('corner-market');
+    // Distinct name proves the :rkey route — bare route returns "SF Transit".
+    expect(cfg?.name).toBe('Corner Market');
+    expect((cfg as Record<string, unknown> | null)?.rkeyEcho).toBe('corner-market');
+    await expect(t.serviceConfig('no-such-listing')).resolves.toBeNull();
+  });
+
+  it('listServiceConfigs unwraps the listings catalog (rkey + config per row)', async () => {
+    const t = new InProcessTransport(buildRouter());
+    const listings = await t.listServiceConfigs();
+    expect(listings.map((l) => l.rkey)).toEqual(['self', 'corner-market']);
+    expect(listings[1]?.config.name).toBe('Corner Market');
+  });
+
+  it('deleteServiceConfig dispatches DELETE on the per-listing route', async () => {
+    const hits: { method: string; rkey?: string }[] = [];
+    const r = new CoreRouter();
+    r.delete(
+      '/v1/service/config/:rkey',
+      (req) => {
+        hits.push({ method: 'DELETE', rkey: req.params.rkey });
+        return { status: 200, body: { ok: true } };
+      },
+      { auth: 'public' },
+    );
+    const t = new InProcessTransport(r);
+    await t.deleteServiceConfig('corner-market');
+    expect(hits).toEqual([{ method: 'DELETE', rkey: 'corner-market' }]);
   });
 
   it('serviceQuery maps camelCase → snake_case + returns task handle', async () => {

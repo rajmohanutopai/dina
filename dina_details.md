@@ -122,13 +122,13 @@ risk: BLOCKED
 
 How do we test bus driver scenario
 stub_eta_runner.py
-bus42-agent
+dina-services-demo
   - What it is: Alonso asks "when does bus 42 reach Castro?" → his Dina finds a public transit service in the AppView directory, sends it a private message, and the answer comes back as an ETA card. Two separate
   Dinas talking over MsgBox.
   - The real path (no shortcuts): Alonso discovers the provider on test-appview → sends a service.query D2D over MsgBox → the provider Dina creates a task → its paired dina-agent daemon claims the task →
-  bus42-agent/stub_eta_runner.py answers (eta = random.randint(2,14), reverse-geocodes the location to a real stop) → service.response D2D back → ETA card. Everything inside Dina is the real signed/relayed path;
+  dina-services-demo/stub_eta_runner.py answers (eta = random.randint(2,14), reverse-geocodes the location to a real stop) → service.response D2D back → ETA card. Everything inside Dina is the real signed/relayed path;
   only the runner at the edge stands in for OpenClaw + a real transit API.
-  - To run it: start the provider lite Core on :18298 + the bus42-agent daemon (both live under bus42-agent/ — keys in keys/, vault in provider-vault/). Keep EXPO_PUBLIC_DINA_DEMO empty so the in-app demo loopback
+  - To run it: start the provider lite Core on :18298 + the dina-services-demo daemon (both live under dina-services-demo/ — keys in keys/, vault in provider-vault/). Keep EXPO_PUBLIC_DINA_DEMO empty so the in-app demo loopback
    stays off.
 
 

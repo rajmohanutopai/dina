@@ -4,7 +4,7 @@ dina-agent daemon for the "Dr Carl's Clinic" appointment provider.
 Same shape as run_daemon.py (the bus ETA provider) but registers the
 appointment stub and claims tasks for the `stub_appt` runner. MUST set
 DINA_CONFIG_DIR to the Dr Carl agent's config dir — otherwise dina_cli's
-config resolver falls through to the local `bus42-agent/.dina/cli/`
+config resolver falls through to the local `dina-services-demo/.dina/cli/`
 config (priority 2) and the daemon would talk to the bus42 Core, not
 Dr Carl. DINA_CONFIG_DIR is priority 1 in cli/src/dina_cli/config.py.
 

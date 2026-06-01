@@ -70,8 +70,12 @@ export default function ApprovalsScreen() {
       setResolved(resolvedList);
     } catch (err) {
       if (err instanceof InboxNotConfiguredError) {
+        // The inbox client is wired during boot (same block as the
+        // service-config client); a null here means the screen loaded
+        // before startup finished — recoverable, NOT a pairing problem.
+        // Avoid the misleading "wired"/"onboarding"/"pair" jargon.
         setErrorMessage(
-          "Approvals inbox isn't wired yet. Finish onboarding to pair the node first.",
+          'Couldn’t load approvals yet — Dina may still be starting up. Reopen Dina and try again.',
         );
       } else {
         setErrorMessage((err as Error).message ?? 'Failed to load approvals');

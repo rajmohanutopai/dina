@@ -50,6 +50,11 @@ const SECTION_PARENTS: Record<string, string> = {
   // return to the index page — handled as a special case in
   // `parentRouteFor` below.
   'peerlens-preferences': '/settings',
+  // /approvals is a focused Activity sub-screen (no longer a bottom tab —
+  // spec 5.3/8.6). It's reached by tapping an approval notification or a
+  // `dina://approvals/<id>` deep link, so its back chevron returns to
+  // Activity rather than the default Chat.
+  approvals: '/notifications',
   // Hamburger-menu items return to the Chat tab as the safe default.
   // We don't track which tab the user was on when they opened the
   // menu — making that reliable would need an explicit "menu source"

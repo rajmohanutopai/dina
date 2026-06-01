@@ -1,0 +1,74 @@
+  Problem statement
+  
+  On the Dina test stack, a review/service-profile record authored by a brand-new did:plc identity takes ~30 minutes to become visible via the AppView's discovery/resolve xRPC endpoints. Records authored by an
+  already-established did:plc (one created days earlier) appear in seconds. We want to know why, and whether it's a code bug (would affect production too) or a test-environment timing artifact.
+  
+  Topology (confirmed)
+
+  Home Node (lite Core, TS)  ──createAccount/putRecord──▶  test-pds.dinakernel.com   (PDS, shared)
+                                                                │ firehose (repo commits)
+                                                                ▼
+                                                           relay / BGS
+                                                                │
+                                                                ▼
+                                                      JETSTREAM_URL (Jetstream)
+                                                                │ ws subscribe (forward cursor)
+                                                                ▼
+                                                appview ingester (jetstream-consumer.ts)
+                                                                │ validate / gate / persist
+                                                                ▼
+                                                     Postgres  ◀── xRPC resolve/search reads
+
+  - Both test providers are on the same PDS:
+    - bus42demo.test-pds.dinakernel.com (old, fast) and drcarlclinic.test-pds.dinakernel.com (new, slow) — both @ https://test-pds.dinakernel.com. (Source: their pds_identity.json files.)
+  - PLC directory: test-plc (dinakernel). AppView firehose source: JETSTREAM_URL (appview/src/config/env.ts:23-26; prod-required, dev-default ws://jetstream:6008).
+  
+  Confirmed facts (with evidence)
+  
+  1. AppView ingester does no repo discovery. It's a forward-cursor Jetstream consumer with on-disk spool replay. (appview/src/ingester/jetstream-consumer.ts: private cursor, loadCursor(), replaySpool(), connect()
+  at lines ~147, 232-235.) → The 30 min is not AppView indexing logic. (This corrected my first wrong guess that "AppView indexing is slow.")
+  2. requestCrawl is absent from the entire codebase. grep -rn "requestCrawl" across appview/src, packages/core/src, apps/home-node-lite, core/ → only hit is the BIP-39 wordlist containing the word "crawl". The
+  PDS-provisioning path (apps/home-node-lite/core-server/src/identity/provision_pds.ts, packages/core/src/pds/) never notifies a relay.
+  3. Same-PDS falsifies the requestCrawl theory. (This corrected my second wrong guess.) The relay already streams test-pds's firehose (bus42 proves it — instant). A new account on that same PDS emits on that same
+  already-subscribed firehose. So "tell the relay about the PDS" is a no-op for this case. I therefore did not implement the requestCrawl change the user had tentatively approved.
+  4. The ingester has a DID-document-dependent gate. appview/src/ingester/namespace-signature-gate.ts: namespace-bearing records require a DID-doc fetch (PLC resolve, 5-min TTL cache via did-doc-cache.ts); on
+  fetch failure it fails closed with reason signature_invalid. BUT — records without a namespace skip the gate entirely (lines 46-49, "V1 majority root-identity path"). PeerLens reviews + service profiles are
+  almost certainly namespace-less, so this gate likely does not apply. (Needs confirmation — see hypotheses.)
+  5. Other ingester gates exist that may resolve/require author identity: pds-suspension-gate.ts, record-validator.ts, did_profiles population. Not yet traced for new-DID deferral behavior.
+
+  What I have NOT confirmed (open — candidate root causes)
+  
+  - H1 — PLC directory propagation lag. A brand-new did:plc may not be resolvable at test-plc for some minutes after createAccount. If any ingester stage resolves the author DID (did_profiles, suspension gate, or
+  namespace gate for namespaced records) and defers/fails-closed until PLC resolves, records sit until PLC catches up + the 5-min did-doc cache TTL turns over. This is my leading hypothesis but is unverified.
+  - H2 — relay new-account/#identity handling. The relay/BGS may process a new repo's first #account/#identity event (or backfill its existing records) on a slower path than steady-state commits. Env-specific to
+  the test relay.
+  - H3 — measurement error. The "~30 min" was wall-clock observation across other work, not an instrumented timestamp. Could be less, or a one-off.
+  - H4 — ingester cursor/replay or bounded-queue drop (bounded-queue.ts has a dropCount for full-queue) delaying or dropping then re-delivering. Lower likelihood (old repos unaffected) but not excluded.
+  
+  Decisive experiment (not yet run)
+
+  Create one more did:plc on test-pds and timestamp every hop:
+  - T0 createAccount returns (PDS has the account)
+  - T1 test-plc resolves the new did:plc (GET .../{did} succeeds) ← tests H1
+  - T2 a record appears on the Jetstream firehose (subscribe + watch for the DID) ← tests H2
+  - T3 AppView discovery/resolve returns it
+  
+  The largest T(n)→T(n+1) gap localizes the layer. If T0→T1 dominates → PLC propagation (H1). If T1→T2 dominates → relay (H2). If T2→T3 dominates → ingester (and then the gates in fact #4/#5 are the place to
+  look).
+  Key files for Codex to read
+  
+  - appview/src/ingester/jetstream-consumer.ts — consumer loop, cursor, spool replay, dispatch order
+  - appview/src/ingester/namespace-signature-gate.ts — DID-doc gate (does it apply to namespace-less reviews?)
+  - appview/src/ingester/pds-suspension-gate.ts, record-validator.ts, rejection-writer.ts — other gates / drop paths
+  - appview/src/shared/utils/did-doc-cache.ts — 5-min TTL, fail-closed behavior on PLC miss
+  - appview/src/config/env.ts — JETSTREAM_URL
+  - apps/home-node-lite/core-server/src/identity/provision_pds.ts + packages/core/src/pds/ — provisioning; confirm no relay notify, check if/when did:plc is published to PLC
+  - appview/src/db/queries/subjects.ts, appview/src/api/xrpc/resolve.ts — read side (rule out a read-path cache; note resolve takes a subject JSON param, and there's an SWR cache CACHE_TTLS.RESOLVE)
+  
+  Two specific questions worth handing Codex
+
+  1. In the ingester dispatch path, is there any stage that resolves the author DID (PLC fetch) or populates did_profiles before a PeerLens-review / service-profile record is persisted — and does that stage defer 
+  or fail-closed when the DID isn't yet in PLC/its cache? (This is the make-or-break for H1.)
+  2. Does the relay/BGS (upstream of JETSTREAM_URL) treat a newly-seen repo (new account on an already-crawled PDS) differently from steady-state commits — i.e., is there a separate account-discovery/backfill
+  cadence? (H2; may be infra-config, not in this repo.)
+

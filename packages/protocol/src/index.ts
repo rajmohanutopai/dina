@@ -32,7 +32,23 @@ export type {
   ServiceCapabilityConfig,
   ServiceCapabilitySchemas,
   ServiceConfig,
+  AccessPolicyHint,
+  RateLimitHint,
+  PricingHint,
+  FreshnessHint,
 } from './types/capability';
+export type {
+  CategoryLifecycle,
+  CapabilityLifecycle,
+  ActionClass,
+  PrivacyClass,
+  Discoverability,
+  ApprovalPolicyHint,
+  CatalogCategory,
+  CapabilityDefinition,
+  DeprecatedCapability,
+  CapabilityCatalog,
+} from './types/catalog';
 
 // Wire constants.
 export {
@@ -284,6 +300,15 @@ export {
 // Core's D2D ingress (`isCapabilityConfigured`) imports
 // `resolveCanonicalCapability` from here to canonicalize inbound queries.
 export * from './services/capability-registry';
+
+// Official service-capability CATALOG — the curated, AppView-served vocabulary
+// providers choose from. Superset of the resolver registry above (a consistency
+// test enforces that). See docs/SERVICE_CAPABILITY_CATALOG_DESIGN.md.
+export * from './services/capability-catalog';
+
+// Provider service-listing validation (discoverability + category + capability
+// kind), fail-closed + explainable. See docs/SERVICE_CAPABILITY_CATALOG_DESIGN.md §5.1.
+export * from './services/listing-validation';
 
 // PeerLens review-dimension registry — shared canonical vocabulary +
 // resolver. Byte-identical to appview/src/shared/dimension-registry.ts.

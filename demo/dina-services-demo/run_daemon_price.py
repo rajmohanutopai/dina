@@ -3,7 +3,7 @@ daemon for the "Corner Market" price_check provider.
 
 Same shape as run_daemon.py / run_daemon_appt.py. MUST set DINA_CONFIG_DIR
 to the price agent's config dir, else dina_cli's resolver falls through to
-the local bus42-agent/.dina/cli config (priority 2) and the daemon talks to
+the local dina-services-demo/.dina/cli config (priority 2) and the daemon talks to
 the wrong Core. DINA_CONFIG_DIR is priority 1 (cli/src/dina_cli/config.py).
 
 Run:

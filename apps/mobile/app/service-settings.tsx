@@ -12,6 +12,7 @@
  * depending on isDiscoverable).
  */
 
+import { Stack, useRouter } from 'expo-router';
 import React, { useState, useEffect, useCallback, useMemo, useSyncExternalStore } from 'react';
 import {
   View,
@@ -19,25 +20,48 @@ import {
   StyleSheet,
   ScrollView,
   TextInput,
-  Switch,
   Pressable,
   ActivityIndicator,
   Alert,
   Modal,
 } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
-import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
+
+import {
+  listCapabilities as listLocalCapabilities,
+  computeSchemaHash,
+  type CapabilityDef,
+} from '@dina/brain';
+import {
+  validateServiceListing,
+  effectiveDiscoverability,
+  type CapabilityDefinition,
+  type Discoverability,
+} from '@dina/protocol';
+
+import { CapabilityPicker } from '../src/components/capability_picker';
+import { getBootDegradations, getBootedNode } from '../src/hooks/useNodeBootstrap';
 import {
   loadServiceConfig,
+  loadServiceConfigWithRetry,
   saveServiceConfig,
   ServiceConfigNotConfiguredError,
   ServiceConfigValidationError,
 } from '../src/hooks/useServiceConfigForm';
-import { getBootDegradations, getBootedNode } from '../src/hooks/useNodeBootstrap';
-import { subscribeRuntimeWarnings, getRuntimeWarnings } from '../src/services/runtime_warnings';
+import {
+  BUNDLED_CATALOG,
+  defaultDiscoverabilityForCapabilities,
+  findCapability,
+  loadCatalog,
+  type CatalogData,
+  type CatalogFetch,
+} from '../src/services/catalog_source';
 import { saveRolePreference } from '../src/services/role_preference';
+import { subscribeRuntimeWarnings, getRuntimeWarnings } from '../src/services/runtime_warnings';
+import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
+
 import type { NodeRole } from '../src/services/bootstrap';
 import type { ServiceConfig } from '@dina/core';
+
 // Local capability registry — every capability the brain knows how to
 // validate (paramsSchema, resultSchema, hash, default TTL). Surfacing
 // these in the Add-Capability picker means a user adding `eta_query`
@@ -48,11 +72,6 @@ import type { ServiceConfig } from '@dina/core';
 // be skipped for them. The list mirrors what AppView accepts across
 // the network; new capabilities are added to
 // `packages/brain/src/service/capabilities/registry.ts` first.
-import {
-  listCapabilities as listLocalCapabilities,
-  computeSchemaHash,
-  type CapabilityDef,
-} from '@dina/brain';
 
 /**
  * Degradation codes that mean "this screen overpromises."
@@ -97,15 +116,33 @@ export default function ServiceSettingsScreen() {
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [isDiscoverable, setIsDiscoverable] = useState(false);
+  // Explicit discovery visibility (spec §5.2). Supersedes the legacy
+  // `isDiscoverable` boolean (which is derived on save: public → true).
+  const [discoverability, setDiscoverability] = useState<Discoverability>('public');
+  // Until the provider taps the "Who can find this?" selector (or we hydrate
+  // a saved config), discoverability auto-tracks the safest catalog default
+  // for the chosen capabilities (spec mobile #12/#13). Once touched, the
+  // provider's explicit choice is respected and never auto-overridden.
+  const [discoverabilityTouched, setDiscoverabilityTouched] = useState(false);
+  const chooseDiscoverability = useCallback((value: Discoverability) => {
+    setDiscoverabilityTouched(true);
+    setDiscoverability(value);
+  }, []);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [capabilities, setCapabilities] = useState<Array<{ key: string; policy: Policy }>>([]);
-  // Add-Capability modal. When open, the user picks a known capability
-  // from the local registry (canonical schemas attached automatically)
-  // OR types a custom key (schemas skipped — provider-side validation
-  // will be lenient until they're registered in the brain registry).
+  // Per-capability `category` is the concrete vertical chosen in the picker —
+  // it travels onto the published listing (controls policy/consent/ranking).
+  const [capabilities, setCapabilities] = useState<
+    { key: string; policy: Policy; category?: string }[]
+  >([]);
+  // Official capability catalog (SERVICE_CAPABILITY_CATALOG_DESIGN.md). Starts as
+  // the bundled fallback; the live AppView catalog is fetched on mount and wins
+  // when available (spec §2). Drives the Category → Capability picker.
+  const [catalog, setCatalog] = useState<CatalogData>(BUNDLED_CATALOG);
+  // Add-Capability modal. The catalog picker drives Category → Capability; the
+  // selected category is shared with the advanced custom (namespaced) entry.
   const [addModalVisible, setAddModalVisible] = useState(false);
+  const [pickerCategoryId, setPickerCategoryId] = useState<string | null>(null);
   const [customCapName, setCustomCapName] = useState('');
   // Local snapshot of the brain registry's known capabilities. Frozen
   // at mount — the registry is module-scope so it can't change at
@@ -155,30 +192,53 @@ export default function ServiceSettingsScreen() {
   const discoveryBlocked = activeBlockers.length > 0;
 
   useEffect(() => {
-    (async () => {
+    // The service-config Core client is wired during node boot
+    // (`installChatGlobals`). This screen can mount inside the brief window
+    // where that client is momentarily null — at first boot, or during a
+    // re-boot (auto-lock → re-unlock, or a dev Fast-Refresh). `loadServiceConfigWithRetry`
+    // keeps trying through that window so a transient null doesn't strand the
+    // user on a sticky error; only a genuine, persistent null surfaces below.
+    let cancelled = false;
+    void (async () => {
       try {
-        const cfg = await loadServiceConfig();
+        const cfg = await loadServiceConfigWithRetry();
+        if (cancelled) return;
         if (cfg !== null) hydrate(cfg);
       } catch (err) {
+        if (cancelled) return;
         if (err instanceof ServiceConfigNotConfiguredError) {
-          setLoadError("Service config isn't wired yet. Complete onboarding first.");
+          // Still null after the retry window — genuinely not ready.
+          // Recoverable by reopening (which re-wires the client). Avoid
+          // "wired"/"onboarding" jargon: onboarding is already done by the
+          // time a user can reach this screen.
+          setLoadError('Service settings couldn’t load yet — Dina may still be starting up. Reopen Dina and try again.');
         } else {
           setLoadError((err as Error).message ?? 'Failed to load service config');
         }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   function hydrate(cfg: ServiceConfig): void {
-    setIsDiscoverable(cfg.isDiscoverable);
+    // A saved config's discoverability is the provider's prior explicit
+    // choice — pin `touched` so the auto-default effect doesn't clobber it.
+    setDiscoverability(effectiveDiscoverability(cfg));
+    setDiscoverabilityTouched(true);
     setName(cfg.name);
     setDescription(cfg.description ?? '');
     setCapabilities(
       Object.entries(cfg.capabilities).map(([key, cap]) => ({
         key,
         policy: (cap.responsePolicy ?? 'auto') as Policy,
+        // Back-compat: an existing config may predate per-capability category.
+        // Backfill the catalog's default for an official capability so a re-save
+        // validates; leave undefined for custom/unknown (the user re-picks it).
+        category: cap.category ?? findCapability(catalog, key)?.default_category_id,
       })),
     );
   }
@@ -191,20 +251,52 @@ export default function ServiceSettingsScreen() {
     );
   }, []);
 
-  const addCapability = useCallback((key: string) => {
+  const addCapability = useCallback((key: string, category?: string) => {
     const trimmed = key.trim();
     if (trimmed === '') return;
     setCapabilities((list) => {
       if (list.some((c) => c.key === trimmed)) return list;
-      return [...list, { key: trimmed, policy: 'auto' }];
+      return [
+        ...list,
+        { key: trimmed, policy: 'auto', ...(category !== undefined ? { category } : {}) },
+      ];
     });
     setAddModalVisible(false);
+    setPickerCategoryId(null);
     setCustomCapName('');
   }, []);
 
   const removeCapability = useCallback((key: string) => {
     setCapabilities((list) => list.filter((c) => c.key !== key));
   }, []);
+
+  // Fetch the live AppView catalog once; fail-soft to the bundled fallback
+  // (spec §2). The picker uses whichever is resolved.
+  useEffect(() => {
+    let cancelled = false;
+    const url = process.env.EXPO_PUBLIC_DINA_APPVIEW_URL ?? '';
+    void loadCatalog(url, globalThis.fetch as unknown as CatalogFetch).then((c) => {
+      if (!cancelled) setCatalog(c);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Auto-default the discoverability to the safest catalog default for the
+  // chosen capabilities (spec mobile #12/#13) — until the provider taps the
+  // selector or we hydrate a saved config (`discoverabilityTouched`). A new
+  // listing that adds e.g. a developer/ops capability seeds `known_only`
+  // instead of silently defaulting to public search.
+  useEffect(() => {
+    if (discoverabilityTouched) return;
+    setDiscoverability(
+      defaultDiscoverabilityForCapabilities(
+        capabilities.map((c) => c.key),
+        catalog,
+      ),
+    );
+  }, [discoverabilityTouched, capabilities, catalog]);
 
   const onSave = useCallback(async () => {
     if (name.trim() === '') {
@@ -214,7 +306,7 @@ export default function ServiceSettingsScreen() {
     // Review #19: don't allow saving a discoverable profile with no
     // capabilities — Core rejects it anyway, but catching it here
     // produces a clearer UI message than a wire error.
-    if (isDiscoverable && capabilities.length === 0) {
+    if (discoverability === 'public' && capabilities.length === 0) {
       Alert.alert(
         'No capabilities',
         'A discoverable profile must advertise at least one capability. Add one first, or toggle "Make this node discoverable" off.',
@@ -229,21 +321,18 @@ export default function ServiceSettingsScreen() {
       // UI, or a newer version of this screen) survives the save.
       // Previously we rebuilt from the screen-local `capabilities`
       // array alone and every unseen capability got silently dropped.
-      const caps: ServiceConfig['capabilities'] =
-        existing !== null ? { ...existing.capabilities } : {};
-      // Start from the EXISTING capabilitySchemas map so any schemas
-      // configured outside this screen (CLI, onboarding) survive the
-      // save. Newly-added known capabilities (picked from the brain's
-      // local registry) get their canonical schemas attached here.
-      const schemas: NonNullable<ServiceConfig['capabilitySchemas']> = {
-        ...(existing?.capabilitySchemas ?? {}),
-      };
-      // Drop schemas for capabilities the user removed via this screen.
+      // Seed from the EXISTING config so policies + schemas configured
+      // outside this screen (CLI, onboarding) survive the save, but keep
+      // only capabilities still present in the screen list — rebuilt by
+      // filtering (not mutated with `delete`) so a capability the user
+      // removed here drops its policy AND its canonical schema.
       const liveKeys = new Set(capabilities.map((c) => c.key));
-      for (const k of Object.keys(caps)) {
-        if (!liveKeys.has(k)) delete caps[k];
-        if (!liveKeys.has(k) && k in schemas) delete schemas[k];
-      }
+      const caps: ServiceConfig['capabilities'] = Object.fromEntries(
+        Object.entries(existing?.capabilities ?? {}).filter(([k]) => liveKeys.has(k)),
+      );
+      const schemas: NonNullable<ServiceConfig['capabilitySchemas']> = Object.fromEntries(
+        Object.entries(existing?.capabilitySchemas ?? {}).filter(([k]) => liveKeys.has(k)),
+      );
       // Overlay the policy + schema for each capability still in the
       // screen list. For caps NOT in `existing` (newly added via Add
       // Capability), look up the brain registry to attach the
@@ -268,6 +357,14 @@ export default function ServiceSettingsScreen() {
           mcpTool: prior?.mcpTool ?? c.key,
           responsePolicy: c.policy,
           ...(schemaHash !== undefined ? { schemaHash } : {}),
+          // The concrete category chosen in the picker travels onto the listing
+          // (controls policy/consent/ranking). Preserve a prior category if the
+          // screen list didn't carry one.
+          ...(c.category !== undefined
+            ? { category: c.category }
+            : prior?.category !== undefined
+              ? { category: prior.category }
+              : {}),
         };
         // Attach capabilitySchemas only when we have a registry def
         // AND it's not already in the existing schemas map. Mirrors
@@ -283,12 +380,29 @@ export default function ServiceSettingsScreen() {
         }
       }
       const next: ServiceConfig = {
-        isDiscoverable,
+        // Legacy boolean derived from the explicit value for back-compat.
+        isDiscoverable: discoverability === 'public',
+        // Explicit discovery visibility chosen in the "who can find this?"
+        // selector (spec §5.2) — every listing carries it.
+        discoverability,
         name: name.trim(),
         description: description.trim() !== '' ? description.trim() : undefined,
         capabilities: caps,
         ...(Object.keys(schemas).length > 0 ? { capabilitySchemas: schemas } : {}),
       };
+      // Fail-closed catalog validation (spec §8.1): a capability must be
+      // official-or-namespaced (never an unknown flat name), carry an allowed
+      // category, and write/booking actions must be review-gated. Block the
+      // save + show the exact reasons rather than publishing a half-valid
+      // public service.
+      const verdict = validateServiceListing(next, { requireExplicitDiscoverability: true });
+      if (!verdict.ok) {
+        Alert.alert(
+          'Fix before publishing',
+          verdict.errors.map((e) => `• ${e.message}`).join('\n'),
+        );
+        return;
+      }
       await saveServiceConfig(next);
       Alert.alert('Saved', 'Service config updated.', [
         { text: 'OK', onPress: () => router.replace('/settings') },
@@ -302,7 +416,7 @@ export default function ServiceSettingsScreen() {
     } finally {
       setSaving(false);
     }
-  }, [name, description, isDiscoverable, capabilities, localKnownCapabilities, router]);
+  }, [name, description, discoverability, capabilities, localKnownCapabilities, router]);
 
   if (loading) {
     return (
@@ -345,33 +459,52 @@ export default function ServiceSettingsScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionHeader}>PUBLIC</Text>
+          <Text style={styles.sectionHeader}>WHO CAN FIND THIS SERVICE?</Text>
           <View style={styles.card}>
-            <View style={styles.switchRow}>
-              <View style={styles.switchLabel}>
-                <Text style={styles.rowTitle}>Make this node discoverable</Text>
-                <Text style={styles.rowSubtitle}>
-                  When on, your service profile is published to AppView so others on the network can
-                  query you.
-                </Text>
-              </View>
-              <Switch
-                value={isDiscoverable}
-                onValueChange={setIsDiscoverable}
-                trackColor={{ false: colors.bgTertiary, true: colors.accent }}
-                thumbColor={colors.white}
-              />
-            </View>
-            {discoveryBlocked ? (
+            {(
+              [
+                { value: 'public', title: 'Public', body: 'Anyone can find this service in Dina search.' },
+                {
+                  value: 'unlisted',
+                  title: 'Unlisted',
+                  body: 'Only people with the service link, QR, invite, or pairing can find it.',
+                },
+                {
+                  value: 'known_only',
+                  title: 'Private / known only',
+                  body: 'Only people or Dinas you explicitly connect can use it.',
+                },
+              ] as { value: Discoverability; title: string; body: string }[]
+            ).map((opt) => (
+              <Pressable
+                key={opt.value}
+                style={[styles.row, discoverability === opt.value ? styles.rowSelected : null]}
+                onPress={() => chooseDiscoverability(opt.value)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: discoverability === opt.value }}
+                accessibilityLabel={`${opt.title}. ${opt.body}`}
+              >
+                <View style={{ flex: 1, paddingRight: spacing.sm }}>
+                  <Text style={styles.rowTitle}>{opt.title}</Text>
+                  <Text style={styles.rowSubtitle}>{opt.body}</Text>
+                </View>
+                {discoverability === opt.value ? <Text style={styles.rowValue}>{'✓'}</Text> : null}
+              </Pressable>
+            ))}
+            {discoverability === 'public' && discoveryBlocked ? (
               <View style={styles.discoveryCaveat}>
                 <Text style={styles.discoveryCaveatTitle}>Not actually discoverable yet.</Text>
                 <Text style={styles.discoveryCaveatBody}>
-                  Missing: {activeBlockers.join(', ')}.{'\n'}Flip this switch on once onboarding
-                  wires PDS + MsgBox. Until then the profile is saved locally but will not reach
-                  AppView.
+                  Missing: {activeBlockers.join(', ')}.{'\n'}Once onboarding wires PDS + MsgBox this
+                  will reach AppView. Until then the profile is saved locally but won't appear in
+                  search.
                 </Text>
               </View>
             ) : null}
+            <Text style={[styles.rowSubtitle, { paddingHorizontal: spacing.md, paddingTop: spacing.sm }]}>
+              Discoverability is not authorization — the provider still controls who may actually use
+              the service.
+            </Text>
           </View>
         </View>
 
@@ -509,79 +642,68 @@ export default function ServiceSettingsScreen() {
                 Add capability
               </Text>
               <Text style={styles.modalSubtitle}>
-                Pick a known one or type your own. Known capabilities ship with JSON
-                Schemas + schema_hash so requesters can detect version skew.
+                Choose a category, then an official Dina capability. Advanced:
+                define a custom namespaced capability if none fits.
               </Text>
 
-              {/* KNOWN — render only when at least one preset is unused. */}
-              {localKnownCapabilities.some(
-                (def) => !capabilities.some((c) => c.key === def.name),
-              ) ? (
+              {/* Official catalog: Category → Capability (no typing ids). The
+                  chosen category travels onto the listing. Already-added
+                  capabilities are filtered so the picker doesn't show dupes. */}
+              <CapabilityPicker
+                catalog={{
+                  ...catalog,
+                  capabilities: catalog.capabilities.filter(
+                    (def) => !capabilities.some((c) => c.key === def.id),
+                  ),
+                }}
+                selectedCategoryId={pickerCategoryId}
+                onSelectCategory={setPickerCategoryId}
+                selectedCapabilityId={null}
+                onSelectCapability={(cap: CapabilityDefinition, categoryId: string) =>
+                  addCapability(cap.id, categoryId)
+                }
+              />
+
+              {/* Advanced custom — needs a category too (spec §5.1), so it's
+                  gated on a category having been picked above. */}
+              {pickerCategoryId !== null ? (
                 <>
-                  <Text style={styles.modalSectionHeader}>FROM CATALOGUE</Text>
-                  <View style={styles.card}>
-                    {localKnownCapabilities
-                      .filter((def) => !capabilities.some((c) => c.key === def.name))
-                      .map((def, idx, arr) => (
-                        <Pressable
-                          key={def.name}
-                          onPress={() => addCapability(def.name)}
-                          style={({ pressed }) => [
-                            styles.knownCapRow,
-                            idx === arr.length - 1 && styles.capabilityRowLast,
-                            pressed && styles.pressed,
-                          ]}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Add ${def.name}. ${def.description}`}
-                        >
-                          <Text style={styles.capabilityName}>{def.name}</Text>
-                          <Text style={styles.knownCapDescription} numberOfLines={2}>
-                            {def.description}
-                          </Text>
-                        </Pressable>
-                      ))}
+                  <Text style={styles.modalSectionHeader}>OR DEFINE A CUSTOM CAPABILITY</Text>
+                  <View style={styles.customCard}>
+                    <Text style={styles.label}>Capability key</Text>
+                    <TextInput
+                      value={customCapName}
+                      onChangeText={setCustomCapName}
+                      placeholder="e.g. com.example.inventory_lookup"
+                      placeholderTextColor={colors.textMuted}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      style={styles.customCapInput}
+                      accessibilityLabel="Custom capability key"
+                    />
+                    <Text style={styles.modalHelpText}>
+                      Use a reverse-DNS capability name you control, e.g.
+                      com.example.inventory_lookup. Custom capability keys are
+                      developer preview: a public custom capability needs a
+                      parameter/result schema before other Dinas can reliably call
+                      it.
+                    </Text>
+                    <Pressable
+                      onPress={() => addCapability(customCapName, pickerCategoryId)}
+                      disabled={customCapName.trim() === ''}
+                      style={({ pressed }) => [
+                        styles.modalAddButton,
+                        pressed && styles.pressed,
+                        customCapName.trim() === '' && styles.disabled,
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Add custom capability"
+                    >
+                      <Text style={styles.modalAddButtonText}>Add custom</Text>
+                    </Pressable>
                   </View>
                 </>
               ) : null}
-
-              <Text style={styles.modalSectionHeader}>
-                {localKnownCapabilities.some(
-                  (def) => !capabilities.some((c) => c.key === def.name),
-                )
-                  ? 'OR TYPE YOUR OWN'
-                  : 'TYPE YOUR OWN'}
-              </Text>
-              <View style={styles.customCard}>
-                <Text style={styles.label}>Capability key</Text>
-                <TextInput
-                  value={customCapName}
-                  onChangeText={setCustomCapName}
-                  placeholder="e.g. weather_forecast"
-                  placeholderTextColor={colors.textMuted}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={styles.customCapInput}
-                  accessibilityLabel="Custom capability key"
-                />
-                <Text style={styles.modalHelpText}>
-                  Custom capabilities ship without JSON Schemas. Requesters that
-                  pre-validate params will reject the call. Register the key in
-                  `packages/brain/src/service/capabilities/registry.ts` to ship schemas.
-                </Text>
-                <Pressable
-                  onPress={() => addCapability(customCapName)}
-                  disabled={customCapName.trim() === ''}
-                  style={({ pressed }) => [
-                    styles.modalAddButton,
-                    pressed && styles.pressed,
-                    customCapName.trim() === '' && styles.disabled,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Add custom capability"
-                >
-                  <Text style={styles.modalAddButtonText}>Add custom</Text>
-                </Pressable>
-              </View>
 
               <Pressable
                 onPress={() => setAddModalVisible(false)}
@@ -654,11 +776,6 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     ...shadows.sm,
   },
-  switchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  switchLabel: { flex: 1, marginRight: spacing.sm },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

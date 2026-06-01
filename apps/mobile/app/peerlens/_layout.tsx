@@ -33,7 +33,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, navTitle } from '../../src/theme';
 import { openMenu } from '../../src/navigation/menu_state';
 import { StackIndexHeader } from '../../src/navigation/stack_index_header';
-import { FEATURE_NAMES } from '@dina/core';
 
 // CR-3 fix: render the index-screen header in JS via `Stack.Screen`
 // `header` prop. Custom JSX placed in `headerLeft`/`headerRight` of
@@ -57,7 +56,10 @@ function PeerlensIndexHeader(): React.ReactElement {
   // section.
   return (
     <StackIndexHeader
-      title={FEATURE_NAMES.peerlens}
+      // "Network" is the top-level surface (Services + PeerLens trust).
+      // The route folder stays `/peerlens` and the canonical
+      // `FEATURE_NAMES.peerlens` is unchanged (spec 5.1 / 8.3).
+      title="Network"
       onMenuPress={openMenu}
       onHelpPress={() => router.push({ pathname: '/help', params: { from: '/peerlens' } })}
     />
@@ -140,7 +142,11 @@ export default function PeerlensStackLayout(): React.ReactElement {
       <Stack.Screen
         name="index"
         options={{
-          title: FEATURE_NAMES.peerlens,
+          // Header label is "Network" (the surface), not "PeerLens" (the
+          // trust subsystem inside it). The custom `header` below renders
+          // the visible title; `title` is kept in sync for any consumer
+          // that reads screen options.
+          title: 'Network',
           // CR-3: replace the native UINavigationBar entirely with the
           // JS-rendered StackIndexHeader so the hamburger + help
           // Pressables propagate a11y traits to VoiceOver. See the

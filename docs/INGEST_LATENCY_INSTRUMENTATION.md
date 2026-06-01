@@ -104,7 +104,7 @@ the new DID **at creation**. The "new repo is mysteriously slow" framing does **
 
 ## Measurement (do this BEFORE any fix)
 
-### Harness: `bus42-agent/measure_ingest_latency.py` (stdlib only)
+### Harness: `dina-services-demo/measure_ingest_latency.py` (stdlib only)
 
 Times the reachable hops:
 - **T0** caller "now" (or pass `--t0-epoch` = Core boot-log "PDS identity
@@ -114,7 +114,7 @@ Times the reachable hops:
 
 ```bash
 # terminal 1 — start watching, THEN provision the node in terminal 2:
-cd bus42-agent
+cd dina-services-demo
 python measure_ingest_latency.py watch \
   --did did:plc:NEWLYCREATED \
   --capability appointment_status \
@@ -202,7 +202,7 @@ if so add the same fetch-timing log. This is the make-or-break for H1 on
 ## Firehose tap (optional, for the T1→T3 split without a redeploy)
 
 If you can obtain the deployed `JETSTREAM_URL` (or a public test jetstream), a tiny
-`websockets` subscriber (the `bus42-agent/venv` has the lib) that prints every event
+`websockets` subscriber (the `dina-services-demo/venv` has the lib) that prints every event
 for the target DID with arrival wall-clock gives **T2** directly:
 `T1→T2` = relay/firehose lag (H2); `T2→T3` = AppView ingester lag. Without the URL,
 the deployed logs (#1) provide the same arrival timestamp.

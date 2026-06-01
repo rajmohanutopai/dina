@@ -11,7 +11,7 @@ for the full guide + rebuild recipe), then asked from Alonso on the sim.
 **Provider stack (rebuilt — the original was wiped when /tmp cleared on reboot):**
 - Provider lite Core `did:plc:6zyy3bu2njkhdjbosxdqrzri` ("Demo ETA Provider"),
   on :18298, MsgBox-connected, `eta_query` published to test-appview.
-- bus42-agent `dina-agent` daemon paired via MsgBox, running `stub_eta_runner`
+- dina-services-demo `dina-agent` daemon paired via MsgBox, running `stub_eta_runner`
   (the edge OpenClaw stand-in — `eta_minutes = random.randint(2,14)`,
   reverse-geocodes the location to a real stop).
 

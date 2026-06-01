@@ -44,6 +44,7 @@ import type {
   PersonaStatusResult,
   PersonaUnlockResult,
   ServiceConfig,
+  ServiceListing,
   ServiceQueryClientRequest,
   ServiceQueryResult,
   MemoryToCOptions,
@@ -349,22 +350,48 @@ export class InProcessTransport implements CoreClient {
     return expectOk<PersonaUnlockResult>(res, `personaUnlock(persona=${persona})`);
   }
 
-  async putServiceConfig(config: ServiceConfig): Promise<void> {
+  async putServiceConfig(config: ServiceConfig, rkey?: string): Promise<void> {
+    // Omit rkey ⇒ `self` compat route (single-listing back-compat).
+    // Provide rkey ⇒ per-listing route, minting a distinct profile record.
+    const path =
+      rkey !== undefined
+        ? `/v1/service/config/${encodeURIComponent(rkey)}`
+        : '/v1/service/config';
     const res = await this.router.handle(
-      blankRequest({ method: 'PUT', path: '/v1/service/config', body: config }),
+      blankRequest({ method: 'PUT', path, body: config }),
     );
-    expectOk<unknown>(res, 'putServiceConfig');
+    expectOk<unknown>(res, `putServiceConfig(rkey=${rkey ?? 'self'})`);
   }
 
-  async serviceConfig(): Promise<ServiceConfig | null> {
-    // Core returns 404 when no config is published — map to `null`
+  async serviceConfig(rkey?: string): Promise<ServiceConfig | null> {
+    // Core returns 404 when that listing isn't published — map to `null`
     // so Brain can branch without try/catch on a non-exceptional
     // state. Other non-2xx (500, 503) still throw via expectOk.
-    const res = await this.router.handle(
-      blankRequest({ method: 'GET', path: '/v1/service/config' }),
-    );
+    const path =
+      rkey !== undefined
+        ? `/v1/service/config/${encodeURIComponent(rkey)}`
+        : '/v1/service/config';
+    const res = await this.router.handle(blankRequest({ method: 'GET', path }));
     if (res.status === 404) return null;
-    return expectOk<ServiceConfig>(res, 'serviceConfig');
+    return expectOk<ServiceConfig>(res, `serviceConfig(rkey=${rkey ?? 'self'})`);
+  }
+
+  async listServiceConfigs(): Promise<ServiceListing[]> {
+    const res = await this.router.handle(
+      blankRequest({ method: 'GET', path: '/v1/service/configs' }),
+    );
+    const raw = expectOk<{ listings?: ServiceListing[] }>(res, 'listServiceConfigs');
+    return Array.isArray(raw.listings) ? raw.listings : [];
+  }
+
+  async deleteServiceConfig(rkey: string): Promise<void> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'DELETE',
+        path: `/v1/service/config/${encodeURIComponent(rkey)}`,
+      }),
+    );
+    expectOk<unknown>(res, `deleteServiceConfig(rkey=${rkey})`);
   }
 
   async sendServiceQuery(req: ServiceQueryClientRequest): Promise<ServiceQueryResult> {

@@ -8,7 +8,7 @@
 
 import type { NotificationItem } from '@dina/brain/notifications';
 
-export type FilterKey = 'all' | 'unread' | 'reminder' | 'approval';
+export type FilterKey = 'all' | 'unread' | 'reminder' | 'needs_action';
 
 export function applyNotificationFilter(
   items: NotificationItem[],
@@ -21,9 +21,13 @@ export function applyNotificationFilter(
       return items.filter((i) => i.readAt === null);
     case 'reminder':
       return items.filter((i) => i.kind === 'reminder');
-    case 'approval':
-      // The two approval families both surface here so users see one
-      // unified Approvals filter.
+    case 'needs_action':
+      // "Needs action" = every item that asks the user for a decision:
+      // service-approval (`approval`), ask-approval / agent-validation /
+      // locked-vault prompts (`ask_approval`). These two notification
+      // kinds are exactly the action-bearing families (reminders, nudges,
+      // and briefings are informational), so this predicate captures the
+      // full set the spec enumerates (spec 5.2).
       return items.filter((i) => i.kind === 'approval' || i.kind === 'ask_approval');
   }
 }

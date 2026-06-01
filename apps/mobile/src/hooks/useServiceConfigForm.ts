@@ -60,6 +60,41 @@ export async function loadServiceConfig(): Promise<ServiceConfig | null> {
 }
 
 /**
+ * Load the service config, tolerating the brief boot window where the Core
+ * client isn't wired yet.
+ *
+ * The client is set during node boot (`installChatGlobals`); a screen can
+ * mount while it's momentarily `null` — at first boot, or during a re-boot
+ * (auto-lock → re-unlock, dev Fast-Refresh). Without this, that transient
+ * surfaces as a sticky "couldn't load" error even though the client appears a
+ * beat later. So we retry ONLY on `ServiceConfigNotConfiguredError` (the
+ * not-wired-yet signal), up to `maxAttempts`, sleeping `delayMs` between tries.
+ * Any other error (or a genuine persistent null) propagates immediately /
+ * after the window. `sleep` is injectable so tests don't wait real time.
+ */
+export async function loadServiceConfigWithRetry(opts?: {
+  maxAttempts?: number;
+  delayMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+}): Promise<ServiceConfig | null> {
+  const maxAttempts = opts?.maxAttempts ?? 6;
+  const delayMs = opts?.delayMs ?? 500;
+  const sleep = opts?.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await loadServiceConfig();
+    } catch (err) {
+      if (err instanceof ServiceConfigNotConfiguredError && attempt < maxAttempts) {
+        await sleep(delayMs);
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+/**
  * Save a new service config. Runs client-side validation before the
  * network call so typos surface immediately (surfacing the same error
  * Core would have returned after a round-trip).

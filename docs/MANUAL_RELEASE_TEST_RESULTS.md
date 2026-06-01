@@ -862,7 +862,7 @@ Test run driven via `idb` against the booted iPhone 17 Pro sim (iOS 26.4, UDID
 `6D57099D-48DA-430D-B4BB-1A2BF1EBACB7`). Mobile app is the Expo dev build
 (Metro running). Provider stack for §13.9 services scenario:
 `apps/home-node-lite/core-server` on `127.0.0.1:18298` with
-`DINA_VAULT_DIR=bus42-agent/provider-vault` + `bus42-agent/run_daemon.py`
+`DINA_VAULT_DIR=dina-services-demo/provider-vault` + `dina-services-demo/run_daemon.py`
 (stub_eta_runner registered). dina-agent CLI installed from PyPI v0.15.0 into
 `/tmp/dina-test/.venv` for the §13.4 agent-safety scenario.
 
@@ -915,7 +915,7 @@ via Demo ETA Provider · did:plc:6zyy3b…
 
 The reverse-geocode resolved `(lat 37.7626, lng -122.4351)` to "Market Street (Mission)" (stub_eta_runner randomises between nearby Castro-area stops; earlier sessions showed "Jane Warner Plaza"). End-to-end real D2D path confirmed: discovery via `test-appview` service directory → D2D over MsgBox → provider Core workflow plane → daemon-claimed task → stub_eta runner → service.response D2D back → mobile ETA card. `EXPO_PUBLIC_DINA_DEMO=""` (in-app loopback disabled).
 
-**MT-2026-05-28-D-I1 (medium, durability)**: a long-idle provider stack's Mailbox WebSocket session is implicit-stale even though the OS process + port still look healthy. Queued D2D messages survive (MsgBox replays them on reconnect — that's the silver lining) but the requester-side TTL clocks did NOT survive — the queued queries had no chance of meeting their 60s window once the provider came back up. Aligns with task #86 (service-query windows survive restart). Recommendation: ship the bus42-agent / provider-stack restart recipe with a healthcheck loop that re-pings the MsgBox WS every N seconds to keep the session warm.
+**MT-2026-05-28-D-I1 (medium, durability)**: a long-idle provider stack's Mailbox WebSocket session is implicit-stale even though the OS process + port still look healthy. Queued D2D messages survive (MsgBox replays them on reconnect — that's the silver lining) but the requester-side TTL clocks did NOT survive — the queued queries had no chance of meeting their 60s window once the provider came back up. Aligns with task #86 (service-query windows survive restart). Recommendation: ship the dina-services-demo / provider-stack restart recipe with a healthcheck loop that re-pings the MsgBox WS every N seconds to keep the session warm.
 
 ### MT-2026-05-28-E · Agent safety (dina_details §13.4 + §13.4.1) — 🟡 PARTIAL — 2 BUGS FOUND
 
@@ -1615,7 +1615,7 @@ status regardless of which surface drove the resolution.
 green). New code confirmed live: `com.dinakernel.service.searchCapabilities` route → HTTP 200.
 App: existing debug build, JS served fresh from Metro at the current working tree
 (`boot.ready`, requester DID `did:plc:aiidvbzbdvbglt5ywducnryi`). Provider rig already
-up: bus42-agent lite Core on `:18298` (`/healthz` ok), `run_daemon.py` (pid 63752),
+up: dina-services-demo lite Core on `:18298` (`/healthz` ok), `run_daemon.py` (pid 63752),
 provider DID `did:plc:6zyy3bu2njkhdjbosxdqrzri` discoverable on test-appview for
 `eta_query`.
 
@@ -1665,7 +1665,7 @@ Full in-app round-trip (`/ask "When does bus 42 reach Castro?"`):
   canonical capability, found the provider, dispatched the service.query.
 - **ETA card returned in chat:** "🚌 Route 42 — **14 min** to Jane Warner Plaza
   (Mission)" + "Open in Maps", "via Demo ETA Provider · did:plc:6zyy3b…". Full path:
-  ask → service.query D2D (MsgBox) → provider → bus42-agent daemon claim →
+  ask → service.query D2D (MsgBox) → provider → dina-services-demo daemon claim →
   stub_eta_runner → service.response D2D → ETA card. Not a demo responder.
 
 **Findings:**
@@ -1694,13 +1694,13 @@ default) is published to PyPI and exercised via the bus-driver provider path.
 actually exercised live**. This run closes that gap.
 
 **Rig (refreshed 2026-05-30):**
-- Provider = 2nd Dina on lite Core `:18298` (`DINA_VAULT_DIR=bus42-agent/provider-vault`),
+- Provider = 2nd Dina on lite Core `:18298` (`DINA_VAULT_DIR=dina-services-demo/provider-vault`),
   DID `did:plc:6zyy3bu2njkhdjbosxdqrzri`, MsgBox-connected, service profile published.
 - ServiceConfig re-published via `put_service_config_alias.ts` so the capability is keyed
   under the **alias `bus_eta`** (registry schema still looked up via the canonical
   `eta_query` entry). AppView discovery confirms ingest canonicalized it: a
   `search?capability=eta_query` returns this provider with `caps: ['eta_query']`.
-- `bus42-agent` daemon upgraded to **`dina-agent 0.17.0`** (the alias-aware orchestrator).
+- `dina-services-demo` daemon upgraded to **`dina-agent 0.17.0`** (the alias-aware orchestrator).
 
 **Live trace (provider Core `/tmp/provider_core.log`, requester `metro_warm.log`):**
 - Requester `/ask "When is the next 38 Geary bus at Geary and Powell?"` → agentic loop
@@ -1749,7 +1749,7 @@ returning a different result shape, and confirm (1) it lists separately in disco
 (2) a different result renders a good, visibly-distinct display card.
 
 **Second provider — a real, separate `did:plc` node (not a duplicate row):**
-- Lite Core on `:18299`, vault `bus42-agent/drcarl-vault`, MsgBox-connected.
+- Lite Core on `:18299`, vault `dina-services-demo/drcarl-vault`, MsgBox-connected.
 - PDS-provisioned identity `did:plc:uib44xwkcqkosr2hli6exsww` (handle
   `drcarlclinic.test-pds.dinakernel.com`) — distinct from the bus ETA provider
   `did:plc:6zyy3bu2njkhdjbosxdqrzri`.
@@ -1897,7 +1897,7 @@ Corner Market · did:plc:uib44x…" attribution.
   Ops note: `dina configure --config-dir X` writes to `X/.dina/cli/…` (appends
   `.dina/cli`); pointing `DINA_CONFIG_DIR` at the parent of that, not at `X`,
   is the trap that produced the doubled-path config. Re-pair helper:
-  `bus42-agent/repair_price_agent.sh`. See `docs/PRICE_E2E_HANDOFF.md`.
+  `dina-services-demo/repair_price_agent.sh`. See `docs/PRICE_E2E_HANDOFF.md`.
 - **PC-I3 (no-bypass confirmed)** — the entire round-trip used the real
   `search_capabilities → search_provider_services → query_service` discovery
   path; `find_preferred_provider`/direct-DID was NOT used (it bypasses AppView =

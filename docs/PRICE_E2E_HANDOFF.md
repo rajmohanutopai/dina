@@ -22,14 +22,14 @@ everything upstream of it is confirmed working. Resume by driving the sim query.
 3. **Provider agent RE-PAIRED cleanly** (this fixed the earlier
    "Response decryption failed" — the device's `ed25519_private.pem` had been
    regenerated out-of-band and no longer matched Core's registry). Via
-   `bus42-agent/repair_price_agent.sh`:
+   `dina-services-demo/repair_price_agent.sh`:
    - pairing code `5JV7FDZS` minted on drcarl Core (:18299)
    - `dina configure --headless` → fresh keypair
      `did:key:z6MkoDFTLsEs5osMJYfn5gJ8nodVNrU3giJ7CkTw8UHSbHiK`,
      **`Paired! Device ID: dev-179cb695438e5ea0`**, **`MsgBox: Connected`**,
      exit 0
    - config at a CLEAN path (no doubling):
-     `bus42-agent/price-agent/.dina/cli/config.json`
+     `dina-services-demo/price-agent/.dina/cli/config.json`
    - daemon relaunched (pid 83985) with
      `DINA_CONFIG_DIR=…/price-agent/.dina/cli`, registered `stub_price`,
      polling — **no `Response decryption failed`** in the startup window
@@ -43,7 +43,7 @@ So **Svc3-2 (#179) is complete** and the provider rig for **#180** is live.
 
 ## UPDATE — in-app real-discovery path CONFIRMED working (screenshot captured)
 
-Drove the query in-app via `idb` (`bus42-agent/drive_price_query.py`):
+Drove the query in-app via `idb` (`dina-services-demo/drive_price_query.py`):
 `/ask "How much are organic bananas at Corner Market?"`. The captured
 screenshot (`/tmp/sim_price_result.png`) shows the **SERVICE HANDOFF**
 path-trace container rendering the REAL discovery path — no bypass:
@@ -91,7 +91,7 @@ Drive the query through the **real AppView discovery path only** — NO
 ### If the daemon needs a restart first (quick re-verify)
 
 ```
-cd bus42-agent && bash repair_price_agent.sh 2>&1 | tee /tmp/repair_price.log
+cd dina-services-demo && bash repair_price_agent.sh 2>&1 | tee /tmp/repair_price.log
 # success = log ends with the daemon polling and NO "Response decryption failed"
 # then confirm it stays clean:
 grep -c "Response decryption failed" /tmp/price_daemon.log   # want 0
@@ -103,7 +103,7 @@ pgrep -f run_daemon_price.py                                  # want a live pid
 - bus42 Core :18298 UP; drcarl Core :18299 UP.
 - bus42 transit daemon (`run_daemon.py`, pid 4942) UP.
 - price daemon (`run_daemon_price.py`, pid 83985) UP, re-paired, polling clean.
-  Config: `bus42-agent/price-agent/.dina/cli`. (The old doubled-path config
+  Config: `dina-services-demo/price-agent/.dina/cli`. (The old doubled-path config
   under `drcarl-agent/.dina/cli/.dina/cli` is now defunct — ignore it.)
 - Corner Market `service.profile` published on test-pds + discoverable on
   test-appview (verified).
@@ -113,7 +113,7 @@ pgrep -f run_daemon_price.py                                  # want a live pid
 
 - `appview/src/ingester/handlers/service-profile.ts` + its unit test — committed
   (`aa22b3b`, pushed).
-- `bus42-agent/repair_price_agent.sh` (new) — convenience re-pair script.
+- `dina-services-demo/repair_price_agent.sh` (new) — convenience re-pair script.
 - `docs/APPVIEW_SERVICE_PROFILE_UPSERT_BUG.md` (status → FIXED), this file.
-- `bus42-agent/price-agent/` — gitignored (vault/agent dirs); contains the live
+- `dina-services-demo/price-agent/` — gitignored (vault/agent dirs); contains the live
   agent keypair. Never commit.

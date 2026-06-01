@@ -73,6 +73,12 @@ export const FEATURES: Record<FeatureKey, FeatureDef> = {
   },
   peerlens: {
     name: FEATURE_NAMES.peerlens,
+    // Bottom-tab surface label. The canonical feature name stays
+    // "PeerLens" (the trust subsystem); "Network" is the top-level
+    // surface that contains PeerLens + Services. NOTE: the bottom-tab
+    // renderer reads Expo Router's `title` (set in app/_layout.tsx),
+    // which is the source of truth — this field documents the intent.
+    tabLabel: 'Network',
     icon: { lib: 'Ionicons', outline: 'glasses-outline', filled: 'glasses' },
     route: '/peerlens',
   },
@@ -93,6 +99,10 @@ export const FEATURES: Record<FeatureKey, FeatureDef> = {
   },
   notifications: {
     name: FEATURE_NAMES.notifications,
+    // Bottom-tab surface label "Activity" (event/action/safety surface).
+    // Canonical feature name stays "Notifications" (the inbox concept).
+    // Authoritative label is the Tabs.Screen `title` in app/_layout.tsx.
+    tabLabel: 'Activity',
     icon: { lib: 'Ionicons', outline: 'notifications-outline', filled: 'notifications' },
     route: '/notifications',
   },

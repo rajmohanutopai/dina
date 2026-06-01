@@ -72,6 +72,72 @@ now tracks ONLY the post-launch deferrals + open questions that remain.</p>
 
 <div class="item">
   <span class="tag" style="background:#2a8;color:#fff">Shipped</span>
+  <p><b>Per-rkey CoreClient surface — closes the multi-listing client gap.</b>
+  The multi-listing store + routes + publisher shipped (entry above), but the
+  typed <code>CoreClient</code> was <code>self</code>-only:
+  <code>serviceConfig()</code> / <code>putServiceConfig(config)</code> both
+  hardcoded the bare <code>/v1/service/config</code> compat route. So the per-rkey
+  routes had no typed caller — every <code>put_*</code> demo script + any product
+  surface could only ever write/overwrite the <code>self</code> listing, leaving
+  the P1a/P1b paths with no way to be driven through the client.</p>
+  <ul>
+    <li><b>Surface:</b> extended <code>serviceConfig(rkey?)</code> +
+    <code>putServiceConfig(config, rkey?)</code> — omit <code>rkey</code> ⇒ the
+    <code>self</code> compat route (byte-for-byte backwards-compatible with every
+    single-listing caller); pass one ⇒ <code>/v1/service/config/:rkey</code>.
+    Added <code>listServiceConfigs(): ServiceListing[]</code> (unwraps the
+    <code>{listings}</code> catalog) and <code>deleteServiceConfig(rkey)</code>
+    (<code>rkey</code> required — no implicit <code>self</code> default, so a stray
+    call can't wipe the primary listing). New <code>ServiceListing</code> type
+    (<code>{rkey, config}</code>) exported from the <code>@dina/core</code> barrel.</li>
+    <li><b>Both transports + mock:</b> identical wire paths in
+    <code>HttpCoreTransport</code> + <code>InProcessTransport</code>.
+    <code>MockCoreClient</code> keeps <code>self</code> in
+    <code>serviceConfigResult</code> and non-<code>self</code> listings in a
+    separate <code>serviceListingsByRkey</code> map (exactly one source of truth
+    per rkey; map cleared on <code>reset()</code>).</li>
+    <li><b>Tests (closes the prior entry's "per-rkey HTTP route tests"
+    deferral):</b> +11 contract tests across both transports + the mock assert
+    method+path+rkey dispatch and the <code>self</code>-vs-<code>:rkey</code> split
+    (in-process via recording routers, http via a stub <code>HttpClient</code>).
+    No device-signed-auth harness needed — the transport tests stub the signer,
+    so they exercise the dispatch shape directly. Client+mock suites
+    172&rarr;<b>183</b>.</li>
+    <li><b>Demo reshape (#2 — makes the rig actually multi-listing):</b>
+    <code>put_service_config_price.ts</code> now publishes <code>price_check</code>
+    under rkey <code>corner-market</code> (env <code>DINA_SERVICE_RKEY</code>,
+    default <code>corner-market</code>; set <code>=self</code> for the old clobber).
+    Pointed at the same Core <code>:18298</code> that holds the <code>self</code>
+    &rarr; <code>eta_query</code> listing, the provider DID now carries TWO listings
+    &rarr; two <code>service.profile/&lt;rkey&gt;</code> records &rarr; two
+    <code>service_uri</code>s. That is the topology that exercises P1a (provider
+    selects config by the query's <code>service_uri</code> rkey) + P1b (requester
+    picks the listing by <code>service_uri</code>, not <code>[0]</code>). drcarl
+    <code>:18299</code> stays a single <code>self</code> listing (the 1-service
+    user).</li>
+    <li><b>Resolution:</b> <code>@dina/core</code> resolves to <code>src/</code>
+    (no dist) — tsx picks up the new signature directly, no rebuild. Verified:
+    workspace <code>tsc</code> 0; zero net new lint errors (per-file HEAD-vs-work
+    parity; the test files' pre-existing <code>no-non-null-assertion</code> debt
+    was not added to).</li>
+  </ul>
+</div>
+
+<div class="item question">
+  <span class="tag question">Open question</span>
+  <p><b><code>put_service_config_alias.ts</code> is now redundant.</b> It was an
+  earlier attempt at "two listings on one DID" (publishes a <code>bus_eta</code>
+  alias of <code>eta_query</code>) but still calls <code>putServiceConfig(config)</code>
+  — i.e. writes <code>self</code>, clobbering. The reshaped
+  <code>put_service_config_price.ts</code> now demonstrates the 2nd-listing path
+  properly via rkey <code>corner-market</code>. Leave the alias script as-is,
+  repoint it at a non-<code>self</code> rkey (a 3rd same-capability listing to
+  force <code>service_uri</code> disambiguation — the strongest gamut case), or
+  delete it? Not touched this pass (out of the stated scope).</p>
+</div>
+
+<div class="item">
+  <span class="tag" style="background:#2a8;color:#fff">Shipped</span>
   <p><b>Public NSID namespace rename: <code>com.dina.*</code> &rarr;
   <code>com.dinakernel.*</code>.</b> ATProto NSIDs are reverse-DNS, so
   <code>com.dina.*</code> claims control of <code>dina.com</code>; the project

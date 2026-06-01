@@ -147,6 +147,38 @@ describe('MockCoreClient (task 1.34)', () => {
     await expect(m.serviceConfig()).resolves.not.toBeNull();
   });
 
+  it('multi-listing: per-rkey put/get/list/delete keep `self` and other rkeys separate', async () => {
+    const m = new MockCoreClient();
+    const selfCfg = { isDiscoverable: true, name: 'ETA Provider', capabilities: {} };
+    const marketCfg = { isDiscoverable: true, name: 'Corner Market', capabilities: {} };
+
+    // `self` writes land in serviceConfigResult; a custom rkey lands in the map.
+    await m.putServiceConfig(selfCfg); // omit rkey ⇒ self
+    await m.putServiceConfig(marketCfg, 'corner-market');
+
+    await expect(m.serviceConfig()).resolves.toEqual(selfCfg);
+    await expect(m.serviceConfig('self')).resolves.toEqual(selfCfg);
+    await expect(m.serviceConfig('corner-market')).resolves.toEqual(marketCfg);
+    await expect(m.serviceConfig('missing')).resolves.toBeNull();
+
+    // Catalog lists `self` first, then the custom listing.
+    await expect(m.listServiceConfigs()).resolves.toEqual([
+      { rkey: 'self', config: selfCfg },
+      { rkey: 'corner-market', config: marketCfg },
+    ]);
+
+    // Deleting the custom listing leaves `self` intact.
+    await m.deleteServiceConfig('corner-market');
+    await expect(m.serviceConfig('corner-market')).resolves.toBeNull();
+    await expect(m.listServiceConfigs()).resolves.toEqual([{ rkey: 'self', config: selfCfg }]);
+
+    // reset() clears the non-self listings map (serviceConfigResult stays a
+    // canned field, consistent with the other response stubs).
+    await m.putServiceConfig(marketCfg, 'corner-market');
+    m.reset();
+    await expect(m.serviceConfig('corner-market')).resolves.toBeNull();
+  });
+
   // ─── Staging inbox (task 1.29h / 1.32 preamble) ───────────────────────
 
   it('stagingIngest records request + returns configurable canned result', async () => {

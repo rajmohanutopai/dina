@@ -19,7 +19,7 @@ The gap that dominates localizes the bottleneck:
                                 ingester's own per-record logs (deployed side).
 
 Stdlib only for the PLC+AppView path so it runs in any venv. The optional
-firehose tap uses `websockets` if installed (it is, in bus42-agent/venv).
+firehose tap uses `websockets` if installed (it is, in dina-services-demo/venv).
 
 USAGE
   # 1) start watching BEFORE you create the identity, in one terminal:

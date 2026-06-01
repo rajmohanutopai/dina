@@ -191,6 +191,96 @@ describe('HttpCoreTransport (task 1.31)', () => {
     await expect(t.serviceConfig()).resolves.toBeNull();
   });
 
+  // ─── Multi-listing per DID (per-rkey service config) ──────────────────
+  // One local listing == one published `…/service.profile/<rkey>` record.
+  // Omitting rkey hits Core's `self` compat route; passing one hits the
+  // per-listing route so a 2nd listing on the same DID can be published.
+
+  const listingConfig = { isDiscoverable: true, name: 'Corner Market', capabilities: {} };
+
+  it('putServiceConfig without rkey hits the `self` compat route', async () => {
+    const { client, calls } = makeStubClient(() => ok({ ok: true }));
+    const t = new HttpCoreTransport({
+      baseUrl: 'http://core',
+      httpClient: client,
+      signer: makeStubSigner().signer,
+    });
+    await t.putServiceConfig(listingConfig);
+    expect(calls[0]?.init.method).toBe('PUT');
+    expect(calls[0]?.url).toBe('http://core/v1/service/config');
+  });
+
+  it('putServiceConfig with rkey hits the per-listing route (rkey URL-encoded)', async () => {
+    const { client, calls } = makeStubClient(() => ok({ ok: true }));
+    const t = new HttpCoreTransport({
+      baseUrl: 'http://core',
+      httpClient: client,
+      signer: makeStubSigner().signer,
+    });
+    await t.putServiceConfig(listingConfig, 'corner-market');
+    expect(calls[0]?.init.method).toBe('PUT');
+    expect(calls[0]?.url).toBe('http://core/v1/service/config/corner-market');
+    // Body is the config verbatim (no rkey leakage into the payload).
+    const sentBody = calls[0]?.init.body;
+    expect(sentBody).toBeDefined();
+    expect(JSON.parse(new TextDecoder().decode(sentBody))).toEqual(listingConfig);
+  });
+
+  it('serviceConfig(rkey) reads the per-listing route + maps 404 → null', async () => {
+    const { client, calls } = makeStubClient((call) =>
+      call.url.endsWith('/corner-market')
+        ? ok(listingConfig)
+        : ok({ error: 'service_config: not set' }, 404),
+    );
+    const t = new HttpCoreTransport({
+      baseUrl: 'http://core',
+      httpClient: client,
+      signer: makeStubSigner().signer,
+    });
+    await expect(t.serviceConfig('corner-market')).resolves.toEqual(listingConfig);
+    expect(calls[0]?.init.method).toBe('GET');
+    expect(calls[0]?.url).toBe('http://core/v1/service/config/corner-market');
+    await expect(t.serviceConfig('missing')).resolves.toBeNull();
+  });
+
+  it('listServiceConfigs unwraps the `listings` envelope', async () => {
+    const listings = [
+      { rkey: 'self', config: { isDiscoverable: true, name: 'ETA', capabilities: {} } },
+      { rkey: 'corner-market', config: listingConfig },
+    ];
+    const { client, calls } = makeStubClient(() => ok({ listings }));
+    const t = new HttpCoreTransport({
+      baseUrl: 'http://core',
+      httpClient: client,
+      signer: makeStubSigner().signer,
+    });
+    await expect(t.listServiceConfigs()).resolves.toEqual(listings);
+    expect(calls[0]?.init.method).toBe('GET');
+    expect(calls[0]?.url).toBe('http://core/v1/service/configs');
+  });
+
+  it('listServiceConfigs returns [] when the envelope omits listings', async () => {
+    const { client } = makeStubClient(() => ok({}));
+    const t = new HttpCoreTransport({
+      baseUrl: 'http://core',
+      httpClient: client,
+      signer: makeStubSigner().signer,
+    });
+    await expect(t.listServiceConfigs()).resolves.toEqual([]);
+  });
+
+  it('deleteServiceConfig hits DELETE on the per-listing route', async () => {
+    const { client, calls } = makeStubClient(() => ok({ ok: true }));
+    const t = new HttpCoreTransport({
+      baseUrl: 'http://core',
+      httpClient: client,
+      signer: makeStubSigner().signer,
+    });
+    await t.deleteServiceConfig('corner-market');
+    expect(calls[0]?.init.method).toBe('DELETE');
+    expect(calls[0]?.url).toBe('http://core/v1/service/config/corner-market');
+  });
+
   it('serviceQuery maps camelCase → snake_case on the wire + echoes taskId', async () => {
     const { client, calls } = makeStubClient(() =>
       ok({ task_id: 'sq-q-abc-xy', query_id: 'q-abc' }),

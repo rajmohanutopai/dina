@@ -102,12 +102,12 @@ describe('Notifications screen — render (5.67)', () => {
     expect(queryByText('app')).toBeNull();
   });
 
-  it('Approvals filter shows BOTH approval and ask_approval kinds', () => {
+  it('Needs action filter shows BOTH approval and ask_approval kinds', () => {
     appendNotification({ kind: 'approval', title: 'service-app', body: '', sourceId: '1' });
     appendNotification({ kind: 'ask_approval', title: 'ask-app', body: '', sourceId: '2' });
     appendNotification({ kind: 'nudge', title: 'should-hide', body: '', sourceId: '3' });
     const { getByTestId, queryByText } = render(<NotificationsScreen />);
-    fireEvent.press(getByTestId('filter-approval'));
+    fireEvent.press(getByTestId('filter-needs_action'));
     expect(queryByText('service-app')).toBeTruthy();
     expect(queryByText('ask-app')).toBeTruthy();
     expect(queryByText('should-hide')).toBeNull();

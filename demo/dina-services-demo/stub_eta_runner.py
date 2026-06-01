@@ -1,6 +1,6 @@
 """Stub ETA runner — returns canned bus ETA data for service_query_execution tasks.
 
-Used by the bus42-agent test setup to provide the `eta_query` capability
+Used by the dina-services-demo test setup to provide the `eta_query` capability
 backend for iOS Dina (paired). When iOS Dina hands the agent a
 `service_query_execution` task for `eta_query`, this runner returns a
 canned `{eta_minutes, stop_name, route_id, …}` payload that satisfies

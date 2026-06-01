@@ -54,6 +54,7 @@ import {
   TextInput,
 } from 'react-native';
 
+import { NetworkServicesCard } from '../../src/components/network_services_card';
 import { colors, spacing, radius, textStyles } from '../../src/theme';
 import { FacetBarView } from '../../src/peerlens/components/facet_bar_view';
 import { FirstRunModalView } from '../../src/peerlens/components/first_run_modal_view';
@@ -301,8 +302,26 @@ export default function TrustFeedScreen(
     },
   } = props;
 
+  // Provider-aware Services module copy. `getBootedNode()` is the same
+  // boot accessor the self-profile fetch reads above; a provider/both
+  // node manages listings ("My services"), a requester-only node is
+  // invited to publish. Pre-boot / requester → false (the safe default).
+  const bootedRole = getBootedNode()?.role;
+  const isServiceProvider = bootedRole === 'provider' || bootedRole === 'both';
+
   return (
     <View style={styles.container} testID="trust-feed-screen">
+      {/* ─── Services module (Network's first first-level module) ─────
+          Makes Dina Services a discoverable primary surface instead of a
+          hidden Settings preference. "Find a service" routes to Chat (the
+          real discovery path); "Publish/My services" routes to
+          /service-settings. See network_services_card.tsx. */}
+      <NetworkServicesCard
+        isProvider={isServiceProvider}
+        onFindService={() => router.push('/')}
+        onPublishOrManage={() => router.push('/service-settings')}
+      />
+
       {/* ─── Self-profile card ───────────────────────────────────────
           Tappable card at the top of the PeerLens tab showing the
           viewer's own neutral counts (Reddit-style: "90 Karma · 33
@@ -378,7 +397,7 @@ export default function TrustFeedScreen(
             onSubmitEditing={
               onSubmitSearch ? (e) => onSubmitSearch(e.nativeEvent.text) : undefined
             }
-            placeholder="Search subjects, reviewers, places…"
+            placeholder="Search reviews, reviewers, places…"
             placeholderTextColor={colors.textMuted}
             style={styles.searchInput}
             returnKeyType="search"

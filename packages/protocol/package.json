@@ -39,6 +39,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "rm -rf dist && tsc --project tsconfig.build.json",
+    "emit:catalog": "tsx scripts/emit_catalog.ts",
     "test": "jest",
     "conformance": "tsx conformance/cli.ts",
     "prepublishOnly": "npm run build && npm test"

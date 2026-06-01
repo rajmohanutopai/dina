@@ -49,6 +49,7 @@ import type {
   PersonaStatusResult,
   PersonaUnlockResult,
   ServiceConfig,
+  ServiceListing,
   ServiceQueryClientRequest,
   ServiceQueryResult,
   MemoryToCOptions,
@@ -334,20 +335,51 @@ export class HttpCoreTransport implements CoreClient {
     );
   }
 
-  async putServiceConfig(config: ServiceConfig): Promise<void> {
+  async putServiceConfig(config: ServiceConfig, rkey?: string): Promise<void> {
+    // Omit rkey ⇒ `self` compat route (single-listing back-compat).
+    // Provide rkey ⇒ per-listing route, minting a distinct profile record.
+    const path =
+      rkey !== undefined
+        ? `/v1/service/config/${encodeURIComponent(rkey)}`
+        : '/v1/service/config';
     await this.call<unknown>(
       'PUT',
-      '/v1/service/config',
+      path,
       undefined,
       config,
-      'putServiceConfig',
+      `putServiceConfig(rkey=${rkey ?? 'self'})`,
     );
   }
 
-  async serviceConfig(): Promise<ServiceConfig | null> {
-    const res = await this.callRaw('GET', '/v1/service/config', undefined, undefined);
+  async serviceConfig(rkey?: string): Promise<ServiceConfig | null> {
+    const path =
+      rkey !== undefined
+        ? `/v1/service/config/${encodeURIComponent(rkey)}`
+        : '/v1/service/config';
+    const res = await this.callRaw('GET', path, undefined, undefined);
     if (res.status === 404) return null;
-    return this.parseOk<ServiceConfig>(res, 'serviceConfig');
+    return this.parseOk<ServiceConfig>(res, `serviceConfig(rkey=${rkey ?? 'self'})`);
+  }
+
+  async listServiceConfigs(): Promise<ServiceListing[]> {
+    const raw = await this.call<{ listings?: ServiceListing[] }>(
+      'GET',
+      '/v1/service/configs',
+      undefined,
+      undefined,
+      'listServiceConfigs',
+    );
+    return Array.isArray(raw.listings) ? raw.listings : [];
+  }
+
+  async deleteServiceConfig(rkey: string): Promise<void> {
+    await this.call<unknown>(
+      'DELETE',
+      `/v1/service/config/${encodeURIComponent(rkey)}`,
+      undefined,
+      undefined,
+      `deleteServiceConfig(rkey=${rkey})`,
+    );
   }
 
   async sendServiceQuery(req: ServiceQueryClientRequest): Promise<ServiceQueryResult> {

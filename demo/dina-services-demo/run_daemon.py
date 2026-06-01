@@ -25,7 +25,7 @@ def main() -> None:
     print("[run_daemon] registered runner: stub_eta", flush=True)
     # Hand off to the canonical daemon loop. It will pick up dina config
     # from the standard location (~/.config/dina-cli/config.toml or
-    # bus42-agent/.dina/cli/config.toml depending on `dina configure`
+    # dina-services-demo/.dina/cli/config.toml depending on `dina configure`
     # --config-location).
     run_daemon(poll_interval=5, lease_duration=120, runner_name="stub_eta")
 

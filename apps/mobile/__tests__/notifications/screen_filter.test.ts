@@ -44,8 +44,8 @@ describe('applyNotificationFilter (5.67)', () => {
     );
   });
 
-  it('"approval" includes BOTH approval and ask_approval kinds', () => {
-    expect(applyNotificationFilter(items, 'approval').map((i) => i.id).sort()).toEqual(
+  it('"needs_action" includes BOTH approval and ask_approval kinds', () => {
+    expect(applyNotificationFilter(items, 'needs_action').map((i) => i.id).sort()).toEqual(
       ['a1', 'aa1'].sort(),
     );
   });

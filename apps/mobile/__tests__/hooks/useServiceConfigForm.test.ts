@@ -6,6 +6,7 @@ import {
   ServiceConfigNotConfiguredError,
   ServiceConfigValidationError,
   loadServiceConfig,
+  loadServiceConfigWithRetry,
   resetServiceConfigCoreClient,
   saveServiceConfig,
   setServiceConfigCoreClient,
@@ -97,5 +98,77 @@ describe('useServiceConfigForm', () => {
     const { client } = stubClient({ putError: new Error('500 backend down') });
     setServiceConfigCoreClient(client);
     await expect(saveServiceConfig(VALID_CONFIG)).rejects.toThrow('500 backend down');
+  });
+
+  // ─── loadServiceConfigWithRetry — boot-window tolerance ──────────────────
+  // The service-config Core client is wired during node boot; a screen can
+  // mount while it's momentarily null (first boot / re-boot / dev Fast-Refresh).
+  // The retry wrapper rides through that window instead of surfacing a sticky
+  // "couldn't load" error. `sleep` is injected so the tests don't wait real time.
+
+  describe('loadServiceConfigWithRetry', () => {
+    it('returns on the first try when the client is already wired (no sleeps)', async () => {
+      const { client, calls } = stubClient({ getResult: VALID_CONFIG });
+      setServiceConfigCoreClient(client);
+      let slept = 0;
+      const cfg = await loadServiceConfigWithRetry({
+        delayMs: 0,
+        sleep: async () => {
+          slept++;
+        },
+      });
+      expect(cfg).toEqual(VALID_CONFIG);
+      expect(calls.get).toBe(1);
+      expect(slept).toBe(0);
+    });
+
+    it('retries through the boot window: null now, wired a beat later → returns config', async () => {
+      resetServiceConfigCoreClient(); // client starts null (mid-boot)
+      const { client } = stubClient({ getResult: VALID_CONFIG });
+      let slept = 0;
+      const cfg = await loadServiceConfigWithRetry({
+        maxAttempts: 6,
+        delayMs: 0,
+        // Simulate boot finishing: wire the client after the 2nd retry sleep.
+        sleep: async () => {
+          slept++;
+          if (slept === 2) setServiceConfigCoreClient(client);
+        },
+      });
+      expect(cfg).toEqual(VALID_CONFIG);
+      expect(slept).toBe(2); // attempts 1+2 saw null; attempt 3 succeeded
+    });
+
+    it('gives up after maxAttempts when the client never wires', async () => {
+      resetServiceConfigCoreClient(); // never set
+      let slept = 0;
+      await expect(
+        loadServiceConfigWithRetry({
+          maxAttempts: 3,
+          delayMs: 0,
+          sleep: async () => {
+            slept++;
+          },
+        }),
+      ).rejects.toBeInstanceOf(ServiceConfigNotConfiguredError);
+      expect(slept).toBe(2); // sleeps between attempts 1→2 and 2→3; attempt 3 throws
+    });
+
+    it('does NOT retry on non-NotConfigured errors — propagates immediately', async () => {
+      const { client, calls } = stubClient({ getError: new Error('500 backend down') });
+      setServiceConfigCoreClient(client);
+      let slept = 0;
+      await expect(
+        loadServiceConfigWithRetry({
+          maxAttempts: 6,
+          delayMs: 0,
+          sleep: async () => {
+            slept++;
+          },
+        }),
+      ).rejects.toThrow('500 backend down');
+      expect(calls.get).toBe(1);
+      expect(slept).toBe(0);
+    });
   });
 });
