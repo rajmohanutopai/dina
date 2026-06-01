@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { DrizzleDB } from '@/db/connection.js'
 import { getLatestCatalogPayload } from '@/db/queries/catalog.js'
+import { logger } from '@/shared/utils/logger.js'
 
 /**
  * xRPC endpoint: com.dinakernel.catalog.capabilities
@@ -45,5 +46,15 @@ export async function catalogCapabilities(
   _params: CatalogCapabilitiesParamsType,
 ): Promise<unknown> {
   const payload = await getLatestCatalogPayload(db)
-  return payload ?? EMPTY_CATALOG
+  if (payload === null) {
+    // Operational signal: the catalog has never been seeded (or the snapshot
+    // row is missing). Mobile silently falls back to its bundled catalog, so
+    // without this log a broken/forgotten `seed:catalog` is invisible (#8).
+    logger.warn(
+      {},
+      '[catalog] serving EMPTY catalog — no snapshot seeded. Run `npm run seed:catalog`.',
+    )
+    return EMPTY_CATALOG
+  }
+  return payload
 }

@@ -291,6 +291,7 @@ export {
   SERVICE_PROFILE_COLLECTION,
   SERVICE_PROFILE_RKEY,
   buildRecord as buildServiceProfileRecord,
+  shouldPublishProfile,
 } from './service/service_publisher';
 export type {
   ServicePublisherOptions,

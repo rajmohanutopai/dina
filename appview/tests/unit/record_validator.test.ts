@@ -101,6 +101,71 @@ describe('validateRecord — registry surface', () => {
   })
 })
 
+// ── service.profile catalog wire fields (Codex #2/#3/#6) ────────────
+
+describe('serviceProfileSchema — catalog wire fields', () => {
+  const SP = 'com.dinakernel.service.profile'
+  function profile(over: Record<string, unknown> = {}) {
+    return {
+      name: 'Dr Rao',
+      capabilities: ['appointment_status', 'eta_query'],
+      responsePolicy: { appointment_status: 'auto', eta_query: 'auto' },
+      isDiscoverable: true,
+      updatedAt: NOW_ISO,
+      ...over,
+    }
+  }
+
+  it('accepts a record with NO description (#6 — publishers omit when blank)', () => {
+    expectAccept(SP, profile())
+  })
+
+  it('accepts PARTIAL capabilitySchemas — schema-less catalog caps are valid (#2)', () => {
+    expectAccept(
+      SP,
+      profile({
+        capabilitySchemas: {
+          appointment_status: {
+            params: {},
+            result: {},
+            schema_hash: 'a'.repeat(64),
+          },
+        },
+      }),
+    )
+  })
+
+  it('rejects an ORPHAN schema for an undeclared capability (#2)', () => {
+    expectReject(
+      SP,
+      profile({
+        capabilitySchemas: {
+          not_a_declared_cap: { params: {}, result: {}, schema_hash: 'b'.repeat(64) },
+        },
+      }),
+    )
+  })
+
+  it('accepts explicit discoverability + per-capability categories (#3)', () => {
+    const data = expectAccept(
+      SP,
+      profile({
+        discoverability: 'unlisted',
+        capabilityCategories: { appointment_status: 'healthcare', eta_query: 'transit' },
+      }),
+    ) as { discoverability?: string; capabilityCategories?: Record<string, string> }
+    expect(data.discoverability).toBe('unlisted')
+    expect(data.capabilityCategories).toEqual({
+      appointment_status: 'healthcare',
+      eta_query: 'transit',
+    })
+  })
+
+  it('rejects an out-of-enum discoverability value', () => {
+    expectReject(SP, profile({ discoverability: 'semi_public' }))
+  })
+})
+
 // ── Shared-validator behaviour (tested once on attestation) ─────────
 
 describe('shared validators — didString + boundedIsoDate', () => {
@@ -1673,11 +1738,13 @@ describe('serviceProfileSchema', () => {
     })
   })
 
-  it('rejects capabilitySchemas missing one of the declared capabilities (cross-field rule)', () => {
-    // Plan §3.5.5: partial coverage is worse than none — consumers
-    // can't predict which capabilities will validate. The refine
-    // catches this before persistence.
-    expectReject('com.dinakernel.service.profile', {
+  it('ALLOWS partial capabilitySchemas — schema-less catalog caps are valid (Codex #2)', () => {
+    // Revised from the old "must cover every capability" rule: many official
+    // catalog capabilities (deploy_status, order_status, …) ship no schema, so
+    // requiring full coverage rejected legitimate mixed listings. Partial is
+    // now allowed; consumers handle a missing schema per-capability (search →
+    // matchedSchema = null). Only ORPHAN schemas (next test) are rejected.
+    expectAccept('com.dinakernel.service.profile', {
       ...minimal(),
       capabilities: ['notarise', 'translate'],
       capabilitySchemas: {
@@ -1686,7 +1753,22 @@ describe('serviceProfileSchema', () => {
           result: { type: 'object' },
           schema_hash: '0000000000000000000000000000000000000000000000000000000000000abc',
         },
-        // translate is missing — refine should fire
+        // translate has no schema — now valid (partial coverage allowed).
+      },
+    })
+  })
+
+  it('rejects an ORPHAN schema for an undeclared capability (Codex #2)', () => {
+    expectReject('com.dinakernel.service.profile', {
+      ...minimal(),
+      capabilities: ['notarise'],
+      capabilitySchemas: {
+        // `translate` is NOT in `capabilities` — a provider authoring bug.
+        translate: {
+          params: { type: 'object' },
+          result: { type: 'object' },
+          schema_hash: '0000000000000000000000000000000000000000000000000000000000000abc',
+        },
       },
     })
   })

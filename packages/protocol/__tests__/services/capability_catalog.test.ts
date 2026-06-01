@@ -156,13 +156,18 @@ describe('catalog integrity — fail-loud on authoring bugs (spec §41)', () => 
 });
 
 describe('catalog ⊇ resolver-registry consistency gate (spec §79)', () => {
-  it('every registry canonical exists in the catalog with IDENTICAL aliases', () => {
+  it('every registry canonical exists in the catalog with IDENTICAL aliases + categoryIds', () => {
     for (const entry of CAPABILITY_REGISTRY) {
       const cap = getCatalogCapability(entry.canonical);
       expect(cap).not.toBeNull();
       // Aliases must match exactly (set equality) so the catalog and the sync
       // resolver canonicalize the same tokens — no drift.
       expect([...(cap?.aliases ?? [])].sort()).toEqual([...entry.aliases].sort());
+      // categoryIds must match too — AppView validates published categories
+      // against the registry's `categoryIds`, so they MUST equal the catalog's
+      // `category_ids` or AppView would drop a category the catalog allows
+      // (or admit one it forbids). This closes the anti-spoof gate (Codex #3).
+      expect([...entry.categoryIds].sort()).toEqual([...(cap?.category_ids ?? [])].sort());
     }
   });
 });

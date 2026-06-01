@@ -429,6 +429,130 @@ explicitly asks Claude to <b>validate before implementing</b> (§43, §10) and t
   the resolver to the catalog") — the picker forced the answer: a pickable capability MUST be routable.
   <b>Reversible</b> if the user prefers keeping the registry at the demo-backed 3 + restricting the picker instead.</p>
 </div>
+<div class="item iter">
+  <span class="tag iter">Iter 11 — wire discoverability + category through the network layer (Codex #2/#3/#5/#6/#7/#8)</span>
+  <p><b>Context:</b> an external (Codex) review found that Iters 7–9 wired the tri-state discoverability + per-capability
+  category into the UI + local config + mobile validation, but NOT into the PUBLISH/AppView layer — so `unlisted` meant
+  "don't publish at all", `known_only` overpromised a pairing path, and `category` was dropped at the wire. My green
+  tests didn't catch it (nothing asserted those fields reached AppView). Verified every claim in code before acting.
+  Chosen model (Codex's "correct option" + Dina's privacy ethos): <b>public</b> = publish + searchable; <b>unlisted</b>
+  = publish (AppView excludes from search via the `isDiscoverable=false` gate, but the PDS record exists → resolvable by
+  URI/link/QR/D2D); <b>known_only</b> = NOT published (local/pairing-bound). Three concepts finally separated:
+  publication ≠ search-inclusion ≠ authorization.</p>
+  <p><b>#7 first (root cause):</b> there are TWO live wire-record builders on two publish paths — HNL core-server
+  (<code>buildWireServiceProfile</code>) and mobile/brain (<code>buildRecord</code> via <code>toPublisherConfig</code>) —
+  with different input shapes, so a field added to one is forgotten in the other (exactly how category/discoverability
+  were dropped). Rather than a risky cross-package builder migration, closed the drift bug CLASS with a
+  <b>cross-builder parity contract test</b> (<code>service_profile_wire_parity.test.ts</code>): feeds an equivalent
+  config to BOTH builders + asserts identical <code>discoverability</code> + <code>capabilityCategories</code> and that
+  the two publish/unpublish GATES agree across public/unlisted/known_only. (Contract-test-over-scenario, per house
+  style.)</p>
+  <p><b>#2 (discoverability):</b> both builders now emit a top-level <code>discoverability</code> (tri-state; back-compat
+  <code>isDiscoverable</code> boolean kept = public). Both publish gates (HNL <code>shouldPublishListing</code> +
+  boot loop; brain <code>shouldPublishProfile</code> + <code>config_sync</code> + <code>sync</code>) switched from
+  <code>!isDiscoverable</code> to "publish unless known_only" — so unlisted now publishes. Mobile <code>known_only</code>
+  copy made honest ("Not published — only reachable through a direct connection you set up"); <code>unlisted</code>'s
+  link/QR copy is now actually TRUE. <b>#3 (category):</b> per-capability <code>capabilityCategories</code> emitted on
+  the wire by both builders; AppView record-validator accepts it, <code>services</code> gets
+  <code>capability_categories_json</code> + <code>discoverability</code> columns, the ingester stores it (canonical-keyed,
+  dropping categories whose cap isn't indexed), and <code>service.search</code> gains an optional <code>category</code>
+  filter + <code>matchedCategory</code> result field.</p>
+  <p><b>Cheap P1 wins:</b> <b>#6</b> AppView record-validator <code>description</code> → optional (publishers omit it
+  when blank → was rejecting description-less listings); <b>#5</b> Core <code>upsertListing</code> now runs
+  <code>validateServiceListing</code>, gated on <code>discoverability</code> presence so picker-published configs are
+  fully re-validated at Core (closing the mobile-only-validation gap) while legacy/demo/fixture configs that use
+  unofficial cap names (<code>get_eta</code>, <code>schedule_query</code>) + no category skip it — avoids a repo-wide
+  fixture migration (Codex's own fallback). <b>#8</b> catalog endpoint logs a warning when serving the empty catalog
+  (a forgotten seed was invisible behind mobile's bundled fallback). <b>#1 (migration):</b> N/A — greenfield (user);
+  schema applied via <code>drizzle-kit push</code>. <b>#10 (curated subset):</b> by design (spec §43/§10).</p>
+  <p><b>Tests showed (all green, run per-package, no parallel full suites):</b> protocol 478, appview <b>1878</b> (+7:
+  ingester stores categories/discoverability + re-keys aliases + drops unindexed; search category filter +
+  matchedCategory + null back-compat), brain 3337 (package-exports confirms new <code>shouldPublishProfile</code>),
+  core 4504 (legacy configs skip strict #5), HNL core-server 2366 (incl. the 5-case parity contract), mobile 2840.
+  tsc 0 (appview/core/brain/HNL/mobile); eslint 0 on the 8 in-scope touched files (auto-fixed import/order + removed 4
+  pre-existing dead imports in wire_publisher). <b>Deep review:</b> (1) Correct — the model separates the three concepts
+  Codex named; unlisted is genuinely functional now (publish + search-exclude + URI-resolve); known_only is honest
+  (local-only). (2) The #7 drift is guarded by a parity contract test rather than papered over; the only deliberate
+  debt left is the full single-builder collapse (two packages, two input shapes) — the parity test makes that safe to
+  defer. (3) Coverage added at each layer (ingester storage, search filter, both publish builders, gate agreement).
+  <b>Honest scope note:</b> known_only's "explicitly connect" pairing-invocation path is acknowledged future work; today
+  known_only simply means "not on the network." <b>Remaining (deferred, noted):</b> the builder-collapse (#7 full),
+  and strict Core #5 for legacy configs (needs a fixture migration across core/integration/e2e/demos).</p>
+</div>
+<div class="item iter">
+  <span class="tag iter">Iter 12 — second Codex pass: unlisted made USABLE + schema-less listings unblocked (#1/#2)</span>
+  <p><b>#1 (critical) — unlisted published but could not RECEIVE queries.</b> Verified: Core's inbound contact-gate
+  bypass calls <code>isCapabilityConfigured</code>, which did <code>if (!cfg.isDiscoverable) continue</code> — so an
+  unlisted listing (<code>isDiscoverable=false</code>) was skipped → <code>service.query</code> denied
+  <code>not_configured</code>. So Iter 11 made unlisted <i>publishable</i> but it was still <i>unusable</i>. Fixed by
+  gating on <code>effectiveDiscoverability(cfg) === 'known_only'</code> instead — symmetric with the publish gate
+  (<code>shouldPublishListing</code>): anything PUBLISHED (public + unlisted) is queryable; known_only (local-only) is
+  not. Back-compat: a legacy <code>isDiscoverable=false</code> config derives <code>known_only</code> → still skipped (the
+  existing "returns false when isDiscoverable is false" test stays green). The URI authority is still checked separately
+  in <code>bypass.ts</code> (service_uri DID must match recipient). Added Core tests: unlisted → queryable, known_only →
+  not. <b>(Codex's richer "listing-specific by rkey" refinement noted as a multi-listing precision follow-up — the
+  functional bug is fixed; the gate stays the coarse "any published listing offers it" check it already was.)</b></p>
+  <p><b>#2 — schema-less listings rejected at AppView ingest.</b> Verified: HNL builder always emitted
+  <code>capabilitySchemas: wireSchemas</code> (even <code>{}</code>), and AppView's refine required FULL coverage — so
+  any catalog capability without a schema (<code>deploy_status</code>, <code>order_status</code>, … most of the
+  expanded set) produced an invalid record. My Iter-11 parity test MISSED this because it didn't assert
+  <code>capabilitySchemas</code> — the exact field that drifted. Fixed both ends: (a) HNL now omits
+  <code>capabilitySchemas</code> when empty (matches the brain publisher); (b) AppView's refine relaxed from "covers
+  every capability" to "no ORPHAN schemas" (partial coverage allowed — consumers already handle a missing schema as
+  <code>matchedSchema=null</code>). Strengthened the parity test to assert both builders omit-when-empty + emit only the
+  capability that has a schema (partial). Updated the obsolete AppView "rejects partial coverage" test to assert it's now
+  ALLOWED + added an orphan-rejection test.</p>
+  <p><b>#3 / #4 — agreed real, deferred with rationale.</b> #3 (AppView trusts published category strings): it's search-
+  <i>pollution</i>, not a security hole (discoverability ≠ authorization — a mis-categorised listing grants no access;
+  the provider still enforces), and providers are trusted/test for now. Clean fix needs the catalog's
+  <code>category_ids</code> in AppView (registry extension or reading the seeded snapshot) — deferred. #4 (Core strict
+  validation bypassable by omitting <code>discoverability</code>): this is the deliberate back-compat hole from Iter 11,
+  documented in code + notes; closing it = the cross-package fixture migration (#5 full).</p>
+  <p><b>Tests showed:</b> core <b>4506</b> (+2 unlisted/known_only; legacy isDiscoverable=false stays denied), appview
+  <b>1884</b> (+ partial-allowed / orphan-rejected / discoverability-enum / optional-description / category cases; 1
+  obsolete full-coverage test flipped to allow), HNL core-server <b>2368</b> (+2 parity schema cases). tsc 0 across
+  core/appview/HNL; eslint 0 on touched in-scope files (auto-fixed import/order + array-type + removed 2 pre-existing
+  test lint errors). <b>Deep review:</b> (1) Correct — the inbound gate is now symmetric with the publish gate, so
+  "published ⇒ queryable" holds; partial schemas match the curated catalog's reality. (2) The parity test gap that let
+  #2 through is closed by asserting capabilitySchemas — the contract test now covers the field that actually drifted.
+  (3) Coverage added at the layer each bug lived in (Core gate, AppView refine, both builders).</p>
+</div>
+<div class="item iter">
+  <span class="tag iter">Iter 13 — complete #3 (AppView category anti-spoof) + #4 (strict Core validation), greenfield</span>
+  <p><b>User: "no migration (DB is greenfield, deletable) — update it fully, complete everything."</b> So both remaining
+  Codex items done properly, no compatibility bypass.</p>
+  <p><b>#3 — AppView no longer trusts published categories.</b> AppView can't import the catalog, so I extended the
+  byte-duplicated registry's <code>CanonicalCapability</code> with <code>categoryIds</code> (mirroring the catalog's
+  <code>category_ids</code> for all 13 officials) + added <code>allowedCategoriesForCapability()</code>. The §79 gate now
+  asserts <b>categoryIds parity</b> registry↔catalog (so they can't drift). The ingester drops a published category that
+  isn't allowed for an OFFICIAL capability (e.g. <code>appointment_availability</code> published as
+  <code>developer_ops</code> → dropped + metered <code>service.category.invalid</code>); CUSTOM (namespaced) caps carry
+  no constraint (provider-owned). Byte-identical across the drift gate; protocol dist rebuilt; runtime-verified
+  (<code>eta_query → ["transit"]</code>).</p>
+  <p><b>#4 — Core listing validation is now STRICT + always-on.</b> The route's <code>upsertListing</code> runs
+  <code>validateServiceListing(cfg, {requireExplicitDiscoverability:true})</code> unconditionally — removed the
+  discoverability-presence bypass from Iter 11. Every listing entering Core must carry explicit discoverability + a
+  per-capability category + official/namespaced capabilities. <b>Fixture migration:</b> the one real-router jest fixture
+  (<code>core_router_integration</code> round-trip) + all 4 TS demo publishers (<code>put_service_config*.ts</code>:
+  eta_query→transit, bus_eta alias→transit, drcarl appointment_status→healthcare, price_check→commerce) migrated to be
+  catalog-valid. Added a Core test asserting a catalog-INVALID listing (no discoverability/category) is rejected 400.</p>
+  <p><b>Python Docker fixtures NOT migrated — verified unaffected:</b> <code>test_ws2_service_query.py</code> is
+  <code>skip_in_lite</code> (WS2 lands Phase 5+; on the legacy stack it hits the Go Core, which has snake_case wire +
+  no catalog validation), and the e2e busdriver carries <code>skip_in_lite_e2e</code> markers + posts snake_case
+  (<code>is_discoverable</code>). The lite TS Core validates camelCase, so these target the legacy Go Core (or skip on
+  lite) — my TS strict validation can't reach them.</p>
+  <p><b>Tests showed:</b> protocol <b>478</b> (§79 now also pins categoryIds parity), appview <b>1887</b> (+3
+  anti-spoof: drop-disallowed / keep-allowed / custom-unconstrained), core <b>4507</b> (+1 strict-reject; migrated
+  round-trip; the only real-router POST), brain <b>3337</b> (1 pre-existing async flake that passed on re-run — additive
+  registry change doesn't touch brain), HNL <b>2368</b>. tsc 0 across protocol/appview/core/HNL; eslint 0 on my changes
+  (demos are eslint-ignored; the unrelated pre-existing lint debt elsewhere in <code>core_router_integration.test.ts</code>
+  is outside my edit regions — left untouched to avoid an unrelated diff). <b>Deep review:</b> (1) Correct — AppView is
+  now defense-in-depth (drops category lies) and Core enforces the catalog model at its boundary with no bypass; the
+  §79 gate guarantees the registry's categoryIds can't diverge from the catalog. (2) The registry/catalog duplication
+  stays gated (aliases + categoryIds parity + byte-identity). (3) Anti-spoof + strict-reject + parity all have tests.
+  <b>All Codex findings across both passes are now resolved</b> (#1 unlisted-usable, #2 schema-less listings, #3 category
+  anti-spoof, #4 strict validation; #5/#6/#7/#8 from the prior pass).</p>
+</div>
 
 </body>
 </html>

@@ -14,7 +14,15 @@ export const services = pgTable('services', {
   hoursJson: jsonb('hours_json'),
   responsePolicyJson: jsonb('response_policy_json'),
   capabilitySchemasJson: jsonb('capability_schemas_json'),  // WS2: per-capability JSON schemas; each entry holds its own schema_hash
+  // Per-capability concrete category/vertical (catalog §9.1), canonical-keyed.
+  // Lets search filter/rank by vertical (e.g. appointment_availability where
+  // category = healthcare). Null when the publisher carried no categories.
+  capabilityCategoriesJson: jsonb('capability_categories_json'),
   isDiscoverable: boolean('is_discoverable').notNull().default(true),
+  // Explicit catalog discoverability (§5.2). Only `public` records are indexed
+  // for search (the ingester gates on `isDiscoverable`), so for an indexed row
+  // this is effectively always `public`; stored for completeness + future use.
+  discoverability: text('discoverability'),
   searchContent: text('search_content'),
   // Three timestamps with distinct semantics:
   //   - createdAt: first time AppView saw this profile URI. Never

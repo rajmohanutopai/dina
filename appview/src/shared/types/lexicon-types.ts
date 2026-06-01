@@ -400,7 +400,8 @@ export interface PeerlensPolicy {
 /** com.dinakernel.service.profile */
 export interface ServiceProfile {
   name: string
-  description: string
+  /** Optional — publishers omit it when the provider leaves it blank. */
+  description?: string
   capabilities: string[]
   capabilitySchemas?: Record<string, unknown>
   /** Coords are E7-scaled integers — atproto forbids floats in CBOR records. */
@@ -408,6 +409,10 @@ export interface ServiceProfile {
   hours?: { open: string; close: string; timezone: string }
   responsePolicy: Record<string, string>
   isDiscoverable: boolean
+  /** Explicit discoverability (catalog §5.2); optional for back-compat. */
+  discoverability?: 'public' | 'unlisted' | 'known_only'
+  /** Per-capability concrete category/vertical (catalog §9.1). */
+  capabilityCategories?: Record<string, string>
   updatedAt: string
 }
 

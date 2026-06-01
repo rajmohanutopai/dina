@@ -35,29 +35,21 @@
  */
 
 import { PDSPublisher } from '@dina/brain';
-import {
-  getServiceConfig,
-  onServiceConfigChanged,
-  type ServiceConfig,
-} from '@dina/core';
-import { isValidServiceListingRkey } from '@dina/protocol';
+import { onServiceConfigChanged, type ServiceConfig } from '@dina/core';
+import { effectiveDiscoverability, isValidServiceListingRkey } from '@dina/protocol';
 
-import type { Logger } from '../logger';
-import type { PdsIdentity } from '../identity/provision_pds';
+import { type ServiceProfileRecord } from './profile_builder';
+import { computeSchemaHash } from './schema_hash';
 import {
   ServiceProfilePublisher,
   type PutRecordFn,
   type PutRecordInput,
   type PublishOutcome,
-  SERVICE_PROFILE_COLLECTION,
   SERVICE_PROFILE_RKEY,
 } from './service_profile_publisher';
-import {
-  buildServiceProfile,
-  type BuildProfileInput,
-  type ServiceProfileRecord,
-} from './profile_builder';
-import { computeSchemaHash } from './schema_hash';
+
+import type { PdsIdentity } from '../identity/provision_pds';
+import type { Logger } from '../logger';
 
 export interface WireServicePublisherOptions {
   /** Identity persisted by `loadOrProvisionPdsIdentity`. */
@@ -130,13 +122,13 @@ export function wireServiceProfilePublisher(
 
   // 3. Subscribe to config changes. When `setServiceConfig` fires for a
   //    listing, (re)publish THAT listing's record under its rkey; when a
-  //    listing is cleared (config === null) or flips non-discoverable,
-  //    unpublish that one rkey — siblings are untouched (one row → one
-  //    record). First-fire happens AFTER `hydrateServiceConfig` reads the
-  //    persisted catalog during boot, so each listing reflects persisted
-  //    state on every restart even when no edit happens.
+  //    listing is cleared (config === null) or is known-only, unpublish that
+  //    one rkey — siblings are untouched (one row → one record). First-fire
+  //    happens AFTER `hydrateServiceConfig` reads the persisted catalog during
+  //    boot, so each listing reflects persisted state on every restart even
+  //    when no edit happens.
   const unsubscribe = onServiceConfigChanged((rkey, config) => {
-    if (config === null || !config.isDiscoverable) {
+    if (config === null || !shouldPublishListing(config)) {
       void unpublishOnce(pdsPublisher, rkey, logger);
       return;
     }
@@ -147,6 +139,24 @@ export function wireServiceProfilePublisher(
     publisher,
     dispose: () => unsubscribe(),
   };
+}
+
+/**
+ * Whether a listing config should be PUBLISHED to the PDS (catalog §5.2).
+ *
+ *   - `public`   → published (and AppView surfaces it in normal search).
+ *   - `unlisted` → published (AppView excludes it from search via the
+ *                  `isDiscoverable=false` gate, but the PDS record exists so it
+ *                  resolves by URI / link / QR / direct D2D).
+ *   - `known_only` → NOT published — local/pairing-bound; never on the PDS.
+ *
+ * Used at BOTH the config-change subscription and boot's first-publish loop so
+ * the two agree. Back-compat: a legacy config with no explicit
+ * `discoverability` derives it from `isDiscoverable` (true→public,
+ * false→known_only), preserving the old "isDiscoverable=false → unpublish".
+ */
+export function shouldPublishListing(config: ServiceConfig): boolean {
+  return effectiveDiscoverability(config) !== 'known_only';
 }
 
 /**
@@ -239,7 +249,7 @@ export async function unpublishOnce(
  * Returns the record on success, or an error string on validation
  * failure (caller turns it into a `malformed_profile` outcome).
  */
-function buildWireServiceProfile(
+export function buildWireServiceProfile(
   config: ServiceConfig,
 ): Record<string, unknown> | string {
   if (typeof config.name !== 'string' || config.name.trim() === '') {
@@ -291,15 +301,37 @@ function buildWireServiceProfile(
     responsePolicy[cap] = policy;
   }
 
+  // Per-capability concrete category/vertical (catalog §9.1) — travels onto the
+  // listing so AppView can filter/rank by vertical. Only caps that carry one
+  // are included (custom caps may legitimately have none until validated).
+  const capabilityCategories: Record<string, string> = {};
+  for (const cap of capabilities) {
+    const category = config.capabilities[cap]?.category;
+    if (typeof category === 'string' && category !== '') capabilityCategories[cap] = category;
+  }
+
   const record: Record<string, unknown> = {
     $type: 'com.dinakernel.service.profile',
     name: config.name,
     isDiscoverable: config.isDiscoverable,
+    // Explicit discoverability (catalog §5.2). `isDiscoverable` stays as the
+    // back-compat boolean (= public); this carries the full tri-state so
+    // AppView + URI-resolvers can tell `unlisted` from `known_only`.
+    discoverability: effectiveDiscoverability(config),
     capabilities,
     responsePolicy,
-    capabilitySchemas: wireSchemas,
     updatedAt: new Date().toISOString(),
   };
+  // Only include capabilitySchemas when non-empty. Many catalog capabilities
+  // (deploy_status, order_status, …) ship no schema, so a schema-less listing
+  // would otherwise emit `capabilitySchemas: {}` — which AppView's coverage
+  // refine rejects. Matches the brain publisher, which omits it when empty.
+  if (Object.keys(wireSchemas).length > 0) {
+    record.capabilitySchemas = wireSchemas;
+  }
+  if (Object.keys(capabilityCategories).length > 0) {
+    record.capabilityCategories = capabilityCategories;
+  }
   if (config.description !== undefined && config.description !== '') {
     record.description = config.description;
   }

@@ -96,6 +96,7 @@ async function main(): Promise<void> {
 
   const config: ServiceConfig = {
     isDiscoverable: true,
+    discoverability: 'public',
     name,
     description: 'lite-stack provider — price_check (test stub; Corner Market demo)',
     capabilities: {
@@ -103,6 +104,7 @@ async function main(): Promise<void> {
         mcpServer: 'stub_price',
         mcpTool: 'price_check',
         responsePolicy: 'auto',
+        category: 'commerce',
         schemaHash,
       },
     },

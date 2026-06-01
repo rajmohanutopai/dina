@@ -34,8 +34,6 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4a task 4.3.
  */
 
-import type { Logger } from './logger';
-import type { LoadedCoreServerConfig } from './config';
 import {
   createCoreRouter,
   deriveDIDKey,
@@ -44,7 +42,7 @@ import {
   setNodeDID,
   type CoreRouter,
 } from '@dina/core';
-import { makeResolveSender } from '@dina/home-node';
+import { listServiceConfigs } from '@dina/core';
 import {
   bootstrapMsgBox,
   disconnectMsgBox,
@@ -52,28 +50,34 @@ import {
   type MsgBoxBootConfig,
   type WSFactory,
 } from '@dina/core/runtime';
+import { makeResolveSender } from '@dina/home-node';
 import { makeNodeWebSocketFactory } from '@dina/net-node';
-import { createLogger } from './logger';
-import { createServer } from './server';
-import { loadOrGenerateSeed, type SeedSource } from './identity/master_seed';
+
+import {
+  wireServiceProfilePublisher,
+  publishOnce,
+  shouldPublishListing,
+  type WiredServicePublisher,
+} from './appview/wire_publisher';
 import { deriveIdentity } from './identity/derivations';
+import { loadOrGenerateSeed, type SeedSource } from './identity/master_seed';
 import {
   loadOrProvisionPdsIdentity,
   type PdsIdentity,
 } from './identity/provision_pds';
-import {
-  wireServiceProfilePublisher,
-  publishOnce,
-  type WiredServicePublisher,
-} from './appview/wire_publisher';
+import { createLogger } from './logger';
+import { createServer } from './server';
+import { bindCoreRouter } from './server/bind_core_router';
+import { initializeStorage } from './storage/init';
 import {
   wireWorkflowPlane,
   type WiredWorkflowPlane,
 } from './workflow/wire_workflow_plane';
+
+import type { LoadedCoreServerConfig } from './config';
+import type { Logger } from './logger';
 import type { DatabaseAdapter } from '@dina/core/storage';
-import { listServiceConfigs } from '@dina/core';
-import { bindCoreRouter } from './server/bind_core_router';
-import { initializeStorage } from './storage/init';
+
 
 /** The canonical sequence — enumerated once, consulted everywhere. */
 export const BOOT_STEPS = [
@@ -407,7 +411,8 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         // immediate publish for EACH (multi-listing: one record per rkey) so
         // the AppView reflects current state without waiting for an edit.
         for (const { rkey, config } of listServiceConfigs()) {
-          if (!config.isDiscoverable) continue;
+          // public + unlisted publish; known_only is local-only (catalog §5.2).
+          if (!shouldPublishListing(config)) continue;
           void publishOnce(wiredPublisher.publisher, pdsIdentity, config, logger, rkey);
         }
         // Workflow plane wiring needs the CoreRouter (created in the

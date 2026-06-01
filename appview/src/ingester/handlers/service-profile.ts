@@ -2,7 +2,11 @@ import { eq } from 'drizzle-orm'
 import type { RecordHandler, HandlerContext, RecordOp } from './index.js'
 import type { ServiceProfile } from '@/shared/types/lexicon-types.js'
 import { services } from '@/db/schema/index.js'
-import { canonicalizeForIndex } from '@/shared/capability-registry.js'
+import {
+  allowedCategoriesForCapability,
+  canonicalizeForIndex,
+  resolveSearchableCapability,
+} from '@/shared/capability-registry.js'
 
 /**
  * Handler for com.dinakernel.service.profile records.
@@ -75,6 +79,38 @@ export const serviceProfileHandler: RecordHandler = {
       )
     }
 
+    // Re-key per-capability categories (catalog §9.1) to the SAME canonical
+    // names as `canon.capabilities`, dropping any whose capability isn't in the
+    // public index. Keeps categories aligned with the indexed capability set so
+    // search can filter "<capability> where category = <x>".
+    const canonSet = new Set(normalizedCapabilities)
+    let canonicalCategories: Record<string, string> | null = null
+    if (record.capabilityCategories) {
+      const rekeyed: Record<string, string> = {}
+      for (const [rawCap, category] of Object.entries(record.capabilityCategories)) {
+        if (typeof category !== 'string' || category === '') continue
+        const canonical = resolveSearchableCapability(rawCap)
+        if (canonical === null || !canonSet.has(canonical)) continue
+        // Anti-spoof (Codex #3): a provider can publish ANY category string in
+        // its AT record. For an OFFICIAL capability only the catalog-allowed
+        // categories are honoured — a lie (e.g. appointment_availability
+        // published as developer_ops) is dropped, so category-filtered search
+        // can't be polluted. Custom (namespaced) caps carry no registry
+        // constraint (allowed === null → provider-owned, accept as-is).
+        const allowed = allowedCategoriesForCapability(canonical)
+        if (allowed !== null && !allowed.includes(category)) {
+          ctx.metrics.incr('service.category.invalid', { cap: canonical })
+          ctx.logger.debug(
+            { uri: op.uri, cap: canonical, category },
+            '[ServiceProfile] dropping category not allowed for capability',
+          )
+          continue
+        }
+        rekeyed[canonical] = category
+      }
+      if (Object.keys(rekeyed).length > 0) canonicalCategories = rekeyed
+    }
+
     // Build search content from name + description + (canonical)
     // capabilities. Used by the ILIKE text-score branch in search.
     const searchParts: string[] = []
@@ -142,7 +178,9 @@ export const serviceProfileHandler: RecordHandler = {
         responsePolicyJson: canon.responsePolicy,
         capabilitySchemasJson:
           Object.keys(canon.capabilitySchemas).length > 0 ? canon.capabilitySchemas : null,
+        capabilityCategoriesJson: canonicalCategories,
         isDiscoverable: record.isDiscoverable,
+        discoverability: record.discoverability ?? null,
         searchContent,
         createdAt,
         // `updatedAt` mirrors the operator-stamped `record.updatedAt`
@@ -172,7 +210,9 @@ export const serviceProfileHandler: RecordHandler = {
             hoursJson: values.hoursJson,
             responsePolicyJson: values.responsePolicyJson,
             capabilitySchemasJson: values.capabilitySchemasJson,
+            capabilityCategoriesJson: values.capabilityCategoriesJson,
             isDiscoverable: values.isDiscoverable,
+            discoverability: values.discoverability,
             searchContent: values.searchContent,
             updatedAt: values.updatedAt,
             indexedAt: values.indexedAt,

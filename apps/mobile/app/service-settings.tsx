@@ -472,7 +472,7 @@ export default function ServiceSettingsScreen() {
                 {
                   value: 'known_only',
                   title: 'Private / known only',
-                  body: 'Only people or Dinas you explicitly connect can use it.',
+                  body: 'Not published to the network — only reachable through a direct connection you set up.',
                 },
               ] as { value: Discoverability; title: string; body: string }[]
             ).map((opt) => (

@@ -16,7 +16,7 @@
  * behaviour so existing clients keep working; new clients use the `:rkey` form.
  */
 
-import { isValidServiceListingRkey } from '@dina/protocol';
+import { isValidServiceListingRkey, validateServiceListing } from '@dina/protocol';
 
 import {
   type ServiceConfig,
@@ -39,6 +39,22 @@ async function upsertListing(rkey: string, body: unknown): Promise<{ status: num
     validateServiceConfig(body);
   } catch (err) {
     return { status: 400, body: { error: (err as Error).message } };
+  }
+  // Full catalog listing validation — the SAME rules mobile runs at publish, now
+  // enforced at the Core boundary so a direct/paired client can't persist a
+  // listing mobile would reject (unknown flat capability, disallowed category,
+  // write action left on `auto`, public custom capability with no schema). This
+  // is STRICT + always-on (greenfield): every listing must carry explicit
+  // `discoverability` + a per-capability category. Closes the mobile-only-
+  // validation gap (Codex #4) — there is no compatibility bypass.
+  const listing = validateServiceListing(body as ServiceConfig, {
+    requireExplicitDiscoverability: true,
+  });
+  if (!listing.ok) {
+    return {
+      status: 400,
+      body: { error: 'invalid service listing', details: listing.errors },
+    };
   }
   // Durable-first (P1.4): persist before reporting success so a provider's
   // published listing can't appear saved here yet vanish on restart. A

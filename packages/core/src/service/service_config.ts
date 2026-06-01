@@ -15,13 +15,14 @@
  * Source: core/internal/service/service_config.go  (Go reference)
  */
 
+import { effectiveDiscoverability, resolveCanonicalCapability } from '@dina/protocol';
+
 import { configEventChannel } from './config_event_channel';
 import { getServiceConfigRepository } from './service_config_repository';
 // Layer 5 (SERVICES_LAUNCH_ARCHITECTURE.md Part 1) — canonicalize the
 // inbound capability so an alias-configured provider accepts the
 // canonical query. Pure/sync from the shared registry; keeps
 // `isCapabilityConfigured` synchronous (see port_async_gate test).
-import { resolveCanonicalCapability } from '@dina/protocol';
 
 /** Policy for how the provider responds to a `service.query`. */
 // Capability schema + service-config types moved to @dina/protocol in
@@ -80,7 +81,7 @@ export function getServiceConfig(rkey: string = DEFAULT_LISTING_RKEY): ServiceCo
  * stable order. SYNC — reads the in-memory map populated by
  * `hydrateServiceConfig()` + every `setServiceConfig`.
  */
-export function listServiceConfigs(): Array<{ rkey: string; config: ServiceConfig }> {
+export function listServiceConfigs(): { rkey: string; config: ServiceConfig }[] {
   return [...configs.entries()]
     .map(([rkey, config]) => ({ rkey, config }))
     .sort((a, b) => (a.rkey < b.rkey ? -1 : a.rkey > b.rkey ? 1 : 0));
@@ -249,7 +250,7 @@ export function onServiceConfigChanged(listener: ConfigChangeListener): () => vo
  * out-of-registry/custom capabilities still work.
  *
  * Multi-listing: a DID may publish many listings (one row per rkey). The
- * bypass is allowed if ANY discoverable listing offers the capability, so
+ * bypass is allowed if ANY published (public or unlisted) listing offers the capability, so
  * this walks every configured listing — not just `self`.
  *
  * Stays SYNC — `resolveCanonicalCapability` is a pure local function from
@@ -258,11 +259,18 @@ export function onServiceConfigChanged(listener: ConfigChangeListener): () => vo
  */
 export function isCapabilityConfigured(capability: string): boolean {
   // Multi-listing: a DID may publish many listings; the contact-gate bypass
-  // is allowed if ANY discoverable listing offers the capability. Walk every
+  // is allowed if ANY published (public or unlisted) listing offers the capability. Walk every
   // configured listing, not just `self`.
   const inboundCanonical = resolveCanonicalCapability(capability);
   for (const cfg of configs.values()) {
-    if (!cfg.isDiscoverable) continue;
+    // A listing is queryable iff it's PUBLISHED to the network (catalog §5.2):
+    // public + unlisted accept inbound queries (unlisted is reached via its
+    // service_uri from a link/QR — the URI authority is checked separately in
+    // bypass.ts); known_only is local-only and never reachable this way. Using
+    // effectiveDiscoverability keeps this symmetric with the publish gate
+    // (`shouldPublishListing`) — anything published is queryable. Back-compat: a
+    // legacy `isDiscoverable=false` config derives `known_only` → still skipped.
+    if (effectiveDiscoverability(cfg) === 'known_only') continue;
 
     // Fast path: exact match against a configured key (covers both
     // canonical-configured providers and out-of-registry custom keys).

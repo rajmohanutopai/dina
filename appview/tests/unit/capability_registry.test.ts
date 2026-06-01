@@ -113,23 +113,23 @@ describe('capability-registry — invariants', () => {
 describe('capability-registry — buildAliasMap fail-loud invariant', () => {
   it('throws when two entries claim the same alias', () => {
     const bad: CanonicalCapability[] = [
-      { canonical: 'a', aliases: ['x'], description: '', domain: 'd' },
-      { canonical: 'b', aliases: ['x'], description: '', domain: 'd' },
+      { canonical: 'a', aliases: ['x'], categoryIds: [], description: '', domain: 'd' },
+      { canonical: 'b', aliases: ['x'], categoryIds: [], description: '', domain: 'd' },
     ]
     expect(() => buildAliasMap(bad)).toThrow(/maps to both/)
   })
 
   it('throws when one entry\'s alias collides with another\'s canonical', () => {
     const bad: CanonicalCapability[] = [
-      { canonical: 'a', aliases: [], description: '', domain: 'd' },
-      { canonical: 'b', aliases: ['a'], description: '', domain: 'd' },
+      { canonical: 'a', aliases: [], categoryIds: [], description: '', domain: 'd' },
+      { canonical: 'b', aliases: ['a'], categoryIds: [], description: '', domain: 'd' },
     ]
     expect(() => buildAliasMap(bad)).toThrow(/maps to both/)
   })
 
   it('tolerates an alias listed identically twice within one entry (no false positive)', () => {
     const ok: CanonicalCapability[] = [
-      { canonical: 'a', aliases: ['x', 'x'], description: '', domain: 'd' },
+      { canonical: 'a', aliases: ['x', 'x'], categoryIds: [], description: '', domain: 'd' },
     ]
     expect(buildAliasMap(ok).get('x')).toBe('a')
   })

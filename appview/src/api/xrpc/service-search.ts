@@ -55,6 +55,10 @@ export const ServiceSearchParams = z.object({
   lng: z.coerce.number().min(-180).max(180).optional(),
   radiusKm: z.coerce.number().min(0.1).max(500).default(5),
   q: z.string().max(200).optional(),
+  // Optional category/vertical filter (catalog §9.1): restrict to listings
+  // whose MATCHED capability is published under this concrete category — e.g.
+  // `appointment_availability` where category = `healthcare` (vs salon).
+  category: z.string().max(64).optional(),
   limit: z.coerce.number().min(1).max(50).default(10),
   cursor: z.string().max(500).optional(),
 })
@@ -92,6 +96,12 @@ export interface ServiceSearchResult {
   matchedSchema: unknown
   matchedSchemaHash: string | null
   /**
+   * Concrete category/vertical the matched capability is published under
+   * (catalog §9.1), or `null` when the listing carried no category. Lets a
+   * caller disambiguate e.g. healthcare vs salon appointment_availability.
+   */
+  matchedCategory: string | null
+  /**
    * Haversine distance in km from the requested (lat, lng) to the
    * service area centroid. `null` when no location was supplied
    * (search ran in text+trust-only mode).
@@ -113,7 +123,7 @@ export async function serviceSearch(
   db: DrizzleDB,
   params: ServiceSearchParamsType,
 ): Promise<ServiceSearchResponse> {
-  const { capability, lat, lng, radiusKm, q, limit, cursor } = params
+  const { capability, lat, lng, radiusKm, q, category, limit, cursor } = params
   const hasLocation = lat !== undefined && lng !== undefined
 
   // Layer 3 (SERVICES_LAUNCH_ARCHITECTURE.md Part 1): resolve the requested
@@ -185,6 +195,15 @@ export async function serviceSearch(
     // Capability match against the GIN-indexed array column.
     sql`${services.capabilitiesJson}::jsonb @> ${JSON.stringify([canonicalCapability])}::jsonb`,
   ]
+  // Category/vertical filter (catalog §9.1): keep only listings that published
+  // the MATCHED capability under this concrete category. Listings with no
+  // category map are excluded when a category is requested (they can't claim a
+  // vertical they didn't declare).
+  if (category !== undefined && category !== '') {
+    conditions.push(
+      sql`(${services.capabilityCategoriesJson} ->> ${canonicalCapability}) = ${category}`,
+    )
+  }
   if (hasLocation) {
     conditions.push(sql`${services.lat} IS NOT NULL AND ${services.lng} IS NOT NULL`)
     conditions.push(sql`${distanceExpr} <= ${radiusKm}`)
@@ -224,6 +243,7 @@ export async function serviceSearch(
       hours: services.hoursJson,
       responsePolicy: services.responsePolicyJson,
       capabilitySchemas: services.capabilitySchemasJson,
+      capabilityCategories: services.capabilityCategoriesJson,
       trustScore: didProfiles.overallTrustScore,
       score: compositeScoreExpr,
       scoreBucket: scoreBucketExpr,
@@ -290,6 +310,8 @@ export async function serviceSearch(
         matchedCapability: canonicalCapability,
         matchedSchema: matchedSchemaEntry,
         matchedSchemaHash: matchedSchemaEntry?.schema_hash ?? null,
+        matchedCategory:
+          (r.capabilityCategories as Record<string, string> | null)?.[canonicalCapability] ?? null,
         distanceKm: typeof r.distanceKm === 'number' ? r.distanceKm : null,
       }
     }),

@@ -157,6 +157,123 @@ describe('serviceProfileHandler.handleCreate', () => {
     expect(captured.insertValues?.indexedAt).toBeInstanceOf(Date)
   })
 
+  it('stores per-capability categories (canonical-keyed) + explicit discoverability (#3)', async () => {
+    const captured = freshCaptured()
+    const ctx = stubCtx(captured)
+    await serviceProfileHandler.handleCreate(
+      ctx,
+      op({
+        name: 'Dr Rao',
+        capabilities: ['appointment_status'],
+        responsePolicy: { appointment_status: 'auto' },
+        // Category published under an ALIAS key (`appt_status`) — the handler
+        // must re-key it to the canonical capability name so it lines up with
+        // the canonical `capabilities` array search matches on.
+        capabilityCategories: { appt_status: 'healthcare' },
+        discoverability: 'public',
+        isDiscoverable: true,
+        updatedAt: new Date().toISOString(),
+      }),
+    )
+    expect(captured.insertValues?.capabilityCategoriesJson).toEqual({
+      appointment_status: 'healthcare',
+    })
+    expect(captured.insertValues?.discoverability).toBe('public')
+    // onConflict set carries them too (re-publish updates the indexed row).
+    expect(captured.conflictSet?.capabilityCategoriesJson).toEqual({
+      appointment_status: 'healthcare',
+    })
+    expect(captured.conflictSet?.discoverability).toBe('public')
+  })
+
+  it('drops a category whose capability is not in the indexed set (#3)', async () => {
+    const captured = freshCaptured()
+    const ctx = stubCtx(captured)
+    await serviceProfileHandler.handleCreate(
+      ctx,
+      op({
+        name: 'X',
+        capabilities: ['eta_query'],
+        responsePolicy: { eta_query: 'auto' },
+        // `made_up_cap` is unknown → not indexed → its category is dropped.
+        capabilityCategories: { eta_query: 'transit', made_up_cap: 'nope' },
+        isDiscoverable: true,
+        updatedAt: new Date().toISOString(),
+      }),
+    )
+    expect(captured.insertValues?.capabilityCategoriesJson).toEqual({ eta_query: 'transit' })
+  })
+
+  it('stores null categories when the record carried none (#3 back-compat)', async () => {
+    const captured = freshCaptured()
+    const ctx = stubCtx(captured)
+    await serviceProfileHandler.handleCreate(ctx, op(validProfile()))
+    expect(captured.insertValues?.capabilityCategoriesJson).toBeNull()
+    // Legacy record with no explicit discoverability → null stored.
+    expect(captured.insertValues?.discoverability).toBeNull()
+  })
+
+  it('drops a category NOT allowed for an official capability — anti-spoof (#3)', async () => {
+    const captured = freshCaptured()
+    const ctx = stubCtx(captured)
+    await serviceProfileHandler.handleCreate(
+      ctx,
+      op({
+        name: 'Liar',
+        capabilities: ['appointment_availability', 'eta_query'],
+        responsePolicy: { appointment_availability: 'auto', eta_query: 'auto' },
+        capabilityCategories: {
+          // appointment_availability allows appointments/healthcare/professional/
+          // home_local — `developer_ops` is a LIE → dropped.
+          appointment_availability: 'developer_ops',
+          // eta_query allows ['transit'] → kept.
+          eta_query: 'transit',
+        },
+        isDiscoverable: true,
+        updatedAt: new Date().toISOString(),
+      }),
+    )
+    expect(captured.insertValues?.capabilityCategoriesJson).toEqual({ eta_query: 'transit' })
+  })
+
+  it('keeps a category that IS allowed for an official capability (#3)', async () => {
+    const captured = freshCaptured()
+    const ctx = stubCtx(captured)
+    await serviceProfileHandler.handleCreate(
+      ctx,
+      op({
+        name: 'Dr Rao',
+        capabilities: ['appointment_availability'],
+        responsePolicy: { appointment_availability: 'auto' },
+        capabilityCategories: { appointment_availability: 'healthcare' },
+        isDiscoverable: true,
+        updatedAt: new Date().toISOString(),
+      }),
+    )
+    expect(captured.insertValues?.capabilityCategoriesJson).toEqual({
+      appointment_availability: 'healthcare',
+    })
+  })
+
+  it('keeps any category for a CUSTOM (namespaced) capability — provider-owned (#3)', async () => {
+    const captured = freshCaptured()
+    const ctx = stubCtx(captured)
+    await serviceProfileHandler.handleCreate(
+      ctx,
+      op({
+        name: 'Acme',
+        capabilities: ['com.acme.widget_price'],
+        responsePolicy: { 'com.acme.widget_price': 'auto' },
+        capabilityCategories: { 'com.acme.widget_price': 'commerce' },
+        isDiscoverable: true,
+        updatedAt: new Date().toISOString(),
+      }),
+    )
+    expect(captured.insertValues?.capabilityCategoriesJson).toEqual({
+      'com.acme.widget_price': 'commerce',
+    })
+  })
+
   it('is an idempotent UPSERT (onConflictDoUpdate) — concurrency-safe on `uri`', async () => {
     // Regression: the old path was delete + plain insert with NO ON
     // CONFLICT, relying on "the DELETE guarantees no row at this uri".

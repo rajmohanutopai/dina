@@ -77,6 +77,7 @@ async function main(): Promise<void> {
 
   const config: ServiceConfig = {
     isDiscoverable: true,
+    discoverability: 'public',
     name: "Dr Carl's Clinic",
     description: 'lite-stack provider — appointment_status (test stub; Dr Carl demo) [t143000]',
     capabilities: {
@@ -84,6 +85,9 @@ async function main(): Promise<void> {
         mcpServer: 'stub_appt',
         mcpTool: 'appointment_status',
         responsePolicy: 'auto',
+        // Dr Carl is a doctor → healthcare (one of appointment_status's
+        // catalog category_ids: appointments | healthcare).
+        category: 'healthcare',
         schemaHash,
       },
     },

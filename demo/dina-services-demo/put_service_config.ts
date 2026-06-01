@@ -51,6 +51,7 @@ async function main(): Promise<void> {
 
   const config: ServiceConfig = {
     isDiscoverable: true,
+    discoverability: 'public',
     name: 'Demo ETA Provider',
     description: 'lite-stack provider — eta_query (test stub, post-rename)',
     capabilities: {
@@ -58,6 +59,7 @@ async function main(): Promise<void> {
         mcpServer: 'stub_eta',
         mcpTool: 'eta_query',
         responsePolicy: 'auto',
+        category: 'transit',
         schemaHash: computeSchemaHash(eta.paramsSchema),
       },
     },

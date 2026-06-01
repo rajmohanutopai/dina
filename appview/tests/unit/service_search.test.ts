@@ -272,6 +272,71 @@ describe('serviceSearch — response shape', () => {
     expect(r.services[0].distanceKm).toBe(2.5)
   })
 
+  it('maps matchedCategory from the row for the matched capability (#3)', async () => {
+    const fakeRow = {
+      uri: 'at://did:plc:p/com.dinakernel.service.profile/self',
+      operatorDid: 'did:plc:p',
+      name: 'Dr Rao',
+      description: null,
+      capabilities: ['appointment_status'],
+      lat: null,
+      lng: null,
+      radiusKm: null,
+      hours: null,
+      responsePolicy: { appointment_status: 'auto' },
+      capabilitySchemas: null,
+      capabilityCategories: { appointment_status: 'healthcare' },
+      trustScore: null,
+      score: 0,
+      scoreBucket: 0,
+      distanceKm: null,
+    }
+    const { db } = stubDb([fakeRow])
+    const r = await serviceSearch(db, { capability: 'appointment_status', radiusKm: 5, limit: 10 })
+    expect(r.services[0].matchedCategory).toBe('healthcare')
+  })
+
+  it('matchedCategory is null when the row carried no categories (#3 back-compat)', async () => {
+    const fakeRow = {
+      uri: 'at://did:plc:p/com.dinakernel.service.profile/self',
+      operatorDid: 'did:plc:p',
+      name: 'Test',
+      description: null,
+      capabilities: ['eta_query'],
+      lat: null,
+      lng: null,
+      radiusKm: null,
+      hours: null,
+      responsePolicy: { eta_query: 'auto' },
+      capabilitySchemas: null,
+      capabilityCategories: null,
+      trustScore: null,
+      score: 0,
+      scoreBucket: 0,
+      distanceKm: null,
+    }
+    const { db } = stubDb([fakeRow])
+    const r = await serviceSearch(db, { capability: 'eta_query', radiusKm: 5, limit: 10 })
+    expect(r.services[0].matchedCategory).toBeNull()
+  })
+
+  it('binds the requested category into a WHERE filter (#3)', async () => {
+    const { db, cap } = stubDb([])
+    await serviceSearch(db, {
+      capability: 'appointment_availability',
+      category: 'healthcare',
+      radiusKm: 5,
+      limit: 10,
+    })
+    expect(allBoundStrings(cap)).toContain('healthcare')
+  })
+
+  it('omits the category filter (no `healthcare` bound) when no category requested (#3)', async () => {
+    const { db, cap } = stubDb([])
+    await serviceSearch(db, { capability: 'appointment_availability', radiusKm: 5, limit: 10 })
+    expect(allBoundStrings(cap)).not.toContain('healthcare')
+  })
+
   it('matchedSchema is null when the operator did not publish one for the matched capability', async () => {
     const fakeRow = {
       uri: 'at://did:plc:p/com.dinakernel.service.profile/self',

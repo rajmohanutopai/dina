@@ -445,7 +445,11 @@ const capabilitySchemaEntrySchema = z.object({
 
 const serviceProfileSchema = z.object({
   name: z.string().min(1).max(200),
-  description: z.string().max(2000),
+  // Optional: the TypeScript publishers omit `description` entirely when the
+  // provider leaves it blank, so requiring it here would silently reject every
+  // description-less listing at ingest (a concrete discoverability bug). The
+  // search index already handles a null description.
+  description: z.string().max(2000).optional(),
   capabilities: z.array(z.string().max(100)).min(1).max(50),
   capabilitySchemas: z.record(capabilitySchemaEntrySchema).optional(),
   // AT Protocol lexicon forbids floats in CBOR records, so coords are
@@ -469,19 +473,33 @@ const serviceProfileSchema = z.object({
   // change (this enum + the gate in service-profile.ts).
   responsePolicy: z.record(z.enum(['auto', 'review'])),
   isDiscoverable: z.boolean(),
+  // Explicit discoverability (catalog §5.2). Optional for back-compat — older
+  // records carry only `isDiscoverable`. `public` = surfaced in normal search;
+  // `unlisted` = published but search-excluded (resolvable by URI/link/QR);
+  // `known_only` = local/pairing-bound (normally not published to the PDS at
+  // all). The ingester's search-index gate still keys off `isDiscoverable`.
+  discoverability: z.enum(['public', 'unlisted', 'known_only']).optional(),
+  // Per-capability concrete category/vertical (catalog §9.1). Lets search
+  // filter/rank by vertical (e.g. appointment_availability where category =
+  // healthcare). Keys are capability names; values are catalog category ids.
+  capabilityCategories: z.record(z.string().max(64)).optional(),
   updatedAt: boundedIsoDate,
 }).refine(
-  // Schema-driven contract: if capabilitySchemas is supplied it must cover
-  // every capability the profile declares. Partial coverage is worse than
-  // none because consumers can't predict which capabilities will validate.
+  // Schema-driven contract: capabilitySchemas may be PARTIAL — many official
+  // catalog capabilities (deploy_status, order_status, …) ship no schema, so
+  // requiring full coverage would reject every legitimate mixed/schema-less
+  // listing. We only forbid ORPHAN schemas (a schema for a capability the
+  // profile doesn't declare), which is a provider authoring bug. Consumers
+  // already handle a missing schema per-capability (search → matchedSchema=null).
   (data) => {
     if (!data.capabilitySchemas) return true
-    for (const cap of data.capabilities) {
-      if (!(cap in data.capabilitySchemas)) return false
+    const declared = new Set(data.capabilities)
+    for (const cap of Object.keys(data.capabilitySchemas)) {
+      if (!declared.has(cap)) return false
     }
     return true
   },
-  { message: 'capabilitySchemas must cover every declared capability' },
+  { message: 'capabilitySchemas may only contain declared capabilities' },
 )
 
 // ── Schema map ──────────────────────────────────────────────────────

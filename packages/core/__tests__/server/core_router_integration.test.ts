@@ -546,9 +546,17 @@ describe('CoreRouter integration', () => {
     it('PUT then GET round-trips', async () => {
       const cfg = {
         isDiscoverable: true,
+        // Catalog-valid listing: explicit discoverability + a per-capability
+        // category are now REQUIRED at the Core boundary (strict #4).
+        discoverability: 'public',
         name: 'Test',
         capabilities: {
-          eta_query: { mcpServer: 'transit', mcpTool: 'eta', responsePolicy: 'auto' },
+          eta_query: {
+            mcpServer: 'transit',
+            mcpTool: 'eta',
+            responsePolicy: 'auto',
+            category: 'transit',
+          },
         },
       };
       const putResp = await router.handle(signedReq('PUT', '/v1/service/config', cfg, brain));
@@ -566,6 +574,27 @@ describe('CoreRouter integration', () => {
           {
             // missing required fields
             isDiscoverable: 'not-a-boolean',
+          },
+          brain,
+        ),
+      );
+      expect(resp.status).toBe(400);
+    });
+
+    it('PUT rejects a catalog-INVALID listing — strict listing validation (#4)', async () => {
+      // Structurally valid, but no explicit discoverability + no per-capability
+      // category → validateServiceListing rejects it at the Core boundary (no
+      // compatibility bypass).
+      const resp = await router.handle(
+        signedReq(
+          'PUT',
+          '/v1/service/config',
+          {
+            isDiscoverable: true,
+            name: 'NoCat',
+            capabilities: {
+              eta_query: { mcpServer: 'transit', mcpTool: 'eta', responsePolicy: 'auto' },
+            },
           },
           brain,
         ),

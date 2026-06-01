@@ -24,6 +24,10 @@
  *         (config_changed event plumbing).
  */
 
+import { effectiveDiscoverability } from '@dina/protocol';
+
+import { shouldPublishProfile } from './service_publisher';
+
 import type { ServicePublisher, ServicePublisherConfig } from './service_publisher';
 import type { ServiceConfig } from '@dina/protocol';
 
@@ -65,11 +69,21 @@ export interface ConfigSyncOptions {
 export function toPublisherConfig(cfg: ServiceConfig): ServicePublisherConfig {
   const capabilities = Object.keys(cfg.capabilities);
   const responsePolicy: Record<string, 'auto' | 'review'> = {};
+  // Per-capability concrete category/vertical (catalog §9.1). Flattened to a
+  // map here because the publisher config lists capabilities as a string[].
+  const capabilityCategories: Record<string, string> = {};
   for (const [name, entry] of Object.entries(cfg.capabilities)) {
     responsePolicy[name] = entry.responsePolicy;
+    if (typeof entry.category === 'string' && entry.category !== '') {
+      capabilityCategories[name] = entry.category;
+    }
   }
   const out: ServicePublisherConfig = {
     isDiscoverable: cfg.isDiscoverable,
+    // Always set the explicit tri-state (derived from `isDiscoverable` when the
+    // config predates the catalog model) so the publisher gate + wire record
+    // agree on public/unlisted/known_only (catalog §5.2).
+    discoverability: effectiveDiscoverability(cfg),
     name: cfg.name,
     capabilities,
     responsePolicy,
@@ -79,6 +93,9 @@ export function toPublisherConfig(cfg: ServiceConfig): ServicePublisherConfig {
   }
   if (cfg.capabilitySchemas !== undefined) {
     out.capabilitySchemas = cfg.capabilitySchemas;
+  }
+  if (Object.keys(capabilityCategories).length > 0) {
+    out.capabilityCategories = capabilityCategories;
   }
   if (cfg.serviceArea !== undefined) {
     out.serviceArea = cfg.serviceArea;
@@ -163,7 +180,7 @@ export class ConfigSync {
   async flush(): Promise<void> {
     while (this.inFlight !== null) {
       const current = this.inFlight;
-      // eslint-disable-next-line no-await-in-loop
+       
       await current.catch(() => {
         /* swallowed — propagated via onError */
       });
@@ -215,7 +232,8 @@ export class ConfigSync {
         return;
       }
       const publisherConfig = toPublisherConfig(cfg);
-      if (!publisherConfig.isDiscoverable) {
+      // public + unlisted publish; known_only is local-only (catalog §5.2).
+      if (!shouldPublishProfile(publisherConfig)) {
         await this.publisher.unpublish();
         this.onSynced?.({ published: false });
         return;

@@ -33,6 +33,14 @@ export interface CanonicalCapability {
   readonly canonical: string
   /** Synonyms that resolve to `canonical`. Excludes `canonical` itself. */
   readonly aliases: readonly string[]
+  /**
+   * Concrete categories this capability may be listed under (catalog §9.1).
+   * MIRRORS the catalog capability's `category_ids` — the §79 gate asserts
+   * parity. AppView uses this to DROP a provider-published category that isn't
+   * allowed for an official capability (anti-spoof / anti-pollution), since
+   * AppView can't import the catalog. Empty only for an entry with no constraint.
+   */
+  readonly categoryIds: readonly string[]
   /** Human / LLM-readable "what question this answers" — the discovery signal. */
   readonly description: string
   /** Domain grouping for discovery + marketing. */
@@ -63,81 +71,94 @@ export const CAPABILITY_REGISTRY: readonly CanonicalCapability[] = Object.freeze
   Object.freeze({
     canonical: 'eta_query',
     aliases: Object.freeze(['transit_eta', 'bus_eta', 'arrival_time', 'next_bus']),
+    categoryIds: Object.freeze(['transit']),
     description: 'Estimated arrival time for a public transit route at a stop.',
     domain: 'transit',
   }),
   Object.freeze({
     canonical: 'appointment_status',
     aliases: Object.freeze(['appointment_query', 'appt_status', 'booking_status']),
+    categoryIds: Object.freeze(['appointments', 'healthcare']),
     description: 'Check the status or next availability of an appointment with a provider.',
     domain: 'appointments',
   }),
   Object.freeze({
     canonical: 'price_check',
     aliases: Object.freeze(['price_lookup', 'stock_price', 'product_price', 'availability_check']),
+    categoryIds: Object.freeze(['commerce']),
     description: 'Check the current price and stock availability of a product at a store.',
     domain: 'commerce',
   }),
-  // ── Catalog-mirrored official capabilities (§79 gate keeps aliases in sync
-  // with capability-catalog.ts). These are pickable in the mobile catalog
-  // picker, so they MUST resolve + search through this registry. ──
+  // ── Catalog-mirrored official capabilities (§79 gate keeps aliases +
+  // categoryIds in sync with capability-catalog.ts). These are pickable in the
+  // mobile catalog picker, so they MUST resolve + search through this registry. ──
   Object.freeze({
     canonical: 'appointment_availability',
     aliases: Object.freeze(['appointment_slots', 'appt_availability']),
+    categoryIds: Object.freeze(['appointments', 'healthcare', 'professional', 'home_local']),
     description: 'Available appointment/consultation slots for a provider.',
     domain: 'appointments',
   }),
   Object.freeze({
     canonical: 'appointment_book',
     aliases: Object.freeze(['book_appointment', 'appointment_booking']),
+    categoryIds: Object.freeze(['appointments', 'healthcare']),
     description: 'Book an appointment slot. Requires explicit approval.',
     domain: 'appointments',
   }),
   Object.freeze({
     canonical: 'order_status',
     aliases: Object.freeze(['order_state']),
+    categoryIds: Object.freeze(['commerce']),
     description: 'Status of an existing merchant order.',
     domain: 'commerce',
   }),
   Object.freeze({
     canonical: 'package_tracking',
     aliases: Object.freeze(['shipment_tracking', 'parcel_tracking']),
+    categoryIds: Object.freeze(['logistics']),
     description: 'Track a shipment/parcel by tracking number.',
     domain: 'logistics',
   }),
   Object.freeze({
     canonical: 'delivery_eta',
     aliases: Object.freeze(['delivery_time']),
+    categoryIds: Object.freeze(['logistics']),
     description: 'Estimated arrival time for an active delivery.',
     domain: 'logistics',
   }),
   Object.freeze({
     canonical: 'service_health_status',
     aliases: Object.freeze(['health_status', 'api_health']),
+    categoryIds: Object.freeze(['developer_ops']),
     description: 'Health of an API/service/system.',
     domain: 'developer_ops',
   }),
   Object.freeze({
     canonical: 'deploy_status',
     aliases: Object.freeze(['deployment_status']),
+    categoryIds: Object.freeze(['developer_ops']),
     description: 'Status of a deployment.',
     domain: 'developer_ops',
   }),
   Object.freeze({
     canonical: 'school_homework_status',
     aliases: Object.freeze(['homework_status']),
+    categoryIds: Object.freeze(['school']),
     description: 'Homework/assignments for a student.',
     domain: 'school',
   }),
   Object.freeze({
     canonical: 'service_quote',
     aliases: Object.freeze(['repair_quote', 'job_quote']),
+    categoryIds: Object.freeze(['home_local']),
     description: 'Quote for a requested repair/service job.',
     domain: 'home_local',
   }),
   Object.freeze({
     canonical: 'device_status',
     aliases: Object.freeze(['device_state']),
+    categoryIds: Object.freeze(['home_iot']),
     description: 'Status of a device/sensor on a personal node.',
     domain: 'home_iot',
   }),
@@ -267,6 +288,19 @@ export function getCapabilityEntry(raw: string): CanonicalCapability | null {
   const canonical = resolveCanonicalCapability(raw)
   if (canonical === null) return null
   return CANONICAL_TO_ENTRY.get(canonical) ?? null
+}
+
+/**
+ * The categories an OFFICIAL capability may be listed under (catalog §9.1), or
+ * `null` for a custom (namespaced) or unknown capability — which carry no
+ * registry category constraint (a custom capability's category is provider-
+ * owned). AppView uses this to drop a published category that lies about an
+ * official capability's vertical (e.g. `appointment_availability` published
+ * under `developer_ops`), since AppView can't import the catalog to check.
+ */
+export function allowedCategoriesForCapability(raw: string): readonly string[] | null {
+  const entry = getCapabilityEntry(raw)
+  return entry === null ? null : entry.categoryIds
 }
 
 /** All canonical capabilities (e.g. for the discovery coverage join). */

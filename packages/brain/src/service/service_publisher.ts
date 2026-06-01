@@ -22,8 +22,10 @@
  */
 
 import { isValidServiceListingRkey } from '@dina/protocol';
-import type { PDSPublisher, PutRecordResult } from '../pds/publisher';
+
 import { computeSchemaHash } from './capabilities/registry';
+
+import type { PDSPublisher, PutRecordResult } from '../pds/publisher';
 
 /** AT-Proto NSID collection the profile record is published under. */
 export const SERVICE_PROFILE_COLLECTION = 'com.dinakernel.service.profile';
@@ -58,6 +60,13 @@ export interface PublishedCapabilitySchema {
 /** Minimum shape the publisher needs from the service config. */
 export interface ServicePublisherConfig {
   isDiscoverable: boolean;
+  /**
+   * Explicit catalog discoverability (§5.2). `toPublisherConfig` always sets it
+   * (derived from `isDiscoverable` when absent). `public`/`unlisted` publish a
+   * record; `known_only` is local-only (unpublished). Carried onto the wire
+   * record so AppView + URI-resolvers can tell `unlisted` from `known_only`.
+   */
+  discoverability?: 'public' | 'unlisted' | 'known_only';
   name: string;
   description?: string;
   /** Capability names advertised in this profile. */
@@ -66,8 +75,21 @@ export interface ServicePublisherConfig {
   responsePolicy?: Record<string, 'auto' | 'review'>;
   /** Per-capability JSON Schemas. Added in commit 9b1c4a4. */
   capabilitySchemas?: Record<string, PublishedCapabilitySchema>;
+  /** Per-capability concrete category/vertical (catalog §9.1). */
+  capabilityCategories?: Record<string, string>;
   /** Geographic service area for AppView geo-filter search. */
   serviceArea?: { lat: number; lng: number; radiusKm: number };
+}
+
+/**
+ * Whether a publisher config should be PUBLISHED to the PDS (catalog §5.2):
+ * `public` + `unlisted` publish; `known_only` is local/pairing-bound and stays
+ * off the PDS. Back-compat: a config with no explicit `discoverability` derives
+ * it from `isDiscoverable` (true→public, false→known_only).
+ */
+export function shouldPublishProfile(config: ServicePublisherConfig): boolean {
+  const disc = config.discoverability ?? (config.isDiscoverable ? 'public' : 'known_only');
+  return disc !== 'known_only';
 }
 
 /** Options for `ServicePublisher`. */
@@ -187,8 +209,10 @@ export class ServicePublisher {
   }
 
   /**
-   * Dispatch between `publish` and `unpublish` based on `config.isDiscoverable`.
-   * This is the method to wire into the config-changed event.
+   * Dispatch between `publish` and `unpublish` based on discoverability
+   * (catalog §5.2): `public` + `unlisted` publish a record; `known_only` (or a
+   * legacy `isDiscoverable=false`) unpublishes — it's local/pairing-bound. This
+   * is the method to wire into the config-changed event.
    *
    * Returns `{published: true, result}` after a publish, `{published: false}`
    * after an unpublish.
@@ -197,7 +221,7 @@ export class ServicePublisher {
     config: ServicePublisherConfig,
     rkey: string = SERVICE_PROFILE_RKEY,
   ): Promise<{ published: true; result: PutRecordResult } | { published: false }> {
-    if (config.isDiscoverable) {
+    if (shouldPublishProfile(config)) {
       const result = await this.publish(config, rkey);
       return { published: true, result };
     }
@@ -254,11 +278,24 @@ export function buildRecord(
     isDiscoverable: config.isDiscoverable,
     updatedAt: new Date(nowMs).toISOString(),
   };
+  // Explicit discoverability (catalog §5.2). `isDiscoverable` stays as the
+  // back-compat boolean (= public); this carries the full tri-state so AppView
+  // + URI-resolvers can tell `unlisted` from `known_only`. Derived when absent.
+  record.discoverability =
+    config.discoverability ?? (config.isDiscoverable ? 'public' : 'known_only');
   if (config.description !== undefined && config.description !== '') {
     record.description = config.description;
   }
   if (config.responsePolicy !== undefined && Object.keys(config.responsePolicy).length > 0) {
     record.responsePolicy = { ...config.responsePolicy };
+  }
+  // Per-capability concrete category/vertical (catalog §9.1) — lets AppView
+  // filter/rank by vertical. Only caps that carry a category are included.
+  if (
+    config.capabilityCategories !== undefined &&
+    Object.keys(config.capabilityCategories).length > 0
+  ) {
+    record.capabilityCategories = { ...config.capabilityCategories };
   }
   if (config.capabilitySchemas !== undefined && Object.keys(config.capabilitySchemas).length > 0) {
     record.capabilitySchemas = serialiseSchemas(config.capabilitySchemas, log);

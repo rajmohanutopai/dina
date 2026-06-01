@@ -51,6 +51,7 @@ async function main(): Promise<void> {
 
   const config: ServiceConfig = {
     isDiscoverable: true,
+    discoverability: 'public',
     name: 'Demo ETA Provider (alias bus_eta)',
     description: 'lite-stack provider — eta_query (test stub — published under ALIAS bus_eta)',
     capabilities: {
@@ -58,6 +59,9 @@ async function main(): Promise<void> {
         mcpServer: 'stub_eta',
         mcpTool: 'eta_query',
         responsePolicy: 'auto',
+        // bus_eta is an alias of the official eta_query → category from its
+        // catalog category_ids (['transit']).
+        category: 'transit',
         schemaHash: computeSchemaHash(eta.paramsSchema),
       },
     },

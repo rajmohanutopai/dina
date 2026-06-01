@@ -5,10 +5,16 @@
  *                core/internal/adapter/sqlite/service_config.go
  */
 
+import { randomBytes } from 'node:crypto';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+import { NodeSQLiteAdapter } from '@dina/storage-node';
+
 import {
   ServiceConfig,
   clearServiceConfig,
-  clearServiceConfigDurable,
   getServiceConfig,
   listServiceConfigs,
   hydrateServiceConfig,
@@ -24,11 +30,6 @@ import {
   SQLiteServiceConfigRepository,
   setServiceConfigRepository,
 } from '../../src/service/service_config_repository';
-import { randomBytes } from 'node:crypto';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
-import { NodeSQLiteAdapter } from '@dina/storage-node';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
@@ -123,7 +124,7 @@ describe('validateServiceConfig', () => {
     const makeBad = (patch: Record<string, unknown>) => ({
       ...validConfig,
       capabilitySchemas: {
-        eta_query: { ...validConfig.capabilitySchemas!.eta_query, ...patch },
+        eta_query: { ...validConfig.capabilitySchemas?.eta_query, ...patch },
       },
     });
     expect(() => validateServiceConfig(makeBad({ params: undefined }))).toThrow(/params/);
@@ -157,7 +158,7 @@ describe('clearServiceConfig', () => {
   });
 
   it('notifies listeners with null', () => {
-    const seen: Array<ServiceConfig | null> = [];
+    const seen: (ServiceConfig | null)[] = [];
     onServiceConfigChanged((_rkey, cfg) => {
       seen.push(cfg);
     });
@@ -169,7 +170,7 @@ describe('clearServiceConfig', () => {
 
 describe('onServiceConfigChanged', () => {
   it('fires after setServiceConfig', () => {
-    const seen: Array<ServiceConfig | null> = [];
+    const seen: (ServiceConfig | null)[] = [];
     onServiceConfigChanged((_rkey, cfg) => {
       seen.push(cfg);
     });
@@ -178,8 +179,8 @@ describe('onServiceConfigChanged', () => {
   });
 
   it('supports multiple listeners', () => {
-    const a: Array<ServiceConfig | null> = [];
-    const b: Array<ServiceConfig | null> = [];
+    const a: (ServiceConfig | null)[] = [];
+    const b: (ServiceConfig | null)[] = [];
     onServiceConfigChanged((_rkey, c) => {
       a.push(c);
     });
@@ -192,7 +193,7 @@ describe('onServiceConfigChanged', () => {
   });
 
   it('disposer unsubscribes', () => {
-    const seen: Array<ServiceConfig | null> = [];
+    const seen: (ServiceConfig | null)[] = [];
     const dispose = onServiceConfigChanged((_rkey, cfg) => {
       seen.push(cfg);
     });
@@ -202,7 +203,7 @@ describe('onServiceConfigChanged', () => {
   });
 
   it('isolates failing listeners — other listeners still run', () => {
-    const seen: Array<ServiceConfig | null> = [];
+    const seen: (ServiceConfig | null)[] = [];
     onServiceConfigChanged(() => {
       throw new Error('subscriber blew up');
     });
@@ -229,8 +230,21 @@ describe('isCapabilityConfigured', () => {
     expect(isCapabilityConfigured('route_info')).toBe(false);
   });
 
-  it('returns false when isDiscoverable is false', () => {
+  it('returns false when isDiscoverable is false (legacy → derives known_only)', () => {
     setServiceConfig({ ...validConfig, isDiscoverable: false });
+    expect(isCapabilityConfigured('eta_query')).toBe(false);
+  });
+
+  it('returns TRUE for an unlisted listing — published + queryable (catalog §5.2)', () => {
+    // Regression for Codex #1: unlisted (isDiscoverable=false, discoverability
+    // 'unlisted') is published to the PDS and reached via its service_uri, so it
+    // MUST accept inbound queries — otherwise unlisted is published-but-unusable.
+    setServiceConfig({ ...validConfig, isDiscoverable: false, discoverability: 'unlisted' });
+    expect(isCapabilityConfigured('eta_query')).toBe(true);
+  });
+
+  it('returns false for a known_only listing — local-only, never queryable this way', () => {
+    setServiceConfig({ ...validConfig, isDiscoverable: false, discoverability: 'known_only' });
     expect(isCapabilityConfigured('eta_query')).toBe(false);
   });
 });
@@ -397,7 +411,7 @@ describe('multi-listing (per-rkey)', () => {
   });
 
   it('the change event carries the changed rkey', () => {
-    const seen: Array<{ rkey: string; isNull: boolean }> = [];
+    const seen: { rkey: string; isNull: boolean }[] = [];
     onServiceConfigChanged((rkey, cfg) => {
       seen.push({ rkey, isNull: cfg === null });
     });
