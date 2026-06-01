@@ -25,10 +25,10 @@ export interface PassphraseSetProps {
   /**
    * Which flow this screen is part of — picks the right "N of M" label
    * in the shell. Defaults to `'create'` because PassphraseSet was first
-   * built for the create wizard; the recover flow added later passes
-   * `'recover'` so the progress reads "3 of 4" instead of "3 of 6".
+   * built for the create wizard; the recover/external flows pass
+   * their own mode so the progress pill reflects that path.
    */
-  flow?: 'create' | 'recover';
+  flow?: 'create' | 'recover' | 'external';
   onContinue: (passphrase: string, mode: StartupMode) => void;
   onBack: () => void;
 }
@@ -46,7 +46,9 @@ export function PassphraseSet(props: PassphraseSetProps): React.ReactElement {
   const step: Step =
     props.flow === 'recover'
       ? { kind: 'recover_passphrase', draft: {} }
-      : { kind: 'create_passphrase', draft: {} };
+      : props.flow === 'external'
+        ? { kind: 'external_passphrase', draft: {} }
+        : { kind: 'create_passphrase', draft: {} };
   return (
     <OnboardingShell
       location={locateStep(step)}

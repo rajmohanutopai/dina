@@ -13,6 +13,7 @@ import { colors, radius, shadows, spacing, textStyles } from '../../theme';
 export interface ModeChoiceProps {
   onCreate: () => void;
   onRecover: () => void;
+  onExternalAtproto: () => void;
   onBack: () => void;
 }
 
@@ -24,13 +25,21 @@ export function ModeChoice(props: ModeChoiceProps): React.ReactElement {
           from Welcome → Choose without a typography jump. */}
       <Text style={styles.headline}>Welcome to Dina</Text>
       <Text style={styles.subtitle}>
-        New to Dina? Start fresh. Coming back? Restore from your 24-word recovery phrase.
+        Start fresh, connect an AT Protocol account you already own, or restore from your
+        recovery phrase.
       </Text>
       <ChoiceCard
         glyph={'\u002B'}
         title="Create a new Dina"
         body="Generate a fresh identity, new recovery phrase, new vault on this device."
         onPress={props.onCreate}
+      />
+      <View style={styles.spacer} />
+      <ChoiceCard
+        glyph={'@'}
+        title="Use existing AT Protocol identity"
+        body="Connect a Bluesky or custom PDS account you already own."
+        onPress={props.onExternalAtproto}
       />
       <View style={styles.spacer} />
       <ChoiceCard
@@ -90,10 +99,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.lg,
     gap: spacing.md,
-    // Reserve enough vertical room for the longer card's body so the
-    // shorter card matches its height — keeps the two cards visually
-    // balanced on the choice screen.
-    minHeight: 132,
+    minHeight: 112,
     ...shadows.sm,
   },
   spacer: { height: spacing.md },

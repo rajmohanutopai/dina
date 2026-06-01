@@ -57,6 +57,16 @@ export interface RecoverDraft {
   startupMode: StartupMode;
 }
 
+/** Final slot carried through existing AT Protocol identity onboarding. */
+export interface ExternalAtprotoDraft {
+  identifier: string;
+  appPassword: string;
+  plcToken: string;
+  passphrase: string;
+  startupMode: StartupMode;
+  mnemonic: string[];
+}
+
 export type Step =
   | { kind: 'welcome' }
   | { kind: 'choose' }
@@ -72,6 +82,12 @@ export type Step =
   | { kind: 'recover_handle'; draft: Partial<RecoverDraft> }
   | { kind: 'recover_passphrase'; draft: Partial<RecoverDraft> }
   | { kind: 'provisioning_recover'; draft: RecoverDraft }
+  // Existing AT Protocol identity path -------------------------------
+  | { kind: 'external_identity'; draft: Partial<ExternalAtprotoDraft> }
+  | { kind: 'external_passphrase'; draft: Partial<ExternalAtprotoDraft> }
+  | { kind: 'external_mnemonic_reveal'; draft: Partial<ExternalAtprotoDraft> }
+  | { kind: 'external_mnemonic_verify'; draft: Partial<ExternalAtprotoDraft> }
+  | { kind: 'provisioning_external'; draft: ExternalAtprotoDraft }
   // Terminal ------------------------------------------------------------
   | { kind: 'error'; message: string; retry: Step };
 
@@ -114,6 +130,16 @@ export function locateStep(step: Step): StepLocation | null {
       return { current: 3, total: 4, label: 'New passphrase' };
     case 'provisioning_recover':
       return { current: 4, total: 4, label: 'Restoring' };
+    case 'external_identity':
+      return { current: 1, total: 5, label: 'Existing identity' };
+    case 'external_passphrase':
+      return { current: 2, total: 5, label: 'Local vault' };
+    case 'external_mnemonic_reveal':
+      return { current: 3, total: 5, label: 'Recovery phrase' };
+    case 'external_mnemonic_verify':
+      return { current: 4, total: 5, label: 'Confirm phrase' };
+    case 'provisioning_external':
+      return { current: 5, total: 5, label: 'Connecting' };
     case 'error':
       return null;
   }
@@ -152,6 +178,16 @@ export function previousStep(step: Step): Step | null {
     case 'recover_passphrase':
       return { kind: 'recover_handle', draft: step.draft };
     case 'provisioning_recover':
+      return null;
+    case 'external_identity':
+      return { kind: 'choose' };
+    case 'external_passphrase':
+      return { kind: 'external_identity', draft: step.draft };
+    case 'external_mnemonic_reveal':
+      return { kind: 'external_passphrase', draft: step.draft };
+    case 'external_mnemonic_verify':
+      return { kind: 'external_mnemonic_reveal', draft: step.draft };
+    case 'provisioning_external':
       return null;
     case 'error':
       return step.retry;

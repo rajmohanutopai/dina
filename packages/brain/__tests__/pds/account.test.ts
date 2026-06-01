@@ -216,6 +216,105 @@ describe('PDSAccountClient.refreshSession', () => {
   });
 });
 
+describe('PDSAccountClient PLC operation helpers', () => {
+  it('asks the PDS to sign a PLC operation with bearer auth', async () => {
+    const fetchFn = mockFetch((_url, init) => {
+      const headers = init.headers as Record<string, string>;
+      expect(headers.Authorization).toBe('Bearer access-jwt-xyz');
+      return okJson({
+        operation: {
+          type: 'plc_operation',
+          sig: 'signed-by-pds',
+        },
+      });
+    });
+    const client = new PDSAccountClient({ pdsUrl: 'https://pds', fetch: fetchFn });
+    const operation = await client.signPlcOperation({
+      accessJwt: 'access-jwt-xyz',
+      token: 'plc-token',
+      rotationKeys: ['did:key:zQ3rotation'],
+      alsoKnownAs: ['at://alice.bsky.social'],
+      verificationMethods: { atproto: 'did:key:zQ3atproto', dina_signing: 'did:key:z6dina' },
+      services: {
+        atproto_pds: {
+          type: 'AtprotoPersonalDataServer',
+          endpoint: 'https://pds.example',
+        },
+      },
+    });
+    expect(operation).toMatchObject({ sig: 'signed-by-pds' });
+    const [url, init] = fetchFn.mock.calls[0];
+    expect(url).toBe('https://pds/xrpc/com.atproto.identity.signPlcOperation');
+    const sentBody = JSON.parse(init!.body as string);
+    expect(sentBody).toMatchObject({
+      token: 'plc-token',
+      rotationKeys: ['did:key:zQ3rotation'],
+      alsoKnownAs: ['at://alice.bsky.social'],
+      verificationMethods: {
+        atproto: 'did:key:zQ3atproto',
+        dina_signing: 'did:key:z6dina',
+      },
+    });
+  });
+
+  it('submits a signed PLC operation with bearer auth', async () => {
+    const fetchFn = mockFetch((_url, init) => {
+      const headers = init.headers as Record<string, string>;
+      expect(headers.Authorization).toBe('Bearer access-jwt-xyz');
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    const client = new PDSAccountClient({ pdsUrl: 'https://pds', fetch: fetchFn });
+    await client.submitPlcOperation({
+      accessJwt: 'access-jwt-xyz',
+      operation: { type: 'plc_operation', sig: 'signed-by-pds' },
+    });
+    const [url, init] = fetchFn.mock.calls[0];
+    expect(url).toBe('https://pds/xrpc/com.atproto.identity.submitPlcOperation');
+    expect(JSON.parse(init!.body as string)).toEqual({
+      operation: { type: 'plc_operation', sig: 'signed-by-pds' },
+    });
+  });
+
+  it('requests a PLC operation token with bearer auth', async () => {
+    const fetchFn = mockFetch((_url, init) => {
+      const headers = init.headers as Record<string, string>;
+      expect(headers.Authorization).toBe('Bearer access-jwt-xyz');
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    const client = new PDSAccountClient({ pdsUrl: 'https://pds', fetch: fetchFn });
+    await client.requestPlcOperationSignature('access-jwt-xyz');
+    const [url, init] = fetchFn.mock.calls[0];
+    expect(url).toBe('https://pds/xrpc/com.atproto.identity.requestPlcOperationSignature');
+    expect(init!.method).toBe('POST');
+  });
+
+  it('surfaces PLC signing failures as typed PDSAccountError values', async () => {
+    const fetchFn = mockFetch(() =>
+      errorJson(400, 'TokenRequired', 'PLC operation token required'),
+    );
+    const client = new PDSAccountClient({ pdsUrl: 'https://pds', fetch: fetchFn });
+    await expect(
+      client.signPlcOperation({
+        accessJwt: 'access-jwt-xyz',
+        rotationKeys: ['did:key:zQ3rotation'],
+        alsoKnownAs: ['at://alice.bsky.social'],
+        verificationMethods: { atproto: 'did:key:zQ3atproto' },
+        services: {},
+      }),
+    ).rejects.toMatchObject({
+      name: 'PDSAccountError',
+      status: 400,
+      xrpcError: 'TokenRequired',
+    });
+  });
+});
+
 describe('PDSAccountClient.ensureAccount', () => {
   it('returns {created:false} when createSession succeeds', async () => {
     const fetchFn = mockFetch((url) => {
