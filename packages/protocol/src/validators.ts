@@ -111,6 +111,25 @@ export const SERVICE_PROFILE_COLLECTION = 'com.dinakernel.service.profile'
 const SERVICE_LISTING_RKEY_RE = /^[A-Za-z0-9._~-]{1,512}$/
 
 /**
+ * Validate a service-listing record key (the `<rkey>` in
+ * `at://<did>/com.dinakernel.service.profile/<rkey>`).
+ *
+ * SINGLE SOURCE OF TRUTH for the rkey charset/bounds — both the PARSE side
+ * (`parseServiceListingUri`, which a provider runs over a requester-supplied
+ * `service_uri`) and the PUBLISH side (the Brain + Home-Node-Lite service
+ * publishers, which mint a listing under a chosen rkey) call this, so a key a
+ * publisher writes is exactly the set a parser will later accept. Returns
+ * `true` for a well-formed rkey: the bounded charset `[A-Za-z0-9._~-]{1,512}`,
+ * excluding the path-traversal keys `.` and `..`. `'self'` (the single-listing
+ * default) is valid.
+ */
+export function isValidServiceListingRkey(rkey: string): boolean {
+  if (typeof rkey !== 'string') return false
+  if (rkey === '.' || rkey === '..') return false
+  return SERVICE_LISTING_RKEY_RE.test(rkey)
+}
+
+/**
  * Parse + structurally validate a service-listing AT-URI of the form
  * `at://<did>/com.dinakernel.service.profile/<rkey>`. Returns `{ did, rkey }` on
  * success or `null` when the uri is not a well-formed listing reference.
@@ -133,7 +152,7 @@ export function parseServiceListingUri(
   if (authority === undefined || collection === undefined || rkey === undefined) return null
   if (!authority.startsWith('did:') || authority.length < 8) return null
   if (collection !== SERVICE_PROFILE_COLLECTION) return null
-  if (rkey === '.' || rkey === '..' || !SERVICE_LISTING_RKEY_RE.test(rkey)) return null
+  if (!isValidServiceListingRkey(rkey)) return null
   return { did: authority, rkey }
 }
 

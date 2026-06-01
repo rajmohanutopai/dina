@@ -40,6 +40,7 @@ import {
   onServiceConfigChanged,
   type ServiceConfig,
 } from '@dina/core';
+import { isValidServiceListingRkey } from '@dina/protocol';
 
 import type { Logger } from '../logger';
 import type { PdsIdentity } from '../identity/provision_pds';
@@ -127,16 +128,19 @@ export function wireServiceProfilePublisher(
     },
   });
 
-  // 3. Subscribe to config changes. When `setServiceConfig` fires,
-  //    rebuild the profile record from the new config + publish.
-  //    First-fire happens AFTER `hydrateServiceConfig` reads the
-  //    persisted config from disk during boot, so the published
-  //    record reflects the persisted state on every restart even
-  //    when no edit happens.
-  const unsubscribe = onServiceConfigChanged(() => {
-    const config = getServiceConfig();
-    if (config === null) return;
-    void publishOnce(publisher, pdsIdentity, config, logger);
+  // 3. Subscribe to config changes. When `setServiceConfig` fires for a
+  //    listing, (re)publish THAT listing's record under its rkey; when a
+  //    listing is cleared (config === null) or flips non-discoverable,
+  //    unpublish that one rkey — siblings are untouched (one row → one
+  //    record). First-fire happens AFTER `hydrateServiceConfig` reads the
+  //    persisted catalog during boot, so each listing reflects persisted
+  //    state on every restart even when no edit happens.
+  const unsubscribe = onServiceConfigChanged((rkey, config) => {
+    if (config === null || !config.isDiscoverable) {
+      void unpublishOnce(pdsPublisher, rkey, logger);
+      return;
+    }
+    void publishOnce(publisher, pdsIdentity, config, logger, rkey);
   });
 
   return {
@@ -155,7 +159,16 @@ export async function publishOnce(
   pdsIdentity: PdsIdentity,
   config: ServiceConfig,
   logger: Logger,
+  rkey: string = SERVICE_PROFILE_RKEY,
 ): Promise<PublishOutcome> {
+  // Reject an invalid listing key before any PDS write — a key this path mints
+  // must be one `parseServiceListingUri` will later accept (shared gate). Boot
+  // + config-change callers pass no rkey → defaults to `'self'`.
+  if (!isValidServiceListingRkey(rkey)) {
+    const detail = `invalid service listing rkey: ${JSON.stringify(rkey)}`;
+    logger.warn({ error: detail }, 'service profile publish skipped (invalid rkey)');
+    return { ok: false, reason: 'malformed_profile', detail };
+  }
   // The lite-side `buildServiceProfile` in `profile_builder.ts`
   // emits a record shape that's out of sync with the lexicon
   // currently accepted by the production PDS — `isPublic` instead
@@ -180,7 +193,7 @@ export async function publishOnce(
   try {
     const result = await putRecord({
       collection: 'com.dinakernel.service.profile',
-      rkey: 'self',
+      rkey,
       record: record as unknown as ServiceProfileRecord,
     });
     logger.info(
@@ -192,6 +205,30 @@ export async function publishOnce(
     const message = err instanceof Error ? err.message : String(err);
     logger.warn({ error: message }, 'service profile publish rejected');
     return { ok: false, reason: 'network_error', error: message };
+  }
+}
+
+/**
+ * Remove a single listing's published record (the `<rkey>` record), e.g. when a
+ * listing is deleted from config or flips to non-discoverable. Idempotent —
+ * deleting an already-absent record is a no-op. Only this rkey is touched; the
+ * provider's other listings stay published (one row → one record).
+ */
+export async function unpublishOnce(
+  pdsPublisher: PDSPublisher,
+  rkey: string,
+  logger: Logger,
+): Promise<void> {
+  if (!isValidServiceListingRkey(rkey)) {
+    logger.warn({ rkey }, 'service profile unpublish skipped (invalid rkey)');
+    return;
+  }
+  try {
+    await pdsPublisher.deleteRecordIdempotent('com.dinakernel.service.profile', rkey);
+    logger.info({ rkey }, 'service profile unpublished from PDS');
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn({ rkey, error: message }, 'service profile unpublish failed');
   }
 }
 

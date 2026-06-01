@@ -253,4 +253,65 @@ describe('ServiceProfilePublisher (task 6.19)', () => {
       );
     });
   });
+
+  // Multi-listing: one DID may publish many listings, each under its own rkey.
+  // Default stays 'self' (single-listing); a supplied rkey mints a sibling
+  // record at `…/com.dinakernel.service.profile/<rkey>`.
+  describe('multi-listing rkey', () => {
+    function capture(): { fn: PutRecordFn; calls: Array<{ collection: string; rkey: string }> } {
+      const calls: Array<{ collection: string; rkey: string }> = [];
+      const fn: PutRecordFn = async (input) => {
+        calls.push({ collection: input.collection, rkey: input.rkey });
+        return { cid: 'c', uri: `at://did:plc:sftransit/${input.collection}/${input.rkey}` };
+      };
+      return { fn, calls };
+    }
+
+    it("defaults to 'self' when no rkey is supplied", async () => {
+      const { fn, calls } = capture();
+      const out = await new ServiceProfilePublisher({ putRecordFn: fn }).publish(validProfile());
+      expect(out.ok).toBe(true);
+      expect(calls[0].rkey).toBe('self');
+    });
+
+    it('publishes under the supplied rkey (uri reflects it)', async () => {
+      const { fn, calls } = capture();
+      const out = await new ServiceProfilePublisher({ putRecordFn: fn }).publish(
+        validProfile(),
+        'route-42',
+      );
+      expect(out.ok).toBe(true);
+      expect(calls[0].rkey).toBe('route-42');
+      if (out.ok) {
+        expect(out.uri).toMatch(/com\.dinakernel\.service\.profile\/route-42$/);
+      }
+    });
+
+    it('a DID can hold two distinct listings (two rkeys)', async () => {
+      const { fn, calls } = capture();
+      const pub = new ServiceProfilePublisher({ putRecordFn: fn });
+      await pub.publish(validProfile(), 'route-42');
+      await pub.publish(validProfile(), 'route-7');
+      expect(calls.map((c) => c.rkey)).toEqual(['route-42', 'route-7']);
+      expect(new Set(calls.map((c) => c.collection)).size).toBe(1);
+    });
+
+    it('rejects an invalid rkey as malformed_profile BEFORE any write', async () => {
+      const { fn, calls } = capture();
+      const out = await new ServiceProfilePublisher({ putRecordFn: fn }).publish(
+        validProfile(),
+        'bad/rkey',
+      );
+      expect(out.ok).toBe(false);
+      if (!out.ok) expect(out.reason).toBe('malformed_profile');
+      expect(calls).toHaveLength(0);
+    });
+
+    it('rejects a path-traversal rkey', async () => {
+      const { fn, calls } = capture();
+      const out = await new ServiceProfilePublisher({ putRecordFn: fn }).publish(validProfile(), '..');
+      expect(out.ok).toBe(false);
+      expect(calls).toHaveLength(0);
+    });
+  });
 });

@@ -13,8 +13,14 @@ import {
 } from '../src/appview/service_search_client';
 
 function match(overrides: Partial<ServiceMatch> = {}): ServiceMatch {
+  // Default the listing uri to the (possibly-overridden) operatorDid so a case
+  // that overrides ONLY operatorDid still produces a self-consistent row — the
+  // parser binds the listing authority to operatorDid, so a uri under a
+  // different DID would (correctly) be dropped. An explicit `uri` override wins.
+  const operatorDid = overrides.operatorDid ?? 'did:plc:abcdefghijklmnopqrstuvwx';
   return {
-    operatorDid: 'did:plc:abcdefghijklmnopqrstuvwx',
+    uri: `at://${operatorDid}/com.dinakernel.service.profile/self`,
+    operatorDid,
     name: 'SF Transit Authority',
     capability: 'eta_query',
     schema: {
@@ -39,7 +45,9 @@ function match(overrides: Partial<ServiceMatch> = {}): ServiceMatch {
  */
 function toAppviewServiceRow(m: ServiceMatch): Record<string, unknown> {
   return {
-    uri: `at://${m.operatorDid}/com.dinakernel.service.profile/self`,
+    // Honour an explicit `m.uri` (multi-listing tests set distinct rkeys);
+    // fall back to the single-listing `/self` uri for the common case.
+    uri: m.uri ?? `at://${m.operatorDid}/com.dinakernel.service.profile/self`,
     operatorDid: m.operatorDid,
     name: m.name,
     description: null,
@@ -195,6 +203,64 @@ describe('createServiceSearchClient (task 6.12)', () => {
         'Other Provider',
         'SF Transit Authority',
       ]);
+    });
+
+    // The listing uri rides downstream as `service_uri` to disambiguate a
+    // multi-listing provider, so a result without a well-formed, same-DID uri
+    // is unusable — the parser drops it rather than emit a half-match. These
+    // pin each drop reason + the non-self-rkey preserve case directly.
+    describe('listing uri security + compatibility', () => {
+      it('drops a result with a MISSING uri', async () => {
+        const row = toAppviewServiceRow(match());
+        delete (row as Record<string, unknown>).uri;
+        const out = (await createServiceSearchClient({
+          fetchFn: stubFetchMatches([row]),
+        })({})) as Extract<ServiceSearchOutcome, { ok: true }>;
+        expect(out.response.services).toHaveLength(0);
+      });
+
+      it('drops a result with a MALFORMED uri (not an at:// listing)', async () => {
+        const row = { ...toAppviewServiceRow(match()), uri: 'not-an-at-uri' };
+        const out = (await createServiceSearchClient({
+          fetchFn: stubFetchMatches([row]),
+        })({})) as Extract<ServiceSearchOutcome, { ok: true }>;
+        expect(out.response.services).toHaveLength(0);
+      });
+
+      it('drops a CROSS-DID uri (uri authority != matched operatorDid)', async () => {
+        // Confused-deputy shape: a result for operator A can't hand us a
+        // listing uri under operator B's DID.
+        const row = {
+          ...toAppviewServiceRow(match()),
+          uri: 'at://did:plc:cdefghijklmnopqrstuvwxab/com.dinakernel.service.profile/self',
+        };
+        const out = (await createServiceSearchClient({
+          fetchFn: stubFetchMatches([row]),
+        })({})) as Extract<ServiceSearchOutcome, { ok: true }>;
+        expect(out.response.services).toHaveLength(0);
+      });
+
+      it('drops a uri whose collection is not com.dinakernel.service.profile', async () => {
+        const row = {
+          ...toAppviewServiceRow(match()),
+          uri: 'at://did:plc:abcdefghijklmnopqrstuvwx/com.dinakernel.peerlens.attestation/self',
+        };
+        const out = (await createServiceSearchClient({
+          fetchFn: stubFetchMatches([row]),
+        })({})) as Extract<ServiceSearchOutcome, { ok: true }>;
+        expect(out.response.services).toHaveLength(0);
+      });
+
+      it('PRESERVES a non-self rkey (multi-listing per DID)', async () => {
+        const uri =
+          'at://did:plc:abcdefghijklmnopqrstuvwx/com.dinakernel.service.profile/route-42';
+        const row = { ...toAppviewServiceRow(match()), uri };
+        const out = (await createServiceSearchClient({
+          fetchFn: stubFetchMatches([row]),
+        })({})) as Extract<ServiceSearchOutcome, { ok: true }>;
+        expect(out.response.services).toHaveLength(1);
+        expect(out.response.services[0]!.uri).toBe(uri);
+      });
     });
 
     it('fires searched event with result count', async () => {

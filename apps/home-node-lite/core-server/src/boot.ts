@@ -71,7 +71,7 @@ import {
   type WiredWorkflowPlane,
 } from './workflow/wire_workflow_plane';
 import type { DatabaseAdapter } from '@dina/core/storage';
-import { getServiceConfig } from '@dina/core';
+import { listServiceConfigs } from '@dina/core';
 import { bindCoreRouter } from './server/bind_core_router';
 import { initializeStorage } from './storage/init';
 
@@ -403,17 +403,12 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       // when the operator saves a config.
       if (pdsIdentity !== undefined) {
         wiredPublisher = wireServiceProfilePublisher({ pdsIdentity, logger });
-        // If a config was already persisted from a prior boot, fire
-        // an immediate publish so the AppView reflects current state
-        // without waiting for an edit.
-        const existingConfig = getServiceConfig();
-        if (existingConfig !== null) {
-          void publishOnce(
-            wiredPublisher.publisher,
-            pdsIdentity,
-            existingConfig,
-            logger,
-          );
+        // If listings were already persisted from a prior boot, fire an
+        // immediate publish for EACH (multi-listing: one record per rkey) so
+        // the AppView reflects current state without waiting for an edit.
+        for (const { rkey, config } of listServiceConfigs()) {
+          if (!config.isDiscoverable) continue;
+          void publishOnce(wiredPublisher.publisher, pdsIdentity, config, logger, rkey);
         }
         // Workflow plane wiring needs the CoreRouter (created in the
         // next boot step), so stash the identityDB now and let the

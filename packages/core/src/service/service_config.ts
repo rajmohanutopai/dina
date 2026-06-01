@@ -35,17 +35,31 @@ export type {
 } from '@dina/protocol';
 import type { ServiceConfig } from '@dina/protocol';
 
-/** Listener fired after a successful config write. Fresh config is passed. */
-export type ConfigChangeListener = (config: ServiceConfig | null) => void;
+/**
+ * Default listing key. A single-listing provider uses `'self'`; a multi-listing
+ * provider (one DID, many storefront/product listings) keys each listing by its
+ * own rkey. ONE local listing == ONE published
+ * `com.dinakernel.service.profile/<rkey>` record; `rkey` is the join key (the
+ * same rkey a listing's `service_uri` carries).
+ */
+export const DEFAULT_LISTING_RKEY = 'self';
+
+/**
+ * Listener fired after a successful config write. Receives the `rkey` that
+ * changed and the fresh config for that listing (`null` when the listing was
+ * cleared). The rkey lets a subscriber act on exactly the changed listing —
+ * publish/update on a config, unpublish on `null` — without re-reading the
+ * whole catalog.
+ */
+export type ConfigChangeListener = (rkey: string, config: ServiceConfig | null) => void;
 
 // ---------------------------------------------------------------------------
 // In-memory state — the source of truth within the process. Repository (when
-// wired) mirrors writes to SQLite so config survives restart.
+// wired) mirrors writes to SQLite so config survives restart. Keyed by rkey:
+// one entry per listing (multi-listing per DID).
 // ---------------------------------------------------------------------------
 
-const STORAGE_KEY = 'self';
-
-let current: ServiceConfig | null = null;
+const configs = new Map<string, ServiceConfig>();
 const listeners = new Set<ConfigChangeListener>();
 
 /**
@@ -57,8 +71,19 @@ const listeners = new Set<ConfigChangeListener>();
  * explicitly. Staying sync keeps `isCapabilityConfigured` sync on
  * the D2D ingress hot path.
  */
-export function getServiceConfig(): ServiceConfig | null {
-  return current;
+export function getServiceConfig(rkey: string = DEFAULT_LISTING_RKEY): ServiceConfig | null {
+  return configs.get(rkey) ?? null;
+}
+
+/**
+ * List every configured listing (multi-listing per DID). Sorted by rkey for a
+ * stable order. SYNC — reads the in-memory map populated by
+ * `hydrateServiceConfig()` + every `setServiceConfig`.
+ */
+export function listServiceConfigs(): Array<{ rkey: string; config: ServiceConfig }> {
+  return [...configs.entries()]
+    .map(([rkey, config]) => ({ rkey, config }))
+    .sort((a, b) => (a.rkey < b.rkey ? -1 : a.rkey > b.rkey ? 1 : 0));
 }
 
 /**
@@ -73,15 +98,19 @@ export function getServiceConfig(): ServiceConfig | null {
 export async function hydrateServiceConfig(): Promise<void> {
   const repo = getServiceConfigRepository();
   if (repo === null) return;
-  const raw = await repo.get(STORAGE_KEY);
-  if (raw === null) return;
-  try {
-    const parsed = JSON.parse(raw) as ServiceConfig;
-    validateServiceConfig(parsed);
-    current = parsed;
-  } catch {
-    // Corrupt row — leave `current` null.
-    current = null;
+  const rows = await repo.list();
+  // The repo is the source of truth: replace in-memory state rather than merge,
+  // so a listing the repo no longer has can't survive as a stale in-memory entry
+  // across a re-hydrate.
+  configs.clear();
+  for (const row of rows) {
+    try {
+      const parsed = JSON.parse(row.configJSON) as ServiceConfig;
+      validateServiceConfig(parsed);
+      configs.set(row.rkey, parsed);
+    } catch {
+      // Corrupt row — skip this listing; a subsequent setServiceConfig overwrites.
+    }
   }
 }
 
@@ -98,21 +127,24 @@ export async function hydrateServiceConfig(): Promise<void> {
  * Throws if the config fails structural validation — the write is atomic,
  * so the previous value is preserved on error.
  */
-export function setServiceConfig(config: ServiceConfig): void {
+export function setServiceConfig(
+  config: ServiceConfig,
+  rkey: string = DEFAULT_LISTING_RKEY,
+): void {
   validateServiceConfig(config);
   const repo = getServiceConfigRepository();
   const json = JSON.stringify(config);
   if (repo !== null) {
     try {
-      void repo.put(STORAGE_KEY, json, Date.now()).catch(() => {
+      void repo.put(rkey, json, Date.now()).catch(() => {
         /* fail-safe — transient SQL write loss is acceptable */
       });
     } catch {
       /* fail-safe — sync-throw variant (mocked repos) */
     }
   }
-  current = config;
-  notifyListeners(current);
+  configs.set(rkey, config);
+  notifyListeners(rkey, config);
   configEventChannel().emitConfigChanged();
 }
 
@@ -125,14 +157,17 @@ export function setServiceConfig(config: ServiceConfig): void {
  * the fire-and-forget `setServiceConfig` is for best-effort callers (boot
  * hydration) that intentionally tolerate transient write loss.
  */
-export async function setServiceConfigDurable(config: ServiceConfig): Promise<void> {
+export async function setServiceConfigDurable(
+  config: ServiceConfig,
+  rkey: string = DEFAULT_LISTING_RKEY,
+): Promise<void> {
   validateServiceConfig(config);
   const repo = getServiceConfigRepository();
   if (repo !== null) {
-    await repo.put(STORAGE_KEY, JSON.stringify(config), Date.now());
+    await repo.put(rkey, JSON.stringify(config), Date.now());
   }
-  current = config;
-  notifyListeners(current);
+  configs.set(rkey, config);
+  notifyListeners(rkey, config);
   configEventChannel().emitConfigChanged();
 }
 
@@ -141,25 +176,47 @@ export async function setServiceConfigDurable(config: ServiceConfig): Promise<vo
  * `setServiceConfig({...existing, isDiscoverable: false})` (keeping the config row
  * for diagnostics) or `clearServiceConfig()` (removing it entirely).
  */
-export function clearServiceConfig(): void {
+export function clearServiceConfig(rkey: string = DEFAULT_LISTING_RKEY): void {
   const repo = getServiceConfigRepository();
   if (repo !== null) {
     try {
-      void repo.remove(STORAGE_KEY).catch(() => {
+      void repo.remove(rkey).catch(() => {
         /* fail-safe — transient SQL delete loss is acceptable */
       });
     } catch {
       /* fail-safe — sync-throw variant */
     }
   }
-  current = null;
-  notifyListeners(null);
+  configs.delete(rkey);
+  notifyListeners(rkey, null);
+  configEventChannel().emitConfigChanged();
+}
+
+/**
+ * Durable delete (mirror of `setServiceConfigDurable`): remove the row from the
+ * repository BEFORE updating in-memory state + notifying, so a route that
+ * returns 200 has actually persisted the deletion. A failed repo delete REJECTS
+ * and leaves the in-memory listing + its published record untouched — the caller
+ * (the DELETE route) surfaces 503 instead of falsely claiming the listing was
+ * removed (otherwise the local row resurrects on restart and republishes stale
+ * data while the PDS record is already gone). Use this on the request path; the
+ * fire-and-forget `clearServiceConfig` is for best-effort callers.
+ */
+export async function clearServiceConfigDurable(
+  rkey: string = DEFAULT_LISTING_RKEY,
+): Promise<void> {
+  const repo = getServiceConfigRepository();
+  if (repo !== null) {
+    await repo.remove(rkey);
+  }
+  configs.delete(rkey);
+  notifyListeners(rkey, null);
   configEventChannel().emitConfigChanged();
 }
 
 /** Reset module state — tests only. */
 export function resetServiceConfigState(): void {
-  current = null;
+  configs.clear();
   listeners.clear();
 }
 
@@ -191,28 +248,37 @@ export function onServiceConfigChanged(listener: ConfigChangeListener): () => vo
  * unknown (non-registry) capability falls back to exact-match so
  * out-of-registry/custom capabilities still work.
  *
+ * Multi-listing: a DID may publish many listings (one row per rkey). The
+ * bypass is allowed if ANY discoverable listing offers the capability, so
+ * this walks every configured listing — not just `self`.
+ *
  * Stays SYNC — `resolveCanonicalCapability` is a pure local function from
  * the shared registry (no AppView fetch), preserving the sync-hot-path
  * invariant this function is documented to uphold.
  */
 export function isCapabilityConfigured(capability: string): boolean {
-  const cfg = getServiceConfig();
-  if (cfg === null || !cfg.isDiscoverable) return false;
-
-  // Fast path: exact match against a configured key (covers both
-  // canonical-configured providers and out-of-registry custom keys).
-  if (Object.prototype.hasOwnProperty.call(cfg.capabilities, capability)) {
-    return true;
-  }
-
-  // Canonical match: the inbound capability and the configured keys are
-  // compared by their canonical names, so alias-vs-canonical mismatches
-  // between consumer and provider still resolve.
+  // Multi-listing: a DID may publish many listings; the contact-gate bypass
+  // is allowed if ANY discoverable listing offers the capability. Walk every
+  // configured listing, not just `self`.
   const inboundCanonical = resolveCanonicalCapability(capability);
-  if (inboundCanonical === null) return false; // not in registry, no exact hit
-  for (const configured of Object.keys(cfg.capabilities)) {
-    if (resolveCanonicalCapability(configured) === inboundCanonical) {
+  for (const cfg of configs.values()) {
+    if (!cfg.isDiscoverable) continue;
+
+    // Fast path: exact match against a configured key (covers both
+    // canonical-configured providers and out-of-registry custom keys).
+    if (Object.prototype.hasOwnProperty.call(cfg.capabilities, capability)) {
       return true;
+    }
+
+    // Canonical match: the inbound capability and the configured keys are
+    // compared by their canonical names, so alias-vs-canonical mismatches
+    // between consumer and provider still resolve. Skipped for an
+    // out-of-registry capability (no canonical → exact match only above).
+    if (inboundCanonical === null) continue;
+    for (const configured of Object.keys(cfg.capabilities)) {
+      if (resolveCanonicalCapability(configured) === inboundCanonical) {
+        return true;
+      }
     }
   }
   return false;
@@ -227,10 +293,10 @@ export function isCapabilityConfigured(capability: string): boolean {
 // from `getServiceConfig()` was removed so that sync hot paths
 // (`isCapabilityConfigured` on D2D ingress) don't need to await.
 
-function notifyListeners(cfg: ServiceConfig | null): void {
+function notifyListeners(rkey: string, cfg: ServiceConfig | null): void {
   for (const l of listeners) {
     try {
-      l(cfg);
+      l(rkey, cfg);
     } catch {
       // Intentional: a faulty listener should not break the caller's write.
     }

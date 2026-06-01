@@ -14,7 +14,13 @@ import type { CoreClient } from '@dina/core';
 import type { ServiceConfig } from '@dina/protocol';
 
 export interface HomeNodeServiceRuntimeOptions {
-  readConfig: () => ServiceConfig | null;
+  /**
+   * Returns the ServiceConfig for a listing. `rkey` selects WHICH listing
+   * (multi-listing per DID — the rkey carried by a query's `service_uri`);
+   * omitted ⇒ the default `self` listing. Forwarded verbatim to the
+   * ServiceHandler so a query for `…/route-7` executes against route-7.
+   */
+  readConfig: (rkey?: string) => ServiceConfig | null;
   rejectResponder: ServiceRejectResponder;
   deliver: WorkflowEventDeliverer;
   approvalNotifier?: ApprovalNotifier;

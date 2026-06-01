@@ -147,7 +147,12 @@ export const WORKFLOW_EVENT_FAIL = (id: number | string): string =>
 
 export const SERVICE_QUERY = '/v1/service/query';
 export const SERVICE_RESPOND = '/v1/service/respond';
+// Multi-listing: bare SERVICE_CONFIG (no rkey) is the compat alias for the
+// `self` listing (GET/PUT); SERVICE_CONFIGS lists every listing;
+// SERVICE_CONFIG_BY_RKEY is per-listing CRUD (GET/PUT/DELETE).
 export const SERVICE_CONFIG = '/v1/service/config';
+export const SERVICE_CONFIGS = '/v1/service/configs';
+export const SERVICE_CONFIG_BY_RKEY = '/v1/service/config/:rkey';
 
 // ---------------------------------------------------------------
 // Working Memory (per-persona salience + ToC)

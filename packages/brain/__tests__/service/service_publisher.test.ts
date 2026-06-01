@@ -8,6 +8,7 @@ import { PDSPublisher, PDSPublisherError } from '../../src/pds/publisher';
 import {
   PublisherConfigError,
   PublisherIdentityMismatchError,
+  PublisherRkeyError,
   SERVICE_PROFILE_COLLECTION,
   SERVICE_PROFILE_RKEY,
   ServicePublisher,
@@ -461,6 +462,69 @@ describe('ServicePublisher', () => {
 
       expect(result).toEqual({ published: false });
       expect(calls[1].url).toContain('deleteRecord');
+    });
+  });
+
+  // Multi-listing: one DID may publish many independent listings, each under
+  // its own rkey -> its own `at://<did>/com.dinakernel.service.profile/<rkey>`.
+  // The AppView indexes one row per listing URI. These pin that the publisher
+  // puts the chosen rkey on the wire rather than collapsing to 'self'. The
+  // putRecord/deleteRecord request is the 2nd fetch (calls[1]); session is [0].
+  describe('multi-listing rkey', () => {
+    it("defaults to 'self' when no rkey is supplied (publish)", async () => {
+      const { fetchFn, calls } = makeFetch([sessionOK(), jsonResponse(200, { uri: 'at://x/y/z', cid: 'c' })]);
+      await makePublisher(fetchFn).publish(validPublishConfig);
+      expect((calls[1].body as Record<string, unknown>).rkey).toBe('self');
+    });
+
+    it('publishes a listing under the supplied rkey', async () => {
+      const { fetchFn, calls } = makeFetch([sessionOK(), jsonResponse(200, { uri: 'at://x/y/route-42', cid: 'c' })]);
+      await makePublisher(fetchFn).publish(validPublishConfig, 'route-42');
+      const body = calls[1].body as Record<string, unknown>;
+      expect(body.collection).toBe(SERVICE_PROFILE_COLLECTION);
+      expect(body.rkey).toBe('route-42');
+    });
+
+    it('a DID can hold two distinct listings (two rkeys, two records)', async () => {
+      const { fetchFn, calls } = makeFetch([
+        sessionOK(),
+        jsonResponse(200, { uri: 'at://x/y/route-42', cid: 'c1' }),
+        jsonResponse(200, { uri: 'at://x/y/route-7', cid: 'c2' }),
+      ]);
+      const p = makePublisher(fetchFn);
+      await p.publish({ ...validPublishConfig, name: 'Route 42' }, 'route-42');
+      await p.publish({ ...validPublishConfig, name: 'Route 7' }, 'route-7');
+      const putRkeys = calls
+        .filter((c) => c.url.includes('com.atproto.repo.putRecord'))
+        .map((c) => (c.body as Record<string, unknown>).rkey);
+      expect(putRkeys).toEqual(['route-42', 'route-7']);
+    });
+
+    it('unpublish targets the supplied rkey (one listing, not all)', async () => {
+      const { fetchFn, calls } = makeFetch([sessionOK(), jsonResponse(200, {})]);
+      await makePublisher(fetchFn).unpublish('route-42');
+      expect(calls[1].url).toContain('com.atproto.repo.deleteRecord');
+      expect((calls[1].body as Record<string, unknown>).rkey).toBe('route-42');
+    });
+
+    it('sync(config, rkey) routes the rkey to publish', async () => {
+      const { fetchFn, calls } = makeFetch([sessionOK(), jsonResponse(200, { uri: 'at://x/y/route-42', cid: 'c' })]);
+      await makePublisher(fetchFn).sync(validPublishConfig, 'route-42');
+      expect((calls[1].body as Record<string, unknown>).rkey).toBe('route-42');
+    });
+
+    it('rejects an invalid rkey BEFORE any PDS call (publish)', async () => {
+      const { fetchFn, calls } = makeFetch([sessionOK(), jsonResponse(200, {})]);
+      await expect(makePublisher(fetchFn).publish(validPublishConfig, 'bad/rkey')).rejects.toBeInstanceOf(
+        PublisherRkeyError,
+      );
+      expect(calls).toHaveLength(0);
+    });
+
+    it('rejects a path-traversal rkey (unpublish)', async () => {
+      const { fetchFn, calls } = makeFetch([sessionOK(), jsonResponse(200, {})]);
+      await expect(makePublisher(fetchFn).unpublish('..')).rejects.toBeInstanceOf(PublisherRkeyError);
+      expect(calls).toHaveLength(0);
     });
   });
 });

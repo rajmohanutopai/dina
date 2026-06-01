@@ -21,12 +21,22 @@
  * Source: brain/src/service/service_publisher.py  (Python reference)
  */
 
+import { isValidServiceListingRkey } from '@dina/protocol';
 import type { PDSPublisher, PutRecordResult } from '../pds/publisher';
 import { computeSchemaHash } from './capabilities/registry';
 
 /** AT-Proto NSID collection the profile record is published under. */
 export const SERVICE_PROFILE_COLLECTION = 'com.dinakernel.service.profile';
-/** Stable record key — one profile per account, key = 'self'. */
+/**
+ * Default record key. A single-listing provider publishes one profile under
+ * `'self'`. A multi-listing provider (marketplace model: one DID, many
+ * listings) passes a distinct rkey per listing to `publish`/`unpublish`/`sync`;
+ * each `(collection, rkey)` is an independent record at
+ * `at://<did>/com.dinakernel.service.profile/<rkey>`. The AppView indexes one
+ * row per listing URI, and `parseServiceListingUri` (the requester-side
+ * `service_uri` parse) accepts exactly the same rkey charset this publisher
+ * mints — both gate through `isValidServiceListingRkey`.
+ */
 export const SERVICE_PROFILE_RKEY = 'self';
 
 /** A JSON Schema + its published hash, per capability. */
@@ -107,6 +117,26 @@ export class PublisherConfigError extends Error {
   }
 }
 
+/**
+ * Thrown when a caller-supplied listing rkey is not a well-formed service
+ * listing key. The publish is refused before any PDS write so a malformed key
+ * can never mint a record a `parseServiceListingUri` consumer would later
+ * reject (publish/parse charset must agree — both gate through
+ * `isValidServiceListingRkey`).
+ */
+export class PublisherRkeyError extends Error {
+  constructor(readonly rkey: string) {
+    super(`invalid service listing rkey: ${JSON.stringify(rkey)}`);
+    this.name = 'PublisherRkeyError';
+  }
+}
+
+function assertValidRkey(rkey: string): void {
+  if (!isValidServiceListingRkey(rkey)) {
+    throw new PublisherRkeyError(rkey);
+  }
+}
+
 export class ServicePublisher {
   private readonly pds: PDSPublisher;
   private readonly expectedDID: string;
@@ -135,20 +165,25 @@ export class ServicePublisher {
    * Identity is verified **before** the write so that a credential mismatch
    * never results in a record landing in the wrong repo.
    */
-  async publish(config: ServicePublisherConfig): Promise<PutRecordResult> {
+  async publish(
+    config: ServicePublisherConfig,
+    rkey: string = SERVICE_PROFILE_RKEY,
+  ): Promise<PutRecordResult> {
     validateConfig(config);
+    assertValidRkey(rkey);
     await this.verifyIdentity();
     const record = buildRecord(config, this.nowFn(), this.log);
-    return this.pds.putRecord(SERVICE_PROFILE_COLLECTION, SERVICE_PROFILE_RKEY, record);
+    return this.pds.putRecord(SERVICE_PROFILE_COLLECTION, rkey, record);
   }
 
   /**
    * Remove the published profile. Safe to call when nothing is published.
    * Identity is verified before any write.
    */
-  async unpublish(): Promise<void> {
+  async unpublish(rkey: string = SERVICE_PROFILE_RKEY): Promise<void> {
+    assertValidRkey(rkey);
     await this.verifyIdentity();
-    await this.pds.deleteRecordIdempotent(SERVICE_PROFILE_COLLECTION, SERVICE_PROFILE_RKEY);
+    await this.pds.deleteRecordIdempotent(SERVICE_PROFILE_COLLECTION, rkey);
   }
 
   /**
@@ -160,12 +195,13 @@ export class ServicePublisher {
    */
   async sync(
     config: ServicePublisherConfig,
+    rkey: string = SERVICE_PROFILE_RKEY,
   ): Promise<{ published: true; result: PutRecordResult } | { published: false }> {
     if (config.isDiscoverable) {
-      const result = await this.publish(config);
+      const result = await this.publish(config, rkey);
       return { published: true, result };
     }
-    await this.unpublish();
+    await this.unpublish(rkey);
     return { published: false };
   }
 

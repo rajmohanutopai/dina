@@ -67,10 +67,10 @@ function stubPublisher(): ServicePublisher {
 }
 
 function makeSource() {
-  let listener: ((cfg: ServiceConfig | null) => void) | null = null;
+  let listener: ((rkey: string, cfg: ServiceConfig | null) => void) | null = null;
   return {
     source: {
-      onServiceConfigChanged(l: (cfg: ServiceConfig | null) => void) {
+      onServiceConfigChanged(l: (rkey: string, cfg: ServiceConfig | null) => void) {
         listener = l;
         return () => {
           listener = null;
@@ -78,7 +78,7 @@ function makeSource() {
       },
     },
     emit(cfg: ServiceConfig | null) {
-      if (listener !== null) listener(cfg);
+      if (listener !== null) listener('self', cfg);
     },
     hasListener: () => listener !== null,
   };

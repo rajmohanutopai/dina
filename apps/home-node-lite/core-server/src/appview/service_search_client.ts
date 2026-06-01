@@ -47,6 +47,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 6d task 6.12.
  */
 
+import { parseServiceListingUri, classifyCapability } from '@dina/protocol';
 import type { XrpcFetchResult } from './peerlens_resolve_client';
 
 export interface GeoLocation {
@@ -71,6 +72,15 @@ export interface ServiceSearchRequest {
 
 /** One matched service in the response. */
 export interface ServiceMatch {
+  /**
+   * AT-URI of THIS specific listing
+   * (`at://<did>/com.dinakernel.service.profile/<rkey>`). A provider DID may
+   * publish many listings (marketplace multi-listing per DID); this is how a
+   * caller later passes `service_uri` on the `service.query` to disambiguate
+   * which one it picked. Mirrors the Brain-side search result, which preserves
+   * the same uri end-to-end.
+   */
+  uri: string;
   operatorDid: string;
   name: string;
   capability: string;
@@ -122,8 +132,20 @@ export type ServiceSearchEvent =
 export const MAX_SEARCH_LIMIT = 50;
 export const DEFAULT_SEARCH_LIMIT = 10;
 
-const CAPABILITY_NAME_RE = /^[a-z][a-z0-9_]{0,63}$/;
 const DID_RE = /^did:(plc:[a-z2-7]{24}|web:[a-zA-Z0-9.:-]+)$/;
+
+/**
+ * A searchable capability is EITHER a registry capability (flat, e.g.
+ * `eta_query`, possibly via an alias) OR a provider-owned namespaced custom
+ * capability (reverse-DNS dotted, e.g. `com.acme.widget_price`) — the OPEN
+ * vocabulary half of the "any customer can create their own service" model.
+ * Both are accepted via the SHARED `classifyCapability` (same registry the
+ * AppView ingester + service-search use, so HNL's accept-set matches what the
+ * index will actually match); only a genuinely-unknown flat string is rejected.
+ */
+function isSearchableCapability(raw: string): boolean {
+  return classifyCapability(raw).kind !== 'unknown';
+}
 
 /**
  * Create the service-search xRPC client. Returns an
@@ -216,8 +238,8 @@ function validateInput(input: ServiceSearchRequest | null | undefined): string |
   }
   if (input.capability !== undefined) {
     if (typeof input.capability !== 'string') return 'capability must be a string';
-    if (!CAPABILITY_NAME_RE.test(input.capability)) {
-      return `capability "${input.capability}" must match ${CAPABILITY_NAME_RE}`;
+    if (!isSearchableCapability(input.capability)) {
+      return `capability "${input.capability}" is not a known registry or namespaced custom capability`;
     }
   }
   if (input.query !== undefined) {
@@ -292,12 +314,25 @@ function parseResponse(body: Record<string, unknown>): ParseOk | ParseFail {
     const e = entry as Record<string, unknown>;
     if (typeof e.operatorDid !== 'string' || !DID_RE.test(e.operatorDid)) continue;
     if (typeof e.name !== 'string' || e.name === '') continue;
+    // The listing uri is required to disambiguate multi-listing providers
+    // downstream (it rides the `service.query` as `service_uri`). Bind it to a
+    // well-formed `com.dinakernel.service.profile/<rkey>` listing URI — the same
+    // gate `parseServiceListingUri` applies everywhere else — and skip rows
+    // whose uri is missing/malformed rather than emit an unusable match. The
+    // listing's authority must also be the matched operator (a result can't
+    // hand us a uri under a different DID).
+    if (typeof e.uri !== 'string') continue;
+    const listing = parseServiceListingUri(e.uri);
+    if (listing === null || listing.did !== e.operatorDid) continue;
     // AppView emits the matched capability (the one the caller asked
     // for, normalized) as `matchedCapability`. The flat shape lets us
-    // skip walking the full `capabilities` array.
+    // skip walking the full `capabilities` array. It may be a registry
+    // capability OR a provider-owned namespaced custom (open vocabulary),
+    // so accept both via the shared `classifyCapability` gate — the same
+    // accept-set the request-side `isSearchableCapability` uses.
     if (
       typeof e.matchedCapability !== 'string' ||
-      !CAPABILITY_NAME_RE.test(e.matchedCapability)
+      !isSearchableCapability(e.matchedCapability)
     ) continue;
     // `matchedSchema` is the capability schema entry the operator
     // published for this capability; `null` when none was published.
@@ -337,6 +372,7 @@ function parseResponse(body: Record<string, unknown>): ParseOk | ParseFail {
         ? e.trustScore
         : null;
     services.push({
+      uri: e.uri,
       operatorDid: e.operatorDid,
       name: e.name,
       capability: e.matchedCapability,

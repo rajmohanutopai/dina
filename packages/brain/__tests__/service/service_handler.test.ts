@@ -1100,3 +1100,83 @@ describe('ServiceHandler — service_uri threading (P1, multi-listing per DID)',
     expect(payload.service_uri).toBe(LISTING);
   });
 });
+
+describe('ServiceHandler — readConfig(rkey) selects the execution listing (P1a, multi-listing)', () => {
+  // Two listings under ONE did, distinct rkeys + distinct capabilities:
+  //   self    → eta_query
+  //   route-7 → schedule_query
+  // The provider must validate/execute a query against the listing named by
+  // its service_uri's rkey, NOT against `self`.
+  // Namespaced custom capabilities (no registry schema) so the test isolates
+  // RKEY SELECTION — not registry param validation. self → com.self.cap,
+  // route-7 → com.route7.cap; neither listing offers the other's capability.
+  const SELF_CONFIG: ServiceConfig = {
+    isDiscoverable: true,
+    name: 'Bus 42 (self)',
+    capabilities: {
+      'com.self.cap': { mcpServer: 'transit', mcpTool: 'get_self', responsePolicy: 'auto' },
+    },
+  };
+  const ROUTE7_CONFIG: ServiceConfig = {
+    isDiscoverable: true,
+    name: 'Route 7',
+    capabilities: {
+      'com.route7.cap': { mcpServer: 'transit', mcpTool: 'get_route7', responsePolicy: 'auto' },
+    },
+  };
+  const route7Uri = 'at://did:plc:provider/com.dinakernel.service.profile/route-7';
+
+  function rkeyHandler(core: ReturnType<typeof stubCore>) {
+    return new ServiceHandler({
+      coreClient: core.client,
+      readConfig: (rkey?: string) => (rkey === 'route-7' ? ROUTE7_CONFIG : SELF_CONFIG),
+      nowSecFn: () => 1_700_000_000,
+      generateUUID: () => 'uuid-rkey',
+    });
+  }
+
+  it("executes a query against the rkey's listing (com.route7.cap lives only on route-7)", async () => {
+    const core = stubCore();
+    await rkeyHandler(core).handleQuery(REQUESTER, {
+      query_id: 'q-route7',
+      capability: 'com.route7.cap',
+      params: {},
+      ttl_seconds: 60,
+      service_uri: route7Uri,
+    });
+    // Accepted: a task is created, and its service_name comes from route-7.
+    expect(core.createCalls).toHaveLength(1);
+    const payload = JSON.parse(core.createCalls[0].payload as string);
+    expect(payload.service_name).toBe('Route 7');
+    expect(payload.service_uri).toBe(route7Uri);
+  });
+
+  it('rejects a capability that exists only on self when the query targets route-7', async () => {
+    const core = stubCore();
+    // com.self.cap is in SELF_CONFIG, NOT route-7 — with the rkey bound to
+    // route-7 the provider must NOT fall back to self and accept it.
+    await rkeyHandler(core).handleQuery(REQUESTER, {
+      query_id: 'q-wrong-listing',
+      capability: 'com.self.cap',
+      params: {},
+      ttl_seconds: 60,
+      service_uri: route7Uri,
+    });
+    expect(core.createCalls).toHaveLength(0);
+  });
+
+  it('falls back to self when the query carries no service_uri', async () => {
+    const core = stubCore();
+    // No service_uri → rkeyForQuery returns undefined → readConfig defaults to
+    // the `self` listing, which offers com.self.cap.
+    await rkeyHandler(core).handleQuery(REQUESTER, {
+      query_id: 'q-self',
+      capability: 'com.self.cap',
+      params: {},
+      ttl_seconds: 60,
+    });
+    expect(core.createCalls).toHaveLength(1);
+    const payload = JSON.parse(core.createCalls[0].payload as string);
+    expect(payload.service_name).toBe('Bus 42 (self)');
+  });
+});

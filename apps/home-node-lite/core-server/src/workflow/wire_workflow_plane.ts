@@ -159,7 +159,7 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
     runtime: {
       core: new InProcessTransport(coreRouter),
       appView,
-      readConfig: (): ServiceConfig | null => getServiceConfig(),
+      readConfig: (rkey?: string): ServiceConfig | null => getServiceConfig(rkey),
       deliver: ({ text, event, task, details }) => {
         logger.info(
           {

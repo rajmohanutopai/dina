@@ -29,7 +29,11 @@ import type {
   ServiceCapabilitySchemas,
   ServiceQueryBody,
 } from '@dina/protocol';
-import { validateServiceQueryBody, resolveCanonicalCapability } from '@dina/protocol';
+import {
+  validateServiceQueryBody,
+  resolveCanonicalCapability,
+  parseServiceListingUri,
+} from '@dina/protocol';
 import { getCapability, getTTL } from './capabilities/registry';
 import { validateAgainstSchema } from './capabilities/schema_validator';
 
@@ -160,11 +164,19 @@ export type ServiceRejectResponder = (
 export interface ServiceHandlerOptions {
   coreClient: ServiceHandlerCoreClient;
   /**
-   * Returns the *current* ServiceConfig. Read lazily on every inbound
-   * query so config updates via `onServiceConfigChanged` take effect
+   * Returns the *current* ServiceConfig for a listing. Read lazily on every
+   * inbound query so config updates via `onServiceConfigChanged` take effect
    * without rewiring the handler.
+   *
+   * Multi-listing: `rkey` selects WHICH listing's config to validate +
+   * execute against (the rkey carried by the query's `service_uri`). Omitted
+   * ⇒ the default `self` listing — back-compat for single-listing providers
+   * and queries that carry no `service_uri`. A query for
+   * `…/com.dinakernel.service.profile/route-7` must execute against the
+   * `route-7` config, NOT `self` (the one-row==one-record==one-execution
+   * invariant).
    */
-  readConfig: () => ServiceConfig | null;
+  readConfig: (rkey?: string) => ServiceConfig | null;
   /**
    * Optional: fires when an approval task is created. Wire to Telegram /
    * chat / push notifications. No-op when absent.
@@ -197,7 +209,7 @@ export interface ServiceHandlerOptions {
  */
 export class ServiceHandler {
   private readonly core: ServiceHandlerCoreClient;
-  private readonly readConfig: () => ServiceConfig | null;
+  private readonly readConfig: (rkey?: string) => ServiceConfig | null;
   private readonly notifier: ApprovalNotifier | null;
   private readonly inboundNotifier: ServiceInboundNotifier | null;
   private readonly rejectResponder: ServiceRejectResponder | null;
@@ -247,7 +259,7 @@ export class ServiceHandler {
       ttl_seconds: query.ttl_seconds,
     });
 
-    const config = this.readConfig();
+    const config = this.readConfig(this.rkeyForQuery(query));
     const cap = findCapabilityConfig(config, query.capability);
     if (cap === null) {
       await this.sendError(fromDID, query, 'unavailable', 'capability_not_configured');
@@ -369,7 +381,7 @@ export class ServiceHandler {
     cap: ServiceCapabilityConfig,
   ): Promise<void> {
     const taskId = `svc-exec-${this.generateUUID()}`;
-    const config = this.readConfig();
+    const config = this.readConfig(this.rkeyForQuery(query));
     const serviceName = config?.name ?? '';
     await this.createExecutionTaskRaw({
       fromDID,
@@ -467,7 +479,7 @@ export class ServiceHandler {
   ): Promise<void> {
     const taskId = `approval-${this.generateUUID()}`;
     const ttl = query.ttl_seconds > 0 ? query.ttl_seconds : getTTL(query.capability);
-    const config = this.readConfig();
+    const config = this.readConfig(this.rkeyForQuery(query));
     const serviceName = config?.name ?? '';
     const snapshot = snapshotForCapability(config, query.capability);
     const payload: Record<string, unknown> = {
@@ -615,6 +627,19 @@ export class ServiceHandler {
    *     Without this, a stale requester could bypass version safety.
    *   - Mismatch → `schema_version_mismatch`.
    */
+  /**
+   * The listing rkey a query targets, from its `service_uri`. Returns
+   * `undefined` when no (or a malformed) `service_uri` is present, so
+   * `readConfig(undefined)` falls back to the default `self` listing. The
+   * `did` half of the uri is NOT trusted here — `readConfig` only reads OUR
+   * local listings, and the recipient-DID bind is enforced upstream (Core
+   * route + the D2D confused-deputy fix); we use only the rkey segment.
+   */
+  private rkeyForQuery(query: ServiceQueryBody): string | undefined {
+    if (typeof query.service_uri !== 'string' || query.service_uri === '') return undefined;
+    return parseServiceListingUri(query.service_uri)?.rkey;
+  }
+
   private checkSchemaHash(config: ServiceConfig | null, query: ServiceQueryBody): string | null {
     if (config === null) return null;
     const published = lookupPublishedSchema(config, query.capability);

@@ -47,6 +47,7 @@ export { setServiceRespondSender } from './src/server/routes/service_respond';
 export type { CoreRouter } from './src/server/router';
 export {
   getServiceConfig,
+  listServiceConfigs,
   hydrateServiceConfig,
   onServiceConfigChanged,
   resetServiceConfigState,

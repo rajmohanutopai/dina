@@ -1050,4 +1050,59 @@ describe('createQueryServiceTool — listing disambiguation (P2)', () => {
     });
     expect(calls[0].serviceUri).toBeUndefined();
   });
+
+  it('P1b multi-listing: autofetch uses the chosen service_uri listing, not [0]', async () => {
+    // One DID, TWO listings for the same capability under distinct rkeys.
+    // store-2 is returned FIRST by the index (schemaHash H2); the caller
+    // picks store-3 (schemaHash H3). The autofetched schema_hash +
+    // service_name MUST come from store-3 — not whichever listing the index
+    // ordered first (the old `matchedProfiles[0]` bug).
+    const calls: Array<{ schemaHash?: string; serviceName?: string }> = [];
+    const orchestrator = {
+      async issueQueryToDID(req: { schemaHash?: string; serviceName?: string; toDID: string }) {
+        calls.push({ schemaHash: req.schemaHash, serviceName: req.serviceName });
+        return {
+          queryId: 'q-ml',
+          taskId: 'svc-q-ml',
+          toDID: req.toDID,
+          serviceName: req.serviceName ?? req.toDID,
+          deduped: false,
+        };
+      },
+    } as unknown as Parameters<typeof createQueryServiceTool>[0]['orchestrator'];
+    const mkListing = (rkey: string, hash: string, name: string) => ({
+      did: 'did:plc:market',
+      uri: `at://did:plc:market/com.dinakernel.service.profile/${rkey}`,
+      name,
+      capabilities: ['price_check'],
+      capabilitySchemas: {
+        price_check: {
+          params: { type: 'object' },
+          result: { type: 'object' },
+          schemaHash: hash,
+        },
+      },
+    });
+    const tool = createQueryServiceTool({
+      orchestrator,
+      appViewClient: {
+        // store-2 first on purpose — the old `[0]` bug would pick it.
+        async searchServices() {
+          return [
+            mkListing('store-2', 'sha256:H2', 'Store 2'),
+            mkListing('store-3', 'sha256:H3', 'Store 3'),
+          ];
+        },
+      } as unknown as Parameters<typeof createQueryServiceTool>[0]['appViewClient'],
+    });
+    await tool.execute({
+      operator_did: 'did:plc:market',
+      capability: 'price_check',
+      params: { sku: 'X' },
+      service_uri: 'at://did:plc:market/com.dinakernel.service.profile/store-3',
+      // schema_hash + service_name omitted → autofetched from the chosen listing
+    });
+    expect(calls[0].schemaHash).toBe('sha256:H3');
+    expect(calls[0].serviceName).toBe('Store 3');
+  });
 });

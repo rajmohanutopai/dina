@@ -40,15 +40,27 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 6e task 6.19.
  */
 
+import { isValidServiceListingRkey } from '@dina/protocol';
 import type { ServiceProfileRecord } from './profile_builder';
 
 export const SERVICE_PROFILE_COLLECTION = 'com.dinakernel.service.profile' as const;
-/** Every actor has exactly one service profile. */
+/**
+ * Default record key. A single-listing provider publishes one profile under
+ * `'self'`; a multi-listing provider (one DID, many listings — the marketplace
+ * model) passes a distinct rkey per listing to `publish`. Each
+ * `(collection, rkey)` is an independent record at
+ * `at://<did>/com.dinakernel.service.profile/<rkey>`; the AppView indexes one
+ * row per listing URI.
+ */
 export const SERVICE_PROFILE_RKEY = 'self' as const;
 
 export interface PutRecordInput {
   collection: typeof SERVICE_PROFILE_COLLECTION;
-  rkey: typeof SERVICE_PROFILE_RKEY;
+  /**
+   * Listing record key. `'self'` for a single-listing provider; an
+   * `isValidServiceListingRkey`-valid key for a specific marketplace listing.
+   */
+  rkey: string;
   record: ServiceProfileRecord;
 }
 
@@ -102,10 +114,23 @@ export class ServiceProfilePublisher {
 
   /**
    * Publish `profile` to the actor's PDS at
-   * `com.dinakernel.service.profile/self`. Never throws — every failure
-   * path returns a structured outcome.
+   * `com.dinakernel.service.profile/<rkey>` (default rkey `'self'`). Never
+   * throws — every failure path returns a structured outcome.
    */
-  async publish(profile: ServiceProfileRecord): Promise<PublishOutcome> {
+  async publish(
+    profile: ServiceProfileRecord,
+    rkey: string = SERVICE_PROFILE_RKEY,
+  ): Promise<PublishOutcome> {
+    // An invalid rkey is a caller bug, not a transient fault — surface it as
+    // `malformed_profile` (the "don't retry" outcome the auto-republisher
+    // already handles) so a bad key can't mint a record `parseServiceListingUri`
+    // would later reject. Publish-side + parse-side share the same gate.
+    if (!isValidServiceListingRkey(rkey)) {
+      const detail = `invalid service listing rkey: ${JSON.stringify(rkey)}`;
+      this.onEvent?.({ kind: 'rejected', reason: 'malformed_profile', detail });
+      return { ok: false, reason: 'malformed_profile', detail };
+    }
+
     const validation = validateProfile(profile);
     if (validation !== null) {
       this.onEvent?.({
@@ -127,7 +152,7 @@ export class ServiceProfilePublisher {
     try {
       const result = await this.putRecordFn({
         collection: SERVICE_PROFILE_COLLECTION,
-        rkey: SERVICE_PROFILE_RKEY,
+        rkey,
         record: profile,
       });
       if (!result || typeof result.cid !== 'string' || typeof result.uri !== 'string') {

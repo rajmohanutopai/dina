@@ -8,12 +8,15 @@
 import {
   ServiceConfig,
   clearServiceConfig,
+  clearServiceConfigDurable,
   getServiceConfig,
+  listServiceConfigs,
   hydrateServiceConfig,
   isCapabilityConfigured,
   onServiceConfigChanged,
   resetServiceConfigState,
   setServiceConfig,
+  setServiceConfigDurable,
   validateServiceConfig,
 } from '../../src/service/service_config';
 import {
@@ -155,7 +158,7 @@ describe('clearServiceConfig', () => {
 
   it('notifies listeners with null', () => {
     const seen: Array<ServiceConfig | null> = [];
-    onServiceConfigChanged((cfg) => {
+    onServiceConfigChanged((_rkey, cfg) => {
       seen.push(cfg);
     });
     setServiceConfig(validConfig);
@@ -167,7 +170,7 @@ describe('clearServiceConfig', () => {
 describe('onServiceConfigChanged', () => {
   it('fires after setServiceConfig', () => {
     const seen: Array<ServiceConfig | null> = [];
-    onServiceConfigChanged((cfg) => {
+    onServiceConfigChanged((_rkey, cfg) => {
       seen.push(cfg);
     });
     setServiceConfig(validConfig);
@@ -177,10 +180,10 @@ describe('onServiceConfigChanged', () => {
   it('supports multiple listeners', () => {
     const a: Array<ServiceConfig | null> = [];
     const b: Array<ServiceConfig | null> = [];
-    onServiceConfigChanged((c) => {
+    onServiceConfigChanged((_rkey, c) => {
       a.push(c);
     });
-    onServiceConfigChanged((c) => {
+    onServiceConfigChanged((_rkey, c) => {
       b.push(c);
     });
     setServiceConfig(validConfig);
@@ -190,7 +193,7 @@ describe('onServiceConfigChanged', () => {
 
   it('disposer unsubscribes', () => {
     const seen: Array<ServiceConfig | null> = [];
-    const dispose = onServiceConfigChanged((cfg) => {
+    const dispose = onServiceConfigChanged((_rkey, cfg) => {
       seen.push(cfg);
     });
     dispose();
@@ -203,7 +206,7 @@ describe('onServiceConfigChanged', () => {
     onServiceConfigChanged(() => {
       throw new Error('subscriber blew up');
     });
-    onServiceConfigChanged((cfg) => {
+    onServiceConfigChanged((_rkey, cfg) => {
       seen.push(cfg);
     });
     setServiceConfig(validConfig);
@@ -338,5 +341,92 @@ describe('mobile boot precedence — real SQLite restart', () => {
     const override: ServiceConfig = { ...validConfig, name: 'Demo Override' };
     setServiceConfig(override);
     expect(getServiceConfig()?.name).toBe('Demo Override');
+  });
+});
+
+describe('multi-listing (per-rkey)', () => {
+  const secondConfig: ServiceConfig = {
+    isDiscoverable: true,
+    name: 'Route 7',
+    capabilities: {
+      schedule_query: {
+        mcpServer: 'transit',
+        mcpTool: 'get_schedule',
+        responsePolicy: 'auto',
+      },
+    },
+  };
+
+  it('stores listings independently by rkey', () => {
+    setServiceConfig(validConfig); // defaults to 'self'
+    setServiceConfig(secondConfig, 'route-7');
+    expect(getServiceConfig()).toEqual(validConfig);
+    expect(getServiceConfig('self')).toEqual(validConfig);
+    expect(getServiceConfig('route-7')).toEqual(secondConfig);
+    expect(getServiceConfig('missing')).toBeNull();
+  });
+
+  it('listServiceConfigs returns every listing, sorted by rkey', () => {
+    setServiceConfig(validConfig); // 'self'
+    setServiceConfig(secondConfig, 'route-7');
+    const all = listServiceConfigs();
+    expect(all.map((e) => e.rkey)).toEqual(['route-7', 'self']);
+    expect(all.find((e) => e.rkey === 'route-7')?.config).toEqual(secondConfig);
+  });
+
+  it('clearing one listing leaves the others intact', () => {
+    setServiceConfig(validConfig); // 'self'
+    setServiceConfig(secondConfig, 'route-7');
+    clearServiceConfig('route-7');
+    expect(getServiceConfig('route-7')).toBeNull();
+    expect(getServiceConfig('self')).toEqual(validConfig);
+    expect(listServiceConfigs().map((e) => e.rkey)).toEqual(['self']);
+  });
+
+  it('isCapabilityConfigured matches a capability from ANY discoverable listing', () => {
+    setServiceConfig(validConfig); // eta_query under 'self'
+    setServiceConfig(secondConfig, 'route-7'); // schedule_query
+    expect(isCapabilityConfigured('eta_query')).toBe(true);
+    expect(isCapabilityConfigured('schedule_query')).toBe(true);
+    expect(isCapabilityConfigured('not_offered')).toBe(false);
+  });
+
+  it('a non-discoverable listing does not satisfy isCapabilityConfigured', () => {
+    setServiceConfig({ ...secondConfig, isDiscoverable: false }, 'route-7');
+    expect(isCapabilityConfigured('schedule_query')).toBe(false);
+  });
+
+  it('the change event carries the changed rkey', () => {
+    const seen: Array<{ rkey: string; isNull: boolean }> = [];
+    onServiceConfigChanged((rkey, cfg) => {
+      seen.push({ rkey, isNull: cfg === null });
+    });
+    setServiceConfig(validConfig, 'route-7');
+    clearServiceConfig('route-7');
+    expect(seen).toEqual([
+      { rkey: 'route-7', isNull: false },
+      { rkey: 'route-7', isNull: true },
+    ]);
+  });
+
+  it('hydrate restores every persisted listing and replaces stale in-memory state', async () => {
+    const repo = new InMemoryServiceConfigRepository();
+    await repo.put('self', JSON.stringify(validConfig), Date.now());
+    await repo.put('route-7', JSON.stringify(secondConfig), Date.now());
+    setServiceConfig(secondConfig, 'stale'); // in-memory only, not in repo
+    setServiceConfigRepository(repo);
+    await hydrateServiceConfig();
+    expect(listServiceConfigs().map((e) => e.rkey)).toEqual(['route-7', 'self']);
+    expect(getServiceConfig('stale')).toBeNull();
+  });
+
+  it('setServiceConfigDurable persists under the given rkey', async () => {
+    const repo = new InMemoryServiceConfigRepository();
+    setServiceConfigRepository(repo);
+    await setServiceConfigDurable(secondConfig, 'route-7');
+    resetServiceConfigState();
+    setServiceConfigRepository(repo);
+    await hydrateServiceConfig();
+    expect(getServiceConfig('route-7')).toEqual(secondConfig);
   });
 });

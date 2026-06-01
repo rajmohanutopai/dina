@@ -492,6 +492,39 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         WHERE revoked_at IS NULL;
     `,
   },
+  {
+    // Multi-listing service config — reshape the single-row `service_config`
+    // key-value table into a per-rkey `service_configs` catalog. ONE local row
+    // == ONE published `com.dinakernel.service.profile/<rkey>` record; `rkey`
+    // is the join key (the same rkey carried by a listing's `service_uri`).
+    //
+    // Greenfield: services hasn't shipped, so we DROP the old v2 table outright
+    // (no data preservation). The v2 migration block above is left intact —
+    // applied migrations are immutable; this v8 supersedes it. A fresh DB runs
+    // v2 then v8 (creates `service_config`, drops it, creates `service_configs`);
+    // an existing dev DB jumps straight to v8.
+    //
+    //   config_json        — the ServiceConfig JSON for THIS listing (the rkey
+    //                        lives in the row key, NOT inside the JSON).
+    //   last_published_*   — publish bookkeeping (nullable; a future
+    //                        publish-status surface writes these). Unused at
+    //                        write time in V1.
+    version: 8,
+    name: 'service_configs_per_rkey',
+    sql: `
+      DROP TABLE IF EXISTS service_config;
+
+      CREATE TABLE IF NOT EXISTS service_configs (
+        rkey TEXT PRIMARY KEY,
+        config_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        last_published_uri TEXT,
+        last_published_cid TEXT,
+        last_publish_error TEXT
+      ) WITHOUT ROWID;
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

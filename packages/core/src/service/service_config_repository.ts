@@ -21,15 +21,29 @@
 
 import type { DatabaseAdapter } from '../storage/db_adapter';
 
+/** One persisted listing row. `rkey` is the join key to the published record. */
+export interface ServiceConfigRow {
+  rkey: string;
+  /** The JSON-encoded `ServiceConfig` for this listing. */
+  configJSON: string;
+  updatedAtMs: number;
+}
+
 export interface ServiceConfigRepository {
-  /** Read the JSON-encoded config blob by key, or `null` if absent. */
-  get(key: string): Promise<string | null>;
+  /** Read the JSON-encoded config blob by rkey, or `null` if absent. */
+  get(rkey: string): Promise<string | null>;
 
-  /** Upsert the JSON-encoded config blob. */
-  put(key: string, valueJSON: string, updatedAtMs: number): Promise<void>;
+  /**
+   * List every persisted listing row (multi-listing: one row per rkey).
+   * Used by boot-time hydrate-all and `GET /v1/service/configs`.
+   */
+  list(): Promise<ServiceConfigRow[]>;
 
-  /** Delete the blob. No-op if the key does not exist. */
-  remove(key: string): Promise<void>;
+  /** Upsert the JSON-encoded config blob under `rkey`. */
+  put(rkey: string, valueJSON: string, updatedAtMs: number): Promise<void>;
+
+  /** Delete the row for `rkey`. No-op if it does not exist. */
+  remove(rkey: string): Promise<void>;
 }
 
 let repo: ServiceConfigRepository | null = null;
@@ -46,24 +60,40 @@ export function getServiceConfigRepository(): ServiceConfigRepository | null {
 export class SQLiteServiceConfigRepository implements ServiceConfigRepository {
   constructor(private readonly db: DatabaseAdapter) {}
 
-  async get(key: string): Promise<string | null> {
-    const rows = this.db.query<{ value: string }>(
-      'SELECT value FROM service_config WHERE key = ?',
-      [key],
+  async get(rkey: string): Promise<string | null> {
+    const rows = this.db.query<{ config_json: string }>(
+      'SELECT config_json FROM service_configs WHERE rkey = ?',
+      [rkey],
     );
-    return rows.length > 0 ? String(rows[0].value) : null;
+    return rows.length > 0 ? String(rows[0].config_json) : null;
   }
 
-  async put(key: string, valueJSON: string, updatedAtMs: number): Promise<void> {
+  async list(): Promise<ServiceConfigRow[]> {
+    const rows = this.db.query<{ rkey: string; config_json: string; updated_at: number }>(
+      'SELECT rkey, config_json, updated_at FROM service_configs ORDER BY rkey ASC',
+    );
+    return rows.map((r) => ({
+      rkey: String(r.rkey),
+      configJSON: String(r.config_json),
+      updatedAtMs: Number(r.updated_at),
+    }));
+  }
+
+  async put(rkey: string, valueJSON: string, updatedAtMs: number): Promise<void> {
+    // `created_at` is preserved on conflict (only set on first insert);
+    // `updated_at` always advances. Mirrors the AppView createdAt/updatedAt split.
     this.db.execute(
-      `INSERT INTO service_config (key, value, updated_at) VALUES (?, ?, ?)
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-      [key, valueJSON, updatedAtMs],
+      `INSERT INTO service_configs (rkey, config_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(rkey) DO UPDATE SET
+         config_json = excluded.config_json,
+         updated_at = excluded.updated_at`,
+      [rkey, valueJSON, updatedAtMs, updatedAtMs],
     );
   }
 
-  async remove(key: string): Promise<void> {
-    this.db.execute('DELETE FROM service_config WHERE key = ?', [key]);
+  async remove(rkey: string): Promise<void> {
+    this.db.execute('DELETE FROM service_configs WHERE rkey = ?', [rkey]);
   }
 }
 
@@ -72,18 +102,23 @@ export class SQLiteServiceConfigRepository implements ServiceConfigRepository {
  * persistence without a real SQLite connection.
  */
 export class InMemoryServiceConfigRepository implements ServiceConfigRepository {
-  private readonly rows = new Map<string, string>();
+  private readonly rows = new Map<string, { configJSON: string; updatedAtMs: number }>();
 
-  async get(key: string): Promise<string | null> {
-    return this.rows.get(key) ?? null;
+  async get(rkey: string): Promise<string | null> {
+    return this.rows.get(rkey)?.configJSON ?? null;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async put(key: string, valueJSON: string, _updatedAtMs: number): Promise<void> {
-    this.rows.set(key, valueJSON);
+  async list(): Promise<ServiceConfigRow[]> {
+    return [...this.rows.entries()]
+      .map(([rkey, v]) => ({ rkey, configJSON: v.configJSON, updatedAtMs: v.updatedAtMs }))
+      .sort((a, b) => (a.rkey < b.rkey ? -1 : a.rkey > b.rkey ? 1 : 0));
   }
 
-  async remove(key: string): Promise<void> {
-    this.rows.delete(key);
+  async put(rkey: string, valueJSON: string, updatedAtMs: number): Promise<void> {
+    this.rows.set(rkey, { configJSON: valueJSON, updatedAtMs });
+  }
+
+  async remove(rkey: string): Promise<void> {
+    this.rows.delete(rkey);
   }
 }

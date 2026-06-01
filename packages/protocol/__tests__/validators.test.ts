@@ -20,6 +20,8 @@ import {
   validateFutureSkew,
   verifyMessageSignature,
   buildMessageJSON,
+  isValidServiceListingRkey,
+  parseServiceListingUri,
   type Ed25519VerifyFn,
 } from '../src';
 
@@ -348,5 +350,46 @@ describe('verifyMessageSignature (task 1.20)', () => {
         hexToBytes: fakeHexToBytes,
       }),
     ).toBe(true);
+  });
+});
+
+describe('isValidServiceListingRkey', () => {
+  // SINGLE SOURCE OF TRUTH for the service-listing rkey charset, shared by the
+  // PARSE side (parseServiceListingUri, run over a requester-supplied
+  // service_uri) and the PUBLISH side (Brain + Home-Node-Lite publishers). A
+  // key a publisher mints must be exactly the set a parser later accepts.
+  it('accepts the single-listing default and ordinary marketplace keys', () => {
+    expect(isValidServiceListingRkey('self')).toBe(true);
+    expect(isValidServiceListingRkey('route-42')).toBe(true);
+    // The full charset the regex allows: A-Za-z0-9 . _ ~ -
+    expect(isValidServiceListingRkey('a.b_c~d-e')).toBe(true);
+    expect(isValidServiceListingRkey('3lk2j4h5')).toBe(true);
+    expect(isValidServiceListingRkey('a'.repeat(512))).toBe(true);
+  });
+
+  it('rejects empty, path-traversal, and over-long keys', () => {
+    expect(isValidServiceListingRkey('')).toBe(false);
+    expect(isValidServiceListingRkey('.')).toBe(false);
+    expect(isValidServiceListingRkey('..')).toBe(false);
+    expect(isValidServiceListingRkey('a'.repeat(513))).toBe(false);
+  });
+
+  it('rejects characters outside the charset (no smuggling into a uri)', () => {
+    expect(isValidServiceListingRkey('bad/rkey')).toBe(false);
+    expect(isValidServiceListingRkey('a b')).toBe(false);
+    expect(isValidServiceListingRkey('a:b')).toBe(false);
+    expect(isValidServiceListingRkey('a%2f')).toBe(false);
+  });
+
+  it('is the same gate parseServiceListingUri applies to the uri rkey segment', () => {
+    const good = 'at://did:plc:op/com.dinakernel.service.profile/route-42';
+    const parsed = parseServiceListingUri(good);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.rkey).toBe('route-42');
+    // An rkey the publisher would reject is also rejected at parse time.
+    expect(isValidServiceListingRkey('bad/rkey')).toBe(false);
+    expect(
+      parseServiceListingUri('at://did:plc:op/com.dinakernel.service.profile/bad/rkey'),
+    ).toBeNull();
   });
 });

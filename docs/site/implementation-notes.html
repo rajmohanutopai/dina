@@ -28,6 +28,50 @@ now tracks ONLY the post-launch deferrals + open questions that remain.</p>
 
 <div class="item">
   <span class="tag" style="background:#2a8;color:#fff">Shipped</span>
+  <p><b>Multi-listing service CONFIG (one DID manages many storefront/product
+  listings from config).</b> The multi-listing primitive existed (publishers +
+  AppView already take a per-rkey listing), but the normal config flow only ever
+  published the single <code>self</code> listing. Implemented <b>Option C</b>
+  (per-rkey keyed, greenfield): <b>one local <code>service_configs</code> row ==
+  one published <code>com.dinakernel.service.profile/&lt;rkey&gt;</code> record;
+  <code>rkey</code> is the join key.</b></p>
+  <ul>
+    <li><b>Storage:</b> migration v8 reshapes the single-row key-value
+    <code>service_config</code> table into a per-rkey <code>service_configs</code>
+    catalog (rkey PK, config_json, created/updated, nullable
+    <code>last_published_*</code> bookkeeping). Greenfield — drops the old table;
+    v2 migration stays immutable.</li>
+    <li><b>Store:</b> singleton <code>current</code> → <code>Map&lt;rkey,
+    ServiceConfig&gt;</code>. New API: <code>getServiceConfig(rkey='self')</code>,
+    <code>listServiceConfigs()</code>, <code>setServiceConfig(cfg,rkey='self')</code>
+    /<code>…Durable</code>, <code>clearServiceConfig(rkey='self')</code>; event
+    widened to <code>onServiceConfigChanged((rkey, cfg|null))</code>;
+    <code>isCapabilityConfigured</code> bypasses if ANY discoverable listing
+    offers the capability. <code>ServiceConfig</code> itself unchanged (rkey lives
+    in the row key), so existing config literals/tests stay valid.</li>
+    <li><b>hydrate is clear-then-load</b> (repo = source of truth) — also fixed a
+    cross-test stale-listing bug the merge-style hydrate caused.</li>
+    <li><b>Routes:</b> <code>GET /v1/service/configs</code> +
+    <code>GET|PUT|DELETE /v1/service/config/:rkey</code> (rkey validated via
+    <code>isValidServiceListingRkey</code>); <code>/v1/service/config</code> (no
+    rkey) preserved as the <code>self</code> compat alias.</li>
+    <li><b>Publish fan-out:</b> HNL <code>wire_publisher</code> + mobile bootstrap
+    subscribe per-rkey — publish the changed listing, unpublish that one rkey on
+    null/non-discoverable (siblings untouched); <code>boot.ts</code> publishes
+    every persisted listing on boot.</li>
+    <li><b>Verified:</b> tsc 0 across core/brain/home-node-lite/mobile; core
+    service+server+d2d <b>621</b> (incl. 8 new multi-listing store tests); brain
+    config_sync <b>18</b>; HNL publisher+search <b>70</b>.</li>
+    <li><b>Deferred (not blockers):</b> a dedicated HNL <code>wire_publisher</code>
+    fan-out test + per-rkey HTTP route tests (thin over the fully-tested store;
+    need the device-signed-auth dispatch harness). <code>enabled</code> column
+    dropped (<code>isDiscoverable</code> is in the JSON);
+    <code>last_published_*</code> columns created but unwired in V1.</li>
+  </ul>
+</div>
+
+<div class="item">
+  <span class="tag" style="background:#2a8;color:#fff">Shipped</span>
   <p><b>Public NSID namespace rename: <code>com.dina.*</code> &rarr;
   <code>com.dinakernel.*</code>.</b> ATProto NSIDs are reverse-DNS, so
   <code>com.dina.*</code> claims control of <code>dina.com</code>; the project
@@ -277,31 +321,60 @@ now tracks ONLY the post-launch deferrals + open questions that remain.</p>
     <code>searchCapabilities</code> tests (registry cap, namespaced custom cap,
     schema-description preference, raw-name fallback) are now actually present and
     green (appview_stub 14).</li>
-    <li><b>(P2, #4 — NOT done, deliberately deferred to a fresh session.)
-    Multi-listing publishing per operator DID.</b> Today a provider DID
-    advertises exactly ONE <code>com.dinakernel.service.profile</code> record:
-    <code>ServiceConfig</code> is a single blob and BOTH publishers (brain
-    <code>service_publisher.ts</code> and lite
-    <code>core-server/src/appview/service_profile_publisher.ts</code>) write only
-    rkey <code>self</code>. A marketplace DID with many storefronts can't list
-    them separately. <b>Status: not started — source is at HEAD.</b> An earlier
-    attempt this session was reverted: a full-file rewrite of
-    <code>service_publisher.ts</code> was corrupted by a degraded edit channel
-    (it dropped the existing <code>publish</code>/<code>unpublish</code>/
-    <code>buildRecord</code> API + error classes that the 26-test publisher suite
-    depends on) and was restored to HEAD. <b>Correct (additive) plan for next
-    session:</b> (a) add optional <code>listings?: ServiceListing[]</code> to
-    <code>@dina/protocol</code> <code>ServiceConfig</code> (additive — the ~25
-    existing consumers keep working; the primary listing stays the top-level
-    fields at rkey <code>self</code>); (b) EXTEND each publisher with a reconciling
-    multi-rkey path (publish desired {rkey→record}, delete stale rkeys via a new
-    paginated <code>listRecords</code>) WITHOUT removing the existing single-listing
-    API; (c) validate listing rkeys in Core's <code>validateServiceConfig</code>
-    (charset, not <code>self</code>, unique); (d) tests in protocol + brain + lite
-    + core. Deferred because it is the largest, most cross-cutting (wire-adjacent)
-    item and the edit channel proved unreliable for large writes this session —
-    attempting it now risks a compiles-but-wrong publisher, the exact failure mode
-    this review round existed to remove.</li>
+    <li><b>(P1, #4 — DONE this session.) Multi-listing publishing per
+    operator DID.</b> Previously a provider DID could advertise exactly ONE
+    <code>com.dinakernel.service.profile</code> record: both publishers (brain
+    <code>service_publisher.ts</code> + lite
+    <code>core-server/src/appview/service_profile_publisher.ts</code>) hardcoded
+    rkey <code>self</code>, so a marketplace DID with many storefronts couldn't
+    list them separately — conflicting with the <code>service_uri</code>
+    architecture (a listing URI carries a real
+    <code>&lt;rkey&gt;</code>). <b>Fix (publisher-only — the AppView side was
+    ALREADY multi-listing):</b> added an optional <code>rkey</code> param
+    (default <code>self</code>, fully back-compat) to brain
+    <code>publish/unpublish/sync</code> and lite
+    <code>publish</code> + <code>wire_publisher.publishOnce</code>; broadened the
+    lite <code>PutRecordInput.rkey</code> from the literal <code>'self'</code>
+    type to <code>string</code>. Exported <code>isValidServiceListingRkey</code>
+    from <code>@dina/protocol</code> as the SINGLE charset gate
+    (<code>[A-Za-z0-9._~-]{1,512}</code>, rejecting <code>.</code>/<code>..</code>)
+    and refactored <code>parseServiceListingUri</code> to use it — so the key a
+    publisher MINTS is exactly the set a requester-side <code>service_uri</code>
+    parse ACCEPTS; both publishers validate before any PDS write (brain throws
+    <code>PublisherRkeyError</code>, lite returns <code>malformed_profile</code>).
+    NO schema migration / ingester / search change (verified: <code>services.uri</code>
+    is PK, ingester upserts + deletes by <code>uri</code>, search projects
+    per-<code>uri</code>). rkey source: <code>ServiceConfig</code> stays
+    single-listing — a multi-listing provider drives publishing by calling
+    <code>publish</code> N times with N rkeys; a listing-aware CONFIG model
+    (per-listing lifecycle) remains a separate, larger surface, out of scope.
+    <b>Verified:</b> tsc 0 across protocol/brain/home-node-lite/core/appview/mobile;
+    protocol 442, brain publisher 33, home-node-lite full 2351, appview unit 1867
+    (+ direct <code>isValidServiceListingRkey</code> + handler multi-listing
+    coverage). <b>Follow-up (same session):</b> HNL's service-search client
+    (<code>service_search_client.ts</code>) had DROPPED the listing
+    <code>uri</code> from AppView results — <code>ServiceMatch</code> carried
+    no <code>uri</code> and <code>parseResponse</code> never copied
+    <code>e.uri</code> — so HNL couldn't pass <code>service_uri</code>
+    downstream to disambiguate a multi-listing provider (Brain already did).
+    Fixed: added <code>ServiceMatch.uri</code>; the parser now validates each
+    result's uri via <code>parseServiceListingUri</code> (binding the listing
+    authority to the matched <code>operatorDid</code> — a result can't hand us
+    a uri under a different DID) and carries it through, mirroring Brain.
+    <b>Open-vocabulary follow-up:</b> HNL also BLOCKED namespaced custom
+    capabilities (e.g. <code>com.acme.widget_price</code>) — both
+    <code>service_search_client.ts</code> (request validation + the
+    parse-loop <code>matchedCapability</code> check) and
+    <code>service_query_preflight.ts</code> validated against a flat-only
+    <code>/^[a-z][a-z0-9_]{0,63}$/</code>, conflicting with the "any customer
+    can create their own service" model. Fixed by routing all three through
+    the SHARED <code>classifyCapability</code> from <code>@dina/protocol</code>
+    (the same registry the AppView ingester + service-search use), accepting a
+    registry capability OR a well-formed reverse-DNS custom and rejecting only
+    a genuinely-unknown flat string. Also pinned the previously-implicit HNL
+    search uri security cases with direct tests: missing / malformed /
+    cross-DID / wrong-collection uris are DROPPED, a non-<code>self</code> rkey
+    is PRESERVED. HNL full suite 2361 (search_client 50, preflight 31); tsc 0.</li>
   </ol>
 </div>
 

@@ -244,13 +244,16 @@ export type {
 } from './appview/service_resolver';
 export {
   getServiceConfig,
+  listServiceConfigs,
   setServiceConfig,
+  setServiceConfigDurable,
   clearServiceConfig,
   hydrateServiceConfig,
   onServiceConfigChanged,
   isCapabilityConfigured,
   validateServiceConfig,
   resetServiceConfigState,
+  DEFAULT_LISTING_RKEY,
 } from './service/service_config';
 export type {
   ServiceConfig,

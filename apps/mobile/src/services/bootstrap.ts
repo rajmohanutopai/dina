@@ -35,6 +35,7 @@ import {
   bootstrapMsgBox,
   disconnectMsgBox,
   getServiceConfig,
+  listServiceConfigs,
   hydrateServiceConfig,
   isMsgBoxAuthenticated,
   onMsgBoxAuthenticated,
@@ -219,7 +220,7 @@ export interface CreateNodeOptions {
    * global `getServiceConfig` (driven by `setServiceConfig` / the config
    * repository).
    */
-  readConfig?: () => ServiceConfig | null;
+  readConfig?: (rkey?: string) => ServiceConfig | null;
   /**
    * Initial ServiceConfig to seed into Core's global store. Used so the
    * D2D ingress pipeline can immediately bypass the contact gate for
@@ -590,7 +591,8 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
   // ServiceHandler reads config through a thunk. Default to Core's
   // global (shared with the D2D ingress pipeline and the route handler)
   // so the two sides can't diverge.
-  const readConfig = options.readConfig ?? ((): ServiceConfig | null => getServiceConfig());
+  const readConfig =
+    options.readConfig ?? ((rkey?: string): ServiceConfig | null => getServiceConfig(rkey));
 
   // Review #6 (partial): route by origin_channel when a resolver is
   // supplied. The service_query task's payload carries the
@@ -1077,24 +1079,43 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       // failure to the caller rather than marking the node "started"
       // while it sits invisibly broken (issue #18).
       if (publisher !== null) {
-        const cfg = readConfig();
-        if (cfg !== null) {
-          await publisher.sync(toPublisherConfig(cfg));
-          log({ event: 'node.service_profile_synced', is_public: cfg.isDiscoverable });
+        // Multi-listing: publish EVERY persisted listing (one record per rkey),
+        // mirroring HNL boot. When a custom `readConfig` was injected (tests)
+        // and the store has no listings, fall back to the single-config path so
+        // the injected config still publishes.
+        const listings = listServiceConfigs();
+        if (listings.length > 0) {
+          for (const { rkey, config } of listings) {
+            await publisher.sync(toPublisherConfig(config), rkey);
+            log({
+              event: 'node.service_profile_synced',
+              is_public: config.isDiscoverable,
+              rkey,
+            });
+          }
+        } else {
+          const cfg = readConfig();
+          if (cfg !== null) {
+            await publisher.sync(toPublisherConfig(cfg));
+            log({ event: 'node.service_profile_synced', is_public: cfg.isDiscoverable });
+          }
         }
-        const unsubscribe = onServiceConfigChanged((next) => {
+        const unsubscribe = onServiceConfigChanged((rkey, next) => {
           const p = publisher;
           if (p === null) return;
-          // Fire-and-forget — the listener is synchronous but the
-          // publisher's sync is async. We never block the config-event
-          // emission on the PDS round-trip.
-          const syncPromise = next === null ? p.unpublish() : p.sync(toPublisherConfig(next));
+          // Multi-listing: publish/unpublish the SPECIFIC listing that changed
+          // (one row → one record under its rkey). Fire-and-forget — the
+          // listener is synchronous but the publisher's sync is async, so we
+          // never block the config-event emission on the PDS round-trip.
+          const syncPromise =
+            next === null ? p.unpublish(rkey) : p.sync(toPublisherConfig(next), rkey);
           void syncPromise.then(
             () =>
               log({
                 event: 'node.service_profile_synced',
                 is_public: next?.isDiscoverable ?? false,
                 reason: 'config_changed',
+                rkey,
               }),
             (err) => {
               log({

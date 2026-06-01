@@ -120,6 +120,7 @@ export {
   validateFutureSkew,
   verifyMessageSignature,
   parseServiceListingUri,
+  isValidServiceListingRkey,
   SERVICE_PROFILE_COLLECTION,
 } from './validators';
 export type {

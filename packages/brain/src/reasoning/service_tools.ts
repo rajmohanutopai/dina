@@ -484,7 +484,20 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
         try {
           const profiles = await options.appViewClient.searchServices({ capability });
           matchedProfiles = profiles.filter((p) => p.did === operatorDID);
-          const match = matchedProfiles[0];
+          // Resolve the SPECIFIC listing the caller chose so the autofetched
+          // schema_hash / params / TTL / name come from THAT listing — not
+          // whichever the index happened to order first. When the caller
+          // supplied a service_uri, match it exactly; otherwise auto-resolve
+          // only when there's exactly one listing (the ambiguous multi-listing
+          // case is refused below). A supplied uri with no match leaves
+          // `match` undefined → skip autofetch (fail-soft; the provider can
+          // still reject on its own version check).
+          let match: ServiceProfile | undefined;
+          if (serviceUri !== undefined) {
+            match = matchedProfiles.find((p) => p.uri === serviceUri);
+          } else if (matchedProfiles.length === 1) {
+            match = matchedProfiles[0];
+          }
           if (match !== undefined) {
             // Resolve alias↔canonical: AppView returns canonical-keyed
             // schemas, but `capability` may be the requester's alias.

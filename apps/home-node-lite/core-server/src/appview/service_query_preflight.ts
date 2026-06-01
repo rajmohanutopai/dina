@@ -38,6 +38,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 6f task 6.24.
  */
 
+import { classifyCapability } from '@dina/protocol';
 import {
   type TrustAction,
   type TrustContext,
@@ -125,7 +126,18 @@ export type PreflightEvent =
   | { kind: 'completed'; passed: number; rejected: number };
 
 export const DEFAULT_PREFLIGHT_LIMIT = 5;
-const CAPABILITY_RE = /^[a-z][a-z0-9_]{0,63}$/;
+
+/**
+ * A pre-flight capability is EITHER a registry capability (flat, e.g.
+ * `eta_query`) OR a provider-owned namespaced custom capability (reverse-DNS
+ * dotted, e.g. `com.acme.widget_price`) — the OPEN vocabulary half of the
+ * "any customer can create their own service" model. Accept both via the
+ * SHARED `classifyCapability` (same registry the AppView index uses); reject
+ * only a genuinely-unknown flat string.
+ */
+function isSearchableCapability(raw: string): boolean {
+  return classifyCapability(raw).kind !== 'unknown';
+}
 
 const ACTION_RANK: Readonly<Record<TrustAction, number>> = {
   proceed: 0,
@@ -242,8 +254,8 @@ export function createServiceQueryPreflight(
 
 function validateRequest(req: PreflightRequest): string | null {
   if (!req || typeof req !== 'object') return 'request is required';
-  if (typeof req.capability !== 'string' || !CAPABILITY_RE.test(req.capability)) {
-    return 'capability must match [a-z][a-z0-9_]*';
+  if (typeof req.capability !== 'string' || !isSearchableCapability(req.capability)) {
+    return 'capability must be a known registry or namespaced custom capability';
   }
   if (
     req.context !== 'read' &&

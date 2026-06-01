@@ -33,7 +33,7 @@ export interface ConfigChangeSource {
    * Subscribe to config changes. Must return an unsubscribe function.
    * Payload is `null` when the config is cleared.
    */
-  onServiceConfigChanged(listener: (cfg: ServiceConfig | null) => void): () => void;
+  onServiceConfigChanged(listener: (rkey: string, cfg: ServiceConfig | null) => void): () => void;
 }
 
 /** Options for `ConfigSync`. */
@@ -90,6 +90,14 @@ export function toPublisherConfig(cfg: ServiceConfig): ServicePublisherConfig {
  * Subscribes to config-change events and pushes the resulting profile to
  * the PDS. Construct once at brain startup and call `start()` / `stop()`
  * to control the subscription lifecycle.
+ *
+ * @deprecated SINGLE-LISTING ONLY — not multi-listing safe. This class
+ * publishes/unpublishes the default `self` listing regardless of which rkey
+ * changed (it intentionally discards the event's `rkey`). It has no production
+ * construction sites; the live, multi-listing-aware publish fan-out is the
+ * `onServiceConfigChanged((rkey, cfg) => …)` subscriber in Core/HNL
+ * (`wire_publisher.ts`) and mobile bootstrap, which publish per-rkey. Kept for
+ * reference + its existing tests; do not wire it into a multi-listing path.
  */
 export class ConfigSync {
   private readonly publisher: ServicePublisher;
@@ -123,7 +131,10 @@ export class ConfigSync {
   /** Begin listening for config changes. Idempotent. */
   start(): void {
     if (this.unsubscribe !== null) return;
-    this.unsubscribe = this.source.onServiceConfigChanged((cfg) => {
+    this.unsubscribe = this.source.onServiceConfigChanged((_rkey, cfg) => {
+      // ConfigSync is the single-listing publisher driver; it acts on the
+      // changed listing's config (the rkey is carried by the publisher's own
+      // sync path). Multi-listing fan-out lives in the Core/HNL subscribers.
       this.schedule(cfg);
     });
   }
