@@ -17,10 +17,12 @@ import {
   INITIAL_STEP,
   previousStep,
   type CreateDraft,
+  type ExternalAtprotoDraft,
   type RecoverDraft,
   type Step,
 } from '../../onboarding/state';
 
+import { ExistingAtprotoIdentity } from './existing_atproto_identity';
 import { HandlePicker } from './handle_pick';
 import { MnemonicReveal } from './mnemonic_reveal';
 import { MnemonicVerify } from './mnemonic_verify';
@@ -76,6 +78,7 @@ export function OnboardingFlow(): React.ReactElement {
       return (
         <ModeChoice
           onCreate={() => setStep({ kind: 'create_name', draft: {} })}
+          onExternalAtproto={() => setStep({ kind: 'external_identity', draft: {} })}
           onRecover={() => setStep({ kind: 'recover_mnemonic', draft: {} })}
           onBack={goBack}
         />
@@ -288,6 +291,131 @@ export function OnboardingFlow(): React.ReactElement {
               kind: 'error',
               message,
               retry: { kind: 'recover_mnemonic', draft: { mnemonic: step.draft.mnemonic } },
+            })
+          }
+        />
+      );
+
+    case 'external_identity':
+      return (
+        <ExistingAtprotoIdentity
+          initialIdentifier={step.draft.identifier}
+          initialAppPassword={step.draft.appPassword}
+          initialPlcToken={step.draft.plcToken}
+          onBack={goBack}
+          onContinue={(identifier, appPassword, plcToken) =>
+            setStep({
+              kind: 'external_passphrase',
+              draft: { ...step.draft, identifier, appPassword, plcToken },
+            })
+          }
+        />
+      );
+
+    case 'external_passphrase':
+      return (
+        <PassphraseSet
+          flow="external"
+          initialPassphrase={step.draft.passphrase}
+          initialMode={step.draft.startupMode ?? 'auto'}
+          onBack={goBack}
+          onContinue={(passphrase, mode) => {
+            const mnemonic = step.draft.mnemonic ?? generateNewMnemonic();
+            setStep({
+              kind: 'external_mnemonic_reveal',
+              draft: { ...step.draft, passphrase, startupMode: mode, mnemonic },
+            });
+          }}
+        />
+      );
+
+    case 'external_mnemonic_reveal':
+      if (step.draft.mnemonic === undefined) {
+        setStep({
+          kind: 'external_mnemonic_reveal',
+          draft: { ...step.draft, mnemonic: generateNewMnemonic() },
+        });
+        return <></>;
+      }
+      return (
+        <MnemonicReveal
+          step={{ kind: 'external_mnemonic_reveal', draft: {} }}
+          mnemonic={step.draft.mnemonic}
+          onBack={goBack}
+          onContinue={() =>
+            setStep({
+              kind: 'external_mnemonic_verify',
+              draft: step.draft,
+            })
+          }
+        />
+      );
+
+    case 'external_mnemonic_verify':
+      if (step.draft.mnemonic === undefined) return <></>;
+      return (
+        <MnemonicVerify
+          step={{ kind: 'external_mnemonic_verify', draft: {} }}
+          mnemonic={step.draft.mnemonic}
+          onBack={goBack}
+          onViewPhrase={() =>
+            setStep({ kind: 'external_mnemonic_reveal', draft: step.draft })
+          }
+          onVerified={() => {
+            void markVerified();
+            const complete: ExternalAtprotoDraft = {
+              identifier: step.draft.identifier ?? '',
+              appPassword: step.draft.appPassword ?? '',
+              plcToken: step.draft.plcToken ?? '',
+              passphrase: step.draft.passphrase ?? '',
+              startupMode: step.draft.startupMode ?? 'auto',
+              mnemonic: step.draft.mnemonic ?? [],
+            };
+            setStep({ kind: 'provisioning_external', draft: complete });
+          }}
+          onSkip={() => {
+            void markVerificationPending();
+            const complete: ExternalAtprotoDraft = {
+              identifier: step.draft.identifier ?? '',
+              appPassword: step.draft.appPassword ?? '',
+              plcToken: step.draft.plcToken ?? '',
+              passphrase: step.draft.passphrase ?? '',
+              startupMode: step.draft.startupMode ?? 'auto',
+              mnemonic: step.draft.mnemonic ?? [],
+            };
+            setStep({ kind: 'provisioning_external', draft: complete });
+          }}
+        />
+      );
+
+    case 'provisioning_external':
+      return (
+        <Provisioning
+          kind="external"
+          step={step}
+          options={{
+            mnemonic: step.draft.mnemonic,
+            passphrase: step.draft.passphrase,
+            identifier: step.draft.identifier,
+            appPassword: step.draft.appPassword,
+            plcToken: step.draft.plcToken,
+            startupMode: step.draft.startupMode,
+          }}
+          onDone={() => {
+            /* UnlockGate subscriber handles transition. */
+          }}
+          onError={(message) =>
+            setStep({
+              kind: 'error',
+              message,
+              retry: {
+                kind: 'external_identity',
+                draft: {
+                  identifier: step.draft.identifier,
+                  appPassword: step.draft.appPassword,
+                  plcToken: step.draft.plcToken,
+                },
+              },
             })
           }
         />

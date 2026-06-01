@@ -16,6 +16,7 @@ import { colors, radius, spacing, textStyles } from '../../theme';
 
 export interface MnemonicVerifyProps {
   mnemonic: string[];
+  step?: Step;
   onVerified: () => void;
   onBack: () => void;
   /**
@@ -87,7 +88,7 @@ export function MnemonicVerify(props: MnemonicVerifyProps): React.ReactElement {
     if (error !== null) setError(null);
   };
 
-  const step: Step = { kind: 'create_mnemonic_verify', draft: {} };
+  const step: Step = props.step ?? { kind: 'create_mnemonic_verify', draft: {} };
   const compact = props.compact === true;
   return (
     <OnboardingShell

@@ -15,12 +15,13 @@ import { colors, radius, spacing, textStyles } from '../../theme';
 
 export interface MnemonicRevealProps {
   mnemonic: string[];
+  step?: Step;
   onContinue: () => void;
   onBack: () => void;
 }
 
 export function MnemonicReveal(props: MnemonicRevealProps): React.ReactElement {
-  const step: Step = { kind: 'create_mnemonic_reveal', draft: {} };
+  const step: Step = props.step ?? { kind: 'create_mnemonic_reveal', draft: {} };
   return (
     <OnboardingShell
       location={locateStep(step)}

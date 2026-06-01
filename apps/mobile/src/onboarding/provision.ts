@@ -64,7 +64,7 @@ import { hmac } from '@noble/hashes/hmac.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { randomBytes } from '@noble/ciphers/utils.js';
-import { PDSAccountClient } from '@dina/brain';
+import { PDSAccountClient, PDSAccountError } from '@dina/brain';
 import { seedDefaultPersonas } from './default_personas';
 import { saveWrappedSeed } from '../services/wrapped_seed_store';
 import { saveIdentitySeeds } from '../services/identity_store';
@@ -81,6 +81,7 @@ import {
 import { unlock } from '../hooks/useUnlock';
 import { resolveMsgBoxURL } from '../services/msgbox_wiring';
 import { persistStartupChoice } from '../services/startup_preferences';
+import { resolveExistingAtprotoIdentity } from '../services/atproto_identity';
 import type { StartupMode } from './state';
 
 export type ProvisionStage =
@@ -142,12 +143,29 @@ export interface ProvisionResult {
   handle: string;
 }
 
+export interface ExternalAtprotoProvisionOptions {
+  mnemonic: string[];
+  passphrase: string;
+  /** Existing AT Protocol handle or did:plc. */
+  identifier: string;
+  /** PDS/app password for the existing account. */
+  appPassword: string;
+  /** Optional token for PDSes that gate PLC operation signing. */
+  plcToken?: string;
+  /** Override the PLC directory URL. Defaults to `https://plc.directory`. */
+  plcURL?: string;
+  /** Override the MsgBox endpoint. Defaults to the resolved test-mailbox URL. */
+  msgboxEndpoint?: string;
+  startupMode?: StartupMode;
+  onProgress?: (p: ProvisionProgress) => void;
+}
+
 export const PROVISION_LABELS: Record<ProvisionStage, string> = {
   deriving_seed: 'Deriving master seed',
   deriving_keys: 'Deriving signing keys',
   persisting_keys: 'Saving keys to the keychain',
   wrapping_seed: 'Wrapping seed with passphrase',
-  creating_pds_account: 'Creating PDS account',
+  creating_pds_account: 'Connecting PDS account',
   publishing_plc_update: 'Publishing service endpoint to PLC',
   persisting_did: 'Saving identity',
   opening_vault: 'Opening vault',
@@ -309,6 +327,134 @@ export async function provisionIdentity(opts: ProvisionOptions): Promise<Provisi
   };
 }
 
+/**
+ * Existing AT Protocol identity flow. The user already owns a PDS
+ * account; Dina creates only the local vault/recovery material, then
+ * asks the existing PDS to sign a PLC update adding Dina's local
+ * signing key and MsgBox service.
+ */
+export async function provisionExternalAtprotoIdentity(
+  opts: ExternalAtprotoProvisionOptions,
+): Promise<ProvisionResult> {
+  const mnemonicStr = opts.mnemonic.map((w) => w.trim().toLowerCase()).join(' ');
+  const msgboxEndpoint = opts.msgboxEndpoint ?? resolveMsgBoxURL();
+  const plcURL = opts.plcURL ?? process.env.EXPO_PUBLIC_DINA_PLC_URL ?? 'https://plc.directory';
+
+  progress(opts.onProgress, 'deriving_seed');
+  const masterSeed = mnemonicToEntropy(mnemonicStr);
+
+  progress(opts.onProgress, 'deriving_keys');
+  const signing = deriveRootSigningKey(masterSeed, 0);
+  const rotation = deriveRotationKey(masterSeed, 0);
+
+  progress(opts.onProgress, 'persisting_keys');
+  await saveIdentitySeeds({
+    signingSeed: signing.privateKey,
+    rotationSeed: rotation.privateKey,
+  });
+
+  progress(opts.onProgress, 'wrapping_seed');
+  const wrapped = await wrapSeed(opts.passphrase, masterSeed);
+  await saveWrappedSeed(wrapped);
+
+  progress(opts.onProgress, 'creating_pds_account');
+  const resolved = await resolveExistingAtprotoIdentity(opts.identifier, { plcURL });
+  const account = new PDSAccountClient({ pdsUrl: resolved.pdsUrl });
+  let sessionDid: string;
+  let accessJwt: string;
+  let handle: string;
+  try {
+    const session = await account.createSession({
+      identifier: resolved.handle ?? resolved.did,
+      password: opts.appPassword,
+    });
+    sessionDid = session.did;
+    accessJwt = session.accessJwt;
+    handle = session.handle;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`PDS sign-in failed: ${msg}`);
+  }
+  if (sessionDid !== resolved.did) {
+    throw new Error(
+      `PDS sign-in returned ${sessionDid}, but ${opts.identifier.trim()} resolved to ${resolved.did}`,
+    );
+  }
+
+  progress(opts.onProgress, 'publishing_plc_update');
+  const dinaSigningDidKey = `did:key:${publicKeyToMultibase(signing.publicKey)}`;
+  const verificationMethods = {
+    ...resolved.verificationMethods,
+    dina_signing: dinaSigningDidKey,
+  };
+  const services = {
+    ...resolved.services,
+    'dina-messaging': {
+      type: 'DinaMsgBox',
+      endpoint: msgboxEndpoint,
+    },
+  };
+  const alsoKnownAs =
+    resolved.alsoKnownAs.length > 0 ? resolved.alsoKnownAs : [`at://${handle}`];
+  try {
+    const operation = await account.signPlcOperation({
+      accessJwt,
+      ...(opts.plcToken !== undefined && opts.plcToken.trim() !== ''
+        ? { token: opts.plcToken.trim() }
+        : {}),
+      rotationKeys: resolved.rotationKeys,
+      alsoKnownAs,
+      verificationMethods,
+      services,
+    });
+    await account.submitPlcOperation({
+      accessJwt,
+      operation,
+    });
+  } catch (err) {
+    if (err instanceof PDSAccountError && err.xrpcError === 'TokenRequired') {
+      try {
+        await account.requestPlcOperationSignature(accessJwt);
+      } catch {
+        /* best-effort: the original TokenRequired is the actionable error */
+      }
+      throw new Error(
+        'PDS PLC update failed: this PDS requires a PLC token. We requested a token from the PDS; enter it in the optional PLC token field and try again.',
+      );
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`PDS PLC update failed: ${msg}`);
+  }
+
+  await Promise.all([
+    savePdsUrl(resolved.pdsUrl),
+    savePdsHandle(handle),
+    savePdsPassword(opts.appPassword),
+    savePdsEmail(defaultEmailForHandle(handle)),
+  ]);
+
+  progress(opts.onProgress, 'persisting_did');
+  await savePersistedDid(resolved.did);
+
+  seedDefaultPersonas();
+
+  progress(opts.onProgress, 'opening_vault');
+  const unlockResult = await unlock(opts.passphrase, wrapped);
+  if (unlockResult.step === 'failed') {
+    throw new Error(`Unlock failed after AT Protocol sign-in: ${unlockResult.error ?? 'unknown'}`);
+  }
+
+  await persistStartupChoice(opts.startupMode ?? 'manual', opts.passphrase);
+
+  progress(opts.onProgress, 'done');
+
+  const didKey = `did:key:${publicKeyToMultibase(signing.publicKey)}`;
+  return {
+    did: resolved.did,
+    didKey,
+    handle,
+  };
+}
 
 function defaultEmailForHandle(handle: string): string {
   // PDS createAccount accepts any RFC-5322-shaped value; we don't use

@@ -80,6 +80,26 @@ export interface CreateSessionParams {
   password: string;
 }
 
+export interface SignPlcOperationParams {
+  /** Access JWT returned by `createSession`. */
+  accessJwt: string;
+  /**
+   * Optional PLC operation token. Some PDS deployments require this
+   * extra proof before signing identity changes.
+   */
+  token?: string;
+  rotationKeys: string[];
+  alsoKnownAs: string[];
+  verificationMethods: Record<string, string>;
+  services: Record<string, { type: string; endpoint: string }>;
+}
+
+export interface SubmitPlcOperationParams {
+  /** Access JWT returned by `createSession`. */
+  accessJwt: string;
+  operation: Record<string, unknown>;
+}
+
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 /**
@@ -174,6 +194,87 @@ export class PDSAccountClient {
       throw await toAccountError('refreshSession', resp);
     }
     return this.parseSession(resp, 'refreshSession');
+  }
+
+  /**
+   * Ask a PDS-managed account to sign a did:plc update operation.
+   * Used when onboarding an existing AT Protocol identity whose PLC
+   * rotation key is managed by the user's PDS rather than by Dina.
+   */
+  async signPlcOperation(params: SignPlcOperationParams): Promise<Record<string, unknown>> {
+    if (!params.accessJwt) throw new PDSAccountError('accessJwt is required', null);
+    if (!Array.isArray(params.rotationKeys) || params.rotationKeys.length === 0) {
+      throw new PDSAccountError('rotationKeys are required', null);
+    }
+    const body: Record<string, unknown> = {
+      rotationKeys: params.rotationKeys,
+      alsoKnownAs: params.alsoKnownAs,
+      verificationMethods: params.verificationMethods,
+      services: params.services,
+    };
+    if (params.token !== undefined && params.token !== '') body.token = params.token;
+    const url = `${this.pdsUrl}/xrpc/com.atproto.identity.signPlcOperation`;
+    const resp = await this.fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        Authorization: `Bearer ${params.accessJwt}`,
+      },
+      body: JSON.stringify(body),
+    });
+    if (resp.status !== 200) {
+      throw await toAccountError('signPlcOperation', resp);
+    }
+    const parsed = await parseJSON(resp);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new PDSAccountError('signPlcOperation: malformed response', resp.status);
+    }
+    const operation = (parsed as Record<string, unknown>).operation;
+    if (!operation || typeof operation !== 'object' || Array.isArray(operation)) {
+      throw new PDSAccountError('signPlcOperation: response missing operation', resp.status);
+    }
+    return operation as Record<string, unknown>;
+  }
+
+  /** Submit a signed did:plc operation through the authenticated PDS. */
+  async submitPlcOperation(params: SubmitPlcOperationParams): Promise<void> {
+    if (!params.accessJwt) throw new PDSAccountError('accessJwt is required', null);
+    if (!params.operation || typeof params.operation !== 'object') {
+      throw new PDSAccountError('operation is required', null);
+    }
+    const url = `${this.pdsUrl}/xrpc/com.atproto.identity.submitPlcOperation`;
+    const resp = await this.fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        Authorization: `Bearer ${params.accessJwt}`,
+      },
+      body: JSON.stringify({ operation: params.operation }),
+    });
+    if (resp.status !== 200) {
+      throw await toAccountError('submitPlcOperation', resp);
+    }
+  }
+
+  /**
+   * Request a PLC operation token from the PDS. PDSes typically send
+   * this token to the account's registered email address.
+   */
+  async requestPlcOperationSignature(accessJwt: string): Promise<void> {
+    if (!accessJwt) throw new PDSAccountError('accessJwt is required', null);
+    const url = `${this.pdsUrl}/xrpc/com.atproto.identity.requestPlcOperationSignature`;
+    const resp = await this.fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${accessJwt}`,
+      },
+    });
+    if (resp.status !== 200) {
+      throw await toAccountError('requestPlcOperationSignature', resp);
+    }
   }
 
   /**

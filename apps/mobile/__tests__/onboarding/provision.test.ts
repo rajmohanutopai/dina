@@ -18,6 +18,7 @@
 import {
   hasCompletedOnboarding,
   provisionIdentity,
+  provisionExternalAtprotoIdentity,
   recoverIdentity,
   deriveHandle,
 } from '../../src/onboarding/provision';
@@ -299,6 +300,155 @@ describe('provisionIdentity (PDS-first)', () => {
     ).rejects.toThrow(/PLC update.*failed/);
     expect(isUnlocked()).toBe(false);
     expect(await loadPersistedDid()).toBeNull();
+  });
+});
+
+describe('provisionExternalAtprotoIdentity', () => {
+  it('connects an existing did:plc, asks the PDS to sign Dina PLC fields, and unlocks', async () => {
+    const mnemonic = generateNewMnemonic();
+    const externalPassword = 'external-app-password';
+    const handle = 'alice.bsky.social';
+    const signedOperation = {
+      type: 'plc_operation',
+      sig: 'pds-signed',
+      verificationMethods: {
+        atproto: 'did:key:zQ3atproto',
+        dina_signing: 'did:key:z6dina',
+      },
+    };
+    const stub = jest.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = String(input);
+      if (url === `${TEST_PLC_URL}/${STUB_DID}/data`) {
+        return new Response(
+          JSON.stringify({
+            rotationKeys: ['did:key:zQ3existingRotation'],
+            alsoKnownAs: [`at://${handle}`],
+            verificationMethods: { atproto: 'did:key:zQ3atproto' },
+            services: {
+              atproto_pds: {
+                type: 'AtprotoPersonalDataServer',
+                endpoint: TEST_PDS_URL,
+              },
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      if (url.includes('com.atproto.server.createSession')) {
+        const body = JSON.parse(String(init?.body));
+        expect(body).toEqual({ identifier: handle, password: externalPassword });
+        return new Response(
+          JSON.stringify({
+            did: STUB_DID,
+            handle,
+            accessJwt: 'existing-access',
+            refreshJwt: 'existing-refresh',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      if (url.includes('com.atproto.identity.signPlcOperation')) {
+        const body = JSON.parse(String(init?.body));
+        expect(body.rotationKeys).toEqual(['did:key:zQ3existingRotation']);
+        expect(body.alsoKnownAs).toEqual([`at://${handle}`]);
+        expect(body.verificationMethods.dina_signing).toMatch(/^did:key:/);
+        expect(body.services['dina-messaging']).toEqual({
+          type: 'DinaMsgBox',
+          endpoint: TEST_MSGBOX,
+        });
+        return new Response(JSON.stringify({ operation: signedOperation }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (url.includes('com.atproto.identity.submitPlcOperation')) {
+        const body = JSON.parse(String(init?.body));
+        expect(body).toEqual({ operation: signedOperation });
+        return new Response('{}', {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      throw new Error(`unmocked URL ${url}`);
+    }) as unknown as jest.Mock<Promise<Response>, [RequestInfo | URL, RequestInit?]>;
+    (globalThis as unknown as { fetch: typeof globalThis.fetch }).fetch =
+      stub as unknown as typeof globalThis.fetch;
+
+    const result = await provisionExternalAtprotoIdentity({
+      mnemonic,
+      passphrase: TEST_PASSPHRASE,
+      identifier: STUB_DID,
+      appPassword: externalPassword,
+      msgboxEndpoint: TEST_MSGBOX,
+      plcURL: TEST_PLC_URL,
+    });
+
+    expect(result.did).toBe(STUB_DID);
+    expect(result.handle).toBe(handle);
+    expect(await loadPersistedDid()).toBe(STUB_DID);
+    expect(isUnlocked()).toBe(true);
+
+    const infra = await loadInfraPreferences();
+    expect(infra.pdsUrl).toBe(TEST_PDS_URL);
+    expect(infra.pdsHandle).toBe(handle);
+    expect(infra.pdsPassword).toBe(externalPassword);
+  });
+
+  it('fails loudly when the PDS refuses the PLC update', async () => {
+    const mnemonic = generateNewMnemonic();
+    const handle = 'alice.bsky.social';
+    (globalThis as unknown as { fetch: typeof globalThis.fetch }).fetch = jest.fn(
+      async (input: RequestInfo | URL): Promise<Response> => {
+        const url = String(input);
+        if (url === `${TEST_PLC_URL}/${STUB_DID}/data`) {
+          return new Response(
+            JSON.stringify({
+              rotationKeys: ['did:key:zQ3existingRotation'],
+              alsoKnownAs: [`at://${handle}`],
+              verificationMethods: { atproto: 'did:key:zQ3atproto' },
+              services: {
+                atproto_pds: {
+                  type: 'AtprotoPersonalDataServer',
+                  endpoint: TEST_PDS_URL,
+                },
+              },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('com.atproto.server.createSession')) {
+          return new Response(
+            JSON.stringify({
+              did: STUB_DID,
+              handle,
+              accessJwt: 'existing-access',
+              refreshJwt: 'existing-refresh',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('com.atproto.identity.signPlcOperation')) {
+          return new Response(
+            JSON.stringify({ error: 'TokenRequired', message: 'PLC token required' }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        throw new Error(`unmocked URL ${url}`);
+      },
+    ) as unknown as typeof globalThis.fetch;
+
+    await expect(
+      provisionExternalAtprotoIdentity({
+        mnemonic,
+        passphrase: TEST_PASSPHRASE,
+        identifier: STUB_DID,
+        appPassword: 'external-app-password',
+        msgboxEndpoint: TEST_MSGBOX,
+        plcURL: TEST_PLC_URL,
+      }),
+    ).rejects.toThrow(/PDS PLC update failed/);
+    expect(await loadPersistedDid()).toBeNull();
+    expect(isUnlocked()).toBe(false);
   });
 });
 

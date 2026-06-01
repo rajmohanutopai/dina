@@ -20,6 +20,7 @@ import {
   type ProvisionStage,
   type ProvisionResult,
   provisionIdentity,
+  provisionExternalAtprotoIdentity,
   recoverIdentity,
 } from '../../onboarding/provision';
 import { colors, radius, spacing, textStyles } from '../../theme';
@@ -50,6 +51,13 @@ export type ProvisioningProps =
       onDone: (result: ProvisionResult) => void;
       onError: (message: string) => void;
       step: Step;
+    }
+  | {
+      kind: 'external';
+      options: Parameters<typeof provisionExternalAtprotoIdentity>[0];
+      onDone: (result: ProvisionResult) => void;
+      onError: (message: string) => void;
+      step: Step;
     };
 
 export function Provisioning(props: ProvisioningProps): React.ReactElement {
@@ -67,7 +75,12 @@ export function Provisioning(props: ProvisioningProps): React.ReactElement {
         const result =
           props.kind === 'create'
             ? await provisionIdentity({ ...props.options, onProgress: handleProgress })
-            : await recoverIdentity({ ...props.options, onProgress: handleProgress });
+            : props.kind === 'recover'
+              ? await recoverIdentity({ ...props.options, onProgress: handleProgress })
+              : await provisionExternalAtprotoIdentity({
+                  ...props.options,
+                  onProgress: handleProgress,
+                });
         if (cancelled) return;
         props.onDone(result);
       } catch (err) {
@@ -84,10 +97,17 @@ export function Provisioning(props: ProvisioningProps): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const headline = props.kind === 'create' ? 'Creating your Dina' : 'Restoring your Dina';
+  const headline =
+    props.kind === 'create'
+      ? 'Creating your Dina'
+      : props.kind === 'recover'
+        ? 'Restoring your Dina'
+        : 'Connecting your identity';
   const subtitle =
     props.kind === 'create'
       ? 'We\u2019re generating keys, wrapping your master seed, and registering your identity with the Dina network.'
+      : props.kind === 'external'
+        ? 'We\u2019re preparing your local vault, signing into your PDS, and adding Dina endpoints to your did:plc.'
       : 'We\u2019re re-deriving your keys from the recovery phrase and restoring your local vault.';
 
   return (
