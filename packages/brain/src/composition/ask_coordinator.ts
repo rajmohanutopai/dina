@@ -48,6 +48,7 @@ import {
   createAskStatusHandler,
   type AskAnswer,
   type AskExecuteFn,
+  type AskFailure,
   type AskHandlerOptions,
   type AskSubmitResult,
   type AskStatusOutcome,
@@ -320,7 +321,7 @@ export function buildAgenticExecuteFn(args: {
       const message = err instanceof Error ? err.message : String(err);
       return { kind: 'failure', failure: { kind: 'execute_crashed', message } };
     }
-    return translateLoopResult(result);
+    return translateLoopResult(result, input.question);
   };
 }
 
@@ -356,16 +357,26 @@ export function workflowTaskAsSource(core: AskCoordinatorCoreClient): ApprovalSo
   };
 }
 
-function translateLoopResult(result: AgenticLoopResult): ReturnType<AskExecuteFn> extends Promise<infer R> ? R : never {
+function translateLoopResult(
+  result: AgenticLoopResult,
+  query: string,
+): ReturnType<AskExecuteFn> extends Promise<infer R> ? R : never {
   if (result.finishReason === 'completed') {
     // Surface successful `query_service` dispatches alongside the
     // narrative so the chat-bridge (`coordinator_ask_handler`) can
     // post lifecycle-tracked messages instead of duplicating the
     // narrative + workflow-event push (the racey two-message pattern).
     const serviceQueries = extractServiceQueriesFromToolCalls(result.toolCalls);
+    const missingCapabilities = extractMissingCapabilitiesFromToolCalls(
+      result.toolCalls,
+      query,
+      serviceQueries.length > 0,
+    );
     const answer: AskAnswer = { text: result.answer };
     if (serviceQueries.length > 0) {
       answer.serviceQueries = serviceQueries;
+    } else if (missingCapabilities.length > 0) {
+      answer.missingCapabilities = missingCapabilities;
     }
     return { kind: 'answer', answer };
   }
@@ -394,18 +405,26 @@ function translateLoopResult(result: AgenticLoopResult): ReturnType<AskExecuteFn
   if (result.finishReason === 'provider_error' && result.providerErrorMessage) {
     return {
       kind: 'failure',
-      failure: {
-        kind: 'provider_error',
-        message: result.providerErrorMessage,
-      },
+      failure: withMissingCapabilityDetail(
+        {
+          kind: 'provider_error',
+          message: result.providerErrorMessage,
+        },
+        result.toolCalls,
+        query,
+      ),
     };
   }
   return {
     kind: 'failure',
-    failure: {
-      kind: result.finishReason,
-      message: `agentic loop terminated with ${result.finishReason}`,
-    },
+    failure: withMissingCapabilityDetail(
+      {
+        kind: result.finishReason,
+        message: `agentic loop terminated with ${result.finishReason}`,
+      },
+      result.toolCalls,
+      query,
+    ),
   };
 }
 
@@ -466,4 +485,126 @@ function extractServiceQueriesFromToolCalls(
     });
   }
   return out;
+}
+
+interface MissingCapabilityPayload {
+  capability: string;
+  query?: string;
+}
+
+function withMissingCapabilityDetail(
+  failure: AskFailure,
+  toolCalls: AgenticLoopResult['toolCalls'],
+  query: string,
+): AskFailure {
+  const missingCapabilities = extractMissingCapabilitiesFromToolCalls(toolCalls, query, false);
+  if (missingCapabilities.length === 0) return failure;
+  return {
+    ...failure,
+    detail: {
+      ...(failure.detail ?? {}),
+      missingCapabilities,
+    },
+  };
+}
+
+function extractMissingCapabilitiesFromToolCalls(
+  toolCalls: AgenticLoopResult['toolCalls'],
+  query: string,
+  hasServiceQuery: boolean,
+): MissingCapabilityPayload[] {
+  if (hasServiceQuery) return [];
+
+  const out: MissingCapabilityPayload[] = [];
+  const seen = new Set<string>();
+  const add = (capability: string | null): void => {
+    const normalized = capability?.trim();
+    if (normalized === undefined || normalized === '' || seen.has(normalized)) return;
+    seen.add(normalized);
+    out.push({ capability: normalized, query });
+  };
+
+  for (const call of toolCalls) {
+    if (call.name === 'search_capabilities' && call.outcome.success) {
+      add(missingCapabilityFromDiscoveryCall(call.arguments, call.outcome.result, query));
+      continue;
+    }
+    if (call.name === 'search_provider_services' && call.outcome.success) {
+      add(missingCapabilityFromSearchCall(call.arguments, call.outcome.result, query));
+      continue;
+    }
+    if (call.name === 'search_provider_services' && !call.outcome.success) {
+      add(
+        missingCapabilityFromFailedSearchCall(
+          call.arguments,
+          'error' in call.outcome ? call.outcome.error : '',
+          query,
+        ),
+      );
+    }
+  }
+
+  if (out.length === 0 && triedServiceDiscovery(toolCalls)) {
+    add(extractNamespacedCapability(query));
+  }
+
+  return out;
+}
+
+function missingCapabilityFromSearchCall(
+  args: Record<string, unknown>,
+  result: unknown,
+  query: string,
+): string | null {
+  if (!Array.isArray(result) || result.length !== 0) return null;
+  const explicit = extractNamespacedCapability(query);
+  if (explicit !== null) return explicit;
+  const raw = args.capability;
+  if (typeof raw !== 'string') return null;
+  const capability = raw.trim();
+  return capability !== '' ? capability : null;
+}
+
+function missingCapabilityFromFailedSearchCall(
+  args: Record<string, unknown>,
+  error: string,
+  query: string,
+): string | null {
+  if (!/AppView responded 400/i.test(error)) return null;
+  const explicit = extractNamespacedCapability(query);
+  if (explicit !== null) return explicit;
+  const raw = args.capability;
+  if (typeof raw !== 'string') return null;
+  const capability = raw.trim();
+  return extractNamespacedCapability(capability) ?? (capability !== '' ? capability : null);
+}
+
+function missingCapabilityFromDiscoveryCall(
+  args: Record<string, unknown>,
+  result: unknown,
+  query: string,
+): string | null {
+  if (!isEmptyCapabilityDiscovery(result)) return null;
+  const intent = typeof args.intent === 'string' ? args.intent : '';
+  return extractNamespacedCapability(`${intent} ${query}`);
+}
+
+function isEmptyCapabilityDiscovery(result: unknown): boolean {
+  if (!result || typeof result !== 'object') return false;
+  const capabilities = (result as { capabilities?: unknown }).capabilities;
+  return Array.isArray(capabilities) && capabilities.length === 0;
+}
+
+function triedServiceDiscovery(toolCalls: AgenticLoopResult['toolCalls']): boolean {
+  return toolCalls.some(
+    (call) =>
+      call.name === 'search_capabilities' ||
+      call.name === 'search_provider_services' ||
+      call.name === 'query_service',
+  );
+}
+
+function extractNamespacedCapability(text: string): string | null {
+  const match = text.toLowerCase().match(/\b[a-z0-9]+(?:\.[a-z0-9_]+)+\b/);
+  return match?.[0] ?? null;
 }

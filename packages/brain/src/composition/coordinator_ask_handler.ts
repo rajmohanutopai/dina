@@ -54,7 +54,11 @@ import { resetAskApprovalGateway, setAskApprovalGateway } from './ask_gateway_re
 
 import type { AskCoordinator } from './ask_coordinator';
 import type { AskFailure } from '../ask/ask_handler';
-import type { AskCommandHandler } from '../chat/orchestrator';
+import {
+  makeMissingCapabilityNotice,
+  type AskCommandHandler,
+  type MissingCapabilityNotice,
+} from '../chat/orchestrator';
 
 export interface CreateCoordinatorAskHandlerOptions {
   coordinator: AskCoordinator;
@@ -102,6 +106,8 @@ interface PendingTracking {
   persona: string | undefined;
   /** Thread id captured from the ask's originating chat call. */
   threadId: string;
+  /** Original user ask; used to recover capability empty states from async failures. */
+  query: string;
 }
 
 /**
@@ -224,6 +230,7 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
       }
       const answerText = extractAnswerText(parsed);
       const serviceQueries = extractServiceQueries(parsed);
+      const missingCapabilities = extractMissingCapabilities(parsed, tracking.query);
 
       if (formatHeader !== null && tracking.approvalId !== undefined) {
         const header = formatHeader({ askId, approvalId: tracking.approvalId });
@@ -267,6 +274,14 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
         return;
       }
 
+      if (missingCapabilities.length > 0) {
+        if (hasAskPlaceholder) {
+          updateAskLifecycle(targetThread, askId, { status: 'complete' }, '');
+        }
+        postMissingCapabilityCards(targetThread, answerText, missingCapabilities);
+        return;
+      }
+
       if (hasAskPlaceholder) {
         // One-bubble morph — patch the placeholder content + status.
         updateAskLifecycle(targetThread, askId, { status: 'complete' }, answerText);
@@ -284,6 +299,21 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
         failureKind,
         raw: errPayload as AskFailure | string,
       });
+      let missingCapabilities = extractMissingCapabilities(errPayload, tracking.query);
+      if (missingCapabilities.length === 0) {
+        missingCapabilities = missingCapabilitiesFromFailedAsk(
+          tracking.query,
+          failureKind,
+          errPayload,
+        );
+      }
+      if (missingCapabilities.length > 0) {
+        if (hasAskPlaceholder) {
+          updateAskLifecycle(targetThread, askId, { status: 'complete' }, '');
+        }
+        postMissingCapabilityCards(targetThread, text, missingCapabilities);
+        return;
+      }
       const status = record.status === 'failed' ? 'failed' : 'expired';
       if (hasAskPlaceholder) {
         updateAskLifecycle(targetThread, askId, { status, error: text }, text);
@@ -314,16 +344,25 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
     // Submission produced a terminal answer in the fast-path window.
     if (result.kind === 'fast_path' && result.body.status === 'complete') {
       const answer = result.body.answer ?? {};
-      return { response: extractAnswerText(answer), sources: [] };
+      return {
+        response: extractAnswerText(answer),
+        sources: [],
+        missingCapabilities: extractMissingCapabilities(answer, query),
+      };
     }
 
     // Submission produced a terminal failure in the fast-path window.
     if (result.kind === 'fast_path' && result.body.status === 'failed') {
       const raw = result.body.error ?? {};
       const failureKind = extractFailureKind(raw, 'failed');
+      let missingCapabilities = extractMissingCapabilities(raw, query);
+      if (missingCapabilities.length === 0) {
+        missingCapabilities = missingCapabilitiesFromFailedAsk(query, failureKind, raw);
+      }
       return {
         response: formatFailure({ failureKind, raw: raw as AskFailure | string }),
         sources: [],
+        missingCapabilities,
       };
     }
 
@@ -338,6 +377,7 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
         approvalId,
         persona,
         threadId: callerThread,
+        query,
       });
       const placeholder = formatPending({ approvalId, persona });
       // Write an `approval`-typed message into the originating thread.
@@ -373,6 +413,7 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
         approvalId: undefined,
         persona: undefined,
         threadId: callerThread,
+        query,
       });
       const placeholder = "Working on it — I'll reply when the answer is ready.";
       addLifecycleMessage(callerThread, placeholder, {
@@ -472,6 +513,99 @@ function extractServiceQueries(value: unknown): Array<{
     });
   }
   return out;
+}
+
+function extractMissingCapabilities(
+  value: unknown,
+  fallbackQuery?: string,
+): MissingCapabilityNotice[] {
+  const raw = readMissingCapabilityArray(value);
+  if (!Array.isArray(raw)) return [];
+
+  const out: MissingCapabilityNotice[] = [];
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    let capability = '';
+    let query = fallbackQuery;
+    let noticeId = '';
+
+    if (typeof entry === 'string') {
+      capability = entry;
+    } else if (typeof entry === 'object' && entry !== null) {
+      const e = entry as Record<string, unknown>;
+      capability = typeof e.capability === 'string' ? e.capability : '';
+      if (typeof e.query === 'string' && e.query.trim() !== '') query = e.query;
+      if (typeof e.noticeId === 'string') noticeId = e.noticeId;
+    }
+
+    const normalized = capability.trim();
+    if (normalized === '' || seen.has(normalized)) continue;
+    seen.add(normalized);
+
+    const trimmedQuery = query?.trim();
+    if (noticeId.trim() !== '') {
+      out.push({
+        noticeId: noticeId.trim(),
+        capability: normalized,
+        ...(trimmedQuery !== undefined && trimmedQuery !== '' ? { query: trimmedQuery } : {}),
+      });
+    } else {
+      out.push(makeMissingCapabilityNotice(normalized, trimmedQuery));
+    }
+  }
+  return out;
+}
+
+function readMissingCapabilityArray(value: unknown): unknown[] | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const v = value as Record<string, unknown>;
+  if (Array.isArray(v.missingCapabilities)) return v.missingCapabilities;
+  const detail = v.detail;
+  if (typeof detail !== 'object' || detail === null) return null;
+  const d = detail as Record<string, unknown>;
+  return Array.isArray(d.missingCapabilities) ? d.missingCapabilities : null;
+}
+
+function missingCapabilitiesFromFailedAsk(
+  query: string,
+  failureKind: string,
+  raw: unknown,
+): MissingCapabilityNotice[] {
+  if (!isCapabilityDiscoveryFailure(failureKind, raw)) return [];
+  const capability = extractNamespacedCapability(query);
+  return capability === null ? [] : [makeMissingCapabilityNotice(capability, query)];
+}
+
+function isCapabilityDiscoveryFailure(failureKind: string, raw: unknown): boolean {
+  if (failureKind === 'max_iterations' || failureKind === 'max_tool_calls') return true;
+  const detail =
+    typeof raw === 'object' && raw !== null && 'message' in raw
+      ? String((raw as { message: unknown }).message)
+      : typeof raw === 'string'
+        ? raw
+        : '';
+  return /AppView responded 400|no_candidate|no live providers|zero live providers/i.test(detail);
+}
+
+function extractNamespacedCapability(text: string): string | null {
+  const match = text.toLowerCase().match(/\b[a-z0-9]+(?:\.[a-z0-9_]+)+\b/);
+  return match?.[0] ?? null;
+}
+
+function postMissingCapabilityCards(
+  threadId: string,
+  content: string,
+  notices: MissingCapabilityNotice[],
+): void {
+  for (const notice of notices) {
+    addLifecycleMessage(threadId, content, {
+      kind: 'missing_capability',
+      status: 'ready',
+      noticeId: notice.noticeId,
+      capability: notice.capability,
+      query: notice.query,
+    });
+  }
 }
 
 /**

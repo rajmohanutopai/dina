@@ -22,6 +22,7 @@ import {
   updateMessageLifecycle,
   readLifecycle,
   subscribeToThread,
+  type MissingCapabilityLifecycle,
   type ServiceQueryLifecycle,
 } from '../../src/chat/thread';
 
@@ -188,6 +189,15 @@ describe('Chat Message Model + Thread', () => {
       };
     }
 
+    function makeMissingLifecycle(capability: string): MissingCapabilityLifecycle {
+      return {
+        kind: 'missing_capability',
+        status: 'ready',
+        noticeId: `missing-${capability}`,
+        capability,
+      };
+    }
+
     it('addLifecycleMessage posts a regular dina message with lifecycle metadata + taskId source', () => {
       const msg = addLifecycleMessage('main', 'Looking up Bus 42…', makeLifecycle('sq-1', 'Bus 42'));
       // Pattern parity with approval cards: lifecycle-tracked messages
@@ -203,6 +213,23 @@ describe('Chat Message Model + Thread', () => {
         expect(lc.status).toBe('pending');
       }
       expect(msg.sources).toEqual(['sq-1']);
+    });
+
+    it('addLifecycleMessage posts a missing-capability card with noticeId source', () => {
+      const msg = addLifecycleMessage(
+        'main',
+        'No public service advertises "com.acme.widget_price" right now.',
+        makeMissingLifecycle('com.acme.widget_price'),
+      );
+
+      expect(msg.type).toBe('dina');
+      expect(msg.sources).toEqual(['missing-com.acme.widget_price']);
+      const lc = readLifecycle(msg);
+      expect(lc?.kind).toBe('missing_capability');
+      if (lc?.kind === 'missing_capability') {
+        expect(lc.capability).toBe('com.acme.widget_price');
+        expect(lc.status).toBe('ready');
+      }
     });
 
     it('readLifecycle returns null when metadata is missing or malformed', () => {

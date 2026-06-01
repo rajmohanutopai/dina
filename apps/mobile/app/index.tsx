@@ -30,6 +30,7 @@ import {
 import { InlineApprovalCard } from '../src/components/InlineApprovalCard';
 import { InlineBriefingCard } from '../src/components/InlineBriefingCard';
 import { InlineMarkdownText } from '../src/components/InlineMarkdownText';
+import { InlineMissingCapabilityCard } from '../src/components/InlineMissingCapabilityCard';
 import { InlineNudgeCard } from '../src/components/InlineNudgeCard';
 import { InlineReminderCard } from '../src/components/InlineReminderCard';
 import { InlineReviewDraftCard } from '../src/components/InlineReviewDraftCard';
@@ -58,6 +59,7 @@ type UiMessage = ChatMessage & {
     | 'service-approval'
     | 'vault-read-approval'
     | 'service-query'
+    | 'missing-capability'
     | 'ask-pending'
     | 'review-draft'
     | 'nudge'
@@ -89,6 +91,9 @@ function toDisplayType(m: ChatMessage): UiMessage['displayType'] {
     | undefined;
   if (m.type === 'dina' && lifecycle?.kind === 'service_query') {
     return 'service-query';
+  }
+  if (m.type === 'dina' && lifecycle?.kind === 'missing_capability') {
+    return 'missing-capability';
   }
   // ask_pending bubble — show as animated dots while status is
   // 'pending'. Once the bridge patches it to 'complete', content
@@ -274,6 +279,9 @@ export default function ChatScreen() {
     // LLM-narrative + workflow-event-push double message.
     if (item.displayType === 'service-query') {
       return <InlineServiceQueryCard message={item} />;
+    }
+    if (item.displayType === 'missing-capability') {
+      return <InlineMissingCapabilityCard message={item} />;
     }
     // review_draft card — chat-driven `/ask write a review of <X>`
     // flow. Editable sentiment / headline / body inline; Publish

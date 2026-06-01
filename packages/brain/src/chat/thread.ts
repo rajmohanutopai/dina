@@ -83,6 +83,22 @@ export interface ServiceQueryLifecycle {
 }
 
 /**
+ * `missing_capability` lifecycle metadata. Posted when service discovery
+ * truthfully returns zero live providers for a requested capability. It is a
+ * first-party Dina card, not a fake provider listing, so PeerLens/AppView
+ * discovery remains honest while the UI can still show a developer path for
+ * filling the gap.
+ */
+export interface MissingCapabilityLifecycle {
+  kind: 'missing_capability';
+  status: 'ready';
+  noticeId: string;
+  capability: string;
+  /** Optional raw user query or slash-command payload for context. */
+  query?: string;
+}
+
+/**
  * Terminal states for an `ask_pending` placeholder. The bridge
  * (`createCoordinatorAskHandler`) posts the placeholder when the
  * coordinator's fast-path window elapses (or pending_approval is
@@ -161,8 +177,10 @@ export interface ReviewDraftLifecycle {
 }
 
 /**
- * Discriminated union for `metadata.lifecycle`. Three kinds today:
+ * Discriminated union for `metadata.lifecycle`. Four kinds today:
  *   - `service_query` — workflow tasks for D2D capability calls.
+ *   - `missing_capability` — empty service-discovery result with a
+ *                            first-party developer onboarding card.
  *   - `ask_pending`   — async `/ask` deferrals (coordinator fast-path
  *                      timeout + pending_approval flows).
  *   - `review_draft`  — chat-driven `/ask write a review of <X>` flow.
@@ -171,6 +189,7 @@ export interface ReviewDraftLifecycle {
  */
 export type MessageLifecycle =
   | ServiceQueryLifecycle
+  | MissingCapabilityLifecycle
   | AskPendingLifecycle
   | ReviewDraftLifecycle;
 
@@ -587,6 +606,9 @@ export function addLifecycleMessage(
     case 'service_query':
       key = lifecycle.taskId;
       break;
+    case 'missing_capability':
+      key = lifecycle.noticeId;
+      break;
     case 'ask_pending':
       key = lifecycle.askId;
       break;
@@ -614,6 +636,11 @@ export function readLifecycle(msg: ChatMessage): MessageLifecycle | null {
   if (lc.kind === 'service_query') {
     if (typeof lc.taskId !== 'string' || lc.taskId === '') return null;
     return lc as unknown as ServiceQueryLifecycle;
+  }
+  if (lc.kind === 'missing_capability') {
+    if (typeof lc.noticeId !== 'string' || lc.noticeId === '') return null;
+    if (typeof lc.capability !== 'string' || lc.capability === '') return null;
+    return lc as unknown as MissingCapabilityLifecycle;
   }
   if (lc.kind === 'ask_pending') {
     if (typeof lc.askId !== 'string' || lc.askId === '') return null;

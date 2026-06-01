@@ -436,6 +436,71 @@ describe('createCoordinatorAskHandler — async window deferral', () => {
       dispose();
     }
   });
+
+  it('turns an async Ask-button missing capability into a fallback card', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let chatCount = 0;
+    const slowDiscoveryProvider: LLMProvider = {
+      name: 'scripted',
+      supportsStreaming: false,
+      supportsToolCalling: true,
+      supportsEmbedding: false,
+      chat: async () => {
+        if (chatCount === 0) await gate;
+        chatCount++;
+        return toolCallResp({
+          id: `search-${chatCount}`,
+          name: 'search_provider_services',
+          arguments: { capability: 'eta_query' },
+        });
+      },
+      stream: () => {
+        throw new Error('not used');
+      },
+      embed: async () => {
+        throw new Error('not used');
+      },
+    };
+
+    const coord = buildCoord(slowDiscoveryProvider, 1);
+    const { handler, dispose } = createCoordinatorAskHandler({
+      coordinator: coord,
+      requesterDid: REQUESTER,
+    });
+
+    try {
+      const r = await handler('who serves com.acme.widget_price?', { threadId: THREAD });
+      expect(r.response).toBe('');
+      expect(getThread(THREAD)[0]?.metadata?.lifecycle).toMatchObject({
+        kind: 'ask_pending',
+        status: 'pending',
+      });
+
+      release();
+      for (let i = 0; i < 20; i++) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+
+      const thread = getThread(THREAD);
+      expect(thread).toHaveLength(2);
+      expect(thread[0]?.content).toBe('');
+      expect(thread[0]?.metadata?.lifecycle).toMatchObject({
+        kind: 'ask_pending',
+        status: 'complete',
+      });
+      expect(thread[1]?.metadata?.lifecycle).toMatchObject({
+        kind: 'missing_capability',
+        status: 'ready',
+        capability: 'com.acme.widget_price',
+        query: 'who serves com.acme.widget_price?',
+      });
+    } finally {
+      dispose();
+    }
+  });
 });
 
 describe('createCoordinatorAskHandler — multi-thread routing', () => {

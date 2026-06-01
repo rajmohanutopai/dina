@@ -254,7 +254,7 @@ export { getAskApprovalGateway } from './composition/ask_gateway_registry';
 export { createCoordinatorAskHandler } from './composition/coordinator_ask_handler';
 export type { CreateCoordinatorAskHandlerOptions } from './composition/coordinator_ask_handler';
 export { setAskCommandHandler, resetAskCommandHandler } from './chat/orchestrator';
-export type { AskCommandHandler } from './chat/orchestrator';
+export type { AskCommandHandler, MissingCapabilityNotice } from './chat/orchestrator';
 
 // Typed chat-response surface — Python-parity port of
 // `brain/src/domain/response.py`. Mobile UI reads `ChatResponse.typed`

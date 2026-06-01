@@ -25,6 +25,7 @@ import type {
   ServiceProfile,
   SearchServicesParams,
 } from '../../src/appview_client/http';
+import { AppViewError } from '../../src/appview_client/http';
 import type { CoreClient, ServiceQueryResult as SendServiceQueryResult } from '@dina/core';
 
 function stubAppView(
@@ -337,6 +338,23 @@ describe('ServiceQueryOrchestrator.issueQuery — dispatch', () => {
     expect(coreSeen[0].schemaHash).toBe('hash-v1');
   });
 
+  it('normalizes namespaced custom capabilities before searching', async () => {
+    const appViewSeen: SearchServicesParams[] = [];
+    const orch = new ServiceQueryOrchestrator({
+      appViewClient: stubAppView([], appViewSeen),
+      coreClient: stubCore(),
+    });
+
+    await expect(
+      orch.issueQuery({
+        capability: 'Com.Acme.Widget_Price',
+        params: { text: 'quote' },
+      }),
+    ).rejects.toMatchObject({ code: 'no_candidate' });
+
+    expect(appViewSeen[0].capability).toBe('com.acme.widget_price');
+  });
+
   it('forwards geo search params to AppView', async () => {
     const appViewSeen: SearchServicesParams[] = [];
     const orch = new ServiceQueryOrchestrator({
@@ -407,6 +425,28 @@ describe('ServiceQueryOrchestrator.issueQuery — dispatch', () => {
       expect(err).toBeInstanceOf(ServiceOrchestratorError);
       expect((err as ServiceOrchestratorError).code).toBe('no_candidate');
     }
+  });
+
+  it('treats service-search 400 as no_candidate for open-vocabulary fallback', async () => {
+    const orch = new ServiceQueryOrchestrator({
+      appViewClient: {
+        searchServices: async () => {
+          throw new AppViewError(
+            'AppView responded 400',
+            400,
+            '/xrpc/com.dinakernel.service.search',
+          );
+        },
+      },
+      coreClient: stubCore(),
+    });
+
+    await expect(
+      orch.issueQuery({
+        capability: 'com.acme.widget_price',
+        params: { text: 'quote' },
+      }),
+    ).rejects.toMatchObject({ code: 'no_candidate' });
   });
 
   it('wraps sendServiceQuery errors as send_failed', async () => {

@@ -17,6 +17,7 @@
  */
 
 import {
+  makeMissingCapabilityNotice,
   resetServiceCommandHandler,
   setServiceCommandHandler,
   type ServiceCommandHandler,
@@ -95,7 +96,12 @@ export function wireServiceOrchestrator(options: ServiceWiringOptions): ServiceW
         },
       };
     } catch (err) {
-      return { ack: errorToAck(capability, err) };
+      return {
+        ack: errorToAck(capability, err),
+        ...(isNoCandidate(err)
+          ? { missingCapability: makeMissingCapabilityNotice(capability, payload) }
+          : {}),
+      };
     }
   };
   setServiceCommandHandler(chatHandler);
@@ -146,6 +152,10 @@ function defaultFormatAck(result: { serviceName: string; deduped: boolean }): st
   const name = result.serviceName !== '' ? result.serviceName : 'the service';
   if (result.deduped) return `Still asking ${name}…`;
   return `Asking ${name}…`;
+}
+
+function isNoCandidate(err: unknown): boolean {
+  return err instanceof ServiceOrchestratorError && err.code === 'no_candidate';
 }
 
 /**
