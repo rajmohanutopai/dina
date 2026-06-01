@@ -16,8 +16,13 @@
 
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { MAX_SERVICE_TTL, resolveCanonicalCapability } from '@dina/protocol';
-import type { AppViewClient, SearchServicesParams } from '../appview_client/http';
+import { MAX_SERVICE_TTL, resolveSearchableCapability } from '@dina/protocol';
+import {
+  AppViewError,
+  type AppViewClient,
+  type SearchServicesParams,
+  type ServiceProfile,
+} from '../appview_client/http';
 import type { CoreClient, ServiceQueryResult } from '@dina/core';
 import { pickTopCandidate, type Location, type RankOptions } from './candidate_ranker';
 import { getCapability, getTTL, computeSchemaHash } from './capabilities/registry';
@@ -29,12 +34,12 @@ import { getCapability, getTTL, computeSchemaHash } from './capabilities/registr
  * inbound — so the requester pipeline (AppView search, ranking, schema
  * lookup, sender-side validation, Core send) must ALL operate on the
  * canonical name, else `/service bus_eta` searches for an alias AppView
- * never indexes and the ranker exact-matches against a canonical profile
- * → spurious `no_candidate`. Out-of-registry custom capabilities (not in
- * the shared registry) fall back to the raw string so they still work.
+ * never indexes and the ranker exact-matches against a canonical profile.
+ * Namespaced custom capabilities (`com.acme.widget_price`) are their own
+ * searchable key, normalized by the shared resolver.
  */
 function canonicalizeRequested(capability: string): string {
-  return resolveCanonicalCapability(capability) ?? capability;
+  return resolveSearchableCapability(capability) ?? capability;
 }
 
 /** Minimal slice of `CoreClient` the orchestrator needs. */
@@ -227,7 +232,18 @@ export class ServiceQueryOrchestrator {
       radiusKm: req.radiusKm,
       q: req.q,
     };
-    const services = await this.appView.searchServices(searchParams);
+    let services: ServiceProfile[];
+    try {
+      services = await this.appView.searchServices(searchParams);
+    } catch (err) {
+      if (isSearchRejectionNoCandidate(err)) {
+        throw new ServiceOrchestratorError(
+          `no service advertises "${capability}"`,
+          'no_candidate',
+        );
+      }
+      throw err;
+    }
 
     const top = pickTopCandidate(capability, services, {
       viewer: req.viewer,
@@ -389,4 +405,12 @@ export class ServiceQueryOrchestrator {
 /** Default query-id: 16-byte hex. Matches existing dina-mobile conventions. */
 function defaultQueryId(): string {
   return bytesToHex(randomBytes(16));
+}
+
+function isSearchRejectionNoCandidate(err: unknown): boolean {
+  return (
+    err instanceof AppViewError &&
+    err.status === 400 &&
+    err.path === '/xrpc/com.dinakernel.service.search'
+  );
 }

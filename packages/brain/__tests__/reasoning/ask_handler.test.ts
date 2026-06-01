@@ -132,6 +132,185 @@ describe('makeAgenticAskHandler', () => {
     expect(result.sources).toEqual([]);
   });
 
+  it('surfaces a missing-capability notice when provider search returns zero candidates', async () => {
+    const searchCall: ToolCall = {
+      id: 'search-1',
+      name: 'search_provider_services',
+      arguments: { capability: 'com.acme.widget_price' },
+    };
+    const searchTool: AgentTool = {
+      name: 'search_provider_services',
+      description: 'Search providers.',
+      parameters: {
+        type: 'object',
+        properties: { capability: { type: 'string' } },
+        required: ['capability'],
+      },
+      execute: async () => [],
+    };
+    const tools = new ToolRegistry();
+    tools.register(searchTool);
+    const handler = makeAgenticAskHandler({
+      provider: scriptedProvider([
+        { content: '', toolCalls: [searchCall] },
+        { content: 'No Dina service is serving that yet.', toolCalls: [] },
+      ]),
+      tools,
+    });
+
+    const result = await handler('who serves com.acme.widget_price?');
+
+    expect(result.response).toBe('No Dina service is serving that yet.');
+    expect(result.missingCapabilities).toHaveLength(1);
+    expect(result.missingCapabilities![0]).toMatchObject({
+      capability: 'com.acme.widget_price',
+      query: 'who serves com.acme.widget_price?',
+    });
+  });
+
+  it('prefers an explicit capability in the Ask over a guessed provider-search capability', async () => {
+    const searchCall: ToolCall = {
+      id: 'search-1',
+      name: 'search_provider_services',
+      arguments: { capability: 'eta_query' },
+    };
+    const searchTool: AgentTool = {
+      name: 'search_provider_services',
+      description: 'Search providers.',
+      parameters: {
+        type: 'object',
+        properties: { capability: { type: 'string' } },
+        required: ['capability'],
+      },
+      execute: async () => [],
+    };
+    const tools = new ToolRegistry();
+    tools.register(searchTool);
+    const handler = makeAgenticAskHandler({
+      provider: scriptedProvider([
+        { content: '', toolCalls: [searchCall] },
+        { content: 'No Dina service is serving that yet.', toolCalls: [] },
+      ]),
+      tools,
+    });
+
+    const result = await handler('who serves com.acme.widget_price?');
+
+    expect(result.missingCapabilities).toHaveLength(1);
+    expect(result.missingCapabilities![0]).toMatchObject({
+      capability: 'com.acme.widget_price',
+    });
+  });
+
+  it('surfaces a missing-capability notice from normal Ask discovery when no capability is covered', async () => {
+    const discoveryCall: ToolCall = {
+      id: 'discover-1',
+      name: 'search_capabilities',
+      arguments: { intent: 'who serves com.acme.widget_price?' },
+    };
+    const discoveryTool: AgentTool = {
+      name: 'search_capabilities',
+      description: 'Discover capabilities.',
+      parameters: {
+        type: 'object',
+        properties: { intent: { type: 'string' } },
+        required: ['intent'],
+      },
+      execute: async () => ({ capabilities: [] }),
+    };
+    const tools = new ToolRegistry();
+    tools.register(discoveryTool);
+    const handler = makeAgenticAskHandler({
+      provider: scriptedProvider([
+        { content: '', toolCalls: [discoveryCall] },
+        { content: 'No Dina service is serving that yet.', toolCalls: [] },
+      ]),
+      tools,
+    });
+
+    const result = await handler('who serves com.acme.widget_price?');
+
+    expect(result.missingCapabilities).toHaveLength(1);
+    expect(result.missingCapabilities![0]).toMatchObject({
+      capability: 'com.acme.widget_price',
+      query: 'who serves com.acme.widget_price?',
+    });
+  });
+
+  it('surfaces a missing-capability notice when provider search rejects an open capability', async () => {
+    const searchCall: ToolCall = {
+      id: 'search-1',
+      name: 'search_provider_services',
+      arguments: { capability: 'com.acme.widget_price' },
+    };
+    const searchTool: AgentTool = {
+      name: 'search_provider_services',
+      description: 'Search providers.',
+      parameters: {
+        type: 'object',
+        properties: { capability: { type: 'string' } },
+        required: ['capability'],
+      },
+      execute: async () => {
+        throw new Error('AppView responded 400');
+      },
+    };
+    const tools = new ToolRegistry();
+    tools.register(searchTool);
+    const handler = makeAgenticAskHandler({
+      provider: scriptedProvider([
+        { content: '', toolCalls: [searchCall] },
+        { content: 'No Dina service is serving that yet.', toolCalls: [] },
+      ]),
+      tools,
+    });
+
+    const result = await handler('who serves com.acme.widget_price?');
+
+    expect(result.missingCapabilities).toHaveLength(1);
+    expect(result.missingCapabilities![0]).toMatchObject({
+      capability: 'com.acme.widget_price',
+    });
+  });
+
+  it('falls back to a missing-capability notice when Ask service discovery loops out', async () => {
+    const discoveryCall: ToolCall = {
+      id: 'discover-1',
+      name: 'search_capabilities',
+      arguments: { intent: 'who serves com.acme.widget_price?' },
+    };
+    const discoveryTool: AgentTool = {
+      name: 'search_capabilities',
+      description: 'Discover capabilities.',
+      parameters: {
+        type: 'object',
+        properties: { intent: { type: 'string' } },
+        required: ['intent'],
+      },
+      execute: async () => {
+        throw new Error('AppView responded 400');
+      },
+    };
+    const tools = new ToolRegistry();
+    tools.register(discoveryTool);
+    const handler = makeAgenticAskHandler({
+      provider: scriptedProvider([
+        { content: '', toolCalls: [discoveryCall] },
+        { content: '', toolCalls: [discoveryCall] },
+      ]),
+      tools,
+      loopOptions: { maxIterations: 2 },
+    });
+
+    const result = await handler('who serves com.acme.widget_price?');
+
+    expect(result.response).toMatch(/reasoning budget/);
+    expect(result.missingCapabilities).toHaveLength(1);
+    expect(result.missingCapabilities![0]).toMatchObject({
+      capability: 'com.acme.widget_price',
+    });
+  });
+
   it('onTurn trace fires with usage + tool-call summary', async () => {
     const traces: Array<Record<string, unknown>> = [];
     const handler = makeAgenticAskHandler({

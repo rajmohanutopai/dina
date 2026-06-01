@@ -18,7 +18,11 @@
  * chat UI can tap through to the corresponding workflow task.
  */
 
-import type { AskCommandHandler } from '../chat/orchestrator';
+import {
+  makeMissingCapabilityNotice,
+  type AskCommandHandler,
+  type MissingCapabilityNotice,
+} from '../chat/orchestrator';
 import type { LLMProvider } from '../llm/adapters/provider';
 import { VAULT_CONTEXT } from '../llm/prompts';
 import { runAgenticTurn, type AgenticLoopOptions } from './agentic_loop';
@@ -324,7 +328,42 @@ export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCom
     // "LLM narrative + workflow-event push" pair (Option D).
     const sources: string[] = [];
     const serviceQueries: ServiceQueryDispatch[] = [];
+    const missingCapabilities: MissingCapabilityNotice[] = [];
+    const seenMissingCapabilities = new Set<string>();
     for (const call of result.toolCalls) {
+      if (call.name === 'search_capabilities' && call.outcome.success) {
+        const capability = missingCapabilityFromDiscoveryCall(
+          call.arguments,
+          call.outcome.result,
+          query,
+        );
+        if (capability !== null && !seenMissingCapabilities.has(capability)) {
+          seenMissingCapabilities.add(capability);
+          missingCapabilities.push(makeMissingCapabilityNotice(capability, query));
+        }
+        continue;
+      }
+      if (call.name === 'search_provider_services' && call.outcome.success) {
+        const capability = missingCapabilityFromSearchCall(
+          call.arguments,
+          call.outcome.result,
+          query,
+        );
+        if (capability !== null && !seenMissingCapabilities.has(capability)) {
+          seenMissingCapabilities.add(capability);
+          missingCapabilities.push(makeMissingCapabilityNotice(capability, query));
+        }
+        continue;
+      }
+      if (call.name === 'search_provider_services' && !call.outcome.success) {
+        const error = 'error' in call.outcome ? call.outcome.error : '';
+        const capability = missingCapabilityFromFailedSearchCall(call.arguments, error, query);
+        if (capability !== null && !seenMissingCapabilities.has(capability)) {
+          seenMissingCapabilities.add(capability);
+          missingCapabilities.push(makeMissingCapabilityNotice(capability, query));
+        }
+        continue;
+      }
       if (!call.outcome.success) continue;
       if (call.name !== 'query_service') continue;
       const payload = call.outcome.result as
@@ -383,7 +422,14 @@ export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCom
       }
     }
 
-    return { response: answer, sources, serviceQueries };
+    if (missingCapabilities.length === 0 && serviceQueries.length === 0) {
+      const capability = missingCapabilityFromAskFallback(query, result.toolCalls);
+      if (capability !== null) {
+        missingCapabilities.push(makeMissingCapabilityNotice(capability, query));
+      }
+    }
+
+    return { response: answer, sources, serviceQueries, missingCapabilities };
   };
 }
 
@@ -404,6 +450,69 @@ export interface ServiceQueryDispatch {
   providerDid?: string;
   /** Capability params the query carried — summarised in the card. */
   params?: Record<string, unknown>;
+}
+
+function missingCapabilityFromSearchCall(
+  args: Record<string, unknown>,
+  result: unknown,
+  query: string,
+): string | null {
+  if (!Array.isArray(result) || result.length !== 0) return null;
+  const explicit = extractNamespacedCapability(query);
+  if (explicit !== null) return explicit;
+  const raw = args.capability;
+  if (typeof raw !== 'string') return null;
+  const capability = raw.trim();
+  return capability !== '' ? capability : null;
+}
+
+function missingCapabilityFromFailedSearchCall(
+  args: Record<string, unknown>,
+  error: string,
+  query: string,
+): string | null {
+  if (!/AppView responded 400/i.test(error)) return null;
+  const explicit = extractNamespacedCapability(query);
+  if (explicit !== null) return explicit;
+  const raw = args.capability;
+  if (typeof raw !== 'string') return null;
+  const capability = raw.trim();
+  return extractNamespacedCapability(capability) ?? (capability !== '' ? capability : null);
+}
+
+function missingCapabilityFromDiscoveryCall(
+  args: Record<string, unknown>,
+  result: unknown,
+  query: string,
+): string | null {
+  if (!isEmptyCapabilityDiscovery(result)) return null;
+  const intent = typeof args.intent === 'string' ? args.intent : '';
+  return extractNamespacedCapability(`${intent} ${query}`);
+}
+
+function isEmptyCapabilityDiscovery(result: unknown): boolean {
+  if (!result || typeof result !== 'object') return false;
+  const capabilities = (result as { capabilities?: unknown }).capabilities;
+  return Array.isArray(capabilities) && capabilities.length === 0;
+}
+
+function extractNamespacedCapability(text: string): string | null {
+  const match = text.toLowerCase().match(/\b[a-z0-9]+(?:\.[a-z0-9_]+)+\b/);
+  return match?.[0] ?? null;
+}
+
+function missingCapabilityFromAskFallback(
+  query: string,
+  toolCalls: Array<{ name: string; outcome: { success: boolean } }>,
+): string | null {
+  const triedServiceDiscovery = toolCalls.some(
+    (call) =>
+      call.name === 'search_capabilities' ||
+      call.name === 'search_provider_services' ||
+      call.name === 'query_service',
+  );
+  if (!triedServiceDiscovery) return null;
+  return extractNamespacedCapability(query);
 }
 
 function fallbackAnswer(reason: string): string {

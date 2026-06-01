@@ -16,6 +16,7 @@ import {
 } from '../../src/service/service_query_orchestrator';
 import { errorToAck, wireServiceOrchestrator } from '../../src/service/service_wiring';
 import { handleChat } from '../../src/chat/orchestrator';
+import { getThread, readLifecycle, resetThreads } from '../../src/chat/thread';
 
 function stubOrchestrator(impl: (req: IssueQueryRequest) => Promise<IssueQueryResult>): {
   orchestrator: ServiceQueryOrchestrator;
@@ -50,6 +51,10 @@ describe('wireServiceOrchestrator — construction', () => {
 });
 
 describe('wireServiceOrchestrator — chat handler', () => {
+  beforeEach(() => {
+    resetThreads();
+  });
+
   it('installs a handler that issues queries via the orchestrator', async () => {
     const { orchestrator, calls } = stubOrchestrator(async () => OK_RESULT);
     const dispose = wireServiceOrchestrator({ orchestrator });
@@ -120,8 +125,15 @@ describe('wireServiceOrchestrator — chat handler', () => {
     });
     const dispose = wireServiceOrchestrator({ orchestrator });
     try {
-      const ack = (await handleChat('/service eta_query ?')).response;
-      expect(ack).toBe('No public service advertises "eta_query" right now.');
+      const ack = (await handleChat('/service com.acme.widget_price ?')).response;
+      expect(ack).toBe('No public service advertises "com.acme.widget_price" right now.');
+      const thread = getThread('main');
+      const lc = readLifecycle(thread[thread.length - 1]!);
+      expect(lc?.kind).toBe('missing_capability');
+      if (lc?.kind === 'missing_capability') {
+        expect(lc.capability).toBe('com.acme.widget_price');
+        expect(lc.query).toBe('?');
+      }
     } finally {
       dispose();
     }

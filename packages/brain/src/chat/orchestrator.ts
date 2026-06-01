@@ -13,6 +13,9 @@
  * Source: ARCHITECTURE.md Tasks 4.7–4.9
  */
 
+import { randomBytes } from '@noble/ciphers/utils.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+
 import { listRemindersByPersonaRouted } from '../reminders/backend';
 import { CoreHttpError } from '../errors';
 import { reason } from '../pipeline/chat_reasoning';
@@ -82,6 +85,24 @@ export function resetChatDefaults(): void {
   defaultProvider = 'none';
 }
 
+export interface MissingCapabilityNotice {
+  noticeId: string;
+  capability: string;
+  query?: string;
+}
+
+export function makeMissingCapabilityNotice(
+  capability: string,
+  query?: string,
+): MissingCapabilityNotice {
+  const trimmedQuery = query?.trim();
+  return {
+    noticeId: `missing-cap-${bytesToHex(randomBytes(6))}`,
+    capability: capability.trim(),
+    ...(trimmedQuery !== undefined && trimmedQuery !== '' ? { query: trimmedQuery } : {}),
+  };
+}
+
 /**
  * Handle a user chat message.
  *
@@ -98,6 +119,7 @@ export async function handleChat(text: string, threadId?: string): Promise<ChatR
   let typed: BotResponse;
   let sources: string[] = [];
   let serviceQueries: ServiceQueryDispatch[] = [];
+  let missingCapabilities: MissingCapabilityNotice[] = [];
 
   switch (parsed.intent) {
     case 'remember':
@@ -105,7 +127,10 @@ export async function handleChat(text: string, threadId?: string): Promise<ChatR
       break;
 
     case 'ask':
-      ({ typed, sources, serviceQueries } = await handleAsk(parsed.payload, thread));
+      ({ typed, sources, serviceQueries, missingCapabilities } = await handleAsk(
+        parsed.payload,
+        thread,
+      ));
       break;
 
     case 'task':
@@ -119,7 +144,7 @@ export async function handleChat(text: string, threadId?: string): Promise<ChatR
       if (parsed.payload.trim() === '') {
         typed = plainResponse('What would you like the paired agent to do?');
       } else {
-        ({ typed, sources, serviceQueries } = await handleAsk(
+        ({ typed, sources, serviceQueries, missingCapabilities } = await handleAsk(
           wrapAsTaskPrompt(parsed.payload),
           thread,
         ));
@@ -131,7 +156,10 @@ export async function handleChat(text: string, threadId?: string): Promise<ChatR
       break;
 
     case 'service':
-      ({ typed, serviceQueries } = await handleService(parsed.capability ?? '', parsed.payload));
+      ({ typed, serviceQueries, missingCapabilities } = await handleService(
+        parsed.capability ?? '',
+        parsed.payload,
+      ));
       break;
 
     case 'service_approve':
@@ -148,7 +176,10 @@ export async function handleChat(text: string, threadId?: string): Promise<ChatR
 
     case 'chat':
     default:
-      ({ typed, sources, serviceQueries } = await handleAsk(parsed.payload, thread));
+      ({ typed, sources, serviceQueries, missingCapabilities } = await handleAsk(
+        parsed.payload,
+        thread,
+      ));
       break;
   }
 
@@ -178,6 +209,19 @@ export async function handleChat(text: string, threadId?: string): Promise<ChatR
         serviceName: sq.serviceName,
         providerDid: sq.providerDid,
         params: sq.params,
+      });
+      lastId = msg.id;
+    }
+    msgId = lastId;
+  } else if (missingCapabilities.length > 0) {
+    let lastId = '';
+    for (const notice of missingCapabilities) {
+      const msg = addLifecycleMessage(thread, response, {
+        kind: 'missing_capability',
+        status: 'ready',
+        noticeId: notice.noticeId,
+        capability: notice.capability,
+        query: notice.query,
       });
       lastId = msg.id;
     }
@@ -397,12 +441,18 @@ async function handleRemember(text: string, thread: string): Promise<BotResponse
 async function handleAsk(
   query: string,
   threadId: string,
-): Promise<{ typed: BotResponse; sources: string[]; serviceQueries: ServiceQueryDispatch[] }> {
+): Promise<{
+  typed: BotResponse;
+  sources: string[];
+  serviceQueries: ServiceQueryDispatch[];
+  missingCapabilities: MissingCapabilityNotice[];
+}> {
   if (!query) {
     return {
       typed: plainResponse('What would you like to know?'),
       sources: [],
       serviceQueries: [],
+      missingCapabilities: [],
     };
   }
 
@@ -417,6 +467,7 @@ async function handleAsk(
       typed: plainResponse(r.response),
       sources: r.sources,
       serviceQueries: r.serviceQueries ?? [],
+      missingCapabilities: r.missingCapabilities ?? [],
     };
   }
 
@@ -425,7 +476,12 @@ async function handleAsk(
     persona: defaultPersona,
     provider: defaultProvider,
   });
-  return { typed: plainResponse(result.answer), sources: result.sources, serviceQueries: [] };
+  return {
+    typed: plainResponse(result.answer),
+    sources: result.sources,
+    serviceQueries: [],
+    missingCapabilities: [],
+  };
 }
 
 /**
@@ -496,6 +552,13 @@ export type AskCommandHandler = (
    * the same query.
    */
   serviceQueries?: ServiceQueryDispatch[];
+  /**
+   * Capabilities that discovery looked up but found no live providers for.
+   * Each becomes a first-party `missing_capability` card in mobile. This is
+   * deliberately separate from `serviceQueries`: no provider was selected and
+   * no workflow task exists.
+   */
+  missingCapabilities?: MissingCapabilityNotice[];
 }>;
 
 let askHandler: AskCommandHandler | null = null;
@@ -553,7 +616,11 @@ function handleHelp(): BotResponse {
 export type ServiceCommandHandler = (
   capability: string,
   payload: string,
-) => Promise<{ ack: string; dispatch?: ServiceQueryDispatch }>;
+) => Promise<{
+  ack: string;
+  dispatch?: ServiceQueryDispatch;
+  missingCapability?: MissingCapabilityNotice;
+}>;
 
 let serviceHandler: ServiceCommandHandler | null = null;
 
@@ -573,29 +640,37 @@ export function resetServiceCommandHandler(): void {
 async function handleService(
   capability: string,
   payload: string,
-): Promise<{ typed: BotResponse; serviceQueries: ServiceQueryDispatch[] }> {
+): Promise<{
+  typed: BotResponse;
+  serviceQueries: ServiceQueryDispatch[];
+  missingCapabilities: MissingCapabilityNotice[];
+}> {
   if (!capability) {
     return {
       typed: errorResponse('Which service? Usage: /service <capability> <question>'),
       serviceQueries: [],
+      missingCapabilities: [],
     };
   }
   if (serviceHandler === null) {
     return {
       typed: plainResponse(`Service lookup for "${capability}" isn't wired up yet. (Coming soon.)`),
       serviceQueries: [],
+      missingCapabilities: [],
     };
   }
   try {
-    const { ack, dispatch } = await serviceHandler(capability, payload);
+    const { ack, dispatch, missingCapability } = await serviceHandler(capability, payload);
     return {
       typed: plainResponse(ack),
       serviceQueries: dispatch !== undefined ? [dispatch] : [],
+      missingCapabilities: missingCapability !== undefined ? [missingCapability] : [],
     };
   } catch (err) {
     return {
       typed: errorResponse(`Couldn't start service query: ${(err as Error).message}`),
       serviceQueries: [],
+      missingCapabilities: [],
     };
   }
 }
