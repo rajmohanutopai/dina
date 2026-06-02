@@ -130,6 +130,7 @@ function HeaderMenuButton({ onPress }: { onPress: () => void }) {
     <Pressable
       onPress={onPress}
       hitSlop={8}
+      testID="root-layout-menu"
       accessibilityRole="button"
       accessibilityLabel="Open menu"
       style={{ paddingHorizontal: 12, paddingVertical: 6 }}
@@ -194,6 +195,7 @@ function HeaderBackButton({
     <Pressable
       onPress={onPress}
       hitSlop={12}
+      testID="root-layout-back"
       accessibilityRole="button"
       accessibilityLabel="Back"
       style={{
@@ -219,6 +221,7 @@ function HeaderHelpButton({ onPress }: { onPress: () => void }) {
     <Pressable
       onPress={onPress}
       hitSlop={8}
+      testID="root-layout-help"
       accessibilityRole="button"
       accessibilityLabel="Open help"
       style={{ paddingHorizontal: 12, paddingVertical: 6 }}
@@ -265,6 +268,7 @@ function NavMenuSheet({
       <Pressable
         style={navMenuStyles.backdrop}
         onPress={onClose}
+        testID="root-layout-menu-backdrop"
         // Backdrop is a tap-to-dismiss surface; it must NOT claim
         // the AX role for the whole subtree, otherwise iOS collapses
         // everything into a single AXGenericElement labelled with
@@ -278,6 +282,7 @@ function NavMenuSheet({
         <Pressable
           style={navMenuStyles.sheet}
           onPress={() => undefined}
+          testID="root-layout-menu-sheet"
           // Same reasoning as the backdrop — the sheet container
           // is a no-op tap sink (its onPress prevents close-on-card-
           // tap). Let the row TouchableOpacities own AX exposure.
@@ -288,6 +293,7 @@ function NavMenuSheet({
             <TouchableOpacity
               key={item.href ?? `action:${item.action}`}
               style={navMenuStyles.row}
+              testID={`root-layout-menu-row-${item.feature}`}
               accessibilityRole="button"
               accessibilityLabel={FEATURES[item.feature].menuLabel ?? FEATURES[item.feature].name}
               onPress={() => onSelect(item)}
@@ -1026,6 +1032,7 @@ function BootBanner({
   return (
     <Pressable
       onPress={() => hasDetails && setExpanded((v) => !v)}
+      testID="root-layout-boot-banner"
       style={[
         bannerStyles.wrap,
         { backgroundColor: bg, borderBottomColor: border, paddingTop: insets.top + 8 },

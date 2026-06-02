@@ -40,7 +40,11 @@ export function slugifyRkey(name: string, taken: Iterable<string> = []): string 
 
   if (!reserved.has(base)) return base;
   for (let n = 2; ; n++) {
-    const candidate = `${base}-${n}`.slice(0, MAX_RKEY_LEN);
+    // Reserve room for the suffix BEFORE truncating, so a 64-char base doesn't
+    // produce `base-2` sliced straight back to `base` (which would loop
+    // forever). The suffix grows (`-2` … `-10` …); re-trim per iteration.
+    const suffix = `-${n}`;
+    const candidate = base.slice(0, MAX_RKEY_LEN - suffix.length) + suffix;
     if (!reserved.has(candidate)) return candidate;
   }
 }

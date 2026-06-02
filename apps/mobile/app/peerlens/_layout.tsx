@@ -104,6 +104,7 @@ function PeerlensStackBack({ canGoBack }: { canGoBack: boolean }): React.ReactEl
     <Pressable
       onPress={onPress}
       hitSlop={12}
+      testID="peerlens-layout-back"
       accessibilityRole="button"
       accessibilityLabel="Back"
       style={{ paddingHorizontal: 12, paddingVertical: 6 }}

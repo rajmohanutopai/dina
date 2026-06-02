@@ -570,6 +570,72 @@ describe('WorkflowRepository — claimDelegationTask (agent pull)', () => {
   });
 });
 
+describe('WorkflowRepository — claimDelegationTask runner routing (multi-runner provider)', () => {
+  // A provider hosting several capabilities on distinct runners (e.g.
+  // eta_query→stub_eta, price_check→stub_price on ONE node) must route each
+  // task to the daemon registered for its runner. The claim's runner_filter
+  // (the daemon's registered runner) is matched against the task's
+  // requested_runner (the capability's mcpServer). Regression for the
+  // eta daemon wrongly claiming a price_check task.
+  const AGENT = 'did:plc:agent-1';
+  const NOW_MS = 1_700_000_000_000;
+  const LEASE_MS = 30_000;
+
+  function delegation(id: string, requested_runner?: string, created_at = 1000): WorkflowTask {
+    return baseTask({
+      id,
+      kind: 'delegation',
+      status: 'queued',
+      created_at,
+      ...(requested_runner !== undefined ? { requested_runner } : {}),
+    });
+  }
+
+  it('a filtered claim takes a task whose requested_runner matches', () => {
+    const r = buildRepo();
+    r.create(delegation('d-price', 'stub_price'));
+    const claimed = r.claimDelegationTask(AGENT, NOW_MS, LEASE_MS, 'stub_price');
+    expect(claimed?.id).toBe('d-price');
+  });
+
+  it('a filtered claim SKIPS a task whose requested_runner differs', () => {
+    const r = buildRepo();
+    r.create(delegation('d-price', 'stub_price'));
+    // The eta daemon (runner_filter=stub_eta) must NOT grab the price task.
+    expect(r.claimDelegationTask(AGENT, NOW_MS, LEASE_MS, 'stub_eta')).toBeNull();
+  });
+
+  it('routes two co-located runners to their own tasks', () => {
+    const r = buildRepo();
+    r.create(delegation('d-eta', 'stub_eta', 1000));
+    r.create(delegation('d-price', 'stub_price', 2000));
+    const eta = r.claimDelegationTask(AGENT, NOW_MS, LEASE_MS, 'stub_eta');
+    const price = r.claimDelegationTask(AGENT, NOW_MS, LEASE_MS, 'stub_price');
+    expect(eta?.id).toBe('d-eta');
+    expect(price?.id).toBe('d-price');
+  });
+
+  it('a filtered claim still takes an untagged task (single-runner back-compat)', () => {
+    const r = buildRepo();
+    r.create(delegation('d-legacy', undefined));
+    const claimed = r.claimDelegationTask(AGENT, NOW_MS, LEASE_MS, 'stub_eta');
+    expect(claimed?.id).toBe('d-legacy');
+  });
+
+  it('an unfiltered claim takes any task regardless of requested_runner', () => {
+    const r = buildRepo();
+    r.create(delegation('d-price', 'stub_price'));
+    const claimed = r.claimDelegationTask(AGENT, NOW_MS, LEASE_MS, '');
+    expect(claimed?.id).toBe('d-price');
+  });
+
+  it('persists requested_runner through create → getById', () => {
+    const r = buildRepo();
+    r.create(delegation('d-price', 'stub_price'));
+    expect(r.getById('d-price')?.requested_runner).toBe('stub_price');
+  });
+});
+
 describe('WorkflowRepository — heartbeatTask', () => {
   function running(id: string, agentDID: string): WorkflowTask {
     return baseTask({

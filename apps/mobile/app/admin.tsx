@@ -217,6 +217,8 @@ export default function AdminScreen(): React.ReactElement {
           )}
 
           <Pressable
+            testID="admin-copy-diagnostics"
+            accessibilityRole="button"
             onPress={() => copy(JSON.stringify({ degradations, runtimeWarnings }, null, 2))}
             style={({ pressed }) => [styles.copyAll, pressed && styles.pressed]}
           >
@@ -238,6 +240,8 @@ export default function AdminScreen(): React.ReactElement {
             </Text>
           </View>
           <Pressable
+            testID="admin-sign-out"
+            accessibilityRole="button"
             onPress={onSignOut}
             style={({ pressed }) => [styles.dangerBtn, pressed && styles.pressed]}
           >
@@ -248,6 +252,8 @@ export default function AdminScreen(): React.ReactElement {
             </Text>
           </Pressable>
           <Pressable
+            testID="admin-erase-everything"
+            accessibilityRole="button"
             onPress={onEraseEverything}
             style={({ pressed }) => [styles.dangerBtn, styles.dangerBtnDivider, pressed && styles.pressed]}
           >
@@ -386,6 +392,7 @@ function BackupRestoreSection(): React.ReactElement {
       {/* Export */}
       <Text style={styles.backupLabel}>Export</Text>
       <TextInput
+        testID="admin-export-passphrase"
         style={styles.backupInput}
         value={exportPass}
         onChangeText={setExportPass}
@@ -396,6 +403,8 @@ function BackupRestoreSection(): React.ReactElement {
         autoCorrect={false}
       />
       <Pressable
+        testID="admin-export-backup"
+        accessibilityRole="button"
         onPress={onExport}
         disabled={busy !== 'idle'}
         style={({ pressed }) => [styles.backupBtn, pressed && styles.pressed, busy === 'export' && styles.backupBtnBusy]}
@@ -414,6 +423,8 @@ function BackupRestoreSection(): React.ReactElement {
       ) : (
         <>
           <Pressable
+            testID="admin-restore-choose-file"
+            accessibilityRole="button"
             onPress={onChooseFile}
             style={({ pressed }) => [styles.backupBtnSecondary, pressed && styles.pressed]}
           >
@@ -424,6 +435,7 @@ function BackupRestoreSection(): React.ReactElement {
           {picked !== null && (
             <>
               <TextInput
+                testID="admin-restore-passphrase"
                 style={styles.backupInput}
                 value={restorePass}
                 onChangeText={setRestorePass}
@@ -434,6 +446,8 @@ function BackupRestoreSection(): React.ReactElement {
                 autoCorrect={false}
               />
               <Pressable
+                testID="admin-restore-backup"
+                accessibilityRole="button"
                 onPress={onRestore}
                 disabled={busy !== 'idle'}
                 style={({ pressed }) => [styles.backupBtn, pressed && styles.pressed, busy === 'restore' && styles.backupBtnBusy]}
@@ -486,6 +500,8 @@ function DevSendTestRow(): React.ReactElement {
       <Text style={devTestStyles.label}>Send coordination.request to:</Text>
       <Text style={devTestStyles.did}>{didStr ?? '—'}</Text>
       <Pressable
+        testID="admin-dev-send-test"
+        accessibilityRole="button"
         onPress={() => {
           void onPress();
         }}
@@ -602,6 +618,7 @@ function DisplayNameRow(): React.ReactElement {
         <Text style={styles.rowLabel}>Display name</Text>
         <View style={displayNameStyles.editWrap}>
           <TextInput
+            testID="admin-display-name-input"
             value={draft}
             onChangeText={setDraft}
             placeholder="e.g. Sancho"
@@ -616,6 +633,8 @@ function DisplayNameRow(): React.ReactElement {
           />
           <View style={displayNameStyles.actions}>
             <Pressable
+              testID="admin-display-name-cancel"
+              accessibilityRole="button"
               onPress={onCancel}
               disabled={busy}
               style={({ pressed }) => [
@@ -626,6 +645,8 @@ function DisplayNameRow(): React.ReactElement {
               <Text style={displayNameStyles.btnTextSecondary}>Cancel</Text>
             </Pressable>
             <Pressable
+              testID="admin-display-name-save"
+              accessibilityRole="button"
               onPress={() => {
                 void onSave();
               }}
@@ -651,7 +672,12 @@ function DisplayNameRow(): React.ReactElement {
   }
 
   return (
-    <Pressable onPress={onEdit} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+    <Pressable
+      testID="admin-display-name-edit"
+      accessibilityRole="button"
+      onPress={onEdit}
+      style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+    >
       <Text style={styles.rowLabel}>Display name</Text>
       <View style={styles.rowValueWrap}>
         <Text
@@ -763,7 +789,13 @@ function Row(props: {
           {props.value}
         </Text>
         {props.copyable && props.value !== '—' ? (
-          <Pressable onPress={() => props.onCopy?.(props.value)} hitSlop={10}>
+          <Pressable
+            testID="admin-row-copy"
+            accessibilityRole="button"
+            accessibilityLabel={`Copy ${props.label}`}
+            onPress={() => props.onCopy?.(props.value)}
+            hitSlop={10}
+          >
             <Text style={styles.copyGlyph}>{'\u29C9'}</Text>
           </Pressable>
         ) : null}
@@ -775,6 +807,8 @@ function Row(props: {
 function DrillRow({ label, onPress }: { label: string; onPress: () => void }): React.ReactElement {
   return (
     <Pressable
+      testID="admin-drill-row"
+      accessibilityRole="button"
       onPress={onPress}
       style={({ pressed }) => [styles.drillRow, pressed && styles.pressed]}
     >

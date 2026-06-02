@@ -134,6 +134,20 @@
       "when": 1790000600000,
       "tag": "0018_peerlens_check_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790000700000,
+      "tag": "0019_services_capability_categories",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790000800000,
+      "tag": "0020_services_discoverability",
+      "breakpoints": true
     }
   ]
 }

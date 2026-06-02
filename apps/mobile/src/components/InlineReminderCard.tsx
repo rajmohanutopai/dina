@@ -152,6 +152,7 @@ export function InlineReminderCard({ message }: InlineReminderCardProps): React.
             style={[styles.btn, styles.snooze]}
             onPress={onSnooze}
             activeOpacity={0.7}
+            accessibilityRole="button"
           >
             <Text style={styles.snoozeText}>Snooze 1h</Text>
           </TouchableOpacity>
@@ -160,6 +161,7 @@ export function InlineReminderCard({ message }: InlineReminderCardProps): React.
             style={[styles.btn, styles.done]}
             onPress={onMarkDone}
             activeOpacity={0.7}
+            accessibilityRole="button"
           >
             <Text style={styles.doneText}>Mark done</Text>
           </TouchableOpacity>

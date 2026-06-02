@@ -44,6 +44,14 @@ export interface CreateWorkflowTaskInput {
   policy?: string;
   /** Initial state. Defaults to `created`. */
   initialState?: WorkflowTaskState;
+  /**
+   * The runner this task is destined for (a capability's `mcpServer`, e.g.
+   * `stub_price`). When set, only a claim whose `runner_filter` matches (or
+   * an unfiltered claim) may take it — so a provider hosting several
+   * capabilities on distinct runners routes each task to the right daemon.
+   * Unset ⇒ any runner may claim (the single-runner default).
+   */
+  requestedRunner?: string;
 }
 
 /** Structured error surfaces raised by the service. */
@@ -359,6 +367,7 @@ export class WorkflowService {
       origin: input.origin ?? '',
       session_name: input.sessionName,
       idempotency_key: input.idempotencyKey,
+      requested_runner: input.requestedRunner,
       expires_at: input.expiresAtSec,
       created_at: nowMs,
       updated_at: nowMs,

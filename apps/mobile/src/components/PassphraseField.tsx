@@ -50,6 +50,7 @@ export function PassphraseField({
       {label !== undefined ? <Text style={styles.label}>{label}</Text> : null}
       <View style={[styles.row, error !== undefined && error !== '' ? styles.rowError : null]}>
         <TextInput
+          testID="passphrase-field-input"
           {...inputProps}
           secureTextEntry={!visible}
           autoCapitalize="none"
@@ -66,6 +67,7 @@ export function PassphraseField({
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel={visible ? 'Hide passphrase' : 'Show passphrase'}
+          testID="passphrase-field-toggle"
           style={({ pressed }) => [styles.eye, pressed && styles.pressed]}
         >
           <Ionicons

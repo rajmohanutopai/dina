@@ -135,6 +135,7 @@ export function InlineServiceApprovalCard({
             disabled={disabled}
             onPress={onDeny}
             activeOpacity={0.7}
+            accessibilityRole="button"
           >
             <Text style={styles.denyText}>Deny</Text>
           </TouchableOpacity>
@@ -144,6 +145,7 @@ export function InlineServiceApprovalCard({
             disabled={disabled}
             onPress={onApprove}
             activeOpacity={0.7}
+            accessibilityRole="button"
           >
             <Text style={styles.approveText}>Approve</Text>
           </TouchableOpacity>

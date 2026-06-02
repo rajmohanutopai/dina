@@ -105,7 +105,7 @@ export function MnemonicVerify(props: MnemonicVerifyProps): React.ReactElement {
         // JSX attribute strings render `\u2014` literally \u2014 wrap in a
         // template literal (or use the raw character). Same applies
         // to any escaped Unicode in attributes.
-        "Just a few words from what you wrote down \u2014 to make sure your copy is good. You can always re-view the full phrase later in Settings."
+        'Just a few words from what you wrote down \u2014 to make sure your copy is good. You can always re-view the full phrase later in Settings.'
       }
       primaryLabel="Confirm"
       onPrimary={submit}
@@ -129,6 +129,7 @@ export function MnemonicVerify(props: MnemonicVerifyProps): React.ReactElement {
             placeholder="…"
             placeholderTextColor={colors.textMuted}
             style={styles.input}
+            testID={`mnemonic-verify-input-${i}`}
             returnKeyType={i === challenge.indices.length - 1 ? 'done' : 'next'}
             onSubmitEditing={() => {
               if (i < challenge.indices.length - 1) {
@@ -148,6 +149,7 @@ export function MnemonicVerify(props: MnemonicVerifyProps): React.ReactElement {
           onPress={props.onViewPhrase}
           accessibilityRole="link"
           accessibilityLabel="View my recovery phrase again"
+          testID="mnemonic-verify-view-phrase"
           style={styles.viewPhraseLink}
         >
           <Text style={styles.viewPhraseLinkText}>View my recovery phrase again</Text>

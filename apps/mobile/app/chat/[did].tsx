@@ -124,6 +124,7 @@ export default function ChatScreen() {
           title,
           headerTitle: () => (
             <Pressable
+              testID="chat-identity"
               onPress={() => setIdentityOpen(true)}
               accessibilityRole="button"
               accessibilityLabel={`Show identity for ${title}`}
@@ -146,7 +147,12 @@ export default function ChatScreen() {
       />
 
       {!isKnownContact && peerDID !== '' && (
-        <Pressable style={styles.warningBanner} onPress={() => router.push('/add-contact')}>
+        <Pressable
+          testID="chat-add-contact"
+          accessibilityRole="button"
+          style={styles.warningBanner}
+          onPress={() => router.push('/add-contact')}
+        >
           <Text style={styles.warningText}>
             This DID is not in your contacts. Replies may be quarantined until you add them.
           </Text>
@@ -170,6 +176,7 @@ export default function ChatScreen() {
 
       <View style={styles.composer}>
         <TextInput
+          testID="chat-message-input"
           value={draft}
           onChangeText={setDraft}
           placeholder="Message"
@@ -181,6 +188,8 @@ export default function ChatScreen() {
           blurOnSubmit={false}
         />
         <Pressable
+          testID="chat-send"
+          accessibilityRole="button"
           onPress={onSubmit}
           style={({ pressed }) => [
             styles.sendButton,

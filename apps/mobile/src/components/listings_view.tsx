@@ -62,6 +62,11 @@ export function ListingsView(props: ListingsViewProps): React.ReactElement {
       ) : (
         props.listings.map((row) => {
           const active = row.status === 'active';
+          // Show the real status (active / paused / draft) rather than
+          // collapsing draft into "Paused". The toggle still means "is it
+          // live": active → pause; paused/draft → activate.
+          const statusLabel =
+            row.status === 'active' ? 'Active' : row.status === 'draft' ? 'Draft' : 'Paused';
           return (
             <View key={row.rkey} style={styles.row}>
               <Pressable
@@ -85,10 +90,10 @@ export function ListingsView(props: ListingsViewProps): React.ReactElement {
                 onPress={() => props.onToggleStatus(row.rkey, active ? 'paused' : 'active')}
                 accessibilityRole="switch"
                 accessibilityState={{ checked: active }}
-                accessibilityLabel={`${row.name} is ${active ? 'active' : 'paused'}. Tap to ${active ? 'pause' : 'activate'}.`}
+                accessibilityLabel={`${row.name} is ${statusLabel.toLowerCase()}. Tap to ${active ? 'pause' : 'activate'}.`}
               >
                 <Text style={[styles.statusText, active ? styles.statusTextActive : styles.statusTextPaused]}>
-                  {active ? 'Active' : 'Paused'}
+                  {statusLabel}
                 </Text>
               </Pressable>
               <Pressable

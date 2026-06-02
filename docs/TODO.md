@@ -1,3 +1,7 @@
+# Mobile remaining
+MOBILE_FEATURES.md has currnt vs perfect
+
+
 # CardSpec V2
 docs/CARD_SPEC_V2_DESIGN.md
 

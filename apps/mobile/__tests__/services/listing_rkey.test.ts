@@ -45,4 +45,15 @@ describe('slugifyRkey', () => {
       expect(isValidServiceListingRkey(slugifyRkey(name))).toBe(true);
     }
   });
+
+  it('does NOT infinite-loop when a max-length base is already taken (P2#3)', () => {
+    // Base is already 64 chars; the old code sliced `base-2` back to `base`,
+    // so every candidate equalled the taken base → infinite loop. The fix
+    // reserves suffix space, so it returns a distinct, valid, in-bounds rkey.
+    const maxBase = 'x'.repeat(64);
+    const r = slugifyRkey(maxBase, [maxBase]);
+    expect(r).not.toBe(maxBase);
+    expect(r.length).toBeLessThanOrEqual(64);
+    expect(isValidServiceListingRkey(r)).toBe(true);
+  });
 });

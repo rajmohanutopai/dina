@@ -160,7 +160,9 @@ export default function MyListingsScreen(): React.ReactElement {
                 key={opt}
                 style={[styles.row, role === opt ? styles.rowSelected : null]}
                 onPress={() => onChangeRole(opt)}
+                testID={`my-listings-role-${opt}`}
                 accessibilityRole="button"
+                accessibilityState={{ selected: role === opt }}
                 accessibilityLabel={`Set role to ${opt}`}
               >
                 <Text style={styles.rowTitle}>{labelForRole(opt)}</Text>

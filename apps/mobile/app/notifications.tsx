@@ -117,6 +117,7 @@ export default function NotificationsScreen(): React.JSX.Element {
               key={f.key}
               testID={`filter-${f.key}`}
               onPress={() => setFilter(f.key)}
+              accessibilityRole="button"
               style={[styles.chip, active && styles.chipActive]}
             >
               <Text style={[styles.chipText, active && styles.chipTextActive]}>
@@ -155,6 +156,7 @@ export default function NotificationsScreen(): React.JSX.Element {
             <Pressable
               testID={`notif-row-${item.id}`}
               onPress={() => onPress(item)}
+              accessibilityRole="button"
               style={({ pressed }) => [
                 styles.row,
                 isUnread && styles.rowUnread,

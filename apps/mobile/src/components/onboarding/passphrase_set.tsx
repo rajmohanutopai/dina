@@ -152,6 +152,10 @@ function ModeCard({
       accessibilityRole="radio"
       accessibilityState={{ selected }}
       accessibilityLabel={`${title}. ${body}`}
+      testID={`passphrase-set-mode-${title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')}`}
     >
       <View style={[styles.radio, selected && styles.radioSelected]}>
         {selected ? <View style={styles.radioDot} /> : null}

@@ -93,6 +93,36 @@ describe('evaluateServiceEgressBypass', () => {
       expect(d.kind).toBe('allow');
     });
 
+    it('allow an UNLISTED service via service_uri even when the resolver says not-public (P2#2)', async () => {
+      // The requester has the link (service_uri) — that's the access grant.
+      // AppView never advertises unlisted, so resolverThat(false) would otherwise
+      // deny; the present service_uri short-circuits the public-only check.
+      const d = await evaluateServiceEgressBypass(
+        MsgTypeServiceQuery,
+        'did:plc:bus42',
+        JSON.stringify({
+          ...validQueryBody,
+          service_uri: 'at://did:plc:bus42/com.dinakernel.service.profile/store-2',
+        }),
+        resolverThat(false),
+      );
+      expect(d.kind).toBe('allow');
+    });
+
+    it('deny a service_uri whose authority does not match the recipient (P2#2)', async () => {
+      const d = await evaluateServiceEgressBypass(
+        MsgTypeServiceQuery,
+        'did:plc:bus42',
+        JSON.stringify({
+          ...validQueryBody,
+          service_uri: 'at://did:plc:someone-else/com.dinakernel.service.profile/store-2',
+        }),
+        resolverThat(true),
+      );
+      expect(d.kind).toBe('deny');
+      if (d.kind === 'deny') expect(d.reason).toBe('service_uri_mismatch');
+    });
+
     it('deny body_invalid for malformed JSON', async () => {
       const d = await evaluateServiceEgressBypass(MsgTypeServiceQuery, 'did:plc:x', '{not json');
       expect(d.kind).toBe('deny');
@@ -237,6 +267,44 @@ describe('evaluateServiceIngressBypass', () => {
         { isCapabilityConfigured: () => true, recipientDID: 'did:plc:me' },
       );
       expect(d.kind).toBe('allow');
+    });
+
+    it('passes the service_uri rkey to the checker (rkey-aware ingress, P1#2)', () => {
+      const seen: { cap: string; rkey?: string }[] = [];
+      evaluateServiceIngressBypass(
+        MsgTypeServiceQuery,
+        'did:plc:stranger',
+        JSON.stringify({
+          ...validQueryBody,
+          service_uri: 'at://did:plc:me/com.dinakernel.service.profile/store-2',
+        }),
+        {
+          isCapabilityConfigured: (cap, rkey) => {
+            seen.push({ cap, rkey });
+            return true;
+          },
+          recipientDID: 'did:plc:me',
+        },
+      );
+      expect(seen).toEqual([{ cap: 'eta_query', rkey: 'store-2' }]);
+    });
+
+    it('denies when the TARGETED listing rejects the cap, even if a generic check would pass (P1#2)', () => {
+      // checker accepts only rkey 'ride'; the query targets 'store-2' → deny.
+      const d = evaluateServiceIngressBypass(
+        MsgTypeServiceQuery,
+        'did:plc:stranger',
+        JSON.stringify({
+          ...validQueryBody,
+          service_uri: 'at://did:plc:me/com.dinakernel.service.profile/store-2',
+        }),
+        {
+          isCapabilityConfigured: (_cap, rkey) => rkey === 'ride',
+          recipientDID: 'did:plc:me',
+        },
+      );
+      expect(d.kind).toBe('deny');
+      if (d.kind === 'deny') expect(d.reason).toBe('not_configured');
     });
 
     it('denies a cross-DID service_uri (authority != recipientDID) — P2 inbound bind', () => {

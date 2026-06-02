@@ -65,6 +65,18 @@ export interface RankOptions {
    * we want the ranker ready).
    */
   coordsOf?: (profile: ServiceProfile) => Location | undefined;
+  /**
+   * The requester's OWN DID. Any candidate whose `did` matches is dropped:
+   * a node must never route its own `service.query` back to itself. This
+   * happens when a node is both requester and provider for a capability
+   * (e.g. role=provider with `EXPO_PUBLIC_DINA_PROVIDER_CAPABILITY`, or a
+   * stale self-profile lingering in AppView after a provider→requester
+   * switch) — AppView returns the node's own listing, and without this it
+   * ranks itself highest and sends the query to its own DID, which has no
+   * inbound runner → "No response". Self-discovery is never useful: you
+   * already know your own capabilities locally.
+   */
+  excludeDid?: string;
 }
 
 /** Per-candidate rank score. Exposed for tests. */
@@ -107,6 +119,8 @@ export function rankCandidates(
     if (!profile.isDiscoverable) continue;
     if (!advertisesCapability(profile, capability)) continue;
     if (!profile.did) continue;
+    // Never route a service.query to ourselves (see RankOptions.excludeDid).
+    if (options.excludeDid !== undefined && profile.did === options.excludeDid) continue;
 
     ranked.push({
       profile,

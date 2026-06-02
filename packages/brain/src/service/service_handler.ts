@@ -33,6 +33,7 @@ import {
   validateServiceQueryBody,
   resolveCanonicalCapability,
   parseServiceListingUri,
+  isListingPublishable,
 } from '@dina/protocol';
 import { getCapability, getTTL } from './capabilities/registry';
 import { validateAgainstSchema } from './capabilities/schema_validator';
@@ -310,6 +311,9 @@ export class ServiceHandler {
       service_name?: string;
       /** WM-BRAIN-06a: forwarded from the approval task payload. */
       mcp_tool?: string;
+      /** The runner (capability `mcpServer`) — forwarded so the approved
+       *  exec task carries `requested_runner` for multi-runner routing. */
+      mcp_server?: string;
       /** GAP-SH-04: frozen schema block captured at approval-creation
        *  time. Forwarded verbatim into the fresh delegation so the
        *  response bridge validates against the same contract that was
@@ -338,6 +342,7 @@ export class ServiceHandler {
         ttlSeconds: ttl,
         schemaHash: payload.schema_hash,
         mcpTool: payload.mcp_tool,
+        mcpServer: payload.mcp_server,
         serviceName: payload.service_name,
         schemaSnapshot: payload.schema_snapshot,
         serviceUri: payload.service_uri,
@@ -391,6 +396,7 @@ export class ServiceHandler {
       ttlSeconds: query.ttl_seconds,
       schemaHash: query.schema_hash,
       mcpTool: cap.mcpTool,
+      mcpServer: cap.mcpServer,
       serviceName,
       schemaSnapshot: snapshotForCapability(config, query.capability),
       serviceUri: query.service_uri,
@@ -420,6 +426,10 @@ export class ServiceHandler {
      *  so the canonical schema stays portable; surfaced here as a
      *  top-level payload field (WM-BRAIN-06a). */
     mcpTool?: string;
+    /** The capability's `mcpServer` — the runner that should execute this
+     *  task. Carried onto the workflow task as `requested_runner` so a
+     *  multi-runner provider routes each capability to the right daemon. */
+    mcpServer?: string;
     serviceName?: string;
     /** GAP-SH-03: frozen copy of the provider's published schema at
      *  task-creation time. The response bridge validates the runner's
@@ -457,6 +467,7 @@ export class ServiceHandler {
       payload: JSON.stringify(payload),
       origin: 'd2d',
       correlationId: args.queryId,
+      requestedRunner: args.mcpServer,
       expiresAtSec,
       // Tasks enter `queued` so paired dina-agents can claim them via
       // POST /v1/workflow/tasks/claim. In-process execution is not
@@ -494,6 +505,9 @@ export class ServiceHandler {
       // WM-BRAIN-06a: mcp_tool at top level, outside the schema snapshot.
       // `executeAndRespond` reads this back to dispatch the delegation.
       mcp_tool: cap.mcpTool,
+      // mcp_server (the runner) likewise rides the approval payload so the
+      // approved exec task carries `requested_runner` for multi-runner routing.
+      mcp_server: cap.mcpServer,
     };
     // GAP-SH-04: approval-path payload also carries the schema snapshot
     // so it survives the approval → delegation handoff in
@@ -731,7 +745,14 @@ function findCapabilityConfig(
   capability: string,
 ): ServiceCapabilityConfig | null {
   if (config === null) return null;
-  if (!config.isDiscoverable) return null;
+  // The TARGETED listing (resolved by the query's service_uri rkey) must be
+  // LIVE to execute: `active` AND not `known_only`. Using `isListingPublishable`
+  // keeps Brain's execution gate consistent with the publishers + Core ingress
+  // — so an active `unlisted` listing executes (it's reached by URI), while a
+  // `paused`/`draft` (or `known_only`) listing is rejected. Previously this
+  // checked only `isDiscoverable`, which wrongly rejected unlisted + wrongly
+  // accepted paused-but-public.
+  if (!isListingPublishable(config)) return null;
   // Layer 5: accept a canonical query against an alias-configured key.
   const key = resolveConfiguredKey(Object.keys(config.capabilities), capability);
   if (key === null) return null;

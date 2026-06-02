@@ -109,6 +109,8 @@ export function RecoveryEntry(props: RecoveryEntryProps): React.ReactElement {
             /* show details — future */
           }}
           style={styles.didPreview}
+          accessibilityRole="button"
+          testID="recovery-entry-did-preview"
         >
           <Text style={styles.didLabel}>THIS WILL RESTORE</Text>
           <Text style={styles.didValue} numberOfLines={2}>

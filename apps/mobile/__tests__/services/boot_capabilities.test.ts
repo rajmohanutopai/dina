@@ -11,7 +11,11 @@
  * null in tests), and AppView network calls are stubbed explicitly.
  */
 
-import { buildBootInputs } from '../../src/services/boot_capabilities';
+import {
+  buildBootInputs,
+  resolveStagingEnrichmentLLM,
+} from '../../src/services/boot_capabilities';
+import type { RoutedLLMProvider } from '@dina/brain/runtime';
 import { savePersistedDid, clearPersistedDid } from '../../src/services/identity_record';
 import { saveRolePreference } from '../../src/services/role_preference';
 import { clearIdentitySeeds } from '../../src/services/identity_store';
@@ -193,9 +197,49 @@ describe('buildBootInputs — stagingEnrichment default wiring (GAP-RT-02)', () 
     // pre-built agenticAsk — real keychain wiring is tested elsewhere.
     const inputs = await buildBootInputs({ activeProvider: 'none' });
     // `activeProvider: 'none'` → no agenticAsk, so this test only
-    // pins that the field STAYS defined. A positive-path test
-    // requires keychain mocks and is covered indirectly by the
-    // integration e2e (staging_drain_end_to_end).
+    // pins that the field STAYS defined. The provider-present path is
+    // pinned at the decision seam by `resolveStagingEnrichmentLLM`
+    // below (a full positive-path buildBootInputs run needs keychain +
+    // @dina/brain pipeline mocks; covered indirectly by the
+    // integration e2e staging_drain_end_to_end).
     expect(inputs.stagingEnrichment).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Staging-enrichment LLM source — the coordinator-gating trap.
+//
+// Regression pin (MT-52-I1): `stagingEnrichment.llm` was sourced from
+// `agenticAsk?.provider`, but `agenticAsk` is deliberately `undefined`
+// whenever the Pattern-A `askCoordinator` is active (the production / dev
+// path). That silently stripped the staging drain's LLM — auto-reminders,
+// topic extraction, people-graph linking, and LLM preference binding all
+// went dark with NO degradation logged. The decision now lives in a named
+// helper sourced from the BUNDLE (always carries `provider` when any
+// provider is configured), so this pins the bug class: a coordinator-bearing
+// bundle MUST still yield its provider for the drain.
+// ---------------------------------------------------------------------------
+
+describe('resolveStagingEnrichmentLLM — drain LLM survives the coordinator path', () => {
+  const fakeProvider = { __brand: 'routed-llm' } as unknown as RoutedLLMProvider;
+
+  it('returns the bundle provider even when an askCoordinator is present (agenticAsk view would be undefined)', () => {
+    // Shape mirrors the real AgenticAskBundle on the production path:
+    // a coordinator is set, which is exactly when boot leaves the
+    // `agenticAsk` view undefined. The drain LLM must come from the
+    // bundle regardless.
+    const coordinatorBundle = {
+      provider: fakeProvider,
+      askCoordinator: {} as unknown,
+    } as { provider: RoutedLLMProvider };
+    expect(resolveStagingEnrichmentLLM(coordinatorBundle)).toBe(fakeProvider);
+  });
+
+  it('returns the bundle provider on the simple (no-coordinator) path too', () => {
+    expect(resolveStagingEnrichmentLLM({ provider: fakeProvider })).toBe(fakeProvider);
+  });
+
+  it('returns undefined when no provider is configured (reduced mode preserved)', () => {
+    expect(resolveStagingEnrichmentLLM(undefined)).toBeUndefined();
   });
 });

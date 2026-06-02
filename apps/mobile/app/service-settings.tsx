@@ -24,6 +24,8 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 
 import {
@@ -161,8 +163,7 @@ export default function ServiceSettingsScreen() {
   // = CREATE a brand-new listing (its rkey is generated from the name on save).
   // Node role + the listing list live on `/my-listings` (the provider home).
   const params = useLocalSearchParams<{ rkey?: string }>();
-  const editingRkey =
-    typeof params.rkey === 'string' && params.rkey !== '' ? params.rkey : null;
+  const editingRkey = typeof params.rkey === 'string' && params.rkey !== '' ? params.rkey : null;
   const isCreate = editingRkey === null;
 
   // Pull the boot-time degradations so the "make discoverable" toggle
@@ -215,7 +216,9 @@ export default function ServiceSettingsScreen() {
           // Recoverable by reopening (which re-wires the client). Avoid
           // "wired"/"onboarding" jargon: onboarding is already done by the
           // time a user can reach this screen.
-          setLoadError('Service settings couldn’t load yet — Dina may still be starting up. Reopen Dina and try again.');
+          setLoadError(
+            'Service settings couldn’t load yet — Dina may still be starting up. Reopen Dina and try again.',
+          );
         } else {
           setLoadError((err as Error).message ?? 'Failed to load service config');
         }
@@ -421,7 +424,10 @@ export default function ServiceSettingsScreen() {
       let targetRkey = editingRkey;
       if (targetRkey === null) {
         const all = await listServiceListings();
-        targetRkey = slugifyRkey(next.name, all.map((l) => l.rkey));
+        targetRkey = slugifyRkey(
+          next.name,
+          all.map((l) => l.rkey),
+        );
       }
       await saveServiceConfig(next, targetRkey);
       Alert.alert('Saved', isCreate ? 'Listing created.' : 'Listing updated.', [
@@ -458,14 +464,21 @@ export default function ServiceSettingsScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <Stack.Screen options={{ title: 'Service Sharing' }} />
       {loadError !== null ? (
         <View style={styles.errorBanner}>
           <Text style={styles.errorText}>{loadError}</Text>
         </View>
       ) : null}
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scrollFlex}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.section}>
           <Text style={styles.sectionHeader}>SERVICE STATUS</Text>
           <View style={styles.card}>
@@ -487,6 +500,7 @@ export default function ServiceSettingsScreen() {
                 key={opt.value}
                 style={[styles.row, status === opt.value ? styles.rowSelected : null]}
                 onPress={() => setStatus(opt.value)}
+                testID={`service-settings-status-${opt.value}`}
                 accessibilityRole="button"
                 accessibilityState={{ selected: status === opt.value }}
                 accessibilityLabel={`${opt.title}. ${opt.body}`}
@@ -506,7 +520,11 @@ export default function ServiceSettingsScreen() {
           <View style={styles.card}>
             {(
               [
-                { value: 'public', title: 'Public', body: 'Anyone can find this service in Dina search.' },
+                {
+                  value: 'public',
+                  title: 'Public',
+                  body: 'Anyone can find this service in Dina search.',
+                },
                 {
                   value: 'unlisted',
                   title: 'Unlisted',
@@ -523,6 +541,7 @@ export default function ServiceSettingsScreen() {
                 key={opt.value}
                 style={[styles.row, discoverability === opt.value ? styles.rowSelected : null]}
                 onPress={() => chooseDiscoverability(opt.value)}
+                testID={`service-settings-discoverability-${opt.value}`}
                 accessibilityRole="button"
                 accessibilityState={{ selected: discoverability === opt.value }}
                 accessibilityLabel={`${opt.title}. ${opt.body}`}
@@ -544,9 +563,14 @@ export default function ServiceSettingsScreen() {
                 </Text>
               </View>
             ) : null}
-            <Text style={[styles.rowSubtitle, { paddingHorizontal: spacing.md, paddingTop: spacing.sm }]}>
-              Discoverability is not authorization — the provider still controls who may actually use
-              the service.
+            <Text
+              style={[
+                styles.rowSubtitle,
+                { paddingHorizontal: spacing.md, paddingTop: spacing.sm },
+              ]}
+            >
+              Discoverability is not authorization — the provider still controls who may actually
+              use the service.
             </Text>
           </View>
         </View>
@@ -563,6 +587,7 @@ export default function ServiceSettingsScreen() {
                 placeholderTextColor={colors.textMuted}
                 style={styles.input}
                 autoCapitalize="words"
+                testID="service-settings-name-input"
               />
             </View>
             <View style={[styles.inputRow, styles.inputRowLast]}>
@@ -575,6 +600,7 @@ export default function ServiceSettingsScreen() {
                 style={[styles.input, styles.multiline]}
                 multiline
                 numberOfLines={2}
+                testID="service-settings-description-input"
               />
             </View>
           </View>
@@ -605,6 +631,9 @@ export default function ServiceSettingsScreen() {
                   <Pressable
                     onPress={() => toggleCapabilityPolicy(cap.key)}
                     style={({ pressed }) => [styles.policyToggle, pressed && styles.pressed]}
+                    testID={`service-settings-policy-${cap.key}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${cap.key} response policy: ${cap.policy}. Tap to toggle.`}
                   >
                     <View style={[styles.policyHalf, cap.policy === 'auto' && styles.policyActive]}>
                       <Text
@@ -632,6 +661,7 @@ export default function ServiceSettingsScreen() {
                   <Pressable
                     onPress={() => removeCapability(cap.key)}
                     style={({ pressed }) => [styles.removeButton, pressed && styles.pressed]}
+                    testID={`service-settings-remove-capability-${cap.key}`}
                     accessibilityRole="button"
                     accessibilityLabel={`Remove ${cap.key} capability`}
                     hitSlop={8}
@@ -645,6 +675,7 @@ export default function ServiceSettingsScreen() {
           <Pressable
             onPress={() => setAddModalVisible(true)}
             style={({ pressed }) => [styles.addCapButton, pressed && styles.pressed]}
+            testID="service-settings-add-capability"
             accessibilityRole="button"
             accessibilityLabel="Add a capability to this service profile"
           >
@@ -661,6 +692,7 @@ export default function ServiceSettingsScreen() {
           <Pressable
             style={styles.modalBackdrop}
             onPress={() => setAddModalVisible(false)}
+            testID="service-settings-add-modal-backdrop"
             // accessible={false} so the backdrop doesn't consume the
             // entire modal as one accessibility element — VoiceOver
             // can then reach the inputs and buttons inside the sheet.
@@ -678,15 +710,12 @@ export default function ServiceSettingsScreen() {
               accessible={false}
               accessibilityViewIsModal
             >
-              <Text
-                style={styles.modalTitle}
-                accessibilityRole="header"
-              >
+              <Text style={styles.modalTitle} accessibilityRole="header">
                 Add capability
               </Text>
               <Text style={styles.modalSubtitle}>
-                Choose a category, then an official Dina capability. Advanced:
-                define a custom namespaced capability if none fits.
+                Choose a category, then an official Dina capability. Advanced: define a custom
+                namespaced capability if none fits.
               </Text>
 
               {/* Official catalog: Category → Capability (no typing ids). The
@@ -722,14 +751,14 @@ export default function ServiceSettingsScreen() {
                       autoCapitalize="none"
                       autoCorrect={false}
                       style={styles.customCapInput}
+                      testID="service-settings-custom-capability-input"
                       accessibilityLabel="Custom capability key"
                     />
                     <Text style={styles.modalHelpText}>
                       Use a reverse-DNS capability name you control, e.g.
-                      com.example.inventory_lookup. Custom capability keys are
-                      developer preview: a public custom capability needs a
-                      parameter/result schema before other Dinas can reliably call
-                      it.
+                      com.example.inventory_lookup. Custom capability keys are developer preview: a
+                      public custom capability needs a parameter/result schema before other Dinas
+                      can reliably call it.
                     </Text>
                     <Pressable
                       onPress={() => addCapability(customCapName, pickerCategoryId)}
@@ -739,6 +768,7 @@ export default function ServiceSettingsScreen() {
                         pressed && styles.pressed,
                         customCapName.trim() === '' && styles.disabled,
                       ]}
+                      testID="service-settings-add-custom-capability"
                       accessibilityRole="button"
                       accessibilityLabel="Add custom capability"
                     >
@@ -751,6 +781,7 @@ export default function ServiceSettingsScreen() {
               <Pressable
                 onPress={() => setAddModalVisible(false)}
                 style={({ pressed }) => [styles.modalCancelButton, pressed && styles.pressed]}
+                testID="service-settings-add-modal-cancel"
                 accessibilityRole="button"
                 accessibilityLabel="Cancel"
               >
@@ -759,10 +790,20 @@ export default function ServiceSettingsScreen() {
             </Pressable>
           </Pressable>
         </Modal>
+      </ScrollView>
 
+      {/* Pinned footer — keeps the primary "Save changes" action always
+          reachable above the keyboard + tab bar, regardless of how long
+          the form scrolls. (Was the last child of the ScrollView, which
+          parked it below the fold on long listings.) */}
+      <View style={styles.footer}>
         <Pressable
           onPress={onSave}
           disabled={saving}
+          testID="service-settings-save"
+          accessibilityRole="button"
+          accessibilityLabel="Save changes"
+          accessibilityState={{ disabled: saving, busy: saving }}
           style={({ pressed }) => [
             styles.saveButton,
             pressed && styles.pressed,
@@ -775,8 +816,8 @@ export default function ServiceSettingsScreen() {
             <Text style={styles.saveButtonText}>Save changes</Text>
           )}
         </Pressable>
-      </ScrollView>
-    </View>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -786,9 +827,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgPrimary,
   },
   centered: { justifyContent: 'center', alignItems: 'center' },
+  scrollFlex: { flex: 1 },
   scrollContent: {
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.xxl,
+  },
+  footer: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    backgroundColor: colors.bgPrimary,
   },
   section: {
     marginTop: spacing.lg,
@@ -907,7 +957,6 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.7 },
   disabled: { opacity: 0.4 },
   saveButton: {
-    marginTop: spacing.xl,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
     backgroundColor: colors.accent,

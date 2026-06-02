@@ -244,11 +244,44 @@ describe('ServiceHandler.handleQuery — auto path', () => {
     expect(core.createCalls).toHaveLength(0);
   });
 
-  it('drops when isDiscoverable is false', async () => {
+  it('drops when isDiscoverable is false (legacy → derives known_only, not live)', async () => {
     const core = stubCore();
     const handler = makeHandler({
       core,
       config: { ...baseConfig, isDiscoverable: false },
+    });
+    await handler.handleQuery(REQUESTER, validQuery);
+    expect(core.createCalls).toHaveLength(0);
+  });
+
+  // Codex P1#1: the execution gate must use isListingPublishable (active AND
+  // not known_only), NOT raw isDiscoverable. Otherwise active-unlisted is wrongly
+  // dropped and paused-but-public is wrongly executed.
+  it('ACCEPTS an active UNLISTED listing (reached by service_uri, must execute)', async () => {
+    const core = stubCore();
+    const handler = makeHandler({
+      core,
+      config: { ...baseConfig, isDiscoverable: false, discoverability: 'unlisted', status: 'active' },
+    });
+    await handler.handleQuery(REQUESTER, validQuery);
+    expect(core.createCalls).toHaveLength(1);
+  });
+
+  it('DROPS a PAUSED listing even when public (per-listing OFF switch)', async () => {
+    const core = stubCore();
+    const handler = makeHandler({
+      core,
+      config: { ...baseConfig, discoverability: 'public', status: 'paused' },
+    });
+    await handler.handleQuery(REQUESTER, validQuery);
+    expect(core.createCalls).toHaveLength(0);
+  });
+
+  it('DROPS a DRAFT listing (saved, not live)', async () => {
+    const core = stubCore();
+    const handler = makeHandler({
+      core,
+      config: { ...baseConfig, discoverability: 'public', status: 'draft' },
     });
     await handler.handleQuery(REQUESTER, validQuery);
     expect(core.createCalls).toHaveLength(0);

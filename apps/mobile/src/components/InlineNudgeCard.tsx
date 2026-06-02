@@ -124,6 +124,7 @@ export function InlineNudgeCard({ message, onAct }: InlineNudgeCardProps): React
             style={[styles.btn, styles.dismiss]}
             onPress={onPressDismiss}
             activeOpacity={0.7}
+            accessibilityRole="button"
           >
             <Text style={styles.dismissText}>Dismiss</Text>
           </TouchableOpacity>
@@ -133,6 +134,7 @@ export function InlineNudgeCard({ message, onAct }: InlineNudgeCardProps): React
               style={[styles.btn, styles.action]}
               onPress={onPressAction}
               activeOpacity={0.7}
+              accessibilityRole="button"
             >
               <Text style={styles.actionText}>{meta.actionLabel}</Text>
             </TouchableOpacity>

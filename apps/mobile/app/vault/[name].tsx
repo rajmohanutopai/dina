@@ -187,7 +187,11 @@ export default function VaultDetail(): React.ReactElement {
           <View style={styles.descHeader}>
             <Text style={styles.descLabel}>DESCRIPTION</Text>
             {!editingDesc ? (
-              <Pressable onPress={onStartEditDesc}>
+              <Pressable
+                onPress={onStartEditDesc}
+                testID="vault-detail-edit-description"
+                accessibilityRole="button"
+              >
                 <Text style={styles.editLink}>Edit</Text>
               </Pressable>
             ) : null}
@@ -206,6 +210,7 @@ export default function VaultDetail(): React.ReactElement {
                 textAlignVertical="top"
                 placeholder="What kinds of facts belong here?"
                 placeholderTextColor={colors.textMuted}
+                testID="vault-detail-description-input"
               />
               {descError !== null ? <Text style={styles.errorText}>{descError}</Text> : null}
               <View style={styles.descButtonRow}>
@@ -215,10 +220,17 @@ export default function VaultDetail(): React.ReactElement {
                     setEditingDesc(false);
                     setDescError(null);
                   }}
+                  testID="vault-detail-cancel-description"
+                  accessibilityRole="button"
                 >
                   <Text style={styles.descCancelText}>Cancel</Text>
                 </Pressable>
-                <Pressable style={styles.descSaveButton} onPress={onSaveDesc}>
+                <Pressable
+                  style={styles.descSaveButton}
+                  onPress={onSaveDesc}
+                  testID="vault-detail-save-description"
+                  accessibilityRole="button"
+                >
                   <Text style={styles.descSaveText}>Save</Text>
                 </Pressable>
               </View>
@@ -313,6 +325,7 @@ function ItemCard({
   return (
     <Pressable
       onPress={isPressable ? onTogglePress : undefined}
+      testID={`vault-detail-item-${item.id}`}
       style={({ pressed }) => [
         styles.itemCard,
         pressed && isPressable && styles.itemCardPressed,
@@ -332,7 +345,13 @@ function ItemCard({
         >
           {cleanHeadline}
         </Text>
-        <Pressable onPress={onDelete} hitSlop={10} accessibilityLabel="Delete item">
+        <Pressable
+          onPress={onDelete}
+          hitSlop={10}
+          testID={`vault-detail-delete-item-${item.id}`}
+          accessibilityRole="button"
+          accessibilityLabel="Delete item"
+        >
           <Ionicons name="trash-outline" size={18} color={colors.textMuted} />
         </Pressable>
       </View>

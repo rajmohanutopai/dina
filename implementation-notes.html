@@ -622,6 +622,114 @@ explicitly asks Claude to <b>validate before implementing</b> (§43, §10) and t
   rkey + nav all covered; the screens' data wiring has no render harness (consistent with this codebase's screen tests)
   but every unit underneath is tested. <b>"Pause 1 of 5" now works end-to-end.</b></p>
 </div>
+<div class="item iter">
+  <span class="tag iter">Iter 16 — Codex pass 5: status/multi-listing consistency across the execution path</span>
+  <p>Five findings on the Iter 14–15 work; all verified in code first, all fixed.</p>
+  <p><b>P1#1 — Brain execution gate ignored the new model.</b> <code>service_handler.findCapabilityConfig</code> checked
+  <code>!config.isDiscoverable</code> — wrongly rejecting active-<i>unlisted</i> listings and wrongly executing
+  <i>paused</i>-but-public ones. The handler is ALREADY rkey-aware (<code>readConfig(rkeyForQuery(query))</code> resolves
+  the targeted listing), so the fix is a one-liner: gate on <code>isListingPublishable(config)</code> — the same
+  predicate the publishers + Core ingress use. Tests: active-unlisted ACCEPTED, paused/draft DROPPED.</p>
+  <p><b>P1#2 — Core ingress wasn't rkey-aware.</b> <code>isCapabilityConfigured(capability)</code> admitted a query if
+  ANY live listing offered the capability, and <code>service_uri</code> only DID-checked — so a query targeting paused
+  listing A could pass the bypass because live listing B offered the same capability (then Brain rejected it). Made it
+  <code>isCapabilityConfigured(capability, rkey?)</code>: when the query carries a <code>service_uri</code>, validate the
+  EXACT listing (offers cap AND <code>isListingPublishable</code>); else any live listing. <code>bypass.ts</code> now
+  parses the service_uri FIRST (authority + rkey) and passes the rkey to the checker; <code>LocalCapabilityChecker</code>
+  signature widened. Enforces "one listing == one execution contract" at ingress, before Brain. Tests: rkey forwarded;
+  targeting a listing that doesn't offer the cap denied even when a generic check would pass.</p>
+  <p><b>P2#3 — <code>slugifyRkey</code> could infinite-loop.</b> A 64-char base that's already taken produced
+  <code>base-2</code> sliced straight back to <code>base</code> → every candidate identical. Fixed by reserving suffix
+  space before truncating (re-trimmed per iteration). Test: max-length collision returns a distinct, valid, in-bounds
+  rkey.</p>
+  <p><b>P2#4 — "live listing must have a capability" was mobile-only.</b> Added a <code>no_capabilities</code> rule to
+  <code>validateServiceListing</code> (a listing that is <code>isListingPublishable</code> must advertise ≥1 capability),
+  so the my-listings activate-toggle + direct/paired clients can't slip a live-but-empty listing past Core. paused/draft/
+  known_only may be empty. Tests cover active-public, active-unlisted (rejected) + paused/known_only (allowed).</p>
+  <p><b>P3#5 — <code>draft</code> was mislabeled "Paused".</b> <code>ListingsView</code> now renders the real status
+  (Active / Paused / Draft); the toggle still means "is it live" (active→pause, paused/draft→activate). Test: a draft
+  row shows "Draft" + toggles to active. (Kept <code>draft</code> in the model — it's the documented future
+  schema-editor state — but made it honest in the UI.)</p>
+  <p><b>Tests showed:</b> protocol <b>484</b> (+4 no_capabilities), core <b>4515</b> (+5: rkey-targeted ingress +
+  bypass rkey), brain <b>3343</b> (+3 handler unlisted/paused/draft; 1 pre-existing async flake, 0 on re-run), mobile
+  <b>2869</b> (+2: rkey collision + draft label), HNL green. tsc 0; eslint 0 on every substantively-changed file
+  (service_config, listing-validation, listing_rkey, listings_view + their tests). The pre-existing Array&lt;T&gt;/
+  non-null/import-order debt in <code>service_handler.ts</code> + <code>bypass.ts</code> (touched minimally — my added
+  lines are all clean) is unrelated and left untouched. <b>Deep review:</b> (1) Correct — Brain, Core ingress, and the
+  publishers now ALL gate on the one <code>isListingPublishable</code> predicate, and ingress is rkey-exact, so the
+  execution path is consistent end-to-end. (2) No smell — the per-listing offer check is extracted
+  (<code>listingOffersCapability</code>); the rkey param is back-compat (absent → generic). (3) Each finding has a
+  regression test at the layer it lived in.</p>
+</div>
+<div class="item iter">
+  <span class="tag iter">Iter 17 — Codex pass 6: unlisted is link-only at ingress; clean-install egress; validator layering</span>
+  <p>Four findings on the status/multi-listing model; all verified + fixed.</p>
+  <p><b>P1#1 — unlisted was reachable without the link.</b> <code>isCapabilityConfigured</code>'s no-rkey (generic)
+  path used <code>isListingPublishable</code>, which includes <code>unlisted</code> — so an unknown peer sending only
+  <code>{capability}</code> (no <code>service_uri</code>) bypassed the contact gate for an unlisted listing,
+  contradicting "unlisted = link only" (catalog §5.2). Added a STRICTER protocol predicate
+  <code>isListingPublic</code> (active AND <b>public</b>) and used it for the no-rkey branch; the rkey-targeted branch
+  keeps <code>isListingPublishable</code> (public OR unlisted — the sender has the URI). So unlisted now requires the
+  service_uri/rkey. Updated the unlisted ingress test (generic → denied, rkey → allowed) + a protocol
+  <code>isListingPublic</code> truth-table test.</p>
+  <p><b>P1#2 — clean install could discover but not send.</b> <code>boot_capabilities</code> defaulted the AppView
+  SEARCH client to hosted, but only wired the egress <code>providerServiceResolver</code> when a services-AppView URL
+  was explicitly set — so a fresh install searched fine, then D2D <code>service.query</code> egress fell back to
+  contact-gating and got denied (the public provider isn't a contact). Mirrored the search-client priority: override →
+  real; demo → stub (undefined); else → the SAME hosted default
+  (<code>resolveMobileHostedDinaEndpoints().appViewBaseUrl</code>). Discover + send now both work out of the box.</p>
+  <p><b>P2#3 — env/demo config wasn't catalog-valid.</b> The boot env service config (written via the structural-only
+  setter) lacked <code>discoverability</code>, <code>status</code>, and per-capability <code>category</code>. Added
+  <code>discoverability:'public'</code>, <code>status:'active'</code>, and <code>eta_query.category:'transit'</code> so
+  it's a valid catalog listing (its published record now carries a category, and a re-save through the route passes).</p>
+  <p><b>P2#4 — validator layering was inconsistent.</b> <code>validateServiceListing</code> intentionally allows an
+  empty <code>paused</code>/<code>draft</code> listing, but Core's structural <code>validateServiceConfig</code> still
+  threw on <code>isDiscoverable=true</code> + zero caps — so the edit screen could conceptually allow an in-progress
+  paused listing while the save path rejected it. Removed that policy from <code>validateServiceConfig</code> (now
+  STRUCTURAL ONLY); the "a LIVE listing needs ≥1 capability" rule lives entirely in <code>validateServiceListing</code>
+  (status-aware, run by the Core route + mobile publish). Added a test that the structural setter accepts zero caps.</p>
+  <p><b>Tests showed:</b> protocol <b>485</b> (+1 isListingPublic), core <b>4516</b> (+1 structural-zero-caps;
+  unlisted-ingress test now asserts generic-denied + rkey-allowed), mobile <b>2869</b> (boot_capabilities 14 still green
+  after the resolver default + catalog-valid env config), brain <b>3343</b> (pre-existing flake, 0 on re-run), HNL
+  unaffected. tsc 0; eslint 0 on the protocol + core files; the pre-existing debt in <code>boot_capabilities.ts</code>
+  (import/order, require-imports, Array&lt;T&gt;) is unrelated to my additive edits and left untouched. <b>Deep
+  review:</b> (1) Correct — three reachability tiers now distinct: <code>isListingPublic</code> (generic/no-URI),
+  <code>isListingPublishable</code> (URI-targeted + publish), and not-live (paused/draft/known_only). (2) No smell —
+  one validator owns the live/no-cap policy; the env config is honestly catalog-valid rather than relying on a lax
+  setter. (3) Each fix has a test at its layer.</p>
+</div>
+<div class="item iter">
+  <span class="tag iter">Iter 18 — Codex pass 7: generic ingress = self-only; unlisted egress via service_uri</span>
+  <p>Two P2 findings on the execution path; both verified + fixed (core-only round).</p>
+  <p><b>P2#1 — generic (no-service_uri) ingress was inconsistent with execution.</b> Core's no-rkey path admitted a
+  capability if ANY public listing offered it, but Brain resolves a no-service_uri query to the <code>self</code>
+  listing — so Core could allow on the strength of a non-self listing that Brain then silently dropped. Changed the
+  no-rkey branch to validate the <code>self</code> listing ONLY (and only when <code>isListingPublic</code>). A non-self
+  listing is now reachable solely via its <code>service_uri</code>/rkey — "one listing == one execution contract", and
+  Core ⇔ Brain agree. Updated the two multi-listing tests that asserted the old "any listing" semantics (now:
+  generic→self-only, non-self needs rkey).</p>
+  <p><b>P2#2 — unlisted "link/QR/invite" didn't actually work on the requester side.</b>
+  <code>evaluateServiceEgressBypass</code> ignored <code>body.service_uri</code> and only asked AppView "is this DID a
+  public service for this capability?" — and AppView never advertises unlisted (its endpoint filters
+  <code>isDiscoverable=true</code>). So a requester holding an unlisted service's LINK still failed egress (fell back to
+  contact-gating) unless already a contact. Fix: when the query carries a <code>service_uri</code>, the link IS the
+  access grant — validate only that the URI's authority matches the recipient, then ALLOW egress. The RECIPIENT's
+  ingress gate stays authoritative (Iter 16: rkey-targeted <code>isListingPublishable</code> accepts active public OR
+  unlisted, rejects known_only/paused/draft), so a stale/known_only/wrong service_uri is rejected there — no need to
+  index unlisted at AppView. Bare (no-URI) queries still require a public recipient. Tests: allow-unlisted-via-URI even
+  when the resolver says not-public; deny on authority mismatch.</p>
+  <p><b>Why egress-trust is safe:</b> the egress bypass only decides "skip MY contact gate for this outbound
+  service.query." A fabricated service_uri to a random DID still hits THAT recipient's ingress, which not_configured-
+  rejects it → falls to the recipient's own contact gate → dropped if the sender isn't a contact. So trusting the link
+  at egress adds no new reach; it just unblocks the legitimate unlisted-via-link flow.</p>
+  <p><b>Tests showed:</b> core <b>4519</b> (+3: generic-self-only, allow-unlisted-via-URI, authority-mismatch; updated
+  the two old "any listing" assertions). Protocol/brain/mobile/HNL untouched this round. tsc 0; eslint 0 on
+  <code>service_config.ts</code> + its test; the 3 pre-existing import-order/Array&lt;T&gt; issues in
+  <code>bypass.ts</code>/<code>bypass.test.ts</code> are outside my edits + left untouched. <b>Deep review:</b> (1)
+  Correct — generic ingress now matches execution (self-only), and unlisted is reachable end-to-end via its link
+  (egress trusts the URI, ingress authoritative). (2) No smell — egress stays a "skip-my-contact-gate" decision; the
+  authoritative authorization is the recipient ingress, not duplicated. (3) Both findings have egress + ingress tests.</p>
+</div>
 
 </body>
 </html>

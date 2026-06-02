@@ -681,6 +681,7 @@ export class HttpCoreTransport implements CoreClient {
     if (input.idempotencyKey !== undefined) body.idempotency_key = input.idempotencyKey;
     if (input.policy !== undefined) body.policy = input.policy;
     if (input.initialState !== undefined) body.initial_state = input.initialState;
+    if (input.requestedRunner !== undefined) body.requested_runner = input.requestedRunner;
 
     const res = await this.callRaw('POST', '/v1/workflow/tasks', undefined, body);
     if (res.status === 409) {

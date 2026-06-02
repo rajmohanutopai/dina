@@ -306,7 +306,13 @@ function BlockView({ block }: { block: CardBlock }): React.JSX.Element | null {
       const url = buildMapUrl(block);
       if (url === null) return null;
       return (
-        <TouchableOpacity style={styles.mapButton} onPress={() => openSafe(url)} accessibilityRole="button">
+        <TouchableOpacity
+          style={styles.mapButton}
+          onPress={() => openSafe(url)}
+          accessibilityRole="button"
+          accessibilityLabel="Open in Maps"
+          testID="safe-card-renderer-map"
+        >
           <Ionicons name="map-outline" size={16} color={colors.white} />
           <Text style={styles.mapButtonText}>{block.label}</Text>
         </TouchableOpacity>
@@ -316,7 +322,13 @@ function BlockView({ block }: { block: CardBlock }): React.JSX.Element | null {
     case 'link': {
       const host = linkDisplayHost(block.url);
       return (
-        <TouchableOpacity style={styles.linkButton} onPress={() => openSafe(block.url)} accessibilityRole="link">
+        <TouchableOpacity
+          style={styles.linkButton}
+          onPress={() => openSafe(block.url)}
+          accessibilityRole="link"
+          accessibilityLabel={`Open ${block.label}`}
+          testID="safe-card-renderer-link"
+        >
           <View style={styles.linkTextCol}>
             <Text style={styles.linkLabel}>{block.label}</Text>
             {host !== '' && <Text style={styles.linkHost}>{host}</Text>}

@@ -15,7 +15,7 @@
  * Source: core/internal/service/service_config.go  (Go reference)
  */
 
-import { isListingPublishable, resolveCanonicalCapability } from '@dina/protocol';
+import { isListingPublic, isListingPublishable, resolveCanonicalCapability } from '@dina/protocol';
 
 import { configEventChannel } from './config_event_channel';
 import { getServiceConfigRepository } from './service_config_repository';
@@ -249,46 +249,62 @@ export function onServiceConfigChanged(listener: ConfigChangeListener): () => vo
  * unknown (non-registry) capability falls back to exact-match so
  * out-of-registry/custom capabilities still work.
  *
- * Multi-listing: a DID may publish many listings (one row per rkey). The
- * bypass is allowed if ANY published (public or unlisted) listing offers the capability, so
- * this walks every configured listing — not just `self`.
+ * Multi-listing + rkey-aware (one listing == one execution contract):
+ *  - When `rkey` is given (the query carried a `service_uri`), validate ONLY
+ *    that exact listing — it must be LIVE (`isListingPublishable`: active and not
+ *    `known_only`, so public OR unlisted) and offer the capability. This stops a
+ *    query targeting listing A from being admitted because some OTHER listing B
+ *    offers the capability.
+ *  - When `rkey` is omitted (a generic, link-less query), validate ONLY the
+ *    DEFAULT (`self`) listing, and only when it's PUBLIC (`isListingPublic`).
+ *    Non-self listings + unlisted listings are reachable only via their
+ *    service_uri — matching Brain, which resolves a no-service_uri query to
+ *    `self` (so Core can't admit a capability Brain would then drop).
  *
  * Stays SYNC — `resolveCanonicalCapability` is a pure local function from
  * the shared registry (no AppView fetch), preserving the sync-hot-path
  * invariant this function is documented to uphold.
  */
-export function isCapabilityConfigured(capability: string): boolean {
-  // Multi-listing: a DID may publish many listings; the contact-gate bypass
-  // is allowed if ANY published (public or unlisted) listing offers the capability. Walk every
-  // configured listing, not just `self`.
+export function isCapabilityConfigured(capability: string, rkey?: string): boolean {
   const inboundCanonical = resolveCanonicalCapability(capability);
-  for (const cfg of configs.values()) {
-    // A listing is queryable iff it's LIVE on the network (`isListingPublishable`,
-    // the SAME predicate the publishers gate publish/unpublish on — so
-    // "published ⇔ queryable" stays symmetric). That means: status === 'active'
-    // (a `paused`/`draft` listing keeps its config but rejects queries) AND
-    // discoverability !== 'known_only' (local/pairing-bound, never reached via a
-    // generic query — its service_uri authority is checked in bypass.ts).
-    // Back-compat: a legacy config with no status/discoverability derives
-    // active + (isDiscoverable?public:known_only).
-    if (!isListingPublishable(cfg)) continue;
+  // rkey-targeted: validate exactly that listing (the `service_uri` chose it).
+  // A URI-targeted query may reach an `unlisted` listing — the sender got the
+  // link — so the bar is `isListingPublishable` (public OR unlisted, active).
+  if (rkey !== undefined) {
+    const cfg = configs.get(rkey);
+    if (cfg === undefined || !isListingPublishable(cfg)) return false;
+    return listingOffersCapability(cfg, capability, inboundCanonical);
+  }
+  // Generic (no service_uri): only the DEFAULT (`self`) listing, and only when
+  // it's PUBLIC + active. Two reasons:
+  //   - Consistency with execution: Brain resolves a no-service_uri query to the
+  //     `self` listing (rkeyForQuery → undefined → readConfig('self')). If Core
+  //     admitted a capability on the strength of some OTHER public listing, Core
+  //     would allow but Brain would then drop it (self doesn't offer it) — a
+  //     silent mismatch. "One listing == one execution contract": a NON-self
+  //     listing is reachable ONLY via its service_uri/rkey.
+  //   - Unlisted stays link-only: `isListingPublic` excludes unlisted, so even
+  //     `self` is reachable generically only when it's public (catalog §5.2).
+  const selfCfg = configs.get(DEFAULT_LISTING_RKEY);
+  if (selfCfg === undefined || !isListingPublic(selfCfg)) return false;
+  return listingOffersCapability(selfCfg, capability, inboundCanonical);
+}
 
-    // Fast path: exact match against a configured key (covers both
-    // canonical-configured providers and out-of-registry custom keys).
-    if (Object.prototype.hasOwnProperty.call(cfg.capabilities, capability)) {
-      return true;
-    }
-
-    // Canonical match: the inbound capability and the configured keys are
-    // compared by their canonical names, so alias-vs-canonical mismatches
-    // between consumer and provider still resolve. Skipped for an
-    // out-of-registry capability (no canonical → exact match only above).
-    if (inboundCanonical === null) continue;
-    for (const configured of Object.keys(cfg.capabilities)) {
-      if (resolveCanonicalCapability(configured) === inboundCanonical) {
-        return true;
-      }
-    }
+/**
+ * Whether ONE listing's config advertises `capability`. Exact-match first
+ * (covers canonical-configured + out-of-registry custom keys), then canonical
+ * match so an alias-configured provider (`bus_eta`) still answers a canonical
+ * query (`eta_query`). `inboundCanonical` is precomputed by the caller.
+ */
+function listingOffersCapability(
+  cfg: ServiceConfig,
+  capability: string,
+  inboundCanonical: string | null,
+): boolean {
+  if (Object.prototype.hasOwnProperty.call(cfg.capabilities, capability)) return true;
+  if (inboundCanonical === null) return false;
+  for (const configured of Object.keys(cfg.capabilities)) {
+    if (resolveCanonicalCapability(configured) === inboundCanonical) return true;
   }
   return false;
 }
@@ -343,15 +359,14 @@ export function validateServiceConfig(value: unknown): asserts value is ServiceC
     throw new Error('service_config: capabilities must be an object');
   }
   const caps = v.capabilities as Record<string, unknown>;
-  // Review #19: a discoverable profile with zero capabilities is a
-  // hostile advertisement — it tells AppView "I'm here" but any
-  // requester searching for a capability will bounce off. Block it at
-  // validation time so the screen's Save button can't put it there.
-  if (v.isDiscoverable === true && Object.keys(caps).length === 0) {
-    throw new Error(
-      'service_config: a discoverable profile must advertise at least one capability (add capabilities or set isDiscoverable to false)',
-    );
-  }
+  // NOTE: `validateServiceConfig` is STRUCTURAL ONLY. The "a LIVE listing must
+  // advertise ≥1 capability" POLICY lives in `@dina/protocol`'s
+  // `validateServiceListing` (`no_capabilities`), which is status-aware so an
+  // in-progress `paused`/`draft` listing may legitimately be empty. Enforcing it
+  // here too (the old `isDiscoverable && zero caps → throw`) contradicted that —
+  // it blocked pausing an empty public listing — so the rule was removed from
+  // this structural setter and centralised in `validateServiceListing` (run by
+  // the Core route + the mobile publish flow).
   for (const [name, entryU] of Object.entries(caps)) {
     if (!name) {
       throw new Error('service_config: capability name cannot be empty');

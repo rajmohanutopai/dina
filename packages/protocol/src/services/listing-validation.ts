@@ -66,13 +66,29 @@ export function isListingPublishable(config: ServiceConfig): boolean {
   );
 }
 
+/**
+ * Whether a listing is reachable by a GENERIC (no `service_uri`) query — i.e.
+ * an unknown peer who only knows the capability can reach it. True iff the
+ * listing is `active` AND `public`. This is STRICTER than `isListingPublishable`:
+ * an `unlisted` listing is published + URI-resolvable, but it is NOT generically
+ * reachable — it requires the `service_uri`/rkey from a link/QR/invite (catalog
+ * §5.2: "Only people with the service link…"). Core's inbound gate uses this for
+ * the no-rkey path so unlisted can't be hit without the URI.
+ */
+export function isListingPublic(config: ServiceConfig): boolean {
+  return (
+    effectiveListingStatus(config) === 'active' && effectiveDiscoverability(config) === 'public'
+  );
+}
+
 export type ListingValidationCode =
   | 'unknown_capability'
   | 'missing_category'
   | 'category_not_allowed'
   | 'missing_discoverability'
   | 'write_needs_approval'
-  | 'public_custom_needs_schema';
+  | 'public_custom_needs_schema'
+  | 'no_capabilities';
 
 export interface ListingValidationError {
   readonly code: ListingValidationCode;
@@ -121,6 +137,19 @@ export function validateServiceListing(
   const errors: ListingValidationError[] = [];
   const capabilities: ListingCapabilityInfo[] = [];
   const discoverability = effectiveDiscoverability(config);
+
+  // A LIVE listing (active + published) must advertise at least one capability —
+  // a live-but-empty listing is a hostile/dead advertisement (it tells the
+  // network "I'm here" but answers nothing). Enforced in the validator (not just
+  // the mobile editor) so the my-listings activate-toggle + direct/paired
+  // clients can't slip an empty active listing past Core. A `paused`/`draft`
+  // listing may be empty (work in progress).
+  if (isListingPublishable(config) && Object.keys(config.capabilities ?? {}).length === 0) {
+    errors.push({
+      code: 'no_capabilities',
+      message: 'A live service must advertise at least one capability (add one, or pause the listing).',
+    });
+  }
 
   if (options.requireExplicitDiscoverability === true && config.discoverability === undefined) {
     errors.push({

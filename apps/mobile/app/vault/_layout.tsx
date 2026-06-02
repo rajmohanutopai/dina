@@ -60,6 +60,7 @@ function VaultStackBack({ canGoBack }: { canGoBack: boolean }): React.ReactEleme
     <Pressable
       onPress={onPress}
       hitSlop={12}
+      testID="vault-layout-back"
       accessibilityRole="button"
       accessibilityLabel="Back"
       style={{ paddingHorizontal: 12, paddingVertical: 6 }}

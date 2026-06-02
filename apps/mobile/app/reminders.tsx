@@ -79,6 +79,7 @@ export default function RemindersScreen() {
             reminders here.
           </Text>
           <Pressable
+            testID="reminders-go-to-chat"
             onPress={() => router.replace('/')}
             accessibilityRole="button"
             accessibilityLabel="Go to Chat"
@@ -118,6 +119,8 @@ function ReminderRow({
   const dueLabelStyle = item.isOverdue ? styles.dueOverdue : styles.due;
   return (
     <Pressable
+      testID={`reminders-row-${item.id}`}
+      accessibilityRole="button"
       onLongPress={() => onDismiss(item)}
       delayLongPress={350}
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}

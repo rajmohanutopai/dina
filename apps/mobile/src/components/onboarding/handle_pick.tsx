@@ -28,14 +28,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import {
   type AvailabilityResult,
   pickHandle,
@@ -185,7 +178,10 @@ export function HandlePicker(props: HandlePickProps): React.ReactElement {
 type CheckStatus =
   | { kind: 'idle' }
   | { kind: 'checking' }
-  | { kind: 'checked'; result: { preferred: AvailabilityResult; alternatives: AvailabilityResult[] } }
+  | {
+      kind: 'checked';
+      result: { preferred: AvailabilityResult; alternatives: AvailabilityResult[] };
+    }
   | { kind: 'invalid'; reason: string }
   | { kind: 'error'; reason: string };
 
@@ -193,8 +189,7 @@ function canPick(status: CheckStatus, fullHandle: string): boolean {
   if (fullHandle.length === 0) return false;
   if (status.kind !== 'checked') return false;
   return (
-    status.result.preferred.kind === 'available' ||
-    status.result.preferred.kind === 'unknown' // soft-allow PDS-down
+    status.result.preferred.kind === 'available' || status.result.preferred.kind === 'unknown' // soft-allow PDS-down
   );
 }
 

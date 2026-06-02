@@ -48,6 +48,7 @@ export function OwnerName(props: OwnerNameProps): React.ReactElement {
         placeholder="e.g. Raj"
         placeholderTextColor={colors.textMuted}
         style={styles.input}
+        testID="owner-name-input"
         maxLength={40}
         returnKeyType="done"
         onSubmitEditing={() => valid && props.onContinue(trimmed)}

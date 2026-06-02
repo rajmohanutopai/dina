@@ -49,11 +49,16 @@ async function main(): Promise<void> {
   const eta = known.find((c) => c.name === 'eta_query');
   if (eta === undefined) throw new Error('eta_query not found in brain registry');
 
+  // Discoverability override for MT-63/78/79 testing: public | unlisted | known_only.
+  const disc = (process.env.DINA_DISCOVERABILITY ?? 'public') as
+    | 'public'
+    | 'unlisted'
+    | 'known_only';
   const config: ServiceConfig = {
-    isDiscoverable: true,
-    discoverability: 'public',
+    isDiscoverable: disc === 'public',
+    discoverability: disc,
     name: 'Demo ETA Provider',
-    description: 'lite-stack provider — eta_query (test stub, post-rename)',
+    description: `lite-stack provider — eta_query (test stub) [rev ${Date.now()}]`,
     capabilities: {
       eta_query: {
         mcpServer: 'stub_eta',

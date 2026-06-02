@@ -267,6 +267,8 @@ function ReadyState({
                 testID={`review-draft-sentiment-${s}`}
                 onPress={() => setSentiment(s)}
                 style={[styles.sentimentPill, active && styles.sentimentPillActive]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
               >
                 <Ionicons
                   name={SENTIMENT_ICON[s]}
@@ -324,6 +326,7 @@ function ReadyState({
           testID="review-draft-discard"
           onPress={onDiscard}
           style={styles.secondaryButton}
+          accessibilityRole="button"
         >
           <Text style={styles.secondaryButtonText}>Discard</Text>
         </Pressable>
@@ -331,6 +334,7 @@ function ReadyState({
           testID="review-draft-edit-in-form"
           onPress={onEditInForm}
           style={styles.secondaryButton}
+          accessibilityRole="button"
         >
           <Text style={styles.secondaryButtonText}>Edit in form</Text>
         </Pressable>
@@ -342,6 +346,9 @@ function ReadyState({
             styles.primaryButton,
             publishDisabled && styles.primaryButtonDisabled,
           ]}
+          accessibilityRole="button"
+          accessibilityLabel="Publish"
+          accessibilityState={{ disabled: publishDisabled }}
         >
           {submitting ? (
             <ActivityIndicator color={colors.bgPrimary} size="small" />

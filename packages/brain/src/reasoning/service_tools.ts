@@ -231,6 +231,16 @@ export interface SearchProviderServicesToolOptions {
   appViewClient: Pick<AppViewClient, 'searchServices'>;
   /** Cap the number of profiles returned to the LLM. Default 5. */
   resultLimit?: number;
+  /**
+   * This node's own DID. Profiles with a matching DID are dropped before
+   * the list reaches the LLM, so the agent can never pick (and query)
+   * its own listing — a node that's both requester and provider for a
+   * capability (role=provider, or a stale self-listing lingering in
+   * AppView) would otherwise be ranked + chosen, and the query would D2D
+   * to its own DID with no inbound runner → "No response". Self-discovery
+   * is never useful; we know our own capabilities locally.
+   */
+  selfDid?: string;
 }
 
 /** Per-capability schema block returned to the LLM — trimmed from the
@@ -291,7 +301,12 @@ export function createSearchProviderServicesTool(
         radiusKm: typeof args.radius_km === 'number' ? args.radius_km : undefined,
         q: typeof args.q === 'string' ? args.q : undefined,
       });
-      return profiles.slice(0, limit).map(toLLMProfile);
+      // Drop our own listing (see selfDid doc) — never offer self to the LLM.
+      const visible =
+        options.selfDid !== undefined && options.selfDid !== ''
+          ? profiles.filter((p) => p.did !== options.selfDid)
+          : profiles;
+      return visible.slice(0, limit).map(toLLMProfile);
     },
   };
 }

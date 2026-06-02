@@ -389,6 +389,7 @@ export default function ChatScreen() {
           onPress={() =>
             router.push({ pathname: '/confirm-recovery-phrase', params: { from: '/' } })
           }
+          testID="index-verify-banner"
           accessibilityRole="button"
           accessibilityLabel="Confirm your recovery phrase"
           style={({ pressed }) => [
@@ -437,6 +438,8 @@ export default function ChatScreen() {
               style={styles.actionCard}
               onPress={() => router.push('/help')}
               activeOpacity={0.7}
+              testID="index-help-card"
+              accessibilityRole="button"
             >
               <View style={styles.actionCardHeader}>
                 <View style={styles.actionIcon}>
@@ -507,6 +510,8 @@ export default function ChatScreen() {
                     style={styles.modeChip}
                     onPress={() => handleAction(action)}
                     activeOpacity={0.7}
+                    testID={`index-mode-chip-${action.key}`}
+                    accessibilityRole="button"
                   >
                     <Text style={styles.modeChipLabel}>{action.label}</Text>
                   </TouchableOpacity>
@@ -531,6 +536,7 @@ export default function ChatScreen() {
                 style={styles.modePill}
                 onPress={() => setModePopoverOpen(true)}
                 activeOpacity={0.7}
+                testID="index-mode-pill"
                 accessibilityRole="button"
                 accessibilityLabel={`${activeAction.label} mode. Double tap to switch.`}
                 accessibilityHint="Switch between Ask, Remember, and Task modes"
@@ -598,8 +604,15 @@ export default function ChatScreen() {
         <Pressable
           style={styles.popoverBackdrop}
           onPress={() => setModePopoverOpen(false)}
+          testID="index-popover-backdrop"
+          accessibilityRole="button"
+          accessibilityLabel="Close mode switcher"
         >
-          <Pressable style={styles.popoverSheet} onPress={() => undefined}>
+          <Pressable
+            style={styles.popoverSheet}
+            onPress={() => undefined}
+            testID="index-popover-sheet"
+          >
             <Text style={styles.popoverHint}>Switch mode</Text>
             {availableActions.map((action) => {
               const isActive = activeAction?.key === action.key;
@@ -613,6 +626,8 @@ export default function ChatScreen() {
                     setTimeout(() => inputRef.current?.focus(), 100);
                   }}
                   activeOpacity={0.7}
+                  testID={`index-popover-row-${action.key}`}
+                  accessibilityRole="button"
                 >
                   <Text
                     style={[styles.popoverLabel, isActive && styles.popoverLabelActive]}

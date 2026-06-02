@@ -295,7 +295,14 @@ export function buildAgenticAskPipeline(
       }),
     );
     reg.register(createSearchCapabilitiesTool({ appViewClient: input.appViewClient }));
-    reg.register(createSearchProviderServicesTool({ appViewClient: input.appViewClient }));
+    reg.register(
+      createSearchProviderServicesTool({
+        appViewClient: input.appViewClient,
+        // Never let the agent discover + query our own listing (self-routing
+        // → "No response"). See SearchProviderServicesToolOptions.selfDid.
+        ...(input.ownerDid !== undefined ? { selfDid: input.ownerDid } : {}),
+      }),
+    );
     reg.register(
       createQueryServiceTool({
         orchestrator: input.orchestratorHandle,

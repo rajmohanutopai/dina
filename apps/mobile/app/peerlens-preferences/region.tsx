@@ -109,6 +109,7 @@ export default function RegionScreen(): React.ReactElement {
           autoCorrect={false}
           autoCapitalize="none"
           accessibilityLabel="Search countries"
+          testID="peerlens-prefs-region-search-input"
         />
       </View>
 

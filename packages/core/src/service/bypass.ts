@@ -82,7 +82,7 @@ export interface ProviderServiceResolver {
  * `service_config.ts`; passing an explicit function keeps this module
  * unit-testable without pulling in the module-level state.
  */
-export type LocalCapabilityChecker = (capability: string) => boolean;
+export type LocalCapabilityChecker = (capability: string, rkey?: string) => boolean;
 
 /**
  * Minimal shape of the requester-side window for ingress checks. Returns
@@ -123,6 +123,28 @@ export async function evaluateServiceEgressBypass(
       };
     }
     const body = parsed.body as ServiceQueryBody;
+    // A `service_uri` IS the access grant for a specific listing (link / QR /
+    // invite). When the requester targeted one, trust it: validate only that the
+    // URI's authority matches who we're sending to, then allow egress — this is
+    // how an UNLISTED service is reachable (AppView never advertises unlisted, so
+    // the `isDiscoverableService` check below would wrongly deny it). The
+    // RECIPIENT's ingress gate is authoritative: it accepts only a live listing
+    // (active, not known_only) that offers the capability, so a stale/known_only/
+    // wrong service_uri is rejected there.
+    if (typeof body.service_uri === 'string' && body.service_uri !== '') {
+      const listing = parseServiceListingUri(body.service_uri);
+      if (listing === null || listing.did !== recipientDID) {
+        return {
+          kind: 'deny',
+          reason: 'service_uri_mismatch',
+          detail: `service_uri authority ${listing?.did ?? '(unparseable)'} does not match recipient ${recipientDID}`,
+        };
+      }
+      return { kind: 'allow', body };
+    }
+    // No service_uri (a bare, link-less capability query to a non-contact):
+    // require the recipient to be a PUBLIC service for this capability. Unlisted
+    // / known-only need a service_uri (handled above).
     if (resolver !== undefined) {
       const isDiscoverable = await resolver.isDiscoverableService(recipientDID, body.capability);
       if (!isDiscoverable) {
@@ -194,30 +216,38 @@ export function evaluateServiceIngressBypass(
       };
     }
     const body = parsed.body as ServiceQueryBody;
-    const checker = opts.isCapabilityConfigured;
-    if (checker === undefined || !checker(body.capability)) {
-      return {
-        kind: 'deny',
-        reason: 'not_configured',
-        detail: `capability "${body.capability}" is not configured locally`,
-      };
-    }
-    // Cross-DID listing bind (inbound path). `validateServiceQueryBody` already
-    // confirmed a non-empty service_uri is a well-formed listing URI, so a
-    // non-null parse is guaranteed here; we only check the authority matches us.
-    if (
-      opts.recipientDID !== undefined &&
-      typeof body.service_uri === 'string' &&
-      body.service_uri !== ''
-    ) {
+    // Resolve the targeted listing FIRST (one listing == one execution
+    // contract). When the query carries a `service_uri`: (a) its authority must
+    // be us, and (b) we capture its rkey so the capability check validates the
+    // EXACT listing — not just "any of our listings offers this capability".
+    // `validateServiceQueryBody` already confirmed a non-empty service_uri is a
+    // well-formed listing URI, so a non-null parse is guaranteed here.
+    let targetRkey: string | undefined;
+    if (typeof body.service_uri === 'string' && body.service_uri !== '') {
       const listing = parseServiceListingUri(body.service_uri);
-      if (listing !== null && listing.did !== opts.recipientDID) {
+      if (
+        opts.recipientDID !== undefined &&
+        listing !== null &&
+        listing.did !== opts.recipientDID
+      ) {
         return {
           kind: 'deny',
           reason: 'service_uri_mismatch',
           detail: `service_uri authority ${listing.did} does not match recipient ${opts.recipientDID}`,
         };
       }
+      targetRkey = listing?.rkey;
+    }
+    const checker = opts.isCapabilityConfigured;
+    if (checker === undefined || !checker(body.capability, targetRkey)) {
+      return {
+        kind: 'deny',
+        reason: 'not_configured',
+        detail:
+          targetRkey !== undefined
+            ? `listing "${targetRkey}" does not offer capability "${body.capability}" (or is not live)`
+            : `capability "${body.capability}" is not configured locally`,
+      };
     }
     return { kind: 'allow', body };
   }

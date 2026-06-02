@@ -100,6 +100,7 @@ export function InlineApprovalCard({ message, approverDID }: InlineApprovalCardP
             disabled={disabled}
             onPress={onDeny}
             activeOpacity={0.7}
+            accessibilityRole="button"
           >
             <Text style={styles.denyText}>Deny</Text>
           </TouchableOpacity>
@@ -109,6 +110,7 @@ export function InlineApprovalCard({ message, approverDID }: InlineApprovalCardP
             disabled={disabled}
             onPress={onApprove}
             activeOpacity={0.7}
+            accessibilityRole="button"
           >
             <Text style={styles.approveText}>Approve</Text>
           </TouchableOpacity>

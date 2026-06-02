@@ -294,6 +294,8 @@ export default function ApprovalsScreen() {
           </Text>
           <View style={styles.actions}>
             <Pressable
+              testID={`approvals-deny-${item.id}`}
+              accessibilityRole="button"
               style={({ pressed }) => [
                 styles.button,
                 styles.denyButton,
@@ -315,6 +317,8 @@ export default function ApprovalsScreen() {
               // `Approve` grants for the current dina session
               // (`scope='session'`). Direct call paths — no popup.
               <Pressable
+                testID={`approvals-approve-once-${item.id}`}
+                accessibilityRole="button"
                 style={({ pressed }) => [
                   styles.button,
                   styles.approveOnceButton,
@@ -328,6 +332,8 @@ export default function ApprovalsScreen() {
               </Pressable>
             )}
             <Pressable
+              testID={`approvals-approve-${item.id}`}
+              accessibilityRole="button"
               style={({ pressed }) => [
                 styles.button,
                 styles.approveButton,
@@ -420,6 +426,7 @@ export default function ApprovalsScreen() {
             <Pressable
               key={t.key}
               testID={`approvals-tab-${t.key}`}
+              accessibilityRole="button"
               onPress={() => setTab(t.key)}
               style={[styles.tab, active && styles.tabActive]}
             >

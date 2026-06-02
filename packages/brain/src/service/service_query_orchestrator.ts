@@ -64,6 +64,13 @@ export interface IssueQueryRequest {
   coordsOf?: RankOptions['coordsOf'];
   /** Tag for telemetry — e.g. "chat", "scheduled". */
   originChannel?: string;
+  /**
+   * The requester's own DID. Forwarded to the ranker so a node that also
+   * advertises this capability (role=provider, or a stale self-listing in
+   * AppView) never routes the query back to itself. See
+   * `RankOptions.excludeDid`.
+   */
+  selfDid?: string;
 }
 
 /**
@@ -248,6 +255,7 @@ export class ServiceQueryOrchestrator {
     const top = pickTopCandidate(capability, services, {
       viewer: req.viewer,
       coordsOf: req.coordsOf,
+      ...(req.selfDid !== undefined ? { excludeDid: req.selfDid } : {}),
     });
     if (top === null) {
       throw new ServiceOrchestratorError(

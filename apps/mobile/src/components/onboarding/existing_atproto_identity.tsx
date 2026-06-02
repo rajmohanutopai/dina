@@ -15,9 +15,7 @@ export interface ExistingAtprotoIdentityProps {
   onBack: () => void;
 }
 
-export function ExistingAtprotoIdentity(
-  props: ExistingAtprotoIdentityProps,
-): React.ReactElement {
+export function ExistingAtprotoIdentity(props: ExistingAtprotoIdentityProps): React.ReactElement {
   const [identifier, setIdentifier] = useState(props.initialIdentifier ?? '');
   const [appPassword, setAppPassword] = useState(props.initialAppPassword ?? '');
   const [plcToken, setPlcToken] = useState(props.initialPlcToken ?? '');
@@ -71,8 +69,8 @@ export function ExistingAtprotoIdentity(
 
       <View style={styles.note}>
         <Text style={styles.noteText}>
-          Dina must add its signing key and MsgBox endpoint to this did:plc. If your PDS
-          requires a PLC token, enter it here before continuing.
+          Dina must add its signing key and MsgBox endpoint to this did:plc. If your PDS requires a
+          PLC token, enter it here before continuing.
         </Text>
       </View>
     </OnboardingShell>

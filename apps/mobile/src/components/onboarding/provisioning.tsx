@@ -108,7 +108,7 @@ export function Provisioning(props: ProvisioningProps): React.ReactElement {
       ? 'We\u2019re generating keys, wrapping your master seed, and registering your identity with the Dina network.'
       : props.kind === 'external'
         ? 'We\u2019re preparing your local vault, signing into your PDS, and adding Dina endpoints to your did:plc.'
-      : 'We\u2019re re-deriving your keys from the recovery phrase and restoring your local vault.';
+        : 'We\u2019re re-deriving your keys from the recovery phrase and restoring your local vault.';
 
   return (
     <OnboardingShell
@@ -130,6 +130,8 @@ export function Provisioning(props: ProvisioningProps): React.ReactElement {
           <Pressable
             onPress={() => props.onError(error)}
             style={({ pressed }) => [styles.retryBtn, pressed && styles.pressed]}
+            accessibilityRole="button"
+            testID="provisioning-back"
           >
             <Text style={styles.retryText}>Back</Text>
           </Pressable>

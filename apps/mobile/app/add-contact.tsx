@@ -122,6 +122,7 @@ export default function AddContactScreen() {
 
         <Text style={styles.label}>Handle or DID</Text>
         <TextInput
+          testID="add-contact-handle-input"
           value={didOrHandle}
           onChangeText={setDidOrHandle}
           autoCapitalize="none"
@@ -135,6 +136,7 @@ export default function AddContactScreen() {
 
         <Text style={styles.label}>Display name (optional)</Text>
         <TextInput
+          testID="add-contact-name-input"
           value={displayName}
           onChangeText={setDisplayName}
           placeholder="e.g. Alice"
@@ -147,6 +149,8 @@ export default function AddContactScreen() {
 
         <View style={styles.buttons}>
           <Pressable
+            testID="add-contact-cancel"
+            accessibilityRole="button"
             onPress={() => router.replace('/people')}
             style={({ pressed }) => [styles.cancel, pressed && styles.pressed]}
             disabled={busy}
@@ -154,6 +158,8 @@ export default function AddContactScreen() {
             <Text style={styles.cancelText}>Cancel</Text>
           </Pressable>
           <Pressable
+            testID="add-contact-save"
+            accessibilityRole="button"
             onPress={submit}
             style={({ pressed }) => [
               styles.save,

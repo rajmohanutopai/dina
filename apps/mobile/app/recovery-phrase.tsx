@@ -177,6 +177,7 @@ export default function RecoveryPhraseScreen(): React.ReactElement {
         </View>
 
         <Pressable
+          testID="recovery-phrase-done"
           onPress={() => {
             wipeRevealed();
             router.replace(backTarget as never);
@@ -219,6 +220,7 @@ export default function RecoveryPhraseScreen(): React.ReactElement {
       />
 
       <Pressable
+        testID="recovery-phrase-reveal"
         onPress={() => void handleReveal()}
         disabled={mode === 'unlocking'}
         accessibilityRole="button"

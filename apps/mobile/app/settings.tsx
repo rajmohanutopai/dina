@@ -209,6 +209,7 @@ export default function SettingsScreen() {
             onPress={() => router.push('/ai-providers')}
             accessibilityRole="button"
             accessibilityLabel="Add an AI provider"
+            testID="settings-add-provider"
           >
             <View style={styles.providerHeader}>
               <Text style={styles.providerName}>Add an AI provider</Text>

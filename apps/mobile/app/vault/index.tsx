@@ -15,6 +15,8 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -65,9 +67,7 @@ export default function VaultsIndex(): React.ReactElement {
   // memory in chat, then navigated to Vaults: counts must update.
   useFocusEffect(
     useCallback(() => {
-      setRows(
-        getPersonaUIStates().map((p) => ({ ...p, itemCount: safeCount(p.name) })),
-      );
+      setRows(getPersonaUIStates().map((p) => ({ ...p, itemCount: safeCount(p.name) })));
       return () => {
         /* nothing to cleanup */
       };
@@ -84,6 +84,24 @@ export default function VaultsIndex(): React.ReactElement {
     },
     [router],
   );
+
+  // When adding, the form takes the whole screen so its Cancel/Create
+  // footer can pin to the bottom (always reachable above the keyboard) —
+  // an inline form below the vault cards parked Create below the fold.
+  if (showAdd) {
+    return (
+      <>
+        <Stack.Screen options={{ title: 'New vault', headerShown: true }} />
+        <AddVaultForm
+          onCancel={() => setShowAdd(false)}
+          onCreated={() => {
+            setShowAdd(false);
+            refresh();
+          }}
+        />
+      </>
+    );
+  }
 
   return (
     <>
@@ -103,36 +121,28 @@ export default function VaultsIndex(): React.ReactElement {
           ))}
         </View>
 
-        {showAdd ? (
-          <AddVaultForm
-            onCancel={() => setShowAdd(false)}
-            onCreated={() => {
-              setShowAdd(false);
-              refresh();
-            }}
-          />
-        ) : (
-          <Pressable style={styles.addButton} onPress={() => setShowAdd(true)}>
-            <Ionicons name="add-circle-outline" size={20} color={colors.accent} />
-            <Text style={styles.addButtonText}>New vault</Text>
-          </Pressable>
-        )}
+        <Pressable
+          style={styles.addButton}
+          onPress={() => setShowAdd(true)}
+          testID="vault-new-vault"
+          accessibilityRole="button"
+        >
+          <Ionicons name="add-circle-outline" size={20} color={colors.accent} />
+          <Text style={styles.addButtonText}>New vault</Text>
+        </Pressable>
       </ScrollView>
     </>
   );
 }
 
-function VaultCard({
-  row,
-  onPress,
-}: {
-  row: VaultRow;
-  onPress: () => void;
-}): React.ReactElement {
+function VaultCard({ row, onPress }: { row: VaultRow; onPress: () => void }): React.ReactElement {
   return (
     <Pressable
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
       onPress={onPress}
+      testID={`vault-open-${row.name}`}
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${formatPersonaDisplayName(row.name)} vault`}
     >
       <View style={styles.cardHeader}>
         <Ionicons
@@ -179,69 +189,93 @@ function AddVaultForm({
   }, [name, tier, description, onCreated]);
 
   return (
-    <View style={styles.formCard}>
-      <Text style={styles.formTitle}>New vault</Text>
+    <KeyboardAvoidingView
+      style={styles.formScreen}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView
+        style={styles.scrollFlex}
+        contentContainerStyle={styles.formScrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={styles.formTitle}>New vault</Text>
 
-      <Text style={styles.formLabel}>Name</Text>
-      <TextInput
-        style={styles.formInput}
-        value={name}
-        onChangeText={setName}
-        placeholder="e.g. travel"
-        placeholderTextColor={colors.textMuted}
-        autoCapitalize="none"
-        autoCorrect={false}
-      />
+        <Text style={styles.formLabel}>Name</Text>
+        <TextInput
+          style={styles.formInput}
+          value={name}
+          onChangeText={setName}
+          placeholder="e.g. travel"
+          placeholderTextColor={colors.textMuted}
+          autoCapitalize="none"
+          autoCorrect={false}
+          testID="vault-name-input"
+        />
 
-      <Text style={styles.formLabel}>Access tier</Text>
-      <View style={styles.tierRow}>
-        {tierOptions.map((opt) => (
+        <Text style={styles.formLabel}>Access tier</Text>
+        <View style={styles.tierRow}>
+          {tierOptions.map((opt) => (
+            <Pressable
+              key={opt.value}
+              style={[styles.tierChip, tier === opt.value && styles.tierChipActive]}
+              onPress={() => setTier(opt.value)}
+              testID={`vault-tier-${opt.value}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: tier === opt.value }}
+            >
+              <Text style={[styles.tierChipText, tier === opt.value && styles.tierChipTextActive]}>
+                {opt.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+        <Text style={styles.tierHelpText}>
+          {tierOptions.find((o) => o.value === tier)?.description ?? ''}
+        </Text>
+
+        <Text style={styles.formLabel}>Description</Text>
+        <Text style={styles.formHelp}>
+          Used by Dina’s classifier to route new memories into this vault. Be concrete: list the
+          kinds of facts that should land here.
+        </Text>
+        <TextInput
+          style={[styles.formInput, styles.formInputMultiline]}
+          value={description}
+          onChangeText={setDescription}
+          placeholder="Travel plans, hotel bookings, flight numbers, restaurant lists, packing notes…"
+          placeholderTextColor={colors.textMuted}
+          multiline
+          numberOfLines={4}
+          textAlignVertical="top"
+          testID="vault-description-input"
+        />
+
+        {error !== null ? <Text style={styles.errorText}>{error}</Text> : null}
+      </ScrollView>
+
+      {/* Pinned footer — Create/Cancel stay reachable above the keyboard. */}
+      <View style={styles.footer}>
+        <View style={styles.formButtons}>
           <Pressable
-            key={opt.value}
-            style={[styles.tierChip, tier === opt.value && styles.tierChipActive]}
-            onPress={() => setTier(opt.value)}
+            style={styles.formButtonSecondary}
+            onPress={onCancel}
+            testID="vault-cancel"
+            accessibilityRole="button"
           >
-            <Text style={[styles.tierChipText, tier === opt.value && styles.tierChipTextActive]}>
-              {opt.label}
-            </Text>
+            <Text style={styles.formButtonSecondaryText}>Cancel</Text>
           </Pressable>
-        ))}
+          <Pressable
+            style={[styles.formButtonPrimary, !name.trim() && styles.formButtonDisabled]}
+            onPress={submit}
+            disabled={!name.trim()}
+            testID="vault-create"
+            accessibilityRole="button"
+          >
+            <Text style={styles.formButtonPrimaryText}>Create</Text>
+          </Pressable>
+        </View>
       </View>
-      <Text style={styles.tierHelpText}>
-        {tierOptions.find((o) => o.value === tier)?.description ?? ''}
-      </Text>
-
-      <Text style={styles.formLabel}>Description</Text>
-      <Text style={styles.formHelp}>
-        Used by Dina’s classifier to route new memories into this vault. Be concrete: list the
-        kinds of facts that should land here.
-      </Text>
-      <TextInput
-        style={[styles.formInput, styles.formInputMultiline]}
-        value={description}
-        onChangeText={setDescription}
-        placeholder="Travel plans, hotel bookings, flight numbers, restaurant lists, packing notes…"
-        placeholderTextColor={colors.textMuted}
-        multiline
-        numberOfLines={4}
-        textAlignVertical="top"
-      />
-
-      {error !== null ? <Text style={styles.errorText}>{error}</Text> : null}
-
-      <View style={styles.formButtons}>
-        <Pressable style={styles.formButtonSecondary} onPress={onCancel}>
-          <Text style={styles.formButtonSecondaryText}>Cancel</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.formButtonPrimary, !name.trim() && styles.formButtonDisabled]}
-          onPress={submit}
-          disabled={!name.trim()}
-        >
-          <Text style={styles.formButtonPrimaryText}>Create</Text>
-        </Pressable>
-      </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -323,6 +357,21 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.lg,
     marginTop: spacing.md,
     ...shadows.sm,
+  },
+  formScreen: { flex: 1, backgroundColor: colors.bgPrimary },
+  scrollFlex: { flex: 1 },
+  formScrollContent: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xl,
+  },
+  footer: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    backgroundColor: colors.bgPrimary,
   },
   formTitle: {
     ...textStyles.bodyLargeStrong,

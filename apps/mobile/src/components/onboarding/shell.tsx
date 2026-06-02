@@ -70,6 +70,8 @@ export function OnboardingShell(props: OnboardingShellProps): React.ReactElement
               onPress={props.onBack}
               style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
               accessibilityLabel="Go back"
+              accessibilityRole="button"
+              testID="shell-back"
               hitSlop={10}
             >
               <Text style={styles.backGlyph}>{'\u2190'}</Text>
@@ -111,6 +113,8 @@ export function OnboardingShell(props: OnboardingShellProps): React.ReactElement
                 styles.primaryDisabled,
             ]}
             accessibilityLabel={props.primaryLabel}
+            accessibilityRole="button"
+            testID="shell-primary"
           >
             {props.primaryBusy === true ? (
               <ActivityIndicator color="#FFFFFF" />
@@ -123,6 +127,8 @@ export function OnboardingShell(props: OnboardingShellProps): React.ReactElement
               onPress={props.onSecondary}
               hitSlop={8}
               style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
+              accessibilityRole="button"
+              testID="shell-secondary"
             >
               <Text style={styles.secondaryText}>{props.secondaryLabel}</Text>
             </Pressable>

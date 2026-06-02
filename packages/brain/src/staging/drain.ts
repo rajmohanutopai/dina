@@ -756,12 +756,18 @@ export async function runStagingDrainTick(
         }
 
         if (turn.sideEffects.preferences.length > 0) {
-          // No dedicated preferences table yet — log for telemetry.
+          // No dedicated preferences table yet — log COUNT ONLY for
+          // telemetry. PII policy (CLAUDE.md): "Log metadata only
+          // (persona, type, count, latency), never vault content."
+          // The preference objects carry vault-derived content
+          // (`preference` text + `sourceExcerpt` lifted from the memory),
+          // so emitting the array leaked e.g. "likes dinosaur-themed
+          // gifts" + the source sentence into device logs. Count is the
+          // only non-PII signal here.
           log({
             event: 'staging.drain.preferences_recorded',
             item_id: itemId,
             count: turn.sideEffects.preferences.length,
-            preferences: turn.sideEffects.preferences,
           });
         }
 

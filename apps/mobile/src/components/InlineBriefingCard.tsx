@@ -122,6 +122,9 @@ export function InlineBriefingCard({ message }: InlineBriefingCardProps): React.
         onPress={toggle}
         activeOpacity={0.7}
         style={styles.header}
+        accessibilityRole="button"
+        accessibilityLabel={expanded ? 'Collapse briefing' : 'Expand briefing'}
+        accessibilityState={{ expanded }}
       >
         <View style={styles.headerLeft}>
           <Text style={styles.label}>BRIEFING</Text>
@@ -149,6 +152,8 @@ export function InlineBriefingCard({ message }: InlineBriefingCardProps): React.
                   activeOpacity={item.deepLink === undefined ? 1 : 0.7}
                   disabled={item.deepLink === undefined}
                   style={styles.item}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: item.deepLink === undefined }}
                 >
                   <Text style={[styles.itemText, item.deepLink !== undefined && styles.itemLink]}>
                     {item.label}

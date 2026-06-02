@@ -254,6 +254,7 @@ export default function PolicyScreen() {
         <Pressable
           onPress={openAddModal}
           style={styles.addButton}
+          testID="policy-add-action"
           accessibilityLabel="Add action"
           accessibilityRole="button"
         >
@@ -291,12 +292,23 @@ export default function PolicyScreen() {
               onChangeText={setAddModalInput}
               autoFocus
               autoCapitalize="none"
+              testID="policy-add-input"
             />
             <View style={styles.modalButtons}>
-              <Pressable onPress={() => setAddModalVisible(false)} style={styles.modalCancel}>
+              <Pressable
+                onPress={() => setAddModalVisible(false)}
+                style={styles.modalCancel}
+                testID="policy-add-cancel"
+                accessibilityRole="button"
+              >
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </Pressable>
-              <Pressable onPress={commitAddModal} style={styles.modalConfirm}>
+              <Pressable
+                onPress={commitAddModal}
+                style={styles.modalConfirm}
+                testID="policy-add-confirm"
+                accessibilityRole="button"
+              >
                 <Text style={styles.modalConfirmText}>Next</Text>
               </Pressable>
             </View>
@@ -331,6 +343,8 @@ export default function PolicyScreen() {
               ]}
               onPress={() => handleChangeRisk(item)}
               disabled={item.locked || busy}
+              testID={`policy-row-${item.action}`}
+              accessibilityRole="button"
             >
               <View style={styles.rowLeft}>
                 <Text style={[styles.actionName, item.locked && styles.actionNameLocked]}>

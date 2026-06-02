@@ -297,7 +297,13 @@ export function ModelPickerSheet({
       animationType="slide"
       onRequestClose={onClose}
     >
-      <Pressable style={styles.backdrop} onPress={onClose} />
+      <Pressable
+        style={styles.backdrop}
+        onPress={onClose}
+        testID="model-picker-backdrop"
+        accessibilityRole="button"
+        accessibilityLabel="Dismiss model picker"
+      />
       <View style={styles.sheet}>
         <Text style={styles.title}>
           Models — {PROVIDERS[provider].label}
@@ -331,6 +337,7 @@ export function ModelPickerSheet({
                   return (
                     <TouchableOpacity
                       key={`${tier}:${modelId}`}
+                      testID={`model-picker-option-${tier}-${modelId}`}
                       style={styles.row}
                       onPress={() => pickRadio(tier, modelId)}
                       accessibilityRole="radio"
@@ -362,6 +369,7 @@ export function ModelPickerSheet({
                 </View>
 
                 <TouchableOpacity
+                  testID={`model-picker-custom-${tier}`}
                   style={styles.row}
                   onPress={() => pickCustom(tier)}
                   accessibilityRole="radio"
@@ -381,6 +389,7 @@ export function ModelPickerSheet({
                 </TouchableOpacity>
                 {state.usingCustom ? (
                   <TextInput
+                    testID={`model-picker-custom-input-${tier}`}
                     style={styles.customInput}
                     value={state.customText}
                     onChangeText={(v) => changeCustomText(tier, v)}
@@ -403,12 +412,16 @@ export function ModelPickerSheet({
 
         <View style={styles.actions}>
           <TouchableOpacity
+            testID="model-picker-cancel"
+            accessibilityRole="button"
             style={[styles.button, styles.cancelButton]}
             onPress={onClose}
           >
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
           <TouchableOpacity
+            testID="model-picker-save"
+            accessibilityRole="button"
             style={[
               styles.button,
               styles.saveButton,

@@ -202,6 +202,7 @@ export function InlineVaultReadApprovalCard({
             disabled={disabled}
             onPress={onDeny}
             activeOpacity={0.7}
+            accessibilityRole="button"
           >
             <Text style={styles.denyText}>Deny</Text>
           </TouchableOpacity>
@@ -211,6 +212,7 @@ export function InlineVaultReadApprovalCard({
             disabled={disabled}
             onPress={onApproveOnce}
             activeOpacity={0.7}
+            accessibilityRole="button"
           >
             <Text style={styles.approveOnceText}>Approve Once</Text>
           </TouchableOpacity>
@@ -220,6 +222,7 @@ export function InlineVaultReadApprovalCard({
             disabled={disabled}
             onPress={onApproveSession}
             activeOpacity={0.7}
+            accessibilityRole="button"
           >
             <Text style={styles.approveText}>Approve</Text>
           </TouchableOpacity>

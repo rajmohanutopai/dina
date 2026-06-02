@@ -87,4 +87,21 @@ describe('ListingsView', () => {
     fireEvent.press(getByTestId('listing-new'));
     expect(onNew).toHaveBeenCalledTimes(1);
   });
+
+  it('renders a draft listing as "Draft" (not "Paused") and toggles it to active (P3#5)', () => {
+    const draftRow: ListingRow = {
+      rkey: 'wip',
+      name: 'Work In Progress',
+      capabilityCount: 0,
+      status: 'draft',
+      discoverability: 'public',
+    };
+    const { getByTestId, getByText, queryByText, onToggleStatus } = renderView({
+      listings: [draftRow],
+    });
+    expect(getByText('Draft')).toBeTruthy();
+    expect(queryByText('Paused')).toBeNull();
+    fireEvent.press(getByTestId('listing-toggle-wip'));
+    expect(onToggleStatus).toHaveBeenCalledWith('wip', 'active');
+  });
 });

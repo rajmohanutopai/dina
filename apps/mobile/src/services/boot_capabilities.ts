@@ -235,6 +235,13 @@ function buildEnvServiceConfig(): ServiceConfig | undefined {
     });
     return {
       isDiscoverable: true,
+      // Catalog-valid: explicit discoverability + status + per-capability
+      // category so this env/demo config satisfies validateServiceListing (it's
+      // written via the structural-only setter, but must still be a valid
+      // catalog listing so its published record carries a category and a
+      // re-save through the route passes).
+      discoverability: 'public',
+      status: 'active',
       name,
       description: serviceDescription,
       capabilities: {
@@ -242,6 +249,7 @@ function buildEnvServiceConfig(): ServiceConfig | undefined {
           mcpServer: 'transit',
           mcpTool: 'get_eta',
           responsePolicy: policy,
+          category: 'transit',
           schemaHash,
         },
       },
@@ -442,21 +450,32 @@ export async function buildBootInputs(
 
   // GAP-RT-02: wire the staging drain's topic-touch + preference
   // binder by default whenever we have an LLM provider in hand.
-  // Reuses the same provider instance `agenticAsk` captured, so
+  // Reuses the same provider instance the agentic-ask bundle built, so
   // production ingest goes through TopicExtractor + PreferenceExtractor
   // → core.memoryTouch / updateContact out of the box. Without this,
   // every default Expo boot silently records a `staging.no_enrichment`
   // degradation and runs without the pipeline — the review path
   // this commit addresses.
   //
+  // NOTE: source the LLM from `agenticAskBundle.provider`, NOT
+  // `agenticAsk?.provider`. `agenticAsk` is deliberately left `undefined`
+  // whenever the Pattern-A `askCoordinator` is present (the production /
+  // dev path), so `agenticAsk?.provider` would be `undefined` and the
+  // staging drain would silently lose its LLM — no rememberRuntime
+  // (auto-reminders dead), no topic extraction, no LLM preference
+  // binding — with NO degradation logged (boot_service only records
+  // `no_remember_runtime` on a *throw*, not on a missing llm). The
+  // bundle's `provider` is built whenever any provider is configured,
+  // independent of the coordinator-vs-simple ask wiring.
+  //
   // When no provider is wired (`activeProvider === 'none'` or the
-  // adapter couldn't construct one) we still pass a bundle with
-  // `llm: undefined` so the regex-based preference binder runs on
-  // its own. That's a deliberate "reduced mode" rather than a full
-  // disable — preference binding is LLM-free, and the topic
+  // adapter couldn't construct one) the bundle is `undefined`, so this
+  // falls to `llm: undefined` — the regex-based preference binder still
+  // runs on its own. That's a deliberate "reduced mode" rather than a
+  // full disable — preference binding is LLM-free, and the topic
   // extractor degrades to a no-op (see staging_enrichment.ts).
   const stagingEnrichment: BootServiceInputs['stagingEnrichment'] = {
-    llm: agenticAsk?.provider,
+    llm: resolveStagingEnrichmentLLM(agenticAskBundle),
   };
 
   // MsgBox transport — wire the shared Dina relay so outbound D2D
@@ -480,14 +499,25 @@ export async function buildBootInputs(
 
   // Outbound D2D egress for the iOS app. Shares `makeSendD2D` with
   // the lite Core so the resolve → pick `#dina_signing` VM → seal →
-  // sign → forward path lives in one module. The AppView resolver is
-  // wired here when the operator overrode the services-AppView URL
-  // so cross-Dina `service.query` egress bypasses the contact gate
-  // for published service DIDs.
+  // sign → forward path lives in one module. The AppView resolver lets
+  // cross-Dina `service.query` egress bypass the contact gate for
+  // published service DIDs.
+  //
+  // Mirror the appViewClient priority so a CLEAN install can both DISCOVER and
+  // SEND: an explicit override wins; demo mode skips the real resolver (it uses
+  // the in-memory AppView stub); otherwise default to the SAME hosted AppView
+  // search uses (`resolveMobileHostedDinaEndpoints().appViewBaseUrl`). Without
+  // this default, search succeeded against hosted AppView but egress fell back
+  // to contact-gating → a public provider's query was denied because the
+  // provider isn't a contact.
   const providerServiceResolver =
     servicesAppViewURLOverride !== ''
       ? new AppViewServiceResolver({ appViewURL: servicesAppViewURLOverride })
-      : undefined;
+      : options.demoMode === true
+        ? undefined
+        : new AppViewServiceResolver({
+            appViewURL: resolveMobileHostedDinaEndpoints().appViewBaseUrl,
+          });
 
   const sendD2D: BootServiceInputs['sendD2D'] = makeSendD2D({
     senderDID: did,
@@ -642,6 +672,30 @@ interface AgenticAskBundle {
    * (e.g. degraded boot where pipeline construction failed).
    */
   askCoordinator?: AskCoordinator;
+}
+
+/**
+ * Resolve the LLM provider the staging drain's enrichment pipeline
+ * (rememberRuntime → reminders / topic extraction / people-graph linking
+ * / preference binding) should use.
+ *
+ * REGRESSION GUARD: this MUST be sourced from the agentic-ask *bundle*
+ * (`AgenticAskBundle.provider`), NOT from `BootServiceInputs['agenticAsk']`.
+ * The latter is deliberately left `undefined` whenever the Pattern-A
+ * `askCoordinator` is present (the production / dev path — bootstrap routes
+ * coordinator-first). Reading `agenticAsk?.provider` therefore returns
+ * `undefined` exactly when the app is fully wired, silently disabling the
+ * ENTIRE staging enrichment pipeline with NO degradation logged
+ * (`bootAppNode` only records `no_remember_runtime` on a *throw*, not on a
+ * missing llm). The bundle's `provider` is built whenever any provider is
+ * configured, independent of the coordinator-vs-simple ask wiring, so it is
+ * the correct source. Returns `undefined` only when no provider is
+ * configured at all (reduced mode: regex preference binder, no-op topics).
+ */
+export function resolveStagingEnrichmentLLM(
+  bundle: { provider: RoutedLLMProvider } | undefined,
+): RoutedLLMProvider | undefined {
+  return bundle?.provider;
 }
 
 /**

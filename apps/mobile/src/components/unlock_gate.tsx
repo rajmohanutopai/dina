@@ -55,12 +55,7 @@ import {
 import { colors, fonts, radius, spacing, textStyles } from '../theme';
 import { OnboardingFlow } from './onboarding/onboarding_flow';
 
-type Mode =
-  | 'loading'
-  | 'onboarding'
-  | 'locked'
-  | 'unlocking'
-  | 'unlocked';
+type Mode = 'loading' | 'onboarding' | 'locked' | 'unlocking' | 'unlocked';
 
 const DEV_PASSPHRASE = process.env.EXPO_PUBLIC_DINA_DEV_PASSPHRASE ?? '';
 
@@ -282,6 +277,8 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
         />
 
         <Pressable
+          testID="unlock-gate-unlock"
+          accessibilityRole="button"
           onPress={() => void runUnlock(passphrase)}
           disabled={busy}
           style={({ pressed }) => [
@@ -297,9 +294,7 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
           )}
         </Pressable>
 
-        {busy ? (
-          <Text style={styles.progress}>{getStepLabel(unlockState.step)}</Text>
-        ) : null}
+        {busy ? <Text style={styles.progress}>{getStepLabel(unlockState.step)}</Text> : null}
       </ScrollView>
     </KeyboardAvoidingView>
   );

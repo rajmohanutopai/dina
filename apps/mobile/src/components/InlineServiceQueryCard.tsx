@@ -163,6 +163,7 @@ function ProviderAttribution({
         activeOpacity={0.6}
         accessibilityRole="button"
         accessibilityLabel={expanded ? 'Hide handoff path' : 'Show handoff path'}
+        testID="service-query-card-toggle-trace"
       >
         <Ionicons name="git-network-outline" size={13} color={colors.textMuted} />
         <Text style={styles.attributionText} numberOfLines={1}>

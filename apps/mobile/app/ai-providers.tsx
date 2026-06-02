@@ -247,6 +247,8 @@ export default function AIProvidersScreen(): React.JSX.Element {
                 style: styles.providerHeader,
                 onPress: headerOnPress,
                 activeOpacity: 0.7 as const,
+                testID: `ai-providers-add-key-${type}`,
+                accessibilityRole: 'button' as const,
               };
 
           return (
@@ -275,6 +277,7 @@ export default function AIProvidersScreen(): React.JSX.Element {
               {isEditing && !state.configured && (
                 <View style={styles.keyForm}>
                   <TextInput
+                    testID={`ai-providers-key-input-${type}`}
                     style={styles.keyInput}
                     value={keyInput}
                     onChangeText={setKeyInput}
@@ -286,6 +289,8 @@ export default function AIProvidersScreen(): React.JSX.Element {
                   />
                   <View style={styles.keyActions}>
                     <TouchableOpacity
+                      testID={`ai-providers-cancel-${type}`}
+                      accessibilityRole="button"
                       style={styles.cancelButton}
                       onPress={() => {
                         setEditingProvider(null);
@@ -295,6 +300,8 @@ export default function AIProvidersScreen(): React.JSX.Element {
                       <Text style={styles.cancelText}>Cancel</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
+                      testID={`ai-providers-save-${type}`}
+                      accessibilityRole="button"
                       style={[
                         styles.saveButton,
                         saving && styles.saveButtonDisabled,
@@ -315,6 +322,7 @@ export default function AIProvidersScreen(): React.JSX.Element {
               {state.configured && (
                 <>
                   <TouchableOpacity
+                    testID={`ai-providers-models-${type}`}
                     style={styles.modelRow}
                     onPress={() => setModelSheetProvider(type)}
                     accessibilityRole="button"
@@ -346,6 +354,8 @@ export default function AIProvidersScreen(): React.JSX.Element {
                   <View style={styles.configuredActions}>
                     {!isActive && (
                       <TouchableOpacity
+                        testID={`ai-providers-use-${type}`}
+                        accessibilityRole="button"
                         style={styles.useButton}
                         onPress={() => void handleSelectActive(type)}
                       >
@@ -353,6 +363,8 @@ export default function AIProvidersScreen(): React.JSX.Element {
                       </TouchableOpacity>
                     )}
                     <TouchableOpacity
+                      testID={`ai-providers-remove-${type}`}
+                      accessibilityRole="button"
                       style={styles.removeButton}
                       onPress={() => handleRemoveKey(type)}
                     >

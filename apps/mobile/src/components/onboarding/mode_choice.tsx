@@ -25,8 +25,8 @@ export function ModeChoice(props: ModeChoiceProps): React.ReactElement {
           from Welcome → Choose without a typography jump. */}
       <Text style={styles.headline}>Welcome to Dina</Text>
       <Text style={styles.subtitle}>
-        Start fresh, connect an AT Protocol account you already own, or restore from your
-        recovery phrase.
+        Start fresh, connect an AT Protocol account you already own, or restore from your recovery
+        phrase.
       </Text>
       <ChoiceCard
         glyph={'\u002B'}
@@ -69,6 +69,10 @@ function ChoiceCard({
       style={({ pressed }) => [styles.card, pressed && styles.pressed]}
       accessibilityRole="button"
       accessibilityLabel={`${title}. ${body}`}
+      testID={`mode-choice-card-${title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')}`}
     >
       <View style={styles.cardGlyph}>
         <Text style={styles.cardGlyphText}>{glyph}</Text>

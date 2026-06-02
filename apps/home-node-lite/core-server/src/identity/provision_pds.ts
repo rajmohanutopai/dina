@@ -190,10 +190,7 @@ export async function loadOrProvisionPdsIdentity(
       recoveryKey,
     });
   } catch (err) {
-    if (
-      err instanceof PDSAccountError &&
-      err.xrpcError === 'HandleNotAvailable'
-    ) {
+    if (err instanceof PDSAccountError && isHandleTakenError(err)) {
       // Handle already exists — rebind via the seed-derived password.
       // If the password doesn't match (e.g. someone else owns this
       // handle), this throws AuthenticationRequired and propagates up.
@@ -230,6 +227,35 @@ export async function loadOrProvisionPdsIdentity(
 
   await writeAtomic(filePath, JSON.stringify(identity, null, 2));
   return identity;
+}
+
+/**
+ * True when a `createAccount` failure means "this handle is already
+ * registered" — the signal to fall back to seed-derived-password
+ * `createSession` (the recovery path that rebinds a fresh disk to an
+ * existing account).
+ *
+ * The canonical atproto code is `HandleNotAvailable`, but real PDS
+ * implementations diverge: `test-pds.dinakernel.com` (and reference
+ * atproto builds) return HTTP 400 `InvalidRequest` with the message
+ * "Handle already taken: <handle>". Matching ONLY the canonical code
+ * silently broke recovery — a node whose `/tmp`/disk was wiped (so
+ * `pds_identity.json` is gone) but whose handle is still registered
+ * would throw on `createAccount`, never attempt `createSession`, and
+ * fall back to a useless `did:key` (no PDS repo → invisible to AppView).
+ * Match the message too so the deterministic-password recovery the whole
+ * design relies on actually fires.
+ */
+function isHandleTakenError(err: PDSAccountError): boolean {
+  if (err.xrpcError === 'HandleNotAvailable') return true;
+  if (err.status !== 400) return false;
+  const m = err.message?.toLowerCase() ?? '';
+  return (
+    m.includes('handle already taken') ||
+    m.includes('already taken') ||
+    m.includes('handle is unavailable') ||
+    m.includes('handle not available')
+  );
 }
 
 /**

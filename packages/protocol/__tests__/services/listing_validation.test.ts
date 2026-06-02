@@ -10,6 +10,7 @@
 import {
   effectiveDiscoverability,
   effectiveListingStatus,
+  isListingPublic,
   isListingPublishable,
   validateServiceListing,
 } from '../../src/services/listing-validation';
@@ -67,6 +68,40 @@ describe('effectiveListingStatus + isListingPublishable (availability axis)', ()
     // back-compat: no status → active; no discoverability → derived
     expect(isListingPublishable(mkConfig({}, { isDiscoverable: true }))).toBe(true);
     expect(isListingPublishable(mkConfig({}, { isDiscoverable: false }))).toBe(false);
+  });
+
+  it('isListingPublic is STRICTER — only active+public (unlisted is NOT public)', () => {
+    // Reachable by a generic no-URI query iff active + public.
+    expect(isListingPublic(mkConfig({}, { discoverability: 'public', status: 'active' }))).toBe(true);
+    // unlisted is publishable (URI-resolvable) but NOT public (link-only).
+    expect(isListingPublic(mkConfig({}, { discoverability: 'unlisted', status: 'active' }))).toBe(false);
+    expect(isListingPublishable(mkConfig({}, { discoverability: 'unlisted', status: 'active' }))).toBe(true);
+    // paused/known_only never public.
+    expect(isListingPublic(mkConfig({}, { discoverability: 'public', status: 'paused' }))).toBe(false);
+    expect(isListingPublic(mkConfig({}, { discoverability: 'known_only', status: 'active' }))).toBe(false);
+  });
+});
+
+describe('no_capabilities — a LIVE listing must advertise a capability (Codex P2#4)', () => {
+  it('rejects an active public listing with zero capabilities', () => {
+    const r = validateServiceListing(mkConfig({}, { discoverability: 'public', status: 'active' }));
+    expect(r.ok).toBe(false);
+    expect(codes(r)).toContain('no_capabilities');
+  });
+
+  it('rejects an active UNLISTED listing with zero capabilities (still live)', () => {
+    const r = validateServiceListing(mkConfig({}, { discoverability: 'unlisted', status: 'active' }));
+    expect(codes(r)).toContain('no_capabilities');
+  });
+
+  it('ALLOWS an empty PAUSED listing (work in progress, not live)', () => {
+    const r = validateServiceListing(mkConfig({}, { discoverability: 'public', status: 'paused' }));
+    expect(codes(r)).not.toContain('no_capabilities');
+  });
+
+  it('ALLOWS an empty known_only listing (not published)', () => {
+    const r = validateServiceListing(mkConfig({}, { discoverability: 'known_only', status: 'active' }));
+    expect(codes(r)).not.toContain('no_capabilities');
   });
 });
 

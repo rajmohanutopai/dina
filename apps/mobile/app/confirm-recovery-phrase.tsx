@@ -120,6 +120,7 @@ export default function ConfirmRecoveryPhraseScreen(): React.ReactElement {
       />
 
       <Pressable
+        testID="confirm-recovery-phrase-continue"
         onPress={() => void handleUnlock()}
         disabled={mode === 'unlocking'}
         accessibilityRole="button"
@@ -140,6 +141,7 @@ export default function ConfirmRecoveryPhraseScreen(): React.ReactElement {
           Pops back to Settings; the chat-home banner stays visible
           since status is still pending. */}
       <Pressable
+        testID="confirm-recovery-phrase-cancel"
         onPress={() => router.replace(backTarget as never)}
         accessibilityRole="button"
         accessibilityLabel="Cancel and go back"

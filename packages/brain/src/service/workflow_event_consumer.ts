@@ -48,6 +48,9 @@ export interface ApprovedExecutionPayload {
   ttl_seconds?: number;
   schema_hash?: string;
   service_name?: string;
+  /** The runner (capability `mcpServer`) — forwarded so the approved exec
+   *  task carries `requested_runner` for multi-runner provider routing. */
+  mcp_server?: string;
 }
 
 /**
@@ -697,6 +700,10 @@ function parseApprovedPayload(raw: string): ApprovedExecutionPayload | null {
     service_name:
       typeof parsed.service_name === 'string' && parsed.service_name !== ''
         ? parsed.service_name
+        : undefined,
+    mcp_server:
+      typeof parsed.mcp_server === 'string' && parsed.mcp_server !== ''
+        ? parsed.mcp_server
         : undefined,
   };
 }

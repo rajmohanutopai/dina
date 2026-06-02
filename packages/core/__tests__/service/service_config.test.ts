@@ -74,6 +74,14 @@ describe('validateServiceConfig', () => {
     expect(() => validateServiceConfig(rest)).not.toThrow();
   });
 
+  it('accepts zero capabilities — STRUCTURAL only (P2#4)', () => {
+    // The "a LIVE listing must advertise ≥1 capability" policy moved entirely to
+    // validateServiceListing (status-aware: a paused/draft listing may be empty).
+    // The structural setter no longer rejects isDiscoverable=true + zero caps.
+    const { capabilitySchemas: _c, ...rest } = validConfig;
+    expect(() => validateServiceConfig({ ...rest, capabilities: {} })).not.toThrow();
+  });
+
   it('rejects non-object', () => {
     expect(() => validateServiceConfig(null)).toThrow(/JSON object/);
     expect(() => validateServiceConfig('x')).toThrow(/JSON object/);
@@ -235,12 +243,14 @@ describe('isCapabilityConfigured', () => {
     expect(isCapabilityConfigured('eta_query')).toBe(false);
   });
 
-  it('returns TRUE for an unlisted listing — published + queryable (catalog §5.2)', () => {
-    // Regression for Codex #1: unlisted (isDiscoverable=false, discoverability
-    // 'unlisted') is published to the PDS and reached via its service_uri, so it
-    // MUST accept inbound queries — otherwise unlisted is published-but-unusable.
+  it('unlisted: NOT reachable by a generic (no-URI) query, but IS via its rkey (catalog §5.2)', () => {
+    // Codex pass 6 P1#1: an `unlisted` listing is "link only". An unknown peer
+    // sending just { capability } (no service_uri) must NOT reach it — that
+    // would defeat unlisted. It IS reachable when the query carries the
+    // listing's service_uri (the sender got the link → has the rkey).
     setServiceConfig({ ...validConfig, isDiscoverable: false, discoverability: 'unlisted' });
-    expect(isCapabilityConfigured('eta_query')).toBe(true);
+    expect(isCapabilityConfigured('eta_query')).toBe(false); // generic → denied (no link)
+    expect(isCapabilityConfigured('eta_query', 'self')).toBe(true); // rkey-targeted → allowed
   });
 
   it('returns false for a known_only listing — local-only, never queryable this way', () => {
@@ -264,6 +274,53 @@ describe('isCapabilityConfigured', () => {
   it('returns FALSE for a DRAFT listing — saved, not live', () => {
     setServiceConfig({ ...validConfig, discoverability: 'public', status: 'draft' });
     expect(isCapabilityConfigured('eta_query')).toBe(false);
+  });
+});
+
+describe('isCapabilityConfigured — rkey-targeted (one listing == one contract)', () => {
+  const rideConfig: ServiceConfig = {
+    isDiscoverable: true,
+    discoverability: 'public',
+    status: 'active',
+    name: 'Ride',
+    capabilities: { eta_query: { mcpServer: 'transit', mcpTool: 'eta_query', responsePolicy: 'auto' } },
+  };
+  const shopConfig: ServiceConfig = {
+    isDiscoverable: true,
+    discoverability: 'public',
+    status: 'active',
+    name: 'Shop',
+    capabilities: { price_check: { mcpServer: 'shop', mcpTool: 'price_check', responsePolicy: 'auto' } },
+  };
+
+  it('a service_uri targeting a specific rkey validates THAT listing only', () => {
+    setServiceConfig(rideConfig, 'ride');
+    setServiceConfig(shopConfig, 'shop');
+    expect(isCapabilityConfigured('eta_query', 'ride')).toBe(true); // ride offers it
+    // A query whose service_uri targets `shop` must NOT be admitted on the
+    // strength of `ride` — shop doesn't offer eta_query (Codex P1#2).
+    expect(isCapabilityConfigured('eta_query', 'shop')).toBe(false);
+  });
+
+  it('generic (no-service_uri) query reaches the `self` listing ONLY, never a non-self one', () => {
+    // Codex pass 7 P2#1: a no-service_uri query resolves to `self` at Brain, so
+    // Core must NOT admit it on the strength of a non-self listing (else Core
+    // allows and Brain silently drops). Non-self listings need their service_uri.
+    setServiceConfig(rideConfig, 'ride'); // non-self, public, offers eta_query
+    expect(isCapabilityConfigured('eta_query')).toBe(false); // no `self` → denied
+    setServiceConfig(rideConfig, 'self'); // now there IS a public self offering it
+    expect(isCapabilityConfigured('eta_query')).toBe(true);
+  });
+
+  it('a PAUSED targeted listing rejects even if another live listing offers the cap', () => {
+    setServiceConfig({ ...rideConfig, status: 'paused' }, 'ride');
+    setServiceConfig(shopConfig, 'shop');
+    expect(isCapabilityConfigured('eta_query', 'ride')).toBe(false);
+  });
+
+  it('an unknown rkey is not configured', () => {
+    setServiceConfig(rideConfig, 'ride');
+    expect(isCapabilityConfigured('eta_query', 'does-not-exist')).toBe(false);
   });
 });
 
@@ -415,11 +472,15 @@ describe('multi-listing (per-rkey)', () => {
     expect(listServiceConfigs().map((e) => e.rkey)).toEqual(['self']);
   });
 
-  it('isCapabilityConfigured matches a capability from ANY discoverable listing', () => {
-    setServiceConfig(validConfig); // eta_query under 'self'
-    setServiceConfig(secondConfig, 'route-7'); // schedule_query
-    expect(isCapabilityConfigured('eta_query')).toBe(true);
-    expect(isCapabilityConfigured('schedule_query')).toBe(true);
+  it('isCapabilityConfigured: generic reaches `self` only; a non-self listing needs its rkey', () => {
+    setServiceConfig(validConfig); // eta_query under 'self' (public)
+    setServiceConfig(secondConfig, 'route-7'); // schedule_query under a NON-self rkey
+    expect(isCapabilityConfigured('eta_query')).toBe(true); // self, reachable generically
+    // schedule_query lives on a non-self listing → NOT generically reachable
+    // (Codex P2#1: one listing == one execution contract)…
+    expect(isCapabilityConfigured('schedule_query')).toBe(false);
+    // …but reachable when the query carries route-7's service_uri/rkey.
+    expect(isCapabilityConfigured('schedule_query', 'route-7')).toBe(true);
     expect(isCapabilityConfigured('not_offered')).toBe(false);
   });
 

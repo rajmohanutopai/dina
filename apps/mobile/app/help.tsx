@@ -193,6 +193,8 @@ function CardSection({
           key={card.title}
           onPress={() => onPress(card)}
           disabled={card.href === undefined}
+          testID={`help-card-${card.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}`}
+          accessibilityRole="button"
           style={({ pressed }) => [
             styles.card,
             card.href !== undefined && styles.cardLinkable,

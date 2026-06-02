@@ -724,6 +724,7 @@ export class InProcessTransport implements CoreClient {
     if (input.idempotencyKey !== undefined) body.idempotency_key = input.idempotencyKey;
     if (input.policy !== undefined) body.policy = input.policy;
     if (input.initialState !== undefined) body.initial_state = input.initialState;
+    if (input.requestedRunner !== undefined) body.requested_runner = input.requestedRunner;
 
     const res = await this.router.handle(
       blankRequest({ method: 'POST', path: '/v1/workflow/tasks', body }),

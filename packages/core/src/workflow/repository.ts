@@ -116,8 +116,19 @@ export interface WorkflowRepository {
    *
    * This is the server side of `POST /v1/workflow/tasks/claim` used by
    * paired dina-agent instances (role='agent') in the service-discovery path.
+   *
+   * `runnerFilter` (the daemon's registered runner name) scopes the claim on
+   * a multi-runner provider: a non-empty filter only matches tasks whose
+   * `requested_runner` equals it OR is unset; an empty filter matches any
+   * task (the single-runner default). This is what stops one provider's
+   * eta_query daemon from grabbing a price_check task meant for another.
    */
-  claimDelegationTask(agentDID: string, nowMs: number, leaseMs: number): WorkflowTask | null;
+  claimDelegationTask(
+    agentDID: string,
+    nowMs: number,
+    leaseMs: number,
+    runnerFilter?: string,
+  ): WorkflowTask | null;
 
   /**
    * Extend a claimed task's lease. Only the agent that holds the claim
@@ -540,7 +551,12 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
     return affected > 0;
   }
 
-  claimDelegationTask(agentDID: string, nowMs: number, leaseMs: number): WorkflowTask | null {
+  claimDelegationTask(
+    agentDID: string,
+    nowMs: number,
+    leaseMs: number,
+    runnerFilter = '',
+  ): WorkflowTask | null {
     if (leaseMs <= 0) {
       throw new Error('claimDelegationTask: leaseMs must be positive');
     }
@@ -548,14 +564,22 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
     const leaseExpiresAt = nowMs + leaseMs;
     let claimed: WorkflowTask | null = null;
     this.db.transaction(() => {
+      // Runner routing: an empty filter (param 2) matches any task; a
+      // non-empty filter matches only tasks whose requested_runner is unset
+      // or equals it. Keeps single-runner providers unchanged while routing
+      // each capability to its own daemon on a multi-runner provider.
       const rows = this.db.query(
         `SELECT ${TASK_COLUMNS} FROM workflow_tasks
          WHERE kind = 'delegation'
            AND state = 'queued'
            AND (expires_at IS NULL OR expires_at > ?)
+           AND (? = ''
+                OR requested_runner IS NULL
+                OR requested_runner = ''
+                OR requested_runner = ?)
          ORDER BY created_at ASC
          LIMIT 1`,
-        [nowSec],
+        [nowSec, runnerFilter, runnerFilter],
       );
       if (rows.length === 0) return;
       const candidate = rowToTask(rows[0]);
@@ -1052,17 +1076,33 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     return true;
   }
 
-  claimDelegationTask(agentDID: string, nowMs: number, leaseMs: number): WorkflowTask | null {
+  claimDelegationTask(
+    agentDID: string,
+    nowMs: number,
+    leaseMs: number,
+    runnerFilter = '',
+  ): WorkflowTask | null {
     if (leaseMs <= 0) {
       throw new Error('claimDelegationTask: leaseMs must be positive');
     }
     const nowSec = Math.floor(nowMs / 1000);
-    // Pick the oldest queued delegation task that hasn't expired.
+    // Pick the oldest queued delegation task that hasn't expired. Runner
+    // routing mirrors the SQL store: an empty filter matches any task; a
+    // non-empty filter matches only tasks whose requested_runner is unset
+    // or equals it.
     const candidates: WorkflowTask[] = [];
     for (const t of this.tasks.values()) {
       if (t.kind !== 'delegation') continue;
       if (t.status !== 'queued') continue;
       if (t.expires_at !== undefined && t.expires_at <= nowSec) continue;
+      if (
+        runnerFilter !== '' &&
+        t.requested_runner !== undefined &&
+        t.requested_runner !== '' &&
+        t.requested_runner !== runnerFilter
+      ) {
+        continue;
+      }
       candidates.push(t);
     }
     if (candidates.length === 0) return null;

@@ -72,6 +72,7 @@ export default function PeopleScreen() {
     navigation.setOptions({
       headerRight: () => (
         <Pressable
+          testID="people-add-contact-header"
           onPress={() => router.push('/add-contact' as never)}
           accessibilityRole="button"
           accessibilityLabel="Add a contact"
@@ -146,6 +147,7 @@ function ContactsView({
           Add someone by their handle to start an end-to-end encrypted conversation.
         </Text>
         <Pressable
+          testID="people-add-contact"
           onPress={onAdd}
           accessibilityRole="button"
           accessibilityLabel="Add a contact"
@@ -208,6 +210,7 @@ function SubTabBar({
   return (
     <View style={styles.subTabBar}>
       <Pressable
+        testID="people-subtab-contacts"
         onPress={() => onChange('contacts')}
         accessibilityRole="tab"
         accessibilityState={{ selected: value === 'contacts' }}
@@ -223,6 +226,7 @@ function SubTabBar({
         </Text>
       </Pressable>
       <Pressable
+        testID="people-subtab-relations"
         onPress={() => onChange('relations')}
         accessibilityRole="tab"
         accessibilityState={{ selected: value === 'relations' }}
@@ -387,6 +391,7 @@ function OwnIdentityCard(): React.ReactElement | null {
         )}
       </View>
       <Pressable
+        testID="people-share-handle"
         onPress={onShare}
         accessibilityRole="button"
         accessibilityLabel="Share your handle"
@@ -410,6 +415,8 @@ function ContactRow({
   return (
     <Link href={{ pathname: '/chat/[did]', params: { did: contact.did } }} asChild>
       <Pressable
+        testID={`people-contact-row-${contact.did}`}
+        accessibilityRole="button"
         style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
         accessibilityLabel={`Open chat with ${contact.displayName}. Long-press to remove.`}
         onLongPress={() => onLongPress(contact)}

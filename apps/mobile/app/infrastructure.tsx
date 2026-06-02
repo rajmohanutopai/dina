@@ -142,6 +142,7 @@ export default function InfrastructureScreen(): React.ReactElement {
       {error !== null ? <Text style={styles.error}>{error}</Text> : null}
 
       <Pressable
+        testID="infrastructure-save"
         onPress={() => void onSave()}
         disabled={saving}
         style={({ pressed }) => [
@@ -177,6 +178,10 @@ function Field({
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
+        testID={`infrastructure-input-${label
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '')}`}
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}

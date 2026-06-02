@@ -279,7 +279,12 @@ function CopyableRow(props: {
             hitSlop={10}
             style={styles.copyBtn}
             testID={
-              props.testIDPrefix !== undefined ? `${props.testIDPrefix}-copy` : undefined
+              props.testIDPrefix !== undefined
+                ? `${props.testIDPrefix}-copy`
+                : `identity-modal-copy-${props.label
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, '-')
+                    .replace(/^-+|-+$/g, '')}`
             }
           >
             <Ionicons name="copy-outline" size={16} color={colors.textMuted} />

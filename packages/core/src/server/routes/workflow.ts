@@ -148,6 +148,7 @@ async function createTask(req: CoreRequest): Promise<CoreResponse> {
     idempotencyKey: optStrField(body.idempotency_key),
     policy: optStrField(body.policy),
     initialState: optStrField(body.initial_state) as WorkflowTaskState | undefined,
+    requestedRunner: optStrField(body.requested_runner),
   };
   try {
     const task = service.create(input);
@@ -201,7 +202,11 @@ async function claimTask(req: CoreRequest): Promise<CoreResponse> {
   const agentDID = req.headers['x-did'] ?? '';
   if (agentDID === '') return j(400, { error: 'X-DID header is required' });
   const leaseMs = extractLeaseMs(req.body);
-  const task = service.store().claimDelegationTask(agentDID, Date.now(), leaseMs);
+  // `runner_filter` (the daemon's registered runner) routes tasks on a
+  // multi-runner provider: a filtered claim only takes tasks whose
+  // `requested_runner` matches (or is unset). Empty filter ⇒ claim anything.
+  const runnerFilter = extractRunnerFilter(req.body);
+  const task = service.store().claimDelegationTask(agentDID, Date.now(), leaseMs, runnerFilter);
   if (task === null) return j(204, undefined);
   // dina-agent (Python) reads `body.id` / `body.payload` directly off
   // the response body — no `task` envelope. Match Go-Core's wire shape
@@ -592,6 +597,12 @@ function extractLeaseMs(rawBody: unknown): number {
     return Math.max(1_000, Math.min(300_000, Math.floor(lease)));
   }
   return 30_000;
+}
+
+function extractRunnerFilter(rawBody: unknown): string {
+  const body = (rawBody as Record<string, unknown> | undefined) ?? {};
+  const f = body.runner_filter;
+  return typeof f === 'string' ? f : '';
 }
 
 function parseUnsignedNumber(raw: unknown, fallback: number): number {

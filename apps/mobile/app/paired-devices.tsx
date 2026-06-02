@@ -201,6 +201,7 @@ export default function PairedDevicesScreen() {
                 </Text>
                 {!d.revoked && (
                   <Pressable
+                    testID="paired-devices-revoke"
                     onPress={() => handleRevoke(d)}
                     style={({ pressed }) => [
                       styles.revokeButton,
@@ -216,6 +217,7 @@ export default function PairedDevicesScreen() {
             ))
           )}
           <Pressable
+            testID="paired-devices-refresh"
             onPress={refreshDevices}
             style={styles.refreshButton}
             accessibilityRole="button"
@@ -243,6 +245,7 @@ export default function PairedDevicesScreen() {
 
           <Text style={styles.label}>Agent name</Text>
           <TextInput
+            testID="paired-devices-agent-name"
             style={styles.input}
             value={deviceName}
             onChangeText={setDeviceName}
@@ -261,6 +264,7 @@ export default function PairedDevicesScreen() {
           */}
 
           <Pressable
+            testID="paired-devices-generate"
             style={[styles.primaryButton, generating && styles.primaryButtonDisabled]}
             disabled={generating}
             onPress={handleGenerate}
@@ -280,6 +284,7 @@ export default function PairedDevicesScreen() {
               {formatCode(liveCode.code)}
             </Text>
             <Pressable
+              testID="paired-devices-copy-code"
               onPress={handleCopy}
               style={({ pressed }) => [styles.copyButton, pressed && styles.copyButtonPressed]}
               accessibilityRole="button"

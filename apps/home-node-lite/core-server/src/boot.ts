@@ -333,20 +333,33 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         // a PDS-provisioned did:plc, that's our canonical identity.
         setNodeDID(pdsIdentity.did);
       } catch (err) {
-        // Don't take down the whole boot if PDS is unreachable — surface
-        // it as a degradation so /readyz reports honestly + downstream
-        // service publishing reflects the broken state. This keeps the
-        // lite stack usable for non-provider duties even when test-pds
-        // is offline.
+        // FAIL CLOSED — never fall back to a did:key identity. When the
+        // operator opted into provisioning (`DINA_PDS_PROVISION=1` +
+        // handle), this node is meant to be a real did:plc home node /
+        // provider. Silently degrading to did:key was actively harmful:
+        // a did:key node has no PDS repo, so it publishes nothing to the
+        // AppView (invisible to discovery) and its D2D identity diverges
+        // from any previously-registered did:plc — the exact failure that
+        // left a provider stuck with stale pairings + empty discovery
+        // after a disk/`/tmp` wipe. A loud abort forces the operator to
+        // fix the root cause (PDS reachability / handle / seed) instead of
+        // running a broken provider that looks up but answers nothing.
         trace.push({
           step: 'pds_provision',
           status: 'failed',
           elapsedMs: Date.now() - pdsStart,
           error: (err as Error).message,
         });
-        logger.warn(
+        logger.error(
           { error: (err as Error).message },
-          'PDS provisioning failed; continuing without a did:plc identity',
+          'PDS provisioning failed and DINA_PDS_PROVISION=1 — aborting boot (no did:key fallback)',
+        );
+        throw new Error(
+          `PDS provisioning failed for handle "${(process.env.DINA_PDS_HANDLE ?? '').trim()}": ` +
+            `${(err as Error).message}. ` +
+            'Refusing to fall back to a did:key identity (DINA_PDS_PROVISION=1). ' +
+            'Fix PDS reachability / handle / seed and retry, or unset DINA_PDS_PROVISION ' +
+            'only for a throwaway dev node.',
         );
       }
     } else {

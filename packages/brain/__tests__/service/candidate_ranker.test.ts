@@ -282,3 +282,36 @@ describe('pickTopCandidate', () => {
     expect(top?.profile.did).toBe('did:plc:far');
   });
 });
+
+describe('rankCandidates — self-exclusion (excludeDid)', () => {
+  // Regression: a node that is both requester and provider for a capability
+  // (role=provider with EXPO_PUBLIC_DINA_PROVIDER_CAPABILITY, or a stale
+  // self-listing lingering in AppView after a provider→requester switch)
+  // must never route its own service.query to itself — that D2Ds to its own
+  // DID with no inbound runner → "No response". excludeDid drops self.
+  const SELF = 'did:plc:selfnode';
+  const services: ServiceProfile[] = [
+    profile({ did: SELF, name: 'My Own Node' }),
+    profile({ did: 'did:plc:other', name: 'Real Provider' }),
+  ];
+
+  it('drops the self candidate when excludeDid is supplied', () => {
+    const ranked = rankCandidates('eta_query', services, { excludeDid: SELF });
+    expect(ranked.map((r) => r.profile.did)).toEqual(['did:plc:other']);
+  });
+
+  it('pickTopCandidate never returns self when excludeDid is set', () => {
+    const top = pickTopCandidate('eta_query', services, { excludeDid: SELF });
+    expect(top?.profile.did).toBe('did:plc:other');
+  });
+
+  it('returns null when the ONLY candidate is self (no fallback to self)', () => {
+    const onlySelf = [profile({ did: SELF, name: 'My Own Node' })];
+    expect(pickTopCandidate('eta_query', onlySelf, { excludeDid: SELF })).toBeNull();
+  });
+
+  it('includes self when excludeDid is absent (baseline — proves the filter is the cause)', () => {
+    const ranked = rankCandidates('eta_query', services, {});
+    expect(ranked.map((r) => r.profile.did)).toContain(SELF);
+  });
+});

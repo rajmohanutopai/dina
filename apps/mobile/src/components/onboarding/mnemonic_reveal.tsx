@@ -40,11 +40,7 @@ export function MnemonicReveal(props: MnemonicRevealProps): React.ReactElement {
       <View style={styles.card}>
         <View style={styles.grid}>
           {props.mnemonic.map((word, i) => (
-            <View
-              key={i}
-              style={styles.cell}
-              accessibilityLabel={`Word ${i + 1}: ${word}`}
-            >
+            <View key={i} style={styles.cell} accessibilityLabel={`Word ${i + 1}: ${word}`}>
               <Text
                 style={styles.cellIndex}
                 accessibilityElementsHidden
@@ -65,8 +61,8 @@ export function MnemonicReveal(props: MnemonicRevealProps): React.ReactElement {
       </View>
 
       <Text style={styles.footer}>
-        Next we'll ask you to fill in a few of these words. Quick check to make sure you've got
-        them right. You can re-view the full phrase any time from Settings.
+        Next we'll ask you to fill in a few of these words. Quick check to make sure you've got them
+        right. You can re-view the full phrase any time from Settings.
       </Text>
     </OnboardingShell>
   );

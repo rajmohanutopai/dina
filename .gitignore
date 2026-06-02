@@ -355,3 +355,14 @@ apps/mobile/__chrome__/results/**/*.png
 demo/dina-services-demo/drcarl-vault/
 demo/dina-services-demo/drcarl-agent/
 demo/dina-services-demo/price-agent/
+demo/dina-services-demo/price-agent-sluk5/
+
+# bus42-agent provider stack — the live test provider rig (lite Core vault +
+# paired dina-agent config). Holds the master seed (provider-vault/keyfile),
+# PDS creds (provider-vault/pds_identity.json), per-persona SQLCipher vaults,
+# and the agent's Ed25519 device key. ALL test-only (bus42etalive.test-pds +
+# drcarl-vault), but secret-shaped — must never be committed. Flagged by the
+# automated security review when this dir wasn't ignored after the stack moved
+# here from demo/dina-services-demo/.
+bus42-agent/
+demo/dina-services-demo/eta-agent/
