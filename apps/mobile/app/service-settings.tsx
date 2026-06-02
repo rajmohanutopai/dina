@@ -12,7 +12,7 @@
  * depending on isDiscoverable).
  */
 
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState, useEffect, useCallback, useMemo, useSyncExternalStore } from 'react';
 import {
   View,
@@ -36,11 +36,13 @@ import {
   effectiveDiscoverability,
   type CapabilityDefinition,
   type Discoverability,
+  type ServiceListingStatus,
 } from '@dina/protocol';
 
 import { CapabilityPicker } from '../src/components/capability_picker';
-import { getBootDegradations, getBootedNode } from '../src/hooks/useNodeBootstrap';
+import { getBootDegradations } from '../src/hooks/useNodeBootstrap';
 import {
+  listServiceListings,
   loadServiceConfig,
   loadServiceConfigWithRetry,
   saveServiceConfig,
@@ -55,11 +57,10 @@ import {
   type CatalogData,
   type CatalogFetch,
 } from '../src/services/catalog_source';
-import { saveRolePreference } from '../src/services/role_preference';
+import { slugifyRkey } from '../src/services/listing_rkey';
 import { subscribeRuntimeWarnings, getRuntimeWarnings } from '../src/services/runtime_warnings';
 import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 
-import type { NodeRole } from '../src/services/bootstrap';
 import type { ServiceConfig } from '@dina/core';
 
 // Local capability registry — every capability the brain knows how to
@@ -128,6 +129,12 @@ export default function ServiceSettingsScreen() {
     setDiscoverabilityTouched(true);
     setDiscoverability(value);
   }, []);
+  // Listing availability — the per-listing ON/OFF switch, distinct from node
+  // role (requester/provider/both) and from discoverability (who can find it).
+  // `active` = live (publish per discoverability + answer queries); `paused` =
+  // keep the config but unpublish + stop answering. (`draft` exists in the
+  // model but isn't a mobile toggle yet — a new listing starts `active`.)
+  const [status, setStatus] = useState<ServiceListingStatus>('active');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   // Per-capability `category` is the concrete vertical chosen in the picker —
@@ -149,23 +156,14 @@ export default function ServiceSettingsScreen() {
   // runtime. Filtered to capabilities NOT already configured so the
   // picker doesn't show duplicates.
   const localKnownCapabilities = useMemo(() => listLocalCapabilities(), []);
-  const bootedNode = getBootedNode();
-  const [role, setRole] = useState<NodeRole>(
-    bootedNode !== null ? (bootedNode.role as NodeRole) : 'requester',
-  );
 
-  const onChangeRole = useCallback(async (next: NodeRole) => {
-    setRole(next);
-    try {
-      await saveRolePreference(next);
-      Alert.alert(
-        'Role updated',
-        `Saved as ${next}. Force-quit and reopen Dina to apply (boot wires ServicePublisher + ServiceHandler from this preference).`,
-      );
-    } catch (err) {
-      Alert.alert('Error', (err as Error).message ?? 'Failed to save role');
-    }
-  }, []);
+  // Which listing this screen edits. `?rkey=<rkey>` edits that listing; no rkey
+  // = CREATE a brand-new listing (its rkey is generated from the name on save).
+  // Node role + the listing list live on `/my-listings` (the provider home).
+  const params = useLocalSearchParams<{ rkey?: string }>();
+  const editingRkey =
+    typeof params.rkey === 'string' && params.rkey !== '' ? params.rkey : null;
+  const isCreate = editingRkey === null;
 
   // Pull the boot-time degradations so the "make discoverable" toggle
   // can tell the truth: without a PDS publisher + MsgBox transport the
@@ -198,10 +196,16 @@ export default function ServiceSettingsScreen() {
     // re-boot (auto-lock → re-unlock, or a dev Fast-Refresh). `loadServiceConfigWithRetry`
     // keeps trying through that window so a transient null doesn't strand the
     // user on a sticky error; only a genuine, persistent null surfaces below.
+    // CREATE mode: nothing to load — start with an empty form. The Core client
+    // is needed only at save time (it's wired by then).
+    if (isCreate) {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       try {
-        const cfg = await loadServiceConfigWithRetry();
+        const cfg = await loadServiceConfigWithRetry({ rkey: editingRkey });
         if (cancelled) return;
         if (cfg !== null) hydrate(cfg);
       } catch (err) {
@@ -229,6 +233,8 @@ export default function ServiceSettingsScreen() {
     // choice — pin `touched` so the auto-default effect doesn't clobber it.
     setDiscoverability(effectiveDiscoverability(cfg));
     setDiscoverabilityTouched(true);
+    // Listing availability (default `active` for configs predating the field).
+    setStatus(cfg.status ?? 'active');
     setName(cfg.name);
     setDescription(cfg.description ?? '');
     setCapabilities(
@@ -303,10 +309,12 @@ export default function ServiceSettingsScreen() {
       Alert.alert('Missing name', 'Give this node a display name before saving.');
       return;
     }
-    // Review #19: don't allow saving a discoverable profile with no
-    // capabilities — Core rejects it anyway, but catching it here
-    // produces a clearer UI message than a wire error.
-    if (discoverability === 'public' && capabilities.length === 0) {
+    // Review #19: don't allow saving a LIVE discoverable profile with no
+    // capabilities — Core rejects it anyway, but catching it here produces a
+    // clearer UI message than a wire error. Gated on `status === 'active'`: a
+    // paused/draft listing isn't published, so an empty one is allowed (you can
+    // pause an in-progress listing without first adding a capability).
+    if (status === 'active' && discoverability === 'public' && capabilities.length === 0) {
       Alert.alert(
         'No capabilities',
         'A discoverable profile must advertise at least one capability. Add one first, or toggle "Make this node discoverable" off.',
@@ -315,7 +323,9 @@ export default function ServiceSettingsScreen() {
     }
     setSaving(true);
     try {
-      const existing = await loadServiceConfig();
+      // Edit mode: preserve the existing listing's caps/schemas. Create mode:
+      // no existing config (a fresh listing under a new rkey).
+      const existing = isCreate ? null : await loadServiceConfig(editingRkey);
       // Review #11: start from the EXISTING capability map so any
       // cap not surfaced by this screen (added via CLI, different
       // UI, or a newer version of this screen) survives the save.
@@ -385,6 +395,9 @@ export default function ServiceSettingsScreen() {
         // Explicit discovery visibility chosen in the "who can find this?"
         // selector (spec §5.2) — every listing carries it.
         discoverability,
+        // Availability — `paused` keeps everything but unpublishes + stops
+        // answering queries; `active` is live.
+        status,
         name: name.trim(),
         description: description.trim() !== '' ? description.trim() : undefined,
         capabilities: caps,
@@ -403,9 +416,16 @@ export default function ServiceSettingsScreen() {
         );
         return;
       }
-      await saveServiceConfig(next);
-      Alert.alert('Saved', 'Service config updated.', [
-        { text: 'OK', onPress: () => router.replace('/settings') },
+      // Resolve the target rkey: edit → the listing's own rkey; create →
+      // generate a unique slug from the name (avoiding existing rkeys + `self`).
+      let targetRkey = editingRkey;
+      if (targetRkey === null) {
+        const all = await listServiceListings();
+        targetRkey = slugifyRkey(next.name, all.map((l) => l.rkey));
+      }
+      await saveServiceConfig(next, targetRkey);
+      Alert.alert('Saved', isCreate ? 'Listing created.' : 'Listing updated.', [
+        { text: 'OK', onPress: () => router.replace('/my-listings') },
       ]);
     } catch (err) {
       if (err instanceof ServiceConfigValidationError) {
@@ -416,12 +436,22 @@ export default function ServiceSettingsScreen() {
     } finally {
       setSaving(false);
     }
-  }, [name, description, discoverability, capabilities, localKnownCapabilities, router]);
+  }, [
+    name,
+    description,
+    discoverability,
+    status,
+    capabilities,
+    localKnownCapabilities,
+    isCreate,
+    editingRkey,
+    router,
+  ]);
 
   if (loading) {
     return (
       <View style={[styles.container, styles.centered]}>
-        <Stack.Screen options={{ title: 'Service Sharing' }} />
+        <Stack.Screen options={{ title: isCreate ? 'New listing' : 'Edit listing' }} />
         <ActivityIndicator size="small" color={colors.textMuted} />
       </View>
     );
@@ -436,23 +466,36 @@ export default function ServiceSettingsScreen() {
         </View>
       ) : null}
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* ROLE — let a fresh requester-only node self-promote to
-            provider. The boot path reads this on next launch and wires
-            ServicePublisher + ServiceHandler accordingly. Without this
-            toggle, role stays 'requester' forever (no other UI path). */}
         <View style={styles.section}>
-          <Text style={styles.sectionHeader}>ROLE</Text>
+          <Text style={styles.sectionHeader}>SERVICE STATUS</Text>
           <View style={styles.card}>
-            {(['requester', 'provider', 'both'] as NodeRole[]).map((opt) => (
+            {(
+              [
+                {
+                  value: 'active',
+                  title: 'Active',
+                  body: 'Live — published and answering queries (per the visibility below).',
+                },
+                {
+                  value: 'paused',
+                  title: 'Paused',
+                  body: 'Off — kept saved, but not published and not answering queries. Flip back to Active anytime.',
+                },
+              ] as { value: ServiceListingStatus; title: string; body: string }[]
+            ).map((opt) => (
               <Pressable
-                key={opt}
-                style={[styles.row, role === opt ? styles.rowSelected : null]}
-                onPress={() => onChangeRole(opt)}
+                key={opt.value}
+                style={[styles.row, status === opt.value ? styles.rowSelected : null]}
+                onPress={() => setStatus(opt.value)}
                 accessibilityRole="button"
-                accessibilityLabel={`Set role to ${opt}`}
+                accessibilityState={{ selected: status === opt.value }}
+                accessibilityLabel={`${opt.title}. ${opt.body}`}
               >
-                <Text style={styles.rowTitle}>{labelForRole(opt)}</Text>
-                {role === opt ? <Text style={styles.rowValue}>{'✓'}</Text> : null}
+                <View style={{ flex: 1, paddingRight: spacing.sm }}>
+                  <Text style={styles.rowTitle}>{opt.title}</Text>
+                  <Text style={styles.rowSubtitle}>{opt.body}</Text>
+                </View>
+                {status === opt.value ? <Text style={styles.rowValue}>{'✓'}</Text> : null}
               </Pressable>
             ))}
           </View>
@@ -735,12 +778,6 @@ export default function ServiceSettingsScreen() {
       </ScrollView>
     </View>
   );
-}
-
-function labelForRole(r: NodeRole): string {
-  if (r === 'requester') return 'Requester only. Ask others, never serve.';
-  if (r === 'provider') return 'Provider. Accept inbound service queries.';
-  return 'Both: provider plus requester.';
 }
 
 const styles = StyleSheet.create({

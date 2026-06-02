@@ -11,21 +11,26 @@
  * Source: SERVICE_DISCOVERY_DESIGN.md MOBILE-010.
  */
 
-import type { CoreClient } from '@dina/core';
 import {
   validateServiceConfig,
+  type CoreClient,
   type ServiceConfig,
+  type ServiceListing,
 } from '@dina/core';
 
+export type { ServiceListing };
+
 /**
- * Subset of `CoreClient` the config form uses. `serviceConfig` returns
- * `ServiceConfig | null` (null on 404 = "not published yet"), same
- * semantic as the legacy `getServiceConfig`. `putServiceConfig` is the
- * upsert.
+ * Subset of `CoreClient` the config form + listings screen use.
+ * `serviceConfig(rkey?)` returns `ServiceConfig | null` (null on 404 = "not
+ * published yet"); `putServiceConfig(config, rkey?)` upserts;
+ * `listServiceConfigs()` returns every listing (multi-listing per DID);
+ * `deleteServiceConfig(rkey)` removes one listing (idempotent). When `rkey`
+ * is omitted the default `self` listing is used (back-compat).
  */
 export type ServiceConfigCoreClient = Pick<
   CoreClient,
-  'serviceConfig' | 'putServiceConfig'
+  'serviceConfig' | 'putServiceConfig' | 'listServiceConfigs' | 'deleteServiceConfig'
 >;
 
 let client: ServiceConfigCoreClient | null = null;
@@ -53,10 +58,21 @@ export class ServiceConfigValidationError extends Error {
 }
 
 /**
- * Load the current service config. Returns `null` when none is set.
+ * Load a service config by listing `rkey` (default `self`). Returns `null`
+ * when that listing is not set.
  */
-export async function loadServiceConfig(): Promise<ServiceConfig | null> {
-  return requireClient().serviceConfig();
+export async function loadServiceConfig(rkey?: string): Promise<ServiceConfig | null> {
+  return requireClient().serviceConfig(rkey);
+}
+
+/** List every published service listing (multi-listing per DID). */
+export async function listServiceListings(): Promise<ServiceListing[]> {
+  return requireClient().listServiceConfigs();
+}
+
+/** Remove one listing by `rkey` (idempotent — a missing listing is a no-op). */
+export async function deleteServiceListing(rkey: string): Promise<void> {
+  await requireClient().deleteServiceConfig(rkey);
 }
 
 /**
@@ -73,6 +89,7 @@ export async function loadServiceConfig(): Promise<ServiceConfig | null> {
  * after the window. `sleep` is injectable so tests don't wait real time.
  */
 export async function loadServiceConfigWithRetry(opts?: {
+  rkey?: string;
   maxAttempts?: number;
   delayMs?: number;
   sleep?: (ms: number) => Promise<void>;
@@ -83,7 +100,7 @@ export async function loadServiceConfigWithRetry(opts?: {
 
   for (let attempt = 1; ; attempt++) {
     try {
-      return await loadServiceConfig();
+      return await loadServiceConfig(opts?.rkey);
     } catch (err) {
       if (err instanceof ServiceConfigNotConfiguredError && attempt < maxAttempts) {
         await sleep(delayMs);
@@ -99,14 +116,14 @@ export async function loadServiceConfigWithRetry(opts?: {
  * network call so typos surface immediately (surfacing the same error
  * Core would have returned after a round-trip).
  */
-export async function saveServiceConfig(next: ServiceConfig): Promise<void> {
+export async function saveServiceConfig(next: ServiceConfig, rkey?: string): Promise<void> {
   try {
     validateServiceConfig(next);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     throw new ServiceConfigValidationError(msg);
   }
-  await requireClient().putServiceConfig(next);
+  await requireClient().putServiceConfig(next, rkey);
 }
 
 function requireClient(): ServiceConfigCoreClient {

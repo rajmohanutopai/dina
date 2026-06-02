@@ -9,6 +9,8 @@
 
 import {
   effectiveDiscoverability,
+  effectiveListingStatus,
+  isListingPublishable,
   validateServiceListing,
 } from '../../src/services/listing-validation';
 
@@ -43,6 +45,28 @@ describe('effectiveDiscoverability — back-compat (spec §5.2)', () => {
   it('derives from isDiscoverable when not explicit', () => {
     expect(effectiveDiscoverability(mkConfig({}, { isDiscoverable: true }))).toBe('public');
     expect(effectiveDiscoverability(mkConfig({}, { isDiscoverable: false }))).toBe('known_only');
+  });
+});
+
+describe('effectiveListingStatus + isListingPublishable (availability axis)', () => {
+  it('effectiveListingStatus defaults to active when absent', () => {
+    expect(effectiveListingStatus(mkConfig({}))).toBe('active');
+    expect(effectiveListingStatus(mkConfig({}, { status: 'paused' }))).toBe('paused');
+    expect(effectiveListingStatus(mkConfig({}, { status: 'draft' }))).toBe('draft');
+  });
+
+  it('publishable iff active AND not known_only — status is an orthogonal AND', () => {
+    // active + public/unlisted → live
+    expect(isListingPublishable(mkConfig({}, { discoverability: 'public', status: 'active' }))).toBe(true);
+    expect(isListingPublishable(mkConfig({}, { discoverability: 'unlisted', status: 'active' }))).toBe(true);
+    // active + known_only → not live (local/pairing-bound)
+    expect(isListingPublishable(mkConfig({}, { discoverability: 'known_only', status: 'active' }))).toBe(false);
+    // paused/draft → never live, even when public (the OFF switch)
+    expect(isListingPublishable(mkConfig({}, { discoverability: 'public', status: 'paused' }))).toBe(false);
+    expect(isListingPublishable(mkConfig({}, { discoverability: 'public', status: 'draft' }))).toBe(false);
+    // back-compat: no status → active; no discoverability → derived
+    expect(isListingPublishable(mkConfig({}, { isDiscoverable: true }))).toBe(true);
+    expect(isListingPublishable(mkConfig({}, { isDiscoverable: false }))).toBe(false);
   });
 });
 

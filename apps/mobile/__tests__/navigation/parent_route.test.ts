@@ -40,8 +40,12 @@ describe('parentRouteFor', () => {
       expect(parentRouteFor('/paired-devices')).toBe('/settings');
     });
 
-    it('service-settings → /settings', () => {
-      expect(parentRouteFor('/service-settings')).toBe('/settings');
+    it('service-settings (per-listing editor) → /my-listings', () => {
+      expect(parentRouteFor('/service-settings')).toBe('/my-listings');
+    });
+
+    it('my-listings (provider home) → /peerlens (Network)', () => {
+      expect(parentRouteFor('/my-listings')).toBe('/peerlens');
     });
 
     it('settings root → /', () => {

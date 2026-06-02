@@ -24,7 +24,7 @@
  *         (config_changed event plumbing).
  */
 
-import { effectiveDiscoverability } from '@dina/protocol';
+import { effectiveDiscoverability, effectiveListingStatus } from '@dina/protocol';
 
 import { shouldPublishProfile } from './service_publisher';
 
@@ -84,6 +84,9 @@ export function toPublisherConfig(cfg: ServiceConfig): ServicePublisherConfig {
     // config predates the catalog model) so the publisher gate + wire record
     // agree on public/unlisted/known_only (catalog §5.2).
     discoverability: effectiveDiscoverability(cfg),
+    // Listing availability (default `active`) — the publisher gate
+    // (`shouldPublishProfile`) unpublishes a `paused`/`draft` listing.
+    status: effectiveListingStatus(cfg),
     name: cfg.name,
     capabilities,
     responsePolicy,

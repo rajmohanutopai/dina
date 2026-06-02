@@ -25,7 +25,7 @@
 
 import { getCatalogCapability, classifyCatalogCapability } from './capability-catalog';
 
-import type { ServiceConfig } from '../types/capability';
+import type { ServiceConfig, ServiceListingStatus } from '../types/capability';
 import type { Discoverability } from '../types/catalog';
 
 /**
@@ -36,6 +36,34 @@ import type { Discoverability } from '../types/catalog';
 export function effectiveDiscoverability(config: ServiceConfig): Discoverability {
   if (config.discoverability !== undefined) return config.discoverability;
   return config.isDiscoverable ? 'public' : 'known_only';
+}
+
+/**
+ * Effective listing status — the explicit value when present, else `active`
+ * (back-compat: a config that predates the status field is treated as live).
+ */
+export function effectiveListingStatus(config: ServiceConfig): ServiceListingStatus {
+  return config.status ?? 'active';
+}
+
+/**
+ * Whether a listing is LIVE on the network — i.e. it should be published to the
+ * PDS AND should accept inbound `service.query`. True iff the listing is
+ * `active` AND its effective discoverability is not `known_only` (known_only =
+ * local/pairing-bound, never published).
+ *
+ * This is the SINGLE source of truth shared by the publishers (publish vs
+ * unpublish) and Core's inbound capability gate, so "published ⇔ queryable"
+ * stays symmetric and `status` is an orthogonal AND on top of discoverability.
+ * Availability (`status`) is deliberately separated from discoverability (who
+ * can find it) so a multi-listing provider can pause ONE listing without
+ * deleting it or abusing `known_only` as an off switch.
+ */
+export function isListingPublishable(config: ServiceConfig): boolean {
+  return (
+    effectiveListingStatus(config) === 'active' &&
+    effectiveDiscoverability(config) !== 'known_only'
+  );
 }
 
 export type ListingValidationCode =

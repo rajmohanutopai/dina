@@ -36,7 +36,11 @@
 
 import { PDSPublisher } from '@dina/brain';
 import { onServiceConfigChanged, type ServiceConfig } from '@dina/core';
-import { effectiveDiscoverability, isValidServiceListingRkey } from '@dina/protocol';
+import {
+  effectiveDiscoverability,
+  isListingPublishable,
+  isValidServiceListingRkey,
+} from '@dina/protocol';
 
 import { type ServiceProfileRecord } from './profile_builder';
 import { computeSchemaHash } from './schema_hash';
@@ -142,21 +146,26 @@ export function wireServiceProfilePublisher(
 }
 
 /**
- * Whether a listing config should be PUBLISHED to the PDS (catalog §5.2).
+ * Whether a listing config should be PUBLISHED to the PDS — `isListingPublishable`
+ * (the shared live-listing predicate). A listing is published iff it is `active`
+ * AND its discoverability is not `known_only` (catalog §5.2):
  *
- *   - `public`   → published (and AppView surfaces it in normal search).
- *   - `unlisted` → published (AppView excludes it from search via the
+ *   - `active` + `public`   → published (AppView surfaces it in normal search).
+ *   - `active` + `unlisted` → published (AppView excludes it from search via the
  *                  `isDiscoverable=false` gate, but the PDS record exists so it
  *                  resolves by URI / link / QR / direct D2D).
- *   - `known_only` → NOT published — local/pairing-bound; never on the PDS.
+ *   - `active` + `known_only` → NOT published — local/pairing-bound.
+ *   - `paused` / `draft` (any discoverability) → NOT published — config kept,
+ *                  record unpublished. This is the per-listing OFF switch that
+ *                  is distinct from node role + from discoverability.
  *
- * Used at BOTH the config-change subscription and boot's first-publish loop so
- * the two agree. Back-compat: a legacy config with no explicit
- * `discoverability` derives it from `isDiscoverable` (true→public,
- * false→known_only), preserving the old "isDiscoverable=false → unpublish".
+ * Used at BOTH the config-change subscription and boot's first-publish loop, and
+ * mirrored by Core's inbound query gate (`isCapabilityConfigured`), so
+ * publish ⇔ queryable. Back-compat: a legacy config with no status/
+ * discoverability derives active + (isDiscoverable?public:known_only).
  */
 export function shouldPublishListing(config: ServiceConfig): boolean {
-  return effectiveDiscoverability(config) !== 'known_only';
+  return isListingPublishable(config);
 }
 
 /**

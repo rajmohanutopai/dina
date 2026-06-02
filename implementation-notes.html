@@ -553,6 +553,75 @@ explicitly asks Claude to <b>validate before implementing</b> (§43, §10) and t
   <b>All Codex findings across both passes are now resolved</b> (#1 unlisted-usable, #2 schema-less listings, #3 category
   anti-spoof, #4 strict validation; #5/#6/#7/#8 from the prior pass).</p>
 </div>
+<div class="item iter">
+  <span class="tag iter">Iter 14 — per-listing availability: ServiceListingStatus (draft/active/paused)</span>
+  <p><b>Problem (provider model):</b> there was no way to turn ONE service off. Availability was being faked through
+  discoverability (<code>known_only</code> ≠ "off", it means "private") or by deleting the config (destructive). Node
+  role (requester/provider/both) answers "is provider machinery running" — a different axis from "is THIS listing live".
+  Added a third, orthogonal axis.</p>
+  <p><b>Model:</b> <code>ServiceConfig.status: 'draft' | 'active' | 'paused'</code> (optional; default <code>active</code>
+  for back-compat). <code>active</code> = live (publish per discoverability + answer queries); <code>paused</code> = keep
+  the config but unpublish + reject queries (reversible OFF switch); <code>draft</code> = saved, never published. Deleting
+  stays the separate destructive action. Added two pure protocol helpers: <code>effectiveListingStatus()</code> and the
+  <b>single source of truth</b> <code>isListingPublishable(config) = status==='active' &amp;&amp; discoverability!=='known_only'</code>.</p>
+  <p><b>Gates (one predicate, three call sites):</b> HNL <code>shouldPublishListing</code> + brain
+  <code>shouldPublishProfile</code> (mirrored for the flat publisher-config shape) + Core <code>isCapabilityConfigured</code>
+  all now key off <code>isListingPublishable</code> — so a <code>paused</code> listing both UNPUBLISHES (publisher
+  unpublishes the PDS record → AppView drops the index row) AND stops answering inbound <code>service.query</code>.
+  "Published ⇔ queryable" stays symmetric; status is an AND on top of discoverability. <code>toPublisherConfig</code>
+  carries <code>status</code>; <code>validateServiceConfig</code> validates the enum. <b>No wire/AppView change needed</b>
+  — a non-active listing simply isn't published, so AppView never sees it (status is a local provider control whose
+  network effect is publish/unpublish).</p>
+  <p><b>Mobile:</b> a <b>SERVICE STATUS</b> section (Active / Paused) above the discoverability selector in
+  service-settings; hydrate reads <code>status</code>, onSave writes it, the no-cap guard is gated on
+  <code>active</code> (you can pause an in-progress listing). <b>Scope honesty:</b> this gives a working pause/activate
+  for the listing mobile edits (the default <code>self</code>) and fixes the model everywhere. The literal "5 services,
+  switch off one" still needs the <b>multi-listing "My listings" UI</b> (mobile edits a single listing today) — called
+  out as the remaining UX gap in <code>apps/mobile/docs/MOBILE_FEATURES.md</code>. <code>draft</code> is in the model for
+  that future UI but isn't a mobile toggle yet (a new listing starts <code>active</code>).</p>
+  <p><b>Tests showed:</b> protocol <b>480</b> (+2: effectiveListingStatus + isListingPublishable truth table), core
+  <b>4510</b> (+3: active queryable, paused/draft NOT queryable), HNL <b>2369</b> (+1: parity test now proves both
+  publish gates agree on status — paused/draft never publish even when public), brain <b>3341</b>, mobile <b>2846</b>.
+  tsc 0 across all; eslint 0 on touched files. <b>Deep review:</b> (1) Correct — availability is now its own axis;
+  <code>isListingPublishable</code> is the one predicate shared by publishers + ingress so they can't disagree (proven by
+  the parity test). (2) No smell — status doesn't leak onto the wire (publisher gate handles it); back-compat is clean
+  (absent → active). (3) Truth table + gate-agreement + ingress-rejection all tested. <b>Remaining:</b> multi-listing
+  management UI (the only thing between this and the full "pause 1 of 5" UX).</p>
+</div>
+<div class="item iter">
+  <span class="tag iter">Iter 15 — multi-listing "My Services" UI (the "pause 1 of 5" flow)</span>
+  <p><b>Closes the last gap from Iter 14.</b> Mobile edited a single (`self`) listing; the runtime always supported many
+  listings per DID. Built the provider-home + per-listing manager so a provider with several services can pause/edit/
+  delete any one independently.</p>
+  <p><b>Client layer</b> (<code>useServiceConfigForm</code>): widened the Core-client Pick to
+  <code>listServiceConfigs</code> + <code>deleteServiceConfig</code>; added <code>listServiceListings()</code>,
+  <code>deleteServiceListing(rkey)</code>, and <code>rkey</code> params on load/save (default <code>self</code>). The
+  CoreClient already exposed the full multi-listing surface — mobile just wasn't using it.</p>
+  <p><b>New screens:</b> <code>app/my-listings.tsx</code> (the provider HOME) holds the NODE-LEVEL role selector
+  (requester/provider/both — moved here from service-settings so a requester can become a provider WITHOUT first
+  creating a listing) + the list of listings. <code>src/components/listings_view.tsx</code> (presentational) renders one
+  row per listing — name, capability count · visibility, a per-row <b>Active/Paused</b> quick toggle (flips status →
+  re-saves the full config → publisher unpublishes/republishes + Core ingress follows), tap-to-edit, delete (Alert), and
+  "+ New listing". <code>service-settings.tsx</code> became a pure PER-LISTING editor: reads <code>?rkey=</code> (edit
+  that listing) or no param (create); on create it generates a unique rkey from the name via
+  <code>slugifyRkey</code> (pure, protocol-valid charset, avoids existing rkeys + reserved <code>self</code>); role
+  selector removed; success returns to <code>/my-listings</code>.</p>
+  <p><b>Nav:</b> Network → Services "My services" and Settings → "Service Sharing" now route to
+  <code>/my-listings</code>; rows open <code>/service-settings?rkey=…</code>; "+ New" opens <code>/service-settings</code>.
+  Registered <code>my-listings</code> (href:null) + <code>parent_route</code> (my-listings → Network, service-settings →
+  my-listings).</p>
+  <p><b>Tests showed:</b> mobile <b>2867</b> (164 suites) — +<code>listing_rkey</code> (slug/charset/collision/self),
+  +<code>listings_view</code> (rows / toggle active↔paused / edit / delete / new / empty / subtitle),
+  +<code>useServiceConfigForm</code> multi-listing (rkey forwarding, list, delete, not-wired), +updated
+  <code>parent_route</code>. tsc 0; eslint 0 on every new/substantially-changed file (the pre-existing import-order debt
+  in <code>settings.tsx</code> / <code>peerlens/index.tsx</code>, where I changed one router.push line each, is unrelated
+  + left untouched). <b>Deep review:</b> (1) Correct — node role (home) vs listing availability (per row) vs
+  discoverability are three clean axes; the requester→provider path works without a listing. (2) No smell —
+  presentational <code>ListingsView</code> + injected callbacks (house pattern); rkey generation is a pure tested helper;
+  the per-row toggle reuses the same save path so the publisher/ingress gates stay authoritative. (3) Client + view +
+  rkey + nav all covered; the screens' data wiring has no render harness (consistent with this codebase's screen tests)
+  but every unit underneath is tested. <b>"Pause 1 of 5" now works end-to-end.</b></p>
+</div>
 
 </body>
 </html>

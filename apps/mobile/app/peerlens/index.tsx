@@ -314,12 +314,13 @@ export default function TrustFeedScreen(
       {/* ─── Services module (Network's first first-level module) ─────
           Makes Dina Services a discoverable primary surface instead of a
           hidden Settings preference. "Find a service" routes to Chat (the
-          real discovery path); "Publish/My services" routes to
-          /service-settings. See network_services_card.tsx. */}
+          real discovery path); "Publish/My services" routes to /my-listings
+          (the provider home: node role + every listing). See
+          network_services_card.tsx. */}
       <NetworkServicesCard
         isProvider={isServiceProvider}
         onFindService={() => router.push('/')}
-        onPublishOrManage={() => router.push('/service-settings')}
+        onPublishOrManage={() => router.push('/my-listings')}
       />
 
       {/* ─── Self-profile card ───────────────────────────────────────

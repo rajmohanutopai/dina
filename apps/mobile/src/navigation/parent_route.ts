@@ -42,7 +42,11 @@ const SECTION_PARENTS: Record<string, string> = {
   policy: '/admin',
   'paired-devices': '/settings',
   'ai-providers': '/settings',
-  'service-settings': '/settings',
+  // /my-listings (provider home: node role + listings) is reached from Network
+  // → Services and Settings → Service Sharing; default its back to Network.
+  'my-listings': '/peerlens',
+  // /service-settings is the per-listing editor, reached from /my-listings.
+  'service-settings': '/my-listings',
   'recovery-phrase': '/settings',
   'confirm-recovery-phrase': '/settings',
   // /peerlens-preferences index returns to Settings; its sub-screens

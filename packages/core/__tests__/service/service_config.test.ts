@@ -247,6 +247,24 @@ describe('isCapabilityConfigured', () => {
     setServiceConfig({ ...validConfig, isDiscoverable: false, discoverability: 'known_only' });
     expect(isCapabilityConfigured('eta_query')).toBe(false);
   });
+
+  it('returns TRUE for an active public listing (status default)', () => {
+    setServiceConfig({ ...validConfig, discoverability: 'public', status: 'active' });
+    expect(isCapabilityConfigured('eta_query')).toBe(true);
+  });
+
+  it('returns FALSE for a PAUSED listing — kept but off, even when public', () => {
+    // The per-listing OFF switch: a paused listing keeps its config but must not
+    // answer inbound queries (and the publisher unpublishes it). Availability is
+    // its own axis, distinct from discoverability.
+    setServiceConfig({ ...validConfig, discoverability: 'public', status: 'paused' });
+    expect(isCapabilityConfigured('eta_query')).toBe(false);
+  });
+
+  it('returns FALSE for a DRAFT listing — saved, not live', () => {
+    setServiceConfig({ ...validConfig, discoverability: 'public', status: 'draft' });
+    expect(isCapabilityConfigured('eta_query')).toBe(false);
+  });
 });
 
 describe('repository integration', () => {

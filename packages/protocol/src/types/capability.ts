@@ -92,6 +92,26 @@ export interface ServiceCapabilitySchemas {
   defaultTtlSeconds?: number;
 }
 
+/**
+ * Lifecycle / availability of a provider service LISTING — a distinct axis from
+ * node role (requester/provider/both) and from discoverability (who can find
+ * it):
+ *   - `active` — live: published per `discoverability` AND accepts inbound
+ *     `service.query`. The default when the field is absent (back-compat).
+ *   - `paused` — temporarily off: the config (name / category / schemas / rkey)
+ *     is KEPT, but the listing is unpublished and rejects inbound queries.
+ *     Reversible by flipping back to `active`.
+ *   - `draft` — saved locally, never published, not queryable (work in
+ *     progress). Same NETWORK effect as `paused`; the distinction is intent.
+ * Deleting / clearing the config is the separate, destructive action.
+ *
+ * This exists so availability is NOT faked through `discoverability` (which
+ * answers "who can find it", not "is it on") or through deleting the config
+ * (which is destructive). A provider with many listings pauses one without
+ * touching the others.
+ */
+export type ServiceListingStatus = 'draft' | 'active' | 'paused';
+
 /** The full local service configuration. Mirrors the Go `ServiceConfig`. */
 export interface ServiceConfig {
   /**
@@ -109,6 +129,14 @@ export interface ServiceConfig {
    * `discoverability != authorization` — the provider still enforces access.
    */
   discoverability?: Discoverability;
+  /**
+   * Availability of THIS listing — orthogonal to role + discoverability.
+   * `active` (default when absent) publishes + answers queries; `paused`/`draft`
+   * KEEP the config but unpublish + reject inbound queries. See
+   * `ServiceListingStatus`; read the effective value via `effectiveListingStatus`
+   * and the combined live check via `isListingPublishable`.
+   */
+  status?: ServiceListingStatus;
   /** Human-readable service name. */
   name: string;
   description?: string;

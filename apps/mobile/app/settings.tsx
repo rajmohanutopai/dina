@@ -248,11 +248,10 @@ export default function SettingsScreen() {
           <Text style={styles.rowLabel}>Infrastructure</Text>
           <Text style={styles.rowValue}>{'\u203A'}</Text>
         </TouchableOpacity>
-        {/* Service sharing row. The label adapts to whether the
-            node is already running as a provider; a non-provider
-            node can still tap through to /service-settings where
-            the role toggle lives. Without that path the role
-            stays 'requester' forever. */}
+        {/* Service sharing row → /my-listings (the provider home: node role +
+            every listing). The label adapts to whether the node is already
+            running as a provider; a non-provider node taps through to set its
+            role + publish its first listing. */}
         {(() => {
           const node = getBootedNode();
           const runningAsProvider =
@@ -264,9 +263,9 @@ export default function SettingsScreen() {
           return (
             <TouchableOpacity
               style={styles.row}
-              onPress={() => router.push('/service-settings')}
+              onPress={() => router.push('/my-listings')}
               accessibilityRole="button"
-              accessibilityLabel="Open Service Sharing settings"
+              accessibilityLabel="Open My Services"
               testID="settings-row-service-sharing"
             >
               <Text style={styles.rowLabel}>

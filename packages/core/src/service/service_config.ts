@@ -15,7 +15,7 @@
  * Source: core/internal/service/service_config.go  (Go reference)
  */
 
-import { effectiveDiscoverability, resolveCanonicalCapability } from '@dina/protocol';
+import { isListingPublishable, resolveCanonicalCapability } from '@dina/protocol';
 
 import { configEventChannel } from './config_event_channel';
 import { getServiceConfigRepository } from './service_config_repository';
@@ -263,14 +263,15 @@ export function isCapabilityConfigured(capability: string): boolean {
   // configured listing, not just `self`.
   const inboundCanonical = resolveCanonicalCapability(capability);
   for (const cfg of configs.values()) {
-    // A listing is queryable iff it's PUBLISHED to the network (catalog §5.2):
-    // public + unlisted accept inbound queries (unlisted is reached via its
-    // service_uri from a link/QR — the URI authority is checked separately in
-    // bypass.ts); known_only is local-only and never reachable this way. Using
-    // effectiveDiscoverability keeps this symmetric with the publish gate
-    // (`shouldPublishListing`) — anything published is queryable. Back-compat: a
-    // legacy `isDiscoverable=false` config derives `known_only` → still skipped.
-    if (effectiveDiscoverability(cfg) === 'known_only') continue;
+    // A listing is queryable iff it's LIVE on the network (`isListingPublishable`,
+    // the SAME predicate the publishers gate publish/unpublish on — so
+    // "published ⇔ queryable" stays symmetric). That means: status === 'active'
+    // (a `paused`/`draft` listing keeps its config but rejects queries) AND
+    // discoverability !== 'known_only' (local/pairing-bound, never reached via a
+    // generic query — its service_uri authority is checked in bypass.ts).
+    // Back-compat: a legacy config with no status/discoverability derives
+    // active + (isDiscoverable?public:known_only).
+    if (!isListingPublishable(cfg)) continue;
 
     // Fast path: exact match against a configured key (covers both
     // canonical-configured providers and out-of-registry custom keys).
@@ -329,6 +330,14 @@ export function validateServiceConfig(value: unknown): asserts value is ServiceC
   }
   if (v.description !== undefined && typeof v.description !== 'string') {
     throw new Error('service_config: description must be a string when present');
+  }
+  if (
+    v.status !== undefined &&
+    v.status !== 'draft' &&
+    v.status !== 'active' &&
+    v.status !== 'paused'
+  ) {
+    throw new Error("service_config: status must be 'draft', 'active', or 'paused' when present");
   }
   if (!v.capabilities || typeof v.capabilities !== 'object') {
     throw new Error('service_config: capabilities must be an object');

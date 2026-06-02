@@ -67,6 +67,12 @@ export interface ServicePublisherConfig {
    * record so AppView + URI-resolvers can tell `unlisted` from `known_only`.
    */
   discoverability?: 'public' | 'unlisted' | 'known_only';
+  /**
+   * Listing availability (catalog: ServiceListingStatus). `active` (default
+   * when absent) publishes; `paused`/`draft` keep the config but unpublish —
+   * the per-listing OFF switch, distinct from node role + discoverability.
+   */
+  status?: 'draft' | 'active' | 'paused';
   name: string;
   description?: string;
   /** Capability names advertised in this profile. */
@@ -82,14 +88,18 @@ export interface ServicePublisherConfig {
 }
 
 /**
- * Whether a publisher config should be PUBLISHED to the PDS (catalog §5.2):
- * `public` + `unlisted` publish; `known_only` is local/pairing-bound and stays
- * off the PDS. Back-compat: a config with no explicit `discoverability` derives
- * it from `isDiscoverable` (true→public, false→known_only).
+ * Whether a publisher config should be PUBLISHED to the PDS — mirrors
+ * `@dina/protocol`'s `isListingPublishable` for the flat publisher-config shape
+ * (the parity test pins the two gates in agreement). Published iff the listing
+ * is `active` AND its discoverability is not `known_only` (catalog §5.2):
+ * `paused`/`draft` keep the config but stay off the PDS (per-listing OFF
+ * switch); `known_only` is local/pairing-bound. Back-compat: missing
+ * status → `active`, missing discoverability → derived from `isDiscoverable`.
  */
 export function shouldPublishProfile(config: ServicePublisherConfig): boolean {
+  const status = config.status ?? 'active';
   const disc = config.discoverability ?? (config.isDiscoverable ? 'public' : 'known_only');
-  return disc !== 'known_only';
+  return status === 'active' && disc !== 'known_only';
 }
 
 /** Options for `ServicePublisher`. */

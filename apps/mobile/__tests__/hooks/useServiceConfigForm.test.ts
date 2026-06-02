@@ -5,13 +5,17 @@
 import {
   ServiceConfigNotConfiguredError,
   ServiceConfigValidationError,
+  deleteServiceListing,
+  listServiceListings,
   loadServiceConfig,
   loadServiceConfigWithRetry,
   resetServiceConfigCoreClient,
   saveServiceConfig,
   setServiceConfigCoreClient,
   type ServiceConfigCoreClient,
+  type ServiceListing,
 } from '../../src/hooks/useServiceConfigForm';
+
 import type { ServiceConfig } from '../../../core/src/service/service_config';
 
 const VALID_CONFIG: ServiceConfig = {
@@ -31,17 +35,44 @@ function stubClient(init: {
   getResult?: ServiceConfig | null;
   getError?: Error;
   putError?: Error;
-}): { client: ServiceConfigCoreClient; calls: { get: number; put: ServiceConfig[] } } {
-  const calls = { get: 0, put: [] as ServiceConfig[] };
+  listResult?: ServiceListing[];
+}): {
+  client: ServiceConfigCoreClient;
+  calls: {
+    get: number;
+    getRkeys: (string | undefined)[];
+    put: ServiceConfig[];
+    putRkeys: (string | undefined)[];
+    list: number;
+    delete: string[];
+  };
+} {
+  const calls = {
+    get: 0,
+    getRkeys: [] as (string | undefined)[],
+    put: [] as ServiceConfig[],
+    putRkeys: [] as (string | undefined)[],
+    list: 0,
+    delete: [] as string[],
+  };
   const client: ServiceConfigCoreClient = {
-    async serviceConfig() {
+    async serviceConfig(rkey?: string) {
       calls.get++;
+      calls.getRkeys.push(rkey);
       if (init.getError) throw init.getError;
       return init.getResult ?? null;
     },
-    async putServiceConfig(cfg: ServiceConfig) {
+    async putServiceConfig(cfg: ServiceConfig, rkey?: string) {
       calls.put.push(cfg);
+      calls.putRkeys.push(rkey);
       if (init.putError) throw init.putError;
+    },
+    async listServiceConfigs() {
+      calls.list++;
+      return init.listResult ?? [];
+    },
+    async deleteServiceConfig(rkey: string) {
+      calls.delete.push(rkey);
     },
   };
   return { client, calls };
@@ -169,6 +200,53 @@ describe('useServiceConfigForm', () => {
       ).rejects.toThrow('500 backend down');
       expect(calls.get).toBe(1);
       expect(slept).toBe(0);
+    });
+  });
+
+  // ─── multi-listing (one DID, many listings keyed by rkey) ───────────────
+  describe('multi-listing', () => {
+    it('loadServiceConfig forwards the rkey (default self when omitted)', async () => {
+      const { client, calls } = stubClient({ getResult: VALID_CONFIG });
+      setServiceConfigCoreClient(client);
+      await loadServiceConfig('corner-market');
+      await loadServiceConfig();
+      expect(calls.getRkeys).toEqual(['corner-market', undefined]);
+    });
+
+    it('saveServiceConfig forwards the rkey', async () => {
+      const { client, calls } = stubClient({});
+      setServiceConfigCoreClient(client);
+      await saveServiceConfig(VALID_CONFIG, 'corner-market');
+      expect(calls.putRkeys).toEqual(['corner-market']);
+    });
+
+    it('loadServiceConfigWithRetry forwards rkey to loadServiceConfig', async () => {
+      const { client, calls } = stubClient({ getResult: VALID_CONFIG });
+      setServiceConfigCoreClient(client);
+      await loadServiceConfigWithRetry({ rkey: 'corner-market', delayMs: 0 });
+      expect(calls.getRkeys).toEqual(['corner-market']);
+    });
+
+    it('listServiceListings returns every listing', async () => {
+      const listing: ServiceListing = { rkey: 'self', config: VALID_CONFIG };
+      const { client, calls } = stubClient({ listResult: [listing] });
+      setServiceConfigCoreClient(client);
+      expect(await listServiceListings()).toEqual([listing]);
+      expect(calls.list).toBe(1);
+    });
+
+    it('deleteServiceListing forwards the rkey', async () => {
+      const { client, calls } = stubClient({});
+      setServiceConfigCoreClient(client);
+      await deleteServiceListing('corner-market');
+      expect(calls.delete).toEqual(['corner-market']);
+    });
+
+    it('list/delete throw before the client is wired', async () => {
+      await expect(listServiceListings()).rejects.toBeInstanceOf(ServiceConfigNotConfiguredError);
+      await expect(deleteServiceListing('x')).rejects.toBeInstanceOf(
+        ServiceConfigNotConfiguredError,
+      );
     });
   });
 });

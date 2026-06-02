@@ -860,12 +860,22 @@ export default function RootLayout() {
               }}
             />
             <Tabs.Screen
+              name="my-listings"
+              options={{
+                title: 'My Services',
+                // Hidden from the tab bar — the provider home (node role + every
+                // listing). Reached from Network → Services and Settings →
+                // Service Sharing.
+                href: null,
+                headerLeft: renderHeaderBackButton,
+              }}
+            />
+            <Tabs.Screen
               name="service-settings"
               options={{
                 title: 'Service Sharing',
-                // Hidden from the tab bar — reached via drill-down from Settings.
-                // Also hidden entirely when the node isn't provider-capable so
-                // the drill-down target doesn't expose a dead-end flow.
+                // Hidden from the tab bar — the per-listing editor, reached from
+                // /my-listings (edit a row, or "+ New listing").
                 href: null,
 
                 headerLeft: renderHeaderBackButton,

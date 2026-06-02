@@ -111,6 +111,23 @@ describe('service.profile wire-record parity (HNL ↔ brain)', () => {
     }
   });
 
+  it('gates AGREE on status: paused/draft never publish, even when public', () => {
+    const cases: [ServiceConfig['status'], boolean][] = [
+      ['active', true],
+      ['paused', false],
+      ['draft', false],
+      [undefined, true], // no status → default active
+    ];
+    for (const [status, publishes] of cases) {
+      // discoverability is public throughout — only `status` flips the result,
+      // proving availability is its own axis (not faked via discoverability).
+      const cfg = makeConfig({ discoverability: 'public', isDiscoverable: true, status });
+      expect(shouldPublishListing(cfg)).toBe(publishes);
+      expect(shouldPublishProfile(toPublisherConfig(cfg))).toBe(publishes);
+      expect(shouldPublishListing(cfg)).toBe(shouldPublishProfile(toPublisherConfig(cfg)));
+    }
+  });
+
   it('legacy back-compat: no explicit discoverability → derived identically by both', () => {
     const pub = makeConfig({ discoverability: undefined, isDiscoverable: true });
     expect(wire(pub).discoverability).toBe('public');

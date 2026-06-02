@@ -32,6 +32,7 @@ export type {
   ServiceCapabilityConfig,
   ServiceCapabilitySchemas,
   ServiceConfig,
+  ServiceListingStatus,
   AccessPolicyHint,
   RateLimitHint,
   PricingHint,
