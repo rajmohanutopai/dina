@@ -33,7 +33,7 @@ import {
   validateServiceQueryBody,
   resolveCanonicalCapability,
   parseServiceListingUri,
-  isListingPublishable,
+  effectiveListingStatus,
 } from '@dina/protocol';
 import { getCapability, getTTL } from './capabilities/registry';
 import { validateAgainstSchema } from './capabilities/schema_validator';
@@ -746,13 +746,14 @@ function findCapabilityConfig(
 ): ServiceCapabilityConfig | null {
   if (config === null) return null;
   // The TARGETED listing (resolved by the query's service_uri rkey) must be
-  // LIVE to execute: `active` AND not `known_only`. Using `isListingPublishable`
-  // keeps Brain's execution gate consistent with the publishers + Core ingress
-  // — so an active `unlisted` listing executes (it's reached by URI), while a
-  // `paused`/`draft` (or `known_only`) listing is rejected. Previously this
-  // checked only `isDiscoverable`, which wrongly rejected unlisted + wrongly
-  // accepted paused-but-public.
-  if (!isListingPublishable(config)) return null;
+  // LIVE to execute — `active`, regardless of discoverability. AUTHORIZATION
+  // already happened at Core ingress (public → discoverable, unlisted →
+  // service_uri, known_only → an active service_grant for the authenticated
+  // caller); Brain only EXECUTES what Core admitted, so it must NOT re-apply a
+  // publishability gate that excludes `known_only` (that double-gate dropped
+  // grant-authorized known_only queries — they passed Core then died here). A
+  // `paused`/`draft` listing is still rejected (not active).
+  if (effectiveListingStatus(config) !== 'active') return null;
   // Layer 5: accept a canonical query against an alias-configured key.
   const key = resolveConfiguredKey(Object.keys(config.capabilities), capability);
   if (key === null) return null;

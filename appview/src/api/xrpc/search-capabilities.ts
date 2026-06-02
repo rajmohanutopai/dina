@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import { services, didRedactions } from '@/db/schema/index.js'
-import { allCanonicalCapabilities, isCustomCapability } from '@/shared/capability-registry.js'
+import { allCanonicalCapabilities } from '@/shared/capability-registry.js'
 
 /**
  * xRPC endpoint: com.dinakernel.service.searchCapabilities
@@ -21,6 +21,13 @@ import { allCanonicalCapabilities, isCustomCapability } from '@/shared/capabilit
  *   (b) currently advertised by ≥1 discoverable, non-tombstoned provider
  *       (the coverage filter — an unsupported intent ends at the honest
  *       empty-state immediately, no wasted provider search).
+ *
+ * Custom (provider-owned, namespaced) capabilities are DELIBERATELY EXCLUDED
+ * from this generic intent pool (V1 rule). They remain reachable by exact NSID
+ * (service.search), by exact service_uri (service.getByUri), and later by
+ * provider/place browse — but never by generic "what service answers this?"
+ * routing, so a provider can't hijack the shared AI vocabulary by publishing
+ * `com.foo.best_doctor`.
  *
  * Launch implementation: the with-provider set is tiny (2 domains), so we
  * return ALL covered registry capabilities and let the LLM select by
@@ -59,14 +66,13 @@ export async function searchCapabilities(
   // Which index keys currently have ≥1 discoverable, non-tombstoned provider?
   // The index stores canonical names for registry capabilities AND normalized
   // names for namespaced custom capabilities (the handler admits both).
-  // Unnest each service's capabilities; carry the service description +
-  // per-capability schemas alongside so we can give custom capabilities REAL
-  // descriptive text (not just their raw namespaced name) for intent matching.
+  // Unnest each service's capabilities just to compute COVERAGE — which index
+  // keys currently have ≥1 live provider. We only need the capability name:
+  // custom capabilities are intentionally excluded from this result (below),
+  // so the per-capability descriptions the old custom branch needed are gone.
   const rows = await db
     .select({
       cap: sql<string>`jsonb_array_elements_text(${services.capabilitiesJson}::jsonb)`,
-      description: services.description,
-      capabilitySchemasJson: services.capabilitySchemasJson,
     })
     .from(services)
     // GDPR-shaped: exclude any operator with a `did_redactions` row, mirroring
@@ -83,35 +89,23 @@ export async function searchCapabilities(
     )
 
   const covered = new Set<string>()
-  // Best human-readable description per CUSTOM capability key. Preference:
-  // the provider's per-capability schema description → the service-level
-  // description → (fall back to the raw name later). First non-empty wins so
-  // the result is deterministic regardless of row order.
-  const customDescriptions = new Map<string, string>()
   for (const row of rows) {
     const cap = row.cap
-    if (typeof cap !== 'string' || cap.length === 0) continue
-    covered.add(cap)
-    if (customDescriptions.has(cap)) continue
-    const schemas = row.capabilitySchemasJson as
-      | Record<string, { description?: unknown }>
-      | null
-      | undefined
-    const schemaDesc = schemas?.[cap]?.description
-    const desc =
-      typeof schemaDesc === 'string' && schemaDesc.trim() !== ''
-        ? schemaDesc.trim()
-        : typeof row.description === 'string' && row.description.trim() !== ''
-          ? row.description.trim()
-          : ''
-    if (desc !== '') customDescriptions.set(cap, desc)
+    if (typeof cap === 'string' && cap.length > 0) covered.add(cap)
   }
 
-  // Registry capabilities first, in stable registry order, with curated copy.
+  // V1 rule: generic intent discovery returns ONLY official catalog
+  // (canonical) capabilities — the stable, shared AI vocabulary. Custom
+  // (provider-owned, namespaced) capabilities are DELIBERATELY excluded from
+  // this pool: a provider must not be able to publish `com.foo.best_doctor`
+  // and have it compete in generic "what service answers this?" routing
+  // (namespace hijacking → unpredictable, untrustworthy AI selection). Custom
+  // capabilities stay fully reachable — by EXACT NSID via service.search, by
+  // exact service_uri via service.getByUri, and (later) via provider/place
+  // browse — just never via generic intent. (Restored to the original spec
+  // §Layer-4 contract: "in the closed registry".)
   const capabilities: CapabilityCandidate[] = []
-  const registryNames = new Set<string>()
   for (const entry of allCanonicalCapabilities()) {
-    registryNames.add(entry.canonical)
     if (covered.has(entry.canonical)) {
       capabilities.push({
         canonical: entry.canonical,
@@ -119,22 +113,6 @@ export async function searchCapabilities(
         domain: entry.domain,
       })
     }
-  }
-
-  // Open vocabulary: a covered key that is NOT a registry capability but IS a
-  // well-formed namespaced custom capability is a provider-owned listing —
-  // surface it (sorted) so "any customer can create their own service" is
-  // discoverable. A FLAT non-registry key is dropped (defensive).
-  const customNames = [...covered]
-    .filter((c) => !registryNames.has(c) && isCustomCapability(c))
-    .sort()
-  for (const name of customNames) {
-    // Use the provider's published description so the LLM can match this
-    // custom capability from natural language — not just when the query
-    // happens to share words with the raw namespaced name. Falls back to the
-    // name when the provider published no description.
-    const description = customDescriptions.get(name) ?? name
-    capabilities.push({ canonical: name, description, domain: 'custom' })
   }
 
   // Intent ranking: rank candidates by lexical token-overlap against each

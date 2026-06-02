@@ -83,6 +83,7 @@ import type {
   ActionPolicyEntry,
   ActionPolicyResult,
   RiskLevel,
+  ServiceOfferView,
 } from './core-client';
 import type { CoreRouter, CoreRequest, CoreResponse } from '../server/router';
 
@@ -410,6 +411,7 @@ export class InProcessTransport implements CoreClient {
     if (req.originChannel !== undefined) body.origin_channel = req.originChannel;
     if (req.schemaHash !== undefined) body.schema_hash = req.schemaHash;
     if (req.serviceUri !== undefined) body.service_uri = req.serviceUri;
+    if (req.grantId !== undefined) body.grant_id = req.grantId;
 
     const res = await this.router.handle(
       blankRequest({ method: 'POST', path: '/v1/service/query', body }),
@@ -874,6 +876,28 @@ export class InProcessTransport implements CoreClient {
     if (res.status !== 200) return [];
     const raw = (res.body ?? {}) as { contacts?: unknown };
     return Array.isArray(raw.contacts) ? (raw.contacts as Contact[]) : [];
+  }
+
+  async listServiceOffers(params?: {
+    providerDid?: string;
+    capability?: string;
+  }): Promise<ServiceOfferView[]> {
+    const query: Record<string, string> = {};
+    if (params?.providerDid !== undefined && params.providerDid !== '')
+      query.provider_did = params.providerDid;
+    if (params?.capability !== undefined && params.capability !== '')
+      query.capability = params.capability;
+    let res;
+    try {
+      res = await this.router.handle(
+        blankRequest({ method: 'GET', path: '/v1/service/offers', query }),
+      );
+    } catch {
+      return [];
+    }
+    if (res.status !== 200) return [];
+    const raw = (res.body ?? {}) as { offers?: unknown };
+    return Array.isArray(raw.offers) ? (raw.offers as ServiceOfferView[]) : [];
   }
 
   async contactLookup(query: string): Promise<Contact | null> {

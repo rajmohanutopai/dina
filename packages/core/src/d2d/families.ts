@@ -30,6 +30,7 @@ export {
   MSG_TYPE_PEERLENS_VOUCH_RESPONSE as MsgTypeTrustVouchResponse,
   MSG_TYPE_SERVICE_QUERY as MsgTypeServiceQuery,
   MSG_TYPE_SERVICE_RESPONSE as MsgTypeServiceResponse,
+  MSG_TYPE_SERVICE_OFFER as MsgTypeServiceOffer,
 } from '@dina/protocol';
 import {
   MSG_TYPE_PRESENCE_SIGNAL as MsgTypePresenceSignal,
@@ -41,6 +42,7 @@ import {
   MSG_TYPE_PEERLENS_VOUCH_RESPONSE as MsgTypeTrustVouchResponse,
   MSG_TYPE_SERVICE_QUERY as MsgTypeServiceQuery,
   MSG_TYPE_SERVICE_RESPONSE as MsgTypeServiceResponse,
+  MSG_TYPE_SERVICE_OFFER as MsgTypeServiceOffer,
 } from '@dina/protocol';
 import { D2D_SCENARIOS } from '@dina/protocol';
 import type {
@@ -80,6 +82,7 @@ const V1_TYPES_LIST: readonly D2DMessageType[] = [
   MsgTypeTrustVouchResponse,
   MsgTypeServiceQuery,
   MsgTypeServiceResponse,
+  MsgTypeServiceOffer,
 ];
 const V1_TYPES = new Set<string>(V1_TYPES_LIST);
 
@@ -125,6 +128,10 @@ const EPHEMERAL_TYPES_LIST: readonly EphemeralD2DType[] = [
   MsgTypePresenceSignal,
   MsgTypeServiceQuery,
   MsgTypeServiceResponse,
+  // service.offer is "ephemeral" only re: the vault — it is NOT staged as a
+  // vault message item. It IS persisted, as contact metadata in identity.sqlite
+  // (`contact_service_offers`), via a dedicated handler in the receive pipeline.
+  MsgTypeServiceOffer,
 ];
 const EPHEMERAL_TYPES = new Set<string>(EPHEMERAL_TYPES_LIST);
 
@@ -154,6 +161,7 @@ const TYPE_TO_SCENARIO: Record<D2DMessageType, D2DScenario> = {
   [MsgTypeTrustVouchResponse]: 'trust',
   [MsgTypeServiceQuery]: 'service',
   [MsgTypeServiceResponse]: 'service',
+  [MsgTypeServiceOffer]: 'service',
 };
 
 /** Maximum D2D message body size in bytes (256 KB). */

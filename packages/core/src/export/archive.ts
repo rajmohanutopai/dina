@@ -47,8 +47,17 @@ const ARCHIVE_FORMAT = 'dina-archive-v1' as const;
  *   - `staging_inbox` — transient ingest queue.
  *   - `d2d_outbox` — transient outbound queue (issues.txt §1).
  *   - `agent_persona_grants` — active grants must NOT be exported (§2/§3).
+ *   - `service_grants` — active provider-issued service authority; same posture
+ *      as agent grants (re-issue offers after migration, don't restore live
+ *      authorization onto a new device).
  *   - `person_extraction_log` — derived idempotency bookkeeping.
  *   - `schema_version` — managed by the migration runner on restore.
+ *
+ * `service_configs` (per-rkey multi-listing catalog, v8) IS exported — these are
+ * the user's published service listings, real portable content. The old single-
+ * row `service_config` table (v2) was dropped by v8 and no longer exists.
+ * `contact_service_offers` (v9) is exported too — the user's received-offer
+ * catalog is contact metadata, like `contacts`/`contact_aliases`.
  */
 const IDENTITY_TABLES = [
   'contacts',
@@ -57,7 +66,8 @@ const IDENTITY_TABLES = [
   'person_identities',
   'person_surfaces',
   'reminders',
-  'service_config',
+  'service_configs',
+  'contact_service_offers',
   'chat_messages',
 ] as const;
 

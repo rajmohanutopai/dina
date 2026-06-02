@@ -12,6 +12,7 @@ import { serviceSearch, ServiceSearchParams } from '@/api/xrpc/service-search.js
 import { searchCapabilities, SearchCapabilitiesParams } from '@/api/xrpc/search-capabilities.js'
 import { catalogCapabilities, CatalogCapabilitiesParams } from '@/api/xrpc/catalog-capabilities.js'
 import { serviceIsDiscoverable, ServiceIsDiscoverableParams } from '@/api/xrpc/service-is-discoverable.js'
+import { serviceGetByUri, ServiceGetByUriParams } from '@/api/xrpc/service-get-by-uri.js'
 import { attestationStatus, AttestationStatusParams } from '@/api/xrpc/attestation-status.js'
 import { cosigList, CosigListParams } from '@/api/xrpc/cosig-list.js'
 import { networkFeed, NetworkFeedParams } from '@/api/xrpc/network-feed.js'
@@ -66,6 +67,7 @@ const ROUTES: Record<string, { params: any; handler: (db: any, params: any) => P
   'com.dinakernel.service.searchCapabilities': { params: SearchCapabilitiesParams, handler: searchCapabilities },
   'com.dinakernel.catalog.capabilities': { params: CatalogCapabilitiesParams, handler: catalogCapabilities },
   'com.dinakernel.service.isDiscoverable': { params: ServiceIsDiscoverableParams, handler: serviceIsDiscoverable },
+  'com.dinakernel.service.getByUri': { params: ServiceGetByUriParams, handler: serviceGetByUri },
   'com.dinakernel.peerlens.attestationStatus': { params: AttestationStatusParams, handler: attestationStatus },
   'com.dinakernel.peerlens.cosigList': { params: CosigListParams, handler: cosigList },
   'com.dinakernel.peerlens.networkFeed': { params: NetworkFeedParams, handler: networkFeed },

@@ -425,3 +425,51 @@ describe('serviceProfileHandler.handleCreate', () => {
     expect(captured.insertValues?.capabilitiesJson).toEqual(['eta_query'])
   })
 })
+
+describe('serviceProfileHandler — discoverability gating (#2)', () => {
+  it('INDEXES an unlisted record (isDiscoverable=false) so it stays resolvable by uri', async () => {
+    const captured = freshCaptured()
+    const ctx = stubCtx(captured)
+    await serviceProfileHandler.handleCreate(
+      ctx,
+      op({ ...validProfile(), isDiscoverable: false, discoverability: 'unlisted' }),
+    )
+    // Stored (upsert), NOT deleted — link/QR/invite resolution needs the row.
+    expect(captured.events).toContain('tx:upsert:services')
+    expect(captured.events).not.toContain('db:delete:services')
+    // Row carries the unlisted markers; search excludes it via isDiscoverable=true.
+    expect(captured.insertValues?.discoverability).toBe('unlisted')
+    expect(captured.insertValues?.isDiscoverable).toBe(false)
+  })
+
+  it('DELETES a known_only record (local/pairing-bound — never on the network index)', async () => {
+    const captured = freshCaptured()
+    const ctx = stubCtx(captured)
+    await serviceProfileHandler.handleCreate(
+      ctx,
+      op({ ...validProfile(), isDiscoverable: false, discoverability: 'known_only' }),
+    )
+    expect(captured.events).toEqual(['db:delete:services'])
+    expect(captured.insertValues).toBeNull()
+  })
+
+  it('DELETES a legacy isDiscoverable=false record with no discoverability (back-compat)', async () => {
+    const captured = freshCaptured()
+    const ctx = stubCtx(captured)
+    await serviceProfileHandler.handleCreate(ctx, op({ ...validProfile(), isDiscoverable: false }))
+    expect(captured.events).toEqual(['db:delete:services'])
+    expect(captured.insertValues).toBeNull()
+  })
+
+  it('INDEXES a public record (the unchanged happy path)', async () => {
+    const captured = freshCaptured()
+    const ctx = stubCtx(captured)
+    await serviceProfileHandler.handleCreate(
+      ctx,
+      op({ ...validProfile(), isDiscoverable: true, discoverability: 'public' }),
+    )
+    expect(captured.events).toContain('tx:upsert:services')
+    expect(captured.events).not.toContain('db:delete:services')
+    expect(captured.insertValues?.isDiscoverable).toBe(true)
+  })
+})

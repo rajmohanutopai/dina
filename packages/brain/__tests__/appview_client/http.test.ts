@@ -194,6 +194,46 @@ describe('AppViewClient', () => {
     });
   });
 
+  describe('resolveServiceByUri (unlisted shared-link path)', () => {
+    const LISTING = {
+      uri: 'at://did:plc:bus42/com.dinakernel.service.profile/route-42',
+      operatorDid: 'did:plc:bus42',
+      name: 'Bus 42 (unlisted)',
+      capabilities: ['eta_query'],
+      capabilitySchemas: { eta_query: { schemaHash: 'abc123' } },
+    };
+
+    it('hits getByUri with the uri param', async () => {
+      const { fetchFn, calls } = makeFetch([jsonResponse(200, LISTING)]);
+      const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
+      await c.resolveServiceByUri(LISTING.uri);
+      expect(calls[0]).toContain('/xrpc/com.dinakernel.service.getByUri');
+      expect(calls[0]).toContain(encodeURIComponent(LISTING.uri));
+    });
+
+    it('maps a resolved listing to a ServiceProfile (operatorDid → did)', async () => {
+      const { fetchFn } = makeFetch([jsonResponse(200, LISTING)]);
+      const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
+      const profile = await c.resolveServiceByUri(LISTING.uri);
+      expect(profile).not.toBeNull();
+      expect(profile?.did).toBe('did:plc:bus42');
+      expect(profile?.uri).toBe(LISTING.uri);
+      expect(profile?.capabilities).toContain('eta_query');
+    });
+
+    it('returns null when the endpoint returns null (not found / known_only)', async () => {
+      const { fetchFn } = makeFetch([jsonResponse(200, null)]);
+      const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
+      expect(await c.resolveServiceByUri(LISTING.uri)).toBeNull();
+    });
+
+    it('requires a uri', async () => {
+      const { fetchFn } = makeFetch([jsonResponse(200, null)]);
+      const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
+      await expect(c.resolveServiceByUri('')).rejects.toThrow(/uri is required/);
+    });
+  });
+
   describe('isDiscoverable', () => {
     it('returns { isDiscoverable, capabilities } on 200', async () => {
       const { fetchFn } = makeFetch([

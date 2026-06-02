@@ -13,13 +13,26 @@
 
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { parseServiceListingUri } from '@dina/protocol';
+import {
+  parseServiceListingUri,
+  resolveSearchableCapability,
+  type ServiceOfferBody,
+} from '@dina/protocol';
 import type { CoreRouter } from '../router';
 import { MAX_SERVICE_TTL } from '../../d2d/families';
 import type { ServiceQueryBody } from '../../d2d/service_bodies';
 import { WorkflowConflictError, type WorkflowRepository } from '../../workflow/repository';
 import { WorkflowTaskKind, WorkflowTaskPriority, WorkflowTaskState } from '../../workflow/domain';
 import { getWorkflowService } from '../../workflow/service';
+import {
+  getServiceOfferRepository,
+  type ServiceOffer,
+} from '../../contacts/service_offers_repository';
+import { getServiceGrantRepository } from '../../service/service_grant_repository';
+import { getServiceConfig, configuredCapabilityKey } from '../../service/service_config';
+import { isContact } from '../../contacts/directory';
+import { getD2DSender } from './d2d_msg';
+import { getNodeDID } from '../../pairing/ceremony';
 
 /** Inject-time sender contract. Wiring provides this; handler stays pure. */
 export type ServiceQuerySender = (
@@ -79,6 +92,7 @@ export function computeIdempotencyKey(
   params: unknown,
   schemaHash?: string,
   serviceUri?: string,
+  grantId?: string,
 ): string {
   // Namespace the dedupe key by `schema_hash` when present (review #8).
   // Two requests targeting the same (to_did, capability, params) but
@@ -97,7 +111,13 @@ export function computeIdempotencyKey(
   const canonical = canonicalJSON(params);
   const schemaFragment = schemaHash !== undefined && schemaHash !== '' ? `|${schemaHash}` : '';
   const uriFragment = serviceUri !== undefined && serviceUri !== '' ? `|uri=${serviceUri}` : '';
-  const input = `${toDID}|${capability}|${canonical}${schemaFragment}${uriFragment}`;
+  // Also namespace by `grant_id`: two queries identical in (to_did, capability,
+  // params, listing) but exercising DIFFERENT grants are NOT equivalent — a
+  // future one-time/quota/paid grant must not be absorbed into another grant's
+  // in-flight task. Standing grants in V1 rarely collide, but the dedupe
+  // identity must track the grant for the grant model to stay correct.
+  const grantFragment = grantId !== undefined && grantId !== '' ? `|grant=${grantId}` : '';
+  const input = `${toDID}|${capability}|${canonical}${schemaFragment}${uriFragment}${grantFragment}`;
   return bytesToHex(sha256(new TextEncoder().encode(input)));
 }
 
@@ -106,6 +126,12 @@ export function computeIdempotencyKey(
 export interface ServiceQueryRouteOptions {
   sender?: ServiceQuerySender;
   nowSecFn?: () => number;
+  /**
+   * Contact-membership check for `POST /v1/service/offer` — a grant is only
+   * issued to an established contact. Defaults to the global `isContact` (the
+   * live contact directory); injectable for tests.
+   */
+  isContact?: (did: string) => boolean;
 }
 
 interface ServiceQueryRequest {
@@ -124,6 +150,12 @@ interface ServiceQueryRequest {
    * `service.query` body so the provider knows which listing was selected.
    */
   service_uri?: string;
+  /**
+   * Grant the requester is exercising (from a `service.offer`). Forwarded onto
+   * the D2D body; the provider authorizes a known_only listing by grant_id AND
+   * the authenticated caller DID. Non-secret selector.
+   */
+  grant_id?: string;
 }
 
 function validateRequest(
@@ -180,6 +212,11 @@ function validateRequest(
       serviceUri = b.service_uri;
     }
   }
+  if (b.grant_id !== undefined && typeof b.grant_id !== 'string') {
+    return { ok: false, error: 'grant_id must be a string when present' };
+  }
+  const grantId =
+    typeof b.grant_id === 'string' && b.grant_id !== '' ? b.grant_id : undefined;
   return {
     ok: true,
     req: {
@@ -192,6 +229,7 @@ function validateRequest(
       origin_channel: typeof b.origin_channel === 'string' ? b.origin_channel : undefined,
       schema_hash: typeof b.schema_hash === 'string' ? b.schema_hash : undefined,
       service_uri: serviceUri,
+      grant_id: grantId,
     },
   };
 }
@@ -225,6 +263,7 @@ export function registerServiceQueryRoutes(
       q.params,
       q.schema_hash,
       q.service_uri,
+      q.grant_id,
     );
     const repo: WorkflowRepository = service.store();
     const existing = repo.getActiveByIdempotencyKey(idemKey);
@@ -298,6 +337,7 @@ export function registerServiceQueryRoutes(
     };
     if (q.schema_hash !== undefined) d2dBody.schema_hash = q.schema_hash;
     if (q.service_uri !== undefined) d2dBody.service_uri = q.service_uri;
+    if (q.grant_id !== undefined) d2dBody.grant_id = q.grant_id;
 
     try {
       await sender(q.to_did, 'service.query', d2dBody);
@@ -319,4 +359,149 @@ export function registerServiceQueryRoutes(
       body: { task_id: taskId, query_id: q.query_id },
     };
   });
+
+  // GET /v1/service/offers — list known_only service offers received over D2D
+  // (`service.offer`) and persisted as contact metadata. The Brain resolver
+  // reads this to surface "a contact offers capability X" BEFORE falling back
+  // to public AppView discovery. Optional filters: `capability`, `provider_did`.
+  router.get('/v1/service/offers', async (req) => {
+    const offerRepo = getServiceOfferRepository();
+    if (offerRepo === null) {
+      return { status: 503, body: { error: 'service-offer store not wired' } };
+    }
+    const capability = typeof req.query.capability === 'string' ? req.query.capability : '';
+    const providerDid = typeof req.query.provider_did === 'string' ? req.query.provider_did : '';
+    let offers: ServiceOffer[];
+    if (providerDid !== '' && capability !== '') {
+      offers = offerRepo.findByProviderDidAndCapability(providerDid, capability);
+    } else if (providerDid !== '') {
+      offers = offerRepo.listByProviderDid(providerDid);
+    } else {
+      offers = offerRepo.listAll();
+      if (capability !== '') offers = offers.filter((o) => o.capability === capability);
+    }
+    // Drop expired offers from the read surface (the row stays until the
+    // provider re-offers or it's pruned — read is the natural filter point).
+    const now = nowSecFn();
+    const live = offers.filter((o) => o.expiresAt === undefined || o.expiresAt > now);
+    return { status: 200, body: { offers: live } };
+  });
+
+  // POST /v1/service/offer — PROVIDER action: issue a grant for a listing's
+  // capability to a contact + deliver it as a `service.offer` over D2D. This is
+  // the only way a `known_only` listing becomes callable: the grant is the
+  // runtime authority (checked at the recipient's NEXT service.query ingress),
+  // and the offer carries the grant_id + the listing's schema so the recipient
+  // can call it. Grant creation + offer send happen together so the grant_id
+  // exists before the offer goes out.
+  router.post('/v1/service/offer', async (req) => {
+    const grantRepo = getServiceGrantRepository();
+    if (grantRepo === null) return { status: 503, body: { error: 'service-grant store not wired' } };
+    const sender = getD2DSender();
+    if (sender === null) return { status: 503, body: { error: 'D2D sender not wired' } };
+    const selfDID = getNodeDID();
+    if (selfDID === null || selfDID === '') {
+      return { status: 503, body: { error: 'node identity not set' } };
+    }
+    const b = (req.body as Record<string, unknown> | undefined) ?? {};
+    const toDID = typeof b.to_did === 'string' ? b.to_did.trim() : '';
+    const rkey = typeof b.rkey === 'string' ? b.rkey.trim() : '';
+    const capability = typeof b.capability === 'string' ? b.capability.trim() : '';
+    if (toDID === '' || rkey === '' || capability === '') {
+      return { status: 400, body: { error: 'to_did, rkey and capability are required' } };
+    }
+    const expiresAt =
+      typeof b.expires_at === 'number' && Number.isFinite(b.expires_at) ? b.expires_at : undefined;
+
+    // known_only = "Contact D2D + service": only issue a grant to an established
+    // CONTACT, symmetric with the receive side (which only accepts offers from a
+    // contact). A grant to a non-contact would be live authority for a DID we
+    // have no relationship with.
+    const contactCheck = options.isContact ?? isContact;
+    if (!contactCheck(toDID)) {
+      return {
+        status: 403,
+        body: { error: 'to_did must be an established contact to receive a service offer' },
+      };
+    }
+
+    const cfg = getServiceConfig(rkey);
+    if (cfg === null) return { status: 404, body: { error: `no listing for rkey "${rkey}"` } };
+    // Alias-aware: resolve the capability to the listing's CONFIGURED key (so an
+    // alias-configured listing can be offered by its canonical name, and the
+    // schema is read from the right key) — matching service execution semantics.
+    const configuredKey = configuredCapabilityKey(cfg, capability);
+    if (configuredKey === null) {
+      return {
+        status: 400,
+        body: { error: `listing "${rkey}" does not offer capability "${capability}"` },
+      };
+    }
+
+    const nowSec = nowSecFn();
+    const grantId = `grant-${bytesToHex(
+      sha256(
+        new TextEncoder().encode(
+          `${toDID}|${rkey}|${capability}|${Date.now()}|${nextGrantSeq()}`,
+        ),
+      ),
+    ).slice(0, 24)}`;
+
+    // The grant is the authority (provider-side, checked at ingress). Store the
+    // CANONICAL capability so it matches a query sent under an alias (the ingress
+    // canonicalizes the query capability the same way before isAuthorized).
+    const grantCapability = resolveSearchableCapability(capability) ?? capability;
+    grantRepo.create({
+      grantId,
+      granteeDid: toDID,
+      serviceRkey: rkey,
+      capability: grantCapability,
+      grantType: 'standing',
+      ...(expiresAt !== undefined ? { expiresAt } : {}),
+      createdAt: nowSec,
+    });
+
+    // The offer DELIVERS the grant + the self-contained listing metadata.
+    const schema = cfg.capabilitySchemas?.[configuredKey];
+    const serviceUri = `at://${selfDID}/com.dinakernel.service.profile/${rkey}`;
+    const offerBody: ServiceOfferBody = {
+      grant_id: grantId,
+      capability,
+      service_name: cfg.name ?? '',
+      service_uri: serviceUri,
+      ...(schema?.schemaHash !== undefined && schema.schemaHash !== ''
+        ? { schema_hash: schema.schemaHash }
+        : {}),
+      ...(schema?.params !== undefined ? { params_schema: schema.params } : {}),
+      ...(schema?.result !== undefined ? { result_schema: schema.result } : {}),
+      ...(typeof schema?.defaultTtlSeconds === 'number' && schema.defaultTtlSeconds > 0
+        ? { default_ttl_seconds: schema.defaultTtlSeconds }
+        : {}),
+      ...(expiresAt !== undefined ? { expires_at: expiresAt } : {}),
+    };
+    try {
+      await sender(toDID, 'service.offer', offerBody as unknown as Record<string, unknown>);
+    } catch (err) {
+      const msg = (err as Error).message ?? String(err);
+      // Roll back the grant: a grant is AUTHORITY, and the grantee never
+      // received the offer, so it must not be left live. Revoke (idempotent;
+      // best-effort) so a failed delivery can't leave dangling authorization.
+      try {
+        grantRepo.revoke(grantId, nowSec);
+      } catch {
+        /* best-effort rollback — a revoked-but-unsent grant is still inert */
+      }
+      return { status: 502, body: { error: `offer send failed: ${msg}` } };
+    }
+    return { status: 200, body: { grant_id: grantId, service_uri: serviceUri } };
+  });
+}
+
+// Per-process monotonic counter so two offers issued in the same millisecond
+// still mint distinct grant_ids (grant_id is a non-secret SELECTOR — uniqueness
+// is the only requirement, not unguessability).
+let grantSeq = 0;
+function nextGrantSeq(): number {
+  grantSeq += 1;
+  return grantSeq;
 }

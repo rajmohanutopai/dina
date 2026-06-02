@@ -413,6 +413,33 @@ export default function ServiceSettingsScreen() {
       // public service.
       const verdict = validateServiceListing(next, { requireExplicitDiscoverability: true });
       if (!verdict.ok) {
+        // Public custom (namespaced) capabilities need a schema we don't yet
+        // have UI to author. Rather than a dead-end "needs schema" message,
+        // offer the supported V1 path: publish it Known-only (custom caps are
+        // allowed there without a schema — validator §8.1 only requires it for
+        // `public`). One tap switches visibility so the next Save passes.
+        const customSchemaBlocked =
+          discoverability === 'public' &&
+          verdict.errors.some((e) => e.code === 'public_custom_needs_schema');
+        if (customSchemaBlocked) {
+          Alert.alert(
+            'Public custom capabilities not supported yet',
+            'Custom (namespaced) capabilities can only be published Public with a ' +
+              'params/result schema, which this build can’t author yet. Publish it ' +
+              'Known-only instead, or use a standard capability.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Make Known-only',
+                onPress: () => {
+                  setDiscoverability('known_only');
+                  setDiscoverabilityTouched(true);
+                },
+              },
+            ],
+          );
+          return;
+        }
         Alert.alert(
           'Fix before publishing',
           verdict.errors.map((e) => `• ${e.message}`).join('\n'),

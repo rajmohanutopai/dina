@@ -401,6 +401,34 @@ describe the network-level exchange but require a live loopback.
   `conformance/vectors/` are unaffected (none referenced a
   `com.dina.*` NSID).
 
+- **2026-06-03** — **`service.offer` D2D message family added + protocol
+  minor bump (0.1.0 → 0.2.0).** Adds a TENTH V1 message type,
+  `service.offer` (`MSG_TYPE_SERVICE_OFFER`), with body `ServiceOfferBody`
+  and validator `validateServiceOfferBody`. A provider proactively shares a
+  `known_only` listing (never on PDS/AppView) with a single contact over the
+  direct D2D relationship; the body is self-contained (capability + params/
+  result schema + schema_hash + the listing's `service_uri`) so the recipient
+  can call it later without any network lookup. Classified EPHEMERAL re: the
+  vault (not staged as a vault item) — the recipient persists it as CONTACT
+  metadata instead. ADDITIVE change: the nine existing families, all field
+  shapes, and every frozen conformance vector under `conformance/vectors/`
+  are unchanged (no vector referenced `service.offer`), hence a minor bump.
+  Ports that do not implement `service.offer` simply never send/accept it;
+  receiving an unknown type was already a drop, so forward-compat holds.
+
+- **2026-06-03** — **grant-based authorization for `known_only` (within the
+  v0.2.0 minor bump above; pre-release greenfield, no separate version).**
+  `ServiceOfferBody.grant_id` (required) replaces the earlier `offer_id`: an
+  offer DELIVERS a provider-issued grant, identified by `grant_id`.
+  `ServiceQueryBody.grant_id` (optional) added: the requester echoes the grant
+  it is exercising. `grant_id` is a SELECTOR, NOT a secret — provider-side
+  authorization is `grant_id` AND the transport-authenticated caller DID (the
+  grant must be granted to that DID, for the listing + capability, and active).
+  A `known_only` listing executes ONLY against a matching active grant; public/
+  unlisted authorize by listing/URI rules and ignore `grant_id`. ADDITIVE field
+  changes only; frozen vectors unaffected (none reference `service.offer`/
+  `grant_id`).
+
 ## 16. See also
 
 - [`README.md`](../README.md) — `@dina/protocol` implementer

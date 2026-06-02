@@ -81,6 +81,7 @@ import type {
   ActionPolicyEntry,
   ActionPolicyResult,
   RiskLevel,
+  ServiceOfferView,
 } from '@dina/core';
 
 /** One captured call — method name + positional args passed. */
@@ -249,6 +250,9 @@ export class MockCoreClient implements CoreClient {
   /** Per-query canned result for `contactLookup` — keys compared after
    *  trim + lowercase. Unmatched query → null (no contact). */
   contactLookupResult: Record<string, Contact> = {};
+  /** Canned `listServiceOffers` result — tests seed known_only offers;
+   *  filtered by providerDid / capability at call time. */
+  serviceOffersResult: ServiceOfferView[] = [];
   actionPolicyResult: ActionPolicyResult = { actions: [] };
 
   /**
@@ -742,6 +746,22 @@ export class MockCoreClient implements CoreClient {
   async contactLookup(query: string): Promise<Contact | null> {
     return this.dispatch('contactLookup', [query], () => {
       return this.contactLookupResult[query.trim().toLowerCase()] ?? null;
+    });
+  }
+
+  async listServiceOffers(params?: {
+    providerDid?: string;
+    capability?: string;
+  }): Promise<ServiceOfferView[]> {
+    return this.dispatch('listServiceOffers', [params], () => {
+      let offers = this.serviceOffersResult;
+      if (params?.providerDid !== undefined && params.providerDid !== '') {
+        offers = offers.filter((o) => o.providerDid === params.providerDid);
+      }
+      if (params?.capability !== undefined && params.capability !== '') {
+        offers = offers.filter((o) => o.capability === params.capability);
+      }
+      return offers;
     });
   }
 

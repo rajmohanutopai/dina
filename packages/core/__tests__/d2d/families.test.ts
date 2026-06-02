@@ -156,4 +156,17 @@ describe('D2D V1 Message Families', () => {
       });
     }
   });
+
+  describe('service.offer (protocol v1.1)', () => {
+    it('is a valid V1 type', () => {
+      expect(isValidV1Type('service.offer')).toBe(true);
+    });
+    it('is ephemeral re: the vault (never staged as a vault item)', () => {
+      expect(shouldStore('service.offer')).toBe(false);
+      expect(mapToVaultItemType('service.offer')).toBeNull();
+    });
+    it('is not an always-pass type', () => {
+      expect(alwaysPasses('service.offer')).toBe(false);
+    });
+  });
 });

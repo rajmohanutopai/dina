@@ -34,6 +34,8 @@ import {
   SQLiteAuditRepository,
   SQLiteChatMessageRepository,
   SQLiteContactRepository,
+  SQLiteServiceOfferRepository,
+  SQLiteServiceGrantRepository,
   SQLiteDeviceRepository,
   SQLiteKVRepository,
   SQLitePeopleRepository,
@@ -50,6 +52,8 @@ import {
   setAuditRepository,
   setChatMessageRepository,
   setContactRepository,
+  setServiceOfferRepository,
+  setServiceGrantRepository,
   setDeviceRepository,
   setKVRepository,
   setMemoryService,
@@ -130,6 +134,8 @@ export async function initializePersistence(
   // Wire all identity-scoped repositories
   setKVRepository(new SQLiteKVRepository(identityDB));
   setContactRepository(new SQLiteContactRepository(identityDB));
+  setServiceOfferRepository(new SQLiteServiceOfferRepository(identityDB));
+  setServiceGrantRepository(new SQLiteServiceGrantRepository(identityDB));
   setReminderRepository(new SQLiteReminderRepository(identityDB));
   setAuditRepository(new SQLiteAuditRepository(identityDB));
   setDeviceRepository(new SQLiteDeviceRepository(identityDB));
@@ -218,7 +224,9 @@ export async function initializePersistence(
         'people',
         'person_identities',
         'chat_messages',
-        'service_config',
+        'service_configs',
+        'contact_service_offers',
+        'service_grants',
       ];
       for (const t of idTables) {
         try {

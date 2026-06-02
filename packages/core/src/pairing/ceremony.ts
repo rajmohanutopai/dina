@@ -80,6 +80,11 @@ export function setNodeDID(did: string): void {
   nodeDID = did;
 }
 
+/** This node's DID (set at startup), or null before identity is loaded. */
+export function getNodeDID(): string | null {
+  return nodeDID;
+}
+
 /**
  * Generate an 8-character Crockford-Base32 pairing code.
  *

@@ -592,9 +592,19 @@ function isStagingPersonaAccessApproval(task: WorkflowTask | null): boolean {
 
 function extractLeaseMs(rawBody: unknown): number {
   const body = (rawBody as Record<string, unknown> | undefined) ?? {};
-  const lease = body.lease_ms;
-  if (typeof lease === 'number' && Number.isFinite(lease)) {
-    return Math.max(1_000, Math.min(300_000, Math.floor(lease)));
+  const clamp = (ms: number): number => Math.max(1_000, Math.min(300_000, Math.floor(ms)));
+  // The dina-agent CLI sends `lease_seconds` (claim_task / task_heartbeat in
+  // client.py); accept it (×1000) so a long-running runner's requested lease is
+  // honored instead of silently falling back to the 30s default — otherwise the
+  // lease-expiry sweeper requeues a still-running task and duplicates execution.
+  const leaseSec = body.lease_seconds;
+  if (typeof leaseSec === 'number' && Number.isFinite(leaseSec)) {
+    return clamp(leaseSec * 1_000);
+  }
+  // `lease_ms` kept for in-process / TS callers that pass milliseconds directly.
+  const leaseMs = body.lease_ms;
+  if (typeof leaseMs === 'number' && Number.isFinite(leaseMs)) {
+    return clamp(leaseMs);
   }
   return 30_000;
 }

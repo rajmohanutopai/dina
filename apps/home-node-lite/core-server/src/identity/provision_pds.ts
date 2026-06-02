@@ -144,6 +144,23 @@ export async function loadOrProvisionPdsIdentity(
       );
     }
     const identity = validatePdsIdentity(parsed, filePath);
+    // Fail closed when the persisted identity no longer matches the configured
+    // handle / PDS URL. Booting (and publishing) as a stale DID after the
+    // DINA_PDS_HANDLE / PDS URL changed is almost never intended — silently
+    // trusting the file would re-bind to the old account. An operator who
+    // really did change the handle/PDS sets DINA_PDS_ALLOW_IDENTITY_MISMATCH=1
+    // to accept the existing identity, or deletes the file to mint a fresh one.
+    const normUrl = (u: string): string => u.replace(/\/+$/, '');
+    const mismatch =
+      identity.handle !== opts.handle || normUrl(identity.pdsUrl) !== normUrl(opts.pdsUrl);
+    if (mismatch && process.env.DINA_PDS_ALLOW_IDENTITY_MISMATCH !== '1') {
+      throw new Error(
+        `loadOrProvisionPdsIdentity: persisted identity (${identity.handle} @ ${identity.pdsUrl}) ` +
+          `does not match configured (${opts.handle} @ ${opts.pdsUrl}). Refusing to boot as a stale ` +
+          `DID. Set DINA_PDS_ALLOW_IDENTITY_MISMATCH=1 to keep the existing identity, or delete ` +
+          `${filePath} to mint a fresh one for the new handle.`,
+      );
+    }
     if (identity.dinaUpdateApplied !== true) {
       await applyDinaPlcUpdate({
         did: identity.did,

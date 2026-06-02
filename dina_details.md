@@ -256,3 +256,86 @@ Peerlens and Services cannot sidestep appview - it has to go through the deploye
 
 To deploy appview or msgbox - use - ./deploy/managed/infra/deploy_shared_infra.sh
 
+How are services setup in AppView
+public is public, no questions. public - custom - is not used in AppView listing/Queries, but can be found out in other means (AppView listing by geography or things like that which is done by human and not AI - like finding out the school in google maps and finding the publicly listed services associated with the school), unlisted is link only - security by obscurity as of now, later we will support more roles, known_only is Contact D2D with added service
+
+so, how does normal public service work
+  Alonso user asks   > “When does bus 42 reach here?”
+
+  1. Alonso Brain interprets intent
+      - “This is a service query.”
+      - Extracts rough hints: bus, route 42, location “here”.
+  2. Brain resolves location
+      - “here” → lat/lng.
+  3. Brain asks AppView: what capability fits this intent?
+      - searchCapabilities(intent="when does bus 42 reach here", lat, lng)
+      - AppView returns official/common capability candidates:
+      - likely eta_query.
+  4. Brain asks AppView for providers of that capability
+      - searchServices(capability="eta_query", lat, lng, q="bus 42")
+      - AppView returns closest/ranked public service listings:
+      - BusDriver / SF Transit / specific service_uri / schema / schema_hash.
+  5. Brain chooses listing
+      - Usually top ranked.
+      - If ambiguous, ask user or pick based on location/trust.
+  6. Brain fills params from provider schema
+      - { route_id: "42", location: { lat, lng } }
+  7. Brain sends D2D service.query
+      - To provider DID.
+      - Includes capability, params, schema_hash, service_uri.
+
+
+so, how does known_only work properly
+in our D2D pipeline:
+
+  1. Signature verification — every D2D message is Ed25519-signed; the receive pipeline verifies the signature against the sender DID's keys. Bob cannot sign as Emma — he doesn't have her key.
+  2. Authenticated-sender binding — the pipeline binds message.from === authenticatedFromDID (the MsgBox envelope's verified from_did) - so MsgBox also verifies
+
+known_only is when i know that this user is authenticated to use my service - it is not just that he is a contact, we explicitly grant him access
+• grant_id on wire is not a password. It is more like an invoice number or booking reference.
+
+  Anyone can copy the number, but the provider still checks: “is the sender of this signed message the person this grant belongs to?”
+
+  Example:
+
+  1. Provider creates grant:
+
+  grant_id: grant-123
+  allowed_did: did:plc:emma
+  service: homework-status
+
+  2. Provider sends Emma:
+
+  You may call homework-status using grant-123.
+
+  3. Emma sends query:
+
+  from: did:plc:emma
+  grant_id: grant-123
+  question: homework for today
+  signature: Emma's DID key
+
+  4. Provider checks:
+
+  Does grant-123 exist? yes
+  Is grant-123 assigned to did:plc:emma? yes
+  Is the message really signed by did:plc:emma? yes
+  Allow.
+
+  If Bob forwards it:
+
+  from: did:plc:bob
+  grant_id: grant-123
+  signature: Bob's key
+
+  Provider checks:
+
+  Does grant-123 exist? yes
+  Is grant-123 assigned to did:plc:bob? no
+  Reject.
+
+  So forwarding the grant_id does not help.
+
+  The security comes from the D2D authenticated sender DID, not from hiding grant_id.
+
+

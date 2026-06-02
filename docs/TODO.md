@@ -3240,3 +3240,14 @@ but you can ping service and ask
   Activity includes more than notifications: approvals, service results, tasks, alerts.
 
 
+# Future Services
+   public, public custom, unlisted, known_only
+
+  - ⏭️  #4 provider/place browse — logged as future (it's the human-driven surface that lets someone learn a custom NSID)
+
+basically if I want to see a public custom - public is public, no questions. public - custom - is not used in AppView listing/Queries, but can be found out in other means (AppView listing by geography or things like that
+  which is done by human and not AI - like finding out the school in google maps and finding the publicly listed services associated with the school
+
+> public custom shown in google maps
+> known_only with detailed grants
+> unlisted with more detailed auth 

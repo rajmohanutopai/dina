@@ -513,6 +513,61 @@ describe('createQueryServiceTool', () => {
     expect(calls[0].serviceName).toBeUndefined();
   });
 
+  it('unlisted: resolves a shared service_uri by URI when search misses it', async () => {
+    // An unlisted listing is never in search results, so the caller-supplied
+    // service_uri won't match anything from searchServices. The tool must fall
+    // back to resolveServiceByUri (the shared-link path) and hydrate the
+    // schema_hash from the resolved listing.
+    const UNLISTED_URI = 'at://did:plc:drcarl/com.dinakernel.service.profile/unlisted-1';
+    const { orchestrator, calls } = makeOrch();
+    let resolveArg: string | undefined;
+    const tool = createQueryServiceTool({
+      orchestrator,
+      appViewClient: {
+        async searchServices() {
+          return []; // unlisted ⇒ not in public search
+        },
+        async resolveServiceByUri(uri: string) {
+          resolveArg = uri;
+          return { ...autoFetchProfile, uri: UNLISTED_URI };
+        },
+      },
+    });
+    await tool.execute({
+      operator_did: 'did:plc:drcarl',
+      capability: 'appointment_status',
+      params: {},
+      service_uri: UNLISTED_URI,
+    });
+    expect(resolveArg).toBe(UNLISTED_URI);
+    expect(calls[0].schemaHash).toBe('sha256:canonical'); // hydrated via resolve-by-uri
+    expect(calls[0].serviceUri).toBe(UNLISTED_URI);
+  });
+
+  it('unlisted: ignores a resolved listing whose did ≠ operator_did (a link cannot redirect)', async () => {
+    const UNLISTED_URI = 'at://did:plc:drcarl/com.dinakernel.service.profile/unlisted-1';
+    const { orchestrator, calls } = makeOrch();
+    const tool = createQueryServiceTool({
+      orchestrator,
+      appViewClient: {
+        async searchServices() {
+          return [];
+        },
+        async resolveServiceByUri() {
+          // Resolves to a DIFFERENT provider than operator_did → must be rejected.
+          return { ...autoFetchProfile, did: 'did:plc:someoneElse', uri: UNLISTED_URI };
+        },
+      },
+    });
+    await tool.execute({
+      operator_did: 'did:plc:drcarl',
+      capability: 'appointment_status',
+      params: {},
+      service_uri: UNLISTED_URI,
+    });
+    expect(calls[0].schemaHash).toBeUndefined(); // guard rejected the mismatched listing
+  });
+
   it('WM-BRAIN-06d: AppView throws → logs + dispatch still succeeds without hash', async () => {
     const { orchestrator, calls } = makeOrch();
     const logEntries: Array<Record<string, unknown>> = [];
@@ -744,6 +799,47 @@ describe('createFindPreferredProviderTool (PC-BRAIN-07)', () => {
       capabilities: [{ name: 'appointment_status' }],
     });
     expect(out.message).toBeUndefined();
+  });
+
+  it('surfaces a known_only OFFER from a contact (service_uri + schema_hash for query_service)', async () => {
+    const dentist = contactFixture({
+      did: 'did:plc:dentist',
+      displayName: 'Dr Private',
+      trustLevel: 'trusted',
+      preferredFor: ['dental'],
+    });
+    const tool = createFindPreferredProviderTool({
+      core: {
+        async findContactsByPreference() {
+          return [dentist];
+        },
+        async listServiceOffers(params) {
+          expect(params.providerDid).toBe('did:plc:dentist');
+          return [
+            {
+              grantId: 'grant-abc',
+              providerDid: 'did:plc:dentist',
+              capability: 'appointment_status',
+              serviceUri: 'at://did:plc:dentist/com.dinakernel.service.profile/appts',
+              serviceName: 'Dr Private',
+              schemaHash: 'sha256:canonical',
+            },
+          ];
+        },
+      },
+      // No AppView client → the ONLY capability comes from the direct offer.
+    });
+    const out = (await tool.execute({ category: 'dental' })) as FindPreferredProviderResult;
+    expect(out.providers).toHaveLength(1);
+    expect(out.providers[0].capabilities).toEqual([
+      {
+        name: 'appointment_status',
+        source: 'offer',
+        grant_id: 'grant-abc',
+        service_uri: 'at://did:plc:dentist/com.dinakernel.service.profile/appts',
+        schema_hash: 'sha256:canonical',
+      },
+    ]);
   });
 
   it('no contacts match → empty providers + fallback message (no throw)', async () => {

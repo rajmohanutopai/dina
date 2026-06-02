@@ -13,17 +13,25 @@
  */
 
 import { appendAudit } from '../audit/service';
+import { getServiceOfferRepository } from '../contacts/service_offers_repository';
+import { getServiceGrantRepository } from '../service/service_grant_repository';
 import {
   evaluateServiceIngressBypass,
   type ServiceBypassDecision,
   type LocalCapabilityChecker,
   type RequesterWindowView,
 } from '../service/bypass';
-import { isCapabilityConfigured } from '../service/service_config';
+import { isCapabilityConfigured, isKnownOnlyCapabilityConfigured } from '../service/service_config';
 import { requesterWindow, setProviderWindow } from '../service/windows';
 import { isReplayedMessage, recordMessageId } from '../transport/adversarial';
 import { WorkflowConflictError } from '../workflow/repository';
 import { getWorkflowService } from '../workflow/service';
+
+import {
+  parseServiceListingUri,
+  validateServiceOfferBody,
+  type ServiceOfferBody,
+} from '@dina/protocol';
 
 import { unsealMessage, type D2DPayload } from './envelope';
 import {
@@ -32,6 +40,7 @@ import {
   validateMessageBody,
   MsgTypeServiceQuery,
   MsgTypeServiceResponse,
+  MsgTypeServiceOffer,
 } from './families';
 import { checkScenarioGate } from './gates';
 import { quarantineMessage } from './quarantine';
@@ -308,6 +317,16 @@ export function receiveD2D(
       // recipient — a direct peer must not send service_uri: at://<otherdid>/…
       // and have it pass. Same authority bind as the Core HTTP route's to_did.
       recipientDID: authedTo,
+      // known_only path: detect a live known_only listing offering the cap, then
+      // gate execution on a valid GRANT for the authenticated caller. `fromDID`
+      // (message.from) is already bound === authenticatedFromDID above, so it IS
+      // the transport-authenticated grantee identity (never an inner-body claim).
+      knownOnlyCapabilityConfigured: isKnownOnlyCapabilityConfigured,
+      isGrantAuthorized: (args) =>
+        getServiceGrantRepository()?.isAuthorized({
+          ...args,
+          nowSec: Math.floor(Date.now() / 1000),
+        }) ?? false,
     });
     return applyServiceIngressDecision(message.type, message, bypass);
   }
@@ -339,6 +358,131 @@ export function receiveD2D(
         reason: `Scenario policy denied message type "${message.type}"`,
       };
     }
+  }
+
+  // 7b. service.offer — a provider sharing a known_only listing directly.
+  // Accepted ONLY from an established contact (known_only = "people I'm
+  // connected to"), and only after the scenario gate above passed. Persisted
+  // as CONTACT metadata via the injected handler — never staged to the vault.
+  if (message.type === MsgTypeServiceOffer) {
+    if (!isContact) {
+      appendAudit(
+        message.from,
+        'd2d_recv_service_offer_denied',
+        message.to,
+        `reason=not_a_contact id=${message.id}`,
+      );
+      return {
+        action: 'dropped',
+        messageId: message.id,
+        messageType: message.type,
+        senderDID: message.from,
+        signatureValid: true,
+        reason: 'service.offer rejected: sender is not a known contact',
+      };
+    }
+    // message.body is the JSON-encoded body string (same as the service.query
+    // path, which parses via the bypass's parseBody). Parse + validate.
+    let parsedOffer: unknown;
+    try {
+      parsedOffer = JSON.parse(message.body);
+    } catch {
+      parsedOffer = null;
+    }
+    const offerErr = validateServiceOfferBody(parsedOffer);
+    if (offerErr !== null) {
+      appendAudit(
+        message.from,
+        'd2d_recv_service_offer_invalid',
+        message.to,
+        `id=${message.id}`,
+      );
+      return {
+        action: 'dropped',
+        messageId: message.id,
+        messageType: message.type,
+        senderDID: message.from,
+        signatureValid: true,
+        reason: `service.offer invalid: ${offerErr}`,
+      };
+    }
+    const offerBody = parsedOffer as ServiceOfferBody;
+    // Authority bind: the offered listing's service_uri MUST belong to the
+    // SENDER. The validator only checked structure; without this a provider
+    // (or a misconfig) could push an offer pointing at SOMEONE ELSE'S listing
+    // and have it land in our trusted contact-service surface. A query against
+    // such a service_uri would be rejected later (authority != to_did), but the
+    // misleading offer must not enter the surface at all.
+    const offerListing = parseServiceListingUri(offerBody.service_uri);
+    if (offerListing === null || offerListing.did !== message.from) {
+      appendAudit(
+        message.from,
+        'd2d_recv_service_offer_denied',
+        message.to,
+        `reason=service_uri_authority_mismatch id=${message.id}`,
+      );
+      return {
+        action: 'dropped',
+        messageId: message.id,
+        messageType: message.type,
+        senderDID: message.from,
+        signatureValid: true,
+        reason: `service.offer rejected: service_uri authority ${offerListing?.did ?? '(unparseable)'} does not match sender ${message.from}`,
+      };
+    }
+    // Persist as contact metadata, keyed by the sender DID (the resolver maps
+    // a contact → DID → offers). Uses the global repo (consistent with the
+    // pipeline's other singletons); when unwired the offer is dropped — a node
+    // that doesn't implement offers simply ignores them (forward-compat).
+    const offerRepo = getServiceOfferRepository();
+    if (offerRepo === null) {
+      appendAudit(
+        message.from,
+        'd2d_recv_service_offer_dropped',
+        message.to,
+        `cap=${offerBody.capability} reason=no_store id=${message.id}`,
+      );
+      return {
+        action: 'dropped',
+        messageId: message.id,
+        messageType: message.type,
+        senderDID: message.from,
+        signatureValid: true,
+        reason: 'service.offer not persisted (offer store not wired)',
+      };
+    }
+    const nowSec = Math.floor(Date.now() / 1000);
+    offerRepo.upsert({
+      grantId: offerBody.grant_id,
+      providerDid: message.from,
+      capability: offerBody.capability,
+      serviceUri: offerBody.service_uri,
+      serviceName: offerBody.service_name,
+      schemaHash: offerBody.schema_hash ?? '',
+      ...(offerBody.params_schema !== undefined ? { paramsSchema: offerBody.params_schema } : {}),
+      ...(offerBody.result_schema !== undefined ? { resultSchema: offerBody.result_schema } : {}),
+      ...(offerBody.default_ttl_seconds !== undefined
+        ? { defaultTtlSeconds: offerBody.default_ttl_seconds }
+        : {}),
+      ...(offerBody.expires_at !== undefined ? { expiresAt: offerBody.expires_at } : {}),
+      createdAt: nowSec,
+      updatedAt: nowSec,
+    });
+    appendAudit(
+      message.from,
+      'd2d_recv_service_offer',
+      message.to,
+      `cap=${offerBody.capability} id=${message.id}`,
+    );
+    return {
+      action: 'bypassed',
+      messageId: message.id,
+      messageType: message.type,
+      senderDID: message.from,
+      signatureValid: true,
+      bypassedBody: offerBody,
+      reason: 'service.offer stored as contact metadata',
+    };
   }
 
   // 8. Stage / quarantine / drop via existing receive module

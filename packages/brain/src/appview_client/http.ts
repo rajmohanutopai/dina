@@ -316,6 +316,36 @@ export class AppViewClient {
   }
 
   /**
+   * Resolve a SINGLE listing by its exact AT-URI — the "shared link" path for
+   * UNLISTED services. `service.search` only returns `public` listings (it
+   * gates on isDiscoverable); this hits `com.dinakernel.service.getByUri`,
+   * which returns a row regardless of discoverability, so a listing shared by
+   * link/QR/invite resolves even though it never appears in search. Returns
+   * `null` when nothing resolves (not found, `known_only` — never indexed —, or
+   * a tombstoned/redacted operator). Throws `AppViewError` on HTTP failure.
+   */
+  async resolveServiceByUri(uri: string): Promise<ServiceProfile | null> {
+    if (!uri) {
+      throw new AppViewError(
+        'resolveServiceByUri: uri is required',
+        null,
+        '/xrpc/com.dinakernel.service.getByUri',
+      );
+    }
+    const body = await this.get('/xrpc/com.dinakernel.service.getByUri', { uri });
+    if (body === null || typeof body !== 'object') return null;
+    const r = body as Record<string, unknown>;
+    // Same coercion as searchServices: the endpoint publishes `operatorDid`
+    // and omits `isDiscoverable`. A resolved listing is callable, so stamp
+    // `isDiscoverable: true` for the downstream validator + LLM tools.
+    const did = typeof r.did === 'string' ? r.did : (r.operatorDid as string | undefined);
+    if (did === undefined || did === '') return null;
+    const coerced = { ...r, did, isDiscoverable: true };
+    if (!isServiceProfile(coerced)) return null;
+    return normalizeProfile(coerced);
+  }
+
+  /**
    * Intent-based capability DISCOVERY — `com.dinakernel.service.searchCapabilities`
    * (SERVICES_LAUNCH_ARCHITECTURE.md Part 1, Layer 4). Pass the user's
    * intent in natural language; get back the canonical capabilities that

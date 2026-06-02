@@ -348,6 +348,154 @@ describe('evaluateServiceIngressBypass', () => {
     });
   });
 
+  describe('service.query ingress — known_only GRANT gate', () => {
+    const knownOnlyBody = {
+      query_id: 'q1',
+      capability: 'eta_query',
+      params: {},
+      ttl_seconds: 30,
+      service_uri: 'at://did:plc:me/com.dinakernel.service.profile/private-1',
+      grant_id: 'grant-1',
+    };
+
+    it('ALLOWS a known_only query when a grant authorizes the authenticated caller', () => {
+      const d = evaluateServiceIngressBypass(
+        MsgTypeServiceQuery,
+        'did:plc:emma',
+        JSON.stringify(knownOnlyBody),
+        {
+          recipientDID: 'did:plc:me',
+          knownOnlyCapabilityConfigured: () => true,
+          isGrantAuthorized: (a) =>
+            a.granteeDid === 'did:plc:emma' &&
+            a.serviceRkey === 'private-1' &&
+            a.capability === 'eta_query' &&
+            a.grantId === 'grant-1',
+        },
+      );
+      expect(d.kind).toBe('allow');
+    });
+
+    it('DENIES (not_authorized) when no grant matches', () => {
+      const d = evaluateServiceIngressBypass(
+        MsgTypeServiceQuery,
+        'did:plc:emma',
+        JSON.stringify(knownOnlyBody),
+        {
+          recipientDID: 'did:plc:me',
+          knownOnlyCapabilityConfigured: () => true,
+          isGrantAuthorized: () => false,
+        },
+      );
+      expect(d.kind).toBe('deny');
+      if (d.kind === 'deny') expect(d.reason).toBe('not_authorized');
+    });
+
+    it('DENIES (not_authorized) when no grant checker is wired', () => {
+      const d = evaluateServiceIngressBypass(
+        MsgTypeServiceQuery,
+        'did:plc:emma',
+        JSON.stringify(knownOnlyBody),
+        { recipientDID: 'did:plc:me', knownOnlyCapabilityConfigured: () => true },
+      );
+      expect(d.kind).toBe('deny');
+      if (d.kind === 'deny') expect(d.reason).toBe('not_authorized');
+    });
+
+    it("DENIES when the grant belongs to a DIFFERENT did (Bob can't reuse Emma's grant_id)", () => {
+      // Bob sends Emma's grant_id, but the grant check binds to the AUTHENTICATED
+      // caller (fromDID). grant-1 is Emma's → Bob is rejected.
+      const grantIsEmmas = (a: { granteeDid: string }) => a.granteeDid === 'did:plc:emma';
+      const d = evaluateServiceIngressBypass(
+        MsgTypeServiceQuery,
+        'did:plc:bob',
+        JSON.stringify(knownOnlyBody), // still carries grant_id: 'grant-1'
+        {
+          recipientDID: 'did:plc:me',
+          knownOnlyCapabilityConfigured: () => true,
+          isGrantAuthorized: grantIsEmmas,
+        },
+      );
+      expect(d.kind).toBe('deny');
+      if (d.kind === 'deny') expect(d.reason).toBe('not_authorized');
+    });
+
+    it('passes the authenticated caller + grant_id to the grant check', () => {
+      let seen: Record<string, unknown> | undefined;
+      evaluateServiceIngressBypass(
+        MsgTypeServiceQuery,
+        'did:plc:emma',
+        JSON.stringify(knownOnlyBody),
+        {
+          recipientDID: 'did:plc:me',
+          knownOnlyCapabilityConfigured: () => true,
+          isGrantAuthorized: (a) => {
+            seen = a as unknown as Record<string, unknown>;
+            return true;
+          },
+        },
+      );
+      expect(seen).toEqual({
+        granteeDid: 'did:plc:emma',
+        serviceRkey: 'private-1',
+        capability: 'eta_query',
+        grantId: 'grant-1',
+      });
+    });
+
+    it('canonicalizes the capability before the grant check (alias → canonical)', () => {
+      // A query sent under the alias `bus_eta` must match a grant stored under
+      // the canonical `eta_query` — the grant check receives the canonical form.
+      let seen: Record<string, unknown> | undefined;
+      evaluateServiceIngressBypass(
+        MsgTypeServiceQuery,
+        'did:plc:emma',
+        JSON.stringify({ ...knownOnlyBody, capability: 'bus_eta' }),
+        {
+          recipientDID: 'did:plc:me',
+          knownOnlyCapabilityConfigured: () => true,
+          isGrantAuthorized: (a) => {
+            seen = a as unknown as Record<string, unknown>;
+            return true;
+          },
+        },
+      );
+      expect(seen?.capability).toBe('eta_query');
+    });
+
+    it('DENIES a known_only query that omits grant_id (grant_id is required)', () => {
+      const { grant_id: _omit, ...noGrant } = knownOnlyBody;
+      const d = evaluateServiceIngressBypass(
+        MsgTypeServiceQuery,
+        'did:plc:emma',
+        JSON.stringify(noGrant),
+        {
+          recipientDID: 'did:plc:me',
+          knownOnlyCapabilityConfigured: () => true,
+          isGrantAuthorized: () => true, // would authorize — but no grant_id was echoed
+        },
+      );
+      expect(d.kind).toBe('deny');
+      if (d.kind === 'deny') expect(d.reason).toBe('not_authorized');
+    });
+
+    it('a non-known_only listing is unaffected (falls through to isCapabilityConfigured)', () => {
+      const d = evaluateServiceIngressBypass(
+        MsgTypeServiceQuery,
+        'did:plc:stranger',
+        JSON.stringify(knownOnlyBody),
+        {
+          recipientDID: 'did:plc:me',
+          knownOnlyCapabilityConfigured: () => false, // public/unlisted
+          isCapabilityConfigured: () => true,
+          // a grant checker that would REJECT — must not even be consulted
+          isGrantAuthorized: () => false,
+        },
+      );
+      expect(d.kind).toBe('allow');
+    });
+  });
+
   describe('service.response ingress', () => {
     it('allow when the requester window has a live matching entry', () => {
       const d = evaluateServiceIngressBypass(

@@ -495,6 +495,19 @@ export interface CoreClient {
   findContactsByPreference(category: string): Promise<Contact[]>;
 
   /**
+   * List `known_only` service offers received over D2D (`service.offer`) and
+   * persisted as contact metadata (GET /v1/service/offers). The resolver reads
+   * these to surface "a contact offers capability X" before public discovery,
+   * and feeds `serviceUri` + `schemaHash` straight into a `query_service` call.
+   * Optional filters: `providerDid` (a contact's DID), `capability`.
+   * Returns `[]` on transport failure (fail-soft).
+   */
+  listServiceOffers(params?: {
+    providerDid?: string;
+    capability?: string;
+  }): Promise<ServiceOfferView[]>;
+
+  /**
    * Resolve a single contact by DID, display name, or alias (in that
    * order). Returns `null` when nothing matches. Backs the reasoning
    * agent's `contact_lookup` tool out-of-process (lite), where the
@@ -646,6 +659,23 @@ export interface CoreClient {
    * Throws on BRAIN_DENIED actions (server returns 403).
    */
   deleteActionOverride(action: string): Promise<void>;
+}
+
+/**
+ * A known_only service offer as the resolver consumes it (the camelCase domain
+ * shape Core's GET /v1/service/offers returns). `serviceUri` + `schemaHash`
+ * feed a `query_service` call against `providerDid`.
+ */
+export interface ServiceOfferView {
+  /** The provider-issued grant id (echo as service.query.grant_id). */
+  grantId: string;
+  providerDid: string;
+  capability: string;
+  serviceUri: string;
+  serviceName: string;
+  schemaHash: string;
+  paramsSchema?: unknown;
+  defaultTtlSeconds?: number;
 }
 
 /** Minimal identity snapshot Core reveals to a live-probe caller. */
@@ -902,6 +932,13 @@ export interface ServiceQueryClientRequest {
    * `service.query` body so the provider knows which listing to answer for.
    */
   serviceUri?: string;
+  /**
+   * Optional grant the requester is exercising (the `grant_id` it received in a
+   * `service.offer`). Forwarded onto the D2D `service.query` body. Required-in-
+   * effect for a known_only listing; the provider authorizes by grant_id AND
+   * the authenticated caller DID. A non-secret selector.
+   */
+  grantId?: string;
 }
 
 export interface ServiceQueryResult {

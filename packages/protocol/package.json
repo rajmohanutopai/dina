@@ -1,6 +1,6 @@
 {
   "name": "@dina/protocol",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Dina wire-format protocol — types, canonical-sign helpers, envelope builders, frame constants. Zero runtime deps; independently consumable so any language/runtime implementing the Dina protocol can depend on this without the rest of @dina/core.",
   "keywords": [

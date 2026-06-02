@@ -993,6 +993,9 @@ function lazyCoreClient(): Parameters<typeof createFindPreferredProviderTool>[0]
     async findContactsByPreference(category: string) {
       return node()?.coreClient.findContactsByPreference(category) ?? [];
     },
+    async listServiceOffers(params?: { providerDid?: string; capability?: string }) {
+      return (await node()?.coreClient.listServiceOffers(params)) ?? [];
+    },
     async createWorkflowTask(input: import('@dina/core').CreateWorkflowTaskInput) {
       const n = node();
       if (n === null) throw new Error('lazyCoreClient.createWorkflowTask: DinaNode not booted');

@@ -136,11 +136,17 @@ describe('Schema definitions', () => {
     expect(db.hasTable('reminders')).toBe(true);
     expect(db.hasTable('staging_inbox')).toBe(true);
     expect(db.hasTable('kv_store')).toBe(true);
-    // v2 added for service-discovery (commit f3a1bc7).
-    expect(db.hasTable('service_config')).toBe(true);
+    // v8 reshaped the v2 single-row `service_config` into the per-rkey
+    // `service_configs` catalog (v2 DROPs the old table — the InMemory adapter
+    // doesn't track DROP, so we assert the LIVE table name, not the dropped one).
+    expect(db.hasTable('service_configs')).toBe(true);
     // v3 added for WS2 workflow tasks (commit 9c01611).
     expect(db.hasTable('workflow_tasks')).toBe(true);
     expect(db.hasTable('workflow_events')).toBe(true);
+    // v9/v10 — known_only received-offer catalog (requester) + service grants
+    // (provider authority).
+    expect(db.hasTable('contact_service_offers')).toBe(true);
+    expect(db.hasTable('service_grants')).toBe(true);
   });
 
   it('persona migrations are well-formed', () => {

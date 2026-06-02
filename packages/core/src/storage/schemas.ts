@@ -525,6 +525,95 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       ) WITHOUT ROWID;
     `,
   },
+  {
+    // known_only service offers received over D2D (`service.offer`). A provider
+    // proactively shares a non-public listing with us; we persist it here as
+    // CONTACT metadata (NOT vault content) so the resolver can surface "my
+    // contact offers capability X" before falling back to public discovery.
+    //
+    //   grant_id          — the provider-issued grant this offer delivers (PK;
+    //                        the requester echoes it as service.query.grant_id).
+    //   provider_did      — the sender DID = the `to_did` for the eventual
+    //                        service.query, and the resolver's lookup key
+    //                        (it maps a contact → DID → offers at read time).
+    //                        Always set (the sender DID is on the envelope).
+    //   person_id         — the contact, denormalised from the sender DID when
+    //                        cheap to resolve; nullable (the resolver doesn't
+    //                        depend on it — it queries by provider_did).
+    //   capability        — canonical or namespaced custom NSID.
+    //   service_uri       — the known_only listing's AT-URI (well-formed but
+    //                        not network-resolvable); rides the service.query.
+    //   *_schema_json     — the capability's params/result JSON Schema, carried
+    //                        inline (no AppView/PDS to fetch it from).
+    //   expires_at        — optional offer expiry (unix seconds).
+    version: 9,
+    name: 'contact_service_offers',
+    sql: `
+      CREATE TABLE IF NOT EXISTS contact_service_offers (
+        grant_id TEXT PRIMARY KEY,
+        provider_did TEXT NOT NULL,
+        person_id TEXT,
+        capability TEXT NOT NULL,
+        service_uri TEXT NOT NULL,
+        service_name TEXT NOT NULL DEFAULT '',
+        schema_hash TEXT NOT NULL DEFAULT '',
+        params_schema_json TEXT,
+        result_schema_json TEXT,
+        default_ttl_seconds INTEGER,
+        expires_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_contact_offers_provider
+        ON contact_service_offers(provider_did);
+      CREATE INDEX IF NOT EXISTS idx_contact_offers_provider_capability
+        ON contact_service_offers(provider_did, capability);
+    `,
+  },
+  {
+    // PROVIDER-side authorization for service invocation. A grant is the
+    // authority that lets a specific grantee invoke a specific listing's
+    // capability — the source of truth checked at ingress (NOT contact
+    // membership, NOT service_uri possession). Independent of discoverability:
+    // V1 enforces it for `known_only` listings, but the table is general so a
+    // public/unlisted listing can require a grant later.
+    //
+    //   grant_id        — PK; the wire SELECTOR (echoed on service.offer /
+    //                      service.query). NOT a secret — auth = grant_id AND
+    //                      the transport-authenticated caller DID.
+    //   grantee_did     — who may invoke; compared to authenticatedFromDID.
+    //   service_rkey    — which listing.
+    //   capability      — which capability (canonicalized on compare).
+    //   grant_type      — V1: 'standing' (valid until expiry/revoke). The
+    //                      discriminator for future types (quota/one_time/…).
+    //   constraints_json — V1: null/{}; the future per-type extension surface.
+    //   expires_at      — optional (unix seconds).
+    //   revoked_at      — set to revoke; execution denies thereafter.
+    //
+    // (provider_did is implicit — this table lives in THIS node's identity DB,
+    //  so the provider is always us, mirroring agent_persona_grants. Mutable
+    //  usage state for quota/one_time is a future `service_grant_usage` table.)
+    version: 10,
+    name: 'service_grants',
+    sql: `
+      CREATE TABLE IF NOT EXISTS service_grants (
+        grant_id TEXT PRIMARY KEY,
+        grantee_did TEXT NOT NULL,
+        service_rkey TEXT NOT NULL,
+        capability TEXT NOT NULL,
+        grant_type TEXT NOT NULL DEFAULT 'standing',
+        constraints_json TEXT,
+        expires_at INTEGER,
+        revoked_at INTEGER,
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_service_grants_grantee
+        ON service_grants(grantee_did, service_rkey, capability)
+        WHERE revoked_at IS NULL;
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

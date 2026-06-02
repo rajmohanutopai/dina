@@ -299,6 +299,7 @@ export const D2D_V1_MESSAGE_TYPES = [
   'peerlens.vouch.response',
   'service.query',
   'service.response',
+  'service.offer',
 ] as const;
 
 /**
@@ -311,6 +312,9 @@ export const D2D_EPHEMERAL_MESSAGE_TYPES = [
   'presence.signal',
   'service.query',
   'service.response',
+  // service.offer is not staged to the vault — it is persisted as contact
+  // metadata (contact_service_offers) by the receive pipeline instead.
+  'service.offer',
 ] as const;
 
 export const D2D_MEMORY_TYPE_MAP: Record<string, string> = {

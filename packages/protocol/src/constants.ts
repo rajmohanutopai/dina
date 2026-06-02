@@ -77,7 +77,7 @@ export const DEFAULT_BRAIN_PORT = 8200;
 export const DEFAULT_MSGBOX_PORT = 7700;
 
 // ─── D2D message-type strings ────────────────────────────────────────────
-// Nine V1 message families. Wire values are locked — any change is a
+// Ten V1 message families. Wire values are locked — any change is a
 // protocol break. Matches core/internal/domain/d2d.go.
 
 export const MSG_TYPE_PRESENCE_SIGNAL = 'presence.signal' as const;
@@ -89,6 +89,14 @@ export const MSG_TYPE_PEERLENS_VOUCH_REQUEST = 'peerlens.vouch.request' as const
 export const MSG_TYPE_PEERLENS_VOUCH_RESPONSE = 'peerlens.vouch.response' as const;
 export const MSG_TYPE_SERVICE_QUERY = 'service.query' as const;
 export const MSG_TYPE_SERVICE_RESPONSE = 'service.response' as const;
+/**
+ * `service.offer` — a provider proactively shares a `known_only` listing with
+ * a specific contact over the direct D2D relationship (never published to PDS
+ * or AppView). It carries the listing metadata (capability + schema +
+ * service_uri) the contact's Dina needs to call the service later. Added in
+ * protocol v1.1 (additive — see conformance.md §14).
+ */
+export const MSG_TYPE_SERVICE_OFFER = 'service.offer' as const;
 
 /** Union of all V1 D2D message type strings. */
 export type D2DMessageType =
@@ -100,17 +108,21 @@ export type D2DMessageType =
   | typeof MSG_TYPE_PEERLENS_VOUCH_REQUEST
   | typeof MSG_TYPE_PEERLENS_VOUCH_RESPONSE
   | typeof MSG_TYPE_SERVICE_QUERY
-  | typeof MSG_TYPE_SERVICE_RESPONSE;
+  | typeof MSG_TYPE_SERVICE_RESPONSE
+  | typeof MSG_TYPE_SERVICE_OFFER;
 
 /**
- * Types that the protocol guarantees are NEVER stored in the vault
- * (request/response transports + presence beacons). The set is part of
- * the wire contract — receivers MUST drop these from staging.
+ * Types that the protocol guarantees are NEVER staged into the persona vault.
+ * "Ephemeral" here means "not a vault message item" — it does NOT mean "no
+ * effect": `service.query` mints a workflow task, and `service.offer` is
+ * persisted as CONTACT metadata (identity.sqlite `contact_service_offers`),
+ * not as vault content. Receivers MUST keep all of these out of vault staging.
  */
 export type EphemeralD2DType =
   | typeof MSG_TYPE_PRESENCE_SIGNAL
   | typeof MSG_TYPE_SERVICE_QUERY
-  | typeof MSG_TYPE_SERVICE_RESPONSE;
+  | typeof MSG_TYPE_SERVICE_RESPONSE
+  | typeof MSG_TYPE_SERVICE_OFFER;
 
 /**
  * Types that DO persist into the vault. Computed from `D2DMessageType`

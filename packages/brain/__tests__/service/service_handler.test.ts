@@ -244,19 +244,26 @@ describe('ServiceHandler.handleQuery — auto path', () => {
     expect(core.createCalls).toHaveLength(0);
   });
 
-  it('drops when isDiscoverable is false (legacy → derives known_only, not live)', async () => {
+  it('EXECUTES an active KNOWN_ONLY listing (Core grant-gated it at ingress; Brain executes)', async () => {
+    // P1: the Brain's execution gate is `active` (any discoverability) — NOT
+    // `isListingPublishable` (which excludes known_only). AUTHORIZATION for a
+    // known_only query happened at Core ingress (a matching service_grant for
+    // the authenticated caller); the Brain only EXECUTES what Core admitted, so
+    // it must NOT re-drop known_only (the double-gate that previously killed
+    // grant-authorized known_only queries). isDiscoverable=false + no explicit
+    // discoverability → known_only; status defaults to active → executes.
     const core = stubCore();
     const handler = makeHandler({
       core,
       config: { ...baseConfig, isDiscoverable: false },
     });
     await handler.handleQuery(REQUESTER, validQuery);
-    expect(core.createCalls).toHaveLength(0);
+    expect(core.createCalls).toHaveLength(1);
   });
 
-  // Codex P1#1: the execution gate must use isListingPublishable (active AND
-  // not known_only), NOT raw isDiscoverable. Otherwise active-unlisted is wrongly
-  // dropped and paused-but-public is wrongly executed.
+  // The execution gate is `active` (any discoverability); authorization is Core's
+  // job (public → discoverable, unlisted → service_uri, known_only → grant). A
+  // paused/draft listing is still dropped (not active).
   it('ACCEPTS an active UNLISTED listing (reached by service_uri, must execute)', async () => {
     const core = stubCore();
     const handler = makeHandler({

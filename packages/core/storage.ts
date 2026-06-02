@@ -10,6 +10,24 @@ export {
   setContactRepository,
 } from './src/contacts/repository';
 export type { ContactRepository } from './src/contacts/repository';
+export {
+  SQLiteServiceOfferRepository,
+  setServiceOfferRepository,
+  getServiceOfferRepository,
+} from './src/contacts/service_offers_repository';
+export type {
+  ServiceOffer,
+  ServiceOfferRepository,
+} from './src/contacts/service_offers_repository';
+export {
+  SQLiteServiceGrantRepository,
+  setServiceGrantRepository,
+  getServiceGrantRepository,
+} from './src/service/service_grant_repository';
+export type {
+  ServiceGrant,
+  ServiceGrantRepository,
+} from './src/service/service_grant_repository';
 export { SQLiteDeviceRepository, setDeviceRepository } from './src/devices/repository';
 export type { DeviceRepository } from './src/devices/repository';
 export { SQLiteKVRepository } from './src/kv/repository';

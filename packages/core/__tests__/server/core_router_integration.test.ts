@@ -36,7 +36,17 @@ import type { WorkflowTask } from '../../src/workflow/domain';
 import { WorkflowTaskState } from '../../src/workflow/domain';
 import { setServiceQuerySender } from '../../src/server/routes/service_query';
 import { setServiceRespondSender } from '../../src/server/routes/service_respond';
-import { clearServiceConfig, resetServiceConfigState } from '../../src/service/service_config';
+import {
+  clearServiceConfig,
+  resetServiceConfigState,
+  setServiceConfig,
+} from '../../src/service/service_config';
+import { setD2DSender } from '../../src/server/routes/d2d_msg';
+import { setNodeDID } from '../../src/pairing/ceremony';
+import {
+  setServiceGrantRepository,
+  type ServiceGrant,
+} from '../../src/service/service_grant_repository';
 import { TEST_ED25519_SEED } from '@dina/test-harness';
 import { randomBytes } from '@noble/ciphers/utils.js';
 
@@ -300,6 +310,28 @@ describe('CoreRouter integration', () => {
       // wanders. Empty string is the correct value when payload has no
       // `type` field — but the field MUST always be present.
       expect(claimed.payload_type).toBe('');
+    });
+
+    it('honors lease_seconds from the dina-agent CLI (not the 30s default)', async () => {
+      // Regression: the CLI sends `lease_seconds` (client.py claim_task);
+      // Core used to read only `lease_ms` → silently fell back to 30s, so the
+      // lease-expiry sweeper requeued still-running long tasks (duplicate exec).
+      await router.handle(
+        signedReq(
+          'POST',
+          '/v1/workflow/tasks',
+          { id: 'del-lease', kind: 'delegation', description: '', payload: '{}', initial_state: 'queued' },
+          brain,
+        ),
+      );
+      const before = Date.now();
+      const resp = await router.handle(
+        signedReq('POST', '/v1/workflow/tasks/claim', { lease_seconds: 120 }, agent),
+      );
+      expect(resp.status).toBe(200);
+      const claimed = resp.body as WorkflowTask & { payload_type: string };
+      // 120s lease ⇒ expiry well beyond the old 30s default.
+      expect(claimed.lease_expires_at ?? 0).toBeGreaterThan(before + 100_000);
     });
 
     it('claim returns 204 when no queued delegation exists', async () => {
@@ -928,6 +960,164 @@ describe('CoreRouter integration', () => {
       expect(resp.status).toBe(200);
       expect(sent).toHaveLength(1);
       expect(sent[0].body.card).toBeUndefined();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /v1/service/offer — provider mints a grant + delivers it as an offer
+  // -------------------------------------------------------------------------
+  describe('POST /v1/service/offer (grant + offer)', () => {
+    const created: ServiceGrant[] = [];
+    const revoked: string[] = [];
+    const sent: { to: string; type: string; body: Record<string, unknown> }[] = [];
+    let senderThrows = false;
+    // A router whose offer route treats only did:plc:emma as a contact (the
+    // P2 contact gate). Other deps are the module-global stubs set below.
+    let offerRouter: ReturnType<typeof createCoreRouter>;
+
+    beforeEach(() => {
+      created.length = 0;
+      revoked.length = 0;
+      sent.length = 0;
+      senderThrows = false;
+      setNodeDID('did:plc:me');
+      setServiceGrantRepository({
+        create: (g) => {
+          created.push(g);
+        },
+        getById: () => null,
+        isAuthorized: () => false,
+        listByGrantee: () => [],
+        revoke: (id) => {
+          revoked.push(id);
+          return true;
+        },
+      });
+      setD2DSender(async (to, type, body) => {
+        if (senderThrows) throw new Error('msgbox down');
+        sent.push({ to, type, body });
+      });
+      // A known_only listing offering eta_query, with a schema.
+      setServiceConfig(
+        {
+          name: 'My Private Bus',
+          isDiscoverable: false,
+          discoverability: 'known_only',
+          status: 'active',
+          capabilities: { eta_query: { mcpServer: 'stub_eta', mcpTool: 'eta', responsePolicy: 'auto' } },
+          capabilitySchemas: {
+            eta_query: {
+              params: { type: 'object' },
+              result: { type: 'object' },
+              schemaHash: 'sha256:eta',
+              defaultTtlSeconds: 60,
+            },
+          },
+        } as never,
+        'private-1',
+      );
+      offerRouter = createCoreRouter({
+        serviceQuery: { isContact: (d) => d === 'did:plc:emma' },
+      });
+    });
+
+    afterEach(() => {
+      setServiceGrantRepository(null);
+      setD2DSender(null);
+      clearServiceConfig('private-1');
+    });
+
+    it('mints a grant for the contact + sends a service.offer carrying grant_id + service_uri', async () => {
+      const resp = await offerRouter.handle(
+        signedReq(
+          'POST',
+          '/v1/service/offer',
+          { to_did: 'did:plc:emma', rkey: 'private-1', capability: 'eta_query' },
+          brain,
+        ),
+      );
+      expect(resp.status).toBe(200);
+      const body = resp.body as { grant_id: string; service_uri: string };
+      expect(body.service_uri).toBe('at://did:plc:me/com.dinakernel.service.profile/private-1');
+
+      // The grant is the authority — created for THIS grantee/listing/capability.
+      expect(created).toHaveLength(1);
+      expect(created[0]).toMatchObject({
+        grantId: body.grant_id,
+        granteeDid: 'did:plc:emma',
+        serviceRkey: 'private-1',
+        capability: 'eta_query',
+        grantType: 'standing',
+      });
+
+      // The offer DELIVERS the grant_id + self-contained listing metadata.
+      expect(sent).toHaveLength(1);
+      expect(sent[0].to).toBe('did:plc:emma');
+      expect(sent[0].type).toBe('service.offer');
+      expect(sent[0].body).toMatchObject({
+        grant_id: body.grant_id,
+        capability: 'eta_query',
+        service_uri: 'at://did:plc:me/com.dinakernel.service.profile/private-1',
+        schema_hash: 'sha256:eta',
+      });
+    });
+
+    it('REFUSES to issue a grant to a NON-contact (403, contact-gated)', async () => {
+      const resp = await offerRouter.handle(
+        signedReq(
+          'POST',
+          '/v1/service/offer',
+          { to_did: 'did:plc:stranger', rkey: 'private-1', capability: 'eta_query' },
+          brain,
+        ),
+      );
+      expect(resp.status).toBe(403);
+      expect(created).toHaveLength(0);
+      expect(sent).toHaveLength(0);
+    });
+
+    it('rejects an offer for a capability the listing does not offer', async () => {
+      const resp = await offerRouter.handle(
+        signedReq(
+          'POST',
+          '/v1/service/offer',
+          { to_did: 'did:plc:emma', rkey: 'private-1', capability: 'price_check' },
+          brain,
+        ),
+      );
+      expect(resp.status).toBe(400);
+      expect(created).toHaveLength(0);
+      expect(sent).toHaveLength(0);
+    });
+
+    it('404s for an unknown listing rkey', async () => {
+      const resp = await offerRouter.handle(
+        signedReq(
+          'POST',
+          '/v1/service/offer',
+          { to_did: 'did:plc:emma', rkey: 'nope', capability: 'eta_query' },
+          brain,
+        ),
+      );
+      expect(resp.status).toBe(404);
+      expect(created).toHaveLength(0);
+    });
+
+    it('REVOKES the grant when the offer send fails (no dangling authority)', async () => {
+      senderThrows = true;
+      const resp = await offerRouter.handle(
+        signedReq(
+          'POST',
+          '/v1/service/offer',
+          { to_did: 'did:plc:emma', rkey: 'private-1', capability: 'eta_query' },
+          brain,
+        ),
+      );
+      expect(resp.status).toBe(502);
+      // The grant was created, then rolled back (revoked) since it was never delivered.
+      expect(created).toHaveLength(1);
+      expect(revoked).toEqual([created[0].grantId]);
+      expect(sent).toHaveLength(0);
     });
   });
 });

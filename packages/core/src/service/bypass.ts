@@ -24,7 +24,7 @@
  *   core/internal/domain/message.go    — MsgTypeServiceQuery / Response
  */
 
-import { parseServiceListingUri } from '@dina/protocol';
+import { parseServiceListingUri, resolveSearchableCapability } from '@dina/protocol';
 import { MsgTypeServiceQuery, MsgTypeServiceResponse } from '../d2d/families';
 import {
   validateServiceQueryBody,
@@ -37,6 +37,7 @@ import {
 export type BypassDenyReason =
   | 'not_public_service'
   | 'not_configured'
+  | 'not_authorized'
   | 'no_window'
   | 'body_invalid'
   | 'service_uri_mismatch'
@@ -204,6 +205,26 @@ export function evaluateServiceIngressBypass(
      * cross-DID bind (back-compat for callers that don't know the recipient).
      */
     recipientDID?: string;
+    /**
+     * True iff the targeted rkey is a LIVE `known_only` listing offering the
+     * capability (the global `isKnownOnlyCapabilityConfigured`). When it is, the
+     * listing is NOT publishable, so `isCapabilityConfigured` would deny it —
+     * instead we route to the GRANT gate below. Omitted ⇒ known_only path off.
+     */
+    knownOnlyCapabilityConfigured?: (capability: string, rkey: string) => boolean;
+    /**
+     * The provider-side grant authorization check (a `ServiceGrantRepository`
+     * `isAuthorized`, with the clock applied). Called ONLY for a known_only
+     * listing, with `granteeDid` = the transport-authenticated caller (`fromDID`
+     * here, which the pipeline already bound to `authenticatedFromDID`). True
+     * means a matching active grant exists. Omitted ⇒ known_only denied.
+     */
+    isGrantAuthorized?: (args: {
+      granteeDid: string;
+      serviceRkey: string;
+      capability: string;
+      grantId?: string;
+    }) => boolean;
   },
 ): ServiceBypassDecision {
   if (messageType === MsgTypeServiceQuery) {
@@ -237,6 +258,49 @@ export function evaluateServiceIngressBypass(
         };
       }
       targetRkey = listing?.rkey;
+    }
+    // known_only listings are NOT publishable, so `isCapabilityConfigured`
+    // denies them. Instead, a known_only listing executes ONLY against a valid
+    // GRANT: an active `service_grants` row for THIS authenticated caller
+    // (`fromDID`, already bound to the envelope's authenticated sender),
+    // this listing rkey, and this capability, PINNED to the `grant_id` the
+    // requester echoed. Possessing the service_uri/grant_id is NOT enough; the
+    // grant must belong to the caller.
+    if (
+      targetRkey !== undefined &&
+      opts.knownOnlyCapabilityConfigured?.(body.capability, targetRkey) === true
+    ) {
+      // A known_only query MUST echo its grant_id (clean grant semantics +
+      // forward-compat for one-time/quota grants where the exact grant matters).
+      const echoedGrantId =
+        typeof body.grant_id === 'string' && body.grant_id !== '' ? body.grant_id : undefined;
+      if (echoedGrantId === undefined) {
+        return {
+          kind: 'deny',
+          reason: 'not_authorized',
+          detail: `known_only listing "${targetRkey}" requires a grant_id on the query`,
+        };
+      }
+      // Canonicalize the capability so a grant stored under the canonical name
+      // matches a query sent under an alias (or vice versa) — the same alias↔
+      // canonical resolution the listing config uses. Custom NSIDs resolve to
+      // themselves; an unknown falls back to the raw string.
+      const grantCapability = resolveSearchableCapability(body.capability) ?? body.capability;
+      const authorized =
+        opts.isGrantAuthorized?.({
+          granteeDid: fromDID,
+          serviceRkey: targetRkey,
+          capability: grantCapability,
+          grantId: echoedGrantId,
+        }) === true;
+      if (!authorized) {
+        return {
+          kind: 'deny',
+          reason: 'not_authorized',
+          detail: `no active grant authorizes ${fromDID} for known_only listing "${targetRkey}" capability "${body.capability}"`,
+        };
+      }
+      return { kind: 'allow', body };
     }
     const checker = opts.isCapabilityConfigured;
     if (checker === undefined || !checker(body.capability, targetRkey)) {

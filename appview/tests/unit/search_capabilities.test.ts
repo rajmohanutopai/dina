@@ -84,17 +84,14 @@ describe('searchCapabilities — registry ∩ coverage', () => {
     expect(r.capabilities.map((c) => c.canonical)).toEqual(['eta_query'])
   })
 
-  it('surfaces a provider-owned namespaced custom capability (open vocabulary)', async () => {
+  it('EXCLUDES a provider-owned namespaced custom capability from generic intent discovery (V1)', async () => {
+    // V1 rule: custom (namespaced) capabilities must not enter the generic AI
+    // routing pool — only official catalog capabilities do. The custom cap is
+    // still reachable by exact NSID via service.search; it just never surfaces
+    // here. Prevents namespace hijacking of the shared AI vocabulary.
     const db = stubDb([{ cap: 'eta_query' }, { cap: 'com.acme.widget_price' }])
     const r = await searchCapabilities(db, { intent: 'zzz' })
-    const byName = new Map(r.capabilities.map((c) => [c.canonical, c]))
-    // registry one keeps its curated copy; the custom one is surfaced as `custom`.
-    expect(byName.get('eta_query')?.domain).toBe('transit')
-    expect(byName.get('com.acme.widget_price')).toEqual({
-      canonical: 'com.acme.widget_price',
-      description: 'com.acme.widget_price',
-      domain: 'custom',
-    })
+    expect(r.capabilities.map((c) => c.canonical)).toEqual(['eta_query'])
   })
 
   it('still drops a FLAT non-registry capability (only namespaced customs are open)', async () => {
@@ -113,18 +110,18 @@ describe('searchCapabilities — registry ∩ coverage', () => {
     expect(r.capabilities[0].canonical).toBe('appointment_status')
   })
 
-  it('intent with no overlap preserves the default (registry-first) order', async () => {
+  it('intent with no overlap returns only registry capabilities (custom excluded)', async () => {
     const db = stubDb([{ cap: 'eta_query' }, { cap: 'com.acme.widget_price' }])
     const r = await searchCapabilities(db, { intent: 'zzz nomatch qqq' })
-    // stable: registry capability stays before the custom one.
-    expect(r.capabilities.map((c) => c.canonical)).toEqual(['eta_query', 'com.acme.widget_price'])
+    // Only the registry capability — the custom one is never in the generic pool.
+    expect(r.capabilities.map((c) => c.canonical)).toEqual(['eta_query'])
   })
 
-  it("uses the provider's per-capability schema description for a custom capability (#5)", async () => {
-    // The custom cap carries a published schema description; that becomes its
-    // discovery description (NOT the raw namespaced name), so the LLM can
-    // match it from natural language.
+  it('EXCLUDES a custom capability even when it ships a rich schema description (#5)', async () => {
+    // A published description does NOT buy a custom capability into generic
+    // intent discovery — exclusion is by capability CLASS, not by metadata.
     const db = stubDb([
+      { cap: 'eta_query' },
       {
         cap: 'com.acme.widget_price',
         description: 'Acme storefront',
@@ -134,11 +131,14 @@ describe('searchCapabilities — registry ∩ coverage', () => {
       },
     ])
     const r = await searchCapabilities(db, { intent: 'anything' })
-    const custom = r.capabilities.find((c) => c.canonical === 'com.acme.widget_price')
-    expect(custom?.description).toBe('Check the price of a widget at Acme')
+    expect(r.capabilities.map((c) => c.canonical)).toEqual(['eta_query'])
+    expect(r.capabilities.find((c) => c.canonical === 'com.acme.widget_price')).toBeUndefined()
   })
 
-  it('falls back to the service description for a custom capability with no schema desc (#5)', async () => {
+  it('a lone custom capability (no registry coverage) yields an empty generic pool', async () => {
+    // Even when the ONLY covered capability is a custom one, generic intent
+    // discovery returns nothing — the AI is steered to the honest empty-state
+    // (and the custom service is reached by exact NSID / URI / profile browse).
     const db = stubDb([
       {
         cap: 'com.acme.widget_price',
@@ -147,17 +147,7 @@ describe('searchCapabilities — registry ∩ coverage', () => {
       },
     ])
     const r = await searchCapabilities(db, { intent: 'widget' })
-    const custom = r.capabilities.find((c) => c.canonical === 'com.acme.widget_price')
-    expect(custom?.description).toBe('Acme storefront — widgets and gadgets')
-    // and it ranks first because the intent token "widget" overlaps the desc
-    expect(r.capabilities[0].canonical).toBe('com.acme.widget_price')
-  })
-
-  it('falls back to the raw name when a custom capability has no description at all (#5)', async () => {
-    const db = stubDb([{ cap: 'com.acme.widget_price' }])
-    const r = await searchCapabilities(db, { intent: 'anything' })
-    const custom = r.capabilities.find((c) => c.canonical === 'com.acme.widget_price')
-    expect(custom?.description).toBe('com.acme.widget_price')
+    expect(r.capabilities).toEqual([])
   })
 
   it('WHERE excludes GDPR-redacted operators (references the did_redactions join column)', async () => {

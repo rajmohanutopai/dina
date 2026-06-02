@@ -17,6 +17,7 @@ import {
   parseMessageJSON,
   validateServiceQueryBody,
   validateServiceResponseBody,
+  validateServiceOfferBody,
   validateFutureSkew,
   verifyMessageSignature,
   buildMessageJSON,
@@ -123,6 +124,13 @@ describe('validateServiceQueryBody (task 1.20)', () => {
   it('validates schema_hash type when present', () => {
     expect(validateServiceQueryBody({ ...validBody, schema_hash: 42 })).toBe(
       'service.query: schema_hash must be a string when present',
+    );
+  });
+
+  it('accepts grant_id when present + rejects a non-string', () => {
+    expect(validateServiceQueryBody({ ...validBody, grant_id: 'grant-1' })).toBeNull();
+    expect(validateServiceQueryBody({ ...validBody, grant_id: 42 })).toBe(
+      'service.query: grant_id must be a string when present',
     );
   });
 
@@ -391,5 +399,64 @@ describe('isValidServiceListingRkey', () => {
     expect(
       parseServiceListingUri('at://did:plc:op/com.dinakernel.service.profile/bad/rkey'),
     ).toBeNull();
+  });
+});
+
+describe('validateServiceOfferBody (protocol v1.1)', () => {
+  const validOffer = {
+    grant_id: 'grant-1',
+    capability: 'eta_query',
+    service_name: 'Bus 42 (private)',
+    service_uri: 'at://did:plc:bus42/com.dinakernel.service.profile/route-42',
+    schema_hash: 'abc123',
+    params_schema: { type: 'object' },
+    default_ttl_seconds: 120,
+  };
+
+  it('accepts a well-formed offer', () => {
+    expect(validateServiceOfferBody(validOffer)).toBeNull();
+  });
+
+  it('accepts a minimal offer (only required fields)', () => {
+    expect(
+      validateServiceOfferBody({
+        grant_id: 'g',
+        capability: 'com.acme.widget_price',
+        service_name: 'Acme',
+        service_uri: 'at://did:plc:acme/com.dinakernel.service.profile/widgets',
+      }),
+    ).toBeNull();
+  });
+
+  it('rejects a non-object body', () => {
+    expect(validateServiceOfferBody(null)).toBe('service.offer: body must be a JSON object');
+    expect(validateServiceOfferBody('x')).toBe('service.offer: body must be a JSON object');
+  });
+
+  it('requires grant_id, capability, service_name', () => {
+    expect(validateServiceOfferBody({ ...validOffer, grant_id: '' })).toMatch(/grant_id/);
+    expect(validateServiceOfferBody({ ...validOffer, capability: '' })).toMatch(/capability/);
+    expect(validateServiceOfferBody({ ...validOffer, service_name: '' })).toMatch(/service_name/);
+  });
+
+  it('requires a well-formed service_uri (REQUIRED, unlike service.query)', () => {
+    expect(validateServiceOfferBody({ ...validOffer, service_uri: '' })).toMatch(/service_uri/);
+    expect(validateServiceOfferBody({ ...validOffer, service_uri: 'https://x/y' })).toMatch(
+      /at:\/\/<did>/,
+    );
+  });
+
+  it('validates optional field types', () => {
+    expect(validateServiceOfferBody({ ...validOffer, schema_hash: 42 })).toMatch(/schema_hash/);
+    expect(validateServiceOfferBody({ ...validOffer, params_schema: 'no' })).toMatch(
+      /params_schema/,
+    );
+    expect(validateServiceOfferBody({ ...validOffer, default_ttl_seconds: 0 })).toMatch(
+      /default_ttl_seconds/,
+    );
+    expect(validateServiceOfferBody({ ...validOffer, default_ttl_seconds: 99999 })).toMatch(
+      /default_ttl_seconds/,
+    );
+    expect(validateServiceOfferBody({ ...validOffer, expires_at: 'soon' })).toMatch(/expires_at/);
   });
 });

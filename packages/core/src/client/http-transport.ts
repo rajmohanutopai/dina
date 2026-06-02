@@ -88,6 +88,7 @@ import type {
   ActionPolicyEntry,
   ActionPolicyResult,
   RiskLevel,
+  ServiceOfferView,
 } from './core-client';
 
 // ---------------------------------------------------------------------------
@@ -397,6 +398,7 @@ export class HttpCoreTransport implements CoreClient {
     if (req.originChannel !== undefined) body.origin_channel = req.originChannel;
     if (req.schemaHash !== undefined) body.schema_hash = req.schemaHash;
     if (req.serviceUri !== undefined) body.service_uri = req.serviceUri;
+    if (req.grantId !== undefined) body.grant_id = req.grantId;
 
     const raw = await this.call<{ task_id: string; query_id: string; deduped?: boolean }>(
       'POST',
@@ -827,6 +829,30 @@ export class HttpCoreTransport implements CoreClient {
       return [];
     }
     return Array.isArray(raw.contacts) ? (raw.contacts as Contact[]) : [];
+  }
+
+  async listServiceOffers(params?: {
+    providerDid?: string;
+    capability?: string;
+  }): Promise<ServiceOfferView[]> {
+    const query: Record<string, string> = {};
+    if (params?.providerDid !== undefined && params.providerDid !== '')
+      query.provider_did = params.providerDid;
+    if (params?.capability !== undefined && params.capability !== '')
+      query.capability = params.capability;
+    try {
+      const raw = await this.call<{ offers?: unknown }>(
+        'GET',
+        '/v1/service/offers',
+        query,
+        undefined,
+        'listServiceOffers',
+      );
+      return Array.isArray(raw.offers) ? (raw.offers as ServiceOfferView[]) : [];
+    } catch {
+      // Fail-soft: the resolver falls back to public discovery on empty.
+      return [];
+    }
   }
 
   async contactLookup(query: string): Promise<Contact | null> {

@@ -180,6 +180,9 @@ export function validateServiceQueryBody(body: unknown): string | null {
   if (b.schema_hash !== undefined && typeof b.schema_hash !== 'string') {
     return 'service.query: schema_hash must be a string when present';
   }
+  if (b.grant_id !== undefined && typeof b.grant_id !== 'string') {
+    return 'service.query: grant_id must be a string when present';
+  }
   if (b.service_uri !== undefined) {
     if (typeof b.service_uri !== 'string') {
       return 'service.query: service_uri must be a string when present';
@@ -242,6 +245,68 @@ export function validateServiceResponseBody(body: unknown): string | null {
     (b.card === null || typeof b.card !== 'object' || Array.isArray(b.card))
   ) {
     return 'service.response: card must be an object when present';
+  }
+  return null;
+}
+
+/**
+ * Validate a `service.offer` body (protocol v1.1). A provider → contact offer
+ * for a `known_only` listing. Must be self-contained: the recipient stores it
+ * as contact metadata and uses it (later) to issue a `service.query`, so the
+ * structural fields it depends on are required here.
+ */
+export function validateServiceOfferBody(body: unknown): string | null {
+  if (!body || typeof body !== 'object') {
+    return 'service.offer: body must be a JSON object';
+  }
+  const b = body as Record<string, unknown>;
+
+  if (typeof b.grant_id !== 'string' || b.grant_id === '') {
+    return 'service.offer: grant_id is required';
+  }
+  if (typeof b.capability !== 'string' || b.capability === '') {
+    return 'service.offer: capability is required';
+  }
+  if (typeof b.service_name !== 'string' || b.service_name === '') {
+    return 'service.offer: service_name is required';
+  }
+  // service_uri is REQUIRED (unlike service.query, where it's advisory): a
+  // known_only offer has no network record, so the listing URI is the only way
+  // the recipient can address the eventual query back to the right listing.
+  if (typeof b.service_uri !== 'string' || b.service_uri === '') {
+    return 'service.offer: service_uri is required';
+  }
+  if (parseServiceListingUri(b.service_uri) === null) {
+    return 'service.offer: service_uri must be an at://<did>/com.dinakernel.service.profile/<rkey> URI';
+  }
+  if (b.schema_hash !== undefined && typeof b.schema_hash !== 'string') {
+    return 'service.offer: schema_hash must be a string when present';
+  }
+  if (
+    b.params_schema !== undefined &&
+    (b.params_schema === null || typeof b.params_schema !== 'object')
+  ) {
+    return 'service.offer: params_schema must be an object when present';
+  }
+  if (
+    b.result_schema !== undefined &&
+    (b.result_schema === null || typeof b.result_schema !== 'object')
+  ) {
+    return 'service.offer: result_schema must be an object when present';
+  }
+  if (b.default_ttl_seconds !== undefined) {
+    if (typeof b.default_ttl_seconds !== 'number' || !Number.isFinite(b.default_ttl_seconds)) {
+      return 'service.offer: default_ttl_seconds must be a number when present';
+    }
+    if (b.default_ttl_seconds <= 0 || b.default_ttl_seconds > MAX_SERVICE_TTL) {
+      return `service.offer: default_ttl_seconds must be 1-${MAX_SERVICE_TTL}, got ${b.default_ttl_seconds}`;
+    }
+  }
+  if (
+    b.expires_at !== undefined &&
+    (typeof b.expires_at !== 'number' || !Number.isFinite(b.expires_at))
+  ) {
+    return 'service.offer: expires_at must be a number (unix seconds) when present';
   }
   return null;
 }

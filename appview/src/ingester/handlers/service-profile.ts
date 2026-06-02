@@ -15,25 +15,37 @@ import {
  * discoverable service descriptions via AT Protocol. The AppView ingests
  * these records, indexes them, and exposes search/lookup endpoints.
  *
- * Phase 1 constraints:
- * - Only provider services are indexed (isDiscoverable must be true)
- * - All responsePolicy values must be "auto" (no manual approval flows yet)
+ * Constraints:
+ * - `public` + `unlisted` records are indexed; `known_only` is never indexed
+ *   (local/pairing-bound). Only `public` is returned by public search —
+ *   `unlisted` is indexed solely so it stays resolvable by exact service_uri.
+ * - All responsePolicy values must be "auto"/"review" (lexicon-enforced)
  * - DID binding: op.did IS the operator (author == operator)
  */
 export const serviceProfileHandler: RecordHandler = {
   async handleCreate(ctx: HandlerContext, op: RecordOp) {
     const record = op.record as unknown as ServiceProfile
 
-    // A provider can UNPUBLISH a listing by re-publishing the same record with
-    // isDiscoverable=false. We must remove any existing indexed row for this
-    // uri — a bare `return` would leave the prior discoverable row alive, so
-    // the service would still surface in search after the provider unpublished
-    // it. Idempotent: deleting a non-existent uri is a no-op.
-    if (!record.isDiscoverable) {
+    // Three-state discoverability (catalog §5.2):
+    //   public     → indexed + returned in public search.
+    //   unlisted   → INDEXED (so it stays resolvable by exact service_uri for
+    //                link/QR/invite) but EXCLUDED from public search. Search
+    //                gates on isDiscoverable=true and unlisted records carry
+    //                isDiscoverable=false, so storing the row here is safe —
+    //                it never surfaces in search, only in resolve-by-uri.
+    //   known_only → local/pairing-bound; must NEVER touch the network index.
+    //                Remove any existing indexed row.
+    // The publisher already keeps known_only off the PDS (it unpublishes), so
+    // this is mostly a defensive gate; legacy records that predate the
+    // discoverability field fall back to the isDiscoverable boolean (a bare
+    // false ⇒ treat as unpublish, preserving the old behavior).
+    const disc = record.discoverability
+    const isKnownOnly = disc === 'known_only' || (disc === undefined && !record.isDiscoverable)
+    if (isKnownOnly) {
       await ctx.db.delete(services).where(eq(services.uri, op.uri))
       ctx.logger.debug(
-        { uri: op.uri },
-        '[ServiceProfile] non-discoverable — removed any existing indexed row (unpublish)',
+        { uri: op.uri, discoverability: disc ?? '(legacy isDiscoverable=false)' },
+        '[ServiceProfile] known_only / unpublished — removed any existing indexed row',
       )
       ctx.metrics.incr('ingester.service_profile.unpublished')
       return

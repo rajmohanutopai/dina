@@ -52,6 +52,16 @@ export interface ServiceQueryBody {
    * functional contract. Carried end-to-end from the AppView search result.
    */
   service_uri?: string;
+  /**
+   * The provider-issued grant this query exercises (the `grant_id` the
+   * requester received in a `service.offer`). NOT a secret — it is only a
+   * SELECTOR: the provider authorizes by `grant_id` AND the transport-
+   * authenticated caller DID (the grant must be granted to that DID, for this
+   * listing + capability, and be active). Required-in-effect for a `known_only`
+   * listing (no public/unlisted fallback gate authorizes it); omitted for
+   * public/unlisted queries, which authorize by listing/URI rules.
+   */
+  grant_id?: string;
 }
 
 /**
@@ -88,4 +98,52 @@ export interface ServiceResponseBody {
    * back to the deterministic `buildResultCardSpec` mapper over `result`.
    */
   card?: CardSpec;
+}
+
+/**
+ * `service.offer` body schema — a provider proactively shares a `known_only`
+ * listing with a single contact over the direct D2D relationship.
+ *
+ * SINGLE SOURCE OF TRUTH for the wire contract (protocol v1.1, additive).
+ * Unlike `public`/`unlisted` listings (resolved from AppView/PDS), a
+ * `known_only` listing is NEVER on the network — so the offer must be
+ * SELF-CONTAINED: it carries everything the recipient needs to call the
+ * service later (capability + schema + the listing's service_uri). The
+ * recipient's Core persists it as contact metadata (`contact_service_offers`),
+ * and the resolver surfaces it for that contact before any public discovery.
+ * `validateServiceOfferBody` (in `../validators`) enforces these invariants.
+ */
+export interface ServiceOfferBody {
+  /**
+   * The provider-issued GRANT id this offer delivers. The offer is the
+   * delivery mechanism; the authority is the provider's `service_grants` row
+   * with this id. The recipient echoes it back as `service.query.grant_id`.
+   * NOT a secret — it is only a selector (auth = grant_id + authenticated DID).
+   */
+  grant_id: string;
+  /** The capability offered (canonical or namespaced custom NSID). */
+  capability: string;
+  /** Human-readable listing name for display. */
+  service_name: string;
+  /**
+   * AT-URI of the `known_only` listing
+   * (`at://<provider-did>/com.dinakernel.service.profile/<rkey>`). Well-formed
+   * but intentionally NOT network-resolvable — the recipient rides it on the
+   * eventual `service.query` so the provider knows which listing was invoked.
+   */
+  service_uri: string;
+  /** SHA-256 of the capability's params schema (version pin for the query). */
+  schema_hash?: string;
+  /**
+   * The capability's params JSON Schema. Carried inline because a known_only
+   * offer has no AppView/PDS record to fetch it from — this is what lets the
+   * recipient build + validate a valid query.
+   */
+  params_schema?: unknown;
+  /** The capability's result JSON Schema (optional, for result validation). */
+  result_schema?: unknown;
+  /** Provider's advertised default TTL (seconds) for queries to this listing. */
+  default_ttl_seconds?: number;
+  /** Optional expiry (Unix SECONDS); the offer is stale/ignored after this. */
+  expires_at?: number;
 }

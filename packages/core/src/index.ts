@@ -820,6 +820,7 @@ export type {
   PersonaStatusResult,
   PersonaUnlockResult,
   ServiceListing,
+  ServiceOfferView,
   ServiceQueryClientRequest,
   ServiceQueryResult,
   MemoryToCOptions,

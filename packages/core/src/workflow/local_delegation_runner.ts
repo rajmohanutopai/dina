@@ -180,6 +180,16 @@ export class LocalDelegationRunner {
       const nowMs = this.nowMsFn();
       let task: WorkflowTask | null;
       try {
+        // Claim WITHOUT a runner_filter (empty ⇒ matches any requested_runner).
+        // This is the in-process, single-process executor (mobile / demos /
+        // tests; "production uses external dina-agent" — see bootstrap.ts). It
+        // is the SOLE runner on such a node and dispatches by capability
+        // internally, so it must take every service_query_execution task
+        // regardless of the requested_runner set from the capability's
+        // mcpServer. Do NOT enable this alongside external per-capability
+        // daemons on the same node — being unfiltered it would race them for
+        // routed tasks (multi-runner routing lives in the external-daemon claim
+        // path, which DOES pass runner_filter).
         task = this.repo.claimDelegationTask(this.agentDID, nowMs, this.leaseMs);
       } catch (err) {
         this.onError(err);

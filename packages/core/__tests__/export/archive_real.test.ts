@@ -69,6 +69,24 @@ function seedIdentity(a: DatabaseAdapter): void {
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     ['rem-1', 'r1', 'call mom', 9_999, 'general', 'manual', '', 'user', '', '', 'pending', 0, 1],
   );
+  // A published multi-listing service config (v8) — MUST be backed up/restored.
+  a.execute(
+    'INSERT INTO service_configs (rkey, config_json, created_at, updated_at) VALUES (?, ?, ?, ?)',
+    ['route-42', '{"name":"Bus 42"}', 1, 1],
+  );
+  // A received known_only offer (v9) — contact metadata, MUST be backed up.
+  a.execute(
+    `INSERT INTO contact_service_offers (grant_id, provider_did, capability, service_uri, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    ['g-recv', 'did:plc:bus', 'eta_query', 'at://did:plc:bus/com.dinakernel.service.profile/self', 1, 1],
+  );
+  // An ISSUED grant (v10) — active authority; MUST be EXCLUDED from the archive
+  // (same posture as agent_persona_grants — re-issue offers after migration).
+  a.execute(
+    `INSERT INTO service_grants (grant_id, grantee_did, service_rkey, capability, grant_type, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    ['grant-secret', 'did:plc:emma', 'route-42', 'eta_query', 'standing', 1],
+  );
 }
 function seedVaultItem(a: DatabaseAdapter, id: string, text: string): void {
   a.execute(
@@ -172,6 +190,19 @@ describe('real export → clean-install import', () => {
           .adapter.query('SELECT content_l0 FROM vault_items WHERE id = ?', ['v-health'])[0]
           ?.content_l0,
       ).toBe('bp 120/80');
+      // Multi-listing service config restored (v8 — the P1 export fix).
+      expect(
+        dest.id.query("SELECT config_json FROM service_configs WHERE rkey = 'route-42'")[0]
+          ?.config_json,
+      ).toBe('{"name":"Bus 42"}');
+      // Received known_only offer restored (v9 — contact metadata).
+      expect(
+        dest.id.query("SELECT capability FROM contact_service_offers WHERE grant_id = 'g-recv'")[0]
+          ?.capability,
+      ).toBe('eta_query');
+      // ISSUED grant EXCLUDED — active authority must NOT ride a backup (v10),
+      // same posture as agent_persona_grants. The table exists (migrated) but is empty.
+      expect(dest.id.query('SELECT 1 FROM service_grants')).toHaveLength(0);
     } finally {
       closeBundle(dest);
     }

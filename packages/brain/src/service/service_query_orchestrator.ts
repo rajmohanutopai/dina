@@ -100,6 +100,12 @@ export interface IssueQueryToDIDRequest {
    * carries the selection to the provider. Forwarded opaquely onto the wire.
    */
   serviceUri?: string;
+  /**
+   * Grant id the caller is exercising (from a `service.offer`, surfaced by
+   * `find_preferred_provider`). Forwarded onto the wire — required-in-effect
+   * for a known_only listing (provider authorizes by grant_id + authed DID).
+   */
+  grantId?: string;
 }
 
 /**
@@ -367,6 +373,9 @@ export class ServiceQueryOrchestrator {
           req.schemaHash !== undefined && req.schemaHash !== '' ? req.schemaHash : undefined,
         // Carry the LLM-chosen listing's uri (multi-listing per DID).
         serviceUri: req.serviceUri !== undefined && req.serviceUri !== '' ? req.serviceUri : undefined,
+        // Carry the grant id for a known_only listing (provider authorizes by
+        // grant_id + the authenticated caller DID).
+        grantId: req.grantId !== undefined && req.grantId !== '' ? req.grantId : undefined,
       });
     } catch (err) {
       throw new ServiceOrchestratorError(

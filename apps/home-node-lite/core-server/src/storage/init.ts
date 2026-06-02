@@ -34,6 +34,8 @@ import {
   SQLiteAuditRepository,
   SQLiteChatMessageRepository,
   SQLiteContactRepository,
+  SQLiteServiceOfferRepository,
+  SQLiteServiceGrantRepository,
   SQLiteDeviceRepository,
   SQLiteKVRepository,
   SQLitePeopleRepository,
@@ -48,6 +50,8 @@ import {
   setAuditRepository,
   setChatMessageRepository,
   setContactRepository,
+  setServiceOfferRepository,
+  setServiceGrantRepository,
   setDeviceRepository,
   setKVRepository,
   setPeopleRepository,
@@ -153,6 +157,8 @@ export async function initializeStorage(
   // Wire every identity-scoped repository the Core HTTP surface uses.
   setKVRepository(new SQLiteKVRepository(identityDB));
   setContactRepository(new SQLiteContactRepository(identityDB));
+  setServiceOfferRepository(new SQLiteServiceOfferRepository(identityDB));
+  setServiceGrantRepository(new SQLiteServiceGrantRepository(identityDB));
   setReminderRepository(new SQLiteReminderRepository(identityDB));
   setAuditRepository(new SQLiteAuditRepository(identityDB));
   setDeviceRepository(new SQLiteDeviceRepository(identityDB));

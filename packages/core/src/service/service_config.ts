@@ -15,7 +15,13 @@
  * Source: core/internal/service/service_config.go  (Go reference)
  */
 
-import { isListingPublic, isListingPublishable, resolveCanonicalCapability } from '@dina/protocol';
+import {
+  effectiveDiscoverability,
+  effectiveListingStatus,
+  isListingPublic,
+  isListingPublishable,
+  resolveCanonicalCapability,
+} from '@dina/protocol';
 
 import { configEventChannel } from './config_event_channel';
 import { getServiceConfigRepository } from './service_config_repository';
@@ -291,6 +297,24 @@ export function isCapabilityConfigured(capability: string, rkey?: string): boole
 }
 
 /**
+ * True iff `rkey` names a LIVE `known_only` listing that offers `capability`.
+ *
+ * `isCapabilityConfigured` deliberately returns false for known_only (its bar
+ * is `isListingPublishable` = public|unlisted), so the ingress uses THIS to
+ * detect a known_only listing — and then gates execution on a valid GRANT
+ * (the caller-authorization step), NOT on the listing being publishable. A
+ * known_only listing with no matching grant is NOT executable.
+ */
+export function isKnownOnlyCapabilityConfigured(capability: string, rkey: string): boolean {
+  const cfg = configs.get(rkey);
+  if (cfg === undefined) return false;
+  if (effectiveDiscoverability(cfg) !== 'known_only') return false;
+  if (effectiveListingStatus(cfg) !== 'active') return false;
+  const inboundCanonical = resolveCanonicalCapability(capability);
+  return listingOffersCapability(cfg, capability, inboundCanonical);
+}
+
+/**
  * Whether ONE listing's config advertises `capability`. Exact-match first
  * (covers canonical-configured + out-of-registry custom keys), then canonical
  * match so an alias-configured provider (`bus_eta`) still answers a canonical
@@ -307,6 +331,24 @@ function listingOffersCapability(
     if (resolveCanonicalCapability(configured) === inboundCanonical) return true;
   }
   return false;
+}
+
+/**
+ * Resolve `capability` (possibly an alias or canonical name) to the ACTUAL key
+ * under which a listing configured it — so callers read the right
+ * `capabilities` / `capabilitySchemas` entry. Same alias↔canonical logic as
+ * `listingOffersCapability`, but returns the configured key (or null). Used by
+ * the offer route so an alias-configured listing can be offered by its
+ * canonical name (and vice versa).
+ */
+export function configuredCapabilityKey(cfg: ServiceConfig, capability: string): string | null {
+  if (Object.prototype.hasOwnProperty.call(cfg.capabilities, capability)) return capability;
+  const inboundCanonical = resolveCanonicalCapability(capability);
+  if (inboundCanonical === null) return null;
+  for (const configured of Object.keys(cfg.capabilities)) {
+    if (resolveCanonicalCapability(configured) === inboundCanonical) return configured;
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------

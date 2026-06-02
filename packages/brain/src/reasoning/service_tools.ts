@@ -17,7 +17,7 @@
 import type { AgentTool } from './tool_registry';
 import type { AppViewClient, ServiceProfile } from '../appview_client/http';
 import type { ServiceQueryOrchestrator } from '../service/service_query_orchestrator';
-import type { Contact } from '@dina/core';
+import type { Contact, ServiceOfferView } from '@dina/core';
 import { resolveCanonicalCapability } from '@dina/protocol';
 import { autofillRequesterFields, type RequesterAutofillSchema } from './requester_autofill';
 import { defaultFetch } from '../runtime/fetch';
@@ -376,7 +376,11 @@ export interface QueryServiceToolOptions {
    * a provider via some other path (intent-classifier SHORTCUT, a
    * previously-stored DID) and has no hash for version safety.
    */
-  appViewClient?: Pick<AppViewClient, 'searchServices'>;
+  // `resolveServiceByUri` is OPTIONAL (the tool guards its absence) so callers
+  // / mocks that only wire `searchServices` stay valid; when present it enables
+  // the unlisted shared-link resolution path.
+  appViewClient?: Pick<AppViewClient, 'searchServices'> &
+    Partial<Pick<AppViewClient, 'resolveServiceByUri'>>;
   /**
    * Optional structured-log sink. A failed AppView fetch emits
    * `tool_executor.query_service.schema_autofetch_failed` here. When
@@ -434,6 +438,11 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
           description:
             "The chosen listing's service_uri from search_provider_services. Pass it when a provider has multiple listings so the query reaches the exact one you picked. Optional.",
         },
+        grant_id: {
+          type: 'string',
+          description:
+            "The grant_id from a find_preferred_provider OFFER (source:'offer'). REQUIRED to call a contact's private (known_only) service — pass it together with that offer's service_uri. Optional otherwise.",
+        },
       },
       required: ['operator_did', 'capability', 'params'],
     },
@@ -481,6 +490,8 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
         typeof args.service_uri === 'string' && args.service_uri !== ''
           ? args.service_uri
           : undefined;
+      const grantId =
+        typeof args.grant_id === 'string' && args.grant_id !== '' ? args.grant_id : undefined;
       let matchedProfiles: ServiceProfile[] = [];
 
       // WM-BRAIN-06d: if the LLM didn't route via search_provider_services
@@ -510,6 +521,18 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
           let match: ServiceProfile | undefined;
           if (serviceUri !== undefined) {
             match = matchedProfiles.find((p) => p.uri === serviceUri);
+            // UNLISTED path: an unlisted listing is never in search results, so
+            // a service_uri shared by link/QR/invite won't be found above.
+            // Resolve it directly by URI. Guard `did === operatorDID` so a
+            // shared link can't redirect the query to a different provider
+            // (defense-in-depth; Core's egress re-checks authority == recipient).
+            if (match === undefined && options.appViewClient.resolveServiceByUri !== undefined) {
+              const resolved = await options.appViewClient.resolveServiceByUri(serviceUri);
+              if (resolved !== null && resolved.did === operatorDID) {
+                match = resolved;
+                matchedProfiles = [resolved];
+              }
+            }
           } else if (matchedProfiles.length === 1) {
             match = matchedProfiles[0];
           }
@@ -606,6 +629,9 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
         // #1: forward the LLM-chosen listing uri so a multi-listing provider
         // DID knows which one was selected. Auto-filled / validated above.
         serviceUri,
+        // Forward the grant id (known_only): the provider authorizes by
+        // grant_id + the authenticated caller DID.
+        grantId,
       });
       return {
         task_id: result.taskId,
@@ -629,6 +655,13 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
  */
 export interface PreferredContactsClient {
   findContactsByPreference(category: string): Promise<Contact[]>;
+  /**
+   * Optional: list known_only service OFFERS a contact has sent us directly
+   * (by their DID). When present, the tool surfaces each as an offered
+   * capability — with its service_uri + schema_hash — so the LLM can call
+   * `query_service` against the contact without any public/AppView record.
+   */
+  listServiceOffers?(params: { providerDid: string }): Promise<ServiceOfferView[]>;
 }
 
 export interface FindPreferredProviderToolOptions {
@@ -666,7 +699,20 @@ export interface PreferredProviderEntry {
   contact_did: string;
   contact_name: string;
   trust_level: string;
-  capabilities: Array<{ name: string }>;
+  capabilities: Array<{
+    name: string;
+    /** 'public' = published/AppView-discoverable; 'offer' = a direct
+     *  known_only offer this contact sent us. Absent ⇒ public (back-compat). */
+    source?: 'public' | 'offer';
+    /** OFFER only: the known_only listing's service_uri — pass to query_service. */
+    service_uri?: string;
+    /** OFFER only: the grant_id to pass to query_service (provider authorizes
+     *  by grant_id + the authenticated caller DID). */
+    grant_id?: string;
+    /** OFFER only: the schema_hash to pass to query_service (no AppView record
+     *  exists to auto-fetch it from for a known_only listing). */
+    schema_hash?: string;
+  }>;
 }
 export interface FindPreferredProviderResult {
   providers: PreferredProviderEntry[];
@@ -769,6 +815,32 @@ export function createFindPreferredProviderTool(
           } catch (err) {
             options.logger?.({
               event: 'tool_executor.find_preferred_appview_failed',
+              did,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+
+        // Surface known_only OFFERS this contact sent us directly. An offer is
+        // self-contained (no AppView/PDS record): carry its service_uri +
+        // schema_hash so the LLM passes them straight to query_service.
+        if (options.core.listServiceOffers !== undefined && did !== '') {
+          try {
+            const offers = await options.core.listServiceOffers({ providerDid: did });
+            for (const o of offers) {
+              if (typeof o.capability === 'string' && o.capability !== '') {
+                provider.capabilities.push({
+                  name: o.capability,
+                  source: 'offer',
+                  grant_id: o.grantId,
+                  ...(o.serviceUri !== '' ? { service_uri: o.serviceUri } : {}),
+                  ...(o.schemaHash !== '' ? { schema_hash: o.schemaHash } : {}),
+                });
+              }
+            }
+          } catch (err) {
+            options.logger?.({
+              event: 'tool_executor.find_preferred_offers_failed',
               did,
               error: err instanceof Error ? err.message : String(err),
             });

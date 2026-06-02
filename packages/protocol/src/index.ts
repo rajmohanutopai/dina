@@ -18,6 +18,7 @@ export type {
   ServiceResponseStatus,
   ServiceQueryBody,
   ServiceResponseBody,
+  ServiceOfferBody,
 } from './types/d2d';
 export type {
   AuthChallengeFrame,
@@ -73,6 +74,7 @@ export {
   MSG_TYPE_PEERLENS_VOUCH_RESPONSE,
   MSG_TYPE_SERVICE_QUERY,
   MSG_TYPE_SERVICE_RESPONSE,
+  MSG_TYPE_SERVICE_OFFER,
   MAX_MESSAGE_BODY_SIZE,
   MAX_SERVICE_TTL,
   RPC_REQUEST_TYPE,
@@ -134,6 +136,7 @@ export {
   parseMessageJSON,
   validateServiceQueryBody,
   validateServiceResponseBody,
+  validateServiceOfferBody,
   validateFutureSkew,
   verifyMessageSignature,
   parseServiceListingUri,
