@@ -2383,3 +2383,273 @@ schema_hash, routed to its runner) — only the runner name + NSID differ, so a 
 - Test artifacts added (working tree): `put_service_config_custom.ts`, `send_service_query.ts`
   gains an optional `argv[6]` schema_hash override (so non-registry caps can be driven without a
   brain wire-schema), sluk5 `price-agent` pairing dir.
+
+---
+
+## Service visibility model — known_only grants, unlisted resolve-by-link, custom routing (2026-06-03)
+
+> **Verification status for this whole section:** these were built + **unit/
+> contract-tested** (the test counts below are real + green), but — unlike the
+> Scenario A/B bus-ETA runs above — they have **NOT yet been driven E2E through a
+> live sim/idb pass**. So: implementation + automated-test verified; **manual /
+> sim E2E drive still pending.** Treat the E2E column as TODO for these three.
+
+The settled model is two INDEPENDENT axes: **visibility** (how a listing is
+found: `public` / `unlisted` / `known_only`) × **grant** (who may invoke it).
+Contact membership is a prerequisite for *issuing* a grant, never the runtime
+authority. Design + rationale: `packages/protocol/docs/conformance.md` §15 and
+the project memory `project_service_visibility_model`.
+
+### 1. known_only → grant-based authorization (private services) — ✅ unit/contract, ⏳ E2E
+The headline private-services feature. A provider shares a `known_only` listing
+with a chosen contact; nothing is published to PDS/AppView.
+- **Wire:** new D2D family `service.offer` (protocol v0.2.0) carrying `grant_id`
+  (a SELECTOR, not a secret) + the listing's self-contained schema/`service_uri`;
+  `service.query` gains optional `grant_id`. `validateServiceOfferBody`.
+- **Provider authority:** `service_grants` table (migration v10) + repository.
+  `isAuthorized` binds to the **transport-authenticated caller DID** — a
+  forwarded `grant_id` is useless without the matching authenticated caller
+  ("Bob can't reuse Emma's grant_id").
+- **Issue + deliver:** `POST /v1/service/offer` mints a grant + sends the offer;
+  **contact-gated** (only to an established contact), alias-aware capability,
+  **revokes the grant if the D2D send fails** (no dangling authority).
+- **Ingress gate:** `evaluateServiceIngressBypass` admits a live known_only
+  listing ONLY against an active grant for the caller, and **requires** the
+  echoed `grant_id`.
+- **Brain execution:** gate relaxed to `active` (any discoverability) — Core
+  ingress is the authorization boundary; the Brain executes what Core admitted
+  (fixed the double-gate that silently dropped grant-authorized known_only).
+- **Requester side:** `contact_service_offers` (migration v9) stores received
+  offers; `find_preferred_provider` surfaces them with `grant_id`; `grant_id`
+  threads `query_service → orchestrator → service.query`; idempotency key
+  includes `grant_id`. Inbound `service.offer` binds `service_uri` authority to
+  the sender DID (no spoofed offers).
+- **Tests (green):** protocol validators; `service_grant_repository` (grantee/
+  rkey/capability bind, expiry, revoke, grant_id pin, restart-durable); ingress
+  grant gate (allow / no-grant / wrong-grantee / require-grant_id /
+  canonicalize); offer route (mint+send / contact-gate 403 / alias / send-fail
+  revoke); receive offer authority bind; brain offer-surfacing + known_only
+  execution.
+- **⏳ E2E TODO:** drive provider `POST /v1/service/offer` → requester stores →
+  resolver surfaces → grant-gated `service.query` executes, on the live sim +
+  daemons (a `stub` runner like the bus-ETA Scenario A run).
+
+### 2. unlisted → resolve-by-link (callable) — ✅ unit/contract, ⏳ E2E
+Makes an `unlisted` listing usable: hidden from public search but callable by
+exact link/URI.
+- AppView ingester now **stores** `unlisted` (excluded from search) instead of
+  deleting it; new `com.dinakernel.service.getByUri` resolves a listing by exact
+  URI regardless of `isDiscoverable` (tombstoned/redacted still excluded).
+- Brain `AppViewClient.resolveServiceByUri` + a `query_service` fallback when a
+  `service_uri` isn't in search (guards `did === operatorDID`).
+- **Tests (green):** `service_get_by_uri` handler (resolves unlisted, excludes
+  tombstoned, WHERE doesn't filter `is_discoverable`); brain `resolveServiceByUri`;
+  `service_tools` unlisted fallback.
+- **⏳ E2E TODO:** publish an unlisted listing → resolve it by the shared link on
+  the sim → call it.
+
+### 3. custom capabilities excluded from generic AI routing — ✅ unit/contract, ⏳ E2E
+The "less AI-auto-routable" product shape: a provider can't hijack the shared AI
+vocabulary by publishing `com.acme.best_doctor`.
+- AppView `searchCapabilities` (intent → capability discovery) returns **canonical-
+  only**. Custom NSIDs remain reachable by **exact NSID** (`service.search`), by
+  exact `service_uri` (`getByUri`), and later by provider/place browse — never by
+  generic intent.
+- **Tests (green):** `search_capabilities` (custom excluded incl. when it ships a
+  schema; lone-custom → empty pool; classification canonical/custom/unknown).
+- **⏳ E2E TODO:** confirm on the sim that an intent query never auto-routes to a
+  custom cap, while an exact-NSID query still reaches it.
+
+### Backup/restore coverage (related)
+Export/import now backs up `service_configs` (multi-listing) + `contact_service_offers`;
+`service_grants` is **excluded** (active authority — re-issue offers after a
+device migration, same posture as `agent_persona_grants`). Pinned by the
+`archive_real` round-trip test + the `persistence` migration test.
+
+### Net
+The multi-listing / multi-runner / custom-discovery / a11y work was driven E2E
+(Scenario A/B above). The three features in THIS section are implementation- +
+automated-test-complete but still owe a **live sim/idb E2E pass** before they can
+be marked manually verified.
+
+---
+
+## Bring-your-own Bluesky / AT Protocol identity (onboarding) — test account configured (2026-06-03)
+
+The onboarding "Use existing identity" path (`mode_choice` → `existing_atproto_identity.tsx`)
+lets a user connect an account they already own (a Bluesky handle / `did:plc` +
+a **PDS app password**), instead of Dina minting a fresh `did:plc`. Dina then
+uses that account's PDS for public PeerLens + services records.
+
+**Test account configured (real Bluesky account):**
+- Handle: **@rspam.bsky.social**
+- Credential: a Bluesky **App Password** (scoped + revocable — NOT the main
+  account password), stored in the gitignored `tests/sanity/.env.sanity` as
+  `SANITY_BSKY_IDENTIFIER` / `SANITY_BSKY_APP_PASSWORD`. (The value is NOT in
+  this doc or any tracked file.)
+
+**UI hardening added (so users don't paste their real password):** the app-
+password field on the existing-identity screen now shows guidance + a tappable
+link to **bsky.app → Settings → App Passwords** —
+*"Use a Bluesky App Password — never your main account password… it only works
+here and you can revoke it anytime."* (`existing-atproto-app-password-help`).
+
+**Status:** ✅ test account + creds configured; ✅ app-password UI guidance added
+(typecheck + a11y); ⏳ **E2E onboarding drive pending** — sign in via the
+existing-identity flow on the sim with @rspam.bsky.social and confirm Dina adds
+its signing key + MsgBox endpoint to the did:plc and boots on that PDS.
+
+---
+
+# Autonomous live release-test run — iOS sim + idb + test infra (2026-06-03)
+
+Full pass driven on the booted **iPhone 17 Pro** simulator via `idb`, against the
+**redeployed** test infrastructure (`test-appview` / `test-mailbox` / `test-pds`
+.dinakernel.com) and a live local provider stack. Held entirely in the working
+tree (no commits). Screenshots under `/tmp/dina-shots/` + `/tmp/sim_*.png`.
+
+## 0. Infra brought up / recovered
+
+| Step | Result |
+|------|--------|
+| Appview redeploy (`deploy_shared_infra.sh update test`) | ✅ build + drizzle migrate + healthchecks (appview/mailbox/pds all 200) |
+| New appview endpoints live | ✅ `service.getByUri`, canonical-only `service.searchCapabilities` |
+| Provider stack (lite Core :18298 = `did:plc:sluk5…`, eta + price daemons over MsgBox) | ✅ recovered |
+
+**Fixed during run:** redeploying bounced the MsgBox container, leaving the
+provider Core's WS half-open and the runner daemons in a `frames_seen=0` claim-
+timeout loop. Root-caused via remote `msgbox` logs (responses marked `delivered`
+but never reaching the daemon ⇒ duplicate/stale WS per DID). Resolution: bounce
+the provider Core so it re-handshakes, then start **one clean daemon per device
+DID** (the "one WS per DID" rule). After that the full claim→execute→respond
+path was healthy.
+
+## 1. Automated test baseline (changed surface) — all green
+
+| Package | Result |
+|---------|--------|
+| `@dina/protocol` (jest) | ✅ 492 |
+| `appview` (vitest) | ✅ 1895 |
+| `@dina/core` service/d2d/grant/export/storage/server suites (jest) | ✅ 1268 |
+| `@dina/brain` service/reasoning/appview suites (jest) | ✅ 756 |
+| `apps/mobile` service/storage/onboarding suites (jest) | ✅ 417 |
+
+## 2. Services — full round (the fundamentally-changed area)
+
+| Scenario | Path | Result |
+|----------|------|--------|
+| **Public canonical `eta_query`** | mobile (Sancho) → appview discovery → D2D → `sluk5` → stub_eta → card | ✅ **ETA card**: "Route 42 · On route · **5 min to 18th St (Mission)** · Bus · Open in Maps · *via SF Transit Authority Live did:plc:sluk5v…*" (Castro geocoded to lat 37.76/lng -122.43) |
+| **Multi-service / multi-listing (Scenario A)** | one provider DID (`sluk5`) hosts 3 listings: `self`=eta_query, `corner-market`=price_check, `acme-widget`=com.acme.widget_price — each `getByUri`-resolvable | ✅ |
+| **Multi-service EXEC (price_check)** | mobile → appview price_check → `corner-market` listing → D2D → **stub_price** runner (not stub_eta) → card | ✅ **price card**: "organic bananas · In stock · **$0.79** · Corner Market · *via Corner Market did:plc:sluk5v…*" |
+| **Multi-runner routing** | eta_query→stub_eta, price_check→stub_price; no cross-claim; both daemons stable | ✅ |
+| **Custom NSID (Scenario B)** | `com.acme.widget_price` | ✅ **excluded** from canonical `searchCapabilities`; **reachable** by exact-NSID `service.search` |
+| **Unlisted resolve-by-link** | `unlisted-demo` listing | ✅ `getByUri` resolves ("Hidden Link-Only ETA"); **excluded** from `service.search` |
+| **known_only — off-network** | `known-demo` listing (discoverability=known_only) | ✅ `getByUri`→NULL ("service profile unpublished from PDS") |
+| **known_only — ingress grant gate** | ungranted `service.query` to the known_only listing | ✅ **denied** — no exec task minted (daemon claim count unchanged), query expired |
+| **known_only — grant ALLOW path** | offer-mint → grant_id echo → grant-gated execute | ⏳ contract-test-verified only (offer-route mint/contact-gate/revoke, `isAuthorized`, require-grant_id, canonicalization, idempotency all pass); a faithful live ALLOW needs a 2nd reachable node |
+
+**Finding (fixed for testing):** on the first mobile eta_query attempt, the
+directory held **5** `eta_query` listings (3 named "SF Transit Authority Live",
+one of them the mobile node's **own** demo provider listing `did:plc:w6fm5b…`) and
+the brain selected a dead/duplicate listing → "No response". The live provider
+(`sluk5`) was unappealingly named "Demo ETA Provider" and lost on name-relevance.
+Republishing the live provider as the freshest "SF Transit Authority Live" fixed
+selection and the query routed correctly. The selection tool
+(`search_provider_services`) already excludes the node's own DID via
+`selfDid=ownerDid`; **recommended hardening** (not applied — held per no-commit):
+also exclude self in `find_preferred_provider`, and add a last-line guard in
+`query_service` that refuses to D2D a service.query to the node's own DID.
+
+## 3. Core functionalities via idb (dina_details §13)
+
+| Feature | Drive | Result |
+|---------|-------|--------|
+| **remember** + classify → General | "My daughter's name is Emma" / "…loves dinosaurs" | ✅ "Stored in General vault." |
+| **classify → Finance** | "My bank account is at Barclays and ends with 0102" | ✅ "Stored in Finance vault." (no approval — user-via-app = safe space) |
+| **classify → Health** | "My HbA1c is 9 percent, very high" | ✅ "Stored in Health vault." |
+| **ask** (vault retrieval) | "What does Emma like?" | ✅ "Your daughter Emma loves dinosaurs." |
+| **reminders** (explicit, NL time) | "Remind me to buy Emma a dinosaur gift tomorrow at 10am" | ✅ created (June 4, 10:00 AM), persisted to the Reminders screen, **and cross-checked PeerLens** for dinosaur-gift reviews (cross-domain synthesis) |
+
+**Finding (not fixed):** storing a birthday via **Remember** ("Emma's birthday is
+on November 7th") did **not** auto-create the lead-time reminders shown in
+dina_details §13.2 — the user-initiated Remember path stores straight to vault and
+doesn't appear to invoke the reminder-inference pipeline. The explicit
+`schedule_reminder` path works fully. Worth confirming whether auto-inference from
+remembered dates is wired on the mobile Remember path or runs only on a later
+enrichment cycle.
+
+## 4. Deferred (with reasons)
+
+| Area | Status | Reason |
+|------|--------|--------|
+| **Agent-safety / approvals** (§13.4) live drive | ⏳ deferred | Covered by automated tests this run (`workflow_approval_authz`, agent-access — pass) + documented as previously verified. Live re-drive needs the full dina-agent pairing ceremony (multi-screen pairing UI), which is flaky to script via idb. |
+| **Bluesky existing-identity onboarding** live E2E | ⏳ deferred | (1) the dev build auto-onboards as Sancho, so reaching the manual existing-identity screen needs disabling `EXPO_PUBLIC_DINA_DEV_OWNER` + a Metro restart; (2) **more importantly**, the flow runs a **PLC operation that adds Dina's signing key to the account's real `did:plc`** — for `@rspam.bsky.social` that mutates the user's **production** Bluesky identity, which should not run unattended. UI hardening + onboarding unit tests are verified; creds staged in `.env.sanity` for a supervised run. **→ Superseded by the rework below.** |
+
+---
+
+# Existing-identity rework: "link, don't take over" + Login with Bluesky (OAuth) (2026-06-03)
+
+The "Use existing identity" flow was reworked per a product decision: Dina must
+treat an existing Bluesky account as a **linked external identity**, never as its
+own signing authority. Dina mints + keeps its **own** `did:plc` (home-node
+identity); the Bluesky DID stays the person's public identity. Dina **never**
+writes to the account's repo, updates its PLC document, adds keys to it, posts as
+them, or stores their password.
+
+## A. Link-don't-take-over (replaces the PLC-mutation flow) — ✅ implemented + tested
+
+- `provisionExternalAtprotoIdentity` no longer signs/submits a PLC operation on
+  the user's DID, no longer opens a PDS session, no longer stores an app
+  password. It now: resolves `@handle → did:plc` **read-only**, mints Dina's own
+  identity (`provisionIdentity`), and stores the link in a new
+  `linked_identity_record` (`bluesky_did ↔ dina_did`, `verified` flag).
+- UI reframed (`existing_atproto_identity.tsx`): no password / PLC-token fields;
+  copy explains Dina keeps its own keys and only links the handle.
+- **Tests:** `provision.test.ts` rewritten (mints own DID, stores link, asserts
+  **no** createSession/signPlcOperation/submitPlcOperation ever hit the linked
+  account; read-only resolver only GETs the PLC `/data`); `linked_identity_record.test.ts`.
+  Typecheck 0, lint clean.
+- **Live (sim):** the reworked screen rendered correctly; the read-only resolve
+  **fail-closed** correctly on a bad handle (no identity minted). Confirmed live.
+
+## B. "Login with Bluesky" — ATProto OAuth (verified link) — ✅ built + live-validated to the consent gate
+
+Full native ATProto OAuth client (atproto.com/specs/oauth): **PAR + PKCE-S256 +
+DPoP-ES256**, all mandatory. Proves DID control (token `sub` === resolved DID);
+**no PLC mutation, no repo write, no password stored**.
+
+- **Infra:** `client-metadata.json` served by the AppView at
+  `/oauth/client-metadata.json` (client_id derived from Host; native redirect =
+  reverse-domain scheme `com.dinakernel.test-appview:/oauth/callback`). Deployed
+  + verified live on test-appview.
+- **Client:** `atproto_oauth.ts` (pure, `@noble/curves` P-256 ES256 + `@noble/hashes`,
+  no web-crypto) — discovery, PKCE, DPoP keypair+proof, DPoP-nonce retry, PAR,
+  authorize URL, token exchange, sub===DID + DPoP-token-type guards.
+  `oauth_login.ts` (RN `Linking` round-trip). UI "Login with Bluesky" button +
+  `verifiedLink` threaded into provisioning (stores `verified: true`).
+- **Tests:** `atproto_oauth.test.ts` (6) — incl. verifying the DPoP proof is a
+  valid ES256 JWT (signature checked with `p256.verify`), the PAR nonce-retry,
+  the CSRF state guard, and the sub-mismatch proof-of-control guard. **27 tests
+  total across the rework, all green; typecheck 0; lint clean.**
+- **Live (sim, real Bluesky):** drove fresh onboarding → "Link your Bluesky
+  identity" → `@rspam.bsky.social` → **Login with Bluesky** → the flow resolved
+  the handle, discovered bsky.social's auth server, and its **PAR (DPoP-ES256)
+  was accepted by the real bsky.social** — the authorize page opened in Safari
+  showing Bluesky's **real Sign-in/consent screen with `@rspam.bsky.social`
+  pre-filled**. The redirect scheme is registered (iOS "Open in Dina?" confirmed).
+- **Live (Chrome, real Bluesky — full authorization grant):** re-ran `startOAuth`
+  in Node (`demo/dina-services-demo/oauth_chrome_drive.ts`, exercising the
+  shipping `atproto_oauth.ts` with a Node handle-resolver), opened the authorize
+  URL in the user's Chrome → user signed in → **Bluesky rendered the consent for
+  our AppView `client_id` ("wants to access @rspam.bsky.social", `transition:generic`
+  scopes) → user clicked Authorize → "Login complete, redirecting"**: Bluesky
+  issued the auth `code` to `com.dinakernel.test-appview:/oauth/callback`. The
+  final token-exchange POST (code → DPoP tokens, `sub===did`) is **unit-test-proven**
+  (6 tests incl. ES256-DPoP-proof verification + the sub-match guard); it was not
+  run *live* only because the harness correctly blocks reading the one-time `code`.
+  ⇒ The whole OAuth flow is validated against production Bluesky through the
+  authorization grant.
+- **Note:** all of A + B held **uncommitted** in the working tree (standing
+  no-commit constraint). The OAuth resolver was made injectable (type-only import)
+  so `atproto_oauth.ts` is pure + Node-runnable; `oauth_login.ts` passes the RN
+  resolver. Typecheck 0, lint clean, 27 tests green.

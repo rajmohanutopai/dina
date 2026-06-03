@@ -59,9 +59,10 @@ export interface RecoverDraft {
 
 /** Final slot carried through existing AT Protocol identity onboarding. */
 export interface ExternalAtprotoDraft {
+  /** Bluesky / AT Protocol handle or did:plc to LINK (resolved read-only). */
   identifier: string;
-  appPassword: string;
-  plcToken: string;
+  /** Set when control was PROVEN via "Login with Bluesky" (OAuth). */
+  verifiedLink?: { did: string; handle: string | null; pdsUrl: string };
   passphrase: string;
   startupMode: StartupMode;
   mnemonic: string[];

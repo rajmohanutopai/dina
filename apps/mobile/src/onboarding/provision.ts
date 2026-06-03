@@ -49,26 +49,28 @@
  *     atproto PDS rejects without a separate proof-of-control).
  */
 
+import { randomBytes } from '@noble/ciphers/utils.js';
+import { hmac } from '@noble/hashes/hmac.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+
+import { PDSAccountClient } from '@dina/brain';
 import {
   defaultFetch,
   deriveRootSigningKey,
   deriveRotationKey,
-  getPublicKey,
   mnemonicToEntropy,
   publicKeyToMultibase,
   secp256k1ToDidKeyMultibase,
   wrapSeed,
 } from '@dina/core';
 import { applyDinaPlcUpdate } from '@dina/home-node';
-import { hmac } from '@noble/hashes/hmac.js';
-import { sha256 } from '@noble/hashes/sha2.js';
-import { bytesToHex } from '@noble/hashes/utils.js';
-import { randomBytes } from '@noble/ciphers/utils.js';
-import { PDSAccountClient, PDSAccountError } from '@dina/brain';
-import { seedDefaultPersonas } from './default_personas';
-import { saveWrappedSeed } from '../services/wrapped_seed_store';
-import { saveIdentitySeeds } from '../services/identity_store';
+
+
+import { unlock } from '../hooks/useUnlock';
+import { resolveExistingAtprotoIdentity } from '../services/atproto_identity';
 import { savePersistedDid, loadPersistedDid } from '../services/identity_record';
+import { saveIdentitySeeds } from '../services/identity_store';
 import {
   DEFAULT_PDS_URL,
   loadInfraPreferences,
@@ -78,10 +80,13 @@ import {
   savePdsUrl,
   saveAppViewURL,
 } from '../services/infra_preferences';
-import { unlock } from '../hooks/useUnlock';
+import { saveLinkedAtprotoIdentity } from '../services/linked_identity_record';
 import { resolveMsgBoxURL } from '../services/msgbox_wiring';
 import { persistStartupChoice } from '../services/startup_preferences';
-import { resolveExistingAtprotoIdentity } from '../services/atproto_identity';
+import { saveWrappedSeed } from '../services/wrapped_seed_store';
+
+import { seedDefaultPersonas } from './default_personas';
+
 import type { StartupMode } from './state';
 
 export type ProvisionStage =
@@ -146,18 +151,29 @@ export interface ProvisionResult {
 export interface ExternalAtprotoProvisionOptions {
   mnemonic: string[];
   passphrase: string;
-  /** Existing AT Protocol handle or did:plc. */
+  /**
+   * Existing AT Protocol handle or did:plc to LINK. Resolved read-only
+   * (`@handle → did:plc`); Dina never authenticates to or mutates it.
+   */
   identifier: string;
-  /** PDS/app password for the existing account. */
-  appPassword: string;
-  /** Optional token for PDSes that gate PLC operation signing. */
-  plcToken?: string;
   /** Override the PLC directory URL. Defaults to `https://plc.directory`. */
   plcURL?: string;
+  /** Override Dina's own PDS URL (where Dina mints its own did:plc). */
+  pdsURL?: string;
   /** Override the MsgBox endpoint. Defaults to the resolved test-mailbox URL. */
   msgboxEndpoint?: string;
   startupMode?: StartupMode;
   onProgress?: (p: ProvisionProgress) => void;
+  /** Injectable read-only resolver (tests). */
+  resolveLinked?: typeof resolveExistingAtprotoIdentity;
+  /** Injectable ISO timestamp for the link record (tests). */
+  nowIso?: string;
+  /**
+   * Pre-VERIFIED link from ATProto OAuth (proof of DID control). When
+   * present, the read-only resolve is skipped and the link is stored
+   * with `verified: true`. Set by the "Login with Bluesky" flow.
+   */
+  verifiedLink?: { did: string; handle: string | null; pdsUrl: string };
 }
 
 export const PROVISION_LABELS: Record<ProvisionStage, string> = {
@@ -328,132 +344,72 @@ export async function provisionIdentity(opts: ProvisionOptions): Promise<Provisi
 }
 
 /**
- * Existing AT Protocol identity flow. The user already owns a PDS
- * account; Dina creates only the local vault/recovery material, then
- * asks the existing PDS to sign a PLC update adding Dina's local
- * signing key and MsgBox service.
+ * Link an existing AT Protocol / Bluesky identity — WITHOUT taking it over.
+ *
+ * The existing Bluesky DID stays the person's public identity; Dina mints
+ * and keeps its OWN `did:plc` (home-node identity) via `provisionIdentity`.
+ * The Bluesky identity is resolved READ-ONLY (`@handle → did:plc`) and
+ * stored as a linked reference (`linked_identity_record`) for recognition,
+ * trust, attribution, and discovery.
+ *
+ * Dina never: authenticates to the linked account, writes to its repo,
+ * updates its PLC document, adds keys to it, publishes records as it, or
+ * asks for its PDS/app password. A future opt-in
+ * `com.dinakernel.identity.link` sidecar record can declare the link
+ * publicly — a separate, explicit step, not part of onboarding.
  */
 export async function provisionExternalAtprotoIdentity(
   opts: ExternalAtprotoProvisionOptions,
 ): Promise<ProvisionResult> {
-  const mnemonicStr = opts.mnemonic.map((w) => w.trim().toLowerCase()).join(' ');
-  const msgboxEndpoint = opts.msgboxEndpoint ?? resolveMsgBoxURL();
   const plcURL = opts.plcURL ?? process.env.EXPO_PUBLIC_DINA_PLC_URL ?? 'https://plc.directory';
+  const resolveLinked = opts.resolveLinked ?? resolveExistingAtprotoIdentity;
 
-  progress(opts.onProgress, 'deriving_seed');
-  const masterSeed = mnemonicToEntropy(mnemonicStr);
+  // 1. Establish the linked identity. If OAuth already PROVED control
+  //    (`verifiedLink`), use that — no re-resolve. Otherwise resolve the
+  //    handle READ-ONLY (`@handle → did:plc + PDS`): no session, no
+  //    password, no writes either way.
+  const link =
+    opts.verifiedLink !== undefined
+      ? { ...opts.verifiedLink, verified: true }
+      : await resolveLinked(opts.identifier, { plcURL }).then((r) => ({
+          did: r.did,
+          handle: r.handle,
+          pdsUrl: r.pdsUrl,
+          verified: false,
+        }));
 
-  progress(opts.onProgress, 'deriving_keys');
-  const signing = deriveRootSigningKey(masterSeed, 0);
-  const rotation = deriveRotationKey(masterSeed, 0);
-
-  progress(opts.onProgress, 'persisting_keys');
-  await saveIdentitySeeds({
-    signingSeed: signing.privateKey,
-    rotationSeed: rotation.privateKey,
+  // 2. Mint Dina's OWN identity on Dina's own PDS — its own did:plc, keys,
+  //    and PLC document. This is the same path as a fresh identity; the
+  //    Bluesky account is untouched.
+  const result = await provisionIdentity({
+    mnemonic: opts.mnemonic,
+    passphrase: opts.passphrase,
+    ownerName: deriveOwnerNameFromHandle(link.handle ?? link.did),
+    ...(opts.pdsURL !== undefined ? { pdsURL: opts.pdsURL } : {}),
+    ...(opts.plcURL !== undefined ? { plcURL: opts.plcURL } : {}),
+    ...(opts.msgboxEndpoint !== undefined ? { msgboxEndpoint: opts.msgboxEndpoint } : {}),
+    ...(opts.startupMode !== undefined ? { startupMode: opts.startupMode } : {}),
+    ...(opts.onProgress !== undefined ? { onProgress: opts.onProgress } : {}),
   });
 
-  progress(opts.onProgress, 'wrapping_seed');
-  const wrapped = await wrapSeed(opts.passphrase, masterSeed);
-  await saveWrappedSeed(wrapped);
+  // 3. Store the linked external identity as a reference only (verified
+  //    flag reflects whether OAuth proved DID control).
+  await saveLinkedAtprotoIdentity({
+    did: link.did,
+    handle: link.handle,
+    pdsUrl: link.pdsUrl,
+    linkedAt: opts.nowIso ?? new Date().toISOString(),
+    verified: link.verified,
+  });
 
-  progress(opts.onProgress, 'creating_pds_account');
-  const resolved = await resolveExistingAtprotoIdentity(opts.identifier, { plcURL });
-  const account = new PDSAccountClient({ pdsUrl: resolved.pdsUrl });
-  let sessionDid: string;
-  let accessJwt: string;
-  let handle: string;
-  try {
-    const session = await account.createSession({
-      identifier: resolved.handle ?? resolved.did,
-      password: opts.appPassword,
-    });
-    sessionDid = session.did;
-    accessJwt = session.accessJwt;
-    handle = session.handle;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`PDS sign-in failed: ${msg}`);
-  }
-  if (sessionDid !== resolved.did) {
-    throw new Error(
-      `PDS sign-in returned ${sessionDid}, but ${opts.identifier.trim()} resolved to ${resolved.did}`,
-    );
-  }
+  return result;
+}
 
-  progress(opts.onProgress, 'publishing_plc_update');
-  const dinaSigningDidKey = `did:key:${publicKeyToMultibase(signing.publicKey)}`;
-  const verificationMethods = {
-    ...resolved.verificationMethods,
-    dina_signing: dinaSigningDidKey,
-  };
-  const services = {
-    ...resolved.services,
-    'dina-messaging': {
-      type: 'DinaMsgBox',
-      endpoint: msgboxEndpoint,
-    },
-  };
-  const alsoKnownAs =
-    resolved.alsoKnownAs.length > 0 ? resolved.alsoKnownAs : [`at://${handle}`];
-  try {
-    const operation = await account.signPlcOperation({
-      accessJwt,
-      ...(opts.plcToken !== undefined && opts.plcToken.trim() !== ''
-        ? { token: opts.plcToken.trim() }
-        : {}),
-      rotationKeys: resolved.rotationKeys,
-      alsoKnownAs,
-      verificationMethods,
-      services,
-    });
-    await account.submitPlcOperation({
-      accessJwt,
-      operation,
-    });
-  } catch (err) {
-    if (err instanceof PDSAccountError && err.xrpcError === 'TokenRequired') {
-      try {
-        await account.requestPlcOperationSignature(accessJwt);
-      } catch {
-        /* best-effort: the original TokenRequired is the actionable error */
-      }
-      throw new Error(
-        'PDS PLC update failed: this PDS requires a PLC token. We requested a token from the PDS; enter it in the optional PLC token field and try again.',
-      );
-    }
-    const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`PDS PLC update failed: ${msg}`);
-  }
-
-  await Promise.all([
-    savePdsUrl(resolved.pdsUrl),
-    savePdsHandle(handle),
-    savePdsPassword(opts.appPassword),
-    savePdsEmail(defaultEmailForHandle(handle)),
-  ]);
-
-  progress(opts.onProgress, 'persisting_did');
-  await savePersistedDid(resolved.did);
-
-  seedDefaultPersonas();
-
-  progress(opts.onProgress, 'opening_vault');
-  const unlockResult = await unlock(opts.passphrase, wrapped);
-  if (unlockResult.step === 'failed') {
-    throw new Error(`Unlock failed after AT Protocol sign-in: ${unlockResult.error ?? 'unknown'}`);
-  }
-
-  await persistStartupChoice(opts.startupMode ?? 'manual', opts.passphrase);
-
-  progress(opts.onProgress, 'done');
-
-  const didKey = `did:key:${publicKeyToMultibase(signing.publicKey)}`;
-  return {
-    did: resolved.did,
-    didKey,
-    handle,
-  };
+/** Seed Dina's own handle from the linked Bluesky handle's local part. */
+function deriveOwnerNameFromHandle(handleOrDid: string): string {
+  if (handleOrDid.startsWith('did:')) return 'dina';
+  const local = handleOrDid.split('.')[0];
+  return local !== undefined && local.length > 0 ? local : 'dina';
 }
 
 function defaultEmailForHandle(handle: string): string {

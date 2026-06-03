@@ -15,6 +15,11 @@
  * response.
  */
 
+import { mnemonicToEntropy, deriveRotationKey, secp256k1ToDidKeyMultibase } from '@dina/core';
+
+import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
+import { generateNewMnemonic } from '../../src/hooks/useOnboarding';
+import { isUnlocked, resetUnlockState } from '../../src/hooks/useUnlock';
 import {
   hasCompletedOnboarding,
   provisionIdentity,
@@ -22,16 +27,11 @@ import {
   recoverIdentity,
   deriveHandle,
 } from '../../src/onboarding/provision';
-import { generateNewMnemonic } from '../../src/hooks/useOnboarding';
-import { loadWrappedSeed } from '../../src/services/wrapped_seed_store';
 import { loadPersistedDid } from '../../src/services/identity_record';
 import { loadIdentitySeeds } from '../../src/services/identity_store';
 import { loadInfraPreferences } from '../../src/services/infra_preferences';
-import { isUnlocked, resetUnlockState } from '../../src/hooks/useUnlock';
-import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
-import { mnemonicToEntropy } from '@dina/core';
-import { deriveRotationKey } from '@dina/core';
-import { secp256k1ToDidKeyMultibase } from '@dina/core';
+import { loadLinkedAtprotoIdentity } from '../../src/services/linked_identity_record';
+import { loadWrappedSeed } from '../../src/services/wrapped_seed_store';
 
 const TEST_PASSPHRASE = 'test-passphrase-1234';
 const TEST_OWNER = 'Raj';
@@ -303,152 +303,164 @@ describe('provisionIdentity (PDS-first)', () => {
   });
 });
 
-describe('provisionExternalAtprotoIdentity', () => {
-  it('connects an existing did:plc, asks the PDS to sign Dina PLC fields, and unlocks', async () => {
+describe('provisionExternalAtprotoIdentity (link, do not take over)', () => {
+  const LINKED_DID = 'did:plc:linkedbsky9876';
+  const LINKED_HANDLE = 'alice.bsky.social';
+  const DINA_OWN_DID = 'did:plc:dinaown555';
+
+  it('links the Bluesky identity read-only, mints Dina\'s OWN did:plc, stores the link, and NEVER touches the linked account', async () => {
     const mnemonic = generateNewMnemonic();
-    const externalPassword = 'external-app-password';
-    const handle = 'alice.bsky.social';
-    const signedOperation = {
-      type: 'plc_operation',
-      sig: 'pds-signed',
-      verificationMethods: {
-        atproto: 'did:key:zQ3atproto',
-        dina_signing: 'did:key:z6dina',
-      },
-    };
-    const stub = jest.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    // makeFetchStub serves only Dina's OWN provisioning (createAccount +
+    // audit log + PLC update POST) for DINA_OWN_DID. Anything touching the
+    // linked account would hit an unmocked URL and throw.
+    const stub = makeFetchStub({
+      mnemonic,
+      did: DINA_OWN_DID,
+      handle: 'alice.pds.test',
+      pdsURL: TEST_PDS_URL,
+      plcURL: TEST_PLC_URL,
+    });
+
+    // Inject a read-only resolver so no network call reaches the linked
+    // account at all.
+    const resolveLinked = jest.fn(async () => ({
+      did: LINKED_DID,
+      handle: LINKED_HANDLE,
+      pdsUrl: 'https://bsky.social',
+      rotationKeys: [],
+      alsoKnownAs: [`at://${LINKED_HANDLE}`],
+      verificationMethods: {},
+      services: {},
+    }));
+
+    const result = await provisionExternalAtprotoIdentity({
+      mnemonic,
+      passphrase: TEST_PASSPHRASE,
+      identifier: LINKED_HANDLE,
+      msgboxEndpoint: TEST_MSGBOX,
+      plcURL: TEST_PLC_URL,
+      pdsURL: TEST_PDS_URL,
+      resolveLinked: resolveLinked as never,
+      nowIso: '2026-06-03T00:00:00.000Z',
+    });
+
+    // Node identity is Dina's OWN did:plc — NOT the linked Bluesky did.
+    expect(result.did).toBe(DINA_OWN_DID);
+    expect(await loadPersistedDid()).toBe(DINA_OWN_DID);
+    expect(isUnlocked()).toBe(true);
+
+    // The Bluesky identity is stored as a linked reference only — and
+    // unverified (resolve-only, no OAuth proof of control).
+    expect(resolveLinked).toHaveBeenCalledTimes(1);
+    expect(await loadLinkedAtprotoIdentity()).toEqual({
+      did: LINKED_DID,
+      handle: LINKED_HANDLE,
+      pdsUrl: 'https://bsky.social',
+      linkedAt: '2026-06-03T00:00:00.000Z',
+      verified: false,
+    });
+
+    // NEVER authenticate to or mutate the linked account: no session, no
+    // PLC sign/submit, and nothing addressed to the linked DID.
+    const urls = stub.mock.calls.map((c) => String(c[0]));
+    expect(urls.some((u) => u.includes('createSession'))).toBe(false);
+    expect(urls.some((u) => u.includes('signPlcOperation'))).toBe(false);
+    expect(urls.some((u) => u.includes('submitPlcOperation'))).toBe(false);
+    expect(urls.some((u) => u.includes(LINKED_DID))).toBe(false);
+
+    // Dina's own PDS creds were saved (seed-derived, not an app password).
+    const infra = await loadInfraPreferences();
+    expect(infra.pdsUrl).toBe(TEST_PDS_URL);
+    expect(infra.pdsPassword).not.toBe('');
+  });
+
+  it('with an OAuth verifiedLink: skips the resolve, mints Dina\'s own did, stores a VERIFIED link', async () => {
+    const mnemonic = generateNewMnemonic();
+    makeFetchStub({
+      mnemonic,
+      did: DINA_OWN_DID,
+      handle: 'alice.pds.test',
+      pdsURL: TEST_PDS_URL,
+      plcURL: TEST_PLC_URL,
+    });
+    const resolveLinked = jest.fn(); // must NOT be called when verifiedLink is supplied
+
+    const result = await provisionExternalAtprotoIdentity({
+      mnemonic,
+      passphrase: TEST_PASSPHRASE,
+      identifier: LINKED_HANDLE,
+      msgboxEndpoint: TEST_MSGBOX,
+      plcURL: TEST_PLC_URL,
+      pdsURL: TEST_PDS_URL,
+      resolveLinked: resolveLinked as never,
+      nowIso: '2026-06-03T00:00:00.000Z',
+      verifiedLink: { did: LINKED_DID, handle: LINKED_HANDLE, pdsUrl: 'https://bsky.social' },
+    });
+
+    expect(resolveLinked).not.toHaveBeenCalled();
+    expect(result.did).toBe(DINA_OWN_DID);
+    expect(await loadLinkedAtprotoIdentity()).toEqual({
+      did: LINKED_DID,
+      handle: LINKED_HANDLE,
+      pdsUrl: 'https://bsky.social',
+      linkedAt: '2026-06-03T00:00:00.000Z',
+      verified: true,
+    });
+  });
+
+  it('resolves a did:plc identifier read-only via the real resolver (only a GET to the PLC /data endpoint reaches the linked account)', async () => {
+    const mnemonic = generateNewMnemonic();
+    const linkedDataUrl = `${TEST_PLC_URL}/${LINKED_DID}/data`;
+    const ownStub = makeFetchStub({
+      mnemonic,
+      did: DINA_OWN_DID,
+      handle: 'alice.pds.test',
+      pdsURL: TEST_PDS_URL,
+      plcURL: TEST_PLC_URL,
+    });
+    // Wrap the own-stub so the linked /data GET is also served, and record
+    // every URL + method to assert the linked account is only ever read.
+    const seen: { url: string; method: string }[] = [];
+    const combined = jest.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const url = String(input);
-      if (url === `${TEST_PLC_URL}/${STUB_DID}/data`) {
+      seen.push({ url, method: (init?.method ?? 'GET').toUpperCase() });
+      if (url === linkedDataUrl) {
         return new Response(
           JSON.stringify({
-            rotationKeys: ['did:key:zQ3existingRotation'],
-            alsoKnownAs: [`at://${handle}`],
+            rotationKeys: ['did:key:zQ3linkedRotation'],
+            alsoKnownAs: [`at://${LINKED_HANDLE}`],
             verificationMethods: { atproto: 'did:key:zQ3atproto' },
             services: {
-              atproto_pds: {
-                type: 'AtprotoPersonalDataServer',
-                endpoint: TEST_PDS_URL,
-              },
+              atproto_pds: { type: 'AtprotoPersonalDataServer', endpoint: 'https://bsky.social' },
             },
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
-      if (url.includes('com.atproto.server.createSession')) {
-        const body = JSON.parse(String(init?.body));
-        expect(body).toEqual({ identifier: handle, password: externalPassword });
-        return new Response(
-          JSON.stringify({
-            did: STUB_DID,
-            handle,
-            accessJwt: 'existing-access',
-            refreshJwt: 'existing-refresh',
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        );
-      }
-      if (url.includes('com.atproto.identity.signPlcOperation')) {
-        const body = JSON.parse(String(init?.body));
-        expect(body.rotationKeys).toEqual(['did:key:zQ3existingRotation']);
-        expect(body.alsoKnownAs).toEqual([`at://${handle}`]);
-        expect(body.verificationMethods.dina_signing).toMatch(/^did:key:/);
-        expect(body.services['dina-messaging']).toEqual({
-          type: 'DinaMsgBox',
-          endpoint: TEST_MSGBOX,
-        });
-        return new Response(JSON.stringify({ operation: signedOperation }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      if (url.includes('com.atproto.identity.submitPlcOperation')) {
-        const body = JSON.parse(String(init?.body));
-        expect(body).toEqual({ operation: signedOperation });
-        return new Response('{}', {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      throw new Error(`unmocked URL ${url}`);
+      return (ownStub as unknown as (i: RequestInfo | URL, n?: RequestInit) => Promise<Response>)(
+        input,
+        init,
+      );
     }) as unknown as jest.Mock<Promise<Response>, [RequestInfo | URL, RequestInit?]>;
     (globalThis as unknown as { fetch: typeof globalThis.fetch }).fetch =
-      stub as unknown as typeof globalThis.fetch;
+      combined as unknown as typeof globalThis.fetch;
 
     const result = await provisionExternalAtprotoIdentity({
       mnemonic,
       passphrase: TEST_PASSPHRASE,
-      identifier: STUB_DID,
-      appPassword: externalPassword,
+      identifier: LINKED_DID,
       msgboxEndpoint: TEST_MSGBOX,
       plcURL: TEST_PLC_URL,
+      pdsURL: TEST_PDS_URL,
     });
 
-    expect(result.did).toBe(STUB_DID);
-    expect(result.handle).toBe(handle);
-    expect(await loadPersistedDid()).toBe(STUB_DID);
-    expect(isUnlocked()).toBe(true);
+    expect(result.did).toBe(DINA_OWN_DID);
+    expect((await loadLinkedAtprotoIdentity())?.did).toBe(LINKED_DID);
 
-    const infra = await loadInfraPreferences();
-    expect(infra.pdsUrl).toBe(TEST_PDS_URL);
-    expect(infra.pdsHandle).toBe(handle);
-    expect(infra.pdsPassword).toBe(externalPassword);
-  });
-
-  it('fails loudly when the PDS refuses the PLC update', async () => {
-    const mnemonic = generateNewMnemonic();
-    const handle = 'alice.bsky.social';
-    (globalThis as unknown as { fetch: typeof globalThis.fetch }).fetch = jest.fn(
-      async (input: RequestInfo | URL): Promise<Response> => {
-        const url = String(input);
-        if (url === `${TEST_PLC_URL}/${STUB_DID}/data`) {
-          return new Response(
-            JSON.stringify({
-              rotationKeys: ['did:key:zQ3existingRotation'],
-              alsoKnownAs: [`at://${handle}`],
-              verificationMethods: { atproto: 'did:key:zQ3atproto' },
-              services: {
-                atproto_pds: {
-                  type: 'AtprotoPersonalDataServer',
-                  endpoint: TEST_PDS_URL,
-                },
-              },
-            }),
-            { status: 200, headers: { 'Content-Type': 'application/json' } },
-          );
-        }
-        if (url.includes('com.atproto.server.createSession')) {
-          return new Response(
-            JSON.stringify({
-              did: STUB_DID,
-              handle,
-              accessJwt: 'existing-access',
-              refreshJwt: 'existing-refresh',
-            }),
-            { status: 200, headers: { 'Content-Type': 'application/json' } },
-          );
-        }
-        if (url.includes('com.atproto.identity.signPlcOperation')) {
-          return new Response(
-            JSON.stringify({ error: 'TokenRequired', message: 'PLC token required' }),
-            { status: 400, headers: { 'Content-Type': 'application/json' } },
-          );
-        }
-        throw new Error(`unmocked URL ${url}`);
-      },
-    ) as unknown as typeof globalThis.fetch;
-
-    await expect(
-      provisionExternalAtprotoIdentity({
-        mnemonic,
-        passphrase: TEST_PASSPHRASE,
-        identifier: STUB_DID,
-        appPassword: 'external-app-password',
-        msgboxEndpoint: TEST_MSGBOX,
-        plcURL: TEST_PLC_URL,
-      }),
-    ).rejects.toThrow(/PDS PLC update failed/);
-    expect(await loadPersistedDid()).toBeNull();
-    expect(isUnlocked()).toBe(false);
+    // The ONLY request that touched the linked account was a GET of its
+    // public PLC /data — no writes, no session, no PLC mutation.
+    const linkedTouches = seen.filter((s) => s.url.includes(LINKED_DID));
+    expect(linkedTouches).toEqual([{ url: linkedDataUrl, method: 'GET' }]);
   });
 });
 

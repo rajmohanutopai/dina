@@ -127,6 +127,37 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
+  // ATProto OAuth client metadata (Login with Bluesky). The `client_id`
+  // MUST equal the URL this doc is fetched from, so derive it from the
+  // request Host — one route serves both test-appview and appview. The
+  // native redirect scheme is the client_id host in reverse-domain order
+  // (atproto OAuth native-client rule), e.g.
+  // test-appview.dinakernel.com → com.dinakernel.test-appview:/oauth/callback.
+  // Static, no DB, no rate-limit. See atproto.com/specs/oauth.
+  if (url.pathname === '/oauth/client-metadata.json') {
+    const host = (req.headers.host ?? `localhost:${port}`).split(',')[0].trim()
+    const reverseScheme = host.split(':')[0].split('.').reverse().join('.')
+    const clientId = `https://${host}/oauth/client-metadata.json`
+    const metadata = {
+      client_id: clientId,
+      client_name: 'Dina',
+      client_uri: `https://${host}`,
+      application_type: 'native',
+      dpop_bound_access_tokens: true,
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+      scope: 'atproto transition:generic',
+      token_endpoint_auth_method: 'none',
+      redirect_uris: [`${reverseScheme}:/oauth/callback`],
+    }
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'public, max-age=300',
+    })
+    res.end(JSON.stringify(metadata))
+    return
+  }
+
   // POST writes — test-mode-only inject endpoints. Hidden behind a
   // 404 unless `DINA_TEST_INJECT=1` AND `DINA_TEST_INJECT_TOKEN` are
   // both set on the container; the token must match

@@ -57,7 +57,7 @@ async function main(): Promise<void> {
   const config: ServiceConfig = {
     isDiscoverable: disc === 'public',
     discoverability: disc,
-    name: 'Demo ETA Provider',
+    name: process.env.DINA_SERVICE_NAME ?? 'Demo ETA Provider',
     description: `lite-stack provider — eta_query (test stub) [rev ${Date.now()}]`,
     capabilities: {
       eta_query: {

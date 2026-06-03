@@ -10,10 +10,6 @@ import React, { useState } from 'react';
 
 import { generateNewMnemonic } from '../../hooks/useOnboarding';
 import {
-  markVerificationPending,
-  markVerified,
-} from '../../services/verification_status';
-import {
   INITIAL_STEP,
   previousStep,
   type CreateDraft,
@@ -21,6 +17,10 @@ import {
   type RecoverDraft,
   type Step,
 } from '../../onboarding/state';
+import {
+  markVerificationPending,
+  markVerified,
+} from '../../services/verification_status';
 
 import { ExistingAtprotoIdentity } from './existing_atproto_identity';
 import { HandlePicker } from './handle_pick';
@@ -300,13 +300,11 @@ export function OnboardingFlow(): React.ReactElement {
       return (
         <ExistingAtprotoIdentity
           initialIdentifier={step.draft.identifier}
-          initialAppPassword={step.draft.appPassword}
-          initialPlcToken={step.draft.plcToken}
           onBack={goBack}
-          onContinue={(identifier, appPassword, plcToken) =>
+          onContinue={(identifier, verifiedLink) =>
             setStep({
               kind: 'external_passphrase',
-              draft: { ...step.draft, identifier, appPassword, plcToken },
+              draft: { ...step.draft, identifier, ...(verifiedLink ? { verifiedLink } : {}) },
             })
           }
         />
@@ -365,8 +363,7 @@ export function OnboardingFlow(): React.ReactElement {
             void markVerified();
             const complete: ExternalAtprotoDraft = {
               identifier: step.draft.identifier ?? '',
-              appPassword: step.draft.appPassword ?? '',
-              plcToken: step.draft.plcToken ?? '',
+              ...(step.draft.verifiedLink ? { verifiedLink: step.draft.verifiedLink } : {}),
               passphrase: step.draft.passphrase ?? '',
               startupMode: step.draft.startupMode ?? 'auto',
               mnemonic: step.draft.mnemonic ?? [],
@@ -377,8 +374,7 @@ export function OnboardingFlow(): React.ReactElement {
             void markVerificationPending();
             const complete: ExternalAtprotoDraft = {
               identifier: step.draft.identifier ?? '',
-              appPassword: step.draft.appPassword ?? '',
-              plcToken: step.draft.plcToken ?? '',
+              ...(step.draft.verifiedLink ? { verifiedLink: step.draft.verifiedLink } : {}),
               passphrase: step.draft.passphrase ?? '',
               startupMode: step.draft.startupMode ?? 'auto',
               mnemonic: step.draft.mnemonic ?? [],
@@ -397,9 +393,8 @@ export function OnboardingFlow(): React.ReactElement {
             mnemonic: step.draft.mnemonic,
             passphrase: step.draft.passphrase,
             identifier: step.draft.identifier,
-            appPassword: step.draft.appPassword,
-            plcToken: step.draft.plcToken,
             startupMode: step.draft.startupMode,
+            ...(step.draft.verifiedLink ? { verifiedLink: step.draft.verifiedLink } : {}),
           }}
           onDone={() => {
             /* UnlockGate subscriber handles transition. */
@@ -412,8 +407,6 @@ export function OnboardingFlow(): React.ReactElement {
                 kind: 'external_identity',
                 draft: {
                   identifier: step.draft.identifier,
-                  appPassword: step.draft.appPassword,
-                  plcToken: step.draft.plcToken,
                 },
               },
             })
