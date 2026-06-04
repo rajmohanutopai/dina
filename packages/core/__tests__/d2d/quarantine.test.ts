@@ -16,6 +16,10 @@ import {
   getQuarantined,
   getQuarantinedSenders,
   resetQuarantineState,
+  setQuarantineRepository,
+  hydrateQuarantineFromRepository,
+  type QuarantineRepository,
+  type QuarantinedMessage,
 } from '../../src/d2d/quarantine';
 
 describe('Quarantine Management', () => {
@@ -152,6 +156,66 @@ describe('Quarantine Management', () => {
       expect(senders).toHaveLength(2);
       expect(senders).toContain('did:plc:alice');
       expect(senders).toContain('did:plc:bob');
+    });
+  });
+
+  // Regression: the in-memory store empties on restart, which left the
+  // re-rendered "Unknown sender" card's Accept/Block dead (getQuarantined →
+  // null). A durable repo + hydrate must restore the SAME ids so the card's
+  // quarantineId still resolves after a "restart".
+  describe('persistence (survives restart)', () => {
+    function makeFakeRepo(): { repo: QuarantineRepository; rows: Map<string, QuarantinedMessage> } {
+      const rows = new Map<string, QuarantinedMessage>();
+      const repo: QuarantineRepository = {
+        add: (m) => void rows.set(m.id, m),
+        deleteById: (id) => void rows.delete(id),
+        deleteBySender: (did) => {
+          for (const [id, m] of rows) if (m.senderDID === did) rows.delete(id);
+        },
+        deleteExpired: (now) => {
+          for (const [id, m] of rows) if (now >= m.expiresAt) rows.delete(id);
+        },
+        listAll: () => [...rows.values()],
+        clear: () => rows.clear(),
+      };
+      return { repo, rows };
+    }
+
+    afterEach(() => setQuarantineRepository(null));
+
+    it('persists on quarantine and restores by the SAME id after a restart', () => {
+      const { repo, rows } = makeFakeRepo();
+      setQuarantineRepository(repo);
+      const msg = quarantineMessage('did:plc:stranger', 'social.update', '{"text":"hi"}');
+      expect(rows.get(msg.id)).toBeDefined();
+
+      // Simulate a restart: in-memory store gone, repo survives.
+      resetQuarantineState();
+      expect(getQuarantined(msg.id)).toBeNull();
+
+      const restored = hydrateQuarantineFromRepository();
+      expect(restored).toBe(1);
+      // The card references msg.id — it must resolve again.
+      expect(getQuarantined(msg.id)?.body).toBe('{"text":"hi"}');
+    });
+
+    it('does not collide the id counter after hydrate', () => {
+      const { repo } = makeFakeRepo();
+      setQuarantineRepository(repo);
+      const first = quarantineMessage('did:plc:a', 'social.update', '{}');
+      resetQuarantineState();
+      hydrateQuarantineFromRepository();
+      const next = quarantineMessage('did:plc:b', 'social.update', '{}');
+      expect(next.id).not.toBe(first.id);
+    });
+
+    it('un-quarantine deletes from the repo too', () => {
+      const { repo, rows } = makeFakeRepo();
+      setQuarantineRepository(repo);
+      quarantineMessage('did:plc:s', 'social.update', '{}');
+      expect(rows.size).toBe(1);
+      unquarantineSender('did:plc:s');
+      expect(rows.size).toBe(0);
     });
   });
 });

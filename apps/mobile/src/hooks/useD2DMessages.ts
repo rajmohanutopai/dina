@@ -11,6 +11,11 @@
  */
 
 import { getThread, addMessage, type ChatMessage } from '@dina/brain/chat';
+// `addContact` here is the contact-DIRECTORY version (records the person +
+// trust level) — distinct from the 1-arg egress-gate `addContact` on
+// `@dina/core/d2d`. Accepting a stranger must record the real contact so
+// resolveSender returns a positive trust on their NEXT message too.
+import { addContact } from '@dina/core';
 import {
   listQuarantined,
   getQuarantined,
@@ -19,6 +24,7 @@ import {
   deleteQuarantined,
   quarantineSize,
   resetQuarantineState,
+  receiveAndStage,
 } from '@dina/core/d2d';
 
 export interface D2DMessageItem {
@@ -85,7 +91,26 @@ export function acceptFromQuarantine(quarantineId: string): QuarantineAction {
     if (!entry) {
       return { action: 'error', senderDID: '', error: 'Quarantine entry not found' };
     }
-    unquarantineSender(entry.senderDID);
+    // 1. Record the sender as a verified contact so this message AND every
+    //    future one from them passes the trust gate (resolveSender reads
+    //    the contact directory). Idempotent — ignore "already exists".
+    try {
+      addContact(entry.senderDID, senderLabels.get(entry.senderDID) ?? shortDID(entry.senderDID), 'verified');
+    } catch {
+      // Already a contact (e.g. accepting a second held message) — fine.
+    }
+    // 2. Release every held message from this sender and re-stage it so the
+    //    drain runs the same enrichment + reminder pipeline it would have
+    //    run had the sender been a contact when the message first arrived.
+    const released = unquarantineSender(entry.senderDID);
+    for (const msg of released) {
+      const body = typeof msg.body === 'string' ? msg.body : JSON.stringify(msg.body);
+      // `isContact: true` (6th arg) is the real "known sender" gate in
+      // receiveAndStage — the `senderTrust` string only short-circuits
+      // 'blocked'. We just added them as a contact above, so force-stage
+      // (otherwise the message would re-quarantine in a loop).
+      receiveAndStage(msg.messageType, entry.senderDID, 'verified', body, msg.id, true);
+    }
     return { action: 'accepted', senderDID: entry.senderDID };
   } catch (err) {
     return {

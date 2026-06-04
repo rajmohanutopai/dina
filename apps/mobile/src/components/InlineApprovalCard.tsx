@@ -89,7 +89,7 @@ export function InlineApprovalCard({ message, approverDID }: InlineApprovalCardP
   return (
     <View style={styles.card}>
       <Text style={styles.label}>Approval needed</Text>
-      <Text style={styles.body}>
+      <Text testID={`approval-card-body-${meta.approvalId}`} style={styles.body}>
         Dina wants to read{meta.persona ? ` ${personaLabel}` : ''} to answer your question.
       </Text>
       {resolved === null && (

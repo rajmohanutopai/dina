@@ -1,0 +1,19 @@
+# Tab navigation smoke — proves every bottom tab is reachable by testID
+# (never by its visible label). Cheap, deterministic, no LLM: run it first
+# after any nav/layout change. Tab IDs live in app/_layout.tsx as
+# `tabBarButtonTestID` (+ `tabBarAccessibilityLabel`).
+appId: com.dinakernel.mobile
+---
+- launchApp
+- tapOn:
+    id: 'tab-people'
+- assertVisible:
+    id: 'people-add-contact-fab'
+- tapOn:
+    id: 'tab-network'
+- tapOn:
+    id: 'tab-activity'
+- tapOn:
+    id: 'tab-chat'
+- assertVisible:
+    id: 'index-mode-chip-remember'

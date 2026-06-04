@@ -21,6 +21,7 @@ import {
   threadLength,
   listThreads,
   deleteThread,
+  clearThreadMessages,
   resetThreads,
   subscribeToThread,
   type ChatMessage,
@@ -152,7 +153,11 @@ export function clearThread(threadId?: string): boolean {
   typingState.delete(tid);
   lastUserMessageAt.delete(tid);
   lastDinaResponseAt.delete(tid);
-  return deleteThread(tid);
+  // Use clearThreadMessages (NOT deleteThread): it keeps the live
+  // subscription so a mounted chat re-renders empty. deleteThread tears the
+  // subscription down, leaving a stale on-screen snapshot.
+  clearThreadMessages(tid);
+  return true;
 }
 
 /**

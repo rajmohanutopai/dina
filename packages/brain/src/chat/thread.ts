@@ -529,6 +529,49 @@ export function deleteThread(threadId: string): boolean {
 }
 
 /**
+ * Clear a thread's messages WITHOUT tearing down its live subscription.
+ *
+ * `deleteThread` removes the subscriber set (it's a full teardown), so a
+ * mounted chat UI is left showing a stale snapshot — its subscription is
+ * gone, so emptying the store never reaches the screen. "New chat" wants the
+ * opposite: empty the messages, persist the deletion, and NOTIFY the live
+ * subscribers so they re-render empty while staying subscribed.
+ */
+export function clearThreadMessages(threadId: string): void {
+  threads.set(threadId, []);
+  const repo = getChatMessageRepository();
+  if (repo !== null) {
+    try {
+      void repo.deleteThread(threadId).catch((err) => {
+        // eslint-disable-next-line no-console
+        console.warn('[chat] clear persist failed:', err);
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[chat] clear persist failed:', err);
+    }
+  }
+  // Subscribers ignore the payload and re-snapshot the (now empty) thread.
+  const listeners = subscribers.get(threadId);
+  if (listeners) {
+    const ping: ChatMessage = {
+      id: '',
+      threadId,
+      type: 'system',
+      content: '',
+      timestamp: Date.now(),
+    };
+    for (const fn of listeners) {
+      try {
+        fn(ping);
+      } catch {
+        /* swallow */
+      }
+    }
+  }
+}
+
+/**
  * Add a user message (convenience).
  */
 export function addUserMessage(threadId: string, content: string): ChatMessage {

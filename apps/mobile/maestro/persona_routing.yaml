@@ -1,0 +1,34 @@
+# MRS-01 — Remember routes facts to the right vault by sensitivity.
+#
+# Health + finance facts must land in their locked vaults — and because the
+# OWNER is asking in-app, no approval prompt appears (the gate is for agents).
+# Assumes the app is onboarded (no clearState).
+appId: com.dinakernel.mobile
+---
+- launchApp
+
+# Health fact → Health vault
+- tapOn:
+    id: 'index-mode-chip-remember'
+- tapOn:
+    id: 'chat-input'
+- inputText: 'My HbA1c is 9 percent, quite high'
+- tapOn:
+    id: 'send-button'
+- extendedWaitUntil:
+    visible:
+      text: '.*Stored in Health [Vv]ault.*'
+    timeout: 30000
+
+# Finance fact → Finance vault
+- tapOn:
+    id: 'index-mode-chip-remember'
+- tapOn:
+    id: 'chat-input'
+- inputText: 'My bank account is at Barclays ending 0102'
+- tapOn:
+    id: 'send-button'
+- extendedWaitUntil:
+    visible:
+      text: '.*Stored in Finance [Vv]ault.*'
+    timeout: 30000

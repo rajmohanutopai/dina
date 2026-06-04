@@ -1,0 +1,48 @@
+# Cross-platform Talk (MRS-04) — receiver (Sancho, iOS) setup.
+# Adds Alonso (Android) as a contact by DID + seeds the cold-brew memory.
+# DID passed in: -e ALONSO_DID=did:plc:...
+#
+# Selector policy: every CONTROL is selected by testID. The only `text:`
+# matches are LLM-generated payload ("Stored in <vault>") — that prose is
+# the thing under test, so it can't carry a testID.
+appId: com.dinakernel.mobile
+---
+- launchApp
+# Navigate by tab testID — never the "People" label. Text-matching the
+# tab bar is what broke the cross-platform run.
+- tapOn:
+    id: 'tab-people'
+- tapOn:
+    id: 'people-add-contact-fab'
+- extendedWaitUntil:
+    visible:
+      id: 'add-contact-handle-input'
+    timeout: 15000
+- tapOn:
+    id: 'add-contact-handle-input'
+- inputText: ${ALONSO_DID}
+- tapOn:
+    id: 'add-contact-name-input'
+- inputText: 'Alonso'
+- hideKeyboard
+- tapOn:
+    id: 'add-contact-save'
+- extendedWaitUntil:
+    visible:
+      id: 'people-contact-row-${ALONSO_DID}'
+    timeout: 45000
+- tapOn:
+    id: 'tab-chat'
+- tapOn:
+    id: 'index-mode-chip-remember'
+- tapOn:
+    id: 'chat-input'
+- inputText: 'Alonso loves cold brew coffee'
+- hideKeyboard
+- tapOn:
+    id: 'send-button'
+# LLM payload assertion — the model confirms the store in natural language.
+- extendedWaitUntil:
+    visible:
+      text: '.*Stored in .*[Vv]ault.*'
+    timeout: 30000

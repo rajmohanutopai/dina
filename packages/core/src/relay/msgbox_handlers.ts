@@ -80,6 +80,13 @@ export interface D2DInboundResult {
   senderDID?: string;
   pipelineAction?: string;
   stagingId?: string;
+  /**
+   * Populated when `pipelineAction === 'quarantined'` — the quarantine
+   * store id. Callers (MsgBox boot wiring → app) surface an "unknown
+   * sender wants to message you" review card keyed by this id so the
+   * user can accept (add as contact + release) or block.
+   */
+  quarantineId?: string;
   error?: string;
   /**
    * Populated when the receive pipeline returned `action: 'bypassed'` — the
@@ -190,6 +197,7 @@ export async function handleInboundD2D(
       senderDID: env.from_did,
       pipelineAction: result.action,
       stagingId: result.stagingId,
+      quarantineId: result.quarantineId,
       error: result.action === 'dropped' ? result.reason : undefined,
       bypassedBody: result.action === 'bypassed' ? result.bypassedBody : undefined,
       stagedBody:
@@ -197,6 +205,14 @@ export async function handleInboundD2D(
       senderCreatedTime: result.senderCreatedTime,
     };
   } catch (err) {
+    // Don't swallow inbound-D2D failures silently — a thrown resolveSender /
+    // decrypt / pipeline error otherwise vanishes with no trace, making a
+    // dropped message indistinguishable from "never arrived".
+    console.error(
+      `[d2d:handleInboundD2D] FAILED id=${env.id.slice(0, 8)} from=${env.from_did.slice(0, 24)}: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
     return { success: false, error: err instanceof Error ? err.message : 'D2D processing failed' };
   }
 }

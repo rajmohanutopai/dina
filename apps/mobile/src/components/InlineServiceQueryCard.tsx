@@ -88,8 +88,8 @@ export function InlineServiceQueryCard({
     }
     return (
       <View style={styles.card}>
-        <Text style={styles.title}>{serviceName}</Text>
-        <Text style={styles.body}>{message.content}</Text>
+        <Text testID={`service-query-card-title-${message.id}`} style={styles.title}>{serviceName}</Text>
+        <Text testID={`service-query-card-body-${message.id}`} style={styles.body}>{message.content}</Text>
         <ProviderAttribution
           serviceName={serviceName}
           providerDid={lc.providerDid}

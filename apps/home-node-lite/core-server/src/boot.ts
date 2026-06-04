@@ -68,6 +68,7 @@ import {
 import { createLogger } from './logger';
 import { createServer } from './server';
 import { bindCoreRouter } from './server/bind_core_router';
+import { registerDebugDispatch } from './server/debug_dispatch';
 import { initializeStorage } from './storage/init';
 import {
   wireWorkflowPlane,
@@ -543,6 +544,11 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       app,
       skipRoutes: [{ method: 'GET', path: HEALTHZ_PATH }],
     });
+    // Debug control channel — TEST/DEV only, off by default. Lets a test
+    // harness drive a real booted node over loopback without signing.
+    if (process.env.DINA_DEBUG_MODE === '1') {
+      registerDebugDispatch(app, coreRouter, logger);
+    }
     await app.listen({ host: config.network.host, port: config.network.port });
   } catch (err) {
     trace.push({

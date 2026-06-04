@@ -37,6 +37,10 @@ import {
   type ServiceConfig,
 } from '@dina/core';
 import type { DinaMessage } from '@dina/core/runtime';
+// `setD2DSender` registers the generic D2D egress callback for the
+// `/v1/msg/send` route. It lives on the runtime subpath (route module),
+// not the main `@dina/core` barrel.
+import { setD2DSender } from '@dina/core/runtime';
 import {
   makeSendD2D,
   makeOutboxRedeliver,
@@ -115,6 +119,16 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
     defaultMsgboxEndpoint: msgboxURL,
     providerServiceResolver,
   });
+
+  // Register the generic D2D sender so `POST /v1/msg/send` works on the
+  // lite Core. Without this the route 503s ("D2D sender not wired") and a
+  // lite Home Node — which is a *full* node, not just a service provider —
+  // can only emit `service.*` traffic through the workflow plane, never a
+  // plain `social.update` "Talk" message. Mobile wires the same callback in
+  // `bootstrap.ts`; lite was missing it. Sharing the one `sendD2D` keeps a
+  // single signed/gated/audited egress path (WS-first via the live MsgBox
+  // session, HTTP `/forward` fallback) for every message type.
+  setD2DSender(sendD2D);
 
   // issues.txt §1 — wire the durable-outbox drainer's re-delivery function
   // from the same identity, then start the periodic worker. The SQL repo +

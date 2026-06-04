@@ -1,0 +1,28 @@
+# "My identity" front-door: People shows an always-present OwnIdentityCard
+# (handle + DID); tapping it opens the full IdentityModal — handle, full
+# copyable DID, signing keys, and PLC services. The persistent answer to
+# "where do I see all my own details", visible whether or not you have
+# contacts.
+#
+# Selector note: the CARD is a testID (people-own-identity). The modal's
+# DID is asserted by TEXT, not testID — React Native <Modal> presents in a
+# separate iOS window whose accessibilityIdentifiers do NOT surface to
+# XCUITest/Maestro, but its text content does. The DID is the content under
+# test anyway, so a text match is the right tool here.
+appId: com.dinakernel.mobile
+---
+- launchApp
+- tapOn:
+    id: 'tab-people'
+# The card polls for the booted node, so allow a beat after a cold launch.
+- extendedWaitUntil:
+    visible:
+      id: 'people-own-identity'
+    timeout: 15000
+- tapOn:
+    id: 'people-own-identity'
+# Modal open → owner DID shown (rendered from the prop, no network needed).
+- extendedWaitUntil:
+    visible:
+      text: '.*did:plc:.*'
+    timeout: 15000

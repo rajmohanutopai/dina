@@ -1,0 +1,72 @@
+# Onboarding — NORMAL signup: create a brand-new Dina identity
+# (provisions a fresh test did:plc on test-pds). Automated.
+#
+# NOT automated: "Use existing AT Protocol identity" (logging into an
+# external Bluesky/ATProto account with an app password) — real external
+# credential, done by hand.
+#
+# Notes learned the hard way:
+#  - `hideKeyboard` before each Continue: the soft keyboard covers
+#    `shell-primary` after a text field.
+#  - The handle field pre-fills from the owner name, which may be taken —
+#    erase + type a unique one so re-runs don't collide on test-pds.
+#  - Skips the recovery-phrase verify via "I'll do this later"
+#    (shell-secondary), the normal fresh-provision path.
+#  - Expo DEV build: `clearState` wipes the dev-client's Metro URL → dev
+#    launcher. So no clearState here; get the app to the welcome screen
+#    first (`dina://expo-development-client/?url=http://10.0.2.2:8081`).
+#    On a RELEASE/preview build, re-add `launchApp: { clearState: true }`.
+appId: com.dinakernel.mobile
+---
+# Welcome → Get started
+- tapOn:
+    id: 'shell-primary'
+
+# Choose → Create a new Dina  (NOT the existing-AT-proto path)
+- tapOn:
+    id: 'mode-choice-card-create-a-new-dina'
+
+# Owner name
+- tapOn:
+    id: 'owner-name-input'
+- inputText: 'Alonso'
+- hideKeyboard
+- tapOn:
+    id: 'shell-primary'
+
+# Handle — erase the name-derived pre-fill, type a unique one.
+- evalScript: ${output.handle = 'alonso' + Math.floor(Math.random() * 1000000)}
+- tapOn:
+    id: 'handle-prefix-input'
+- eraseText
+- inputText: ${output.handle}
+- extendedWaitUntil:
+    visible:
+      id: 'handle-status-available'
+    timeout: 25000
+- hideKeyboard
+- tapOn:
+    id: 'shell-primary'
+
+# Passphrase (auto-unlock is the default startup mode)
+- tapOn:
+    id: 'passphrase-input'
+- inputText: 'dina-test-pass-123'
+- tapOn:
+    id: 'passphrase-confirm-input'
+- inputText: 'dina-test-pass-123'
+- hideKeyboard
+- tapOn:
+    id: 'shell-primary'
+
+# Recovery phrase: reveal → Continue, then verify → "I'll do this later"
+- tapOn:
+    id: 'shell-primary'
+- tapOn:
+    id: 'shell-secondary'
+
+# Provisioning (createAccount on test-pds + PLC) → chat home (mode chips).
+- extendedWaitUntil:
+    visible:
+      id: 'index-mode-chip-remember'
+    timeout: 90000

@@ -54,7 +54,7 @@ import { hmac } from '@noble/hashes/hmac.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
-import { PDSAccountClient } from '@dina/brain';
+import { PDSAccountClient, PDSAccountError } from '@dina/brain';
 import {
   defaultFetch,
   deriveRootSigningKey,
@@ -81,6 +81,7 @@ import {
   saveAppViewURL,
 } from '../services/infra_preferences';
 import { saveLinkedAtprotoIdentity } from '../services/linked_identity_record';
+import { setDisplayNameOverride } from '../services/display_name_override';
 import { resolveMsgBoxURL } from '../services/msgbox_wiring';
 import { persistStartupChoice } from '../services/startup_preferences';
 import { saveWrappedSeed } from '../services/wrapped_seed_store';
@@ -252,16 +253,32 @@ export async function provisionIdentity(opts: ProvisionOptions): Promise<Provisi
   const account = new PDSAccountClient({ pdsUrl: pdsURL });
   let pdsDid: string;
   try {
-    const session = await account.createAccount({
-      handle,
-      password,
-      email,
-      recoveryKey,
-    });
+    const session = await account.createAccount({ handle, password, email, recoveryKey });
     pdsDid = session.did;
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`PDS account creation failed: ${msg}`);
+    // RESUME PATH. A prior attempt may have created this account but failed
+    // before the PLC update / local persist below — so no local state was
+    // saved, yet the account + handle already exist on the PDS. The PDS
+    // password is seed-derived (deterministic), so we still own it: when
+    // createAccount reports the handle "already taken", log back in with
+    // createSession to recover the existing DID and resume the PLC step,
+    // instead of burning the handle and forcing the user to pick another.
+    // If createSession fails on auth, the handle belongs to a DIFFERENT
+    // account — surface a clear "choose another handle" error.
+    if (err instanceof PDSAccountError && err.xrpcError === 'HandleNotAvailable') {
+      try {
+        const session = await account.createSession({ identifier: handle, password });
+        pdsDid = session.did;
+      } catch (loginErr) {
+        const lmsg = loginErr instanceof Error ? loginErr.message : String(loginErr);
+        throw new Error(
+          `Handle "${handle}" is already registered to a different account — please choose another. (${lmsg})`,
+        );
+      }
+    } else {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`PDS account creation failed: ${msg}`);
+    }
   }
 
   // 5. PLC update — add `dina_signing` VM + `dina-messaging` service.
@@ -323,6 +340,17 @@ export async function provisionIdentity(opts: ProvisionOptions): Promise<Provisi
       ? Promise.resolve()
       : saveAppViewURL(infra.appViewURL),
   ]);
+
+  // Persist the name the user gave at "what should I call you" as the local
+  // display-name override, so the People identity card / contact card can
+  // show "Aalber" rather than only the handle. Skip the autopilot default.
+  if (opts.ownerName.trim() !== '' && opts.ownerName.trim() !== 'Dina') {
+    try {
+      await setDisplayNameOverride(opts.ownerName.trim());
+    } catch {
+      // Non-fatal — the card falls back to a handle-derived name.
+    }
+  }
 
   // Seed the default 4-persona set (general + work + health + finance) —
   // matches main Dina's bootstrap.

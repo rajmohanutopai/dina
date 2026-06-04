@@ -1,0 +1,36 @@
+# Cross-platform Talk (MRS-04) — sender (Alonso, Android).
+# Adds Sancho (iOS) as a contact, opens the chat, sends a Talk message.
+# DID passed in: -e SANCHO_DID=did:plc:...
+appId: com.dinakernel.mobile
+---
+- launchApp
+# Navigate by tab testID — never the "People" label.
+- tapOn:
+    id: 'tab-people'
+- tapOn:
+    id: 'people-add-contact-fab'
+- extendedWaitUntil:
+    visible:
+      id: 'add-contact-handle-input'
+    timeout: 15000
+- tapOn:
+    id: 'add-contact-handle-input'
+- inputText: ${SANCHO_DID}
+- tapOn:
+    id: 'add-contact-name-input'
+- inputText: 'Sancho'
+- hideKeyboard
+- tapOn:
+    id: 'add-contact-save'
+- extendedWaitUntil:
+    visible:
+      id: 'people-contact-row-${SANCHO_DID}'
+    timeout: 45000
+- tapOn:
+    id: 'people-contact-row-${SANCHO_DID}'
+- tapOn:
+    id: 'chat-message-input'
+- inputText: "It's Alonso — coming over tomorrow morning!"
+- hideKeyboard
+- tapOn:
+    id: 'chat-send'

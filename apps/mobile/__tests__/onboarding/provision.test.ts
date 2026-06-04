@@ -61,6 +61,9 @@ function makeFetchStub(opts: {
   handle: string;
   pdsURL: string;
   plcURL: string;
+  /** Make createAccount return HandleNotAvailable (prior attempt) so the
+   *  resume path logs in via createSession and continues. */
+  simulateHandleTaken?: boolean;
 }) {
   const masterSeed = mnemonicToEntropy(opts.mnemonic.join(' '));
   const rotation = deriveRotationKey(masterSeed, 0);
@@ -91,6 +94,26 @@ function makeFetchStub(opts: {
   const stub = jest.fn(async (input: RequestInfo | URL): Promise<Response> => {
     const url = String(input);
     if (url.includes('com.atproto.server.createAccount')) {
+      if (opts.simulateHandleTaken === true) {
+        // A prior attempt already created this account → handle taken.
+        return new Response(
+          JSON.stringify({ error: 'HandleNotAvailable', message: 'Handle already taken' }),
+          { status: 400, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          did: opts.did,
+          handle: opts.handle,
+          accessJwt: 'access-jwt',
+          refreshJwt: 'refresh-jwt',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    if (url.includes('com.atproto.server.createSession')) {
+      // Resume path: we own the account (seed-derived password), so login
+      // succeeds and returns the same DID for the PLC update to continue.
       return new Response(
         JSON.stringify({
           did: opts.did,
@@ -167,6 +190,46 @@ describe('provisionIdentity (PDS-first)', () => {
     expect(infra.pdsHandle).toBe(handle);
     expect(infra.pdsPassword).not.toBeNull();
     expect(infra.pdsUrl).toBe(TEST_PDS_URL);
+  });
+
+  it('RESUME: a taken handle from a prior attempt logs back in (createSession) and finishes — handle not burned', async () => {
+    const mnemonic = generateNewMnemonic();
+    const handle = `${deriveHandle(TEST_OWNER, TEST_PDS_URL)}`;
+    // createAccount returns HandleNotAvailable — a prior attempt already
+    // created this account but failed before the PLC update / local persist.
+    // The seed-derived PDS password lets createSession recover the existing
+    // DID, and provisioning resumes the PLC update + persist instead of
+    // forcing the user to pick a new handle.
+    const stub = makeFetchStub({
+      mnemonic,
+      did: STUB_DID,
+      handle,
+      pdsURL: TEST_PDS_URL,
+      plcURL: TEST_PLC_URL,
+      simulateHandleTaken: true,
+    });
+
+    const result = await provisionIdentity({
+      mnemonic,
+      passphrase: TEST_PASSPHRASE,
+      ownerName: TEST_OWNER,
+      handle,
+      msgboxEndpoint: TEST_MSGBOX,
+      pdsURL: TEST_PDS_URL,
+      plcURL: TEST_PLC_URL,
+    });
+
+    // Same DID recovered + full state persisted — the chosen handle is reused.
+    expect(result.did).toBe(STUB_DID);
+    expect(result.handle).toBe(handle);
+    expect(await loadPersistedDid()).toBe(STUB_DID);
+    expect(isUnlocked()).toBe(true);
+
+    const urls = stub.mock.calls.map((c) => String(c[0]));
+    expect(urls.some((u) => u.includes('com.atproto.server.createAccount'))).toBe(true);
+    expect(urls.some((u) => u.includes('com.atproto.server.createSession'))).toBe(true);
+    // PLC update ran against the recovered DID (resume completed).
+    expect(urls).toContain(`${TEST_PLC_URL}/${STUB_DID}`);
   });
 
   it('invokes progress callback for each stage in order', async () => {

@@ -1,0 +1,55 @@
+# Remember — reminder WITH and WITHOUT (replaces the standalone reminder test).
+#
+# Remember is the "liberal" reminder path: a dated/actionable fact auto-mints
+# a reminder (the agentic loop calls schedule_reminder); a plain preference
+# does NOT (it calls bind_preference). We test both:
+#   - WITHOUT: "Emma loves dinosaurs"      → stored, NO reminder card
+#   - WITH:    "Emma's birthday is Nov 7"  → reminder card, enriched w/ dinosaur
+#
+# Order matters: the negative case runs FIRST (before any reminder exists), so
+# an absent `chat-card-reminder` is unambiguous. Real-LLM — keep on the
+# on-demand lane. Assumes the app is onboarded.
+appId: com.dinakernel.mobile
+---
+- launchApp
+# Clear the chat so old reminder cards from prior runs don't pollute the
+# "no reminder card" assertion below. (Menu → New chat clears the thread
+# display only; reminders/vault are untouched.)
+- tapOn:
+    id: 'root-layout-menu'
+- tapOn:
+    id: 'root-layout-menu-row-clear-chat'
+
+# ── WITHOUT reminder: a plain preference is stored, no reminder fires ──
+- tapOn:
+    id: 'index-mode-chip-remember'
+- tapOn:
+    id: 'chat-input'
+- inputText: 'Emma loves dinosaurs'
+- tapOn:
+    id: 'send-button'
+# The remember handler drives the drain inline and surfaces any reminder
+# BEFORE the "Stored" confirmation — so once "Stored" shows, the reminder
+# decision is already made. No reminder card should be present.
+- extendedWaitUntil:
+    visible:
+      text: '.*Stored in .*[Vv]ault.*'
+    timeout: 40000
+- assertNotVisible:
+    id: 'chat-card-reminder'
+
+# ── WITH reminder: a dated event auto-creates an enriched reminder ──
+- tapOn:
+    id: 'index-mode-chip-remember'
+- tapOn:
+    id: 'chat-input'
+- inputText: "Emma's birthday is on November 7"
+- tapOn:
+    id: 'send-button'
+- extendedWaitUntil:
+    visible:
+      id: 'chat-card-reminder'
+    timeout: 60000
+# Enrichment: the reminder weaves in the dinosaur preference from above.
+- assertVisible:
+    text: '.*[Dd]inosaur.*'

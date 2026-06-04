@@ -46,12 +46,16 @@ export async function loginWithBluesky(
     ...(opts.oauthClientUrl !== undefined ? { oauthClientUrl: opts.oauthClientUrl } : {}),
   });
 
-  resetRedirect();
+  // State-scope the bridge to THIS flow so a leftover callback from a
+  // previous login attempt (surfaced by getInitialURL below) is ignored
+  // instead of consumed — see oauth_flow_store.isCallback.
+  resetRedirect(start.session.state);
   const sub = Linking.addEventListener('url', (e) => {
     deliverRedirect(e.url);
   });
   try {
     // If the app was cold-started by the redirect, the launch URL holds it.
+    // The bridge only accepts it when its `state` matches this flow.
     const initial = await Linking.getInitialURL();
     if (initial !== null) deliverRedirect(initial);
 

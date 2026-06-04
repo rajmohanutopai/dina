@@ -27,6 +27,10 @@ module.exports = {
     '^expo-notifications$': '<rootDir>/__mocks__/expo-notifications.ts',
     '^@expo/vector-icons$': '<rootDir>/__mocks__/expo-vector-icons.ts',
     '^expo-router$': '<rootDir>/__mocks__/expo-router.ts',
+    // op-sqlite is a native module that can't load in Jest; back it with a
+    // real (Node) SQLite so the unlock/persistence path is actually
+    // exercised instead of silently swallowing a load failure.
+    '^@op-engineering/op-sqlite$': '<rootDir>/__mocks__/op-sqlite.ts',
   },
   transform: {
     // `isolatedModules: true` tells ts-jest to transpile each file in

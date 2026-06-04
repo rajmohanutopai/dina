@@ -34,10 +34,12 @@ import {
 
 import type { WorkflowTask } from '@dina/core';
 
-// Activity uses `useRouter`; stub it so the notification-row taps don't crash.
+// Activity uses `useRouter` (notification-row taps) + `useLocalSearchParams`
+// (the `?filter=` deep-link tab); stub both so rendering doesn't crash.
 const pushed: string[] = [];
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: (path: string): void => void pushed.push(path) }),
+  useLocalSearchParams: () => ({}),
 }));
 
 // `storage/init` touches native side effects (op-sqlite); stub to no-ops so

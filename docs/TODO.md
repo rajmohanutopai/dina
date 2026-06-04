@@ -1,6 +1,30 @@
 # Mobile remaining
 MOBILE_FEATURES.md has currnt vs perfect
 
+# Improving Talk/Remember Enrichment
+  That's where I see real improvement room:
+     
+  1. Read-time recall is deterministic for Talk but LLM-discretionary for Ask/Remember.
+  - Talk: the drain pre-fetches vault_item_subjects → vault_items for the sender and injects them as "Known facts about the sender" before the model runs. Reliable.
+  - Ask/Remember: enrichment only happens if the model chooses to call find_person + vault_search. And a typed /remember "Emma's birthday" has no D2D originDid, so relatedMemories is empty — there's no 
+  person-keyed pre-fetch at all; it leans entirely on the model running an FTS5 content search.
+  - Improvement: the Ask planner already extracts the named entities (it returns people: ["emma"]). Run the same deterministic person-keyed pre-fetch Talk does off those resolved names, and inject the facts —
+  instead of hoping the loop calls the tools. This makes enrichment consistent across all three modes and is more precise than content search: it survives "she loves dinosaurs" (pronoun after resolution), facts
+  that don't literally contain "Emma", and it forces disambiguation when there are two Emmas (content search silently mixes them).
+  
+  2. Recall is ranked by recency, not relevance (ORDER BY created_at DESC LIMIT 5). For a birthday reminder you want gift-relevant facts ("loves dinosaurs") surfaced over "allergic to shellfish," and if a person
+  has >5 facts the relevant one can fall off the window. This bites Talk too, not just Ask/Remember — ranking the person's facts by similarity to the current context would help all three.
+  
+  3. The real foundation is write-time linking, and that's the weakest link. Talk's "deterministic" recall is only as good as vault_item_subjects being populated — and that table is filled by the LLM calling
+  link_to_person at ingestion. If linking is spotty, even Talk degrades and you fall back to content search. So the highest-leverage fix is arguably making entity-extraction + person-linking robust at write time
+  (a deterministic NER + resolve pass, not pure model discretion), because everything person-keyed downstream depends on it.
+  
+  One honest counter-point so I'm not just selling the change: the LLM-driven approach has a virtue — not every mentioned name deserves a full facts dump (noise). The right scope for deterministic pre-fetch is the
+  entities the planner flagged as subjects of the request, not every token. So it's "promote the planner's already-extracted people to a deterministic recall," not "pre-fetch on every name."
+  
+  Net: it's a reasonable design, not broken — but I'd (a) make name→person→facts a deterministic pre-fetch for Ask/Remember like Talk, (b) rank a person's facts by relevance not recency, and (c) harden write-time
+  person-linking since it underpins all of it.
+
 
 # CardSpec V2
 docs/CARD_SPEC_V2_DESIGN.md

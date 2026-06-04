@@ -425,11 +425,16 @@ export function OnboardingFlow(): React.ReactElement {
             setStep({
               kind: 'error',
               message,
+              // Retry provisioning DIRECTLY with the full verified draft —
+              // do NOT bounce back to `external_identity` (only `identifier`),
+              // which would make the user redo the Bluesky OAuth + recovery
+              // setup. `step.draft` carries verifiedLink + mnemonic +
+              // passphrase + startupMode, so the retry re-attempts the PDS /
+              // PLC steps (which now resume an already-created account) with
+              // nothing lost.
               retry: {
-                kind: 'external_identity',
-                draft: {
-                  identifier: step.draft.identifier,
-                },
+                kind: 'provisioning_external',
+                draft: step.draft,
               },
             })
           }

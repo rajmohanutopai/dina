@@ -1,0 +1,19 @@
+# Cross-platform Talk (MRS-04) — receiver assertion (Sancho, iOS).
+# After the D2D arrives + drains, an enriched reminder card appears.
+#
+# Selector policy: the card is located by testID (`chat-card-reminder`);
+# the only `text:` match is the enriched LLM payload ("cold brew") — the
+# thing under test.
+appId: com.dinakernel.mobile
+---
+- launchApp
+- tapOn:
+    id: 'tab-chat'
+# Locate the reminder CARD by testID (deterministic UI element).
+- extendedWaitUntil:
+    visible:
+      id: 'chat-card-reminder'
+    timeout: 150000
+# Assert the enrichment payload — generated prose, so matched by text.
+- assertVisible:
+    text: '.*[Cc]old ?[Bb]rew.*'

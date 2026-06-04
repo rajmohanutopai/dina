@@ -137,9 +137,9 @@ export function InlineReminderCard({ message }: InlineReminderCardProps): React.
     <View style={styles.card}>
       <View style={styles.header}>
         <Ionicons name={iconName} size={16} color={colors.textMuted} />
-        <Text style={styles.label}>{headerLabel}</Text>
+        <Text testID={`reminder-card-header-${meta.reminderId}`} style={styles.label}>{headerLabel}</Text>
       </View>
-      <Text style={styles.body}>{message.content}</Text>
+      <Text testID={`reminder-card-body-${meta.reminderId}`} style={styles.body}>{message.content}</Text>
       {meta.persona !== '' && meta.persona !== 'general' && (
         <Text style={styles.personaLine}>/{meta.persona}</Text>
       )}

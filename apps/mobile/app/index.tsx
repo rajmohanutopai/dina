@@ -33,6 +33,7 @@ import { InlineMarkdownText } from '../src/components/InlineMarkdownText';
 import { InlineMissingCapabilityCard } from '../src/components/InlineMissingCapabilityCard';
 import { InlineNudgeCard } from '../src/components/InlineNudgeCard';
 import { InlineReminderCard } from '../src/components/InlineReminderCard';
+import { InlineQuarantineCard } from '../src/components/InlineQuarantineCard';
 import { InlineReviewDraftCard } from '../src/components/InlineReviewDraftCard';
 import { InlineServiceApprovalCard } from '../src/components/InlineServiceApprovalCard';
 import { InlineServiceQueryCard } from '../src/components/InlineServiceQueryCard';
@@ -62,6 +63,7 @@ type UiMessage = ChatMessage & {
     | 'missing-capability'
     | 'ask-pending'
     | 'review-draft'
+    | 'quarantine-request'
     | 'nudge'
     | 'reminder'
     | 'briefing';
@@ -113,6 +115,11 @@ function toDisplayType(m: ChatMessage): UiMessage['displayType'] {
   // dispatch always lands on the inline component.
   if (m.type === 'dina' && lifecycle?.kind === 'review_draft') {
     return 'review-draft';
+  }
+  // Unknown-sender D2D review card — a stranger's message was
+  // quarantined; offer Add-to-contacts / Block inline.
+  if (m.type === 'dina' && lifecycle?.kind === 'quarantine_request') {
+    return 'quarantine-request';
   }
   if (m.type === 'dina') return 'dina';
   if (m.type === 'nudge') return 'nudge';
@@ -254,14 +261,24 @@ export default function ChatScreen() {
     if (item.displayType === 'ask-approval') {
       const node = getBootedNode();
       const approverDID = node?.did ?? '';
-      return <InlineApprovalCard message={item} approverDID={approverDID} />;
+      // E2E: `chat-card-<type>` wraps every inline card so tests can assert
+      // "the right card showed up for the scenario" by a stable id.
+      return (
+        <View testID="chat-card-ask-approval">
+          <InlineApprovalCard message={item} approverDID={approverDID} />
+        </View>
+      );
     }
     // Service-capability approval card — 5.65. `defaultApprovalNotifier`
     // writes these when a peer's D2D `service.query` lands and the
     // operator's review policy says "ask". Same dispatch shape, but
     // routes Approve/Deny to the orchestrator's service handlers.
     if (item.displayType === 'service-approval') {
-      return <InlineServiceApprovalCard message={item} />;
+      return (
+        <View testID="chat-card-service-approval">
+          <InlineServiceApprovalCard message={item} />
+        </View>
+      );
     }
     // F-AGENT-VAULT-GATE round-2: agent-driven vault-read approval
     // card. Posted by `installWorkflowApprovalChatBridge` when an
@@ -269,7 +286,11 @@ export default function ChatScreen() {
     // the same `approveWorkflowTask` / `cancelWorkflowTask` path the
     // Approvals tab uses (via `approvePending` / `denyPending`).
     if (item.displayType === 'vault-read-approval') {
-      return <InlineVaultReadApprovalCard message={item} />;
+      return (
+        <View testID="chat-card-vault-read-approval">
+          <InlineVaultReadApprovalCard message={item} />
+        </View>
+      );
     }
     // Lifecycle-tracked service-query message. Posted as a regular
     // 'dina' message tagged with `metadata.lifecycle.kind ===
@@ -278,10 +299,18 @@ export default function ChatScreen() {
     // lands. One message for the whole lifecycle replaces the prior
     // LLM-narrative + workflow-event-push double message.
     if (item.displayType === 'service-query') {
-      return <InlineServiceQueryCard message={item} />;
+      return (
+        <View testID="chat-card-service-query">
+          <InlineServiceQueryCard message={item} />
+        </View>
+      );
     }
     if (item.displayType === 'missing-capability') {
-      return <InlineMissingCapabilityCard message={item} />;
+      return (
+        <View testID="chat-card-missing-capability">
+          <InlineMissingCapabilityCard message={item} />
+        </View>
+      );
     }
     // review_draft card — chat-driven `/ask write a review of <X>`
     // flow. Editable sentiment / headline / body inline; Publish
@@ -289,7 +318,19 @@ export default function ChatScreen() {
     // ready → publishing → published / discarded / failed lives on
     // the lifecycle metadata, the card renders the matching variant.
     if (item.displayType === 'review-draft') {
-      return <InlineReviewDraftCard message={item} />;
+      return (
+        <View testID="chat-card-review-draft">
+          <InlineReviewDraftCard message={item} />
+        </View>
+      );
+    }
+    // Unknown-sender review card — Add to contacts / Block.
+    if (item.displayType === 'quarantine-request') {
+      return (
+        <View testID="chat-card-quarantine">
+          <InlineQuarantineCard message={item} />
+        </View>
+      );
     }
     // ask_pending placeholder — Dina hasn't returned the answer in
     // the fast-path window. Render as animated typing dots inside a
@@ -298,7 +339,7 @@ export default function ChatScreen() {
     // re-renders as a normal reply with the answer text.
     if (item.displayType === 'ask-pending') {
       return (
-        <View style={[styles.messageBubble, styles.dinaBubble]}>
+        <View testID="chat-msg-ask-pending" style={[styles.messageBubble, styles.dinaBubble]}>
           <View style={styles.typingDots}>
             <View style={[styles.typingDot, { opacity: 0.4 }]} />
             <View style={[styles.typingDot, { opacity: 0.6 }]} />
@@ -310,17 +351,29 @@ export default function ChatScreen() {
     // Proactive nudge card — 5.62. Reconnection / reminder context /
     // pending promise / health alert. Tier dot indicates urgency.
     if (item.displayType === 'nudge') {
-      return <InlineNudgeCard message={item} />;
+      return (
+        <View testID="chat-card-nudge">
+          <InlineNudgeCard message={item} />
+        </View>
+      );
     }
     // Fired reminder — 5.64. Posted by `useReminderFireWatcher` when
     // a pending reminder's due_at elapses. Mark done / Snooze 1h.
     if (item.displayType === 'reminder') {
-      return <InlineReminderCard message={item} />;
+      return (
+        <View testID="chat-card-reminder">
+          <InlineReminderCard message={item} />
+        </View>
+      );
     }
     // Daily briefing card — 5.63. Collapsible aggregate of recent
     // activity; tap-through links route per-item via expo-router.
     if (item.displayType === 'briefing') {
-      return <InlineBriefingCard message={item} />;
+      return (
+        <View testID="chat-card-briefing">
+          <InlineBriefingCard message={item} />
+        </View>
+      );
     }
 
     const isUser = item.displayType === 'user';
@@ -341,6 +394,11 @@ export default function ChatScreen() {
 
     return (
       <View
+        // E2E: a stable, type-keyed handle for transient chat bubbles so
+        // tests can assert "a Dina/user message appeared" without matching
+        // on volatile LLM text. `chat-msg-dina` / `chat-msg-user` /
+        // `chat-msg-system`. Cards use `chat-card-<type>` (see Inline*Card).
+        testID={`chat-msg-${item.displayType}`}
         style={[
           styles.messageBubble,
           isUser ? styles.userBubble : styles.dinaBubble,

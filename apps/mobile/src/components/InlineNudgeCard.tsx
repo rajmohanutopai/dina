@@ -110,8 +110,8 @@ export function InlineNudgeCard({ message, onAct }: InlineNudgeCardProps): React
         <View style={[styles.tierDot, { backgroundColor: TIER_DOT[meta.tier] }]} />
         <Text style={styles.label}>{tierLabel(meta.tier)}</Text>
       </View>
-      <Text style={styles.title}>{meta.title}</Text>
-      <Text style={styles.body}>{meta.body}</Text>
+      <Text testID={`nudge-card-title-${meta.nudgeId}`} style={styles.title}>{meta.title}</Text>
+      <Text testID={`nudge-card-body-${meta.nudgeId}`} style={styles.body}>{meta.body}</Text>
       {meta.contactName !== null && (
         <Text style={styles.contactLine} numberOfLines={1}>
           {meta.contactName}

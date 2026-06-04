@@ -75,6 +75,22 @@ export interface MsgBoxBootConfig {
     senderCreatedTime?: number;
   }) => Promise<void> | void;
   /**
+   * Called when the receive pipeline QUARANTINED an inbound D2D message
+   * — i.e. it decrypted + signature-verified fine, but the sender isn't
+   * a known contact. Surfaces an "unknown sender wants to message you"
+   * review card so the user can accept (add as contact + release the
+   * message) or block. WITHOUT this, a stranger's message decrypts,
+   * verifies, then vanishes into the quarantine store with zero UI
+   * trace — installed users reasonably conclude "messages aren't
+   * arriving". The message BODY is intentionally NOT forwarded: the
+   * user decides before seeing content (anti-spam). MT-D2D quarantine UX.
+   */
+  onQuarantinedD2D?: (info: {
+    senderDID: string;
+    messageType: string;
+    quarantineId: string;
+  }) => Promise<void> | void;
+  /**
    * Timeout for the initial WS handshake. Forwarded to
    * `connectToMsgBox`. Default 10s (matches `connectToMsgBox`).
    */
@@ -131,6 +147,27 @@ export async function bootstrapMsgBox(config: MsgBoxBootConfig): Promise<void> {
             });
           } catch {
             // UI fan-out errors are caller-owned; the vault copy is authoritative.
+          }
+        }
+        // Quarantined (unknown sender): surface a review card. Note this
+        // is NOT gated on `result.success` — quarantine is a "false"
+        // outcome (nothing staged), but the user still needs to see it.
+        if (
+          result.pipelineAction === 'quarantined' &&
+          result.quarantineId !== undefined &&
+          result.messageType !== undefined &&
+          result.senderDID !== undefined &&
+          config.onQuarantinedD2D !== undefined
+        ) {
+          try {
+            await config.onQuarantinedD2D({
+              senderDID: result.senderDID,
+              messageType: result.messageType,
+              quarantineId: result.quarantineId,
+            });
+          } catch {
+            // Review-card fan-out errors are caller-owned; the message
+            // remains in the quarantine store for later review.
           }
         }
       })

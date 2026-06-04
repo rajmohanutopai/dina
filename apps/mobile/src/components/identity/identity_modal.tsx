@@ -39,6 +39,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing, textStyles } from '../../theme';
 import { lookupPlc, type PlcLookupResult } from '../../services/plc_lookup';
+import { buildContactCard } from '../../services/contact_card';
 
 export interface IdentityModalProps {
   visible: boolean;
@@ -56,10 +57,57 @@ export interface IdentityModalProps {
    * fetch path entirely. Production callers leave this undefined.
    */
   fetchPlc?: (did: string) => Promise<PlcLookupResult>;
+  /**
+   * Whose identity this is. `self` switches the section titles to the
+   * first person ("Your handle", "Your Dina ID") and the helper copy.
+   * Defaults to `peer` (inspecting a contact).
+   */
+  variant?: 'self' | 'peer';
+  /**
+   * Friendly name (self only). When set it becomes the sheet title and is
+   * included in the shareable contact card. Falls back to the handle.
+   */
+  selfName?: string | null;
+  /**
+   * Reveal the technical sections (signing keys, network services,
+   * registration date, other names). Default false — those are
+   * infrastructure, not something a normal user wants on the People
+   * page. The Settings → Infrastructure screen opens the modal with
+   * this on.
+   */
+  showAdvanced?: boolean;
+  /**
+   * Optional callback for the "Signing keys & network services →" link
+   * shown in the friendly (non-advanced) view. People wires this to
+   * navigate to Settings → Infrastructure. Omit to hide the link.
+   */
+  onShowAdvanced?: () => void;
+}
+
+/** did:plc:xxx#dina_signing → "Dina signing key" (human, not the raw frag). */
+function keyLabel(id: string): string {
+  const frag = id.includes('#') ? id.slice(id.indexOf('#') + 1) : id;
+  const f = frag.toLowerCase();
+  if (f.includes('dina')) return 'Dina signing key';
+  if (f.includes('atproto')) return 'Account signing key';
+  return frag;
+}
+
+/** Map a PLC service entry to a plain-language name. */
+function serviceLabel(s: { type: string; id: string }): string {
+  const t = `${s.type} ${s.id}`.toLowerCase();
+  if (t.includes('msgbox') || t.includes('messaging')) return 'Messaging server';
+  if (t.includes('personaldataserver') || t.includes('atproto_pds') || t.includes('pds')) {
+    return 'Personal data server';
+  }
+  return s.type || s.id;
 }
 
 export function IdentityModal(props: IdentityModalProps): React.ReactElement {
   const { visible, onClose, did, initialHandle, fetchPlc } = props;
+  const isSelf = props.variant === 'self';
+  const showAdvanced = props.showAdvanced === true;
+  const selfName = props.selfName != null && props.selfName.trim() !== '' ? props.selfName.trim() : null;
   const [doc, setDoc] = useState<PlcLookupResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -100,6 +148,15 @@ export function IdentityModal(props: IdentityModalProps): React.ReactElement {
   }, [visible]);
 
   const headerHandle = doc?.handle ?? initialHandle ?? null;
+  // For self, lead with the friendly name; the handle moves to the subtitle.
+  const title = (isSelf ? selfName : null) ?? headerHandle ?? 'Identity';
+  const subtitle = isSelf && selfName !== null ? (headerHandle ?? did) : did;
+
+  const onShareCard = (): void => {
+    void Share.share({
+      message: buildContactCard({ name: selfName, handle: headerHandle, did }),
+    });
+  };
 
   return (
     <Modal
@@ -121,10 +178,10 @@ export function IdentityModal(props: IdentityModalProps): React.ReactElement {
           <View style={styles.headerRow}>
             <View style={styles.headerText}>
               <Text style={styles.handle} numberOfLines={1} testID="identity-modal-handle">
-                {headerHandle ?? 'Identity'}
+                {title}
               </Text>
               <Text style={styles.didCaption} numberOfLines={1} ellipsizeMode="middle">
-                {did}
+                {subtitle}
               </Text>
             </View>
             <Pressable
@@ -161,63 +218,110 @@ export function IdentityModal(props: IdentityModalProps): React.ReactElement {
 
             {doc !== null ? (
               <>
-                <FieldGroup title="Handle">
+                {/* Share the whole identity as one contact card (name +
+                    handle + DID) — paste-able into someone else's Add
+                    Contact. Self only. */}
+                {isSelf ? (
+                  <Pressable
+                    testID="identity-modal-share-card"
+                    onPress={onShareCard}
+                    accessibilityRole="button"
+                    accessibilityLabel="Share your contact card"
+                    style={({ pressed }) => [styles.shareCardBtn, pressed && { opacity: 0.7 }]}
+                  >
+                    <Ionicons name="share-outline" size={18} color={colors.white} />
+                    <Text style={styles.shareCardText}>Share contact card</Text>
+                  </Pressable>
+                ) : null}
+
+                {/* ── Essentials: the only things a normal user needs ── */}
+                <FieldGroup title={isSelf ? 'Your handle' : 'Handle'}>
                   <CopyableRow
-                    label="Canonical"
                     value={doc.handle ?? '—'}
                     copyable={doc.handle !== null}
                     testIDPrefix="identity-modal-handle-row"
                   />
-                  {doc.alsoKnownAs.length > 1
-                    ? doc.alsoKnownAs.slice(1).map((aka, i) => (
-                        <CopyableRow
-                          key={aka}
-                          label={`Also known as ${i + 2}`}
-                          value={aka.startsWith('at://') ? aka.slice('at://'.length) : aka}
-                          copyable
-                        />
-                      ))
-                    : null}
+                  <Text style={styles.fieldHelp}>
+                    {isSelf
+                      ? 'People add you using this handle.'
+                      : 'Their handle on the network.'}
+                  </Text>
                 </FieldGroup>
 
-                <FieldGroup title="DID">
+                <FieldGroup title={isSelf ? 'Your Dina ID' : 'Dina ID'}>
                   <CopyableRow
-                    label="Identifier"
                     value={doc.did}
                     copyable
                     mono
                     testIDPrefix="identity-modal-did-row"
                   />
-                  {doc.created !== null ? (
-                    <CopyableRow label="Registered" value={doc.created} copyable={false} />
-                  ) : null}
+                  <Text style={styles.fieldHelp}>
+                    {isSelf ? 'Your permanent ID. Safe to share.' : 'Their permanent ID.'}
+                  </Text>
                 </FieldGroup>
 
-                {doc.verificationMethods.length > 0 ? (
-                  <FieldGroup title="Signing keys">
-                    {doc.verificationMethods.map((vm) => (
-                      <CopyableRow
-                        key={vm.id}
-                        label={vmLabel(vm.id)}
-                        value={vm.publicKeyMultibase ?? vm.id}
-                        copyable={vm.publicKeyMultibase !== undefined}
-                        mono
-                      />
-                    ))}
-                  </FieldGroup>
-                ) : null}
+                {/* ── Technical: infrastructure, hidden unless asked for ── */}
+                {showAdvanced ? (
+                  <>
+                    {doc.alsoKnownAs.length > 1 ? (
+                      <FieldGroup title="Other names">
+                        {doc.alsoKnownAs.slice(1).map((aka, i) => (
+                          <CopyableRow
+                            key={aka}
+                            label={`Also known as ${i + 2}`}
+                            value={aka.startsWith('at://') ? aka.slice('at://'.length) : aka}
+                            copyable
+                          />
+                        ))}
+                      </FieldGroup>
+                    ) : null}
 
-                {doc.services.length > 0 ? (
-                  <FieldGroup title="Services">
-                    {doc.services.map((s) => (
-                      <CopyableRow
-                        key={s.id}
-                        label={`${s.type} ${s.id}`.trim()}
-                        value={s.serviceEndpoint}
-                        copyable={s.serviceEndpoint !== ''}
-                      />
-                    ))}
-                  </FieldGroup>
+                    {doc.created !== null ? (
+                      <FieldGroup title="Registered">
+                        <CopyableRow value={doc.created} copyable={false} />
+                      </FieldGroup>
+                    ) : null}
+
+                    {doc.verificationMethods.length > 0 ? (
+                      <FieldGroup title="Signing keys">
+                        {doc.verificationMethods.map((vm) => (
+                          <CopyableRow
+                            key={vm.id}
+                            label={keyLabel(vm.id)}
+                            value={vm.publicKeyMultibase ?? vm.id}
+                            copyable={vm.publicKeyMultibase !== undefined}
+                            mono
+                          />
+                        ))}
+                      </FieldGroup>
+                    ) : null}
+
+                    {doc.services.length > 0 ? (
+                      <FieldGroup title="Network services">
+                        {doc.services.map((s) => (
+                          <CopyableRow
+                            key={s.id}
+                            label={serviceLabel(s)}
+                            value={s.serviceEndpoint}
+                            copyable={s.serviceEndpoint !== ''}
+                          />
+                        ))}
+                      </FieldGroup>
+                    ) : null}
+                  </>
+                ) : props.onShowAdvanced !== undefined ? (
+                  <Pressable
+                    testID="identity-modal-advanced-link"
+                    onPress={props.onShowAdvanced}
+                    accessibilityRole="button"
+                    accessibilityLabel="View signing keys and network services"
+                    style={({ pressed }) => [styles.advancedLink, pressed && { opacity: 0.6 }]}
+                  >
+                    <Text style={styles.advancedLinkText}>
+                      Signing keys &amp; network services
+                    </Text>
+                    <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                  </Pressable>
                 ) : null}
               </>
             ) : null}
@@ -226,12 +330,6 @@ export function IdentityModal(props: IdentityModalProps): React.ReactElement {
       </Pressable>
     </Modal>
   );
-}
-
-function vmLabel(id: string): string {
-  // `did:plc:xxxx#dina_signing` → `dina_signing`.
-  const hash = id.indexOf('#');
-  return hash >= 0 ? id.slice(hash + 1) : id;
 }
 
 function FieldGroup({
@@ -250,7 +348,10 @@ function FieldGroup({
 }
 
 function CopyableRow(props: {
-  label: string;
+  /** Optional sub-label. Omit for single-value sections where the group
+   * title already says what the value is (avoids "Your handle → Canonical"
+   * jargon stacking). */
+  label?: string;
   value: string;
   copyable: boolean;
   mono?: boolean;
@@ -261,9 +362,18 @@ function CopyableRow(props: {
   };
   return (
     <View style={styles.fieldRow} testID={props.testIDPrefix}>
-      <Text style={styles.fieldLabel}>{props.label}</Text>
+      {props.label !== undefined ? (
+        <Text style={styles.fieldLabel}>{props.label}</Text>
+      ) : null}
       <View style={styles.fieldValueWrap}>
         <Text
+          // testID on the value Text (not just the row View) — a bare
+          // container View doesn't reliably surface in the iOS
+          // accessibility tree, so E2E can't see the row by its prefix.
+          // The Text node does, and this also lets tests read the value.
+          testID={
+            props.testIDPrefix !== undefined ? `${props.testIDPrefix}-value` : undefined
+          }
           style={[styles.fieldValue, props.mono === true && styles.fieldValueMono]}
           numberOfLines={2}
           ellipsizeMode="middle"
@@ -275,13 +385,13 @@ function CopyableRow(props: {
           <Pressable
             onPress={onCopy}
             accessibilityRole="button"
-            accessibilityLabel={`Copy ${props.label}`}
+            accessibilityLabel={`Copy ${props.label ?? 'value'}`}
             hitSlop={10}
             style={styles.copyBtn}
             testID={
               props.testIDPrefix !== undefined
                 ? `${props.testIDPrefix}-copy`
-                : `identity-modal-copy-${props.label
+                : `identity-modal-copy-${(props.label ?? 'value')
                     .toLowerCase()
                     .replace(/[^a-z0-9]+/g, '-')
                     .replace(/^-+|-+$/g, '')}`
@@ -395,6 +505,38 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   fieldValueMono: textStyles.monoSmall,
+  fieldHelp: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  shareCardBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.accent,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.md,
+  },
+  shareCardText: {
+    ...textStyles.button,
+    color: colors.white,
+  },
+  advancedLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    marginTop: spacing.sm,
+  },
+  advancedLinkText: {
+    ...textStyles.bodySmall,
+    color: colors.textSecondary,
+  },
   copyBtn: {
     padding: 2,
   },

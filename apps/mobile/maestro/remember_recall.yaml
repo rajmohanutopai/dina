@@ -1,0 +1,40 @@
+# MRS-01 + MRS-02 — Remember a fact, then recall it via Ask.
+#
+# This is the "fully integrated, like idb but reliable" E2E: Maestro drives
+# the REAL app on the sim by testID, waiting for the app to be idle between
+# steps (no pixel coordinates, no screenshot-reading, no sleep guesses).
+#
+# Assumes the app is already onboarded (no `clearState` — onboarding mints a
+# real did:plc and is exercised by its own flow). Run against a booted sim
+# with the app installed:  maestro test apps/mobile/maestro/remember_recall.yaml
+appId: com.dinakernel.mobile
+---
+- launchApp
+
+# ── MRS-01: Remember a fact → it routes to a vault ──────────────────────
+- tapOn:
+    id: 'index-mode-chip-remember'
+- tapOn:
+    id: 'chat-input'
+- inputText: 'Emma loves dinosaurs'
+- tapOn:
+    id: 'send-button'
+- extendedWaitUntil:
+    visible:
+      text: '.*Stored in .*[Vv]ault.*'
+    timeout: 30000
+
+# ── MRS-02: Ask recalls it from memory (real LLM answer) ────────────────
+- tapOn:
+    id: 'index-mode-chip-ask'
+- tapOn:
+    id: 'chat-input'
+- inputText: 'What does Emma like?'
+- tapOn:
+    id: 'send-button'
+# LLM round-trip — Maestro retries the assertion until it's visible or the
+# timeout elapses. Assert on the enrichment token, not exact wording.
+- extendedWaitUntil:
+    visible:
+      text: '.*[Dd]inosaur.*'
+    timeout: 45000

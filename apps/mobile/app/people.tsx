@@ -26,7 +26,7 @@ import {
   Share,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Link, useFocusEffect, useNavigation, useRouter } from 'expo-router';
+import { Link, useFocusEffect, useRouter } from 'expo-router';
 import {
   listContacts,
   deleteContact,
@@ -38,6 +38,9 @@ import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
 import { getProfile as getTrustProfile } from '../src/peerlens/appview_runtime';
 import { loadInfraPreferences } from '../src/services/infra_preferences';
+import { IdentityModal } from '../src/components/identity/identity_modal';
+import { getDisplayNameOverride } from '../src/services/display_name_override';
+import { buildContactCard } from '../src/services/contact_card';
 
 type SubTab = 'contacts' | 'relations';
 
@@ -45,7 +48,6 @@ export default function PeopleScreen() {
   const [subTab, setSubTab] = useState<SubTab>('contacts');
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
-  const navigation = useNavigation();
   const router = useRouter();
 
   const refresh = useCallback(() => {
@@ -63,27 +65,10 @@ export default function PeopleScreen() {
     }, [refresh]),
   );
 
-  // Pin the "+ Add contact" action into the navbar's headerRight so
-  // the in-page hero stays clean.  Using `setOptions` instead of
-  // setting it from the parent Tabs layout keeps the action local
-  // to the screen that owns it. The "+" is contact-only for now;
-  // adding a relation manually is the next milestone.
-  useEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <Pressable
-          testID="people-add-contact-header"
-          onPress={() => router.push('/add-contact' as never)}
-          accessibilityRole="button"
-          accessibilityLabel="Add a contact"
-          hitSlop={8}
-          style={{ paddingHorizontal: spacing.sm + 4, paddingVertical: 6 }}
-        >
-          <Ionicons name="add" size={26} color={colors.textPrimary} />
-        </Pressable>
-      ),
-    });
-  }, [navigation, router]);
+  // Add-contact lives in the bottom-right FAB (see below) — the single,
+  // conventional "add" target. The old top-right header "+" was removed:
+  // it collided with the Expo dev-client Tools overlay and duplicated the
+  // FAB.
 
   const onLongPress = useCallback(
     (contact: Contact) => {
@@ -120,6 +105,20 @@ export default function PeopleScreen() {
       ) : (
         <RelationsView people={people} />
       )}
+      {/* Bottom-right FAB — the conventional, always-visible "add" target.
+          The header also has a "+", but the top-right corner collides with
+          the Expo dev-client Tools overlay and is easy to miss. */}
+      {subTab === 'contacts' ? (
+        <Pressable
+          testID="people-add-contact-fab"
+          onPress={() => router.push('/add-contact' as never)}
+          accessibilityRole="button"
+          accessibilityLabel="Add a contact"
+          style={({ pressed }) => [styles.fab, pressed && { opacity: 0.85 }]}
+        >
+          <Ionicons name="add" size={30} color={colors.white} />
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -317,17 +316,43 @@ function RelationRow({ person }: { person: Person }) {
  * handle published yet, AppView unreachable, etc.) so the share
  * flow is never blocked.
  */
+/** 'aalber.test-pds.dinakernel.com' → 'Aalber'. Null/empty → null. */
+function deriveNameFromHandle(handle: string | null): string | null {
+  if (handle === null || handle.trim() === '') return null;
+  const first = handle.split('.')[0] ?? '';
+  if (first === '') return null;
+  return first.charAt(0).toUpperCase() + first.slice(1);
+}
+
 function OwnIdentityCard(): React.ReactElement | null {
   const [identity, setIdentity] = useState<{
     did: string;
     handle: string | null;
   } | null>(null);
+  // Tap the card to reveal your identity (handle + Dina ID) via the shared
+  // IdentityModal, pointed at your own DID. This is the persistent "show me
+  // my details" front-door, visible whether or not you have contacts (the
+  // card sits above the empty/list split). Signing keys + network services
+  // are intentionally NOT here — they live in Settings → Infrastructure
+  // (reached via the modal's "Signing keys & network services →" link).
+  const [showIdentity, setShowIdentity] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
-      const node = getBootedNode();
-      if (node === null) return;
+      // The node singleton may not be set the instant this card mounts
+      // (People can render mid-boot, before SQLCipher open + argon2 key
+      // derivation finish). Reading it once and bailing left the card
+      // permanently hidden whenever it lost that race — the contacts
+      // list survived only because it re-fetches via useFocusEffect.
+      // Poll briefly until the node is ready instead of giving up.
+      let node = getBootedNode();
+      for (let i = 0; node === null && i < 25 && !cancelled; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        node = getBootedNode();
+      }
+      if (node === null || cancelled) return;
       // Optimistic: render with DID immediately, replace with handle
       // when the local lookup completes. Avoids a loading spinner —
       // the DID is already useful.
@@ -369,38 +394,66 @@ function OwnIdentityCard(): React.ReactElement | null {
 
   if (identity === null) return null;
 
-  // Prefer the handle as the primary share string — it's the form
-  // the recipient will paste back into add-contact. The DID is
-  // shown smaller as a fallback identity reference.
-  const primary = identity.handle ?? identity.did;
-  const onShare = (): void => {
-    void Share.share({ message: primary });
+  // Friendly name: the local display-name override (what the user entered
+  // at "what should I call you"), falling back to the handle's first label
+  // so the card always has a human label.
+  const ownerName = getDisplayNameOverride() ?? deriveNameFromHandle(identity.handle);
+  const onShareCard = (): void => {
+    void Share.share({
+      message: buildContactCard({
+        name: ownerName,
+        handle: identity.handle,
+        did: identity.did,
+      }),
+    });
   };
 
   return (
     <View style={styles.identityCard}>
-      <View style={styles.identityText}>
-        <Text style={styles.identityLabel}>YOUR HANDLE</Text>
-        <Text style={styles.identityValue} numberOfLines={2} ellipsizeMode="middle">
-          {primary}
+      <Pressable
+        style={styles.identityText}
+        testID="people-own-identity"
+        onPress={() => setShowIdentity(true)}
+        accessibilityRole="button"
+        accessibilityLabel="View and share your contact card"
+      >
+        <Text style={styles.identityLabel}>{ownerName !== null ? 'YOU' : 'YOUR HANDLE'}</Text>
+        <Text style={styles.identityValue} numberOfLines={1} ellipsizeMode="tail">
+          {ownerName ?? identity.handle ?? identity.did}
         </Text>
-        {identity.handle === null && (
-          <Text style={styles.identityHint}>
-            No handle published yet. Share your DID for now.
+        {ownerName !== null && identity.handle !== null ? (
+          <Text style={styles.identitySub} numberOfLines={1} ellipsizeMode="middle">
+            {identity.handle}
           </Text>
-        )}
-      </View>
+        ) : null}
+        <View style={styles.identityHintRow}>
+          <Text style={styles.identityHint}>Tap to view &amp; share your contact card</Text>
+          <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+        </View>
+      </Pressable>
       <Pressable
         testID="people-share-handle"
-        onPress={onShare}
+        onPress={onShareCard}
         accessibilityRole="button"
-        accessibilityLabel="Share your handle"
+        accessibilityLabel="Share your contact card"
         hitSlop={8}
         style={({ pressed }) => [styles.shareButton, pressed && styles.shareButtonPressed]}
       >
         <Ionicons name="share-outline" size={18} color="#FFFFFF" />
         <Text style={styles.shareButtonText}>Share</Text>
       </Pressable>
+      <IdentityModal
+        visible={showIdentity}
+        onClose={() => setShowIdentity(false)}
+        did={identity.did}
+        initialHandle={identity.handle}
+        variant="self"
+        selfName={ownerName}
+        onShowAdvanced={() => {
+          setShowIdentity(false);
+          router.push('/infrastructure' as never);
+        }}
+      />
     </View>
   );
 }
@@ -466,6 +519,22 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bgPrimary,
   },
+  fab: {
+    position: 'absolute',
+    right: spacing.lg,
+    bottom: spacing.lg,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
   // UX-2: own-handle "Share" card. Lives at the top of the screen
   // above both the populated list and the empty-state hero.
   identityCard: {
@@ -491,10 +560,20 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 2,
   },
-  identityValue: textStyles.mono,
+  identityValue: { ...textStyles.bodyStrong, color: colors.textPrimary },
+  identitySub: {
+    ...textStyles.monoSmall,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+  identityHintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
   identityHint: {
     ...textStyles.caption,
-    marginTop: 2,
   },
   shareButton: {
     flexDirection: 'row',

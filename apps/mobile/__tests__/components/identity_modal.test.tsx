@@ -19,7 +19,7 @@
  */
 
 import React from 'react';
-import { render, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { IdentityModal } from '../../src/components/identity/identity_modal';
 import type { PlcLookupResult } from '../../src/services/plc_lookup';
 
@@ -51,7 +51,7 @@ function makeDoc(overrides: Partial<PlcLookupResult> = {}): PlcLookupResult {
 }
 
 describe('IdentityModal', () => {
-  it('renders the loaded card with handle, DID, signing key, and service', async () => {
+  it('renders handle + DID, and (advanced) signing key + service', async () => {
     const fetchPlc = jest.fn(async () => makeDoc());
     const { getByText, getAllByText, queryByTestId } = render(
       <IdentityModal
@@ -60,6 +60,7 @@ describe('IdentityModal', () => {
         did={DID}
         initialHandle={null}
         fetchPlc={fetchPlc}
+        showAdvanced
       />,
     );
     await waitFor(() =>
@@ -70,10 +71,34 @@ describe('IdentityModal', () => {
     expect(getAllByText('rajmohanddc9.test-pds.dinakernel.com').length).toBeGreaterThanOrEqual(2);
     // DID appears as the muted header caption AND in the DID group.
     expect(getAllByText(DID).length).toBeGreaterThanOrEqual(2);
+    // Technical sections only render with showAdvanced.
     expect(
       getByText('z6Mkiup6CNAw2w3t6adaYNv12jd81jNz9XHiExBwpugbeEBN'),
     ).toBeTruthy();
     expect(getByText('wss://test-mailbox.dinakernel.com')).toBeTruthy();
+  });
+
+  it('hides signing keys + services by default and offers the advanced link', async () => {
+    const fetchPlc = jest.fn(async () => makeDoc());
+    const onShowAdvanced = jest.fn();
+    const { getByTestId, queryByText, queryByTestId } = render(
+      <IdentityModal
+        visible
+        onClose={() => undefined}
+        did={DID}
+        initialHandle={null}
+        fetchPlc={fetchPlc}
+        variant="self"
+        onShowAdvanced={onShowAdvanced}
+      />,
+    );
+    await waitFor(() => expect(queryByTestId('identity-modal-loading')).toBeNull());
+    // Technical detail is NOT on the friendly view.
+    expect(queryByText('z6Mkiup6CNAw2w3t6adaYNv12jd81jNz9XHiExBwpugbeEBN')).toBeNull();
+    expect(queryByText('wss://test-mailbox.dinakernel.com')).toBeNull();
+    // ...but the link to reach it is, and it fires the callback.
+    fireEvent.press(getByTestId('identity-modal-advanced-link'));
+    expect(onShowAdvanced).toHaveBeenCalledTimes(1);
   });
 
   it('shows the initialHandle as the title while the fetch is in flight', () => {

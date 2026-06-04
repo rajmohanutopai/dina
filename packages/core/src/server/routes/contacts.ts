@@ -21,14 +21,15 @@
  */
 
 import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
-import { CONTACTS_BY_PREFERENCE, CONTACTS_LOOKUP, CONTACT_UPDATE } from './paths';
-import type { Contact } from '../../contacts/directory';
+import { CONTACTS_BY_PREFERENCE, CONTACTS_LOOKUP, CONTACT_UPDATE, CONTACTS_ROOT } from './paths';
+import type { Contact, TrustLevel } from '../../contacts/directory';
 import {
   findByPreferredFor as directoryFindByPreferredFor,
   setPreferredFor as directorySetPreferredFor,
   getContact,
   resolveByName as directoryResolveByName,
   findByAlias as directoryFindByAlias,
+  addContactIfNotExists as directoryAddContactIfNotExists,
 } from '../../contacts/directory';
 
 /**
@@ -61,6 +62,19 @@ export interface ContactRoutesOptions {
   resolveByName?: (name: string) => Contact | null;
   /** Resolve a contact by alias. Defaults to the module-global directory. */
   findByAlias?: (alias: string) => Contact | null;
+  /**
+   * Add a contact (idempotent). Defaults to the module-global directory.
+   * Needed so a headless / lite node can record a contact over the API —
+   * mobile does this in-process via `addContact`, but lite had no add
+   * route, so an inbound D2D from a peer you *meant* to trust still
+   * quarantined (resolveSender saw no contact). POST /v1/contacts closes
+   * that gap.
+   */
+  addContact?: (
+    did: string,
+    displayName: string,
+    trustLevel?: TrustLevel,
+  ) => { contact: Contact; created: boolean };
 }
 
 // ---------------------------------------------------------------------------
@@ -76,16 +90,19 @@ export function makeContactsHandlers(options: ContactRoutesOptions = {}): {
   findByPreference: (req: CoreRequest) => Promise<CoreResponse>;
   updateContact: (req: CoreRequest) => Promise<CoreResponse>;
   lookup: (req: CoreRequest) => Promise<CoreResponse>;
+  addContact: (req: CoreRequest) => Promise<CoreResponse>;
 } {
   const findFn = options.findByPreferredFor ?? directoryFindByPreferredFor;
   const setFn = options.setPreferredFor ?? directorySetPreferredFor;
   const getFn = options.getContact ?? getContact;
   const resolveNameFn = options.resolveByName ?? directoryResolveByName;
   const findAliasFn = options.findByAlias ?? directoryFindByAlias;
+  const addFn = options.addContact ?? directoryAddContactIfNotExists;
   return {
     findByPreference: (req) => handleFindByPreference(req, findFn),
     updateContact: (req) => handleUpdateContact(req, setFn, getFn),
     lookup: (req) => handleLookup(req, getFn, resolveNameFn, findAliasFn),
+    addContact: (req) => handleAddContact(req, addFn),
   };
 }
 
@@ -93,10 +110,11 @@ export function registerContactsRoutes(
   router: CoreRouter,
   options: ContactRoutesOptions = {},
 ): void {
-  const { findByPreference, updateContact, lookup } = makeContactsHandlers(options);
+  const { findByPreference, updateContact, lookup, addContact } = makeContactsHandlers(options);
   router.get(CONTACTS_BY_PREFERENCE, findByPreference);
   router.get(CONTACTS_LOOKUP, lookup);
   router.put(CONTACT_UPDATE, updateContact);
+  router.post(CONTACTS_ROOT, addContact);
 }
 
 // ---------------------------------------------------------------------------
@@ -203,6 +221,59 @@ async function handleUpdateContact(
   }
 
   return { status: 200, body: { status: 'updated' } };
+}
+
+// ---------------------------------------------------------------------------
+// POST /v1/contacts
+// ---------------------------------------------------------------------------
+
+/** Body shape accepted by the POST endpoint. */
+interface AddContactBody {
+  did?: unknown;
+  display_name?: unknown;
+  trust_level?: unknown;
+}
+
+const ADD_BODY_MAX_BYTES = 16 * 1024;
+
+/**
+ * Add (or no-op-return) a contact. Idempotent — re-adding an existing
+ * contact returns `{ created: false }` rather than erroring, so a seed
+ * step is safe to re-run. Defaults the trust level to `verified` because
+ * an explicit add-over-the-API is a deliberate "I know this peer" action;
+ * pass `trust_level` to override.
+ */
+async function handleAddContact(
+  req: CoreRequest,
+  addFn: (
+    did: string,
+    displayName: string,
+    trustLevel?: TrustLevel,
+  ) => { contact: Contact; created: boolean },
+): Promise<CoreResponse> {
+  if (req.rawBody.byteLength > ADD_BODY_MAX_BYTES) {
+    return jsonError(413, `body exceeds ${ADD_BODY_MAX_BYTES} bytes`);
+  }
+  if (req.body === undefined || req.body === null || typeof req.body !== 'object') {
+    return jsonError(400, 'body must be a JSON object');
+  }
+  const body = req.body as AddContactBody;
+  const did = typeof body.did === 'string' ? body.did.trim() : '';
+  if (did === '') {
+    return jsonError(400, 'did is required');
+  }
+  const displayName =
+    typeof body.display_name === 'string' && body.display_name.trim() !== ''
+      ? body.display_name.trim()
+      : did;
+  const trustLevel: TrustLevel =
+    typeof body.trust_level === 'string' ? (body.trust_level as TrustLevel) : 'verified';
+  try {
+    const { contact, created } = addFn(did, displayName, trustLevel);
+    return { status: 200, body: { contact, created } };
+  } catch (err) {
+    return jsonError(500, (err as Error).message);
+  }
 }
 
 // ---------------------------------------------------------------------------

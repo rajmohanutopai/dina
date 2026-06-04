@@ -39,11 +39,13 @@ import {
   SQLiteDeviceRepository,
   SQLiteKVRepository,
   SQLitePeopleRepository,
+  SQLiteQuarantineRepository,
   SQLiteReminderRepository,
   SQLiteStagingRepository,
   SQLiteTopicRepository,
   SQLiteVaultRepository,
   bootstrapPersistence,
+  hydrateQuarantineFromRepository,
   hydrateRemindersFromRepo,
   hydrateStagingFromRepository,
   openPersonaVault,
@@ -58,6 +60,7 @@ import {
   setKVRepository,
   setMemoryService,
   setPeopleRepository,
+  setQuarantineRepository,
   setReminderRepository,
   setStagingRepository,
   setTopicRepository,
@@ -141,6 +144,10 @@ export async function initializePersistence(
   setDeviceRepository(new SQLiteDeviceRepository(identityDB));
   setStagingRepository(new SQLiteStagingRepository(identityDB));
   hydrateStagingFromRepository();
+  // D2D quarantine: persist + re-hydrate so the "Unknown sender" card's
+  // Accept/Block survive a restart (the in-memory store empties on boot).
+  setQuarantineRepository(new SQLiteQuarantineRepository(identityDB));
+  hydrateQuarantineFromRepository();
   setChatMessageRepository(new SQLiteChatMessageRepository(identityDB));
   // People graph backs the reminder planner's sender resolver +
   // the post-publish people-graph extractor. Without it,

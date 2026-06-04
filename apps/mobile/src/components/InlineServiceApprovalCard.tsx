@@ -123,9 +123,9 @@ export function InlineServiceApprovalCard({
   return (
     <View style={styles.card}>
       <Text style={styles.label}>Service approval</Text>
-      <Text style={styles.body}>
+      <Text testID={`service-approval-card-body-${meta.taskId}`} style={styles.body}>
         <Text style={styles.requester}>{requesterLabel}</Text> wants to run{' '}
-        <Text style={styles.capability}>{meta.capability}</Text>.
+        <Text testID={`service-approval-card-capability-${meta.taskId}`} style={styles.capability}>{meta.capability}</Text>.
       </Text>
       {resolved === null && (
         <View style={styles.row}>

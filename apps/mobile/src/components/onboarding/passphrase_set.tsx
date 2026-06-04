@@ -60,6 +60,7 @@ export function PassphraseSet(props: PassphraseSetProps): React.ReactElement {
       onBack={props.onBack}
     >
       <PassphraseField
+        testID="passphrase-input"
         label="Passphrase"
         value={pp}
         onChangeText={setPp}
@@ -72,6 +73,7 @@ export function PassphraseSet(props: PassphraseSetProps): React.ReactElement {
       <View style={styles.gap} />
 
       <PassphraseField
+        testID="passphrase-confirm-input"
         label="Confirm"
         value={confirm}
         onChangeText={setConfirm}

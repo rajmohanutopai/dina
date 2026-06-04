@@ -15,6 +15,10 @@ import {
 } from '../../src/hooks/useD2DMessages';
 import { quarantineMessage, resetQuarantineState } from '../../../core/src/d2d/quarantine';
 import { resetThreads, getThread } from '../../../brain/src/chat/thread';
+import { claim, resetStagingState } from '../../../core/src/staging/service';
+import { getContact, resetContactDirectory, setPeopleRepository } from '../../../core/src';
+import { clearGatesState } from '../../../core/src/d2d/gates';
+import { makeFakePeopleRepo } from '@dina/test-harness';
 
 describe('D2D Message View Hook (6.19)', () => {
   beforeEach(() => {
@@ -59,6 +63,51 @@ describe('D2D Message View Hook (6.19)', () => {
     it('returns error for nonexistent quarantine', () => {
       const result = acceptFromQuarantine('nonexistent');
       expect(result.action).toBe('error');
+    });
+  });
+
+  // Regression contract for the two bugs the live two-Dina Talk run exposed
+  // (see project_d2d_talk_live_test / docs MRS-05):
+  //   1. acceptFromQuarantine only un-quarantined — it never recorded the
+  //      sender as a contact, so resolveSender returned 'unknown' on their
+  //      NEXT message and it re-quarantined forever.
+  //   2. The released message was re-staged WITHOUT isContact=true, so
+  //      receiveAndStage re-quarantined it (the known-sender gate is the
+  //      6th param, not the senderTrust string).
+  describe('acceptFromQuarantine — contract (records contact + releases for drain)', () => {
+    beforeEach(() => {
+      resetContactDirectory();
+      clearGatesState();
+      resetStagingState();
+      setPeopleRepository(makeFakePeopleRepo());
+    });
+
+    it('records the sender as a verified contact and re-stages the held message (not re-quarantined)', () => {
+      const sender = 'did:plc:alonsosanitycheck';
+      const q = quarantineMessage(
+        sender,
+        'social.update',
+        JSON.stringify({ text: "I'm coming over tomorrow morning" }),
+      );
+
+      const result = acceptFromQuarantine(q.id);
+      expect(result.action).toBe('accepted');
+
+      // (1) sender is now a known, VERIFIED contact — so their next message
+      // resolves to a positive trust and stages directly instead of looping
+      // back into quarantine.
+      const contact = getContact(sender);
+      expect(contact).not.toBeNull();
+      expect(contact?.trustLevel).toBe('verified');
+
+      // (1b) the held message left the quarantine store.
+      expect(getQuarantinedMessages()).toHaveLength(0);
+
+      // (2) the released message was STAGED (claimable by the drain), NOT
+      // re-quarantined. Before the isContact=true fix this list was empty.
+      const staged = claim(10);
+      expect(staged.length).toBeGreaterThanOrEqual(1);
+      expect(staged.some((s) => s.producer_id === sender)).toBe(true);
     });
   });
 

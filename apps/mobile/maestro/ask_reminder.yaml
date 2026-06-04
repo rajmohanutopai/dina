@@ -1,0 +1,50 @@
+# Ask — reminder WITH and WITHOUT.
+#
+# Ask is the "conservative" reminder path: a pure query is answered from the
+# vault with NO reminder; an explicit time-bound request DOES schedule one
+# (the /ask agentic loop has schedule_reminder — the MT-15-I2 fix). Unlike
+# Remember, Ask confirms the schedule in TEXT ("I have scheduled a reminder
+# …") rather than posting a reminder CARD — the card appears only when the
+# reminder later fires. So we assert on the response text, not the card.
+#   - WITHOUT: "What does Emma like?"          → answer, NO "scheduled" text
+#   - WITH:    "Remind me in 5 minutes to …"   → "…scheduled a reminder…"
+#
+# Run remember_reminder.yaml first so "Emma loves dinosaurs" is in the vault.
+# Real-LLM — on-demand lane.
+appId: com.dinakernel.mobile
+---
+- launchApp
+# Clear the chat so a prior "scheduled a reminder" line doesn't pollute the
+# negative assertion. (Menu → New chat — display only; vault untouched.)
+- tapOn:
+    id: 'root-layout-menu'
+- tapOn:
+    id: 'root-layout-menu-row-clear-chat'
+
+# ── WITHOUT reminder: a query is answered, nothing is scheduled ──
+- tapOn:
+    id: 'index-mode-chip-ask'
+- tapOn:
+    id: 'chat-input'
+- inputText: 'What does Emma like?'
+- tapOn:
+    id: 'send-button'
+- extendedWaitUntil:
+    visible:
+      text: '.*[Dd]inosaur.*'
+    timeout: 45000
+- assertNotVisible:
+    text: '.*[Ss]cheduled a reminder.*'
+
+# ── WITH reminder: an explicit time-bound request schedules one ──
+- tapOn:
+    id: 'index-mode-chip-ask'
+- tapOn:
+    id: 'chat-input'
+- inputText: 'Remind me in 5 minutes to test reminders'
+- tapOn:
+    id: 'send-button'
+- extendedWaitUntil:
+    visible:
+      text: '.*a reminder.*'
+    timeout: 60000

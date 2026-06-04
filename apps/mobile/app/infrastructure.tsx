@@ -25,6 +25,9 @@ import {
   saveServicesAppViewURL,
 } from '../src/services/infra_preferences';
 import { colors, radius, shadows, spacing, textStyles } from '../src/theme';
+import { Ionicons } from '@expo/vector-icons';
+import { IdentityModal } from '../src/components/identity/identity_modal';
+import { getBootedNode } from '../src/hooks/useNodeBootstrap';
 
 export default function InfrastructureScreen(): React.ReactElement {
   const [loading, setLoading] = useState(true);
@@ -33,6 +36,10 @@ export default function InfrastructureScreen(): React.ReactElement {
   const [appViewURL, setAppViewURL] = useState(DEFAULT_APPVIEW_URL);
   const [servicesAppViewURL, setServicesAppViewURL] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // Advanced identity sheet (signing keys + network services). Lives here
+  // — not on the People page — because it's infrastructure, not everyday.
+  const [showIdentity, setShowIdentity] = useState(false);
+  const ownDid = getBootedNode()?.did ?? '';
 
   useEffect(() => {
     let cancelled = false;
@@ -138,7 +145,38 @@ export default function InfrastructureScreen(): React.ReactElement {
         </View>
       </View>
 
+      {ownDid !== '' ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>IDENTITY &amp; KEYS</Text>
+          <View style={styles.card}>
+            <Pressable
+              testID="infrastructure-identity"
+              onPress={() => setShowIdentity(true)}
+              accessibilityRole="button"
+              accessibilityLabel="View your identity, signing keys, and network services"
+              style={({ pressed }) => [styles.linkRow, pressed && styles.pressed]}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.linkTitle}>Your identity, keys &amp; services</Text>
+                <Text style={styles.linkSub}>
+                  Handle, Dina ID, signing keys, and the PDS / messaging servers.
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+
       {error !== null ? <Text style={styles.error}>{error}</Text> : null}
+
+      <IdentityModal
+        visible={showIdentity}
+        onClose={() => setShowIdentity(false)}
+        did={ownDid}
+        variant="self"
+        showAdvanced
+      />
 
       <Pressable
         testID="infrastructure-save"
@@ -276,4 +314,20 @@ const styles = StyleSheet.create({
   primaryText: textStyles.button,
   pressed: { opacity: 0.7 },
   disabled: { opacity: 0.5 },
+  linkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  linkTitle: {
+    ...textStyles.bodyStrong,
+    color: colors.textPrimary,
+  },
+  linkSub: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
 });

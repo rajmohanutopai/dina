@@ -36,6 +36,8 @@ import {
 import { useRouter } from 'expo-router';
 import { addContact, getContact } from '@dina/core';
 import { getProfile as getTrustProfile } from '../src/peerlens/appview_runtime';
+import { getBootedNode } from '../src/hooks/useNodeBootstrap';
+import { parseContactCard } from '../src/services/contact_card';
 import { colors, spacing, radius, textStyles } from '../src/theme';
 
 export default function AddContactScreen() {
@@ -47,10 +49,15 @@ export default function AddContactScreen() {
 
   const submit = async (): Promise<void> => {
     setErrorText('');
-    const raw = didOrHandle.trim();
+    // Parse at submit (NOT on every keystroke — rewriting the field as the
+    // user types mangles a multi-line paste). Whatever is in the field —
+    // a bare handle, a bare DID, or a whole pasted contact card — is run
+    // through the card parser, which pulls out a clean identifier + name.
+    const parsed = parseContactCard(didOrHandle);
+    const raw = parsed.identifier.trim();
     if (raw === '') {
       setStatus('error');
-      setErrorText('Enter a DID or handle.');
+      setErrorText('Enter a DID, handle, or paste a contact card.');
       return;
     }
 
@@ -68,7 +75,19 @@ export default function AddContactScreen() {
       }
     }
 
-    if (getContact(did) !== null) {
+    // You can't be your own contact. Adding the owner's own DID collides
+    // with the owner's existing record in the people graph and wedges the
+    // save (the spinner never clears). Reject it with a clear message
+    // BEFORE any write. (People often paste their own card to test Share.)
+    const ownDid = getBootedNode()?.did ?? null;
+    if (ownDid !== null && did === ownDid) {
+      setStatus('error');
+      setErrorText("That's your own contact card. You can't add yourself.");
+      return;
+    }
+
+    const existing = getContact(did);
+    if (existing !== null) {
       setStatus('error');
       setErrorText('That DID is already in your contacts.');
       return;
@@ -81,6 +100,10 @@ export default function AddContactScreen() {
     // best-effort; on failure we fall back to the existing
     // `prettyNameFromDid` (handle-first-label or DID slice).
     let name = displayName.trim();
+    // A pasted card carries the sender's name — prefer it over a lookup.
+    if (name === '' && parsed.name != null && parsed.name.trim() !== '') {
+      name = parsed.name.trim();
+    }
     if (name === '') {
       if (raw.startsWith('did:')) {
         try {
@@ -116,15 +139,17 @@ export default function AddContactScreen() {
             helper line carries the actual instruction the user reads
             first. */}
         <Text style={styles.sub}>
-          Paste a handle (alice.test-pds.dinakernel.com) or a DID (did:plc:…).
-          Just the handle is enough — the host is the PDS.
+          Paste a contact card someone shared, or a handle
+          (alice.test-pds.dinakernel.com) or DID (did:plc:…). Just the handle
+          is enough. The host is the PDS.
         </Text>
 
-        <Text style={styles.label}>Handle or DID</Text>
+        <Text style={styles.label}>Handle, DID, or pasted card</Text>
         <TextInput
           testID="add-contact-handle-input"
           value={didOrHandle}
           onChangeText={setDidOrHandle}
+          multiline
           autoCapitalize="none"
           autoCorrect={false}
           spellCheck={false}
@@ -219,6 +244,22 @@ export default function AddContactScreen() {
  * failed last so the user can recover (e.g. typo'd handle vs.
  * unreachable PDS).
  */
+/**
+ * fetch with a hard timeout. Without this, a non-responsive PDS host
+ * leaves the "Save" spinner hung forever (there is no other way out of
+ * `resolveHandle`). On timeout the AbortError propagates like any other
+ * transport error, so the existing fallback + error handling kicks in.
+ */
+async function fetchWithTimeout(url: string, ms = 8000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function resolveHandle(handle: string): Promise<string> {
   const trimmed = handle.trim().toLowerCase();
   const dot = trimmed.indexOf('.');
@@ -235,7 +276,7 @@ async function resolveHandle(handle: string): Promise<string> {
   let xrpcError: Error | null = null;
   try {
     const xrpcUrl = `https://${pdsHost}/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(trimmed)}`;
-    const res = await fetch(xrpcUrl);
+    const res = await fetchWithTimeout(xrpcUrl);
     if (res.ok) {
       const body = (await res.json()) as { did?: string };
       if (typeof body.did === 'string' && body.did.startsWith('did:')) {
@@ -268,7 +309,7 @@ async function resolveHandle(handle: string): Promise<string> {
  */
 async function resolveViaWellKnown(handle: string): Promise<string | null> {
   const url = `https://${handle}/.well-known/atproto-did`;
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url);
   if (!res.ok) {
     // 404 / 503 / etc are not errors at this layer — the caller falls
     // back to xrpc. Throwing here would short-circuit the fallback.

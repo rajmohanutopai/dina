@@ -74,6 +74,12 @@ export {
 export type { StagingRepository } from './src/staging/repository';
 export { hydrateStagingFromRepository } from './src/staging/service';
 export {
+  SQLiteQuarantineRepository,
+  setQuarantineRepository,
+  hydrateQuarantineFromRepository,
+} from './src/d2d/quarantine';
+export type { QuarantineRepository } from './src/d2d/quarantine';
+export {
   SQLiteVaultRepository,
   resetVaultRepositories,
   setVaultRepository,

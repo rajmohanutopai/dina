@@ -243,6 +243,79 @@ describe('buildRememberRuntime', () => {
     expect(allText).toMatch(/Emma loves dinosaurs/);
   });
 
+  it('D2D arrival: renders sender context (relatedMemories) + schedules an enriched arrival reminder', async () => {
+    // For a D2D arrival the staging drain resolves the sender → person and
+    // feeds their subject-linked memories into the loop via `relatedMemories`
+    // (drain.ts → recallSenderSubjectMemories; that recall is covered by
+    // subject_recall.test). This proves the agentic loop (a) SEES that sender
+    // context and (b) schedules a reminder for the arrival, linked to the
+    // D2D item — i.e. enrichment + reminders work on the Talk/D2D path.
+    const dueAt = new Date(Date.now() + 3_600_000).toISOString();
+    let userMsgSeen = '';
+    let i = 0;
+    const provider: LLMProvider = {
+      name: 'test',
+      supportsStreaming: false,
+      supportsToolCalling: true,
+      supportsEmbedding: false,
+      async chat(messages: Array<{ role: string; content: unknown }>) {
+        const user = messages.find((m) => m.role === 'user');
+        if (user !== undefined && typeof user.content === 'string') userMsgSeen += user.content;
+        if (i++ === 0) {
+          return {
+            content: '',
+            toolCalls: [
+              { id: 'r1', name: 'route_to_persona', arguments: { persona: 'general' } },
+              {
+                id: 'r2',
+                name: 'schedule_reminder',
+                arguments: {
+                  message: 'Alonso arriving at 4pm — have a matcha latte ready',
+                  due_at: dueAt,
+                },
+              },
+            ],
+            model: 'test',
+            usage: { inputTokens: 1, outputTokens: 1 },
+            finishReason: 'tool_use' as const,
+          };
+        }
+        return {
+          content: "I'll have a matcha ready.",
+          toolCalls: [],
+          model: 'test',
+          usage: { inputTokens: 1, outputTokens: 1 },
+          finishReason: 'end' as const,
+        };
+      },
+      async *stream() {
+        throw new Error('not used');
+      },
+      async embed() {
+        throw new Error('not used');
+      },
+    };
+
+    const { run } = buildRememberRuntime({ llm: provider, personas: [{ name: 'general' }] });
+    const result = await run({
+      memoryText: "I'm coming over at 4pm",
+      sourceItemId: 'd2d-1',
+      // Exactly what the drain hands in for a D2D arrival: the sender's
+      // recalled subject memories.
+      relatedMemories: ['Alonso prefers matcha lattes'],
+    });
+
+    // Enrichment: the sender's recalled memory reached the loop's input.
+    expect(userMsgSeen).toMatch(/matcha/i);
+    // Reminder: the loop scheduled an arrival reminder, enriched with the
+    // sender context, linked to the D2D item.
+    expect(result.toolNames).toContain('schedule_reminder');
+    const reminders = listByPersona('general');
+    expect(reminders).toHaveLength(1);
+    expect(reminders[0]?.source_item_id).toBe('d2d-1');
+    expect(reminders[0]?.message).toMatch(/matcha/i);
+  });
+
   it("returns empty side effects when the LLM doesn't call any tools", async () => {
     const { provider } = scripted([{ content: 'just stored', toolCalls: [] }]);
     const { run } = buildRememberRuntime({

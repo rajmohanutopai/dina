@@ -48,6 +48,9 @@ export {
   unquarantineSender,
 } from './src/d2d/quarantine';
 export type { QuarantinedMessage } from './src/d2d/quarantine';
+// Re-staging path for accept-from-quarantine: feed a released message
+// back into the staging inbox so the drain runs enrichment + reminders.
+export { receiveAndStage } from './src/d2d/receive';
 export { DIDResolver } from './src/d2d/resolver';
 export type { ResolvedDID, ResolverConfig } from './src/d2d/resolver';
 export { getD2DSender, setD2DSender } from './src/server/routes/d2d_msg';

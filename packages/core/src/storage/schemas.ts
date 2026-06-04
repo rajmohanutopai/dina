@@ -614,6 +614,29 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         WHERE revoked_at IS NULL;
     `,
   },
+  {
+    // D2D quarantine durability — persist quarantined messages from unknown
+    // senders so the Accept/Block actions survive an app restart. Without
+    // this the in-memory quarantine store empties on boot, leaving the
+    // re-rendered "Unknown sender" card's buttons dead (getQuarantined →
+    // null). Body is held here (encrypted at rest) and never surfaced to the
+    // chat layer until the user accepts — preserving the anti-spam hide.
+    version: 11,
+    name: 'd2d_quarantine',
+    sql: `
+      CREATE TABLE IF NOT EXISTS d2d_quarantine (
+        id TEXT PRIMARY KEY,
+        sender_did TEXT NOT NULL,
+        message_type TEXT NOT NULL,
+        body TEXT NOT NULL,
+        received_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_quarantine_sender ON d2d_quarantine(sender_did);
+      CREATE INDEX IF NOT EXISTS idx_quarantine_expires ON d2d_quarantine(expires_at);
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

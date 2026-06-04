@@ -1,6 +1,6 @@
 # Manual Release Tests
 
-Last updated: 2026-06-02
+Last updated: 2026-06-04
 
 This is the current release-candidate manual checklist for the mobile app. It is intentionally clean: keep validation entries short and put long logs, screenshots, stack traces, and debugging notes in `docs/MANUAL_RELEASE_TEST_RESULTS.md` or an issue.
 
@@ -20,6 +20,63 @@ This is the current release-candidate manual checklist for the mobile app. It is
 - Test PDS, AppView, and MsgBox endpoints.
 - Paired `dina-agent` / OpenClaw container for task and agent-safety tests.
 - At least one provider Dina with service listings enabled.
+
+## Manual Release Sanity (Golden Path)
+
+**Run this section FIRST.** It is the smoke test for the nine product promises in
+`dina_details.md` plus the safety model. If every `MRS` row passes, the product is
+basically working end-to-end and it's worth running the full `MT` suite below. If an
+`MRS` row fails, stop and fix it before spending time on the granular checks — a sanity
+failure means a core promise is broken in the assembled app, which the per-component
+`MT` rows can miss (every bug we shipped past was at a *seam* between components that
+unit/stub tests couldn't see — drive the real two-party path, not a stubbed one).
+
+These are deliberately **end-to-end** and several need **two real Dinas** and/or a paired
+agent. That is expected — a promise like Talk or Services is meaningless with one node.
+
+### Two-Dina setup (needed for MRS-04, 05, 10, 11)
+
+You need two *distinct, separately-provisioned* identities on the test infra
+(`test-pds` / `test-mailbox` / `test-appview`). Pick one:
+
+- **Option A — two app installs (closest to shipping reality):** onboard the app twice —
+  e.g. iOS sim = Dina-A ("Sancho", the user under test) and Android emu (or a second iOS
+  sim) = Dina-B ("Alonso", the peer/provider). Drive A with `idb`, B with `adb`.
+- **Option B — app + lite node (engineering harness, what we use for repeatable D2D):**
+  Dina-A = the app; Dina-B = a lite `core-server` (own vault dir, `DINA_ENDPOINT_MODE=test`,
+  `DINA_PDS_PROVISION=1`, `DINA_MSGBOX_ENABLED=true`, its own `DINA_ADMIN_DID`). It
+  auto-provisions a `did:plc`, publishes `dina_signing`/`dina-messaging`, and connects to
+  MsgBox. Send a Talk message either via `makeSendD2D` (seal+sign+`/forward`) or a signed
+  `POST /v1/msg/send` (signed with B's `did:plc` **root** key — `/v1/msg/send` is a
+  brain-class route). Gotcha: the `keyfile` is the **64-byte** BIP-39 master seed, not a
+  32-byte key. See `project_d2d_talk_live_test` for the full recipe.
+
+For **Talk** (MRS-04), A and B must have **each other** as contacts (add by DID — handle
+resolution against per-account `test-pds` subdomains has no DNS). For the **stranger**
+case (MRS-05), they must NOT be contacts.
+
+### Sanity scenarios
+
+| ID | Promise (dina_details) | What to do | Pass = sanity OK | Rolls up | Validation |
+|---|---|---|---|---|---|
+| MRS-01 | 1. Remember + persona routing | `/remember My daughter Emma loves dinosaurs` (→ General); `/remember My HbA1c is 9%` (→ Health); `/remember My bank account is Barclays ending 0102` (→ Finance). | Each replies `Stored in <X> vault.` with the right vault. **No approval prompt** — the user asking via the app is trusted even for locked vaults. | MT-11,13,14 | |
+| MRS-02 | 2. Ask / cross-vault recall | `/ask What does Emma like?`; `/ask Which bank has my account?` | Answers from memory (`Emma loves dinosaurs`; `Barclays …0102`). No approval prompt for the locked vault when the **user** asks in-app. | MT-10,15 | |
+| MRS-03 | 3. Reminder + context enrichment | `/remember Emma's birthday is on Nov 7`. | Stored in General, **and Dina auto-creates reminder cards** — one ~a day before that **weaves in vault context** (e.g. "…you may want a dinosaur-themed gift" because Emma loves dinosaurs), one on the day. The reminder must NOT be a generic "Emma's birthday" with no enrichment. | MT-52 | |
+| MRS-04 | 5. Talk (D2D) + enrichment | Two-Dina, mutual contacts. On A: `/remember Alonso loves cold brew coffee`. From B (Alonso) send a Talk message: "Coming over tomorrow morning." | On A: the message surfaces, **and** a reminder is auto-created **enriched from A's vault** — e.g. "Alonso is coming over tomorrow morning — have a cold brew ready." Decrypt + signature verify happen silently; no plaintext in logs. | MT-18,19 | |
+| MRS-05 | 5. Talk safety — unknown sender | Two-Dina, A and B NOT contacts. From B send any Talk message to A. | On A's **Chat** an "Unknown sender — Add to contacts / Block" card appears (message body hidden until decided). **Add to contacts** → sender becomes a verified contact AND the held message is released + processed (enrichment/reminder runs); future messages stage directly. **Block** → dropped. The message must never silently vanish. | MT-21 | |
+| MRS-06 | 4. Task via agent | Pair `dina-agent`/OpenClaw. In Chat, give Dina a task. | Agent claims the task **through MsgBox** (never a direct connection), marks running, completes; result appears **once** in Chat/Activity. Brain itself never calls the tool/MCP directly. | MT-35,36 | |
+| MRS-07 | 6. Security — agent reads locked vault | Agent: `dina ask --session <s> "what's my blood pressure"` (Health locked). | Phone shows a `🔐 AGENT VAULT READ` approval card (Chat + Approvals, badge). Agent gets **no data** until approved. Approve → returns only the approved persona's data; same session+persona passes silently after. Deny/expire → no data. A second persona (e.g. Finance) re-prompts independently. | MT-15,38 | |
+| MRS-08 | 7. Approvals — risky agent action | Agent: `dina validate --session <s> send_email "…"` (MODERATE), `transfer_money "…"` (HIGH), `read_vault "health records"` (BLOCKED), `search "…"` (SAFE). | SAFE auto-approves; MODERATE/HIGH create a phone approval card (`pending_approval`); BLOCKED is denied outright. Approve/Deny/Approve-Once/Approve-Session behave per scope and stay in sync across Chat card + Approvals tab. | MT-37 | |
+| MRS-09 | 8. PeerLens | On Network/PeerLens, search a subject; open a detail + a reviewer; then write a review. | Results come from **AppView** (`test-appview`), not a local stub. Empty results don't crash. Publishing a review reaches PDS/AppView online, or enters the durable outbox offline and retries. | MT-58,59 | |
+| MRS-10 | 9. Services — public service E2E | Provider Dina has an active public listing (e.g. bus ETA) indexed on `test-appview`. On A: `/ask When does bus 42 reach Castro?` | A discovers the provider on AppView → sends a `service.query` D2D → provider's agent (OpenClaw/runner) computes the answer → `service.response` D2D → A renders an **ETA card** in Chat. Everything inside Dina is the real signed/relayed path; only the edge runner stands in for the real tool. | MT-29,30 | |
+| MRS-11 | 9. Services — known_only | Provider creates a `known_only` listing and issues a grant (`grant_id`, `allowed_did = A`). A invokes the service with that `grant_id`, signed as A. Then attempt the same `grant_id` from a different DID. | A's signed request is **accepted** (grant belongs to A's authenticated sender DID). A forwarded `grant_id` from any other DID is **rejected** (sender DID ≠ grant owner — possession of the number is not authority). The known_only listing does **not** appear in public AppView search. | MT-63,79 | |
+| MRS-12 | Foundational — identity | Fresh install → create a new Dina; separately, onboard an existing ATProto identity ("Login with Bluesky"). | New: `did:plc` minted on `test-pds`, 24-word phrase shown + confirmed, passphrase set, boots to Chat, MsgBox connects. Existing: links the user's Bluesky DID **read-only** — Dina keeps its **own** `did:plc` and never mutates the user's PLC doc. | MT-03,04,05 | |
+| MRS-13 | Foundational — durability + move | Kill/relaunch after data exists. Then Export → fresh install → Restore. | Relaunch does **not** re-onboard; vault, contacts, reminders, and service config survive. Export/restore round-trips real data; the archive excludes API keys, PDS password, and master seed; wrong passphrase/corrupt archive fail cleanly. | MT-06,40,41 | |
+| MRS-14 | Cross-cutting — safety invariants | Throughout the above: tail device logs; confirm the user-vs-agent gate. | No vault content, prompts, tool args, service params/results, D2D plaintext, API keys, or recovery words in device logs. **User-via-app sees every persona with no approval**; the gate applies only to external agents (`dina-agent`). | MT-21,44 | |
+
+A practical sanity pass is: MRS-01→03 on one device (≈5 min, no peer), then MRS-12/13
+(onboarding + restart), then bring up the second Dina for MRS-04/05/10/11, then the agent
+for MRS-06/07/08. MRS-14 is observed continuously, not as a separate step.
 
 ## P0 Release Gate
 

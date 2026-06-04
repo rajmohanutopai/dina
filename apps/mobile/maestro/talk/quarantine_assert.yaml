@@ -1,0 +1,33 @@
+# MRS-05 — Talk safety: unknown-sender quarantine (receiver = iOS app).
+#
+# The send-only harness (live_d2d_send_to_mobile.ts) sends a D2D from an
+# UNKNOWN lite-Core DID to the mobile app. The sender isn't a contact, so the
+# app gates it: the message body is HIDDEN and an "Unknown sender — Block /
+# Add to contacts" card appears in Chat (never silently vanishes). Accept
+# adds the sender as a contact and releases the held message.
+#
+# The quarantine store now persists (d2d_quarantine table) + re-hydrates on
+# boot, so Accept/Block work even after a restart — this flow's launchApp is
+# safe. Run AFTER the harness send.
+#
+# testIDs: chat-card-quarantine (wrapper), quarantine-accept-<id> (runtime id
+# → regex selector).
+appId: com.dinakernel.mobile
+---
+- launchApp
+- tapOn:
+    id: 'tab-chat'
+# Relay + staging take a few seconds after the harness sends.
+- extendedWaitUntil:
+    visible:
+      id: 'chat-card-quarantine'
+    timeout: 90000
+# Accept → adds the sender + releases the held message. Runtime id ⇒ regex.
+- tapOn:
+    id: 'quarantine-accept-.*'
+# The card flips to its accepted state — proof the message was released, not
+# dropped.
+- extendedWaitUntil:
+    visible:
+      text: '.*[Aa]dded to contacts.*'
+    timeout: 20000

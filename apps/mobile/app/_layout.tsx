@@ -54,6 +54,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { markNotificationRead } from '@dina/brain/notifications';
 import { UnlockGate } from '../src/components/unlock_gate';
 import { DinaWordmark } from '../src/components/DinaWordmark';
+import { clearThread } from '../src/hooks/useChatThread';
 import { useAutoLock } from '../src/hooks/useAutoLock';
 import { useNodeBootstrap } from '../src/hooks/useNodeBootstrap';
 import { useUnreadBadge } from '../src/hooks/useNotificationsBadge';
@@ -233,6 +234,7 @@ function NavMenuSheet({
   onClose,
   onSelect,
   currentPath,
+  onClearChat,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -244,6 +246,8 @@ function NavMenuSheet({
    * was a router.push to the same route, which read as broken.
    */
   currentPath: string;
+  /** Clear the current Chat thread (history only — source data is kept). */
+  onClearChat: () => void;
 }) {
   // Match by prefix so deep routes like `/vault/general` still hide
   // the Vault entry. Exact equality alone would leave Vault visible
@@ -303,6 +307,22 @@ function NavMenuSheet({
               </Text>
             </TouchableOpacity>
           ))}
+          {/* Clear the Chat thread (history only — reminders/vault are kept;
+              the cards are re-rendered chat messages, not the source data).
+              Lives at the bottom, after the feature rows. */}
+          <TouchableOpacity
+            key="action:clearChat"
+            style={navMenuStyles.row}
+            testID="root-layout-menu-row-clear-chat"
+            accessibilityRole="button"
+            accessibilityLabel="New chat (clear conversation)"
+            onPress={onClearChat}
+          >
+            <View style={{ marginRight: 14 }}>
+              <Ionicons name="create-outline" size={22} color={colors.textPrimary} />
+            </View>
+            <Text style={navMenuStyles.rowText}>New chat</Text>
+          </TouchableOpacity>
         </Pressable>
       </Pressable>
     </Modal>
@@ -683,6 +703,8 @@ export default function RootLayout() {
                 title: 'Chat',
                 headerTitle: () => <DinaHeaderTitle />,
                 tabBarIcon: ({ focused }) => <TabIcon name="Chat" focused={focused} />,
+                tabBarButtonTestID: 'tab-chat',
+                tabBarAccessibilityLabel: 'Chat tab',
               }}
             />
             <Tabs.Screen
@@ -708,6 +730,8 @@ export default function RootLayout() {
               options={{
                 title: 'People',
                 tabBarIcon: ({ focused }) => <TabIcon name="People" focused={focused} />,
+                tabBarButtonTestID: 'tab-people',
+                tabBarAccessibilityLabel: 'People tab',
               }}
             />
             <Tabs.Screen
@@ -741,6 +765,8 @@ export default function RootLayout() {
                   tabBarIcon: ({ focused: f }: { focused: boolean }) => (
                     <TabIcon name="Network" focused={f} />
                   ),
+                  tabBarButtonTestID: 'tab-network',
+                  tabBarAccessibilityLabel: 'Network tab',
                   // The trust folder has its own Stack layout
                   // (`app/peerlens/_layout.tsx`) that scopes back-navigation
                   // properly: search → subject → reviewer → back goes
@@ -833,6 +859,8 @@ export default function RootLayout() {
                 tabBarIcon: ({ focused }) => (
                   <TabIcon name="Activity" focused={focused} />
                 ),
+                tabBarButtonTestID: 'tab-activity',
+                tabBarAccessibilityLabel: 'Activity tab',
                 // Action-first badge: pending approvals first, else unread.
                 tabBarBadge: activityBadge,
               }}
@@ -1006,6 +1034,10 @@ export default function RootLayout() {
         onClose={closeMenu}
         onSelect={handleMenuSelect}
         currentPath={pathname}
+        onClearChat={() => {
+          closeMenu();
+          clearThread('main');
+        }}
       />
     </View>
   );

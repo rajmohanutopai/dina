@@ -1051,6 +1051,30 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
               ...(senderCreatedTime !== undefined ? { timestamp: senderCreatedTime } : {}),
             });
           },
+          // A stranger's message decrypted + verified but isn't from a
+          // contact, so the pipeline quarantined it. Surface a review card
+          // in the main chat thread so the message doesn't silently vanish
+          // — the user taps "Add to contacts" (accept + release + drain) or
+          // "Block". The body is intentionally withheld until they decide.
+          onQuarantinedD2D: ({ senderDID, messageType, quarantineId }) => {
+            addMessage(
+              'main',
+              'dina',
+              `Someone who isn't in your contacts wants to message you.`,
+              {
+                metadata: {
+                  source: 'd2d',
+                  senderDID,
+                  lifecycle: {
+                    kind: 'quarantine_request',
+                    quarantineId,
+                    senderDID,
+                    messageType,
+                  },
+                },
+              },
+            );
+          },
         };
         // MsgBox handshake failures are soft — a dev install with no
         // internet, a transient relay blip, or a rejected did:key should
