@@ -45,12 +45,6 @@ import { LLMRouter, RoutedLLMProvider } from '../llm/router_dispatch';
 import { registerPersonLinkProvider } from '../person/linking';
 import { registerIdentityExtractor } from '../pipeline/identity_extraction';
 import {
-  registerReminderLLM,
-  registerReminderQueryExpander,
-  type QueryExpansionInput,
-} from '../pipeline/reminder_planner';
-import { REMINDER_QUERY_EXPANSION } from '../llm/prompts';
-import {
   createGeocodeTool,
   createSearchCapabilitiesTool,
   createSearchProviderServicesTool,
@@ -246,21 +240,11 @@ export function buildAgenticAskPipeline(
     }),
   );
 
-  // Post-publish refinement LLMs — fire-and-forget hooks the drain's
-  // `handlePostPublish` calls. Both take `(system, prompt) => string`
-  // and are fail-open. Wired through the shared router so PII scrub +
-  // consent gate + lite-tier selection apply.
-  // Reminder planning is the only post-publish task that does real
-  // date math + structured JSON output (`due_at` epoch ms, kind enum,
-  // future/past filtering). The April 2026 simulator pass found the
-  // 'summarize' lite tier emitting 2025 dates — Gemini 1.5 Flash lite
-  // defaulting to its training-cutoff year despite `{{today}}` in the
-  // prompt. Bump to the primary tier ('reason' → tiers.primary in
-  // pickModel) so the planner gets the same model the /ask path
-  // already uses for date/time reasoning. Identity extraction is
-  // pure entity tagging, lightweight is fine.
-  registerReminderLLM(buildLightweightLLMCall(router, 'reason'));
-  registerReminderQueryExpander(buildReminderQueryExpander(router));
+  // Identity / people-graph extractor — the agentic remember loop's
+  // `link_to_person` tool routes through `applyPeopleGraphExtraction` →
+  // `extractPersonLinks` → this provider. Pure entity tagging, so the
+  // lightweight 'classify' tier is fine. Wired through the shared router
+  // so PII scrub + consent gate + lite-tier selection apply.
   registerIdentityExtractor(buildLightweightLLMCall(router, 'classify'));
   // People-graph extractor — Phase E pipeline. Same lite tier as the
   // legacy `IdentityExtractor` (entity tagging, no date math). The
@@ -416,79 +400,6 @@ function buildLightweightLLMCall(
       return '';
     }
   };
-}
-
-/**
- * Query expander for the reminder planner — runs a small classify-
- * tier LLM call that returns 3–8 topical keywords used to broaden
- * the FTS5 retrieval into other personas. The output is OR-joined
- * into the planner's keyword set, so a finance-vault budget note
- * can rank into the context for an Emma-birthday reminder even
- * though the literal text shares no tokens.
- *
- * Fail-soft: any router error or unparseable response returns `[]`
- * (planner falls back to literal-text-only search). The expander
- * never blocks the reminder pipeline.
- */
-function buildReminderQueryExpander(
-  router: LLMRouter,
-): (input: QueryExpansionInput) => Promise<string[]> {
-  return async (input: QueryExpansionInput): Promise<string[]> => {
-    const prompt = REMINDER_QUERY_EXPANSION.replace('{{subject}}', input.subject).replace(
-      '{{body}}',
-      input.body.slice(0, 2000),
-    );
-    let raw = '';
-    try {
-      const response = await router.chat({
-        taskType: 'classify',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.1,
-        maxTokens: 256,
-      });
-      raw = response.content;
-    } catch {
-      return [];
-    }
-    return parseQueryExpansionTerms(raw);
-  };
-}
-
-/**
- * Parse the LLM's expansion output into a clean string list.
- * Tolerates fenced code blocks and stray prose around the JSON
- * array (small models sometimes emit "Output: [...]" or wrap in
- * ```json). Returns `[]` on any parse failure.
- *
- * Exported via `buildReminderQueryExpander` only — the test harness
- * registers its own mocked expander so this helper stays local.
- */
-function parseQueryExpansionTerms(raw: string): string[] {
-  if (typeof raw !== 'string' || raw.trim().length === 0) return [];
-  // Strip ```json / ``` fences and try to locate the first JSON
-  // array in the response.
-  const fenced = raw.replace(/```(?:json)?/gi, '').trim();
-  const start = fenced.indexOf('[');
-  const end = fenced.lastIndexOf(']');
-  if (start < 0 || end < 0 || end <= start) return [];
-  const slice = fenced.slice(start, end + 1);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(slice);
-  } catch {
-    return [];
-  }
-  if (!Array.isArray(parsed)) return [];
-  const out: string[] = [];
-  for (const v of parsed) {
-    if (typeof v !== 'string') continue;
-    const trimmed = v.trim();
-    if (trimmed.length === 0) continue;
-    if (trimmed.length > 60) continue;
-    out.push(trimmed);
-    if (out.length >= 12) break;
-  }
-  return out;
 }
 
 /**

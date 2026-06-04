@@ -1,6 +1,7 @@
 import {
   buildAgenticAskPipeline,
   buildAgenticExecuteFn,
+  buildPreFlightPersonaAllowed,
   createAskCoordinator,
   DEFAULT_ASK_SYSTEM_PROMPT,
   planAskRetrieval,
@@ -16,7 +17,9 @@ import {
   type EmbeddingProvider,
   type InstalledPersona,
   type LLMProvider,
+  type PreFlightRetrievalProvider,
   type PreFlightRetrievalResult,
+  type RunPreFlightOptions,
   type ProviderName,
 } from '@dina/brain';
 import {
@@ -218,10 +221,11 @@ export function buildHomeNodeAskRuntime(
   // exists. The planner LLM call goes through the same router as the
   // rest of the brain — same PII scrub, same consent gate, same tier
   // selection (intent_classification → lite tier).
-  let preFlight: ((question: string) => Promise<PreFlightRetrievalResult | null>) | undefined;
+  let preFlight: PreFlightRetrievalProvider | undefined;
   if (plannerEnabled) {
     const installedPersonas = options.installedPersonas!;
     const fetchers = options.retrievalFetchers!;
+    const ownerDid = options.ownerDid;
     const router = pipeline.router;
     const llmCall = async (system: string, prompt: string): Promise<string> => {
       try {
@@ -237,11 +241,30 @@ export function buildHomeNodeAskRuntime(
         return '';
       }
     };
-    preFlight = async (question: string): Promise<PreFlightRetrievalResult | null> => {
+    preFlight = async (question, ctx): Promise<PreFlightRetrievalResult | null> => {
       try {
         const personas = installedPersonas();
         const plan = await planAskRetrieval(question, { llmCall, personas });
-        return await runAskPreFlightRetrieval(plan, fetchers);
+        // F-AGENT-VAULT-GATE round-3: gate the planner's pre-fetch the
+        // same way the on-demand vault tool is gated. The coordinator
+        // always supplies requesterDid; when it's present we build the
+        // owner/tier/session-aware filter (owner → allow-all; external
+        // agent → skip sensitive/locked). The legacy handler path has no
+        // DID → no filter → allow-all (unchanged).
+        const requesterDid = ctx?.requesterDid;
+        const runOpts: RunPreFlightOptions | undefined =
+          requesterDid !== undefined && requesterDid !== ''
+            ? {
+                personaAllowed: buildPreFlightPersonaAllowed({
+                  requesterDid,
+                  ...(ownerDid !== undefined && ownerDid !== '' ? { ownerDid } : {}),
+                  ...(ctx?.sessionId !== undefined && ctx.sessionId !== ''
+                    ? { sessionId: ctx.sessionId }
+                    : {}),
+                }),
+              }
+            : undefined;
+        return await runAskPreFlightRetrieval(plan, fetchers, runOpts);
       } catch {
         return null;
       }

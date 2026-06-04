@@ -34,7 +34,12 @@ import type { resolveExistingAtprotoIdentity } from './atproto_identity';
  *  (no RN deps) and runnable in Node test drivers. */
 export type IdentityResolver = typeof resolveExistingAtprotoIdentity;
 
-const DEFAULT_APPVIEW = 'https://test-appview.dinakernel.com';
+// The OAuth client identity is hosted on a mobile-branded host (reads as
+// "Dina mobile app" on the consent screen, not the AppView). The native
+// redirect scheme is its reverse-domain (e.g. mobile.dinakernel.com →
+// com.dinakernel.mobile). Test uses test-mobile.dinakernel.com via
+// EXPO_PUBLIC_DINA_OAUTH_CLIENT_URL.
+const DEFAULT_OAUTH_CLIENT_URL = 'https://mobile.dinakernel.com';
 
 // ── base64url (no padding) ──────────────────────────────────────────
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
@@ -208,12 +213,13 @@ export async function discoverAuthServer(
   };
 }
 
-// ── client_id / redirect derived from the AppView host ──────────────
-export function oauthClientConfig(appViewUrl?: string): { clientId: string; redirectUri: string } {
-  const base = (appViewUrl ?? process.env.EXPO_PUBLIC_DINA_APPVIEW_URL ?? DEFAULT_APPVIEW).replace(
-    /\/$/,
-    '',
-  );
+// ── client_id / redirect derived from the OAuth client (mobile) host ──
+export function oauthClientConfig(clientUrl?: string): { clientId: string; redirectUri: string } {
+  const base = (
+    clientUrl ??
+    process.env.EXPO_PUBLIC_DINA_OAUTH_CLIENT_URL ??
+    DEFAULT_OAUTH_CLIENT_URL
+  ).replace(/\/$/, '');
   const host = base.replace(/^https?:\/\//, '').split('/')[0];
   const scheme = host.split(':')[0].split('.').reverse().join('.');
   return { clientId: `${base}/oauth/client-metadata.json`, redirectUri: `${scheme}:/oauth/callback` };
@@ -242,7 +248,8 @@ export async function startOAuth(
   identifier: string,
   opts: {
     fetchFn: FetchLike;
-    appViewUrl?: string;
+    /** Override the OAuth client-metadata host (defaults to the env/mobile host). */
+    oauthClientUrl?: string;
     plcURL?: string;
     nowSec: number;
     resolve: IdentityResolver;
@@ -253,7 +260,7 @@ export async function startOAuth(
     resolve: opts.resolve,
     ...(opts.plcURL !== undefined ? { plcURL: opts.plcURL } : {}),
   });
-  const { clientId, redirectUri } = oauthClientConfig(opts.appViewUrl);
+  const { clientId, redirectUri } = oauthClientConfig(opts.oauthClientUrl);
 
   // PKCE (S256).
   const codeVerifier = b64urlEncode(randomBytes(32));
@@ -270,7 +277,12 @@ export async function startOAuth(
     code_challenge_method: 'S256',
     state,
     redirect_uri: redirectUri,
-    scope: 'atproto transition:generic',
+    // Identity-only. We use OAuth purely to PROVE the user controls the
+    // Bluesky DID (token `sub`), then link it read-only — we never read or
+    // write their PDS. `transition:generic` would grant broad,
+    // app-password-like PDS access, contradicting the "No other access
+    // required" promise. See atproto.com/specs/oauth + permission-sets.
+    scope: 'atproto',
     login_hint: identifier,
   }).toString();
   const par = await dpopFetch(

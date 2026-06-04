@@ -1,21 +1,28 @@
 /**
  * SEC (P1.3) — `resolveSafeDeepLink` is THE single resolver for every untrusted
- * notification/briefing `deepLink` push. It normalises (approval → /approvals,
- * dina:// scheme strip) AND allowlists: external schemes and sensitive routes
- * are rejected. Previously the Notifications screen + briefing card pushed
- * links through a normalise-only path that let `https://…` and `/vault/…`
- * through — this tests the real, unified function.
+ * notification/briefing `deepLink` push. It normalises (approval →
+ * /notifications, dina:// scheme strip) AND allowlists: external schemes and
+ * sensitive routes are rejected. Previously the Notifications screen + briefing
+ * card pushed links through a normalise-only path that let `https://…` and
+ * `/vault/…` through — this tests the real, unified function.
+ *
+ * The standalone Approvals screen was merged into the Activity tab; approval
+ * deep links now land on `/notifications` (Needs action) where the inline
+ * approval cards cover the action.
  */
 
 import { resolveSafeDeepLink } from '../../src/notifications/deep_link';
 
 describe('resolveSafeDeepLink (unified normalise + allowlist)', () => {
-  it('normalises Brain approval deep links (with/without scheme, with id) to /approvals', () => {
+  it('normalises Brain approval deep links to /notifications on the Needs-action filter', () => {
+    // Approval cards live on Activity's "Needs action" filter, so land taps
+    // there directly (not the default "Unread" tab).
     expect(
       resolveSafeDeepLink('dina://approvals/approval-staging-stg-19c9529527531f0a-health'),
-    ).toBe('/approvals');
-    expect(resolveSafeDeepLink('/approvals/abc123')).toBe('/approvals');
-    expect(resolveSafeDeepLink('/approvals')).toBe('/approvals');
+    ).toBe('/notifications?filter=needs_action');
+    expect(resolveSafeDeepLink('/approvals/abc123')).toBe('/notifications?filter=needs_action');
+    expect(resolveSafeDeepLink('/approvals')).toBe('/notifications?filter=needs_action');
+    expect(resolveSafeDeepLink('dina://approvals')).toBe('/notifications?filter=needs_action');
   });
 
   it('strips the dina:// scheme for allowlisted routes', () => {

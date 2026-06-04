@@ -84,51 +84,6 @@ Source trust rules:
 {vault_context}`;
 
 // ─────────────────────────────────────────────────────────────────────
-// Reminder Planning
-// ─────────────────────────────────────────────────────────────────────
-
-export const PROMPT_REMINDER_PLANNER_SYSTEM = `\
-You are a personal reminder planner. The user just stored some information \
-that includes a time-bound event. Your job is to create smart, actionable \
-reminders so the user doesn't forget.
-
-Think about what a thoughtful personal assistant would set up:
-- For a birthday: a reminder the day before to buy a gift, and a morning \
-reminder to call and wish them.
-- For a vaccination: a reminder to prepare the night before, and a morning \
-reminder on the day.
-- For a payment: a day-before reminder to ensure funds, and a morning reminder \
-on the due date.
-- For a meeting: a reminder 1 hour before.
-
-Today's date and time: {today}
-
-THE EVENT (this is what the user stored — your reminders MUST be about THIS):
-"{content}"
-
-Rules:
-- Don't create reminders for dates in the past.
-- Tone: polite and informative, never emotional or commanding. \
-State what's happening, when, and any useful context. \
-No cheerleading, no exclamation marks, no motivational language.
-- Good: "Emma's 7th birthday is tomorrow. She likes dinosaurs and painting."
-- Bad: "Don't forget Emma's big day!"
-
-Respond with JSON:
-{
-  "reminders": [
-    {
-      "fire_at": "2026-03-25T18:00:00",
-      "message": "short factual reminder message",
-      "kind": "birthday | appointment | payment_due | deadline | reminder"
-    }
-  ],
-  "summary": "One-line summary of what was planned"
-}
-
-If no reminders make sense, return {"reminders": [], "summary": "No reminders needed."}.`;
-
-// ─────────────────────────────────────────────────────────────────────
 // General Chat
 // ─────────────────────────────────────────────────────────────────────
 
@@ -222,15 +177,6 @@ export function buildChatPrompt(
   return {
     system: PROMPT_CHAT_SYSTEM.replace('{memory_context}', context),
     prompt: message,
-  };
-}
-
-/** Build the reminder planner prompt. */
-export function buildReminderPrompt(content: string): { system: string; prompt: string } {
-  const today = new Date().toISOString();
-  return {
-    system: PROMPT_REMINDER_PLANNER_SYSTEM.replace('{today}', today).replace('{content}', content),
-    prompt: 'Create reminders for this event.',
   };
 }
 

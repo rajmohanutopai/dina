@@ -192,13 +192,16 @@ describe('provisionIdentity (PDS-first)', () => {
         stages.push(p.stage);
       },
     });
+    // Order reflects the atomic flow: derive + wrap in memory, both
+    // network steps (createAccount + PLC update), THEN persist (keys +
+    // did). Nothing durable is written before the network steps succeed.
     expect(stages).toEqual([
       'deriving_seed',
       'deriving_keys',
-      'persisting_keys',
       'wrapping_seed',
       'creating_pds_account',
       'publishing_plc_update',
+      'persisting_keys',
       'persisting_did',
       'opening_vault',
       'done',
@@ -244,6 +247,12 @@ describe('provisionIdentity (PDS-first)', () => {
     ).rejects.toThrow(/PDS account creation failed/);
     expect(isUnlocked()).toBe(false);
     expect(await loadPersistedDid()).toBeNull();
+    // Atomicity: a createAccount failure must leave NO durable state, so
+    // the next boot starts fresh instead of unlocking a vault with no
+    // did:plc (which boot would back-fill with a did:key fallback — the
+    // bug this guards against).
+    expect(await loadWrappedSeed()).toBeNull();
+    expect(await loadIdentitySeeds()).toBeNull();
   });
 
   it('surfaces PLC update failure with a tagged error', async () => {
@@ -300,6 +309,10 @@ describe('provisionIdentity (PDS-first)', () => {
     ).rejects.toThrow(/PLC update.*failed/);
     expect(isUnlocked()).toBe(false);
     expect(await loadPersistedDid()).toBeNull();
+    // Same atomicity guarantee for the second network step: a PLC-update
+    // failure (after createAccount succeeded) must also persist nothing.
+    expect(await loadWrappedSeed()).toBeNull();
+    expect(await loadIdentitySeeds()).toBeNull();
   });
 });
 

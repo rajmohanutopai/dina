@@ -100,6 +100,34 @@ const MAX_PREFIX_CHARS = 30;
 const MIN_PREFIX_CHARS = 3;
 
 /**
+ * Maximum length of the FULL handle (`prefix + "." + pdsHost`) the
+ * deployment's PDS will accept at `createAccount`. The AT Protocol spec
+ * ceiling is 253, but dinakernel.com's PDS enforces a tighter limit —
+ * and a handle that passes the spec but exceeds this is happily reported
+ * "available" by the live `resolveHandle` check yet rejected by
+ * `createAccount` ("InvalidHandle: Handle too long"), which used to
+ * strand onboarding in a did:key fallback. Keep in sync with the PDS
+ * config; tune here if the server limit changes.
+ */
+export const MAX_HANDLE_CHARS = 30;
+
+/**
+ * Usable prefix length for a given PDS host, derived from the full-handle
+ * limit so the cap is correct for any host length (not a magic number
+ * tuned to one domain):
+ *
+ *   maxPrefixChars = MAX_HANDLE_CHARS − pdsHost.length − 1   (−1 = the dot)
+ *
+ * e.g. `pds.dinakernel.com` (18) → 11; `test-pds.dinakernel.com` (23) → 6.
+ * Clamped to [MIN_PREFIX_CHARS, MAX_PREFIX_CHARS] so a pathologically long
+ * host can't yield a zero/negative cap.
+ */
+export function maxPrefixChars(pdsHost: string): number {
+  const room = MAX_HANDLE_CHARS - pdsHost.length - 1;
+  return Math.max(MIN_PREFIX_CHARS, Math.min(MAX_PREFIX_CHARS, room));
+}
+
+/**
  * Curated word list for `<base>-<word>` candidates. Short, neutral,
  * easy to spell. Picked for evocativeness — small enough to fit on a
  * single screen if surfaced as suggestions.
@@ -141,18 +169,20 @@ const DEFAULT_TIMEOUT_MS = 5_000;
 /**
  * Sanitize a free-form display name into a valid handle prefix.
  * Lowercase, strips non-`[a-z0-9-]`, trims edge hyphens, clamps to
- * `MAX_PREFIX_CHARS`. Returns `''` if nothing usable remains — the
- * caller should treat empty as "ask user to pick one explicitly"
- * rather than silently substituting a fallback.
+ * `maxPrefixChars(pdsHost)` when a host is supplied (so the seeded
+ * prefix already fits the full-handle limit), else `MAX_PREFIX_CHARS`.
+ * Returns `''` if nothing usable remains — the caller should treat
+ * empty as "ask user to pick one explicitly" rather than silently
+ * substituting a fallback.
  */
-export function sanitizeHandlePrefix(input: string): string {
+export function sanitizeHandlePrefix(input: string, pdsHost?: string): string {
   const stripped = input
     .toLowerCase()
     .normalize('NFKD') // strip accents (José → jose)
     .replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9-]/g, '')
     .replace(/^-+|-+$/g, '')
-    .slice(0, MAX_PREFIX_CHARS)
+    .slice(0, pdsHost !== undefined ? maxPrefixChars(pdsHost) : MAX_PREFIX_CHARS)
     .replace(/^-+|-+$/g, ''); // re-trim if slice exposed an edge hyphen
   return stripped;
 }
@@ -169,9 +199,6 @@ export function validateHandleFormat(
   if (typeof handle !== 'string' || handle.length === 0) {
     return { ok: false, reason: 'Handle is empty.' };
   }
-  if (handle.length > 253) {
-    return { ok: false, reason: 'Handle is too long.' };
-  }
   const suffix = `.${pdsHost.toLowerCase()}`;
   if (!handle.toLowerCase().endsWith(suffix)) {
     return { ok: false, reason: `Handle must end with ${suffix}.` };
@@ -179,6 +206,25 @@ export function validateHandleFormat(
   const prefix = handle.slice(0, handle.length - suffix.length);
   if (prefix.length < MIN_PREFIX_CHARS) {
     return { ok: false, reason: `Pick at least ${MIN_PREFIX_CHARS} characters.` };
+  }
+  // Domain-relative length cap. The FULL handle (prefix + "." + host)
+  // must fit MAX_HANDLE_CHARS — what the PDS enforces at createAccount,
+  // and what the live availability check (resolveHandle) does NOT, so
+  // without it a too-long handle reads "available" then fails to create.
+  //
+  // We validate the full length directly, NOT just `prefix.length > cap`:
+  // `maxPrefixChars` clamps UP to MIN_PREFIX_CHARS, so for a
+  // pathologically long host even a minimum-length prefix overflows and a
+  // prefix-only check (cap === MIN) would wave it through. See MAX_HANDLE_CHARS.
+  if (handle.length > MAX_HANDLE_CHARS) {
+    const room = MAX_HANDLE_CHARS - pdsHost.length - 1;
+    return {
+      ok: false,
+      reason:
+        room < MIN_PREFIX_CHARS
+          ? `This server's domain is too long to fit a handle in ${MAX_HANDLE_CHARS} characters.`
+          : `Pick at most ${room} characters.`,
+    };
   }
   if (!DNS_SEGMENT_RE.test(prefix)) {
     return {
@@ -258,39 +304,53 @@ export async function checkHandleAvailability(
  */
 export function generateCandidates(
   base: string,
-  opts?: { random?: () => number; year?: number },
+  opts?: { random?: () => number; year?: number; maxLen?: number },
 ): string[] {
   const random = opts?.random ?? Math.random;
   const year = opts?.year ?? new Date().getUTCFullYear();
   const yearShort = String(year).slice(-2);
+  const maxLen = opts?.maxLen;
 
   const out: string[] = [];
-  const pushUnique = (c: string): void => {
-    if (c === base) return;
+
+  // Compose `prefix + base + suffix`, clipping the BASE so the whole
+  // candidate fits `maxLen` (the PDS's per-host handle cap). The
+  // decoration is preserved; the base shrinks. Returns null when even a
+  // 1-char base won't fit — caller skips. Without maxLen, no clipping.
+  const fit = (prefix: string, suffix: string): string | null => {
+    if (maxLen === undefined) return `${prefix}${base}${suffix}`;
+    const room = maxLen - prefix.length - suffix.length;
+    if (room < 1) return null;
+    const clipped = base.slice(0, room).replace(/-+$/, '');
+    if (clipped.length < 1) return null;
+    return `${prefix}${clipped}${suffix}`;
+  };
+  const pushUnique = (c: string | null): void => {
+    if (c === null || c === base) return;
     if (out.includes(c)) return;
     out.push(c);
   };
 
   // Numeric suffixes — small two-digit ints for memorability.
-  pushUnique(`${base}${pickInt(random, 2, 99)}`);
-  pushUnique(`${base}${pickInt(random, 2, 99)}`);
-  pushUnique(`${base}${yearShort}`);
+  pushUnique(fit('', String(pickInt(random, 2, 99))));
+  pushUnique(fit('', String(pickInt(random, 2, 99))));
+  pushUnique(fit('', yearShort));
 
   // Prepend modifiers.
-  pushUnique(`the${base}`);
-  pushUnique(`real${base}`);
+  pushUnique(fit('the', ''));
+  pushUnique(fit('real', ''));
 
   // Word-suffix variants. Pull a deterministic-shuffled view of
   // SUFFIX_WORDS so two consecutive calls don't produce identical
   // lists (when random isn't injected).
   const shuffled = shuffle([...SUFFIX_WORDS], random);
   for (const w of shuffled.slice(0, 4)) {
-    pushUnique(`${base}-${w}`);
+    pushUnique(fit('', `-${w}`));
   }
 
   // Hyphenated digit ("raju-7") for users who don't like trailing
   // numerals smashed onto the name.
-  pushUnique(`${base}-${pickInt(random, 2, 9)}`);
+  pushUnique(fit('', `-${pickInt(random, 2, 9)}`));
 
   return out;
 }
@@ -335,6 +395,10 @@ export async function pickHandle(
   const candidatePrefixes = generateCandidates(basePrefix, {
     random: opts.random,
     year: opts.yearOverride,
+    // Clip candidates to the host's handle cap so suggestions are always
+    // accepted by createAccount — otherwise long decorations get filtered
+    // out below and the user sees few/no alternatives.
+    maxLen: maxPrefixChars(opts.pdsHost),
   });
   const candidateHandles = candidatePrefixes.map((p) => `${p}.${opts.pdsHost}`);
   const checks = await Promise.all(

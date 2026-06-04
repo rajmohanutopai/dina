@@ -103,13 +103,25 @@ export function OnboardingFlow(): React.ReactElement {
         <HandlePicker
           seedPrefix={step.draft.ownerName ?? ''}
           initialHandle={step.draft.handle}
+          serverError={step.error}
           onBack={goBack}
-          onContinue={(handle) =>
-            setStep({
-              kind: 'create_passphrase',
-              draft: { ...step.draft, handle },
-            })
-          }
+          onContinue={(handle) => {
+            const draft = { ...step.draft, handle };
+            // If we bounced back here from a failed provisioning attempt,
+            // the rest of the draft (passphrase + verified mnemonic) is
+            // already complete — go straight back to provisioning rather
+            // than re-walking passphrase + mnemonic confirm.
+            if (
+              draft.passphrase !== undefined &&
+              draft.passphrase.length > 0 &&
+              draft.mnemonic !== undefined &&
+              draft.mnemonic.length > 0
+            ) {
+              setStep({ kind: 'provisioning_create', draft: draft as CreateDraft });
+            } else {
+              setStep({ kind: 'create_passphrase', draft });
+            }
+          }}
         />
       );
 
@@ -217,7 +229,17 @@ export function OnboardingFlow(): React.ReactElement {
             // render, swapping this whole tree out. No-op here beyond
             // optional telemetry.
           }}
-          onError={(message) => setStep({ kind: 'error', message, retry: { kind: 'choose' } })}
+          onError={(message) =>
+            // Bounce back to the handle step (not all the way to `choose`)
+            // with the draft intact and the PDS error shown, so the user
+            // can fix the handle and retry without re-entering everything.
+            // Provisioning is atomic — nothing was persisted on failure.
+            setStep({
+              kind: 'error',
+              message,
+              retry: { kind: 'create_handle', draft: step.draft, error: message },
+            })
+          }
         />
       );
 

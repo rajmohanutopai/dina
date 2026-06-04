@@ -93,7 +93,7 @@ export interface TrustFeedScreenProps {
   /**
    * The network-feed cards for this viewer. Defaults to `[]` so the
    * screen can be rendered as an Expo Router default export with no
-   * runner — the empty state ("Your network is quiet") fires.
+   * runner — the empty state ("Your PeerLens network is quiet") fires.
    */
   feed?: readonly FeedItem[];
   /** Derived facets from the feed set. Defaults to an empty bar. */
@@ -197,7 +197,7 @@ export default function TrustFeedScreen(
   // supplies controlled feed state. Tests that pass `feed` / `isLoading`
   // explicitly stay presentational; production lands here with no props
   // and the runner kicks in. Empty 1-hop network → empty `feed` →
-  // existing "Your network is quiet" UX still fires.
+  // existing "Your PeerLens network is quiet" UX still fires.
   const isFeedControlled =
     props.feed !== undefined || props.isLoading !== undefined;
   const viewerDid = getBootedNode()?.did ?? '';
@@ -442,7 +442,7 @@ export default function TrustFeedScreen(
       ) : feed.length === 0 ? (
         <View style={styles.empty} testID="trust-feed-empty">
           <Ionicons name="people-outline" size={40} color={colors.textMuted} />
-          <Text style={styles.emptyTitle}>Your network is quiet</Text>
+          <Text style={styles.emptyTitle}>Your {FEATURE_NAMES.peerlens} network is quiet</Text>
           <Text style={styles.emptyBody}>
             Search above for what you want to review. If nothing matches, you can
             create the first review for it from there.

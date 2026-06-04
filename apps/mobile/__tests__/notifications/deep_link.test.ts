@@ -29,8 +29,10 @@ describe('handleNotificationTap', () => {
     );
     expect(result).toEqual({ marked: true, navigated: true });
     expect(marked).toEqual(['nt-1']);
-    // resolveSafeDeepLink normalises the approval link to the /approvals index.
-    expect(pushed).toEqual(['/approvals']);
+    // resolveSafeDeepLink normalises the approval link to the Activity tab's
+    // Needs-action filter (the standalone Approvals screen merged into
+    // /notifications; actionable cards live under needs_action).
+    expect(pushed).toEqual(['/notifications?filter=needs_action']);
   });
 
   it('only marks read when deepLink missing', () => {

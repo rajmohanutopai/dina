@@ -120,6 +120,10 @@ export const fonts = {
   headingExtraBold: 'PlusJakartaSans_800ExtraBold',
 
   display: 'CormorantGaramond_600SemiBold_Italic',
+  // Upright serif — same Cormorant Garamond face, no italic. Used for
+  // functional step titles where italic reads as decorative; hero
+  // copy keeps the italic `display`.
+  displayUpright: 'CormorantGaramond_600SemiBold',
   // `serif` is the legacy name for the display face. Existing call
   // sites (hero copy in onboarding, admin glyphs, unlock-gate
   // tagline) read this; the dinakernel.com site uses Cormorant
@@ -194,28 +198,47 @@ export const textStyles = {
     letterSpacing: -0.2,
   } as TextStyle,
 
-  // ─── Headlines: Plus Jakarta Sans 700 ───────────────────────────
-  // Task-focused screen titles ("Set your passphrase", "Choose a handle").
+  // Brand logotype — the spaced small-caps "D I N A" wordmark. This is
+  // the ONE way to render "DINA" as a LOGO/brand mark (chat header,
+  // welcome, unlock). It is NOT for "Dina" as a noun/verb in running
+  // copy. The domino-D glyph is reserved for the app icon alone — never
+  // inline. Use the `<DinaWordmark>` component rather than re-deriving
+  // this style at each site.
+  wordmark: {
+    fontFamily: fonts.sansSemibold,
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 6,
+    color: colors.textMuted,
+    textTransform: 'uppercase' as TextStyle['textTransform'],
+  } as TextStyle,
+
+  // ─── Headlines: Cormorant Garamond SemiBold (upright serif) ─────
+  // The app-wide heading voice — every screen/section title. Upright
+  // (not italic) so functional titles read crisply; the italic
+  // `display`/`displaySmall`/`tagline` faces stay reserved for hero
+  // and brand lines. letterSpacing is near-zero: serif faces don't
+  // want the negative tracking a bold sans needs at these sizes.
   h1: {
-    fontFamily: fonts.headingBold,
+    fontFamily: fonts.displayUpright,
     fontSize: 32,
     lineHeight: 38,
     color: colors.textPrimary,
-    letterSpacing: -0.5,
+    letterSpacing: -0.2,
   } as TextStyle,
   h2: {
-    fontFamily: fonts.headingBold,
+    fontFamily: fonts.displayUpright,
+    fontSize: 28,
+    lineHeight: 34,
+    color: colors.textPrimary,
+    letterSpacing: -0.1,
+  } as TextStyle,
+  h3: {
+    fontFamily: fonts.displayUpright,
     fontSize: 24,
     lineHeight: 30,
     color: colors.textPrimary,
-    letterSpacing: -0.3,
-  } as TextStyle,
-  h3: {
-    fontFamily: fonts.heading,
-    fontSize: 18,
-    lineHeight: 24,
-    color: colors.textPrimary,
-    letterSpacing: -0.2,
+    letterSpacing: 0,
   } as TextStyle,
 
   // ─── Body: Figtree 400/500/600 ──────────────────────────────────
@@ -339,8 +362,8 @@ export const navTitle: {
   fontWeight: '600';
   color: string;
 } = {
-  fontFamily: fonts.headingBold,
-  fontSize: 17,
+  fontFamily: fonts.displayUpright,
+  fontSize: 23,
   fontWeight: '600',
   color: colors.textPrimary,
 };

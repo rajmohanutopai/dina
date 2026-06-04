@@ -12,13 +12,11 @@ import {
   PROMPT_PERSONA_CLASSIFY_SYSTEM,
   PROMPT_VAULT_CONTEXT_SYSTEM,
   PROMPT_CHAT_SYSTEM,
-  PROMPT_REMINDER_PLANNER_SYSTEM,
   PROMPT_REMEMBER_ACK_SYSTEM,
   DEFAULT_PERSONAS,
   buildClassifyPrompt,
   buildVaultContextPrompt,
   buildChatPrompt,
-  buildReminderPrompt,
   buildRememberAckPrompt,
 } from '../../src/ai/prompts';
 
@@ -91,23 +89,6 @@ describe('Prompt Registry', () => {
     });
   });
 
-  describe('PROMPT_REMINDER_PLANNER_SYSTEM', () => {
-    it('includes birthday example', () => {
-      expect(PROMPT_REMINDER_PLANNER_SYSTEM).toContain('birthday');
-      expect(PROMPT_REMINDER_PLANNER_SYSTEM).toContain('gift');
-    });
-
-    it('bans emotional tone', () => {
-      expect(PROMPT_REMINDER_PLANNER_SYSTEM).toContain('never emotional');
-      expect(PROMPT_REMINDER_PLANNER_SYSTEM).toContain('No cheerleading');
-    });
-
-    it('requires JSON response', () => {
-      expect(PROMPT_REMINDER_PLANNER_SYSTEM).toContain('"reminders"');
-      expect(PROMPT_REMINDER_PLANNER_SYSTEM).toContain('"fire_at"');
-    });
-  });
-
   describe('DEFAULT_PERSONAS', () => {
     it('includes all four persona types', () => {
       expect(DEFAULT_PERSONAS).toContain('general');
@@ -155,15 +136,6 @@ describe('Prompt Registry', () => {
       const { system } = buildChatPrompt('Hello', memories);
       expect(system).toContain('Alice likes tea');
       expect(system).not.toContain('{memory_context}');
-    });
-  });
-
-  describe('buildReminderPrompt', () => {
-    it('injects content and today date', () => {
-      const { system } = buildReminderPrompt("Emma's birthday is March 15");
-      expect(system).toContain("Emma's birthday");
-      expect(system).not.toContain('{content}');
-      expect(system).not.toContain('{today}');
     });
   });
 

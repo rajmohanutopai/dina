@@ -122,39 +122,23 @@ export function createPersonaGuard(opts: CreatePersonaGuardOptions): AsyncPerson
   const { coreClient, askId, requesterDid } = opts;
   const ownerDid = typeof opts.ownerDid === 'string' && opts.ownerDid !== '' ? opts.ownerDid : null;
   const sessionId = typeof opts.sessionId === 'string' ? opts.sessionId : '';
-  const isOwnerCall = ownerDid !== null && requesterDid === ownerDid;
   const now = opts.nowMsFn ?? ((): number => Date.now());
 
   return async (persona: string): Promise<string | null> => {
-    // Owner-on-app shortcut: the home node's own user gets free access
-    // to every persona, sensitive tiers included. The dina-agent CLI
-    // (different DID) still takes the gated path below.
-    if (isOwnerCall) return null;
-
-    const personaState = getPersona(persona);
-    if (personaState === null) {
-      // Unknown persona — let the vault tool's accessibility check
-      // produce its empty result. Approval would be meaningless here.
+    // Allow/deny (owner shortcut, tier check, session-grant shortcut) is
+    // shared with the pre-flight planner filter via
+    // `personaReadRequiresApproval` so the two paths can never drift.
+    if (
+      !personaReadRequiresApproval(persona, {
+        requesterDid,
+        ...(ownerDid !== null ? { ownerDid } : {}),
+        sessionId,
+      })
+    ) {
       return null;
     }
 
-    if (personaState.tier === 'default' || personaState.tier === 'standard') {
-      // Open tiers — vault is freely accessible.
-      return null;
-    }
-
-    // Session-scoped approval shortcut: when the owner taps "Allow for
-    // this session" on a vault_read card, the workflow approve route
-    // calls `grantVaultReadSessionApproval(agentDid, sessionId, persona)`.
-    // We check the SAME tuple here so the auto-pass only triggers when
-    // the requester is the same agent AND running in the same
-    // `dina session`. Without a sessionId (older clients), this branch
-    // is a no-op — the workflow-task path runs as the fallback.
-    if (sessionId !== '' && isVaultReadSessionApproved(requesterDid, sessionId, persona)) {
-      return null;
-    }
-
-    // Sensitive / locked tier — approval required.
+    // Sensitive / locked tier, non-owner, no session grant — approval required.
     const approvalId = approvalIdFor(askId, persona);
 
     const existing = await coreClient.getWorkflowTask(approvalId);
@@ -222,4 +206,59 @@ export function createPersonaGuard(opts: CreatePersonaGuardOptions): AsyncPerson
  */
 export function approvalIdFor(askId: string, persona: string): string {
   return `appr-${askId}-${persona}`;
+}
+
+/** Read-only context for the allow/deny decision (no I/O, no task mint). */
+export interface PersonaReadContext {
+  /** DID of whoever is asking (agent did:key, or the owner's did:plc). */
+  requesterDid: string;
+  /** The home node's owner DID — owner calls bypass the gate entirely. */
+  ownerDid?: string;
+  /** dina-agent CLI session id, for the session-grant shortcut. */
+  sessionId?: string;
+}
+
+/**
+ * Pure allow/deny decision: does a vault read of `persona` by this
+ * requester require user approval? Mirrors the tier/owner/session logic
+ * inside `createPersonaGuard` exactly — both paths call this so they can
+ * never drift — but creates NO workflow task (read-only). `true` ⇒
+ * sensitive/locked tier, non-owner caller, no active session grant.
+ *
+ * Used by the agentic loop's on-demand `vault_search` guard AND the
+ * pre-flight retrieval planner's persona filter (F-AGENT-VAULT-GATE
+ * round-3: the planner used to pre-fetch sensitive personas for external
+ * agents, bypassing the on-demand guard).
+ */
+export function personaReadRequiresApproval(persona: string, ctx: PersonaReadContext): boolean {
+  const ownerDid = typeof ctx.ownerDid === 'string' && ctx.ownerDid !== '' ? ctx.ownerDid : null;
+  // Owner-on-app: free access to every persona, sensitive tiers included.
+  if (ownerDid !== null && ctx.requesterDid === ownerDid) return false;
+  const personaState = getPersona(persona);
+  // Unknown persona — the vault tool's accessibility check produces an
+  // empty result; approval would be meaningless.
+  if (personaState === null) return false;
+  // Open tiers — freely accessible.
+  if (personaState.tier === 'default' || personaState.tier === 'standard') return false;
+  // Active session grant for this (agent, session, persona).
+  const sessionId = typeof ctx.sessionId === 'string' ? ctx.sessionId : '';
+  if (sessionId !== '' && isVaultReadSessionApproved(ctx.requesterDid, sessionId, persona)) {
+    return false;
+  }
+  // Sensitive / locked, non-owner, no grant → approval required.
+  return true;
+}
+
+/**
+ * Build the persona filter the pre-flight retrieval planner applies
+ * before pre-fetching: returns `false` for any persona this caller may
+ * NOT pre-fetch without approval. Sensitive/locked personas are skipped
+ * for external agents so their content is never pre-fetched ungated; the
+ * agent reaches them only through the on-demand `vault_search` tool,
+ * which raises the approval card + parks/resumes. Owner calls allow all.
+ */
+export function buildPreFlightPersonaAllowed(
+  ctx: PersonaReadContext,
+): (persona: string) => boolean {
+  return (persona: string): boolean => !personaReadRequiresApproval(persona, ctx);
 }

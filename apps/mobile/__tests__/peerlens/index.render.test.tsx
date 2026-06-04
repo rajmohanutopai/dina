@@ -74,7 +74,9 @@ describe('TrustFeedScreen — render states', () => {
       <TrustFeedScreen feed={[]} facets={EMPTY_FACETS} />,
     );
     expect(getByTestId('trust-feed-empty')).toBeTruthy();
-    expect(getByText(/Your network is quiet/)).toBeTruthy();
+    // PeerLens-specific so it doesn't read as the whole Network tab
+    // (Services + PeerLens) being empty.
+    expect(getByText(/Your PeerLens network is quiet/)).toBeTruthy();
   });
 
   it('renders contextual "Search <q>" CTA in empty state when q is non-empty', () => {

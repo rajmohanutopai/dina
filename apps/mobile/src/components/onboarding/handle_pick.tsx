@@ -31,6 +31,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import {
   type AvailabilityResult,
+  maxPrefixChars,
   pickHandle,
   sanitizeHandlePrefix,
   validateHandleFormat,
@@ -48,6 +49,10 @@ export interface HandlePickProps {
   /** Pre-existing draft handle (e.g. when user comes back from a later
    *  step). Takes precedence over `seedPrefix` when present. */
   initialHandle?: string;
+  /** Error from a prior failed provisioning attempt (e.g. the PDS
+   *  rejected the handle at createAccount). Shown inline so the user can
+   *  fix the handle and retry without re-walking the whole flow. */
+  serverError?: string;
   onContinue: (handle: string) => void;
   onBack: () => void;
 }
@@ -68,7 +73,7 @@ export function HandlePicker(props: HandlePickProps): React.ReactElement {
         return lowered.slice(0, lowered.length - suffix.length);
       }
     }
-    return sanitizeHandlePrefix(props.seedPrefix);
+    return sanitizeHandlePrefix(props.seedPrefix, pdsHost);
   }, [props.initialHandle, props.seedPrefix, pdsHost]);
 
   const [prefix, setPrefix] = useState<string>(initialPrefix);
@@ -136,6 +141,16 @@ export function HandlePicker(props: HandlePickProps): React.ReactElement {
       primaryDisabled={!canContinue}
       onBack={props.onBack}
     >
+      {props.serverError !== undefined ? (
+        <View style={styles.serverError} testID="handle-server-error">
+          <Text style={styles.serverErrorTitle}>We couldn&rsquo;t finish setting up</Text>
+          <Text style={styles.serverErrorMsg}>{props.serverError}</Text>
+          <Text style={styles.serverErrorHint}>
+            Try a different handle below, then continue.
+          </Text>
+        </View>
+      ) : null}
+
       <Text style={styles.label}>Handle</Text>
       <View style={styles.inputRow}>
         <TextInput
@@ -147,7 +162,7 @@ export function HandlePicker(props: HandlePickProps): React.ReactElement {
           placeholder="raju"
           placeholderTextColor={colors.textMuted}
           style={styles.input}
-          maxLength={30}
+          maxLength={maxPrefixChars(pdsHost)}
           returnKeyType="done"
           accessibilityLabel="Handle prefix"
           testID="handle-prefix-input"
@@ -292,6 +307,29 @@ function resolvePDSHost(): string {
 }
 
 const styles = StyleSheet.create({
+  serverError: {
+    marginBottom: spacing.lg,
+    padding: spacing.md,
+    backgroundColor: colors.errorBgSofter,
+    borderRadius: radius.md,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.error,
+  },
+  serverErrorTitle: {
+    ...textStyles.bodySmallStrong,
+    color: colors.error,
+    letterSpacing: 0.2,
+  },
+  serverErrorMsg: {
+    ...textStyles.mono,
+    color: colors.errorTextDeepest,
+    marginTop: 4,
+  },
+  serverErrorHint: {
+    ...textStyles.bodySmall,
+    color: colors.textSecondary,
+    marginTop: spacing.sm,
+  },
   label: {
     ...textStyles.label,
     marginBottom: spacing.sm,

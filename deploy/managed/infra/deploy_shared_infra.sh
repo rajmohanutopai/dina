@@ -157,6 +157,33 @@ ${APPVIEW_HOST} {
 	reverse_proxy appview-web:3000
 }
 EOF
+    # Optional: a mobile-branded host for the ATProto OAuth client metadata
+    # (client_id reads as the Dina mobile app, not the AppView). Served by
+    # the same AppView container; the /oauth/client-metadata.json route
+    # derives client_id + the reverse-domain redirect scheme from the Host.
+    if [ -n "${MOBILE_HOST:-}" ]; then
+        cat >> "$SCRIPT_DIR/Caddyfile" << EOF
+
+${MOBILE_HOST} {
+	reverse_proxy appview-web:3000
+}
+EOF
+    fi
+}
+
+# ── Reload Caddy so a regenerated Caddyfile (e.g. new host blocks) takes
+#    effect. `docker compose up -d` does NOT restart a long-running Caddy
+#    whose only change is the mounted Caddyfile. NOTE: a hot `caddy reload`
+#    applies HTTP routing but does NOT reliably provision Let's Encrypt
+#    certs for *newly added* hosts (no ACME attempt fires) — so we do a
+#    full container restart, which provisions certs for every configured
+#    host at boot. ~seconds of downtime on the shared hosts; acceptable.
+reload_caddy() {
+    info "Restarting Caddy (apply Caddyfile + provision new-host TLS)..."
+    ssh "$REMOTE" "
+        cd $REMOTE_DIR/deploy
+        COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml restart caddy
+    "
 }
 
 # ── Step 3: Generate compose with correct hostnames ──
@@ -287,6 +314,7 @@ case "$ACTION" in
         generate_secrets
         prepare_compose
         start_services
+        reload_caddy
         push_schema
         health_check
         ;;
@@ -300,11 +328,24 @@ case "$ACTION" in
             COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml build
             COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml up -d
         "
+        # Caddy is long-running; `up -d` won't reload its mounted Caddyfile,
+        # so new host blocks (e.g. MOBILE_HOST) need an explicit reload.
+        reload_caddy
         # Apply any new Drizzle migrations on update too — without this
         # an `update` against a DB that's behind the new schema would
         # leave Web/Ingester pointing at columns/tables that don't exist.
         # `drizzle-kit migrate` is idempotent (no-op when caught up).
         push_schema
+        health_check
+        ;;
+    reload-caddy)
+        # Regenerate + sync the Caddyfile and restart Caddy only — no
+        # container rebuild. Use after changing host blocks (e.g. adding
+        # MOBILE_HOST) to apply routing + provision new-host TLS.
+        generate_caddyfile
+        rsync -az --delete --exclude='infra-*.env' --exclude='infra.env' --exclude='.env' \
+            "$SCRIPT_DIR/" "$REMOTE:$REMOTE_DIR/deploy/"
+        reload_caddy
         health_check
         ;;
     status)
@@ -315,7 +356,7 @@ case "$ACTION" in
         ;;
     *)
         echo "Unknown action: $ACTION"
-        echo "Usage: $0 <deploy|update|status|logs> <prod|test> [service]"
+        echo "Usage: $0 <deploy|update|reload-caddy|status|logs> <prod|test> [service]"
         exit 1
         ;;
 esac

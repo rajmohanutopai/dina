@@ -18,9 +18,9 @@
  *
  * Sections covered here:
  *   - Settings family (`/admin`, `/policy`, `/paired-devices`,
- *     `/service-settings`, `/ai-providers`, `/recovery-phrase`,
- *     `/confirm-recovery-phrase`, `/peerlens-preferences/*` →
- *     `/settings`; `/settings` → `/`)
+ *     `/service-settings`, `/ai-providers`, `/infrastructure`,
+ *     `/recovery-phrase`, `/confirm-recovery-phrase`,
+ *     `/peerlens-preferences/*` → `/settings`; `/settings` → `/`)
  *   - Chat thread + add-contact (reached from People tab)
  *   - Hamburger items not in a Stack folder (`/help`, `/reminders`)
  */
@@ -42,6 +42,9 @@ const SECTION_PARENTS: Record<string, string> = {
   policy: '/admin',
   'paired-devices': '/settings',
   'ai-providers': '/settings',
+  // /infrastructure (advanced endpoint overrides) is reached from
+  // Settings → More; back returns to Settings, not the Chat tab.
+  infrastructure: '/settings',
   // /my-listings (provider home: node role + listings) is reached from Network
   // → Services and Settings → Service Sharing; default its back to Network.
   'my-listings': '/peerlens',

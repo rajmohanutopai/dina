@@ -87,6 +87,10 @@ export {
 // Jest custom matchers (register with expect.extend(dinaMatchers))
 export { dinaMatchers } from './helpers/matchers';
 
+// Stub agentic remember-runtime for staging-drain / scheduler tests
+// (the drain requires one — Dina is LLM-driven, no fallback).
+export { makeStubRememberRuntime } from './helpers/remember_runtime_stub';
+
 // Unhandled-promise-rejection guard (task 11.8)
 export {
   UnhandledRejectionBuffer,

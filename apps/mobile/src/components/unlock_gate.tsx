@@ -55,9 +55,29 @@ import {
 import { colors, fonts, radius, spacing, textStyles } from '../theme';
 import { OnboardingFlow } from './onboarding/onboarding_flow';
 
-type Mode = 'loading' | 'onboarding' | 'locked' | 'unlocking' | 'unlocked';
+export type Mode = 'loading' | 'onboarding' | 'locked' | 'unlocking' | 'unlocked';
 
 const DEV_PASSPHRASE = process.env.EXPO_PUBLIC_DINA_DEV_PASSPHRASE ?? '';
+
+/**
+ * Decide the gate's mode when the vault transitions unlocked → sealed.
+ *
+ * Only a genuine seal/wipe (prev === 'unlocked') is acted on — every
+ * other prior mode (notably first-render 'loading') is owned by the
+ * mount probe and passed through unchanged.
+ *
+ *   - seal / background auto-lock leaves the wrapped seed → 'locked'
+ *     (re-prompt for the passphrase)
+ *   - Sign out / Erase everything DELETED the wrapped seed →
+ *     'onboarding' (there's no passphrase to ask for anymore)
+ *
+ * Pure so the wipe→onboarding contract is unit-testable without a full
+ * gate render.
+ */
+export function modeAfterSeal(prev: Mode, hasWrappedSeed: boolean): Mode {
+  if (prev !== 'unlocked') return prev;
+  return hasWrappedSeed ? 'locked' : 'onboarding';
+}
 
 /** Total budget for the full unlock pipeline. Argon2id KDF + SQLCipher
  *  open + per-persona DB open + hydration tops out at ~5–8s on iOS
@@ -143,16 +163,28 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
       setMode('unlocked');
       return;
     }
-    // unlocked → false transition. The user just sealed the vault
-    // (or boot has not yet unwrapped the seed). Reset autoRanRef so a
-    // subsequent boot can auto-unlock again, but ONLY when there's no
-    // wrapped seed (i.e. fresh state) — for the Sign out case the
-    // force-prompt flag (set by `sealVault`) suppresses auto-unlock so
-    // the user must re-type the passphrase. The distinction: if mode
-    // was 'unlocked' before, this is a manual seal; if mode was
-    // 'loading' it's first-render. We only flip to 'locked' for the
-    // manual-seal case.
-    setMode((prev) => (prev === 'unlocked' ? 'locked' : prev));
+    // unlocked → false transition. Only act on a real seal/wipe — i.e.
+    // when we were previously 'unlocked'. First-render (mode 'loading')
+    // is owned by the mount probe above, so leave it alone.
+    //
+    // Where we go depends on whether a vault still exists:
+    //   - Manual seal / background auto-lock leaves the wrapped seed in
+    //     place → 'locked' (re-prompt for the passphrase).
+    //   - Sign out / Erase everything DELETES the wrapped seed →
+    //     'onboarding'. Showing the "enter passphrase" form for a vault
+    //     that no longer exists is a dead end (the passphrase isn't
+    //     there anymore); the user should drop straight into a fresh
+    //     onboarding flow.
+    // So re-probe the seed rather than assuming 'locked'.
+    let cancelled = false;
+    void (async () => {
+      const wrapped = await loadWrappedSeed();
+      if (cancelled) return;
+      setMode((prev) => modeAfterSeal(prev, wrapped !== null));
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [unlocked]);
 
   const runUnlock = useCallback(async (pp: string): Promise<void> => {
@@ -312,8 +344,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xxl * 2,
   },
   brand: {
-    ...textStyles.eyebrow,
-    letterSpacing: 6,
+    ...textStyles.wordmark,
   },
   headline: {
     ...textStyles.display,

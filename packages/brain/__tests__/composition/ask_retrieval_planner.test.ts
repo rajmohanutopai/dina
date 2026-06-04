@@ -225,6 +225,48 @@ describe('runAskPreFlightRetrieval', () => {
     expect(result.block).toContain('Emma (daughter)');
   });
 
+  it('skips personas the personaAllowed filter blocks — never pre-fetches them (F-AGENT-VAULT-GATE round-3)', async () => {
+    // Regression for the agent vault-read gate bypass: the pre-flight
+    // planner used to pre-fetch EVERY planned persona, including
+    // sensitive ones, for an external agent — leaking vault content with
+    // no approval. With a filter that blocks 'finance', vaultSearch must
+    // never be called for it; 'general' (allowed) still runs.
+    const vaultSearchCalls: Array<{ persona: string; query: string }> = [];
+    const result = await runAskPreFlightRetrieval(
+      plan,
+      {
+        vaultSearch: async (persona, query) => {
+          vaultSearchCalls.push({ persona, query });
+          return [{ id: `${persona}-1`, content_l0: `secret from ${persona}`, persona }];
+        },
+        findPerson: async () => [],
+      },
+      { personaAllowed: (persona) => persona !== 'finance' },
+    );
+    // finance was filtered out → no fetch, no hits, not in the block.
+    expect(vaultSearchCalls.map((c) => c.persona)).toEqual(['general']);
+    expect(result.hits.finance ?? 0).toBe(0);
+    expect(result.block).not.toContain('Vault — finance:');
+    expect(result.block).not.toContain('secret from finance');
+    // general (allowed) still pre-fetched.
+    expect(result.block).toContain('Vault — general:');
+  });
+
+  it('supports an async personaAllowed filter', async () => {
+    const calls: string[] = [];
+    await runAskPreFlightRetrieval(
+      plan,
+      {
+        vaultSearch: async (persona) => {
+          calls.push(persona);
+          return [];
+        },
+      },
+      { personaAllowed: async (persona) => Promise.resolve(persona === 'general') },
+    );
+    expect(calls).toEqual(['general']);
+  });
+
   it('dedupes items by id within a persona', async () => {
     const planTwoQueries: AskRetrievalPlan = {
       personas: [

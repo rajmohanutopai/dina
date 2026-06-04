@@ -73,7 +73,9 @@ export type Step =
   | { kind: 'choose' }
   // Create path ----------------------------------------------------------
   | { kind: 'create_name'; draft: Partial<CreateDraft> }
-  | { kind: 'create_handle'; draft: Partial<CreateDraft> }
+  // `error` is set when provisioning bounced back here (e.g. the PDS
+  // rejected the handle); the picker surfaces it inline.
+  | { kind: 'create_handle'; draft: Partial<CreateDraft>; error?: string }
   | { kind: 'create_passphrase'; draft: Partial<CreateDraft> }
   | { kind: 'create_mnemonic_reveal'; draft: Partial<CreateDraft> }
   | { kind: 'create_mnemonic_verify'; draft: Partial<CreateDraft> }

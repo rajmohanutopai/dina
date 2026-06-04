@@ -104,48 +104,6 @@ describe('Event Processor', () => {
     });
   });
 
-  describe('post_publish', () => {
-    it('runs post-publish handler on stored item', async () => {
-      const result = await processEvent({
-        event: 'post_publish',
-        data: {
-          id: 'item-1',
-          type: 'email',
-          summary: 'Meeting with Alice tomorrow at 3pm',
-          body: "Hi, let's meet tomorrow at 3pm.",
-          timestamp: Date.now(),
-          persona: 'work',
-        },
-      });
-
-      expect(result.handled).toBe(true);
-      const r = result.result as any;
-      expect(r).toBeDefined();
-      expect(typeof r.remindersCreated).toBe('number');
-      expect(typeof r.contactUpdated).toBe('boolean');
-      expect(typeof r.ambiguousRouting).toBe('boolean');
-    });
-
-    it('rejects missing id', async () => {
-      const result = await processEvent({
-        event: 'post_publish',
-        data: { summary: 'test' },
-      });
-
-      expect(result.handled).toBe(false);
-      expect(result.error).toContain('id and summary are required');
-    });
-
-    it('rejects missing summary', async () => {
-      const result = await processEvent({
-        event: 'post_publish',
-        data: { id: 'item-1' },
-      });
-
-      expect(result.handled).toBe(false);
-    });
-  });
-
   describe('persona_unlocked', () => {
     it('creates drain request for persona', async () => {
       const result = await processEvent({

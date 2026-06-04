@@ -11,8 +11,6 @@ export * from './peerlens/tier_classifier';
 export * from './enrichment/l0_deterministic';
 export * from './contact/matcher';
 export * from './contact/attributor';
-export * from './enrichment/event_extractor';
-export * from './api/process';
 export * from './auth/service_key';
 export { CoreHttpError } from './errors';
 export { ApprovalReconciler } from './service/approval_reconciliation';
@@ -125,7 +123,6 @@ export {
 export type { LLMCallFn, EnrichmentResult } from './enrichment/pipeline';
 export * from './pipeline/chat_reasoning';
 export * from './pipeline/reasoning_trace';
-export * from './pipeline/reminder_planner';
 // identity_extraction exports `parseLLMResponse` which collides with
 // guardian/anti_her_classify's. Re-export under a disambiguated name.
 export {
@@ -141,7 +138,6 @@ export type {
   IdentityExtractionResult,
   IdentityLLMCallFn,
 } from './pipeline/identity_extraction';
-export * from './pipeline/post_publish';
 export * from './briefing/assembly';
 export * from './briefing/providers';
 export * from './service/capabilities/registry';
@@ -201,7 +197,11 @@ export type {
   ScheduleReminderToolOptions,
 } from './reasoning/schedule_reminder_tool';
 export { makeAgenticAskHandler, DEFAULT_ASK_SYSTEM_PROMPT } from './reasoning/ask_handler';
-export type { AgenticAskHandlerOptions } from './reasoning/ask_handler';
+export type {
+  AgenticAskHandlerOptions,
+  PreFlightRetrievalProvider,
+  PreFlightContext,
+} from './reasoning/ask_handler';
 export {
   buildRememberRuntime,
 } from './composition/remember_runtime';
@@ -240,7 +240,16 @@ export type {
   RetrievedVaultItem,
   RetrievedPersonMatch,
   PreFlightRetrievalResult,
+  RunPreFlightOptions,
 } from './composition/ask_retrieval_planner';
+// Agent vault-read gate — the pre-flight planner reuses these to skip
+// sensitive personas for non-owner callers so their content is never
+// pre-fetched ungated (F-AGENT-VAULT-GATE round-3).
+export {
+  personaReadRequiresApproval,
+  buildPreFlightPersonaAllowed,
+} from './composition/persona_guard';
+export type { PersonaReadContext } from './composition/persona_guard';
 export {
   buildAgenticExecuteFn,
   createAskCoordinator,

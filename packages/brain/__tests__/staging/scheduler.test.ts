@@ -2,6 +2,8 @@
  * StagingDrainScheduler — lifecycle + flush determinism.
  */
 
+import { makeStubRememberRuntime } from '@dina/test-harness';
+
 import { StagingDrainScheduler } from '../../src/staging/scheduler';
 import type { StagingDrainCoreClient } from '../../src/staging/drain';
 
@@ -50,6 +52,7 @@ describe('StagingDrainScheduler', () => {
     const timers: Array<{ fn: () => void; ms: number }> = [];
     const scheduler = new StagingDrainScheduler({
       core,
+      drain: { rememberRuntime: makeStubRememberRuntime('general') },
       onTick: (r) => ticks.push({ claimed: r.claimed, stored: r.stored }),
       // Inject a no-op timer — we drive ticks manually via flush().
       setInterval: (fn, ms) => {

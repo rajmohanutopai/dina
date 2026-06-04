@@ -12,7 +12,6 @@ import { buildAgenticAskPipeline } from '../../src/composition/agentic_ask';
 import { LLMRouter, RoutedLLMProvider } from '../../src/llm/router_dispatch';
 import { ToolRegistry } from '../../src/reasoning/tool_registry';
 import type { LLMProvider, ChatResponse } from '../../src/llm/adapters/provider';
-import { resetReminderLLM } from '../../src/pipeline/reminder_planner';
 import { resetIdentityExtractor } from '../../src/pipeline/identity_extraction';
 import type { CreateWorkflowTaskInput, WorkflowTask } from '@dina/core';
 
@@ -135,11 +134,9 @@ function makeBuilderInput(): Parameters<typeof buildAgenticAskPipeline>[0] {
 }
 
 describe('buildAgenticAskPipeline', () => {
-  // Reset the module-globals `registerReminderLLM` /
-  // `registerIdentityExtractor` mutate so parallel test files don't
-  // see side-effects from this suite.
+  // Reset the module-global `registerIdentityExtractor` mutates so
+  // parallel test files don't see side-effects from this suite.
   afterEach(() => {
-    resetReminderLLM();
     resetIdentityExtractor();
   });
 

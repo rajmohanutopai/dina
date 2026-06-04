@@ -90,8 +90,9 @@ function isLoopbackHost(host: string): boolean {
   return h === '127.0.0.1' || h === '::1' || h === 'localhost' || h.startsWith('127.');
 }
 
+import { createPersona, getPersona } from '@dina/core';
 import type { AskCoordinator } from '@dina/brain';
-import type { CoreClient } from '@dina/core';
+import type { CoreClient, PersonaTier } from '@dina/core';
 import type { HomeNodeRuntime } from '@dina/home-node';
 
 export interface BrainServerClients {
@@ -304,9 +305,29 @@ export async function bootServer(
       remotePersonas = await core.personasList();
       const names = remotePersonas.map((p) => p.name);
       setAccessiblePersonas(names);
+      // SECURITY: mirror persona TIERS into Brain's local persona
+      // registry too — not just the accessible-names set. The agent
+      // vault-read gate (`persona_guard` / `vault_tool`) reads tiers via
+      // `getPersona` / `listPersonas`; in this split-process Brain that
+      // registry is otherwise empty, so the gate would fail OPEN — every
+      // sensitive/locked persona treated as not requiring approval. An
+      // unrecognised tier is mirrored as `locked` (fail-closed).
+      const VALID_TIERS = new Set<PersonaTier>(['default', 'standard', 'sensitive', 'locked']);
+      for (const p of remotePersonas) {
+        if (getPersona(p.name) !== null) continue; // already mirrored this process
+        const tier: PersonaTier = VALID_TIERS.has(p.tier as PersonaTier)
+          ? (p.tier as PersonaTier)
+          : 'locked';
+        try {
+          createPersona(p.name, tier);
+        } catch {
+          // Invalid name / duplicate race — skip. `setAccessiblePersonas`
+          // above still constrains what `vault_search` can reach.
+        }
+      }
       logger.info(
         { count: names.length, personas: names },
-        'brain-server accessible personas mirrored from Core',
+        'brain-server accessible personas + tiers mirrored from Core',
       );
     } catch (err) {
       logger.warn(
@@ -316,12 +337,11 @@ export async function bootServer(
       setAccessiblePersonas([]);
     }
 
-    // Build the per-item remember runtime when an LLM is configured.
-    // The staging drain receives it and uses the agentic loop for
-    // every drained item — replacing the legacy keyword classifier
-    // + reminder_planner + identity-link extractor sequence with
-    // one LLM round-trip per item. When no LLM is configured, the
-    // drain falls back to the legacy path.
+    // Build the per-item remember runtime from the configured LLM. The
+    // staging drain uses the agentic loop for every drained item (persona
+    // routing, reminders, people links, preferences) — one LLM round-trip
+    // per item. Dina is LLM-driven: when no LLM is configured the drain
+    // stays unwired (below); there is NO non-LLM fallback.
     personaDescriptors = remotePersonas.map((p) => ({
       name: p.name,
       description: PERSONA_DESCRIPTIONS[p.name] ?? '',
@@ -334,46 +354,56 @@ export async function bootServer(
             defaultPersona: 'general',
           })
         : undefined;
-    if (rememberRuntime !== undefined) {
+    if (rememberRuntime === undefined) {
+      // Dina is LLM-driven: the staging drain REQUIRES the agentic
+      // runtime (it throws per item without one — no non-LLM fallback).
+      // With no LLM configured, leave the drain unwired so it never
+      // claims items and marks them failed; staged items wait until a
+      // provider is configured and the server restarts.
+      logger.warn(
+        {},
+        'brain-server staging drain disabled — no LLM configured (Dina is LLM-driven; staged items stay queued until a provider is set up)',
+      );
+    } else {
       logger.info(
         { personaCount: personaDescriptors.length },
         'brain-server remember runtime configured (agentic /remember)',
       );
+
+      const stagingDrain = new StagingDrainScheduler({
+        core,
+        drain: {
+          // Out-of-process people-graph writer. Core owns SQLite in lite;
+          // Brain's post-publish extractor POSTs the structured result
+          // through the signed Core HTTP surface.
+          peopleGraphApply: (result, persona) => core.peopleApplyExtraction(result, persona),
+          rememberRuntime,
+        },
+        logger: (entry) => logger.info(entry, 'brain-server staging drain'),
+        onError: (err) => {
+          logger.warn(
+            { error: err instanceof Error ? err.message : String(err) },
+            'brain-server staging drain tick failed',
+          );
+        },
+        ...(options.setInterval !== undefined ? { setInterval: options.setInterval } : {}),
+        ...(options.clearInterval !== undefined ? { clearInterval: options.clearInterval } : {}),
+      });
+      schedulers.stagingDrain = stagingDrain;
+
+      // Wire the chat orchestrator's Core + drain hook through the
+      // shared runtime so /remember replies on `/api/v1/chat` arrive
+      // sub-second instead of waiting for a periodic tick. Same
+      // helper mobile's bootstrap uses — one source of truth for the
+      // run-tick + status-poll behaviour. We omit `lookupPendingApproval`
+      // because the staging service lives in another process (Core);
+      // the orchestrator falls back to a generic parked-row reply.
+      chatRememberRuntime = wireChatRememberRuntime({
+        core: clients.core,
+        stagingDrain,
+        maxAttempts: 8,
+      });
     }
-
-    const stagingDrain = new StagingDrainScheduler({
-      core,
-      drain: {
-        // Out-of-process people-graph writer. Core owns SQLite in lite;
-        // Brain's post-publish extractor POSTs the structured result
-        // through the signed Core HTTP surface.
-        peopleGraphApply: (result, persona) => core.peopleApplyExtraction(result, persona),
-        ...(rememberRuntime !== undefined ? { rememberRuntime } : {}),
-      },
-      logger: (entry) => logger.info(entry, 'brain-server staging drain'),
-      onError: (err) => {
-        logger.warn(
-          { error: err instanceof Error ? err.message : String(err) },
-          'brain-server staging drain tick failed',
-        );
-      },
-      ...(options.setInterval !== undefined ? { setInterval: options.setInterval } : {}),
-      ...(options.clearInterval !== undefined ? { clearInterval: options.clearInterval } : {}),
-    });
-    schedulers.stagingDrain = stagingDrain;
-
-    // Wire the chat orchestrator's Core + drain hook through the
-    // shared runtime so /remember replies on `/api/v1/chat` arrive
-    // sub-second instead of waiting for a periodic tick. Same
-    // helper mobile's bootstrap uses — one source of truth for the
-    // run-tick + status-poll behaviour. We omit `lookupPendingApproval`
-    // because the staging service lives in another process (Core);
-    // the orchestrator falls back to a generic parked-row reply.
-    chatRememberRuntime = wireChatRememberRuntime({
-      core: clients.core,
-      stagingDrain,
-      maxAttempts: 8,
-    });
   }
 
   // fastify_start (scaffold — full route binding in tasks 5.3 – 5.49).

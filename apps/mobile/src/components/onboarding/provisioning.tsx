@@ -25,13 +25,17 @@ import {
 } from '../../onboarding/provision';
 import { colors, radius, spacing, textStyles } from '../../theme';
 
+// Order mirrors provisionIdentity's emission order: derive + wrap in
+// memory, the two network steps (createAccount + PLC update), THEN the
+// atomic-commit persistence (keys + did). Keeping this in sync with the
+// actual order keeps the progress checklist monotonic.
 const STAGES: ProvisionStage[] = [
   'deriving_seed',
   'deriving_keys',
-  'persisting_keys',
   'wrapping_seed',
   'creating_pds_account',
   'publishing_plc_update',
+  'persisting_keys',
   'persisting_did',
   'opening_vault',
   'done',
@@ -107,7 +111,7 @@ export function Provisioning(props: ProvisioningProps): React.ReactElement {
     props.kind === 'create'
       ? 'We\u2019re generating keys, wrapping your master seed, and registering your identity with the Dina network.'
       : props.kind === 'external'
-        ? 'We\u2019re preparing your local vault, signing into your PDS, and adding Dina endpoints to your did:plc.'
+        ? 'We\u2019re creating a separate Dina identity and linking your Bluesky account read-only \u2014 your Bluesky DID stays yours, untouched.'
         : 'We\u2019re re-deriving your keys from the recovery phrase and restoring your local vault.';
 
   return (

@@ -40,8 +40,22 @@ import type { PreFlightRetrievalResult } from '../composition/ask_retrieval_plan
  * message. Fail-soft: implementations should never throw; they
  * return `null` (or an empty block) when planning fails.
  */
+/**
+ * Per-ask context the coordinator passes so the pre-flight planner can
+ * gate sensitive-vault pre-fetch the same way the on-demand vault tool
+ * does (F-AGENT-VAULT-GATE round-3). Absent on the legacy
+ * `makeAgenticAskHandler` path, which has no per-ask DID → allow-all.
+ */
+export interface PreFlightContext {
+  /** DID of whoever is asking (agent did:key, or the owner's did:plc). */
+  requesterDid?: string;
+  /** dina-agent CLI session id, for the session-grant shortcut. */
+  sessionId?: string;
+}
+
 export type PreFlightRetrievalProvider = (
   question: string,
+  ctx?: PreFlightContext,
 ) => Promise<PreFlightRetrievalResult | null>;
 
 export interface AgenticAskHandlerOptions {

@@ -107,7 +107,6 @@ export default function InfrastructureScreen(): React.ReactElement {
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={styles.title}>Infrastructure</Text>
       <Text style={styles.subtitle}>
         Dina uses hosted defaults automatically. Change these only when you are using a
         different PDS or AppView.
@@ -218,11 +217,9 @@ const styles = StyleSheet.create({
     paddingTop: spacing.lg,
     paddingBottom: spacing.xxl,
   },
-  title: textStyles.h1,
   subtitle: {
     ...textStyles.body,
     color: colors.textSecondary,
-    marginTop: spacing.sm,
   },
   section: {
     marginTop: spacing.xl,

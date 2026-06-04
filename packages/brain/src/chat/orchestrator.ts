@@ -412,10 +412,14 @@ async function handleRemember(text: string, thread: string): Promise<BotResponse
 
   const personaName = formatPersonaDisplayName(persona);
 
-  // The reminder planner uses the staging row's id as the reminder's
-  // `source_item_id` (see `drain.ts` → `handlePostPublish` → `planReminders`),
-  // so we can filter by the staging id we already have — no need to
-  // dig the published vault-item id out of the tick result.
+  // Both drain paths stamp the reminder's `source_item_id` with the
+  // staging row id: the legacy `handlePostPublish` → `planReminders`
+  // path, and the agentic `remember_runtime` → `schedule_reminder` path
+  // (which threads `sourceItemId` through). So we can filter by the
+  // staging id we already have — no need to dig the published vault-item
+  // id out of the tick result. The reminder lands in the routed persona
+  // (the agentic tool's `resolvePersona` fallback guarantees this when
+  // the LLM omits an explicit persona), which is the `persona` we query.
   const reminders = (await listRemindersByPersonaRouted(persona))
     .filter((r) => r.source_item_id === itemId)
     .sort((a, b) => a.due_at - b.due_at);

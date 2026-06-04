@@ -20,25 +20,20 @@
  */
 
 import { listContacts, getContact, updateContact, getVaultRepository } from '@dina/core';
-import { isVaultItemType } from '@dina/core';
 import { enrichItem as enrichVaultItem } from '../enrichment/pipeline';
 import {
   touchTopicsForItem,
   type TopicTouchPipelineOptions,
 } from '../enrichment/topic_touch_pipeline';
 import { processEvent } from '../pipeline/event_processor';
-import { handlePostPublish } from '../pipeline/post_publish';
 import { type Reminder } from '@dina/core/reminders';
 import { listRemindersByPersonaRouted } from '../reminders/backend';
-import { classifyDomain, classifyPersonas } from '../routing/domain';
-import { selectPersonaRich } from '../routing/persona_selector';
 import { scoreSender } from '../peerlens/scorer';
 import { getAccessiblePersonas } from '../vault_context/assembly';
 import { recallSenderSubjectMemories } from '../vault_context/subject_recall';
 import { getPeopleRepository } from '@dina/core';
 
 import type { StagingProcessResult } from './processor';
-import type { VaultItemType } from '@dina/core';
 import type { CoreClient, ApplyExtractionResponse, ExtractionResult } from '@dina/core';
 import type { RememberTurnInput, RememberTurnResult } from '../composition/remember_runtime';
 
@@ -186,12 +181,12 @@ export interface StagingDrainOptions {
     persona?: string,
   ) => Promise<ApplyExtractionResponse>;
   /**
-   * [pipeline hook] The per-item agentic loop. **REQUIRED in production**;
-   * `runStagingDrainTick` throws on the first item if it's missing.
-   * Tests that don't care about classification omit this and the drain
-   * defaults the route to `general`, skips people-graph + preferences,
-   * still runs trust scoring + topic touch + vault write. This lets
-   * legacy fixtures keep passing while the new path proves out.
+   * [pipeline hook] The per-item agentic loop. **REQUIRED** — Dina is
+   * LLM-driven and there is no non-LLM fallback. `runStagingDrainTick`
+   * throws on each item if it's missing (the host disables the drain
+   * entirely when no AI provider is configured, so a missing runtime
+   * here is a wiring bug). Tests that exercise the drain inject a stub
+   * via `makeStubRememberRuntime` (`@dina/test-harness`).
    *
    * Built via `buildRememberRuntime({ llm, personas, ... })` in the
    * host's boot (lite brain-server + mobile `boot_capabilities`).
@@ -321,98 +316,84 @@ export async function runStagingDrainTick(
       };
 
       // ────────────────────────────────────────────────────────────────
-      // Per-item agentic loop (preferred path). When `rememberRuntime`
-      // is wired (lite brain-server + mobile boot when an LLM is
-      // configured), the loop sees the item once and emits tool calls
-      // for every side effect: persona routing, reminders, people
-      // links, preferences. The drain reads `turn.sideEffects` and
-      // applies them after vault storage.
+      // Per-item agentic loop — the ONLY path. The `rememberRuntime`
+      // (built by lite brain-server + mobile boot from the configured
+      // LLM) sees the item once and emits tool calls for every side
+      // effect: persona routing, reminders, people links, preferences.
+      // The drain reads `turn.sideEffects` and applies them after vault
+      // storage.
       //
-      // Fallback (no runtime): the original separate
-      // `classifyDomain` → `selectPersonaRich` → keyword fallback +
-      // `handlePostPublish` pipeline runs. This keeps legacy fixtures
-      // and integration tests green while the new path proves out in
-      // production. A future cleanup pass removes the fallback once
-      // every consumer wires the runtime.
+      // There is NO non-LLM fallback. Dina is LLM-driven: `rememberRuntime`
+      // is required, and the host disables the drain when no AI provider
+      // is configured. A missing runtime here is therefore a wiring bug,
+      // not a degraded mode — surface it loudly.
       // ────────────────────────────────────────────────────────────────
-      let turn: RememberTurnResult | null = null;
-      if (options.rememberRuntime !== undefined) {
+      if (options.rememberRuntime === undefined) {
+        throw new Error(
+          'staging drain requires an LLM-backed rememberRuntime — Dina is LLM-driven; configure an AI provider',
+        );
+      }
+      const memoryText =
+        classifyInput.body !== '' ? classifyInput.body : classifyInput.subject;
+      // Structured recall: for a D2D arrival (originDid set), resolve
+      // the sender → person and pull their subject-linked memories so
+      // the agentic loop can enrich a terse "I'm coming over" with the
+      // sender's remembered preferences — works in-process (mobile) and
+      // out-of-process (lite, via Core HTTP backends). Fail-soft.
+      let relatedMemories: string[] = [];
+      if (originDid !== '') {
         try {
-          const memoryText =
-            classifyInput.body !== '' ? classifyInput.body : classifyInput.subject;
-          // Structured recall: for a D2D arrival (originDid set), resolve
-          // the sender → person and pull their subject-linked memories so
-          // the agentic loop can enrich a terse "I'm coming over" with the
-          // sender's remembered preferences — works in-process (mobile) and
-          // out-of-process (lite, via Core HTTP backends). Fail-soft.
-          let relatedMemories: string[] = [];
-          if (originDid !== '') {
-            try {
-              relatedMemories = await recallSenderSubjectMemories(
-                originDid,
-                getAccessiblePersonas(),
-                5,
-              );
-            } catch (err) {
-              log({
-                event: 'staging.drain.subject_recall_failed',
-                item_id: itemId,
-                error: err instanceof Error ? err.message : String(err),
-              });
-            }
-          }
-          turn = await options.rememberRuntime.run({
-            memoryText,
-            metadata: {
-              type: classifyInput.type,
-              source: classifyInput.source,
-              sender: classifyInput.sender,
-              subject: classifyInput.subject,
-            },
-            ...(relatedMemories.length > 0 ? { relatedMemories } : {}),
-          });
+          relatedMemories = await recallSenderSubjectMemories(
+            originDid,
+            getAccessiblePersonas(),
+            5,
+          );
         } catch (err) {
           log({
-            event: 'staging.drain.remember_runtime_failed',
+            event: 'staging.drain.subject_recall_failed',
             item_id: itemId,
             error: err instanceof Error ? err.message : String(err),
           });
-          // Falls through to the keyword classifier below.
         }
+      }
+      // A run() failure (e.g. transient LLM/network error) re-throws so
+      // the item stays claimed and retries on the next tick — never a
+      // silent keyword-only store.
+      let turn: RememberTurnResult;
+      try {
+        turn = await options.rememberRuntime.run({
+          memoryText,
+          sourceItemId: itemId,
+          metadata: {
+            type: classifyInput.type,
+            source: classifyInput.source,
+            sender: classifyInput.sender,
+            subject: classifyInput.subject,
+          },
+          ...(relatedMemories.length > 0 ? { relatedMemories } : {}),
+        });
+      } catch (err) {
+        log({
+          event: 'staging.drain.remember_runtime_failed',
+          item_id: itemId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
       }
 
-      let personas: string[];
-      let classifierMethod: 'agentic' | 'llm' | 'keyword' = 'keyword';
-      let classifierConfidence = 0;
-      let classifierReason = '';
-      const classification = classifyDomain(classifyInput);
-      if (turn !== null) {
-        const routedPrimary = turn.sideEffects.routes[0]?.primary;
-        const routedSecondary = turn.sideEffects.routes[0]?.secondary ?? [];
-        personas = [routedPrimary ?? 'general', ...routedSecondary];
-        classifierMethod = 'agentic';
-        classifierConfidence = 1;
-        classifierReason = turn.text ?? '';
-      } else {
-        const rich = await selectPersonaRich(classifyInput);
-        if (rich !== null) {
-          personas = [rich.primary ?? rich.persona, ...(rich.secondary ?? [])];
-          classifierMethod = 'llm';
-          classifierConfidence = rich.confidence ?? 0;
-          classifierReason = rich.reason ?? '';
-        } else {
-          personas = classifyPersonas(classifyInput);
-          classifierMethod = 'keyword';
-          classifierConfidence = classification.confidence;
-        }
-      }
+      const routedPrimary = turn.sideEffects.routes[0]?.primary;
+      const routedSecondary = turn.sideEffects.routes[0]?.secondary ?? [];
+      const personas: string[] = [routedPrimary ?? 'general', ...routedSecondary];
+      const classifierMethod = 'agentic';
+      const classifierConfidence = 1;
+      const classifierReason = turn.text ?? '';
       log({
         event: 'staging.drain.classified',
         item_id: itemId,
         personas,
         method: classifierMethod,
         confidence: classifierConfidence,
-        ...(turn !== null ? { toolNames: turn.toolNames } : {}),
+        toolNames: turn.toolNames,
       });
 
       // PeerLens rating — stamp provenance onto the vault row BEFORE
@@ -593,13 +574,8 @@ export async function runStagingDrainTick(
         data: enriched,
       });
       if (resolveResult.status !== 'stored') {
-        // Use the storage target (`personas[0]`), not the keyword
-        // classifier's raw output. Same reasoning as the stored
-        // branch below: the keyword DOMAINS table includes legacy
-        // persona names (`social`, `legal`, `professional`) that
-        // may not be installed on this device, while `personas[0]`
-        // comes from the LLM-rich selector or the threshold fan-out
-        // — both of which target real, installed personas.
+        // Report the storage target (`personas[0]`, the agentic loop's
+        // routed primary), which targets a real, installed persona.
         const result: StagingProcessResult = {
           itemId,
           persona: personas[0] ?? 'general',
@@ -624,16 +600,9 @@ export async function runStagingDrainTick(
       });
 
       // The primary persona where the item actually got stored is
-      // `personas[0]`, not `classification.persona`. `classification`
-      // is the keyword-classifier's best-match output (used as a
-      // weak prior); the actual storage destination is the rich-LLM
-      // primary (when registered) or the threshold-gated keyword
-      // fan-out, both of which can differ from the bare keyword
-      // best-match. Reporting `classification.persona` here led to
-      // "Stored in Social vault" replies in chat while the row
-      // actually landed in `general` — the keyword classifier scored
-      // 'birthday' as a weak social signal, while the LLM (or the
-      // 0.5-threshold fan-out) correctly fell back to general.
+      // `personas[0]` — the agentic loop's routed primary (or the first
+      // of its fan-out). Report that, so the chat reply names the vault
+      // the row truly landed in.
       const result: StagingProcessResult = {
         itemId,
         persona: personas[0] ?? 'general',
@@ -662,19 +631,12 @@ export async function runStagingDrainTick(
       }
 
       // ────────────────────────────────────────────────────────────────
-      // Post-storage side effects. Two paths:
-      //
-      // (A) Agentic — `turn` is non-null because `rememberRuntime` ran.
-      //     Apply the loop's collected side effects: people-graph link,
-      //     reminders already fired mid-loop, preferences logged. The
-      //     contact last-seen update is deterministic and runs regardless.
-      //
-      // (B) Legacy — no runtime injected. `handlePostPublish` does the
-      //     reminder_planner LLM call, identity-link extraction, etc.
-      //     This is the path existing tests + the Python-parity pipeline
-      //     still use until every consumer wires the runtime.
+      // Post-storage side effects (agentic). Apply the loop's collected
+      // side effects: people-graph link, reminders already fired mid-loop,
+      // preferences logged. The contact last-seen update is deterministic
+      // and runs regardless.
       // ────────────────────────────────────────────────────────────────
-      if (turn !== null) {
+      {
         const postErrors: string[] = [];
         let peopleGraphTelemetry: {
           applied: number;
@@ -794,57 +756,6 @@ export async function runStagingDrainTick(
           peopleGraph: peopleGraphTelemetry,
           errors: postErrors,
         };
-      } else {
-        // Legacy path — handlePostPublish does reminder_planner LLM
-        // call, identity extraction, contact last-seen, ambiguous flag.
-        try {
-          const primaryPersona = personas[0] ?? 'general';
-          const rawType = pickString('type');
-          const itemType: VaultItemType = isVaultItemType(rawType) ? rawType : 'note';
-          const postResult = await handlePostPublish(
-            {
-              id: itemId,
-              type: itemType,
-              summary: pickString('summary'),
-              body: pickString('body'),
-              timestamp: originalTimestamp > 0 ? originalTimestamp : Date.now(),
-              persona: primaryPersona,
-              sender_did: d2dContactDid !== '' ? d2dContactDid : undefined,
-              confidence: classifierConfidence,
-              metadata: routingMeta,
-            },
-            {
-              ...(options.peopleGraphApply !== undefined
-                ? { peopleGraphApply: options.peopleGraphApply }
-                : {}),
-            },
-          );
-          result.postPublish = {
-            remindersCreated: postResult.remindersCreated,
-            identityLinksFound: postResult.identityLinksFound,
-            contactUpdated: postResult.contactUpdated,
-            ambiguousRouting: postResult.ambiguousRouting,
-            llmRefinedReminders: postResult.llmRefinedReminders,
-            peopleGraph: postResult.peopleGraph,
-            errors: postResult.errors,
-          };
-        } catch (err) {
-          const reason = err instanceof Error ? err.message : String(err);
-          log({
-            event: 'staging.drain.post_publish_threw',
-            item_id: itemId,
-            error: reason,
-          });
-          result.postPublish = {
-            remindersCreated: 0,
-            identityLinksFound: 0,
-            contactUpdated: false,
-            ambiguousRouting: false,
-            llmRefinedReminders: false,
-            peopleGraph: null,
-            errors: [`post_publish threw: ${reason}`],
-          };
-        }
       }
 
       // D2D → nudge chain. Fires only for items that came in over

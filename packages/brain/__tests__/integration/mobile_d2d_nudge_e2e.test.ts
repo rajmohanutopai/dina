@@ -46,7 +46,7 @@ import {
   resetContactDirectory,
   setPeopleRepository,
 } from '@dina/core';
-import { makeFakePeopleRepo } from '@dina/test-harness';
+import { makeFakePeopleRepo, makeStubRememberRuntime } from '@dina/test-harness';
 import { resetReminderState } from '@dina/core/reminders';
 import {
   clearCheckpoints,
@@ -149,6 +149,9 @@ describe('D2D arrival → nudge notification (Sancho Moment)', () => {
     scheduler = new StagingDrainScheduler({
       core,
       drain: {
+        // Routing is the agentic loop's job now; stub it to the persona
+        // this case pins ("bank account" → financial).
+        rememberRuntime: makeStubRememberRuntime('financial'),
         onD2DReceived: async (n) => {
           delivered.push(n);
         },
@@ -209,6 +212,7 @@ describe('D2D arrival → nudge notification (Sancho Moment)', () => {
     scheduler = new StagingDrainScheduler({
       core,
       drain: {
+        rememberRuntime: makeStubRememberRuntime('general'),
         onD2DReceived: async (n) => {
           delivered.push(n);
         },
@@ -244,6 +248,7 @@ describe('D2D arrival → nudge notification (Sancho Moment)', () => {
     scheduler = new StagingDrainScheduler({
       core,
       drain: {
+        rememberRuntime: makeStubRememberRuntime('general'),
         onD2DReceived: async (n) => {
           delivered.push(n);
         },

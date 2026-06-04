@@ -19,7 +19,6 @@ import {
   GUARD_SCAN,
   ANTI_HER,
   ANTI_HER_CLASSIFY,
-  REMINDER_PLAN,
   PERSON_IDENTITY_EXTRACTION,
   NUDGE_ASSEMBLE,
   CHAT_SYSTEM,
@@ -29,8 +28,8 @@ import {
 
 describe('Prompt Registry', () => {
   describe('completeness', () => {
-    it('has exactly 15 prompts', () => {
-      expect(PROMPT_NAMES.length).toBe(15);
+    it('has exactly 13 prompts', () => {
+      expect(PROMPT_NAMES.length).toBe(13);
     });
 
     const expectedNames = [
@@ -40,8 +39,6 @@ describe('Prompt Registry', () => {
       'GUARD_SCAN',
       'ANTI_HER',
       'ANTI_HER_CLASSIFY',
-      'REMINDER_PLAN',
-      'REMINDER_QUERY_EXPANSION',
       'ASK_RETRIEVAL_PLAN',
       'NUDGE_ASSEMBLE',
       'PERSON_IDENTITY_EXTRACTION',
@@ -250,80 +247,6 @@ describe('Prompt Registry', () => {
 
     it('instructs redirect to real people', () => {
       expect(ANTI_HER).toMatch(/redirect/i);
-    });
-  });
-
-  describe('REMINDER_PLAN', () => {
-    it('contains "what is now" placeholders', () => {
-      // Lineage: {{event_date}} → {{today}} → {{now_local}} +
-      // {{now_ms_grouped}}. Localised string drives the LLM's
-      // year-bump/past-birthday reasoning; underscored Unix-ms is the
-      // arithmetic anchor that survives PII scrubbing (the bare 13-digit
-      // form was getting masked as a phone number — see commit notes).
-      expect(REMINDER_PLAN).toContain('{{now_local}}');
-      expect(REMINDER_PLAN).toContain('{{now_ms_grouped}}');
-    });
-
-    it('defines reminder JSON output', () => {
-      expect(REMINDER_PLAN).toContain('"reminders"');
-      expect(REMINDER_PLAN).toContain('"due_at"');
-    });
-
-    it('contains vault_context placeholder', () => {
-      expect(REMINDER_PLAN).toContain('{{vault_context}}');
-    });
-
-    it('contains timezone placeholder', () => {
-      expect(REMINDER_PLAN).toContain('{{timezone}}');
-    });
-
-    it('includes anti-hallucination guard', () => {
-      expect(REMINDER_PLAN).toContain('NEVER fabricate');
-    });
-
-    it('includes consolidation rule for arrivals (Python parity)', () => {
-      // Python phrasing: "create ONE reminder that includes ALL relevant
-      // context about that person from the vault" — no "Consolidation"
-      // header keyword.
-      expect(REMINDER_PLAN).toContain('ONE reminder');
-      expect(REMINDER_PLAN).toContain('ALL relevant context');
-    });
-
-    it('carries the canonical Alonso arrival example (capabilities.md spec)', () => {
-      // Pinning the verbatim example so prompt edits that drop it
-      // surface in code review.
-      expect(REMINDER_PLAN).toContain('Alonso is arriving');
-      expect(REMINDER_PLAN).toContain('cold brew coffee');
-    });
-
-    it('exposes arrival as a valid kind for the LLM to choose', () => {
-      // No per-scenario rule for lead time — we trust the reasoning
-      // model to pick a sensible fire time from the event content +
-      // vault context. Just expose the kind so the type system stays
-      // honest with what the deterministic extractor produces.
-      expect(REMINDER_PLAN).toContain('arrival');
-    });
-
-    it('locks in the explicit-time-of-day rule (MT-16-I1)', () => {
-      // MT-16-I1 was the case where "Pick up dry cleaning tomorrow at
-      // 6pm" landed as a 9am reminder — the planner inferred a
-      // morning heads-up instead of honoring the explicit clock
-      // time. The EVENT TIME vs FIRE TIME section blocks that
-      // regression: the event's named time is the source of truth and
-      // must never default to a morning hour.
-      expect(REMINDER_PLAN).toMatch(/preserve HH:MM verbatim/);
-      expect(REMINDER_PLAN).toMatch(/EVENT TIME vs FIRE TIME/);
-      expect(REMINDER_PLAN).toMatch(/morning hour/i);
-      expect(REMINDER_PLAN).toMatch(/dry cleaning tomorrow at 6pm/);
-    });
-
-    it('instructs lead time + fire-time phrasing for prep reminders', () => {
-      // (1) A "prepare for a visit" reminder must fire BEFORE the
-      // event, not at it. (2) The message is read when it pops, so it
-      // must not bake in creation-relative words like "tomorrow".
-      expect(REMINDER_PLAN).toMatch(/LEAD TIME/);
-      expect(REMINDER_PLAN).toMatch(/PHRASE FOR FIRE TIME/);
-      expect(REMINDER_PLAN).toMatch(/read WHEN THE REMINDER FIRES/i);
     });
   });
 

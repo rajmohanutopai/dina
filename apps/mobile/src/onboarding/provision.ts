@@ -230,18 +230,15 @@ export async function provisionIdentity(opts: ProvisionOptions): Promise<Provisi
   const signing = deriveRootSigningKey(masterSeed, 0);
   const rotation = deriveRotationKey(masterSeed, 0);
 
-  // 3. Keychain write so subsequent boots have keys without the master
-  //    seed in memory.
-  progress(opts.onProgress, 'persisting_keys');
-  await saveIdentitySeeds({
-    signingSeed: signing.privateKey,
-    rotationSeed: rotation.privateKey,
-  });
-
-  // 4. Wrap + persist the master seed so unlock() can recover it.
+  // 3. Wrap the master seed (Argon2id KDF) in memory. Provisioning is
+  //    all-or-nothing: neither the wrapped seed nor the keychain seeds
+  //    are persisted until BOTH network steps below (createAccount +
+  //    PLC update) succeed — see the atomic-commit block. This keeps a
+  //    failed onboarding from leaving a bootable vault with no did:plc,
+  //    which is what made boot fall back to a did:key identity
+  //    (resolveIdentity in boot_capabilities.ts).
   progress(opts.onProgress, 'wrapping_seed');
   const wrapped = await wrapSeed(opts.passphrase, masterSeed);
-  await saveWrappedSeed(wrapped);
 
   // 5. PDS createAccount. PDS mints the did:plc, publishes the genesis
   //    op to plc.directory with our K256 in rotationKeys, and returns
@@ -267,22 +264,7 @@ export async function provisionIdentity(opts: ProvisionOptions): Promise<Provisi
     throw new Error(`PDS account creation failed: ${msg}`);
   }
 
-  // 6. Persist PDS credentials so boot's tryBuildPdsPublisher can
-  //    re-authenticate without re-running provision. Also pin the
-  //    PDS URL in case the user overrode the default.
-  await Promise.all([
-    savePdsUrl(pdsURL),
-    savePdsHandle(handle),
-    savePdsPassword(password),
-    savePdsEmail(email),
-    // Stamp the AppView pref too — first-run gate may have set it
-    // already, but be idempotent against partial state.
-    infra.appViewURL === null
-      ? Promise.resolve()
-      : saveAppViewURL(infra.appViewURL),
-  ]);
-
-  // 7. PLC update — add `dina_signing` VM + `dina-messaging` service.
+  // 5. PLC update — add `dina_signing` VM + `dina-messaging` service.
   //    The PDS-published genesis op only carries `atproto` VM and
   //    `atproto_pds` service; we need both Dina-specific fields for
   //    D2D to work. Sign with our K256 rotation key (PDS already
@@ -309,9 +291,38 @@ export async function provisionIdentity(opts: ProvisionOptions): Promise<Provisi
     throw new Error(`PLC update (dina services + signing key) failed: ${msg}`);
   }
 
-  // 8. Remember the DID for next boot.
+  // ─── Atomic commit ─────────────────────────────────────────────────
+  // Both network steps succeeded and the did:plc is fully published.
+  // Only now do we write durable state, so the invariant holds: if a
+  // vault exists on disk, a real did:plc exists behind it — never a
+  // did:key fallback left over from a half-finished onboarding.
+
+  // 6. Keychain seeds + wrapped master seed (deferred from earlier so
+  //    nothing survives a network failure above).
+  progress(opts.onProgress, 'persisting_keys');
+  await saveIdentitySeeds({
+    signingSeed: signing.privateKey,
+    rotationSeed: rotation.privateKey,
+  });
+  await saveWrappedSeed(wrapped);
+
+  // 7. Remember the DID for next boot + persist PDS credentials so
+  //    boot's tryBuildPdsPublisher can re-authenticate without
+  //    re-running provision. Also pin the PDS URL in case the user
+  //    overrode the default.
   progress(opts.onProgress, 'persisting_did');
   await savePersistedDid(pdsDid);
+  await Promise.all([
+    savePdsUrl(pdsURL),
+    savePdsHandle(handle),
+    savePdsPassword(password),
+    savePdsEmail(email),
+    // Stamp the AppView pref too — first-run gate may have set it
+    // already, but be idempotent against partial state.
+    infra.appViewURL === null
+      ? Promise.resolve()
+      : saveAppViewURL(infra.appViewURL),
+  ]);
 
   // Seed the default 4-persona set (general + work + health + finance) —
   // matches main Dina's bootstrap.
@@ -471,15 +482,15 @@ export async function recoverIdentity(opts: {
   const signing = deriveRootSigningKey(masterSeed, 0);
   const rotation = deriveRotationKey(masterSeed, 0);
 
+  progress(opts.onProgress, 'wrapping_seed');
+  const wrapped = await wrapSeed(opts.passphrase, masterSeed);
+  await saveWrappedSeed(wrapped);
+
   progress(opts.onProgress, 'persisting_keys');
   await saveIdentitySeeds({
     signingSeed: signing.privateKey,
     rotationSeed: rotation.privateKey,
   });
-
-  progress(opts.onProgress, 'wrapping_seed');
-  const wrapped = await wrapSeed(opts.passphrase, masterSeed);
-  await saveWrappedSeed(wrapped);
 
   // Re-derive PDS password from the seed (deterministic — same on
   // every device that restores from the same mnemonic) and persist

@@ -116,8 +116,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
   },
   brand: {
-    ...textStyles.eyebrow,
-    letterSpacing: 6,
+    ...textStyles.wordmark,
     marginBottom: spacing.lg,
   },
   headline: {

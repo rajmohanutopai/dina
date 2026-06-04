@@ -17,8 +17,6 @@ import {
   resetStagingState,
 } from '@dina/core';
 import { classifyItem, enrichItem, applyTrustScoring } from '../../src/staging/processor';
-import { handlePostPublish } from '../../src/pipeline/post_publish';
-import { planReminders } from '../../src/pipeline/reminder_planner';
 import { isDuplicate, markSeen, resetDedupState } from '@dina/core';
 import {
   createPersona,
@@ -199,39 +197,6 @@ describe('Staging Pipeline End-to-End Integration', () => {
       }
       // retry_count is now 4 → should be dead-lettered
       expect(getItem(id)!.status).toBe('failed');
-    });
-  });
-
-  describe('post-publish: reminder extraction', () => {
-    it('item with event signal triggers post-publish handler', async () => {
-      const itemData = {
-        id: 'item-birthday',
-        type: 'email' as const,
-        summary: 'Birthday party on December 25',
-        body: 'Join us for the celebration',
-        timestamp: Date.now(),
-        persona: 'general',
-      };
-
-      const result = await handlePostPublish(itemData);
-      // Reminders may or may not be created depending on date parsing
-      expect(result.errors).toHaveLength(0);
-    });
-  });
-
-  describe('contact integration', () => {
-    it('post-publish updates known contact interaction', async () => {
-      addContact('did:plc:alice', 'Alice');
-      const result = await handlePostPublish({
-        id: 'item-from-alice',
-        type: 'email',
-        summary: 'Hello from Alice',
-        body: 'text',
-        timestamp: Date.now(),
-        persona: 'general',
-        sender_did: 'did:plc:alice',
-      });
-      expect(result.contactUpdated).toBe(true);
     });
   });
 

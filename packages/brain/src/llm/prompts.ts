@@ -335,154 +335,6 @@ Rules:
 - Never penalize emotional expression — only flag AI-as-companion patterns`;
 
 /**
- * REMINDER_QUERY_EXPANSION — Broaden the retrieval query for a
- * reminder so cross-domain facts (finance budget, schedule
- * conflicts, people preferences) can surface alongside the literal
- * event text.
- *
- * The result is appended to the FTS5 keyword set; the engine OR-
- * joins terms, so adding "budget" lets a finance-vault note
- * mentioning "budget tight" rank into the context for an "Emma's
- * birthday" reminder. The list MUST be short — every term widens
- * the recall and dilutes ranking precision. 3–8 short keywords or
- * 2-word phrases hits the sweet spot.
- *
- * Lite-tier (gemini-flash-lite class) is enough — this is a
- * keyword-association task, not synthesis.
- */
-export const REMINDER_QUERY_EXPANSION = `You help retrieve relevant facts from a personal vault for an upcoming reminder.
-
-Reminder subject: {{subject}}
-Body: {{body}}
-
-What topical keywords (besides words already in the subject/body) would help find related facts the user has stored? Think about:
-- People named: their preferences, family role, recent updates
-- Implied actions: birthday → gift/purchase; meeting → preparation/agenda; arrival → hospitality; travel → packing/booking; payment → balance/budget
-- Cross-domain context that changes the right answer: purchase → budget/spending/savings; medical → conditions/allergies/medications; travel → calendar conflicts
-
-Return ONLY a JSON array of 3–8 short keywords or 2-word phrases. No commentary, no markdown fences.
-
-Examples:
-Input: "Emma's birthday is on November 7th"
-Output: ["birthday gift", "purchase", "budget", "spending", "Emma preferences"]
-
-Input: "Doctor appointment next Tuesday at 10am"
-Output: ["medication", "symptoms", "insurance", "prior appointments", "fasting"]
-
-Input: "Sancho is arriving in 15 minutes"
-Output: ["Sancho preferences", "guest", "coffee", "snack", "recent updates"]`;
-
-/**
- * REMINDER_PLAN — Extract reminders from an item with events.
- *
- * Aligned with Python `PROMPT_REMINDER_PLANNER_SYSTEM`
- * (`brain/src/prompts.py:141`). Carries Python's specific tone rules
- * (no cheerleading / no exclamation marks / suggest-don't-order) and
- * the canonical arrival-with-vault-context consolidation example
- * ("Alonso is arriving in 10 minutes. He likes cold brew coffee. His
- * mother was unwell last week — you may want to ask how she is doing.")
- * so the LLM produces the capabilities.md spec output when Phase F's
- * sender hint + alias-expanded vault facts are in the context.
- *
- * TS-only additions kept (these are correctness fixes the Python
- * version inherits via separate validators rather than the prompt):
- *   - Explicit unix-ms `due_at` (Python uses ISO `fire_at`).
- *   - The recurring birthday year-bump rule with worked example —
- *     pinned an April 2026 simulator regression where Gemini emitted
- *     2025 dates from its training cutoff.
- */
-export const REMINDER_PLAN = `You are a personal reminder planner. The user just stored some information that includes a time-bound event. Your job is to create smart, actionable reminders so the user doesn't forget.
-
-Think about what a thoughtful personal assistant would set up:
-- For a birthday: a reminder to buy a gift the day before, and a morning reminder to call and wish them.
-- For a vaccination: a reminder to prepare the night before, and a morning reminder on the day.
-- For a payment: a day-before reminder to ensure funds, and a morning reminder on the due date.
-- For a meeting: a reminder 1 hour before.
-- For someone arriving: ONE reminder that bundles every relevant fact about them from the vault.
-
-RIGHT NOW IS: {{now_local}}
-NOW (Unix milliseconds, with underscores for readability — strip them before arithmetic): {{now_ms_grouped}}
-Current timezone: {{timezone}}
-
-THE EVENT (this is what the user stored — your reminders MUST be about THIS):
-- Subject: {{subject}}
-- Body: {{body}}
-
-Related vault context (supplementary — use to enrich reminders, NEVER to invent reminders unrelated to the event above):
-{{vault_context}}
-
-How to compute due_at (let NOW_MS be the value above with underscores stripped):
-- "in N minutes" → due_at = NOW_MS + N * 60000  (this IS a valid future time — emit it, do not return [])
-- "in N hours"   → due_at = NOW_MS + N * 3600000
-- "today at HH:MM" / "at HH:MM" without a date → use today's date in {{timezone}}, preserve HH:MM verbatim
-- "tomorrow at HH:MM" → tomorrow's date in {{timezone}}, preserve HH:MM verbatim
-- A specific date+time → resolve to {{timezone}}, then to Unix milliseconds
-- For a moment that's already past in {{timezone}}, only roll forward when the event is RECURRING (birthday / anniversary) — see rule below.
-
-⚠️ EVENT TIME vs FIRE TIME: distinguish WHEN THE EVENT HAPPENS from WHEN THE REMINDER FIRES (due_at).
-- The event's stated clock time ("at 6pm", "at 9:30", "tonight at 8") is the source of truth for the EVENT and for what the message says — never silently shift the event to a default morning hour (9am).
-- due_at (when the reminder pops) may be AT the event time, or EARLIER when the user needs lead time to prepare or travel (see the LEAD TIME rule below). It must never default to an unrelated morning hour just because the event is hours away; a morning heads-up is only for a date given with NO clock time ("tomorrow", "next Tuesday", "March 15").
-
-  Good: Body "Pick up dry cleaning tomorrow at 6pm" → due_at is tomorrow ~17:30 in {{timezone}} (a little lead to act); message names "6 PM".
-  Bad:  Body "Pick up dry cleaning tomorrow at 6pm" → due_at is tomorrow 09:00 with message "Your pickup is scheduled for 6pm". Don't dump it on the morning hours away from the event.
-
-Worked example — short-horizon arrival from a peer:
-  Body: "I am coming in 15 minutes"
-  Vault context (sender + facts): "Sender: Alonso (friend)\n- Alonso prefers matcha lattes — keep one ready when he visits"
-  → Emit ONE reminder. Fire a few minutes BEFORE arrival so there's time to prepare: due_at = NOW_MS + 10 * 60000 (≈5 min lead). kind = "arrival".
-    message = "Alonso is arriving in a few minutes. He prefers matcha lattes — you may want to have one ready."  (NOT "in 15 minutes" — the message is read when it fires, ~5 min before he arrives.)
-  → Do NOT return {"reminders": []} — the event is in the future, the sender is named, and the vault carries call-to-action context.
-
-Worked example — dated arrival you should prepare for:
-  RIGHT NOW IS a day before, ~noon. Body: "Don Quixote is coming over tomorrow at 4 PM"
-  Vault context: "Sender: Don Quixote (friend)\n- Don Quixote loves eggs and bacon — have some ready when he visits"
-  → Emit ONE reminder. Fire it with lead time to prepare, on the day of the visit: due_at = the visit day at 15:30 in {{timezone}} (≈30 min before 4 PM), NOT 16:00, and NOT "tomorrow morning". kind = "arrival".
-    message = "Don Quixote is coming over at 4 PM. He loves eggs and bacon — you may want to have some ready."  (Note: "at 4 PM", NOT "tomorrow at 4 PM" — the reminder pops on the day of the visit, when "tomorrow" would be wrong.)
-
-Worked example — recognising a JSON-shaped body:
-  Body: \`{"text":"I am coming at 5 pm"}\`
-  Treat the inner "text" as the user-visible event text. Don't emit zero reminders just because the body is wrapped as JSON.
-
-⚠️ CRITICAL DATE RULE: every due_at you emit MUST be strictly greater than NOW_MS (the Unix-ms value above with underscores stripped). Compare numbers, not date strings — the day part is irrelevant, only the millisecond ordering matters. Do NOT roll a one-off event ("in 15 minutes", "at 5pm today") to tomorrow just because the day is already in progress; the only time you advance the day is for a recurring event whose anniversary already passed this year.
-
-For recurring events (birthdays, anniversaries) stated without a year — and ALL birthdays without a year ARE recurring:
-  1. Compare the stated month+day against today's month+day in {{timezone}}.
-  2. If the month+day this year is already in the past OR is today, use NEXT year.
-  3. Example: today is 2026-04-25 in {{timezone}} and the user says "Emma's birthday is March 15". March 15, 2026 has passed → use March 15, 2027.
-  4. Example: today is 2026-04-25 in {{timezone}} and the user says "Sam's birthday is November 7". November 7, 2026 is still ahead → use 2026.
-
-Create reminders. Each reminder has:
-- due_at: Unix timestamp in milliseconds for when the reminder should fire
-- message: short, factual notification (1 sentence max)
-- kind: One of: birthday, appointment, payment_due, deadline, arrival, reminder
-
-Respond with ONLY a JSON object:
-{"reminders": [{"due_at": <unix_ms>, "message": "<reminder text>", "kind": "<kind>"}]}
-
-Rules:
-- Don't create reminders for moments that have already passed (due_at ≤ NOW_MS).
-- Use the user's timezone: {{timezone}} when interpreting "today", "tomorrow", "tonight", or any wall-clock time without a date.
-- Tone: polite and informative, never emotional or commanding. State what's happening, when, and any useful context. No cheerleading, no exclamation marks, no motivational language. Suggest, don't order.
-  Good: "Your gym session is in 30 minutes."
-  Good: "Emma's 7th birthday is tomorrow. She likes dinosaurs and painting."
-  Good: "Gym session tomorrow at 7am — you may want to pack your bag tonight."
-  Bad: "Rise and shine! You've got this!"
-  Bad: "Don't forget Emma's big day!"
-  Bad: "Pack bag tonight."
-- If the event is today or tomorrow, still create useful reminders for remaining time slots that haven't passed.
-- When someone is arriving or you are meeting someone, create ONE reminder that includes ALL relevant context about that person from the vault. Do not split facts across multiple reminders — combine them into one message so the user gets a single, complete briefing. Treat preferences in vault context as call-to-action context — if a vault note says "Alonso likes cold brew", the arrival reminder should suggest preparing it ("you may want to have it ready").
-  Good: "Alonso is arriving in 10 minutes. He likes cold brew coffee — you may want to have one ready. His mother was unwell last week — you may want to ask how she is doing."
-  Bad: two separate reminders, one about coffee and one about his mother.
-- The vault context may include a "Sender: <name> (<relationship>)" line at the top — when present, USE THAT NAME in the reminder message instead of "Someone" or the raw DID. Example: a Sender line "Sender: Sancho Garcia (brother)" with body "I am arriving in 5 minutes" → "Sancho Garcia is arriving shortly. ..."
-- LEAD TIME — fire early enough to act on it: when the reminder exists so the user can PREPARE for or not miss an event (a visit/arrival they'd get things ready for, a meeting, an appointment, leaving on time), set due_at BEFORE the event with enough time to act — roughly 30 minutes before a visit so there's time to prepare, about an hour before a meeting, longer if real preparation is implied. Firing at the exact event moment is too late to be useful. (A reminder that IS the action itself — "call Emma on her birthday morning" — fires at the intended moment, not before.)
-- PHRASE FOR FIRE TIME — the message is read WHEN THE REMINDER FIRES (its due_at), which may be hours or days after you create it, NOT at the moment of creation. Every time word in the message must be correct as of that fire moment. Prefer the event's concrete clock time and AVOID creation-relative words ("today", "tomorrow", "tonight", "in N minutes") for any dated/future event — they will be wrong when the reminder pops.
-  Good (visit at 4 PM; reminder fires 3:30 PM the same day): "Don Quixote is coming over at 4 PM. He loves eggs and bacon — you may want to have some ready."
-  Bad  (created the day before; read when it fires): "Don Quixote is coming over tomorrow at 4 PM."
-- NEVER fabricate events, dates, or details not mentioned in the item or vault context.
-- NEVER invent preferences, relationships, or facts — only use what is explicitly stated.
-- Never create a reminder with due_at ≤ NOW_MS. If the only candidate date is past and the event is not recurring, return {"reminders": []}.`;
-
-/**
  * NUDGE_ASSEMBLE — Build a reconnection nudge for a contact.
  */
 export const NUDGE_ASSEMBLE = `You are Dina, helping the user maintain relationships.
@@ -753,13 +605,15 @@ export const REMEMBER_AGENTIC = `You are Dina, helping the user remember a new m
 
 Your job: decide what side effects this memory deserves, by calling tools. Always pick a persona vault to store it in. Schedule a reminder when the memory implies one. Link to people the user mentions. Bind preferences when the user is stating one. Don't force calls when the memory doesn't warrant them — a fact about the world that's not date-bound and not about a person needs only a persona.
 
+When a memory is about a person or a dated event, call vault_search FIRST to recall what the user has already saved about them — then use it to make your reminders specific. A birthday reminder for someone you've recorded loves dinosaurs can suggest a dinosaur gift; a reminder about a visitor you know prefers matcha can say to have one ready. Search before you schedule.
+
 Installed personas: {{personas_list}}
 Today: {{today}}
 Timezone: {{timezone}}
 
-After your tool calls, you may emit a short final text — a one-sentence acknowledgement the user will see (e.g. "Saved to finance — I'll remind you a week before Emma's birthday."). This is what they read in chat once processing finishes. Keep it under one sentence, no greetings, no system jargon. If you have nothing to add beyond the persona name, leave the text empty.
+After your tool calls, you may emit a short final text — a one-sentence acknowledgement the user will see (e.g. "Saved to finance — I'll remind you a week before Emma's birthday, and to grab a dinosaur gift."). This is what they read in chat once processing finishes. Keep it under one sentence, no greetings, no system jargon. If you have nothing to add beyond the persona name, leave the text empty.
 
-Source trust: never recommend, fabricate, or augment the user's memory with outside knowledge. You only structure what they wrote.`;
+Source trust: work only from what the user has saved — never fabricate facts or pull in outside/world knowledge. Connecting their OWN saved memories (including what you find via vault_search) to enrich a reminder is encouraged; inventing details they never told you is not.`;
 
 /**
  * CHAT_SYSTEM — System prompt for the chat reasoning endpoint.
@@ -846,8 +700,6 @@ export const PROMPT_REGISTRY: Record<string, string> = {
   GUARD_SCAN,
   ANTI_HER,
   ANTI_HER_CLASSIFY,
-  REMINDER_PLAN,
-  REMINDER_QUERY_EXPANSION,
   ASK_RETRIEVAL_PLAN,
   NUDGE_ASSEMBLE,
   PERSON_IDENTITY_EXTRACTION,

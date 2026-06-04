@@ -52,6 +52,8 @@ export {
   checkHandleAvailability,
   generateCandidates,
   pickHandle,
+  maxPrefixChars,
+  MAX_HANDLE_CHARS,
 } from './identity/handle_picker';
 export type {
   AvailabilityKind,

@@ -25,7 +25,7 @@ import {
 } from '../../apps/mobile/src/services/atproto_oauth';
 
 const SESSION_PATH = '/tmp/dina_oauth_session.json';
-const APPVIEW = 'https://test-appview.dinakernel.com';
+const OAUTH_CLIENT = 'https://test-mobile.dinakernel.com';
 
 const fetchFn: FetchLike = (url, init) =>
   fetch(url, init as RequestInit) as unknown as ReturnType<FetchLike>;
@@ -65,7 +65,7 @@ async function main(): Promise<void> {
     const handle = process.argv[3] ?? 'rspam.bsky.social';
     const { authorizeUrl, session } = await startOAuth(handle, {
       fetchFn,
-      appViewUrl: APPVIEW,
+      oauthClientUrl: OAUTH_CLIENT,
       nowSec: Math.floor(Date.now() / 1000),
       resolve: nodeResolve,
     });

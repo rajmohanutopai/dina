@@ -37,6 +37,7 @@ function listAllReminders() {
 import {
   createScheduleReminderTool,
   type ScheduleReminderOutcome,
+  type ScheduleReminderToolOptions,
 } from '../../src/reasoning/schedule_reminder_tool';
 
 const FIXED_NOW = Date.UTC(2026, 4, 6, 12, 0, 0); // 2026-05-06T12:00:00Z
@@ -45,12 +46,19 @@ beforeEach(() => {
   resetReminderState();
 });
 
-function build(now = FIXED_NOW) {
+/** Build the tool with the suite defaults; pass overrides per test. */
+function build(overrides: Partial<ScheduleReminderToolOptions> = {}) {
   return createScheduleReminderTool({
     defaultPersona: 'general',
     defaultTimezone: 'UTC',
-    nowMsFn: () => now,
+    nowMsFn: () => FIXED_NOW,
+    ...overrides,
   });
+}
+
+/** A future ISO due_at (one minute past FIXED_NOW) — the common happy case. */
+function futureDueIso(offsetMs = 60_000): string {
+  return new Date(FIXED_NOW + offsetMs).toISOString();
 }
 
 describe('schedule_reminder tool', () => {
@@ -190,6 +198,71 @@ describe('schedule_reminder tool', () => {
     expect(out.status).toBe('scheduled');
     expect(out.persona).toBe('health');
     expect(listAllReminders()[0]?.persona).toBe('health');
+  });
+
+  it('stamps source_item_id from the sourceItemId option (chat-card linkage)', async () => {
+    const tool = build({ sourceItemId: 'stage-abc123' });
+    const out = (await tool.execute({
+      message: "Emma's birthday is coming up",
+      due_at: futureDueIso(),
+    })) as ScheduleReminderOutcome;
+
+    expect(out.status).toBe('scheduled');
+    // The reminder carries the staging id so the orchestrator's
+    // `source_item_id === itemId` lookup finds it and renders the card.
+    expect(listAllReminders()[0]?.source_item_id).toBe('stage-abc123');
+  });
+
+  it('treats same message+time+persona from DIFFERENT items as distinct rows', async () => {
+    const dueAt = futureDueIso();
+    const a = (await build({ sourceItemId: 'item-A' }).execute({
+      message: 'Pay rent',
+      due_at: dueAt,
+    })) as ScheduleReminderOutcome;
+    const b = (await build({ sourceItemId: 'item-B' }).execute({
+      message: 'Pay rent',
+      due_at: dueAt,
+    })) as ScheduleReminderOutcome;
+    expect(a.status).toBe('scheduled');
+    // Different source_item_id ⇒ NOT a duplicate (the service dedup key
+    // includes source_item_id), so it's a fresh row.
+    expect(b.status).toBe('scheduled');
+    expect(b.reminder_id).not.toBe(a.reminder_id);
+    expect(listAllReminders()).toHaveLength(2);
+  });
+
+  it('falls back to resolvePersona() when the LLM omits an explicit persona', async () => {
+    const tool = build({ resolvePersona: () => 'health' });
+    const out = (await tool.execute({
+      message: 'Doctor appointment',
+      due_at: futureDueIso(),
+    })) as ScheduleReminderOutcome;
+    // No persona arg → uses the routed persona, not the static default,
+    // so the reminder lands in the same vault as the item.
+    expect(out.persona).toBe('health');
+    expect(listAllReminders()[0]?.persona).toBe('health');
+  });
+
+  it('explicit persona arg still wins over resolvePersona()', async () => {
+    const tool = build({ resolvePersona: () => 'health' });
+    const out = (await tool.execute({
+      message: 'Pay invoice',
+      due_at: futureDueIso(),
+      persona: 'work',
+    })) as ScheduleReminderOutcome;
+    expect(out.persona).toBe('work');
+  });
+
+  it('description keeps recurring dates (birthdays) IN scope — the regressed case', () => {
+    const tool = build();
+    const desc = tool.description.toLowerCase();
+    // The bug: the old description said recurring reminders were "out of
+    // scope", so the agentic loop linked the person and skipped the
+    // reminder for "Emma's birthday is Nov 7". Guard against that wording
+    // and require birthdays/anniversaries + next-occurrence to be named.
+    expect(desc).not.toMatch(/out of scope/);
+    expect(desc).toMatch(/birthday|anniversar/);
+    expect(desc).toMatch(/next occurrence/);
   });
 
   it('declares a tool schema the LLM can wire (name, required fields)', () => {

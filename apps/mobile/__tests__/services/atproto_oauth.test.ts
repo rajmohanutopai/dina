@@ -20,7 +20,7 @@ const DID = 'did:plc:linkedbsky9876';
 const HANDLE = 'alice.bsky.social';
 const PDS = 'https://pds.example';
 const ISSUER = 'https://bsky.social';
-const APPVIEW = 'https://test-appview.dinakernel.com';
+const OAUTH_CLIENT = 'https://test-mobile.dinakernel.com';
 
 function b64urlDecode(s: string): Uint8Array {
   const pad = s.length % 4 === 0 ? '' : '='.repeat(4 - (s.length % 4));
@@ -80,7 +80,7 @@ function makeAuthServer(opts: { tokenSub: string }) {
           refresh_token: 'rt-token',
           token_type: 'DPoP',
           sub: opts.tokenSub,
-          scope: 'atproto transition:generic',
+          scope: 'atproto',
         },
         'server-nonce-xyz',
       );
@@ -101,10 +101,10 @@ const resolve = (async () => ({
 })) as never;
 
 describe('oauthClientConfig', () => {
-  it('derives client_id + reverse-domain native redirect from the AppView host', () => {
-    const cfg = oauthClientConfig(APPVIEW);
-    expect(cfg.clientId).toBe('https://test-appview.dinakernel.com/oauth/client-metadata.json');
-    expect(cfg.redirectUri).toBe('com.dinakernel.test-appview:/oauth/callback');
+  it('derives client_id + reverse-domain native redirect from the OAuth client host', () => {
+    const cfg = oauthClientConfig(OAUTH_CLIENT);
+    expect(cfg.clientId).toBe('https://test-mobile.dinakernel.com/oauth/client-metadata.json');
+    expect(cfg.redirectUri).toBe('com.dinakernel.test-mobile:/oauth/callback');
   });
 });
 
@@ -123,7 +123,7 @@ describe('startOAuth', () => {
     const srv = makeAuthServer({ tokenSub: DID });
     const { authorizeUrl, session } = await startOAuth('alice.bsky.social', {
       fetchFn: srv.fetchFn,
-      appViewUrl: APPVIEW,
+      oauthClientUrl: OAUTH_CLIENT,
       nowSec: 1_780_000_000,
       resolve,
     });
@@ -135,6 +135,15 @@ describe('startOAuth', () => {
 
     // PAR was retried once (nonce challenge → success).
     expect(srv.parCalls()).toBe(2);
+
+    // SECURITY: identity-only scope. The PAR requests `atproto`, NEVER the
+    // broad `transition:generic` (app-password-like PDS access) — that would
+    // contradict the "No other access required" read-only-link promise.
+    const parBody = String(
+      srv.calls.filter((c) => c.url.endsWith('/oauth/par'))[1]?.body ?? '',
+    );
+    expect(parBody).toMatch(/(^|&)scope=atproto(&|$)/);
+    expect(parBody).not.toContain('transition');
 
     // The retried PAR carried a DPoP proof that (a) is a valid ES256 JWT
     // over its signing input, and (b) echoes the server nonce.
@@ -161,7 +170,7 @@ describe('completeOAuth', () => {
     const srv = makeAuthServer({ tokenSub });
     const { session } = await startOAuth('alice.bsky.social', {
       fetchFn: srv.fetchFn,
-      appViewUrl: APPVIEW,
+      oauthClientUrl: OAUTH_CLIENT,
       nowSec: 1_780_000_000,
       resolve,
     });

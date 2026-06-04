@@ -8,7 +8,6 @@ import {
   extractJSON,
   parseClassification,
   parseEnrichment,
-  parseReminderPlan,
   parseSilence,
 } from '../../src/llm/output_parser';
 
@@ -117,39 +116,6 @@ describe('Structured Output Parser', () => {
     it('rejects non-string tags', () => {
       const result = parseEnrichment('{"tags":[1,2,3]}');
       expect(result.tags).toEqual([]); // falls back to default
-    });
-  });
-
-  describe('parseReminderPlan', () => {
-    it('parses valid reminder plan', () => {
-      const result = parseReminderPlan(
-        '{"reminders":[{"message":"Birthday party","due_at":1700000000,"kind":"birthday"}]}',
-      );
-      expect(result.reminders).toHaveLength(1);
-      expect(result.reminders[0].message).toBe('Birthday party');
-      expect(result.reminders[0].kind).toBe('birthday');
-    });
-
-    it('filters out invalid reminders', () => {
-      const result = parseReminderPlan(
-        '{"reminders":[{"message":"Valid","due_at":100,"kind":"x"},{"message":"","due_at":0}]}',
-      );
-      expect(result.reminders).toHaveLength(1); // second filtered out
-    });
-
-    it('defaults kind to manual', () => {
-      const result = parseReminderPlan('{"reminders":[{"message":"Test","due_at":100}]}');
-      expect(result.reminders[0].kind).toBe('manual');
-    });
-
-    it('falls back for invalid JSON', () => {
-      const result = parseReminderPlan('not json');
-      expect(result.reminders).toEqual([]);
-    });
-
-    it('handles missing reminders key', () => {
-      const result = parseReminderPlan('{"other":"data"}');
-      expect(result.reminders).toEqual([]);
     });
   });
 

@@ -1,5 +1,6 @@
 import http from 'node:http'
 import { URL } from 'node:url'
+import { buildOAuthClientMetadata } from '@/web/oauth_metadata.js'
 import { createDb } from '@/db/connection.js'
 import { ensureFtsColumns } from '@/db/fts_columns.js'
 import { sql } from 'drizzle-orm'
@@ -136,20 +137,8 @@ const server = http.createServer(async (req, res) => {
   // Static, no DB, no rate-limit. See atproto.com/specs/oauth.
   if (url.pathname === '/oauth/client-metadata.json') {
     const host = (req.headers.host ?? `localhost:${port}`).split(',')[0].trim()
-    const reverseScheme = host.split(':')[0].split('.').reverse().join('.')
-    const clientId = `https://${host}/oauth/client-metadata.json`
-    const metadata = {
-      client_id: clientId,
-      client_name: 'Dina',
-      client_uri: `https://${host}`,
-      application_type: 'native',
-      dpop_bound_access_tokens: true,
-      grant_types: ['authorization_code', 'refresh_token'],
-      response_types: ['code'],
-      scope: 'atproto transition:generic',
-      token_endpoint_auth_method: 'none',
-      redirect_uris: [`${reverseScheme}:/oauth/callback`],
-    }
+    // Identity-only scope, no refresh_token — see `buildOAuthClientMetadata`.
+    const metadata = buildOAuthClientMetadata(host)
     res.writeHead(200, {
       'Content-Type': 'application/json',
       'Cache-Control': 'public, max-age=300',

@@ -400,9 +400,22 @@ export interface PreFlightRetrievalResult {
  * 404s) collapse to empty results for that branch — the rest of the
  * block is still emitted. The overall function never throws.
  */
+export interface RunPreFlightOptions {
+  /**
+   * Persona pre-fetch filter. Returns `false` for personas the caller
+   * may NOT pre-fetch without approval (sensitive/locked tiers for an
+   * external agent). Filtered personas are dropped before fetching so
+   * their content is never pre-fetched ungated — the agentic loop's
+   * on-demand `vault_search` tool gates them instead. Omit ⇒ allow all
+   * (the owner-on-app path, or callers without a guard).
+   */
+  personaAllowed?: (persona: string) => boolean | Promise<boolean>;
+}
+
 export async function runAskPreFlightRetrieval(
   plan: AskRetrievalPlan,
   fetchers: AskRetrievalFetchers,
+  opts?: RunPreFlightOptions,
 ): Promise<PreFlightRetrievalResult> {
   if (plan.personas.length === 0 && plan.people.length === 0) {
     return { plan, block: '', hits: {} };
@@ -410,8 +423,20 @@ export async function runAskPreFlightRetrieval(
 
   // Flatten the (persona, query) pairs so we can dispatch the whole
   // batch in one Promise.all and group by persona afterward.
-  const vaultTasks: Array<{ persona: string; query: string }> = [];
+  // F-AGENT-VAULT-GATE round-3: drop personas the caller may not
+  // pre-fetch without approval. For an external agent this skips
+  // sensitive/locked vaults so their content is never pre-fetched
+  // ungated; the agent reaches them via the gated on-demand vault tool.
+  const personaAllowed = opts?.personaAllowed;
+  const picks: PlannedPersonaSearch[] = [];
   for (const pick of plan.personas) {
+    if (personaAllowed === undefined || (await personaAllowed(pick.persona))) {
+      picks.push(pick);
+    }
+  }
+
+  const vaultTasks: Array<{ persona: string; query: string }> = [];
+  for (const pick of picks) {
     for (const q of pick.queries) {
       vaultTasks.push({ persona: pick.persona, query: q });
     }

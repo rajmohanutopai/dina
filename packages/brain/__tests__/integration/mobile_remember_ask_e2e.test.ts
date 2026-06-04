@@ -39,6 +39,7 @@ import {
 } from '@dina/core';
 
 import { InProcessTransport } from '@dina/core';
+import { makeStubRememberRuntime } from '@dina/test-harness';
 import { StagingDrainScheduler } from '../../src/staging/scheduler';
 import {
   setAccessiblePersonas,
@@ -152,6 +153,7 @@ describe('mobile /remember → drain → /ask end-to-end (real SQLite)', () => {
     scheduler = new StagingDrainScheduler({
       core,
       intervalMs: 10_000,
+      drain: { rememberRuntime: makeStubRememberRuntime('general') },
       setInterval: () => 1,
       clearInterval: () => {
         /* noop */
@@ -228,6 +230,7 @@ describe('mobile /remember → drain → /ask end-to-end (real SQLite)', () => {
     scheduler = new StagingDrainScheduler({
       core,
       intervalMs: 10_000,
+      drain: { rememberRuntime: makeStubRememberRuntime('health') },
       setInterval: () => 1,
       clearInterval: () => {
         /* noop */

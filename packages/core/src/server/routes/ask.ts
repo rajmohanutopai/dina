@@ -89,18 +89,32 @@ export function registerAskRoutes(router: CoreRouter, options: AskRouteOptions =
     if (!question) {
       return { status: 400, body: { error: 'question must be a non-empty string' } };
     }
-    // requesterDid is optional from the agent — fall back to the agent's DID
-    // from the auth context (set in x-did header by the auth middleware).
-    const requesterDid =
-      typeof body.requester_did === 'string' && body.requester_did.trim() !== ''
-        ? body.requester_did
-        : typeof req.headers['x-did'] === 'string'
-          ? req.headers['x-did']
-          : '';
+    // SECURITY: the requester identity is the AUTHENTICATED caller, never a
+    // body field. The router verifies the signed request and resolves the
+    // caller into `req.callerDID`. Trusting `body.requester_did` would let an
+    // authenticated agent claim the owner's DID and bypass the
+    // sensitive/locked persona approval gate — `persona_guard` treats
+    // `requesterDid === ownerDid` as owner access. (The owner's own chat does
+    // NOT use this route; it goes through the in-process ask command handler
+    // with a server-configured owner DID.) See feedback_inner_body_not_authority.
+    const requesterDid = typeof req.callerDID === 'string' ? req.callerDID.trim() : '';
     if (requesterDid === '') {
       return {
-        status: 400,
-        body: { error: 'requester_did is required (or supply via X-DID header)' },
+        status: 401,
+        body: { error: 'unauthenticated: no caller identity resolved' },
+      };
+    }
+    // A body `requester_did` is honoured only when it matches the
+    // authenticated caller (older CLIs echo their own DID). A mismatch is an
+    // impersonation attempt — reject it loudly rather than silently ignore.
+    if (
+      typeof body.requester_did === 'string' &&
+      body.requester_did.trim() !== '' &&
+      body.requester_did.trim() !== requesterDid
+    ) {
+      return {
+        status: 403,
+        body: { error: 'requester_did does not match the authenticated caller' },
       };
     }
     if (body.ttl_ms !== undefined && typeof body.ttl_ms !== 'number') {

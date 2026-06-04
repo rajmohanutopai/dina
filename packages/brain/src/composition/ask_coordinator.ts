@@ -296,7 +296,16 @@ export function buildAgenticExecuteFn(args: {
     if (preFlight !== undefined) {
       let result: PreFlightRetrievalResult | null = null;
       try {
-        result = await preFlight(input.question);
+        // Pass the per-ask requester context so the planner gates
+        // sensitive-vault pre-fetch (F-AGENT-VAULT-GATE round-3): an
+        // external agent must not have sensitive personas pre-fetched
+        // ungated; the owner (requesterDid === ownerDid) is unaffected.
+        result = await preFlight(input.question, {
+          requesterDid: input.requesterDid,
+          ...(input.sessionId !== undefined && input.sessionId !== ''
+            ? { sessionId: input.sessionId }
+            : {}),
+        });
       } catch {
         result = null;
       }

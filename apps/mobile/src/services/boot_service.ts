@@ -493,52 +493,53 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
   // runs but skips topic touches + preference binding — the memory
   // landed in the vault has no ToC footprint and `my dentist Dr Carl`
   // never binds to a contact. Record a degradation so the caller knows.
+  // Dina is LLM-driven: the staging drain REQUIRES the per-item agentic
+  // `rememberRuntime` (it throws per item without one — there is no
+  // non-LLM fallback). So the drain is enabled ONLY when we can build
+  // that runtime; otherwise it's disabled (fail-closed) rather than
+  // claiming items and marking every one failed.
   let stagingDrainOption: CreateNodeOptions['stagingDrain'];
   if (inputs.stagingEnrichment === false) {
+    // Caller explicitly disabled the drain (e.g. test harness manages it).
     stagingDrainOption = false;
-  } else if (inputs.stagingEnrichment !== undefined) {
-    stagingDrainOption = {
-      topicTouch: buildStagingEnrichment({
-        core: coreClient,
-        llm: inputs.stagingEnrichment.llm,
-      }),
-      // When an inbound D2D message plans a reminder, surface it as a
-      // scheduled card in the chat the moment it lands (the drain is
-      // headless and just emits — the host decides to render it here).
-      onD2DReminderCreated: (reminder) => {
-        postReminderCard('main', reminder, { scheduled: true });
-      },
-    };
-    // Wire the per-item agentic /remember loop when we have an LLM in
-    // hand. The drain prefers this path; the legacy
-    // classifyDomain + reminder_planner pipeline only runs when no
-    // runtime is supplied (kept as a fallback during the transition).
+  } else if (inputs.stagingEnrichment !== undefined && inputs.stagingEnrichment.llm !== undefined) {
+    const llm = inputs.stagingEnrichment.llm;
+    let rememberRuntime: ReturnType<typeof buildRememberRuntime> | undefined;
     try {
       const personas = listPersonas().map((p) => ({
         name: p.name,
         description: MOBILE_PERSONA_DESCRIPTIONS[p.name] ?? '',
       }));
-      const llm = inputs.stagingEnrichment.llm;
-      if (llm !== undefined) {
-        (stagingDrainOption as { rememberRuntime?: unknown }).rememberRuntime =
-          buildRememberRuntime({
-            llm,
-            personas,
-            defaultPersona: 'general',
-          });
-      }
+      rememberRuntime = buildRememberRuntime({ llm, personas, defaultPersona: 'general' });
     } catch (err) {
       addDegradation(
-        'staging.no_remember_runtime',
-        `Remember runtime construction failed: ${err instanceof Error ? err.message : String(err)}. Drain falls back to keyword classifier + reminder_planner.`,
+        'staging.remember_runtime_failed',
+        `Remember runtime construction failed: ${err instanceof Error ? err.message : String(err)}. Staging drain disabled until a working AI provider is configured.`,
       );
     }
+    if (rememberRuntime === undefined) {
+      stagingDrainOption = false;
+    } else {
+      stagingDrainOption = {
+        rememberRuntime,
+        topicTouch: buildStagingEnrichment({ core: coreClient, llm }),
+        // When an inbound D2D message plans a reminder, surface it as a
+        // scheduled card in the chat the moment it lands (the drain is
+        // headless and just emits — the host decides to render it here).
+        onD2DReminderCreated: (reminder) => {
+          postReminderCard('main', reminder, { scheduled: true });
+        },
+      };
+    }
   } else {
+    // No AI provider configured — disable the drain (fail-closed).
+    // Remembered items stay queued in staging until a provider is set up
+    // and the node re-boots; Dina can't enrich/route without an LLM.
     addDegradation(
-      'staging.no_enrichment',
-      'No stagingEnrichment wiring supplied — the drain resolves items but does not extract topics or bind preferences. "my dentist Dr Carl" will not surface on the contact. Pass `stagingEnrichment: { llm }` to enable.',
+      'staging.disabled_no_llm',
+      'No AI provider configured — staging drain disabled. Remembered items stay queued until you set up a provider; Dina is LLM-driven and cannot enrich or route without one.',
     );
-    stagingDrainOption = undefined; // scheduler runs, but no topicTouch
+    stagingDrainOption = false;
   }
 
   // Wire the ask coordinator into the CoreRouter's /api/v1/ask surface so

@@ -696,8 +696,13 @@ const styles = StyleSheet.create({
   },
   heroTagline: {
     ...textStyles.tagline,
+    // Larger than the 18pt tagline — sized into the h2 range so the
+    // empty-chat brand line reads as a soft hero. Keeps the italic
+    // Cormorant face (not the upright h2) for the brand voice.
+    fontSize: 26,
+    lineHeight: 32,
     textAlign: 'center',
-    marginBottom: spacing.xs,
+    marginBottom: spacing.sm,
   },
   heroTitle: {
     ...textStyles.displaySmall,

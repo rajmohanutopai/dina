@@ -59,6 +59,30 @@ function makeCore(overrides: {
   } satisfies StagingDrainCoreClient;
 }
 
+/**
+ * Minimal agentic remember-runtime stub. Dina is LLM-driven: the drain
+ * now REQUIRES a `rememberRuntime` (no keyword fallback), so every test
+ * that processes an item injects one. `primary` is the persona the loop
+ * "routed" the item to — these tests assert the drain forwards it to
+ * Core resolve.
+ */
+function stubRuntime(primary = 'general') {
+  return {
+    async run() {
+      return {
+        sideEffects: {
+          routes: [{ primary, secondary: [] as string[] }],
+          reminders: [],
+          people: [],
+          preferences: [],
+        },
+        text: '',
+        toolNames: [] as string[],
+      };
+    },
+  };
+}
+
 describe('runStagingDrainTick', () => {
   beforeEach(() => {
     resetEnrichmentPipeline();
@@ -90,7 +114,7 @@ describe('runStagingDrainTick', () => {
       resolveCalls,
     });
 
-    const tick = await runStagingDrainTick(core);
+    const tick = await runStagingDrainTick(core, { rememberRuntime: stubRuntime('health') });
     expect(tick.claimed).toBe(1);
     expect(tick.stored).toBe(1);
     expect(tick.failed).toBe(0);
@@ -100,9 +124,9 @@ describe('runStagingDrainTick', () => {
       enriched: true,
     });
 
-    // Routed to health via keyword classifier (`lab result` strong).
-    // GAP-MULTI-01: resolve now forwards every classified persona as
-    // an array. A single-persona item yields `['health']`.
+    // Routed to health by the agentic runtime stub. GAP-MULTI-01: resolve
+    // forwards every routed persona as an array. A single-persona item
+    // yields `['health']`.
     expect(resolveCalls).toHaveLength(1);
     expect(resolveCalls[0].itemId).toBe('item-1');
     expect(resolveCalls[0].persona).toEqual(['health']);
@@ -158,7 +182,7 @@ describe('runStagingDrainTick', () => {
       resolveCalls,
     });
 
-    const tick = await runStagingDrainTick(core);
+    const tick = await runStagingDrainTick(core, { rememberRuntime: stubRuntime('health') });
 
     expect(tick).toMatchObject({ claimed: 1, stored: 1, failed: 0 });
     expect(resolveCalls).toHaveLength(1);
@@ -203,7 +227,7 @@ describe('runStagingDrainTick', () => {
       resolveCalls,
     });
 
-    await runStagingDrainTick(core);
+    await runStagingDrainTick(core, { rememberRuntime: stubRuntime('health') });
 
     expect(resolveCalls).toHaveLength(1);
     expect(resolveCalls[0].persona).toEqual(expect.arrayContaining(['health']));
@@ -242,6 +266,7 @@ describe('runStagingDrainTick', () => {
     } satisfies StagingDrainCoreClient;
 
     const tick = await runStagingDrainTick(core, {
+      rememberRuntime: stubRuntime('health'),
       logger: (e) => logs.push(e),
       topicTouch: {
         extractor: {
@@ -310,7 +335,7 @@ describe('runStagingDrainTick', () => {
       },
     } satisfies StagingDrainCoreClient;
 
-    const tick = await runStagingDrainTick(core);
+    const tick = await runStagingDrainTick(core, { rememberRuntime: stubRuntime('general') });
     expect(tick.claimed).toBe(2);
     expect(tick.stored).toBe(1);
     expect(tick.failed).toBe(1);
@@ -337,6 +362,7 @@ describe('runStagingDrainTick', () => {
       },
     };
     await runStagingDrainTick(core, {
+      rememberRuntime: stubRuntime('general'),
       topicTouch: {
         extractor,
         core: topicCore,
@@ -359,7 +385,10 @@ describe('runStagingDrainTick', () => {
       items: [{ id: 'a', type: 'email', source: 'clinic', subject: 'diagnosis', body: '' }],
       resolveCalls: [],
     });
-    await runStagingDrainTick(core, { logger: (e) => logs.push(e) });
+    await runStagingDrainTick(core, {
+      logger: (e) => logs.push(e),
+      rememberRuntime: stubRuntime('general'),
+    });
     const summary = logs.find((e) => e.event === 'staging.drain.tick');
     expect(summary).toBeDefined();
     expect(summary!.claimed).toBe(1);

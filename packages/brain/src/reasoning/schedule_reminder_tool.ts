@@ -1,16 +1,20 @@
 /**
- * `schedule_reminder` — agentic-loop tool that creates a reminder
- * directly from /ask flow.
+ * `schedule_reminder` — agentic-loop tool that creates a reminder.
+ * Shared by BOTH the /ask agentic loop and the /remember agentic loop
+ * (`remember_runtime.ts`): whenever the model decides a memory or
+ * request is time-bound, it calls this to schedule the reminder.
  *
- * Why this exists: the `/remember` path runs the LLM-driven reminder
- * planner as a side-effect of staging an item — useful for "Pick up
- * dry cleaning tomorrow at 6pm" because the dry-cleaning fact itself
- * is also worth remembering. /ask has no equivalent: "Remind me in 2
- * minutes to test reminders" used to fall through to the vault-search
- * tool and return "no relevant information about that in my memory."
- * (MT-15-I2). This tool closes the gap by giving the LLM a first-class
- * way to schedule a one-off reminder when the user's intent is clearly
- * "schedule a reminder" rather than "store a fact".
+ * Why this exists: /ask had no way to schedule ("Remind me in 2
+ * minutes to test reminders" used to fall through to vault-search and
+ * return "no relevant information"; MT-15-I2). The /remember loop now
+ * routes through it too — it replaced the separate `reminder_planner`
+ * LLM call, so this tool is the single place birthdays, appointments,
+ * deadlines, and payments become reminders. Its description must
+ * therefore cover recurring dates (birthdays / anniversaries → next
+ * occurrence), not just one-offs — earlier wording said "recurring
+ * reminders are out of scope", which made the model link the person
+ * and silently skip the reminder for "Emma's birthday is Nov 7". See
+ * the description string below.
  *
  * Design notes:
  *
@@ -57,6 +61,25 @@ export interface ScheduleReminderToolOptions {
    * the runtime's resolved tz, then UTC.
    */
   defaultTimezone?: string;
+  /**
+   * The staging item id this reminder originates from, when called from
+   * the /remember agentic loop. Persisted as the reminder's
+   * `source_item_id` so the chat orchestrator can find the reminder it
+   * just created and render the "Reminders set" confirmation card
+   * (the legacy `reminder_planner` path set this; the agentic path used
+   * to leave it empty, so the card never rendered). Omitted by /ask.
+   */
+  sourceItemId?: string;
+  /**
+   * Fallback persona resolver, evaluated only when the LLM omits an
+   * explicit `persona` arg. The /remember loop passes the persona the
+   * item was just routed to (via `route_to_persona`) so the reminder
+   * lands in the SAME vault the item did — otherwise it would default
+   * to `general` while the item went to e.g. `social`, and the chat
+   * card lookup (which queries the routed persona) would miss it. /ask
+   * omits this and falls straight through to `defaultPersona`.
+   */
+  resolvePersona?: () => string | undefined;
   /** Clock hook for tests. Defaults to `Date.now`. */
   nowMsFn?: () => number;
 }
@@ -105,11 +128,13 @@ export function createScheduleReminderTool(
       }
     })();
   const nowMsFn = opts.nowMsFn ?? (() => Date.now());
+  const sourceItemId = opts.sourceItemId ?? '';
+  const resolvePersona = opts.resolvePersona;
 
   return {
     name: 'schedule_reminder',
     description:
-      "Schedule a one-off reminder. Use when the user's intent is clearly 'remind me to X at/in Y' — NOT for storing facts (use /remember for those). The LLM is responsible for resolving phrases like 'in 5 minutes' or 'tomorrow at 9am' into a concrete due_at (ISO-8601 string OR epoch milliseconds) BEFORE calling. The reminder fires once at due_at; recurring reminders are out of scope for this tool.",
+      "Schedule a reminder that fires once at a specific time. Use it whenever the memory or request is time-bound and the user would want a heads-up — an appointment, a deadline, a payment, an arrival, OR a birthday / anniversary. Don't use it to store plain facts (those just go in a persona vault). You resolve the timing yourself: turn 'in 5 minutes', 'tomorrow at 9am', or a bare date into a concrete due_at (ISO-8601 string OR epoch milliseconds) BEFORE calling. For an annually-recurring date like a birthday or anniversary, schedule its NEXT occurrence — if this year's date has already passed, use next year — and fire ahead of time (e.g. a few days before) when the user would want to prepare. Call the tool more than once when a single event deserves multiple reminders (e.g. a prep reminder a few days out and a day-of reminder).",
     parameters: {
       type: 'object',
       properties: {
@@ -156,10 +181,19 @@ export function createScheduleReminderTool(
         };
       }
 
+      // Persona precedence: the LLM's explicit arg wins; otherwise fall
+      // back to the persona the item was just routed to (remember loop),
+      // and only then to the static default. This keeps the reminder in
+      // the same vault as the item so the chat-card lookup finds it.
+      const explicitPersona =
+        typeof args.persona === 'string' && args.persona !== '' ? args.persona : '';
+      const fallbackPersona = (resolvePersona?.() ?? '').trim();
       const persona =
-        typeof args.persona === 'string' && args.persona !== ''
-          ? args.persona
-          : defaultPersona;
+        explicitPersona !== ''
+          ? explicitPersona
+          : fallbackPersona !== ''
+            ? fallbackPersona
+            : defaultPersona;
 
       // Detect a true duplicate reliably + deterministically: check whether
       // an identical manual reminder already exists BEFORE creating. The
@@ -170,7 +204,11 @@ export function createScheduleReminderTool(
       // broke once `message` joined the dedup key — a dup returns a
       // same-source row, so it never tripped.)
       const alreadyExists = (await listRemindersByPersonaRouted(persona)).some(
-        (r) => r.kind === 'manual' && r.due_at === dueAtMs && r.message === message,
+        (r) =>
+          r.kind === 'manual' &&
+          r.due_at === dueAtMs &&
+          r.message === message &&
+          r.source_item_id === sourceItemId,
       );
 
       let reminder: Reminder;
@@ -180,6 +218,7 @@ export function createScheduleReminderTool(
           due_at: dueAtMs,
           persona,
           kind: 'manual',
+          source_item_id: sourceItemId,
           source: 'agentic_ask',
           timezone: defaultTimezone,
         });

@@ -23,6 +23,7 @@
 import { runAgenticTurn } from '../reasoning/agentic_loop';
 import { ToolRegistry } from '../reasoning/tool_registry';
 import { createScheduleReminderTool } from '../reasoning/schedule_reminder_tool';
+import { createVaultSearchTool } from '../reasoning/vault_tool';
 import {
   createBindPreferenceTool,
   createLinkToPersonTool,
@@ -55,6 +56,14 @@ export interface RememberRuntimeInput {
 export interface RememberTurnInput {
   /** The memory text the user just saved. */
   memoryText: string;
+  /**
+   * The staging item id this memory is being drained from. Threaded
+   * into `schedule_reminder` as the reminder's `source_item_id` so the
+   * chat orchestrator can find the reminder it just created and render
+   * the "Reminders set" confirmation card. Omitted by callers that
+   * don't have a staging id (rare).
+   */
+  sourceItemId?: string;
   /** Optional metadata that aids classification (source, sender, type). */
   metadata?: {
     type?: string;
@@ -124,10 +133,27 @@ export function buildRememberRuntime(input: RememberRuntimeInput): {
       tools.register(createRouteToPersonaTool({ collect }));
       tools.register(createLinkToPersonTool({ collect }));
       tools.register(createBindPreferenceTool({ collect }));
+      // Recall tool — lets the loop look up what the user has ALREADY
+      // saved about the people / topics in this memory and enrich its
+      // reminders + acknowledgement ("Emma's birthday" + a prior "Emma
+      // loves dinosaurs" → suggest a dinosaur gift). No personaGuard:
+      // this is the OWNER processing their own /remember, so it reads
+      // across every unlocked persona, exactly like the in-app user.
+      // The prior item(s) are already drained/stored by the time this
+      // one runs, so the search finds them.
+      tools.register(createVaultSearchTool());
       tools.register(
         createScheduleReminderTool({
           defaultPersona,
           defaultTimezone: timezone,
+          // Link the reminder back to the staged item so the chat reply
+          // can surface a "Reminders set" card for it.
+          sourceItemId: turn.sourceItemId,
+          // When the LLM omits an explicit persona on schedule_reminder,
+          // pin the reminder to the persona the item was just routed to
+          // (the most recent `route_to_persona` call) instead of the
+          // static default — keeps reminder + item in the same vault.
+          resolvePersona: () => collect.routes[collect.routes.length - 1]?.primary,
         }),
       );
 

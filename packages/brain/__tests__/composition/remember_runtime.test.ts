@@ -6,6 +6,10 @@
  * behaviour is out of scope (covered by integration runs).
  */
 
+import { resetReminderState, listByPersona } from '@dina/core/reminders';
+import { clearVaults, storeItem } from '@dina/core';
+
+import { setAccessiblePersonas, resetReasoningProvider } from '../../src/vault_context/assembly';
 import { buildRememberRuntime } from '../../src/composition/remember_runtime';
 import type {
   ChatOptions,
@@ -52,6 +56,17 @@ function scripted(script: Array<Partial<ChatResponse>>): {
 }
 
 describe('buildRememberRuntime', () => {
+  // Reset every process-global the runtime touches so each test starts
+  // clean: the reminder service map, the in-process vault, the search
+  // backend, and the accessible-persona allowlist (baseline = none; the
+  // tests that exercise vault_search opt in explicitly).
+  beforeEach(() => {
+    resetReminderState();
+    clearVaults();
+    resetReasoningProvider();
+    setAccessiblePersonas([]);
+  });
+
   it('renders persona list + today + timezone into the system prompt', async () => {
     const { provider, systemPromptSeen } = scripted([{ content: 'ok', toolCalls: [] }]);
     const { run } = buildRememberRuntime({
@@ -71,6 +86,9 @@ describe('buildRememberRuntime', () => {
     expect(sys).toContain('finance — budgets and money');
     expect(sys).toContain('2026-05-18');
     expect(sys).toContain('Asia/Kolkata');
+    // Recall nudge must stay — it's what makes the loop search the vault to
+    // enrich reminders ("Emma's birthday" + prior "Emma loves dinosaurs").
+    expect(sys).toContain('vault_search');
   });
 
   it('captures tool calls into the side-effects collector', async () => {
@@ -123,6 +141,106 @@ describe('buildRememberRuntime', () => {
     expect(result.sideEffects.people[0]?.canonicalName).toBe('Emma');
     expect(result.sideEffects.preferences).toHaveLength(1);
     expect(result.sideEffects.preferences[0]?.preference).toBe('loves dinosaurs');
+  });
+
+  it('threads sourceItemId + routed persona into schedule_reminder (birthday fix)', async () => {
+    const dueAt = new Date(Date.now() + 3_600_000).toISOString();
+    const { provider } = scripted([
+      {
+        toolCalls: [
+          { id: 't1', name: 'route_to_persona', arguments: { persona: 'health' } },
+          // NOTE: no `persona` arg on schedule_reminder — the runtime must
+          // fall back to the routed persona ('health'), not 'general'.
+          {
+            id: 't2',
+            name: 'schedule_reminder',
+            arguments: { message: "Emma's birthday is coming up", due_at: dueAt },
+          },
+        ],
+      },
+      { content: "I'll remind you before Emma's birthday.", toolCalls: [] },
+    ]);
+    const { run } = buildRememberRuntime({
+      llm: provider,
+      personas: [{ name: 'general' }, { name: 'health' }],
+    });
+
+    const result = await run({
+      memoryText: "Emma's birthday is on Nov 7",
+      sourceItemId: 'stage-xyz',
+    });
+
+    expect(result.toolNames).toEqual(['route_to_persona', 'schedule_reminder']);
+
+    // The reminder must land in the ROUTED persona ('health'), carry the
+    // staging id (so the chat "Reminders set" card renders), and exist
+    // exactly once — not silently default to 'general'.
+    const created = listByPersona('health');
+    expect(created).toHaveLength(1);
+    expect(created[0]?.source_item_id).toBe('stage-xyz');
+    expect(created[0]?.message).toBe("Emma's birthday is coming up");
+    expect(listByPersona('general')).toHaveLength(0);
+  });
+
+  it('exposes vault_search so the loop can recall prior memories to enrich (dinosaur fix)', async () => {
+    setAccessiblePersonas(['general']); // opt in to vault access for this test
+    // A fact the user saved in an EARLIER memory.
+    storeItem('general', {
+      type: 'user_memory',
+      summary: 'Emma loves dinosaurs',
+      body: 'Emma loves dinosaurs',
+    });
+
+    // Capture every message the provider sees so we can prove the
+    // vault_search result (the dinosaur fact) gets fed back into the loop
+    // — i.e. the recall tool is registered AND surfaces prior memories.
+    const messagesSeen: Array<{ role: string; content: unknown }> = [];
+    let i = 0;
+    const provider: LLMProvider = {
+      name: 'test',
+      supportsStreaming: false,
+      supportsToolCalling: true,
+      supportsEmbedding: false,
+      async chat(messages: Array<{ role: string; content: unknown }>) {
+        messagesSeen.push(...messages);
+        const step = i++;
+        if (step === 0) {
+          // First turn: recall what we already know about Emma.
+          return {
+            content: '',
+            toolCalls: [{ id: 's1', name: 'vault_search', arguments: { query: 'Emma' } }],
+            model: 'test',
+            usage: { inputTokens: 1, outputTokens: 1 },
+            finishReason: 'tool_use' as const,
+          };
+        }
+        return {
+          content: 'Saved — and Emma loves dinosaurs.',
+          toolCalls: [],
+          model: 'test',
+          usage: { inputTokens: 1, outputTokens: 1 },
+          finishReason: 'end' as const,
+        };
+      },
+      async *stream() {
+        throw new Error('not used');
+      },
+      async embed() {
+        throw new Error('not used');
+      },
+    };
+
+    const { run } = buildRememberRuntime({ llm: provider, personas: [{ name: 'general' }] });
+    const result = await run({ memoryText: "Emma's birthday is on Nov 7", sourceItemId: 'stage-1' });
+
+    expect(result.toolNames).toContain('vault_search');
+    // The recall result must have been fed back into the loop — without the
+    // tool registered the loop couldn't surface "Emma loves dinosaurs" and
+    // the model could never enrich the reminder with it.
+    const allText = messagesSeen
+      .map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)))
+      .join('\n');
+    expect(allText).toMatch(/Emma loves dinosaurs/);
   });
 
   it("returns empty side effects when the LLM doesn't call any tools", async () => {

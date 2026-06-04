@@ -13,6 +13,35 @@ import { join } from 'node:path';
 import { bootServer, ConfigError, loadConfig } from '../src/main';
 
 import type { AskCoordinator, LLMProvider } from '@dina/brain';
+import { getPersona, resetPersonaState } from '@dina/core';
+
+/**
+ * Minimal LLM provider so boot wires the staging drain. The drain is
+ * LLM-driven and is only created when an LLM is configured (no non-LLM
+ * fallback); these boot tests don't drain real items, so the provider is
+ * never actually called — it just needs to exist for `buildRememberRuntime`.
+ */
+function makeStubLLM(): LLMProvider {
+  return {
+    name: 'scripted',
+    supportsStreaming: false,
+    supportsToolCalling: true,
+    supportsEmbedding: false,
+    chat: jest.fn(async () => ({
+      content: '',
+      toolCalls: [],
+      model: 'scripted',
+      usage: { inputTokens: 0, outputTokens: 0 },
+      finishReason: 'end' as const,
+    })),
+    stream: () => {
+      throw new Error('not used');
+    },
+    embed: async () => {
+      throw new Error('not used');
+    },
+  };
+}
 
 describe('brain-server — config (task 5.1/5.4 scaffold)', () => {
   it('loads defaults from empty env', () => {
@@ -507,6 +536,8 @@ describe('brain-server — boot (task 5.1)', () => {
           DINA_SERVICE_KEY_DIR: keyDir,
         },
         {
+          // LLM present → staging drain is wired (it's LLM-driven; no fallback).
+          askRuntime: { llm: makeStubLLM(), providerName: 'gemini' },
           serviceRuntime: {
             readConfig: () => null,
             rejectResponder: jest.fn(),
@@ -553,6 +584,7 @@ describe('brain-server — boot (task 5.1)', () => {
   });
 
   it('constructs a signed CoreClient when the Brain service key is provisioned', async () => {
+    resetPersonaState(); // isolate the persona-tier mirror assertions below
     const keyDir = await mkdtemp(join(tmpdir(), 'dina-brain-key-'));
     const seed = Uint8Array.from({ length: 32 }, (_v, i) => i + 1);
     await writeFile(join(keyDir, 'brain.ed25519'), seed);
@@ -578,6 +610,7 @@ describe('brain-server — boot (task 5.1)', () => {
             personas: [
               { name: 'general', tier: 'default', isOpen: true },
               { name: 'work', tier: 'standard', isOpen: true },
+              { name: 'health', tier: 'sensitive', isOpen: false },
             ],
           }),
           { headers: { 'content-type': 'application/json' } },
@@ -603,11 +636,23 @@ describe('brain-server — boot (task 5.1)', () => {
           DINA_CORE_URL: 'http://core.example:8100/',
           DINA_SERVICE_KEY_DIR: keyDir,
         },
-        { setInterval: setIntervalFn, clearInterval: clearIntervalFn },
+        {
+          // LLM present → staging drain is wired (it's LLM-driven; no fallback).
+          askRuntime: { llm: makeStubLLM(), providerName: 'gemini' },
+          setInterval: setIntervalFn,
+          clearInterval: clearIntervalFn,
+        },
       );
 
       expect(booted.clients.core).toBeDefined();
       expect(booted.dependencyStatus.core).toBe('configured');
+      // SECURITY: persona TIERS (not just names) are mirrored into Brain's
+      // local registry, so the split-process agent vault-read gate sees
+      // sensitive/locked tiers instead of failing open (getPersona === null
+      // → "no approval needed"). `health` MUST resolve as sensitive here.
+      expect(getPersona('general')?.tier).toBe('default');
+      expect(getPersona('work')?.tier).toBe('standard');
+      expect(getPersona('health')?.tier).toBe('sensitive');
       expect(booted.dependencyStatus.stagingDrain).toBe('running');
       expect(booted.schedulers.stagingDrain).toBeDefined();
       expect(setIntervalFn).toHaveBeenCalledTimes(1);

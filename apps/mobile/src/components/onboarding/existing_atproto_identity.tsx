@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { locateStep, type Step } from '../../onboarding/state';
 import { loginWithBluesky } from '../../services/oauth_login';
@@ -51,8 +51,8 @@ export function ExistingAtprotoIdentity(props: ExistingAtprotoIdentityProps): Re
   return (
     <OnboardingShell
       location={locateStep(step)}
-      title="Link your Bluesky identity"
-      subtitle="Connect a Bluesky or AT Protocol account you already have. Dina keeps its own keys — we just link your handle so people can recognise and trust you."
+      title="Link your Bluesky account"
+      subtitle={"Sign in with Bluesky OAuth to confirm it's you.\nNo other access required."}
       primaryLabel={busy ? 'Opening Bluesky…' : 'Login with Bluesky'}
       onPrimary={onLogin}
       primaryDisabled={!valid || busy}
@@ -88,24 +88,9 @@ export function ExistingAtprotoIdentity(props: ExistingAtprotoIdentityProps): Re
 
       <View style={styles.note} testID="existing-atproto-link-explainer">
         <Text style={styles.noteText}>
-          You’ll sign in on Bluesky to prove the account is yours. Dina never sees your password,
-          creates its own separate identity, and only stores a reference to this account — for
-          recognition, trust, and attribution. We never post as you or change your account.
+          This links your Dina to your Bluesky account. You’ll set up Dina in the next steps.
         </Text>
       </View>
-
-      <TouchableOpacity
-        onPress={() => {
-          if (valid && !busy) props.onContinue(identifier.trim());
-        }}
-        disabled={!valid || busy}
-        testID="existing-atproto-link-without-signin"
-        accessibilityRole="button"
-      >
-        <Text style={[styles.secondary, (!valid || busy) && styles.secondaryDisabled]}>
-          Link without signing in (unverified)
-        </Text>
-      </TouchableOpacity>
     </OnboardingShell>
   );
 }
@@ -152,14 +137,5 @@ const styles = StyleSheet.create({
   noteText: {
     ...textStyles.bodySmall,
     color: colors.textSecondary,
-  },
-  secondary: {
-    ...textStyles.bodySmall,
-    color: colors.accent,
-    textAlign: 'center',
-    marginTop: spacing.lg,
-  },
-  secondaryDisabled: {
-    color: colors.textMuted,
   },
 });

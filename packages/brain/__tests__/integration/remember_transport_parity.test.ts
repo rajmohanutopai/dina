@@ -7,7 +7,7 @@
  * one staging-first path, one drain, one Core resolve contract.
  */
 
-import { TEST_ED25519_SEED } from '@dina/test-harness';
+import { TEST_ED25519_SEED, makeStubRememberRuntime } from '@dina/test-harness';
 import { signRequest } from '@dina/core';
 import {
   configureRateLimiter,
@@ -141,10 +141,20 @@ async function ingestRemember(
 async function drainOnce(
   core: RememberClient,
   accessiblePersonas: string[],
+  /**
+   * Personas the agentic loop "routes" the item to. Defaults to
+   * `accessiblePersonas`, but the owner-override case routes to a CLOSED
+   * persona (not in `accessiblePersonas`) on purpose.
+   */
+  route: string[] = accessiblePersonas,
 ): Promise<Awaited<ReturnType<typeof runStagingDrainTick>>> {
   setAccessiblePersonas(accessiblePersonas);
+  // Dina is LLM-driven: the drain requires an agentic runtime. Route the
+  // item to the personas the test expects (primary + secondary) so the
+  // parity assertions still pin the cross-transport routing.
   return runStagingDrainTick(core, {
     limit: 10,
+    rememberRuntime: makeStubRememberRuntime(route[0] ?? 'general', route.slice(1)),
     setInterval: () => 1,
     clearInterval: () => {
       /* no-op */
@@ -261,9 +271,10 @@ describe.each<TransportCase>([
       sender: 'user',
     });
 
-    // Only 'general' is in accessiblePersonas — but user_remember bypasses
-    // this and treats all target personas as accessible.
-    const tick = await drainOnce(core, ['general']);
+    // Only 'general' is in accessiblePersonas — but the loop routes this
+    // health content to the (closed) 'health' persona, and user_remember
+    // bypasses the access gate, writing it there immediately.
+    const tick = await drainOnce(core, ['general'], ['health']);
 
     expect(tick).toMatchObject({ claimed: 1, stored: 1, failed: 0 });
     expect(tick.results[0]).toMatchObject({ itemId, status: 'stored' });

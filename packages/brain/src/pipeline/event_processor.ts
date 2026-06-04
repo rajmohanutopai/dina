@@ -4,19 +4,16 @@
  * Event types:
  *   approval_needed  → create approval request via Core API
  *   reminder_fired   → classify priority, send notification via Core
- *   post_publish     → run post-publish handler (reminders, contacts, ambiguous routing)
  *   persona_unlocked → drain pending_unlock items for that persona
  *   staging_batch    → trigger batch processing of staging queue
+ *   d2d_received     → Silence-First classify + nudge assembly (the live
+ *                      path the staging drain calls after storing a D2D item)
  *
- * Events arrive via Brain's POST /v1/process endpoint (from Core or UI).
  * Each handler is fail-safe — errors are captured, never thrown.
  *
  * Source: ARCHITECTURE.md Task 3.26
  */
 
-import { handlePostPublish, type PostPublishResult } from './post_publish';
-import { isVaultItemType } from '@dina/core';
-import type { VaultItemType } from '@dina/core';
 import {
   classifyDeterministic,
   type ClassificationResult as SilenceResult,
@@ -31,7 +28,6 @@ import {
 export type EventType =
   | 'approval_needed'
   | 'reminder_fired'
-  | 'post_publish'
   | 'persona_unlocked'
   | 'staging_batch'
   | 'd2d_received';
@@ -60,8 +56,6 @@ export async function processEvent(input: EventInput): Promise<EventResult> {
         return handleApprovalNeeded(input);
       case 'reminder_fired':
         return handleReminderFired(input);
-      case 'post_publish':
-        return await handlePostPublishEvent(input);
       case 'persona_unlocked':
         return handlePersonaUnlocked(input);
       case 'staging_batch':
@@ -148,33 +142,6 @@ function handleReminderFired(input: EventInput): EventResult {
       interrupt,
       tier: classification.tier,
     },
-  };
-}
-
-async function handlePostPublishEvent(input: EventInput): Promise<EventResult> {
-  const { id, type, summary, body, timestamp, persona, sender_did, confidence } = input.data;
-
-  if (!id || !summary) {
-    return { event: 'post_publish', handled: false, error: 'id and summary are required' };
-  }
-
-  const rawType = String(type ?? 'note');
-  const itemType: VaultItemType = isVaultItemType(rawType) ? rawType : 'note';
-  const result: PostPublishResult = await handlePostPublish({
-    id: String(id),
-    type: itemType,
-    summary: String(summary),
-    body: String(body ?? ''),
-    timestamp: Number(timestamp ?? Date.now()),
-    persona: String(persona ?? 'general'),
-    sender_did: sender_did ? String(sender_did) : undefined,
-    confidence: confidence ? Number(confidence) : undefined,
-  });
-
-  return {
-    event: 'post_publish',
-    handled: true,
-    result,
   };
 }
 

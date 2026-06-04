@@ -45,7 +45,6 @@ import type {
   LLMProvider,
   ToolCall,
 } from '../../src/llm/adapters/provider';
-import { resetReminderLLM } from '../../src/pipeline/reminder_planner';
 import { resetIdentityExtractor } from '../../src/pipeline/identity_extraction';
 
 const REQUESTER = 'did:key:zBridgeTester';
@@ -188,7 +187,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  resetReminderLLM();
   resetIdentityExtractor();
 });
 

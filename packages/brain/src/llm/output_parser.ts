@@ -30,14 +30,6 @@ export interface EnrichmentOutput {
   has_event: boolean;
 }
 
-export interface ReminderPlanOutput {
-  reminders: Array<{
-    message: string;
-    due_at: number;
-    kind: string;
-  }>;
-}
-
 export interface SilenceOutput {
   priority: 1 | 2 | 3;
   reason: string;
@@ -58,10 +50,6 @@ const ENRICHMENT_DEFAULT: EnrichmentOutput = {
   content_l1: '',
   tags: [],
   has_event: false,
-};
-
-const REMINDER_PLAN_DEFAULT: ReminderPlanOutput = {
-  reminders: [],
 };
 
 const SILENCE_DEFAULT: SilenceOutput = {
@@ -183,32 +171,6 @@ export function parseEnrichment(raw: string): EnrichmentOutput {
         : ENRICHMENT_DEFAULT.tags,
     has_event: typeof obj.has_event === 'boolean' ? obj.has_event : ENRICHMENT_DEFAULT.has_event,
   };
-}
-
-/** Parse reminder plan output. Returns default on failure. */
-export function parseReminderPlan(raw: string): ReminderPlanOutput {
-  const obj = extractJSON(raw);
-  if (!obj) return { ...REMINDER_PLAN_DEFAULT };
-
-  if (!Array.isArray(obj.reminders)) return { ...REMINDER_PLAN_DEFAULT };
-
-  // Accept both parser schema (due_at, kind) and prompt schema (due_relative, priority)
-  // Fix: Codex #11 — prompt and parser used different field names
-  const reminders = (obj.reminders as Array<Record<string, unknown>>)
-    .filter((r) => typeof r === 'object' && r !== null)
-    .map((r) => ({
-      message: typeof r.message === 'string' ? r.message : '',
-      due_at: typeof r.due_at === 'number' ? r.due_at : 0,
-      kind:
-        typeof r.kind === 'string'
-          ? r.kind
-          : typeof r.priority === 'string'
-            ? r.priority
-            : 'manual',
-    }))
-    .filter((r) => r.message.length > 0);
-
-  return { reminders };
 }
 
 /** Parse silence classification output. Returns default on failure. */

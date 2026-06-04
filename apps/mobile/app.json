@@ -4,7 +4,7 @@
     "slug": "dina-mobile",
     "version": "0.0.1",
     "orientation": "portrait",
-    "scheme": "dina",
+    "scheme": ["dina", "com.dinakernel.mobile", "com.dinakernel.test-mobile"],
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "icon": "./assets/branding/dina-icon.png",

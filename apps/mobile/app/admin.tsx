@@ -86,7 +86,10 @@ export default function AdminScreen(): React.ReactElement {
             void (async () => {
               try {
                 await signOutLocal();
-                Alert.alert('Signed out', 'Close and reopen the app to onboard again.');
+                Alert.alert(
+                  'Signed out',
+                  'This device is disconnected. Re-onboard with your recovery phrase to come back.',
+                );
               } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
                 Alert.alert('Couldn’t sign out', msg);
@@ -113,7 +116,7 @@ export default function AdminScreen(): React.ReactElement {
                 await eraseEverythingLocal();
                 Alert.alert(
                   'Erased',
-                  'All data on this device has been deleted. Close and reopen the app to onboard again.',
+                  'All data on this device has been deleted. Set up Dina again to start fresh.',
                 );
               } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);

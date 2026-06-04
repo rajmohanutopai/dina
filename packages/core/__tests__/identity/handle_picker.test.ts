@@ -8,6 +8,8 @@
 import {
   checkHandleAvailability,
   generateCandidates,
+  MAX_HANDLE_CHARS,
+  maxPrefixChars,
   pickHandle,
   sanitizeHandlePrefix,
   validateHandleFormat,
@@ -130,6 +132,54 @@ describe('validateHandleFormat', () => {
   it('rejects reserved prefix "dina"', () => {
     const r = validateHandleFormat('dina.test-pds.dinakernel.com', PDS_HOST);
     expect(r.ok).toBe(false);
+  });
+});
+
+describe('domain-relative handle length cap (regression: did:key strand)', () => {
+  it('maxPrefixChars shrinks as the PDS host grows', () => {
+    // Full handle (prefix + "." + host) must fit MAX_HANDLE_CHARS, so the
+    // usable prefix is MAX_HANDLE_CHARS − host − 1 (the dot).
+    expect(maxPrefixChars('pds.dinakernel.com')).toBe(
+      MAX_HANDLE_CHARS - 'pds.dinakernel.com'.length - 1,
+    );
+    expect(maxPrefixChars('pds.dinakernel.com')).toBe(11);
+    expect(maxPrefixChars('test-pds.dinakernel.com')).toBe(6);
+  });
+
+  it('rejects a prefix that fits the AT Proto 253 spec but exceeds the deployment cap', () => {
+    // 'alonsoalonsoserif42z9' (21) is a valid AT Proto label and the live
+    // resolveHandle check reports it "available" — but createAccount
+    // rejects it as too long, stranding onboarding in a did:key fallback.
+    // validateHandleFormat must reject it up front instead.
+    const host = 'test-pds.dinakernel.com';
+    const r = validateHandleFormat(`alonsoalonsoserif42z9.${host}`, host);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/at most/i);
+  });
+
+  it('accepts a prefix exactly at the cap and rejects one over', () => {
+    const host = 'pds.dinakernel.com'; // cap 11
+    expect(validateHandleFormat(`${'a'.repeat(11)}.${host}`, host)).toEqual({ ok: true });
+    expect(validateHandleFormat(`${'a'.repeat(12)}.${host}`, host).ok).toBe(false);
+  });
+
+  it('sanitizeHandlePrefix clamps the seed to the host-relative cap when a host is given', () => {
+    const host = 'test-pds.dinakernel.com'; // cap 6
+    expect(sanitizeHandlePrefix('alexandria', host)).toBe('alexan');
+    // Without a host it falls back to the absolute MAX_PREFIX_CHARS (30).
+    expect(sanitizeHandlePrefix('alexandria')).toBe('alexandria');
+  });
+
+  it('rejects every handle for a PDS host too long to fit even a minimum prefix', () => {
+    // The host leaves < MIN_PREFIX_CHARS of room, so even a 3-char prefix
+    // overflows MAX_HANDLE_CHARS. maxPrefixChars clamps UP to MIN, so a
+    // prefix-only check (cap === MIN, 3 > 3 === false) would wave it
+    // through — validateHandleFormat must reject on the FULL handle length.
+    const host = 'a-very-long-self-hosted-pds.example.com'; // 38 > MAX_HANDLE_CHARS
+    expect(host.length).toBeGreaterThan(MAX_HANDLE_CHARS);
+    const r = validateHandleFormat(`abc.${host}`, host);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/too long/i);
   });
 });
 

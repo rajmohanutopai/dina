@@ -11,3 +11,7 @@ test-mailbox.dinakernel.com {
 test-appview.dinakernel.com {
 	reverse_proxy appview-web:3000
 }
+
+test-mobile.dinakernel.com {
+	reverse_proxy appview-web:3000
+}

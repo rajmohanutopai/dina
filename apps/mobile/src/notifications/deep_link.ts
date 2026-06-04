@@ -58,14 +58,18 @@ export function safeDeepLink(raw: string): string | null {
 }
 
 /**
- * Normalise an approval deep link to `/approvals` (Brain emits
- * `dina://approvals/<id>`, but there is no dynamic approvals route) and strip
- * the `dina://` scheme so a link reaches its in-app page. Pure transform — the
- * allowlist is applied by `resolveSafeDeepLink`.
+ * Normalise an approval deep link to `/notifications?filter=needs_action`
+ * (Brain emits `dina://approvals` / `dina://approvals/<id>`, but the
+ * standalone Approvals screen was merged into the Activity tab — approval
+ * cards are now actionable inline on the "Needs action" filter). We land
+ * taps on that filter directly, not Activity's default "Unread", so the
+ * actionable card is on screen. The scheme is stripped so the link reaches
+ * its in-app page. Pure transform — the allowlist is applied by
+ * `resolveSafeDeepLink` (the root segment is still `notifications`).
  */
 function normaliseDeepLinkPath(link: string): string {
-  const approvalMatch = link.match(/^(?:dina:\/\/)?\/?approvals\/[^/?#]+/);
-  if (approvalMatch !== null) return '/approvals';
+  const approvalMatch = link.match(/^(?:dina:\/\/)?\/?approvals(?:\/[^/?#]+)?(?:[/?#]|$)/);
+  if (approvalMatch !== null) return '/notifications?filter=needs_action';
   if (link.startsWith('dina://')) return `/${link.slice('dina://'.length)}`;
   return link;
 }
@@ -73,7 +77,7 @@ function normaliseDeepLinkPath(link: string): string {
 /**
  * THE single safe deep-link resolver — every untrusted `deepLink` push (OS
  * notification taps, the Notifications screen, briefing cards) MUST go through
- * this. Normalises the link (approval → `/approvals`, scheme strip) THEN
+ * this. Normalises the link (approval → `/notifications`, scheme strip) THEN
  * applies the allowlist (`safeDeepLink`): returns a safe internal path, or
  * `null` to reject (external scheme, or a non-allowlisted/sensitive route such
  * as `/vault/...`). Callers MUST no-op on `null`.

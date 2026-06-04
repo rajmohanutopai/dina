@@ -20,6 +20,24 @@ const pushed: string[] = [];
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: (path: string): void => void pushed.push(path) }),
+  useLocalSearchParams: () => ({}),
+}));
+
+// The approval inbox (merged into Activity) reads workflow tasks through
+// `useServiceInbox`. This render test only exercises the notification-row
+// surface + filter chips, so stub the inbox reads to empty/resolved so the
+// hook settles deterministically (no unconfigured-client error churn).
+jest.mock('../../src/hooks/useServiceInbox', () => ({
+  ...jest.requireActual('../../src/hooks/useServiceInbox'),
+  listPendingApprovals: jest.fn(async () => []),
+  listResolvedApprovals: jest.fn(async () => []),
+}));
+
+// `storage/init` touches native side effects (op-sqlite / expo-file-system)
+// via the approval card's staging-approve branch; stub to no-ops.
+jest.mock('../../src/storage/init', () => ({
+  openPersonaDB: jest.fn(),
+  isPersistenceReady: (): boolean => true,
 }));
 
 beforeEach(() => {
@@ -78,9 +96,10 @@ describe('Notifications screen — render (5.67)', () => {
     const { getByTestId } = render(<NotificationsScreen />);
     fireEvent.press(getByTestId('notif-row-r1'));
     // The screen normalises Brain-emitted `dina://approvals/<id>` deep
-    // links to `/approvals` so tapping lands on the index page (no
-    // dynamic `[id].tsx` route exists). See MT-12-I1 / normaliseDeepLink.
-    expect(pushed).toEqual(['/approvals']);
+    // links to the Activity tab's Needs-action filter (the standalone
+    // Approvals screen merged in; actionable cards live under
+    // needs_action). See normaliseDeepLink.
+    expect(pushed).toEqual(['/notifications?filter=needs_action']);
   });
 
   it('tapping a row WITHOUT a deepLink stays put but marks it read', () => {
@@ -102,14 +121,25 @@ describe('Notifications screen — render (5.67)', () => {
     expect(queryByText('app')).toBeNull();
   });
 
-  it('Needs action filter shows BOTH approval and ask_approval kinds', () => {
+  it('Needs action filter renders the actionable approval inbox, not notification rows', () => {
+    // The Approvals screen merged into Activity: "Needs action" now renders
+    // the ACTIONABLE pending-approval cards (Deny / Approve Once / Approve)
+    // from `useApprovalInbox`, NOT plain notification rows. With no Core
+    // client wired in this render test the pending list is empty, so the
+    // approval empty-state shows and none of the appended approval-kind
+    // *notification* rows leak through this filter. (The actionable-card
+    // rendering + action wiring is covered in
+    // __tests__/components/approval_inbox.test.tsx.)
     appendNotification({ kind: 'approval', title: 'service-app', body: '', sourceId: '1' });
     appendNotification({ kind: 'ask_approval', title: 'ask-app', body: '', sourceId: '2' });
     appendNotification({ kind: 'nudge', title: 'should-hide', body: '', sourceId: '3' });
     const { getByTestId, queryByText } = render(<NotificationsScreen />);
     fireEvent.press(getByTestId('filter-needs_action'));
-    expect(queryByText('service-app')).toBeTruthy();
-    expect(queryByText('ask-app')).toBeTruthy();
+    // Notification rows are not the Needs-action surface anymore.
+    expect(queryByText('service-app')).toBeNull();
+    expect(queryByText('ask-app')).toBeNull();
     expect(queryByText('should-hide')).toBeNull();
+    // The approval empty-state copy is shown instead.
+    expect(queryByText(/All caught up/i)).toBeTruthy();
   });
 });

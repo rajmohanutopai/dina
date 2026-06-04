@@ -40,6 +40,17 @@ describe('parentRouteFor', () => {
       expect(parentRouteFor('/paired-devices')).toBe('/settings');
     });
 
+    it('ai-providers → /settings', () => {
+      expect(parentRouteFor('/ai-providers')).toBe('/settings');
+    });
+
+    it('infrastructure → /settings (was falling through to Chat)', () => {
+      // Regression pin: /infrastructure had no SECTION_PARENTS entry, so
+      // the back chevron from Settings → More → Infrastructure landed on
+      // the Chat tab instead of returning to Settings.
+      expect(parentRouteFor('/infrastructure')).toBe('/settings');
+    });
+
     it('service-settings (per-listing editor) → /my-listings', () => {
       expect(parentRouteFor('/service-settings')).toBe('/my-listings');
     });

@@ -22,7 +22,6 @@ import {
   createAskCoordinator,
   resetIdentityExtractor,
   resetReasoningProvider,
-  resetReminderLLM,
   setAccessiblePersonas,
   type AskCoordinatorCoreClient,
   type BuildAgenticAskPipelineInput,
@@ -219,7 +218,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  resetReminderLLM();
   resetIdentityExtractor();
 });
 

@@ -339,3 +339,102 @@ known_only is when i know that this user is authenticated to use my service - it
   The security comes from the D2D authenticated sender DID, not from hiding grant_id.
 
 
+# How dina keys and security work
+
+  24-word recovery phrase
+    ↓
+  32-byte master seed
+    ↓
+  SLIP-0010 key tree under m/9999'
+
+  Dina starts with a 24-word recovery phrase.
+
+  That phrase converts to a 32-byte master seed.
+
+  24 words -> master seed
+
+  This is the root of the user’s Dina identity.
+
+  2. Passphrase protects the seed on device
+  The passphrase is not the identity.
+
+  It derives a KEK:
+
+  passphrase + salt -> KEK
+
+  The KEK wraps/encrypts the master seed for local storage:
+
+  master seed -> encrypted/wrapped seed using Argon2id
+
+  On app unlock:
+
+  passphrase -> KEK -> unwrap master seed
+
+  3. Signing keys derive from master seed
+  Dina derives deterministic identity keys from the master seed:
+
+  master seed -> Ed25519 signing key
+  master seed -> secp256k1 rotation key
+
+  Ed25519 signing key:
+
+  - D2D messages
+  - request signing
+  - Dina identity auth
+
+  secp256k1 rotation key:
+
+  - PLC update authority for Dina-created did:plc
+  - lets Dina update DID document when needed
+
+  ┌────────────────────────┬──────────────────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────┐
+  │ Purpose                │                                     Path │ Meaning                                                                         │
+  ├────────────────────────┼──────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────┤
+  │ Root signing key       │                 m/9999'/0'/{generation}' │ Main Dina Ed25519 signing key. Gen 0 is m/9999'/0'/0'.                          │
+  │ Persona signing key    │ m/9999'/1'/{personaIndex}'/{generation}' │ Per-persona Ed25519 signing key. Example professional gen 1 = m/9999'/1'/1'/1'. │
+  │ PLC rotation key       │                 m/9999'/2'/{generation}' │ secp256k1 PLC recovery/rotation key. Gen 0 is m/9999'/2'/0'.                    │
+  │ Service auth key       │               m/9999'/3'/{serviceIndex}' │ Core/Brain service auth. Core = m/9999'/3'/0', Brain = m/9999'/3'/1'.           │
+  │ PeerLens namespace key │             m/9999'/4'/{namespaceIndex}' │ Pseudonymous namespace signing key. Example namespace 1 = m/9999'/4'/1'.        │
+  └────────────────────────┴──────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────┘
+
+  4. Normal Dina-created identity
+  For normal onboarding, Dina creates a PDS account.
+
+  The PDS creates a new did:plc.
+
+  Dina provides its secp256k1 rotation public key as recoveryKey, so the PLC doc includes Dina’s rotation key.
+
+  Then Dina updates PLC to add:
+
+  dina_signing -> Ed25519 public key
+  dina-messaging -> MsgBox endpoint
+
+  So:
+
+  Dina DID = did:plc created for Dina
+  Dina signing key = derived from recovery phrase
+  Dina rotation key = derived from recovery phrase
+
+  5. Vault encryption
+  The master seed also derives vault/persona encryption keys.
+
+  Conceptually:
+
+  master seed -> identity DB key
+  master seed + persona name -> persona vault DEK
+
+  Each persona vault has its own DEK.
+
+  So if you restore the same recovery phrase, Dina can derive the same keys and open the same encrypted vault backup.
+
+  PDS Passowrd
+  In code it is derived like this:
+
+  HMAC-SHA256(masterSeed, "dina:pds_password:v1")
+
+  Then Dina uses it for:
+
+  - createAccount on Dina’s PDS during onboarding
+  - createSession later, so Dina can publish ATProto records again after restart
+  - recovery, because the same recovery phrase re-derives the same PDS password
+

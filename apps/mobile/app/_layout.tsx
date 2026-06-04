@@ -24,7 +24,10 @@ import '../src/polyfills';
 import { Ionicons } from '@expo/vector-icons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FEATURES, FeatureIcon, type FeatureKey } from '../src/features';
-import { CormorantGaramond_600SemiBold_Italic } from '@expo-google-fonts/cormorant-garamond';
+import {
+  CormorantGaramond_600SemiBold,
+  CormorantGaramond_600SemiBold_Italic,
+} from '@expo-google-fonts/cormorant-garamond';
 import {
   Figtree_400Regular,
   Figtree_500Medium,
@@ -45,11 +48,12 @@ import { useFonts } from 'expo-font';
 import * as Notifications from 'expo-notifications';
 import { Tabs, useRouter, usePathname, useGlobalSearchParams } from 'expo-router';
 import React, { useEffect, useSyncExternalStore } from 'react';
-import { Image, Modal, Platform, Pressable, TouchableOpacity, View, Text, StyleSheet } from 'react-native';
+import { Modal, Platform, Pressable, TouchableOpacity, View, Text, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { markNotificationRead } from '@dina/brain/notifications';
 import { UnlockGate } from '../src/components/unlock_gate';
+import { DinaWordmark } from '../src/components/DinaWordmark';
 import { useAutoLock } from '../src/hooks/useAutoLock';
 import { useNodeBootstrap } from '../src/hooks/useNodeBootstrap';
 import { useUnreadBadge } from '../src/hooks/useNotificationsBadge';
@@ -85,17 +89,10 @@ import type { BootDegradation } from '../src/services/boot_service';
 // dilute it. The asset is at retina resolution (1672×941, ratio
 // 1.78), so width is generous and `contain` lets the height drive
 // the rendered size without stretching.
-const dinaHeaderLogo = require('../assets/branding/dina-logo-horizontal.png');
-
 function DinaHeaderTitle() {
-  return (
-    <Image
-      source={dinaHeaderLogo}
-      resizeMode="contain"
-      style={{ height: 40, width: 120 }}
-      accessibilityLabel="Dina"
-    />
-  );
+  // The brand mark in the top bar is the spaced DINA wordmark — NOT the
+  // domino-D glyph, which is reserved for the app icon alone.
+  return <DinaWordmark />;
 }
 
 // Hamburger button + nav menu sheet rendered as `headerLeft` on
@@ -408,6 +405,7 @@ export default function RootLayout() {
     PlusJakartaSans_600SemiBold,
     PlusJakartaSans_700Bold,
     PlusJakartaSans_800ExtraBold,
+    CormorantGaramond_600SemiBold,
     CormorantGaramond_600SemiBold_Italic,
     JetBrainsMono_400Regular,
     JetBrainsMono_500Medium,
@@ -806,6 +804,15 @@ export default function RootLayout() {
             <Tabs.Screen
               name="peerlens-preferences/accessibility"
               options={{ title: 'Accessibility', href: null, headerLeft: renderHeaderBackButton }}
+            />
+            <Tabs.Screen
+              name="oauth/callback"
+              // Internal ATProto OAuth redirect handler — NEVER a tab.
+              // `href: null` keeps it routable for the `<scheme>:/oauth/callback`
+              // redirect (so it's not "Unmatched Route") without a bottom-bar
+              // entry; it self-dismisses (router.back) after handing the code
+              // to the flow bridge, so no header is needed.
+              options={{ href: null, headerShown: false }}
             />
             <Tabs.Screen
               name="reminders"
