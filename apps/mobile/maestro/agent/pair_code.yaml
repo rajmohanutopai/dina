@@ -1,0 +1,32 @@
+# MRS-06/07/08 setup — mint a pairing code on the app for the dina-agent CLI.
+# Settings -> Agents -> name the agent -> Generate -> Copy (to the sim
+# pasteboard, which the orchestrator reads with `xcrun simctl pbpaste`).
+appId: com.dinakernel.mobile
+---
+- launchApp
+- tapOn:
+    id: 'root-layout-menu'
+- tapOn:
+    id: 'root-layout-menu-row-settings'
+- extendedWaitUntil:
+    visible:
+      id: 'settings-row-agents'
+    timeout: 15000
+- tapOn:
+    id: 'settings-row-agents'
+- extendedWaitUntil:
+    visible:
+      id: 'paired-devices-agent-name'
+    timeout: 15000
+- tapOn:
+    id: 'paired-devices-agent-name'
+- inputText: 'mrs-agent'
+- hideKeyboard
+- tapOn:
+    id: 'paired-devices-generate'
+- extendedWaitUntil:
+    visible:
+      id: 'paired-devices-copy-code'
+    timeout: 15000
+- tapOn:
+    id: 'paired-devices-copy-code'

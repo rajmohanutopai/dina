@@ -128,6 +128,11 @@ async function main(): Promise<void> {
   const text = arg('text');
   const name = arg('name', 'Alonso');
   const handlePrefix = arg('handle', `sender${rand}`);
+  // Two-phase handoff for MRS-04: write the sender DID so the orchestrator can
+  // add it as a contact (+ seed memories) on the mobile side, then signal via
+  // wait-file to release the send AFTER that setup is done.
+  const didFile = arg('did-file', '');
+  const waitFile = arg('wait-file', '');
 
   rmSync(SCRATCH, { recursive: true, force: true });
   const txVault = `${SCRATCH}/sender/vault`;
@@ -156,8 +161,18 @@ async function main(): Promise<void> {
   await waitFor('sender DID provisioned', async () => readDID(txVault) !== null, 60_000);
   const senderDID = readDID(txVault)!;
   log('setup', `SENDER_DID=${senderDID}`);
+  if (didFile !== '') writeFileSync(didFile, senderDID);
   // Let the MsgBox WS settle before sending.
   await sleep(5000);
+
+  // Two-phase: hold until the orchestrator finishes mobile-side setup
+  // (add contact + seed memory) and signals by creating the wait-file.
+  if (waitFile !== '') {
+    log('wait', `holding send until ${waitFile} appears…`);
+    const deadline = Date.now() + 180_000;
+    while (!existsSync(waitFile) && Date.now() < deadline) await sleep(1000);
+    log('wait', existsSync(waitFile) ? 'go signal received ✓' : 'wait-file timeout — sending anyway');
+  }
 
   // Add the mobile DID as a contact so the egress gate passes.
   log('seed', JSON.stringify(await debug(TX_CORE, 'POST', '/v1/contacts', { did: to, display_name: 'Mobile', trust_level: 'verified' })));

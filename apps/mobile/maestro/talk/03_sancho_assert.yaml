@@ -1,19 +1,21 @@
 # Cross-platform Talk (MRS-04) — receiver assertion (Sancho, iOS).
-# After the D2D arrives + drains, an enriched reminder card appears.
+# After the D2D arrives + the drain runs, an ENRICHED reminder is created
+# that weaves the sender's vault context (cold brew) into the arrival.
 #
-# Selector policy: the card is located by testID (`chat-card-reminder`);
-# the only `text:` match is the enriched LLM payload ("cold brew") — the
-# thing under test.
+# Assert on the REMINDERS screen, not a chat card: the D2D drain writes the
+# reminder to the reminder store (it shows in Reminders), and does NOT
+# reliably post a scheduled card to the main chat thread — so the store is
+# the deterministic surface. The "cold brew" payload is real-LLM enrichment,
+# matched by text.
 appId: com.dinakernel.mobile
 ---
 - launchApp
 - tapOn:
-    id: 'tab-chat'
-# Locate the reminder CARD by testID (deterministic UI element).
+    id: 'root-layout-menu'
+- tapOn:
+    id: 'root-layout-menu-row-reminders'
+# The drain runs a real LLM, so give it room.
 - extendedWaitUntil:
     visible:
-      id: 'chat-card-reminder'
+      text: '.*[Cc]old ?[Bb]rew.*'
     timeout: 150000
-# Assert the enrichment payload — generated prose, so matched by text.
-- assertVisible:
-    text: '.*[Cc]old ?[Bb]rew.*'

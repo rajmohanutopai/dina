@@ -262,7 +262,8 @@ def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
 
     Dina checks all persona to get the data if this session has access.
     
-    If session does not have access, user should approve use through telegram/dina-admin
+    If session does not have access, the owner approves it in the Dina app
+    (Activity → Needs action).
     """
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
@@ -285,7 +286,7 @@ def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
 
             if result_status == "pending_approval":
                 click.echo(f"Access to '{persona}' data requires approval.", err=True)
-                click.echo("A notification has been sent. Approve via Telegram or dina-admin.", err=True)
+                click.echo("A notification has been sent. Open the Dina app → Activity → Needs action to approve.", err=True)
                 banner = "Awaiting approval..."
                 # Poll intervals: be patient — user may take minutes.
                 fast_interval, slow_interval, fast_window = 5, 15, 30
@@ -387,10 +388,10 @@ def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
                 print_result_with_trace(result, json_mode, client.req_id)
             else:
                 _ERROR_MESSAGES = {
-                    "llm_not_configured": "LLM not configured. Run 'dina-admin model list' to see options.",
-                    "llm_auth_failed": "LLM authentication failed. Check your API key with 'dina-admin model status'.",
-                    "llm_timeout": "LLM request timed out. Try again or check 'dina-admin model status'.",
-                    "llm_unreachable": "LLM provider unreachable. Check network or 'dina-admin model status'.",
+                    "llm_not_configured": "LLM not configured. Set up a provider in the Dina app (AI providers).",
+                    "llm_auth_failed": "LLM authentication failed. Check the provider's API key in the Dina app (AI providers).",
+                    "llm_timeout": "LLM request timed out. Try again, or check the provider in the Dina app (AI providers).",
+                    "llm_unreachable": "LLM provider unreachable. Check the network, or the provider in the Dina app (AI providers).",
                 }
                 msg = result.get("message") or _ERROR_MESSAGES.get(error_code, f"Error: {error_code}")
                 click.echo(msg, err=True)
@@ -411,9 +412,9 @@ def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
     except DinaClientError as exc:
         if "approval_required" in str(exc).lower():
             click.echo("Access to sensitive data requires approval.", err=True)
-            click.echo("A notification has been sent. Approve via Telegram or legacy/bin/dina-admin.", err=True)
+            click.echo("A notification has been sent. Open the Dina app → Activity → Needs action to approve.", err=True)
         elif "persona locked" in str(exc).lower():
-            click.echo("Some data is locked. Unlock on your Home Node: legacy/bin/dina-admin persona unlock", err=True)
+            click.echo("Some data is locked. Unlock it in the Dina app.", err=True)
         else:
             print_error_with_trace(str(exc), json_mode, client.req_id)
         click.echo(f"  req_id: {client.req_id}", err=True)
@@ -817,7 +818,7 @@ def audit(ctx: click.Context, limit: int, action_filter: str) -> None:
     help="[headless] Transport mode: direct | msgbox | auto (default: msgbox)",
 )
 @click.option("--device-name", default=None, help="[headless] Device name")
-@click.option("--pairing-code", default=None, help="[headless] Pairing code from dina-admin device pair")
+@click.option("--pairing-code", default=None, help="[headless] Pairing code from the Dina app (Settings → Agents)")
 @click.option("--config-dir", default=None, help="[headless] Config directory (default: .dina/cli in cwd)")
 @click.pass_context
 def configure(
@@ -1064,7 +1065,7 @@ def unpair(ctx: click.Context) -> None:
             print_result({"status": "cleared", "message": "Local state cleared (no keypair to revoke on Core)"}, json_mode)
         else:
             click.echo("  No keypair — cleared local device_id.")
-            click.echo("  Revoke on Core manually: dina-admin device revoke")
+            click.echo("  Revoke in the Dina app: Settings → Agents → Revoke access.")
         return
 
     ident = CLIIdentity()
@@ -1103,7 +1104,7 @@ def unpair(ctx: click.Context) -> None:
             print_error(f"Cannot reach Core at {core_url}", json_mode)
         else:
             click.echo(f"  Cannot reach Core at {core_url}.", err=True)
-            click.echo("  Revoke manually: dina-admin device revoke", err=True)
+            click.echo("  Revoke in the Dina app: Settings → Agents → Revoke access.", err=True)
         ctx.exit(1)
 
 
@@ -1287,7 +1288,7 @@ def _try_unpair(
             click.echo(f"  Unpair returned {resp.status} — continuing anyway.")
     except (TransportError, Exception) as exc:
         click.echo(f"  Could not reach Core to unpair: {exc}")
-        click.echo("  Continuing — revoke the old device manually: dina-admin device revoke")
+        click.echo("  Continuing — revoke the old device in the Dina app: Settings → Agents → Revoke access.")
     # Clear device_id from config
     saved.pop("device_id", None)
     save_config(saved)
@@ -1380,7 +1381,7 @@ def _pair_with_key(
     for attempt in range(1, max_attempts + 1):
         if not pairing_code:
             click.echo("  Enter the pairing code from your Home Node.")
-            click.echo("  (Generate one by running: legacy/bin/dina-admin device pair)")
+            click.echo("  (Generate one in the Dina app: Settings → Agents.)")
             pairing_code = click.prompt("  Pairing code")
 
         click.echo("  Registering device...")
@@ -2037,7 +2038,7 @@ def task(ctx: click.Context, description: str, dry_run: bool, timeout: int) -> N
             proposal_id = decision.get("proposal_id", "")
             if not json_mode:
                 click.echo(f"  Task requires approval (proposal: {proposal_id})")
-                click.echo(f"  Approve with: dina-admin intent approve {proposal_id}")
+                click.echo("  Approve in the Dina app → Activity → Needs action.")
 
             # Poll for approval (fast then slow, configurable timeout).
             import time

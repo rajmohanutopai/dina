@@ -1,0 +1,42 @@
+# MRS-07 — Security: an agent asking for SENSITIVE vault data (e.g. /health)
+# does NOT get it silently. The agent's `dina ask` blocks ("Awaiting
+# approval…") and a "Vault read approval" card appears in the Activity →
+# Needs-action inbox, tagged with the persona it wants to read.
+#
+# Unlike the HIGH-risk intent (MRS-08), a vault read supports a session
+# grant, so the card is the 3-button shape (Deny / Approve Once / Approve)
+# and the buttons approve DIRECTLY — no native confirm Alert. "Approve"
+# grants for the current agent session; "Approve Once" is single-use.
+#
+# Driven by `harness/agent_mrs_driver.sh vault`, which runs the `dina ask`
+# in the background, waits for it to block on approval, runs this flow, then
+# confirms the ask UNBLOCKS and returns an answer (the security invariant:
+# no data without the operator's OK).
+appId: com.dinakernel.mobile
+---
+# Foreground WITHOUT a cold restart (stopApp:false). The agent's `dina ask`
+# is holding a blocking approval poll against the mobile Core; a cold launch
+# would tear down the in-flight staged ask + MsgBox connection, so the
+# approval would never resume it. A real operator just opens the running app.
+- launchApp:
+    stopApp: false
+- tapOn:
+    id: 'tab-activity'
+- tapOn:
+    id: 'filter-needs_action'
+- extendedWaitUntil:
+    visible:
+      text: 'Vault read approval'
+    timeout: 25000
+# The persona it wants to read is shown as the tag (here: health).
+- assertVisible:
+    text: 'health'
+# Session-scope Approve — direct call, no confirm Alert.
+- tapOn:
+    id: 'approvals-approve-.*'
+- extendedWaitUntil:
+    notVisible:
+      text: 'Vault read approval'
+    timeout: 15000
+- assertVisible:
+    text: 'All caught up'

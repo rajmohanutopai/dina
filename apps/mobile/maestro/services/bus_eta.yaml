@@ -1,0 +1,33 @@
+# MRS-10 — Services: a public service query (bus ETA) resolves through the
+# real Pull-Economy path: the user /asks a transit question, Dina discovers a
+# provider on the AppView, hands the query to the provider's Dina over D2D,
+# and a resolved ETA card lands in the chat.
+#
+# This is the app-side half. It needs a provider live FIRST (see
+# harness/live_services_provider.sh — boots a provider lite-Core + publishes
+# an eta_query listing to the test-AppView + runs the stub_eta daemon). With
+# the provider warm, the query resolves to `chat-card-service-response`
+# (the static resolved-card testID added to InlineServiceQueryCard).
+#
+# Pass = a resolved service card lands (not the pending handoff, not an
+# error). The card render path is CardSpec-or-fallback; both now carry the
+# same testID. Run with EXPO_PUBLIC_DINA_DEMO="" so this exercises the REAL
+# discovery + D2D path, not the in-app demo loopback.
+appId: com.dinakernel.mobile
+---
+- launchApp:
+    stopApp: false
+- tapOn:
+    id: 'index-mode-chip-ask'
+- tapOn:
+    id: 'chat-input'
+- inputText: "When's the next bus 42 at my stop?"
+- tapOn:
+    id: 'send-button'
+# Discovery → D2D handoff → provider daemon claim → stub ETA reply. The stub
+# holds the response a few seconds (STUB_ETA_DELAY_SECONDS) on top of real
+# network + AppView resolution, so give it generous headroom.
+- extendedWaitUntil:
+    visible:
+      id: 'chat-card-service-response'
+    timeout: 120000

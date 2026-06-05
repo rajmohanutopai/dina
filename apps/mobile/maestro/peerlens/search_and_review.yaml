@@ -1,0 +1,25 @@
+# MRS-09 — PeerLens: search the trust network (results OR clean empty state,
+# never a crash). Results come from the live test-appview.
+#
+# This is the sanity baseline: the Network tab renders, a search runs and
+# lands on the search screen (results or empty), and the write-a-review entry
+# is reachable. Publishing a review is left to the manual pass (it touches
+# the live AppView / outbox).
+appId: com.dinakernel.mobile
+---
+- launchApp
+- tapOn:
+    id: 'tab-network'
+- extendedWaitUntil:
+    visible:
+      id: 'trust-feed-screen'
+    timeout: 15000
+- tapOn:
+    id: 'trust-search-input'
+- inputText: 'coffee'
+- pressKey: Enter
+# The search screen renders — either results or a clean empty state.
+- extendedWaitUntil:
+    visible:
+      id: 'search-screen'
+    timeout: 25000

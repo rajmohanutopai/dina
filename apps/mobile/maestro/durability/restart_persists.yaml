@@ -1,0 +1,48 @@
+# MRS-13 — Durability: state survives a cold restart (no re-onboard).
+#
+# Seed a unique fact, kill + relaunch the app, and confirm (a) it does NOT
+# re-onboard (lands on Chat, not the welcome screen) and (b) the fact still
+# recalls from the vault. Real-LLM recall — on-demand lane.
+appId: com.dinakernel.mobile
+---
+- launchApp
+- tapOn:
+    id: 'root-layout-menu'
+- tapOn:
+    id: 'root-layout-menu-row-clear-chat'
+
+# ── Seed a distinctive fact ──
+- tapOn:
+    id: 'index-mode-chip-remember'
+- tapOn:
+    id: 'chat-input'
+- inputText: 'My favorite planet is Neptune'
+- tapOn:
+    id: 'send-button'
+- extendedWaitUntil:
+    visible:
+      text: '.*Stored in .*[Vv]ault.*'
+    timeout: 40000
+
+# ── Cold restart ──
+- stopApp
+- launchApp
+# Did NOT re-onboard: the chat home (mode chips) renders, not the welcome
+# shell. (welcome would show shell-primary / "Get started".)
+- extendedWaitUntil:
+    visible:
+      id: 'index-mode-chip-remember'
+    timeout: 60000
+
+# ── The vault fact survived ──
+- tapOn:
+    id: 'index-mode-chip-ask'
+- tapOn:
+    id: 'chat-input'
+- inputText: 'What is my favorite planet?'
+- tapOn:
+    id: 'send-button'
+- extendedWaitUntil:
+    visible:
+      text: '.*[Nn]eptune.*'
+    timeout: 45000

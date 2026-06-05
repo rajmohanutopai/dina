@@ -1,0 +1,40 @@
+# MRS-06 — Task: an agent delegating an autonomous task (`dina task`) is
+# gated by an approval before anything runs. Dina validates the task-level
+# intent (research → MODERATE) and raises an "Agent action approval" card in
+# the Activity → Needs-action inbox, tagged MODERATE, showing the task
+# description as the target. MODERATE intents support a session grant, so the
+# card is the 3-button shape (Deny / Approve Once / Approve) and approves
+# DIRECTLY — no native confirm Alert.
+#
+# Driven by `harness/agent_mrs_driver.sh task`, which issues
+# `dina task --dry-run "<desc>"` (validate-only, no runner needed) BEFORE
+# this flow and polls `dina validate-status <id>` AFTER → expects approved.
+# (Full autonomous execution = the deprecated OpenClaw/Hermes runner path,
+# out of scope; the approval GATE is the safety-relevant core.)
+appId: com.dinakernel.mobile
+---
+- launchApp:
+    stopApp: false
+- tapOn:
+    id: 'tab-activity'
+- tapOn:
+    id: 'filter-needs_action'
+- extendedWaitUntil:
+    visible:
+      text: 'Agent action approval'
+    timeout: 25000
+# Disambiguate from the HIGH-risk (transfer_money) card: this is the research
+# task delegation at MODERATE risk.
+- assertVisible:
+    text: 'research'
+- assertVisible:
+    text: 'MODERATE'
+# Session-scope Approve — direct call, no confirm Alert (MODERATE).
+- tapOn:
+    id: 'approvals-approve-.*'
+- extendedWaitUntil:
+    notVisible:
+      text: 'Agent action approval'
+    timeout: 15000
+- assertVisible:
+    text: 'All caught up'

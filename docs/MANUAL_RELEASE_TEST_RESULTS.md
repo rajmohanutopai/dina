@@ -2653,3 +2653,60 @@ DPoP-ES256**, all mandatory. Proves DID control (token `sub` === resolved DID);
   no-commit constraint). The OAuth resolver was made injectable (type-only import)
   so `atproto_oauth.ts` is pure + Node-runnable; `oauth_login.ts` passes the RN
   resolver. Typecheck 0, lint clean, 27 tests green.
+
+---
+
+## MRS automation suite — agent/security/approvals + master runner (2026-06-04)
+
+Automated the previously hand-driven MRS scenarios on the dev-client fast loop
+(iOS sim under Maestro + the paired `dina` agent CLI). New artifacts under
+`apps/mobile/maestro/`: `run_mrs.sh` (phased master runner), `agent/{risky_action,vault_read,task}_approval.yaml`,
+`harness/{agent_mrs_driver.sh,log_hygiene_check.sh}`, `services/{bus_eta.yaml,SERVICES_HARNESS.md}`.
+
+**Agent scenarios — proven live, 3/3 through `run_mrs.sh --only agent` (exit 0):**
+- **MRS-06 Task** — `dina task --dry-run "Fetch my new email"` raises a MODERATE
+  "Agent action approval" card (action `research`, 3-button, no native alert);
+  on-device Approve → `validate-status: approved`.
+- **MRS-07 Security (agent reads locked vault)** — `dina ask "blood pressure /
+  HbA1c?"` **blocks** ("Awaiting approval…") and raises a `Vault read approval`
+  card tagged `health` (3-button, direct approve). On-device Approve **resumes
+  the blocked ask** → "Approved — reasoning…" → returns the real seeded fact
+  (**BP 142/91**, HbA1c not found). Without approval the ask times out — no data
+  leaks. The security invariant holds.
+- **MRS-08 Approvals (risky action)** — `dina validate transfer_money` (HIGH)
+  raises an "Agent action approval" card; inline Approve opens a **native confirm
+  Alert** (HIGH = every-invocation) whose Approve is the 2nd "Approve" element
+  (`text:Approve index:1`) → `validate-status: approved`.
+
+**Key fix (recorded in memory):** all three approval flows must foreground with
+`launchApp: {stopApp:false}`, NOT a cold `launchApp`. Two cold-restart failure
+modes seen live: (1) the blocking vault ask is torn down mid-flight → "Timed out"
+even though the card clears on screen; (2) even the decoupled HIGH-risk flow
+flaked in-sequence — the cold boot races the `filter-needs_action` tap, the
+Activity filter resets to the default "Unread", and the real pending card hides
+behind the wrong filter (screenshot-confirmed). Fixed; risky then passed 3/3.
+
+**Other phases:**
+- **MRS-09 PeerLens** — `peerlens/search_and_review.yaml` ✓ (Network → trust-feed
+  → search "coffee" → search-screen).
+- **MRS-13 Durability** — `durability/restart_persists.yaml` ✓ (seed Neptune →
+  cold restart, no re-onboard → recall Neptune). Export/restore stay manual (OS
+  Share sheet / document picker, not Maestro-drivable).
+- **MRS-10 Services** — app-side `services/bus_eta.yaml` ✓-ready against a static
+  `chat-card-service-response` testID added to BOTH resolved render paths of
+  `InlineServiceQueryCard.tsx` (the primary CardSpec path had none). The provider
+  is a second full Dina (lite-Core :18298 + published `eta_query` listing + the
+  `stub_eta` daemon) — runbook in `services/SERVICES_HARNESS.md`; `run_mrs.sh`
+  Phase 5 probes `:18298` and SKIPs cleanly when absent. Validated live separately
+  2026-05-25.
+- **MRS-11 known_only** positive app-invoke = manual/N-A (UI not built); the
+  authorization invariant is harness-side.
+- **MRS-14 log-hygiene gate** — `harness/log_hygiene_check.sh` functionally tested:
+  flags seeded vault tokens (cold brew/Neptune/HbA1c/…) + secret patterns
+  (`AIza…`, `sk-…`, mnemonic, PDS password) + non-owner DIDs in plaintext; passes
+  a clean log.
+
+**Master runner** `run_mrs.sh` — phased (core hard-gate → durability → agent →
+talk → services → peerlens → logs), `--continue`/`--only`, PASS/FAIL/SKIP tally.
+All shell scripts `bash -n` clean; mobile `tsc --noEmit` clean. Held uncommitted
+(standing no-commit constraint).
