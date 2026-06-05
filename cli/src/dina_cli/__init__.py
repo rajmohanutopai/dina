@@ -1,3 +1,3 @@
 """Dina CLI — thin HTTP client for Dina Home Node."""
 
-__version__ = "0.17.0"
+__version__ = "0.17.1"
