@@ -49,6 +49,7 @@ import {
   hydrateRemindersFromRepo,
   hydrateStagingFromRepository,
   openPersonaVault,
+  resetQuarantineState,
   resetTopicRepositories,
   resetVaultRepositories,
   setAuditRepository,
@@ -328,10 +329,21 @@ export async function openPersonaDB(persona: string): Promise<void> {
  * /v1/memory routes 503 until the next boot re-installs it.
  */
 export async function shutdownAllPersistence(): Promise<void> {
-  await shutdownPersistence();
-  resetVaultRepositories();
-  resetTopicRepositories();
-  setMemoryService(null);
-  provider = null;
-  identityAdapter = null;
+  try {
+    await shutdownPersistence();
+  } finally {
+    // The module-global resets MUST run even if the DB shutdown throws —
+    // otherwise a previous user's in-memory state (notably the D2D quarantine
+    // map + repo handle) survives a failed teardown. eraseEverythingLocal()
+    // catches a shutdown failure and continues, so this path is real. These
+    // setters/resets are all non-throwing, so the `finally` stays clean and
+    // any DB-shutdown error still propagates afterwards.
+    resetVaultRepositories();
+    resetTopicRepositories();
+    setQuarantineRepository(null);
+    resetQuarantineState();
+    setMemoryService(null);
+    provider = null;
+    identityAdapter = null;
+  }
 }

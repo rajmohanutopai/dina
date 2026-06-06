@@ -458,8 +458,13 @@ function doConnect(url: string): void {
       ev !== null && typeof ev === 'object' && 'message' in ev
         ? String((ev as { message?: unknown }).message ?? '')
         : '';
+    // WARN, not error: this is a RECOVERABLE transport blip — the error
+    // triggers `onclose` → scheduleReconnect() below. A console.error here
+    // escalates to a fatal RedBox on the dev-client (and breaks the e2e loop)
+    // for what is usually just an ENOTCONN on a network-reachability change.
+    // Same rationale as the auth-frame downgrade in handleFrameText().
     // eslint-disable-next-line no-console
-    console.error(`[WS] onerror msg=${msg !== '' ? msg : '(no message)'}`);
+    console.warn(`[WS] onerror msg=${msg !== '' ? msg : '(no message)'}`);
     // Error triggers close, which triggers reconnect
   };
 }

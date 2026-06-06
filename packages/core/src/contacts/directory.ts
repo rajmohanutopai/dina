@@ -46,7 +46,18 @@ import {
   clearKnownContacts as clearSourceTrustContacts,
 } from '../peerlens/source_trust';
 
-export type TrustLevel = 'blocked' | 'unknown' | 'verified' | 'trusted';
+/**
+ * Valid trust levels (runtime list = single source of truth; `TrustLevel`
+ * is derived from it). Callers that accept a trust level off the wire must
+ * validate against `isTrustLevel` before casting — the projection in
+ * `syncProjections` treats anything !== 'blocked' as gate-eligible, so an
+ * unvalidated bogus value becomes effectively trusted.
+ */
+export const TRUST_LEVELS = ['blocked', 'unknown', 'verified', 'trusted'] as const;
+export type TrustLevel = (typeof TRUST_LEVELS)[number];
+export function isTrustLevel(v: unknown): v is TrustLevel {
+  return typeof v === 'string' && (TRUST_LEVELS as readonly string[]).includes(v);
+}
 export type SharingTier = 'none' | 'summary' | 'full' | 'locked';
 export type Relationship =
   | 'spouse'

@@ -88,13 +88,17 @@ describe('MRS-05 quarantine card — right card, internals, working buttons', ()
     expect(staged.some((s) => s.producer_id === SENDER)).toBe(true);
   });
 
-  it('"Block" resolves without recording a contact', () => {
+  it('"Block" records a DURABLE blocked contact so future messages drop', () => {
     stageQuarantineCard();
     render(<InlineQuarantineCard message={lastMessage()} />);
 
     fireEvent.press(screen.getByText('Block'));
 
     expect(screen.getByText(/Blocked/i)).toBeTruthy();
-    expect(getContact(SENDER)).toBeNull();
+    // New contract: a real block persists a 'blocked' contact policy, so the
+    // receive pipeline drops every future message from this DID pre-gate.
+    // (Previously this only deleted the held rows and the next message just
+    // re-quarantined.)
+    expect(getContact(SENDER)?.trustLevel).toBe('blocked');
   });
 });

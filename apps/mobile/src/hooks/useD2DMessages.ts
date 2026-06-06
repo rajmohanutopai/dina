@@ -15,7 +15,7 @@ import { getThread, addMessage, type ChatMessage } from '@dina/brain/chat';
 // trust level) — distinct from the 1-arg egress-gate `addContact` on
 // `@dina/core/d2d`. Accepting a stranger must record the real contact so
 // resolveSender returns a positive trust on their NEXT message too.
-import { addContact } from '@dina/core';
+import { addContact, getContact, updateContact } from '@dina/core';
 import {
   listQuarantined,
   getQuarantined,
@@ -83,6 +83,23 @@ export function getQuarantinedMessages(): D2DMessageItem[] {
 }
 
 /**
+ * Durably set a sender's trust level — an UPSERT. `addContact` THROWS when a
+ * contact policy already exists, so a sender who is already a contact (e.g.
+ * `trustLevel='unknown'` — the very state that gets their messages
+ * quarantined) must be UPDATED in place, not re-added. Without this split,
+ * Accept never upgrades an existing unknown contact to verified (their next
+ * message re-quarantines forever) and Block fails outright for any existing
+ * non-blocked contact.
+ */
+function setSenderTrust(did: string, trustLevel: 'verified' | 'blocked'): void {
+  if (getContact(did) !== null) {
+    updateContact(did, { trustLevel });
+  } else {
+    addContact(did, senderLabels.get(did) ?? shortDID(did), trustLevel);
+  }
+}
+
+/**
  * Accept a quarantined message — add sender as contact, un-quarantine.
  */
 export function acceptFromQuarantine(quarantineId: string): QuarantineAction {
@@ -93,11 +110,26 @@ export function acceptFromQuarantine(quarantineId: string): QuarantineAction {
     }
     // 1. Record the sender as a verified contact so this message AND every
     //    future one from them passes the trust gate (resolveSender reads
-    //    the contact directory). Idempotent — ignore "already exists".
+    //    the contact directory). Upsert: new contact → add; existing
+    //    (e.g. 'unknown') → UPDATE to 'verified' so future messages stop
+    //    re-quarantining.
     try {
-      addContact(entry.senderDID, senderLabels.get(entry.senderDID) ?? shortDID(entry.senderDID), 'verified');
-    } catch {
-      // Already a contact (e.g. accepting a second held message) — fine.
+      setSenderTrust(entry.senderDID, 'verified');
+    } catch (addErr) {
+      // The sender must end up durably VERIFIED before we release the message.
+      // A failure that leaves them null OR still 'unknown' must NOT release:
+      // updateContact writes SQL first (directory.ts), so a failed durable
+      // write throws with the cached contact UNCHANGED — the contact exists but
+      // the trust upgrade didn't stick. Force-staging then would push the
+      // message through on a phantom upgrade (and the next message would just
+      // re-quarantine). Require the verified post-condition, not mere existence.
+      if (getContact(entry.senderDID)?.trustLevel !== 'verified') {
+        return {
+          action: 'error',
+          senderDID: entry.senderDID,
+          error: `Could not save contact: ${addErr instanceof Error ? addErr.message : String(addErr)}`,
+        };
+      }
     }
     // 2. Release every held message from this sender and re-stage it so the
     //    drain runs the same enrichment + reminder pipeline it would have
@@ -130,6 +162,26 @@ export function blockFromQuarantine(quarantineId: string): QuarantineAction {
     if (!entry) {
       return { action: 'error', senderDID: '', error: 'Quarantine entry not found' };
     }
+    // Persist a DURABLE block first: record the sender as a 'blocked' contact
+    // so resolveSender returns senderTrust='blocked' and receive_pipeline drops
+    // every FUTURE message pre-gate (d2d_recv_blocked). Without this, blockSender
+    // only clears the currently-held rows and the next message just
+    // re-quarantines — a block that doesn't block. Upsert: new contact → add
+    // as blocked; existing (e.g. 'unknown') → UPDATE to 'blocked'.
+    try {
+      setSenderTrust(entry.senderDID, 'blocked');
+    } catch (addErr) {
+      // Couldn't persist the block — surface it rather than silently clearing
+      // the held rows (which would look "blocked" but let the next message in).
+      if (getContact(entry.senderDID)?.trustLevel !== 'blocked') {
+        return {
+          action: 'error',
+          senderDID: entry.senderDID,
+          error: `Could not block sender: ${addErr instanceof Error ? addErr.message : String(addErr)}`,
+        };
+      }
+    }
+    // Then drop the currently-held quarantined messages from this sender.
     blockSender(entry.senderDID);
     return { action: 'blocked', senderDID: entry.senderDID };
   } catch (err) {

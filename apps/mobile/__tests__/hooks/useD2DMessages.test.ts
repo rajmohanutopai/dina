@@ -16,7 +16,42 @@ import {
 import { quarantineMessage, resetQuarantineState } from '../../../core/src/d2d/quarantine';
 import { resetThreads, getThread } from '../../../brain/src/chat/thread';
 import { claim, resetStagingState } from '../../../core/src/staging/service';
-import { getContact, resetContactDirectory, setPeopleRepository } from '../../../core/src';
+import {
+  addContact,
+  getContact,
+  resetContactDirectory,
+  setPeopleRepository,
+} from '../../../core/src';
+import {
+  setContactRepository,
+  type ContactRepository,
+} from '../../../core/src/contacts/repository';
+
+/**
+ * A contact repository whose durable `update()` throws (e.g. disk failure)
+ * but whose `add()` succeeds — so an INSERT (new contact) works while an
+ * UPDATE (trust upgrade on an existing contact) fails. Used to prove Accept
+ * does not release a message on a failed trust upgrade.
+ */
+function makeFailingUpdateContactRepo(): ContactRepository {
+  const noop = (): void => {};
+  return {
+    add: noop,
+    get: () => null,
+    list: () => [],
+    update: () => {
+      throw new Error('simulated durable write failure');
+    },
+    remove: () => false,
+    addAlias: noop,
+    removeAlias: noop,
+    resolveAlias: () => null,
+    getAliases: () => [],
+    setPreferredFor: noop,
+    getPreferredFor: () => [],
+    findByPreferredFor: () => [],
+  };
+}
 import { clearGatesState } from '../../../core/src/d2d/gates';
 import { makeFakePeopleRepo } from '@dina/test-harness';
 
@@ -52,6 +87,15 @@ describe('D2D Message View Hook (6.19)', () => {
   });
 
   describe('acceptFromQuarantine', () => {
+    // Accept now REQUIRES a working contact directory — it persists the sender
+    // as a contact and only releases the held message once that succeeds.
+    beforeEach(() => {
+      resetContactDirectory();
+      clearGatesState();
+      resetStagingState();
+      setPeopleRepository(makeFakePeopleRepo());
+    });
+
     it('accepts a quarantined message', () => {
       const q = quarantineMessage('did:key:z6MkAlice', 'social.update', 'Hello');
 
@@ -63,6 +107,57 @@ describe('D2D Message View Hook (6.19)', () => {
     it('returns error for nonexistent quarantine', () => {
       const result = acceptFromQuarantine('nonexistent');
       expect(result.action).toBe('error');
+    });
+
+    // Finding #1: an EXISTING 'unknown' contact (the state that causes
+    // quarantine) must be UPGRADED to verified on accept — not left unknown,
+    // which would re-quarantine their next message forever. addContact() throws
+    // on an existing policy, so this only works via the update path.
+    it('upgrades an existing unknown contact to verified', () => {
+      const sender = 'did:plc:existingunknownaccept';
+      addContact(sender, 'Existing', 'unknown');
+      expect(getContact(sender)?.trustLevel).toBe('unknown');
+
+      const q = quarantineMessage(sender, 'social.update', JSON.stringify({ text: 'hi' }));
+      const result = acceptFromQuarantine(q.id);
+      expect(result.action).toBe('accepted');
+      expect(getContact(sender)?.trustLevel).toBe('verified');
+    });
+
+    // Finding #3: a genuine contact-persist failure (NEW contact can't be
+    // created) must NOT silently release the message.
+    it('does NOT release the message when the contact cannot be persisted', () => {
+      setPeopleRepository(null); // contact directory unavailable → addContact throws
+      const q = quarantineMessage(
+        'did:plc:persistfail',
+        'social.update',
+        JSON.stringify({ text: 'hi' }),
+      );
+      const result = acceptFromQuarantine(q.id);
+      expect(result.action).toBe('error');
+      // The message stays quarantined — not force-staged with a phantom trust.
+      expect(getQuarantinedMessages().some((m) => m.id === q.id)).toBe(true);
+    });
+
+    // Finding #1 (round 3): an EXISTING unknown contact whose trust-upgrade
+    // WRITE fails must NOT release — the contact stays non-null but 'unknown',
+    // so a getContact !== null check is insufficient; require trust='verified'.
+    it('does NOT release when the trust upgrade write fails (stays unknown + quarantined)', () => {
+      const sender = 'did:plc:upgradewritefail';
+      try {
+        setContactRepository(makeFailingUpdateContactRepo());
+        addContact(sender, 'Existing', 'unknown'); // INSERT (add) ok → cached unknown
+        expect(getContact(sender)?.trustLevel).toBe('unknown');
+
+        const q = quarantineMessage(sender, 'social.update', JSON.stringify({ text: 'hi' }));
+        const result = acceptFromQuarantine(q.id); // UPDATE (upgrade) throws
+
+        expect(result.action).toBe('error');
+        expect(getContact(sender)?.trustLevel).toBe('unknown'); // upgrade didn't stick
+        expect(getQuarantinedMessages().some((m) => m.id === q.id)).toBe(true); // not released
+      } finally {
+        setContactRepository(null);
+      }
     });
   });
 
@@ -112,6 +207,12 @@ describe('D2D Message View Hook (6.19)', () => {
   });
 
   describe('blockFromQuarantine', () => {
+    beforeEach(() => {
+      resetContactDirectory();
+      clearGatesState();
+      setPeopleRepository(makeFakePeopleRepo());
+    });
+
     it('blocks a quarantined sender', () => {
       const q = quarantineMessage('did:key:z6MkSpam', 'promo.offer', 'Buy now');
 
@@ -123,6 +224,28 @@ describe('D2D Message View Hook (6.19)', () => {
     it('returns error for nonexistent', () => {
       const result = blockFromQuarantine('nonexistent');
       expect(result.action).toBe('error');
+    });
+
+    // Finding #2: block must persist a durable 'blocked' contact so the
+    // receive pipeline drops FUTURE messages (not just delete current rows).
+    it('persists a blocked contact so future messages are dropped', () => {
+      const sender = 'did:key:z6MkSpamDurable';
+      const q = quarantineMessage(sender, 'social.update', 'spam');
+      const result = blockFromQuarantine(q.id);
+      expect(result.action).toBe('blocked');
+      const contact = getContact(sender);
+      expect(contact?.trustLevel).toBe('blocked');
+    });
+
+    // Finding #1: blocking an EXISTING 'unknown' contact must update it to
+    // 'blocked' (addContact would throw already-exists and fail the block).
+    it('blocks an existing unknown contact instead of failing', () => {
+      const sender = 'did:plc:existingunknownblock';
+      addContact(sender, 'Existing', 'unknown');
+      const q = quarantineMessage(sender, 'social.update', 'spam');
+      const result = blockFromQuarantine(q.id);
+      expect(result.action).toBe('blocked');
+      expect(getContact(sender)?.trustLevel).toBe('blocked');
     });
   });
 

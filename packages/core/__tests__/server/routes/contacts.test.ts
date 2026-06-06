@@ -368,3 +368,62 @@ describe('GET /v1/contacts/lookup', () => {
     expect((await handlers().lookup(req({ query: {} }))).status).toBe(400);
   });
 });
+
+// ---------------------------------------------------------------------------
+// POST /v1/contacts — trust_level validation
+// ---------------------------------------------------------------------------
+//
+// Regression for the review finding: the route used to cast any string to
+// TrustLevel. Since the projection treats anything !== 'blocked' as
+// gate-eligible, a bogus value became effectively trusted. The route must now
+// validate against the real enum BEFORE calling addContact.
+
+describe('POST /v1/contacts trust_level validation', () => {
+  function makeAddHandler() {
+    const addContact = jest.fn(
+      (did: string, displayName: string, trustLevel?: Contact['trustLevel']) => ({
+        contact: { ...contactFixture(did, displayName), trustLevel: trustLevel ?? 'verified' },
+        created: true,
+      }),
+    );
+    return { addContact, handler: makeContactsHandlers({ addContact }).addContact };
+  }
+
+  function post(body: unknown): CoreRequest {
+    return req({ method: 'POST', path: '/v1/contacts', ...jsonBody(body) });
+  }
+
+  it.each(['blocked', 'unknown', 'verified', 'trusted'])(
+    'accepts the valid trust level %s and passes it through',
+    async (level) => {
+      const { addContact, handler } = makeAddHandler();
+      const res = await handler(post({ did: 'did:plc:abc', trust_level: level }));
+      expect(res.status).toBe(200);
+      expect(addContact).toHaveBeenCalledWith('did:plc:abc', 'did:plc:abc', level);
+    },
+  );
+
+  it('defaults to verified when trust_level is omitted', async () => {
+    const { addContact, handler } = makeAddHandler();
+    const res = await handler(post({ did: 'did:plc:abc' }));
+    expect(res.status).toBe(200);
+    expect(addContact).toHaveBeenCalledWith('did:plc:abc', 'did:plc:abc', 'verified');
+  });
+
+  it.each([
+    'trusted-ish',
+    'BLOCKED',
+    'admin',
+    '',
+    'verified ',
+    123,
+    true,
+    null,
+    {},
+  ])('rejects invalid trust_level %p with 400 and never calls addContact', async (level) => {
+    const { addContact, handler } = makeAddHandler();
+    const res = await handler(post({ did: 'did:plc:abc', trust_level: level }));
+    expect(res.status).toBe(400);
+    expect(addContact).not.toHaveBeenCalled();
+  });
+});

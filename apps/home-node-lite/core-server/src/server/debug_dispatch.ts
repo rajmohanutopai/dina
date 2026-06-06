@@ -14,17 +14,26 @@
  * own in-process Core.
  *
  * SECURITY — this deliberately bypasses authentication, so it is fenced
- * three ways:
+ * several ways:
  *   1. Off by default. Only `DINA_DEBUG_MODE=1` registers it, and the
  *      release build-env sanity check (MT-45) should flag the flag being
  *      set in a store/prod build.
- *   2. Loopback only. Non-loopback peers get 403 — it never serves a
+ *   2. Release fail-closed. `boot.ts` REFUSES TO BOOT if the flag is set
+ *      with release endpoints, so the route can never exist on a production
+ *      node even if the flag leaks in.
+ *   3. Loopback only. Non-loopback peers get 403 — it never serves a
  *      remote client even if the port is exposed.
- *   3. The `trustedInProcess` marker is unforgeable over HTTP: the normal
+ *   4. Optional `x-debug-token` shared secret. When `DINA_DEBUG_TOKEN` is
+ *      set, requests must carry a matching token (constant-time compared).
+ *      This defends the reverse-proxy case where a remote caller's `req.ip`
+ *      can appear loopback — the loopback check alone wouldn't stop them.
+ *   5. The `trustedInProcess` marker is unforgeable over HTTP: the normal
  *      Fastify→Core adapter (`bind_core_router`) never sets it, so a
  *      regular signed/unsigned HTTP request can't reach owner dispatch.
  *      Only this route, running in-process, stamps it.
  */
+
+import { timingSafeEqual } from 'node:crypto';
 
 import type { CoreRouter, CoreRequest } from '@dina/core';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -52,15 +61,34 @@ interface DebugDispatchBody {
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
+/** Constant-time string compare (length-safe — unequal lengths short-circuit). */
+function tokenMatches(provided: unknown, expected: string): boolean {
+  if (typeof provided !== 'string') return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 /** Register the debug dispatch route. Call ONLY when DINA_DEBUG_MODE=1. */
 export function registerDebugDispatch(app: DebugApp, coreRouter: CoreRouter, logger: Logger): void {
+  // Optional shared-secret gate: when DINA_DEBUG_TOKEN is set, every request
+  // must carry a matching `x-debug-token` header. This closes the gap where a
+  // local reverse proxy makes a remote caller's `req.ip` look loopback — the
+  // loopback check alone wouldn't stop them, but they can't forge the token.
+  const expectedToken = process.env.DINA_DEBUG_TOKEN ?? '';
   logger.warn(
-    'DINA_DEBUG_MODE=1 — registering UNAUTHENTICATED POST /v1/debug/dispatch (loopback only). Never enable in production.',
+    expectedToken !== ''
+      ? 'DINA_DEBUG_MODE=1 — registering UNAUTHENTICATED POST /v1/debug/dispatch (loopback + x-debug-token). Never enable in production.'
+      : 'DINA_DEBUG_MODE=1 — registering UNAUTHENTICATED POST /v1/debug/dispatch (loopback only; set DINA_DEBUG_TOKEN to require a token). Never enable in production.',
   );
 
   app.post('/v1/debug/dispatch', async (req, reply) => {
     if (!LOOPBACK.has(req.ip)) {
       void reply.code(403).send({ error: 'debug dispatch is loopback-only' });
+      return;
+    }
+    if (expectedToken !== '' && !tokenMatches(req.headers['x-debug-token'], expectedToken)) {
+      void reply.code(403).send({ error: 'debug dispatch token required or invalid' });
       return;
     }
     const b = (req.body ?? {}) as DebugDispatchBody;

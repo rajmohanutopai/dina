@@ -175,6 +175,8 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
       appView,
       readConfig: (rkey?: string): ServiceConfig | null => getServiceConfig(rkey),
       deliver: ({ text, event, task, details }) => {
+        // Metadata-only: `text` is rendered user/service response content and
+        // must never hit the logs (PII rule). Log its length, not its body.
         logger.info(
           {
             task_id: task.id,
@@ -182,7 +184,7 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
             event_kind: event.event_kind,
             capability: details.capability,
             response_status: details.response_status,
-            text,
+            text_len: typeof text === 'string' ? text.length : 0,
           },
           'workflow event delivered',
         );

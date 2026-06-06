@@ -547,6 +547,16 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     // Debug control channel — TEST/DEV only, off by default. Lets a test
     // harness drive a real booted node over loopback without signing.
     if (process.env.DINA_DEBUG_MODE === '1') {
+      // Fail closed: the debug channel bypasses auth entirely, so it must
+      // NEVER be reachable on a release-endpoint (production) node — not even
+      // behind a local reverse proxy that makes remote requests look loopback.
+      // If the flag leaked into a release build, refuse to boot rather than
+      // silently expose owner-level dispatch.
+      if (config.endpoints.mode === 'release') {
+        throw new Error(
+          'DINA_DEBUG_MODE=1 is forbidden with release endpoints — refusing to boot (fail-closed).',
+        );
+      }
       registerDebugDispatch(app, coreRouter, logger);
     }
     await app.listen({ host: config.network.host, port: config.network.port });

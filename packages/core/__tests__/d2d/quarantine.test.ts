@@ -217,5 +217,53 @@ describe('Quarantine Management', () => {
       unquarantineSender('did:plc:s');
       expect(rows.size).toBe(0);
     });
+
+    // Cross-user isolation: a previous user's quarantine (sender DID + body)
+    // must never bleed into the next unlock in the same JS process.
+    it('hydrate REPLACES in-memory state — a previous user cannot bleed through', () => {
+      // User A: a quarantined stranger, hydrated in memory.
+      const a = makeFakeRepo();
+      setQuarantineRepository(a.repo);
+      const stale = quarantineMessage('did:plc:userA-stranger', 'social.update', '{"text":"A secret"}');
+      expect(getQuarantined(stale.id)?.body).toBe('{"text":"A secret"}');
+
+      // Sign-out teardown (what shutdownAllPersistence now does).
+      setQuarantineRepository(null);
+      resetQuarantineState();
+      expect(getQuarantined(stale.id)).toBeNull();
+
+      // User B unlocks: a DIFFERENT repo with its own row, then hydrate.
+      const b = makeFakeRepo();
+      b.rows.set('q-1', {
+        id: 'q-1',
+        senderDID: 'did:plc:userB-x',
+        messageType: 'social.update',
+        body: '{"text":"B"}',
+        receivedAt: 1,
+        expiresAt: Number.MAX_SAFE_INTEGER,
+      });
+      setQuarantineRepository(b.repo);
+      hydrateQuarantineFromRepository();
+
+      expect(getQuarantined('q-1')?.body).toBe('{"text":"B"}');
+      expect(getQuarantinedSenders()).toEqual(['did:plc:userB-x']);
+      expect(quarantineSize()).toBe(1);
+    });
+
+    // Belt-and-suspenders: hydrate clears FIRST, so even if teardown were
+    // skipped, a stale entry can't survive a hydrate against a fresh repo.
+    it('hydrate clears stale in-memory entries even without an explicit reset', () => {
+      const a = makeFakeRepo();
+      setQuarantineRepository(a.repo);
+      const stale = quarantineMessage('did:plc:stale', 'social.update', '{"text":"stale"}');
+      expect(getQuarantined(stale.id)).not.toBeNull();
+
+      const b = makeFakeRepo(); // empty repo — no reset between
+      setQuarantineRepository(b.repo);
+      const restored = hydrateQuarantineFromRepository();
+      expect(restored).toBe(0);
+      expect(getQuarantined(stale.id)).toBeNull();
+      expect(quarantineSize()).toBe(0);
+    });
   });
 });

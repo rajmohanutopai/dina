@@ -311,6 +311,27 @@ describe('ordered boot (task 4.3)', () => {
       delete process.env['DINA_VAULT_DIR']; // break the required field
       await expect(bootServer()).rejects.toThrow(/DINA_VAULT_DIR/);
     });
+
+    it('refuses to boot when DINA_DEBUG_MODE=1 with release endpoints (fail-closed)', async () => {
+      // The debug channel bypasses auth, so it must never be reachable on a
+      // production (release) node — boot must fail rather than expose it.
+      process.env['DINA_ENDPOINT_MODE'] = 'release';
+      process.env['DINA_DEBUG_MODE'] = '1';
+      await expect(bootTestServer()).rejects.toThrow(
+        /DINA_DEBUG_MODE=1 is forbidden with release endpoints/,
+      );
+    });
+
+    it('boots normally with DINA_DEBUG_MODE=1 in test mode (the guard is release-only)', async () => {
+      process.env['DINA_ENDPOINT_MODE'] = 'test';
+      process.env['DINA_DEBUG_MODE'] = '1';
+      const booted = await bootTestServer();
+      try {
+        expect(booted.trace.ok).toBe(true);
+      } finally {
+        await booted.app.close();
+      }
+    });
   });
 
   describe('composition output', () => {

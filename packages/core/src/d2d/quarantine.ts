@@ -92,11 +92,17 @@ export class SQLiteQuarantineRepository implements QuarantineRepository {
  * Re-populate the in-memory map from the durable repo on boot. Restores the
  * SAME ids the persisted quarantine cards reference, and advances the id
  * counter past them so new quarantines don't collide. Returns the count.
+ *
+ * REPLACE semantics: the in-memory map is cleared FIRST so a previous user's
+ * quarantine (sender DID + body) can never survive into this session — e.g.
+ * sign-out / erase followed by a different unlock in the same JS process. The
+ * repo (this session's identity DB) is the sole source of truth.
  */
 export function hydrateQuarantineFromRepository(): number {
   if (repo === null) return 0;
+  quarantine.clear();
   const entries = repo.listAll();
-  let maxId = idCounter;
+  let maxId = 0;
   for (const m of entries) {
     quarantine.set(m.id, m);
     const n = Number.parseInt(m.id.replace(/^q-/, ''), 10);
@@ -224,7 +230,12 @@ export function getQuarantinedSenders(): string[] {
   return [...senders];
 }
 
-/** Reset all quarantine state (for testing). */
+/**
+ * Reset all in-memory quarantine state. Called on persistence teardown
+ * (sign-out / lock / erase) alongside `setQuarantineRepository(null)` so no
+ * sender DID or body lingers in the module global for the next unlock; also
+ * used by tests.
+ */
 export function resetQuarantineState(): void {
   quarantine.clear();
   idCounter = 0;

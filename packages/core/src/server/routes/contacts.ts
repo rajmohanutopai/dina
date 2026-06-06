@@ -27,6 +27,8 @@ import {
   findByPreferredFor as directoryFindByPreferredFor,
   setPreferredFor as directorySetPreferredFor,
   getContact,
+  isTrustLevel,
+  TRUST_LEVELS,
   resolveByName as directoryResolveByName,
   findByAlias as directoryFindByAlias,
   addContactIfNotExists as directoryAddContactIfNotExists,
@@ -266,8 +268,13 @@ async function handleAddContact(
     typeof body.display_name === 'string' && body.display_name.trim() !== ''
       ? body.display_name.trim()
       : did;
-  const trustLevel: TrustLevel =
-    typeof body.trust_level === 'string' ? (body.trust_level as TrustLevel) : 'verified';
+  // Validate against the real enum — never cast a raw wire string. The
+  // projection treats anything !== 'blocked' as gate-eligible, so a bogus
+  // trust_level would otherwise make the contact effectively trusted.
+  if (body.trust_level !== undefined && !isTrustLevel(body.trust_level)) {
+    return jsonError(400, `invalid trust_level (expected one of: ${TRUST_LEVELS.join(', ')})`);
+  }
+  const trustLevel: TrustLevel = body.trust_level ?? 'verified';
   try {
     const { contact, created } = addFn(did, displayName, trustLevel);
     return { status: 200, body: { contact, created } };

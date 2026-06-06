@@ -77,6 +77,7 @@ export {
   SQLiteQuarantineRepository,
   setQuarantineRepository,
   hydrateQuarantineFromRepository,
+  resetQuarantineState,
 } from './src/d2d/quarantine';
 export type { QuarantineRepository } from './src/d2d/quarantine';
 export {
