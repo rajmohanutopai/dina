@@ -15,14 +15,26 @@ export function useLocalSearchParams<
   return {} as T;
 }
 
+/** Imperative router stub — modules (not just components) import `router`
+ *  directly, e.g. the guided-demo navigate seam. No-ops in tests. */
+export const router = {
+  navigate: (_href: unknown): void => undefined,
+  push: (_href: unknown): void => undefined,
+  replace: (_href: unknown): void => undefined,
+  back: (): void => undefined,
+  canGoBack: (): boolean => true,
+};
+
 /** No-op router stub — extend per-test if a screen ever imports `useRouter`. */
 export function useRouter(): {
+  navigate: (href: unknown) => void;
   push: (href: string) => void;
   replace: (href: string) => void;
   back: () => void;
   canGoBack: () => boolean;
 } {
   return {
+    navigate: () => undefined,
     push: () => undefined,
     replace: () => undefined,
     back: () => undefined,
@@ -42,7 +54,7 @@ export function useRouter(): {
 export function useFocusEffect(
   effect: () => void | (() => void),
 ): void {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+   
   const React = require('react');
   React.useEffect(() => {
     const cleanup = effect();

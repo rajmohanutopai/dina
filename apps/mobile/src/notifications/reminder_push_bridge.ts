@@ -22,9 +22,26 @@
  * user-created "remind me about X 5 minutes ago" prompt fires
  * immediately. The fire-watcher hook would catch it next tick anyway,
  * but the OS path gives a banner if the chat tab isn't foregrounded.
+ *
+ * **Guided-demo isolation**: this bridge is the ONLY reminder→OS path,
+ * so it's where demo isolation must hold. A demo reminder (e.g. "Emma's
+ * birthday is Nov 7") is a scoped, local-only row that teardown deletes
+ * — but the OS scheduler lives OUTSIDE the data scope, so a scheduled
+ * `notif-rem-<id>` would survive teardown and fire a banner with fake
+ * demo content weeks later. The reminder event payload carries no scope
+ * (`Reminder` has no `data_scope`), but the demo holds the process-global
+ * scope for its whole run and `createReminder` fans this event out
+ * synchronously while still in that scope — so `currentDataScope()` here
+ * is the demo scope for a demo reminder. We suppress at this choke point
+ * (don't schedule, don't mirror) rather than schedule-then-cancel: there
+ * is nothing to leak and nothing to clean up. The in-app chat reminder
+ * card still demonstrates the feature during the demo. Mirrors the
+ * inbox's scope-stamping and the topic-touch no-op in demo scope.
  */
 
+import { currentDataScope, isGuidedDemoScope } from '@dina/core';
 import { subscribeReminderCreated, type Reminder } from '@dina/core/reminders';
+
 import { scheduleNotification, tierToChannel } from './local';
 
 /**
@@ -45,6 +62,10 @@ function reminderTier(r: Reminder): 1 | 2 | 3 {
  */
 export function installReminderPushBridge(): () => void {
   return subscribeReminderCreated((reminder) => {
+    // Guided-demo reminders never reach the OS scheduler — see the module
+    // header. The demo is torn down with its scope; an OS-scheduled banner
+    // would outlive it. (No teardown cancel needed: we never schedule.)
+    if (isGuidedDemoScope(currentDataScope())) return;
     const tier = reminderTier(reminder);
     void scheduleNotification({
       id: `notif-rem-${reminder.id}`,

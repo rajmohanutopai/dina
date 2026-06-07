@@ -44,6 +44,9 @@ interface DemoApprovalMetadata {
   approvalId: string;
   persona?: string;
   preview?: string;
+  /** Plain-language what/why so the prompt is actually decidable. */
+  what?: string;
+  why?: string;
 }
 
 function readMetadata(m: ChatMessage): DemoApprovalMetadata | null {
@@ -53,6 +56,8 @@ function readMetadata(m: ChatMessage): DemoApprovalMetadata | null {
   const meta: DemoApprovalMetadata = { kind: 'demo_approval', approvalId: md.approvalId };
   if (typeof md.persona === 'string') meta.persona = md.persona;
   if (typeof md.preview === 'string') meta.preview = md.preview;
+  if (typeof md.what === 'string') meta.what = md.what;
+  if (typeof md.why === 'string') meta.why = md.why;
   return meta;
 }
 
@@ -106,8 +111,9 @@ export function InlineDemoApprovalCard({
     <View style={styles.card} testID={`demo-approval-card-${meta.approvalId}`}>
       <Text style={styles.label}>Approval needed</Text>
       <Text testID={`demo-approval-body-${meta.approvalId}`} style={styles.body}>
-        {meta.preview ?? `An agent wants to read ${personaLabel}. Only you can approve it.`}
+        {meta.what ?? `An agent wants to read ${personaLabel}`}
       </Text>
+      {meta.why !== undefined && <Text style={styles.why}>{meta.why}</Text>}
       {resolved === null && (
         <View style={styles.row}>
           <TouchableOpacity
@@ -149,6 +155,7 @@ const styles = StyleSheet.create({
   },
   label: { ...textStyles.eyebrow, marginBottom: spacing.xs },
   body: { ...textStyles.body, color: colors.textPrimary },
+  why: { ...textStyles.bodySmall, color: colors.textSecondary, marginTop: spacing.xs },
   row: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   btn: { flex: 1, alignItems: 'center', paddingVertical: spacing.sm, borderRadius: radius.sm },
   approve: { backgroundColor: colors.accent },

@@ -20,12 +20,29 @@ beforeEach(() => {
 });
 
 describe('makeGuidedDemoSeams', () => {
-  it('postServiceCard posts a real resolved service_query lifecycle', () => {
-    const seams = makeGuidedDemoSeams();
-    seams.postServiceCard(buildDemoServiceCard(1));
+  it('postServiceCard posts the question immediately, then the resolved card after a pause', async () => {
+    jest.useFakeTimers();
+    try {
+      const seams = makeGuidedDemoSeams();
+      const posted = seams.postServiceCard(
+        buildDemoServiceCard(1, 'Where can I get the ErgoFlex Study Chair?'),
+      );
+      // The user's question posts right away; the resolved card waits for the
+      // "Dina is checking" pause so it doesn't render instantly (canned-looking).
+      expect(getThread('main')).toHaveLength(1);
+      await jest.advanceTimersByTimeAsync(4000);
+      await posted;
+    } finally {
+      jest.useRealTimers();
+    }
     const thread = getThread('main');
-    expect(thread).toHaveLength(1);
-    const lc = readLifecycle(thread[0]);
+    // 1) the user's question, 2) the resolved lifecycle card.
+    expect(thread).toHaveLength(2);
+    expect(thread[0].type).toBe('user');
+    // `/ask ` prefix drives the ASK badge (renderer strips it for display),
+    // matching how remember messages render the REMEMBER badge.
+    expect(thread[0].content).toMatch(/^\/ask .*ErgoFlex Study Chair/);
+    const lc = readLifecycle(thread[1]);
     expect(lc).not.toBeNull();
     expect(lc).toMatchObject({
       kind: 'service_query',
@@ -38,6 +55,7 @@ describe('makeGuidedDemoSeams', () => {
     expect((lc as { result?: Record<string, unknown> }).result).toMatchObject({
       product: 'ErgoFlex Study Chair',
       available: true,
+      price: 420,
     });
   });
 

@@ -8,6 +8,7 @@ import {
   DEMO_PEERLENS_CHAIRS,
   DEMO_SERVICE_RESPONSE,
   DEMO_AGENT,
+  DEMO_TASK,
   DEMO_PUBLISH_DRAFT,
   buildChairRecommendation,
   nextNovember7,
@@ -35,29 +36,37 @@ describe('nextNovember7 (year derived, never hardcoded)', () => {
 });
 
 describe('demo content fixtures', () => {
-  it('facts are split into separate inputs, ordered to reveal cross-input synthesis', () => {
+  it('opens with people (Emma + Alonso), one nav peek, then ordered synthesis', () => {
     expect(DEMO_STEPS.map((s) => s.id)).toEqual([
-      'remember_emma_relation',
-      'remember_emma_likes',
+      'remember_people',
+      'show_relations',
       'remember_back',
       'remember_budget',
       'remember_emma_birthday',
       'chair_ask',
       'chair_availability',
     ]);
-    // Each Emma fact is its own message (not one blob).
-    expect(DEMO_STEPS[0].message).toContain('daughter');
-    expect(DEMO_STEPS[1].message).toContain('dinosaurs');
+    const byId = Object.fromEntries(DEMO_STEPS.map((s) => [s.id, s]));
+    // The opening step remembers a family member AND a friend (two messages).
+    expect(byId['remember_people'].messages).toHaveLength(2);
+    expect(byId['remember_people'].messages?.[0]).toContain('daughter');
+    expect(byId['remember_people'].messages?.[0]).toContain('dinosaurs');
+    expect(byId['remember_people'].messages?.[1]).toMatch(/Alonso/);
+    expect(byId['remember_people'].messages?.[1]).toMatch(/cold brew/i);
     // Health + a GENERIC monthly budget (not tied to a chair) come BEFORE the
     // birthday line, so the user sees functionality arrive separately.
-    expect(DEMO_STEPS[2].message).toMatch(/lower back/i);
-    expect(DEMO_STEPS[3].message).toContain('$500');
-    expect(DEMO_STEPS[3].message).not.toMatch(/chair/i); // budget isn't obviously about a chair
-    expect(DEMO_STEPS[4].message).toContain('Nov 7'); // birthday last → connects to dinosaurs
+    expect(byId['remember_back'].message).toMatch(/lower back/i);
+    expect(byId['remember_budget'].message).toContain('$500');
+    expect(byId['remember_budget'].message).not.toMatch(/chair/i); // budget isn't obviously a chair
+    expect(byId['remember_emma_birthday'].message).toContain('Nov 7'); // connects to dinosaurs
+    // A single nav step peeks at People › Relations (the next step returns).
+    expect(byId['show_relations'].kind).toBe('navigate');
+    expect(byId['show_relations'].navigateTo).toBe('people-relations');
     // Only the availability check is a service step (real resolved card).
     expect(DEMO_STEPS.filter((s) => s.kind === 'service').map((s) => s.id)).toEqual([
       'chair_availability',
     ]);
+    expect(byId['chair_availability'].message).toMatch(/ErgoFlex Study Chair/);
     expect(DEMO_STEPS[0].kind).toBeUndefined(); // chat is the default
   });
 
@@ -89,10 +98,21 @@ describe('demo content fixtures', () => {
     expect(answer).not.toMatch(/Rajmohan|Sancho|Aeron/);
   });
 
-  it('service response is about the recommended chair; agent targets health read', () => {
+  it('service response is a rich card; agent has a decidable what/why; task framing', () => {
     expect(DEMO_SERVICE_RESPONSE.product).toBe('ErgoFlex Study Chair');
     expect(DEMO_SERVICE_RESPONSE.available).toBe(true);
+    // Richer fields so the resolved card reads like a real result + money-formats.
+    expect(DEMO_SERVICE_RESPONSE.price).toBe(420);
+    expect(DEMO_SERVICE_RESPONSE.currency).toBe('USD');
+    expect(DEMO_SERVICE_RESPONSE.seller).toMatch(/ChairMaker/);
+    // Agent-safety request carries a plain-language what/why.
     expect(DEMO_AGENT.persona).toBe('health');
+    expect(DEMO_AGENT.what.toLowerCase()).toContain('health');
+    expect(DEMO_AGENT.why.length).toBeGreaterThan(0);
+    // The approval is framed as a delegated task — an email draft (NOT a
+    // purchase: Dina never touches money).
+    expect(DEMO_TASK.message).toMatch(/Email my manager/i);
+    expect(DEMO_TASK.message).not.toMatch(/buy/i);
     expect(DEMO_PUBLISH_DRAFT.visibility).toBe('unlisted'); // never auto-public
   });
 });

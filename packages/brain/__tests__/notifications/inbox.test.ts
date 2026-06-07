@@ -8,6 +8,7 @@
 
 import {
   appendNotification,
+  dropGuidedDemoNotifications,
   getUnreadCount,
   hydrateNotifications,
   listNotifications,
@@ -19,6 +20,9 @@ import {
 } from '../../src/notifications/inbox';
 import {
   InMemoryNotificationLogRepository,
+  newGuidedDemoScope,
+  resetDataScope,
+  setCurrentDataScope,
   setNotificationLogRepository,
 } from '@dina/core';
 
@@ -26,6 +30,11 @@ describe('Notifications inbox (5.66)', () => {
   beforeEach(() => {
     setNotificationLogRepository(null);
     resetNotifications();
+    resetDataScope();
+  });
+
+  afterEach(() => {
+    resetDataScope();
   });
 
   describe('appendNotification', () => {
@@ -163,6 +172,48 @@ describe('Notifications inbox (5.66)', () => {
       expect(getUnreadCount('reminder')).toBe(2);
       expect(getUnreadCount('approval')).toBe(1);
       expect(getUnreadCount('nudge')).toBe(0);
+    });
+  });
+
+  describe('dropGuidedDemoNotifications (guided-demo teardown)', () => {
+    it('drops only guided-demo-scope items, leaving user items intact', () => {
+      // A real user notification (default 'user' scope).
+      appendNotification({ kind: 'reminder', title: 'real', body: '' });
+      // Enter a guided-demo scope and append two demo notifications.
+      const demoScope = newGuidedDemoScope();
+      setCurrentDataScope(demoScope);
+      appendNotification({ kind: 'approval', title: 'demo-approval', body: '' });
+      appendNotification({ kind: 'reminder', title: 'demo-reminder', body: '' });
+      // Back to the user scope (mirrors teardown returning to 'user').
+      resetDataScope();
+
+      expect(listNotifications()).toHaveLength(3);
+      const dropped = dropGuidedDemoNotifications();
+      expect(dropped).toBe(2);
+      const remaining = listNotifications();
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0]!.title).toBe('real');
+    });
+
+    it('returns 0 and fires nothing when no demo notifications exist', () => {
+      appendNotification({ kind: 'reminder', title: 'real', body: '' });
+      const events: NotificationEvent[] = [];
+      subscribeNotifications((e) => events.push(e));
+      expect(dropGuidedDemoNotifications()).toBe(0);
+      expect(events).toHaveLength(0);
+      expect(listNotifications()).toHaveLength(1);
+    });
+
+    it('fires a hydrated event so live unread badges recompute', () => {
+      const demoScope = newGuidedDemoScope();
+      setCurrentDataScope(demoScope);
+      appendNotification({ kind: 'approval', title: 'demo', body: '' });
+      resetDataScope();
+      const events: NotificationEvent[] = [];
+      subscribeNotifications((e) => events.push(e));
+      dropGuidedDemoNotifications();
+      expect(events).toEqual([{ type: 'hydrated', loaded: 0 }]);
+      expect(getUnreadCount()).toBe(0);
     });
   });
 

@@ -1,5 +1,6 @@
 export {
   appendNotification,
+  dropGuidedDemoNotifications,
   getUnreadCount,
   hydrateNotifications,
   listNotifications,

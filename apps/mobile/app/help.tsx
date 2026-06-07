@@ -10,10 +10,11 @@
  */
 
 import React, { useCallback } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { FEATURES, FeatureIcon } from '../src/features';
 import { FEATURE_NAMES } from '@dina/core';
+import { requestGuidedDemoReplay } from '../src/guided_demo/replay_request';
 import { colors, fonts, radius, shadows, spacing, textStyles } from '../src/theme';
 
 interface CapabilityCard {
@@ -145,6 +146,15 @@ export default function HelpScreen(): React.ReactElement {
     [router],
   );
 
+  // "See Dina in action" — relaunch the guided demo on demand. The gate (at the
+  // root layout) listens for the request and starts an isolated demo scope; we
+  // navigate to Chat so the demo dock is visible over the composer. The demo's
+  // sample data is torn down on Exit, leaving the real vault untouched.
+  const onReplayDemo = useCallback(() => {
+    requestGuidedDemoReplay();
+    router.navigate('/');
+  }, [router]);
+
   return (
     <>
       <Stack.Screen options={{ title: 'Help', headerShown: true }} />
@@ -157,6 +167,32 @@ export default function HelpScreen(): React.ReactElement {
             want.
           </Text>
         </View>
+
+        <Pressable
+          onPress={onReplayDemo}
+          testID="help-replay-demo"
+          accessibilityRole="button"
+          accessibilityLabel="See Dina in action — replay the guided tour"
+          style={({ pressed }) => [styles.demoCta, pressed && styles.cardPressed]}
+        >
+          {/* The Dina app icon (domino-D glyph) as a small rounded-square
+              badge — "meet Dina". (The wider brand rule reserves the domino-D
+              for the app icon; reusing it here is an intentional exception for
+              the "see Dina in action" CTA.) */}
+          <Image
+            source={require('../assets/branding/dina-icon.png')}
+            style={styles.demoCtaIcon}
+            resizeMode="cover"
+            accessible={false}
+          />
+          <View style={styles.demoCtaText}>
+            <Text style={styles.demoCtaTitle}>See Dina in action</Text>
+            <Text style={styles.demoCtaDesc}>
+              Replay the 2-minute guided tour with sample data. Your real vault stays untouched.
+            </Text>
+          </View>
+          <Text style={styles.demoCtaArrow}>{'›'}</Text>
+        </Pressable>
 
         <CardSection title="Your vault" cards={VAULT_CARDS} onPress={onCardPress} />
         <CardSection title="Reminders" cards={REMINDER_CARDS} onPress={onCardPress} />
@@ -242,6 +278,37 @@ const styles = StyleSheet.create({
     ...textStyles.bodySmall,
     color: colors.textSecondary,
     marginTop: spacing.sm,
+  },
+  // "See Dina in action" CTA — a prominent accent banner above the cards.
+  demoCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.bgCard,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.accent,
+    ...shadows.sm,
+  },
+  demoCtaIcon: {
+    width: 38,
+    height: 38,
+    // Squircle-ish corner so the app icon reads as an app icon inline.
+    borderRadius: 9,
+  },
+  demoCtaText: { flex: 1 },
+  demoCtaTitle: textStyles.bodyStrong,
+  demoCtaDesc: {
+    ...textStyles.bodySmall,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  demoCtaArrow: {
+    ...textStyles.h2,
+    color: colors.textMuted,
   },
   section: {
     marginTop: spacing.lg,

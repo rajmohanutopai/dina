@@ -20,20 +20,26 @@ import { markGuidedDemoStep } from '@dina/core';
 
 import {
   DEMO_AGENT,
+  DEMO_D2D,
   DEMO_PUBLISH_DRAFT,
+  DEMO_REVIEW,
   DEMO_SERVICE_CAPABILITY,
   DEMO_SERVICE_PROVIDER_DID,
   DEMO_SERVICE_PROVIDER_NAME,
   DEMO_SERVICE_REQUEST,
   DEMO_SERVICE_RESPONSE,
   DEMO_STEPS,
+  DEMO_TASK,
   buildChairRecommendation,
   type DemoMode,
+  type DemoNavTarget,
   type DemoStep,
 } from './content';
 
 /** Stable action ids for the non-chat steps (chat ids come from DemoStep.id). */
+export const D2D_MESSAGE_STEP = 'd2d_message';
 export const AGENT_APPROVAL_STEP = 'agent_approval';
+export const PEERLENS_REVIEW_STEP = 'peerlens_review';
 export const PUBLISH_DRAFT_STEP = 'publish_draft';
 
 /** A single agent-approval request the runner asks the user to act on. */
@@ -44,6 +50,10 @@ export interface DemoApprovalRequest {
   persona: string;
   reason: string;
   preview: string;
+  /** Plain-language WHAT the agent is asking for (shown on the card). */
+  what: string;
+  /** Plain-language WHY (shown on the card) so the decision is informed. */
+  why: string;
 }
 
 /** A resolved service-query card the runner posts for the availability step. */
@@ -54,6 +64,8 @@ export interface DemoServiceCard {
   providerDid: string;
   params: Record<string, unknown>;
   result: Record<string, unknown>;
+  /** The user's question, posted as a user message before the result card. */
+  question: string;
   /** Narrative text shown if the card falls back to the generic renderer. */
   content: string;
 }
@@ -66,16 +78,33 @@ export interface DemoServiceCard {
 export interface GuidedDemoSeams {
   /** Send a scripted message through the real /remember or /ask path. */
   send(mode: DemoMode, message: string): Promise<void>;
-  /** Post a grounded recommendation as a real user→Dina chat exchange. */
-  postRecommendation(question: string, answer: string): void;
-  /** Post a REAL resolved service-query card (the furniture provider). */
-  postServiceCard(card: DemoServiceCard): void;
+  /** Post a grounded recommendation as a real user→Dina chat exchange. Async:
+   *  the real impl posts the question, pauses (so the answer doesn't appear
+   *  instantly and read as canned), then posts the answer. */
+  postRecommendation(question: string, answer: string): Promise<void>;
+  /** Post the user's question + a REAL resolved service-query card. Async for
+   *  the same realistic "Dina is checking" pause before the card lands. */
+  postServiceCard(card: DemoServiceCard): Promise<void>;
   /** Create a real, pending agent-approval request → returns its id. */
   requestApproval(req: DemoApprovalRequest): string;
   /** Deny a previously created approval (teardown if the user never acted). */
   denyApproval(id: string): void;
   /** Post a scope-bound demo card into Chat (used for the publish draft). */
   postDemoCard(text: string): void;
+  /** Dina-to-Dina (Talk): post an incoming peer message, pause, then an
+   *  enriched reminder. Async so the pause holds Next disabled. */
+  postD2DMessage(from: string, message: string, reminder: string): Promise<void>;
+  /** Post the PeerLens review card (with an inert Publish button in demo). */
+  postReviewCard(review: { product: string; rating: number; text: string }): void;
+  /** Post a plain user chat message (the task hand-off, not routed to an LLM). */
+  postUserMessage(text: string): void;
+  /** Drive the app to another surface (People › Relations / Chat). */
+  navigate(target: DemoNavTarget): void;
+  /** Pause for the "Dina is checking / the agent is working" beat. The real impl
+   *  sleeps; fake seams resolve instantly so tests stay fast. Used where the
+   *  pause sits BETWEEN two seam calls (the task step), so it can't live inside
+   *  one seam the way the recommend/service pauses do. */
+  delay(): Promise<void>;
 }
 
 /** A step in the linear demo plan. Discriminated by `kind`. */
@@ -83,7 +112,10 @@ export type DemoAction =
   | { kind: 'chat'; id: string; caption: string; step: DemoStep }
   | { kind: 'recommend'; id: string; caption: string; step: DemoStep }
   | { kind: 'service'; id: string; caption: string; step: DemoStep }
+  | { kind: 'navigate'; id: string; caption: string; step: DemoStep }
+  | { kind: 'd2d'; id: string; caption: string }
   | { kind: 'approval'; id: string; caption: string }
+  | { kind: 'review'; id: string; caption: string }
   | { kind: 'publish'; id: string; caption: string };
 
 /**
@@ -94,25 +126,43 @@ export type DemoAction =
 export function buildDemoPlan(steps: readonly DemoStep[] = DEMO_STEPS): DemoAction[] {
   return [
     ...steps.map((step): DemoAction => {
-      const kind =
-        step.kind === 'service' ? 'service' : step.kind === 'recommend' ? 'recommend' : 'chat';
+      const kind: DemoAction['kind'] =
+        step.kind === 'service'
+          ? 'service'
+          : step.kind === 'recommend'
+            ? 'recommend'
+            : step.kind === 'navigate'
+              ? 'navigate'
+              : 'chat';
       return { kind, id: step.id, caption: step.caption, step };
     }),
     {
+      kind: 'd2d',
+      id: D2D_MESSAGE_STEP,
+      caption: DEMO_D2D.caption,
+    },
+    {
       kind: 'approval',
       id: AGENT_APPROVAL_STEP,
-      caption: 'An agent asks to read Health — only you can approve it.',
+      caption: DEMO_TASK.caption,
+    },
+    {
+      kind: 'review',
+      id: PEERLENS_REVIEW_STEP,
+      caption: DEMO_REVIEW.caption,
     },
     {
       kind: 'publish',
       id: PUBLISH_DRAFT_STEP,
-      caption: 'Turn your own context into a service others can ask — as a draft.',
+      caption:
+        'Provide a service of your own. Have your own OpenClaw or other agent provide a public or private service to other Dinas.',
     },
   ];
 }
 
-/** Build the resolved furniture-availability service card payload. */
-export function buildDemoServiceCard(now: number): DemoServiceCard {
+/** Build the resolved furniture-availability service card payload (+ the
+ *  user's question, posted before the card). */
+export function buildDemoServiceCard(now: number, question: string): DemoServiceCard {
   const r = DEMO_SERVICE_RESPONSE;
   return {
     taskId: `guided-demo-service-${now}`,
@@ -121,20 +171,32 @@ export function buildDemoServiceCard(now: number): DemoServiceCard {
     providerDid: DEMO_SERVICE_PROVIDER_DID,
     params: { ...DEMO_SERVICE_REQUEST },
     result: { ...r },
-    content: `${r.product} — ${r.available ? 'available' : 'unavailable'}, $${r.price}, ${r.nearby}, ${r.delivery}.`,
+    question,
+    content: `${r.product}: ${r.available ? 'available' : 'unavailable'} at ${r.seller}, $${r.price}, ${r.nearby}. ${r.delivery}.`,
   };
 }
 
-/** The approval request the demo agent makes (real approval, demo subject). */
+/** The approval request the demo agent makes (real approval, demo subject).
+ *  Carries plain-language what/why so the card prompt is actually decidable. */
 export function buildDemoApprovalRequest(now: number): DemoApprovalRequest {
   return {
     id: `guided-demo-approval-${now}`,
     action: 'read_vault',
     requesterDid: 'did:plc:demoshoppingagent',
     persona: DEMO_AGENT.persona,
-    reason: DEMO_AGENT.reason,
-    preview: `${DEMO_AGENT.name} requests ${DEMO_AGENT.persona} access (${DEMO_AGENT.access}).`,
+    reason: DEMO_AGENT.why,
+    preview: `${DEMO_AGENT.name}: ${DEMO_AGENT.what}. ${DEMO_AGENT.why}`,
+    what: DEMO_AGENT.what,
+    why: DEMO_AGENT.why,
   };
+}
+
+/** Human-readable summary of the PeerLens review the user contributes back. */
+export function describePeerLensReview(): string {
+  return (
+    `PeerLens review · ${DEMO_REVIEW.product} · ${DEMO_REVIEW.rating}/5 · ` +
+    `"${DEMO_REVIEW.text}" Draft only, you choose when to publish.`
+  );
 }
 
 /** Human-readable summary of the publish-service draft card. */
@@ -142,7 +204,7 @@ export function describePublishDraft(): string {
   return (
     `Draft service · ${DEMO_PUBLISH_DRAFT.name} ` +
     `(${DEMO_PUBLISH_DRAFT.capability}, ${DEMO_PUBLISH_DRAFT.visibility}, ` +
-    `${DEMO_PUBLISH_DRAFT.responsePolicy}). Draft only — nothing is published.`
+    `${DEMO_PUBLISH_DRAFT.responsePolicy}). Draft only, nothing is published.`
   );
 }
 
@@ -212,22 +274,54 @@ export class GuidedDemoRunner {
     const action = this.currentAction;
     if (action === null) return null;
     switch (action.kind) {
-      case 'chat':
-        await this.seams.send(action.step.mode, action.step.message);
+      case 'chat': {
+        // A step can send one message or several (the opening step remembers
+        // Emma AND Alonso). Sequential so each lands as its own chat turn.
+        const messages = action.step.messages ?? [action.step.message];
+        for (const message of messages) {
+          await this.seams.send(action.step.mode, message);
+        }
         break;
+      }
       case 'recommend': {
         const rec = buildChairRecommendation();
-        this.seams.postRecommendation(rec.question, rec.answer);
+        // Awaited so the "Dina is checking" pause holds Next disabled until the
+        // answer actually lands (no instant, obviously-canned response).
+        await this.seams.postRecommendation(rec.question, rec.answer);
         break;
       }
       case 'service':
-        this.seams.postServiceCard(buildDemoServiceCard(this.now()));
+        await this.seams.postServiceCard(buildDemoServiceCard(this.now(), action.step.message));
+        break;
+      case 'navigate':
+        // Drive the app to another surface (People › Relations / Chat). No
+        // message; the navigation IS the step.
+        if (action.step.navigateTo !== undefined) this.seams.navigate(action.step.navigateTo);
         break;
       case 'approval': {
+        // Task hand-off: the user delegates a task (email the manager); the agent
+        // then works on it and comes back asking to read Health. Pause between the
+        // hand-off and the approval card so it reads like the agent processed the
+        // task, not an instant canned prompt.
+        this.seams.postUserMessage(DEMO_TASK.message);
+        await this.seams.delay();
         const id = this.seams.requestApproval(buildDemoApprovalRequest(this.now()));
         this.pendingApprovals.push(id);
         break;
       }
+      case 'd2d':
+        // Dina-to-Dina Talk: a friend's Dina messages; Dina sets an enriched
+        // reminder (from the cold-brew memory). Pauses internally like service.
+        await this.seams.postD2DMessage(DEMO_D2D.from, DEMO_D2D.message, DEMO_D2D.reminder);
+        break;
+      case 'review':
+        // Give back: contribute a PeerLens review card (inert Publish in demo).
+        this.seams.postReviewCard({
+          product: DEMO_REVIEW.product,
+          rating: DEMO_REVIEW.rating,
+          text: DEMO_REVIEW.text,
+        });
+        break;
       case 'publish':
         this.seams.postDemoCard(describePublishDraft());
         break;

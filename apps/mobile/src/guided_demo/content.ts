@@ -32,11 +32,17 @@ export type DemoMode = 'remember' | 'ask';
  *                 free /ask hallucinates fake peer reviews when no real PeerLens
  *                 data is wired (the boot AppView can't be runtime-injected),
  *                 which would violate the demo's Verified-Truth premise;
- *   'service'   — posts a REAL resolved service-query card (the deterministic
- *                 furniture-availability provider) so the service path card
- *                 always renders.
+ *   'service'   — posts the user's question + a REAL resolved service-query card
+ *                 (the deterministic furniture-availability provider) so the
+ *                 service path card always renders;
+ *   'navigate'  — drives the app to another surface (e.g. People › Relations)
+ *                 so the user SEES where the just-remembered data landed, then
+ *                 back to Chat. No message is sent.
  */
-export type DemoStepKind = 'chat' | 'recommend' | 'service';
+export type DemoStepKind = 'chat' | 'recommend' | 'service' | 'navigate';
+
+/** Targets a `navigate` step can drive to. */
+export type DemoNavTarget = 'people-relations' | 'chat';
 
 export interface DemoStep {
   /** Matches the active-demo `step` marker + orchestration order. */
@@ -45,10 +51,18 @@ export interface DemoStep {
   kind?: DemoStepKind;
   /** Which composer chip the step uses (chat steps). */
   mode: DemoMode;
-  /** Message pre-filled + sent through the real path. */
+  /** Message pre-filled + sent through the real path (chat/recommend/service). */
   message: string;
+  /** Optional: send MULTIPLE messages in one step (one Next tap), in order.
+   *  Used by the opening step to remember Emma AND Alonso together. When set,
+   *  `message` is ignored. */
+  messages?: readonly string[];
   /** Short narration shown before the step. */
   caption: string;
+  /** For `navigate` steps: where to drive the app. */
+  navigateTo?: DemoNavTarget;
+  /** Optional override for the dock's advance-button label (navigate steps). */
+  nextLabel?: string;
 }
 
 /**
@@ -63,48 +77,64 @@ export const DEMO_STEPS: readonly DemoStep[] = [
   // the dinosaurs fact; the chair rec applies the month's budget). One blob
   // hides that; separate inputs make the "it remembered + connected" obvious.
   {
-    id: 'remember_emma_relation',
+    // Two remembers in one step: a family member and a friend, so the people
+    // graph (next step) shows both. The dinosaurs fact rides along with Emma so
+    // the later birthday reminder can still enrich with it.
+    id: 'remember_people',
     mode: 'remember',
-    message: 'Emma is my daughter.',
-    caption: 'Start by telling Dina about someone in your life.',
+    message: 'Emma is my daughter, and she loves dinosaurs.',
+    messages: [
+      'Emma is my daughter, and she loves dinosaurs.',
+      'Alonso, my friend, loves cold brew.',
+    ],
+    caption: 'Start by telling Dina about the people in your life, family and friends.',
   },
+  // One nav step (no back-and-forth): peek at People › Relations to SEE both
+  // land. The next step's send returns to chat automatically.
   {
-    id: 'remember_emma_likes',
+    id: 'show_relations',
+    kind: 'navigate',
     mode: 'remember',
-    message: 'Emma loves dinosaurs.',
-    caption: 'Add something she likes — Dina just quietly remembers it.',
+    message: '',
+    navigateTo: 'people-relations',
+    caption: 'Dina automatically added Emma and Alonso to People › Relations.',
+    nextLabel: 'Show me',
   },
   {
     id: 'remember_back',
     mode: 'remember',
     message: "I've been getting a lot of lower back pain lately.",
-    caption: 'Now switch topics — tell Dina something about your health.',
+    caption:
+      'Tell Dina about your health. It goes straight into your locked Health vault.',
   },
   {
     id: 'remember_budget',
     mode: 'remember',
     message: "I'm trying to keep my spending under $500 this month.",
-    caption: 'And set yourself a budget for the month.',
+    caption: 'Anything about money lands in your locked Finance vault.',
   },
   {
     id: 'remember_emma_birthday',
     mode: 'remember',
     message: "Emma's birthday is on Nov 7.",
-    caption: 'Add a date — watch Dina tie it back to what you said earlier.',
+    caption:
+      'Add a date and Dina sets a reminder. It links to what Dina already knows about Emma.',
   },
   {
     id: 'chair_ask',
     kind: 'recommend',
     mode: 'ask',
     message: 'Find me a good office chair.',
-    caption: 'Now ask — Dina draws on everything above, no need to repeat yourself.',
+    caption:
+      'Ask about anything out there, a product, a video, anything. Dina includes your preferences automatically, then checks PeerLens, a network of reviews and suggestions, to help you choose.',
   },
   {
     id: 'chair_availability',
     kind: 'service',
     mode: 'ask',
-    message: 'Is the ErgoFlex chair available near me?',
-    caption: 'Dina checks the service network — sharing only the minimum.',
+    message: 'Where can I get the ErgoFlex Study Chair?',
+    caption:
+      'Next is the Service Network, all the other Dinas offering services. Dina connects to the best provider Dina for a custom answer. That provider cannot message you, because it is not your contact.',
   },
 ] as const;
 
@@ -168,7 +198,7 @@ export function buildChairRecommendation(): { question: string; answer: string }
   });
   const answer =
     `For your lower-back pain and the $${DEMO_CHAIR_BUDGET} budget you set this month, ` +
-    `PeerLens reviewers point me to the ${pick.product} ($${pick.price}) — ` +
+    `PeerLens reviewers point me to the ${pick.product} ($${pick.price}), ` +
     `rated well for ${pick.review} (trust: ${pick.trust}). ` +
     `I set aside ${rejects.join(' and ')}. ` +
     `Want me to check if it's available near you?`;
@@ -182,13 +212,17 @@ export interface DemoServiceParams {
   location: string;
 }
 
-/** Canned response from the demo furniture-availability provider. */
+/** Canned response from the demo furniture-availability provider. Richer than a
+ *  yes/no so the resolved card reads like a real availability result. */
 export const DEMO_SERVICE_RESPONSE = {
   product: 'ErgoFlex Study Chair',
   available: true,
   price: 420,
-  nearby: 'San Francisco',
-  delivery: '2 days',
+  currency: 'USD', // → the card money-formats price as "$420"
+  seller: 'ChairMaker (verified)',
+  nearby: 'San Francisco · 2.3 mi',
+  stock: 'In stock',
+  delivery: 'Free delivery in 2 days',
 } as const;
 
 export const DEMO_SERVICE_PROVIDER_NAME = 'Demo Furniture Availability Provider';
@@ -200,15 +234,54 @@ export const DEMO_SERVICE_REQUEST: DemoServiceParams = {
   location: 'near me',
 };
 
-/** The demo agent that requests Health access through the REAL approval flow. */
-export const DEMO_AGENT = {
-  name: 'Demo Shopping Agent',
-  persona: 'health',
-  access: 'read, this task only',
-  reason: 'compare ergonomic fit for office chairs',
+/** The task the user hands off, which the agent then executes — needing Health
+ *  access along the way (the demo's agent-safety moment). A draft-an-email task
+ *  (NOT a purchase: Dina never touches money — see the Four Laws) that naturally
+ *  needs the Health vault (the lower-back note from the earlier remember step). */
+export const DEMO_TASK = {
+  /** What the user types to delegate the task. */
+  message: 'Email my manager about my health condition.',
+  caption:
+    'Hand off a task to OpenClaw or another agent. Dina is the safety layer: for locked data or risky actions, the agent can get your approval through Dina.',
 } as const;
 
-/** The publish-service draft shown in Step 7 (draft only — never auto-published). */
+/** The demo agent that requests Health access through the REAL approval flow.
+ *  `what`/`why` are shown verbatim on the approval card so the decision is
+ *  actually informed (not a generic "an agent wants access"). */
+export const DEMO_AGENT = {
+  name: 'Email assistant',
+  persona: 'health',
+  access: 'read, this task only',
+  /** Plain-language WHAT is being requested. */
+  what: 'Read your Health vault',
+  /** Plain-language WHY — tied to the task in flight. */
+  why: 'To draft your email to your manager about your health condition.',
+} as const;
+
+/** The Dina-to-Dina (Talk) moment: a friend's Dina messages yours, and the
+ *  reminder Dina sets is enriched from memory (the cold-brew fact remembered in
+ *  step 1). Contact-gated: only mutual contacts can reach you. */
+export const DEMO_D2D = {
+  from: 'Alonso',
+  message: 'Heading over tomorrow morning, looking forward to it!',
+  /** The reminder Dina sets, linked to the cold-brew memory from step 1. */
+  reminder: 'Alonso visits tomorrow morning. Have his cold brew ready.',
+  caption:
+    'Friends with their own Dina can message you. Alonso says he is coming, so Dina sets a reminder using what it remembers about him. Only people you have both added as contacts can message you.',
+} as const;
+
+/** The PeerLens review the user contributes back. Grounded in the chair they
+ *  just researched, so the "give back" step ties to the earlier ask. */
+export const DEMO_REVIEW = {
+  product: 'ErgoFlex Study Chair',
+  rating: 5,
+  text: 'Solid lower-back support, worth it.',
+  caption:
+    'Got value from something? Add a PeerLens review so others benefit. Real people reviewing real things is what makes PeerLens trustworthy.',
+} as const;
+
+/** The publish-service draft shown in the final step (draft only, never
+ *  auto-published). */
 export const DEMO_PUBLISH_DRAFT = {
   name: 'Chair availability checker',
   capability: 'product_availability',

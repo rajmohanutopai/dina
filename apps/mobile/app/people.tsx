@@ -14,6 +14,8 @@
  * DID-bound rows from Relations would hide useful context.
  */
 
+import { Ionicons } from '@expo/vector-icons';
+import { Link, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
@@ -25,8 +27,7 @@ import {
   Alert,
   Share,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { Link, useFocusEffect, useRouter } from 'expo-router';
+
 import {
   listContacts,
   deleteContact,
@@ -34,13 +35,14 @@ import {
   type Contact,
   type Person,
 } from '@dina/core';
-import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
+
+import { IdentityModal } from '../src/components/identity/identity_modal';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
 import { getProfile as getTrustProfile } from '../src/peerlens/appview_runtime';
-import { loadInfraPreferences } from '../src/services/infra_preferences';
-import { IdentityModal } from '../src/components/identity/identity_modal';
-import { getDisplayNameOverride } from '../src/services/display_name_override';
 import { buildContactCard } from '../src/services/contact_card';
+import { getDisplayNameOverride } from '../src/services/display_name_override';
+import { loadInfraPreferences } from '../src/services/infra_preferences';
+import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 
 type SubTab = 'contacts' | 'relations';
 
@@ -49,6 +51,13 @@ export default function PeopleScreen() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const router = useRouter();
+  // Honor a `?tab=relations` deep-link (used by the guided demo to show the
+  // just-added person under Relations). Reacts to param changes too.
+  const params = useLocalSearchParams<{ tab?: string }>();
+  useEffect(() => {
+    if (params.tab === 'relations') setSubTab('relations');
+    else if (params.tab === 'contacts') setSubTab('contacts');
+  }, [params.tab]);
 
   const refresh = useCallback(() => {
     setContacts(listContacts());

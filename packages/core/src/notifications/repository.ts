@@ -12,6 +12,19 @@
  * false on second ack); listAll is newest-first; purgeBefore drops
  * rows older than the cutoff (preferring explicit `expiresAt` when
  * present). reset wipes for tests + identity reset.
+ *
+ * **Guided-demo scoping gap (forward-guard, not a live bug).** This
+ * interface has no `data_scope` field, and the inbox's in-memory item
+ * DOES (`NotificationItem.dataScope`, dropped on demo teardown via
+ * `dropGuidedDemoNotifications`). That asymmetry is safe ONLY because no
+ * host wires a persistence layer here today (`setNotificationLogRepository`
+ * is never called in source), and the only producer of demo-scoped
+ * notifications — the mobile guided demo — runs entirely on the in-memory
+ * store. If a persistent log is ever wired on a host that runs the guided
+ * demo, this MUST gain a `data_scope` column (reminders-v12 pattern), the
+ * inbox's `storedToItem` must carry it instead of defaulting to `'user'`,
+ * and `dropGuidedDemoNotifications` must also purge persisted demo rows —
+ * otherwise a demo approval would survive teardown in the persistent log.
  */
 
 export type NotificationKind =

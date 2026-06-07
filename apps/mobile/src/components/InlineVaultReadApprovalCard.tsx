@@ -24,12 +24,14 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { markNotificationRead } from '@dina/brain/notifications';
+
 import {
   approvePending,
   denyPending,
   getApprovalLifecycle,
 } from '../hooks/useServiceInbox';
 import { colors, radius, spacing, textStyles } from '../theme';
+
 import { MessageTimestamp } from './MessageTimestamp';
 
 import type { ChatMessage } from '@dina/brain/chat';
@@ -42,6 +44,8 @@ interface VaultReadMetadata {
   approvalTaskId: string;
   persona: string;
   agentDid: string;
+  /** WHY the agent wants access — shown so the decision is informed. */
+  reason: string;
 }
 
 function readMetadata(m: ChatMessage): VaultReadMetadata | null {
@@ -52,7 +56,8 @@ function readMetadata(m: ChatMessage): VaultReadMetadata | null {
   if (typeof taskId !== 'string' || taskId.length === 0) return null;
   const persona = typeof md.persona === 'string' ? md.persona : '';
   const agentDid = typeof md.agentDid === 'string' ? md.agentDid : '';
-  return { approvalTaskId: taskId, persona, agentDid };
+  const reason = typeof md.reason === 'string' ? md.reason : '';
+  return { approvalTaskId: taskId, persona, agentDid, reason };
 }
 
 export function InlineVaultReadApprovalCard({
@@ -186,6 +191,7 @@ export function InlineVaultReadApprovalCard({
       <Text style={styles.body}>
         An agent wants to access {personaLabel}.
       </Text>
+      {meta.reason !== '' && <Text style={styles.reason}>{meta.reason}</Text>}
       {shortAgent !== '' && <Text style={styles.agent}>{shortAgent}</Text>}
       {resolved === null && (
         // dina_details §13.4 — inline three-way scope picker on the card
@@ -261,6 +267,11 @@ const styles = StyleSheet.create({
   },
   body: {
     ...textStyles.body,
+    marginBottom: spacing.xs,
+  },
+  reason: {
+    ...textStyles.bodySmall,
+    color: colors.textSecondary,
     marginBottom: spacing.xs,
   },
   agent: {

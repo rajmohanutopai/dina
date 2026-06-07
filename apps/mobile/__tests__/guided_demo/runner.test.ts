@@ -7,7 +7,9 @@ import {
   resetKVStore,
 } from '../../../core/src/kv/store';
 import {
+  D2D_MESSAGE_STEP,
   AGENT_APPROVAL_STEP,
+  PEERLENS_REVIEW_STEP,
   PUBLISH_DRAFT_STEP,
   GuidedDemoRunner,
   buildDemoPlan,
@@ -21,10 +23,14 @@ import { DEMO_STEPS, type DemoStep } from '../../src/guided_demo/content';
 interface Recorded {
   sends: Array<{ mode: string; message: string }>;
   recommendations: Array<{ question: string; answer: string }>;
-  serviceCards: Array<{ capability: string; serviceName: string }>;
+  serviceCards: Array<{ capability: string; serviceName: string; question: string }>;
   approvals: DemoApprovalRequest[];
   denied: string[];
   cards: string[];
+  userMessages: string[];
+  navigations: string[];
+  d2dMessages: Array<{ from: string; message: string; reminder: string }>;
+  reviewCards: Array<{ product: string; rating: number; text: string }>;
 }
 
 function fakeSeams(): { seams: GuidedDemoSeams; rec: Recorded } {
@@ -35,16 +41,24 @@ function fakeSeams(): { seams: GuidedDemoSeams; rec: Recorded } {
     approvals: [],
     denied: [],
     cards: [],
+    userMessages: [],
+    navigations: [],
+    d2dMessages: [],
+    reviewCards: [],
   };
   const seams: GuidedDemoSeams = {
     async send(mode, message) {
       rec.sends.push({ mode, message });
     },
-    postRecommendation(question, answer) {
+    async postRecommendation(question, answer) {
       rec.recommendations.push({ question, answer });
     },
-    postServiceCard(card) {
-      rec.serviceCards.push({ capability: card.capability, serviceName: card.serviceName });
+    async postServiceCard(card) {
+      rec.serviceCards.push({
+        capability: card.capability,
+        serviceName: card.serviceName,
+        question: card.question,
+      });
     },
     requestApproval(req) {
       rec.approvals.push(req);
@@ -56,6 +70,21 @@ function fakeSeams(): { seams: GuidedDemoSeams; rec: Recorded } {
     postDemoCard(text) {
       rec.cards.push(text);
     },
+    postUserMessage(text) {
+      rec.userMessages.push(text);
+    },
+    navigate(target) {
+      rec.navigations.push(target);
+    },
+    async postD2DMessage(from, message, reminder) {
+      rec.d2dMessages.push({ from, message, reminder });
+    },
+    postReviewCard(review) {
+      rec.reviewCards.push(review);
+    },
+    async delay() {
+      /* no pause in tests */
+    },
   };
   return { seams, rec };
 }
@@ -63,9 +92,16 @@ function fakeSeams(): { seams: GuidedDemoSeams; rec: Recorded } {
 const CHAT_STEPS = DEMO_STEPS.filter((s) => s.kind === undefined || s.kind === 'chat');
 const RECOMMEND_STEPS = DEMO_STEPS.filter((s) => s.kind === 'recommend');
 const SERVICE_STEPS = DEMO_STEPS.filter((s) => s.kind === 'service');
+const NAVIGATE_STEPS = DEMO_STEPS.filter((s) => s.kind === 'navigate');
 
 function planKind(k: DemoStep['kind']): string {
-  return k === 'service' ? 'service' : k === 'recommend' ? 'recommend' : 'chat';
+  return k === 'service'
+    ? 'service'
+    : k === 'recommend'
+      ? 'recommend'
+      : k === 'navigate'
+        ? 'navigate'
+        : 'chat';
 }
 
 beforeEach(() => {
@@ -74,14 +110,16 @@ beforeEach(() => {
 });
 
 describe('buildDemoPlan', () => {
-  it('mirrors the content steps (chat/service per kind) then approval then publish', () => {
+  it('mirrors the content steps then d2d, approval, review, publish', () => {
     const plan = buildDemoPlan();
-    expect(plan).toHaveLength(DEMO_STEPS.length + 2);
+    expect(plan).toHaveLength(DEMO_STEPS.length + 4);
     // Each content step maps to chat / recommend / service per step.kind.
     expect(plan.slice(0, DEMO_STEPS.length).map((a) => a.kind)).toEqual(
       DEMO_STEPS.map((s) => planKind(s.kind)),
     );
-    expect(plan[plan.length - 2]).toMatchObject({ kind: 'approval', id: AGENT_APPROVAL_STEP });
+    expect(plan[plan.length - 4]).toMatchObject({ kind: 'd2d', id: D2D_MESSAGE_STEP });
+    expect(plan[plan.length - 3]).toMatchObject({ kind: 'approval', id: AGENT_APPROVAL_STEP });
+    expect(plan[plan.length - 2]).toMatchObject({ kind: 'review', id: PEERLENS_REVIEW_STEP });
     expect(plan[plan.length - 1]).toMatchObject({ kind: 'publish', id: PUBLISH_DRAFT_STEP });
     // content step ids mirror 1:1
     expect(plan.slice(0, DEMO_STEPS.length).map((a) => a.id)).toEqual(
@@ -103,6 +141,9 @@ describe('buildDemoApprovalRequest', () => {
     });
     expect(req.requesterDid).toMatch(/^did:plc:/);
     expect(req.preview.toLowerCase()).toContain('health');
+    // Carries plain-language what/why so the approval card is decidable.
+    expect(req.what.toLowerCase()).toContain('health');
+    expect(req.why.length).toBeGreaterThan(0);
   });
 });
 
@@ -110,22 +151,30 @@ describe('GuidedDemoRunner.advance', () => {
   it('runs each content step through its real seam, marking progress', async () => {
     const { seams, rec } = fakeSeams();
     const runner = new GuidedDemoRunner(seams, { now: () => 1 });
-    expect(runner.total).toBe(DEMO_STEPS.length + 2);
+    expect(runner.total).toBe(DEMO_STEPS.length + 4);
     expect(runner.position).toBe(0);
 
     for (const step of DEMO_STEPS) {
       const action = await runner.advance();
       expect(action?.kind).toBe(planKind(step.kind));
     }
-    // chat steps → send(); recommend step → recommendation; service → service card.
-    expect(rec.sends).toEqual(CHAT_STEPS.map((s) => ({ mode: s.mode, message: s.message })));
+    // chat → send(); recommend → recommendation; service → question + card;
+    // navigate → navigation. Each per its kind. A chat step may send MULTIPLE
+    // messages (the opening step remembers Emma AND Alonso), so expand them.
+    expect(rec.sends).toEqual(
+      CHAT_STEPS.flatMap((s) =>
+        (s.messages ?? [s.message]).map((message) => ({ mode: s.mode, message })),
+      ),
+    );
     expect(rec.recommendations).toHaveLength(RECOMMEND_STEPS.length);
     expect(rec.serviceCards).toEqual(
-      SERVICE_STEPS.map(() => ({
+      SERVICE_STEPS.map((s) => ({
         capability: 'product_availability',
         serviceName: 'Demo Furniture Availability Provider',
+        question: s.message,
       })),
     );
+    expect(rec.navigations).toEqual(NAVIGATE_STEPS.map((s) => s.navigateTo));
     expect(runner.position).toBe(DEMO_STEPS.length);
     expect(runner.isComplete).toBe(false);
   });
@@ -152,26 +201,43 @@ describe('GuidedDemoRunner.advance', () => {
     const serviceIdx = buildDemoPlan().findIndex((a) => a.kind === 'service');
     for (let i = 0; i <= serviceIdx; i += 1) await runner.advance();
     expect(rec.serviceCards).toEqual([
-      { capability: 'product_availability', serviceName: 'Demo Furniture Availability Provider' },
+      {
+        capability: 'product_availability',
+        serviceName: 'Demo Furniture Availability Provider',
+        question: SERVICE_STEPS[0]!.message,
+      },
     ]);
+    // The user's question was posted (as a user message) before the card.
+    expect(rec.serviceCards[0]?.question).toMatch(/ErgoFlex Study Chair/);
   });
 
   it('creates a real approval on the approval step', async () => {
     const { seams, rec } = fakeSeams();
     const runner = new GuidedDemoRunner(seams, { now: () => 42 });
-    for (let i = 0; i < DEMO_STEPS.length; i += 1) await runner.advance();
+    // Content steps, then the D2D step, land us on the approval step next.
+    for (let i = 0; i < DEMO_STEPS.length + 1; i += 1) await runner.advance();
     const action = await runner.advance();
     expect(action?.kind).toBe('approval');
     expect(rec.approvals).toHaveLength(1);
     expect(rec.approvals[0]?.id).toBe('guided-demo-approval-42');
+    // The approval step is framed as a delegated task — the hand-off message is
+    // posted before the agent's access request.
+    expect(rec.userMessages.some((m) => /Email my manager/.test(m))).toBe(true);
   });
 
-  it('posts the publish-draft card on the final step and then completes', async () => {
+  it('posts the D2D message, review card, then publish-draft card, then completes', async () => {
     const { seams, rec } = fakeSeams();
     const runner = new GuidedDemoRunner(seams, { now: () => 1 });
     await runner.runAll();
     expect(runner.isComplete).toBe(true);
     expect(runner.currentAction).toBeNull();
+    // The Talk step posts a peer message + enriched reminder.
+    expect(rec.d2dMessages).toHaveLength(1);
+    expect(rec.d2dMessages[0]?.from).toBe('Alonso');
+    // The review goes through postReviewCard (its own card); only the publish
+    // draft uses postDemoCard now.
+    expect(rec.reviewCards).toHaveLength(1);
+    expect(rec.reviewCards[0]?.product).toBe('ErgoFlex Study Chair');
     expect(rec.cards).toEqual([describePublishDraft()]);
     // advancing past the end is a no-op
     expect(await runner.advance()).toBeNull();
@@ -228,7 +294,7 @@ describe('GuidedDemoRunner.teardown', () => {
   it('denies any approval the user left pending, idempotently', async () => {
     const { seams, rec } = fakeSeams();
     const runner = new GuidedDemoRunner(seams, { now: () => 7 });
-    for (let i = 0; i < DEMO_STEPS.length; i += 1) await runner.advance();
+    for (let i = 0; i < DEMO_STEPS.length + 1; i += 1) await runner.advance(); // content + d2d
     await runner.advance(); // approval
     runner.teardown();
     expect(rec.denied).toEqual(['guided-demo-approval-7']);
@@ -242,7 +308,7 @@ describe('GuidedDemoRunner.teardown', () => {
       throw new Error('not pending');
     };
     const runner = new GuidedDemoRunner(seams, { now: () => 7 });
-    for (let i = 0; i < DEMO_STEPS.length; i += 1) await runner.advance();
+    for (let i = 0; i < DEMO_STEPS.length + 1; i += 1) await runner.advance(); // content + d2d
     await runner.advance();
     expect(() => runner.teardown()).not.toThrow();
   });

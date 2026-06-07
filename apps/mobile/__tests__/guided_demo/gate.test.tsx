@@ -25,6 +25,10 @@ import {
 import { useGuidedDemoGate } from '../../src/guided_demo/useGuidedDemoGate';
 import type { GuidedDemoSeams } from '../../src/guided_demo/runner';
 import { DEMO_STEPS } from '../../src/guided_demo/content';
+import {
+  requestGuidedDemoReplay,
+  resetGuidedDemoReplayForTest,
+} from '../../src/guided_demo/replay_request';
 import { resetKVStore } from '../../../core/src/kv/store';
 
 /** Fake runner seams so the gate's advance/teardown can be asserted without
@@ -38,6 +42,8 @@ function fakeSeams(): {
     approvals: string[];
     denied: string[];
     cards: number;
+    d2dMessages: number;
+    reviewCards: number;
   };
 } {
   const rec = {
@@ -47,15 +53,17 @@ function fakeSeams(): {
     approvals: [] as string[],
     denied: [] as string[],
     cards: 0,
+    d2dMessages: 0,
+    reviewCards: 0,
   };
   const seams: GuidedDemoSeams = {
     async send() {
       rec.sends += 1;
     },
-    postRecommendation() {
+    async postRecommendation() {
       rec.recommendations += 1;
     },
-    postServiceCard() {
+    async postServiceCard() {
       rec.serviceCards += 1;
     },
     requestApproval(req) {
@@ -67,6 +75,21 @@ function fakeSeams(): {
     },
     postDemoCard() {
       rec.cards += 1;
+    },
+    postUserMessage() {
+      /* task hand-off message — not asserted here */
+    },
+    navigate() {
+      /* navigation — not asserted here */
+    },
+    async postD2DMessage() {
+      rec.d2dMessages += 1;
+    },
+    postReviewCard() {
+      rec.reviewCards += 1;
+    },
+    async delay() {
+      /* no pause in tests */
     },
   };
   return { make: () => seams, rec };
@@ -80,6 +103,7 @@ describe('useGuidedDemoGate', () => {
   beforeEach(() => {
     resetKVStore();
     resetDataScope();
+    resetGuidedDemoReplayForTest();
     clearScopedCleanups();
     setGuidedDemoIdFactory(() => 'run1');
     registerScopedCleanup({ table: 'reminders', deleteScope: () => 0 });
@@ -129,6 +153,51 @@ describe('useGuidedDemoGate', () => {
     expect(currentDataScope()).toBe('user');
   });
 
+  it('replay request starts the demo from the running app (any-time entry)', async () => {
+    // Past first run: entry already seen → boot lands on running (no entry).
+    await markGuidedDemoEntrySeen();
+    const { make } = fakeSeams();
+    const { result } = renderHook(() => useGuidedDemoGate(true, { makeSeams: make }));
+    await waitFor(() => expect(result.current.phase).toBe('running'));
+    expect(result.current.demoActive).toBe(false);
+    await act(async () => {
+      requestGuidedDemoReplay();
+    });
+    await waitFor(() => expect(result.current.demoActive).toBe(true));
+    expect(result.current.phase).toBe('running');
+    expect(currentDataScope()).toBe('guided_demo:run1');
+    expect(result.current.currentAction?.id).toBe(DEMO_STEPS[0]?.id);
+  });
+
+  it('replay request is ignored while a demo is already active', async () => {
+    const { make } = fakeSeams();
+    const { result } = renderHook(() => useGuidedDemoGate(true, { makeSeams: make }));
+    await waitFor(() => expect(result.current.phase).toBe('entry'));
+    await act(async () => {
+      await result.current.startDemo();
+    });
+    await act(async () => {
+      await result.current.advanceDemo();
+    });
+    expect(result.current.step).toBe(2);
+    await act(async () => {
+      requestGuidedDemoReplay();
+    });
+    // No restart: a replay mid-demo would reset the cursor to step 1.
+    expect(result.current.step).toBe(2);
+  });
+
+  it('replay request is ignored before the app is running (entry phase)', async () => {
+    const { result } = renderHook(() => useGuidedDemoGate());
+    await waitFor(() => expect(result.current.phase).toBe('entry'));
+    await act(async () => {
+      requestGuidedDemoReplay();
+    });
+    // A replay must not bypass the first-run entry screen.
+    expect(result.current.phase).toBe('entry');
+    expect(result.current.demoActive).toBe(false);
+  });
+
   it('exit → tears down, returns to user, clears recovery', async () => {
     const { result } = renderHook(() => useGuidedDemoGate());
     await waitFor(() => expect(result.current.phase).toBe('entry'));
@@ -157,7 +226,7 @@ describe('useGuidedDemoGate', () => {
     await act(async () => {
       await result.current.startDemo();
     });
-    expect(result.current.stepCount).toBe(DEMO_STEPS.length + 2);
+    expect(result.current.stepCount).toBe(DEMO_STEPS.length + 4);
     expect(result.current.step).toBe(1);
     expect(result.current.currentAction?.id).toBe(DEMO_STEPS[0]?.id);
     expect(result.current.demoComplete).toBe(false);
@@ -173,7 +242,8 @@ describe('useGuidedDemoGate', () => {
     await act(async () => {
       await result.current.advanceDemo();
     });
-    expect(rec.sends).toBe(1);
+    // Step 1 sends two remembers (Emma + Alonso) in the one step.
+    expect(rec.sends).toBe(2);
     expect(result.current.step).toBe(2);
     expect(result.current.currentAction?.id).toBe(DEMO_STEPS[1]?.id);
   });
@@ -185,16 +255,19 @@ describe('useGuidedDemoGate', () => {
     await act(async () => {
       await result.current.startDemo();
     });
-    for (let i = 0; i < DEMO_STEPS.length + 2; i += 1) {
+    for (let i = 0; i < DEMO_STEPS.length + 4; i += 1) {
       await act(async () => {
         await result.current.advanceDemo();
       });
     }
-    expect(rec.sends).toBe(CHAT_STEP_COUNT);
+    // CHAT_STEP_COUNT + 1: the opening step sends two remembers (Emma + Alonso).
+    expect(rec.sends).toBe(CHAT_STEP_COUNT + 1);
     expect(rec.recommendations).toBe(RECOMMEND_STEP_COUNT);
     expect(rec.serviceCards).toBe(SERVICE_STEP_COUNT);
     expect(rec.approvals).toHaveLength(1);
-    expect(rec.cards).toBe(1);
+    expect(rec.d2dMessages).toBe(1); // Dina-to-Dina Talk step
+    expect(rec.reviewCards).toBe(1); // PeerLens review card
+    expect(rec.cards).toBe(1); // publish-service draft (review now uses postReviewCard)
     expect(result.current.demoComplete).toBe(true);
     expect(result.current.currentAction).toBeNull();
   });
@@ -219,13 +292,18 @@ describe('useGuidedDemoGate', () => {
         // was reset (if exit didn't await us, this would read 'user').
         state.scopeAtSend = currentDataScope();
       },
-      postRecommendation() {},
-      postServiceCard() {},
+      async postRecommendation() {},
+      async postServiceCard() {},
       requestApproval(req) {
         return req.id;
       },
       denyApproval() {},
       postDemoCard() {},
+      postUserMessage() {},
+      navigate() {},
+      async postD2DMessage() {},
+      postReviewCard() {},
+      async delay() {},
     };
     return { make: () => seams, release, state };
   }
@@ -252,8 +330,9 @@ describe('useGuidedDemoGate', () => {
       await first;
       await second;
     });
-    // Only one send fired and the cursor moved by exactly one.
-    expect(state.sends).toBe(1);
+    // Only ONE step ran (its two sends — Emma + Alonso) and the cursor moved by
+    // exactly one; the double-tapped second advance was ignored.
+    expect(state.sends).toBe(2);
     expect(result.current.step).toBe(2);
     expect(result.current.actionInFlight).toBe(false);
   });
@@ -330,8 +409,8 @@ describe('useGuidedDemoGate', () => {
     await act(async () => {
       await result.current.startDemo();
     });
-    // Advance through the chat steps + the approval step.
-    for (let i = 0; i < DEMO_STEPS.length + 1; i += 1) {
+    // Advance through the content steps, the D2D step, then the approval step.
+    for (let i = 0; i < DEMO_STEPS.length + 2; i += 1) {
       await act(async () => {
         await result.current.advanceDemo();
       });

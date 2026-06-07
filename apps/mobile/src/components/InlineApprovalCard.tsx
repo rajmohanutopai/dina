@@ -18,10 +18,15 @@
 
 import React, { useCallback, useState } from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
-import type { ChatMessage } from '@dina/brain/chat';
+
+import { getApprovalManager } from '@dina/core';
+
 import { approveCard, denyCard } from '../hooks/useChatApprovals';
 import { colors, radius, spacing, textStyles } from '../theme';
+
 import { MessageTimestamp } from './MessageTimestamp';
+
+import type { ChatMessage } from '@dina/brain/chat';
 
 export interface InlineApprovalCardProps {
   /** The chat message carrying the approval metadata. */
@@ -85,6 +90,11 @@ export function InlineApprovalCard({ message, approverDID }: InlineApprovalCardP
 
   const personaLabel = meta.persona ? `/${meta.persona}` : 'this persona';
   const disabled = pending || resolved !== null;
+  // WHY: surface the request's reason/preview (the agentic ask's intent) so the
+  // decision is informed, not a generic "to answer your question". Read live
+  // from the ApprovalManager request the card already resolves against.
+  const request = getApprovalManager().getRequest(meta.approvalId);
+  const why = (request?.reason ?? request?.preview ?? '').trim();
 
   return (
     <View style={styles.card}>
@@ -92,6 +102,7 @@ export function InlineApprovalCard({ message, approverDID }: InlineApprovalCardP
       <Text testID={`approval-card-body-${meta.approvalId}`} style={styles.body}>
         Dina wants to read{meta.persona ? ` ${personaLabel}` : ''} to answer your question.
       </Text>
+      {why !== '' && <Text style={styles.why}>{why}</Text>}
       {resolved === null && (
         <View style={styles.row}>
           <TouchableOpacity
@@ -139,6 +150,11 @@ const styles = StyleSheet.create({
   },
   body: {
     ...textStyles.body,
+    marginBottom: spacing.sm,
+  },
+  why: {
+    ...textStyles.bodySmall,
+    color: colors.textSecondary,
     marginBottom: spacing.sm,
   },
   row: {

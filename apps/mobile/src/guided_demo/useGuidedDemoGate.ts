@@ -33,6 +33,7 @@ import {
   resumeGuidedDemoAndRefresh,
 } from './controller';
 import { makeGuidedDemoSeams } from './providers';
+import { subscribeGuidedDemoReplay } from './replay_request';
 import { GuidedDemoRunner, type DemoAction, type GuidedDemoSeams } from './runner';
 
 /**
@@ -91,6 +92,13 @@ export function useGuidedDemoGate(
   const [actionInFlight, setActionInFlight] = useState(false);
   const makeSeams = options.makeSeams ?? makeGuidedDemoSeams;
 
+  // Live mirrors of phase + demoActive so the (once-installed) replay-request
+  // subscriber reads current values without re-subscribing on every change.
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
+  const demoActiveRef = useRef(demoActive);
+  demoActiveRef.current = demoActive;
+
   const newRunner = useCallback((): GuidedDemoRunner => {
     const runner = new GuidedDemoRunner(makeSeams());
     runnerRef.current = runner;
@@ -131,6 +139,19 @@ export function useGuidedDemoGate(
     setDemoActive(isGuidedDemoScope(currentDataScope()));
     setPhase('running');
   }, [newRunner]);
+
+  // "Replay the tour" — any screen (e.g. Help) can request a demo on demand.
+  // Only honor it from the normal running app: never restart mid-demo, and
+  // never while still checking / recovering / tearing down (those are boot or
+  // transitional states a replay must not stomp). The first-run entry screen
+  // uses startDemo() directly; this is the "any time" entry point.
+  useEffect(() => {
+    if (!enabled) return undefined;
+    return subscribeGuidedDemoReplay(() => {
+      if (phaseRef.current !== 'running' || demoActiveRef.current) return;
+      void startDemo();
+    });
+  }, [enabled, startDemo]);
 
   const skip = useCallback(async () => {
     beginEmpty();

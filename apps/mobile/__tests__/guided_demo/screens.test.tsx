@@ -19,7 +19,7 @@ describe('guided demo screens', () => {
     render(<GuidedDemoEntry onStartDemo={onStartDemo} onStartEmpty={onStartEmpty} />);
 
     expect(screen.getByText('See Dina in action')).toBeTruthy();
-    expect(screen.getByText(/Nothing from the demo is kept/)).toBeTruthy();
+    expect(screen.getByText(/Your real data stays untouched/)).toBeTruthy();
 
     fireEvent.press(screen.getByTestId('guided-demo-start'));
     expect(onStartDemo).toHaveBeenCalledTimes(1);
@@ -53,6 +53,41 @@ describe('guided demo screens', () => {
     expect(screen.getByText(/1\/6/)).toBeTruthy();
     fireEvent.press(screen.getByTestId('guided-demo-next'));
     expect(onAdvance).toHaveBeenCalledTimes(1);
+  });
+
+  it('advance button mimics the Remember composer chip for a remember step', () => {
+    const onAdvance = jest.fn();
+    render(
+      <GuidedDemoBanner
+        onExit={jest.fn()}
+        onAdvance={onAdvance}
+        caption="Tell Dina something to remember."
+        step={2}
+        stepCount={9}
+        demoComplete={false}
+        nextMode="remember"
+      />,
+    );
+    // "Next step" hint points at a button labelled like the real Remember chip.
+    expect(screen.getByText('Next step')).toBeTruthy();
+    expect(screen.getByText('Remember')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('guided-demo-next'));
+    expect(onAdvance).toHaveBeenCalledTimes(1);
+  });
+
+  it('advance button reads "Ask" for an ask step', () => {
+    render(
+      <GuidedDemoBanner
+        onExit={jest.fn()}
+        onAdvance={jest.fn()}
+        caption="Now ask Dina something."
+        step={6}
+        stepCount={9}
+        demoComplete={false}
+        nextMode="ask"
+      />,
+    );
+    expect(screen.getByText('Ask')).toBeTruthy();
   });
 
   it('banner disables Next + shows "Working…" while a step is in flight', () => {

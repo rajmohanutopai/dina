@@ -359,6 +359,8 @@ describe('Notifications inbox bridges (5.66)', () => {
       expect(meta.approvalTaskId).toBe('appr-health-1');
       expect(meta.persona).toBe('health');
       expect(meta.agentDid).toBe('did:key:z6MkAgentOpenClawAcmeAcmeAcmeAcme');
+      // WHY the agent wants access is forwarded so the card is decidable.
+      expect(meta.reason).toBe('Agentic /ask requires read of persona "health"');
     });
 
     it('does NOT write a chat message for intent_validation tasks', () => {

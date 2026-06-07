@@ -23,11 +23,11 @@
  * extra layer of indirection for no testability gain.
  */
 
-import type { ApprovalManager, ApprovalRequest } from '@dina/core';
-import type { WorkflowRepository } from '@dina/core';
-import type { WorkflowTask } from '@dina/core';
-import { appendNotification } from './inbox';
 import { addMessage } from '../chat/thread';
+
+import { appendNotification } from './inbox';
+
+import type { ApprovalManager, ApprovalRequest , WorkflowRepository , WorkflowTask } from '@dina/core';
 
 /**
  * Subscribe an inbox bridge to an ApprovalManager. Every
@@ -172,6 +172,16 @@ export function installWorkflowApprovalChatBridge(
 
     const persona = typeof payload.persona === 'string' ? payload.persona : '';
     const agentDid = typeof payload.requester_did === 'string' ? payload.requester_did : '';
+    // WHY the agent wants access — carried on the request payload (the
+    // persona-guard writes a `reason`; the task `description` is the fallback).
+    // Surfaced on the card so the user can actually decide, instead of a generic
+    // "an agent wants access". (Empty string when neither is present.)
+    const reason =
+      typeof payload.reason === 'string' && payload.reason.trim() !== ''
+        ? payload.reason.trim()
+        : typeof task.description === 'string'
+          ? task.description.trim()
+          : '';
     const shortAgent = agentDid.length > 32 ? `${agentDid.slice(0, 32)}…` : agentDid;
     const body = `🔐 An agent wants to access /${persona}\n${shortAgent}`;
 
@@ -181,9 +191,10 @@ export function installWorkflowApprovalChatBridge(
         approvalTaskId: task.id,
         persona,
         agentDid,
-        // `InlineApprovalCard` reads these to render the Approve/Deny
-        // buttons and to drive the same scope dialog the Approvals tab
-        // uses (This time only / Allow for this session / Cancel).
+        reason,
+        // `InlineVaultReadApprovalCard` reads these to render the Approve/Deny
+        // buttons + the reason, and to drive the same scope dialog the Approvals
+        // tab uses (This time only / Allow for this session / Cancel).
       },
       timestamp: task.created_at,
     });

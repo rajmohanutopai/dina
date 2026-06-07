@@ -17,6 +17,11 @@ import {
 } from '../../src/notifications/local';
 import * as NotificationsMock from 'expo-notifications';
 import { resetKVStore } from '../../../../packages/core/src/kv/store';
+import {
+  newGuidedDemoScope,
+  resetDataScope,
+  setCurrentDataScope,
+} from '../../../../packages/core/src/scope/data_scope';
 
 const Mock = NotificationsMock as unknown as typeof NotificationsMock & {
   __resetNotificationsMock: () => void;
@@ -27,6 +32,11 @@ beforeEach(async () => {
   Mock.__resetNotificationsMock();
   await resetNotifications();
   resetReminderState();
+  resetDataScope();
+});
+
+afterEach(() => {
+  resetDataScope();
 });
 
 async function flushMicrotasks(): Promise<void> {
@@ -134,6 +144,38 @@ describe('installReminderPushBridge (5.60)', () => {
     // duplicate creates.
     const scheduled = await getScheduled();
     expect(scheduled).toHaveLength(1);
+  });
+
+  it('does NOT schedule an OS notification for a guided-demo reminder', async () => {
+    // The demo holds the process-global scope for its whole run; a reminder
+    // created in that window must stay local-only (the OS scheduler outlives
+    // the data scope, so a scheduled banner would fire fake demo content after
+    // teardown deletes the row).
+    installReminderPushBridge();
+    setCurrentDataScope(newGuidedDemoScope());
+    createReminder({
+      message: "Emma's birthday",
+      due_at: Date.now() + 90 * 86_400_000, // ~3 months out, like Nov 7
+      persona: 'general',
+    });
+    await flushMicrotasks();
+    expect(await getScheduled()).toHaveLength(0);
+  });
+
+  it('resumes scheduling for user-scope reminders after the demo ends', async () => {
+    installReminderPushBridge();
+    // Demo reminder — suppressed.
+    setCurrentDataScope(newGuidedDemoScope());
+    createReminder({ message: 'demo', due_at: Date.now() + 60_000, persona: 'general' });
+    await flushMicrotasks();
+    expect(await getScheduled()).toHaveLength(0);
+    // Teardown returns to user scope — real reminders schedule again.
+    resetDataScope();
+    const r = createReminder({ message: 'real', due_at: Date.now() + 60_000, persona: 'general' });
+    await flushMicrotasks();
+    const scheduled = await getScheduled();
+    expect(scheduled).toHaveLength(1);
+    expect(scheduled[0]!.id).toBe(`notif-rem-${r.id}`);
   });
 
   it('disposer detaches — subsequent reminders are not scheduled', async () => {

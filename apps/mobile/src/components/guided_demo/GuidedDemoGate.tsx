@@ -7,6 +7,7 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 
+import { GuidedDemoActiveContext } from '../../guided_demo/active_context';
 import { useGuidedDemoGate } from '../../guided_demo/useGuidedDemoGate';
 import { colors } from '../../theme';
 
@@ -59,22 +60,45 @@ export function GuidedDemoGate({
     // write to the soon-deleted demo scope). Replaces the app entirely.
     return <GuidedDemoTeardown />;
   }
-  // running
+  // running — the demo control is a BOTTOM dock rendered AFTER (on top of) the
+  // app so it covers the composer (Ask/Remember), blocking it mid-demo, and
+  // leaves the top of the screen clean.
+  //
+  // The advance button is styled like the composer chip for the step's mode
+  // (Remember / Ask) so the user learns the real affordance — "to remember
+  // something, tap Remember". Steps with no composer analog (approval / publish)
+  // pass undefined → a generic "Next step" button.
+  const action = gate.currentAction;
+  const nextMode =
+    action === null
+      ? undefined
+      : action.kind === 'chat'
+        ? action.step.mode
+        : action.kind === 'recommend' || action.kind === 'service'
+          ? 'ask'
+          : undefined;
+  // navigate steps carry an explicit button label ("Show me" / "Back to chat").
+  const nextLabel =
+    action !== null && action.kind === 'navigate' ? action.step.nextLabel : undefined;
   return (
-    <View style={styles.fill}>
-      {gate.demoActive ? (
-        <GuidedDemoBanner
-          onExit={() => void gate.exitDemo()}
-          onAdvance={() => void gate.advanceDemo()}
-          caption={gate.currentAction?.caption ?? null}
-          step={gate.step}
-          stepCount={gate.stepCount}
-          demoComplete={gate.demoComplete}
-          actionInFlight={gate.actionInFlight}
-        />
-      ) : null}
-      <View style={styles.fill}>{children}</View>
-    </View>
+    <GuidedDemoActiveContext.Provider value={gate.demoActive}>
+      <View style={styles.fill}>
+        <View style={styles.fill}>{children}</View>
+        {gate.demoActive ? (
+          <GuidedDemoBanner
+            onExit={() => void gate.exitDemo()}
+            onAdvance={() => void gate.advanceDemo()}
+            caption={gate.currentAction?.caption ?? null}
+            step={gate.step}
+            stepCount={gate.stepCount}
+            demoComplete={gate.demoComplete}
+            actionInFlight={gate.actionInFlight}
+            nextMode={nextMode}
+            nextLabel={nextLabel}
+          />
+        ) : null}
+      </View>
+    </GuidedDemoActiveContext.Provider>
   );
 }
 

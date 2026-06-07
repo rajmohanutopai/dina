@@ -29,7 +29,10 @@
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import {
+  currentDataScope,
   getNotificationLogRepository,
+  isGuidedDemoScope,
+  type DataScope,
   type NotificationKind,
   type StoredNotificationItem,
 } from '@dina/core';
@@ -46,6 +49,10 @@ export interface NotificationItem {
   readonly sourceId: string;
   readonly deepLink?: string;
   readonly expiresAt?: number;
+  /** Data scope the notification was created in. Stamped at append so the
+   *  guided-demo teardown can drop demo-scope notifications (the inbox is an
+   *  in-memory store the DB-level deleteDataScope can't reach). */
+  readonly dataScope: DataScope;
 }
 
 export type NotificationEvent =
@@ -107,6 +114,8 @@ export function appendNotification(input: {
     sourceId: input.sourceId ?? '',
     ...(input.deepLink !== undefined && { deepLink: input.deepLink }),
     ...(input.expiresAt !== undefined && { expiresAt: input.expiresAt }),
+    // Stamp the scope so a guided-demo notification can be dropped on teardown.
+    dataScope: currentDataScope(),
   };
 
   if (existingIdx >= 0) {
@@ -137,6 +146,23 @@ export function markNotificationRead(id: string, now?: number): boolean {
   persistMarkRead(id, item.readAt);
   fire({ type: 'marked_read', id });
   return true;
+}
+
+/**
+ * Drop every notification created in a guided-demo scope. Called from the demo
+ * teardown's cache refresh — the inbox is an in-memory store, so the DB-level
+ * `deleteDataScope` can't reach it (and on mobile the persistent log isn't even
+ * wired). User-scope notifications are untouched. Fires `'hydrated'` so live
+ * subscribers (the unread badge) recompute. Returns the number dropped.
+ */
+export function dropGuidedDemoNotifications(): number {
+  const before = items.length;
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    if (isGuidedDemoScope(items[i]!.dataScope)) items.splice(i, 1);
+  }
+  const dropped = before - items.length;
+  if (dropped > 0) fire({ type: 'hydrated', loaded: items.length });
+  return dropped;
 }
 
 export interface ListNotificationsOptions {
@@ -319,5 +345,14 @@ function storedToItem(row: StoredNotificationItem): NotificationItem {
     sourceId: row.sourceId,
     ...(row.deepLink !== null && { deepLink: row.deepLink }),
     ...(row.expiresAt !== null && { expiresAt: row.expiresAt }),
+    // The persistent log predates scoping (no `data_scope` column); hydrated
+    // rows are the user's own. Demo notifications never persist (no host wires
+    // the log — see notifications/repository.ts; and the guided demo runs only
+    // on mobile's in-memory store) — they live + die in-memory within the demo
+    // session. FORWARD-GUARD: if a persistent log is ever wired on a host that
+    // runs the guided demo, add a data_scope column + carry it here (don't
+    // hard-code 'user'), and extend dropGuidedDemoNotifications to purge
+    // persisted demo rows. See repository.ts's "Guided-demo scoping gap" note.
+    dataScope: 'user',
   };
 }

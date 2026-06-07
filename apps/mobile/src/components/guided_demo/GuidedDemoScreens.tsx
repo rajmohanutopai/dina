@@ -4,15 +4,19 @@
  * where it specifies user-facing strings.
  *
  *   GuidedDemoEntry          — first-run "See Dina in action" / Start demo / Start empty
- *   GuidedDemoBanner         — persistent "Guided demo · N/M" tag + caption + Next
+ *   GuidedDemoBanner         — bottom dock (over the composer): caption + Next + Exit
  *   GuidedDemoRecoveryPrompt — boot Continue / Delete after a crash mid-demo
  */
 
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, fonts, radius, spacing, textStyles } from '../../theme';
+
+/** Height of the bottom tab bar — MUST match `tabBarStyle.height` in
+ *  app/_layout.tsx. The demo dock pads its bottom by this so its content sits
+ *  over the composer (just above the tab bar) and its background covers both. */
+const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 88 : 64;
 
 export function GuidedDemoEntry({
   onStartDemo,
@@ -25,7 +29,7 @@ export function GuidedDemoEntry({
     <View testID="guided-demo-entry" style={styles.entry}>
       <Text style={styles.title}>See Dina in action</Text>
       <Text style={styles.subtitle}>
-        A 3-minute guided demo using sample data. Nothing from the demo is kept.
+        A quick guided tour with sample data. Your real data stays untouched.
       </Text>
       <Pressable
         testID="guided-demo-start"
@@ -55,6 +59,8 @@ export function GuidedDemoBanner({
   stepCount,
   demoComplete,
   actionInFlight = false,
+  nextMode,
+  nextLabel,
 }: {
   onExit: () => void;
   /** Run the next scripted step. Omit to render the indicator-only banner. */
@@ -67,22 +73,52 @@ export function GuidedDemoBanner({
   demoComplete?: boolean;
   /** True while a step is running → disable "Next" so a double-tap can't run two steps. */
   actionInFlight?: boolean;
+  /**
+   * Composer mode this step exercises. When set, the advance button is styled +
+   * labelled like the real composer chip ("Remember" / "Ask") so the user learns
+   * the affordance ("to remember, tap Remember"). Undefined for steps with no
+   * composer analog (approval / publish) → a generic "Next step" button.
+   */
+  nextMode?: 'remember' | 'ask';
+  /** Explicit advance-button label (navigate steps: "Show me" / "Back to chat").
+   *  Overrides the mode-derived label; rendered as a generic (non-chip) button. */
+  nextLabel?: string;
 }): React.JSX.Element {
   const showStepper = onAdvance !== undefined;
-  // The banner is mounted above the app's own safe-area-padded header, so it
-  // sits at the very top of the screen. Without this inset it renders UNDER the
-  // status bar / Dynamic Island — hiding it and making its Exit/Next buttons
-  // untappable (taps land on the system status bar). Pad by the top inset so
-  // the banner + its controls clear the notch.
-  const insets = useSafeAreaInsets();
+  // Compact dock pinned just ABOVE the tab bar, OVER the composer (Ask/Remember)
+  // so those can't be tapped mid-demo. It only covers the composer (not the tab
+  // bar), keeping the top of the screen + most of the chat visible. `insets`
+  // unused for bottom now (we sit above the tab bar) but kept for the notch-free
+  // contract.
   const hasProgress =
     stepCount !== undefined && stepCount > 0 && step !== undefined && step > 0;
+  // On the final step (and the complete state) show "End Demo" instead of the
+  // number — there's nothing after it, so a count reads oddly.
+  const onLastStep =
+    stepCount !== undefined && stepCount > 0 && step !== undefined && step >= stepCount;
+  const eyebrowSuffix = onLastStep
+    ? '  ·  End Demo'
+    : hasProgress
+      ? `  ·  ${step}/${stepCount}`
+      : '';
+  // Chip-styled (Remember/Ask) only for composer steps; navigate/approval/
+  // publish use a generic button (with an explicit label when provided).
+  const composerStyle = nextMode !== undefined;
+  const advanceLabel = actionInFlight
+    ? 'Working…'
+    : nextLabel !== undefined
+      ? nextLabel
+      : nextMode === 'remember'
+        ? 'Remember'
+        : nextMode === 'ask'
+          ? 'Ask'
+          : 'Next step  ›';
   return (
-    <View testID="guided-demo-banner" style={[styles.bannerWrap, { paddingTop: insets.top }]}>
-      {/* Header: small "demo / sample data" tag on the left, Exit on the right. */}
-      <View style={styles.headerRow}>
+    <View testID="guided-demo-banner" style={styles.dock}>
+      {/* Header row: small "Guided demo · N/M" tag (left) + Exit (right). */}
+      <View style={styles.dockHeaderRow}>
         <Text style={styles.eyebrow} numberOfLines={1}>
-          Guided demo{hasProgress ? `  ·  ${step}/${stepCount}` : ''}
+          Guided demo{eyebrowSuffix}
         </Text>
         <Pressable
           testID="guided-demo-exit"
@@ -95,53 +131,59 @@ export function GuidedDemoBanner({
           <Text style={styles.exitText}>Exit</Text>
         </Pressable>
       </View>
-      {showStepper && (
-        <View style={styles.stepWrap}>
-          {demoComplete === true ? (
-            <>
-              <Text testID="guided-demo-complete" style={styles.caption} numberOfLines={2}>
-                Demo complete. This was sample data, nothing is kept.
-              </Text>
-              {/* The primary action when done is to leave — make it an obvious
-                  body button, not just the small Exit link in the header. */}
-              <Pressable
-                testID="guided-demo-exit-cta"
-                accessibilityRole="button"
-                accessibilityLabel="Exit guided demo and clear the sample data"
-                onPress={onExit}
-                style={({ pressed }) => [styles.nextBtn, pressed && styles.pressed]}
-              >
-                <Text style={styles.nextText}>Exit and clear sample data</Text>
-              </Pressable>
-            </>
-          ) : (
-            <>
-              <Text testID="guided-demo-caption" style={styles.caption} numberOfLines={2}>
-                {caption ?? ''}
-              </Text>
-              {/* Compact, centred pill — clears the top-right dev-tools FAB and
-                  reads as a CTA, not a full-width slab. Disabled while a step is
-                  running so a double-tap can't run two steps. */}
+      {showStepper &&
+        (demoComplete === true ? (
+          <View style={styles.actionRow}>
+            <Text
+              testID="guided-demo-complete"
+              style={[styles.caption, styles.captionFlex]}
+              numberOfLines={2}
+            >
+              All done. Welcome to Dina.
+            </Text>
+            <Pressable
+              testID="guided-demo-exit-cta"
+              accessibilityRole="button"
+              accessibilityLabel="End the demo and clear the sample data"
+              onPress={onExit}
+              style={({ pressed }) => [styles.nextBtn, pressed && styles.pressed]}
+            >
+              <Text style={styles.nextText}>End Demo</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <>
+            {/* Up to 6 lines: the PeerLens / service-network / D2D captions are
+                two-to-three-sentence explanations. The dock grows upward into the
+                chat area (which has room), pushing the Next row down. */}
+            <Text testID="guided-demo-caption" style={styles.caption} numberOfLines={6}>
+              {caption ?? ''}
+            </Text>
+            {/* "Next step" hint (left) points at the advance button (right). When
+                the step maps to a composer mode the button is styled + labelled
+                like the real Remember/Ask chip, so the user learns to tap that
+                affordance. Disabled while a step runs (no double-fire). */}
+            <View style={styles.actionRow}>
+              <Text style={styles.nextHint}>{composerStyle ? 'Next step' : ''}</Text>
               <Pressable
                 testID="guided-demo-next"
                 accessibilityRole="button"
-                accessibilityLabel="Run next demo step"
+                accessibilityLabel={`Run next demo step${composerStyle ? `: ${advanceLabel}` : ''}`}
                 accessibilityState={{ disabled: actionInFlight }}
                 disabled={actionInFlight}
                 onPress={onAdvance}
                 style={({ pressed }) => [
-                  styles.nextBtn,
+                  composerStyle ? styles.chipBtn : styles.nextBtn,
                   (pressed || actionInFlight) && styles.pressed,
                 ]}
               >
-                <Text style={styles.nextText}>
-                  {actionInFlight ? 'Working…' : 'Next step  ›'}
+                <Text style={composerStyle ? styles.chipText : styles.nextText}>
+                  {advanceLabel}
                 </Text>
               </Pressable>
-            </>
-          )}
-        </View>
-      )}
+            </View>
+          </>
+        ))}
     </View>
   );
 }
@@ -235,17 +277,29 @@ const styles = StyleSheet.create({
   },
   secondaryText: { ...textStyles.button, color: colors.textPrimary },
   pressed: { opacity: 0.7 },
-  bannerWrap: {
+  // Bottom dock pinned to the very bottom (bottom:0), covering BOTH the composer
+  // (Ask/Remember) AND the tab bar so neither is tappable mid-demo — only the
+  // demo control is interactive. The CONTENT stays compact at the top (3 short
+  // rows landing over the composer); `paddingBottom: TAB_BAR_HEIGHT` reserves the
+  // tab-bar zone, which the opaque background simply covers. The tab-bar area
+  // holds no chat, so covering it hides nothing extra.
+  dock: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: colors.warningBgSoft,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.sm,
+    paddingBottom: TAB_BAR_HEIGHT,
+    paddingHorizontal: spacing.md,
+    gap: spacing.xs,
   },
-  headerRow: {
+  dockHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: spacing.xs,
-    paddingHorizontal: spacing.md,
   },
   // Small-caps tag: "GUIDED DEMO · 7/9" — quiet, not a heading.
   eyebrow: {
@@ -258,26 +312,39 @@ const styles = StyleSheet.create({
   },
   exitBtn: { paddingVertical: spacing.xs, paddingLeft: spacing.md },
   exitText: { fontFamily: fonts.sansSemibold, fontSize: 13, color: colors.warningTextDeepest },
-  stepWrap: {
-    gap: spacing.sm,
-    paddingTop: 2,
-    paddingBottom: spacing.sm,
-    paddingHorizontal: spacing.md,
-  },
   caption: {
     fontFamily: fonts.sans,
     fontSize: 13,
     lineHeight: 18,
     color: colors.warningTextDeep,
   },
-  // Compact, centred pill (not a full-width slab) — clears the top-right
-  // dev-tools FAB and reads as a CTA.
+  captionFlex: { flex: 1, marginRight: spacing.sm },
+  // "Next step" hint (left) + advance button (right).
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  nextHint: { fontFamily: fonts.sansSemibold, fontSize: 13, color: colors.warningTextDeep },
+  // Advance button styled like the composer's Remember/Ask chip — a light
+  // bordered pill on white — so the user learns the real affordance.
+  chipBtn: {
+    backgroundColor: colors.bgSecondary,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xl,
+    alignItems: 'center',
+  },
+  chipText: { ...textStyles.link },
+  // Generic advance / exit button (steps with no composer analog).
   nextBtn: {
-    alignSelf: 'center',
+    alignItems: 'center',
     backgroundColor: colors.accent,
     borderRadius: radius.full,
-    paddingVertical: spacing.xs,
+    paddingVertical: spacing.sm,
     paddingHorizontal: spacing.lg,
   },
-  nextText: { fontFamily: fonts.sansSemibold, fontSize: 13, color: colors.white },
+  nextText: { fontFamily: fonts.sansSemibold, fontSize: 14, color: colors.white },
 });

@@ -30,6 +30,7 @@ import {
 import { InlineApprovalCard } from '../src/components/InlineApprovalCard';
 import { InlineBriefingCard } from '../src/components/InlineBriefingCard';
 import { InlineDemoApprovalCard } from '../src/components/InlineDemoApprovalCard';
+import { InlineDemoReviewCard } from '../src/components/InlineDemoReviewCard';
 import { InlineMarkdownText } from '../src/components/InlineMarkdownText';
 import { InlineMissingCapabilityCard } from '../src/components/InlineMissingCapabilityCard';
 import { InlineNudgeCard } from '../src/components/InlineNudgeCard';
@@ -39,6 +40,10 @@ import { InlineReviewDraftCard } from '../src/components/InlineReviewDraftCard';
 import { InlineServiceApprovalCard } from '../src/components/InlineServiceApprovalCard';
 import { InlineServiceQueryCard } from '../src/components/InlineServiceQueryCard';
 import { InlineVaultReadApprovalCard } from '../src/components/InlineVaultReadApprovalCard';
+import {
+  GUIDED_DEMO_LIST_CLEARANCE,
+  useGuidedDemoActive,
+} from '../src/guided_demo/active_context';
 import { useLiveThread } from '../src/hooks/useChatThread';
 import { useHasActiveAgent } from '../src/hooks/useHasActiveAgent';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
@@ -61,6 +66,7 @@ type UiMessage = ChatMessage & {
     | 'service-approval'
     | 'vault-read-approval'
     | 'demo-approval'
+    | 'demo-review'
     | 'service-query'
     | 'missing-capability'
     | 'ask-pending'
@@ -90,6 +96,11 @@ function toDisplayType(m: ChatMessage): UiMessage['displayType'] {
   // InlineDemoApprovalCard); no gateway/workflow/grant, so it's leak-free.
   if (m.type === 'approval' && m.metadata?.kind === 'demo_approval') {
     return 'demo-approval';
+  }
+  // Guided-demo PeerLens review card (InlineDemoReviewCard) — inert Publish,
+  // posted as a 'system' message tagged with metadata.kind 'demo_review'.
+  if (m.metadata?.kind === 'demo_review') {
+    return 'demo-review';
   }
   // Lifecycle-tracked dina message — same MessageType as a plain dina
   // reply, dispatched here on the metadata block. Mirrors the
@@ -173,6 +184,10 @@ const ACTIONS = [
 
 export default function ChatScreen() {
   const router = useRouter();
+  // While the guided demo's bottom dock is up, reserve extra space at the end of
+  // the message list so the last message isn't hidden behind it (the dock is an
+  // absolute overlay taller than the composer the list normally clears).
+  const demoActive = useGuidedDemoActive();
   // Live-subscribed view of the Brain thread store. Issue #1 + #2:
   // - `send` routes through `handleChat` → uses the installed /ask,
   //   /service, /service_approve, /service_deny command handlers.
@@ -303,6 +318,13 @@ export default function ChatScreen() {
       return (
         <View testID="chat-card-demo-approval">
           <InlineDemoApprovalCard message={item} />
+        </View>
+      );
+    }
+    if (item.displayType === 'demo-review') {
+      return (
+        <View testID="chat-card-demo-review">
+          <InlineDemoReviewCard message={item} />
         </View>
       );
     }
@@ -499,31 +521,45 @@ export default function ChatScreen() {
             Ask, remember, or hand off a task. Everything stays on your device.
           </Text>
 
-          {/* Help CTA \u2014 first-time-user discovery surface. The previous
-              two action cards (Remember / Ask) duplicated the chip
-              bar above the input AND only taught two of the eight
-              capabilities; tapping through to Help is a richer entry
-              point. The header `?` icon (added in _layout.tsx) keeps
-              Help reachable once the user is past this empty state. */}
+          {/* During a guided demo the "What can Dina do?" card is an escape
+              hatch (it routes to Help). Swap it for a non-interactive "Demo
+              running" card so the empty chat doesn't look bare while the dock
+              drives the flow. Outside the demo: the Help CTA (first-run
+              discovery surface; Help also stays reachable via the header `?`). */}
           <View style={styles.actionCards}>
-            <TouchableOpacity
-              style={styles.actionCard}
-              onPress={() => router.push('/help')}
-              activeOpacity={0.7}
-              testID="index-help-card"
-              accessibilityRole="button"
-            >
-              <View style={styles.actionCardHeader}>
-                <View style={styles.actionIcon}>
-                  <Text style={styles.actionIconText}>?</Text>
+            {demoActive ? (
+              <View style={styles.actionCard} testID="index-demo-running-card">
+                <View style={styles.actionCardHeader}>
+                  <View style={styles.actionIcon}>
+                    <Text style={styles.actionIconText}>{'\u25b6'}</Text>
+                  </View>
+                  <Text style={styles.actionCardTitle}>Demo running</Text>
                 </View>
-                <Text style={styles.actionCardTitle}>What can Dina do?</Text>
-                <Text style={styles.actionArrow}>{'\u2192'}</Text>
+                <Text style={styles.actionCardDesc}>
+                  Follow the guided steps below. Tap Exit any time to end the demo and clear the
+                  sample data.
+                </Text>
               </View>
-              <Text style={styles.actionCardDesc}>
-                {'Tour Dina\'s capabilities: your vault, agents, people, and network services.'}
-              </Text>
-            </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.actionCard}
+                onPress={() => router.push('/help')}
+                activeOpacity={0.7}
+                testID="index-help-card"
+                accessibilityRole="button"
+              >
+                <View style={styles.actionCardHeader}>
+                  <View style={styles.actionIcon}>
+                    <Text style={styles.actionIconText}>?</Text>
+                  </View>
+                  <Text style={styles.actionCardTitle}>What can Dina do?</Text>
+                  <Text style={styles.actionArrow}>{'\u2192'}</Text>
+                </View>
+                <Text style={styles.actionCardDesc}>
+                  {'Tour Dina\'s capabilities: your vault, agents, people, and network services.'}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </ScrollView>
       ) : (
@@ -533,7 +569,10 @@ export default function ChatScreen() {
           keyExtractor={(item) => item.id}
           renderItem={renderMessage}
           style={styles.messageList}
-          contentContainerStyle={styles.messageListContent}
+          contentContainerStyle={[
+            styles.messageListContent,
+            demoActive && { paddingBottom: spacing.lg + GUIDED_DEMO_LIST_CLEARANCE },
+          ]}
           onContentSizeChange={() =>
             // Defer to after the layout commit so scrollToEnd uses the
             // *final* content height. A direct call races tall last

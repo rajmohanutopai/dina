@@ -189,6 +189,241 @@ cross-Dina service D2D / external-agent gateway. Documented the "SCOPE OF FIDELI
 <code>content.ts</code> + <code>providers.ts</code>, pointing to where real E2E coverage lives (MRS,
 the bus-driver services scenario, system tests).</li>
 </ul></div>
+<div class="iter"><span class="tag t-dec">Demo-flow rework + bottom dock + real approval prompts</span>
+A big UX pass on the live demo (<span class="status-green">mobile guided_demo 56 + components/bridges
+green; workspace typecheck 0; nav verified live on the sim</span>):
+<ul>
+<li><strong>Bottom dock, not a top banner.</strong> The demo control moved from a top banner to a
+compact dock pinned over the composer (covers the tab bar too — only the demo control is
+interactive). Top of the screen stays clean. The advance button is styled like the real composer
+chip and labelled for the step's mode — <strong>Remember</strong> / <strong>Ask</strong> — so the
+user learns the affordance; navigate steps use an explicit label ("Show me" / "Back to chat").
+Chat list reserves clearance (<code>GuidedDemoActiveContext</code>) so the last message isn't hidden
+behind the dock.</li>
+<li><strong>11-step script (was 9).</strong> Added two <code>navigate</code> steps — after "Emma is
+my daughter" the demo drives to <strong>People › Relations</strong> (via a <code>?tab=relations</code>
+deep-link) to SHOW Emma landed in the people graph, then back to Chat. Reworded captions: health →
+"locked Health vault", finance → "locked Finance vault", birthday → reminder + links, ask → "vault +
+PeerLens (real reviews)" (dropped "everything above" so it doesn't read as this chat session).</li>
+<li><strong>Service step = question + rich card.</strong> The service step now posts the user's
+question ("Where can I get the ErgoFlex Study Chair?") then a richer resolved card ($420 via
+<code>currency:'USD'</code>, seller, location, stock, delivery) through the real
+<code>buildResultCardSpec</code> renderer.</li>
+<li><strong>Approval = task hand-off + decidable prompt.</strong> Reframed as a delegated task ("Buy
+the ErgoFlex Study Chair") whose agent must ask before reading Health. The card now shows a real
+what/why ("Read your Health vault" / "To match an ergonomic chair to your lower-back note…"). Also a
+REAL-system fix (not just demo): the vault-read bridge forwards the request's <code>reason</code> and
+<code>InlineVaultReadApprovalCard</code> + <code>InlineApprovalCard</code> render it, so genuine agent
+approvals are decidable instead of a generic "an agent wants access".</li>
+</ul>
+Files: <code>guided_demo/{content,runner,providers}.ts</code>, <code>guided_demo/active_context.ts</code>,
+<code>components/guided_demo/*</code>, <code>InlineDemoApprovalCard/InlineApprovalCard/InlineVaultReadApprovalCard.tsx</code>,
+<code>app/index.tsx</code>, <code>app/people.tsx</code>, <code>brain/notifications/bridges.ts</code>.</div>
+<div class="iter"><span class="tag t-dec">Demo polish — email task, badge consistency, forward-only, notification cleanup</span>
+Four follow-ups after a live look (<span class="status-green">brain notifications 29 (incl. 3 new),
+mobile guided_demo 42; brain + mobile typecheck 0; verified live on the sim end-to-end</span>):
+<ul>
+<li><strong>Task reframed: "Email my manager about my health condition" (was "Buy the chair").</strong>
+Per the Four Laws, Dina advises on purchases but never initiates them — a demo task that looked like
+Dina buying a chair gave the wrong impression. The agent-safety moment is now a delegated <em>email</em>
+task whose agent must ask before reading Health, with a decidable what/why ("Read your Health vault" /
+"To draft your email to your manager about your health condition"). (<code>guided_demo/content.ts</code>
+<code>DEMO_TASK</code>/<code>DEMO_AGENT</code>)</li>
+<li><strong>Badge consistency on the dock advance button.</strong> Remember showed a mode badge but
+Ask/Task didn't. The badge is now derived uniformly from the message's command prefix
+(<code>/remember</code>/<code>/ask</code>/<code>/task</code>) so every scripted send labels its mode.
+(<code>guided_demo/providers.ts</code>, <code>GuidedDemoGate.tsx</code>)</li>
+<li><strong>Forward-only navigation kept (no Back).</strong> Considered adding step-back; decided
+against it — the demo is a short scripted narrative and each step has real side effects (sends,
+nav, an approval) that a naive "back" would either replay or leave half-undone. Forward + Exit only.</li>
+<li><strong>Notification leak on Exit — now part of the scope cleanup.</strong> The agent-approval at
+step 10 is mirrored into the notifications inbox by the global <code>installApprovalInboxBridge</code>,
+so a demo-scoped approval left an unread item in <strong>Activity</strong> after Exit. The inbox is an
+in-memory store (its persistent log isn't even wired on mobile), so the DB-level
+<code>deleteDataScope</code> can't reach it. Fix mirrors the data-scope model rather than suppressing
+the notification: <code>appendNotification</code> stamps each item with <code>currentDataScope()</code>,
+and the teardown's <code>refreshCachesForCurrentScope</code> calls a new
+<code>dropGuidedDemoNotifications()</code> that splices out every guided-demo-scope item (user items
+untouched) and fires <code>'hydrated'</code> so the unread badge recomputes. Verified live: with the
+APPROVAL NEEDED card present at step 11, Exit → Activity is empty under both <em>Unread</em> and
+<em>All</em>, no tab badge. (<code>brain/src/notifications/inbox.ts</code>,
+<code>brain/notifications.ts</code> barrel, <code>guided_demo/rehydrate.ts</code>)</li>
+</ul></div>
+<div class="iter"><span class="tag t-dec">Notification isolation — the bigger leak: OS-scheduled reminders</span>
+A review of the notification fix surfaced a second, more serious layer the in-app Activity drop
+didn't cover (<span class="status-green">mobile reminder_push_bridge 9 (incl. 2 new); mobile
+typecheck 0</span>):
+<ul>
+<li><strong>The leak.</strong> The demo's "Emma's birthday is Nov 7" step creates a reminder. The
+reminder ROW is scope-stamped in SQL (deleted on teardown), but the OS-push bridge
+(<code>reminder_push_bridge.ts</code>) schedules an OS-level notification (<code>notif-rem-&lt;id&gt;</code>)
+for EVERY created reminder and mirrors it in <code>kv_store</code> — and the OS scheduler lives
+OUTSIDE the data scope. So teardown deleted the row but left the scheduled banner, which would fire
+months later with fake demo content. Worse than the in-app case: it escapes the app entirely.</li>
+<li><strong>Fix — suppress at the one choke point.</strong> The push bridge is the ONLY reminder→OS
+path. The <code>Reminder</code> event payload carries no scope, but the demo holds the process-global
+<code>currentDataScope()</code> for its whole run and <code>createReminder</code> fans the event out
+synchronously in-scope — so the bridge guards with <code>isGuidedDemoScope(currentDataScope())</code>
+and returns early. We <em>suppress</em> (never schedule, never mirror) rather than schedule-then-cancel:
+nothing to leak, nothing to clean up, no teardown-cancel race. The in-app chat reminder card still
+demonstrates the feature during the demo. Mirrors the inbox scope-stamping + the topic-touch no-op.
+Tests assert a demo-scope reminder schedules nothing, and user-scope scheduling resumes after the demo.</li>
+<li><strong>Persistent Activity log — forward-guard, not a live bug.</strong> The persistent
+notification interface (<code>notifications/repository.ts</code>) has no <code>data_scope</code> and
+<code>storedToItem</code> hydrates rows as <code>'user'</code> — so a persisted demo notification
+would mislabel. Verified this is unreachable today: <code>setNotificationLogRepository</code> is never
+called in source (mobile uses the in-memory inbox only; the lite server that <em>could</em> wire it
+never runs the guided demo). Documented the asymmetry as an explicit forward-guard in both files: if a
+persistent log is ever wired on a host that runs the demo, it MUST add a <code>data_scope</code> column
+(reminders-v12 pattern) + scope-aware hydrate + extend <code>dropGuidedDemoNotifications</code> to purge
+persisted demo rows.</li>
+</ul>
+Files: <code>apps/mobile/src/notifications/reminder_push_bridge.ts</code>,
+<code>packages/core/src/notifications/repository.ts</code>,
+<code>packages/brain/src/notifications/inbox.ts</code>.</div>
+<div class="iter"><span class="tag t-dec">Demo round 3 — D2D Talk step, people in step 1, review card, "End Demo", tighter flow (11 steps)</span>
+A third pass: trim the repetition, add the Talk feature, and finish locking down the surface
+(<span class="status-green">63 guided_demo + component tests; mobile typecheck + new-file lint 0; full
+11-step flow verified live on the sim</span>):
+<ul>
+<li><strong>Open with people (Emma + Alonso) in one step.</strong> Step 1 now fires TWO remembers in a
+single tap — "Emma is my daughter, and she loves dinosaurs." + "Alonso, my friend, loves cold brew."
+(<code>DemoStep.messages</code>). Both run the real people-extraction, so the next step's
+People › Relations peek shows BOTH (verified live: Alonso=friend, Emma=daughter). Folded the old
+standalone "dinosaurs" step into step 1 (the birthday reminder still enriches with it).</li>
+<li><strong>Collapsed the nav round-trip (2 → 1).</strong> One "peek People › Relations" step; the next
+step's <code>send</code> calls <code>router.navigate('/')</code> first (no-op if already on Chat) so the
+user returns to Chat automatically when they tap the next Remember. Saves a tap.</li>
+<li><strong>New D2D Talk step.</strong> A friend's Dina messages yours: posts Alonso's incoming message
+(as a contact note) + an enriched reminder card ("Alonso visits tomorrow morning. Have his cold brew
+ready.") — the enrichment pulled from the step-1 cold-brew memory. Simulation (deterministic seed),
+reusing the real <code>InlineReminderCard</code> (scheduled → display-only). Caption teaches the
+contact-gating: "Only people you have both added as contacts can message you." Placed after the service
+step. New <code>'d2d'</code> action + <code>DEMO_D2D</code> + a <code>delay()</code>-paced post.</li>
+<li><strong>Real-looking review card.</strong> The PeerLens review step now renders a card
+(<code>InlineDemoReviewCard</code>: product + stars + text + <strong>Publish</strong>) instead of a text
+line. Publish is INERT (flips to a local "Published" confirmation) — a demo duplicate, NOT the real
+<code>review_draft</code> card whose Publish hits the live AppView publish path. New seam
+<code>postReviewCard</code> + <code>metadata.kind 'demo_review'</code> dispatch.</li>
+<li><strong>Lock the empty-chat escape hatch.</strong> The empty Chat showed a "What can Dina do?"
+card that routes to Help. During a demo it's swapped for a non-interactive "Demo running" card
+(<code>index-demo-running-card</code>) so the dock is the only way forward.</li>
+<li><strong>Counter + "End Demo".</strong> Real total now 11 (computed from the plan). The eyebrow shows
+<code>N/11</code> for steps 1–10 and <strong>"End Demo"</strong> (no number) on the last step + the
+complete state; the complete-state button is now "End Demo" (was "Exit").</li>
+<li><strong>Copy.</strong> Step 2 "Dina automatically added…"; step 8 "folds in" → "includes"; step 9
+leads with "Next is the Service Network…" + "the provider cannot message you, it is not your contact";
+step 10 agent-safety reframed for OpenClaw with "can" (not "must", since the agent decides); step 11
+second line → "Have your own OpenClaw or other agent provide a public or private service to other
+Dinas." Caption clamp 5 → 6 lines + clearance 220 → 250 for the longer two-to-three-sentence captions.</li>
+</ul>
+Files: <code>guided_demo/{content,runner,providers,active_context}.ts</code>,
+<code>components/{guided_demo/GuidedDemoScreens,InlineDemoReviewCard}.tsx</code>,
+<code>app/{index,_layout}.tsx</code>.</div>
+<div class="iter"><span class="tag t-dec">Demo round 2 — lock down the demo, clearer copy, 12 steps (review + provide-a-service)</span>
+A second copy/UX pass from a live review (<span class="status-green">59 guided_demo tests; mobile
+typecheck + guided_demo lint 0; full 12-step flow verified live on the sim</span>):
+<ul>
+<li><strong>Lock the demo down — hide the header escape hatches.</strong> The dock covered the composer
++ tab bar, but the header still had the hamburger menu (→ Help/Settings/…) AND a "?" button that routes
+straight to Help (which carries the replay CTA — recursive). Both now hide while a demo is active:
+<code>HeaderMenuButton</code> + <code>HeaderHelpButton</code> read <code>useGuidedDemoActive()</code> and
+render null. (They sit inside the gate's context provider, so the context reaches them — verified live.)
+The demo dock is now the only interactive surface.</li>
+<li><strong>Warmer / clearer captions.</strong> Step 2 → "Dina <em>automatically</em> added Emma to
+People › Relations." Step 7 split into two sentences ("Add a date and Dina sets a reminder. It links to
+what Dina already knows about Emma.") — one long sentence was hard to parse.</li>
+<li><strong>Step 8 — explain PeerLens + auto-preferences.</strong> "Ask about anything out there, a
+product, a video, anything. Dina folds in your preferences automatically, then checks PeerLens, a network
+of reviews and suggestions, to help you choose."</li>
+<li><strong>Step 9 — define the service network.</strong> "The service network is all the other Dinas
+offering services. Dina finds the best one for your question and connects with it to get a customised
+answer."</li>
+<li><strong>Step 10 — frame agent safety without "must".</strong> The agent ultimately decides on its
+own, so we don't claim it "must" ask: "Hand off a task to OpenClaw or another agent. Dina is the safety
+layer: for locked data or risky actions, the agent <em>can</em> get your approval through Dina."</li>
+<li><strong>Two new closing steps (11 → 12, demo is now 12 steps).</strong> Added a "give back" arc:
+<strong>11) create a PeerLens review</strong> (grounded in the chair just researched —
+<code>describePeerLensReview</code>), then <strong>12) provide a service</strong> (the existing
+publish-draft, reworded to "Provide a service of your own…"). New <code>'review'</code> action kind +
+<code>DEMO_REVIEW</code>.</li>
+<li><strong>Slower, more believable pause (3s → 4s).</strong> Still felt instant; bumped
+<code>DINA_THINKING_MS</code> to 4000. Also added the pause to the <strong>task step</strong> (between the
+hand-off and the approval card) via a new <code>delay()</code> seam (the pause sits between two seam
+calls there, so it can't live inside one seam like recommend/service do). Fake seams resolve instantly so
+tests stay fast.</li>
+<li><strong>Caption room.</strong> Two-sentence captions pushed the dock taller: caption clamp 4 → 5
+lines, Chat list clearance 180 → 220. Verified the step 8/9/10 captions show in full.</li>
+</ul>
+Files: <code>guided_demo/{content,runner,providers,active_context}.ts</code>,
+<code>components/guided_demo/GuidedDemoScreens.tsx</code>, <code>app/_layout.tsx</code>.</div>
+<div class="iter"><span class="tag t-dec">Demo copy + pacing pass — warmer captions, no em-dashes, explain PeerLens / service network, realistic delays</span>
+A live-review pass on the running demo (<span class="status-green">59 guided_demo tests; mobile typecheck +
+lint 0; verified live end-to-end on the sim</span>):
+<ul>
+<li><strong>Warmer, jargon-free.</strong> Step 2 was "Dina filed Emma in your people graph" → now
+"Dina added Emma to People › Relations." (drops "filed" / "people graph").</li>
+<li><strong>No em-dashes anywhere user-facing.</strong> Removed the em-dash from every caption, the
+PeerLens recommendation answer, the service-card text, the approval preview, the publish-draft summary,
+and the "Run next demo step" a11y label (replaced with commas / periods / colons). Code comments keep
+theirs.</li>
+<li><strong>Explain PeerLens + the service network.</strong> Users didn't know what these are. Step 8 →
+"Ask for anything. Dina checks PeerLens, a trust network where real people rate what is worth it, not
+ads." Step 9 leads with the definition (not "sharing the minimum"): "The service network is other Dinas
+offering help. Dina asks them where to get it, sharing only what is needed."</li>
+<li><strong>Caption no longer cut off.</strong> The dock caption was clamped to 2 lines (the PeerLens /
+service-network explanations overflowed). Bumped to 4 lines; the dock grows upward into the chat area,
+and the Chat list's reserved clearance went 120 → 180 so the last message still clears it.</li>
+<li><strong>Realistic "Dina is checking" pause.</strong> The recommend (step 8) + service (step 9)
+answers came from deterministic seed data and rendered in &lt;1ms, which read as obviously canned. Made
+<code>postRecommendation</code> / <code>postServiceCard</code> async (the runner awaits them) and the
+REAL seams post the question, pause 3s, then post the answer; the dock holds "Working…" + Next disabled
+through the pause. Fake seams (tests) resolve instantly; the providers test drives it with fake timers.</li>
+<li><strong>Drop "Nothing was kept".</strong> The complete state said "Demo complete. Nothing was kept."
+(users didn't get it) → "All done. Welcome to Dina." The entry reassurance went from "Nothing from the
+demo is kept" to the clearer "Your real data stays untouched."</li>
+</ul>
+Files: <code>guided_demo/{content,runner,providers,active_context}.ts</code>,
+<code>components/guided_demo/GuidedDemoScreens.tsx</code>.</div>
+<div class="iter"><span class="tag t-dec">New feature — replay the demo any time (from Help)</span>
+The demo was first-run only (gated on the <code>guided_demo.entry_seen</code> KV flag; after
+start/skip the gate boots straight to <code>running</code> and never re-offers it). The engine was
+always re-entrant — <code>startGuidedDemo</code> mints a fresh scope each call, teardown is idempotent,
+and both notification fixes are scope-keyed, not first-run-keyed — so replay needed only a UI trigger
+(<span class="status-green">mobile replay_request 4 + gate 17 (3 new); typecheck 0; verified live on
+the sim</span>):
+<ul>
+<li><strong>Placement — Help, not the hamburger menu.</strong> The hamburger sheet (Vault / Reminders /
+Settings / Help / Sign out) is the primary nav; a top-level row there would make the tour prominent,
+the opposite of "tuck it away". The Help screen's hero is literally <em>"What can Dina do?"</em> — the
+exact framing of the demo's own entry card — so the demo is its interactive version. Added a "See Dina
+in action" CTA at the top of Help (<code>help-replay-demo</code>): "Replay the 2-minute guided tour with
+sample data. Your real vault stays untouched." Low-visibility (one level into Help) + best semantic fit.
+The CTA badge is the <strong>Dina app icon</strong> (the domino-D glyph, <code>branding/dina-icon.png</code>)
+rendered as a small rounded-square — "meet Dina". The fingerprint (the <code>identity</code> feature icon)
+read as "identity", not "meet Dina". Note: the codebase brand rule reserves the domino-D for the app icon
+alone (never inline; <code>DinaWordmark.tsx</code> / <code>_layout.tsx</code>) — reusing it here is an
+<strong>intentional, owner-approved exception</strong> for this CTA (a brand-font "D" letterform was the
+rule-respecting alternative, but the actual app-icon mark was chosen for stronger recognition).</li>
+<li><strong>Cross-component trigger.</strong> <code>startDemo()</code> lives inside
+<code>useGuidedDemoGate</code> (instantiated once in <code>GuidedDemoGate</code> at the root layout), out
+of Help's scope. Rather than lift the gate into a Context (coupling every route to the layout tree),
+added a module-level fire+subscribe signal <code>guided_demo/replay_request.ts</code> (mirrors
+<code>navigation/menu_state.ts</code>). Help calls <code>requestGuidedDemoReplay()</code> then
+<code>router.navigate('/')</code> so the dock is visible over the Chat composer.</li>
+<li><strong>Guarded re-entry.</strong> The gate subscribes once and honors a replay ONLY from the normal
+running app — <code>phase === 'running' &amp;&amp; !demoActive</code> — so it never restarts mid-demo and
+never stomps the boot <code>checking</code>/<code>recovery</code> or <code>tearing_down</code> states.
+Live mirrors (<code>phaseRef</code>/<code>demoActiveRef</code>) keep the once-installed subscriber reading
+current values without re-subscribing. Tests: replay starts the demo from running+inactive; ignored mid-demo
+(cursor doesn't reset); ignored in the entry phase (a replay must not bypass first-run entry).</li>
+<li><strong>Replay safety.</strong> A replay user has real data — <code>beginGuidedDemo</code> swaps caches
+to the empty demo scope on START (hiding real chat/reminders), restored on teardown; the in-app
+notification drop + OS-reminder suppression are scope-keyed, so a replay leaves nothing behind, same as
+first run. Verified live: Help → "See Dina in action" → Chat dock at step 1/11 → Exit → clean chat.</li>
+</ul>
+Files: <code>apps/mobile/src/guided_demo/replay_request.ts</code> (new),
+<code>apps/mobile/src/guided_demo/useGuidedDemoGate.ts</code>, <code>apps/mobile/app/help.tsx</code>.</div>
 <div class="decision"><span class="tag t-dec">New feature — mandatory "Connect your AI" onboarding step</span>
 The app is unusable without a working LLM key (every /ask + /remember routes through it), yet
 the key lived only in Settings. Added a shared <code>ai_provider</code> step to the onboarding

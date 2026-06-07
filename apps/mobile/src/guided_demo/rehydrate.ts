@@ -21,6 +21,7 @@
  */
 
 import { hydrateThread, listThreads } from '@dina/brain/chat';
+import { dropGuidedDemoNotifications } from '@dina/brain/notifications';
 import { hydrateContactDirectory } from '@dina/core';
 import { hydrateRemindersFromRepo, resetReminderCaches } from '@dina/core/reminders';
 
@@ -54,6 +55,12 @@ export async function refreshCachesForCurrentScope(): Promise<void> {
   for (const threadId of threadIds) {
     await hydrateThread(threadId, { force: true });
   }
+
+  // Notifications inbox: drop any notification created in a guided-demo scope
+  // (e.g. the agent-approval mirrored in by the global approval→inbox bridge).
+  // The inbox is an in-memory store the DB-level cleanup can't reach, so a demo
+  // notification would otherwise linger unread in Activity after Exit.
+  dropGuidedDemoNotifications();
 
   // Contact directory projections (did/alias → person). The demo creates no
   // contacts, so this is a harmless refresh of the existing user contacts.

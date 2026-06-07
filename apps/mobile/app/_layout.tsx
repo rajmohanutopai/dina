@@ -54,6 +54,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { markNotificationRead } from '@dina/brain/notifications';
 import { UnlockGate } from '../src/components/unlock_gate';
 import { GuidedDemoGate } from '../src/components/guided_demo/GuidedDemoGate';
+import { useGuidedDemoActive } from '../src/guided_demo/active_context';
 import { DinaWordmark } from '../src/components/DinaWordmark';
 import { clearThread } from '../src/hooks/useChatThread';
 import { useAutoLock } from '../src/hooks/useAutoLock';
@@ -125,6 +126,10 @@ const NAV_MENU_ITEMS: NavMenuItem[] = [
 ];
 
 function HeaderMenuButton({ onPress }: { onPress: () => void }) {
+  // Hidden during a guided demo: the menu (Vault / Reminders / Settings / Help /
+  // Sign out) is the last escape hatch once the dock covers the composer + tabs.
+  // Keeping the user on the guided path is the whole point of the demo.
+  if (useGuidedDemoActive()) return null;
   return (
     <Pressable
       onPress={onPress}
@@ -216,6 +221,10 @@ function HeaderBackButton({
  * available from any tab once they're past the initial screen.
  */
 function HeaderHelpButton({ onPress }: { onPress: () => void }) {
+  // During a guided demo the header is an escape hatch (it routes straight to
+  // Help, which carries the "replay the demo" CTA). Hide it so the demo dock is
+  // the only interactive surface, matching the locked-down composer + tab bar.
+  if (useGuidedDemoActive()) return null;
   return (
     <Pressable
       onPress={onPress}
