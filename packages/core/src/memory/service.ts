@@ -26,12 +26,15 @@
  * (edge cases — locked personas, cross-persona topics).
  */
 
-import { computeSalience } from './scoring';
+import { currentDataScope, isGuidedDemoScope } from '../scope/data_scope';
+
 import {
   getTopicRepository,
   listTopicRepositoryPersonas,
   type TopicRepository,
 } from './repository';
+import { computeSalience } from './scoring';
+
 import type { TocEntry, Topic } from './domain';
 
 const MISSING_TABLE_MARKER = 'no such table: topic_salience';
@@ -113,6 +116,14 @@ export class MemoryService {
    */
   async toc(personas: string[] | undefined, limit: number): Promise<TocEntry[]> {
     if (limit <= 0) return [];
+
+    // Data-scope isolation: the working-memory tables are NOT scope-partitioned,
+    // so while a guided demo is active the ToC must read as EMPTY — otherwise an
+    // upgraded/restored user's real topics would surface in demo prompts/results
+    // (both the /v1/memory/toc route and the in-process intent classifier read
+    // through here). The write side is blocked in the touch handler; this is the
+    // matching read-side guard.
+    if (isGuidedDemoScope(currentDataScope())) return [];
 
     const requested =
       personas !== undefined && personas.length > 0 ? personas : this.listPersonas();

@@ -37,52 +37,52 @@ export interface PassphraseFieldProps
   style?: StyleProp<ViewStyle>;
 }
 
-export function PassphraseField({
-  label,
-  error,
-  style,
-  accessibilityLabel,
-  ...inputProps
-}: PassphraseFieldProps): React.ReactElement {
-  const [visible, setVisible] = useState(false);
-  return (
-    <View style={style}>
-      {label !== undefined ? <Text style={styles.label}>{label}</Text> : null}
-      <View style={[styles.row, error !== undefined && error !== '' ? styles.rowError : null]}>
-        <TextInput
-          testID="passphrase-field-input"
-          {...inputProps}
-          secureTextEntry={!visible}
-          autoCapitalize="none"
-          autoCorrect={false}
-          spellCheck={false}
-          autoComplete="off"
-          textContentType="password"
-          placeholderTextColor={colors.textMuted}
-          style={styles.input}
-          accessibilityLabel={accessibilityLabel}
-        />
-        <Pressable
-          onPress={() => setVisible((v) => !v)}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={visible ? 'Hide passphrase' : 'Show passphrase'}
-          testID="passphrase-field-toggle"
-          style={({ pressed }) => [styles.eye, pressed && styles.pressed]}
-        >
-          <Ionicons
-            name={visible ? 'eye-off-outline' : 'eye-outline'}
-            size={20}
-            color={colors.textMuted}
+export const PassphraseField = React.forwardRef<TextInput, PassphraseFieldProps>(
+  function PassphraseField(
+    { label, error, style, accessibilityLabel, ...inputProps },
+    ref,
+  ): React.ReactElement {
+    const [visible, setVisible] = useState(false);
+    return (
+      <View style={style}>
+        {label !== undefined ? <Text style={styles.label}>{label}</Text> : null}
+        <View style={[styles.row, error !== undefined && error !== '' ? styles.rowError : null]}>
+          <TextInput
+            ref={ref}
+            testID="passphrase-field-input"
+            {...inputProps}
+            secureTextEntry={!visible}
+            autoCapitalize="none"
+            autoCorrect={false}
+            spellCheck={false}
+            autoComplete="off"
+            textContentType="password"
+            placeholderTextColor={colors.textMuted}
+            style={styles.input}
+            accessibilityLabel={accessibilityLabel}
           />
-        </Pressable>
+          <Pressable
+            onPress={() => setVisible((v) => !v)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={visible ? 'Hide passphrase' : 'Show passphrase'}
+            testID="passphrase-field-toggle"
+            style={({ pressed }) => [styles.eye, pressed && styles.pressed]}
+          >
+            <Ionicons
+              name={visible ? 'eye-off-outline' : 'eye-outline'}
+              size={20}
+              color={colors.textMuted}
+            />
+          </Pressable>
+        </View>
+        {error !== undefined && error !== '' ? (
+          <Text style={styles.errorText}>{error}</Text>
+        ) : null}
       </View>
-      {error !== undefined && error !== '' ? (
-        <Text style={styles.errorText}>{error}</Text>
-      ) : null}
-    </View>
-  );
-}
+    );
+  },
+);
 
 const styles = StyleSheet.create({
   label: {

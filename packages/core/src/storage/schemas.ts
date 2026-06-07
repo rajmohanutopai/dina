@@ -637,6 +637,105 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_quarantine_expires ON d2d_quarantine(expires_at);
     `,
   },
+  {
+    // Guided-demo data scope (docs/GUIDED_DEMO_DATA_SCOPE_DESIGN.md).
+    // Adds `data_scope` to the identity-DB tables that hold user content or
+    // user-visible state the guided demo writes to. The demo runs in an
+    // isolated 'guided_demo:<run_id>' scope; everything else stays 'user'.
+    // ALTER (not editing v1) because applied migrations are immutable here —
+    // a new version is the only way every fresh AND existing DB gets the column.
+    // Infra/security tables (contacts, paired_devices, service_grants,
+    // agent_persona_grants, audit_log, kv_store, …) are deliberately NOT scoped
+    // — see the design doc "Should Not Scope". person_identities/contacts are
+    // not scoped in V1 because the demo's Emma has no DID/contact.
+    version: 12,
+    name: 'data_scope_identity',
+    sql: `
+      -- reminders: REBUILD (not ALTER) — data_scope must be part of the dedup
+      -- UNIQUE key, because a demo reminder and a user reminder with identical
+      -- content are DISTINCT rows in different scopes. SQLite can't ALTER a
+      -- UNIQUE constraint, so we recreate the table. Existing rows → 'user'.
+      -- Keep this UNIQUE list in lockstep with dedupKey() in reminders/service.ts.
+      CREATE TABLE reminders_v12 (
+        id TEXT PRIMARY KEY,
+        short_id TEXT NOT NULL DEFAULT '',
+        message TEXT NOT NULL,
+        due_at INTEGER NOT NULL,
+        persona TEXT NOT NULL DEFAULT 'general',
+        kind TEXT NOT NULL DEFAULT 'manual',
+        source_item_id TEXT NOT NULL DEFAULT '',
+        source TEXT NOT NULL DEFAULT '',
+        recurring TEXT NOT NULL DEFAULT '',
+        timezone TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'pending',
+        completed INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        data_scope TEXT NOT NULL DEFAULT 'user',
+        UNIQUE(source_item_id, kind, due_at, persona, message, data_scope)
+      );
+      INSERT INTO reminders_v12
+        (id, short_id, message, due_at, persona, kind, source_item_id, source, recurring, timezone, status, completed, created_at, data_scope)
+        SELECT id, short_id, message, due_at, persona, kind, source_item_id, source, recurring, timezone, status, completed, created_at, 'user'
+        FROM reminders;
+      DROP TABLE reminders;
+      ALTER TABLE reminders_v12 RENAME TO reminders;
+      CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(due_at) WHERE completed=0;
+      CREATE INDEX IF NOT EXISTS idx_reminders_persona ON reminders(persona);
+      CREATE INDEX IF NOT EXISTS idx_reminders_short_id ON reminders(short_id);
+      CREATE INDEX IF NOT EXISTS idx_reminders_scope ON reminders(data_scope);
+
+      ALTER TABLE chat_messages ADD COLUMN data_scope TEXT NOT NULL DEFAULT 'user';
+      ALTER TABLE staging_inbox ADD COLUMN data_scope TEXT NOT NULL DEFAULT 'user';
+      ALTER TABLE people ADD COLUMN data_scope TEXT NOT NULL DEFAULT 'user';
+      ALTER TABLE person_surfaces ADD COLUMN data_scope TEXT NOT NULL DEFAULT 'user';
+
+      CREATE INDEX IF NOT EXISTS idx_chat_messages_scope ON chat_messages(data_scope);
+      CREATE INDEX IF NOT EXISTS idx_staging_scope ON staging_inbox(data_scope);
+      CREATE INDEX IF NOT EXISTS idx_people_scope ON people(data_scope);
+      CREATE INDEX IF NOT EXISTS idx_person_surfaces_scope ON person_surfaces(data_scope);
+    `,
+  },
+  {
+    // staging_inbox: fold data_scope into the dedup UNIQUE key. v12 added the
+    // column but left UNIQUE(producer_id, source, source_id) — so the SAME
+    // (producer, source, source_id) ingested in BOTH the user scope and a
+    // guided-demo scope collided: the second scope's row was silently dropped
+    // (INSERT OR IGNORE), so it was never created or claimed in that scope.
+    // SQLite can't ALTER a UNIQUE constraint, so rebuild (same pattern as the
+    // reminders v12 rebuild). Existing rows keep their v12-assigned data_scope.
+    version: 13,
+    name: 'staging_inbox_scope_dedup',
+    sql: `
+      CREATE TABLE staging_inbox_v13 (
+        id TEXT PRIMARY KEY,
+        source TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        producer_id TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'received',
+        persona TEXT NOT NULL DEFAULT '',
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        lease_until INTEGER NOT NULL DEFAULT 0,
+        expires_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        data TEXT NOT NULL DEFAULT '{}',
+        source_hash TEXT NOT NULL DEFAULT '',
+        classified_item TEXT,
+        error TEXT,
+        approval_id TEXT,
+        data_scope TEXT NOT NULL DEFAULT 'user',
+        UNIQUE(producer_id, source, source_id, data_scope)
+      );
+      INSERT INTO staging_inbox_v13
+        (id, source, source_id, producer_id, status, persona, retry_count, lease_until, expires_at, created_at, data, source_hash, classified_item, error, approval_id, data_scope)
+        SELECT id, source, source_id, producer_id, status, persona, retry_count, lease_until, expires_at, created_at, data, source_hash, classified_item, error, approval_id, data_scope
+        FROM staging_inbox;
+      DROP TABLE staging_inbox;
+      ALTER TABLE staging_inbox_v13 RENAME TO staging_inbox;
+      CREATE INDEX IF NOT EXISTS idx_staging_status ON staging_inbox(status);
+      CREATE INDEX IF NOT EXISTS idx_staging_expires ON staging_inbox(expires_at);
+      CREATE INDEX IF NOT EXISTS idx_staging_scope ON staging_inbox(data_scope);
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------
@@ -783,6 +882,22 @@ export const PERSONA_MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_vault_items_contact_did
         ON vault_items(contact_did, deleted, timestamp DESC)
         WHERE contact_did != ''
+    `,
+  },
+  {
+    // Guided-demo data scope (docs/GUIDED_DEMO_DATA_SCOPE_DESIGN.md).
+    // Adds `data_scope` to the persona vault tables the demo writes. The FTS5
+    // triggers reference specific columns only, so adding a column to
+    // vault_items doesn't touch them. ALTER (not editing v1) — applied
+    // migrations are immutable.
+    version: 3,
+    name: 'data_scope_persona',
+    sql: `
+      ALTER TABLE vault_items ADD COLUMN data_scope TEXT NOT NULL DEFAULT 'user';
+      ALTER TABLE vault_item_subjects ADD COLUMN data_scope TEXT NOT NULL DEFAULT 'user';
+
+      CREATE INDEX IF NOT EXISTS idx_vault_items_scope ON vault_items(data_scope);
+      CREATE INDEX IF NOT EXISTS idx_vault_item_subjects_scope ON vault_item_subjects(data_scope);
     `,
   },
 ];

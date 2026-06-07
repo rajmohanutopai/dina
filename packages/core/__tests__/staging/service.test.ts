@@ -34,11 +34,13 @@ import {
   denyApproval,
 } from '../../src/staging/service';
 import { getItem as getVaultItem, clearVaults } from '../../src/vault/crud';
+import { currentDataScope, resetDataScope, setCurrentDataScope } from '../../src/scope/data_scope';
 
 describe('Staging Service', () => {
   beforeEach(() => {
     resetStagingState();
     setStagingRepository(null);
+    resetDataScope();
     const workflowRepo = new InMemoryWorkflowRepository();
     setWorkflowRepository(workflowRepo);
     setWorkflowService(new WorkflowService({ repository: workflowRepo }));
@@ -48,8 +50,103 @@ describe('Staging Service', () => {
   afterEach(() => {
     resetStagingState();
     setStagingRepository(null);
+    resetDataScope();
     setWorkflowService(null);
     setWorkflowRepository(null);
+  });
+
+  describe('data-scope isolation (guided demo)', () => {
+    it('ingest stamps the current data scope', () => {
+      const { id: userId } = ingest({ source: 'user_remember', source_id: 'u1' });
+      expect(getItem(userId)!.data_scope).toBe('user');
+
+      setCurrentDataScope('guided_demo:run1');
+      const { id: demoId } = ingest({ source: 'user_remember', source_id: 'd1' });
+      expect(getItem(demoId)!.data_scope).toBe('guided_demo:run1');
+      expect(currentDataScope()).toBe('guided_demo:run1');
+    });
+
+    it.each([['in-memory', false], ['sqlite-repo', true]])(
+      'dedup is per-scope: SAME (producer,source,source_id) in user+demo → TWO rows (%s)',
+      (_label, useRepo) => {
+        if (useRepo) setStagingRepository(new InMemoryStagingRepository());
+
+        // Identical dedup tuple, different scopes — must NOT collide.
+        const u = ingest({ source: 'connector', source_id: 'stable-id', producer_id: 'p' });
+        expect(u.duplicate).toBe(false);
+
+        setCurrentDataScope('guided_demo:run1');
+        const d = ingest({ source: 'connector', source_id: 'stable-id', producer_id: 'p' });
+        expect(d.duplicate).toBe(false); // a distinct row in the demo scope
+        expect(d.id).not.toBe(u.id);
+        expect(getItem(d.id)!.data_scope).toBe('guided_demo:run1');
+
+        // Re-ingesting the SAME tuple within the demo scope IS a duplicate.
+        const d2 = ingest({ source: 'connector', source_id: 'stable-id', producer_id: 'p' });
+        expect(d2).toEqual({ id: d.id, duplicate: true });
+      },
+    );
+
+    it.each([['in-memory', false], ['sqlite-repo', true]])(
+      'claim only returns items in the CURRENT scope (%s)',
+      (_label, useRepo) => {
+        if (useRepo) setStagingRepository(new InMemoryStagingRepository());
+
+        // One user item, one demo item.
+        ingest({ source: 'user_remember', source_id: 'u1' });
+        setCurrentDataScope('guided_demo:run1');
+        ingest({ source: 'user_remember', source_id: 'd1' });
+
+        // On the user scope the drain must NOT pick up the demo row (u1 is now
+        // leased → 'classifying'; d1 stays 'received' but in the demo scope).
+        setCurrentDataScope('user');
+        const userClaim = claim(10);
+        expect(userClaim.map((i) => i.source_id)).toEqual(['u1']);
+
+        // On the demo scope it claims only the demo row.
+        setCurrentDataScope('guided_demo:run1');
+        const demoClaim = claim(10);
+        expect(demoClaim.map((i) => i.source_id)).toEqual(['d1']);
+      },
+    );
+
+    it('exact-ID mutations reject an item from a DIFFERENT scope', () => {
+      // Claim a demo item (status → classifying) in the demo scope…
+      setCurrentDataScope('guided_demo:run1');
+      const { id } = ingest({ source: 'user_remember', source_id: 'd1' });
+      const [claimed] = claim(1);
+      expect(claimed?.id).toBe(id);
+
+      // …then a by-id mutation while the runtime flipped to the user scope must
+      // refuse to touch the demo-scoped row (defense-in-depth for the scope model).
+      setCurrentDataScope('user');
+      expect(() => resolve(id, 'general', true, { summary: 'x' })).toThrow(/not the current scope/);
+      expect(() => fail(id)).toThrow(/not the current scope/);
+      expect(() => extendLease(id, 60)).toThrow(/not the current scope/);
+
+      // Back in the demo scope, the same mutation is allowed.
+      setCurrentDataScope('guided_demo:run1');
+      expect(() => extendLease(id, 60)).not.toThrow();
+    });
+
+    it('crash/restart: a leftover demo row is never claimed back on the user scope', () => {
+      setStagingRepository(new InMemoryStagingRepository());
+      // A demo /remember leaves a 'received' row (it never drained inline).
+      setCurrentDataScope('guided_demo:run1');
+      ingest({ source: 'user_remember', source_id: 'leftover' });
+
+      // Simulate a restart: drop the in-memory cache, keep the persisted rows,
+      // and return to the user scope (the demo has ended).
+      resetStagingState({ preserveRepositoryRows: true });
+      setCurrentDataScope('user');
+      hydrateStagingFromRepository();
+
+      // The interval drain on the user scope finds nothing to claim.
+      expect(claim(10)).toEqual([]);
+      // The row still exists (cleanup deletes it by scope; here we only assert
+      // the drain can't resolve it into the user vault).
+      expect(inboxSize()).toBe(1);
+    });
   });
 
   describe('ingest (2.41)', () => {

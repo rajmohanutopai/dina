@@ -10,6 +10,7 @@ export {
   listPending,
   nextPending,
   resetReminderState,
+  resetReminderCaches,
   snoozeReminder,
   subscribeReminderCreated,
 } from './src/reminders/service';

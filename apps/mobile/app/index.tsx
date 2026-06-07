@@ -29,11 +29,12 @@ import {
 
 import { InlineApprovalCard } from '../src/components/InlineApprovalCard';
 import { InlineBriefingCard } from '../src/components/InlineBriefingCard';
+import { InlineDemoApprovalCard } from '../src/components/InlineDemoApprovalCard';
 import { InlineMarkdownText } from '../src/components/InlineMarkdownText';
 import { InlineMissingCapabilityCard } from '../src/components/InlineMissingCapabilityCard';
 import { InlineNudgeCard } from '../src/components/InlineNudgeCard';
-import { InlineReminderCard } from '../src/components/InlineReminderCard';
 import { InlineQuarantineCard } from '../src/components/InlineQuarantineCard';
+import { InlineReminderCard } from '../src/components/InlineReminderCard';
 import { InlineReviewDraftCard } from '../src/components/InlineReviewDraftCard';
 import { InlineServiceApprovalCard } from '../src/components/InlineServiceApprovalCard';
 import { InlineServiceQueryCard } from '../src/components/InlineServiceQueryCard';
@@ -59,6 +60,7 @@ type UiMessage = ChatMessage & {
     | 'ask-approval'
     | 'service-approval'
     | 'vault-read-approval'
+    | 'demo-approval'
     | 'service-query'
     | 'missing-capability'
     | 'ask-pending'
@@ -83,6 +85,11 @@ function toDisplayType(m: ChatMessage): UiMessage['displayType'] {
   // synthesises a richer metadata bag than the chat-tab approval flow.
   if (m.type === 'approval' && m.metadata?.approvalKind === 'vault_read') {
     return 'vault-read-approval';
+  }
+  // Guided-demo agent-approval card — backed only by the ApprovalManager (see
+  // InlineDemoApprovalCard); no gateway/workflow/grant, so it's leak-free.
+  if (m.type === 'approval' && m.metadata?.kind === 'demo_approval') {
+    return 'demo-approval';
   }
   // Lifecycle-tracked dina message — same MessageType as a plain dina
   // reply, dispatched here on the metadata block. Mirrors the
@@ -289,6 +296,13 @@ export default function ChatScreen() {
       return (
         <View testID="chat-card-vault-read-approval">
           <InlineVaultReadApprovalCard message={item} />
+        </View>
+      );
+    }
+    if (item.displayType === 'demo-approval') {
+      return (
+        <View testID="chat-card-demo-approval">
+          <InlineDemoApprovalCard message={item} />
         </View>
       );
     }

@@ -1,0 +1,106 @@
+# Clean-install end-to-end: onboard a fresh Dina, then run the guided demo and
+# Exit. Verifies the whole first-run path on a real device.
+#
+# Robust input notes (learned on iOS 26.4 sim):
+#  - handle: synthetic typing into the handle field is flaky; tap an available
+#    suggestion by its real testID (handle-suggestion-<handle>) instead.
+#  - passphrase confirm: a synthetic tap does NOT focus the 2nd secure field;
+#    use the keyboard "Next" key (returnKeyType=next + onSubmitEditing ref focus)
+#    to move from passphrase -> confirm, then type.
+#  - dev build: dismiss the Expo dev-menu (tap outside) before running.
+appId: com.dinakernel.mobile
+---
+# Dev-build only: dismiss the Expo dev-menu intro if it's covering the welcome
+# screen (tap its Continue, then tap outside the panel). No-ops on a clean
+# welcome (optional tap + a harmless tap on the top status area).
+- tapOn:
+    text: 'Continue'
+    optional: true
+- tapOn:
+    point: '50%,12%'
+- tapOn:
+    id: 'shell-primary'
+- tapOn:
+    id: 'mode-choice-card-create-a-new-dina'
+- tapOn:
+    id: 'owner-name-input'
+- inputText: 'Alonso'
+- hideKeyboard
+- tapOn:
+    id: 'shell-primary'
+# Handle: prefilled "alonso" (taken from prior runs) → use an available suggestion.
+- extendedWaitUntil:
+    visible:
+      id: 'handle-suggestion-.*'
+    timeout: 25000
+- tapOn:
+    id: 'handle-suggestion-.*'
+- extendedWaitUntil:
+    visible:
+      id: 'handle-status-available'
+    timeout: 20000
+- tapOn:
+    id: 'shell-primary'
+# Passphrase via the keyboard "Next" chain (the new ref-focus fix).
+- tapOn:
+    id: 'passphrase-input'
+- inputText: 'dinatestpassword'
+- pressKey: Enter
+- inputText: 'dinatestpassword'
+- tapOn:
+    text: 'This encrypts your vault.*'
+- tapOn:
+    id: 'shell-primary'
+# Recovery reveal → Continue, verify → "I'll do this later"
+- extendedWaitUntil:
+    visible:
+      id: 'shell-primary'
+    timeout: 15000
+- tapOn:
+    id: 'shell-primary'
+- extendedWaitUntil:
+    visible:
+      id: 'shell-secondary'
+    timeout: 15000
+- tapOn:
+    id: 'shell-secondary'
+# Mandatory "Connect your AI" step. Gemini is auto-connected via the dev env
+# key (EXPO_PUBLIC_DINA_DEV_GEMINI_API_KEY), so it shows the connected state →
+# Continue. (In production with no key, the user picks a provider + pastes one.)
+- extendedWaitUntil:
+    visible:
+      id: 'onboarding-ai-connected'
+    timeout: 20000
+- assertVisible:
+    text: '.*connected.*'
+- tapOn:
+    id: 'shell-primary'
+# First-run → guided demo entry → run demo → Exit (verify banner clears fast)
+- extendedWaitUntil:
+    visible:
+      id: 'guided-demo-entry'
+    timeout: 90000
+- assertVisible:
+    text: 'See Dina in action'
+- tapOn:
+    id: 'guided-demo-start'
+- extendedWaitUntil:
+    visible:
+      id: 'guided-demo-banner'
+    timeout: 15000
+- assertVisible:
+    id: 'guided-demo-next'
+- tapOn:
+    id: 'guided-demo-next'
+# The first step is a real /remember ("Emma is my daughter") through Gemini.
+# The caption only advances to step 2 once that turn completes — proving the
+# demo runs the real path + steps forward. The full multi-step run (incl. the
+# cross-input dinosaur reminder + the chair recommendation) is exercised by
+# drive_to_exit.yaml.
+- extendedWaitUntil:
+    visible:
+      text: '.*quietly remembers.*'
+    timeout: 60000
+# Exit + cleanup is verified by guided_demo/exit_cleanup.yaml (a fresh Maestro
+# session — the long LLM-heavy session here destabilises the XCUITest driver,
+# so the teardown tap is run separately for reliability).

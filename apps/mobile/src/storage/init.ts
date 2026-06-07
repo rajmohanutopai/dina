@@ -27,6 +27,8 @@ import {
   getPersonaTier,
   createPersona,
   personaExists,
+  wireIdentityScopeCleanups,
+  wirePersonaScopeCleanups,
   type ArchivePersonaSource,
   type PersonaTier,
 } from '@dina/core';
@@ -104,6 +106,14 @@ let provider: ProductionDBProvider | null = null;
 let identityAdapter: DatabaseAdapter | null = null;
 
 /**
+ * Persona DBs opened this session, by name. Backs the guided-demo per-persona
+ * cleanup: the demo's memory routes to whatever persona (general/health/…), and
+ * those personas are open for the duration of the demo, so cleanup deletes the
+ * demo scope across all of them.
+ */
+const openPersonaAdapters = new Map<string, DatabaseAdapter>();
+
+/**
  * Initialize all persistence after identity unlock.
  *
  * 1. Opens the identity database (encrypted with identity DEK)
@@ -161,6 +171,18 @@ export async function initializePersistence(
   // Sancho-specific context, even though the user had stored
   // notes about him.
   setPeopleRepository(new SQLitePeopleRepository(identityDB));
+
+  // Guided-demo cleanup wiring — register every scoped table's deleter so
+  // `deleteDataScope`/`tearDownDataScope` can remove a demo run end-to-end.
+  // Identity-DB tables read the live identity adapter; per-persona vault tables
+  // sum across the personas opened this session.
+  wireIdentityScopeCleanups(() => identityAdapter);
+  // Open EVERY registered persona for cleanup, not just the currently-open set:
+  // a demo can route content into a sensitive/locked persona (health/financial)
+  // that's closed at teardown — notably after a crash-recovery boot where only
+  // the default personas are open. openAllPersonaAdapters mirrors the export
+  // path (opens each on demand) so no demo row is left behind in a closed vault.
+  wirePersonaScopeCleanups(() => openAllPersonaAdapters());
 
   // issues.txt §1 — durable D2D outbox. Without this the outbox falls
   // back to an in-memory Map that loses every queued outbound message on
@@ -313,9 +335,52 @@ export function isPersistenceReady(): boolean {
  * handle as vault, which matches the Go `TopicStoreFor(persona)` layout
  * (one persona DB = one vault + topic store pair).
  */
+/** Names of persona vaults opened this session (for guided-demo rehydration). */
+export function getOpenPersonaNames(): string[] {
+  return [...openPersonaAdapters.keys()];
+}
+
+/**
+ * Open EVERY registered persona vault and return their adapters, opening any
+ * that aren't open yet (deriving their DEK on demand, like the export path).
+ * Backs guided-demo persona cleanup: a demo row in a persona that's closed at
+ * teardown (health/financial after a crash-recovery boot) must still be
+ * deleted. Opened adapters are cached in `openPersonaAdapters` so the
+ * subsequent HNSW rebuild sees them.
+ *
+ * A registered persona that FAILS to open is NOT silently skipped: op-sqlite
+ * creates the DB on open, so a throw means a real error (corruption, I/O), not a
+ * benign absent file. We collect those names in `failed` and hand them to the
+ * cleanup wiring, which records a cleanup error so the recovery record is kept
+ * (rows in that persona may still hold demo data) instead of being lost.
+ */
+async function openAllPersonaAdapters(): Promise<{ adapters: DatabaseAdapter[]; failed: string[] }> {
+  if (!provider) return { adapters: [], failed: [] };
+  const adapters: DatabaseAdapter[] = [];
+  const failed: string[] = [];
+  for (const p of listPersonas()) {
+    try {
+      const adapter = await openPersonaVault(provider, p.name);
+      openPersonaAdapters.set(p.name, adapter);
+      adapters.push(adapter);
+    } catch (err) {
+      // Real open failure → surface it so teardown preserves recovery.
+      failed.push(p.name);
+       
+      console.warn(
+        `[storage/init] persona "${p.name}" failed to open for cleanup: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+  return { adapters, failed };
+}
+
 export async function openPersonaDB(persona: string): Promise<void> {
   if (!provider) throw new Error('persistence: not initialized — call initializePersistence first');
   const personaDB = await openPersonaVault(provider, persona);
+  openPersonaAdapters.set(persona, personaDB); // for guided-demo per-persona cleanup
   setVaultRepository(persona, new SQLiteVaultRepository(personaDB));
   setTopicRepository(persona, new SQLiteTopicRepository(personaDB));
 }
@@ -342,6 +407,7 @@ export async function shutdownAllPersistence(): Promise<void> {
     resetTopicRepositories();
     setQuarantineRepository(null);
     resetQuarantineState();
+    openPersonaAdapters.clear();
     setMemoryService(null);
     provider = null;
     identityAdapter = null;

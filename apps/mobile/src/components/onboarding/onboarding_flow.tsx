@@ -16,12 +16,14 @@ import {
   type ExternalAtprotoDraft,
   type RecoverDraft,
   type Step,
+  type StepLocation,
 } from '../../onboarding/state';
 import {
   markVerificationPending,
   markVerified,
 } from '../../services/verification_status';
 
+import { AiProviderSet } from './ai_provider_set';
 import { ExistingAtprotoIdentity } from './existing_atproto_identity';
 import { HandlePicker } from './handle_pick';
 import { MnemonicReveal } from './mnemonic_reveal';
@@ -49,6 +51,16 @@ export function OnboardingFlow(): React.ReactElement {
   const goBack = (): void => {
     const prev = previousStep(step);
     if (prev !== null) setStep(prev);
+  };
+
+  /**
+   * Route into the mandatory AI-provider step, which then advances to
+   * `next` (the flow's provisioning step) once a working key is connected.
+   * `back` returns to the step the user came from; `location` carries the
+   * right "N of M" for the flow.
+   */
+  const goToAiStep = (next: Step, back: Step, location: StepLocation): void => {
+    setStep({ kind: 'ai_provider', next, back, location });
   };
 
   // Dev autopilot: on first render, if we're at `welcome` and the dev
@@ -187,13 +199,17 @@ export function OnboardingFlow(): React.ReactElement {
               startupMode: step.draft.startupMode ?? 'auto',
               mnemonic: step.draft.mnemonic ?? [],
             };
-            setStep({ kind: 'provisioning_create', draft: complete });
+            // Mandatory AI step before provisioning unlocks the app.
+            goToAiStep(
+              { kind: 'provisioning_create', draft: complete },
+              { kind: 'create_mnemonic_verify', draft: complete },
+              { current: 6, total: 7, label: 'Connect AI' },
+            );
           }}
           onSkip={() => {
-            // Mark pending and advance through provisioning. Chat
-            // home renders a "Confirm recovery phrase" banner from
-            // this state until the user completes the deferred
-            // confirm flow in Settings.
+            // Mark pending and advance. Chat home renders a "Confirm
+            // recovery phrase" banner from this state until the user
+            // completes the deferred confirm flow in Settings.
             void markVerificationPending();
             const complete: CreateDraft = {
               ownerName: step.draft.ownerName ?? 'Dina',
@@ -202,7 +218,11 @@ export function OnboardingFlow(): React.ReactElement {
               startupMode: step.draft.startupMode ?? 'auto',
               mnemonic: step.draft.mnemonic ?? [],
             };
-            setStep({ kind: 'provisioning_create', draft: complete });
+            goToAiStep(
+              { kind: 'provisioning_create', draft: complete },
+              { kind: 'create_mnemonic_verify', draft: complete },
+              { current: 6, total: 7, label: 'Connect AI' },
+            );
           }}
         />
       );
@@ -288,7 +308,11 @@ export function OnboardingFlow(): React.ReactElement {
               passphrase,
               startupMode: mode,
             };
-            setStep({ kind: 'provisioning_recover', draft: complete });
+            goToAiStep(
+              { kind: 'provisioning_recover', draft: complete },
+              { kind: 'recover_passphrase', draft: complete },
+              { current: 4, total: 5, label: 'Connect AI' },
+            );
           }}
         />
       );
@@ -390,7 +414,11 @@ export function OnboardingFlow(): React.ReactElement {
               startupMode: step.draft.startupMode ?? 'auto',
               mnemonic: step.draft.mnemonic ?? [],
             };
-            setStep({ kind: 'provisioning_external', draft: complete });
+            goToAiStep(
+              { kind: 'provisioning_external', draft: complete },
+              { kind: 'external_mnemonic_verify', draft: complete },
+              { current: 5, total: 6, label: 'Connect AI' },
+            );
           }}
           onSkip={() => {
             void markVerificationPending();
@@ -401,7 +429,11 @@ export function OnboardingFlow(): React.ReactElement {
               startupMode: step.draft.startupMode ?? 'auto',
               mnemonic: step.draft.mnemonic ?? [],
             };
-            setStep({ kind: 'provisioning_external', draft: complete });
+            goToAiStep(
+              { kind: 'provisioning_external', draft: complete },
+              { kind: 'external_mnemonic_verify', draft: complete },
+              { current: 5, total: 6, label: 'Connect AI' },
+            );
           }}
         />
       );
@@ -438,6 +470,15 @@ export function OnboardingFlow(): React.ReactElement {
               },
             })
           }
+        />
+      );
+
+    case 'ai_provider':
+      return (
+        <AiProviderSet
+          location={step.location}
+          onBack={goBack}
+          onContinue={() => setStep(step.next)}
         />
       );
 

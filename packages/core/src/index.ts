@@ -972,3 +972,56 @@ export type {
   HttpCoreTransportOptions,
 } from './client/http-transport';
 export { FEATURE_NAMES, type FeatureKey, type FeatureName } from './feature-names';
+export {
+  USER_SCOPE,
+  currentDataScope,
+  setCurrentDataScope,
+  isGuidedDemoScope,
+  isValidDataScope,
+  newGuidedDemoScope,
+  runInDataScope,
+  resetDataScope,
+  setGuidedDemoIdFactory,
+  resetGuidedDemoIdFactory,
+  type DataScope,
+} from './scope/data_scope';
+export {
+  ACTIVE_DEMO_KEY,
+  getActiveDemo,
+  setActiveDemo,
+  updateActiveDemoStep,
+  clearActiveDemo,
+  hasActiveDemo,
+  type ActiveDemoState,
+} from './scope/active_demo';
+export {
+  deleteDataScope,
+  registerScopedCleanup,
+  clearScopedCleanups,
+  registeredCleanupTables,
+  type DeleteDataScopeResult,
+  type ScopedCleanup,
+} from './scope/cleanup';
+export {
+  DATA_SCOPE_COLUMN,
+  scopedInsertFields,
+  scopedWhere,
+  scopedParams,
+  scopedTableDeleter,
+} from './scope/repository';
+export {
+  wireIdentityScopeCleanups,
+  wirePersonaScopeCleanups,
+  tearDownDataScope,
+} from './scope/cleanup_wiring';
+export {
+  DEMO_FIRST_STEP,
+  startGuidedDemo,
+  startEmpty,
+  pendingGuidedDemo,
+  resumeGuidedDemo,
+  markGuidedDemoStep,
+  endGuidedDemo,
+  hasSeenGuidedDemoEntry,
+  markGuidedDemoEntrySeen,
+} from './scope/guided_demo';

@@ -17,6 +17,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { STAGING_LEASE_DURATION_S, STAGING_ITEM_TTL_S, STAGING_MAX_RETRIES } from '../constants';
+import { currentDataScope, setCurrentDataScope, type DataScope } from '../scope/data_scope';
 import { storeItem } from '../vault/crud';
 import {
   WorkflowTaskKind,
@@ -54,6 +55,14 @@ export interface StagingItem {
   error?: string;
   /** Approval request ID when item is pending_approval (matching Go). */
   approval_id?: string;
+  /**
+   * Data scope the item was ingested in (guided-demo isolation). Stamped at
+   * `ingest` from the runtime scope. The drain only CLAIMS items in the current
+   * scope, and resolve pins the vault write to THIS scope, so a guided-demo
+   * staging row can never drain into the user vault — and `tearDownDataScope`
+   * deletes it. Defaults to `user` for rows written before the column existed.
+   */
+  data_scope: DataScope;
 }
 
 export const STAGING_PERSONA_ACCESS_APPROVAL_TYPE = 'staging_persona_access';
@@ -102,18 +111,29 @@ const inbox = _stagingState.inbox;
 /** Dedup index: "producer_id|source|source_id" → staging ID. */
 const dedupIndex = _stagingState.dedupIndex;
 
-function dedupKey(producerId: string, source: string, sourceId: string): string {
-  return `${producerId}|${source}|${sourceId}`;
+function dedupKey(
+  producerId: string,
+  source: string,
+  sourceId: string,
+  scope: DataScope,
+): string {
+  // data_scope is part of the dedup key (mirrors the v13 UNIQUE constraint): a
+  // demo row and a user row with the same (producer, source, source_id) are
+  // distinct rows, not duplicates.
+  return `${producerId}|${source}|${sourceId}|${scope}`;
 }
 
 function cacheItem(item: StagingItem): void {
   inbox.set(item.id, item);
-  dedupIndex.set(dedupKey(item.producer_id, item.source, item.source_id), item.id);
+  dedupIndex.set(
+    dedupKey(item.producer_id, item.source, item.source_id, item.data_scope),
+    item.id,
+  );
 }
 
 function removeCachedItem(item: StagingItem): void {
   inbox.delete(item.id);
-  dedupIndex.delete(dedupKey(item.producer_id, item.source, item.source_id));
+  dedupIndex.delete(dedupKey(item.producer_id, item.source, item.source_id, item.data_scope));
 }
 
 function loadItem(id: string): StagingItem | null {
@@ -160,6 +180,51 @@ export function clearOnDrainCallback(): void {
 
 function nowSeconds(): number {
   return Math.floor(Date.now() / 1000);
+}
+
+/**
+ * Store a classified item into the vault PINNED to the staging row's own data
+ * scope, then restore the prior runtime scope. The interval drain's
+ * claim→enrich→resolve has an async gap (LLM enrichment); if the runtime scope
+ * flips (e.g. the user exits a guided demo) during that gap, an unpinned
+ * `storeItem` would write the row's vault item into whatever scope is current —
+ * leaking a demo memory into the user vault. Pinning makes the vault row land
+ * in `item.data_scope` regardless of the live scope. The vault's
+ * `scopedInsertFields` reads `currentDataScope()`, so this temporary set is the
+ * one authoritative way to redirect the write.
+ */
+function storeItemInScope(
+  persona: string,
+  classifiedItem: Record<string, unknown>,
+  scope: DataScope,
+): void {
+  const prev = currentDataScope();
+  if (scope !== prev) setCurrentDataScope(scope);
+  try {
+    storeItem(persona, classifiedItem);
+  } finally {
+    if (scope !== prev) setCurrentDataScope(prev);
+  }
+}
+
+/**
+ * Guard for exact-ID staging mutations (resolve / fail / extendLease /
+ * markPendingApproval / …). A claimed item is always claimed in the current
+ * scope (claim is scope-filtered), so a by-id mutation should never touch a row
+ * from a DIFFERENT scope. This asserts that — defense-in-depth for the scope
+ * model, mirroring the "exact-ID deletes are still scope-bound" rule in
+ * `scope/repository.ts`. The realistic trigger is a runtime scope flip between
+ * claim and resolve (e.g. a guided demo exited mid-drain); throwing here makes
+ * the drain mark the item failed instead of mutating a cross-scope row, and the
+ * row is cleaned up with its own scope's teardown.
+ */
+function assertItemInCurrentScope(item: StagingItem): void {
+  const scope = currentDataScope();
+  if (item.data_scope !== scope) {
+    throw new Error(
+      `staging: item "${item.id}" belongs to scope "${item.data_scope}", not the current scope "${scope}"`,
+    );
+  }
 }
 
 function stagingApprovalId(stagingId: string, persona: string): string {
@@ -278,10 +343,14 @@ export function ingest(input: {
 }): { id: string; duplicate: boolean } {
   const producer = input.producer_id ?? '';
   const repo = getStagingRepository();
-  const dk = dedupKey(producer, input.source, input.source_id);
+  // Dedup is per-scope: an item is only a duplicate of another in the SAME data
+  // scope (a demo /remember and a user /remember of the same source are
+  // distinct). Stamp + dedup against the current runtime scope.
+  const scope = currentDataScope();
+  const dk = dedupKey(producer, input.source, input.source_id, scope);
 
   if (repo) {
-    const existing = repo.findByDedup(producer, input.source, input.source_id);
+    const existing = repo.findByDedup(producer, input.source, input.source_id, scope);
     if (existing) {
       cacheItem(existing);
       return { id: existing.id, duplicate: true };
@@ -310,12 +379,16 @@ export function ingest(input: {
     created_at: now,
     data,
     source_hash: computeSourceHash(data),
+    // Stamp the scope this item was ingested in — a guided-demo /remember tags
+    // its rows so the drain never claims them outside the demo + cleanup can
+    // delete them on teardown.
+    data_scope: scope,
   };
 
   if (repo) {
     const inserted = repo.ingest(item);
     if (!inserted) {
-      const existing = repo.findByDedup(producer, input.source, input.source_id);
+      const existing = repo.findByDedup(producer, input.source, input.source_id, scope);
       if (existing) {
         cacheItem(existing);
         return { id: existing.id, duplicate: true };
@@ -340,9 +413,14 @@ export function ingest(input: {
 export function claim(limit = 10, leaseDurationSeconds?: number): StagingItem[] {
   const now = nowSeconds();
   const leaseDuration = leaseDurationSeconds ?? LEASE_DURATION_S;
+  // Only claim items belonging to the CURRENT data scope. This is the core of
+  // guided-demo isolation: after a demo ends (scope → user) the interval drain
+  // must never pick up a leftover demo staging row and resolve it into the user
+  // vault. During the demo (scope → guided_demo:*) it claims only demo rows.
+  const scope = currentDataScope();
   const repo = getStagingRepository();
   if (repo) {
-    const claimed = repo.claim(limit, leaseDuration, now);
+    const claimed = repo.claim(limit, leaseDuration, now, scope);
     for (const item of claimed) cacheItem(item);
     return claimed;
   }
@@ -352,6 +430,7 @@ export function claim(limit = 10, leaseDurationSeconds?: number): StagingItem[] 
   for (const item of inbox.values()) {
     if (claimed.length >= limit) break;
     if (item.status !== 'received') continue;
+    if (item.data_scope !== scope) continue;
 
     item.status = 'classifying';
     item.lease_until = now + leaseDuration;
@@ -381,6 +460,7 @@ export function resolve(
   const repo = getStagingRepository();
   const item = repo ? repo.get(id) : inbox.get(id) ?? null;
   if (!item) throw new Error(`staging: item "${id}" not found`);
+  assertItemInCurrentScope(item);
   if (item.status !== 'classifying') {
     throw new Error(`staging: cannot resolve item in status "${item.status}"`);
   }
@@ -405,7 +485,7 @@ export function resolve(
   let storedOpenPersona: string | null = null;
   if (personaOpen && classifiedItem) {
     try {
-      storeItem(persona, classifiedItem);
+      storeItemInScope(persona, classifiedItem, item.data_scope);
       storedOpenPersona = persona;
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
@@ -451,6 +531,7 @@ export function resolveMulti(
   const repo = getStagingRepository();
   const item = repo ? repo.get(id) : inbox.get(id) ?? null;
   if (!item) throw new Error(`staging: item "${id}" not found`);
+  assertItemInCurrentScope(item);
   if (item.status !== 'classifying') {
     throw new Error(`staging: cannot resolve item in status "${item.status}"`);
   }
@@ -505,7 +586,7 @@ export function resolveMulti(
   for (const target of targets) {
     if (target.personaOpen && classifiedItem) {
       try {
-        storeItem(target.persona, classifiedItem);
+        storeItemInScope(target.persona, classifiedItem, item.data_scope);
         storedPersonas.push(target.persona);
       } catch (err) {
         // Surface the reason so the drain / ops can see WHY the vault
@@ -517,7 +598,7 @@ export function resolveMulti(
         // continue the loop so other targets can still store.
         const reason = err instanceof Error ? err.message : String(err);
         failures.push({ persona: target.persona, reason });
-        // eslint-disable-next-line no-console
+         
         console.warn(
           `[staging/resolveMulti] vault store failed persona=${target.persona} reason=${reason}`,
         );
@@ -590,6 +671,7 @@ export function fail(id: string, errorMessage?: string): void {
   const repo = getStagingRepository();
   const item = repo ? repo.get(id) : inbox.get(id) ?? null;
   if (!item) throw new Error(`staging: item "${id}" not found`);
+  assertItemInCurrentScope(item);
   if (item.status !== 'classifying') {
     throw new Error(`staging: cannot fail item in status "${item.status}"`);
   }
@@ -621,6 +703,7 @@ export function markPendingApproval(id: string, approvalId: string): void {
   const repo = getStagingRepository();
   const item = repo ? repo.get(id) : inbox.get(id) ?? null;
   if (!item) throw new Error(`staging: item "${id}" not found`);
+  assertItemInCurrentScope(item);
   if (item.status !== 'classifying') {
     throw new Error(`staging: cannot mark pending_approval from status "${item.status}"`);
   }
@@ -641,6 +724,7 @@ export function resumeAfterApprovalGranted(id: string): void {
   const repo = getStagingRepository();
   const item = repo ? repo.get(id) : inbox.get(id) ?? null;
   if (!item) throw new Error(`staging: item "${id}" not found`);
+  assertItemInCurrentScope(item);
   if (item.status !== 'pending_approval') {
     throw new Error(`staging: cannot resume from status "${item.status}"`);
   }
@@ -662,6 +746,7 @@ export function extendLease(id: string, extensionSeconds: number): void {
   const repo = getStagingRepository();
   const item = repo ? repo.get(id) : inbox.get(id) ?? null;
   if (!item) throw new Error(`staging: item "${id}" not found`);
+  assertItemInCurrentScope(item);
   if (item.status !== 'classifying') {
     throw new Error(`staging: cannot extend lease on item in status "${item.status}"`);
   }
@@ -742,7 +827,7 @@ export function drainForPersona(persona: string): number {
       // Write classified data to vault if available
       if (item.classified_item) {
         try {
-          storeItem(persona, item.classified_item);
+          storeItemInScope(persona, item.classified_item, item.data_scope);
         } catch {
           /* fail-safe */
         }
@@ -791,7 +876,7 @@ export function drainForApproval(approvalId: string): StagingApprovalActionResul
       );
     }
     try {
-      storeItem(item.persona, item.classified_item);
+      storeItemInScope(item.persona, item.classified_item, item.data_scope);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       throw new Error(`staging: vault store failed for persona "${item.persona}": ${reason}`);

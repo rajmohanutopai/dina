@@ -12,9 +12,12 @@
  */
 
 import { randomBytes } from '@noble/ciphers/utils.js';
-import { bytesToHex } from '@noble/hashes/utils.js';
 import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+
 import { MS_DAY } from '../constants';
+import { currentDataScope } from '../scope/data_scope';
+
 import { getReminderRepository } from './repository';
 
 export type RecurringFrequency = '' | 'daily' | 'weekly' | 'monthly';
@@ -79,9 +82,11 @@ function generateShortId(fullId: string): string {
  * minute". Source-derived reminders (planner) still dedup correctly on
  * re-ingestion because the same item yields the same message + key.
  *
- * Mirrors the DB `UNIQUE(source_item_id, kind, due_at, persona, message)`
- * in `schemas.ts` — the two MUST agree or a service-level dedup miss
- * becomes a swallowed `INSERT` conflict.
+ * Mirrors the DB `UNIQUE(source_item_id, kind, due_at, persona, message,
+ * data_scope)` in `schemas.ts` — the two MUST agree or a service-level dedup
+ * miss becomes a swallowed `INSERT` conflict. data_scope is folded in here
+ * (read from the active scope at dedup time) so a demo reminder and a user
+ * reminder with identical content are NOT deduped against each other.
  */
 function dedupKey(
   sourceItemId: string,
@@ -90,7 +95,7 @@ function dedupKey(
   persona: string,
   message: string,
 ): string {
-  return `${sourceItemId}|${kind}|${dueAt}|${persona}|${message}`;
+  return `${sourceItemId}|${kind}|${dueAt}|${persona}|${message}|${currentDataScope()}`;
 }
 
 /** Subscribers fan-out registered via `subscribeReminderCreated`. */
@@ -491,6 +496,25 @@ export function resetReminderState(): void {
   shortIdIndex.clear();
   createListeners.clear();
   inflightDurable.clear();
+}
+
+/**
+ * Reset ONLY the rebuildable in-memory read caches (the reminder Map + its
+ * dedup / short-id indexes), preserving the registered create-listeners and
+ * any in-flight durable writes.
+ *
+ * This is the data-scope-refresh reset: a guided-demo enter/exit must clear the
+ * other scope's cached reminders before re-hydrating from the scope-filtered
+ * repo, but it must NOT detach the OS-push bridge (`subscribeReminderCreated`,
+ * installed once at unlock). `resetReminderState()` clears `createListeners`,
+ * so calling it on every scope transition silently stops local notifications
+ * from being scheduled for reminders created after the first demo. Use this
+ * instead on the scope-refresh path. See `refreshCachesForCurrentScope`.
+ */
+export function resetReminderCaches(): void {
+  reminders.clear();
+  dedupIndex.clear();
+  shortIdIndex.clear();
 }
 
 /**

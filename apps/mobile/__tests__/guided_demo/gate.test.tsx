@@ -1,0 +1,346 @@
+/**
+ * useGuidedDemoGate — first-run / recovery / running state machine.
+ * Real core engine + controller; only cache rehydration is mocked.
+ */
+
+jest.mock('../../src/guided_demo/rehydrate', () => {
+  const noop = jest.fn(async () => undefined);
+  return { refreshCachesForCurrentScope: noop, rehydrateUserScopeCaches: noop };
+});
+
+import { act, renderHook, waitFor } from '@testing-library/react-native';
+
+import {
+  currentDataScope,
+  getActiveDemo,
+  setActiveDemo,
+  resetDataScope,
+  setGuidedDemoIdFactory,
+  resetGuidedDemoIdFactory,
+  clearScopedCleanups,
+  registerScopedCleanup,
+  markGuidedDemoEntrySeen,
+} from '@dina/core';
+
+import { useGuidedDemoGate } from '../../src/guided_demo/useGuidedDemoGate';
+import type { GuidedDemoSeams } from '../../src/guided_demo/runner';
+import { DEMO_STEPS } from '../../src/guided_demo/content';
+import { resetKVStore } from '../../../core/src/kv/store';
+
+/** Fake runner seams so the gate's advance/teardown can be asserted without
+ *  touching the real composer / approval manager. */
+function fakeSeams(): {
+  make: () => GuidedDemoSeams;
+  rec: {
+    sends: number;
+    recommendations: number;
+    serviceCards: number;
+    approvals: string[];
+    denied: string[];
+    cards: number;
+  };
+} {
+  const rec = {
+    sends: 0,
+    recommendations: 0,
+    serviceCards: 0,
+    approvals: [] as string[],
+    denied: [] as string[],
+    cards: 0,
+  };
+  const seams: GuidedDemoSeams = {
+    async send() {
+      rec.sends += 1;
+    },
+    postRecommendation() {
+      rec.recommendations += 1;
+    },
+    postServiceCard() {
+      rec.serviceCards += 1;
+    },
+    requestApproval(req) {
+      rec.approvals.push(req.id);
+      return req.id;
+    },
+    denyApproval(id) {
+      rec.denied.push(id);
+    },
+    postDemoCard() {
+      rec.cards += 1;
+    },
+  };
+  return { make: () => seams, rec };
+}
+
+const CHAT_STEP_COUNT = DEMO_STEPS.filter((s) => s.kind === undefined || s.kind === 'chat').length;
+const RECOMMEND_STEP_COUNT = DEMO_STEPS.filter((s) => s.kind === 'recommend').length;
+const SERVICE_STEP_COUNT = DEMO_STEPS.filter((s) => s.kind === 'service').length;
+
+describe('useGuidedDemoGate', () => {
+  beforeEach(() => {
+    resetKVStore();
+    resetDataScope();
+    clearScopedCleanups();
+    setGuidedDemoIdFactory(() => 'run1');
+    registerScopedCleanup({ table: 'reminders', deleteScope: () => 0 });
+  });
+  afterEach(() => {
+    clearScopedCleanups();
+    resetGuidedDemoIdFactory();
+  });
+
+  it('first run → entry', async () => {
+    const { result } = renderHook(() => useGuidedDemoGate());
+    await waitFor(() => expect(result.current.phase).toBe('entry'));
+  });
+
+  it('already offered → running', async () => {
+    await markGuidedDemoEntrySeen();
+    const { result } = renderHook(() => useGuidedDemoGate());
+    await waitFor(() => expect(result.current.phase).toBe('running'));
+  });
+
+  it('a pending demo record → recovery (priority over entry)', async () => {
+    await setActiveDemo({ activeDemoScope: 'guided_demo:run1', startedAt: 1, step: '' });
+    const { result } = renderHook(() => useGuidedDemoGate());
+    await waitFor(() => expect(result.current.phase).toBe('recovery'));
+  });
+
+  it('startDemo → running + demoActive + scope + recovery record', async () => {
+    const { result } = renderHook(() => useGuidedDemoGate());
+    await waitFor(() => expect(result.current.phase).toBe('entry'));
+    await act(async () => {
+      await result.current.startDemo();
+    });
+    expect(result.current.phase).toBe('running');
+    expect(result.current.demoActive).toBe(true);
+    expect(currentDataScope()).toBe('guided_demo:run1');
+    expect((await getActiveDemo())?.activeDemoScope).toBe('guided_demo:run1');
+  });
+
+  it('skip → running, on user, no demo', async () => {
+    const { result } = renderHook(() => useGuidedDemoGate());
+    await waitFor(() => expect(result.current.phase).toBe('entry'));
+    await act(async () => {
+      await result.current.skip();
+    });
+    expect(result.current.phase).toBe('running');
+    expect(result.current.demoActive).toBe(false);
+    expect(currentDataScope()).toBe('user');
+  });
+
+  it('exit → tears down, returns to user, clears recovery', async () => {
+    const { result } = renderHook(() => useGuidedDemoGate());
+    await waitFor(() => expect(result.current.phase).toBe('entry'));
+    await act(async () => {
+      await result.current.startDemo();
+    });
+    expect(result.current.demoActive).toBe(true);
+    await act(async () => {
+      await result.current.exitDemo();
+    });
+    expect(result.current.demoActive).toBe(false);
+    expect(currentDataScope()).toBe('user');
+    expect(await getActiveDemo()).toBeNull();
+  });
+
+  it('disabled gate stays in checking (boot not ready)', async () => {
+    const { result } = renderHook(() => useGuidedDemoGate(false));
+    // No probe runs; phase stays at its initial value.
+    expect(result.current.phase).toBe('checking');
+  });
+
+  it('startDemo arms the runner at the first step', async () => {
+    const { make } = fakeSeams();
+    const { result } = renderHook(() => useGuidedDemoGate(true, { makeSeams: make }));
+    await waitFor(() => expect(result.current.phase).toBe('entry'));
+    await act(async () => {
+      await result.current.startDemo();
+    });
+    expect(result.current.stepCount).toBe(DEMO_STEPS.length + 2);
+    expect(result.current.step).toBe(1);
+    expect(result.current.currentAction?.id).toBe(DEMO_STEPS[0]?.id);
+    expect(result.current.demoComplete).toBe(false);
+  });
+
+  it('advanceDemo runs the next step through the seams and moves the cursor', async () => {
+    const { make, rec } = fakeSeams();
+    const { result } = renderHook(() => useGuidedDemoGate(true, { makeSeams: make }));
+    await waitFor(() => expect(result.current.phase).toBe('entry'));
+    await act(async () => {
+      await result.current.startDemo();
+    });
+    await act(async () => {
+      await result.current.advanceDemo();
+    });
+    expect(rec.sends).toBe(1);
+    expect(result.current.step).toBe(2);
+    expect(result.current.currentAction?.id).toBe(DEMO_STEPS[1]?.id);
+  });
+
+  it('runs to completion → approval created, publish card posted, complete flag set', async () => {
+    const { make, rec } = fakeSeams();
+    const { result } = renderHook(() => useGuidedDemoGate(true, { makeSeams: make }));
+    await waitFor(() => expect(result.current.phase).toBe('entry'));
+    await act(async () => {
+      await result.current.startDemo();
+    });
+    for (let i = 0; i < DEMO_STEPS.length + 2; i += 1) {
+      await act(async () => {
+        await result.current.advanceDemo();
+      });
+    }
+    expect(rec.sends).toBe(CHAT_STEP_COUNT);
+    expect(rec.recommendations).toBe(RECOMMEND_STEP_COUNT);
+    expect(rec.serviceCards).toBe(SERVICE_STEP_COUNT);
+    expect(rec.approvals).toHaveLength(1);
+    expect(rec.cards).toBe(1);
+    expect(result.current.demoComplete).toBe(true);
+    expect(result.current.currentAction).toBeNull();
+  });
+
+  /** Seams whose `send` blocks until `release()` and records the scope it ran
+   *  in — used to assert serialization + the exit/in-flight ordering. */
+  function blockingSeams(): {
+    make: () => GuidedDemoSeams;
+    release: () => void;
+    state: { sends: number; scopeAtSend: string };
+  } {
+    let release!: () => void;
+    const blocker = new Promise<void>((r) => {
+      release = r;
+    });
+    const state = { sends: 0, scopeAtSend: '' };
+    const seams: GuidedDemoSeams = {
+      async send() {
+        state.sends += 1;
+        await blocker;
+        // Captured AFTER the await: proves the step finished BEFORE the scope
+        // was reset (if exit didn't await us, this would read 'user').
+        state.scopeAtSend = currentDataScope();
+      },
+      postRecommendation() {},
+      postServiceCard() {},
+      requestApproval(req) {
+        return req.id;
+      },
+      denyApproval() {},
+      postDemoCard() {},
+    };
+    return { make: () => seams, release, state };
+  }
+
+  it('advanceDemo serializes — a double-tap runs only ONE step', async () => {
+    const { make, release, state } = blockingSeams();
+    const { result } = renderHook(() => useGuidedDemoGate(true, { makeSeams: make }));
+    await waitFor(() => expect(result.current.phase).toBe('entry'));
+    await act(async () => {
+      await result.current.startDemo();
+    });
+
+    let first: Promise<void>;
+    let second: Promise<void>;
+    await act(async () => {
+      first = result.current.advanceDemo();
+      second = result.current.advanceDemo(); // ignored — a step is in flight
+      await Promise.resolve();
+    });
+    expect(result.current.actionInFlight).toBe(true);
+
+    await act(async () => {
+      release();
+      await first;
+      await second;
+    });
+    // Only one send fired and the cursor moved by exactly one.
+    expect(state.sends).toBe(1);
+    expect(result.current.step).toBe(2);
+    expect(result.current.actionInFlight).toBe(false);
+  });
+
+  it('exitDemo WAITS for an in-flight step to finish in the demo scope before reset', async () => {
+    const { make, release, state } = blockingSeams();
+    const { result } = renderHook(() => useGuidedDemoGate(true, { makeSeams: make }));
+    await waitFor(() => expect(result.current.phase).toBe('entry'));
+    await act(async () => {
+      await result.current.startDemo();
+    });
+
+    let advancing: Promise<void>;
+    await act(async () => {
+      advancing = result.current.advanceDemo(); // blocks inside send
+      await Promise.resolve();
+    });
+
+    let exiting: Promise<void>;
+    await act(async () => {
+      exiting = result.current.exitDemo(); // flips UI, then awaits the step
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      release();
+      await advancing;
+      await exiting;
+    });
+
+    // The step finished while still in the demo scope (exit awaited it), and
+    // only afterwards was the scope reset to user.
+    expect(state.scopeAtSend).toBe('guided_demo:run1');
+    expect(currentDataScope()).toBe('user');
+    expect(result.current.demoActive).toBe(false);
+  });
+
+  it('exitDemo stays in a non-interactive tearing_down phase until the scope is reset', async () => {
+    const { make, release } = blockingSeams();
+    const { result } = renderHook(() => useGuidedDemoGate(true, { makeSeams: make }));
+    await waitFor(() => expect(result.current.phase).toBe('entry'));
+    await act(async () => {
+      await result.current.startDemo();
+    });
+
+    await act(async () => {
+      void result.current.advanceDemo(); // blocks inside send
+      await Promise.resolve();
+    });
+
+    let exiting: Promise<void>;
+    await act(async () => {
+      exiting = result.current.exitDemo();
+      await Promise.resolve();
+    });
+    // Scope is still the demo scope here, so the gate must show the blocking
+    // teardown surface — NOT 'running' (which exposes the live app).
+    expect(result.current.phase).toBe('tearing_down');
+    expect(result.current.demoActive).toBe(false);
+
+    await act(async () => {
+      release();
+      await exiting;
+    });
+    // Only once teardown completes (scope back to user) does the live app show.
+    expect(result.current.phase).toBe('running');
+    expect(currentDataScope()).toBe('user');
+  });
+
+  it('exitDemo tears the runner down, denying a pending approval', async () => {
+    const { make, rec } = fakeSeams();
+    const { result } = renderHook(() => useGuidedDemoGate(true, { makeSeams: make }));
+    await waitFor(() => expect(result.current.phase).toBe('entry'));
+    await act(async () => {
+      await result.current.startDemo();
+    });
+    // Advance through the chat steps + the approval step.
+    for (let i = 0; i < DEMO_STEPS.length + 1; i += 1) {
+      await act(async () => {
+        await result.current.advanceDemo();
+      });
+    }
+    expect(rec.approvals).toHaveLength(1);
+    await act(async () => {
+      await result.current.exitDemo();
+    });
+    expect(rec.denied).toEqual(rec.approvals);
+    expect(currentDataScope()).toBe('user');
+  });
+});

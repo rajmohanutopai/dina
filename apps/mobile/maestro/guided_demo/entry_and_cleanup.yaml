@@ -1,0 +1,56 @@
+# MRS-GD-01 — Guided demo gate: entry → start → banner → exit cleanup.
+#
+# Drives the data-scope guided demo's app-shell surfaces (GuidedDemoGate,
+# wired in app/_layout under UnlockGate). Requires a FRESH install (the entry
+# screen is first-run-only — gated on the `guided_demo.entry_seen` flag), so
+# run after onboarding on a clean device/sim.
+#
+# This flow asserts the gate flow + that exiting returns to a normal, empty
+# Chat. The scripted CONTENT (Emma/chair/agent/publish) + demo-data providers
+# are exercised by the in-app steps once seeded; the data-scope isolation +
+# cleanup invariants are unit/real-SQLite covered (core/scope + storage-node
+# *_scope_isolation suites).
+appId: com.dinakernel.mobile
+---
+- launchApp
+# First run after onboarding: the entry screen replaces Chat.
+- extendedWaitUntil:
+    visible:
+      id: 'guided-demo-entry'
+    timeout: 30000
+- assertVisible:
+    text: 'See Dina in action'
+# Start the demo → enter the isolated guided_demo scope; banner appears.
+- tapOn:
+    id: 'guided-demo-start'
+- extendedWaitUntil:
+    visible:
+      id: 'guided-demo-banner'
+    timeout: 15000
+- assertVisible:
+    text: '.*sample data only.*'
+# The runner is armed at step 1 with its caption + a Next affordance.
+- assertVisible:
+    id: 'guided-demo-caption'
+- assertVisible:
+    id: 'guided-demo-next'
+# The normal Chat composer is present beneath the banner (real surface).
+- assertVisible:
+    id: 'index-mode-chip-remember'
+# Run the first scripted step through the REAL /remember path; the runner
+# advances and the banner persists with the next step's caption.
+- tapOn:
+    id: 'guided-demo-next'
+- extendedWaitUntil:
+    visible:
+      id: 'guided-demo-caption'
+    timeout: 20000
+# Exit the demo → cleanup runs, banner disappears, Chat stays usable + empty.
+- tapOn:
+    id: 'guided-demo-exit'
+- extendedWaitUntil:
+    notVisible:
+      id: 'guided-demo-banner'
+    timeout: 20000
+- assertVisible:
+    id: 'index-mode-chip-remember'

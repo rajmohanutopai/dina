@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Guided Demo Data Scope — Implementation Notes</title>
+<style>
+  body { font: 15px/1.6 -apple-system, system-ui, sans-serif; max-width: 60rem; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+  h1 { border-bottom: 2px solid #222; padding-bottom: .3rem; }
+  h2 { margin-top: 2.2rem; border-bottom: 1px solid #ddd; padding-bottom: .2rem; }
+  h3 { margin-top: 1.4rem; }
+  code, pre { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  code { background: #f3f3f3; padding: .1rem .3rem; border-radius: 3px; }
+  pre { background: #f7f7f7; border: 1px solid #e5e5e5; padding: .7rem; border-radius: 6px; overflow-x: auto; }
+  .decision { border-left: 4px solid #2b7; padding: .2rem 0 .2rem .8rem; margin: .8rem 0; }
+  .deviation { border-left: 4px solid #e67e22; padding: .2rem 0 .2rem .8rem; margin: .8rem 0; }
+  .tradeoff { border-left: 4px solid #3498db; padding: .2rem 0 .2rem .8rem; margin: .8rem 0; }
+  .open { border-left: 4px solid #c0392b; padding: .2rem 0 .2rem .8rem; margin: .8rem 0; }
+  .iter { background: #fafafa; border: 1px solid #eee; border-radius: 6px; padding: .6rem .9rem; margin: .8rem 0; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: .1rem .4rem; border-radius: 3px; color: #fff; margin-right: .4rem; }
+  .t-dec { background: #2b7; } .t-dev { background: #e67e22; } .t-tra { background: #3498db; } .t-open { background: #c0392b; }
+  .status-green { color: #2b7; font-weight: 700; }
+  .status-red { color: #c0392b; font-weight: 700; }
+  table { border-collapse: collapse; width: 100%; margin: .8rem 0; }
+  th, td { border: 1px solid #ddd; padding: .4rem .6rem; text-align: left; font-size: 14px; }
+  th { background: #f3f3f3; }
+</style>
+</head>
+<body>
+<h1>Guided Demo Data Scope — Implementation Notes</h1>
+<p>Running log for <code>docs/GUIDED_DEMO_DATA_SCOPE_DESIGN.md</code>. Captures design
+decisions, deviations, tradeoffs, open questions, and per-iteration progress with
+test status. Newest iterations appended at the end of each phase.</p>
+
+<h2>Phase status</h2>
+<table>
+  <tr><th>Phase</th><th>Scope</th><th>Status</th></tr>
+  <tr><td>1</td><td>DataScope runtime manager + active-demo state + cleanup skeleton + unit tests</td><td class="status-green">done — 29 tests green, typecheck 0</td></tr>
+  <tr><td>2</td><td>data_scope schema columns + migration/validators</td><td class="status-green">done — real-SQLite + 212 repo tests green, typecheck 0</td></tr>
+  <tr><td>3</td><td>Scoped repo helpers + enforcement + leak tests + export exclusion</td><td class="status-green">done — vault/reminders/people/chat wired + real-SQLite leak tests; export excludes demo; staging deferred (see note)</td></tr>
+  <tr><td>3b</td><td>deleteDataScope cleanup service</td><td class="status-green">done — registry wiring (identity + per-persona) + tearDownDataScope orchestration, 5 tests</td></tr>
+  <tr><td>4-5</td><td>Guided demo orchestrator + content + recovery UI</td><td class="status-green">DONE — engine + controller + rehydration + UI (entry/banner+stepper/recovery) wired into app/_layout; GuidedDemoRunner drives the 6-action plan (3 scripted /remember+/ask sends, a real resolved service-query card, real agent-approval, publish-draft card) through real seams; teardown denies pending approvals. 41 mobile guided_demo tests, typecheck 0.</td></tr>
+  <tr><td>6</td><td>E2E/integration + MRS-GD-01 + Maestro</td><td class="status-green">DONE — real-SQLite e2e flow (seed→start→isolate→finish→cleanup) + cache-swap e2e (in-memory Chat/Reminders hidden in demo, restored on teardown) + MRS-GD-01 doc + Maestro flow YAML.</td></tr>
+  <tr><td>7</td><td>Mandatory AI-provider onboarding step + LIVE device verification</td><td class="status-green">DONE — verified live on iOS sim with Gemini (see "Live verification" below).</td></tr>
+</table>
+
+<h2>Live device verification + mandatory AI onboarding step</h2>
+<div class="iter"><span class="tag t-dec">Verified live on iPhone 17 Pro sim (Maestro 2.6, Gemini BYOK)</span>
+Running the demo on a real sim caught three bugs no unit test could, all fixed + re-verified:
+<ul>
+<li><strong>Heading font</strong> — entry title used a hand-rolled sans weight; now <code>textStyles.display</code> (Cormorant), matching onboarding.</li>
+<li><strong>Banner behind the status bar</strong> — the banner mounted at screen y=0 under the Dynamic Island, hiding it AND making Exit/Next untappable (taps hit the system status bar). Fixed with <code>useSafeAreaInsets()</code> top padding. This was the real "Exit never worked" root cause.</li>
+<li><strong>Banner Next a full-width row</strong> — the tiny top-right Next button collided with the status bar / the expo dev-tools FAB; it's now a full-width button below the caption (better tap target + clear of the corner).</li>
+</ul>
+</div>
+<div class="iter"><span class="tag t-dec">Banner redesign — top UI looked "wonky" (heavy slab) + complete-state Exit not obvious</span>
+Two follow-up UI fixes after a live look, re-verified on the sim with Maestro:
+<ul>
+<li><strong>Full-width slab → compact centred pill.</strong> The earlier "full-width Next" fix
+over-corrected: a heavy edge-to-edge black slab dominated the top of the screen. Restructured
+the banner into a quiet header row (small-caps <code>GUIDED&nbsp;DEMO&nbsp;·&nbsp;N/M</code>
+eyebrow + a small Exit link) over the caption, with <strong>Next step</strong> as a compact,
+centred, fully-rounded pill (<code>radius.full</code>, <code>alignSelf:'center'</code>). Reads as
+a CTA, not a wall, and the centred pill clears the top-right dev-tools FAB. Removed the now-unused
+<code>banner</code>/<code>bannerText</code>/<code>bannerExit</code>/<code>stepCaption</code> styles.</li>
+<li><strong>Complete state — prominent body Exit.</strong> "Demo complete — tap Exit…" pointed at
+the small header-corner Exit link, which on the dev build is buried under the notch + Metro's
+"Downloading" overlay (user asked "where is the exit button?"). The complete state now renders a
+prominent centred Exit pill in the body (<code>guided-demo-exit-cta</code>, "Exit and clear sample
+data", same pill style) directly under the caption; the header link stays as a secondary affordance.</li>
+</ul>
+<strong>Tests:</strong> <span class="status-green">screens.test asserts the eyebrow N/M format
+(<code>/1\/6/</code>) + the new <code>guided-demo-exit-cta</code> fires onExit; 44 guided_demo
+tests + mobile typecheck green.</span> Verified live: fresh onboard → entry → Start demo →
+stepper (compact pill, screenshot) and the complete-state body Exit pill.</div>
+<div class="iter"><span class="tag t-dec">Code-review hardening — 8 data-scope isolation fixes (P1/P2)</span>
+A review of the data-scope engine surfaced eight leak / correctness gaps; all fixed with tests
+(<span class="status-green">core 564, brain 509, storage-node 2, mobile guided_demo 48 + reminders
+green; workspace typecheck 0 errors</span>):
+<ul>
+<li><strong>P1 — exit races in-flight demo writes.</strong> <code>advanceDemo</code> is now
+serialized (an in-flight ref; a double-tap on Next runs ONE step) and <code>exitDemo</code>/
+<code>deleteDemo</code> <em>await the in-flight step</em> before <code>endGuidedDemoAndRefresh</code>,
+so a still-draining <code>/remember</code> can't land in the user vault after the scope resets. The
+banner disables Next → "Working…" while running. (<code>useGuidedDemoGate.ts</code>,
+<code>GuidedDemoScreens.tsx</code>)</li>
+<li><strong>P1 — <code>staging_inbox</code> ignored its <code>data_scope</code> column.</strong>
+<code>ingest</code> stamps the current scope; <code>claim</code> filters by current scope (both
+SQLite + in-memory repos) so the interval drain never picks a demo row up on the user scope;
+the vault write is PINNED to the row's own scope across the async claim→resolve gap
+(<code>storeItemInScope</code>); <code>staging_inbox</code> registered in cleanup. Crash/restart
+test included. (<code>staging/service.ts</code>, <code>staging/repository.ts</code>,
+<code>cleanup_wiring.ts</code>)</li>
+<li><strong>P1 — topic memory leaked demo content.</strong> The per-persona
+<code>topic_salience</code>/<code>topic_aliases</code> tables aren't scope-partitioned, so
+<code>POST /v1/memory/topic/touch</code> is now a soft no-op (<code>skipped: guided_demo_scope</code>)
+in a demo scope — the central choke point for both HTTP + in-process transports. Demo topics never
+reach the ToC or export. (<code>server/routes/memory.ts</code>)</li>
+<li><strong>P1/P2 — cleanup only covered OPEN personas.</strong> <code>wirePersonaScopeCleanups</code>
+is now async and the mobile wiring opens EVERY registered persona
+(<code>openAllPersonaAdapters</code>, like export) so a demo row in a closed health/financial vault
+is deleted after a crash-recovery boot. (<code>cleanup_wiring.ts</code>,
+<code>storage/init.ts</code>)</li>
+<li><strong>P2 — reminder push bridge removed by cache refresh.</strong>
+<code>refreshCachesForCurrentScope</code> called <code>resetReminderState</code> (which clears
+<code>createListeners</code> = the OS-notification bridge). Added <code>resetReminderCaches</code>
+(clears the Map, keeps listeners) and switched the refresh path to it. (<code>reminders/service.ts</code>,
+<code>rehydrate.ts</code>)</li>
+<li><strong>P2 — resume marker skipped step 1.</strong> <code>startGuidedDemo</code> persisted
+<code>step = DEMO_FIRST_STEP</code> before any action ran, so <code>resumeAfter</code> treated step 1
+as done. Now persists <code>step = ''</code> (the marker records the last <em>completed</em> step) →
+a crash right after start replays "Emma is my daughter." (<code>scope/guided_demo.ts</code>)</li>
+<li><strong>P2 — recovery cleared on partial cleanup failure.</strong> <code>tearDownDataScope</code>
+now KEEPS the active-demo record (and warns) when <code>deleteDataScope</code> reports per-table
+errors, so the next boot can retry instead of abandoning demo rows. (<code>cleanup_wiring.ts</code>)</li>
+<li><strong>P2 — stale Maestro onboarding flow.</strong> <code>onboarding_create.yaml</code> now drives
+the mandatory AI-provider step (connected → Continue) before waiting for the guided-demo entry.</li>
+</ul></div>
+<div class="iter"><span class="tag t-dec">Code-review round 2 — 5 more isolation gaps (P2)</span>
+A second pass (mostly fallout from round 1's scope-stamping) — all fixed with tests
+(<span class="status-green">core 599, brain 357, mobile 55; typecheck 0 errors</span>):
+<ul>
+<li><strong>Staging dedup ignored scope.</strong> Round 1 stamped <code>data_scope</code> on ingest
+but left <code>UNIQUE(producer_id, source, source_id)</code> + a scope-blind <code>findByDedup</code>,
+so the SAME tuple in user + demo collided (second scope's row silently dropped by INSERT OR IGNORE).
+Migration <strong>v13</strong> rebuilds <code>staging_inbox</code> with
+<code>UNIQUE(producer_id, source, source_id, data_scope)</code> (reminders-v12 pattern), and
+<code>findByDedup</code> + both in-memory dedup keys now fold in scope. (demo uses
+timestamp-based source ids so it never hit this in practice, but the half-fix was a latent bug.)</li>
+<li><strong>ToC READS leaked in demo scope.</strong> The touch guard blocked writes, but
+<code>handleToc</code> AND the in-process intent classifier still read the user's real topics while
+in a demo scope. Guarded the single read choke point — <code>MemoryService.toc()</code> returns
+<code>[]</code> in a guided-demo scope. (<code>memory/service.ts</code>)</li>
+<li><strong>Demo approval had no actionable card.</strong> <code>providers.requestApproval</code> only
+drove <code>ApprovalManager</code> (→ a notification deep-link). Switched to the real
+<code>createApprovalCard(...)</code> path, which also posts the actionable <code>'approval'</code>
+chat card (scope-bound, torn down with the demo). (<code>guided_demo/providers.ts</code>)</li>
+<li><strong>Only 'main' thread refreshed on scope change.</strong> Per-peer D2D threads in the same
+unscoped in-memory chat map kept the user's real messages inside the demo. <code>rehydrate</code> now
+force-replaces EVERY open thread (<code>['main', ...listThreads()]</code>). (<code>rehydrate.ts</code>)</li>
+<li><strong>Active-demo KV leaked into archives.</strong> A backup taken during a demo carried the
+<code>guided_demo.active</code> record; restoring it resurrected an orphan recovery record. Added an
+ephemeral-key exclusion (<code>/^guided_demo\./</code>) to the archive kv filter. (<code>export/archive.ts</code>)</li>
+</ul></div>
+<div class="iter"><span class="tag t-dec">Code-review round 3 — 2 more (P2)</span>
+<span class="status-green">mobile 54, core 378; typecheck 0 errors.</span>
+<ul>
+<li><strong>Demo approval card never rendered.</strong> Round 2's <code>createApprovalCard</code>
+posts an <code>'approval'</code> message with NO <code>metadata.kind</code>, so the chat renderer
+ignored it (it dispatches on <code>metadata.kind</code>). Investigation showed none of the three real
+cards resolve a STANDALONE demo request cleanly: <code>ask_approval</code>'s <code>approveCard</code>
+routes through the AskApprovalGateway, which short-circuits <code>unknown_approval</code> with no real
+<code>/ask</code> in flight; <code>vault_read</code> writes a real (unscoped) agent grant — a user-scope
+leak; <code>service_approval</code> runs a slash command against a non-existent workflow task. Built a
+dedicated <code>InlineDemoApprovalCard</code> (<code>metadata.kind: 'demo_approval'</code>, dispatched in
+<code>app/index.tsx</code>, <code>chat-card-demo-approval</code>) backed ONLY by the real
+<code>ApprovalManager</code> (approve/deny mutate it directly — no gateway/workflow/grant), so the card
+renders + resolves reliably and leaves nothing behind (scope-bound message + runner teardown-deny).</li>
+<li><strong>Teardown window let writes hit the demo scope.</strong> Exit/Delete revealed the live app
+(<code>setPhase('running')</code>) BEFORE <code>settleInFlight</code> + <code>endGuidedDemoAndRefresh</code>
+reset the scope — so anything the user did during a long in-flight <code>/remember</code> was written to
+<code>guided_demo:*</code> and then deleted, with no banner. Added a non-interactive
+<code>'tearing_down'</code> phase + <code>GuidedDemoTeardown</code> overlay ("Ending demo and clearing
+the sample data…") that replaces the app until the scope is actually back on <code>user</code>.
+(<code>useGuidedDemoGate.ts</code>, <code>GuidedDemoGate.tsx</code>, <code>GuidedDemoScreens.tsx</code>)</li>
+</ul></div>
+<div class="iter"><span class="tag t-dec">Code-review round 4 — 2 P2 + 1 P3</span>
+<span class="status-green">core 610, mobile 61, storage-node 2; typecheck 0 errors.</span>
+<ul>
+<li><strong>P2 — staging exact-ID ops bypassed scope.</strong> <code>claim</code> is scope-filtered and
+vault writes are scope-pinned, but <code>resolve</code>/<code>fail</code>/<code>extendLease</code>/
+<code>markPendingApproval</code>/<code>resumeAfterApprovalGranted</code>/<code>resolveMulti</code> loaded by
+id only. Added <code>assertItemInCurrentScope(item)</code> after each by-id load (the "exact-ID deletes
+are still scope-bound" rule, applied to mutations) — a by-id mutation can't touch a row from another
+scope; the realistic trigger (scope flip between claim and resolve) now throws → the drain marks the
+item failed instead of mutating a cross-scope row. (<code>staging/service.ts</code>)</li>
+<li><strong>P2 — persona cleanup silently skipped a failed-to-open persona.</strong>
+<code>openAllPersonaAdapters</code> caught every error as "nothing to clean", so a real open failure
+(corruption/I/O — NOT a benign absent file, since op-sqlite creates the DB on open) let demo rows
+survive AND teardown still cleared the recovery record. It now returns <code>{adapters, failed}</code>;
+<code>wirePersonaScopeCleanups</code> cleans the personas that opened, then throws if any
+<code>failed</code> → recorded in <code>deleteDataScope</code>'s errors → recovery preserved + retried.
+(<code>storage/init.ts</code>, <code>scope/cleanup_wiring.ts</code>)</li>
+<li><strong>P3 — demo service/PeerLens/agent moments are simulations, not E2E.</strong> Made that
+explicit (intentional): <code>send</code> runs the real pipeline, but <code>recommend</code> (PeerLens),
+<code>service</code> (availability), and <code>requestApproval</code> (agent-safety) are deterministic
+seed data through the real card renderers — they do NOT exercise the real PeerLens AppView /
+cross-Dina service D2D / external-agent gateway. Documented the "SCOPE OF FIDELITY" in
+<code>content.ts</code> + <code>providers.ts</code>, pointing to where real E2E coverage lives (MRS,
+the bus-driver services scenario, system tests).</li>
+</ul></div>
+<div class="decision"><span class="tag t-dec">New feature — mandatory "Connect your AI" onboarding step</span>
+The app is unusable without a working LLM key (every /ask + /remember routes through it), yet
+the key lived only in Settings. Added a shared <code>ai_provider</code> step to the onboarding
+state machine (<code>state.ts</code>), inserted before provisioning in ALL three flows
+(create/recover/external) so the vault never unlocks without a brain — totals bumped 6→7 / 4→5 /
+5→6. New screen <code>ai_provider_set.tsx</code> reuses the exact Settings BYOK entry +
+<strong>live key probe</strong> (<code>validateKeyFormat</code> + <code>verifyKey</code>), so a
+typo'd/expired key can't pass. Auto-satisfied when a provider is already configured (returning
+user, or a dev/CI key via <code>EXPO_PUBLIC_DINA_DEV_&lt;PROVIDER&gt;_API_KEY</code>). No skip.
+Also fixed the side effect this introduced: the step now appears right after onboarding, so
+<code>onboarding_create.yaml</code> was updated to pass through it.
+<br><strong>Tests:</strong> <span class="status-green">+8 (ai_step_state 6, ai_provider_set 3 →
+71 guided_demo+onboarding tests)</span>, typecheck 0.
+</div>
+<div class="decision"><span class="tag t-dec">Live green run (Gemini), two flows</span>
+<code>maestro/guided_demo/onboard_and_demo.yaml</code> (onboarding → AI step auto-connected →
+entry → Start demo → Next → real Gemini <code>/remember</code> produces the enriched
+"Emma … dinosaur" birthday reminders) + <code>exit_cleanup.yaml</code> (Exit → banner cleared →
+clean Chat). Split into two Maestro sessions on purpose: a <code>/remember</code> fires several
+async Gemini calls (embedding + topic/preference enrichment) that saturate the single JS thread
+for ~30–60s, which destabilises the XCUITest driver and delays the synchronous op-sqlite
+teardown's repaint — so the teardown tap is reliable in a fresh session once the work settles.
+<strong>Known follow-up:</strong> make the post-<code>/remember</code> enrichment off-thread /
+the demo teardown non-blocking so Exit is snappy even immediately after a step.
+</div>
+<div class="decision"><span class="tag t-dec">Exit-lag root cause — XCUITest driver wedge, not an app bug</span>
+Investigated the "Exit needs a retry" follow-up. Findings: (1) a fresh-session Exit tap
+(<code>exit_cleanup.yaml</code>) clears the banner <em>immediately</em>, every time; (2) inside
+one long, LLM-heavy Maestro session the Exit tap ran a full 90s without ever invoking
+<code>exitDemo</code> (no JS executed) — a <strong>phantom tap</strong> — and the run log shows an
+XCUITest "Failed to connect" mid-session. So the lag is the <strong>XCUITest driver degrading
+over a long busy session</strong>, not the app: the app's Exit logic + optimistic banner flip are
+correct and work on real devices + fresh sessions. The automation pattern (split exit into its own
+session — already done) is the right harness fix; no app teardown bug exists.
+</div>
+<div class="decision"><span class="tag t-dec">Responsiveness improvement — cooperative drain yield</span>
+Still made the staging drain kinder to the single JS thread (the user's "off-thread" intent):
+<code>StagingDrainScheduler</code>'s per-item loop now <code>await</code>s a macrotask
+<code>yieldToHost</code> after the agentic <code>rememberRuntime.run</code> and after the embedding
+enrichment, so the thread hands back a turn to flush queued touches/paints during ingest instead
+of monopolising it. Injectable (default <code>setTimeout(…,0)</code>; pass
+<code>() =&gt; Promise.resolve()</code> to opt out) so fake-timer tests are unaffected. Brain
+staging 65 tests + 74 guided_demo/onboarding tests green, typecheck 0. True off-thread enrichment
+(RN worklets / a second JS context) remains a larger future option if ever needed, but isn't
+warranted — the exit issue was the harness, not the thread.
+</div>
+<div class="decision"><span class="tag t-dec">All 6 demo steps driven live (Gemini) — incl. service + PeerLens flows</span>
+Drove the full doc flow on the sim, step by step: (1) Emma <code>/remember</code> → enriched
+"dinosaur" birthday reminders; (2) back-pain/$500 context <code>/remember</code> → stored in the
+Health vault; (3) <strong>PeerLens chair recommendation</strong> → grounded ErgoFlex pick;
+(4) <strong>service availability</strong> → real <code>chat-card-service-response</code> card
+("Demo Furniture Availability Provider · ErgoFlex · available · SF · 2 days"); (5) demo agent
+Health approval → real <code>ApprovalManager</code> request, Activity badge; (6) publish draft →
+"Draft service … nothing is published" card; then Exit → clean Chat.
+</div>
+<div class="decision"><span class="tag t-dec">Believability restructure — split + reordered inputs (9-action plan)</span>
+The original demo crammed all three Emma facts into one <code>/remember</code> blob, which hid that
+the reminders/people/recommendation come from <em>separate</em> capabilities. Reworked
+<code>DEMO_STEPS</code> into discrete inputs so the user watches functionality arrive piece by
+piece, then sees Dina <strong>connect</strong> them: (1) "Emma is my daughter" → people; (2) "Emma
+loves dinosaurs" → memory; (3) "lower back pain" → health; (4) "keep my spending under $500 this
+month" → a GENERIC budget (deliberately NOT tied to a chair); (5) "Emma's birthday is on Nov 7" →
+a reminder that, despite the bare date, reads <em>"…get her a dinosaur-themed gift"</em> — Dina
+pulled the dinosaurs fact stored 3 steps earlier; (6) "find a good office chair" → recommends
+ErgoFlex citing the back-pain + <em>the $500 budget you set this month</em>; (7) availability card.
+Plan is now 7 content steps + agent-approval + publish-draft = <strong>9 actions</strong> ("Step N
+of 9"). <strong>Verified live (Gemini):</strong> every step's caption advances, the cross-input
+dinosaur reminder renders from the separate birthday input (screenshot), the budget→chair
+synthesis works, service card + approval + publish + Exit all green. <code>DEMO_FIRST_STEP</code>
+(core) updated to the new first id; 74 mobile + 7 core-scope tests green, typecheck 0.
+</div>
+<div class="deviation"><span class="tag t-dev">PeerLens flow fix — grounded recommendation, not a free /ask</span>
+The first live drive exposed a real bug: <code>chair_ask</code> as a free <code>/ask</code>
+<strong>hallucinated PeerLens data</strong> — it recommended an "Aeron Chair" with invented peer
+reviews ("peers in PeerLens", "Rajmohan/Sancho recommend"). With demoMode off the boot AppView is
+the real hosted one (no chair data) + can't be runtime-injected, so the LLM filled the void —
+directly violating the demo's Verified-Truth premise. Fix: <code>chair_ask</code> is now a
+<code>recommend</code> step that posts a deterministic, GROUNDED recommendation
+(<code>buildChairRecommendation</code>, derived from <code>DEMO_PEERLENS_CHAIRS</code> + the $500
+budget) as a real user→Dina chat exchange via the live renderer — recommends ErgoFlex, sets aside
+BudgetLite (poor back) + SpinePro (over budget), cites only the seeded reviews, never invents
+peers. Verified live. Also makes the step instant (one fewer LLM call). 3 new tests assert the
+ErgoFlex pick + the "no Rajmohan/Sancho/Aeron" invariant → 74 guided_demo+onboarding tests green.
+</div>
+<div class="deviation"><span class="tag t-dev">Dev-build Maestro learnings (not product bugs)</span>
+(1) The Expo dev-menu intro covers the welcome screen on a fresh dev install — dismiss it (tap
+Continue, then tap outside). (2) The expo dev-tools floating gear FAB sits top-right over the
+banner's Exit/Next — drag it out of the corner first (no FAB in production). (3) The passphrase
+<em>confirm</em> field can't be focused by a synthetic tap on iOS 26.4; onboarding now wires
+<code>returnKeyType="next"</code> + a ref <code>.focus()</code> (a real UX win too), so the
+keyboard "Next" key moves to it. (4) The handle field's typed text is flaky; tap an available
+suggestion by its <code>handle-suggestion-&lt;handle&gt;</code> testID instead.
+</div>
+
+<h2>Cross-cutting decisions</h2>
+
+<div class="deviation"><span class="tag t-dev">Deviation</span>
+<strong>Schema: ALTER-TABLE in new migration versions, not editing the original CREATE TABLE.</strong>
+The spec (Phase 2) says "Greenfield release: no compatibility migration complexity is
+required beyond normal schema initialization," implying we could just add the column to
+the original <code>CREATE TABLE</code>. But this codebase treats <em>applied migrations as
+immutable</em> (see <code>schemas.ts</code> "applied migrations are immutable; this v8
+supersedes it"). Editing v1's <code>CREATE TABLE</code> would leave every already-migrated
+dev DB without the column. So <code>data_scope</code> is added via <em>new</em> migration
+versions using <code>ALTER TABLE … ADD COLUMN data_scope TEXT NOT NULL DEFAULT 'user'</code>,
+which is correct for both fresh and existing DBs and respects the immutability convention.
+</div>
+
+<div class="decision"><span class="tag t-dec">Decision</span>
+<strong>Run-id factory is injectable.</strong> <code>newGuidedDemoScope()</code> keeps the
+spec's no-arg signature but delegates id generation to a swappable factory
+(<code>setGuidedDemoIdFactory</code>) so tests are deterministic. The default produces a
+url/file-safe hex id; the run id is <em>not</em> a secret, so cryptographic randomness
+isn't required — uniqueness across a single local demo run is the only requirement.
+</div>
+
+<div class="decision"><span class="tag t-dec">Decision</span>
+<strong><code>runInDataScope</code> is synchronous (matches the spec signature).</strong>
+The guided demo sets a <em>persistent</em> scope via <code>setCurrentDataScope</code> for the
+whole run, so async remember/ask/reminder operations inherit demo scope without wrapping.
+<code>runInDataScope</code> is a utility for short synchronous critical sections + tests.
+Singleton runtime scope is sound for V1 because the mobile app is local, single-user, and
+the demo is exclusive while active (per the spec's own guidance).
+</div>
+
+<div class="decision"><span class="tag t-dec">Decision</span>
+<strong>Scope is validated at the boundary.</strong> <code>setCurrentDataScope</code> and
+<code>newGuidedDemoScope</code> reject malformed scopes (<code>isValidDataScope</code>).
+Because scope drives data isolation, a malformed scope is a correctness/security risk, so
+it fails loud rather than silently isolating to a garbage container.
+</div>
+
+<h2>Phase 3 — Repository enforcement</h2>
+<div class="iter"><span class="tag t-dec">Iteration 1 — helpers + vault repo</span>
+<strong>What changed:</strong> <code>scope/repository.ts</code> — <code>scopedInsertFields</code>,
+<code>scopedWhere(alias?)</code>, <code>scopedParams</code>, <code>scopedTableDeleter</code>
+(registry-ready DELETE-by-scope). Wired the <strong>vault repository fully</strong> — BOTH
+<code>SQLiteVaultRepository</code> and <code>InMemoryVaultRepository</code>: store stamps
+<code>currentDataScope()</code>; every read (getItem×2, queryFTS, queryAll, valuesSync,
+getItemIdsForPerson, getItemsForPerson) filters by scope; soft-delete and repoint are
+exact-id + scope; subject links carry their own scope; the subject join scopes both sides.
+<br><strong>Tests:</strong> <span class="status-green">helpers 6/6; vault/memory/people 361/361
+(no regression); real-SQLite leak test 2/2</span> (items + subjects + FTS isolation, cleanup
+deletes demo only, exact-id cross-scope soft-delete is a no-op). Composite typecheck 0.
+<br><strong>Next:</strong> wire reminders, people graph, chat, staging repos (same pattern) +
+their leak tests; register cleanups; export exclusion.
+</div>
+<div class="deviation"><span class="tag t-dev">Deviation / deep-review finding</span>
+<strong>Subject links are scoped by the LINK's own scope, not the item's.</strong> My first
+in-memory pass derived a link's scope from its item — which broke a contract test asserting a
+"ghost" link (to a not-yet-stored item) is still returned. The SQLite repo scopes
+<code>vault_item_subjects.data_scope</code> independently (set at link time, unchanged on
+conflict), so a ghost link belongs to the link-time scope and IS returned. I changed the
+in-memory subjects map to <code>{itemId, scope}[]</code> for true parity. Lesson: the
+in-memory double must mirror the SQL column's semantics exactly, not approximate them.
+</div>
+<div class="iter"><span class="tag t-dec">Iteration 2 — reminders repo</span>
+<strong>What changed:</strong> Wired <code>SQLiteReminderRepository</code> (create/get/listPending/
+listByPersona/listAll/update/remove) for scope; <code>listPending</code> (the fire path) and
+<code>listAll</code> (boot hydration) now filter by the active scope. Real-SQLite leak test
+added (storage-node) incl. fire-path isolation + exact-id cross-scope no-op for remove/update.
+<br><strong>Tests:</strong> <span class="status-green">storage-node 15/15, core reminders +
+persistence 89/89</span>, typecheck 0.
+</div>
+<div class="deviation"><span class="tag t-dev">Deviation / real bug found by the leak test</span>
+<strong>Reminder dedup UNIQUE key now includes <code>data_scope</code>.</strong> The spec's leak
+test ("insert user row and demo row with same logical content") tripped
+<code>UNIQUE(source_item_id, kind, due_at, persona, message)</code> — a demo reminder and an
+identical user reminder collided, which is wrong: they're distinct rows in different scopes.
+SQLite can't ALTER a UNIQUE constraint, so migration v12 now <strong>rebuilds</strong> the
+reminders table with <code>UNIQUE(…, data_scope)</code> (existing rows → 'user'), and the
+in-memory <code>dedupKey()</code> folds in <code>currentDataScope()</code> to stay in lockstep.
+This is a genuine pre-existing limitation the multi-scope work exposed — fixed properly, not
+worked around. (Editing the not-yet-released v12 is fine; greenfield, append-only rule applies
+to shipped migrations.)
+</div>
+
+<div class="iter"><span class="tag t-dec">Iteration 3 — people graph repo</span>
+<strong>What changed:</strong> Scoped ALL ~33 <code>people</code>/<code>person_surfaces</code> SQL
+sites in <code>SQLitePeopleRepository</code> — inserts stamp scope; reads/lists filter; the
+<em>resolution chain</em> (<code>findOrAssignPersonId</code>, <code>resolveContactPersonId</code>,
+the role-phrase conflict check, <code>resolveConfirmedSurfaces</code>) is scoped so a demo
+"Emma" cannot merge into a user "Emma"; joins scope the <code>people</code>/<code>person_surfaces</code>
+sides (<code>person_identities</code> stays global). Real-SQLite leak test added.
+<br><strong>Tests:</strong> <span class="status-green">people leak test 1/1; people+contacts
+223/223</span>, typecheck 0. The leak test's keystone assertion: the SAME extraction applied in
+two scopes yields TWO distinct people.
+</div>
+<div class="open"><span class="tag t-open">Open question</span>
+<strong><code>person_identities</code> and <code>person_extraction_log</code> left unscoped.</strong>
+<code>person_identities</code> is global by design — a DID/identity is unique across the whole
+node (V1 Emma has none). <code>person_extraction_log</code> is dedup metadata keyed by a unique
+<code>source_item_id</code>; demo items have their own ids so there's no cross-scope dedup
+collision in practice, and after cleanup the stale demo log rows are harmless (they reference
+deleted items). Confirm you're OK leaving both unscoped, or I'll scope the extraction log for
+tidiness in cleanup.
+</div>
+
+<div class="iter"><span class="tag t-dec">Iteration 4 — chat repo + cleanup wiring + export</span>
+<strong>What changed:</strong> Scoped <code>chat_messages</code> (SQLite + in-memory variants;
+<code>reset()</code> is now scope-bound). Added <code>cleanup_wiring.ts</code>:
+<code>wireIdentityScopeCleanups</code> + <code>wirePersonaScopeCleanups</code> register every
+scoped table's deleter (child→parent order; per-persona deletes summed across open persona
+DBs), and <code>tearDownDataScope</code> orchestrates delete → clearActiveDemo →
+setCurrentDataScope('user'). Export (<code>archive.ts dumpTable</code>) now filters scoped
+tables to <code>data_scope='user'</code>.
+<br><strong>Tests:</strong> <span class="status-green">chat leak 1/1, cleanup_wiring 5/5,
+export incl. scope-exclusion 8/8, brain chat 157/157</span>, typecheck 0.
+</div>
+<div class="deviation"><span class="tag t-dev">Deviation</span>
+<strong>Staging repo scoping deferred.</strong> The spec qualifies it — "staging inbox rows
+<em>if</em> demo writes through staging." The V1 primary demo (Emma <code>/remember</code> +
+chair <code>/ask</code>) writes vault/people/reminders/chat directly, NOT staging (only the
+<em>optional</em> D2D demo stages). The staging repo has ~18 sites + claim/lease logic;
+scoping it now would be dead code. It gets scoped when/if the optional D2D demo is built.
+</div>
+<div class="decision"><span class="tag t-dec">Decision</span>
+<strong>Cleanup registration is split identity vs per-persona.</strong> Identity-DB tables share
+one adapter; vault tables live in N persona DBs. <code>wirePersonaScopeCleanups</code> takes a
+<code>() =&gt; DatabaseAdapter[]</code> provider and sums deletes across every open persona, so
+the demo's memory routing (general/health/…) is fully cleaned regardless of which persona it
+landed in. App init (Phase 4) calls these with its live DB handles.
+</div>
+
+<h3>Phase 3 deep review (vault repo)</h3>
+<div class="iter">
+<strong>(1) Absolute correct way?</strong> Yes. Inserts stamp <code>currentDataScope()</code>
+(spec model); reads default-filter to current scope; updates/deletes are exact-id + scope
+("Exact-ID Safety"); the subject join scopes both tables. Both repo variants share identical
+scope semantics, proven by the same assertions passing on real SQLite and the JS double.
+<br><strong>(2) Code smells / workarounds?</strong> None. The link-scope fix removed the one
+divergence. No partial scoping (every query site wired — partial scoping would leak).
+<br><strong>(3) Test issues?</strong> The real-SQLite leak test exercises FTS5 + the join +
+DELETE-by-scope (things the in-memory mock can't fully model). Existing 361 tests stay green
+because defaults preserve <code>'user'</code> behavior.
+</div>
+
+<h2>Phase 4–5 — Orchestrator + content</h2>
+<div class="iter"><span class="tag t-dec">Iteration 1 — orchestration engine + init wiring</span>
+<strong>What changed:</strong> <code>scope/guided_demo.ts</code> — the runtime-agnostic state
+machine: <code>startGuidedDemo(now)</code>, <code>pendingGuidedDemo</code>,
+<code>resumeGuidedDemo</code>, <code>markGuidedDemoStep</code>, <code>endGuidedDemo</code>,
+<code>startEmpty</code>. Mobile <code>storage/init.ts</code> now registers the cleanups
+(<code>wireIdentityScopeCleanups(() =&gt; identityAdapter)</code> +
+<code>wirePersonaScopeCleanups</code> over an <code>openPersonaAdapters</code> map populated by
+<code>openPersonaDB</code>), so <code>endGuidedDemo</code> deletes a demo run end-to-end on the
+real device DBs.
+<br><strong>Tests:</strong> <span class="status-green">guided_demo orchestration 7/7 (incl.
+full crash-recovery flow), mobile init teardown 2/2</span>, typecheck 0.
+</div>
+<div class="decision"><span class="tag t-dec">Decision</span>
+<strong>Orchestration engine lives in <code>@dina/core</code>, not the app.</strong> start/
+resume/end are pure scope+recovery transitions usable by both mobile and lite; only the UI,
+the scripted content, and cache rehydration are app-specific. <code>endGuidedDemo</code>
+resolves the scope to tear down from the PERSISTED record first (robust if a restart left the
+runtime on 'user'), and the caller rehydrates user caches afterward.
+</div>
+
+<div class="decision"><span class="tag t-dec">Decision / deep-review finding</span>
+<strong>The in-RAM HNSW vault index need not be scope-partitioned for isolation.</strong>
+Semantic search uses HNSW only to produce candidate ids, then fetches each via the SCOPED
+<code>getItem</code>/<code>queryAll</code> — so a candidate from the wrong scope is filtered out
+at the fetch. HNSW staleness after teardown is therefore a recall/cleanliness concern, not a
+leak; the orchestrator's post-teardown rehydration re-opens the touched personas
+(<code>openPersonaDB</code> rebuilds the index from the now-cleaned, scope-filtered
+<code>vault_items</code>). Verified by the vault real-SQLite leak test (FTS isolation) + the
+scoped fetch path.
+</div>
+<div class="decision"><span class="tag t-dec">Resolved by Iterations 2–4</span>
+The presentation + scripting layer this iteration deferred is now complete: (a) the
+<code>useGuidedDemoGate</code> hook; (b) entry / banner+stepper / recovery UI wired into
+<code>app/_layout</code>; (c) scripted steps run through the real composer + the real
+agent-approval + the publish-draft card via <code>GuidedDemoRunner</code>; (d) Phase 6
+integration + MRS-GD-01 + Maestro. See Iteration 4 below.
+</div>
+
+<div class="iter"><span class="tag t-dec">Iteration 2 — controller + content + UI</span>
+<strong>What changed:</strong> <code>apps/mobile/src/guided_demo/</code> —
+<code>controller.ts</code> (begin/end/recover wrappers over the core engine +
+rehydration), <code>rehydrate.ts</code> (post-teardown refresh: contacts, reminders Map, main
+chat thread, per-persona HNSW rebuild), <code>content.ts</code> (scripted steps + the
+year-derived <code>nextNovember7</code> + deterministic PeerLens/service/agent/publish
+fixtures). <code>components/guided_demo/GuidedDemoScreens.tsx</code> — entry / banner /
+recovery, presentational + testID'd. <code>MANUAL_RELEASE_TESTS.md</code> gains MRS-GD-01.
+<br><strong>Tests:</strong> <span class="status-green">controller 3, content 9, screens 3
+(12 guided_demo) + 36 mobile regression</span>, typecheck 0. <code>nextNovember7</code> covered
+for before/on/after Nov 7 (year never hardcoded).
+</div>
+<div class="deviation"><span class="tag t-dev">Deviation</span>
+<strong>Banner copy uses a middle dot, not an em dash.</strong> The spec block shows
+"Guided demo - sample data only"; I render "Guided demo · sample data only" — the owner has a
+standing preference against em dashes in UI copy. Same meaning, cleaner glyph.
+</div>
+<div class="decision"><span class="tag t-dec">Resolved by Iterations 3–4</span>
+All of this is now wired: <code>GuidedDemoGate</code> mounts entry/recovery in
+<code>app/_layout</code> and overlays the banner while demo scope is active; the scripted steps
+run through the real <code>/remember</code>+<code>/ask</code> composer + the real agent-approval
+via <code>GuidedDemoRunner</code>; the Maestro flow exists. The one true remainder is executing
+that Maestro flow on a fresh-install sim (needs the device + LLM key).
+</div>
+
+<div class="iter"><span class="tag t-dec">Iteration 3 — app-shell gate + e2e</span>
+<strong>What changed:</strong> <code>useGuidedDemoGate</code> (first-run/recovery/running state
+machine, with an <code>enabled</code> gate so the boot banner is never masked + the KV-backed
+entry flag isn't read before a successful boot) + <code>GuidedDemoGate</code> wired into
+<code>app/_layout.tsx</code> just inside <code>UnlockGate</code> (entry replaces Chat first-run;
+recovery prompt on a crashed demo; banner overlays Chat while active). Added an entry-seen KV
+flag (<code>hasSeenGuidedDemoEntry</code>/<code>markGuidedDemoEntrySeen</code>). Wrote a
+real-SQLite end-to-end flow test + a Maestro flow (<code>guided_demo/entry_and_cleanup.yaml</code>).
+<br><strong>Tests:</strong> <span class="status-green">gate 7/7, e2e flow 1/1; 84 feature tests
+total (47 core scope + 19 mobile guided-demo + 18 storage-node real-SQLite) + 635 regression</span>,
+typecheck 0.
+</div>
+<h3>Phase 4–5 / 6 deep review</h3>
+<div class="iter">
+<strong>(1) Absolute correct way?</strong> Yes — orchestration is a small runtime-agnostic state
+machine in core; the app gate composes it + rehydration; the gate defers to children until boot
+is ready so it never masks a boot error or reads an unwired KV. The e2e test proves the whole
+flow on real SQLCipher with the real repos.
+<br><strong>(2) Code smells / workarounds?</strong> None. UI is presentational + callback-driven;
+the gate's <code>enabled</code> guard is principled (not a hack). Banner copy intentionally uses
+a middle dot, not an em dash. No partial scoping; isolation is proven by the leak + e2e suites.
+<br><strong>(3) Test issues?</strong> Hook tests use the real engine with only RN-coupled
+rehydration mocked, so they exercise true behavior. The e2e test asserts the spec's leak
+invariant directly (same content in two scopes stays distinct; user data survives cleanup).
+</div>
+<div class="iter"><span class="tag t-dec">Iteration 4 — Phase 5 demo content runner + banner stepper</span>
+<strong>What changed:</strong> <code>guided_demo/runner.ts</code> — <code>GuidedDemoRunner</code>,
+a pure orchestrator over an injected <code>GuidedDemoSeams</code> that drives the 6-action plan
+(<code>buildDemoPlan</code>: 3 scripted chat steps + a real service-card step + agent-approval +
+publish-draft) one action per <code>advance()</code>, marking each via
+<code>markGuidedDemoStep</code> for crash recovery, with <code>resumeAfter(stepId)</code> and a
+<code>teardown()</code> that denies any approval the user left pending.
+<code>guided_demo/providers.ts</code> binds the seams to the REAL app mechanisms:
+<code>send</code> → the chat composer's <code>sendMessage</code> with the
+<code>/remember</code>|<code>/ask</code> prefix the mode chips use; <code>postServiceCard</code> →
+<code>addLifecycleMessage</code> posting a genuine resolved <code>service_query</code> lifecycle
+so <code>InlineServiceQueryCard</code> renders the furniture-availability result through the same
+<code>buildResultCardSpec</code> path a live provider reply uses; <code>requestApproval</code>/
+<code>denyApproval</code> → the shared <code>ApprovalManager</code> singleton (the same one the chat
+approval cards + inbox read); <code>postDemoCard</code> → a scope-bound system chat message.
+<code>useGuidedDemoGate</code> now arms a runner on start/continue, exposes
+<code>currentAction</code>/<code>step</code>/<code>stepCount</code>/<code>demoComplete</code>/
+<code>advanceDemo</code>, and tears the runner down on exit/delete. The banner gained a stepper
+(caption + <code>guided-demo-next</code>; <code>guided-demo-complete</code> at the end).
+<br><strong>Tests:</strong> <span class="status-green">runner 12, providers 3, gate 11, screens 5,
+controller 4, content 6 — 41 mobile guided_demo + 8 storage-node scope/e2e (incl. cache-swap) +
+47 core scope</span>, composite typecheck 0.
+</div>
+<div class="decision"><span class="tag t-dec">Decision</span>
+<strong>The runner is pure; every side effect is an injected seam.</strong> The demo's steps
+must run through the SAME composer / approval / chat paths a real user hits (spec Risks: "cards
+should come from real renderers"), but those depend on live singletons + (for /ask) an LLM, so
+they can't run in unit tests. Splitting the orchestration (order, marking, recovery, teardown)
+from the seams lets the orchestration be exhaustively + deterministically tested with fakes,
+while production binds the real seams in one small <code>providers.ts</code>. The gate accepts a
+<code>makeSeams</code> override so its wiring is tested with fakes too.
+</div>
+<div class="decision"><span class="tag t-dec">Decision</span>
+<strong>Step-by-step on user "Next", not auto-send.</strong> The spec permits "pre-fill/send";
+the runner exposes <code>advance()</code> (one action per tap) rather than firing all six on
+start. This keeps the demo deterministic, lets the user watch each real step happen, and avoids
+spending LLM tokens / racing four <code>/ask</code> turns the instant the demo opens. The gate's
+banner drives <code>advanceDemo</code>; <code>runAll()</code> exists for non-interactive tests.
+</div>
+<div class="deviation"><span class="tag t-dev">Deviation</span>
+<strong>The furniture-availability step renders a real service card directly, rather than routing
+the <code>/ask</code> through the LLM's autonomous service discovery.</strong> The AppView client +
+agentic-ask pipeline are captured at boot (<code>boot_capabilities.ts</code>); runtime-swapping
+them to seed a demo provider is invasive and would make the demo non-deterministic. The spec
+explicitly sanctions this — "Demo data/provider can be seeded, but cards should come from real
+renderers" + "If using a local demo service instead of public AppView … Still show the service
+path card." So the availability step posts a genuine resolved <code>service_query</code> lifecycle
+(via the real <code>addLifecycleMessage</code>) carrying the deterministic furniture result, and
+<code>InlineServiceQueryCard</code> renders it through the real <code>buildResultCardSpec</code> —
+the exact card a live provider reply produces, but deterministic. The chair-recommendation step
+(<code>chair_ask</code>) stays a real <code>/ask</code> so the LLM reasons over the just-stored
+back-pain + budget context. The full LLM-driven service-discovery path remains exercised by the
+existing <code>EXPO_PUBLIC_DINA_DEMO</code> walkthrough + the MRS suite. The agent-approval is the
+real <code>ApprovalManager</code> + real card per "Do not fake the approval card."
+</div>
+<div class="deviation"><span class="tag t-dev">Deviation</span>
+<strong>Publish-service draft is a scope-bound chat card, not a write to the real
+<code>service_configs</code>.</strong> Writing the draft to the user's real service config would
+pollute user data and survive cleanup (the <code>service_configs</code>/<code>kv_store</code>
+tables are not scope-partitioned), violating invariant #1. So the draft surfaces as a
+scope-bound system chat message (cleaned up with the demo scope's chat rows) — "draft only,
+nothing is published," which matches the spec's intent for the step.
+</div>
+<div class="deviation"><span class="tag t-dev">Deep-review finding (real bug fixed)</span>
+<strong>In-memory Chat + Reminders caches were never swapped on scope transition.</strong> The
+repositories enforce <code>data_scope</code>, but the UI reads Chat + Reminders from in-memory
+caches (the chat thread Map, the reminders Map) that are NOT scope-partitioned and whose hydrate
+helpers <em>merge</em> (never evict). My Phase-4 rehydration only ran on teardown and used the
+default (merge) <code>hydrateThread</code>. Result: (1) entering the demo would still show the
+user's real Chat/Reminders — violating functional invariant #2 in the live UI; (2) demo cards
+would linger after cleanup. The repo-level e2e didn't catch it because it reads through the
+scoped repos, not the caches. Fix: <code>refreshCachesForCurrentScope()</code> clears
+(<code>resetReminderState</code>) + re-hydrates reminders and force-replaces the thread
+(<code>hydrateThread('main', {force:true})</code>) + rebuilds per-persona HNSW, and it now runs
+on BOTH start (<code>beginGuidedDemo</code>) and teardown/resume. Covered by the new storage-node
+<code>guided_demo_cache_swap</code> real-SQLite test (user data hidden in demo, restored on
+teardown) + a controller test asserting start swaps the caches.
+</div>
+<h3>Phase 5 deep review</h3>
+<div class="iter">
+<strong>(1) Absolute correct way?</strong> Yes — orchestration is pure + injected-seam, so it's
+fully testable and the production wiring is a thin adapter to the real composer/approval/chat.
+Steps go through the genuine paths; the agent approval is the real <code>ApprovalManager</code>.
+The cache-swap fix closes the one place the UI could leak across scopes.
+<br><strong>(2) Code smells / workarounds?</strong> None. The two deviations (no boot-AppView
+hijack; publish-draft as a scope-bound card) are principled, documented trade-offs that protect
+determinism + the cleanup invariant — not shortcuts. No partial scoping remains.
+<br><strong>(3) Test issues?</strong> Runner tests assert order, marking, recovery, failure
+(no cursor advance on throw), and teardown idempotency with fakes; the gate tests drive the real
+hook with fake seams; the cache-swap e2e exercises the real mechanism on real SQLite. The only
+unautomatable remainder is running the Maestro flow on a sim (needs the device + LLM).
+</div>
+
+<h2>Phase 2 — Schema (data_scope columns)</h2>
+<div class="iter"><span class="tag t-dec">Iteration 1</span>
+<strong>What changed:</strong> Identity migration <code>v12 (data_scope_identity)</code> ALTERs
+<code>reminders, chat_messages, staging_inbox, people, person_surfaces</code>; persona migration
+<code>v3 (data_scope_persona)</code> ALTERs <code>vault_items, vault_item_subjects</code>. Each adds
+<code>data_scope TEXT NOT NULL DEFAULT 'user'</code> + a scope index.
+<br><strong>Tests:</strong> <span class="status-green">11/11</span> in storage-node real-SQLite
+integration (incl. new "data_scope columns" assertions: columns present, infra tables NOT
+scoped, default <code>'user'</code> on unspecified insert; FTS5 MATCH still works after the
+<code>vault_items</code> column add). 212 affected-repo tests green, typecheck 0.
+</div>
+<div class="decision"><span class="tag t-dec">Decision</span>
+<strong>Column ⟺ repo-wiring in lockstep.</strong> I only added <code>data_scope</code> to tables
+I will wire in Phase 3 (the minimum acceptance set). Adding a column to a table whose repo
+isn't yet scope-aware would default its writes to <code>'user'</code> and create a <em>false
+sense of coverage</em> (demo rows leaking into user scope). Service-config drafts (Step 7) and
+topic tables get their columns when those steps are built (Phase 5).
+</div>
+<div class="open"><span class="tag t-open">Open question</span>
+<strong>Topic store (<code>topic_salience</code>/<code>topic_aliases</code>) scoping.</strong>
+Demo memories create working-memory topics (dinosaurs, back-pain, chairs). For first-run-only
+V1 there are no pre-existing user topics, so clearing the ToC on cleanup is safe; but the
+spec's future "run demo again" needs real scoping. I'll scope topics when wiring the demo's
+remember path (Phase 5) rather than guess now. Confirm: is first-run-only acceptable for V1
+(so topic scoping can be deferred), or should topics be scoped up front?
+</div>
+<h3>Phase 2 deep review</h3>
+<div class="iter">
+<strong>(1) Absolute correct way?</strong> Yes. ALTER-in-new-version is the only approach that
+gives both fresh and already-migrated DBs the column under this codebase's immutable-migration
+rule, verified against real SQLCipher (the gate that catches DDL the mock swallows).
+<br><strong>(2) Code smells?</strong> None. Infra/security tables verified unscoped by test.
+Single-column scope indexes are right for V1's small demo row counts (composite indexes would
+be premature). <br><strong>(3) Test issues?</strong> None — added explicit column/default/infra
+assertions on real SQLite; count assertions use <code>&gt;=</code>/<code>.length</code> so they
+auto-adapt to v12/v3.
+</div>
+
+<h2>Phase 1 — Scope runtime manager</h2>
+
+<div class="iter"><span class="tag t-dec">Iteration 1</span>
+<strong>What changed:</strong> Added <code>packages/core/src/scope/data_scope.ts</code> — the
+pure runtime scope manager. Added <code>active_demo.ts</code> (kv_store-backed boot-recovery
+state) and <code>cleanup.ts</code> (registry-driven <code>deleteDataScope</code> skeleton).
+Exported all three from the core barrel.
+<br><strong>Tests:</strong> <span class="status-green">29 passed</span> across
+<code>data_scope.test.ts</code> (12), <code>active_demo.test.ts</code> (9),
+<code>cleanup.test.ts</code> (8). One TS error fixed mid-iteration: a <code>void x ?? 0</code>
+expression in a test (TS2869) — rewrote with block-body arrows. Composite typecheck 0.
+<br><strong>Next:</strong> Phase 2 — add <code>data_scope</code> columns via ALTER-TABLE migrations.
+</div>
+
+<div class="decision"><span class="tag t-dec">Decision</span>
+<strong><code>deleteDataScope</code> is pure data deletion; runtime-state teardown is the
+orchestrator's job.</strong> The spec lists "clear active demo state and set scope to user"
+under Cleanup. I kept <code>deleteDataScope(scope)</code> as <em>only</em> row deletion
+(registry-driven, refuses <code>user</code>, idempotent, per-table error isolation) and will
+have the finish/skip/recover flows (Phase 4) call <code>deleteDataScope</code> →
+<code>clearActiveDemo</code> → <code>setCurrentDataScope('user')</code> → reset in-memory
+caches. Rationale: keeps the data API single-responsibility and independently testable, and
+crash-recovery can delete a leftover scope while the runtime is already on <code>user</code>
+without the API forcing a redundant scope switch. Tradeoff considered: folding everything into
+<code>deleteDataScope</code> would match the spec's wording literally but couples data deletion
+to global runtime mutation, which is harder to reason about and test.
+</div>
+
+<div class="decision"><span class="tag t-dec">Decision</span>
+<strong>Cleanup is a registry, not a hardcoded table list.</strong> Each scoped repository
+registers a <code>ScopedCleanup {table, order, deleteScope}</code>. <code>deleteDataScope</code>
+runs them sorted by <code>order</code> (child tables low, parents high) so referential order
+holds even without FK cascades, and a newly-scoped table can't be silently forgotten by
+cleanup. Sequential (not parallel) execution is intentional — ordering matters.
+</div>
+
+<h3>Phase 1 deep review</h3>
+<div class="iter">
+<strong>(1) Absolute correct way?</strong> Yes. Singleton runtime scope is the spec's explicit
+V1 choice (local, single-user, exclusive demo). Registry-driven cleanup and injectable id
+factory are clean, testable patterns. Boundaries validate scope (<code>isValidDataScope</code>)
+so a malformed scope fails loud instead of silently isolating to a garbage container.
+<br><strong>(2) Code smells / workarounds?</strong> None found. <code>newGuidedDemoScope</code>
+uses <code>`guided_demo:${id}` as const</code> to narrow to the <code>DataScope</code> template
+type (a template literal with a string interpolation otherwise widens to <code>string</code>) —
+idiomatic, not a smell. No global leakage beyond the deliberate singleton; tests reset it.
+<br><strong>(3) Test issues?</strong> Covers every Phase-1 Test-Plan item plus edge cases
+(corrupt JSON, non-demo/invalid scope, error isolation, idempotency, ordering, dedupe). Fixed
+the one TS2869 in the test. No remaining issues.
+</div>
+
+</body>
+</html>

@@ -17,6 +17,8 @@ import {
   snoozeReminder,
   deleteReminder,
   resetReminderState,
+  resetReminderCaches,
+  subscribeReminderCreated,
   hydrateRemindersFromRepo,
 } from '../../src/reminders/service';
 import type { ReminderRepository } from '../../src/reminders/repository';
@@ -25,6 +27,37 @@ import type { Reminder } from '../../src/reminders/service';
 
 describe('Reminder Service', () => {
   beforeEach(() => resetReminderState());
+
+  describe('resetReminderCaches (scope-refresh reset)', () => {
+    it('clears the cached reminders but KEEPS create listeners (the OS bridge)', () => {
+      const fired: string[] = [];
+      const dispose = subscribeReminderCreated((r) => fired.push(r.id));
+      try {
+        const a = createReminder({ message: 'before', due_at: Date.now() + 1000, persona: 'general' });
+        expect(fired).toEqual([a.id]);
+        expect(getReminder(a.id)).not.toBeNull();
+
+        // Scope refresh: cache-only reset (NOT resetReminderState).
+        resetReminderCaches();
+        // Cached rows are gone…
+        expect(getReminder(a.id)).toBeNull();
+        // …but the listener is still attached, so a reminder created in the new
+        // scope still reaches the OS-push bridge.
+        const b = createReminder({ message: 'after', due_at: Date.now() + 1000, persona: 'general' });
+        expect(fired).toEqual([a.id, b.id]);
+      } finally {
+        dispose();
+      }
+    });
+
+    it('resetReminderState (full reset) DOES detach the listeners', () => {
+      const fired: string[] = [];
+      subscribeReminderCreated((r) => fired.push(r.id));
+      resetReminderState();
+      createReminder({ message: 'x', due_at: Date.now() + 1000, persona: 'general' });
+      expect(fired).toEqual([]); // listener cleared by the full reset
+    });
+  });
 
   describe('createReminder', () => {
     it('creates a reminder with generated ID', () => {

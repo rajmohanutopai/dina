@@ -16,6 +16,23 @@
  * Mirrors `packages/{core,brain}/__tests__/setup.ts`.
  */
 
+// Mock react-native-safe-area-context globally: components using
+// `useSafeAreaInsets` (e.g. the guided-demo banner) render under jsdom without
+// a SafeAreaProvider. Return zero insets + pass-through provider/consumer.
+jest.mock('react-native-safe-area-context', () => {
+  const inset = { top: 0, right: 0, bottom: 0, left: 0 };
+  const frame = { x: 0, y: 0, width: 390, height: 844 };
+  return {
+    useSafeAreaInsets: () => inset,
+    useSafeAreaFrame: () => frame,
+    SafeAreaProvider: ({ children }: { children: unknown }) => children,
+    SafeAreaConsumer: ({ children }: { children: (i: typeof inset) => unknown }) =>
+      children(inset),
+    SafeAreaView: ({ children }: { children: unknown }) => children,
+    initialWindowMetrics: { insets: inset, frame },
+  };
+});
+
 import { setRememberCoreClient } from '../../../packages/brain/src/chat/orchestrator';
 import {
   ingest as stagingIngest,

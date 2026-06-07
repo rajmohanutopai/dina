@@ -1,0 +1,26 @@
+# Guided-demo Exit + cleanup. Run RIGHT AFTER onboard_and_demo.yaml (which
+# leaves the app in an active demo at step 2). A fresh Maestro session here
+# re-establishes a healthy XCUITest driver after the LLM-heavy demo flow, and
+# the gap lets the /remember's background Gemini work settle — so the Exit tap
+# reliably registers and the banner clears promptly.
+#
+# Verifies: Exit dismisses the "sample data only" banner and the user lands in
+# a normal, usable Chat (demo data torn down).
+appId: com.dinakernel.mobile
+---
+# Dev-build only: drag the Expo dev-tools gear FAB out of the top-right corner
+# so it doesn't sit over the banner's Exit button. (No FAB in production.)
+- swipe:
+    start: '89%,11%'
+    end: '45%,90%'
+    duration: 700
+- assertVisible:
+    id: 'guided-demo-exit'
+- tapOn:
+    id: 'guided-demo-exit'
+- extendedWaitUntil:
+    notVisible:
+      id: 'guided-demo-banner'
+    timeout: 30000
+- assertVisible:
+    id: 'index-mode-chip-remember'

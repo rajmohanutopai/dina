@@ -15,14 +15,30 @@
  */
 
 import type { StagingItem } from './service';
+import type { DataScope } from '../scope/data_scope';
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
 export interface StagingRepository {
-  /** Returns true if new, false if duplicate (3-part dedup key). */
+  /** Returns true if new, false if duplicate (4-part dedup key incl. scope). */
   ingest(item: StagingItem): boolean;
   get(id: string): StagingItem | null;
-  findByDedup(producerId: string, source: string, sourceId: string): StagingItem | null;
-  claim(limit: number, leaseDuration: number, now: number): StagingItem[];
+  /**
+   * Find an existing row by the dedup key. `scope` is part of the key: a demo
+   * row and a user row with the SAME (producer, source, source_id) are distinct,
+   * so dedup must be per-scope (mirrors the v13 UNIQUE constraint).
+   */
+  findByDedup(
+    producerId: string,
+    source: string,
+    sourceId: string,
+    scope: DataScope,
+  ): StagingItem | null;
+  /**
+   * Claim up to `limit` `received` items IN `scope` (data-scope isolation: the
+   * drain must not claim a guided-demo row while on the user scope, or vice
+   * versa). Atomically leases them.
+   */
+  claim(limit: number, leaseDuration: number, now: number, scope: DataScope): StagingItem[];
   updateStatus(id: string, status: string, updates?: Partial<StagingItem>): void;
   sweep(now: number): {
     expired: number;
@@ -50,8 +66,8 @@ export class SQLiteStagingRepository implements StagingRepository {
   ingest(item: StagingItem): boolean {
     // ON CONFLICT(producer_id, source, source_id) DO NOTHING handles dedup
     const result = this.db.run(
-      `INSERT OR IGNORE INTO staging_inbox (id, source, source_id, producer_id, status, persona, retry_count, lease_until, expires_at, created_at, data, source_hash)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT OR IGNORE INTO staging_inbox (id, source, source_id, producer_id, status, persona, retry_count, lease_until, expires_at, created_at, data, source_hash, data_scope)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         item.id,
         item.source,
@@ -65,6 +81,7 @@ export class SQLiteStagingRepository implements StagingRepository {
         item.created_at,
         JSON.stringify(item.data),
         item.source_hash,
+        item.data_scope,
       ],
     );
     return result > 0;
@@ -75,22 +92,27 @@ export class SQLiteStagingRepository implements StagingRepository {
     return rows.length > 0 ? rowToStagingItem(rows[0]) : null;
   }
 
-  findByDedup(producerId: string, source: string, sourceId: string): StagingItem | null {
+  findByDedup(
+    producerId: string,
+    source: string,
+    sourceId: string,
+    scope: DataScope,
+  ): StagingItem | null {
     const rows = this.db.query(
-      'SELECT * FROM staging_inbox WHERE producer_id = ? AND source = ? AND source_id = ?',
-      [producerId, source, sourceId],
+      'SELECT * FROM staging_inbox WHERE producer_id = ? AND source = ? AND source_id = ? AND data_scope = ?',
+      [producerId, source, sourceId, scope],
     );
     return rows.length > 0 ? rowToStagingItem(rows[0]) : null;
   }
 
-  claim(limit: number, leaseDuration: number, now: number): StagingItem[] {
+  claim(limit: number, leaseDuration: number, now: number, scope: DataScope): StagingItem[] {
     const leaseUntil = now + leaseDuration;
     const candidates = this.db.query<{ id: string }>(
       `SELECT id FROM staging_inbox
-       WHERE status = 'received'
+       WHERE status = 'received' AND data_scope = ?
        ORDER BY created_at ASC, id ASC
        LIMIT ?`,
-      [limit],
+      [scope, limit],
     );
     const ids = candidates.map((row) => String(row.id));
     if (ids.length === 0) return [];
@@ -219,7 +241,7 @@ export class InMemoryStagingRepository implements StagingRepository {
   private readonly dedup = new Map<string, string>();
 
   ingest(item: StagingItem): boolean {
-    const key = dedupKey(item.producer_id, item.source, item.source_id);
+    const key = dedupKey(item.producer_id, item.source, item.source_id, item.data_scope);
     const existing = this.dedup.get(key);
     if (existing && this.rows.has(existing)) return false;
     this.rows.set(item.id, cloneItem(item));
@@ -231,16 +253,21 @@ export class InMemoryStagingRepository implements StagingRepository {
     return cloneNullable(this.rows.get(id));
   }
 
-  findByDedup(producerId: string, source: string, sourceId: string): StagingItem | null {
-    const id = this.dedup.get(dedupKey(producerId, source, sourceId));
+  findByDedup(
+    producerId: string,
+    source: string,
+    sourceId: string,
+    scope: DataScope,
+  ): StagingItem | null {
+    const id = this.dedup.get(dedupKey(producerId, source, sourceId, scope));
     return id ? this.get(id) : null;
   }
 
-  claim(limit: number, leaseDuration: number, now: number): StagingItem[] {
+  claim(limit: number, leaseDuration: number, now: number, scope: DataScope): StagingItem[] {
     const leaseUntil = now + leaseDuration;
     const claimed: StagingItem[] = [];
     const received = Array.from(this.rows.values())
-      .filter((item) => item.status === 'received')
+      .filter((item) => item.status === 'received' && item.data_scope === scope)
       .sort((a, b) => a.created_at - b.created_at || a.id.localeCompare(b.id));
     for (const item of received) {
       if (claimed.length >= limit) break;
@@ -272,7 +299,7 @@ export class InMemoryStagingRepository implements StagingRepository {
     for (const [id, item] of Array.from(this.rows.entries())) {
       if (item.expires_at < now) {
         this.rows.delete(id);
-        this.dedup.delete(dedupKey(item.producer_id, item.source, item.source_id));
+        this.dedup.delete(dedupKey(item.producer_id, item.source, item.source_id, item.data_scope));
         result.expired++;
         continue;
       }
@@ -348,11 +375,17 @@ function rowToStagingItem(row: DBRow): StagingItem {
     classified_item: classifiedItem,
     error: row.error ? String(row.error) : undefined,
     approval_id: row.approval_id ? String(row.approval_id) : undefined,
+    data_scope: (String(row.data_scope ?? 'user') || 'user') as DataScope,
   };
 }
 
-function dedupKey(producerId: string, source: string, sourceId: string): string {
-  return `${producerId}|${source}|${sourceId}`;
+function dedupKey(
+  producerId: string,
+  source: string,
+  sourceId: string,
+  scope: DataScope,
+): string {
+  return `${producerId}|${source}|${sourceId}|${scope}`;
 }
 
 function cloneNullable(item: StagingItem | undefined): StagingItem | null {

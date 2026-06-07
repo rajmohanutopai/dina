@@ -10,6 +10,9 @@
  * Greenfield — no migration from any prior shape.
  */
 
+import { currentDataScope, type DataScope } from '../scope/data_scope';
+import { scopedInsertFields, scopedParams, scopedWhere } from '../scope/repository';
+
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
 /** Persisted chat message — mirrors Brain's `ChatMessage` 1:1. */
@@ -63,8 +66,8 @@ export class SQLiteChatMessageRepository implements ChatMessageRepository {
   async append(msg: StoredChatMessage): Promise<void> {
     this.db.execute(
       `INSERT OR REPLACE INTO chat_messages
-       (id, thread_id, type, content, metadata, sources, timestamp)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       (id, thread_id, type, content, metadata, sources, timestamp, data_scope)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         msg.id,
         msg.threadId,
@@ -73,6 +76,7 @@ export class SQLiteChatMessageRepository implements ChatMessageRepository {
         JSON.stringify(msg.metadata ?? {}),
         JSON.stringify(msg.sources ?? []),
         msg.timestamp,
+        scopedInsertFields().data_scope,
       ],
     );
   }
@@ -84,27 +88,34 @@ export class SQLiteChatMessageRepository implements ChatMessageRepository {
     // same tick). Random ids would otherwise reshuffle them.
     const sql =
       limit !== undefined
-        ? `SELECT * FROM chat_messages WHERE thread_id = ? ORDER BY timestamp ASC, rowid ASC LIMIT ?`
-        : `SELECT * FROM chat_messages WHERE thread_id = ? ORDER BY timestamp ASC, rowid ASC`;
-    const args = limit !== undefined ? [threadId, limit] : [threadId];
+        ? `SELECT * FROM chat_messages WHERE thread_id = ? AND ${scopedWhere()} ORDER BY timestamp ASC, rowid ASC LIMIT ?`
+        : `SELECT * FROM chat_messages WHERE thread_id = ? AND ${scopedWhere()} ORDER BY timestamp ASC, rowid ASC`;
+    const args =
+      limit !== undefined ? [threadId, ...scopedParams(), limit] : [threadId, ...scopedParams()];
     const rows = this.db.query(sql, args);
     return rows.map(rowToMessage);
   }
 
   async listThreadIds(): Promise<string[]> {
     const rows = this.db.query(
-      `SELECT DISTINCT thread_id FROM chat_messages ORDER BY thread_id ASC`,
+      `SELECT DISTINCT thread_id FROM chat_messages WHERE ${scopedWhere()} ORDER BY thread_id ASC`,
+      [...scopedParams()],
     );
     return rows.map((r) => String(r.thread_id));
   }
 
   async deleteThread(threadId: string): Promise<boolean> {
-    const affected = this.db.run(`DELETE FROM chat_messages WHERE thread_id = ?`, [threadId]);
+    const affected = this.db.run(
+      `DELETE FROM chat_messages WHERE thread_id = ? AND ${scopedWhere()}`,
+      [threadId, ...scopedParams()],
+    );
     return affected > 0;
   }
 
   async reset(): Promise<void> {
-    this.db.run(`DELETE FROM chat_messages`, []);
+    // Scope-bound reset (spec: deletes filter to currentDataScope) — a demo
+    // reset never wipes user chat. Full sign-out wipe goes through teardown.
+    this.db.run(`DELETE FROM chat_messages WHERE ${scopedWhere()}`, [...scopedParams()]);
   }
 }
 
@@ -147,48 +158,60 @@ function safeParseArray(raw: unknown): string[] {
 // ---------------------------------------------------------------------------
 
 export class InMemoryChatMessageRepository implements ChatMessageRepository {
-  private readonly rows: StoredChatMessage[] = [];
+  // Each row carries the scope it was appended under (mirrors the SQLite
+  // data_scope column), so reads/deletes can isolate by the active scope.
+  private readonly rows: Array<{ msg: StoredChatMessage; scope: DataScope }> = [];
 
   async append(msg: StoredChatMessage): Promise<void> {
-    // Upsert semantics — match SQLite's INSERT OR REPLACE on id.
-    const existingIdx = this.rows.findIndex((r) => r.id === msg.id);
+    // Upsert semantics — match SQLite's INSERT OR REPLACE on id (ids are
+    // globally unique, so this never collides across scopes); re-stamp scope.
+    const existingIdx = this.rows.findIndex((r) => r.msg.id === msg.id);
     const cloned: StoredChatMessage = {
       ...msg,
       metadata: { ...(msg.metadata ?? {}) },
       sources: [...(msg.sources ?? [])],
     };
+    const entry = { msg: cloned, scope: currentDataScope() };
     if (existingIdx >= 0) {
-      this.rows[existingIdx] = cloned;
+      this.rows[existingIdx] = entry;
     } else {
-      this.rows.push(cloned);
+      this.rows.push(entry);
     }
   }
 
   async listByThread(threadId: string, limit?: number): Promise<StoredChatMessage[]> {
-    // Stable timestamp sort — ES2019+ Array#sort is stable, so equal
-    // timestamps preserve the push() insertion order (matching the
-    // SQLite `rowid ASC` tie-break). Keeping random ids out of the
-    // comparator avoids reordering within a single-millisecond batch.
+    const scope = currentDataScope();
     const filtered = this.rows
-      .filter((r) => r.threadId === threadId)
+      .filter((r) => r.scope === scope && r.msg.threadId === threadId)
+      .map((r) => r.msg)
       .sort((a, b) => a.timestamp - b.timestamp)
-      .map((r) => ({ ...r, metadata: { ...r.metadata }, sources: [...r.sources] }));
+      .map((m) => ({ ...m, metadata: { ...m.metadata }, sources: [...m.sources] }));
     return limit !== undefined ? filtered.slice(0, limit) : filtered;
   }
 
   async listThreadIds(): Promise<string[]> {
-    return Array.from(new Set(this.rows.map((r) => r.threadId))).sort();
+    const scope = currentDataScope();
+    return Array.from(
+      new Set(this.rows.filter((r) => r.scope === scope).map((r) => r.msg.threadId)),
+    ).sort();
   }
 
   async deleteThread(threadId: string): Promise<boolean> {
+    const scope = currentDataScope();
     const before = this.rows.length;
     for (let i = this.rows.length - 1; i >= 0; i--) {
-      if (this.rows[i].threadId === threadId) this.rows.splice(i, 1);
+      if (this.rows[i].scope === scope && this.rows[i].msg.threadId === threadId) {
+        this.rows.splice(i, 1);
+      }
     }
     return this.rows.length !== before;
   }
 
   async reset(): Promise<void> {
-    this.rows.length = 0;
+    // Scope-bound (matches the SQLite repo): clears only the active scope.
+    const scope = currentDataScope();
+    for (let i = this.rows.length - 1; i >= 0; i--) {
+      if (this.rows[i].scope === scope) this.rows.splice(i, 1);
+    }
   }
 }

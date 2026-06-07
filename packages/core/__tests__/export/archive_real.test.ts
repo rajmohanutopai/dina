@@ -415,3 +415,96 @@ describe('real export → clean-install import', () => {
     }
   });
 });
+
+describe('export excludes guided-demo scope', () => {
+  it('backs up only data_scope=user rows (demo rows are never exported)', async () => {
+    const src = freshBundle([['general', 'default']]);
+    let archive: Uint8Array;
+    try {
+      // A user reminder (default scope) AND a guided-demo reminder.
+      src.id.execute(
+        `INSERT INTO reminders (id, short_id, message, due_at, persona, kind, source_item_id, source, recurring, timezone, status, completed, created_at, data_scope)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        ['rem-user', 'ru', 'real reminder', 1, 'general', 'manual', '', '', '', '', 'pending', 0, 1, 'user'],
+      );
+      src.id.execute(
+        `INSERT INTO reminders (id, short_id, message, due_at, persona, kind, source_item_id, source, recurring, timezone, status, completed, created_at, data_scope)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        ['rem-demo', 'rd', 'demo reminder', 1, 'general', 'manual', '', '', '', '', 'pending', 0, 1, 'guided_demo:x'],
+      );
+      // A user vault item AND a demo vault item.
+      const gen = src.personas.get('general')!.adapter;
+      gen.execute(
+        'INSERT INTO vault_items (id, content_l0, timestamp, created_at, updated_at, data_scope) VALUES (?,?,?,?,?,?)',
+        ['v-user', 'real note', 1, 1, 1, 'user'],
+      );
+      gen.execute(
+        'INSERT INTO vault_items (id, content_l0, timestamp, created_at, updated_at, data_scope) VALUES (?,?,?,?,?,?)',
+        ['v-demo', 'demo note', 1, 1, 1, 'guided_demo:x'],
+      );
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+    }
+
+    const dest = freshBundle([]);
+    try {
+      setArchiveDataSource(dataSourceFor(dest));
+      await importArchive(archive, PASS);
+
+      // Only the user rows came back; the demo rows were never in the archive.
+      expect(dest.id.query('SELECT id FROM reminders ORDER BY id').map((r) => r.id)).toEqual([
+        'rem-user',
+      ]);
+      const gen = dest.personas.get('general')!.adapter;
+      expect(gen.query('SELECT id FROM vault_items ORDER BY id').map((r) => r.id)).toEqual([
+        'v-user',
+      ]);
+    } finally {
+      closeBundle(dest);
+    }
+  });
+
+  it('excludes the active-demo KV record (no orphan recovery after restore)', async () => {
+    const src = freshBundle([['general', 'default']]);
+    let archive: Uint8Array;
+    try {
+      // A backup taken DURING a demo: the active-demo + entry-seen records live
+      // in kv_store. A portable pref (theme) is the control that DOES export.
+      src.id.execute('INSERT INTO kv_store (key, value, updated_at) VALUES (?,?,?)', [
+        'theme',
+        'dark',
+        1,
+      ]);
+      src.id.execute('INSERT INTO kv_store (key, value, updated_at) VALUES (?,?,?)', [
+        'guided_demo.active',
+        JSON.stringify({ activeDemoScope: 'guided_demo:x', startedAt: 1, step: '' }),
+        1,
+      ]);
+      src.id.execute('INSERT INTO kv_store (key, value, updated_at) VALUES (?,?,?)', [
+        'guided_demo.entry_seen',
+        '1',
+        1,
+      ]);
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+    }
+
+    const dest = freshBundle([]);
+    try {
+      setArchiveDataSource(dataSourceFor(dest));
+      await importArchive(archive, PASS);
+
+      // The portable pref restored…
+      expect(dest.id.query("SELECT value FROM kv_store WHERE key = 'theme'")[0]?.value).toBe('dark');
+      // …but the ephemeral guided-demo records did NOT — restoring them would
+      // resurrect a recovery record with no demo data (orphan-scope boot).
+      expect(dest.id.query("SELECT 1 FROM kv_store WHERE key LIKE 'guided_demo.%'")).toHaveLength(0);
+    } finally {
+      closeBundle(dest);
+    }
+  });
+});

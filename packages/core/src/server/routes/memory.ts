@@ -31,11 +31,14 @@
  * by the router's default auth mode.
  */
 
-import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
-import { MEMORY_TOC, MEMORY_TOPIC_TOUCH } from './paths';
-import { getMemoryService, type MemoryService } from '../../memory/service';
-import { getTopicRepository, type TopicRepository } from '../../memory/repository';
 import { isTopicKind, type TopicKind } from '../../memory/domain';
+import { getTopicRepository, type TopicRepository } from '../../memory/repository';
+import { getMemoryService, type MemoryService } from '../../memory/service';
+import { currentDataScope, isGuidedDemoScope } from '../../scope/data_scope';
+
+import { MEMORY_TOC, MEMORY_TOPIC_TOUCH } from './paths';
+
+import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
 
 /** Body size cap for touch — 16 KiB matches the Go port's limit. */
 const TOUCH_BODY_MAX_BYTES = 16 * 1024;
@@ -125,6 +128,21 @@ async function handleTouch(
     return jsonError(400, 'kind must be "entity" or "theme"');
   }
   const kind: TopicKind = kindRaw;
+
+  // Data-scope isolation: the working-memory tables (topic_salience /
+  // topic_aliases) live in the per-persona DBs and are NOT scope-partitioned,
+  // so a guided-demo /remember would otherwise pollute the user's real ToC
+  // (Emma / back-pain / budget topics) and survive teardown + leak into export.
+  // The demo is throwaway, so we simply don't feed its content into the ToC —
+  // a soft no-op (mirrors the persona-not-open 'skipped' branch below). This is
+  // the central choke point: both the HTTP and in-process transports route
+  // every topic touch through this handler.
+  if (isGuidedDemoScope(currentDataScope())) {
+    return {
+      status: 200,
+      body: { status: 'skipped', reason: 'guided_demo_scope' },
+    };
+  }
 
   const repo = resolveRepo(persona);
   if (repo === null) {

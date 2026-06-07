@@ -12,6 +12,7 @@
 
 import { InMemoryTopicRepository, type TopicRepository } from '../../src/memory/repository';
 import { MemoryService } from '../../src/memory/service';
+import { resetDataScope, setCurrentDataScope } from '../../src/scope/data_scope';
 
 const T0 = 1_700_000_000; // unix seconds
 const DAY = 86_400;
@@ -37,6 +38,11 @@ function makeService(
 }
 
 describe('MemoryService.toc — empty cases', () => {
+  // The ToC is scope-sensitive (returns [] in a guided-demo scope), so keep
+  // every test on the default user scope unless it sets one explicitly.
+  beforeEach(() => resetDataScope());
+  afterEach(() => resetDataScope());
+
   it('limit <= 0 returns []', async () => {
     const svc = makeService({ general: makeRepo() });
     expect(await svc.toc(undefined, 0)).toEqual([]);
@@ -50,6 +56,18 @@ describe('MemoryService.toc — empty cases', () => {
 
   it('personas with no topics return []', async () => {
     const svc = makeService({ general: makeRepo(), health: makeRepo() });
+    expect(await svc.toc(undefined, 10)).toEqual([]);
+  });
+
+  it('returns [] in a guided-demo scope even when personas HAVE topics', async () => {
+    const repo = makeRepo();
+    await repo.touch({ topic: 'real-user-topic', kind: 'theme', nowUnix: T0 });
+    const svc = makeService({ general: repo });
+    // On the user scope the topic is visible…
+    expect((await svc.toc(undefined, 10)).map((e) => e.topic)).toEqual(['real-user-topic']);
+    // …but inside a demo scope the ToC reads empty (no user-topic leak into demo
+    // prompts/results), matching the write-side touch guard.
+    setCurrentDataScope('guided_demo:run1');
     expect(await svc.toc(undefined, 10)).toEqual([]);
   });
 });

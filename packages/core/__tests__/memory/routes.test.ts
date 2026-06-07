@@ -12,6 +12,7 @@ import type { CoreRequest, CoreResponse } from '../../src/server/router';
 import { makeMemoryHandlers } from '../../src/server/routes/memory';
 import { InMemoryTopicRepository, type TopicRepository } from '../../src/memory/repository';
 import { MemoryService } from '../../src/memory/service';
+import { resetDataScope, setCurrentDataScope } from '../../src/scope/data_scope';
 
 const T0 = 1_700_000_000;
 
@@ -97,6 +98,24 @@ describe('POST /v1/memory/topic/touch', () => {
     const res = await touch(req({ method: 'POST', ...bodyBits }));
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ status: 'skipped', reason: 'persona not open' });
+  });
+
+  it('guided-demo scope returns 200 status=skipped and writes NO topic row', async () => {
+    // The per-persona topic tables aren't scope-partitioned, so a demo
+    // /remember must not pollute the real ToC (it would survive teardown +
+    // leak into export). The touch is a soft no-op in a guided-demo scope.
+    const { repo, touch } = setup();
+    setCurrentDataScope('guided_demo:run1');
+    try {
+      const bodyBits = jsonBody({ persona: 'health', topic: 'dinosaurs', kind: 'entity' });
+      const res = await touch(req({ method: 'POST', ...bodyBits }));
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ status: 'skipped', reason: 'guided_demo_scope' });
+      // No topic row was written despite a valid, open persona.
+      expect(await repo.get('dinosaurs')).toBeNull();
+    } finally {
+      resetDataScope();
+    }
   });
 
   it('400 on missing persona', async () => {

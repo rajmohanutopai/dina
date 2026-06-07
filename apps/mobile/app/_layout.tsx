@@ -53,6 +53,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { markNotificationRead } from '@dina/brain/notifications';
 import { UnlockGate } from '../src/components/unlock_gate';
+import { GuidedDemoGate } from '../src/components/guided_demo/GuidedDemoGate';
 import { DinaWordmark } from '../src/components/DinaWordmark';
 import { clearThread } from '../src/hooks/useChatThread';
 import { useAutoLock } from '../src/hooks/useAutoLock';
@@ -613,6 +614,9 @@ export default function RootLayout() {
   return (
     <View style={{ flex: 1 }}>
       <UnlockGate>
+        <GuidedDemoGate
+          enabled={bootState.status !== 'error' && bootState.status !== 'booting'}
+        >
         {bootState.status === 'error' ? (
           <BootBanner
             kind="error"
@@ -1028,6 +1032,7 @@ export default function RootLayout() {
             />
           </Tabs>
         ) : null}
+        </GuidedDemoGate>
       </UnlockGate>
       <NavMenuSheet
         visible={menuOpen}

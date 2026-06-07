@@ -65,8 +65,30 @@ appId: com.dinakernel.mobile
 - tapOn:
     id: 'shell-secondary'
 
-# Provisioning (createAccount on test-pds + PLC) → chat home (mode chips).
+# Mandatory "Connect your AI" step (before provisioning — the vault never
+# unlocks without a working LLM). Gemini auto-connects via the dev env key
+# (EXPO_PUBLIC_DINA_DEV_GEMINI_API_KEY), so it lands on the connected state →
+# Continue. In production with no key the user picks a provider + pastes one
+# (onboarding-ai-provider-<type> + onboarding-ai-key-input + verify).
+- extendedWaitUntil:
+    visible:
+      id: 'onboarding-ai-connected'
+    timeout: 20000
+- tapOn:
+    id: 'shell-primary'
+
+# Provisioning (createAccount on test-pds + PLC) → on a clean install the
+# first-run GUIDED-DEMO ENTRY now shows here (see GuidedDemoGate); skip the tour
+# ("Start empty") to land in normal chat, which downstream flows expect. (On a
+# non-wiped re-run where the entry was already dismissed, the entry won't show —
+# this flow assumes a fresh install, same as its no-clearState note above.)
+- extendedWaitUntil:
+    visible:
+      id: 'guided-demo-entry'
+    timeout: 90000
+- tapOn:
+    id: 'guided-demo-skip'
 - extendedWaitUntil:
     visible:
       id: 'index-mode-chip-remember'
-    timeout: 90000
+    timeout: 15000

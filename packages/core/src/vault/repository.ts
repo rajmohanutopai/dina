@@ -24,6 +24,9 @@
  * Source: ARCHITECTURE.md — op-sqlite persistence layer
  */
 
+import { currentDataScope, type DataScope } from '../scope/data_scope';
+import { scopedInsertFields, scopedParams, scopedWhere } from '../scope/repository';
+
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 import type { VaultItem } from '@dina/test-harness';
 
@@ -164,8 +167,8 @@ export class SQLiteVaultRepository implements VaultRepository {
         id, type, source, source_id, contact_did, author_person_id, summary, body, metadata, tags,
         content_l0, content_l1, deleted, timestamp, created_at, updated_at,
         sender, sender_trust, source_type, confidence, retrieval_policy,
-        contradicts, enrichment_status, enrichment_version, embedding
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        contradicts, enrichment_status, enrichment_version, embedding, data_scope
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         item.id,
         item.type,
@@ -192,6 +195,8 @@ export class SQLiteVaultRepository implements VaultRepository {
         item.enrichment_status,
         item.enrichment_version,
         embedding,
+        // Stamp the active scope: 'user' normally, 'guided_demo:<id>' in a demo.
+        scopedInsertFields().data_scope,
       ],
     );
   }
@@ -201,7 +206,10 @@ export class SQLiteVaultRepository implements VaultRepository {
   }
 
   getItemSync(id: string): VaultItem | null {
-    const rows = this.db.query('SELECT * FROM vault_items WHERE id = ? AND deleted = 0', [id]);
+    const rows = this.db.query(
+      `SELECT * FROM vault_items WHERE id = ? AND deleted = 0 AND ${scopedWhere()}`,
+      [id, ...scopedParams()],
+    );
     if (rows.length === 0) return null;
     return rowToVaultItem(rows[0]);
   }
@@ -211,7 +219,10 @@ export class SQLiteVaultRepository implements VaultRepository {
   }
 
   getItemIncludeDeletedSync(id: string): VaultItem | null {
-    const rows = this.db.query('SELECT * FROM vault_items WHERE id = ?', [id]);
+    const rows = this.db.query(`SELECT * FROM vault_items WHERE id = ? AND ${scopedWhere()}`, [
+      id,
+      ...scopedParams(),
+    ]);
     if (rows.length === 0) return null;
     return rowToVaultItem(rows[0]);
   }
@@ -221,12 +232,17 @@ export class SQLiteVaultRepository implements VaultRepository {
   }
 
   deleteItemSync(id: string): boolean {
-    const existing = this.db.query('SELECT 1 FROM vault_items WHERE id = ?', [id]);
-    if (existing.length === 0) return false;
-    this.db.execute('UPDATE vault_items SET deleted = 1, updated_at = ? WHERE id = ?', [
-      Date.now(),
+    // Exact-ID + scope (design doc "Exact-ID Safety"): a demo id can never
+    // soft-delete a user row and vice versa.
+    const existing = this.db.query(`SELECT 1 FROM vault_items WHERE id = ? AND ${scopedWhere()}`, [
       id,
+      ...scopedParams(),
     ]);
+    if (existing.length === 0) return false;
+    this.db.execute(
+      `UPDATE vault_items SET deleted = 1, updated_at = ? WHERE id = ? AND ${scopedWhere()}`,
+      [Date.now(), id, ...scopedParams()],
+    );
     return true;
   }
 
@@ -241,9 +257,10 @@ export class SQLiteVaultRepository implements VaultRepository {
        WHERE vault_items_fts MATCH ?
          AND vi.deleted = 0
          AND vi.retrieval_policy IN ('normal', 'caveated', '')
+         AND ${scopedWhere('vi')}
        ORDER BY rank
        LIMIT ?`,
-      [text, limit],
+      [text, ...scopedParams(), limit],
     );
     return rows.map(rowToVaultItem);
   }
@@ -257,9 +274,10 @@ export class SQLiteVaultRepository implements VaultRepository {
       `SELECT * FROM vault_items
        WHERE deleted = 0
          AND retrieval_policy IN ('normal', 'caveated', '')
+         AND ${scopedWhere()}
        ORDER BY timestamp DESC
        LIMIT ?`,
-      [limit],
+      [...scopedParams(), limit],
     );
     return rows.map(rowToVaultItem);
   }
@@ -280,7 +298,8 @@ export class SQLiteVaultRepository implements VaultRepository {
     // Filter deleted at the DB layer — matches the contract's "deleted
     // rows are invisible" rule (see `VaultRepository.valuesSync` docs).
     const rows = this.db.query(
-      'SELECT * FROM vault_items WHERE deleted = 0 ORDER BY timestamp DESC',
+      `SELECT * FROM vault_items WHERE deleted = 0 AND ${scopedWhere()} ORDER BY timestamp DESC`,
+      [...scopedParams()],
     );
     return rows.map(rowToVaultItem);
   }
@@ -295,8 +314,8 @@ export class SQLiteVaultRepository implements VaultRepository {
     // Idempotent on (item_id, person_id): re-linking refreshes the
     // relation/confidence/source rather than duplicating.
     this.db.execute(
-      `INSERT INTO vault_item_subjects (item_id, person_id, relation, confidence, source, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO vault_item_subjects (item_id, person_id, relation, confidence, source, created_at, data_scope)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(item_id, person_id) DO UPDATE SET
          relation = excluded.relation,
          confidence = excluded.confidence,
@@ -308,6 +327,9 @@ export class SQLiteVaultRepository implements VaultRepository {
         opts?.confidence ?? 'medium',
         opts?.source ?? 'manual',
         nowSec,
+        // The link inherits the active scope (matches the item's scope, since
+        // links are created in the same scope the item was stored in).
+        scopedInsertFields().data_scope,
       ],
     );
   }
@@ -319,8 +341,8 @@ export class SQLiteVaultRepository implements VaultRepository {
   getItemIdsForPersonSync(personId: string): string[] {
     if (personId === '') return [];
     const rows = this.db.query(
-      `SELECT item_id FROM vault_item_subjects WHERE person_id = ? ORDER BY created_at DESC`,
-      [personId],
+      `SELECT item_id FROM vault_item_subjects WHERE person_id = ? AND ${scopedWhere()} ORDER BY created_at DESC`,
+      [personId, ...scopedParams()],
     );
     return rows.map((r) => String(r.item_id));
   }
@@ -328,13 +350,16 @@ export class SQLiteVaultRepository implements VaultRepository {
   getItemsForPersonSync(personId: string, limit: number): VaultItem[] {
     if (personId === '' || limit <= 0) return [];
     // Join subjects → items, newest-linked first, non-deleted only.
+    // Scope BOTH joined tables (design doc: "joins include scope on both
+    // sides where both tables are scoped").
     const rows = this.db.query(
       `SELECT vi.* FROM vault_item_subjects vis
        JOIN vault_items vi ON vi.id = vis.item_id
        WHERE vis.person_id = ? AND vi.deleted = 0
+         AND ${scopedWhere('vi')} AND ${scopedWhere('vis')}
        ORDER BY vis.created_at DESC
        LIMIT ?`,
-      [personId, limit],
+      [personId, ...scopedParams(), ...scopedParams(), limit],
     );
     return rows.map(rowToVaultItem);
   }
@@ -344,10 +369,13 @@ export class SQLiteVaultRepository implements VaultRepository {
     // Move links to the survivor; `OR IGNORE` skips any (item, survivor)
     // pair that already exists (PK collision), then drop the leftovers.
     this.db.execute(
-      `UPDATE OR IGNORE vault_item_subjects SET person_id = ? WHERE person_id = ?`,
-      [toPersonId, fromPersonId],
+      `UPDATE OR IGNORE vault_item_subjects SET person_id = ? WHERE person_id = ? AND ${scopedWhere()}`,
+      [toPersonId, fromPersonId, ...scopedParams()],
     );
-    this.db.execute(`DELETE FROM vault_item_subjects WHERE person_id = ?`, [fromPersonId]);
+    this.db.execute(`DELETE FROM vault_item_subjects WHERE person_id = ? AND ${scopedWhere()}`, [
+      fromPersonId,
+      ...scopedParams(),
+    ]);
   }
 }
 
@@ -364,6 +392,8 @@ export class SQLiteVaultRepository implements VaultRepository {
  */
 export class InMemoryVaultRepository implements VaultRepository {
   private readonly items = new Map<string, VaultItem>();
+  /** id → scope the item was stored under (mirrors the SQLite data_scope column). */
+  private readonly itemScope = new Map<string, DataScope>();
 
   async storeItem(item: VaultItem): Promise<void> {
     this.storeItemSync(item);
@@ -371,6 +401,12 @@ export class InMemoryVaultRepository implements VaultRepository {
 
   storeItemSync(item: VaultItem): void {
     this.items.set(item.id, { ...item });
+    this.itemScope.set(item.id, currentDataScope());
+  }
+
+  /** True iff `id` belongs to the active scope (read-isolation gate). */
+  private inScope(id: string): boolean {
+    return this.itemScope.get(id) === currentDataScope();
   }
 
   async getItem(id: string): Promise<VaultItem | null> {
@@ -378,6 +414,7 @@ export class InMemoryVaultRepository implements VaultRepository {
   }
 
   getItemSync(id: string): VaultItem | null {
+    if (!this.inScope(id)) return null;
     const item = this.items.get(id);
     if (!item || item.deleted) return null;
     return { ...item };
@@ -388,6 +425,7 @@ export class InMemoryVaultRepository implements VaultRepository {
   }
 
   getItemIncludeDeletedSync(id: string): VaultItem | null {
+    if (!this.inScope(id)) return null;
     const item = this.items.get(id);
     return item ? { ...item } : null;
   }
@@ -397,6 +435,7 @@ export class InMemoryVaultRepository implements VaultRepository {
   }
 
   deleteItemSync(id: string): boolean {
+    if (!this.inScope(id)) return false;
     const item = this.items.get(id);
     if (!item) return false;
     item.deleted = 1;
@@ -431,6 +470,7 @@ export class InMemoryVaultRepository implements VaultRepository {
     const scored: Scored[] = [];
     for (const item of this.items.values()) {
       if (item.deleted) continue;
+      if (!this.inScope(item.id)) continue;
       if (item.retrieval_policy === 'briefing_only' || item.retrieval_policy === 'quarantined') {
         continue;
       }
@@ -452,7 +492,7 @@ export class InMemoryVaultRepository implements VaultRepository {
   queryAllSync(limit: number): VaultItem[] {
     const live: VaultItem[] = [];
     for (const item of this.items.values()) {
-      if (!item.deleted) live.push({ ...item });
+      if (!item.deleted && this.inScope(item.id)) live.push({ ...item });
     }
     live.sort((a, b) => b.timestamp - a.timestamp);
     return live.slice(0, limit);
@@ -469,6 +509,7 @@ export class InMemoryVaultRepository implements VaultRepository {
   /** Test helper — clear everything. */
   clear(): void {
     this.items.clear();
+    this.itemScope.clear();
     this.subjects.clear();
   }
 
@@ -481,13 +522,16 @@ export class InMemoryVaultRepository implements VaultRepository {
     // no-ops instead of masking a latent divergence.
     const live: VaultItem[] = [];
     for (const item of this.items.values()) {
-      if (!item.deleted) live.push({ ...item });
+      if (!item.deleted && this.inScope(item.id)) live.push({ ...item });
     }
     return live;
   }
 
-  // person_id -> item_ids, newest-linked last (we reverse on read).
-  private readonly subjects = new Map<string, string[]>();
+  // person_id -> links (newest-linked last; we reverse on read). Each link
+  // carries its OWN scope (set at link time), matching the SQLite repo's
+  // vault_item_subjects.data_scope column — NOT derived from the item, so a
+  // link to a not-yet-stored item ("ghost" link) still belongs to a scope.
+  private readonly subjects = new Map<string, Array<{ itemId: string; scope: DataScope }>>();
 
   async linkSubject(itemId: string, personId: string, opts?: SubjectLinkOptions): Promise<void> {
     this.linkSubjectSync(itemId, personId, opts);
@@ -496,7 +540,12 @@ export class InMemoryVaultRepository implements VaultRepository {
   linkSubjectSync(itemId: string, personId: string, _opts?: SubjectLinkOptions): void {
     if (itemId === '' || personId === '') return;
     const list = this.subjects.get(personId) ?? [];
-    if (!list.includes(itemId)) list.push(itemId); // idempotent on (item,person)
+    // Idempotent on (item, person): keep the existing link + its scope
+    // (matches SQLite's ON CONFLICT(item_id, person_id), which leaves
+    // data_scope unchanged).
+    if (!list.some((l) => l.itemId === itemId)) {
+      list.push({ itemId, scope: currentDataScope() });
+    }
     this.subjects.set(personId, list);
   }
 
@@ -506,7 +555,12 @@ export class InMemoryVaultRepository implements VaultRepository {
 
   getItemIdsForPersonSync(personId: string): string[] {
     if (personId === '') return [];
-    return [...(this.subjects.get(personId) ?? [])].reverse(); // newest-linked first
+    // Links in the active scope only (parity with `vis.data_scope = ?`).
+    const scope = currentDataScope();
+    return (this.subjects.get(personId) ?? [])
+      .filter((l) => l.scope === scope)
+      .map((l) => l.itemId)
+      .reverse(); // newest-linked first
   }
 
   getItemsForPersonSync(personId: string, limit: number): VaultItem[] {
@@ -514,7 +568,9 @@ export class InMemoryVaultRepository implements VaultRepository {
     const out: VaultItem[] = [];
     for (const id of this.getItemIdsForPersonSync(personId)) {
       const item = this.items.get(id);
-      if (item && !item.deleted) out.push({ ...item });
+      // Both the link AND the item must be in scope (parity with the SQLite
+      // join scoping both vis + vi); ghost links resolve to no item.
+      if (item && !item.deleted && this.inScope(id)) out.push({ ...item });
       if (out.length >= limit) break;
     }
     return out;
@@ -524,12 +580,21 @@ export class InMemoryVaultRepository implements VaultRepository {
     if (fromPersonId === '' || toPersonId === '' || fromPersonId === toPersonId) return;
     const fromList = this.subjects.get(fromPersonId);
     if (fromList === undefined) return;
+    const scope = currentDataScope();
     const toList = this.subjects.get(toPersonId) ?? [];
-    for (const itemId of fromList) {
-      if (!toList.includes(itemId)) toList.push(itemId);
+    // Only repoint in-scope links (parity with the SQLite repo's scoped
+    // UPDATE/DELETE); leave other-scope links on the source person.
+    const remaining: Array<{ itemId: string; scope: DataScope }> = [];
+    for (const link of fromList) {
+      if (link.scope === scope) {
+        if (!toList.some((l) => l.itemId === link.itemId)) toList.push(link);
+      } else {
+        remaining.push(link);
+      }
     }
     this.subjects.set(toPersonId, toList);
-    this.subjects.delete(fromPersonId);
+    if (remaining.length > 0) this.subjects.set(fromPersonId, remaining);
+    else this.subjects.delete(fromPersonId);
   }
 }
 

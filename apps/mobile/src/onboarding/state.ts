@@ -91,6 +91,13 @@ export type Step =
   | { kind: 'external_mnemonic_reveal'; draft: Partial<ExternalAtprotoDraft> }
   | { kind: 'external_mnemonic_verify'; draft: Partial<ExternalAtprotoDraft> }
   | { kind: 'provisioning_external'; draft: ExternalAtprotoDraft }
+  // Shared mandatory AI-provider step -----------------------------------
+  // Inserted before provisioning in every flow: the app is unusable
+  // without a working LLM key, so onboarding requires one before the
+  // vault unlocks. `next` is the provisioning step to run once a key is
+  // connected; `back` + `location` are carried so this shared step renders
+  // correctly regardless of which flow funnelled into it.
+  | { kind: 'ai_provider'; next: Step; back: Step; location: StepLocation }
   // Terminal ------------------------------------------------------------
   | { kind: 'error'; message: string; retry: Step };
 
@@ -114,35 +121,38 @@ export function locateStep(step: Step): StepLocation | null {
     case 'choose':
       return null;
     case 'create_name':
-      return { current: 1, total: 6, label: 'Your name' };
+      return { current: 1, total: 7, label: 'Your name' };
     case 'create_handle':
-      return { current: 2, total: 6, label: 'Pick a handle' };
+      return { current: 2, total: 7, label: 'Pick a handle' };
     case 'create_passphrase':
-      return { current: 3, total: 6, label: 'Passphrase' };
+      return { current: 3, total: 7, label: 'Passphrase' };
     case 'create_mnemonic_reveal':
-      return { current: 4, total: 6, label: 'Recovery phrase' };
+      return { current: 4, total: 7, label: 'Recovery phrase' };
     case 'create_mnemonic_verify':
-      return { current: 5, total: 6, label: 'Confirm phrase' };
+      return { current: 5, total: 7, label: 'Confirm phrase' };
     case 'provisioning_create':
-      return { current: 6, total: 6, label: 'Setting up' };
+      return { current: 7, total: 7, label: 'Setting up' };
     case 'recover_mnemonic':
-      return { current: 1, total: 4, label: 'Recovery phrase' };
+      return { current: 1, total: 5, label: 'Recovery phrase' };
     case 'recover_handle':
-      return { current: 2, total: 4, label: 'Your handle' };
+      return { current: 2, total: 5, label: 'Your handle' };
     case 'recover_passphrase':
-      return { current: 3, total: 4, label: 'New passphrase' };
+      return { current: 3, total: 5, label: 'New passphrase' };
     case 'provisioning_recover':
-      return { current: 4, total: 4, label: 'Restoring' };
+      return { current: 5, total: 5, label: 'Restoring' };
     case 'external_identity':
-      return { current: 1, total: 5, label: 'Existing identity' };
+      return { current: 1, total: 6, label: 'Existing identity' };
     case 'external_passphrase':
-      return { current: 2, total: 5, label: 'Local vault' };
+      return { current: 2, total: 6, label: 'Local vault' };
     case 'external_mnemonic_reveal':
-      return { current: 3, total: 5, label: 'Recovery phrase' };
+      return { current: 3, total: 6, label: 'Recovery phrase' };
     case 'external_mnemonic_verify':
-      return { current: 4, total: 5, label: 'Confirm phrase' };
+      return { current: 4, total: 6, label: 'Confirm phrase' };
     case 'provisioning_external':
-      return { current: 5, total: 5, label: 'Connecting' };
+      return { current: 6, total: 6, label: 'Connecting' };
+    // Shared AI step — carries the right "N of M" for whichever flow it's in.
+    case 'ai_provider':
+      return step.location;
     case 'error':
       return null;
   }
@@ -192,6 +202,8 @@ export function previousStep(step: Step): Step | null {
       return { kind: 'external_mnemonic_reveal', draft: step.draft };
     case 'provisioning_external':
       return null;
+    case 'ai_provider':
+      return step.back;
     case 'error':
       return step.retry;
   }

@@ -7,8 +7,8 @@
  * hitting "Continue".
  */
 
-import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { locateStep, type StartupMode, type Step } from '../../onboarding/state';
 import { colors, radius, spacing, textStyles } from '../../theme';
@@ -37,6 +37,11 @@ export function PassphraseSet(props: PassphraseSetProps): React.ReactElement {
   const [pp, setPp] = useState<string>(props.initialPassphrase ?? '');
   const [confirm, setConfirm] = useState<string>(props.initialConfirm ?? '');
   const [mode, setMode] = useState<StartupMode>(props.initialMode ?? 'auto');
+  // Ref to the confirm field so the passphrase field's keyboard "Next" key
+  // moves focus here. Beyond the UX win, ref.focus() is a JS→native focus that
+  // works under automation where a synthetic tap on the second field does not
+  // reliably move focus (iOS sim + RN secure inputs).
+  const confirmRef = useRef<TextInput>(null);
 
   const tooShort = pp.length > 0 && pp.length < MIN_LENGTH;
   const mismatch = confirm.length > 0 && pp !== confirm;
@@ -67,12 +72,16 @@ export function PassphraseSet(props: PassphraseSetProps): React.ReactElement {
         placeholder="At least 8 characters"
         error={tooShort ? 'At least 8 characters' : undefined}
         accessibilityLabel="Passphrase"
+        returnKeyType="next"
+        submitBehavior="submit"
+        onSubmitEditing={() => confirmRef.current?.focus()}
       />
       <StrengthBar score={strength} />
 
       <View style={styles.gap} />
 
       <PassphraseField
+        ref={confirmRef}
         testID="passphrase-confirm-input"
         label="Confirm"
         value={confirm}
@@ -80,6 +89,7 @@ export function PassphraseSet(props: PassphraseSetProps): React.ReactElement {
         placeholder="Type it again"
         error={mismatch ? 'Passphrases don\u2019t match' : undefined}
         accessibilityLabel="Confirm passphrase"
+        returnKeyType="done"
       />
 
       <View style={styles.section}>

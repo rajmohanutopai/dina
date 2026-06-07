@@ -11,6 +11,8 @@
  * Source: ARCHITECTURE.md — op-sqlite persistence layer
  */
 
+import { scopedInsertFields, scopedParams, scopedWhere } from '../scope/repository';
+
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 import type { Reminder } from './service';
 
@@ -49,8 +51,8 @@ export class SQLiteReminderRepository implements ReminderRepository {
     // best-effort path (createReminder) swallows the throw; in-process
     // dedup means a real duplicate never reaches a second INSERT.
     this.db.execute(
-      `INSERT INTO reminders (id, short_id, message, due_at, persona, kind, source_item_id, source, recurring, timezone, status, completed, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO reminders (id, short_id, message, due_at, persona, kind, source_item_id, source, recurring, timezone, status, completed, created_at, data_scope)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         r.id,
         r.short_id,
@@ -65,12 +67,16 @@ export class SQLiteReminderRepository implements ReminderRepository {
         r.status,
         r.completed,
         r.created_at,
+        scopedInsertFields().data_scope,
       ],
     );
   }
 
   async get(id: string): Promise<Reminder | null> {
-    const rows = this.db.query('SELECT * FROM reminders WHERE id = ?', [id]);
+    const rows = this.db.query(`SELECT * FROM reminders WHERE id = ? AND ${scopedWhere()}`, [
+      id,
+      ...scopedParams(),
+    ]);
     return rows.length > 0 ? rowToReminder(rows[0]) : null;
   }
 
@@ -81,20 +87,31 @@ export class SQLiteReminderRepository implements ReminderRepository {
     // reminders from any cold-start/recovery path that reads the repo
     // directly (the in-memory service is authoritative at runtime, but
     // this keeps durable + in-memory semantics identical).
+    // Scope-filtered: the fire path must not surface user reminders while a
+    // guided demo is active (and vice versa).
     const rows = this.db.query(
-      "SELECT * FROM reminders WHERE completed = 0 AND status IN ('pending', 'snoozed') AND due_at <= ? ORDER BY due_at ASC",
-      [nowMs],
+      `SELECT * FROM reminders WHERE completed = 0 AND status IN ('pending', 'snoozed') AND due_at <= ? AND ${scopedWhere()} ORDER BY due_at ASC`,
+      [nowMs, ...scopedParams()],
     );
     return rows.map(rowToReminder);
   }
 
   async listByPersona(persona: string): Promise<Reminder[]> {
-    const rows = this.db.query('SELECT * FROM reminders WHERE persona = ?', [persona]);
+    const rows = this.db.query(
+      `SELECT * FROM reminders WHERE persona = ? AND ${scopedWhere()}`,
+      [persona, ...scopedParams()],
+    );
     return rows.map(rowToReminder);
   }
 
   async listAll(): Promise<Reminder[]> {
-    const rows = this.db.query('SELECT * FROM reminders ORDER BY due_at ASC');
+    // Scope-filtered: boot hydration rebuilds the in-memory Map for the ACTIVE
+    // scope only — a normal boot (user scope) never loads demo reminders; a
+    // crash-recovery boot that restores the demo scope first loads demo ones.
+    const rows = this.db.query(
+      `SELECT * FROM reminders WHERE ${scopedWhere()} ORDER BY due_at ASC`,
+      [...scopedParams()],
+    );
     return rows.map(rowToReminder);
   }
 
@@ -114,14 +131,21 @@ export class SQLiteReminderRepository implements ReminderRepository {
       params.push(updates.due_at);
     }
     if (sets.length === 0) return;
-    params.push(id);
-    this.db.execute(`UPDATE reminders SET ${sets.join(', ')} WHERE id = ?`, params);
+    // Exact-id + scope: a demo id can never update a user reminder.
+    params.push(id, ...scopedParams());
+    this.db.execute(`UPDATE reminders SET ${sets.join(', ')} WHERE id = ? AND ${scopedWhere()}`, params);
   }
 
   async remove(id: string): Promise<boolean> {
-    const existing = this.db.query('SELECT 1 FROM reminders WHERE id = ?', [id]);
+    const existing = this.db.query(`SELECT 1 FROM reminders WHERE id = ? AND ${scopedWhere()}`, [
+      id,
+      ...scopedParams(),
+    ]);
     if (existing.length === 0) return false;
-    this.db.execute('DELETE FROM reminders WHERE id = ?', [id]);
+    this.db.execute(`DELETE FROM reminders WHERE id = ? AND ${scopedWhere()}`, [
+      id,
+      ...scopedParams(),
+    ]);
     return true;
   }
 }

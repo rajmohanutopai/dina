@@ -161,6 +161,16 @@ export interface StagingDrainOptions {
   /** [deps] Clears handles minted by `setInterval`. */
   clearInterval?: (handle: unknown) => void;
   /**
+   * [responsiveness hook] Yields the JS thread back to the host event loop
+   * between a drain item's heavy operations (the agentic LLM turn + the
+   * embedding enrichment). React Native runs everything on one JS thread, so
+   * an uninterrupted multi-second drain otherwise starves UI input/render —
+   * e.g. a tap on the guided-demo Exit during ingest is dropped. A macrotask
+   * yield hands the thread a turn to flush pending touches + paints. Defaults
+   * to `setTimeout(…, 0)`; pass `() => Promise.resolve()` to opt out.
+   */
+  yieldToHost?: () => Promise<void>;
+  /**
    * [pipeline hook] Called for each target persona BEFORE resolve when
    * the item source is owner-direct (`user_remember`). Should open the
    * persona vault so the resolve can write immediately instead of parking
@@ -238,6 +248,9 @@ export async function runStagingDrainTick(
   const clearIntervalFn =
     options.clearInterval ??
     ((h): void => clearInterval(h as ReturnType<typeof setInterval>));
+  // Macrotask yield between heavy per-item ops so the single JS thread stays
+  // responsive to UI input/render during ingest (see `yieldToHost` doc).
+  const yieldToHost = options.yieldToHost ?? ((): Promise<void> => new Promise((r) => setTimeout(r, 0)));
 
   let items: unknown[];
   try {
@@ -380,6 +393,9 @@ export async function runStagingDrainTick(
         });
         throw err;
       }
+      // Hand the JS thread a turn after the (multi-turn) agentic loop so the UI
+      // can flush queued touches/paints before the embedding enrichment below.
+      await yieldToHost();
 
       const routedPrimary = turn.sideEffects.routes[0]?.primary;
       const routedSecondary = turn.sideEffects.routes[0]?.secondary ?? [];
@@ -482,6 +498,9 @@ export async function runStagingDrainTick(
         body: pickString('body'),
         sender_trust: senderScore.sender_trust,
       });
+      // Yield again after embedding generation (another network + vector-math
+      // chunk) so the UI thread isn't starved before the vault write.
+      await yieldToHost();
       const embedding = vectorToJsonArray(enrichment.embedding);
       const enrichmentMeta = {
         status: enrichment.enrichment_status,

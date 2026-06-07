@@ -31,6 +31,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
 
 import { normalizeAlias } from '../contacts/validation';
+import { scopedInsertFields, scopedParams, scopedWhere } from '../scope/repository';
 
 import {
   canonicalizeIdentityValue,
@@ -202,9 +203,17 @@ export class SQLitePeopleRepository implements PeopleRepository {
         if (isNew) {
           this.db.execute(
             `INSERT INTO people (person_id, canonical_name,
-              relationship_hint, status, created_from, created_at, updated_at)
-             VALUES (?, ?, ?, ?, 'llm', ?, ?)`,
-            [personId, link.canonicalName, link.relationshipHint, personStatus, nowSec, nowSec],
+              relationship_hint, status, created_from, created_at, updated_at, data_scope)
+             VALUES (?, ?, ?, ?, 'llm', ?, ?, ?)`,
+            [
+              personId,
+              link.canonicalName,
+              link.relationshipHint,
+              personStatus,
+              nowSec,
+              nowSec,
+              scopedInsertFields().data_scope,
+            ],
           );
           response.created++;
         } else {
@@ -217,7 +226,7 @@ export class SQLitePeopleRepository implements PeopleRepository {
                relationship_hint = CASE WHEN ? = '' THEN relationship_hint ELSE ? END,
                status = CASE WHEN ? = 'confirmed' THEN 'confirmed' ELSE status END,
                updated_at = ?
-             WHERE person_id = ?`,
+             WHERE person_id = ? AND ${scopedWhere()}`,
             [
               link.canonicalName,
               link.canonicalName,
@@ -226,6 +235,7 @@ export class SQLitePeopleRepository implements PeopleRepository {
               personStatus,
               nowSec,
               personId,
+              ...scopedParams(),
             ],
           );
           response.updated++;
@@ -246,8 +256,9 @@ export class SQLitePeopleRepository implements PeopleRepository {
                  AND surface_type = 'role_phrase'
                  AND status = 'confirmed'
                  AND person_id != ?
+                 AND ${scopedWhere()}
                LIMIT 1`,
-              [norm, personId],
+              [norm, personId, ...scopedParams()],
             );
             if (conflict.length > 0) {
               response.conflicts.push(entry.surface);
@@ -285,8 +296,8 @@ export class SQLitePeopleRepository implements PeopleRepository {
   getPerson(personId: string): Person | null {
     const rows = this.db.query(
       `SELECT ${personSelectColumns('people')}
-       FROM people WHERE person_id = ? LIMIT 1`,
-      [personId],
+       FROM people WHERE person_id = ? AND ${scopedWhere()} LIMIT 1`,
+      [personId, ...scopedParams()],
     );
     if (rows.length === 0) return null;
     const person = rowToPerson(rows[0]);
@@ -297,8 +308,9 @@ export class SQLitePeopleRepository implements PeopleRepository {
   listPeople(): Person[] {
     const rows = this.db.query(
       `SELECT ${personSelectColumns('people')}
-       FROM people WHERE status != 'rejected'
+       FROM people WHERE status != 'rejected' AND ${scopedWhere()}
        ORDER BY updated_at DESC`,
+      [...scopedParams()],
     );
     return rows.map((row) => {
       const person = rowToPerson(row);
@@ -319,9 +331,10 @@ export class SQLitePeopleRepository implements PeopleRepository {
        FROM people p
        JOIN person_identities pi ON pi.person_id = p.person_id
        WHERE pi.identity_type = ? AND pi.identity_value = ? AND p.status != 'rejected'
+         AND ${scopedWhere('p')}
        ORDER BY p.updated_at DESC
        LIMIT 1`,
-      [identityType, canonical],
+      [identityType, canonical, ...scopedParams()],
     );
     if (rows.length === 0) return null;
     const person = rowToPerson(rows[0]);
@@ -346,8 +359,8 @@ export class SQLitePeopleRepository implements PeopleRepository {
     this.db.transaction(() => {
       this.db.execute(
         `UPDATE person_surfaces SET status = 'rejected', updated_at = ?
-         WHERE person_id = ?`,
-        [nowSec, personId],
+         WHERE person_id = ? AND ${scopedWhere()}`,
+        [nowSec, personId, ...scopedParams()],
       );
       changed = this.updatePersonStatus(personId, PERSON_STATUS_REJECTED);
     });
@@ -364,13 +377,13 @@ export class SQLitePeopleRepository implements PeopleRepository {
 
   detachSurface(personId: string, surfaceId: number): boolean {
     const before = this.db.query(
-      `SELECT 1 AS one FROM person_surfaces WHERE id = ? AND person_id = ? LIMIT 1`,
-      [surfaceId, personId],
+      `SELECT 1 AS one FROM person_surfaces WHERE id = ? AND person_id = ? AND ${scopedWhere()} LIMIT 1`,
+      [surfaceId, personId, ...scopedParams()],
     );
     if (before.length === 0) return false;
     this.db.execute(
-      `DELETE FROM person_surfaces WHERE id = ? AND person_id = ?`,
-      [surfaceId, personId],
+      `DELETE FROM person_surfaces WHERE id = ? AND person_id = ? AND ${scopedWhere()}`,
+      [surfaceId, personId, ...scopedParams()],
     );
     return true;
   }
@@ -392,8 +405,8 @@ export class SQLitePeopleRepository implements PeopleRepository {
     this.db.transaction(() => {
       this.db.execute(
         `UPDATE person_surfaces SET person_id = ?, updated_at = ?
-         WHERE person_id = ?`,
-        [keepId, nowSec, mergeId],
+         WHERE person_id = ? AND ${scopedWhere()}`,
+        [keepId, nowSec, mergeId, ...scopedParams()],
       );
       // Re-point every identity to the survivor. `(type,value)` is
       // globally unique, so mergeId's identities never collide with
@@ -405,8 +418,8 @@ export class SQLitePeopleRepository implements PeopleRepository {
       );
       this.db.execute(
         `UPDATE people SET status = 'rejected', updated_at = ?
-         WHERE person_id = ?`,
-        [nowSec, mergeId],
+         WHERE person_id = ? AND ${scopedWhere()}`,
+        [nowSec, mergeId, ...scopedParams()],
       );
     });
   }
@@ -419,8 +432,8 @@ export class SQLitePeopleRepository implements PeopleRepository {
     if (contactDid === '') return false;
     const nowSec = Math.floor(this.nowFn() / 1000);
     const before = this.db.query(
-      `SELECT 1 AS one FROM people WHERE person_id = ? LIMIT 1`,
-      [personId],
+      `SELECT 1 AS one FROM people WHERE person_id = ? AND ${scopedWhere()} LIMIT 1`,
+      [personId, ...scopedParams()],
     );
     if (before.length === 0) return false;
     this.db.transaction(() => {
@@ -428,8 +441,8 @@ export class SQLitePeopleRepository implements PeopleRepository {
       // Touch the person so `resolveByIdentity`'s updated_at ordering
       // surfaces the freshly-linked person first.
       this.db.execute(
-        `UPDATE people SET updated_at = ? WHERE person_id = ?`,
-        [nowSec, personId],
+        `UPDATE people SET updated_at = ? WHERE person_id = ? AND ${scopedWhere()}`,
+        [nowSec, personId, ...scopedParams()],
       );
     });
     return true;
@@ -493,8 +506,8 @@ export class SQLitePeopleRepository implements PeopleRepository {
              status = 'confirmed',
              created_from = CASE WHEN created_from = 'llm' THEN 'user' ELSE created_from END,
              updated_at = ?
-           WHERE person_id = ?`,
-          [trimmedName, nowSec, personId],
+           WHERE person_id = ? AND ${scopedWhere()}`,
+          [trimmedName, nowSec, personId, ...scopedParams()],
         );
       } else {
         // Zero or ambiguous (>1) matches → don't guess; create a fresh
@@ -503,9 +516,9 @@ export class SQLitePeopleRepository implements PeopleRepository {
         personId = newPersonId();
         this.db.execute(
           `INSERT INTO people (person_id, canonical_name,
-            relationship_hint, status, created_from, created_at, updated_at)
-           VALUES (?, ?, '', 'confirmed', 'user', ?, ?)`,
-          [personId, trimmedName, nowSec, nowSec],
+            relationship_hint, status, created_from, created_at, updated_at, data_scope)
+           VALUES (?, ?, '', 'confirmed', 'user', ?, ?, ?)`,
+          [personId, trimmedName, nowSec, nowSec, scopedInsertFields().data_scope],
         );
       }
 
@@ -548,7 +561,9 @@ export class SQLitePeopleRepository implements PeopleRepository {
               ps.created_from, ps.created_at, ps.updated_at
        FROM person_surfaces ps
        JOIN people p ON ps.person_id = p.person_id
-       WHERE ps.status = 'confirmed' AND p.status != 'rejected'`,
+       WHERE ps.status = 'confirmed' AND p.status != 'rejected'
+         AND ${scopedWhere('ps')} AND ${scopedWhere('p')}`,
+      [...scopedParams(), ...scopedParams()],
     );
     const out = new Map<string, PersonSurface[]>();
     for (const row of rows) {
@@ -566,15 +581,15 @@ export class SQLitePeopleRepository implements PeopleRepository {
   clearExcerptsForItem(sourceItemId: string): number {
     const nowSec = Math.floor(this.nowFn() / 1000);
     const before = this.db.query(
-      `SELECT COUNT(*) AS n FROM person_surfaces WHERE source_item_id = ?`,
-      [sourceItemId],
+      `SELECT COUNT(*) AS n FROM person_surfaces WHERE source_item_id = ? AND ${scopedWhere()}`,
+      [sourceItemId, ...scopedParams()],
     );
     const count = (before[0]?.n as number | undefined) ?? 0;
     this.db.execute(
       `UPDATE person_surfaces
        SET source_excerpt = '', updated_at = ?
-       WHERE source_item_id = ?`,
-      [nowSec, sourceItemId],
+       WHERE source_item_id = ? AND ${scopedWhere()}`,
+      [nowSec, sourceItemId, ...scopedParams()],
     );
     return count;
   }
@@ -587,11 +602,12 @@ export class SQLitePeopleRepository implements PeopleRepository {
     const cutoffSec = Math.floor((nowMs ?? this.nowFn()) / 1000) - maxAgeDays * 86_400;
     const before = this.db.query(
       `SELECT person_id FROM people
-       WHERE status = 'suggested' AND updated_at < ?
+       WHERE status = 'suggested' AND updated_at < ? AND ${scopedWhere()}
          AND person_id NOT IN (
-           SELECT DISTINCT person_id FROM person_surfaces WHERE status = 'confirmed'
+           SELECT DISTINCT person_id FROM person_surfaces
+           WHERE status = 'confirmed' AND ${scopedWhere()}
          )`,
-      [cutoffSec],
+      [cutoffSec, ...scopedParams(), ...scopedParams()],
     );
     const ids = before.map((r) => String(r.person_id));
     if (ids.length === 0) return 0;
@@ -600,12 +616,12 @@ export class SQLitePeopleRepository implements PeopleRepository {
       for (const id of ids) {
         this.db.execute(
           `UPDATE person_surfaces SET status = 'rejected', updated_at = ?
-           WHERE person_id = ?`,
-          [nowSec, id],
+           WHERE person_id = ? AND ${scopedWhere()}`,
+          [nowSec, id, ...scopedParams()],
         );
         this.db.execute(
-          `UPDATE people SET status = 'rejected', updated_at = ? WHERE person_id = ?`,
-          [nowSec, id],
+          `UPDATE people SET status = 'rejected', updated_at = ? WHERE person_id = ? AND ${scopedWhere()}`,
+          [nowSec, id, ...scopedParams()],
         );
       }
     });
@@ -635,8 +651,9 @@ export class SQLitePeopleRepository implements PeopleRepository {
          WHERE normalized_surface = ?
            AND surface_type = 'role_phrase'
            AND status = 'confirmed'
+           AND ${scopedWhere()}
          LIMIT 2`,
-        [norm],
+        [norm, ...scopedParams()],
       );
       if (rows.length === 1 && typeof rows[0].person_id === 'string') {
         return rows[0].person_id;
@@ -653,8 +670,9 @@ export class SQLitePeopleRepository implements PeopleRepository {
            AND ps.surface_type = 'name'
            AND ps.status = 'confirmed'
            AND p.status = 'confirmed'
+           AND ${scopedWhere('ps')} AND ${scopedWhere('p')}
          LIMIT 2`,
-        [norm],
+        [norm, ...scopedParams(), ...scopedParams()],
       );
       if (rows.length === 1 && typeof rows[0].person_id === 'string') {
         return rows[0].person_id;
@@ -667,8 +685,8 @@ export class SQLitePeopleRepository implements PeopleRepository {
 
   private personExists(personId: string): boolean {
     const rows = this.db.query(
-      `SELECT 1 AS one FROM people WHERE person_id = ? LIMIT 1`,
-      [personId],
+      `SELECT 1 AS one FROM people WHERE person_id = ? AND ${scopedWhere()} LIMIT 1`,
+      [personId, ...scopedParams()],
     );
     return rows.length > 0;
   }
@@ -696,9 +714,10 @@ export class SQLitePeopleRepository implements PeopleRepository {
        JOIN person_identities pi ON pi.person_id = p.person_id
        WHERE pi.identity_type = 'did' AND pi.identity_value = ?
          AND p.status != 'rejected'
+         AND ${scopedWhere('p')}
        ORDER BY p.updated_at DESC
        LIMIT 1`,
-      [canonicalDid],
+      [canonicalDid, ...scopedParams()],
     );
     if (byIdentity.length > 0 && typeof byIdentity[0].person_id === 'string') {
       return byIdentity[0].person_id;
@@ -712,12 +731,13 @@ export class SQLitePeopleRepository implements PeopleRepository {
          JOIN people p ON ps.person_id = p.person_id
          WHERE ps.normalized_surface = ? AND ps.surface_type = 'name'
            AND ps.status = 'confirmed' AND p.status != 'rejected'
+           AND ${scopedWhere('ps')} AND ${scopedWhere('p')}
            AND NOT EXISTS (
              SELECT 1 FROM person_identities pid
              WHERE pid.person_id = p.person_id AND pid.identity_type = 'did'
            )
          LIMIT 2`,
-        [normalizedName],
+        [normalizedName, ...scopedParams(), ...scopedParams()],
       );
       if (bySurface.length === 1 && typeof bySurface[0].person_id === 'string') {
         return bySurface[0].person_id;
@@ -800,9 +820,9 @@ export class SQLitePeopleRepository implements PeopleRepository {
   }): void {
     const existing = this.db.query(
       `SELECT id FROM person_surfaces
-       WHERE person_id = ? AND normalized_surface = ?
+       WHERE person_id = ? AND normalized_surface = ? AND ${scopedWhere()}
        LIMIT 1`,
-      [args.personId, args.normalizedSurface],
+      [args.personId, args.normalizedSurface, ...scopedParams()],
     );
     if (existing.length > 0) {
       const id = existing[0].id as number;
@@ -814,7 +834,7 @@ export class SQLitePeopleRepository implements PeopleRepository {
            source_excerpt = ?,
            extractor_version = ?,
            updated_at = ?
-         WHERE id = ?`,
+         WHERE id = ? AND ${scopedWhere()}`,
         [
           args.confidence,
           args.status,
@@ -823,6 +843,7 @@ export class SQLitePeopleRepository implements PeopleRepository {
           args.extractorVersion,
           args.nowSec,
           id,
+          ...scopedParams(),
         ],
       );
       return;
@@ -831,8 +852,8 @@ export class SQLitePeopleRepository implements PeopleRepository {
       `INSERT INTO person_surfaces
          (person_id, surface, normalized_surface, surface_type,
           status, confidence, source_item_id, source_excerpt,
-          extractor_version, created_from, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'llm', ?, ?)`,
+          extractor_version, created_from, created_at, updated_at, data_scope)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'llm', ?, ?, ?)`,
       [
         args.personId,
         args.surface,
@@ -845,6 +866,7 @@ export class SQLitePeopleRepository implements PeopleRepository {
         args.extractorVersion,
         args.nowSec,
         args.nowSec,
+        scopedInsertFields().data_scope,
       ],
     );
   }
@@ -859,9 +881,9 @@ export class SQLitePeopleRepository implements PeopleRepository {
               status, confidence, source_item_id, source_excerpt,
               extractor_version, created_from, created_at, updated_at
        FROM person_surfaces
-       WHERE person_id = ? AND status != 'rejected'
+       WHERE person_id = ? AND status != 'rejected' AND ${scopedWhere()}
        ORDER BY created_at ASC, id ASC`,
-      [personId],
+      [personId, ...scopedParams()],
     );
     return rows.map(rowToSurface);
   }
@@ -869,13 +891,13 @@ export class SQLitePeopleRepository implements PeopleRepository {
   private updatePersonStatus(personId: string, status: PersonStatus): boolean {
     const nowSec = Math.floor(this.nowFn() / 1000);
     const before = this.db.query(
-      `SELECT 1 AS one FROM people WHERE person_id = ? LIMIT 1`,
-      [personId],
+      `SELECT 1 AS one FROM people WHERE person_id = ? AND ${scopedWhere()} LIMIT 1`,
+      [personId, ...scopedParams()],
     );
     if (before.length === 0) return false;
     this.db.execute(
-      `UPDATE people SET status = ?, updated_at = ? WHERE person_id = ?`,
-      [status, nowSec, personId],
+      `UPDATE people SET status = ?, updated_at = ? WHERE person_id = ? AND ${scopedWhere()}`,
+      [status, nowSec, personId, ...scopedParams()],
     );
     return true;
   }
@@ -887,14 +909,14 @@ export class SQLitePeopleRepository implements PeopleRepository {
   ): boolean {
     const nowSec = Math.floor(this.nowFn() / 1000);
     const before = this.db.query(
-      `SELECT 1 AS one FROM person_surfaces WHERE id = ? AND person_id = ? LIMIT 1`,
-      [surfaceId, personId],
+      `SELECT 1 AS one FROM person_surfaces WHERE id = ? AND person_id = ? AND ${scopedWhere()} LIMIT 1`,
+      [surfaceId, personId, ...scopedParams()],
     );
     if (before.length === 0) return false;
     this.db.execute(
       `UPDATE person_surfaces SET status = ?, updated_at = ?
-       WHERE id = ? AND person_id = ?`,
-      [status, nowSec, surfaceId, personId],
+       WHERE id = ? AND person_id = ? AND ${scopedWhere()}`,
+      [status, nowSec, surfaceId, personId, ...scopedParams()],
     );
     return true;
   }

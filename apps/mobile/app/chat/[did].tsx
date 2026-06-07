@@ -156,7 +156,7 @@ export default function ChatScreen() {
           <Text style={styles.warningText}>
             This DID is not in your contacts. Replies may be quarantined until you add them.
           </Text>
-          <Text style={styles.warningAction}>Add \u2192</Text>
+          <Text style={styles.warningAction}>Add {'\u2192'}</Text>
         </Pressable>
       )}
 

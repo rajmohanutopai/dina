@@ -99,6 +99,27 @@ function isSensitiveKvKey(key: unknown): boolean {
   return SENSITIVE_KV_PATTERNS.some((re) => re.test(key));
 }
 
+/**
+ * kv keys that are EPHEMERAL device-session state, not portable user content —
+ * never exported. The guided-demo keys (`guided_demo.active`,
+ * `guided_demo.entry_seen`) matter most: a backup taken DURING a demo would
+ * otherwise carry the active-demo record, and restoring it resurrects a recovery
+ * record with no corresponding demo data — the next boot would offer to recover
+ * into an orphan guided-demo scope. The actual demo rows are already excluded
+ * (they're scope-tagged, and the archive only exports user-scope rows).
+ */
+const EPHEMERAL_KV_PATTERNS: RegExp[] = [/^guided_demo\./];
+
+function isEphemeralKvKey(key: unknown): boolean {
+  if (typeof key !== 'string') return false;
+  return EPHEMERAL_KV_PATTERNS.some((re) => re.test(key));
+}
+
+/** kv keys excluded from the archive: secrets + ephemeral device-session state. */
+function isExcludedKvKey(key: unknown): boolean {
+  return isSensitiveKvKey(key) || isEphemeralKvKey(key);
+}
+
 // ---------------------------------------------------------------
 // Payload shape
 // ---------------------------------------------------------------
@@ -176,9 +197,27 @@ export function resetImportHandler(): void {
 // Table dump / restore + checksums
 // ---------------------------------------------------------------
 
+/**
+ * Tables carrying a `data_scope` column. Export must include ONLY the `user`
+ * scope — guided-demo data must never end up in a backup (design doc
+ * Functional Invariant #3). Keep in lockstep with the data_scope migrations.
+ */
+const SCOPED_EXPORT_TABLES = new Set<string>([
+  'vault_items',
+  'vault_item_subjects',
+  'reminders',
+  'people',
+  'person_surfaces',
+  'chat_messages',
+]);
+
 function dumpTable(adapter: DatabaseAdapter, table: string): DBRow[] {
   try {
-    return adapter.query(`SELECT * FROM ${table}`);
+    // `'user'` is a constant (USER_SCOPE), not user input — safe to inline.
+    const sql = SCOPED_EXPORT_TABLES.has(table)
+      ? `SELECT * FROM ${table} WHERE data_scope = 'user'`
+      : `SELECT * FROM ${table}`;
+    return adapter.query(sql);
   } catch {
     // Table absent in this DB (e.g. an older persona) — treat as empty.
     return [];
@@ -253,8 +292,8 @@ export async function buildArchivePayload(ds: ArchiveDataSource): Promise<Archiv
       identityTables[t] = rows;
       checksums[`identity:${t}`] = tableChecksum(rows);
     }
-    // kv_store with sensitive keys filtered out.
-    const kvRows = dumpTable(idAdapter, KV_TABLE).filter((r) => !isSensitiveKvKey(r.key));
+    // kv_store with secrets + ephemeral (guided-demo) keys filtered out.
+    const kvRows = dumpTable(idAdapter, KV_TABLE).filter((r) => !isExcludedKvKey(r.key));
     identityTables[KV_TABLE] = kvRows;
     checksums[`identity:${KV_TABLE}`] = tableChecksum(kvRows);
   }
