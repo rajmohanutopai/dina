@@ -31,6 +31,7 @@ interface Recorded {
   navigations: string[];
   d2dMessages: Array<{ from: string; message: string; reminder: string }>;
   reviewCards: Array<{ product: string; rating: number; text: string }>;
+  delays: (number | undefined)[];
 }
 
 function fakeSeams(): { seams: GuidedDemoSeams; rec: Recorded } {
@@ -45,6 +46,7 @@ function fakeSeams(): { seams: GuidedDemoSeams; rec: Recorded } {
     navigations: [],
     d2dMessages: [],
     reviewCards: [],
+    delays: [],
   };
   const seams: GuidedDemoSeams = {
     async send(mode, message) {
@@ -82,8 +84,8 @@ function fakeSeams(): { seams: GuidedDemoSeams; rec: Recorded } {
     postReviewCard(review) {
       rec.reviewCards.push(review);
     },
-    async delay() {
-      /* no pause in tests */
+    async delay(ms) {
+      rec.delays.push(ms); // record the requested pause; don't actually wait
     },
   };
   return { seams, rec };
@@ -177,6 +179,16 @@ describe('GuidedDemoRunner.advance', () => {
     expect(rec.navigations).toEqual(NAVIGATE_STEPS.map((s) => s.navigateTo));
     expect(runner.position).toBe(DEMO_STEPS.length);
     expect(runner.isComplete).toBe(false);
+  });
+
+  it('pauses ~2s between the two opening remembers (Emma, then Alonso)', async () => {
+    const { seams, rec } = fakeSeams();
+    const runner = new GuidedDemoRunner(seams, { now: () => 1 });
+    await runner.advance(); // the opening multi-send step
+    expect(rec.sends).toHaveLength(2);
+    // One inter-message pause (between the two sends), a short gap not the long
+    // "thinking" delay.
+    expect(rec.delays).toEqual([2000]);
   });
 
   it('recommends ErgoFlex (grounded in the demo PeerLens chairs, no fake peers)', async () => {

@@ -190,10 +190,11 @@ export function makeGuidedDemoSeams(): GuidedDemoSeams {
         },
       });
     },
-    async delay() {
-      // The "agent is working" beat for the task step (between the hand-off and
-      // the approval card). Same duration as the recommend/service pauses.
-      await sleep(DINA_THINKING_MS);
+    async delay(ms = DINA_THINKING_MS) {
+      // Default: the "agent is working" beat for the task step (between the
+      // hand-off and the approval card), same as the recommend/service pauses.
+      // A caller may pass a shorter gap (e.g. between the two opening remembers).
+      await sleep(ms);
     },
   };
 }

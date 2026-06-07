@@ -281,6 +281,28 @@ persisted demo rows.</li>
 Files: <code>apps/mobile/src/notifications/reminder_push_bridge.ts</code>,
 <code>packages/core/src/notifications/repository.ts</code>,
 <code>packages/brain/src/notifications/inbox.ts</code>.</div>
+<div class="iter"><span class="tag t-dec">Demo round 3b — pacing + copy polish (now 10 steps)</span>
+Small follow-ups from a live read (<span class="status-green">60 guided_demo tests; typecheck + content
+lint clean</span>):
+<ul>
+<li><strong>2s pause between paired remembers.</strong> The multi-send loop waits
+<code>delay(2000)</code> between sends, so the first "Stored in &lt;vault&gt;" reply is read before the
+next remember fires. A short gap, not the 4s "thinking" pause. (Verified live: with the stale committed
+bundle the gap read as ~0; on a fresh bundle the pause is clearly visible — the dock holds "Working…"
+between the two "Stored in General vault" replies.)</li>
+<li><strong>Merged health + finance into one step</strong> (two sends, like the people step) — they pair
+naturally (each routes to its own locked vault). Demo is now 10 steps. Caption: "Now tell Dina something
+private. Health goes to your locked Health vault, money to your locked Finance vault."</li>
+<li><strong>Service caption clarified.</strong> "the best provider Dina" read ambiguously →
+"Dina finds the best provider and talks to <em>their Dina</em> to get a custom answer."</li>
+<li><strong>D2D caption reframed.</strong> Lead with the feature ("Talk to your friends over
+end-to-end encrypted channels"), drop the "Alonso is coming" line (it's visible in the next chat anyway),
+and describe what Dina does: "reads what comes in, tells you what matters, and sets reminders enriched
+with what it already knows." Kept the contact-gate.</li>
+<li><strong>Warmer D2D reminder.</strong> The reminder is hardcoded seed data (the D2D step is a
+deterministic simulation, not LLM output), and the curt "Have his cold brew ready." → "Alonso is coming
+over tomorrow morning. He loves his cold brew, so maybe have some ready."</li>
+</ul></div>
 <div class="iter"><span class="tag t-dec">Demo round 3 — D2D Talk step, people in step 1, review card, "End Demo", tighter flow (11 steps)</span>
 A third pass: trim the repetition, add the Talk feature, and finish locking down the surface
 (<span class="status-green">63 guided_demo + component tests; mobile typecheck + new-file lint 0; full
@@ -290,7 +312,9 @@ A third pass: trim the repetition, add the Talk feature, and finish locking down
 single tap — "Emma is my daughter, and she loves dinosaurs." + "Alonso, my friend, loves cold brew."
 (<code>DemoStep.messages</code>). Both run the real people-extraction, so the next step's
 People › Relations peek shows BOTH (verified live: Alonso=friend, Emma=daughter). Folded the old
-standalone "dinosaurs" step into step 1 (the birthday reminder still enriches with it).</li>
+standalone "dinosaurs" step into step 1 (the birthday reminder still enriches with it). A ~1s pause
+sits between the two sends (<code>delay(1000)</code>) so the first "Stored in General vault" reply is
+read before the Alonso remember fires.</li>
 <li><strong>Collapsed the nav round-trip (2 → 1).</strong> One "peek People › Relations" step; the next
 step's <code>send</code> calls <code>router.navigate('/')</code> first (no-op if already on Chat) so the
 user returns to Chat automatically when they tap the next Remember. Saves a tap.</li>
@@ -308,9 +332,11 @@ line. Publish is INERT (flips to a local "Published" confirmation) — a demo du
 <li><strong>Lock the empty-chat escape hatch.</strong> The empty Chat showed a "What can Dina do?"
 card that routes to Help. During a demo it's swapped for a non-interactive "Demo running" card
 (<code>index-demo-running-card</code>) so the dock is the only way forward.</li>
-<li><strong>Counter + "End Demo".</strong> Real total now 11 (computed from the plan). The eyebrow shows
-<code>N/11</code> for steps 1–10 and <strong>"End Demo"</strong> (no number) on the last step + the
-complete state; the complete-state button is now "End Demo" (was "Exit").</li>
+<li><strong>Counter + "End Demo".</strong> Total computed from the plan. The eyebrow shows
+<code>N/total</code> on every actionable step (including the last, e.g. <code>10/10</code>); only the
+<strong>complete state</strong> drops the number for <strong>"End Demo"</strong> (corrected in 3b — it
+was briefly showing on the last actionable step too). The complete-state button is "End Demo" (was
+"Exit").</li>
 <li><strong>Copy.</strong> Step 2 "Dina automatically added…"; step 8 "folds in" → "includes"; step 9
 leads with "Next is the Service Network…" + "the provider cannot message you, it is not your contact";
 step 10 agent-safety reframed for OpenClaw with "can" (not "must", since the agent decides); step 11

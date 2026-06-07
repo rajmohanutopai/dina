@@ -36,6 +36,10 @@ import {
   type DemoStep,
 } from './content';
 
+/** Gap between paired remembers (people; health+finance) so the user reads the
+ *  first "Stored in <vault>" reply before the next one fires. */
+const INTER_MESSAGE_PAUSE_MS = 2000;
+
 /** Stable action ids for the non-chat steps (chat ids come from DemoStep.id). */
 export const D2D_MESSAGE_STEP = 'd2d_message';
 export const AGENT_APPROVAL_STEP = 'agent_approval';
@@ -100,11 +104,11 @@ export interface GuidedDemoSeams {
   postUserMessage(text: string): void;
   /** Drive the app to another surface (People › Relations / Chat). */
   navigate(target: DemoNavTarget): void;
-  /** Pause for the "Dina is checking / the agent is working" beat. The real impl
-   *  sleeps; fake seams resolve instantly so tests stay fast. Used where the
-   *  pause sits BETWEEN two seam calls (the task step), so it can't live inside
-   *  one seam the way the recommend/service pauses do. */
-  delay(): Promise<void>;
+  /** Pause for a beat. With no argument, the "Dina is checking / the agent is
+   *  working" duration; with `ms`, a custom pause (e.g. the short gap between the
+   *  two opening remembers). The real impl sleeps; fake seams resolve instantly
+   *  so tests stay fast. Used where the pause sits BETWEEN two seam calls. */
+  delay(ms?: number): Promise<void>;
 }
 
 /** A step in the linear demo plan. Discriminated by `kind`. */
@@ -276,9 +280,12 @@ export class GuidedDemoRunner {
     switch (action.kind) {
       case 'chat': {
         // A step can send one message or several (the opening step remembers
-        // Emma AND Alonso). Sequential so each lands as its own chat turn.
+        // Emma AND Alonso). Sequential so each lands as its own chat turn, with
+        // a short pause between them so the user reads each "Stored in <vault>"
+        // reply before the next remember fires.
         const messages = action.step.messages ?? [action.step.message];
-        for (const message of messages) {
+        for (const [i, message] of messages.entries()) {
+          if (i > 0) await this.seams.delay(INTER_MESSAGE_PAUSE_MS);
           await this.seams.send(action.step.mode, message);
         }
         break;

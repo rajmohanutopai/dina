@@ -108,7 +108,24 @@ describe('guided demo screens', () => {
     expect(screen.getByTestId('guided-demo-next')).toBeDisabled();
   });
 
-  it('banner shows the complete state (Exit CTA, no Next) once every step has run', () => {
+  it('shows the count (not "End Demo") on the LAST actionable step', () => {
+    render(
+      <GuidedDemoBanner
+        onExit={jest.fn()}
+        onAdvance={jest.fn()}
+        caption="Last step before done."
+        step={10}
+        stepCount={10}
+        demoComplete={false}
+      />,
+    );
+    // The last actionable step still reads "10/10" — "End Demo" is for the
+    // complete state only.
+    expect(screen.getByText(/10\/10/)).toBeTruthy();
+    expect(screen.queryByText(/End Demo/)).toBeNull();
+  });
+
+  it('banner shows the complete state (End Demo CTA + eyebrow, no Next) once every step has run', () => {
     const onExit = jest.fn();
     render(
       <GuidedDemoBanner
@@ -122,7 +139,11 @@ describe('guided demo screens', () => {
     );
     expect(screen.getByTestId('guided-demo-complete')).toBeTruthy();
     expect(screen.queryByTestId('guided-demo-next')).toBeNull();
-    // The prominent body Exit CTA fires onExit (not just the header link).
+    // Only now does the eyebrow drop the number for "End Demo" (and the count
+    // is gone). One occurrence is the eyebrow, one is the CTA button.
+    expect(screen.getAllByText(/End Demo/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText(/6\/6/)).toBeNull();
+    // The prominent body End Demo CTA fires onExit (not just the header link).
     fireEvent.press(screen.getByTestId('guided-demo-exit-cta'));
     expect(onExit).toHaveBeenCalledTimes(1);
   });

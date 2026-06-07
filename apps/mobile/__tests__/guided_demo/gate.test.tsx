@@ -95,7 +95,10 @@ function fakeSeams(): {
   return { make: () => seams, rec };
 }
 
-const CHAT_STEP_COUNT = DEMO_STEPS.filter((s) => s.kind === undefined || s.kind === 'chat').length;
+const CHAT_STEPS = DEMO_STEPS.filter((s) => s.kind === undefined || s.kind === 'chat');
+// Total send() calls across all chat steps — a step may send several messages
+// (the people step and the private step each send two).
+const TOTAL_SENDS = CHAT_STEPS.reduce((n, s) => n + (s.messages?.length ?? 1), 0);
 const RECOMMEND_STEP_COUNT = DEMO_STEPS.filter((s) => s.kind === 'recommend').length;
 const SERVICE_STEP_COUNT = DEMO_STEPS.filter((s) => s.kind === 'service').length;
 
@@ -260,8 +263,8 @@ describe('useGuidedDemoGate', () => {
         await result.current.advanceDemo();
       });
     }
-    // CHAT_STEP_COUNT + 1: the opening step sends two remembers (Emma + Alonso).
-    expect(rec.sends).toBe(CHAT_STEP_COUNT + 1);
+    // Total sends across chat steps (the people + private steps each send two).
+    expect(rec.sends).toBe(TOTAL_SENDS);
     expect(rec.recommendations).toBe(RECOMMEND_STEP_COUNT);
     expect(rec.serviceCards).toBe(SERVICE_STEP_COUNT);
     expect(rec.approvals).toHaveLength(1);

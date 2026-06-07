@@ -101,17 +101,17 @@ export const DEMO_STEPS: readonly DemoStep[] = [
     nextLabel: 'Show me',
   },
   {
-    id: 'remember_back',
+    // Two private facts in one step (like the people step): health and money.
+    // Each routes to its own locked vault, so they pair naturally.
+    id: 'remember_private',
     mode: 'remember',
     message: "I've been getting a lot of lower back pain lately.",
+    messages: [
+      "I've been getting a lot of lower back pain lately.",
+      "I'm trying to keep my spending under $500 this month.",
+    ],
     caption:
-      'Tell Dina about your health. It goes straight into your locked Health vault.',
-  },
-  {
-    id: 'remember_budget',
-    mode: 'remember',
-    message: "I'm trying to keep my spending under $500 this month.",
-    caption: 'Anything about money lands in your locked Finance vault.',
+      'Now tell Dina something private. Health goes to your locked Health vault, money to your locked Finance vault.',
   },
   {
     id: 'remember_emma_birthday',
@@ -134,7 +134,7 @@ export const DEMO_STEPS: readonly DemoStep[] = [
     mode: 'ask',
     message: 'Where can I get the ErgoFlex Study Chair?',
     caption:
-      'Next is the Service Network, all the other Dinas offering services. Dina connects to the best provider Dina for a custom answer. That provider cannot message you, because it is not your contact.',
+      'Next is the Service Network, all the other Dinas offering services. Dina finds the best provider and talks to their Dina to get a custom answer. That provider cannot message you, because it is not your contact.',
   },
 ] as const;
 
@@ -264,10 +264,10 @@ export const DEMO_AGENT = {
 export const DEMO_D2D = {
   from: 'Alonso',
   message: 'Heading over tomorrow morning, looking forward to it!',
-  /** The reminder Dina sets, linked to the cold-brew memory from step 1. */
-  reminder: 'Alonso visits tomorrow morning. Have his cold brew ready.',
+  /** The reminder Dina sets, enriched from the cold-brew memory from step 1. */
+  reminder: 'Alonso is coming over tomorrow morning. He loves his cold brew, so maybe have some ready.',
   caption:
-    'Friends with their own Dina can message you. Alonso says he is coming, so Dina sets a reminder using what it remembers about him. Only people you have both added as contacts can message you.',
+    'Talk to your friends over end-to-end encrypted channels. Dina reads what comes in, tells you what matters, and sets reminders enriched with what it already knows. Only people you have both added as contacts can reach you.',
 } as const;
 
 /** The PeerLens review the user contributes back. Grounded in the chair they

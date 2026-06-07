@@ -40,8 +40,7 @@ describe('demo content fixtures', () => {
     expect(DEMO_STEPS.map((s) => s.id)).toEqual([
       'remember_people',
       'show_relations',
-      'remember_back',
-      'remember_budget',
+      'remember_private',
       'remember_emma_birthday',
       'chair_ask',
       'chair_availability',
@@ -53,11 +52,12 @@ describe('demo content fixtures', () => {
     expect(byId['remember_people'].messages?.[0]).toContain('dinosaurs');
     expect(byId['remember_people'].messages?.[1]).toMatch(/Alonso/);
     expect(byId['remember_people'].messages?.[1]).toMatch(/cold brew/i);
-    // Health + a GENERIC monthly budget (not tied to a chair) come BEFORE the
-    // birthday line, so the user sees functionality arrive separately.
-    expect(byId['remember_back'].message).toMatch(/lower back/i);
-    expect(byId['remember_budget'].message).toContain('$500');
-    expect(byId['remember_budget'].message).not.toMatch(/chair/i); // budget isn't obviously a chair
+    // Health + a GENERIC monthly budget (not tied to a chair) share one step,
+    // each routing to its own locked vault.
+    expect(byId['remember_private'].messages).toHaveLength(2);
+    expect(byId['remember_private'].messages?.[0]).toMatch(/lower back/i);
+    expect(byId['remember_private'].messages?.[1]).toContain('$500');
+    expect(byId['remember_private'].messages?.[1]).not.toMatch(/chair/i); // budget isn't obviously a chair
     expect(byId['remember_emma_birthday'].message).toContain('Nov 7'); // connects to dinosaurs
     // A single nav step peeks at People › Relations (the next step returns).
     expect(byId['show_relations'].kind).toBe('navigate');
