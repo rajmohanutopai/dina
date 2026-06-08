@@ -395,6 +395,56 @@ describe('createNode — provider role', () => {
     expect(pubPds.putRecord).toHaveBeenCalledTimes(1);
     await node.dispose();
   });
+
+  // A transiently-unreachable PDS at boot must NOT block startup. The boot
+  // wrapper keeps the (lazy) publisher around for the review-outbox drainer,
+  // but flags pdsSessionReachable=false so the service-profile ServicePublisher
+  // is never constructed — its initial sync() re-auths and would throw out of
+  // start(), turning the intended `publisher.stub` degradation into a boot
+  // failure.
+  it('provider with an unreachable PDS (pdsSessionReachable=false) still boots, keeping the publisher for reviews', async () => {
+    const downPds = {
+      putRecord: jest.fn().mockRejectedValue(new Error('PDS unreachable')),
+      deleteRecordIdempotent: jest.fn(),
+      authenticate: jest.fn().mockRejectedValue(new Error('PDS unreachable')),
+      did: DID,
+    };
+    const node = await createNode(
+      baseOptions({
+        role: 'provider',
+        pdsPublisher: downPds as never,
+        pdsSessionReachable: false,
+        readConfig: () => BUS_CONFIG,
+      }),
+    );
+    await expect(node.start()).resolves.toBeUndefined(); // boot survives the outage
+    expect(downPds.putRecord).not.toHaveBeenCalled(); // ServicePublisher never constructed
+    expect(node.pdsPublisher).toBe(downPds); // still available to the review drainer
+    await node.dispose();
+  });
+
+  // Faithfulness guard: the SAME throwing publisher, when the session IS
+  // considered reachable, constructs the ServicePublisher whose load-bearing
+  // initial sync() rejects — proving the gate above is what prevents the boot
+  // failure, not some unrelated reason the sync didn't fire.
+  it('provider with a reachable-but-throwing PDS sync fails boot (regression sentinel)', async () => {
+    const throwingPds = {
+      putRecord: jest.fn().mockRejectedValue(new Error('PDS write rejected')),
+      deleteRecordIdempotent: jest.fn(),
+      authenticate: jest.fn().mockResolvedValue(DID),
+      did: DID,
+    };
+    const node = await createNode(
+      baseOptions({
+        role: 'provider',
+        pdsPublisher: throwingPds as never,
+        pdsSessionReachable: true,
+        readConfig: () => BUS_CONFIG,
+      }),
+    );
+    await expect(node.start()).rejects.toThrow();
+    await node.dispose();
+  });
 });
 
 describe('createNode — agenticAsk wiring', () => {

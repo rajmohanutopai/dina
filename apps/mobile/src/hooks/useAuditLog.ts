@@ -124,7 +124,7 @@ export function verifyChain(): ChainVerification {
     totalEntries: total,
     message: result.valid
       ? `Chain verified: ${total} entries, all hashes valid`
-      : `Chain broken at entry #${result.brokenAt} — possible tampering`,
+      : `Chain broken at entry #${result.brokenAt}. Possible tampering.`,
   };
 }
 

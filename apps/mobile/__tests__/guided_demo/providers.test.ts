@@ -1,16 +1,18 @@
 /**
- * makeGuidedDemoSeams — the REAL provider seams (minus the LLM-backed `send`).
- * Drives them against the real in-memory chat thread + ApprovalManager and
- * asserts they produce genuine artifacts the live renderers consume:
+ * makeGuidedDemoSeams — the REAL provider seams. Drives them against the real
+ * in-memory chat thread + ApprovalManager and asserts they produce genuine
+ * artifacts the live renderers consume:
+ *   - send → a scripted remember (user message + "Stored in <vault>" reply);
  *   - postServiceCard → a resolved `service_query` lifecycle message;
+ *   - seedReminders → display-only reminder cards;
  *   - requestApproval/denyApproval → real ApprovalManager state + an actionable
- *     'approval' chat card (createApprovalCard), not just a notification;
- *   - postDemoCard → a scope-bound system chat message.
+ *     'approval' chat card; postDemoCard → a scope-bound system chat message.
  */
 
 import { getThread, readLifecycle, resetThreads } from '@dina/brain/chat';
 import { getApprovalManager, resetApprovalManager } from '@dina/core';
 
+import { nextNovember7 } from '../../src/guided_demo/content';
 import { makeGuidedDemoSeams } from '../../src/guided_demo/providers';
 import { buildDemoApprovalRequest, buildDemoServiceCard } from '../../src/guided_demo/runner';
 
@@ -20,6 +22,52 @@ beforeEach(() => {
 });
 
 describe('makeGuidedDemoSeams', () => {
+  it('send posts the user message immediately, then a scripted "Stored in <vault>" reply after a pause', async () => {
+    jest.useFakeTimers();
+    try {
+      const seams = makeGuidedDemoSeams();
+      const posted = seams.send('remember', 'Emma is my daughter', 'General');
+      // User message posts right away (REMEMBER badge via the /remember prefix);
+      // the scripted reply waits for the ~2s pause (not instant/canned).
+      const early = getThread('main');
+      expect(early).toHaveLength(1);
+      expect(early[0].type).toBe('user');
+      expect(early[0].content).toMatch(/^\/remember /);
+      await jest.advanceTimersByTimeAsync(2000);
+      await posted;
+    } finally {
+      jest.useRealTimers();
+    }
+    const thread = getThread('main');
+    expect(thread).toHaveLength(2);
+    expect(thread[1].type).toBe('dina');
+    expect(thread[1].content).toBe('Stored in General vault.');
+  });
+
+  it('seedReminders posts display-only reminder cards (scheduled, scope-bound)', () => {
+    const seams = makeGuidedDemoSeams();
+    seams.seedReminders([
+      { text: 'Emma birthday in a week' },
+      { text: "Today is Emma's birthday" },
+    ]);
+    const thread = getThread('main');
+    expect(thread).toHaveLength(2);
+    expect(thread[0].type).toBe('reminder');
+    expect(thread[0].metadata?.kind).toBe('reminder');
+    expect(thread[0].metadata?.scheduled).toBe(true);
+    expect(thread[0].content).toMatch(/Emma birthday/);
+    // Both cards render the ABSOLUTE next Nov 7, matching the "Nov 7" copy —
+    // not a relative now+N offset that would print a contradictory date.
+    const nov7 = nextNovember7(new Date()).getTime();
+    expect(thread[0].metadata?.dueAt).toBe(nov7);
+    expect(thread[1].metadata?.dueAt).toBe(nov7);
+  });
+
+  it('seedPerson is a no-op (no crash) when no people repository is wired', () => {
+    const seams = makeGuidedDemoSeams();
+    expect(() => seams.seedPerson({ name: 'Emma', relation: 'daughter' })).not.toThrow();
+  });
+
   it('postServiceCard posts the question immediately, then the resolved card after a pause', async () => {
     jest.useFakeTimers();
     try {

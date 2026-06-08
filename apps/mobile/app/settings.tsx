@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 import { loadVerificationStatus } from '../src/services/verification_status';
 import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 import {
@@ -398,7 +399,7 @@ export default function SettingsScreen() {
       </SettingsSection>
 
       <View style={styles.footer}>
-        <Text style={styles.footerText}>Dina v0.1.0</Text>
+        <Text style={styles.footerText}>Dina v{Constants.expoConfig?.version ?? '0.0.1'}</Text>
         <Text style={styles.footerSubtext}>Vault contents are encrypted and stay on this device</Text>
       </View>
     </ScrollView>

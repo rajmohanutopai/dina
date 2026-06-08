@@ -306,7 +306,7 @@ export function ModelPickerSheet({
       />
       <View style={styles.sheet}>
         <Text style={styles.title}>
-          Models — {PROVIDERS[provider].label}
+          Models · {PROVIDERS[provider].label}
         </Text>
         <Text style={styles.subtitle}>
           The models Dina uses on this provider. Each selection is

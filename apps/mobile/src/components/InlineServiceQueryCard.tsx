@@ -322,12 +322,12 @@ function buildHops(
             opts.elapsedSeconds !== undefined
               ? `${serviceName} replied in ${opts.elapsedSeconds}s`
               : `${serviceName} replied`,
-          subtitle: 'Private — only your two Dinas see this',
+          subtitle: 'Private. Only your two Dinas see this',
         }
       : {
           icon: 'hourglass-outline',
           title: `Waiting for ${serviceName} to reply…`,
-          subtitle: 'Private — only your two Dinas see this',
+          subtitle: 'Private. Only your two Dinas see this',
         };
   return [
     {

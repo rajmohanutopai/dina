@@ -205,6 +205,22 @@ describe('WriteScreen — inline errors', () => {
     );
     expect(getByTestId('write-error-body_too_long')).toBeTruthy();
   });
+
+  it('text_too_long (combined headline+body cap) surfaces EAGERLY — no publish tap needed', () => {
+    // Each field is under its own visible limit (140 / 4000), but together they
+    // exceed AppView's 2000-char composed cap. This must show on the overflow
+    // itself, NOT behind a publish attempt: it disables Publish, and a real user
+    // can't press a disabled button to reveal `showErrors` — they'd be stuck
+    // with Publish dead and no explanation.
+    const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
+    fireEvent.changeText(getByTestId('write-headline-input'), 'a'.repeat(100));
+    fireEvent.changeText(getByTestId('write-body-input'), 'b'.repeat(1950)); // 100 + 2 + 1950 > 2000
+    // No fireEvent.press — the error is visible immediately.
+    expect(getByTestId('write-error-text_too_long')).toBeTruthy();
+    expect(getByTestId('write-publish').props.accessibilityState).toMatchObject({
+      disabled: true,
+    });
+  });
 });
 
 describe('WriteScreen — submit + cancel', () => {

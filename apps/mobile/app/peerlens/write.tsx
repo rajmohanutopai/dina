@@ -47,23 +47,20 @@ import {
   Modal,
 } from 'react-native';
 
-import { getBootedNode } from '../../src/hooks/useNodeBootstrap';
-import { colors, fonts, spacing, radius, textStyles } from '../../src/theme';
-import {
-  injectAttestation,
-  isTestPublishConfigured,
-  type SubjectRefBody,
-} from '../../src/peerlens/appview_runtime';
-import { SubjectAnchorView } from '../../src/peerlens/components/subject_anchor_view';
-import { useComposeContext } from '../../src/peerlens/runners/use_compose_context';
-import { listPersonas, isPersonaOpen, FEATURE_NAMES } from '@dina/core';
-import { deriveEditWarning, type EditWarning } from '../../src/peerlens/edit_flow';
 import { findMessageByDraftId, readLifecycle } from '@dina/brain/chat';
-import { setReviewDraftStatus } from '../../src/peerlens/review_draft';
+import { listPersonas, isPersonaOpen } from '@dina/core';
+
+import { getBootedNode } from '../../src/hooks/useNodeBootstrap';
+import { type SubjectRefBody } from '../../src/peerlens/appview_runtime';
+import { SubjectAnchorView } from '../../src/peerlens/components/subject_anchor_view';
+import { deriveEditWarning, type EditWarning } from '../../src/peerlens/edit_flow';
 import {
   enqueueLocal,
   type AttestationDraftBody,
 } from '../../src/peerlens/outbox_store';
+import { setReviewDraftStatus } from '../../src/peerlens/review_draft';
+import { publishReview } from '../../src/peerlens/review_publish_service';
+import { useComposeContext } from '../../src/peerlens/runners/use_compose_context';
 import {
   emptyWriteFormState,
   emptyWriteFormStateWithSubject,
@@ -106,6 +103,7 @@ import {
   type WriteSubjectState,
   type SubjectKind,
 } from '../../src/peerlens/write_form_data';
+import { colors, fonts, spacing, radius, textStyles } from '../../src/theme';
 
 import type { Sentiment, Confidence } from '@dina/protocol';
 
@@ -532,82 +530,107 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
             : null;
       const subjectKindForCategory: SubjectKind | null =
         formState.subject?.kind ?? paramSubjectKind ?? null;
-      if (
-        isTestPublishConfigured() &&
-        node !== null &&
-        subjectRef !== null &&
-        subjectKindForCategory !== null
-      ) {
+
+      // Shared post-publish handling for BOTH the inject shortcut and the
+      // real PDS publish: flip an originating chat-draft card to
+      // `published` and route the user back where they came from.
+      const finishPublished = (attestation: { uri: string; cid: string }): void => {
+        if (
+          paramDraftId !== undefined &&
+          paramDraftId.length > 0 &&
+          paramThreadId !== undefined &&
+          paramThreadId.length > 0
+        ) {
+          setReviewDraftStatus(paramThreadId, paramDraftId, 'published', {
+            attestation,
+            values: formState,
+            content: `Published your review of ${formState.subject?.name ?? subjectTitle}.`,
+          });
+          router.replace('/');
+          return;
+        }
+        if (router.canGoBack()) router.back();
+        else router.replace('/peerlens');
+      };
+      const freshRkey = `mob-${Date.now().toString(36)}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+      // Edit mode (`paramEditingUri` set): reuse the ORIGINAL record's rkey
+      // (last segment of its AT-URI) so putRecord REPLACES the review in place
+      // instead of publishing a duplicate. Fresh key for a brand-new review.
+      const editRkey = paramEditingUri?.split('/').pop();
+      const publishRkey = editRkey !== undefined && editRkey.length > 0 ? editRkey : freshRkey;
+
+      // Build the publishable record + draft once (only when the form has a
+      // subject). The publish decision tree — dev test-inject vs real
+      // sovereign PDS publish vs durable offline queue (cap-respecting) —
+      // lives in `review_publish_service`, not in this route file.
+      if (node !== null && subjectRef !== null && subjectKindForCategory !== null) {
+        const record: Record<string, unknown> = {
+          subject: subjectRef,
+          category: categoryFor(subjectKindForCategory),
+          sentiment: formState.sentiment,
+          confidence: formState.confidence,
+          text: composeText(formState.headline, formState.body),
+          tags: formState.body.length > 0 ? [] : undefined,
+          createdAt: new Date().toISOString(),
+          ...serializeFormToV2Extras(formState),
+        };
+        const draft: AttestationDraftBody = {
+          sentiment: formState.sentiment,
+          headline: formState.headline,
+          body: formState.body,
+          confidence: formState.confidence,
+          subjectTitle,
+          subjectId: paramSubjectId,
+        };
         try {
           setLocalSubmitting(true);
-          const rkey = `mob-${Date.now().toString(36)}-${Math.random()
-            .toString(36)
-            .slice(2, 8)}`;
-          // V2 wire-field extras (TN-V2-MOBILE-WIRE) — useCases,
-          // lastUsedMs, reviewerExperience, alternatives, compliance,
-          // accessibility, compat, price, availability, schedule.
-          // Every field optional; only ones the reviewer populated
-          // travel to AppView so the empty-array → NULL collapse on
-          // the server stays cheap. The serializer is `null`-safe and
-          // returns `{}` for an unfilled form, so a `{ ...record,
-          // ...v2Extras }` spread is a no-op when nothing is set.
-          const v2Extras = serializeFormToV2Extras(formState);
-          const cidPlaceholder = `bafyreim${Date.now().toString(36)}`;
-          const result = await injectAttestation({
-            authorDid: node.did,
-            rkey,
-            cid: cidPlaceholder,
-            record: {
-              subject: subjectRef,
-              category: categoryFor(subjectKindForCategory),
-              sentiment: formState.sentiment,
-              confidence: formState.confidence,
-              text: composeText(formState.headline, formState.body),
-              tags: formState.body.length > 0 ? [] : undefined,
-              createdAt: new Date().toISOString(),
-              ...v2Extras,
-            },
+          const outcome = await publishReview({
+            did: node.did,
+            pdsPublisher: node.pdsPublisher,
+            rkey: publishRkey,
+            record,
+            draft,
+            threadId: paramThreadId,
+            draftId: paramDraftId,
           });
-          // Chat-draft handoff: if the form was opened from an inline
-          // draft card, flip its lifecycle to `published` so the card
-          // collapses to the receipt instead of leaving a stale
-          // editable card in the chat thread. Also redirect the user
-          // back to chat (the place they came from) instead of
-          // popping into trust home — the form was pushed onto the
-          // trust stack from a different tab, so plain back() ends
-          // up at trust home.
+          if (outcome.kind === 'published') {
+            finishPublished(outcome.attestation);
+            return;
+          }
+          if (outcome.kind === 'error') {
+            setLocalError(outcome.message);
+            return;
+          }
+          // queued durably. If this was composed from an inline chat-draft
+          // card, mark that card in-flight ('publishing') so it can't be
+          // re-published into a duplicate while it waits in the outbox — the
+          // drainer flips it to 'published' once it lands.
           if (
-            paramDraftId !== undefined &&
-            paramDraftId.length > 0 &&
             paramThreadId !== undefined &&
-            paramThreadId.length > 0
+            paramThreadId.length > 0 &&
+            paramDraftId !== undefined &&
+            paramDraftId.length > 0
           ) {
-            setReviewDraftStatus(paramThreadId, paramDraftId, 'published', {
-              attestation: { uri: result.uri, cid: result.cid },
-              values: formState,
-              content: `Published your review of ${formState.subject?.name ?? subjectTitle}.`,
-            });
+            setReviewDraftStatus(paramThreadId, paramDraftId, 'publishing', { values: formState });
+            // Chat-draft handoff: as with cancel + publish-success, a plain
+            // back() pops into the PeerLens stack, not the chat tab the user
+            // came from. Send them home to chat where their (now 'publishing')
+            // card lives and will flip to 'published' once the drainer lands.
             router.replace('/');
             return;
           }
           if (router.canGoBack()) router.back();
-          else router.replace('/peerlens');
-          return;
-        } catch (err) {
-          setLocalError(
-            err instanceof Error
-              ? err.message
-              : `Couldn't publish to ${FEATURE_NAMES.peerlens}.`,
-          );
+          else router.replace('/peerlens/outbox');
           return;
         } finally {
           setLocalSubmitting(false);
         }
       }
 
-      // Legacy local-outbox path — kept for the existing review-only
-      // flow (subjectId in URL, no subject describe-fields) and as a
-      // fallback when test-publish isn't configured.
+      // Not buildable (no subject context) — in-memory minimal draft only;
+      // it can't be published without a subject, so it isn't persisted.
       const draft: AttestationDraftBody = {
         sentiment: formState.sentiment,
         headline: formState.headline,
@@ -620,8 +643,8 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
       if (!result.ok) {
         setLocalError(
           result.reason === 'cap_exceeded'
-            ? "Your outbox is full. Dismiss some queued drafts and try again."
-            : "Couldn't queue this draft. Please try again.",
+            ? 'Your outbox is full. Dismiss some queued reviews and try again.'
+            : "Couldn't queue this review. Please try again.",
         );
         return;
       }
@@ -1168,7 +1191,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
           paramInitialName.length > 0 &&
           state.subject.name === paramInitialName ? (
             <Text style={styles.kindHint} testID="write-subject-name-prefill-hint">
-              Pre-filled from your search — tap to edit if the spelling is off.
+              Pre-filled from your search. Tap to edit if the spelling is off.
             </Text>
           ) : null}
           {fieldError(
@@ -1371,9 +1394,19 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
         />
         {fieldError(
           validation.errors,
-          ['body_too_long'],
-          // Same logic: a length error implies user typed → always show.
-          showErrors || validation.bodyLength > BODY_MAX_LENGTH,
+          // `text_too_long` is the COMBINED headline+body cap (AppView's lexicon
+          // limit). It can trip while headline and body are each under their own
+          // visible limit, so it would otherwise leave Publish disabled with no
+          // explanation. Render it under the body — the field most likely over.
+          ['body_too_long', 'text_too_long'],
+          // Length errors always show — the user OBVIOUSLY typed past a cap. Show
+          // `text_too_long` (the combined cap) eagerly too: it disables Publish,
+          // and a real user can't press a disabled button to reveal `showErrors`,
+          // so gating it on a publish attempt would leave Publish dead with no
+          // explanation.
+          showErrors ||
+            validation.bodyLength > BODY_MAX_LENGTH ||
+            validation.errors.includes('text_too_long'),
         )}
       </View>
 
@@ -1528,7 +1561,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
             <Text style={styles.kindHint}>
               {prefilledFields.has('use_cases')
                 ? `Dina noted these from your vault. Tap to change.`
-                : `Optional — pick up to ${MAX_USE_CASES}. Helps other readers find reviews from people with the same use-case.`}
+                : `Optional. Pick up to ${MAX_USE_CASES}. Helps other readers find reviews from people with the same use-case.`}
             </Text>
             {(() => {
               // IIFE keeps the vocabulary derivation co-located with
@@ -1582,7 +1615,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
             <Text style={styles.kindHint}>
               {prefilledFields.has('last_used_bucket')
                 ? `Dina inferred this from when you last mentioned it. Tap a different bucket to change.`
-                : `When did you last interact with this? Optional — helps readers judge how fresh your review still is.`}
+                : `When did you last interact with this? Optional. It helps readers judge how fresh your review still is.`}
             </Text>
             {/* Vertical row list — single-select with checkmark.
                 Replaces the chip pill row. Single-select fields read
@@ -1640,7 +1673,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
           <View style={styles.field}>
             <Text style={styles.fieldLabel}>Other things you tried</Text>
             <Text style={styles.kindHint}>
-              Optional — add up to {MAX_REVIEW_ALTERNATIVES} subjects you
+              Optional. Add up to {MAX_REVIEW_ALTERNATIVES} subjects you
               also considered. Helps readers compare.
             </Text>
             {state.alternatives.length > 0 && (
@@ -1754,7 +1787,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
           <View style={styles.field}>
             <Text style={styles.fieldLabel}>How experienced are you with this?</Text>
             <Text style={styles.kindHint}>
-              Optional — readers can prefer reviews from your tier when
+              Optional. Readers can prefer reviews from your tier when
               filtering.
             </Text>
             <View style={styles.segmentedControl} testID="write-experience-row">
@@ -1802,7 +1835,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
           <View style={styles.field}>
             <Text style={styles.fieldLabel}>Price</Text>
             <Text style={styles.kindHint}>
-              Optional — what you paid (or saw advertised). Helps power
+              Optional. What you paid (or saw advertised). Helps power
               price-range filtering.
             </Text>
             <View style={styles.priceRow}>

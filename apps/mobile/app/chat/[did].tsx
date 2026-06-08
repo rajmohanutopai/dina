@@ -151,7 +151,7 @@ export default function ChatScreen() {
           testID="chat-add-contact"
           accessibilityRole="button"
           style={styles.warningBanner}
-          onPress={() => router.push('/add-contact')}
+          onPress={() => router.push({ pathname: '/add-contact', params: { did: peerDID } })}
         >
           <Text style={styles.warningText}>
             This DID is not in your contacts. Replies may be quarantined until you add them.

@@ -30,10 +30,7 @@
  *         service-discovery demo is actually runnable from the current app shell.
  */
 
-import { loadOrGenerateSeeds } from './identity_store';
-import { loadPersistedDid } from './identity_record';
-import { loadRolePreference } from './role_preference';
-import { AppViewStub, demoServiceProfile } from './appview_stub';
+
 import {
   AppViewClient,
   EtaQueryParamsSchema,
@@ -43,12 +40,8 @@ import {
   computeSchemaHash,
   createGeminiEmbeddingProvider,
   getCapability,
-} from '@dina/brain';
-import { getApiKey } from '../ai/provider';
-import { loadInfraPreferences, resolveServicesAppViewURL } from './infra_preferences';
-import type { ServiceConfig } from '@dina/protocol';
-import { getIdentityAdapter } from '../storage/init';
-import { resolveMobileHostedDinaEndpoints } from '@dina/home-node';
+ executeToolSearch } from '@dina/brain';
+import { resolveMobileHostedDinaEndpoints , makeSendD2D, makeOutboxRedeliver } from '@dina/home-node';
 import {
   deriveDIDKey,
   getApprovalManager,
@@ -100,8 +93,16 @@ import {
   startOutboxDrainer,
   type DrainerHandle,
 } from '@dina/core';
-import { makeSendD2D, makeOutboxRedeliver } from '@dina/home-node';
-import { executeToolSearch } from '@dina/brain';
+import { getApiKey } from '../ai/provider';
+import { getIdentityAdapter } from '../storage/init';
+
+import { AppViewStub, demoServiceProfile } from './appview_stub';
+import { loadPersistedDid } from './identity_record';
+import { loadOrGenerateSeeds } from './identity_store';
+import { loadInfraPreferences, resolveServicesAppViewURL } from './infra_preferences';
+import { loadRolePreference } from './role_preference';
+
+import type { ServiceConfig } from '@dina/protocol';
 
 /**
  * Durable-outbox drainer handle (issues.txt §1). Held at module scope so a
@@ -184,26 +185,38 @@ function parseRoleEnv(raw: string | undefined): NodeRole | undefined {
 async function tryBuildPdsPublisher(
   _did: string,
   infra: { pdsUrl: string | null; pdsHandle: string | null; pdsPassword: string | null; pdsEmail: string | null },
-): Promise<PDSPublisher | undefined> {
+  opts: { validateSession?: boolean } = {},
+): Promise<{ publisher: PDSPublisher | undefined; sessionReachable: boolean }> {
   const pdsUrl =
     infra.pdsUrl ??
     process.env.EXPO_PUBLIC_DINA_PDS_URL ??
     'https://test-pds.dinakernel.com';
   const handle = infra.pdsHandle ?? process.env.EXPO_PUBLIC_DINA_PDS_HANDLE ?? '';
   const password = infra.pdsPassword ?? process.env.EXPO_PUBLIC_DINA_PDS_PASSWORD ?? '';
-  if (handle === '' || password === '') return undefined;
-  const account = new PDSAccountClient({ pdsUrl });
-  try {
-    await account.createSession({ identifier: handle, password });
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error(
-      '[dina:boot] PDS createSession failed — re-onboard or check infra prefs',
-      (err as Error).message,
-    );
-    return undefined;
+  if (handle === '' || password === '') return { publisher: undefined, sessionReachable: false };
+  const publisher = new PDSPublisher({ pdsUrl, handle, password });
+  // Provider boot eagerly validates the session so an unreachable PDS
+  // degrades to `publisher.stub` immediately. The review-publish path
+  // (used by ALL roles) builds lazily — `PDSPublisher` opens a session on
+  // first write — so boot stays offline-safe and fast for non-providers.
+  if (opts.validateSession !== false) {
+    const account = new PDSAccountClient({ pdsUrl });
+    try {
+      await account.createSession({ identifier: handle, password });
+    } catch (err) {
+       
+      console.error(
+        '[dina:boot] PDS createSession failed — re-onboard or check infra prefs',
+        (err as Error).message,
+      );
+      // Keep the lazy publisher so the review-publish drainer can still retry
+      // once the PDS recovers; flag the session unreachable so the provider
+      // `publisher.stub` degradation surfaces SEPARATELY (it no longer nulls
+      // the publisher the review path depends on).
+      return { publisher, sessionReachable: false };
+    }
   }
-  return new PDSPublisher({ pdsUrl, handle, password });
+  return { publisher, sessionReachable: true };
 }
 
 function buildEnvServiceConfig(): ServiceConfig | undefined {
@@ -566,8 +579,15 @@ export async function buildBootInputs(
   // The PDS account is created during onboarding (`provisionIdentity`); boot
   // just opens a session. Without a publisher, a provider node degrades to
   // `publisher.stub` and the profile never reaches AppView.
-  const pdsPublisher =
-    role === 'provider' || role === 'both' ? await tryBuildPdsPublisher(did, infra) : undefined;
+  // Build for ALL roles. Providers publish their service profile (eager
+  // session validation so an unreachable PDS degrades to `publisher.stub`);
+  // every node also needs it to publish PeerLens reviews (lazy — session on
+  // first write). `bootstrap` only constructs a profile-publishing
+  // `ServicePublisher` when `isProvider`, so a non-provider holding a
+  // publisher does NOT auto-publish a service profile.
+  const isProviderRole = role === 'provider' || role === 'both';
+  const { publisher: pdsPublisher, sessionReachable: pdsSessionReachable } =
+    await tryBuildPdsPublisher(did, infra, { validateSession: isProviderRole });
 
   return {
     did,
@@ -586,6 +606,7 @@ export async function buildBootInputs(
     hasPairedAgent,
     initialServiceConfig,
     pdsPublisher,
+    pdsSessionReachable,
   };
 }
 
@@ -808,7 +829,7 @@ async function tryBuildAgenticAsk(opts: {
   // `installedPersonas` is recomputed per /ask via `listPersonas()`
   // so a persona added by the user mid-session shows up in the
   // planner's menu without a reboot.
-  const installedPersonas = (): Array<{ name: string; description: string }> =>
+  const installedPersonas = (): { name: string; description: string }[] =>
     listPersonas().map((p) => ({
       name: p.name,
       description: MOBILE_PERSONA_DESCRIPTIONS[p.name] ?? '',
@@ -958,7 +979,7 @@ function lazyOrchestratorHandle(): Parameters<typeof createQueryServiceTool>[0][
       // Deferred import to avoid a cycle: useNodeBootstrap → boot_capabilities
       // → useNodeBootstrap. At *call* time the bootstrap module is already
       // loaded because a query was only possible after the node started.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
+       
       const { getBootedNode } =
         require('../hooks/useNodeBootstrap') as typeof import('../hooks/useNodeBootstrap');
       const node = getBootedNode();
@@ -984,7 +1005,7 @@ function lazyCoreClient(): Parameters<typeof createFindPreferredProviderTool>[0]
   // invoked mid-ask, well after boot). Returning [] / null on the cold
   // path keeps tool calls on fail-soft rails rather than throwing.
   function node() {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     const { getBootedNode } =
       require('../hooks/useNodeBootstrap') as typeof import('../hooks/useNodeBootstrap');
     return getBootedNode();
@@ -1033,7 +1054,7 @@ function lazyCoreClient(): Parameters<typeof createFindPreferredProviderTool>[0]
 function lazyWorkflowClient(): Parameters<typeof createDelegateToAgentTool>[0]['core'] {
   return {
     async createWorkflowTask(input) {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
+       
       const { getBootedNode } =
         require('../hooks/useNodeBootstrap') as typeof import('../hooks/useNodeBootstrap');
       const node = getBootedNode();
@@ -1043,7 +1064,7 @@ function lazyWorkflowClient(): Parameters<typeof createDelegateToAgentTool>[0]['
       return node.coreClient.createWorkflowTask(input);
     },
     async getWorkflowTask(id) {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
+       
       const { getBootedNode } =
         require('../hooks/useNodeBootstrap') as typeof import('../hooks/useNodeBootstrap');
       const node = getBootedNode();

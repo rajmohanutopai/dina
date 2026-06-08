@@ -21,7 +21,7 @@ import {
 import { DEMO_STEPS, type DemoStep } from '../../src/guided_demo/content';
 
 interface Recorded {
-  sends: Array<{ mode: string; message: string }>;
+  sends: Array<{ mode: string; message: string; vault: string }>;
   recommendations: Array<{ question: string; answer: string }>;
   serviceCards: Array<{ capability: string; serviceName: string; question: string }>;
   approvals: DemoApprovalRequest[];
@@ -32,6 +32,8 @@ interface Recorded {
   d2dMessages: Array<{ from: string; message: string; reminder: string }>;
   reviewCards: Array<{ product: string; rating: number; text: string }>;
   delays: (number | undefined)[];
+  seededPeople: { name: string; relation: string }[];
+  seededReminders: string[];
 }
 
 function fakeSeams(): { seams: GuidedDemoSeams; rec: Recorded } {
@@ -47,10 +49,18 @@ function fakeSeams(): { seams: GuidedDemoSeams; rec: Recorded } {
     d2dMessages: [],
     reviewCards: [],
     delays: [],
+    seededPeople: [],
+    seededReminders: [],
   };
   const seams: GuidedDemoSeams = {
-    async send(mode, message) {
-      rec.sends.push({ mode, message });
+    async send(mode, message, vault) {
+      rec.sends.push({ mode, message, vault });
+    },
+    seedPerson(person) {
+      rec.seededPeople.push(person);
+    },
+    seedReminders(texts) {
+      rec.seededReminders.push(...texts);
     },
     async postRecommendation(question, answer) {
       rec.recommendations.push({ question, answer });
@@ -160,13 +170,21 @@ describe('GuidedDemoRunner.advance', () => {
       const action = await runner.advance();
       expect(action?.kind).toBe(planKind(step.kind));
     }
-    // chat → send(); recommend → recommendation; service → question + card;
-    // navigate → navigation. Each per its kind. A chat step may send MULTIPLE
-    // messages (the opening step remembers Emma AND Alonso), so expand them.
+    // chat → send() per remember (scripted reply, no LLM); recommend →
+    // recommendation; service → question + card; navigate → navigation. A chat
+    // step may have several remembers (Emma + Alonso), so expand them.
     expect(rec.sends).toEqual(
       CHAT_STEPS.flatMap((s) =>
-        (s.messages ?? [s.message]).map((message) => ({ mode: s.mode, message })),
+        (s.remembers ?? [{ message: s.message, vault: 'General' }]).map((r) => ({
+          mode: s.mode,
+          message: r.message,
+          vault: r.vault,
+        })),
       ),
+    );
+    // People seeded for every remember that carries a person (Emma, Alonso).
+    expect(rec.seededPeople).toEqual(
+      CHAT_STEPS.flatMap((s) => (s.remembers ?? []).flatMap((r) => (r.person ? [r.person] : []))),
     );
     expect(rec.recommendations).toHaveLength(RECOMMEND_STEPS.length);
     expect(rec.serviceCards).toEqual(

@@ -275,11 +275,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   agent: {
-    ...textStyles.bodySmall,
-    color: colors.textMuted,
+    ...textStyles.monoSmall,
     marginBottom: spacing.sm,
-    fontFamily: 'Menlo',
-    fontSize: 11,
   },
   row: {
     flexDirection: 'row',

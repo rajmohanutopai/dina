@@ -33,7 +33,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { PassphraseField } from './PassphraseField';
+
+import { setBackgroundTimeout } from '@dina/core';
+
 import {
   unlock,
   useIsUnlocked,
@@ -42,18 +44,19 @@ import {
   shouldForcePromptOnUnlock,
   clearForcePromptOnUnlock,
 } from '../hooks/useUnlock';
-import { loadWrappedSeed } from '../services/wrapped_seed_store';
-import { loadAutoPassphrase, loadStartupMode } from '../services/startup_preferences';
-import { loadBackgroundTimeoutPreference } from '../services/security_preferences';
-import { setBackgroundTimeout } from '@dina/core';
 import {
   clearOrphanKeychainState,
   installMarkerExists,
   wipeOrphanVaultFiles,
   writeInstallMarker,
 } from '../services/install_marker';
+import { loadBackgroundTimeoutPreference } from '../services/security_preferences';
+import { loadAutoPassphrase, loadStartupMode } from '../services/startup_preferences';
+import { loadWrappedSeed } from '../services/wrapped_seed_store';
 import { colors, fonts, radius, spacing, textStyles } from '../theme';
+
 import { OnboardingFlow } from './onboarding/onboarding_flow';
+import { PassphraseField } from './PassphraseField';
 
 export type Mode = 'loading' | 'onboarding' | 'locked' | 'unlocking' | 'unlocked';
 
@@ -150,7 +153,8 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
       } catch (err) {
         if (cancelled) return;
         setMode('onboarding');
-        setError(`Couldn't read vault state: ${err instanceof Error ? err.message : String(err)}`);
+        console.warn('[unlock] failed to read vault state', err);
+        setError("Couldn't read your saved data. Please restart the app and try again.");
       }
     })();
     return () => {
@@ -197,7 +201,7 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
     try {
       const wrapped = await loadWrappedSeed();
       if (wrapped === null) {
-        setError('Vault record missing — starting fresh onboarding.');
+        setError('Vault record missing. Starting fresh onboarding.');
         setMode('onboarding');
         return;
       }
@@ -223,7 +227,8 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
         setMode('locked');
       }
     } catch (err) {
-      setError(`Couldn't unlock: ${err instanceof Error ? err.message : String(err)}`);
+      console.warn('[unlock] unexpected unlock failure', err);
+      setError("Couldn't unlock. Please try again, or restart the app if it keeps happening.");
       setMode('locked');
     }
   }, []);
@@ -292,7 +297,7 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
       style={styles.root}
     >
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.brand}>DINA</Text>
+        <Text style={styles.brand}>Dina</Text>
         <Text style={styles.headline}>Welcome back</Text>
         <Text style={styles.sub}>
           Your vault is on this device. Enter the passphrase you set during onboarding.

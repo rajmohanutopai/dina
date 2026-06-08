@@ -23,13 +23,18 @@
 import { router } from 'expo-router';
 
 import { addLifecycleMessage, addMessage } from '@dina/brain/chat';
-import { getApprovalManager } from '@dina/core';
+import {
+  currentDataScope,
+  getApprovalManager,
+  getPeopleRepository,
+  type ExtractionResult,
+} from '@dina/core';
 
-import { addSystemNotification, sendMessage } from '../hooks/useChatThread';
+import { addSystemNotification } from '../hooks/useChatThread';
 
+import { nextNovember7, type DemoMode, type DemoNavTarget } from './content';
 import { describePeerLensReview, type GuidedDemoSeams } from './runner';
 
-import type { DemoMode, DemoNavTarget } from './content';
 
 const MAIN_THREAD = 'main';
 
@@ -40,6 +45,8 @@ const MAIN_THREAD = 'main';
  * seams (the runner awaits them) — fake seams in tests resolve instantly.
  */
 const DINA_THINKING_MS = 4000;
+/** Shorter pause for a scripted remember reply (the user reads it quickly). */
+const REMEMBER_THINKING_MS = 2000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -56,15 +63,73 @@ function prefixFor(mode: DemoMode): string {
  */
 export function makeGuidedDemoSeams(): GuidedDemoSeams {
   return {
-    async send(mode, message) {
-      // Make sure Chat is focused before sending — after the People › Relations
-      // peek (the single nav step) the user is on the People tab; this returns
-      // them so they see the message land. No-op when already on Chat.
+    async send(mode, message, vault) {
+      // Make sure Chat is focused — after the People › Relations peek (the nav
+      // step) the user is on the People tab; this returns them so they see the
+      // message land. No-op when already on Chat.
       router.navigate('/');
-      // Route through the exact path the composer uses, so the demo exercises
-      // intent routing, vault writes, people extraction, reminders, and card
-      // rendering identically to a real user message.
-      await sendMessage(`${prefixFor(mode)}${message}`);
+      // SCRIPTED remember (no live LLM): post the user message, pause ~2s so the
+      // reply doesn't render instantly (canned-looking), then a deterministic
+      // "Stored in <vault> vault." reply. The `/remember` prefix drives the
+      // REMEMBER badge (the renderer strips it). Vault routing is real-accurate,
+      // just scripted — see the seam doc for why a tour skips the live call.
+      addMessage(MAIN_THREAD, 'user', `${prefixFor(mode)}${message}`);
+      await sleep(REMEMBER_THINKING_MS);
+      addMessage(MAIN_THREAD, 'dina', `Stored in ${vault} vault.`);
+    },
+    seedPerson(person) {
+      // Write the person + relationship straight into the scoped People store
+      // (the same applyExtraction the live pipeline uses), so the nav peek shows
+      // it. Scope-bound → torn down with the demo. No-op without a repo (tests).
+      const repo = getPeopleRepository();
+      if (repo === null) return;
+      // Source id MUST be unique per demo run: applyExtraction's idempotency
+      // log (source_item_id + extractor_version + fingerprint) is GLOBAL, not
+      // scope-aware, so a fixed id would skip seeding on every replay (the
+      // people rows are scoped + torn down, but the log row survives). Fold in
+      // the current data scope (guided_demo:<run_id>, unique per run).
+      const extraction: ExtractionResult = {
+        sourceItemId: `guided-demo-person-${person.name.toLowerCase()}-${currentDataScope()}`,
+        extractorVersion: 'guided-demo',
+        results: [
+          {
+            canonicalName: person.name,
+            relationshipHint: person.relation,
+            sourceExcerpt: `${person.name} is my ${person.relation}`,
+            surfaces: [
+              { surface: person.name, surfaceType: 'name', confidence: 'high' },
+              { surface: person.relation, surfaceType: 'role_phrase', confidence: 'high' },
+            ],
+          },
+        ],
+      };
+      try {
+        repo.applyExtraction(extraction);
+      } catch {
+        /* best-effort demo seed — a failure just leaves People empty, no crash */
+      }
+    },
+    seedReminders(reminders) {
+      // Scripted reminder cards (the birthday enrichment) as display-only
+      // 'reminder' messages — same shape as the D2D reminder, scope-bound. Both
+      // reference Emma's birthday (Nov 7), so render the ABSOLUTE next Nov 7 —
+      // a relative "now + N days" would print e.g. JUN 15 while the body says
+      // "Nov 7", and the guided demo would visibly contradict itself.
+      const birthdayMs = nextNovember7(new Date()).getTime();
+      for (const [i, reminder] of reminders.entries()) {
+        addMessage(MAIN_THREAD, 'reminder', reminder.text, {
+          metadata: {
+            kind: 'reminder',
+            reminderId: `guided-demo-reminder-${i}`,
+            shortId: `gd${i}`,
+            reminderKind: 'event',
+            persona: 'general',
+            dueAt: birthdayMs,
+            recurring: '',
+            scheduled: true, // confirmation card → no Snooze / Mark-done actions
+          },
+        });
+      }
     },
     async postRecommendation(question, answer) {
       // A real user→Dina exchange via the live chat renderer. Deterministic +

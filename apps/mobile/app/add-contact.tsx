@@ -33,7 +33,7 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { addContact, getContact } from '@dina/core';
 import { getProfile as getTrustProfile } from '../src/peerlens/appview_runtime';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
@@ -42,7 +42,12 @@ import { colors, spacing, radius, textStyles } from '../src/theme';
 
 export default function AddContactScreen() {
   const router = useRouter();
-  const [didOrHandle, setDidOrHandle] = useState('');
+  // Pre-fill when navigated from a non-contact chat ("Add" banner passes
+  // the peer DID), so the user doesn't have to re-type/paste it.
+  const { did: prefillDid } = useLocalSearchParams<{ did?: string }>();
+  const [didOrHandle, setDidOrHandle] = useState(
+    typeof prefillDid === 'string' ? prefillDid : '',
+  );
   const [displayName, setDisplayName] = useState('');
   const [status, setStatus] = useState<'idle' | 'resolving' | 'saving' | 'error'>('idle');
   const [errorText, setErrorText] = useState('');

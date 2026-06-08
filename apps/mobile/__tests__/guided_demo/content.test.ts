@@ -46,19 +46,34 @@ describe('demo content fixtures', () => {
       'chair_availability',
     ]);
     const byId = Object.fromEntries(DEMO_STEPS.map((s) => [s.id, s]));
-    // The opening step remembers a family member AND a friend (two messages).
-    expect(byId['remember_people'].messages).toHaveLength(2);
-    expect(byId['remember_people'].messages?.[0]).toContain('daughter');
-    expect(byId['remember_people'].messages?.[0]).toContain('dinosaurs');
-    expect(byId['remember_people'].messages?.[1]).toMatch(/Alonso/);
-    expect(byId['remember_people'].messages?.[1]).toMatch(/cold brew/i);
+    // The opening step remembers a family member AND a friend (two remembers),
+    // each seeded into People › Relations with the right relationship.
+    expect(byId['remember_people'].remembers).toHaveLength(2);
+    expect(byId['remember_people'].remembers?.[0]?.message).toContain('daughter');
+    expect(byId['remember_people'].remembers?.[0]?.message).toContain('dinosaurs');
+    expect(byId['remember_people'].remembers?.[0]?.person).toEqual({
+      name: 'Emma',
+      relation: 'daughter',
+    });
+    expect(byId['remember_people'].remembers?.[1]?.message).toMatch(/Alonso/);
+    expect(byId['remember_people'].remembers?.[1]?.message).toMatch(/cold brew/i);
+    expect(byId['remember_people'].remembers?.[1]?.person).toEqual({
+      name: 'Alonso',
+      relation: 'friend',
+    });
     // Health + a GENERIC monthly budget (not tied to a chair) share one step,
-    // each routing to its own locked vault.
-    expect(byId['remember_private'].messages).toHaveLength(2);
-    expect(byId['remember_private'].messages?.[0]).toMatch(/lower back/i);
-    expect(byId['remember_private'].messages?.[1]).toContain('$500');
-    expect(byId['remember_private'].messages?.[1]).not.toMatch(/chair/i); // budget isn't obviously a chair
-    expect(byId['remember_emma_birthday'].message).toContain('Nov 7'); // connects to dinosaurs
+    // each routing (scripted reply) to its own locked vault.
+    expect(byId['remember_private'].remembers).toHaveLength(2);
+    expect(byId['remember_private'].remembers?.[0]?.message).toMatch(/lower back/i);
+    expect(byId['remember_private'].remembers?.[0]?.vault).toBe('Health');
+    expect(byId['remember_private'].remembers?.[1]?.message).toContain('$500');
+    expect(byId['remember_private'].remembers?.[1]?.vault).toBe('Finance');
+    expect(byId['remember_private'].remembers?.[1]?.message).not.toMatch(/chair/i); // budget isn't obviously a chair
+    // The birthday step carries scripted enrichment reminders (incl. dinosaurs).
+    expect(byId['remember_emma_birthday'].remembers?.[0]?.message).toContain('Nov 7');
+    expect(byId['remember_emma_birthday'].reminders?.some((r) => /dinosaur/i.test(r.text))).toBe(
+      true,
+    );
     // A single nav step peeks at People › Relations (the next step returns).
     expect(byId['show_relations'].kind).toBe('navigate');
     expect(byId['show_relations'].navigateTo).toBe('people-relations');
@@ -113,6 +128,8 @@ describe('demo content fixtures', () => {
     // purchase: Dina never touches money).
     expect(DEMO_TASK.message).toMatch(/Email my manager/i);
     expect(DEMO_TASK.message).not.toMatch(/buy/i);
-    expect(DEMO_PUBLISH_DRAFT.visibility).toBe('unlisted'); // never auto-public
+    // The published service is the canon bus-driver ETA service (eta_query).
+    expect(DEMO_PUBLISH_DRAFT.name).toMatch(/Bus.*ETA/i);
+    expect(DEMO_PUBLISH_DRAFT.capability).toBe('eta_query');
   });
 });

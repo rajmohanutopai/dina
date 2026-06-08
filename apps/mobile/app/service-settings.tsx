@@ -217,7 +217,7 @@ export default function ServiceSettingsScreen() {
           // "wired"/"onboarding" jargon: onboarding is already done by the
           // time a user can reach this screen.
           setLoadError(
-            'Service settings couldn’t load yet — Dina may still be starting up. Reopen Dina and try again.',
+            'Service settings couldn’t load yet. Dina may still be starting up. Reopen Dina and try again.',
           );
         } else {
           setLoadError((err as Error).message ?? 'Failed to load service config');
@@ -309,7 +309,7 @@ export default function ServiceSettingsScreen() {
 
   const onSave = useCallback(async () => {
     if (name.trim() === '') {
-      Alert.alert('Missing name', 'Give this node a display name before saving.');
+      Alert.alert('Missing name', 'Give this service a display name before saving.');
       return;
     }
     // Review #19: don't allow saving a LIVE discoverable profile with no
@@ -320,7 +320,7 @@ export default function ServiceSettingsScreen() {
     if (status === 'active' && discoverability === 'public' && capabilities.length === 0) {
       Alert.alert(
         'No capabilities',
-        'A discoverable profile must advertise at least one capability. Add one first, or toggle "Make this node discoverable" off.',
+        'A published listing must advertise at least one capability. Add one first, or set its visibility to Unlisted or Private.',
       );
       return;
     }
@@ -366,7 +366,12 @@ export default function ServiceSettingsScreen() {
           prior?.schemaHash ??
           (def !== undefined ? computeSchemaHash(def.paramsSchema) : undefined);
         caps[c.key] = {
-          mcpServer: prior?.mcpServer ?? 'transit',
+          // Default runner is the conventional paired dina-agent name
+          // ('openclaw' — see cli agent_daemon default). A task's
+          // requested_runner is set from this mcpServer, so hardcoding a
+          // specific runner (e.g. 'transit') would route every capability
+          // to that one daemon. The transit demo overrides this explicitly.
+          mcpServer: prior?.mcpServer ?? 'openclaw',
           mcpTool: prior?.mcpTool ?? c.key,
           responsePolicy: c.policy,
           ...(schemaHash !== undefined ? { schemaHash } : {}),
@@ -495,7 +500,7 @@ export default function ServiceSettingsScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <Stack.Screen options={{ title: 'Service Sharing' }} />
+      <Stack.Screen options={{ title: isCreate ? 'New listing' : 'Edit listing' }} />
       {loadError !== null ? (
         <View style={styles.errorBanner}>
           <Text style={styles.errorText}>{loadError}</Text>
@@ -514,12 +519,12 @@ export default function ServiceSettingsScreen() {
                 {
                   value: 'active',
                   title: 'Active',
-                  body: 'Live — published and answering queries (per the visibility below).',
+                  body: 'Live. Published and answering queries (per the visibility below).',
                 },
                 {
                   value: 'paused',
                   title: 'Paused',
-                  body: 'Off — kept saved, but not published and not answering queries. Flip back to Active anytime.',
+                  body: 'Off. Kept saved, but not published and not answering queries. Flip back to Active anytime.',
                 },
               ] as { value: ServiceListingStatus; title: string; body: string }[]
             ).map((opt) => (
@@ -560,7 +565,7 @@ export default function ServiceSettingsScreen() {
                 {
                   value: 'known_only',
                   title: 'Private / known only',
-                  body: 'Not published to the network — only reachable through a direct connection you set up.',
+                  body: 'Not published to the network; only reachable through a direct connection you set up.',
                 },
               ] as { value: Discoverability; title: string; body: string }[]
             ).map((opt) => (
@@ -584,9 +589,9 @@ export default function ServiceSettingsScreen() {
               <View style={styles.discoveryCaveat}>
                 <Text style={styles.discoveryCaveatTitle}>Not actually discoverable yet.</Text>
                 <Text style={styles.discoveryCaveatBody}>
-                  Missing: {activeBlockers.join(', ')}.{'\n'}Once onboarding wires PDS + MsgBox this
-                  will reach AppView. Until then the profile is saved locally but won't appear in
-                  search.
+                  This listing is saved on your device, but Dina isn't ready to publish it to the
+                  network yet. Once setup finishes it will appear in search. Until then it stays
+                  local and won't show up for anyone else.
                 </Text>
               </View>
             ) : null}
@@ -596,7 +601,7 @@ export default function ServiceSettingsScreen() {
                 { paddingHorizontal: spacing.md, paddingTop: spacing.sm },
               ]}
             >
-              Discoverability is not authorization — the provider still controls who may actually
+              Discoverability is not authorization. The provider still controls who may actually
               use the service.
             </Text>
           </View>

@@ -18,6 +18,8 @@
  * the full WriteScreen via "Edit in form".
  */
 
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -27,34 +29,33 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 
 import {
   readLifecycle,
   type ChatMessage,
   type ReviewDraftLifecycle,
 } from '@dina/brain/chat';
-import { colors, radius, spacing, textStyles } from '../theme';
-import { MessageTimestamp } from './MessageTimestamp';
-import { setReviewDraftStatus } from '../peerlens/review_draft';
+
+import { getBootedNode } from '../hooks/useNodeBootstrap';
+import { type AttestationDraftBody } from '../peerlens/outbox_store';
 import {
   buildAttestationRecord,
   newPublishKeys,
 } from '../peerlens/publish_helpers';
+import { setReviewDraftStatus } from '../peerlens/review_draft';
+import { publishReview } from '../peerlens/review_publish_service';
 import {
   HEADLINE_MAX_LENGTH,
   BODY_MAX_LENGTH,
   SENTIMENT_OPTIONS,
   type WriteFormState,
 } from '../peerlens/write_form_data';
+import { colors, radius, spacing, textStyles } from '../theme';
+
+import { MessageTimestamp } from './MessageTimestamp';
+
 import type { Sentiment } from '@dina/protocol';
-import {
-  injectAttestation,
-  isTestPublishConfigured,
-  type InjectAttestationRequest,
-} from '../peerlens/appview_runtime';
-import { getBootedNode } from '../hooks/useNodeBootstrap';
+
 
 export interface InlineReviewDraftCardProps {
   message: ChatMessage;
@@ -152,10 +153,6 @@ function ReadyState({
 
   const onPublish = useCallback(async () => {
     if (publishDisabled) return;
-    if (!isTestPublishConfigured()) {
-      setError('Trust publish endpoint is not configured.');
-      return;
-    }
     const node = getBootedNode();
     if (node === null) {
       setError('Local node is not booted yet.');
@@ -175,19 +172,44 @@ function ReadyState({
         headline: headline.trim(),
         body: body.trim(),
       };
-      const record = buildAttestationRecord(merged) as InjectAttestationRequest['record'];
-      const { rkey, cid } = newPublishKeys();
-      const result = await injectAttestation({
-        authorDid: node.did,
+      const record = buildAttestationRecord(merged) as Record<string, unknown>;
+      const { rkey } = newPublishKeys();
+      const draft: AttestationDraftBody = {
+        sentiment: sentiment ?? 'neutral', // non-null here: publishDisabled gates sentiment === null
+        headline: merged.headline,
+        body: merged.body,
+        confidence: merged.confidence ?? 'moderate', // form seeds 'moderate'; default defensively
+        subjectTitle: subjectName,
+        subjectId: typeof lc.subject.identifier === 'string' ? lc.subject.identifier : undefined,
+      };
+      // Route through the SAME decision tree the full form uses — dev
+      // test-inject → real sovereign PDS publish → durable offline queue.
+      // (Previously this card short-circuited to the test-inject endpoint and
+      // failed in production builds with no test token.)
+      const outcome = await publishReview({
+        did: node.did,
+        pdsPublisher: node.pdsPublisher,
         rkey,
-        cid,
         record,
+        draft,
+        threadId: message.threadId,
+        draftId: lc.draftId,
       });
-      setReviewDraftStatus(message.threadId, lc.draftId, 'published', {
-        attestation: { uri: result.uri, cid: result.cid },
-        values: merged,
-        content: `Published your review of ${subjectName}.`,
-      });
+      if (outcome.kind === 'published') {
+        setReviewDraftStatus(message.threadId, lc.draftId, 'published', {
+          attestation: outcome.attestation,
+          values: merged,
+          content: `Published your review of ${subjectName}.`,
+        });
+      } else if (outcome.kind === 'error') {
+        setError(outcome.message);
+        setReviewDraftStatus(message.threadId, lc.draftId, 'ready', {
+          error: outcome.message,
+          values: merged,
+        });
+      }
+      // `queued`: leave the card 'publishing' — the durable drainer flips it to
+      // 'published' once it lands (and back to a usable state on dead-letter).
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Publish failed.';
       setError(msg);
@@ -201,6 +223,7 @@ function ReadyState({
     publishDisabled,
     message.threadId,
     lc.draftId,
+    lc.subject,
     initialValues,
     sentiment,
     headline,

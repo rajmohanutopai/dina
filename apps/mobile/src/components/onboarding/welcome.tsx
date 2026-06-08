@@ -35,7 +35,7 @@ export function Welcome(props: WelcomeProps): React.ReactElement {
   return (
     <OnboardingShell canGoBack={false} primaryLabel="Get started" onPrimary={props.onGetStarted}>
       <View style={styles.hero}>
-        <Text style={styles.brand}>DINA</Text>
+        <Text style={styles.brand}>Dina</Text>
         <Text style={styles.headline}>Your sovereign personal AI</Text>
         <View style={styles.pills}>
           {PILL_FEATURES.map((key) => (

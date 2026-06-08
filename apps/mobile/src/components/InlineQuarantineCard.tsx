@@ -112,7 +112,7 @@ export function InlineQuarantineCard({ message }: InlineQuarantineCardProps): Re
         </View>
       )}
       {resolved === 'accepted' && (
-        <Text style={styles.statusAccepted}>Added to contacts — showing their message…</Text>
+        <Text style={styles.statusAccepted}>Added to contacts. Showing their message…</Text>
       )}
       {resolved === 'blocked' && <Text style={styles.statusBlocked}>Blocked.</Text>}
       <MessageTimestamp timestamp={message.timestamp} />

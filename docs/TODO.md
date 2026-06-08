@@ -3275,3 +3275,105 @@ basically if I want to see a public custom - public is public, no questions. pub
 > public custom shown in google maps
 > known_only with detailed grants
 > unlisted with more detailed auth 
+
+# Pending items
+❯   - Delete-vault affordance (currently no way to remove a vault).
+    - Reminder snooze — wire the built-but-hidden snooze into the UI (or remove the API).
+
+
+# Some more comments
+  The remaining areas are mostly cleaner. But I would still audit/fix a few before release.
+
+   Area                   Risk    View
+  ━━━━━━━━━━━━━━━━━  ━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Reminders           Low/Med    Mostly sound. Scoped storage and durable repo exist. Main question: are all user-visible reminder creates using the durable path, or can crash-before-persist lose one?
+  ─────────────────  ──────────  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Remember                Low    Much cleaner now. Staging is scoped/durable, dedup includes scope, writes are pinned to item scope. Not seeing PeerLens-style complexity.
+  ─────────────────  ──────────  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Ask                     Med    Main concern: ask approval/resume durability. If external agents rely on Ask and app restarts mid-approval, verify the ask registry/workflow path is durable in production, not
+                                  only in-memory.
+  ─────────────────  ──────────  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Agent safety       Med/High    Architecture is correct: deterministic grants, persona gate, approval tasks. Risk is coverage: every agent-facing vault/tool read/write path must go through the gate.
+  ─────────────────  ──────────  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Service query       Low/Med    Looks architecturally strong now: Core workflow owns lifecycle, provider creates tasks, durable response bridge, service_uri and grant checks. Needs E2E tests across restart and
+                                  visibility modes.
+  ─────────────────  ──────────  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   PeerLens query          Low    Read-only/search path. Quality/ranking can be weak, but it does not have the same data-loss/public-mutation danger.
+  ─────────────────  ──────────  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Service publish         Med    Multi-listing/rkey architecture is now right. Remaining risk is known-only grant/offer lifecycle: revoke, delete listing, pause listing, expiry, stale offers.
+  ─────────────────  ──────────  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   D2D                     Med    Durable outbox/quarantine are now much better. Remaining risk is lifecycle correctness: block, accept, quarantine, reconnect, duplicate/replay, service response after restart.
+
+  The three areas I would treat as most important after PeerLens publish:
+
+  1. Ask + agent safety durability
+     If Dina-agent asks for data and mobile restarts while approval is pending, the system must not lose the decision or resume incorrectly. This is close to identity-level important if agent safety is a launch
+     pillar.
+
+  2. Agent safety coverage audit
+     The grant model is good, but one missed path is enough to make the safety story weak. Every agent-accessible tool should prove: caller DID authenticated, persona checked, mode checked, approval/grant
+     enforced.
+
+  3. Service publish known-only lifecycle
+     Public/unlisted are straightforward. Known-only is authority-bearing. A deleted/revoked/expired grant must stop invocation even if the requester still has an old service offer/link.
+
+  What I do not see as equally dangerous right now:
+
+  - remember core architecture
+  - service query core lifecycle
+  - D2D outbox durability
+  - service multi-listing storage
+  - PeerLens query/read path
+
+  So the situation is not “everything is broken.” The pattern is: public mutation + offline retry + cancellation + identity binding is the dangerous class. PeerLens publish has it. D2D and service query have some
+  of it but are now more deterministic. Ask/agent safety needs the most careful remaining verification.
+
+─ Worked for 4m 02s ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+› oh - in fact, this looks like a well built system  - given the complexity
+
+
+• I’ll give you the architecture-level read, not a cheerleading answer: the codebase looks like it has crossed from prototype into a real distributed system, and the remaining issues are mostly edge-state
+  hardening rather than “wrong foundation.”
+
+• Yes. Given the complexity, this is a well-built system.
+
+  What makes it strong:
+
+  - Clear separation of concerns: Dina interprets and mediates; execution happens in local planes; AppView indexes; MsgBox transports; providers own schemas.
+  - Good security instincts: deterministic gates, grants, scoped vault access, no direct LLM execution authority, approval tasks, schema validation.
+  - Durable core paths now exist: D2D outbox, quarantine, service workflows, response bridging, service grants, scoped demo data.
+  - The hard concepts are modeled explicitly: identity hub, service visibility, grants, data scopes, personas, tasks, approval windows.
+  - You caught the dangerous architectural bugs early: identity linkage, in-memory D2D outbox, locked-vault approval, service grants, public-card rendering, PeerLens durable publish.
+
+  The reason reviews feel endless is not because the system is badly designed. It is because you are now operating in the hardest zone:
+
+  > mobile + local-first + encrypted vaults + ATProto + D2D + offline retry + public publishing + agents + approvals
+
+  Most apps have one or two of those. Dina has all of them.
+
+  The remaining issues are mostly of this form:
+
+  - “What if the app restarts here?”
+  - “What if identity changes here?”
+  - “What if user cancels during publish?”
+  - “What if a stale row survives?”
+  - “What if scope flips during async work?”
+
+  Those are real, but they are maturity issues, not “the architecture is bad” issues.
+
+  The areas I would still treat with extra seriousness before release:
+
+  1. PeerLens publish/outbox
+     Public mutation plus durable retry is inherently tricky.
+
+  2. Agent safety
+     Not because the model is wrong, but because one bypass hurts the product promise.
+
+  3. Ask approval/resume durability
+     If external agents depend on it, restart behavior must be exact.
+
+  4. Service known-only grants
+     Authorization must be grant-based, not contact-based.
+

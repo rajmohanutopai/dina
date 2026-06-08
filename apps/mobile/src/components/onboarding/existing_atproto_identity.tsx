@@ -41,7 +41,8 @@ export function ExistingAtprotoIdentity(props: ExistingAtprotoIdentityProps): Re
         });
       })
       .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err));
+        console.warn('[onboarding] Bluesky sign-in failed', err);
+        setError("Couldn't sign in with Bluesky. Please try again.");
       })
       .finally(() => {
         setBusy(false);

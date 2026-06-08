@@ -413,7 +413,7 @@ export default function ReviewerProfileScreen(
                   {truncateDid(display.did)}
                 </Text>
                 <Text style={styles.headerHint} testID="reviewer-handle-hint">
-                  Anonymous identity — no handle published
+                  Anonymous identity. No handle published
                 </Text>
               </>
             )}

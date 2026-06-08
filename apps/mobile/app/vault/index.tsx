@@ -176,6 +176,20 @@ function AddVaultForm({
   // by design (only one default vault per device — `general`).
   const tierOptions = useMemo(() => getTierOptions(), []);
 
+  // Mirror the hook's rule (usePersonas) so the button + inline hint agree
+  // with what `addPersona` accepts — no "tap Create, then get rejected".
+  const trimmedName = name.trim().toLowerCase();
+  const nameError = useMemo<string | null>(() => {
+    if (trimmedName.length === 0) return null; // empty: no message, button just stays disabled
+    if (trimmedName.length < 2) return 'Name must be at least 2 characters.';
+    if (trimmedName.length > 30) return 'Name must be at most 30 characters.';
+    if (!/^[a-zA-Z0-9_-]+$/.test(trimmedName)) {
+      return 'Use only letters, numbers, hyphens, and underscores.';
+    }
+    return null;
+  }, [trimmedName]);
+  const canCreate = trimmedName.length >= 2 && nameError === null;
+
   const submit = useCallback(() => {
     setError(null);
     const trimmed = name.trim().toLowerCase();
@@ -211,6 +225,11 @@ function AddVaultForm({
           autoCorrect={false}
           testID="vault-name-input"
         />
+        {nameError !== null ? (
+          <Text style={styles.errorText} testID="vault-name-error">
+            {nameError}
+          </Text>
+        ) : null}
 
         <Text style={styles.formLabel}>Access tier</Text>
         <View style={styles.tierRow}>
@@ -265,9 +284,9 @@ function AddVaultForm({
             <Text style={styles.formButtonSecondaryText}>Cancel</Text>
           </Pressable>
           <Pressable
-            style={[styles.formButtonPrimary, !name.trim() && styles.formButtonDisabled]}
+            style={[styles.formButtonPrimary, !canCreate && styles.formButtonDisabled]}
             onPress={submit}
-            disabled={!name.trim()}
+            disabled={!canCreate}
             testID="vault-create"
             accessibilityRole="button"
           >

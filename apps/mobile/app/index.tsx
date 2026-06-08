@@ -44,10 +44,14 @@ import {
   GUIDED_DEMO_LIST_CLEARANCE,
   useGuidedDemoActive,
 } from '../src/guided_demo/active_context';
-import { useLiveThread } from '../src/hooks/useChatThread';
+import { useLiveThread, addSystemNotification } from '../src/hooks/useChatThread';
 import { useHasActiveAgent } from '../src/hooks/useHasActiveAgent';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
-import { loadVerificationStatus } from '../src/services/verification_status';
+import {
+  dismissVerificationBanner,
+  isVerificationBannerDismissed,
+  loadVerificationStatus,
+} from '../src/services/verification_status';
 import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 
 import type { ChatMessage } from '@dina/brain/chat';
@@ -221,14 +225,24 @@ export default function ChatScreen() {
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      void loadVerificationStatus().then((status) => {
-        if (!cancelled) setVerificationPending(status === 'pending');
-      });
+      void Promise.all([loadVerificationStatus(), isVerificationBannerDismissed()]).then(
+        ([status, dismissed]) => {
+          // Show the banner only if verification is still pending AND the user
+          // hasn't explicitly closed it.
+          if (!cancelled) setVerificationPending(status === 'pending' && !dismissed);
+        },
+      );
       return () => {
         cancelled = true;
       };
     }, []),
   );
+  // Closing the confirm-your-phrase banner persists the dismissal (Settings →
+  // Confirm recovery phrase still works for users who want it later).
+  const onDismissVerifyBanner = useCallback(() => {
+    setVerificationPending(false);
+    void dismissVerificationBanner();
+  }, []);
   const flatListRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
 
@@ -253,7 +267,18 @@ export default function ChatScreen() {
       setInputText('');
       setActiveAction(null);
 
-      await send(fullText);
+      try {
+        await send(fullText);
+      } catch {
+        // Provider/runtime errors are normally handled inside the ask
+        // pipeline (it writes a friendly reply to the thread). This
+        // catches the rare unexpected throw so it surfaces as a message
+        // instead of a silent unhandled rejection.
+        addSystemNotification(
+          'Something went wrong reaching Dina. Please try again.',
+          'main',
+        );
+      }
 
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
@@ -478,33 +503,47 @@ export default function ChatScreen() {
     >
       <StatusBar style="dark" />
 
-      {verificationPending ? (
-        <Pressable
-          onPress={() =>
-            router.push({ pathname: '/confirm-recovery-phrase', params: { from: '/' } })
-          }
-          testID="index-verify-banner"
-          accessibilityRole="button"
-          accessibilityLabel="Confirm your recovery phrase"
-          style={({ pressed }) => [
-            styles.verifyBanner,
-            pressed && styles.verifyBannerPressed,
-          ]}
-        >
-          <Ionicons
-            name="alert-circle-outline"
-            size={18}
-            color="#8A5A00"
-            style={{ marginRight: spacing.sm }}
-          />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.verifyBannerTitle}>Confirm your recovery phrase</Text>
-            <Text style={styles.verifyBannerBody}>
-              Quick check that your written copy is good.
-            </Text>
-          </View>
-          <Text style={styles.verifyBannerChevron}>{'›'}</Text>
-        </Pressable>
+      {/* Hidden during a guided demo (the dock is the only surface) and once the
+          user dismisses it. The tappable area navigates to confirm; the X
+          dismisses (persisted). */}
+      {verificationPending && !demoActive ? (
+        <View style={styles.verifyBanner}>
+          <Pressable
+            onPress={() =>
+              router.push({ pathname: '/confirm-recovery-phrase', params: { from: '/' } })
+            }
+            testID="index-verify-banner"
+            accessibilityRole="button"
+            accessibilityLabel="Confirm your recovery phrase"
+            style={({ pressed }) => [
+              styles.verifyBannerMain,
+              pressed && styles.verifyBannerPressed,
+            ]}
+          >
+            <Ionicons
+              name="alert-circle-outline"
+              size={18}
+              color="#8A5A00"
+              style={{ marginRight: spacing.sm }}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.verifyBannerTitle}>Confirm your recovery phrase</Text>
+              <Text style={styles.verifyBannerBody}>
+                Quick check that your written copy is good.
+              </Text>
+            </View>
+          </Pressable>
+          <Pressable
+            onPress={onDismissVerifyBanner}
+            testID="index-verify-banner-close"
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss recovery phrase reminder"
+            hitSlop={10}
+            style={({ pressed }) => [styles.verifyBannerClose, pressed && styles.verifyBannerPressed]}
+          >
+            <Ionicons name="close" size={18} color={colors.warningTextDeep} />
+          </Pressable>
+        </View>
       ) : null}
 
       {messages.length === 0 ? (
@@ -777,6 +816,16 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     borderRadius: radius.sm,
   },
+  // Tappable area (navigates to confirm) — sits left of the close button.
+  verifyBannerMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  verifyBannerClose: {
+    paddingLeft: spacing.sm,
+    paddingVertical: 2,
+  },
   verifyBannerPressed: {
     opacity: 0.85,
   },
@@ -788,11 +837,6 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.warningTextDeep,
     marginTop: 1,
-  },
-  verifyBannerChevron: {
-    ...textStyles.h3,
-    color: colors.warningTextDeep,
-    marginLeft: spacing.sm,
   },
 
   // Empty state / hero

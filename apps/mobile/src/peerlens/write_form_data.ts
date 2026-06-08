@@ -28,6 +28,13 @@ import type { Sentiment, Confidence } from '@dina/protocol';
 
 export const HEADLINE_MAX_LENGTH = 140;
 export const BODY_MAX_LENGTH = 4000;
+/**
+ * Max length of the COMPOSED text (`headline` + blank line + `body`) — mirrors
+ * AppView's `attestationSchema` text cap. The form enforces this so a long
+ * review can't pass `putRecord` only to be silently rejected at ingestion (the
+ * PDS write succeeds but AppView never indexes it).
+ */
+export const ATTESTATION_TEXT_MAX_LENGTH = 2000;
 export const SUBJECT_NAME_MAX_LENGTH = 200;
 export const SUBJECT_IDENTIFIER_MAX_LENGTH = 256;
 
@@ -992,6 +999,7 @@ export type WriteFormError =
   | 'headline_empty'
   | 'headline_too_long'
   | 'body_too_long'
+  | 'text_too_long'
   | 'sentiment_required'
   | 'confidence_required'
   | 'subject_name_required'
@@ -1088,6 +1096,14 @@ export function validateWriteForm(state: WriteFormState): WriteFormValidation {
   // their character count tick up exactly as they type.
   if (state.headline.length > HEADLINE_MAX_LENGTH) errors.push('headline_too_long');
   if (state.body.length > BODY_MAX_LENGTH) errors.push('body_too_long');
+  // Composed text (headline + blank line + body) must fit AppView's
+  // attestationSchema cap, or the PDS write succeeds but ingestion silently
+  // rejects it (the review never becomes searchable). Mirrors `composeText`.
+  const composedLength =
+    headline.length > 0 && body.length > 0
+      ? headline.length + 2 + body.length
+      : Math.max(headline.length, body.length);
+  if (composedLength > ATTESTATION_TEXT_MAX_LENGTH) errors.push('text_too_long');
   if (state.sentiment === null) errors.push('sentiment_required');
   // Confidence is no longer required from the user; the form seeds it
   // to 'moderate'. The validator still flags `null` (defensive: a
@@ -1203,6 +1219,8 @@ export function describeWriteFormError(error: WriteFormError): string {
       return `Headline must be ${HEADLINE_MAX_LENGTH} characters or fewer.`;
     case 'body_too_long':
       return `Body must be ${BODY_MAX_LENGTH} characters or fewer.`;
+    case 'text_too_long':
+      return `Your review is too long. Keep the headline and body under ${ATTESTATION_TEXT_MAX_LENGTH} characters combined.`;
     case 'sentiment_required':
       return 'Choose a sentiment.';
     case 'confidence_required':

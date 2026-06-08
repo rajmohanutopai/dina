@@ -10,6 +10,8 @@
 
 import * as Keychain from 'react-native-keychain';
 import {
+  dismissVerificationBanner,
+  isVerificationBannerDismissed,
   loadVerificationStatus,
   markVerificationPending,
   markVerified,
@@ -68,5 +70,47 @@ describe('markVerified', () => {
   it('is idempotent — safe to call when no flag was ever set', async () => {
     await expect(markVerified()).resolves.toBeUndefined();
     expect(await loadVerificationStatus()).toBe('verified');
+  });
+});
+
+describe('verification banner dismissal', () => {
+  it('defaults to not dismissed', async () => {
+    expect(await isVerificationBannerDismissed()).toBe(false);
+  });
+
+  it('persists the dismissal and reads it back', async () => {
+    await dismissVerificationBanner();
+    expect(await isVerificationBannerDismissed()).toBe(true);
+  });
+
+  it('is independent of the pending status (dismiss != verify)', async () => {
+    await markVerificationPending();
+    await dismissVerificationBanner();
+    // The user still hasn't verified — Settings keeps the row — but the chat
+    // banner stays hidden.
+    expect(await loadVerificationStatus()).toBe('pending');
+    expect(await isVerificationBannerDismissed()).toBe(true);
+  });
+
+  it('markVerificationPending clears a stale prior dismissal (new phrase re-surfaces the banner)', async () => {
+    await dismissVerificationBanner();
+    expect(await isVerificationBannerDismissed()).toBe(true);
+    // A fresh onboarding / recovery marks pending for a NEW phrase. The previous
+    // identity/session's dismissal must not suppress this phrase's reminder.
+    await markVerificationPending();
+    expect(await loadVerificationStatus()).toBe('pending');
+    expect(await isVerificationBannerDismissed()).toBe(false);
+  });
+
+  it('fails open to not-dismissed on a keychain read error', async () => {
+    const origGet = Keychain.getGenericPassword;
+    (Keychain as unknown as { getGenericPassword: () => Promise<never> }).getGenericPassword =
+      () => Promise.reject(new Error('keychain unavailable'));
+    try {
+      expect(await isVerificationBannerDismissed()).toBe(false);
+    } finally {
+      (Keychain as unknown as { getGenericPassword: typeof origGet }).getGenericPassword =
+        origGet;
+    }
   });
 });

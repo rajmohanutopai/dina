@@ -435,9 +435,8 @@ const styles = StyleSheet.create({
   },
   addKey: { ...textStyles.bodySmallStrong, color: colors.accent },
   keyPreview: {
-    ...textStyles.bodySmall,
+    ...textStyles.mono,
     color: colors.textMuted,
-    fontFamily: 'Menlo',
   },
   keyForm: {
     paddingHorizontal: spacing.md,
@@ -447,13 +446,11 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
   },
   keyInput: {
-    ...textStyles.body,
+    ...textStyles.mono,
     backgroundColor: colors.bgPrimary,
     borderRadius: radius.sm,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    fontFamily: 'Menlo',
-    fontSize: 13,
   },
   keyActions: {
     flexDirection: 'row',

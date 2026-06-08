@@ -198,19 +198,20 @@ export const textStyles = {
     letterSpacing: -0.2,
   } as TextStyle,
 
-  // Brand logotype — the spaced small-caps "D I N A" wordmark. This is
-  // the ONE way to render "DINA" as a LOGO/brand mark (chat header,
-  // welcome, unlock). It is NOT for "Dina" as a noun/verb in running
-  // copy. The domino-D glyph is reserved for the app icon alone — never
-  // inline. Use the `<DinaWordmark>` component rather than re-deriving
-  // this style at each site.
+  // Brand logotype — the "Dina" wordmark, set in the same Cormorant
+  // Garamond face as the tagline ("Your sovereign personal AI") so the
+  // brand speaks in ONE voice. Title case (a name, not a label) — the
+  // earlier spaced small-caps "D I N A" read as a generic AI/SaaS
+  // template. This is the ONE way to render the brand mark (chat header,
+  // welcome, unlock); NOT for "Dina" as a noun/verb in running copy. The
+  // domino-D glyph is reserved for the app icon alone — never inline. Use
+  // the `<DinaWordmark>` component rather than re-deriving this style.
   wordmark: {
-    fontFamily: fonts.sansSemibold,
-    fontSize: 11,
-    lineHeight: 14,
-    letterSpacing: 6,
+    fontFamily: fonts.displayUpright,
+    fontSize: 19,
+    lineHeight: 24,
+    letterSpacing: 0.3,
     color: colors.textMuted,
-    textTransform: 'uppercase' as TextStyle['textTransform'],
   } as TextStyle,
 
   // ─── Headlines: Cormorant Garamond SemiBold (upright serif) ─────

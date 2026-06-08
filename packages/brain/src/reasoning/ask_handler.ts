@@ -537,7 +537,7 @@ function fallbackAnswer(reason: string): string {
     case 'cancelled':
       return `Request cancelled.`;
     case 'provider_error':
-      return `Sorry — the reasoning service is unreachable right now. Try again in a moment.`;
+      return `Sorry, the reasoning service is unreachable right now. Try again in a moment.`;
     default:
       return `(no answer)`;
   }

@@ -49,10 +49,10 @@ const VAULT_CARDS: CapabilityCard[] = [
 const REMINDER_CARDS: CapabilityCard[] = [
   {
     icon: 'reminders',
-    title: 'Reminders, picked up automatically',
+    title: 'Reminders, set automatically',
     description:
-      'When Dina is doing something for you and a reminder would help, it just adds one automatically. Since Dina also knows the context about the user, the reminder has extra context added. Emma\'s birthday is on Nov 7? On Nov 6 morning a reminder shows up with possible dinosaur toys suggested, since Dina knew from earlier that Emma loves dinosaurs.',
-    example: '"Tell Sancho I\'ll be there in 15." A reminder shows up on Sancho\'s phone: Alonso coming in 15 minutes. She reminds you to get the cold brew ready. He likes it extra strong.',
+      'When something you tell Dina has a date in it, Dina sets a reminder without being asked, and folds in what it already knows so the reminder is genuinely useful, not just a bare alarm.',
+    example: '"Emma\'s birthday is Nov 7." The day before, Dina reminds you, and because it knows Emma loves dinosaurs, it suggests a dinosaur-themed gift.',
   },
 ];
 
@@ -172,7 +172,7 @@ export default function HelpScreen(): React.ReactElement {
           onPress={onReplayDemo}
           testID="help-replay-demo"
           accessibilityRole="button"
-          accessibilityLabel="See Dina in action — replay the guided tour"
+          accessibilityLabel="See Dina in action. Replay the guided tour"
           style={({ pressed }) => [styles.demoCta, pressed && styles.cardPressed]}
         >
           {/* The Dina app icon (domino-D glyph) as a small rounded-square

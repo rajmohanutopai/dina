@@ -159,7 +159,7 @@ export function AiProviderSet({ location, onBack, onContinue }: AiProviderSetPro
     <OnboardingShell
       location={location}
       title="Connect your AI"
-      subtitle="Dina runs on an AI model you bring (your key stays on this device). Pick a provider and paste an API key — the app needs it to think."
+      subtitle="Dina runs on an AI model you bring (your key stays on this device). Pick a provider and paste an API key. The app needs it to think."
       primaryLabel={busy ? 'Checking…' : 'Connect'}
       primaryBusy={busy}
       primaryDisabled={selected === null || trimmed === '' || busy}

@@ -111,6 +111,94 @@ export function dismissLocal(clientId: string): void {
 }
 
 /**
+ * Mark a row as a terminal failure — used when the durable drainer has
+ * exhausted its retries (dead-letter). Reuses `stuck-offline` (the existing
+ * terminal "couldn't publish" status) so the Outbox screen surfaces it as a
+ * failure with retry / dismiss, instead of a perpetual "will publish when
+ * back online". No-op when the row is absent or already terminal.
+ */
+export function markDeadLetteredLocal(clientId: string, atMs: number = Date.now()): void {
+  let changed = false;
+  rows = rows.map((r) => {
+    if (r.clientId !== clientId || r.status === 'stuck-offline') return r;
+    changed = true;
+    return { ...r, status: 'stuck-offline', stuckAt: new Date(atMs).toISOString() };
+  });
+  if (changed) notify();
+}
+
+/**
+ * Mark a queued row as IN-FLIGHT (`submitted-pending`) right before the drainer
+ * starts its public PDS write. While in-flight the row drops out of the
+ * dismissable `queued-offline` list (the Outbox screen offers Dismiss only on
+ * `queued-offline`), so a user can't "cancel" a review whose write is already
+ * on the wire and will go public regardless. It still counts toward the
+ * "N queued" banner. No-op unless the row is currently dismissable —
+ * `queued-offline` (the normal flush) OR `stuck-offline` (a dead-letter the user
+ * just hit "Try again" on; it must leave the failure state BEFORE the write so a
+ * "Remove" tap can't drop a review whose publish is already on the wire).
+ */
+export function markSubmittingLocal(clientId: string, atMs: number = Date.now()): void {
+  let changed = false;
+  rows = rows.map((r) => {
+    if (r.clientId !== clientId || (r.status !== 'queued-offline' && r.status !== 'stuck-offline')) {
+      return r;
+    }
+    changed = true;
+    return {
+      ...r,
+      status: 'submitted-pending',
+      submittedAt: new Date(atMs).toISOString(),
+      stuckAt: undefined,
+    };
+  });
+  if (changed) notify();
+}
+
+/**
+ * Revert an in-flight row back to `queued-offline` — used when the public write
+ * FAILED (transient) and the row will be retried, so the user regains the
+ * Dismiss/Try-again affordances. No-op unless the row is currently in-flight.
+ */
+export function markQueuedLocal(clientId: string): void {
+  let changed = false;
+  rows = rows.map((r) => {
+    if (r.clientId !== clientId || r.status !== 'submitted-pending') return r;
+    changed = true;
+    return { ...r, status: 'queued-offline', submittedAt: undefined };
+  });
+  if (changed) notify();
+}
+
+/**
+ * Insert a row DIRECTLY in the terminal `stuck-offline` state, bypassing the
+ * active-queue cap (terminal rows don't consume capacity). Used when HYDRATING a
+ * durable row that already exhausted its retries: routing it through
+ * `enqueueLocal` (as `queued-offline`) would be cap-rejected when the active
+ * queue is full, leaving the dead-letter hidden in KV with no visible row to
+ * dismiss or retry. Idempotent — no-op when the row already exists.
+ */
+export function enqueueDeadLetteredLocal(
+  draft: AttestationDraftBody,
+  clientId: string,
+  enqueuedAt: string,
+  atMs: number = Date.now(),
+): void {
+  if (rows.some((r) => r.clientId === clientId)) return;
+  rows = [
+    ...rows,
+    {
+      clientId,
+      draftBody: draft,
+      status: 'stuck-offline',
+      enqueuedAt,
+      stuckAt: new Date(atMs).toISOString(),
+    },
+  ];
+  notify();
+}
+
+/**
  * Snapshot the current outbox rows. Mostly for tests + the rare
  * imperative read; screens should `subscribeOutbox` instead.
  */

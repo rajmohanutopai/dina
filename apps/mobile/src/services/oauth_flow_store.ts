@@ -66,7 +66,7 @@ export function awaitRedirect(timeoutMs: number): Promise<string> {
     setTimeout(() => {
       if (resolver === resolve) {
         resolver = null;
-        reject(new Error('Login timed out — no response from Bluesky.'));
+        reject(new Error('Login timed out. No response from Bluesky.'));
       }
     }, timeoutMs);
   });

@@ -152,7 +152,7 @@ export default function ConfirmRecoveryPhraseScreen(): React.ReactElement {
 
       <View style={styles.hint}>
         <Text style={styles.hintText}>
-          We'll only check a few words — you don't have to type all 24. After this we'll stop
+          We'll only check a few words. You don't have to type all 24. After this we'll stop
           showing the reminder banner.
         </Text>
       </View>

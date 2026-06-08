@@ -222,7 +222,7 @@ describe('validateWriteForm — body rules', () => {
     expect(v.canPublish).toBe(true);
   });
 
-  it('body at exactly 4000 chars → no error', () => {
+  it('body within its own cap but composing >2000 chars → text_too_long (AppView cap), not body_too_long', () => {
     const v = validateWriteForm(
       withState({
         headline: 'Great',
@@ -231,7 +231,21 @@ describe('validateWriteForm — body rules', () => {
         confidence: 'high',
       }),
     );
-    expect(v.errors).not.toContain('body_too_long');
+    expect(v.errors).not.toContain('body_too_long'); // body alone is within BODY_MAX_LENGTH
+    expect(v.errors).toContain('text_too_long'); // composed headline+body exceeds AppView's 2000 cap
+    expect(v.canPublish).toBe(false);
+  });
+
+  it('composed text within the AppView cap → publishable', () => {
+    const v = validateWriteForm(
+      withState({
+        headline: 'Great',
+        body: 'a'.repeat(1800),
+        sentiment: 'positive',
+        confidence: 'high',
+      }),
+    );
+    expect(v.errors).not.toContain('text_too_long');
     expect(v.canPublish).toBe(true);
   });
 

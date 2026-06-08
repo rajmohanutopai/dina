@@ -57,7 +57,7 @@ export default function MyListingsScreen(): React.ReactElement {
       setLoadError(null);
     } catch (err) {
       if (err instanceof ServiceConfigNotConfiguredError) {
-        setLoadError('Service settings couldn’t load yet — Dina may still be starting up. Reopen and try again.');
+        setLoadError('Service settings couldn’t load yet. Dina may still be starting up. Reopen and try again.');
       } else {
         setLoadError((err as Error).message ?? 'Failed to load listings');
       }
@@ -85,7 +85,7 @@ export default function MyListingsScreen(): React.ReactElement {
       await saveRolePreference(next);
       Alert.alert(
         'Role updated',
-        `Saved as ${next}. Force-quit and reopen Dina to apply (boot wires ServicePublisher + ServiceHandler from this preference).`,
+        `Saved as ${next}. Force-quit and reopen Dina to apply the change.`,
       );
     } catch (err) {
       Alert.alert('Error', (err as Error).message ?? 'Failed to save role');

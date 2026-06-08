@@ -10,11 +10,18 @@
  * this is published to AppView; it only shapes how *your* Dina
  * surfaces / boosts / demotes results in your own trust-network
  * screens.
+ *
+ * Region + Languages are live. Budget / Devices / Dietary /
+ * Accessibility are collected but not yet consumed by the ranker
+ * (the subject-metadata enrichers they filter on aren't shipped), so
+ * they're shown as "Coming soon" and not navigable — we don't let a
+ * user configure a knob that does nothing today.
  */
 
-import React from 'react';
 import { Stack, useRouter } from 'expo-router';
+import React from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
 import { colors, radius, shadows, spacing, textStyles } from '../../src/theme';
 
 interface Row {
@@ -28,6 +35,7 @@ interface Row {
     | '/peerlens-preferences/dietary'
     | '/peerlens-preferences/accessibility';
   testID: string;
+  comingSoon?: boolean;
 }
 
 const ROWS: Row[] = [
@@ -45,27 +53,31 @@ const ROWS: Row[] = [
   },
   {
     label: 'Budget',
-    description: 'Per-category spending bands to filter recommendations.',
+    description: 'Spending range per category, so prices match what you would pay.',
     href: '/peerlens-preferences/budget',
     testID: 'peerlens-prefs-budget',
+    comingSoon: true,
   },
   {
     label: 'Devices',
-    description: 'Phones, laptops, headphones you actually use.',
+    description: 'Phones, laptops, and headphones you actually use.',
     href: '/peerlens-preferences/devices',
     testID: 'peerlens-prefs-devices',
+    comingSoon: true,
   },
   {
     label: 'Dietary',
-    description: 'Allergies, preferences, restrictions for food recommendations.',
+    description: 'Allergies and diets that shape food recommendations.',
     href: '/peerlens-preferences/dietary',
     testID: 'peerlens-prefs-dietary',
+    comingSoon: true,
   },
   {
     label: 'Accessibility',
-    description: 'Mobility, visual, hearing needs that shape place recommendations.',
+    description: 'Mobility, visual, and hearing needs that shape place recommendations.',
     href: '/peerlens-preferences/accessibility',
     testID: 'peerlens-prefs-accessibility',
+    comingSoon: true,
   },
 ];
 
@@ -77,26 +89,41 @@ export default function PeerLensPreferencesIndex(): React.ReactElement {
       <Stack.Screen options={{ title: 'PeerLens preferences', headerShown: true }} />
       <ScrollView style={styles.root} contentContainerStyle={styles.content}>
         <Text style={styles.subtitle}>
-          Dina uses these to customise the query it sends to PeerLens.
+          Dina uses these to personalise your PeerLens results on this device. Nothing here is sent
+          to PeerLens.
         </Text>
 
         <View style={styles.card}>
-          {ROWS.map((row, idx) => (
-            <TouchableOpacity
-              key={row.href}
-              style={[styles.row, idx === ROWS.length - 1 && styles.rowLast]}
-              onPress={() => router.push(row.href)}
-              accessibilityRole="button"
-              accessibilityLabel={`${row.label}. ${row.description}`}
-              testID={row.testID}
-            >
-              <View style={styles.rowText}>
-                <Text style={styles.rowLabel}>{row.label}</Text>
-                <Text style={styles.rowDescription}>{row.description}</Text>
-              </View>
-              <Text style={styles.rowArrow}>{'›'}</Text>
-            </TouchableOpacity>
-          ))}
+          {ROWS.map((row, idx) => {
+            const isLast = idx === ROWS.length - 1;
+            const comingSoon = row.comingSoon === true;
+            return (
+              <TouchableOpacity
+                key={row.href}
+                style={[styles.row, isLast && styles.rowLast]}
+                onPress={() => router.push(row.href)}
+                disabled={comingSoon}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: comingSoon }}
+                accessibilityLabel={`${row.label}. ${row.description}${
+                  comingSoon ? '. Coming soon.' : ''
+                }`}
+                testID={row.testID}
+              >
+                <View style={styles.rowText}>
+                  <Text style={[styles.rowLabel, comingSoon && styles.rowLabelMuted]}>
+                    {row.label}
+                  </Text>
+                  <Text style={styles.rowDescription}>{row.description}</Text>
+                </View>
+                {comingSoon ? (
+                  <Text style={styles.soonBadge}>Soon</Text>
+                ) : (
+                  <Text style={styles.rowArrow}>{'›'}</Text>
+                )}
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </ScrollView>
     </>
@@ -135,6 +162,7 @@ const styles = StyleSheet.create({
   },
   rowText: { flex: 1, marginRight: spacing.sm },
   rowLabel: textStyles.bodyLargeStrong,
+  rowLabelMuted: { color: colors.textMuted },
   rowDescription: {
     ...textStyles.caption,
     marginTop: 2,
@@ -142,5 +170,14 @@ const styles = StyleSheet.create({
   rowArrow: {
     ...textStyles.h3,
     color: colors.textMuted,
+  },
+  soonBadge: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    backgroundColor: colors.bgTertiary,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.full,
+    overflow: 'hidden',
   },
 });

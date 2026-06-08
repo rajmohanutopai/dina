@@ -104,8 +104,8 @@ export function deriveEditWarning(cosigCount: number): EditWarning | null {
   // singular vs plural.
   const body =
     safe === 1
-      ? 'This review has 1 cosignature. Editing will release it — the cosigner will need to be asked again.'
-      : `This review has ${safe} cosignatures. Editing will release them — the cosigners will need to be asked again.`;
+      ? 'This review has 1 cosignature. Editing will release it, and the cosigner will need to be asked again.'
+      : `This review has ${safe} cosignatures. Editing will release them, and the cosigners will need to be asked again.`;
 
   return {
     kind: 'cosig_release',

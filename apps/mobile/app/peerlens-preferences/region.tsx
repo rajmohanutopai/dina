@@ -74,7 +74,10 @@ export default function RegionScreen(): React.ReactElement {
         // screen). The hook didn't update, so the parent shows the
         // unchanged region — which IS the truth.
       }
-      router.replace('/settings');
+      // Return to the PeerLens preferences index (consistent with every
+      // sibling pref screen + the header back button), not Settings.
+      if (router.canGoBack()) router.back();
+      else router.replace('/peerlens-preferences');
     },
     [profile, router, save],
   );

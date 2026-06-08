@@ -44,6 +44,29 @@ export type DemoStepKind = 'chat' | 'recommend' | 'service' | 'navigate';
 /** Targets a `navigate` step can drive to. */
 export type DemoNavTarget = 'people-relations' | 'chat';
 
+/** One scripted remember inside a chat step. The demo no longer calls the live
+ *  LLM (too slow + network-dependent for a tour); instead it posts the message,
+ *  pauses ~2s, and posts a deterministic "Stored in <vault> vault." reply. When
+ *  `person` is set it's also seeded into People › Relations (scope-bound), so
+ *  that navigable surface stays accurate without the real extraction. */
+export interface DemoRemember {
+  message: string;
+  /** Vault the scripted reply names — e.g. 'General', 'Health', 'Finance'. */
+  vault: string;
+  /** Optional person to seed (name + relationship) so People › Relations shows it. */
+  person?: { name: string; relation: string };
+}
+
+/** One scripted reminder enrichment card. Both birthday cards reference Emma's
+ *  birthday (Nov 7), so the rendered due date is the ABSOLUTE next Nov 7 (via
+ *  {@link nextNovember7}), not an offset from "now". A relative offset rendered
+ *  e.g. "JUN 15" on 2026-06-08 while the body says "Nov 7" — the header
+ *  contradicting the copy. The "in a week" vs "today" distinction is body flavor;
+ *  the displayed event date is the birthday either way. */
+export interface DemoReminder {
+  text: string;
+}
+
 export interface DemoStep {
   /** Matches the active-demo `step` marker + orchestration order. */
   id: string;
@@ -51,12 +74,13 @@ export interface DemoStep {
   kind?: DemoStepKind;
   /** Which composer chip the step uses (chat steps). */
   mode: DemoMode;
-  /** Message pre-filled + sent through the real path (chat/recommend/service). */
+  /** Message pre-filled — the question for recommend/service steps. Chat steps
+   *  use `remembers` instead (this is kept as a fallback / for non-chat kinds). */
   message: string;
-  /** Optional: send MULTIPLE messages in one step (one Next tap), in order.
-   *  Used by the opening step to remember Emma AND Alonso together. When set,
-   *  `message` is ignored. */
-  messages?: readonly string[];
+  /** Scripted remembers for a chat step (one Next tap → one or more, in order). */
+  remembers?: readonly DemoRemember[];
+  /** Reminder cards posted after the remembers (the birthday step's enrichment). */
+  reminders?: readonly DemoReminder[];
   /** Short narration shown before the step. */
   caption: string;
   /** For `navigate` steps: where to drive the app. */
@@ -77,15 +101,23 @@ export const DEMO_STEPS: readonly DemoStep[] = [
   // the dinosaurs fact; the chair rec applies the month's budget). One blob
   // hides that; separate inputs make the "it remembered + connected" obvious.
   {
-    // Two remembers in one step: a family member and a friend, so the people
-    // graph (next step) shows both. The dinosaurs fact rides along with Emma so
-    // the later birthday reminder can still enrich with it.
+    // Two remembers in one step: a family member and a friend, both seeded into
+    // People › Relations (shown in the next step). The dinosaurs fact rides
+    // along with Emma so the birthday reminder can still reference it.
     id: 'remember_people',
     mode: 'remember',
     message: 'Emma is my daughter, and she loves dinosaurs.',
-    messages: [
-      'Emma is my daughter, and she loves dinosaurs.',
-      'Alonso, my friend, loves cold brew.',
+    remembers: [
+      {
+        message: 'Emma is my daughter, and she loves dinosaurs.',
+        vault: 'General',
+        person: { name: 'Emma', relation: 'daughter' },
+      },
+      {
+        message: 'Alonso, my friend, loves cold brew.',
+        vault: 'General',
+        person: { name: 'Alonso', relation: 'friend' },
+      },
     ],
     caption: 'Start by telling Dina about the people in your life, family and friends.',
   },
@@ -106,9 +138,9 @@ export const DEMO_STEPS: readonly DemoStep[] = [
     id: 'remember_private',
     mode: 'remember',
     message: "I've been getting a lot of lower back pain lately.",
-    messages: [
-      "I've been getting a lot of lower back pain lately.",
-      "I'm trying to keep my spending under $500 this month.",
+    remembers: [
+      { message: "I've been getting a lot of lower back pain lately.", vault: 'Health' },
+      { message: "I'm trying to keep my spending under $500 this month.", vault: 'Finance' },
     ],
     caption:
       'Now tell Dina something private. Health goes to your locked Health vault, money to your locked Finance vault.',
@@ -117,6 +149,13 @@ export const DEMO_STEPS: readonly DemoStep[] = [
     id: 'remember_emma_birthday',
     mode: 'remember',
     message: "Emma's birthday is on Nov 7.",
+    remembers: [{ message: "Emma's birthday is on Nov 7.", vault: 'General' }],
+    // Scripted enrichment cards — the "it connected the dinosaurs fact" payoff
+    // without a live LLM round-trip.
+    reminders: [
+      { text: "Emma's birthday is in a week (Nov 7). She loves dinosaurs, so maybe a dinosaur-themed gift." },
+      { text: "Today is Emma's birthday! Wish your daughter a happy birthday." },
+    ],
     caption:
       'Add a date and Dina sets a reminder. It links to what Dina already knows about Emma.',
   },
@@ -281,10 +320,12 @@ export const DEMO_REVIEW = {
 } as const;
 
 /** The publish-service draft shown in the final step (draft only, never
- *  auto-published). */
+ *  auto-published). The bus-driver service from the canon
+ *  (docs/BUSDRIVER_SERVICES_SCENARIO.md): a driver publishes live bus ETAs that
+ *  other Dinas can query (capability `eta_query`), answered by their agent. */
 export const DEMO_PUBLISH_DRAFT = {
-  name: 'Chair availability checker',
-  capability: 'product_availability',
-  visibility: 'unlisted',
-  responsePolicy: 'review',
+  name: 'Bus 42 live ETA',
+  capability: 'eta_query',
+  visibility: 'public',
+  responsePolicy: 'auto',
 } as const;

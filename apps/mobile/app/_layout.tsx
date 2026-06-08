@@ -21,9 +21,7 @@
  */
 
 import '../src/polyfills';
-import { Ionicons } from '@expo/vector-icons';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { FEATURES, FeatureIcon, type FeatureKey } from '../src/features';
+import { Ionicons , MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   CormorantGaramond_600SemiBold,
   CormorantGaramond_600SemiBold_Italic,
@@ -52,12 +50,14 @@ import { Modal, Platform, Pressable, TouchableOpacity, View, Text, StyleSheet } 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { markNotificationRead } from '@dina/brain/notifications';
-import { UnlockGate } from '../src/components/unlock_gate';
-import { GuidedDemoGate } from '../src/components/guided_demo/GuidedDemoGate';
-import { useGuidedDemoActive } from '../src/guided_demo/active_context';
+
 import { DinaWordmark } from '../src/components/DinaWordmark';
-import { clearThread } from '../src/hooks/useChatThread';
+import { GuidedDemoGate } from '../src/components/guided_demo/GuidedDemoGate';
+import { UnlockGate } from '../src/components/unlock_gate';
+import { FEATURES, FeatureIcon, type FeatureKey } from '../src/features';
+import { useGuidedDemoActive } from '../src/guided_demo/active_context';
 import { useAutoLock } from '../src/hooks/useAutoLock';
+import { clearThread } from '../src/hooks/useChatThread';
 import { useNodeBootstrap } from '../src/hooks/useNodeBootstrap';
 import { useUnreadBadge } from '../src/hooks/useNotificationsBadge';
 import { useReminderFireWatcher } from '../src/hooks/useReminderFireWatcher';
@@ -76,6 +76,8 @@ import {
   requestPushPermission,
 } from '../src/notifications/local';
 import { installReminderPushBridge } from '../src/notifications/reminder_push_bridge';
+import { isTrustTabHidden } from '../src/peerlens/flags';
+import { startReviewOutboxAutodrain } from '../src/peerlens/review_outbox_autodrain';
 import { bootstrapInferredPreferences } from '../src/services/preferences_bootstrap';
 import {
   subscribeRuntimeWarnings,
@@ -83,7 +85,6 @@ import {
   type RuntimeWarning,
 } from '../src/services/runtime_warnings';
 import { colors, navTitle, textStyles } from '../src/theme';
-import { isTrustTabHidden } from '../src/peerlens/flags';
 
 import type { BootDegradation } from '../src/services/boot_service';
 
@@ -563,6 +564,17 @@ export default function RootLayout() {
     };
   }, [unlocked]);
 
+  // App-global review-outbox autodrain (TN-MOB-007): once the node is up,
+  // retry any reviews queued offline — on boot and on every app foreground —
+  // without requiring the user to open the Outbox screen.
+  useEffect(() => {
+    // Only with a fully-booted node — NOT 'idle' (locked / pre-boot) and not
+    // during sign-out / auto-lock teardown, where draining could touch a node
+    // being disposed while the vault is locked.
+    if (bootState.status !== 'ready') return;
+    return startReviewOutboxAutodrain();
+  }, [bootState.status]);
+
   // Viewer-preferences inference (region / languages / devices /
   // dietary). Runs ONCE on first launch — `bootstrapInferredPreferences`
   // delegates to `hydrateUserPreferences()` which short-circuits when
@@ -660,7 +672,7 @@ export default function RootLayout() {
               kind="warning"
               primary={
                 surfaceDegradations.length > 0
-                  ? 'Dina running in dev-degraded mode.'
+                  ? 'Dina is running in limited mode.'
                   : 'Runtime warnings active.'
               }
               details={[

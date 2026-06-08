@@ -88,6 +88,12 @@ function fakeSeams(): {
     postReviewCard() {
       rec.reviewCards += 1;
     },
+    seedPerson() {
+      /* people seeding — not asserted here */
+    },
+    seedReminders() {
+      /* reminder cards — not asserted here */
+    },
     async delay() {
       /* no pause in tests */
     },
@@ -96,9 +102,9 @@ function fakeSeams(): {
 }
 
 const CHAT_STEPS = DEMO_STEPS.filter((s) => s.kind === undefined || s.kind === 'chat');
-// Total send() calls across all chat steps — a step may send several messages
-// (the people step and the private step each send two).
-const TOTAL_SENDS = CHAT_STEPS.reduce((n, s) => n + (s.messages?.length ?? 1), 0);
+// Total send() calls across all chat steps — a step may have several remembers
+// (the people step and the private step each have two).
+const TOTAL_SENDS = CHAT_STEPS.reduce((n, s) => n + (s.remembers?.length ?? 1), 0);
 const RECOMMEND_STEP_COUNT = DEMO_STEPS.filter((s) => s.kind === 'recommend').length;
 const SERVICE_STEP_COUNT = DEMO_STEPS.filter((s) => s.kind === 'service').length;
 
@@ -306,6 +312,12 @@ describe('useGuidedDemoGate', () => {
       navigate() {},
       async postD2DMessage() {},
       postReviewCard() {},
+      seedPerson() {
+        /* not used here */
+      },
+      seedReminders() {
+        /* not used here */
+      },
       async delay() {},
     };
     return { make: () => seams, release, state };

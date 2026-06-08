@@ -270,7 +270,7 @@ export async function resolveAndVerifyDidPlc(
     if (res.status === 400 || res.status === 404) {
       return {
         kind: 'unknown_handle',
-        message: `${trimmed} isn't bound on the PDS — check the spelling.`,
+        message: `${trimmed} isn't bound on the PDS. Check the spelling.`,
       };
     }
     if (res.status !== 200) {

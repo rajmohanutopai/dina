@@ -73,7 +73,7 @@ export interface FirstRunModalCopy {
 export const FIRST_RUN_MODAL_COPY: FirstRunModalCopy = Object.freeze({
   title: FEATURE_NAMES.peerlens,
   body: Object.freeze([
-    `${FEATURE_NAMES.peerlens} shows reviews from people you know — and reviews from people they know.`,
+    `${FEATURE_NAMES.peerlens} shows reviews from people you know, and reviews from people they know.`,
     "You can publish reviews under separate namespaces (e.g. one for products, one for places). They keep your reviews compartmentalised at first glance.",
     "But these namespaces aren't anonymous: anyone reading your DID document can see how many you have, and a sophisticated observer correlating signatures over time can tell them apart. We'll close that gap in a future version.",
   ]),

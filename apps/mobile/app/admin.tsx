@@ -387,8 +387,8 @@ function BackupRestoreSection(): React.ReactElement {
   return (
     <View>
       <Text style={styles.backupNote}>
-        An export is an encrypted copy of your data (contacts, memories, reminders, settings) —
-        never your keys or API secrets. Restore brings it back onto a device after you’ve set up
+        An export is an encrypted copy of your data (contacts, memories, reminders, settings).
+        It never includes your keys or API secrets. Restore brings it back onto a device after you’ve set up
         your identity.
       </Text>
 

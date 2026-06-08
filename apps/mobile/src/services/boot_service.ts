@@ -26,6 +26,19 @@
  * proceed, warn, or block.
  */
 
+import type {
+  AgenticAskHandlerOptions,
+  AppViewClient,
+  LLMProvider,
+  PDSPublisher,
+  PDSSession,
+  ToolRegistry,
+} from '@dina/brain';
+import type { IdentityKeypair } from '@dina/core';
+
+import { buildRememberRuntime } from '@dina/brain';
+import { postReminderCard } from '@dina/brain/chat';
+import { listPersonas } from '@dina/core';
 import {
   MemoryService,
   InMemoryServiceConfigRepository,
@@ -48,20 +61,6 @@ import {
   type WorkflowRepository,
   type WSFactory,
 } from '@dina/core/runtime';
-import type {
-  AgenticAskHandlerOptions,
-  AppViewClient,
-  LLMProvider,
-  PDSPublisher,
-  PDSSession,
-  ToolRegistry,
-} from '@dina/brain';
-import type { IdentityKeypair } from '@dina/core';
-import { createNode, type DinaNode, type NodeRole, type CreateNodeOptions } from './bootstrap';
-import { buildStagingEnrichment } from './staging_enrichment';
-import { buildRememberRuntime } from '@dina/brain';
-import { postReminderCard } from '@dina/brain/chat';
-import { listPersonas } from '@dina/core';
 
 /**
  * Per-persona hints for the agentic /remember loop on mobile. Matches
@@ -77,9 +76,11 @@ export const MOBILE_PERSONA_DESCRIPTIONS: Record<string, string> = {
   health: 'Medical, fitness, symptoms, medications, doctors, allergies.',
   finance: 'Money, budgets, spending, income, bills, debt, investments, taxes.',
 };
-import { emitRuntimeWarning, clearRuntimeWarning } from './runtime_warnings';
-import { createDemoServiceResponder } from './demo_service_responder';
 import { isAppViewStub } from './appview_stub';
+import { createNode, type DinaNode, type NodeRole, type CreateNodeOptions } from './bootstrap';
+import { createDemoServiceResponder } from './demo_service_responder';
+import { emitRuntimeWarning, clearRuntimeWarning } from './runtime_warnings';
+import { buildStagingEnrichment } from './staging_enrichment';
 
 export type BootLogger = (entry: Record<string, unknown>) => void;
 
@@ -161,6 +162,13 @@ export interface BootServiceInputs {
    * discoverability; ignored otherwise.
    */
   pdsPublisher?: PDSPublisher;
+  /**
+   * Whether the PDS session was reachable at boot. `false` while a publisher
+   * is still present means a transient outage — providers surface the
+   * `publisher.stub` degradation, but the review-publish drainer keeps its
+   * (lazy) publisher so queued reviews retry once the PDS recovers.
+   */
+  pdsSessionReachable?: boolean;
   /**
    * Seed config for provider nodes — matches Core's
    * `setServiceConfig` shape. Without it a provider node boots
@@ -432,10 +440,10 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     : sendD2D;
 
   const isProvider = inputs.role === 'provider' || inputs.role === 'both';
-  if (isProvider && inputs.pdsPublisher === undefined) {
+  if (isProvider && (inputs.pdsPublisher === undefined || inputs.pdsSessionReachable === false)) {
     addDegradation(
       'publisher.stub',
-      'Provider role selected but no PDS publisher supplied — the service profile will not reach AppView.',
+      'Provider role: the PDS is unreachable or not configured, so the service profile will not reach AppView. (Queued reviews still retry once the PDS recovers.)',
     );
   }
 
@@ -558,6 +566,7 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     coreClient,
     appViewClient,
     pdsPublisher: inputs.pdsPublisher,
+    pdsSessionReachable: inputs.pdsSessionReachable,
     workflowRepository,
     serviceConfigRepository,
     initialServiceConfig: inputs.initialServiceConfig,
@@ -673,10 +682,10 @@ function defaultLogger(entry: Record<string, unknown>): void {
   const isDemoExpected =
     typeof entry.code === 'string' && DEMO_EXPECTED_CODES.has(entry.code);
   if (isDegradation && !isDemoExpected) {
-    // eslint-disable-next-line no-console
+     
     console.warn('[dina:boot]', entry);
   } else {
-    // eslint-disable-next-line no-console
+     
     console.log('[dina:boot]', entry);
   }
 }

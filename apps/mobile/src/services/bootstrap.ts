@@ -207,6 +207,16 @@ export interface CreateNodeOptions {
   coreClient: CoreClient;
   appViewClient: Pick<AppViewClient, 'searchServices'>;
   pdsPublisher?: PDSPublisher;
+  /**
+   * Whether the supplied `pdsPublisher`'s session was validated at boot.
+   * `false` means the PDS was unreachable (transient outage / offline): the
+   * publisher is still passed through for the review-outbox drainer (which
+   * retries and never blocks boot), but the provider service-profile
+   * `ServicePublisher` is NOT constructed — its initial `sync()` re-auths and
+   * would throw out of `start()`, turning a transient outage into a boot
+   * failure. Defaults to "reachable" when omitted (test/no-PDS paths).
+   */
+  pdsSessionReachable?: boolean;
   workflowRepository: WorkflowRepository;
   /**
    * Service-config repository (SQLite-backed in production). When supplied
@@ -370,6 +380,13 @@ export interface DinaNode extends HomeNodeLifecycle {
    */
   role: NodeRole;
   coreClient: CoreClient;
+  /**
+   * Authed PDS publisher (lazy session). Present for every role when PDS
+   * credentials exist — providers use it for the service profile; every node
+   * uses it to publish PeerLens reviews (attestation records) to AppView.
+   * `undefined` when no PDS handle/password is configured.
+   */
+  pdsPublisher?: PDSPublisher;
   workflowService: WorkflowService;
   orchestrator: ServiceQueryOrchestrator;
   handler: ServiceHandler;
@@ -910,9 +927,13 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
 
   // 7. ServicePublisher — publishes service profile record to PDS when
   // provider+isDiscoverable. Instantiated lazily; caller supplies the publisher
-  // so we don't duplicate credentials.
+  // so we don't duplicate credentials. Skipped when the PDS session couldn't be
+  // validated at boot: the initial sync() below is LOAD-BEARING (it re-auths and
+  // throws out of start()), so constructing it against an unreachable PDS would
+  // turn a transient outage into a boot failure. The review-outbox drainer still
+  // gets the lazy `node.pdsPublisher` and retries independently.
   let publisher: ServicePublisher | null = null;
-  if (isProvider && options.pdsPublisher !== undefined) {
+  if (isProvider && options.pdsPublisher !== undefined && options.pdsSessionReachable !== false) {
     publisher = new ServicePublisher({
       pds: options.pdsPublisher,
       expectedDID: options.did,
@@ -929,6 +950,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     did: options.did,
     role: options.role,
     coreClient: options.coreClient,
+    pdsPublisher: options.pdsPublisher,
     workflowService,
     orchestrator,
     handler,
@@ -1491,7 +1513,7 @@ function defaultInboundNotifier(threadId: string): ServiceInboundNotifier {
   return ({ kind, fromDID, capability }) => {
     const peer = shortDID(fromDID);
     const verb = kind === 'approval' ? 'awaiting approval' : 'handling';
-    addSystemMessage(threadId, `Incoming ${capability} from ${peer} — ${verb}.`);
+    addSystemMessage(threadId, `Incoming ${capability} from ${peer}: ${verb}.`);
   };
 }
 

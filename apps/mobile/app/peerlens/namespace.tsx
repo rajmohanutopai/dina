@@ -100,6 +100,33 @@ export default function NamespaceScreen(props: NamespaceScreenProps = {}): React
     return () => clearTimeout(id);
   }, [retryNonce, props.prior]);
 
+  // Coming soon: mounted as the bare route (no runner wires `prior` or
+  // the add/select callbacks), namespace management isn't available yet
+  // — the PLC signing + submit runner (TN-IDENT-005/006) isn't shipped.
+  // Show a clean "coming soon" state instead of spinning into a
+  // "DID unavailable" error. Tests always pass `prior` and bypass this.
+  if (props.prior === undefined) {
+    return (
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        testID="namespace-screen"
+      >
+        <View style={styles.header}>
+          <Text style={styles.title}>Pseudonymous namespaces</Text>
+        </View>
+        <View style={styles.empty} testID="namespace-coming-soon">
+          <Ionicons name="layers-outline" size={36} color={colors.textMuted} />
+          <Text style={styles.emptyTitle}>Coming soon</Text>
+          <Text style={styles.emptyBody}>
+            Pseudonymous namespaces aren&apos;t available yet. You&apos;ll be able to publish
+            reviews under separate compartments of your identity in a future update.
+          </Text>
+        </View>
+      </ScrollView>
+    );
+  }
+
   return (
     <ScrollView
       style={styles.container}
@@ -109,9 +136,9 @@ export default function NamespaceScreen(props: NamespaceScreenProps = {}): React
       <View style={styles.header}>
         <Text style={styles.title}>Pseudonymous namespaces</Text>
         <Text style={styles.subtitle}>
-          Compartments of your identity. Each namespace publishes under its own key —
-          attestations made under one are kept separate from your root identity in
-          reviewer PeerLens rating.
+          Compartments of your identity. Each namespace publishes under its own key, so
+          attestations made under one are kept separate from your root identity's
+          PeerLens rating.
         </Text>
       </View>
 

@@ -32,6 +32,10 @@ import * as Keychain from './keychain';
 export type VerificationStatus = 'pending' | 'verified';
 
 const SERVICE = 'dina.verification_status';
+// Separate slot: the user explicitly dismissed the confirm-your-phrase banner.
+// Status stays 'pending' (they still haven't verified), but they asked not to
+// be nagged on the chat home — Settings → Confirm recovery phrase still works.
+const DISMISS_SERVICE = 'dina.verification_banner_dismissed';
 // react-native-keychain wants a non-empty username field even when
 // only the password slot carries data. Same convention as
 // `startup_preferences`.
@@ -58,9 +62,36 @@ export async function loadVerificationStatus(): Promise<VerificationStatus> {
 /**
  * Mark verification as pending. Called when the user taps "I'll do
  * this later" during onboarding.
+ *
+ * Also clears any prior banner-dismissal: a new pending phrase (a fresh
+ * onboarding / recovery for a different identity or session) must be able to
+ * surface the confirm-your-phrase reminder again, even if a PREVIOUS phrase's
+ * banner was dismissed. Without this, Chat computes `pending && !dismissed` as
+ * false and silently never nags about the new, genuinely-unconfirmed phrase.
  */
 export async function markVerificationPending(): Promise<void> {
   await Keychain.setGenericPassword(USERNAME, 'pending', { service: SERVICE });
+  // Reset the dismissal so the banner reflects THIS phrase, not a stale one.
+  await Keychain.resetGenericPassword({ service: DISMISS_SERVICE });
+}
+
+/**
+ * True iff the user dismissed the confirm-your-phrase banner (tapped its close
+ * button). Persisted in keychain so the banner stays hidden across launches.
+ * Fails open to `false` (banner shown) on a transient read error.
+ */
+export async function isVerificationBannerDismissed(): Promise<boolean> {
+  try {
+    const row = await Keychain.getGenericPassword({ service: DISMISS_SERVICE });
+    return row !== false && row.password === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** Persist that the user dismissed the confirm-your-phrase banner. */
+export async function dismissVerificationBanner(): Promise<void> {
+  await Keychain.setGenericPassword(USERNAME, '1', { service: DISMISS_SERVICE });
 }
 
 /**

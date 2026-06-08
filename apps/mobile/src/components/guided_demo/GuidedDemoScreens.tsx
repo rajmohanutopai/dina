@@ -13,10 +13,12 @@ import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from '
 
 import { colors, fonts, radius, spacing, textStyles } from '../../theme';
 
-/** Height of the bottom tab bar — MUST match `tabBarStyle.height` in
- *  app/_layout.tsx. The demo dock pads its bottom by this so its content sits
- *  over the composer (just above the tab bar) and its background covers both. */
-const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 88 : 64;
+/** Bottom padding for the dock — just enough to clear the home indicator. The
+ *  dock is anchored to the screen bottom and its opaque background still covers
+ *  the (taller) tab-bar zone behind it, so the tab bar stays non-tappable. We no
+ *  longer reserve the FULL tab-bar height — that left a tall empty band below the
+ *  buttons. iOS home-indicator ≈ 34; Android gesture area ≈ 16. */
+const DOCK_BOTTOM_PAD = Platform.OS === 'ios' ? 34 : 16;
 
 export function GuidedDemoEntry({
   onStartDemo,
@@ -279,9 +281,10 @@ const styles = StyleSheet.create({
   // Bottom dock pinned to the very bottom (bottom:0), covering BOTH the composer
   // (Ask/Remember) AND the tab bar so neither is tappable mid-demo — only the
   // demo control is interactive. The CONTENT stays compact at the top (3 short
-  // rows landing over the composer); `paddingBottom: TAB_BAR_HEIGHT` reserves the
-  // tab-bar zone, which the opaque background simply covers. The tab-bar area
-  // holds no chat, so covering it hides nothing extra.
+  // rows landing over the composer). The opaque background still covers the
+  // tab-bar zone behind it (so the tabs stay non-tappable), but we only pad the
+  // bottom enough to clear the home indicator — reserving the full tab-bar
+  // height left a tall empty band below the buttons.
   dock: {
     position: 'absolute',
     left: 0,
@@ -291,7 +294,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
     paddingTop: spacing.sm,
-    paddingBottom: TAB_BAR_HEIGHT,
+    paddingBottom: DOCK_BOTTOM_PAD,
     paddingHorizontal: spacing.md,
     gap: spacing.xs,
   },

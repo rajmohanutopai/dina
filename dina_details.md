@@ -438,3 +438,5 @@ known_only is when i know that this user is authenticated to use my service - it
   - createSession later, so Dina can publish ATProto records again after restart
   - recovery, because the same recovery phrase re-derives the same PDS password
 
+# Testing Manual Release Tests
+We use Maestro to test the manual release tests - there is already maestro based test cases. Also, maestro is installed in this machine - if it is not found, it might be because you are not looking at the proper location

@@ -33,6 +33,7 @@ import {
   buildChairRecommendation,
   type DemoMode,
   type DemoNavTarget,
+  type DemoReminder,
   type DemoStep,
 } from './content';
 
@@ -80,8 +81,18 @@ export interface DemoServiceCard {
  * bind fakes and assert ordering + payloads.
  */
 export interface GuidedDemoSeams {
-  /** Send a scripted message through the real /remember or /ask path. */
-  send(mode: DemoMode, message: string): Promise<void>;
+  /** Post a scripted remember: the user message, a ~2s pause, then a
+   *  deterministic "Stored in <vault> vault." reply. Deliberately NOT the live
+   *  LLM path — a tour needs to be fast + reliable + offline-safe + repeatable.
+   *  The outcomes (vault routing, people, enrichment) are still accurate, just
+   *  scripted; the real app is one tap away for live behaviour. */
+  send(mode: DemoMode, message: string, vault: string): Promise<void>;
+  /** Seed a person + relationship into People › Relations (scope-bound), so the
+   *  nav peek shows it without the live people-extraction. No-op without a repo. */
+  seedPerson(person: { name: string; relation: string }): void;
+  /** Post scripted reminder cards (the birthday-step enrichment). Each carries
+   *  its own `dueInDays` so the rendered due date agrees with the body copy. */
+  seedReminders(reminders: readonly DemoReminder[]): void;
   /** Post a grounded recommendation as a real user→Dina chat exchange. Async:
    *  the real impl posts the question, pauses (so the answer doesn't appear
    *  instantly and read as canned), then posts the answer. */
@@ -159,7 +170,7 @@ export function buildDemoPlan(steps: readonly DemoStep[] = DEMO_STEPS): DemoActi
       kind: 'publish',
       id: PUBLISH_DRAFT_STEP,
       caption:
-        'Provide a service of your own. Have your own OpenClaw or other agent provide a public or private service to other Dinas.',
+        'Provide a service of your own. A bus driver could publish live bus ETAs for other Dinas to query, answered by your OpenClaw or another agent, public or private.',
     },
   ];
 }
@@ -279,14 +290,21 @@ export class GuidedDemoRunner {
     if (action === null) return null;
     switch (action.kind) {
       case 'chat': {
-        // A step can send one message or several (the opening step remembers
-        // Emma AND Alonso). Sequential so each lands as its own chat turn, with
-        // a short pause between them so the user reads each "Stored in <vault>"
-        // reply before the next remember fires.
-        const messages = action.step.messages ?? [action.step.message];
-        for (const [i, message] of messages.entries()) {
+        // Scripted remembers (no live LLM): one or several per step, each posts
+        // the message, pauses, then a deterministic "Stored in <vault>" reply.
+        // A short gap between them so the user reads each reply before the next
+        // remember fires. People are seeded so the nav peek stays accurate.
+        const remembers = action.step.remembers ?? [
+          { message: action.step.message, vault: 'General' },
+        ];
+        for (const [i, r] of remembers.entries()) {
           if (i > 0) await this.seams.delay(INTER_MESSAGE_PAUSE_MS);
-          await this.seams.send(action.step.mode, message);
+          await this.seams.send(action.step.mode, r.message, r.vault);
+          if (r.person !== undefined) this.seams.seedPerson(r.person);
+        }
+        // Step-level enrichment cards (e.g. the birthday reminders).
+        if (action.step.reminders !== undefined && action.step.reminders.length > 0) {
+          this.seams.seedReminders(action.step.reminders);
         }
         break;
       }

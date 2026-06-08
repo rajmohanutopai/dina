@@ -281,6 +281,59 @@ persisted demo rows.</li>
 Files: <code>apps/mobile/src/notifications/reminder_push_bridge.ts</code>,
 <code>packages/core/src/notifications/repository.ts</code>,
 <code>packages/brain/src/notifications/inbox.ts</code>.</div>
+<div class="iter"><span class="tag t-dec">Demo round 4b — shorter dock + bus-driver service + repeat-run seed fix</span>
+<ul>
+<li><strong>Dock height.</strong> The dock padded its bottom by the FULL tab-bar height
+(<code>TAB_BAR_HEIGHT</code> 88/64), leaving a tall empty band below the buttons. Reduced to a home-
+indicator clearance (<code>DOCK_BOTTOM_PAD</code> 34/16) — the opaque background still covers the tab-bar
+zone behind it (tabs stay non-tappable), but the buttons sit near the bottom. Verified live: compact dock.</li>
+<li><strong>Published service = the bus-driver service.</strong> The final "provide a service" step now
+publishes the canon bus-driver ETA service (<code>docs/BUSDRIVER_SERVICES_SCENARIO.md</code>):
+<code>DEMO_PUBLISH_DRAFT</code> → "Bus 42 live ETA" (capability <code>eta_query</code>, public, auto), and the
+caption frames it ("A bus driver could publish live bus ETAs for other Dinas to query, answered by your
+OpenClaw or another agent"). Card reads "Draft service · Bus 42 live ETA (eta_query, public, auto)."</li>
+<li><strong>Repeat-run People seed fix</strong> (carried from the prior fix): <code>seedPerson</code> folds
+the run's data scope into the <code>sourceItemId</code> so <code>applyExtraction</code>'s GLOBAL idempotency
+log no longer skips seeding on replays.</li>
+</ul></div>
+<div class="iter"><span class="tag t-dec">Demo round 4 — fully deterministic (no live LLM) for speed + reliability</span>
+The <code>remember</code>/<code>ask</code> steps were the only live-LLM calls left, and at ~15-30s each
+(5 of them) they dominated the tour — easily 1.5-2.5 min of waiting, plus network/key dependence and
+non-determinism that could break the scripted narrative. Decision (with the user): a <em>tour</em> wants
+fast + reliable + offline-safe + repeatable over "watch the real model reason" — and a user can't
+visually tell a scripted "Stored in General vault" from a live one, so going deterministic loses nothing
+they can see (the real app is one tap away). Converted the remember steps to scripted, keeping the
+OUTCOMES accurate (<span class="status-green">64 guided_demo tests; typecheck + changed-file lint clean;
+full deterministic flow verified live on the sim</span>):
+<ul>
+<li><strong>Scripted remember.</strong> The <code>send</code> seam no longer calls the composer/LLM — it
+posts the user message, pauses ~2s (so it doesn't read as canned), then a deterministic
+"Stored in &lt;vault&gt; vault." reply. New per-message model: <code>DemoStep.remembers: DemoRemember[]</code>
+(<code>{ message, vault, person? }</code>) so each remember names its own vault (General / Health /
+Finance) and optionally a person to seed.</li>
+<li><strong>People stay accurate (seeded, not extracted).</strong> The nav peek must still show Emma +
+Alonso, so a new <code>seedPerson</code> seam writes them straight into the scoped People store via the
+real <code>PeopleRepository.applyExtraction</code> (scope-aware → torn down with the demo). Verified live:
+People › Relations shows Emma (daughter) + Alonso (friend) with no LLM call.</li>
+<li><strong>Repeat-run seeding bug (fixed).</strong> First version used a FIXED <code>sourceItemId</code>
+(<code>guided-demo-person-emma</code>). But <code>applyExtraction</code>'s idempotency log
+(<code>person_extraction_log</code>, keyed by source_item_id + extractor_version + fingerprint) is GLOBAL,
+not scope-aware — so the first run seeded + wrote a log row, and every REPLAY hit that row → returned
+<code>skipped: true</code> → no relations (the people rows are scoped + deleted, but the log row survives).
+Symptom: "I didn't see any relations getting added" on a second run. Fix: fold the run's data scope into
+the id (<code>...-${currentDataScope()}</code>), unique per run. Verified live by driving the demo TWICE
+back-to-back — both runs now show Emma + Alonso. KNOWN MINOR GAP: those per-run log rows are NOT torn down
+(the log table isn't scope-partitioned), so a few tiny demo marker rows accumulate — harmless idempotency
+residue, no user-visible effect; a custom teardown sweep could clear them if we want perfect removability.</li>
+<li><strong>Scripted enrichment reminders.</strong> The birthday step's "it connected the dinosaurs fact"
+payoff is now a <code>seedReminders</code> seam posting display-only reminder cards
+("...She loves dinosaurs, so maybe a dinosaur-themed gift." + "Today is Emma's birthday!").</li>
+<li><strong>Result.</strong> The whole tour drops to ~30-45s, runs offline / without an LLM key, and never
+varies. Verified live: step 1's two remembers resolve in ~6s (vs ~80s live), correct vault routing
+(General/Health/Finance), and the enrichment reminders render. The PeerLens/service/D2D/agent/review
+moments were already simulations; now the entire demo is deterministic.</li>
+</ul>
+Files: <code>guided_demo/{content,runner,providers}.ts</code> + the four guided_demo test suites.</div>
 <div class="iter"><span class="tag t-dec">Demo round 3b — pacing + copy polish (now 10 steps)</span>
 Small follow-ups from a live read (<span class="status-green">60 guided_demo tests; typecheck + content
 lint clean</span>):

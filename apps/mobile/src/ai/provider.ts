@@ -258,7 +258,7 @@ export function validateKeyFormat(provider: ProviderType, key: string): string |
     return `${info.label} keys should start with "${info.keyPrefix}"`;
   }
   if (trimmed.length < info.minKeyLength) {
-    return `${info.label} keys are at least ${info.minKeyLength} characters — yours is ${trimmed.length}. Double-check you pasted the full key.`;
+    return `${info.label} keys are at least ${info.minKeyLength} characters. Yours is ${trimmed.length}. Double-check you pasted the full key.`;
   }
   return null; // looks plausible
 }
@@ -294,7 +294,7 @@ export async function verifyKey(
       if (res.status === 401 || res.status === 403) {
         return "OpenAI rejected this key. Check that it's valid and has access to the chat models.";
       }
-      return `OpenAI responded HTTP ${res.status} — try again or check OpenAI's status.`;
+      return `OpenAI responded HTTP ${res.status}. Try again or check OpenAI's status.`;
     }
     if (provider === 'gemini') {
       const res = await fetch(
@@ -305,7 +305,7 @@ export async function verifyKey(
       if (res.status === 400 || res.status === 401 || res.status === 403) {
         return 'Google Gemini rejected this key. Check the key string and that the Gemini API is enabled on your project.';
       }
-      return `Google Gemini responded HTTP ${res.status} — try again later.`;
+      return `Google Gemini responded HTTP ${res.status}. Try again later.`;
     }
     if (provider === 'claude') {
       // Anthropic requires both x-api-key and anthropic-version on every
@@ -323,7 +323,7 @@ export async function verifyKey(
       if (res.status === 401 || res.status === 403) {
         return "Anthropic rejected this key. Check that it's valid and has access to the Claude models.";
       }
-      return `Anthropic responded HTTP ${res.status} — try again or check Anthropic's status.`;
+      return `Anthropic responded HTTP ${res.status}. Try again or check Anthropic's status.`;
     }
     if (provider === 'openrouter') {
       // OpenRouter is OpenAI-compatible. /api/v1/models lists every
@@ -337,7 +337,7 @@ export async function verifyKey(
       if (res.status === 401 || res.status === 403) {
         return "OpenRouter rejected this key. Check that it's valid and active.";
       }
-      return `OpenRouter responded HTTP ${res.status} — try again later.`;
+      return `OpenRouter responded HTTP ${res.status}. Try again later.`;
     }
     return `Unknown provider: ${String(provider)}`;
   } catch (err) {

@@ -154,7 +154,7 @@ export default function VaultDetail(): React.ReactElement {
           <Ionicons name="alert-circle-outline" size={32} color={colors.textMuted} />
           <Text style={styles.emptyTitle}>Vault not found</Text>
           <Text style={styles.emptySub}>
-            No persona named "{formatPersonaDisplayName(personaName)}".
+            No vault named "{formatPersonaDisplayName(personaName)}".
           </Text>
         </View>
       </>
@@ -641,7 +641,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   itemMeta: {
-    ...textStyles.eyebrow,
+    ...textStyles.caption,
     color: colors.textMuted,
     marginTop: spacing.xs,
   },

@@ -1,10 +1,12 @@
 /**
- * DinaWordmark — the canonical "D I N A" brand logotype.
+ * DinaWordmark — the canonical "Dina" brand logotype.
  *
- * Renders the spaced small-caps wordmark used everywhere Dina shows its
- * name as a LOGO: the chat header, the onboarding welcome, the unlock
+ * Renders the brand name in the Cormorant Garamond face (matching the
+ * tagline), title case — a NAME, not a label. Used everywhere Dina shows
+ * its name as a LOGO: the chat header, the onboarding welcome, the unlock
  * gate. This is the single source of truth for the brand mark — do not
- * hand-roll the spaced-caps style at call sites.
+ * hand-roll the style at call sites. (Was the spaced small-caps "D I N A";
+ * that read as a generic AI/SaaS template.)
  *
  * NOT for "Dina" as a noun/verb in running copy (those stay sentence
  * case in the normal text styles). And the domino-D glyph is the APP
@@ -29,7 +31,7 @@ export function DinaWordmark({
       accessibilityLabel="Dina"
       allowFontScaling={false}
     >
-      DINA
+      Dina
     </Text>
   );
 }

@@ -35,7 +35,6 @@
  *      "Try again" CTA + "Remove" affordance.
  */
 
-import { FEATURE_NAMES } from '@dina/core';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import {
@@ -44,9 +43,11 @@ import {
   StyleSheet,
   Pressable,
   ScrollView,
+  AppState,
 } from 'react-native';
 
-import { colors, spacing, radius, textStyles } from '../../src/theme';
+import { FEATURE_NAMES } from '@dina/core';
+
 import {
   selectInboxFailureRows,
   inFlightCount,
@@ -58,6 +59,13 @@ import {
   dismissLocal,
   type AttestationDraftBody,
 } from '../../src/peerlens/outbox_store';
+import {
+  hydrateBootedReviewOutbox,
+  drainBootedReviewOutbox,
+  retryReview,
+  dismissReview,
+} from '../../src/peerlens/review_outbox_durable';
+import { colors, spacing, radius, textStyles } from '../../src/theme';
 
 export interface OutboxScreenProps<DraftBody = unknown> {
   /**
@@ -87,7 +95,7 @@ export interface OutboxScreenProps<DraftBody = unknown> {
 const STATUS_LABEL: Record<Extract<OutboxStatus, 'rejected' | 'stuck-pending' | 'stuck-offline'>, string> = {
   'rejected': 'Rejected',
   'stuck-pending': 'Stuck (no AppView response)',
-  'stuck-offline': 'Queued > 24 h',
+  'stuck-offline': "Couldn't publish",
 };
 
 /**
@@ -150,6 +158,43 @@ export default function OutboxScreen<DraftBody = unknown>(
         : 'Draft';
     }) as (draft: DraftBody) => string,
   } = props;
+
+  // Uncontrolled (production) only: surface reviews persisted before an app
+  // restart, then try to publish them — on mount and on every return to the
+  // foreground (a cheap "retry on reconnect"). The node-aware orchestration
+  // lives in `review_outbox_durable`; this screen just triggers it. Tests +
+  // a future runner pass `rows` and skip this.
+  React.useEffect(() => {
+    if (props.rows !== undefined) return;
+    let cancelled = false;
+    void hydrateBootedReviewOutbox().then(() => {
+      if (!cancelled) void drainBootedReviewOutbox();
+    });
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') void drainBootedReviewOutbox();
+    });
+    return () => {
+      cancelled = true;
+      sub.remove();
+    };
+  }, [props.rows]);
+
+  // Manual "Try again" / "Dismiss" are wired ONLY in the uncontrolled
+  // production path; controlled callers/tests keep their injected handlers
+  // (and a missing onRetry keeps the retry button hidden — the contract the
+  // render tests rely on).
+  const effectiveOnRetry: ((clientId: string) => void) | undefined =
+    onRetry ??
+    (props.rows === undefined ? (clientId: string) => void retryReview(clientId) : undefined);
+
+  const effectiveOnDismiss = React.useCallback(
+    (clientId: string): void => {
+      if (props.rows === undefined) void dismissReview(clientId);
+      else onDismiss(clientId);
+    },
+    [props.rows, onDismiss],
+  );
+
   const failures = React.useMemo(() => selectInboxFailureRows(rows), [rows]);
   const inFlight = React.useMemo(() => inFlightCount(rows), [rows]);
   // Queued (non-terminal, non-failure) rows — surfaced as an explicit
@@ -197,7 +242,7 @@ export default function OutboxScreen<DraftBody = unknown>(
                 <QueuedRow
                   key={row.clientId}
                   row={row}
-                  onDismiss={onDismiss}
+                  onDismiss={effectiveOnDismiss}
                   renderDraftPreview={renderDraftPreview}
                 />
               ))}
@@ -217,8 +262,8 @@ export default function OutboxScreen<DraftBody = unknown>(
                 <FailureRow
                   key={row.clientId}
                   row={row}
-                  onRetry={onRetry}
-                  onDismiss={onDismiss}
+                  onRetry={effectiveOnRetry}
+                  onDismiss={effectiveOnDismiss}
                   renderDraftPreview={renderDraftPreview}
                 />
               ))}

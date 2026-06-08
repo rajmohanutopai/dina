@@ -105,7 +105,7 @@ export default function PairedDevicesScreen() {
                   if (!result.durable) {
                     Alert.alert(
                       'Revoke not fully saved',
-                      'Access was cut on this device, but the change could not be saved durably. It may not survive a restart — please retry.',
+                      'Access was cut on this device, but the change could not be saved durably. It may not survive a restart, so please retry.',
                     );
                   }
                 } catch (err) {
