@@ -20,6 +20,7 @@
  */
 
 import type { HomeNodeLifecycle } from '@dina/home-node';
+
 import {
   BridgePendingSweeper,
   LeaseExpirySweeper,
@@ -50,6 +51,7 @@ import {
   setD2DSender,
   setDeviceRoleResolver,
   setNodeDID,
+  setReviewPublishRepository,
   setServiceConfig,
   setServiceConfigRepository,
   setServiceQuerySender,
@@ -64,19 +66,14 @@ import {
   type LocalCapabilityRunner,
   type MsgBoxBootConfig,
   type ServiceConfig,
+  type ReviewPublishRepository,
   type ServiceConfigRepository,
   type ServiceQueryBody,
   type ServiceResponseBody,
   type WorkflowRepository,
   type WSFactory,
 } from '@dina/core/runtime';
-import {
-  installWorkflowApprovalInboxBridge,
-  installWorkflowApprovalChatBridge,
-  StagingDrainScheduler,
-  type StagingDrainOptions,
-} from '@dina/brain/runtime';
-import { clearRuntimeWarning } from './runtime_warnings';
+
 
 // Wire MsgBox WS authentication to clear any pending offline warning.
 // Fires on initial connect AND on every reconnect cycle, so a user
@@ -129,12 +126,7 @@ import {
   type ToolRegistry,
   type WorkflowEventConsumer,
   type WorkflowEventDeliverer,
-} from '@dina/brain';
-import { buildHomeNodeServiceRuntime } from '@dina/home-node/service-runtime';
-import type { AppViewClient } from '@dina/brain';
-import { validateCardSpec } from '@dina/protocol';
-import type { IdentityKeypair } from '@dina/core';
-import { stagingGetItem } from '@dina/core';
+ AppViewClient } from '@dina/brain';
 import {
   setServiceApproveCommandHandler,
   resetServiceApproveCommandHandler,
@@ -143,7 +135,6 @@ import {
   setAskCommandHandler,
   resetAskCommandHandler,
 } from '@dina/brain/chat';
-import { wireChatRememberRuntime } from '@dina/home-node/chat-runtime';
 import {
   addDinaResponse,
   addApprovalMessage,
@@ -156,6 +147,16 @@ import {
   readLifecycle,
   type ServiceQueryStatus,
 } from '@dina/brain/chat';
+import {
+  installWorkflowApprovalInboxBridge,
+  installWorkflowApprovalChatBridge,
+  StagingDrainScheduler,
+  type StagingDrainOptions,
+} from '@dina/brain/runtime';
+import { stagingGetItem } from '@dina/core';
+import { wireChatRememberRuntime } from '@dina/home-node/chat-runtime';
+import { buildHomeNodeServiceRuntime } from '@dina/home-node/service-runtime';
+import { validateCardSpec } from '@dina/protocol';
 
 import {
   setServiceConfigCoreClient,
@@ -163,6 +164,10 @@ import {
 } from '../hooks/useServiceConfigForm';
 import { setInboxCoreClient, resetInboxCoreClient } from '../hooks/useServiceInbox';
 import { openPersonaDB, isPersistenceReady } from '../storage/init';
+
+import { clearRuntimeWarning } from './runtime_warnings';
+
+import type { IdentityKeypair } from '@dina/core';
 
 export type NodeRole = 'requester' | 'provider' | 'both';
 
@@ -224,6 +229,9 @@ export interface CreateNodeOptions {
    * during D2D ingress; when omitted the config lives only in-process.
    */
   serviceConfigRepository?: ServiceConfigRepository;
+  /** Durable PeerLens publish-job store. When present it's registered as the
+   *  global so the worker, Outbox screen, and inline card project from it. */
+  reviewPublishRepository?: ReviewPublishRepository;
   /**
    * Accessor for the node's ServiceConfig. Kept for injection in tests.
    * When omitted, bootstrap falls back to Core's
@@ -489,6 +497,9 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     // hydrate persisted → apply initialServiceConfig override.
     if (options.serviceConfigRepository !== undefined) {
       setServiceConfigRepository(options.serviceConfigRepository);
+    }
+    if (options.reviewPublishRepository !== undefined) {
+      setReviewPublishRepository(options.reviewPublishRepository);
     }
 
     // Ed25519 public-key resolver — self is always resolvable; peers come
@@ -1321,6 +1332,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
         // attached would let getServiceConfig re-hydrate the old config.
         resetServiceConfigState();
         setServiceConfigRepository(null);
+        setReviewPublishRepository(null);
         resetCallerTypeState();
         resetMiddlewareState();
       }

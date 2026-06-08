@@ -35,15 +35,18 @@ import {
   type ChatMessage,
   type ReviewDraftLifecycle,
 } from '@dina/brain/chat';
+import { type PublishJob } from '@dina/core';
 
-import { getBootedNode } from '../hooks/useNodeBootstrap';
-import { type AttestationDraftBody } from '../peerlens/outbox_store';
+import { describePublishErrorCode } from '../peerlens/classify_publish_error';
 import {
   buildAttestationRecord,
   newPublishKeys,
 } from '../peerlens/publish_helpers';
 import { setReviewDraftStatus } from '../peerlens/review_draft';
-import { publishReview } from '../peerlens/review_publish_service';
+import { type AttestationDraftBody } from '../peerlens/review_draft_body';
+import { cancelReviewPublishJob, retryReviewPublishJob } from '../peerlens/review_publish_actions';
+import { submitReviewFromUI } from '../peerlens/submit_review_ui';
+import { useReviewPublishJob } from '../peerlens/useReviewPublishJob';
 import {
   HEADLINE_MAX_LENGTH,
   BODY_MAX_LENGTH,
@@ -77,23 +80,18 @@ export function InlineReviewDraftCard({
   message,
 }: InlineReviewDraftCardProps): React.JSX.Element | null {
   const lc = readLifecycle(message);
+  const draftId = lc !== null && lc.kind === 'review_draft' ? lc.draftId : undefined;
+  // The durable publish JOB is the source of truth for every POST-submit state
+  // (queued / publishing / failed / published). The chat-message lifecycle only
+  // owns the PRE-submit phase (drafting / ready) + the discarded terminal.
+  const job = useReviewPublishJob(message.threadId, draftId);
   if (lc === null || lc.kind !== 'review_draft') return null;
 
-  const status = lc.status;
-  if (status === 'drafting') {
-    return <DraftingState message={message} lc={lc} />;
-  }
-  if (status === 'ready' || status === 'publishing') {
-    return <ReadyState message={message} lc={lc} />;
-  }
-  if (status === 'published') {
-    return <PublishedState message={message} lc={lc} />;
-  }
-  if (status === 'discarded') {
-    return <DiscardedState message={message} lc={lc} />;
-  }
-  // failed
-  return <FailedState message={message} lc={lc} />;
+  if (lc.status === 'drafting') return <DraftingState message={message} lc={lc} />;
+  if (job !== null) return <JobState message={message} lc={lc} job={job} />;
+  if (lc.status === 'discarded') return <DiscardedState message={message} lc={lc} />;
+  // ready (or a cancelled job that reverted) → editable draft
+  return <ReadyState message={message} lc={lc} />;
 }
 
 // ─── States ────────────────────────────────────────────────────────────
@@ -148,24 +146,16 @@ function ReadyState({
     sentiment === null ||
     headline.trim().length === 0 ||
     headline.length > HEADLINE_MAX_LENGTH ||
-    body.length > BODY_MAX_LENGTH ||
-    lc.status === 'publishing';
+    body.length > BODY_MAX_LENGTH;
 
   const onPublish = useCallback(async () => {
     if (publishDisabled) return;
-    const node = getBootedNode();
-    if (node === null) {
-      setError('Local node is not booted yet.');
-      return;
-    }
     setSubmitting(true);
     setError(null);
-    setReviewDraftStatus(message.threadId, lc.draftId, 'publishing');
     try {
-      // Reconstitute a publishable WriteFormState from the lifecycle
-      // values + the locally-edited primary fields. Anything the user
-      // didn't touch (additional details, price, recommend-for, etc.)
-      // flows through unchanged from what the LLM drafted.
+      // Reconstitute a publishable WriteFormState from the lifecycle values +
+      // the locally-edited primary fields. Anything the user didn't touch flows
+      // through unchanged from what the LLM drafted.
       const merged: WriteFormState = {
         ...(initialValues as WriteFormState),
         sentiment,
@@ -182,40 +172,26 @@ function ReadyState({
         subjectTitle: subjectName,
         subjectId: typeof lc.subject.identifier === 'string' ? lc.subject.identifier : undefined,
       };
-      // Route through the SAME decision tree the full form uses — dev
-      // test-inject → real sovereign PDS publish → durable offline queue.
-      // (Previously this card short-circuited to the test-inject endpoint and
-      // failed in production builds with no test token.)
-      const outcome = await publishReview({
-        did: node.did,
-        pdsPublisher: node.pdsPublisher,
+      // ONE entrypoint (same as the full form): creates the durable job + runs
+      // an inline attempt. On published/queued a job now exists, so the card
+      // re-renders to <JobState> via the projection hook — no lifecycle patch.
+      // Only the no-job gates surface an inline error here.
+      const outcome = await submitReviewFromUI({
         rkey,
         record,
         draft,
         threadId: message.threadId,
         draftId: lc.draftId,
       });
-      if (outcome.kind === 'published') {
-        setReviewDraftStatus(message.threadId, lc.draftId, 'published', {
-          attestation: outcome.attestation,
-          values: merged,
-          content: `Published your review of ${subjectName}.`,
-        });
+      if (outcome.kind === 'no_credentials') {
+        setError(describePublishErrorCode('no_credentials'));
+      } else if (outcome.kind === 'cap_exceeded') {
+        setError('Your outbox is full. Dismiss some queued reviews and try again.');
       } else if (outcome.kind === 'error') {
         setError(outcome.message);
-        setReviewDraftStatus(message.threadId, lc.draftId, 'ready', {
-          error: outcome.message,
-          values: merged,
-        });
       }
-      // `queued`: leave the card 'publishing' — the durable drainer flips it to
-      // 'published' once it lands (and back to a usable state on dead-letter).
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Publish failed.';
-      setError(msg);
-      setReviewDraftStatus(message.threadId, lc.draftId, 'ready', {
-        error: msg,
-      });
+      setError(e instanceof Error ? e.message : 'Publish failed.');
     } finally {
       setSubmitting(false);
     }
@@ -389,22 +365,111 @@ function ReadyState({
   );
 }
 
-function PublishedState({
+/**
+ * Post-submit projection of the durable publish job. Renders queued /
+ * publishing / failed / published off the job row — the card owns NO post-submit
+ * status of its own. Cancel/dismiss deletes the job (the card reverts to its
+ * editable draft); Try again retries a dead-letter.
+ */
+function JobState({
   message,
   lc,
+  job,
 }: {
   message: ChatMessage;
   lc: ReviewDraftLifecycle;
+  job: PublishJob;
 }): React.JSX.Element {
-  const subjectName =
-    typeof lc.subject.name === 'string' ? lc.subject.name : 'this subject';
-  return (
-    <View style={styles.card} testID="review-draft-card-published">
-      <View style={styles.headerRow}>
-        <Ionicons name="checkmark-circle" size={18} color={colors.success ?? colors.accent} />
-        <Text style={styles.title}>Published your review</Text>
+  const router = useRouter();
+  const subjectName = typeof lc.subject.name === 'string' ? lc.subject.name : 'this subject';
+
+  if (job.status === 'publishing') {
+    return (
+      <View style={styles.card} testID="review-draft-card-publishing">
+        <View style={styles.headerRow}>
+          <ActivityIndicator color={colors.textMuted} size="small" />
+          <Text style={styles.title}>Publishing…</Text>
+        </View>
+        <Text style={styles.subtitle}>{subjectName}</Text>
+        <MessageTimestamp timestamp={message.timestamp} />
       </View>
-      <Text style={styles.subtitle}>{subjectName}</Text>
+    );
+  }
+
+  if (job.status === 'published') {
+    return (
+      <View style={styles.card} testID="review-draft-card-published">
+        <View style={styles.headerRow}>
+          <Ionicons name="checkmark-circle" size={18} color={colors.success ?? colors.accent} />
+          <Text style={styles.title}>Published your review</Text>
+        </View>
+        <Text style={styles.subtitle}>{subjectName}</Text>
+        <MessageTimestamp timestamp={message.timestamp} />
+      </View>
+    );
+  }
+
+  if (job.status === 'queued') {
+    return (
+      <View style={styles.card} testID="review-draft-card-queued">
+        <View style={styles.headerRow}>
+          <Ionicons name="time-outline" size={18} color={colors.textMuted} />
+          <Text style={styles.title}>Queued in Outbox</Text>
+        </View>
+        <Text style={styles.subtitle}>Will publish {subjectName} when you’re back online.</Text>
+        <View style={styles.actionRow}>
+          <Pressable
+            testID="review-draft-view-outbox"
+            onPress={() => router.push('/peerlens/outbox')}
+            style={styles.secondaryButton}
+            accessibilityRole="button"
+          >
+            <Text style={styles.secondaryButtonText}>View Outbox</Text>
+          </Pressable>
+          <Pressable
+            testID="review-draft-cancel"
+            onPress={() => cancelReviewPublishJob(job.jobId)}
+            style={styles.secondaryButton}
+            accessibilityRole="button"
+          >
+            <Text style={styles.secondaryButtonText}>Cancel</Text>
+          </Pressable>
+        </View>
+        <MessageTimestamp timestamp={message.timestamp} />
+      </View>
+    );
+  }
+
+  // failed (transient exhausted or permanent)
+  return (
+    <View style={[styles.card, styles.cardError]} testID="review-draft-card-failed">
+      <View style={styles.headerRow}>
+        <Ionicons name="alert-circle-outline" size={18} color={colors.error} />
+        <Text style={styles.title}>Couldn’t publish</Text>
+      </View>
+      <Text style={styles.subtitle}>
+        {job.lastErrorCode !== null
+          ? describePublishErrorCode(job.lastErrorCode)
+          : `Couldn’t publish ${subjectName}.`}
+      </Text>
+      <View style={styles.actionRow}>
+        <Pressable
+          testID="review-draft-retry"
+          onPress={() => void retryReviewPublishJob(job.jobId)}
+          style={styles.secondaryButton}
+          accessibilityRole="button"
+        >
+          <Text style={styles.secondaryButtonText}>Try again</Text>
+        </Pressable>
+        <Pressable
+          testID="review-draft-dismiss"
+          onPress={() => cancelReviewPublishJob(job.jobId)}
+          style={styles.secondaryButton}
+          accessibilityRole="button"
+        >
+          <Text style={styles.secondaryButtonText}>Dismiss</Text>
+        </Pressable>
+      </View>
       <MessageTimestamp timestamp={message.timestamp} />
     </View>
   );
@@ -425,29 +490,6 @@ function DiscardedState({
         <Ionicons name="close-circle-outline" size={18} color={colors.textMuted} />
         <Text style={styles.titleMuted}>Discarded the draft of {subjectName}</Text>
       </View>
-      <MessageTimestamp timestamp={message.timestamp} />
-    </View>
-  );
-}
-
-function FailedState({
-  message,
-  lc,
-}: {
-  message: ChatMessage;
-  lc: ReviewDraftLifecycle;
-}): React.JSX.Element {
-  const subjectName =
-    typeof lc.subject.name === 'string' ? lc.subject.name : 'this subject';
-  return (
-    <View style={[styles.card, styles.cardError]} testID="review-draft-card-failed">
-      <View style={styles.headerRow}>
-        <Ionicons name="alert-circle-outline" size={18} color={colors.error} />
-        <Text style={styles.title}>Couldn’t draft a review</Text>
-      </View>
-      <Text style={styles.subtitle}>
-        {lc.error ?? `Open the form to start a fresh review of ${subjectName}.`}
-      </Text>
       <MessageTimestamp timestamp={message.timestamp} />
     </View>
   );

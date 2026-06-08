@@ -35,8 +35,12 @@ jest.mock('../../src/peerlens/appview_runtime', () => ({
 // node).
 jest.mock('../../src/hooks/useNodeBootstrap', () => ({
   __esModule: true,
-  getBootedNode: jest.fn().mockReturnValue({ did: 'did:plc:test-author' }),
+  // A publisher must be present (non-undefined) or submit returns no_credentials;
+  // the test-inject path ignores it but the credential gate checks it.
+  getBootedNode: jest.fn().mockReturnValue({ did: 'did:plc:test-author', pdsPublisher: {} }),
 }));
+
+import { InMemoryReviewPublishRepository, setReviewPublishRepository } from '@dina/core';
 
 import * as appview from '../../src/peerlens/appview_runtime';
 import WriteScreen from '../../app/peerlens/write';
@@ -47,6 +51,11 @@ const injectMock = appview.injectAttestation as jest.MockedFunction<
 
 beforeEach(() => {
   injectMock.mockClear();
+  setReviewPublishRepository(new InMemoryReviewPublishRepository());
+});
+
+afterEach(() => {
+  setReviewPublishRepository(null);
 });
 
 /**

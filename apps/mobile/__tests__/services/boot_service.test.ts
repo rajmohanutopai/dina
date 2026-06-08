@@ -8,11 +8,13 @@
  * invariants.
  */
 
-import { bootAppNode, type BootServiceInputs } from '../../src/services/boot_service';
-import { InMemoryDatabaseAdapter } from '../../../core/src/storage/db_adapter';
-import { getPublicKey } from '../../../core/src/crypto/ed25519';
 import { TEST_ED25519_SEED } from '@dina/test-harness';
+
+import { getPublicKey } from '../../../core/src/crypto/ed25519';
 import { getMemoryService, setMemoryService } from '../../../core/src/memory/service';
+import { getReviewPublishRepository } from '../../../core/src/review/publish_job_repository';
+import { InMemoryDatabaseAdapter } from '../../../core/src/storage/db_adapter';
+import { bootAppNode, type BootServiceInputs } from '../../src/services/boot_service';
 
 const SEED = TEST_ED25519_SEED;
 const PUB = getPublicKey(SEED);
@@ -56,6 +58,16 @@ describe('bootAppNode — boots + returns a live node', () => {
     } finally {
       await node.dispose();
     }
+  });
+
+  it('wires the review-publish repository as a global (and unwires on dispose)', async () => {
+    const { node } = await bootAppNode(baseInputs());
+    try {
+      expect(getReviewPublishRepository()).not.toBeNull();
+    } finally {
+      await node.dispose();
+    }
+    expect(getReviewPublishRepository()).toBeNull(); // cleaned up so the next boot is fresh
   });
 
   it('supplying a DatabaseAdapter removes the persistence degradation', async () => {
@@ -137,7 +149,7 @@ describe('bootAppNode — boots + returns a live node', () => {
   });
 
   it('surfaces degradations to the provided logger as warnings', async () => {
-    const entries: Array<Record<string, unknown>> = [];
+    const entries: Record<string, unknown>[] = [];
     const { node } = await bootAppNode(
       baseInputs({
         logger: (e) => entries.push(e),

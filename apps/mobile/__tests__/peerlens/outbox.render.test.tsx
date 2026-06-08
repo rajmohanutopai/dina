@@ -1,255 +1,135 @@
 /**
- * Render tests for the outbox screen (TN-MOB-017).
- *
- * Three states pinned by the screen:
- *   1. **Empty** — no rows in any state. "Nothing in your outbox" copy.
- *   2. **In-flight only** — rows exist but none have failed. Shows the
- *      "<n> reviews queued — will publish when back online" banner +
- *      the "All caught up" empty-failures panel.
- *   3. **Failures present** — `selectInboxFailureRows` returns ≥ 1.
- *      One FailureRow per row, each with status label + reason text +
- *      retry/dismiss CTAs.
- *
- * Plus interaction tests: tapping retry / dismiss fires the right
- * callback with the row's `clientId`.
- *
- * The data-layer state machine + selectors are covered exhaustively
- * in `outbox.test.ts` (52 tests); this file pins only the screen-side
- * wiring.
+ * OutboxScreen render + interactions, on the durable publish-job model. The
+ * screen is a projection: it renders the jobs it's given (controlled `jobs`
+ * prop) and its Cancel / Try again / Dismiss buttons drive the SAME repo the
+ * inline card does.
  */
 
-import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
+import React from 'react';
+
+jest.mock('../../src/hooks/useNodeBootstrap', () => ({
+  __esModule: true,
+  // null node → the live hook returns [] and drainReviewPublishNow no-ops, so
+  // the controlled `jobs` prop is the only data + actions only touch the repo.
+  getBootedNode: jest.fn().mockReturnValue(null),
+}));
+
+import { InMemoryReviewPublishRepository, setReviewPublishRepository, type PublishJob } from '@dina/core';
 
 import OutboxScreen from '../../app/peerlens/outbox';
-import type { OutboxRow } from '../../src/peerlens/outbox';
 
-interface DraftBody {
-  readonly text: string;
-}
+const DID = 'did:plc:owner';
 
-const NOW_ISO = '2026-04-30T10:00:00Z';
-
-function makeRow(overrides: Partial<OutboxRow<DraftBody>> = {}): OutboxRow<DraftBody> {
+function job(over: Partial<PublishJob> = {}): PublishJob {
   return {
-    clientId: 'cid-default',
-    draftBody: { text: 'A draft' },
-    status: 'queued-offline',
-    enqueuedAt: NOW_ISO,
-    ...overrides,
+    jobId: 'j1',
+    ownerDid: DID,
+    rkey: 'rk',
+    recordJSON: '{}',
+    draftJSON: JSON.stringify({ headline: 'A solid review' }),
+    status: 'queued',
+    attempts: 0,
+    lastErrorCode: null,
+    lastErrorMessage: null,
+    nextAttemptAt: null,
+    claimedAt: null,
+    claimExpiresAt: null,
+    threadId: null,
+    draftId: null,
+    publishedUri: null,
+    publishedCid: null,
+    dataScope: 'user',
+    createdAt: 1,
+    updatedAt: 1,
+    ...over,
   };
 }
 
+afterEach(() => setReviewPublishRepository(null));
+
 describe('OutboxScreen — render states', () => {
-  it('renders empty state when rows is empty', () => {
-    const { getByTestId, queryByTestId } = render(<OutboxScreen rows={[]} />);
+  it('empty: friendly empty state, no banner', () => {
+    const { getByTestId, queryByTestId } = render(<OutboxScreen jobs={[]} />);
     expect(getByTestId('outbox-empty')).toBeTruthy();
     expect(queryByTestId('outbox-inflight-banner')).toBeNull();
     expect(queryByTestId('outbox-no-failures')).toBeNull();
   });
 
-  it('renders in-flight banner + "all caught up" when only non-terminal rows exist', () => {
-    const rows: OutboxRow<DraftBody>[] = [
-      makeRow({ clientId: 'a', status: 'queued-offline' }),
-      makeRow({ clientId: 'b', status: 'submitted-pending', submittedAt: NOW_ISO, atUri: 'at://x/y/1' }),
-    ];
-    const { getByTestId, queryByTestId, getByText } = render(
-      <OutboxScreen rows={rows} />,
+  it('in-flight only: banner + all-caught-up, no empty', () => {
+    const { getByTestId, queryByTestId } = render(
+      <OutboxScreen jobs={[job({ jobId: 'a', status: 'queued' }), job({ jobId: 'b', status: 'publishing' })]} />,
     );
     expect(getByTestId('outbox-inflight-banner')).toBeTruthy();
-    expect(getByText(/2 reviews queued/)).toBeTruthy();
     expect(getByTestId('outbox-no-failures')).toBeTruthy();
     expect(queryByTestId('outbox-empty')).toBeNull();
+    expect(getByTestId('outbox-row-queued')).toBeTruthy();
+    expect(getByTestId('outbox-row-publishing')).toBeTruthy();
   });
 
-  it('uses singular "review" when exactly one in-flight row', () => {
-    const rows: OutboxRow<DraftBody>[] = [makeRow({ clientId: 'only-one' })];
-    const { getByText } = render(<OutboxScreen rows={rows} />);
-    expect(getByText(/^1 review queued/)).toBeTruthy();
+  it('failures: renders the failed row with a friendly error + actions', () => {
+    const { getByTestId, getByText } = render(
+      <OutboxScreen jobs={[job({ jobId: 'f1', status: 'failed', lastErrorCode: 'unauthorized' })]} />,
+    );
+    expect(getByTestId('outbox-row-failed')).toBeTruthy();
+    expect(getByText(/credentials|infrastructure|re-onboard/i)).toBeTruthy();
+    expect(getByTestId('outbox-retry-f1')).toBeTruthy();
+    expect(getByTestId('outbox-dismiss-f1')).toBeTruthy();
   });
 
-  it('renders one failure row per terminal-failure row, sorted FIFO', () => {
-    const rows: OutboxRow<DraftBody>[] = [
-      makeRow({
-        clientId: 'older-failure',
-        status: 'rejected',
-        enqueuedAt: '2026-04-30T09:00:00Z',
-        atUri: 'at://x/y/older',
-        submittedAt: '2026-04-30T09:00:01Z',
-        rejection: { reason: 'rate_limit', rejectedAt: '2026-04-30T09:00:05Z' },
-      }),
-      makeRow({
-        clientId: 'newer-failure',
-        status: 'stuck-pending',
-        enqueuedAt: '2026-04-30T10:00:00Z',
-        atUri: 'at://x/y/newer',
-        submittedAt: '2026-04-30T10:00:01Z',
-      }),
-      // Indexed (terminal-success) row should NOT appear.
-      makeRow({
-        clientId: 'indexed',
-        status: 'indexed',
-        atUri: 'at://x/y/idx',
-        submittedAt: '2026-04-30T10:00:00Z',
-        indexedAt: '2026-04-30T10:00:02Z',
-      }),
-    ];
-    const { getAllByTestId, queryByTestId } = render(<OutboxScreen rows={rows} />);
-    const rowEls = getAllByTestId(/^outbox-row-/);
-    expect(rowEls).toHaveLength(2);
-    // FIFO order — older-failure rendered first.
-    expect(rowEls[0]?.props.testID).toBe('outbox-row-older-failure');
-    expect(rowEls[1]?.props.testID).toBe('outbox-row-newer-failure');
-    // Indexed row absent.
-    expect(queryByTestId('outbox-row-indexed')).toBeNull();
-  });
-
-  it('shows the rejection reason text for rejected rows', () => {
-    const rows: OutboxRow<DraftBody>[] = [
-      makeRow({
-        clientId: 'r1',
-        status: 'rejected',
-        atUri: 'at://x/y/r1',
-        submittedAt: NOW_ISO,
-        rejection: { reason: 'rate_limit', rejectedAt: NOW_ISO },
-      }),
-    ];
-    const { getByText } = render(<OutboxScreen rows={rows} />);
-    expect(getByText(/Rate limit exceeded/)).toBeTruthy();
-  });
-
-  it('renders the pds_suspended reason text (TN-OPS-003)', () => {
-    const rows: OutboxRow<DraftBody>[] = [
-      makeRow({
-        clientId: 'r1',
-        status: 'rejected',
-        atUri: 'at://x/y/r1',
-        submittedAt: NOW_ISO,
-        rejection: { reason: 'pds_suspended', rejectedAt: NOW_ISO },
-      }),
-    ];
-    const { getByText } = render(<OutboxScreen rows={rows} />);
-    expect(getByText(/PDS host is suspended by the operator/)).toBeTruthy();
-  });
-
-  it('falls back to a generic "Rejected: <reason>" when reason is unknown', () => {
-    const rows: OutboxRow<DraftBody>[] = [
-      makeRow({
-        clientId: 'r1',
-        status: 'rejected',
-        atUri: 'at://x/y/r1',
-        submittedAt: NOW_ISO,
-        rejection: {
-          // Cast through unknown — the type is a closed union, but the
-          // wire data MAY drift; the screen tolerates and surfaces.
-          reason: 'unrecognised' as unknown as 'rate_limit',
-          rejectedAt: NOW_ISO,
-        },
-      }),
-    ];
-    const { getByText } = render(<OutboxScreen rows={rows} />);
-    expect(getByText(/Rejected: unrecognised/)).toBeTruthy();
-  });
-
-  it('renders draft preview when renderDraftPreview is provided', () => {
-    const rows: OutboxRow<DraftBody>[] = [
-      makeRow({
-        clientId: 'r1',
-        status: 'rejected',
-        atUri: 'at://x/y/r1',
-        submittedAt: NOW_ISO,
-        draftBody: { text: 'My review of the chair' },
-        rejection: { reason: 'rate_limit', rejectedAt: NOW_ISO },
-      }),
-    ];
+  it('shows the draft headline parsed from the job', () => {
     const { getByText } = render(
-      <OutboxScreen rows={rows} renderDraftPreview={(d) => d.text} />,
+      <OutboxScreen jobs={[job({ draftJSON: JSON.stringify({ headline: 'Sturdy + quiet' }) })]} />,
     );
-    expect(getByText('My review of the chair')).toBeTruthy();
+    expect(getByText('Sturdy + quiet')).toBeTruthy();
+  });
+
+  it('publishing rows have no Cancel button (write is on the wire)', () => {
+    const { queryByTestId } = render(
+      <OutboxScreen jobs={[job({ jobId: 'p', status: 'publishing' })]} />,
+    );
+    expect(queryByTestId('outbox-cancel-p')).toBeNull();
   });
 });
 
-describe('OutboxScreen — interactions', () => {
-  it('tapping retry fires onRetry with the row clientId', () => {
-    const onRetry = jest.fn();
-    const rows: OutboxRow<DraftBody>[] = [
-      makeRow({
-        clientId: 'failed-1',
-        status: 'rejected',
-        atUri: 'at://x/y/r1',
-        submittedAt: NOW_ISO,
-        rejection: { reason: 'rate_limit', rejectedAt: NOW_ISO },
-      }),
-    ];
-    const { getByTestId } = render(<OutboxScreen rows={rows} onRetry={onRetry} />);
-    fireEvent.press(getByTestId('outbox-retry-failed-1'));
-    expect(onRetry).toHaveBeenCalledTimes(1);
-    expect(onRetry).toHaveBeenCalledWith('failed-1');
-  });
+describe('OutboxScreen — interactions (drive the repo)', () => {
+  it('Dismiss deletes the failed job', () => {
+    const repo = new InMemoryReviewPublishRepository();
+    setReviewPublishRepository(repo);
+    repo.create({ jobId: 'f1', ownerDid: DID, rkey: 'rk', recordJSON: '{}', draftJSON: '{}', createdAt: 1 });
+    repo.claim('f1', 1, 60_000);
+    repo.fail('f1', { class: 'permanent', code: 'bad_request', message: 'x' }, 2);
 
-  it('tapping dismiss fires onDismiss with the row clientId', () => {
-    const onDismiss = jest.fn();
-    const rows: OutboxRow<DraftBody>[] = [
-      makeRow({
-        clientId: 'failed-1',
-        status: 'rejected',
-        atUri: 'at://x/y/r1',
-        submittedAt: NOW_ISO,
-        rejection: { reason: 'rate_limit', rejectedAt: NOW_ISO },
-      }),
-    ];
     const { getByTestId } = render(
-      <OutboxScreen rows={rows} onDismiss={onDismiss} />,
+      <OutboxScreen jobs={[job({ jobId: 'f1', status: 'failed', lastErrorCode: 'bad_request' })]} />,
     );
-    fireEvent.press(getByTestId('outbox-dismiss-failed-1'));
-    expect(onDismiss).toHaveBeenCalledTimes(1);
-    expect(onDismiss).toHaveBeenCalledWith('failed-1');
+    fireEvent.press(getByTestId('outbox-dismiss-f1'));
+    expect(repo.getById('f1')).toBeNull();
   });
 
-  it('omits retry button when onRetry is not provided', () => {
-    const rows: OutboxRow<DraftBody>[] = [
-      makeRow({
-        clientId: 'failed-1',
-        status: 'rejected',
-        atUri: 'at://x/y/r1',
-        submittedAt: NOW_ISO,
-        rejection: { reason: 'rate_limit', rejectedAt: NOW_ISO },
-      }),
-    ];
-    const { queryByTestId } = render(<OutboxScreen rows={rows} />);
-    expect(queryByTestId('outbox-retry-failed-1')).toBeNull();
-  });
-});
+  it('Cancel deletes a queued job', () => {
+    const repo = new InMemoryReviewPublishRepository();
+    setReviewPublishRepository(repo);
+    repo.create({ jobId: 'q1', ownerDid: DID, rkey: 'rk', recordJSON: '{}', draftJSON: '{}', createdAt: 1 });
 
-describe('OutboxScreen — accessibility (TN-TEST-061 surface)', () => {
-  it('failure row has descriptive accessibilityLabel including status + reason', () => {
-    const rows: OutboxRow<DraftBody>[] = [
-      makeRow({
-        clientId: 'r1',
-        status: 'rejected',
-        atUri: 'at://x/y/r1',
-        submittedAt: NOW_ISO,
-        rejection: { reason: 'rate_limit', rejectedAt: NOW_ISO },
-      }),
-    ];
-    const { getByLabelText } = render(<OutboxScreen rows={rows} />);
-    // Combined label: "Rejected. Rate limit exceeded — try again later"
-    expect(getByLabelText(/Rejected\. Rate limit exceeded/)).toBeTruthy();
+    const { getByTestId } = render(<OutboxScreen jobs={[job({ jobId: 'q1', status: 'queued' })]} />);
+    fireEvent.press(getByTestId('outbox-cancel-q1'));
+    expect(repo.getById('q1')).toBeNull();
   });
 
-  it('retry button has accessibilityLabel="Try again"', () => {
-    const rows: OutboxRow<DraftBody>[] = [
-      makeRow({
-        clientId: 'r1',
-        status: 'rejected',
-        atUri: 'at://x/y/r1',
-        submittedAt: NOW_ISO,
-        rejection: { reason: 'rate_limit', rejectedAt: NOW_ISO },
-      }),
-    ];
-    const { getByLabelText } = render(
-      <OutboxScreen rows={rows} onRetry={() => undefined} />,
+  it('Try again resets a failed job back to queued', async () => {
+    const repo = new InMemoryReviewPublishRepository();
+    setReviewPublishRepository(repo);
+    repo.create({ jobId: 'f1', ownerDid: DID, rkey: 'rk', recordJSON: '{}', draftJSON: '{}', createdAt: 1 });
+    repo.claim('f1', 1, 60_000);
+    repo.fail('f1', { class: 'permanent', code: 'bad_request', message: 'x' }, 2);
+
+    const { getByTestId } = render(
+      <OutboxScreen jobs={[job({ jobId: 'f1', status: 'failed', lastErrorCode: 'bad_request' })]} />,
     );
-    expect(getByLabelText('Try again')).toBeTruthy();
+    fireEvent.press(getByTestId('outbox-retry-f1'));
+    await Promise.resolve(); // retry is async (resets then drains; drain no-ops with a null node)
+    expect(repo.getById('f1')?.status).toBe('queued');
+    expect(repo.getById('f1')?.attempts).toBe(0);
   });
 });

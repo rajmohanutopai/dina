@@ -77,7 +77,7 @@ import {
 } from '../src/notifications/local';
 import { installReminderPushBridge } from '../src/notifications/reminder_push_bridge';
 import { isTrustTabHidden } from '../src/peerlens/flags';
-import { startReviewOutboxAutodrain } from '../src/peerlens/review_outbox_autodrain';
+import { startReviewPublishWorker } from '../src/peerlens/review_publish_autodrain';
 import { bootstrapInferredPreferences } from '../src/services/preferences_bootstrap';
 import {
   subscribeRuntimeWarnings,
@@ -564,15 +564,15 @@ export default function RootLayout() {
     };
   }, [unlocked]);
 
-  // App-global review-outbox autodrain (TN-MOB-007): once the node is up,
-  // retry any reviews queued offline — on boot and on every app foreground —
-  // without requiring the user to open the Outbox screen.
+  // App-global PeerLens publish worker: once the node is up, drain queued
+  // publish jobs — on boot and on every app foreground — without requiring the
+  // user to open the Outbox screen.
   useEffect(() => {
     // Only with a fully-booted node — NOT 'idle' (locked / pre-boot) and not
     // during sign-out / auto-lock teardown, where draining could touch a node
     // being disposed while the vault is locked.
     if (bootState.status !== 'ready') return;
-    return startReviewOutboxAutodrain();
+    return startReviewPublishWorker();
   }, [bootState.status]);
 
   // Viewer-preferences inference (region / languages / devices /

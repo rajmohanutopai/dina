@@ -41,9 +41,11 @@ import { postReminderCard } from '@dina/brain/chat';
 import { listPersonas } from '@dina/core';
 import {
   MemoryService,
+  InMemoryReviewPublishRepository,
   InMemoryServiceConfigRepository,
   InMemoryWorkflowRepository,
   InProcessTransport,
+  SQLiteReviewPublishRepository,
   SQLiteServiceConfigRepository,
   SQLiteWorkflowRepository,
   configureRateLimiter,
@@ -56,6 +58,7 @@ import {
   type CoreRouter,
   type DatabaseAdapter,
   type LocalCapabilityRunner,
+  type ReviewPublishRepository,
   type ServiceConfigRepository,
   type ServiceResponseBody,
   type WorkflowRepository,
@@ -357,12 +360,15 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
   // --- Persistence (issues #6, #7) --------------------------------------
   let workflowRepository: WorkflowRepository;
   let serviceConfigRepository: ServiceConfigRepository;
+  let reviewPublishRepository: ReviewPublishRepository;
   if (inputs.databaseAdapter !== undefined) {
     workflowRepository = new SQLiteWorkflowRepository(inputs.databaseAdapter);
     serviceConfigRepository = new SQLiteServiceConfigRepository(inputs.databaseAdapter);
+    reviewPublishRepository = new SQLiteReviewPublishRepository(inputs.databaseAdapter);
   } else {
     workflowRepository = new InMemoryWorkflowRepository();
     serviceConfigRepository = new InMemoryServiceConfigRepository();
+    reviewPublishRepository = new InMemoryReviewPublishRepository();
     addDegradation(
       'persistence.in_memory',
       'No SQLite adapter supplied — workflow tasks + service config are not durable across restart.',
@@ -569,6 +575,7 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     pdsSessionReachable: inputs.pdsSessionReachable,
     workflowRepository,
     serviceConfigRepository,
+    reviewPublishRepository,
     initialServiceConfig: inputs.initialServiceConfig,
     role: inputs.role ?? 'requester',
     peerPublicKeys: inputs.peerPublicKeys,

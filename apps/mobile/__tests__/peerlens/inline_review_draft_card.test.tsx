@@ -1,19 +1,13 @@
 /**
- * Integration test for the chat-driven review draft → edit → publish
- * flow. Drives the InlineReviewDraftCard with a synthesized lifecycle
- * message, edits the headline, taps Publish, and asserts that
- * `injectAttestation` receives the edited record.
+ * The chat-driven review draft → edit → publish flow, on the durable
+ * publish-job model. The inline card owns only the PRE-submit phase
+ * (drafting/ready/discarded); every post-submit state (queued/publishing/
+ * failed/published) is projected from the durable job via the back-reference.
  *
- * The lifecycle states this test covers:
- *   - `ready` → renders editable inputs + Publish button
- *   - `publishing` → no card-level assertions (fast path: we mock
- *     injectAttestation to resolve immediately, lifecycle flips
- *     directly to `published`)
- *   - `published` → card collapses to a receipt
- *
- * Drafting + failed states are pinned by the unit tests in
- * `review_draft.test.ts` — this file pins the user-visible publish
- * round-trip end-to-end.
+ *   - `ready`      → editable inputs + Publish; tap creates a job + inline attempt
+ *   - `published`  → JobState reads the receipt off the job row
+ *   - `failed`     → JobState reads the error code off the job row
+ *   - `discarded`  → pre-submit terminal (lifecycle-owned)
  */
 
 import { fireEvent, render } from '@testing-library/react-native';
@@ -26,15 +20,15 @@ jest.mock('../../src/peerlens/appview_runtime', () => ({
 }));
 jest.mock('../../src/hooks/useNodeBootstrap', () => ({
   __esModule: true,
-  getBootedNode: jest.fn().mockReturnValue({ did: 'did:plc:test-author' }),
+  // A publisher must be present (non-undefined) or submit returns no_credentials;
+  // the inject path ignores it but the credential gate checks it.
+  getBootedNode: jest.fn().mockReturnValue({ did: 'did:plc:test-author', pdsPublisher: {} }),
 }));
 jest.mock('expo-router', () => ({
   __esModule: true,
   useRouter: () => ({ push: jest.fn() }),
 }));
 
-import * as appview from '../../src/peerlens/appview_runtime';
-import { InlineReviewDraftCard } from '../../src/components/InlineReviewDraftCard';
 import {
   addLifecycleMessage,
   getThread,
@@ -43,39 +37,44 @@ import {
   type ChatMessage,
   type ReviewDraftLifecycle,
 } from '@dina/brain/chat';
+import {
+  InMemoryReviewPublishRepository,
+  getReviewPublishRepository,
+  setReviewPublishRepository,
+} from '@dina/core';
+
+import { InlineReviewDraftCard } from '../../src/components/InlineReviewDraftCard';
+import * as appview from '../../src/peerlens/appview_runtime';
 import { emptyWriteFormState } from '../../src/peerlens/write_form_data';
 
-const injectMock = appview.injectAttestation as jest.MockedFunction<
-  typeof appview.injectAttestation
->;
+const injectMock = appview.injectAttestation as jest.MockedFunction<typeof appview.injectAttestation>;
 
 const THREAD = 'main';
 const DRAFT_ID = 'draft-test-1';
+const DID = 'did:plc:test-author';
 
 beforeEach(() => {
   resetThreads();
   injectMock.mockClear();
+  setReviewPublishRepository(new InMemoryReviewPublishRepository());
 });
 
 afterEach(() => {
   resetThreads();
+  setReviewPublishRepository(null);
 });
 
-function postReadyDraft(extras: Partial<{
-  sentiment: 'positive' | 'neutral' | 'negative';
-  headline: string;
-  body: string;
-  useCases: readonly string[];
-}> = {}): ChatMessage {
+function postReadyDraft(
+  extras: Partial<{
+    sentiment: 'positive' | 'neutral' | 'negative';
+    headline: string;
+    body: string;
+    useCases: readonly string[];
+  }> = {},
+): ChatMessage {
   const values = {
     ...emptyWriteFormState(),
-    subject: {
-      kind: 'product' as const,
-      name: 'Aeron Chair',
-      did: '',
-      uri: '',
-      identifier: '',
-    },
+    subject: { kind: 'product' as const, name: 'Aeron Chair', did: '', uri: '', identifier: '' },
     sentiment: extras.sentiment ?? ('positive' as const),
     headline: extras.headline ?? 'Comfortable for daily work',
     body: extras.body ?? 'I sit in this for 8 hours every day.',
@@ -91,78 +90,84 @@ function postReadyDraft(extras: Partial<{
   return addLifecycleMessage(THREAD, 'Drafted a review of Aeron Chair.', lc);
 }
 
-describe('InlineReviewDraftCard — ready state', () => {
-  it('renders editable sentiment / headline / body + Publish button', () => {
-    const msg = postReadyDraft();
-    const { getByTestId } = render(<InlineReviewDraftCard message={msg} />);
+function requireRepo() {
+  const repo = getReviewPublishRepository();
+  if (repo === null) throw new Error('repo not wired');
+  return repo;
+}
+
+function requireCall() {
+  const first = injectMock.mock.calls[0];
+  if (first === undefined) throw new Error('injectAttestation was not called');
+  return first[0];
+}
+
+/** Seed a durable job for the card's (thread, draft) at a given status. */
+function seedJob(status: 'queued' | 'publishing' | 'published' | 'failed', code = 'unauthorized'): void {
+  const repo = requireRepo();
+  repo.create({
+    jobId: 'j1',
+    ownerDid: DID,
+    rkey: 'rk',
+    recordJSON: '{}',
+    draftJSON: '{}',
+    threadId: THREAD,
+    draftId: DRAFT_ID,
+    createdAt: 1,
+  });
+  if (status === 'queued') return;
+  repo.claim('j1', 1, 60_000);
+  if (status === 'publishing') return;
+  if (status === 'published') repo.complete('j1', 'at://x', 'bafytest', 2);
+  if (status === 'failed')
+    repo.fail('j1', { class: 'permanent', code: code as 'unauthorized', message: 'boom' }, 2);
+}
+
+describe('InlineReviewDraftCard — ready / publish', () => {
+  it('renders editable sentiment / headline / body + Publish', () => {
+    const { getByTestId } = render(<InlineReviewDraftCard message={postReadyDraft()} />);
     expect(getByTestId('review-draft-card-ready')).toBeTruthy();
-    expect(getByTestId('review-draft-headline').props.value).toBe(
-      'Comfortable for daily work',
-    );
-    expect(getByTestId('review-draft-body').props.value).toContain(
-      'I sit in this',
-    );
+    expect(getByTestId('review-draft-headline').props.value).toBe('Comfortable for daily work');
+    expect(getByTestId('review-draft-body').props.value).toContain('I sit in this');
     expect(getByTestId('review-draft-publish')).toBeTruthy();
     expect(getByTestId('review-draft-discard')).toBeTruthy();
     expect(getByTestId('review-draft-edit-in-form')).toBeTruthy();
   });
 
-  it('publish carries the EDITED headline through to injectAttestation', async () => {
-    const msg = postReadyDraft();
-    const { getByTestId } = render(<InlineReviewDraftCard message={msg} />);
-
-    // Edit the headline before publishing.
+  it('publish carries the EDITED headline through to the publish path', async () => {
+    const { getByTestId } = render(<InlineReviewDraftCard message={postReadyDraft()} />);
     fireEvent.changeText(getByTestId('review-draft-headline'), 'Edited headline');
     fireEvent.press(getByTestId('review-draft-publish'));
-
-    // Flush microtasks so the async publish settles.
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
 
     expect(injectMock).toHaveBeenCalledTimes(1);
-    const call = injectMock.mock.calls[0]![0];
-    expect(call.record.subject).toEqual({
-      type: 'product',
-      name: 'Aeron Chair',
-    });
+    const call = requireCall();
+    expect(call.record.subject).toEqual({ type: 'product', name: 'Aeron Chair' });
     expect(call.record.text).toContain('Edited headline');
     expect(call.record.text).toContain('I sit in this');
     expect(call.record.sentiment).toBe('positive');
-    // V2 extras should still flow through — the LLM drafted use_cases.
     expect(call.record.useCases).toEqual(['professional']);
   });
 
-  it('publish flips the lifecycle to "published" with the attestation ref', async () => {
-    const msg = postReadyDraft();
-    const { getByTestId } = render(<InlineReviewDraftCard message={msg} />);
+  it('publish creates a durable job that completes to published', async () => {
+    const { getByTestId } = render(<InlineReviewDraftCard message={postReadyDraft()} />);
     fireEvent.press(getByTestId('review-draft-publish'));
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
 
-    const messages = getThread(THREAD);
-    const card = messages.find((m) => readLifecycle(m)?.kind === 'review_draft')!;
-    const lc = readLifecycle(card) as ReviewDraftLifecycle;
-    expect(lc.status).toBe('published');
-    expect(lc.attestation).toEqual({ uri: 'at://x', cid: 'bafytest' });
+    const job = requireRepo().findLatestForDraft(DID, THREAD, DRAFT_ID);
+    expect(job?.status).toBe('published');
+    expect(job?.publishedUri).toBe('at://x');
+    expect(job?.publishedCid).toBe('bafytest');
   });
 
-  it('publish disabled when sentiment cleared', () => {
-    const msg = postReadyDraft();
-    // Synthesize a draft with NO sentiment so the publish button starts
-    // disabled — equivalent to the LLM omitting sentiment because the
-    // vault content was mixed.
-    resetThreads();
-    const noSentimentValues = {
+  it('publish disabled when sentiment cleared (no job created)', () => {
+    const noSentiment = {
       ...emptyWriteFormState(),
-      subject: {
-        kind: 'product' as const,
-        name: 'Aeron Chair',
-        did: '',
-        uri: '',
-        identifier: '',
-      },
+      subject: { kind: 'product' as const, name: 'Aeron Chair', did: '', uri: '', identifier: '' },
       sentiment: null,
       headline: 'Comfortable',
       body: '',
@@ -171,67 +176,71 @@ describe('InlineReviewDraftCard — ready state', () => {
       kind: 'review_draft',
       status: 'ready',
       draftId: DRAFT_ID,
-      subject: noSentimentValues.subject as unknown as Record<string, unknown>,
-      values: noSentimentValues as unknown as Record<string, unknown>,
+      subject: noSentiment.subject as unknown as Record<string, unknown>,
+      values: noSentiment as unknown as Record<string, unknown>,
     };
-    const newMsg = addLifecycleMessage(THREAD, 'Drafting…', lc);
-    void msg;
-    const { getByTestId } = render(<InlineReviewDraftCard message={newMsg} />);
-    // Pressable mirrors `disabled` either onto props.disabled OR
-    // accessibilityState.disabled depending on RN version. Accept
-    // either — the contract is "tap is a no-op".
+    const { getByTestId } = render(<InlineReviewDraftCard message={addLifecycleMessage(THREAD, 'd', lc)} />);
     const btn = getByTestId('review-draft-publish');
     const isDisabled =
-      btn.props.disabled === true ||
-      btn.props.accessibilityState?.disabled === true;
+      btn.props.disabled === true || btn.props.accessibilityState?.disabled === true;
     expect(isDisabled).toBe(true);
-    // And tapping it must not fire injectAttestation.
     fireEvent.press(btn);
     expect(injectMock).not.toHaveBeenCalled();
+    expect(requireRepo().countActive(DID)).toBe(0);
   });
 
-  it('discard flips the lifecycle to "discarded"', () => {
-    const msg = postReadyDraft();
-    const { getByTestId } = render(<InlineReviewDraftCard message={msg} />);
+  it('discard flips the lifecycle to "discarded" (pre-submit, no job)', () => {
+    const { getByTestId } = render(<InlineReviewDraftCard message={postReadyDraft()} />);
     fireEvent.press(getByTestId('review-draft-discard'));
-    const messages = getThread(THREAD);
-    const card = messages.find((m) => readLifecycle(m)?.kind === 'review_draft')!;
-    const lc = readLifecycle(card) as ReviewDraftLifecycle;
-    expect(lc.status).toBe('discarded');
+    const card = getThread(THREAD).find((m) => readLifecycle(m)?.kind === 'review_draft');
+    if (card === undefined) throw new Error('no review_draft message');
+    expect((readLifecycle(card) as ReviewDraftLifecycle).status).toBe('discarded');
   });
 });
 
-describe('InlineReviewDraftCard — terminal states', () => {
-  it('renders the published receipt', () => {
-    const lc: ReviewDraftLifecycle = {
-      kind: 'review_draft',
-      status: 'published',
-      draftId: DRAFT_ID,
-      subject: { kind: 'product', name: 'Aeron Chair' },
-      values: null,
-      attestation: { uri: 'at://x', cid: 'bafytest' },
-    };
-    const msg = addLifecycleMessage(THREAD, 'Published your review of Aeron Chair.', lc);
-    const { getByTestId } = render(<InlineReviewDraftCard message={msg} />);
-    expect(getByTestId('review-draft-card-published')).toBeTruthy();
+describe('InlineReviewDraftCard — job projection', () => {
+  it('renders the published receipt from a published job', () => {
+    const msg = postReadyDraft();
+    seedJob('published');
+    expect(render(<InlineReviewDraftCard message={msg} />).getByTestId('review-draft-card-published')).toBeTruthy();
   });
 
-  it('renders the failed state with the inferer error', () => {
-    const lc: ReviewDraftLifecycle = {
-      kind: 'review_draft',
-      status: 'failed',
-      draftId: DRAFT_ID,
-      subject: { kind: 'product', name: 'Aeron Chair' },
-      values: null,
-      error: 'Draft inference failed.',
-    };
-    const msg = addLifecycleMessage(THREAD, 'Couldn’t draft.', lc);
+  it('renders the publishing spinner from a publishing job', () => {
+    const msg = postReadyDraft();
+    seedJob('publishing');
+    expect(render(<InlineReviewDraftCard message={msg} />).getByTestId('review-draft-card-publishing')).toBeTruthy();
+  });
+
+  it('renders the queued state with View Outbox + Cancel', () => {
+    const msg = postReadyDraft();
+    seedJob('queued');
+    const { getByTestId } = render(<InlineReviewDraftCard message={msg} />);
+    expect(getByTestId('review-draft-card-queued')).toBeTruthy();
+    expect(getByTestId('review-draft-view-outbox')).toBeTruthy();
+    expect(getByTestId('review-draft-cancel')).toBeTruthy();
+  });
+
+  it('renders the failed state with a friendly error + retry/dismiss', () => {
+    const msg = postReadyDraft();
+    seedJob('failed', 'unauthorized');
     const { getByTestId, getByText } = render(<InlineReviewDraftCard message={msg} />);
     expect(getByTestId('review-draft-card-failed')).toBeTruthy();
-    expect(getByText(/Draft inference failed/)).toBeTruthy();
+    expect(getByText(/credentials|infrastructure|re-onboard/i)).toBeTruthy();
+    expect(getByTestId('review-draft-retry')).toBeTruthy();
+    expect(getByTestId('review-draft-dismiss')).toBeTruthy();
   });
 
-  it('renders the discarded state', () => {
+  it('cancelling a queued job reverts the card to its editable draft', () => {
+    const msg = postReadyDraft();
+    seedJob('queued');
+    const { getByTestId, queryByTestId } = render(<InlineReviewDraftCard message={msg} />);
+    fireEvent.press(getByTestId('review-draft-cancel'));
+    expect(queryByTestId('review-draft-card-queued')).toBeNull();
+    expect(getByTestId('review-draft-card-ready')).toBeTruthy(); // back to editable
+    expect(requireRepo().getById('j1')).toBeNull(); // job deleted
+  });
+
+  it('renders the discarded state (pre-submit terminal)', () => {
     const lc: ReviewDraftLifecycle = {
       kind: 'review_draft',
       status: 'discarded',
@@ -240,7 +249,6 @@ describe('InlineReviewDraftCard — terminal states', () => {
       values: null,
     };
     const msg = addLifecycleMessage(THREAD, 'Discarded.', lc);
-    const { getByTestId } = render(<InlineReviewDraftCard message={msg} />);
-    expect(getByTestId('review-draft-card-discarded')).toBeTruthy();
+    expect(render(<InlineReviewDraftCard message={msg} />).getByTestId('review-draft-card-discarded')).toBeTruthy();
   });
 });

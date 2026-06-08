@@ -180,6 +180,31 @@ export {
 } from './workflow/repository';
 export type { WorkflowRepository } from './workflow/repository';
 export {
+  ALLOWED_TRANSITIONS,
+  canTransition,
+  ACTIVE_STATUSES,
+  OUTBOX_STATUSES,
+  MAX_PUBLISH_QUEUE,
+  MAX_PUBLISH_ATTEMPTS,
+  PUBLISH_CLAIM_LEASE_MS,
+  publishBackoffMs,
+} from './review/publish_job';
+export type {
+  PublishJob,
+  PublishJobStatus,
+  PublishErrorCode,
+  ClassifiedError,
+  NewPublishJob,
+} from './review/publish_job';
+export {
+  SQLiteReviewPublishRepository,
+  InMemoryReviewPublishRepository,
+  setReviewPublishRepository,
+  getReviewPublishRepository,
+  rowToPublishJob,
+} from './review/publish_job_repository';
+export type { ReviewPublishRepository } from './review/publish_job_repository';
+export {
   WorkflowService,
   WorkflowValidationError,
   WorkflowTransitionError,

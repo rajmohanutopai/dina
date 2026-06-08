@@ -736,6 +736,48 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_staging_scope ON staging_inbox(data_scope);
     `,
   },
+  {
+    // PeerLens review publishing as a durable job state machine
+    // (docs/PEERLENS_PUBLISH_JOBS_DESIGN.md). One row == one review's full
+    // publish lifecycle (queued → publishing → published | failed | discarded),
+    // replacing the old KV `peerlens_outbox` row + in-memory mirror split. The
+    // row is the single source of truth; chat card + Outbox screen project from
+    // it. `claimed_at`/`claim_expires_at` are the worker lease that lets a row
+    // whose owner crashed mid-publish be reclaimed (idempotent via the stable
+    // `rkey`). `thread_id`/`draft_id` back-reference the originating inline chat
+    // draft so the card can find its job. `data_scope` is always 'user' (jobs
+    // must survive guided-demo teardown; the worker refuses to drain in demo
+    // scope) — stamped explicitly, NOT via the scope helper.
+    version: 14,
+    name: 'peerlens_publish_jobs',
+    sql: `
+      CREATE TABLE IF NOT EXISTS peerlens_publish_jobs (
+        job_id             TEXT PRIMARY KEY,
+        owner_did          TEXT NOT NULL,
+        rkey               TEXT NOT NULL,
+        record_json        TEXT NOT NULL,
+        draft_json         TEXT NOT NULL,
+        status             TEXT NOT NULL DEFAULT 'queued'
+                             CHECK (status IN ('queued','publishing','published','failed','discarded')),
+        attempts           INTEGER NOT NULL DEFAULT 0,
+        last_error_code    TEXT,
+        last_error_message TEXT,
+        next_attempt_at    INTEGER,
+        claimed_at         INTEGER,
+        claim_expires_at   INTEGER,
+        thread_id          TEXT,
+        draft_id           TEXT,
+        published_uri      TEXT,
+        published_cid      TEXT,
+        data_scope         TEXT NOT NULL DEFAULT 'user',
+        created_at         INTEGER NOT NULL,
+        updated_at         INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_ppj_owner_status ON peerlens_publish_jobs(owner_did, status);
+      CREATE INDEX IF NOT EXISTS idx_ppj_draft        ON peerlens_publish_jobs(thread_id, draft_id);
+      CREATE INDEX IF NOT EXISTS idx_ppj_lease        ON peerlens_publish_jobs(status, claim_expires_at);
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

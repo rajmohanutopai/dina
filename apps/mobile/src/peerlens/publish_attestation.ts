@@ -54,6 +54,21 @@ export class AttestationLexiconError extends Error {
 }
 
 /**
+ * Validate a record against AppView's lexicon (text length is the cap the
+ * mobile form can exceed; other fields are form-validated to match). Returns a
+ * user-relevant error message, or `null` when valid. Pure — the single source
+ * of truth used both by `submitReviewPublish` (reject before creating a job) and
+ * by {@link publishAttestationToPDS} (defence before the write).
+ */
+export function lexiconErrorFor(record: Record<string, unknown>): string | null {
+  const text = record.text;
+  if (typeof text === 'string' && text.length > ATTESTATION_TEXT_MAX_LENGTH) {
+    return `Review text exceeds AppView's ${ATTESTATION_TEXT_MAX_LENGTH}-character limit.`;
+  }
+  return null;
+}
+
+/**
  * Publish a built attestation record to the PDS at `rkey`. `record` is the
  * same body the test-inject path sends; we add the `$type` discriminator
  * AppView's ingester keys on. Each review uses a fresh unique `rkey`, so
@@ -72,14 +87,9 @@ export async function publishAttestationToPDS(
 ): Promise<PublishedAttestation> {
   // Validate the wire body against AppView's lexicon BEFORE writing. A record
   // that passes putRecord but fails ingestion would look "published" yet never
-  // become searchable; text length is the cap the mobile form can exceed (other
-  // fields are form-validated to match the lexicon).
-  const text = record.text;
-  if (typeof text === 'string' && text.length > ATTESTATION_TEXT_MAX_LENGTH) {
-    throw new AttestationLexiconError(
-      `Review text exceeds AppView's ${ATTESTATION_TEXT_MAX_LENGTH}-character limit.`,
-    );
-  }
+  // become searchable.
+  const lex = lexiconErrorFor(record);
+  if (lex !== null) throw new AttestationLexiconError(lex);
   // Pre-write identity check (mirrors ServicePublisher): force a session
   // and confirm the PDS account is THIS node before anything is written.
   const actualDid = await pds.authenticate();

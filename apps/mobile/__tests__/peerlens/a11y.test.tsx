@@ -36,30 +36,27 @@
  * and assert each interactive element clears the bar.
  */
 
-import React from 'react';
 import { render } from '@testing-library/react-native';
+import React from 'react';
 
+import SubjectDetailScreen from '../../app/peerlens/[subjectId]';
+import TrustFeedScreen from '../../app/peerlens/index';
 import NamespaceScreen from '../../app/peerlens/namespace';
 import OutboxScreen from '../../app/peerlens/outbox';
 import ReviewerProfileScreen from '../../app/peerlens/reviewer/[did]';
 import SearchScreen from '../../app/peerlens/search';
-import type { SearchResult } from '../../app/peerlens/search';
-import TrustFeedScreen from '../../app/peerlens/index';
-import type { FeedItem } from '../../app/peerlens/index';
-import SubjectDetailScreen from '../../app/peerlens/[subjectId]';
 import WriteScreen from '../../app/peerlens/write';
 
-import type { SubjectDetailInput } from '../../src/peerlens/subject_detail_data';
-
-import type { OutboxRow } from '../../src/peerlens/outbox';
-import type { PeerlensProfile } from '@dina/core';
-import type { SubjectCardDisplay } from '../../src/peerlens/subject_card';
+import type { FeedItem } from '../../app/peerlens/index';
+import type { SearchResult } from '../../app/peerlens/search';
 import type { FacetBar } from '../../src/peerlens/facets';
+import type { SubjectCardDisplay } from '../../src/peerlens/subject_card';
+import type { SubjectDetailInput } from '../../src/peerlens/subject_detail_data';
+import type { PublishJob , PeerlensProfile } from '@dina/core';
 
 // ─── Test fixtures ────────────────────────────────────────────────────────
 
 const DID = 'did:plc:abcdefghijklmnopqrstuvwx';
-const NOW_ISO = '2026-04-30T10:00:00Z';
 const NOW = 1_700_000_000_000;
 
 const PRIOR_OP = {
@@ -69,15 +66,27 @@ const PRIOR_OP = {
   },
 };
 
-function makeOutboxRow(overrides: Partial<OutboxRow<{ text: string }>> = {}): OutboxRow<{ text: string }> {
+function makeOutboxJob(overrides: Partial<PublishJob> = {}): PublishJob {
   return {
-    clientId: 'cid-default',
-    draftBody: { text: 'A draft' },
-    status: 'rejected',
-    enqueuedAt: NOW_ISO,
-    submittedAt: NOW_ISO,
-    atUri: 'at://x/y/1',
-    rejection: { reason: 'rate_limit', rejectedAt: NOW_ISO },
+    jobId: 'cid-default',
+    ownerDid: 'did:plc:owner',
+    rkey: 'rk',
+    recordJSON: '{}',
+    draftJSON: JSON.stringify({ headline: 'A draft' }),
+    status: 'failed',
+    attempts: 1,
+    lastErrorCode: 'rate_limited',
+    lastErrorMessage: 'x',
+    nextAttemptAt: null,
+    claimedAt: null,
+    claimExpiresAt: null,
+    threadId: null,
+    draftId: null,
+    publishedUri: null,
+    publishedCid: null,
+    dataScope: 'user',
+    createdAt: 1,
+    updatedAt: 1,
     ...overrides,
   };
 }
@@ -151,14 +160,14 @@ interface RenderedElement {
   props: Record<string, unknown>;
 }
 
-function flattenTree(root: { children: ReadonlyArray<unknown> }): RenderedElement[] {
+function flattenTree(root: { children: readonly unknown[] }): RenderedElement[] {
   const out: RenderedElement[] = [];
   walk(root);
   return out;
 
   function walk(node: unknown): void {
     if (node === null || typeof node !== 'object') return;
-    const n = node as { type?: unknown; props?: Record<string, unknown>; children?: ReadonlyArray<unknown> };
+    const n = node as { type?: unknown; props?: Record<string, unknown>; children?: readonly unknown[] };
     if (typeof n.type === 'string' && n.props) {
       out.push({ type: n.type, props: n.props });
     }
@@ -242,10 +251,10 @@ interface ScreenFixture {
    * tap-target invariant skips them. The shorter floor (36pt) is
    * still enforced.
    */
-  inlineAffordancePrefixes?: ReadonlyArray<string>;
+  inlineAffordancePrefixes?: readonly string[];
 }
 
-const SCREENS: ReadonlyArray<ScreenFixture> = [
+const SCREENS: readonly ScreenFixture[] = [
   {
     name: 'NamespaceScreen (loaded)',
     render: () =>
@@ -267,7 +276,7 @@ const SCREENS: ReadonlyArray<ScreenFixture> = [
     render: () =>
       render(
         <OutboxScreen
-          rows={[makeOutboxRow({ clientId: 'r1' })]}
+          jobs={[makeOutboxJob({ jobId: 'r1' })]}
           onRetry={() => undefined}
           onDismiss={() => undefined}
         />,
@@ -277,7 +286,7 @@ const SCREENS: ReadonlyArray<ScreenFixture> = [
   },
   {
     name: 'OutboxScreen (empty)',
-    render: () => render(<OutboxScreen rows={[]} />),
+    render: () => render(<OutboxScreen jobs={[]} />),
   },
   {
     name: 'ReviewerProfileScreen (loaded)',
@@ -409,7 +418,7 @@ describe('a11y — VoiceOver labels (every interactive element has one)', () => 
   for (const fixture of SCREENS) {
     it(`${fixture.name}: every Pressable has a label or visible text`, () => {
       const r = fixture.render();
-      const elements = flattenTree(r.UNSAFE_root as unknown as { children: ReadonlyArray<unknown> });
+      const elements = flattenTree(r.UNSAFE_root as unknown as { children: readonly unknown[] });
       const interactives = elements.filter(isInteractive);
       // Some screens render zero interactives (loading, empty); that's
       // fine — the invariant is "of the ones that render, all have labels".
@@ -424,7 +433,7 @@ describe('a11y — accessibilityRole (every interactive element declares one)', 
   for (const fixture of SCREENS) {
     it(`${fixture.name}: every Pressable declares accessibilityRole`, () => {
       const r = fixture.render();
-      const elements = flattenTree(r.UNSAFE_root as unknown as { children: ReadonlyArray<unknown> });
+      const elements = flattenTree(r.UNSAFE_root as unknown as { children: readonly unknown[] });
       const interactives = elements.filter(isInteractive);
       for (const el of interactives) {
         expect(typeof el.props.accessibilityRole).toBe('string');
@@ -438,7 +447,7 @@ describe('a11y — tap-target sizes (44pt floor for primary CTAs)', () => {
   for (const fixture of SCREENS) {
     it(`${fixture.name}: primary CTAs respect 44pt floor`, () => {
       const r = fixture.render();
-      const elements = flattenTree(r.UNSAFE_root as unknown as { children: ReadonlyArray<unknown> });
+      const elements = flattenTree(r.UNSAFE_root as unknown as { children: readonly unknown[] });
       const interactives = elements.filter(isInteractive);
       const inlinePrefixes = fixture.inlineAffordancePrefixes ?? [];
       for (const el of interactives) {

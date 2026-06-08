@@ -59,6 +59,13 @@ export {
   setServiceConfigRepository,
 } from './src/service/service_config_repository';
 export type { ServiceConfigRepository } from './src/service/service_config_repository';
+export {
+  InMemoryReviewPublishRepository,
+  SQLiteReviewPublishRepository,
+  setReviewPublishRepository,
+  getReviewPublishRepository,
+} from './src/review/publish_job_repository';
+export type { ReviewPublishRepository } from './src/review/publish_job_repository';
 export type { DatabaseAdapter } from './src/storage/db_adapter';
 export { setWSDeliverFn } from './src/transport/delivery';
 export { BridgePendingSweeper } from './src/workflow/bridge_pending_sweeper';

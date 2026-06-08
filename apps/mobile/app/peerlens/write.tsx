@@ -50,17 +50,13 @@ import {
 import { findMessageByDraftId, readLifecycle } from '@dina/brain/chat';
 import { listPersonas, isPersonaOpen } from '@dina/core';
 
-import { getBootedNode } from '../../src/hooks/useNodeBootstrap';
 import { type SubjectRefBody } from '../../src/peerlens/appview_runtime';
+import { describePublishErrorCode } from '../../src/peerlens/classify_publish_error';
 import { SubjectAnchorView } from '../../src/peerlens/components/subject_anchor_view';
 import { deriveEditWarning, type EditWarning } from '../../src/peerlens/edit_flow';
-import {
-  enqueueLocal,
-  type AttestationDraftBody,
-} from '../../src/peerlens/outbox_store';
-import { setReviewDraftStatus } from '../../src/peerlens/review_draft';
-import { publishReview } from '../../src/peerlens/review_publish_service';
+import { type AttestationDraftBody } from '../../src/peerlens/review_draft_body';
 import { useComposeContext } from '../../src/peerlens/runners/use_compose_context';
+import { submitReviewFromUI } from '../../src/peerlens/submit_review_ui';
 import {
   emptyWriteFormState,
   emptyWriteFormStateWithSubject,
@@ -106,16 +102,6 @@ import {
 import { colors, fonts, spacing, radius, textStyles } from '../../src/theme';
 
 import type { Sentiment, Confidence } from '@dina/protocol';
-
-/**
- * Generate a client-side draft id. Crypto-grade randomness isn't
- * required (the outbox enforces uniqueness via `duplicate_client_id`
- * rejection); a timestamp + short random suffix is enough to keep
- * drafts distinct across rapid re-taps.
- */
-function generateClientId(): string {
-  return `draft-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
-}
 
 /**
  * Map the form's per-kind subject inputs into the `SubjectRef` shape
@@ -503,13 +489,6 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
       // non-null assertions are safe under that contract.
       if (formState.sentiment === null || formState.confidence === null) return;
 
-      // Test-publish path: when `EXPO_PUBLIC_DINA_TEST_INJECT_TOKEN`
-      // is bundled, mobile bypasses the local outbox + stub-PDS and
-      // POSTs directly to AppView's test-inject endpoint. Lets us
-      // round-trip create→read→delete end-to-end without standing up
-      // PDS auth. Production publish (real Jetstream pipeline) is
-      // TN-MOB-022 — distinct from this dev shortcut.
-      const node = getBootedNode();
       // Two ways the form has enough context to publish:
       //   A) describe-mode (state.subject set) — user filled the
       //      "What are you reviewing?" fields.
@@ -531,22 +510,17 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
       const subjectKindForCategory: SubjectKind | null =
         formState.subject?.kind ?? paramSubjectKind ?? null;
 
-      // Shared post-publish handling for BOTH the inject shortcut and the
-      // real PDS publish: flip an originating chat-draft card to
-      // `published` and route the user back where they came from.
-      const finishPublished = (attestation: { uri: string; cid: string }): void => {
+      // After a successful submit (published OR queued), the durable JOB is the
+      // source of truth — an originating inline chat card projects its state from
+      // the job. So here we only NAVIGATE; no lifecycle patch, no mirror.
+      const navigateAfterSubmit = (): void => {
         if (
           paramDraftId !== undefined &&
           paramDraftId.length > 0 &&
           paramThreadId !== undefined &&
           paramThreadId.length > 0
         ) {
-          setReviewDraftStatus(paramThreadId, paramDraftId, 'published', {
-            attestation,
-            values: formState,
-            content: `Published your review of ${formState.subject?.name ?? subjectTitle}.`,
-          });
-          router.replace('/');
+          router.replace('/'); // chat-draft origin → back to the chat tab
           return;
         }
         if (router.canGoBack()) router.back();
@@ -561,76 +535,24 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
       const editRkey = paramEditingUri?.split('/').pop();
       const publishRkey = editRkey !== undefined && editRkey.length > 0 ? editRkey : freshRkey;
 
-      // Build the publishable record + draft once (only when the form has a
-      // subject). The publish decision tree — dev test-inject vs real
-      // sovereign PDS publish vs durable offline queue (cap-respecting) —
-      // lives in `review_publish_service`, not in this route file.
-      if (node !== null && subjectRef !== null && subjectKindForCategory !== null) {
-        const record: Record<string, unknown> = {
-          subject: subjectRef,
-          category: categoryFor(subjectKindForCategory),
-          sentiment: formState.sentiment,
-          confidence: formState.confidence,
-          text: composeText(formState.headline, formState.body),
-          tags: formState.body.length > 0 ? [] : undefined,
-          createdAt: new Date().toISOString(),
-          ...serializeFormToV2Extras(formState),
-        };
-        const draft: AttestationDraftBody = {
-          sentiment: formState.sentiment,
-          headline: formState.headline,
-          body: formState.body,
-          confidence: formState.confidence,
-          subjectTitle,
-          subjectId: paramSubjectId,
-        };
-        try {
-          setLocalSubmitting(true);
-          const outcome = await publishReview({
-            did: node.did,
-            pdsPublisher: node.pdsPublisher,
-            rkey: publishRkey,
-            record,
-            draft,
-            threadId: paramThreadId,
-            draftId: paramDraftId,
-          });
-          if (outcome.kind === 'published') {
-            finishPublished(outcome.attestation);
-            return;
-          }
-          if (outcome.kind === 'error') {
-            setLocalError(outcome.message);
-            return;
-          }
-          // queued durably. If this was composed from an inline chat-draft
-          // card, mark that card in-flight ('publishing') so it can't be
-          // re-published into a duplicate while it waits in the outbox — the
-          // drainer flips it to 'published' once it lands.
-          if (
-            paramThreadId !== undefined &&
-            paramThreadId.length > 0 &&
-            paramDraftId !== undefined &&
-            paramDraftId.length > 0
-          ) {
-            setReviewDraftStatus(paramThreadId, paramDraftId, 'publishing', { values: formState });
-            // Chat-draft handoff: as with cancel + publish-success, a plain
-            // back() pops into the PeerLens stack, not the chat tab the user
-            // came from. Send them home to chat where their (now 'publishing')
-            // card lives and will flip to 'published' once the drainer lands.
-            router.replace('/');
-            return;
-          }
-          if (router.canGoBack()) router.back();
-          else router.replace('/peerlens/outbox');
-          return;
-        } finally {
-          setLocalSubmitting(false);
-        }
+      // A publishable review needs a SUBJECT (the thing being reviewed). Without
+      // one we can't build a valid attestation record — surface it rather than
+      // queue an unpublishable draft.
+      if (subjectRef === null || subjectKindForCategory === null) {
+        setLocalError('Pick a subject (product, place, person…) to publish this review.');
+        return;
       }
 
-      // Not buildable (no subject context) — in-memory minimal draft only;
-      // it can't be published without a subject, so it isn't persisted.
+      const record: Record<string, unknown> = {
+        subject: subjectRef,
+        category: categoryFor(subjectKindForCategory),
+        sentiment: formState.sentiment,
+        confidence: formState.confidence,
+        text: composeText(formState.headline, formState.body),
+        tags: formState.body.length > 0 ? [] : undefined,
+        createdAt: new Date().toISOString(),
+        ...serializeFormToV2Extras(formState),
+      };
       const draft: AttestationDraftBody = {
         sentiment: formState.sentiment,
         headline: formState.headline,
@@ -639,17 +561,30 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
         subjectTitle,
         subjectId: paramSubjectId,
       };
-      const result = enqueueLocal(draft, generateClientId());
-      if (!result.ok) {
-        setLocalError(
-          result.reason === 'cap_exceeded'
-            ? 'Your outbox is full. Dismiss some queued reviews and try again.'
-            : "Couldn't queue this review. Please try again.",
-        );
-        return;
+      try {
+        setLocalSubmitting(true);
+        // ONE entrypoint (same as the inline chat card): create the durable job +
+        // run an inline attempt. published + queued both send the user home; the
+        // job carries the rest of the lifecycle.
+        const outcome = await submitReviewFromUI({
+          rkey: publishRkey,
+          record,
+          draft,
+          threadId: paramThreadId,
+          draftId: paramDraftId,
+        });
+        if (outcome.kind === 'published' || outcome.kind === 'queued') {
+          navigateAfterSubmit();
+        } else if (outcome.kind === 'no_credentials') {
+          setLocalError(describePublishErrorCode('no_credentials'));
+        } else if (outcome.kind === 'cap_exceeded') {
+          setLocalError('Your outbox is full. Dismiss some queued reviews and try again.');
+        } else if (outcome.kind === 'error') {
+          setLocalError(outcome.message);
+        }
+      } finally {
+        setLocalSubmitting(false);
       }
-      if (router.canGoBack()) router.back();
-      else router.replace('/peerlens/outbox');
     },
     onCancel = () => {
       // Chat-draft handoff: the form was pushed inside the trust
