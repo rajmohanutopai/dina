@@ -23,11 +23,7 @@ import {
   type CapabilityCandidate,
   type ServiceProfile,
 } from '@dina/brain';
-import {
-  allCanonicalCapabilities,
-  resolveSearchableCapability,
-  isCustomCapability,
-} from '@dina/protocol';
+import { allCanonicalCapabilities, resolveSearchableCapability } from '@dina/protocol';
 
 export interface AppViewStubOptions {
   /** Initial profiles to publish. Use `publish()` to add more at runtime. */
@@ -134,37 +130,33 @@ export class AppViewStub {
 
   /**
    * `searchCapabilities` mirror (Services Layer 4). Like the real
-   * `com.dinakernel.service.searchCapabilities` endpoint, returns the canonical
-   * capabilities that are BOTH in the registry AND covered by at least one
-   * discoverable profile. `intent` is accepted but unused at launch (the
-   * covered set is tiny), matching the real endpoint's launch shortcut.
+   * `com.dinakernel.service.searchCapabilities` endpoint, returns ONLY the
+   * canonical (registry) capabilities covered by ≥1 discoverable profile.
+   *
+   * Custom (provider-owned, namespaced) capabilities are DELIBERATELY EXCLUDED
+   * from generic intent discovery — they must not compete in "what service
+   * answers this?" routing. They stay reachable by EXACT NSID via
+   * `searchServices` / `getByUri`, never via generic routing. This mirrors
+   * production `appview/src/api/xrpc/search-capabilities.ts` (which iterates
+   * `allCanonicalCapabilities()` only). The stub previously also emitted custom
+   * caps here — that was drift from production and taught the wrong architecture
+   * in dev/demo.
+   *
+   * `intent` is accepted but unused at launch (the covered set is tiny),
+   * matching the real endpoint's launch shortcut.
    */
   async searchCapabilities(_params: SearchCapabilitiesParams): Promise<CapabilityCandidate[]> {
     const covered = new Set<string>();
-    // Best human-readable description per CUSTOM capability key, mirroring
-    // production search-capabilities.ts: provider's per-capability schema
-    // description → the service description → (fall back to the raw name).
-    const customDescriptions = new Map<string, string>();
     for (const profile of this.profiles.values()) {
       if (!profile.isDiscoverable) continue;
       for (const raw of profile.capabilities) {
         const canonical = resolveSearchableCapability(raw);
-        if (canonical === null) continue;
-        covered.add(canonical);
-        if (isCustomCapability(canonical) && !customDescriptions.has(canonical)) {
-          const schemaDesc = profile.capabilitySchemas?.[canonical]?.description;
-          const best =
-            typeof schemaDesc === 'string' && schemaDesc.trim() !== ''
-              ? schemaDesc.trim()
-              : typeof profile.description === 'string' && profile.description.trim() !== ''
-                ? profile.description.trim()
-                : undefined;
-          if (best !== undefined) customDescriptions.set(canonical, best);
-        }
+        if (canonical !== null) covered.add(canonical);
       }
     }
+    // Only canonical registry capabilities enter generic discovery. Custom NSIDs
+    // may be present in `covered`, but are never emitted from this endpoint.
     const out: CapabilityCandidate[] = [];
-    // Registry capabilities first (stable registry-defined description/domain).
     for (const entry of allCanonicalCapabilities()) {
       if (covered.has(entry.canonical)) {
         out.push({
@@ -173,16 +165,6 @@ export class AppViewStub {
           domain: entry.domain,
         });
       }
-    }
-    // Then namespaced custom capabilities — production AppView surfaces these
-    // too, so the stub must as well (description falls back to the raw name).
-    for (const name of covered) {
-      if (!isCustomCapability(name)) continue;
-      out.push({
-        canonical: name,
-        description: customDescriptions.get(name) ?? name,
-        domain: 'custom',
-      });
     }
     return out;
   }

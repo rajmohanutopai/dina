@@ -53,10 +53,10 @@ describe('AppViewStub', () => {
 
   // Real AppView drops only FLAT unknown capability names (e.g. `my_custom_cap`
   // with no namespace) — those resolve to null and short-circuit to []. By
-  // contrast, NAMESPACED custom capabilities (`com.acme.widget_price`) ARE
-  // discoverable under the open vocabulary, so the stub mirrors BOTH: it drops
-  // flat unknowns here, and surfaces namespaced customs in the
-  // searchCapabilities tests below.
+  // contrast, NAMESPACED custom capabilities (`com.acme.widget_price`) are
+  // reachable by EXACT NSID via searchServices (the direct-addressing path) — but
+  // are EXCLUDED from generic searchCapabilities routing (see the
+  // searchCapabilities tests below).
   it('searchServices drops an unknown (out-of-registry) capability query', async () => {
     const stub = new AppViewStub({ profiles: [demoServiceProfile()] });
     expect(await stub.searchServices({ capability: 'totally_made_up' })).toEqual([]);
@@ -67,8 +67,8 @@ describe('AppViewStub', () => {
     // capability (those are reverse-DNS, e.g. com.acme.widget_price). It's
     // neither in the registry nor a well-formed namespaced custom, so it
     // resolves to null and the profile is invisible to search. Namespaced
-    // customs, by contrast, ARE discoverable (covered in the searchCapabilities
-    // tests above).
+    // customs, by contrast, are reachable by exact NSID via searchServices
+    // (though excluded from generic searchCapabilities).
     const customProfile = { ...demoServiceProfile(), capabilities: ['my_custom_cap'] };
     const stub = new AppViewStub({ profiles: [customProfile] });
     expect(await stub.searchServices({ capability: 'my_custom_cap' })).toEqual([]);
@@ -94,16 +94,19 @@ describe('AppViewStub', () => {
     expect(isAppViewStub(null)).toBe(false);
   });
 
-  // searchCapabilities parity with production AppView (P2 review): the stub
-  // must surface BOTH registry capabilities AND namespaced custom capabilities
-  // covered by discoverable profiles, matching appview/src/api/xrpc/search-capabilities.ts.
+  // searchCapabilities parity with production AppView: generic intent discovery
+  // returns ONLY canonical (registry) capabilities — custom (namespaced) caps are
+  // DELIBERATELY EXCLUDED (they must not compete in generic routing). This mirrors
+  // appview/src/api/xrpc/search-capabilities.ts, which iterates
+  // allCanonicalCapabilities() only. Custom stays reachable by exact NSID via
+  // searchServices, never here.
   it('searchCapabilities surfaces a covered registry capability', async () => {
     const stub = new AppViewStub({ profiles: [demoServiceProfile()] });
     const caps = await stub.searchCapabilities({ intent: 'bus' });
     expect(caps.map((c) => c.canonical)).toContain('eta_query');
   });
 
-  it('searchCapabilities surfaces a namespaced custom capability (matches production)', async () => {
+  it('searchCapabilities EXCLUDES a namespaced custom capability (matches production)', async () => {
     const customProfile = {
       ...demoServiceProfile(),
       capabilities: ['com.acme.widget_price'],
@@ -112,44 +115,11 @@ describe('AppViewStub', () => {
     };
     const stub = new AppViewStub({ profiles: [customProfile] });
     const caps = await stub.searchCapabilities({ intent: 'widget price' });
-    const custom = caps.find((c) => c.canonical === 'com.acme.widget_price');
-    expect(custom).toBeDefined();
-    expect(custom!.domain).toBe('custom');
-    // No schema description → falls back to the service-level description.
-    expect(custom!.description).toBe('Acme widget pricing');
-  });
-
-  it('searchCapabilities prefers a per-capability schema description for a custom cap', async () => {
-    const customProfile = {
-      ...demoServiceProfile(),
-      capabilities: ['com.acme.widget_price'],
-      description: 'Acme storefront',
-      capabilitySchemas: {
-        'com.acme.widget_price': {
-          params: {},
-          result: {},
-          schemaHash: 'h1',
-          description: 'Check the price of an Acme widget',
-        },
-      },
-    };
-    const stub = new AppViewStub({ profiles: [customProfile] });
-    const caps = await stub.searchCapabilities({ intent: 'price' });
-    const custom = caps.find((c) => c.canonical === 'com.acme.widget_price');
-    expect(custom!.description).toBe('Check the price of an Acme widget');
-  });
-
-  it('searchCapabilities falls back to the raw name when a custom cap has no description', async () => {
-    const customProfile = {
-      ...demoServiceProfile(),
-      capabilities: ['com.acme.widget_price'],
-      description: undefined,
-      capabilitySchemas: undefined,
-    };
-    const stub = new AppViewStub({ profiles: [customProfile] });
-    const caps = await stub.searchCapabilities({ intent: 'x' });
-    const custom = caps.find((c) => c.canonical === 'com.acme.widget_price');
-    expect(custom!.description).toBe('com.acme.widget_price');
+    // Generic intent discovery must NOT surface the custom cap — production
+    // excludes it; the stub had drifted to include it. Reachable only by exact
+    // NSID via searchServices.
+    expect(caps.find((c) => c.canonical === 'com.acme.widget_price')).toBeUndefined();
+    expect(caps.some((c) => c.domain === 'custom')).toBe(false);
   });
 });
 
