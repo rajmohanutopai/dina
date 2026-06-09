@@ -34,7 +34,12 @@ import type {
 } from '../types/catalog';
 
 /** Catalog content version. Bump (date) on every catalog content change. */
-export const CATALOG_VERSION = '2026-06-01';
+// 2026-06-09: added routing-policy fields (intent_routable /
+// requires_verified_provider / requires_subject_authorization) and moved
+// `school_homework_status` to its target default `known_only`
+// (PUBLIC_SERVICES_TAXONOMY.md §3). `introduced_in` stays pinned to the
+// version each capability actually shipped in.
+export const CATALOG_VERSION = '2026-06-09';
 
 // ─── Categories ─────────────────────────────────────────────────────────────
 // `sort_order` follows the spec's mobile ordering (§36) for the subset present.
@@ -151,7 +156,10 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     privacy_class: 'public' as const,
     default_discoverability: 'public' as const,
     approval_policy_hint: 'none' as const,
-    introduced_in: CATALOG_VERSION,
+    intent_routable: true, // public transit info — the canonical generic-discovery case
+    requires_verified_provider: false,
+    requires_subject_authorization: false,
+    introduced_in: '2026-06-01',
     params_schema: ETA_QUERY_PARAMS,
     result_schema: ETA_QUERY_RESULT,
   }),
@@ -167,7 +175,13 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     privacy_class: 'sensitive' as const,
     default_discoverability: 'unlisted' as const,
     approval_policy_hint: 'none' as const,
-    introduced_in: CATALOG_VERSION,
+    // Reads an EXISTING appointment — subject-scoped: the requester already
+    // knows their provider, so discovery goes via provider/profile, never
+    // generic intent (taxonomy: subject auth ⇒ never intent-routable).
+    intent_routable: false,
+    requires_verified_provider: false,
+    requires_subject_authorization: true,
+    introduced_in: '2026-06-01',
     params_schema: APPOINTMENT_STATUS_PARAMS,
     result_schema: APPOINTMENT_STATUS_RESULT,
   }),
@@ -183,7 +197,10 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     privacy_class: 'public' as const,
     default_discoverability: 'public' as const,
     approval_policy_hint: 'none' as const,
-    introduced_in: CATALOG_VERSION,
+    intent_routable: true, // public storefront info
+    requires_verified_provider: false,
+    requires_subject_authorization: false,
+    introduced_in: '2026-06-01',
     params_schema: PRICE_CHECK_PARAMS,
     result_schema: PRICE_CHECK_RESULT,
   }),
@@ -201,7 +218,12 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     privacy_class: 'personal' as const,
     default_discoverability: 'unlisted' as const,
     approval_policy_hint: 'none' as const,
-    introduced_in: CATALOG_VERSION,
+    // PROVIDER-side open slots, not subject data — finding a NEW provider
+    // ("find me ENT appointments") is the core generic-discovery use case.
+    intent_routable: true,
+    requires_verified_provider: false,
+    requires_subject_authorization: false,
+    introduced_in: '2026-06-01',
   }),
   Object.freeze({
     id: 'appointment_book',
@@ -215,7 +237,13 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     privacy_class: 'sensitive' as const,
     default_discoverability: 'unlisted' as const,
     approval_policy_hint: 'always_approval' as const,
-    introduced_in: CATALOG_VERSION,
+    // CREATES a new booking for the requester ("book me a haircut") — a
+    // legitimate generic flow; doesn't READ existing subject data (the
+    // always_approval hint gates the action itself).
+    intent_routable: true,
+    requires_verified_provider: false,
+    requires_subject_authorization: false,
+    introduced_in: '2026-06-01',
   }),
 
   // ── Commerce + logistics (distinct contracts: order vs parcel vs ETA). ──
@@ -231,7 +259,13 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     privacy_class: 'personal' as const,
     default_discoverability: 'public' as const,
     approval_policy_hint: 'none' as const,
-    introduced_in: CATALOG_VERSION,
+    // Reads an EXISTING order (subject-scoped) — the merchant is already known
+    // from purchase context; "where's my order" routes via that provider, not
+    // generic discovery.
+    intent_routable: false,
+    requires_verified_provider: false,
+    requires_subject_authorization: true,
+    introduced_in: '2026-06-01',
   }),
   Object.freeze({
     id: 'package_tracking',
@@ -245,7 +279,13 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     privacy_class: 'personal' as const,
     default_discoverability: 'public' as const,
     approval_policy_hint: 'none' as const,
-    introduced_in: CATALOG_VERSION,
+    // Tracking-NUMBER-scoped (possession of the number is the lookup key —
+    // industry norm), not identity-scoped; "track 1Z…" → find the carrier is a
+    // real generic flow.
+    intent_routable: true,
+    requires_verified_provider: false,
+    requires_subject_authorization: false,
+    introduced_in: '2026-06-01',
   }),
   Object.freeze({
     id: 'delivery_eta',
@@ -259,7 +299,12 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     privacy_class: 'personal' as const,
     default_discoverability: 'public' as const,
     approval_policy_hint: 'none' as const,
-    introduced_in: CATALOG_VERSION,
+    // YOUR active delivery (subject-scoped) — the courier is known from the
+    // order; routes via that provider, not generic discovery.
+    intent_routable: false,
+    requires_verified_provider: false,
+    requires_subject_authorization: true,
+    introduced_in: '2026-06-01',
   }),
 
   // ── Developer/ops (official common contracts, but private by default). ──
@@ -275,7 +320,13 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     privacy_class: 'sensitive' as const,
     default_discoverability: 'known_only' as const,
     approval_policy_hint: 'none' as const,
-    introduced_in: CATALOG_VERSION,
+    // PUBLIC status pages are a real discovery case ("is X down?") — routable
+    // when a provider deliberately publishes one; the known_only default keeps
+    // internal ops listings out of search unless explicitly flipped.
+    intent_routable: true,
+    requires_verified_provider: false,
+    requires_subject_authorization: false,
+    introduced_in: '2026-06-01',
   }),
   Object.freeze({
     id: 'deploy_status',
@@ -289,7 +340,12 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     privacy_class: 'sensitive' as const,
     default_discoverability: 'known_only' as const,
     approval_policy_hint: 'none' as const,
-    introduced_in: CATALOG_VERSION,
+    // Internal ops vocabulary — nobody generic-searches "any deploy status";
+    // reached via the known provider (your own pipeline).
+    intent_routable: false,
+    requires_verified_provider: false,
+    requires_subject_authorization: false,
+    introduced_in: '2026-06-01',
   }),
 
   // ── School (sensitive — child data). ──
@@ -303,9 +359,16 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     lifecycle: 'beta' as const,
     action_class: 'read' as const,
     privacy_class: 'sensitive' as const,
-    default_discoverability: 'unlisted' as const,
+    // Target default per PUBLIC_SERVICES_TAXONOMY §3 (was `unlisted`): student
+    // data is subject-scoped child data — approved-only by default.
+    default_discoverability: 'known_only' as const,
     approval_policy_hint: 'none' as const,
-    introduced_in: CATALOG_VERSION,
+    // The taxonomy's canonical "official but NEVER generic-routable" example:
+    // reads a child's data; the school is already known to the family.
+    intent_routable: false,
+    requires_verified_provider: false,
+    requires_subject_authorization: true,
+    introduced_in: '2026-06-01',
   }),
 
   // ── Local services (quote action). ──
@@ -321,7 +384,12 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     privacy_class: 'personal' as const,
     default_discoverability: 'public' as const,
     approval_policy_hint: 'confirm_before_send' as const,
-    introduced_in: CATALOG_VERSION,
+    // "Find me a plumber quote" — finding NEW providers is the use case;
+    // submits a fresh request, reads no existing subject data.
+    intent_routable: true,
+    requires_verified_provider: false,
+    requires_subject_authorization: false,
+    introduced_in: '2026-06-01',
   }),
 
   // ── Home/IoT (private home-node, known-only by default). ──
@@ -337,7 +405,12 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     privacy_class: 'personal' as const,
     default_discoverability: 'known_only' as const,
     approval_policy_hint: 'none' as const,
-    introduced_in: CATALOG_VERSION,
+    // Your own home devices — subject-scoped personal-node data; never a
+    // generic-discovery target.
+    intent_routable: false,
+    requires_verified_provider: false,
+    requires_subject_authorization: true,
+    introduced_in: '2026-06-01',
   }),
 ]);
 
@@ -366,7 +439,10 @@ const ACTION_REQUIRES_APPROVAL: ReadonlySet<string> = new Set([
  *    one canonical, like the resolver's `buildAliasMap`); aliases are flat;
  *  - every `category_ids` / `default_category_id` references a real category,
  *    and `default_category_id` (if set) is within `category_ids`;
- *  - write/booking/payment/agentic capabilities carry a non-`none` approval hint.
+ *  - write/booking/payment/agentic capabilities carry a non-`none` approval hint;
+ *  - a subject-scoped capability (`requires_subject_authorization`) is never
+ *    `intent_routable` (PUBLIC_SERVICES_TAXONOMY §3: generic search must never
+ *    imply access to a subject's data).
  */
 export function validateCatalogIntegrity(
   categories: readonly CatalogCategory[],
@@ -430,6 +506,33 @@ export function validateCatalogIntegrity(
     if (ACTION_REQUIRES_APPROVAL.has(cap.action_class) && cap.approval_policy_hint === 'none') {
       throw new Error(
         `capability-catalog: ${cap.action_class} capability "${cap.id}" must carry a non-"none" approval_policy_hint.`,
+      );
+    }
+    if (cap.requires_subject_authorization && cap.intent_routable) {
+      throw new Error(
+        `capability-catalog: capability "${cap.id}" is subject-scoped (requires_subject_authorization) and must not be intent_routable — generic search must never imply access to a subject's data.`,
+      );
+    }
+    // A sensitive/regulated capability that the public-exposure predicate
+    // forbids on public listings must not DEFAULT to public — otherwise the
+    // catalog default steers every new listing straight into a guaranteed
+    // `public_sensitive_capability` publish error.
+    const publicExposureAllowed =
+      (cap.privacy_class !== 'sensitive' && cap.privacy_class !== 'regulated') ||
+      (cap.intent_routable && !cap.requires_subject_authorization);
+    if (!publicExposureAllowed && cap.default_discoverability === 'public') {
+      throw new Error(
+        `capability-catalog: ${cap.privacy_class} capability "${cap.id}" fails the public-exposure predicate but defaults to "public" — its default_discoverability must be unlisted or known_only.`,
+      );
+    }
+    // Verified-provider routing infra does not exist yet (taxonomy guardrail
+    // #8): a capability that REQUIRES a verified provider must not enter
+    // generic routing, or it would be routed to unverified providers. Relax
+    // this only when generic routing can filter to verified providers
+    // (taxonomy §6 Stage B).
+    if (cap.requires_verified_provider && cap.intent_routable) {
+      throw new Error(
+        `capability-catalog: capability "${cap.id}" requires a verified provider and cannot be intent_routable until verified-provider routing exists (taxonomy §6 Stage B).`,
       );
     }
   }

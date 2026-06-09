@@ -43,9 +43,19 @@ interface FetchedCatalogShape {
 
 /**
  * Choose the catalog to use: the fetched (live) catalog when it is structurally
- * valid and non-empty, else the bundled fallback. Never returns an empty
- * catalog — a malformed/empty AppView response degrades to bundled rather than
- * leaving the picker with nothing (§2: fallback is treated as fallback only).
+ * valid, non-empty, AND policy-complete, else the bundled fallback. Never
+ * returns an empty catalog — a malformed/empty AppView response degrades to
+ * bundled rather than leaving the picker with nothing (§2: fallback is treated
+ * as fallback only).
+ *
+ * Policy-completeness gate (PUBLIC_SERVICES_TAXONOMY §3): a STALE AppView
+ * snapshot (pre-2026-06-09) lacks the routing-policy fields and still carries
+ * the old defaults (e.g. school_homework_status → `unlisted` instead of
+ * `known_only`). "Live wins" over a NEWER bundled catalog would silently
+ * revert the shipped safety defaults and feed `undefined` into any policy
+ * read — so a live catalog whose capabilities are missing `intent_routable` /
+ * `requires_subject_authorization` is treated as stale and degraded to
+ * bundled, exactly like a malformed payload.
  */
 export function resolveCatalog(fetched: FetchedCatalogShape | null | undefined): CatalogData {
   if (
@@ -54,7 +64,15 @@ export function resolveCatalog(fetched: FetchedCatalogShape | null | undefined):
     Array.isArray(fetched.categories) &&
     fetched.categories.length > 0 &&
     Array.isArray(fetched.capabilities) &&
-    fetched.capabilities.length > 0
+    fetched.capabilities.length > 0 &&
+    fetched.capabilities.every(
+      (cap) =>
+        typeof cap === 'object' &&
+        cap !== null &&
+        typeof (cap as { intent_routable?: unknown }).intent_routable === 'boolean' &&
+        typeof (cap as { requires_subject_authorization?: unknown })
+          .requires_subject_authorization === 'boolean',
+    )
   ) {
     return {
       categories: fetched.categories as CatalogCategory[],

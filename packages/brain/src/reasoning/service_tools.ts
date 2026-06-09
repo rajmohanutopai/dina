@@ -18,7 +18,7 @@ import type { AgentTool } from './tool_registry';
 import type { AppViewClient, ServiceProfile } from '../appview_client/http';
 import type { ServiceQueryOrchestrator } from '../service/service_query_orchestrator';
 import type { Contact, ServiceOfferView } from '@dina/core';
-import { resolveCanonicalCapability } from '@dina/protocol';
+import { getCapabilityEntry, resolveCanonicalCapability } from '@dina/protocol';
 import { autofillRequesterFields, type RequesterAutofillSchema } from './requester_autofill';
 import { defaultFetch } from '../runtime/fetch';
 
@@ -182,20 +182,27 @@ export interface SearchCapabilitiesToolOptions {
  * Factory — returns the `search_capabilities` AgentTool. This is the
  * FIRST tool the LLM calls for a public-service question
  * (SERVICES_LAUNCH_ARCHITECTURE.md Part 1, Layer 4). It takes the user's
- * intent verbatim and returns the canonical capabilities that BOTH exist
- * in the registry AND currently have a provider — so the model selects a
- * real, serviceable capability instead of inventing a string.
+ * intent verbatim and returns the canonical capabilities that exist in the
+ * registry, are flagged `intentRoutable` (PUBLIC_SERVICES_TAXONOMY §3), AND
+ * currently have a provider — so the model selects a real, serviceable
+ * capability instead of inventing a string.
  *
  * - One match → the model proceeds to `search_provider_services(canonical)`
  *   → `query_service`.
  * - No match → the model returns the honest empty-state ("No Dina service
  *   for that yet") WITHOUT inventing a capability or searching blind.
+ *
+ * DEFENSE IN DEPTH: the result is re-filtered locally against the bundled
+ * registry — only canonical, intent-routable capabilities pass. The Home
+ * Node must not outsource its routing-safety gate to whatever AppView it
+ * happens to be pointed at (a stale or third-party AppView could otherwise
+ * reopen the subject-scoped-capability leak this gate closes).
  */
 export function createSearchCapabilitiesTool(options: SearchCapabilitiesToolOptions): AgentTool {
   return {
     name: 'search_capabilities',
     description:
-      'Discover which kinds of public service Dina can answer for a given intent. Call this FIRST for a public-service question ("when does the bus arrive", "is my appointment confirmed"). Pass the user\'s intent verbatim. Returns canonical capability names + descriptions for every service that has a provider. IMPORTANT: the returned list is NOT filtered or ranked by your intent — it is the full set of available services. Read each `description` and pick ONLY the capability that genuinely matches the user\'s intent, then pass that one to search_provider_services. If NONE of the returned descriptions matches the intent (or the list is empty), tell the user there is no Dina service for that yet — do NOT pick an unrelated capability and do NOT invent one.',
+      'Discover which kinds of GENERICALLY-DISCOVERABLE public service Dina can answer for a given intent. Call this FIRST for a find-me-a-provider question ("when does the bus arrive", "find me a dentist appointment"). Pass the user\'s intent verbatim. Returns canonical capability names + descriptions for every generically-discoverable service that has a provider. NOTE: some official capabilities are DELIBERATELY never returned here because they read a specific person\'s data (appointment/order/delivery status, homework, device status) — those route via the user\'s KNOWN provider instead: use find_preferred_provider for "my appointment / my order / my delivery" questions. Read each `description` and pick ONLY the capability that genuinely matches the user\'s intent, then pass that one to search_provider_services. If NONE of the returned descriptions matches the intent (or the list is empty), try find_preferred_provider before telling the user there is no Dina service for that yet — do NOT pick an unrelated capability and do NOT invent one.',
     parameters: {
       type: 'object',
       properties: {
@@ -218,7 +225,15 @@ export function createSearchCapabilitiesTool(options: SearchCapabilitiesToolOpti
         lat: typeof args.lat === 'number' ? args.lat : undefined,
         lng: typeof args.lng === 'number' ? args.lng : undefined,
       });
-      return { capabilities };
+      // Defense in depth: trust no remote AppView with the routing gate. Keep
+      // only entries the LOCAL registry knows AND marks intent-routable; drop
+      // custom/unknown NSIDs and subject-scoped officials a stale or hostile
+      // AppView might return.
+      const safe = capabilities.filter((c) => {
+        const entry = getCapabilityEntry(c.canonical);
+        return entry !== null && entry.intentRoutable;
+      });
+      return { capabilities: safe };
     },
   };
 }

@@ -875,5 +875,308 @@ explicitly asks Claude to <b>validate before implementing</b> (§43, §10) and t
 <div class="item iter"><span class="tag iter">Deep review (per fix)</span> (1) <b>Correct way?</b> P1 is the precise scope fix — the published-receipt idempotency only ever made sense for the chat back-reference path (full-form published rows are pruned, so a rkey-found published row is ALWAYS a retained chat receipt that an edit must replace). P2 makes the persist outcome-independent (the lifecycle should always mirror the user's latest form edits for a chat-draft origin). P3 restores the discard terminal the other card states already have. (2) <b>Smells?</b> None; each mirrors an existing pattern. (3) <b>Tests?</b> One per fix; the P1 test specifically distinguishes re-publish (PDS called) from a silent receipt.</div>
 <div class="item iter"><span class="tag iter">Result</span> Core review <b>45 green</b>; full peerlens <b>66 suites / 1584 green</b> (+3); tsc 0 (core + mobile); lint delta 0 (source files at 0 errors; write.tsx unchanged at its pre-existing baseline). Uncommitted in the working tree.</div>
 
+<h2 id="taxonomy">PUBLIC_SERVICES_TAXONOMY implementation (2026-06-09 →)</h2>
+<p class="meta">Spec: <code>docs/PUBLIC_SERVICES_TAXONOMY.md</code> — implementing the enforcement machinery it
+mandates: the three routing-policy fields, the sensitive-public validator rule, the <code>searchCapabilities</code>
+<code>intent_routable</code> filter (+ mobile stub parity), the mobile save-path gate, and guardrail tests #1–#9.</p>
+
+<h3>Item 1 — protocol policy fields (<code>intent_routable</code> / <code>requires_verified_provider</code> / <code>requires_subject_authorization</code>)</h3>
+
+<div class="item decision"><span class="tag decision">decision</span> <b>Fields are REQUIRED on
+<code>CapabilityDefinition</code>, not optional.</b> Forces an explicit authoring decision per capability
+(fail-loud at compile time), and no runtime consumer parses a remote catalog through this type with validation
+(mobile <code>catalog_source</code> casts opaquely), so stale AppView snapshots can't be rejected by the new
+shape.</div>
+
+<div class="item decision"><span class="tag decision">decision</span> <b>Registry mirror carries ONLY
+<code>intentRoutable</code>.</b> The byte-identical shared module (appview ⇄ protocol, drift-gate-tested) is what
+AppView's generic search can actually read. It gets the one flag search enforcement needs; the other two stay
+catalog-only (verified-provider has no enforcement infra yet; subject-auth is a Core/ingress concern, not a search
+one). Catalog⇄registry agreement asserted by the extended §79 gate.</div>
+
+<div class="item decision"><span class="tag decision">decision</span> <b>The routing matrix (spec ambiguity: Stage
+B's literal criteria vs the doc's own ENT example).</b> Stage B says routable ⇒ <code>privacy_class: public</code>,
+but the doc itself routes <code>appointment_availability</code> (privacy <code>personal</code>) for "find me ENT
+appointments". Resolution implemented: <b>subject-scoped ⇒ never routable</b> (catalog integrity invariant,
+fail-loud); for non-subject-scoped caps, routable = "is finding a NEW provider the actual use case". Routable:
+<code>eta_query</code>, <code>price_check</code>, <code>appointment_availability</code>,
+<code>appointment_book</code> (creates new, reads nothing), <code>package_tracking</code>
+(tracking-number-scoped), <code>service_health_status</code> (public status pages), <code>service_quote</code>.
+Not routable: <code>appointment_status</code>, <code>order_status</code>, <code>delivery_eta</code>,
+<code>school_homework_status</code>, <code>device_status</code> (all subject-scoped,
+<code>requires_subject_authorization: true</code>) + <code>deploy_status</code> (internal-ops vocabulary;
+subject-auth false).</div>
+
+<div class="item deviation"><span class="tag deviation">deviation</span> <b>Only
+<code>school_homework_status</code>'s default flipped (<code>unlisted</code> → <code>known_only</code>).</b> The
+doc's §4 table implies more per-family targets, but those rows are labelled "target"; restrictive-direction flips
+are safe and §3 names only the school one explicitly. Side effect: a new mobile listing adding the school cap now
+auto-seeds <code>known_only</code> (<code>defaultDiscoverabilityForCapabilities</code>). Other migrations = open
+question below.</div>
+
+<div class="item deviation"><span class="tag deviation">deviation</span> <b><code>introduced_in</code> pinned to
+literal <code>'2026-06-01'</code></b> (was the <code>CATALOG_VERSION</code> constant) — bumping the version to
+<code>2026-06-09</code> must not rewrite when capabilities were introduced.</div>
+
+<div class="item tradeoff"><span class="tag tradeoff">tradeoff</span> <b><code>appointment_book</code>:
+<code>sensitive</code> + routable.</b> (a) not routable — but "book me a haircut" is a legitimate generic flow and
+the doc treats booking as discoverable in Food&amp;Dining; (b) routable (chosen) — <code>always_approval</code>
+gates the action itself, and booking CREATES rather than READS subject data. It's deliberately the one
+sensitive+routable cap the upcoming validator §7 exception (<code>intent_routable &&
+!requires_subject_authorization</code>) permits publicly.</div>
+
+<div class="item question"><span class="tag question">question</span> <b>Confirm the routing matrix</b> — esp.
+<code>deploy_status</code> (not routable) vs <code>service_health_status</code> (routable), and
+<code>appointment_book</code> routable. Each is a one-line catalog flip if you disagree.</div>
+
+<div class="item question"><span class="tag question">question</span> <b>Other default-discoverability targets</b>
+(doc §4 per-family targets, e.g. Travel reservation/check-in) — migrate now or on demand? I held off beyond the
+school flip.</div>
+
+<div class="item iter"><span class="tag iter">iter</span> <b>Iteration 1:</b> fields added
+(<code>types/catalog.ts</code>), 13 caps populated with per-cap rationale comments, integrity rule
+<code>subject_auth ⇒ !intent_routable</code> (throws at module load), registry +<code>intentRoutable</code> synced
+via <code>cp</code> (drift gate green), §79 parity extended to the new flag + NEW reverse-inclusion check (catalog
+⊆ registry — previously a catalog cap could be pickable in mobile yet absent from AppView's registry). Tests:
+protocol <b>497/497</b>, appview registry/search/seed <b>47/47</b>, workspace typecheck <b>0 errors</b>. Ops note:
+deployed test-appview serves a SEEDED snapshot — re-run <code>appview/scripts/seed_catalog.ts</code> to serve the
+new fields/version.</div>
+
+<p class="meta"><b>Autonomy note:</b> user asleep from item 2 onward — decisions below taken on my own judgement
+per instruction, recorded here for analysis.</p>
+
+<h3>Item 2 — validator: <code>public_sensitive_capability</code> (guardrail #7)</h3>
+<div class="item decision"><span class="tag decision">decision</span> Rule lives in
+<code>validateServiceListing</code> (the ONE validator Core + mobile share), inside the official-capability branch,
+keyed on the <b>resolved canonical</b> (alias spellings can't bypass — tested). Includes
+<code>regulated</code> alongside <code>sensitive</code> (blocking sensitive but allowing the stricter class would
+be absurd). Exception is exactly guardrail #7's wording: public allowed iff <code>intent_routable &&
+!requires_subject_authorization</code> — which today permits exactly <code>appointment_book</code> (deliberate)
+and <code>service_health_status</code> (public status pages).</div>
+<div class="item iter"><span class="tag iter">iter</span> Blast-radius checked first: no existing flow publishes a
+sensitive cap publicly (Dr Carl demo profile is stub-only — never passes the validator; the bus demo is
+<code>eta_query</code>). 7 new tests (3 reject, alias-bypass, 2 explicit-allow, non-public unaffected). Protocol
+<b>504/504</b>, Core service suites <b>530/530</b>.</div>
+
+<h3>Item 3 — <code>searchCapabilities</code> intentRoutable gate (guardrails #2/#3) + stub parity (#6)</h3>
+<div class="item decision"><span class="tag decision">decision</span> One boolean AND in the canonical loop on BOTH
+production (<code>appview/src/api/xrpc/search-capabilities.ts</code>) and the mobile stub — composes with (does not
+replace) the custom-exclusion and coverage gates. Contract doc-comments updated to the 3-condition output (in
+registry AND intentRoutable AND covered). Behaviour change: <code>appointment_status</code>,
+<code>order_status</code>, <code>delivery_eta</code>, <code>device_status</code>, <code>deploy_status</code>,
+<code>school_homework_status</code> no longer appear in generic discovery even when covered.</div>
+<div class="item tradeoff"><span class="tag tradeoff">tradeoff</span> Two appview tests that used
+<code>appointment_status</code> as their multi-domain/ranking fixture switched to
+<code>appointment_availability</code> (same domain, routable) — test semantics preserved, and the old fixture's
+new behaviour is itself ASSERTED by a dedicated exclusion test.</div>
+<div class="item iter"><span class="tag iter">iter</span> Checked the Dr Carl in-app demo would not break: the
+profile exists only in stub fixtures/tests; brain ask-tests mock the AppView client;
+<code>find_preferred_provider</code> is the provider-known path the taxonomy prescribes. Tests: appview unit
+<b>1901/1901</b>, stub <b>14/14</b>, mobile services <b>27 suites / 317</b> (after locking the school-flip into
+<code>catalog_source.test</code> rather than masking it), brain <b>3249 passed</b>.</div>
+<div class="item question"><span class="tag question">question</span> <b>Pre-existing brain failures (NOT mine —
+verified by stash-bisect against clean HEAD + dist rebuild):</b>
+<code>__tests__/integration/approve_event_to_delegation.test.ts</code> (payload shape: one extra field vs
+expectation) and <code>__tests__/resilience/degradation.test.ts</code> (1 case). Both fail identically without my
+changes. Left untouched; flagged for the THOROUGH_TEST report.</div>
+
+<h3>Item 4 — mobile save-path gate (enforcement point 2)</h3>
+<div class="item decision"><span class="tag decision">decision</span> Presentation-only over the validator verdict
+(no rule duplication in mobile): a dedicated alert for <code>public_sensitive_capability</code> mirroring the
+existing public-custom pattern, with one-tap "Make Unlisted" / "Make Private" fixes. Verified LIVE on the iOS sim
+via Maestro: explicitly pick Public → add <code>appointment_status</code> → Save blocks with the alert → Make
+Unlisted → Save succeeds. (Because of auto-default seeding you only hit the gate by EXPLICITLY choosing Public —
+exactly the override path the doc warns about.)</div>
+<div class="item iter"><span class="tag iter">iter</span> tsc 0, eslint 0. The live check created an unlisted
+"Carl Clinic" listing in the dev app's local state; left in place (harmless; visible in my-listings during
+THOROUGH_TEST).</div>
+
+<h3>Ultracode verification round (25-agent adversarial workflow) — 15 confirmed findings, 8 critic gaps, 5 refuted</h3>
+
+<div class="item iter"><span class="tag iter">iter</span> Ran a 4-reviewer (protocol/appview/brain+core/mobile) ×
+2-skeptic-per-finding × completeness-critic workflow (~1.57M tokens). Triage below was done autonomously (user
+asleep). <b>FIXED in this round:</b> PROTO-1/AV-2/PSV-005 (one root), AV-1, PROTO-3, PROTO-5, F1+PSV-006, F2's
+validator half, PSV-002, MOB-1's hydrate half, MOB-5, AV-5, PROTO-4, PSV-007's pin. <b>RECORDED (not fixed) with
+rationale:</b> PSV-001, PSV-003/004, MOB-2/3/4, F3 — see below.</div>
+
+<div class="item decision"><span class="tag decision">decision</span> <b>Ingester trust-boundary gate (PROTO-1 /
+AV-2 / PSV-005).</b> The validator runs only in cooperating clients — a publisher writing the AT record straight
+to its PDS bypassed it entirely. Fixed at the boundary: registry (both byte-identical copies) gained
+<code>privacyClass</code> + <code>requiresSubjectAuthorization</code> mirrors + a shared
+<code>isPublicExposureAllowed()</code> predicate; the service-profile ingester now DROPS a sensitive/regulated
+official capability from a PUBLIC row (same pattern as the category anti-spoof drop), metered as
+<code>service.capability.public_sensitive_dropped</code>. Unlisted rows keep their caps (resolve-by-uri only);
+custom caps pass (no registry privacy class; exact-NSID-only reachable anyway).</div>
+
+<div class="item decision"><span class="tag decision">decision</span> <b><code>isDiscoverable</code> derived from
+the enum (AV-1).</b> The ingester stored the publisher-controlled boolean verbatim; a record claiming
+<code>{discoverability:'unlisted', isDiscoverable:true}</code> leaked into public search + coverage. Now
+<code>disc !== undefined ? disc === 'public' : record.isDiscoverable</code> (legacy records keep the boolean).
+Enum wins BOTH directions — tested.</div>
+
+<div class="item decision"><span class="tag decision">decision</span> <b>New validator rule
+<code>subject_auth_needs_review</code> (F2's cheap half).</b> order_status/delivery_eta are subject-scoped but
+privacy `personal` — the public_sensitive rule didn't cover them, and D2D ingress admits any possessor with
+stranger-chosen params (order ids). Now an official subject-scoped capability on a public/unlisted listing must
+use responsePolicy 'review' (mirrors write_needs_approval — a human sees every stranger-supplied subject
+identifier); known_only stays exempt (grant-gated per grantee). The full ingress-grant gate remains the documented
+known gap — now PINNED by a core bypass test (PSV-007) that documents allow-by-possession as a decision and fails
+loudly the day the gate is wired.</div>
+
+<div class="item decision"><span class="tag decision">decision</span> <b>Brain defense-in-depth re-filter
+(PSV-006) + honest prompts (F1).</b> <code>search_capabilities</code> now drops candidates the LOCAL registry
+doesn't mark intent-routable (stale/third-party AppView can't reopen the leak). The tool description + the
+PROVIDER_SERVICES_ROUTING_BLOCK were rewritten: "is my appointment confirmed" moved from Path 2 (where it now
+deterministically dead-ended!) to Path 1 (find_preferred_provider); subject-scoped caps documented as
+intentionally absent from generic discovery; the no-service answer requires BOTH paths to fail; fall-through works
+both ways.</div>
+
+<div class="item decision"><span class="tag decision">decision</span> <b>Mobile stale-catalog gate (PSV-002,
+critic P1).</b> <code>resolveCatalog</code> "live wins" had no field validation, so the still-stale deployed
+AppView snapshot (pre-2026-06-09) would silently revert the school known_only default on every device. A live
+catalog whose capabilities lack <code>intent_routable</code>/<code>requires_subject_authorization</code> is now
+treated as stale → bundled wins. All-or-nothing per payload.</div>
+
+<div class="item decision"><span class="tag decision">decision</span> <b>Other fixes:</b> PROTO-3 — two new
+fail-loud catalog integrity rules (sensitive-failing-predicate must not DEFAULT public; requires_verified_provider
++ intent_routable throws until verified-provider routing exists). PROTO-5 — §79 parity now pins
+<code>description</code>/<code>domain</code> (the LLM's routing signals) to catalog
+short_description/default_category_id; 5 registry descriptions aligned. MOB-1 — hydrate's category backfill
+resolves ALIAS keys via <code>resolveCatalogCapability</code> so alias-keyed configs don't dead-end on
+missing_category. MOB-5 — the stub now applies production's byte-identical intent-ranking (tokenize/overlapScore) +
+ordering test. AV-5 — coverage query's isDiscoverable/tombstonedAt filters pinned. PROTO-4 — taxonomy §6 Stage B
+reworded to the implemented predicate (privacy_class:public NOT required; rationale spelled out).</div>
+
+<div class="item question"><span class="tag question">question</span> <b>RECORDED, deliberately not fixed:</b>
+(1) <b>PSV-001 (P1, ops)</b> — the DEPLOYED test/prod AppView still runs pre-filter code AND serves the
+pre-2026-06-09 catalog snapshot. Required: <code>deploy_shared_infra.sh update test</code>, then
+<code>npm run emit:catalog -w @dina/protocol</code> + re-run <code>appview/scripts/seed_catalog.ts</code> against
+the env DB, then curl-verify catalog_version + an empty school-intent searchCapabilities. NOT run autonomously —
+deploys bounce MsgBox (memory: provider Cores + daemons need restarts) and that's not a sleeping-user decision.
+Mobile is protected meanwhile by the PSV-002 gate + brain re-filter. (2) <b>PSV-003/004, MOB-3, F3</b> —
+grandfathered/pre-rule-data scenarios: greenfield per user's earlier confirmation (no existing installs, no
+migration path), so republish/import re-validation is hardening backlog, not a live hole. (3) <b>MOB-2/MOB-4</b> —
+alias display rendering + picker early-signal: P3 UX polish backlog. (4) Public-custom-needs-schema is also
+client-side-only at the ingester — same lane as PROTO-1 but lower stakes (custom is exact-NSID-only); backlog.</div>
+
+<div class="item iter"><span class="tag iter">iter</span> <b>Post-fix result:</b> protocol <b>511/511</b>, appview
+unit <b>90 files / 1911</b>, brain <b>3254 passed</b> (only the 2 verified-pre-existing failures; degradation is
+order-dependent flaky — passes in isolation), core service/routes/d2d/transport <b>714/714</b> (full-core
+single-run HUNG at 0% CPU on an unrelated suite — pre-existing infra hazard, killed; my core delta is one test
+file, fully covered by the dirs run), mobile services <b>320/320</b>, workspace tsc <b>0</b>. Maestro
+listing_editor_taxonomy re-ran green (34 steps) post-fixes.</div>
+
+<h3>THOROUGH_TEST (whole-app Maestro sweep — report-only)</h3>
+<div class="item iter"><span class="tag iter">iter</span> Full report:
+<code>docs/THOROUGH_TEST_REPORT_2026-06-10.md</code>. Headlines: taxonomy surfaces all green (new committed flow
+<code>maestro/services/listing_editor_taxonomy.yaml</code>, 34 steps ×2); remember/persona/durability green;
+<b>P1 (environmental — stash-bisected against clean HEAD): the ASK lane is hard-down with "problem reaching the
+AI provider" — suspect per-model provider quota exhausted by tonight's automated LLM load</b>; <b>P1/P2: dated
+remembers store but create NO reminders, and the drain failure is silent to the user</b> (re-test once the
+provider recovers — likely the same root); P2: raw expo-router "Unmatched Route"+Sitemap screen is user-reachable
+via bad deep links; plus 6 Maestro-infra findings (bare launchApp → dev-client picker; chat-menu Modal not
+Maestro-drivable — product verified fine via idb; hierarchy staleness after pressKey Enter; self-matching text
+assertions = false positives). Per instruction, NOTHING from the report was fixed.</div>
+
+<h3>Post-goal (user-requested): key-health pill on Settings — "is the money gone?"</h3>
+<div class="item decision"><span class="tag decision">decision</span> <b>Root cause of the THOROUGH_TEST P1
+confirmed by direct API probe:</b> the Gemini dev key returns <b>HTTP 429 RESOURCE_EXHAUSTED — "Your prepayment
+credits are depleted"</b> on all four models (key itself valid; project credits gone). The existing
+<code>verifyKey</code> can NEVER see this — it probes the free model-LIST endpoint, which 200s while every billed
+<code>generateContent</code> 429s. New module <code>src/ai/key_health.ts</code>: a MINIMAL GENERATION probe
+(1 max output token against the provider's lite tier, all 4 providers) classified into
+<code>ok / credits_exhausted / invalid_key / unreachable</code> — money checked first (429+phrases, 402),
+plain rate-limits deliberately classed <code>unreachable</code> so a transient burst can't scare the user about
+billing. 5-min TTL cache + in-flight coalescing + subscription (runtime_warnings shape).</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>Problem-only pill (Silence First):</b>
+<code>KeyHealthPill</code> renders ONLY for <code>credits_exhausted</code> ("Credits exhausted", card icon) /
+<code>invalid_key</code> ("Key not working", key icon); healthy/unreachable show nothing. Tap → alert with the
+provider's own message + "Re-check now". Mounted on BOTH surfaces: the Settings active-provider card and the
+/ai-providers ACTIVE tile (probe gated to the active provider — cost discipline, ~1 token when healthy).</div>
+<div class="item iter"><span class="tag iter">iter</span> Tests: <code>__tests__/ai/key_health.test.ts</code>
+10/10 (classification incl. the live Gemini-depleted body verbatim, OpenAI insufficient_quota, OpenRouter 402,
+invalid-key variants, transient 429/5xx/network; TTL + force + coalescing — one test initially hung on a
+text()-level gate that resolved before being awaited; regated at the fetch level). tsc 0; new-file lint 0;
+eslint --fix also cleaned the two screens' PRE-EXISTING import-order baseline (settings 14→1, ai-providers 10→0).
+<b>Verified LIVE against the genuinely exhausted key:</b> pill visible on Settings + /ai-providers, tap shows
+Gemini's verbatim "prepayment credits are depleted" message, Close/Re-check work
+(<code>shot_keypill_settings/alert/providers.png</code>).</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>Asymmetric TTL (user-reported
+stickiness):</b> after topping up, the user revisited Settings within the 5-min cache window and the pill was
+still there. Fixed: the 5-min TTL now applies only to <code>ok</code> verdicts; ERROR verdicts expire after 15s
+(re-probing a failing key is free — the provider refuses it; the one probe after recovery costs a token and
+clears the pill). Pinned by a Date.now-mocked test (error expires at 16s → re-probe heals to ok → ok then holds
+the long TTL). <b>Full live cycle verified:</b> exhausted→pill shown→top-up→revisit→pill GONE
+(<code>shot_pill_cleared.png</code>). Bonus: with credits restored, both THOROUGH_TEST P1s closed as
+credits-only — ask answers ("Hello!") and the dated-remember probe produced BOTH §13.2 reminders
+(<code>shot_ask_recovered.png</code>, <code>shot_rp2_card.png</code>); report updated.</div>
+
+<h3>Post-goal (user-requested): chat → key-health bridge ("the bubble should say credits exhausted")</h3>
+<div class="item decision"><span class="tag decision">decision</span> <b>Why the bubble was generic during the
+incident:</b> brain's <code>provider_error_classify</code> had no patterns for Gemini's prepaid wording
+(<code>RESOURCE_EXHAUSTED</code> / "prepayment credits are depleted"), so the loop fell through to the generic
+apology. Upgraded the classifier to a STRUCTURED kind model
+(<code>credits_exhausted / rate_limited / invalid_key / timeout / network</code>) with the credits family checked
+BEFORE the generic 429 match (waiting won't refill a balance), kind→template map, and
+<code>providerErrorMessageForKind</code>. The kind now rides
+<code>AgenticLoopResult.providerErrorKind</code> → <code>AskFailure.detail.providerErrorKind</code> →
+<code>coordinator_ask_handler</code>.</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>Double-classification bug found by the
+new test:</b> the loop converts the raw error into a TEMPLATE, and the coordinator's humaniser then re-classified
+the TEMPLATE text — whose wording doesn't match the raw-error patterns — regressing the credits message back to
+the generic apology. Fix: <code>formatFailure</code> prefers the structured kind when present and maps it straight
+to the template; re-classification only as fallback for legacy persisted error_json.</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>The bridge:</b> new optional
+<code>onProviderFailure({kind, message})</code> on <code>createCoordinatorAskHandler</code>, fired (best-effort,
+exceptions swallowed) at BOTH failure sites (fast-path + async/deferred), gated to
+<code>failureKind === 'provider_error'</code> so denial/cancel text is never classified. Mobile bootstrap wires it:
+<code>credits_exhausted | invalid_key</code> → <code>reportKeyHealthIncident(activeProvider, kind, message)</code>
+— the Settings pill is lit the MOMENT chat hits the wall, and the 15s error TTL re-verifies on the next Settings
+visit. Transient kinds (rate-limit/timeout/network) deliberately do NOT touch the pill.</div>
+<div class="item iter"><span class="tag iter">iter</span> Tests: new
+<code>provider_error_classify.test.ts</code> (kinds incl. the verbatim live incident message; credits-beats-429
+ordering; template not generic), coordinator integration (scripted provider throwing the live Gemini error →
+bubble says "credits are exhausted" + callback fires once; unclassified crash → no callback), mobile
+<code>reportKeyHealthIncident</code> (pill lit + subscriber notified + error-TTL re-probe clears). Brain
+<b>3264 passed</b> (same 2 pre-existing fails), mobile key_health <b>12/12</b>, workspace tsc <b>0</b>, lint
+delta <b>0</b>. Live-trigger verification impossible right now (credits are healthy again) — the integration test
+carries the verbatim incident payload instead. Lite brain-server: callback left unset (no pill UI), but its
+bubbles get the better templates automatically.</div>
+
+<h3>Post-goal (user-requested): live Maestro demo with a corrupted key — and the @google/genai wrapper discovery</h3>
+<div class="item decision"><span class="tag decision">decision</span> <b>Demo method:</b> corrupted the dev key's
+tail in <code>.env</code> (kept prefix/length), restarted Metro (same <code>expo start --no-dev -c --port
+8081</code>), drove the full flow with Maestro. First run FAILED → led to the real discovery:
+<b>@google/genai's retry wrapper DISCARDS the vendor error body.</b> What reaches the agentic loop is only the
+HTTP statusText: 400/401/403 → <code>"Non-retryable exception Bad Request|Unauthorized|Forbidden sending
+request"</code> (AbortError, verified by reproducing in Node with the SDK + corrupted key); 429 → <code>"Retryable
+HTTP Error: Too Many Requests"</code> after retries exhaust. This RETROACTIVELY explains the original incident:
+even a perfect phrase-classifier could never have seen "prepayment credits are depleted" — the wrapper ate it.</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>Classifier taught the wrapper shapes:</b>
+"Non-retryable exception Bad Request/Unauthorized/Forbidden" → <code>invalid_key</code> (our chat request shape is
+fixed + contract-tested, so a 400 on this path is in practice a bad key — Gemini rejects keys with 400
+INVALID_ARGUMENT); "Too Many Requests" → <code>rate_limited</code> with the template HEDGED toward credits ("rate
+limit — or your account may be out of credits… check your balance") since the wrapper makes 429-rate-limit vs
+429-credits indistinguishable. The SETTINGS probe (raw fetch, full body) still resolves that ambiguity precisely —
+the two layers complement. Alternative considered + rejected for now: replacing the SDK's retryOptions with an
+adapter-level retry that preserves bodies (touches the iOS connection-lost rationale; backlog).</div>
+<div class="item iter"><span class="tag iter">iter</span> <b>Maestro demo end-to-end green</b>
+(<code>shot_keydemo_bubble/pill/alert.png</code>): corrupted key → /ask → bubble "Your API key was rejected.
+Update it in Settings → Manage AI providers." (the same frame shows the OLD generic bubble at 4:36 vs the
+classified one at 4:45) → Settings shows red "Key not working" pill (key preview even reads AIza…XXXX) → tap →
+detail alert. <b>Recovery verified:</b> .env restored + Metro restarted → ask answers again, pill GONE
+(<code>shot_rec_clean.png</code>). Tests: classifier 26/26 incl. the verbatim wrapper strings. No stray state:
+.env byte-restored, backup removed, Metro running on the real key.</div>
+
+<h3>Item 5 — guardrail tests #1–#9</h3>
+<div class="item decision"><span class="tag decision">decision</span> Tally: #1 custom excluded (both sides) ✅; #2
+intentRoutable filter ✅; #3 school never in generic search (both sides) ✅; #4 bare family ids
+(<code>status_lookup</code> + 6 more) assert <code>kind: 'unknown'</code> → validator-rejected, i.e. "conceptual
+until tuple routing" ✅; #5 exact-NSID custom search binds into the index + NEW "routing ≠ reachability" case (a
+non-routable official cap is still exact-searchable) ✅; #6 parity = registry drift gate + mirrored behavioural
+cases ✅; #7 validator ✅; <b>#8 SKIPPED — provider/place/domain/DID verification infra does not exist; nothing to
+test against (it remains the documented known gap)</b>; #9 unlisted (exact-URI resolves / search excludes /
+invocation-follows-policy via <code>isListingPublic</code> + Core ingress) already covered by existing tests ✅.</div>
+
 </body>
 </html>

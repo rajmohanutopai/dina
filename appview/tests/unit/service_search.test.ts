@@ -214,6 +214,34 @@ describe('serviceSearch — capability canonicalization (Layer 3)', () => {
     // The early return short-circuits before binding the capability.
     expect(allBoundStrings(cap)).not.toContain('["plumbing"]')
   })
+
+  it('a namespaced CUSTOM capability searches by exact NSID (taxonomy guardrail #5)', async () => {
+    // Custom capabilities are excluded from generic searchCapabilities, but the
+    // direct-addressing path stays open: an exact-NSID service.search query
+    // binds the normalized custom key into the index query (custom is its own
+    // canonical — no alias folding, no drop).
+    const { db, cap } = stubDb([])
+    await serviceSearch(db, {
+      capability: '  COM.Acme.Widget_Price ', // normalizes to the NSID
+      radiusKm: 5,
+      limit: 10,
+    })
+    expect(allBoundStrings(cap)).toContain('["com.acme.widget_price"]')
+  })
+
+  it('a NON-intent-routable official capability still searches by exact name (routing ≠ reachability)', async () => {
+    // school_homework_status never enters generic searchCapabilities, but a
+    // caller that already KNOWS the capability (provider/profile context) can
+    // still search providers for it explicitly — the intentRoutable gate
+    // constrains generic discovery only, not direct addressing.
+    const { db, cap } = stubDb([])
+    await serviceSearch(db, {
+      capability: 'school_homework_status',
+      radiusKm: 5,
+      limit: 10,
+    })
+    expect(allBoundStrings(cap)).toContain('["school_homework_status"]')
+  })
 })
 
 describe('serviceSearch — response shape', () => {

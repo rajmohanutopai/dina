@@ -45,6 +45,45 @@ export interface CanonicalCapability {
   readonly description: string
   /** Domain grouping for discovery + marketing. */
   readonly domain: string
+  /**
+   * MIRRORS the catalog capability's `intent_routable` (the §79 gate asserts
+   * parity). Generic intent discovery (`searchCapabilities`) surfaces ONLY
+   * entries with `intentRoutable: true` — an official capability can be a
+   * shared contract yet stay OUT of the generic LLM routing vocabulary
+   * forever (subject-scoped reads like `school_homework_status`: the provider
+   * is already known, so discovery goes via provider/profile, never generic
+   * search — PUBLIC_SERVICES_TAXONOMY §3). Lives here because AppView cannot
+   * import the catalog.
+   */
+  readonly intentRoutable: boolean
+  /**
+   * MIRRORS the catalog capability's `privacy_class` (§79 parity). AppView's
+   * INGESTER needs it to enforce the public-sensitive rule at the trust
+   * boundary: a publisher writing the AT record directly to its PDS bypasses
+   * the listing validator entirely, so the ingest path must be able to drop a
+   * sensitive/regulated capability from a public row (same pattern as the
+   * category anti-spoof drop).
+   */
+  readonly privacyClass: 'public' | 'personal' | 'sensitive' | 'regulated'
+  /**
+   * MIRRORS the catalog capability's `requires_subject_authorization` (§79
+   * parity). Subject-scoped capabilities read data ABOUT someone (a student's
+   * homework, a customer's order) — combined with `privacyClass` this is the
+   * ingest-side public-exposure predicate.
+   */
+  readonly requiresSubjectAuthorization: boolean
+}
+
+/**
+ * The ingest-side public-exposure predicate (PUBLIC_SERVICES_TAXONOMY §3 /
+ * guardrail #7), shared so AppView's ingester and any other registry consumer
+ * apply EXACTLY the rule the listing validator applies catalog-side: a
+ * sensitive/regulated official capability may sit on a PUBLIC listing only
+ * when it is intent-routable AND not subject-scoped.
+ */
+export function isPublicExposureAllowed(entry: CanonicalCapability): boolean {
+  if (entry.privacyClass !== 'sensitive' && entry.privacyClass !== 'regulated') return true
+  return entry.intentRoutable && !entry.requiresSubjectAuthorization
 }
 
 /**
@@ -72,22 +111,31 @@ export const CAPABILITY_REGISTRY: readonly CanonicalCapability[] = Object.freeze
     canonical: 'eta_query',
     aliases: Object.freeze(['transit_eta', 'bus_eta', 'arrival_time', 'next_bus']),
     categoryIds: Object.freeze(['transit']),
-    description: 'Estimated arrival time for a public transit route at a stop.',
+    description: 'Estimated arrival time for a transit route at a stop.',
     domain: 'transit',
+    intentRoutable: true,
+    privacyClass: 'public',
+    requiresSubjectAuthorization: false,
   }),
   Object.freeze({
     canonical: 'appointment_status',
     aliases: Object.freeze(['appointment_query', 'appt_status', 'booking_status']),
     categoryIds: Object.freeze(['appointments', 'healthcare']),
-    description: 'Check the status or next availability of an appointment with a provider.',
+    description: 'Check the status or next availability of an appointment.',
     domain: 'appointments',
+    intentRoutable: false, // subject-scoped: reads YOUR existing appointment
+    privacyClass: 'sensitive',
+    requiresSubjectAuthorization: true,
   }),
   Object.freeze({
     canonical: 'price_check',
     aliases: Object.freeze(['price_lookup', 'stock_price', 'product_price', 'availability_check']),
     categoryIds: Object.freeze(['commerce']),
-    description: 'Check the current price and stock availability of a product at a store.',
+    description: 'Current price and stock availability of a product at a store.',
     domain: 'commerce',
+    intentRoutable: true,
+    privacyClass: 'public',
+    requiresSubjectAuthorization: false,
   }),
   // ── Catalog-mirrored official capabilities (§79 gate keeps aliases +
   // categoryIds in sync with capability-catalog.ts). These are pickable in the
@@ -96,8 +144,11 @@ export const CAPABILITY_REGISTRY: readonly CanonicalCapability[] = Object.freeze
     canonical: 'appointment_availability',
     aliases: Object.freeze(['appointment_slots', 'appt_availability']),
     categoryIds: Object.freeze(['appointments', 'healthcare', 'professional', 'home_local']),
-    description: 'Available appointment/consultation slots for a provider.',
+    description: 'Available appointment/consultation slots.',
     domain: 'appointments',
+    intentRoutable: true, // provider-side open slots — the "find me a provider" case
+    privacyClass: 'personal',
+    requiresSubjectAuthorization: false,
   }),
   Object.freeze({
     canonical: 'appointment_book',
@@ -105,6 +156,9 @@ export const CAPABILITY_REGISTRY: readonly CanonicalCapability[] = Object.freeze
     categoryIds: Object.freeze(['appointments', 'healthcare']),
     description: 'Book an appointment slot. Requires explicit approval.',
     domain: 'appointments',
+    intentRoutable: true, // creates a NEW booking; reads no existing subject data
+    privacyClass: 'sensitive',
+    requiresSubjectAuthorization: false,
   }),
   Object.freeze({
     canonical: 'order_status',
@@ -112,6 +166,9 @@ export const CAPABILITY_REGISTRY: readonly CanonicalCapability[] = Object.freeze
     categoryIds: Object.freeze(['commerce']),
     description: 'Status of an existing merchant order.',
     domain: 'commerce',
+    intentRoutable: false, // subject-scoped: YOUR order at a known merchant
+    privacyClass: 'personal',
+    requiresSubjectAuthorization: true,
   }),
   Object.freeze({
     canonical: 'package_tracking',
@@ -119,13 +176,19 @@ export const CAPABILITY_REGISTRY: readonly CanonicalCapability[] = Object.freeze
     categoryIds: Object.freeze(['logistics']),
     description: 'Track a shipment/parcel by tracking number.',
     domain: 'logistics',
+    intentRoutable: true, // tracking-number-scoped; "track 1Z…" → find the carrier
+    privacyClass: 'personal',
+    requiresSubjectAuthorization: false,
   }),
   Object.freeze({
     canonical: 'delivery_eta',
     aliases: Object.freeze(['delivery_time']),
     categoryIds: Object.freeze(['logistics']),
-    description: 'Estimated arrival time for an active delivery.',
+    description: 'ETA for an active delivery.',
     domain: 'logistics',
+    intentRoutable: false, // subject-scoped: YOUR active delivery, courier known
+    privacyClass: 'personal',
+    requiresSubjectAuthorization: true,
   }),
   Object.freeze({
     canonical: 'service_health_status',
@@ -133,6 +196,9 @@ export const CAPABILITY_REGISTRY: readonly CanonicalCapability[] = Object.freeze
     categoryIds: Object.freeze(['developer_ops']),
     description: 'Health of an API/service/system.',
     domain: 'developer_ops',
+    intentRoutable: true, // public status pages: "is X down?"
+    privacyClass: 'sensitive',
+    requiresSubjectAuthorization: false,
   }),
   Object.freeze({
     canonical: 'deploy_status',
@@ -140,6 +206,9 @@ export const CAPABILITY_REGISTRY: readonly CanonicalCapability[] = Object.freeze
     categoryIds: Object.freeze(['developer_ops']),
     description: 'Status of a deployment.',
     domain: 'developer_ops',
+    intentRoutable: false, // internal ops; reached via the known provider
+    privacyClass: 'sensitive',
+    requiresSubjectAuthorization: false,
   }),
   Object.freeze({
     canonical: 'school_homework_status',
@@ -147,6 +216,9 @@ export const CAPABILITY_REGISTRY: readonly CanonicalCapability[] = Object.freeze
     categoryIds: Object.freeze(['school']),
     description: 'Homework/assignments for a student.',
     domain: 'school',
+    intentRoutable: false, // subject-scoped child data — NEVER generic-routable
+    privacyClass: 'sensitive',
+    requiresSubjectAuthorization: true,
   }),
   Object.freeze({
     canonical: 'service_quote',
@@ -154,6 +226,9 @@ export const CAPABILITY_REGISTRY: readonly CanonicalCapability[] = Object.freeze
     categoryIds: Object.freeze(['home_local']),
     description: 'Quote for a requested repair/service job.',
     domain: 'home_local',
+    intentRoutable: true, // "find me a plumber quote" — new-provider discovery
+    privacyClass: 'personal',
+    requiresSubjectAuthorization: false,
   }),
   Object.freeze({
     canonical: 'device_status',
@@ -161,6 +236,9 @@ export const CAPABILITY_REGISTRY: readonly CanonicalCapability[] = Object.freeze
     categoryIds: Object.freeze(['home_iot']),
     description: 'Status of a device/sensor on a personal node.',
     domain: 'home_iot',
+    intentRoutable: false, // your own home devices — never a discovery target
+    privacyClass: 'personal',
+    requiresSubjectAuthorization: true,
   }),
 ])
 

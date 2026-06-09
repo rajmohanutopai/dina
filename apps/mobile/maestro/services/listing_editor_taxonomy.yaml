@@ -1,0 +1,63 @@
+# Service listing editor — taxonomy enforcement sweep (PUBLIC_SERVICES_TAXONOMY).
+#
+# Covers, in one pass over /service-settings (CREATE mode):
+#   1. Visibility picker: 4 tiers incl. the DISABLED "Provider-specific"
+#      (greyed + "Coming soon" pill; tap → popup, selection unchanged).
+#   2. Capability sheet under PUBLIC: catalog-only (custom box ABSENT).
+#   3. Capability sheet under UNLISTED: custom box PRESENT.
+#   4. Sensitive-public gate: Public + appointment_status → save blocked with
+#      "Too sensitive for a Public listing" → one-tap "Make Unlisted" → saves.
+#
+# Pre-req: dev-client launched into Metro (launchApp with stopApp:false after
+# a deep-link reset), onboarded app.
+appId: com.dinakernel.mobile
+---
+- launchApp: { stopApp: false }
+- tapOn: { id: 'tab-network' }
+- tapOn: { id: 'tab-network' }
+- tapOn: { id: 'network-services-publish' }
+- extendedWaitUntil: { visible: { text: 'New listing' }, timeout: 8000 }
+- tapOn: { text: 'New listing' }
+
+# ── 1. Visibility tiers ──────────────────────────────────────────────
+# (The "Coming soon" pill text is inside the row Pressable's accessibility
+#  label, so it isn't independently matchable — the popup below proves the
+#  disabled behavior.)
+- scrollUntilVisible: { element: { id: 'service-settings-discoverability-provider_specific' }, direction: DOWN, timeout: 8000 }
+- tapOn: { id: 'service-settings-discoverability-provider_specific' }
+- extendedWaitUntil: { visible: { text: 'Coming soon' }, timeout: 4000 }
+- tapOn: { text: 'OK' }
+- assertVisible: { id: 'service-settings-discoverability-unlisted' }
+- assertVisible: { id: 'service-settings-discoverability-known_only' }
+
+# ── 2. Public → catalog-only capability sheet ────────────────────────
+- tapOn: { id: 'service-settings-discoverability-public' }
+- scrollUntilVisible: { element: { id: 'service-settings-name-input' }, direction: DOWN, timeout: 8000 }
+- tapOn: { id: 'service-settings-name-input' }
+- inputText: 'Taxonomy Sweep'
+- tapOn: { text: 'IDENTITY' }
+- scrollUntilVisible: { element: { id: 'service-settings-add-capability' }, direction: DOWN, timeout: 10000 }
+- tapOn: { id: 'service-settings-add-capability' }
+- tapOn: { text: 'Appointments and Bookings' }
+- scrollUntilVisible: { element: { id: 'service-settings-add-modal-cancel' }, direction: DOWN, timeout: 6000 }
+- assertNotVisible: { id: 'service-settings-custom-capability-input' }
+
+# ── 3. + sensitive-public gate (pick appointment_status while Public) ─
+- scrollUntilVisible: { element: { id: 'picker-capability-appointment_status' }, direction: UP, timeout: 6000 }
+- tapOn: { id: 'picker-capability-appointment_status' }
+- tapOn: { id: 'service-settings-save' }
+- extendedWaitUntil: { visible: { text: 'Too sensitive for a Public listing' }, timeout: 6000 }
+- tapOn: { text: 'Make Unlisted' }
+
+# ── 4. Unlisted → custom box present ─────────────────────────────────
+- scrollUntilVisible: { element: { id: 'service-settings-add-capability' }, direction: DOWN, timeout: 10000 }
+- tapOn: { id: 'service-settings-add-capability' }
+- tapOn: { text: 'Commerce and Retail' }
+- scrollUntilVisible: { element: { id: 'service-settings-custom-capability-input' }, direction: DOWN, timeout: 6000 }
+- assertVisible: { id: 'service-settings-custom-capability-input' }
+- tapOn: { id: 'service-settings-add-modal-cancel' }
+
+# ── 5. Unlisted save passes the gate ─────────────────────────────────
+- tapOn: { id: 'service-settings-save' }
+- extendedWaitUntil: { visible: { text: 'Saved' }, timeout: 8000 }
+- tapOn: { text: 'OK' }

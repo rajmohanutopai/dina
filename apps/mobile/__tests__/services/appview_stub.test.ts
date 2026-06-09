@@ -121,6 +121,44 @@ describe('AppViewStub', () => {
     expect(caps.find((c) => c.canonical === 'com.acme.widget_price')).toBeUndefined();
     expect(caps.some((c) => c.domain === 'custom')).toBe(false);
   });
+
+  it('searchCapabilities EXCLUDES an official-but-not-intentRoutable capability (taxonomy §3, matches production)', async () => {
+    // Dr Carl advertises appointment_status (official, discoverable) — but it
+    // is subject-scoped (reads YOUR existing appointment), so it must never
+    // enter generic intent discovery. It stays reachable by exact capability
+    // via searchServices (asserted above) and via the provider's profile.
+    const stub = new AppViewStub({ profiles: [drCarlDemoProfile()] });
+    const caps = await stub.searchCapabilities({ intent: 'my appointment with dr carl' });
+    expect(caps.find((c) => c.canonical === 'appointment_status')).toBeUndefined();
+  });
+
+  it('searchCapabilities surfaces routable + suppresses non-routable from ONE mixed profile', async () => {
+    const mixed = {
+      ...demoServiceProfile(),
+      capabilities: ['eta_query', 'school_homework_status'],
+    };
+    const stub = new AppViewStub({ profiles: [mixed] });
+    const caps = (await stub.searchCapabilities({ intent: 'x' })).map((c) => c.canonical);
+    expect(caps).toContain('eta_query');
+    expect(caps).not.toContain('school_homework_status'); // guardrail #3
+  });
+
+  it('searchCapabilities RANKS by intent-token overlap (production ordering parity)', async () => {
+    // Production lexically ranks candidates by intent overlap; the stub must
+    // produce the same ORDER or dev/demo teaches the LLM a different ranking.
+    const mixed = {
+      ...demoServiceProfile(),
+      capabilities: ['eta_query', 'appointment_availability'],
+    };
+    const stub = new AppViewStub({ profiles: [mixed] });
+    const ranked = (await stub.searchCapabilities({ intent: 'find appointment slots' })).map(
+      (c) => c.canonical,
+    );
+    expect(ranked[0]).toBe('appointment_availability');
+    // No-overlap intent → stable registry order (eta_query first).
+    const stable = (await stub.searchCapabilities({ intent: 'zzz qqq' })).map((c) => c.canonical);
+    expect(stable[0]).toBe('eta_query');
+  });
 });
 
 describe('drCarlDemoProfile (WM-DEMO-02)', () => {

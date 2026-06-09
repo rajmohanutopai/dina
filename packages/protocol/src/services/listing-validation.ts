@@ -12,7 +12,12 @@
  *    — with back-compat derivation from the legacy `isDiscoverable` boolean;
  *  - a write/booking/payment/agentic official capability is gated by `review`,
  *    not `auto` (spec §6 rule 6);
- *  - a PUBLIC custom capability ships params/result schemas (spec §8.1).
+ *  - a PUBLIC custom capability ships params/result schemas (spec §8.1);
+ *  - a PUBLIC listing must not advertise a sensitive/regulated official
+ *    capability unless that capability's policy explicitly allows generic
+ *    exposure (`intent_routable && !requires_subject_authorization`) —
+ *    PUBLIC_SERVICES_TAXONOMY §3 guardrail #7: the override-to-public is the
+ *    real leak risk, not the default.
  *
  * Pure + fail-CLOSED + EXPLAINABLE: returns the full error list (not a throw) so
  * mobile developer mode can show exactly why a publish is blocked (spec §8.1
@@ -88,6 +93,8 @@ export type ListingValidationCode =
   | 'missing_discoverability'
   | 'write_needs_approval'
   | 'public_custom_needs_schema'
+  | 'public_sensitive_capability'
+  | 'subject_auth_needs_review'
   | 'no_capabilities';
 
 export interface ListingValidationError {
@@ -204,6 +211,43 @@ export function validateServiceListing(
             code: 'write_needs_approval',
             capability: raw,
             message: `"${cls.canonical}" performs a ${def.action_class} action and must use the "review" response policy, not "auto".`,
+          });
+        }
+        // Sensitive/regulated official capabilities must not be published
+        // PUBLIC unless the capability's policy explicitly allows generic
+        // exposure (taxonomy §3 / guardrail #7). Without this, a provider
+        // flipping a listing to `public` would leak a subject-scoped
+        // capability (e.g. school_homework_status) into generic discovery —
+        // the catalog DEFAULT alone doesn't protect against the override.
+        if (
+          discoverability === 'public' &&
+          (def.privacy_class === 'sensitive' || def.privacy_class === 'regulated') &&
+          !(def.intent_routable && !def.requires_subject_authorization)
+        ) {
+          errors.push({
+            code: 'public_sensitive_capability',
+            capability: raw,
+            message: `"${cls.canonical}" is a ${def.privacy_class} capability and can't be on a Public listing. Use Unlisted or Private / Approved Only.`,
+          });
+        }
+        // A SUBJECT-SCOPED capability (reads data about someone — an order, a
+        // delivery, a device) on a reachable-by-strangers listing (public or
+        // unlisted) must be review-gated, not auto: D2D ingress admits any
+        // possessor of the capability/service_uri with stranger-chosen params
+        // (order ids, patient ids), and no execution layer checks the
+        // requester's relationship to the subject yet. Review puts a human in
+        // front of every stranger-supplied subject identifier — the same
+        // pattern as write_needs_approval. `known_only` listings are exempt:
+        // access there is explicitly grant-gated per grantee.
+        if (
+          def.requires_subject_authorization &&
+          discoverability !== 'known_only' &&
+          capConfig.responsePolicy === 'auto'
+        ) {
+          errors.push({
+            code: 'subject_auth_needs_review',
+            capability: raw,
+            message: `"${cls.canonical}" reads subject data and must use the "review" response policy on a ${discoverability} listing (or make the listing Private / Approved Only).`,
           });
         }
       }

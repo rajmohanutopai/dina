@@ -44,7 +44,11 @@ function mockFetch(opts: {
 const LIVE_BODY = {
   catalog_version: '2026-07-01',
   categories: [{ id: 'live_cat' }],
-  capabilities: [{ id: 'live_cap' }],
+  // Policy-complete (intent_routable + requires_subject_authorization) — a
+  // live catalog missing these is treated as a stale snapshot and degraded.
+  capabilities: [
+    { id: 'live_cap', intent_routable: true, requires_subject_authorization: false },
+  ],
 };
 
 describe('resolveCatalog — live wins, else bundled (spec §2)', () => {
@@ -60,14 +64,48 @@ describe('resolveCatalog — live wins, else bundled (spec §2)', () => {
     expect(resolveCatalog({ capabilities: 'nope' } as never).source).toBe('bundled');
   });
 
-  it('uses the live catalog when it is valid + non-empty', () => {
+  it('uses the live catalog when it is valid + non-empty + policy-complete', () => {
     const live = resolveCatalog({
       categories: [{ id: 'live_cat' }],
-      capabilities: [{ id: 'live_cap' }],
+      capabilities: [
+        { id: 'live_cap', intent_routable: true, requires_subject_authorization: false },
+      ],
     });
     expect(live.source).toBe('live');
     expect(live.categories).toHaveLength(1);
     expect(live.capabilities).toHaveLength(1);
+  });
+
+  it('degrades a STALE live catalog (missing routing-policy fields) to bundled — taxonomy §3', () => {
+    // A pre-2026-06-09 AppView snapshot lacks intent_routable /
+    // requires_subject_authorization and still carries old defaults (school →
+    // unlisted). "Live wins" must not silently revert the shipped safety
+    // defaults or feed `undefined` into policy reads.
+    const stale = resolveCatalog({
+      categories: [{ id: 'school' }],
+      capabilities: [
+        {
+          id: 'school_homework_status',
+          default_discoverability: 'unlisted', // the old, reverted default
+        },
+      ],
+    });
+    expect(stale.source).toBe('bundled');
+    // And via the bundled catalog the school cap still seeds known_only.
+    expect(defaultDiscoverabilityForCapabilities(['school_homework_status'], stale)).toBe(
+      'known_only',
+    );
+  });
+
+  it('degrades when only SOME capabilities are policy-complete (all-or-nothing)', () => {
+    const partial = resolveCatalog({
+      categories: [{ id: 'c' }],
+      capabilities: [
+        { id: 'ok_cap', intent_routable: true, requires_subject_authorization: false },
+        { id: 'stale_cap' },
+      ],
+    });
+    expect(partial.source).toBe('bundled');
   });
 });
 
@@ -120,7 +158,13 @@ describe('defaultDiscoverabilityForCapabilities — safest catalog default (spec
   });
 
   it('an unlisted-default capability defaults to unlisted', () => {
-    expect(defaultDiscoverabilityForCapabilities(['school_homework_status'], catalog)).toBe('unlisted');
+    expect(defaultDiscoverabilityForCapabilities(['appointment_status'], catalog)).toBe('unlisted');
+  });
+
+  it('school_homework_status seeds known_only (taxonomy §3 target default — subject-scoped child data)', () => {
+    expect(defaultDiscoverabilityForCapabilities(['school_homework_status'], catalog)).toBe(
+      'known_only',
+    );
   });
 
   it('a custom (unknown-to-catalog) capability defaults to unlisted (#13)', () => {
@@ -131,7 +175,9 @@ describe('defaultDiscoverabilityForCapabilities — safest catalog default (spec
     // public + known_only → known_only
     expect(defaultDiscoverabilityForCapabilities(['eta_query', 'deploy_status'], catalog)).toBe('known_only');
     // public + unlisted → unlisted
-    expect(defaultDiscoverabilityForCapabilities(['eta_query', 'school_homework_status'], catalog)).toBe('unlisted');
+    expect(defaultDiscoverabilityForCapabilities(['eta_query', 'appointment_status'], catalog)).toBe('unlisted');
+    // public + known_only (school, post-taxonomy flip) → known_only
+    expect(defaultDiscoverabilityForCapabilities(['eta_query', 'school_homework_status'], catalog)).toBe('known_only');
     // public official + custom → unlisted (custom contributes unlisted)
     expect(defaultDiscoverabilityForCapabilities(['eta_query', 'com.acme.thing'], catalog)).toBe('unlisted');
   });

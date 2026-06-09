@@ -75,7 +75,6 @@ import {
   type WSFactory,
 } from '@dina/core/runtime';
 
-
 // Wire MsgBox WS authentication to clear any pending offline warning.
 // Fires on initial connect AND on every reconnect cycle, so a user
 // action that surfaced "relay offline" inline gets a silent
@@ -127,7 +126,8 @@ import {
   type ToolRegistry,
   type WorkflowEventConsumer,
   type WorkflowEventDeliverer,
- AppViewClient } from '@dina/brain';
+  AppViewClient,
+} from '@dina/brain';
 import {
   setServiceApproveCommandHandler,
   resetServiceApproveCommandHandler,
@@ -159,6 +159,8 @@ import { wireChatRememberRuntime } from '@dina/home-node/chat-runtime';
 import { buildHomeNodeServiceRuntime } from '@dina/home-node/service-runtime';
 import { validateCardSpec } from '@dina/protocol';
 
+import { peekActiveProvider } from '../ai/active_provider';
+import { reportKeyHealthIncident } from '../ai/key_health';
 import {
   setServiceConfigCoreClient,
   resetServiceConfigCoreClient,
@@ -474,9 +476,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       // to access health" UX — previously only the Approvals tab +
       // Notifications inbox got the card; the operator's primary
       // surface (chat) showed nothing. Same disposer chain.
-      const chatBridgeDispose = installWorkflowApprovalChatBridge(
-        options.workflowRepository,
-      );
+      const chatBridgeDispose = installWorkflowApprovalChatBridge(options.workflowRepository);
       const inboxDispose = workflowApprovalBridgeDispose;
       workflowApprovalBridgeDispose = (): void => {
         try {
@@ -663,7 +663,9 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       const serviceName =
         details.service_name !== undefined && details.service_name !== ''
           ? details.service_name
-          : (lc?.kind === 'service_query' ? lc.serviceName : 'service');
+          : lc?.kind === 'service_query'
+            ? lc.serviceName
+            : 'service';
       const capability =
         details.capability !== undefined && details.capability !== ''
           ? details.capability
@@ -886,6 +888,18 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
         bridgeOpts.formatResumeHeader = cfg.formatResumeHeader;
       if (cfg.formatFailureMessage !== undefined)
         bridgeOpts.formatFailureMessage = cfg.formatFailureMessage;
+      // Chat → Settings pill bridge: when an /ask fails on a CLASSIFIED
+      // provider error (credits exhausted / invalid key), record the
+      // incident in the key-health store immediately — the pill is lit
+      // before the user ever visits Settings, instead of waiting for the
+      // next screen-mount probe. Other kinds (rate-limit/timeout/network)
+      // are transient and deliberately NOT surfaced as key problems.
+      bridgeOpts.onProviderFailure = ({ kind, message }) => {
+        if (kind !== 'credits_exhausted' && kind !== 'invalid_key') return;
+        const provider = peekActiveProvider();
+        if (provider === null) return;
+        reportKeyHealthIncident(provider, kind, message);
+      };
       const { handler, dispose } = createCoordinatorAskHandler(bridgeOpts);
       setAskCommandHandler(handler);
       globalDisposers.push(resetAskCommandHandler);
@@ -901,12 +915,9 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
         options.setInterval ?? ((fn, ms) => setInterval(fn, ms));
       const _ciReconcile: (h: unknown) => void =
         options.clearInterval ?? ((h) => clearInterval(h as ReturnType<typeof setInterval>));
-      const reconcileHandle = _siReconcile(
-        () => {
-          void cfg.coordinator.gateway.reconcile().catch(() => {});
-        },
-        3_000,
-      );
+      const reconcileHandle = _siReconcile(() => {
+        void cfg.coordinator.gateway.reconcile().catch(() => {});
+      }, 3_000);
       globalDisposers.push(() => _ciReconcile(reconcileHandle));
     } else if (options.agenticAsk !== undefined) {
       setAskCommandHandler(
@@ -1091,23 +1102,18 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
           // — the user taps "Add to contacts" (accept + release + drain) or
           // "Block". The body is intentionally withheld until they decide.
           onQuarantinedD2D: ({ senderDID, messageType, quarantineId }) => {
-            addMessage(
-              'main',
-              'dina',
-              `Someone who isn't in your contacts wants to message you.`,
-              {
-                metadata: {
-                  source: 'd2d',
+            addMessage('main', 'dina', `Someone who isn't in your contacts wants to message you.`, {
+              metadata: {
+                source: 'd2d',
+                senderDID,
+                lifecycle: {
+                  kind: 'quarantine_request',
+                  quarantineId,
                   senderDID,
-                  lifecycle: {
-                    kind: 'quarantine_request',
-                    quarantineId,
-                    senderDID,
-                    messageType,
-                  },
+                  messageType,
                 },
               },
-            );
+            });
           },
         };
         // MsgBox handshake failures are soft — a dev install with no

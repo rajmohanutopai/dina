@@ -201,3 +201,95 @@ describe('validateServiceListing', () => {
     expect(r.capabilities.map((c) => c.kind).sort()).toEqual(['custom', 'official']);
   });
 });
+
+describe('public_sensitive_capability — taxonomy §3 / guardrail #7', () => {
+  it('rejects a PUBLIC listing carrying school_homework_status (sensitive + subject-scoped)', () => {
+    const r = validateServiceListing(
+      mkConfig({ school_homework_status: cap('school') }, { discoverability: 'public' }),
+    );
+    expect(codes(r)).toContain('public_sensitive_capability');
+  });
+
+  it('rejects a PUBLIC listing carrying appointment_status (sensitive + subject-scoped)', () => {
+    const r = validateServiceListing(
+      mkConfig({ appointment_status: cap('appointments') }, { discoverability: 'public' }),
+    );
+    expect(codes(r)).toContain('public_sensitive_capability');
+  });
+
+  it('rejects a PUBLIC listing carrying deploy_status (sensitive, not intent-routable)', () => {
+    const r = validateServiceListing(
+      mkConfig({ deploy_status: cap('developer_ops') }, { discoverability: 'public' }),
+    );
+    expect(codes(r)).toContain('public_sensitive_capability');
+  });
+
+  it('catches the rule when the sensitive capability is published under an ALIAS', () => {
+    // homework_status folds to school_homework_status — the override must not
+    // slip through via an alias spelling.
+    const r = validateServiceListing(
+      mkConfig({ homework_status: cap('school') }, { discoverability: 'public' }),
+    );
+    expect(codes(r)).toContain('public_sensitive_capability');
+  });
+
+  it('ALLOWS a PUBLIC sensitive capability whose policy explicitly permits it (appointment_book: routable + not subject-scoped)', () => {
+    const r = validateServiceListing(
+      mkConfig({ appointment_book: cap('healthcare', 'review') }, { discoverability: 'public' }),
+    );
+    expect(r.ok).toBe(true);
+  });
+
+  it('ALLOWS a PUBLIC service_health_status (sensitive but routable — public status pages)', () => {
+    const r = validateServiceListing(
+      mkConfig({ service_health_status: cap('developer_ops') }, { discoverability: 'public' }),
+    );
+    expect(r.ok).toBe(true);
+  });
+
+  it('only constrains PUBLIC — unlisted/known_only sensitive listings stay valid (review-gated)', () => {
+    for (const discoverability of ['unlisted', 'known_only'] as const) {
+      const r = validateServiceListing(
+        mkConfig({ school_homework_status: cap('school', 'review') }, { discoverability }),
+      );
+      expect(r.ok).toBe(true);
+    }
+  });
+});
+
+describe('subject_auth_needs_review — stranger-reachable subject-scoped caps must be review-gated', () => {
+  it('rejects AUTO for a subject-scoped capability on an UNLISTED listing', () => {
+    // unlisted is reachable by anyone with the service_uri; stranger-chosen
+    // subject identifiers (order ids, student names) need a human in front.
+    const r = validateServiceListing(
+      mkConfig({ school_homework_status: cap('school', 'auto') }, { discoverability: 'unlisted' }),
+    );
+    expect(codes(r)).toContain('subject_auth_needs_review');
+  });
+
+  it('rejects AUTO for order_status on a PUBLIC listing (personal privacy class — the public_sensitive rule does NOT cover it)', () => {
+    const r = validateServiceListing(
+      mkConfig({ order_status: cap('commerce', 'auto') }, { discoverability: 'public' }),
+    );
+    expect(codes(r)).toContain('subject_auth_needs_review');
+    // and review satisfies it:
+    const review = validateServiceListing(
+      mkConfig({ order_status: cap('commerce', 'review') }, { discoverability: 'public' }),
+    );
+    expect(review.ok).toBe(true);
+  });
+
+  it('ALLOWS auto on a KNOWN_ONLY listing (access is explicitly grant-gated per grantee)', () => {
+    const r = validateServiceListing(
+      mkConfig({ school_homework_status: cap('school', 'auto') }, { discoverability: 'known_only' }),
+    );
+    expect(r.ok).toBe(true);
+  });
+
+  it('does not touch non-subject-scoped reads (eta_query auto public stays valid)', () => {
+    const r = validateServiceListing(
+      mkConfig({ eta_query: cap('transit', 'auto') }, { discoverability: 'public' }),
+    );
+    expect(r.ok).toBe(true);
+  });
+});

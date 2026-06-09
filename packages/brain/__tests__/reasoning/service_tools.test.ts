@@ -4,6 +4,7 @@
 
 import {
   createGeocodeTool,
+  createSearchCapabilitiesTool,
   createSearchProviderServicesTool,
   createQueryServiceTool,
   createFindPreferredProviderTool,
@@ -26,6 +27,39 @@ function okJson(body: unknown): Response {
     headers: { 'Content-Type': 'application/json' },
   });
 }
+
+describe('createSearchCapabilitiesTool — local intentRoutable re-filter (defense in depth)', () => {
+  // PUBLIC_SERVICES_TAXONOMY §3: the Home Node must not outsource its routing
+  // gate to whatever AppView it is pointed at. A stale or third-party AppView
+  // returning a subject-scoped official capability (or a custom NSID) must be
+  // dropped locally against the bundled registry.
+  it('drops subject-scoped officials + custom/unknown NSIDs a remote AppView returns; keeps routable canonicals', async () => {
+    const tool = createSearchCapabilitiesTool({
+      appViewClient: {
+        searchCapabilities: async () => [
+          { canonical: 'eta_query', description: 'eta', domain: 'transit' },
+          { canonical: 'school_homework_status', description: 'homework', domain: 'school' }, // official, NOT routable
+          { canonical: 'order_status', description: 'order', domain: 'commerce' }, // official, NOT routable
+          { canonical: 'com.acme.widget_price', description: 'acme', domain: 'custom' }, // custom NSID
+          { canonical: 'made_up_thing', description: '??', domain: 'x' }, // unknown
+        ],
+      },
+    });
+    const result = (await tool.execute({ intent: 'anything' })) as {
+      capabilities: Array<{ canonical: string }>;
+    };
+    expect(result.capabilities.map((c) => c.canonical)).toEqual(['eta_query']);
+  });
+
+  it('tool description routes own-record questions away from generic discovery', () => {
+    const tool = createSearchCapabilitiesTool({
+      appViewClient: { searchCapabilities: async () => [] },
+    });
+    expect(tool.description).toMatch(/GENERICALLY-DISCOVERABLE/);
+    expect(tool.description).toMatch(/find_preferred_provider/);
+    expect(tool.description).not.toMatch(/is my appointment confirmed/); // the old dead-end example
+  });
+});
 
 describe('createGeocodeTool', () => {
   const SF_LAT = 37.76;

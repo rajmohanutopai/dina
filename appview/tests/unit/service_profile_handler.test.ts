@@ -164,24 +164,26 @@ describe('serviceProfileHandler.handleCreate', () => {
       ctx,
       op({
         name: 'Dr Rao',
-        capabilities: ['appointment_status'],
-        responsePolicy: { appointment_status: 'auto' },
-        // Category published under an ALIAS key (`appt_status`) — the handler
-        // must re-key it to the canonical capability name so it lines up with
-        // the canonical `capabilities` array search matches on.
-        capabilityCategories: { appt_status: 'healthcare' },
+        // appointment_availability: official, public-exposure ALLOWED (the
+        // public-sensitive gate must not interfere with this re-keying test).
+        capabilities: ['appointment_availability'],
+        responsePolicy: { appointment_availability: 'auto' },
+        // Category published under an ALIAS key (`appt_availability`) — the
+        // handler must re-key it to the canonical capability name so it lines
+        // up with the canonical `capabilities` array search matches on.
+        capabilityCategories: { appt_availability: 'healthcare' },
         discoverability: 'public',
         isDiscoverable: true,
         updatedAt: new Date().toISOString(),
       }),
     )
     expect(captured.insertValues?.capabilityCategoriesJson).toEqual({
-      appointment_status: 'healthcare',
+      appointment_availability: 'healthcare',
     })
     expect(captured.insertValues?.discoverability).toBe('public')
     // onConflict set carries them too (re-publish updates the indexed row).
     expect(captured.conflictSet?.capabilityCategoriesJson).toEqual({
-      appointment_status: 'healthcare',
+      appointment_availability: 'healthcare',
     })
     expect(captured.conflictSet?.discoverability).toBe('public')
   })
@@ -423,6 +425,138 @@ describe('serviceProfileHandler.handleCreate', () => {
       }),
     )
     expect(captured.insertValues?.capabilitiesJson).toEqual(['eta_query'])
+  })
+})
+
+describe('serviceProfileHandler — public-sensitive trust-boundary gate (taxonomy guardrail #7)', () => {
+  it('drops a sensitive subject-scoped official capability from a PUBLIC row (direct-PDS bypass)', async () => {
+    // A publisher writing the AT record straight to its PDS bypasses the
+    // listing validator entirely — the ingester is the trust boundary.
+    const captured = freshCaptured()
+    const ctx = stubCtx(captured)
+    await serviceProfileHandler.handleCreate(
+      ctx,
+      op({
+        name: 'Rogue School',
+        capabilities: ['school_homework_status', 'eta_query'],
+        responsePolicy: { school_homework_status: 'auto', eta_query: 'auto' },
+        capabilitySchemas: { school_homework_status: { params: {}, result: {} } },
+        discoverability: 'public',
+        isDiscoverable: true,
+        updatedAt: new Date().toISOString(),
+      }),
+    )
+    // The sensitive cap is gone from ALL public arrays; the safe cap stays.
+    expect(captured.insertValues?.capabilitiesJson).toEqual(['eta_query'])
+    expect(captured.insertValues?.responsePolicyJson).toEqual({ eta_query: 'auto' })
+    expect(captured.insertValues?.capabilitySchemasJson).toBeNull()
+    expect(ctx.metrics.incr).toHaveBeenCalledWith(
+      'service.capability.public_sensitive_dropped',
+      { cap: 'school_homework_status' },
+    )
+  })
+
+  it('drops appointment_status from a PUBLIC row but ALLOWS the explicitly-permitted sensitive caps', async () => {
+    const captured = freshCaptured()
+    const ctx = stubCtx(captured)
+    await serviceProfileHandler.handleCreate(
+      ctx,
+      op({
+        name: 'Clinic',
+        // appointment_book + service_health_status are sensitive but pass the
+        // public-exposure predicate (routable + not subject-scoped);
+        // appointment_status does not.
+        capabilities: ['appointment_status', 'appointment_book', 'service_health_status'],
+        responsePolicy: {
+          appointment_status: 'auto',
+          appointment_book: 'review',
+          service_health_status: 'auto',
+        },
+        discoverability: 'public',
+        isDiscoverable: true,
+        updatedAt: new Date().toISOString(),
+      }),
+    )
+    expect(captured.insertValues?.capabilitiesJson).toEqual([
+      'appointment_book',
+      'service_health_status',
+    ])
+  })
+
+  it('KEEPS a sensitive capability on an UNLISTED row (not in public search; resolve-by-uri only)', async () => {
+    const captured = freshCaptured()
+    const ctx = stubCtx(captured)
+    await serviceProfileHandler.handleCreate(
+      ctx,
+      op({
+        name: 'School',
+        capabilities: ['school_homework_status'],
+        responsePolicy: { school_homework_status: 'review' },
+        discoverability: 'unlisted',
+        isDiscoverable: false,
+        updatedAt: new Date().toISOString(),
+      }),
+    )
+    expect(captured.insertValues?.capabilitiesJson).toEqual(['school_homework_status'])
+    expect(captured.insertValues?.isDiscoverable).toBe(false)
+  })
+
+  it('a CUSTOM (namespaced) capability passes the gate untouched on a public row', async () => {
+    const captured = freshCaptured()
+    const ctx = stubCtx(captured)
+    await serviceProfileHandler.handleCreate(
+      ctx,
+      op({
+        name: 'Acme',
+        capabilities: ['com.acme.widget_price'],
+        responsePolicy: { 'com.acme.widget_price': 'auto' },
+        discoverability: 'public',
+        isDiscoverable: true,
+        updatedAt: new Date().toISOString(),
+      }),
+    )
+    expect(captured.insertValues?.capabilitiesJson).toEqual(['com.acme.widget_price'])
+  })
+})
+
+describe('serviceProfileHandler — isDiscoverable derived from the discoverability enum (AV-1)', () => {
+  it('an UNLISTED record claiming isDiscoverable=true is stored search-EXCLUDED', async () => {
+    // The redundant boolean is publisher-controlled; the enum is authoritative.
+    // Without the derivation, this record leaks into public search + the
+    // generic-routing coverage join.
+    const captured = freshCaptured()
+    const ctx = stubCtx(captured)
+    await serviceProfileHandler.handleCreate(
+      ctx,
+      op({
+        ...validProfile(),
+        discoverability: 'unlisted',
+        isDiscoverable: true, // lie
+      }),
+    )
+    expect(captured.insertValues?.isDiscoverable).toBe(false)
+    expect(captured.insertValues?.discoverability).toBe('unlisted')
+  })
+
+  it('a PUBLIC record claiming isDiscoverable=false is stored search-INCLUDED (enum wins both ways)', async () => {
+    const captured = freshCaptured()
+    const ctx = stubCtx(captured)
+    await serviceProfileHandler.handleCreate(
+      ctx,
+      op({
+        ...validProfile(),
+        discoverability: 'public',
+        isDiscoverable: false,
+      }),
+    )
+    expect(captured.insertValues?.isDiscoverable).toBe(true)
+  })
+
+  it('a LEGACY record (no enum) keeps its boolean', async () => {
+    const captured = freshCaptured()
+    const ctx = stubCtx(captured)
+    await serviceProfileHandler.handleCreate(ctx, op(validProfile())) // no discoverability
+    expect(captured.insertValues?.isDiscoverable).toBe(true)
   })
 })
 

@@ -271,9 +271,7 @@ export function buildAgenticExecuteFn(args: {
 }): AskExecuteFn {
   const buildToolsForAsk = args.pipeline.buildToolsForAsk;
   if (!buildToolsForAsk) {
-    throw new TypeError(
-      'buildAgenticExecuteFn: pipeline.buildToolsForAsk is missing',
-    );
+    throw new TypeError('buildAgenticExecuteFn: pipeline.buildToolsForAsk is missing');
   }
   const { pipeline, systemPrompt, preFlight } = args;
   return async (input) => {
@@ -426,6 +424,12 @@ function translateLoopResult(
         {
           kind: 'provider_error',
           message: result.providerErrorMessage,
+          // Structured classification (credits / key / …) so downstream
+          // consumers (mobile key-health pill) can react without
+          // string-matching the human template.
+          ...(result.providerErrorKind !== undefined
+            ? { detail: { providerErrorKind: result.providerErrorKind } }
+            : {}),
         },
         result.toolCalls,
         query,
@@ -457,9 +461,7 @@ function translateLoopResult(
  * `ServiceQueryDispatch` shape so downstream consumers stay
  * single-typed.
  */
-function extractServiceQueriesFromToolCalls(
-  toolCalls: AgenticLoopResult['toolCalls'],
-): {
+function extractServiceQueriesFromToolCalls(toolCalls: AgenticLoopResult['toolCalls']): {
   taskId: string;
   queryId: string;
   capability: string;
@@ -478,9 +480,12 @@ function extractServiceQueriesFromToolCalls(
   for (const call of toolCalls) {
     if (call.name !== 'query_service') continue;
     if (!call.outcome.success) continue;
-    const payload = call.outcome.result as
-      | { task_id?: string; query_id?: string; to_did?: string; service_name?: string }
-      | null;
+    const payload = call.outcome.result as {
+      task_id?: string;
+      query_id?: string;
+      to_did?: string;
+      service_name?: string;
+    } | null;
     if (!payload || typeof payload.task_id !== 'string' || payload.task_id === '') continue;
     const args = call.arguments as { capability?: string; params?: unknown } | null;
     const capability = typeof args?.capability === 'string' ? args.capability : '';

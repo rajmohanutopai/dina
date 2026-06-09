@@ -5,39 +5,28 @@
  * enter their API key, and it's stored securely in the device keychain.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-} from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
-import { loadVerificationStatus } from '../src/services/verification_status';
-import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
-import {
-  PROVIDERS,
-  getApiKey,
-  maskKey,
-  getConfiguredProviders,
-} from '../src/ai/provider';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { getBackgroundTimeout, setBackgroundTimeout } from '@dina/core';
+
 import {
   loadActiveProvider,
   saveActiveProvider,
   peekActiveProvider,
 } from '../src/ai/active_provider';
 import { wireBrainChatProvider } from '../src/ai/brain_wiring';
+import { PROVIDERS, getApiKey, maskKey, getConfiguredProviders } from '../src/ai/provider';
+import { KeyHealthPill } from '../src/components/key_health_pill';
 import { getBootedNode, getBootDegradations } from '../src/hooks/useNodeBootstrap';
-import type { ProviderType } from '../src/ai/provider';
-import {
-  getBackgroundTimeout,
-  setBackgroundTimeout,
-} from '@dina/core';
 import { saveBackgroundTimeoutPreference } from '../src/services/security_preferences';
+import { loadVerificationStatus } from '../src/services/verification_status';
+import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
+
+import type { ProviderType } from '../src/ai/provider';
 
 /**
  * Degradation codes that mean "this node cannot serve provider-role
@@ -167,7 +156,10 @@ export default function SettingsScreen() {
   }, [loadStates]);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
+    >
       {/* LLM Providers — quiet summary. The full add/remove/switch
           surface lives in /ai-providers; Settings only shows the
           active provider + its model picks so the top-level screen
@@ -186,6 +178,11 @@ export default function SettingsScreen() {
                   </View>
                 </View>
                 <Text style={styles.providerDesc}>{PROVIDERS[active].description}</Text>
+                {/* Problem-only key-health pill: probes the BILLED generation
+                    path (model-list "verify" can't see credit exhaustion) and
+                    shows "Credits exhausted" / "Key not working" on the active
+                    key. Renders nothing when healthy. */}
+                <KeyHealthPill provider={active} />
               </View>
               <Text style={styles.keyPreview}>{providerStates[active].keyPreview}</Text>
             </View>
@@ -218,9 +215,7 @@ export default function SettingsScreen() {
             </View>
           </TouchableOpacity>
         )}
-
       </View>
-
 
       {/* MORE — drill-downs that don't earn their own section.
           PeerLens preferences was a dedicated PEERLENS section with
@@ -258,9 +253,7 @@ export default function SettingsScreen() {
           const node = getBootedNode();
           const runningAsProvider =
             node !== null && (node.role === 'provider' || node.role === 'both');
-          const blocked = getBootDegradations().some((d) =>
-            PROVIDER_BLOCKERS.has(d.code),
-          );
+          const blocked = getBootDegradations().some((d) => PROVIDER_BLOCKERS.has(d.code));
           const blockedLabel = blocked ? ' (blocked)' : '';
           return (
             <TouchableOpacity
@@ -341,7 +334,7 @@ export default function SettingsScreen() {
         <TouchableOpacity
           style={styles.row}
           onPress={() => {
-            const presets: ReadonlyArray<{ s: number; label: string }> = [
+            const presets: readonly { s: number; label: string }[] = [
               { s: 60, label: '1 minute' },
               { s: 300, label: '5 minutes' },
               { s: 600, label: '10 minutes' },
@@ -363,14 +356,9 @@ export default function SettingsScreen() {
                       // forget; the in-memory `setBackgroundTimeout`
                       // call above already armed the new value for the
                       // current session.
-                      void saveBackgroundTimeoutPreference(p.s).catch(
-                        (err) => {
-                          console.warn(
-                            '[settings] saveBackgroundTimeoutPreference failed',
-                            err,
-                          );
-                        },
-                      );
+                      void saveBackgroundTimeoutPreference(p.s).catch((err) => {
+                        console.warn('[settings] saveBackgroundTimeoutPreference failed', err);
+                      });
                     } catch (err) {
                       Alert.alert(
                         'Could not change timeout',
@@ -389,7 +377,9 @@ export default function SettingsScreen() {
           testID="settings-row-autolock"
         >
           <Text style={styles.rowLabel}>Auto-lock when backgrounded</Text>
-          <Text style={styles.rowValue}>{formatTimeoutLabel(autoLockSeconds)} {'›'}</Text>
+          <Text style={styles.rowValue}>
+            {formatTimeoutLabel(autoLockSeconds)} {'›'}
+          </Text>
         </TouchableOpacity>
         <SettingsRow label="Vault encryption" value="AES-256-CBC" />
         <SettingsRow label="Seed wrap" value="AES-256-GCM" />
@@ -400,7 +390,9 @@ export default function SettingsScreen() {
 
       <View style={styles.footer}>
         <Text style={styles.footerText}>Dina v{Constants.expoConfig?.version ?? '0.0.1'}</Text>
-        <Text style={styles.footerSubtext}>Vault contents are encrypted and stay on this device</Text>
+        <Text style={styles.footerSubtext}>
+          Vault contents are encrypted and stay on this device
+        </Text>
       </View>
     </ScrollView>
   );

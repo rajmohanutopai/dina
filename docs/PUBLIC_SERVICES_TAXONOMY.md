@@ -40,12 +40,13 @@ promotion**.
 NOT the search key.** You find *House of Prime Rib*, then its menu; nobody
 generic-searches `com.houseofprimerib.tasting_menu`.
 
-**V1 reality (verified in code):** generic search already returns **canonical only**
-— `appview/src/api/xrpc/search-capabilities.ts` iterates `allCanonicalCapabilities()`
-and *deliberately excludes custom*. The mobile `AppViewStub` now matches that (a
-prior drift that surfaced custom in generic search has been fixed). **Not yet
-wired:** `intent_routable` is not a field on `CapabilityDefinition` yet, so generic
-search currently returns *all* covered canonical caps — see §2/§4.
+**V1 reality (verified in code, updated 2026-06-10):** generic search returns
+**canonical only** — `appview/src/api/xrpc/search-capabilities.ts` iterates
+`allCanonicalCapabilities()` and *deliberately excludes custom*; the mobile
+`AppViewStub` matches. **Now wired:** `intent_routable` is a required field on
+`CapabilityDefinition` (mirrored as `intentRoutable` on the registry, §79
+parity-gated), and generic search filters on it — official-but-subject-scoped
+capabilities never enter the generic pool even when covered. See §2/§3.
 
 **Discoverability ≠ authorization.** Two orthogonal questions, never conflated:
 - **"How is it found?"** → discoverability (`public` / `unlisted` / `known_only`) +
@@ -120,44 +121,36 @@ Every canonical capability carries policy metadata so "official" never silently 
 | Field | Status | Values |
 |---|---|---|
 | `action_class` | ✅ exists | `read` \| `quote` \| `booking` \| `write` \| `payment` \| `agentic` |
-| `privacy_class` | ✅ exists | `public` \| `personal` \| `sensitive` |
+| `privacy_class` | ✅ exists | `public` \| `personal` \| `sensitive` \| `regulated` |
 | `default_discoverability` | ✅ exists | `public` \| `unlisted` \| `known_only` |
 | `approval_policy_hint` | ✅ exists | (informational approval hint) |
-| **`intent_routable`** | **⬜ to add** | can this enter generic LLM service discovery? |
-| **`requires_verified_provider`** | **⬜ to add** | must the provider prove domain/place/institution ownership? |
-| **`requires_subject_authorization`** | **⬜ to add** | does the requester need a grant/relationship to the data **subject**? |
+| `intent_routable` | ✅ exists (2026-06-09) | can this enter generic LLM service discovery? Mirrored as `intentRoutable` on the registry (§79 parity-gated) so AppView can filter. |
+| `requires_verified_provider` | ✅ exists (2026-06-09) | must the provider prove domain/place/institution ownership? **Declarative only** — verification infra still doesn't exist. |
+| `requires_subject_authorization` | ✅ exists (2026-06-09) | does the requester need a grant/relationship to the data **subject**? Catalog integrity enforces `subject_auth ⇒ !intent_routable` (fail-loud). |
 
-`requires_subject_authorization` is the most important addition. `school_homework_status`,
-grades, lab results, benefit status, account balance are not merely *sensitive* —
-they are **sensitive about a subject**. Generic search must never imply access. A
-school-homework capability can be *official*, but should be `privacy_class: sensitive`,
-`intent_routable: false`, `requires_subject_authorization: true`, and (target)
-`default_discoverability: known_only`. Compare `eta_query`: `read` / `public` /
+`requires_subject_authorization` is the most important of the three.
+`school_homework_status`, grades, lab results, benefit status, account balance are
+not merely *sensitive* — they are **sensitive about a subject**. Generic search must
+never imply access. The school-homework capability is *official*, with
+`privacy_class: sensitive`, `intent_routable: false`,
+`requires_subject_authorization: true`, and `default_discoverability: known_only`
+(the target default — shipped 2026-06-09). Compare `eta_query`: `read` / `public` /
 `intent_routable: true` / no verification / no subject auth.
 
-> **Current vs target.** The policy fields that exist already carry real values; the
-> §4 "Target visibility policy" column is the **target**, and a few current defaults differ
-> — e.g. `school_homework_status` is `default_discoverability: unlisted` **today**
-> (`capability-catalog.ts:306`), target `known_only`. Treat such mismatches as
-> "default-to-change," not current reality.
+> **Risk closed (2026-06-09/10).** The former gap — `searchCapabilities` returning
+> *all* covered canonical caps with no way to filter — is fixed: the fields exist,
+> generic search filters `intentRoutable`, and a provider flipping a sensitive
+> listing to `public` is **rejected by the validator** (and, defense in depth,
+> still wouldn't be generic-routed). The full routing matrix for the 13 shipped
+> capabilities lives in `capability-catalog.ts` with per-capability rationale.
 
-> **Present-tense risk, not just future (real follow-up).** Sensitive official
-> capabilities **already exist** — `appointment_status` and `school_homework_status`
-> are `privacy_class: sensitive`. `searchCapabilities` returns *all* covered canonical
-> caps and **cannot filter `intent_routable`** (the field doesn't exist —
-> `catalog.ts:83`). Today these stay out of generic search only because they default
-> to `unlisted`/`known_only` (so `isDiscoverable=false`); **a provider flipping one to
-> `public` would leak it into generic discovery.** Therefore: **do not allow a public,
-> sensitive, official listing into generic discovery until `intent_routable` +
-> `requires_subject_authorization` exist and `searchCapabilities` filters on them.**
->
-> **Where to enforce** (defense in depth): (1) the **listing validator**
-> (`listing-validation.ts` — today it checks category + write policy but does **not**
-> block `public` + `privacy_class: sensitive`; add that rule), (2) the **mobile
-> service-settings save path** (warn/block flipping a sensitive cap to `public`), and
-> (3) **AppView `searchCapabilities`** (filter `intent_routable === true` once the
-> field exists). (1)+(3) are load-bearing; add those fields + the filter before adding
-> *any* further sensitive official cap.
+> **Where it's enforced** (defense in depth, all live): (1) the **listing
+> validator** (`listing-validation.ts` `public_sensitive_capability` — rejects
+> `public` + sensitive/regulated official caps unless
+> `intent_routable && !requires_subject_authorization` explicitly allows), (2) the
+> **mobile service-settings save path** (dedicated alert + one-tap "Make Unlisted" /
+> "Make Private"), and (3) **AppView `searchCapabilities`** (filters
+> `intentRoutable === true`; the mobile stub mirrors it).
 
 ## 4 · Provider-category map (the opportunity surface)
 
@@ -180,7 +173,7 @@ Approved Only**. These are **targets**; some current catalog defaults differ (§
 | **Commerce & Retail** | `price_check` ✅, `order_status` ✅, `inventory_lookup` ⬜, `hours_lookup` ⬜ | loyalty game, store-specific config | `public` | — |
 | **Food & Dining** | `menu_lookup` ⬜, `order_status` 🔁, `availability_lookup` ⬜ (table), `reservation_status` ⬜, `wait_time` ⬜, `hours_lookup` ⬜ | special tasting menu, chef's table | `public` | — |
 | **Appointments & Bookings** | `appointment_availability` ✅, `appointment_book` ✅, `appointment_status` ✅, `booking_request` ⬜ | intake forms, package builder | availability `public`; book/status `unlisted` (personal/sensitive) | per-family: status/booking carry subject data |
-| **School & Education** | `hours_lookup` ⬜, `schedule_lookup` ⬜, `application_status` ⬜, `school_homework_status` ✅ | parent homework dashboard, LMS portal | `known_only` (target; currently `unlisted`) | `requires_subject_authorization`; `intent_routable: false` for student data |
+| **School & Education** | `hours_lookup` ⬜, `schedule_lookup` ⬜, `application_status` ⬜, `school_homework_status` ✅ | parent homework dashboard, LMS portal | `known_only` (shipped 2026-06-09) | `requires_subject_authorization`; `intent_routable: false` for student data |
 | **Healthcare & Wellness** | `appointment_availability` ✅, `appointment_book` ✅, `wait_time` ⬜, `status_lookup` ⬜ (results) | patient portal flows, lab portal | `unlisted` / `known_only` | sensitive; subject auth; not public by default |
 | **Home, Repairs & Local** | `service_quote` ✅, `appointment_availability` ✅, `status_lookup` ⬜ (job) | custom estimate wizard | `public` | — |
 | **Logistics & Delivery** | `package_tracking` ✅, `delivery_eta` ✅, `order_status` 🔁, `document_status` ⬜ | carrier-specific tracking detail | `public` | — |
@@ -255,14 +248,26 @@ Two **separate** stages — becoming *official* does **not** make a capability
 4. It can be **rendered safely**.
 
 **Stage B — official → generic intent routing** (a distinct, later decision). Set
-`intent_routable: true` **only** if the capability is safe for generic discovery:
-`privacy_class: public`, no `requires_subject_authorization`, and **either** no
-verified provider is required **or** generic routing filters to verified providers
-only (so `credential_verify` / license verification *can* still be routable, but only
-against verified issuers). **Many official capabilities should stay
-`intent_routable: false` permanently** — e.g. `school_homework_status` is a
-legitimate *official shared contract* (Stage A) but must **never** be generic-routed
-(Stage B), because it reads subject data.
+`intent_routable: true` **only** if the capability is safe for generic discovery —
+the shipped predicate (enforced by catalog integrity):
+1. **No `requires_subject_authorization`** — it reads no EXISTING subject data
+   (provider-side info like open slots or prices, requester-created requests like
+   a new booking or quote, or possession-keyed lookups like a tracking number are
+   all fine; "your order / your homework / your appointment" never are).
+2. **Finding a NEW provider is the actual use case** — generic routing exists for
+   "find me an X", not for data whose provider the user already knows.
+3. **Either** no verified provider is required **or** generic routing filters to
+   verified providers only (so `credential_verify` *can* eventually be routable,
+   but only against verified issuers — until that filter exists, catalog
+   integrity rejects routable+verified-required).
+
+`privacy_class: public` is NOT required — `appointment_availability` (personal)
+and `service_health_status` (sensitive, public status pages) are deliberately
+routable because they satisfy 1+2; the sensitivity gates their LISTING visibility
+(validator/ingester), not their vocabulary membership. **Many official
+capabilities stay `intent_routable: false` permanently** — e.g.
+`school_homework_status` is a legitimate *official shared contract* (Stage A) but
+must **never** be generic-routed (Stage B), because it reads subject data.
 
 > Example: `com.rajschool.homework_status` stays provider-specific until *many*
 > schools converge on one homework contract → promote to the official
@@ -278,19 +283,19 @@ filing submission; gambling / betting; adult / controlled-substance services; we
 firearm services. (Four Laws: Dina advises and fetches verified truth — it does not
 transact, diagnose, dispatch, or file from a public listing.)
 
-## Guardrail tests (land these before expanding official capabilities)
+## Guardrail tests (status as of 2026-06-10)
 
-The taxonomy is only safe if search enforces it. Required tests:
+The taxonomy is only safe if search enforces it. Status:
 
-1. Generic `searchCapabilities` **excludes custom** capabilities. *(passing — production + the mobile stub, after the 2026-06-09 stub fix.)*
-2. Generic `searchCapabilities` filters **`intent_routable === true`** — *(blocked: needs the field first.)*
-3. A sensitive subject-data capability (`school_homework_status`) **never appears in generic search** unless deliberately allowed. *(blocked on #2.)*
-4. Broad-family routing **requires `category_id` + `object_type`** (rejects a bare `status_lookup`). **Until this test exists, `status_lookup` stays conceptual — do not ship it as a callable bare capability** (only its typed profiles like `order_status` are callable).
-5. Public custom remains reachable by **exact NSID / URI but not generic intent** (`service-search.ts` exact-NSID + `service-get-by-uri.ts` keep working; `search-capabilities.ts` excludes).
-6. The **mobile stub stays behaviorally identical** to production AppView (parity test).
-7. A sensitive official capability **must carry the right `default_discoverability`** (not `public`) — **and** the validator **rejects `public` + `privacy_class: sensitive`** unless `intent_routable` + a subject-auth policy explicitly allow it (the override-to-public is the real risk, not just the default).
-8. Provider-specific labels require **provider/place/domain/DID verification** (verify the *provider*, not the NSID) before a "verified/provider-owned" badge.
-9. **Unlisted behaves as specified:** exact-URI resolves; generic search excludes it; **invocation follows the listing's access policy** (V1: anyone-with-link may be the policy, but it's a policy decision, enforced separately from discoverability).
+1. ✅ Generic `searchCapabilities` **excludes custom** capabilities *(production + mobile stub)*.
+2. ✅ Generic `searchCapabilities` filters **`intentRoutable === true`** *(production `search_capabilities.test.ts` + stub parity tests)*.
+3. ✅ `school_homework_status` (and every subject-scoped official cap) **never appears in generic search**, even from a discoverable provider *(both sides)*.
+4. ✅ Bare family ids (`status_lookup`, `availability_lookup`, …) classify as **unknown** → validator-rejected — i.e. **conceptual until tuple routing exists** *(capability_catalog.test.ts)*. The positive tuple-router test arrives with the first shipped family.
+5. ✅ Custom reachable by **exact NSID** (`service_search.test.ts` binds the NSID into the index query) **/ URI** (`service_get_by_uri` resolves unlisted) but never generic intent. Plus: a **non-routable official cap is still exact-searchable** (routing ≠ reachability).
+6. ✅ Stub ↔ production parity: registry **drift gate** (byte-identical) + mirrored behavioural cases on both sides.
+7. ✅ Validator **rejects `public` + sensitive/regulated** official caps unless `intent_routable && !requires_subject_authorization` *(7 cases incl. alias-bypass; catalog defaults additionally asserted)*.
+8. ⬜ **Still open (infra missing):** provider/place/domain/DID verification before a "verified/provider-owned" badge — nothing to test against until verification exists.
+9. ✅ **Unlisted behaves as specified:** exact-URI resolves; generic search excludes it; invocation follows the listing's access policy (`isListingPublic` + Core's ingress gate).
 
 ## Notes
 
@@ -300,8 +305,11 @@ The taxonomy is only safe if search enforces it. Required tests:
 - **Read-first.** Default new capabilities to read; `*_book`/`*_request`/
   `quote_request`/`eligibility_check` are the review-gated exceptions; the guardrail
   list is excluded.
-- **Verified state (2026-06-09):** catalog = 10 categories, 13 capabilities (4 `beta`);
-  policy fields `action_class`/`privacy_class`/`default_discoverability`/
-  `approval_policy_hint` exist; `intent_routable`/`requires_verified_provider`/
-  `requires_subject_authorization` do not yet; production `searchCapabilities` excludes
-  custom; the mobile stub now matches that.
+- **Verified state (2026-06-10):** catalog = 10 categories, 13 capabilities (4 `beta`),
+  `CATALOG_VERSION 2026-06-09`; ALL SEVEN policy fields exist (`action_class`,
+  `privacy_class`, `default_discoverability`, `approval_policy_hint`,
+  `intent_routable`, `requires_verified_provider`, `requires_subject_authorization`);
+  `school_homework_status` defaults `known_only`; production `searchCapabilities`
+  excludes custom AND filters `intentRoutable`; the mobile stub mirrors both; the
+  validator rejects public+sensitive. Remaining gaps: provider/DID verification
+  (declarative field only) and tuple routing for generic families.

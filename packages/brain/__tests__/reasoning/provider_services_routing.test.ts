@@ -35,4 +35,24 @@ describe('PROVIDER_SERVICES_ROUTING_BLOCK', () => {
   it('still routes "my X" relationships through find_preferred_provider first', () => {
     expect(PROVIDER_SERVICES_ROUTING_BLOCK).toContain('find_preferred_provider')
   })
+
+  // PUBLIC_SERVICES_TAXONOMY §3: subject-scoped capabilities are filtered out
+  // of generic discovery, so the prompt must (a) route own-record questions
+  // ("is my appointment confirmed") through Path 1, (b) tell the model those
+  // capabilities are deliberately absent from search_capabilities, and (c)
+  // only give the no-service answer after BOTH paths fail — otherwise the
+  // old Path-2 example would deterministically dead-end.
+  it('routes own-record (subject-scoped) questions via Path 1, not generic discovery', () => {
+    // the own-appointment example must sit in Path 1's half, not Path 2's
+    const path1 = PROVIDER_SERVICES_ROUTING_BLOCK.split('Path 2:')[0]
+    expect(path1).toMatch(/is my appointment confirmed/i)
+    expect(PROVIDER_SERVICES_ROUTING_BLOCK).toMatch(/intentionally absent/i)
+  })
+
+  it('requires BOTH paths to fail before the no-service answer (no premature dead-end)', () => {
+    expect(PROVIDER_SERVICES_ROUTING_BLOCK).toMatch(
+      /BOTH search_capabilities[\s\S]*AND find_preferred_provider/i,
+    )
+    expect(PROVIDER_SERVICES_ROUTING_BLOCK).toMatch(/Fall-through works BOTH ways/i)
+  })
 })

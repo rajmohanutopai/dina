@@ -229,6 +229,35 @@ describe('evaluateServiceIngressBypass', () => {
       if (d.kind === 'deny') expect(d.reason).toBe('not_configured');
     });
 
+    it('PINS the accepted V1 gap: ingress admits a SUBJECT-SCOPED capability by configuration/possession alone', () => {
+      // PUBLIC_SERVICES_TAXONOMY known gap (guardrail #8 adjacent): the
+      // ingress bypass layer does NOT consult the catalog's
+      // `requires_subject_authorization` — a stranger holding a listing's
+      // capability/service_uri is admitted, and the requester's relationship
+      // to the SUBJECT (whose order/homework/appointment it is) is never
+      // checked here. This is a DECISION, not an accident:
+      //   - known_only listings are grant-gated upstream (service_grants);
+      //   - public/unlisted listings now require responsePolicy 'review' for
+      //     subject-scoped caps (listing-validation `subject_auth_needs_review`),
+      //     so a human approves every stranger-supplied subject identifier;
+      //   - a future subject-grant check at ingress would replace this pin.
+      // If this test starts failing because ingress DENIES, the gate was
+      // wired — update the taxonomy doc + delete this pin.
+      const subjectScopedQuery = {
+        query_id: 'q-2',
+        capability: 'order_status', // requires_subject_authorization: true
+        params: { order_id: 'stranger-chosen-123' },
+        ttl_seconds: 60,
+      };
+      const d = evaluateServiceIngressBypass(
+        MsgTypeServiceQuery,
+        'did:plc:total-stranger',
+        JSON.stringify(subjectScopedQuery),
+        { isCapabilityConfigured: () => true },
+      );
+      expect(d.kind).toBe('allow');
+    });
+
     it('deny body_invalid for malformed body', () => {
       const d = evaluateServiceIngressBypass(
         MsgTypeServiceQuery,

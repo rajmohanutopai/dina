@@ -37,6 +37,7 @@ import {
 import {
   validateServiceListing,
   effectiveDiscoverability,
+  resolveCatalogCapability,
   type CapabilityDefinition,
   type Discoverability,
   type ServiceListingStatus,
@@ -262,14 +263,26 @@ export default function ServiceSettingsScreen() {
     setName(cfg.name);
     setDescription(cfg.description ?? '');
     setCapabilities(
-      Object.entries(cfg.capabilities).map(([key, cap]) => ({
-        key,
-        policy: (cap.responsePolicy ?? 'auto') as Policy,
+      Object.entries(cfg.capabilities).map(([key, cap]) => {
         // Back-compat: an existing config may predate per-capability category.
-        // Backfill the catalog's default for an official capability so a re-save
-        // validates; leave undefined for custom/unknown (the user re-picks it).
-        category: cap.category ?? findCapability(catalog, key)?.default_category_id,
-      })),
+        // Backfill the catalog's default for an official capability so a
+        // re-save validates; leave undefined for custom/unknown (the user
+        // re-picks it). The key is resolved THROUGH THE ALIAS MAP first — an
+        // alias-keyed config (e.g. `booking_status` for appointment_status,
+        // possible from CLI/Core-authored configs) classifies as OFFICIAL in
+        // the validator, so skipping the backfill for it would dead-end the
+        // save on `missing_category` with no in-screen remedy.
+        const canonical = resolveCatalogCapability(key);
+        return {
+          key,
+          policy: (cap.responsePolicy ?? 'auto') as Policy,
+          category:
+            cap.category ??
+            (canonical !== null
+              ? findCapability(catalog, canonical)?.default_category_id
+              : undefined),
+        };
+      }),
     );
   }
 
@@ -457,6 +470,39 @@ export default function ServiceSettingsScreen() {
               { text: 'Cancel', style: 'cancel' },
               {
                 text: 'Make Known-only',
+                onPress: () => {
+                  setDiscoverability('known_only');
+                  setDiscoverabilityTouched(true);
+                },
+              },
+            ],
+          );
+          return;
+        }
+        // A sensitive official capability on a PUBLIC listing (taxonomy §3 /
+        // guardrail #7 — e.g. school homework, appointment status). The
+        // validator fail-closes; here we explain it and offer the one-tap
+        // fixes instead of a dead-end error list.
+        const sensitivePublicBlocked =
+          discoverability === 'public' &&
+          verdict.errors.some((e) => e.code === 'public_sensitive_capability');
+        if (sensitivePublicBlocked) {
+          Alert.alert(
+            'Too sensitive for a Public listing',
+            'This listing includes a capability that reads sensitive or personal data ' +
+              '(for example appointment or homework status). It can be offered Unlisted ' +
+              '(link or QR) or Private / Approved Only, but not in public Dina search.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Make Unlisted',
+                onPress: () => {
+                  setDiscoverability('unlisted');
+                  setDiscoverabilityTouched(true);
+                },
+              },
+              {
+                text: 'Make Private',
                 onPress: () => {
                   setDiscoverability('known_only');
                   setDiscoverabilityTouched(true);

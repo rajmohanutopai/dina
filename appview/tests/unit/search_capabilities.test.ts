@@ -57,10 +57,10 @@ describe('searchCapabilities — registry ∩ coverage', () => {
   })
 
   it('returns multiple when multiple domains have providers', async () => {
-    const db = stubDb([{ cap: 'eta_query' }, { cap: 'appointment_status' }])
+    const db = stubDb([{ cap: 'eta_query' }, { cap: 'appointment_availability' }])
     const r = await searchCapabilities(db, { intent: 'anything' })
     const names = r.capabilities.map((c) => c.canonical).sort()
-    expect(names).toEqual(['appointment_status', 'eta_query'])
+    expect(names).toEqual(['appointment_availability', 'eta_query'])
   })
 
   it('returns empty when NO provider exists (honest empty-state / coverage)', async () => {
@@ -103,11 +103,38 @@ describe('searchCapabilities — registry ∩ coverage', () => {
   })
 
   it('ranks candidates by lexical overlap with intent', async () => {
+    const db = stubDb([{ cap: 'eta_query' }, { cap: 'appointment_availability' }])
+    // "appointment" overlaps the appointment_availability name/description, so
+    // it ranks ahead of the transit capability.
+    const r = await searchCapabilities(db, { intent: 'find appointment slots' })
+    expect(r.capabilities[0].canonical).toBe('appointment_availability')
+  })
+
+  it('EXCLUDES an official capability with intentRoutable=false even when covered (taxonomy §3 / guardrail #2)', async () => {
+    // appointment_status is OFFICIAL and covered by a discoverable provider,
+    // but it is subject-scoped (reads YOUR existing appointment) — it must
+    // never enter the generic routing pool. Routability is enforced
+    // independently of discoverability.
     const db = stubDb([{ cap: 'eta_query' }, { cap: 'appointment_status' }])
-    // "appointment" overlaps the appointment_status name/description, so it
-    // ranks ahead of the transit capability.
-    const r = await searchCapabilities(db, { intent: 'check my appointment booking' })
-    expect(r.capabilities[0].canonical).toBe('appointment_status')
+    const r = await searchCapabilities(db, { intent: 'anything' })
+    expect(r.capabilities.map((c) => c.canonical)).toEqual(['eta_query'])
+  })
+
+  it('school_homework_status NEVER appears in generic search, even from a discoverable provider (guardrail #3)', async () => {
+    const db = stubDb([{ cap: 'school_homework_status' }])
+    const r = await searchCapabilities(db, { intent: 'homework status for my kid' })
+    expect(r.capabilities).toEqual([])
+  })
+
+  it('other subject-scoped officials (order_status, delivery_eta, device_status) are excluded too', async () => {
+    const db = stubDb([
+      { cap: 'order_status' },
+      { cap: 'delivery_eta' },
+      { cap: 'device_status' },
+      { cap: 'price_check' }, // routable control
+    ])
+    const r = await searchCapabilities(db, { intent: 'anything' })
+    expect(r.capabilities.map((c) => c.canonical)).toEqual(['price_check'])
   })
 
   it('intent with no overlap returns only registry capabilities (custom excluded)', async () => {
@@ -176,5 +203,34 @@ describe('searchCapabilities — registry ∩ coverage', () => {
         : v,
     )
     expect(cols).toContain('col:did')
+  })
+
+  it('WHERE pins is_discoverable + tombstoned_at — the lines keeping unlisted/taken-down rows out of coverage (AV-5)', async () => {
+    // Without these filters an unlisted (isDiscoverable=false) or tombstoned
+    // listing would count toward generic-routing coverage. Pin the columns so
+    // a refactor can't silently drop them.
+    let captured: unknown
+    const whereStep = {
+      where: async (pred: unknown) => {
+        captured = pred
+        return [] as Array<{ cap: string }>
+      },
+    }
+    const db = {
+      select: () => ({
+        from: () => ({
+          leftJoin: () => whereStep,
+          where: whereStep.where,
+        }),
+      }),
+    } as unknown as DrizzleDB
+    await searchCapabilities(db, { intent: 'anything' })
+    const cols = JSON.stringify(captured, (_k, v) =>
+      v && typeof v === 'object' && typeof (v as { name?: unknown }).name === 'string'
+        ? `col:${(v as { name: string }).name}`
+        : v,
+    )
+    expect(cols).toContain('col:is_discoverable')
+    expect(cols).toContain('col:tombstoned_at')
   })
 })

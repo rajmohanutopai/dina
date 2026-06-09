@@ -43,7 +43,11 @@
  * Pattern A suspend/resume is that Phase-2 extension.
  */
 
-import { classifyProviderErrorMessage } from '../llm/provider_error_classify';
+import {
+  classifyProviderErrorKind,
+  classifyProviderErrorMessage,
+  type ProviderErrorKind,
+} from '../llm/provider_error_classify';
 
 import type { ToolExecutionOutcome, ToolRegistry } from './tool_registry';
 import type {
@@ -147,6 +151,13 @@ export interface AgenticLoopResult {
    * captured by the system log stream).
    */
   providerErrorMessage?: string;
+  /**
+   * Structured classification of the provider failure (credits / key /
+   * rate-limit / …) when a vendor signal matched. Lets non-message
+   * consumers (mobile key-health pill) react to "the money ran out"
+   * without string-matching the human template.
+   */
+  providerErrorKind?: ProviderErrorKind;
 }
 
 const DEFAULT_MAX_ITERATIONS = 8;
@@ -350,6 +361,7 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
   const toolLog = state.toolLog;
   let answer = '';
   let providerErrorMessage: string | undefined;
+  let providerErrorKind: ProviderErrorKind | undefined;
 
   console.log('[agentic_loop] start', {
     iteration,
@@ -446,6 +458,7 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
       const classified = classifyProviderErrorMessage(errMessage);
       providerErrorMessage =
         classified ?? `${errCtor}: provider unavailable (see device logs for the error type)`;
+      providerErrorKind = classifyProviderErrorKind(errMessage) ?? undefined;
       return done('provider_error');
     }
 
@@ -559,6 +572,9 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
     };
     if (providerErrorMessage !== undefined) {
       result.providerErrorMessage = providerErrorMessage;
+    }
+    if (providerErrorKind !== undefined) {
+      result.providerErrorKind = providerErrorKind;
     }
     return result;
   }

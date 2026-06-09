@@ -12,6 +12,7 @@
  * mental index of the page doesn't shuffle when they switch active.
  */
 
+import { useFocusEffect } from 'expo-router';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -23,10 +24,19 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
+import { getProviderTiers } from '@dina/brain/llm';
+
+import {
+  loadActiveProvider,
+  saveActiveProvider,
+  peekActiveProvider,
+} from '../src/ai/active_provider';
+import { swapAgenticActiveProvider } from '../src/ai/agentic_swap';
+import { wireBrainChatProvider } from '../src/ai/brain_wiring';
+import { loadModelOverrides, peekModelOverride } from '../src/ai/model_overrides';
+import { getModelDisplayName } from '../src/ai/models_catalog';
 import {
   PROVIDERS,
   saveApiKey,
@@ -37,20 +47,9 @@ import {
   verifyKey,
   getConfiguredProviders,
 } from '../src/ai/provider';
-import {
-  loadActiveProvider,
-  saveActiveProvider,
-  peekActiveProvider,
-} from '../src/ai/active_provider';
-import { wireBrainChatProvider } from '../src/ai/brain_wiring';
-import { swapAgenticActiveProvider } from '../src/ai/agentic_swap';
+import { KeyHealthPill } from '../src/components/key_health_pill';
 import { ModelPickerSheet } from '../src/components/ModelPickerSheet';
-import {
-  loadModelOverrides,
-  peekModelOverride,
-} from '../src/ai/model_overrides';
-import { getModelDisplayName } from '../src/ai/models_catalog';
-import { getProviderTiers } from '@dina/brain/llm';
+import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 
 import type { ProviderType } from '../src/ai/provider';
 
@@ -67,24 +66,17 @@ export default function AIProvidersScreen(): React.JSX.Element {
   // extra padding to keep the last tile clear.
   const bottomPad = insets.bottom + 49 + spacing.md;
 
-  const [providerStates, setProviderStates] = useState<
-    Record<ProviderType, ProviderState>
-  >({
+  const [providerStates, setProviderStates] = useState<Record<ProviderType, ProviderState>>({
     openai: { configured: false, keyPreview: null, loading: true },
     gemini: { configured: false, keyPreview: null, loading: true },
     claude: { configured: false, keyPreview: null, loading: true },
     openrouter: { configured: false, keyPreview: null, loading: true },
   });
-  const [editingProvider, setEditingProvider] = useState<ProviderType | null>(
-    null,
-  );
+  const [editingProvider, setEditingProvider] = useState<ProviderType | null>(null);
   const [keyInput, setKeyInput] = useState('');
   const [saving, setSaving] = useState(false);
-  const [active, setActive] = useState<ProviderType | null>(
-    peekActiveProvider(),
-  );
-  const [modelSheetProvider, setModelSheetProvider] =
-    useState<ProviderType | null>(null);
+  const [active, setActive] = useState<ProviderType | null>(peekActiveProvider());
+  const [modelSheetProvider, setModelSheetProvider] = useState<ProviderType | null>(null);
   // Bumped after the model picker closes so the inline preview reads
   // the new override without a navigation/focus event.
   const [modelVersion, setModelVersion] = useState(0);
@@ -191,9 +183,7 @@ export default function AIProvidersScreen(): React.JSX.Element {
     );
   };
 
-  const handleSelectActive = async (
-    provider: ProviderType,
-  ): Promise<void> => {
+  const handleSelectActive = async (provider: ProviderType): Promise<void> => {
     await saveActiveProvider(provider);
     await wireBrainChatProvider(provider);
     await swapAgenticActiveProvider(provider);
@@ -264,6 +254,10 @@ export default function AIProvidersScreen(): React.JSX.Element {
                     )}
                   </View>
                   <Text style={styles.providerDesc}>{info.description}</Text>
+                  {/* Probe only the ACTIVE configured key (cost discipline —
+                      a probe burns ~1 token when healthy). Problem-only pill:
+                      credits exhausted / key not working. */}
+                  {isActive && state.configured && <KeyHealthPill provider={type} />}
                 </View>
                 {state.loading ? (
                   <ActivityIndicator size="small" color={colors.textMuted} />
@@ -302,10 +296,7 @@ export default function AIProvidersScreen(): React.JSX.Element {
                     <TouchableOpacity
                       testID={`ai-providers-save-${type}`}
                       accessibilityRole="button"
-                      style={[
-                        styles.saveButton,
-                        saving && styles.saveButtonDisabled,
-                      ]}
+                      style={[styles.saveButton, saving && styles.saveButtonDisabled]}
                       onPress={() => void handleSaveKey(type)}
                       disabled={saving || !keyInput.trim()}
                     >
@@ -339,12 +330,10 @@ export default function AIProvidersScreen(): React.JSX.Element {
                         {modelVersion >= 0
                           ? `${getModelDisplayName(
                               type,
-                              peekModelOverride(type, 'primary') ??
-                                getProviderTiers(type).primary,
+                              peekModelOverride(type, 'primary') ?? getProviderTiers(type).primary,
                             )}\n${getModelDisplayName(
                               type,
-                              peekModelOverride(type, 'lite') ??
-                                getProviderTiers(type).lite,
+                              peekModelOverride(type, 'lite') ?? getProviderTiers(type).lite,
                             )}`
                           : ''}
                       </Text>

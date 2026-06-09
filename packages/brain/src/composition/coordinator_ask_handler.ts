@@ -52,8 +52,11 @@ import {
   type ServiceQueryLifecycle,
 } from '../chat/thread';
 import {
+  classifyProviderErrorKind,
   classifyProviderErrorMessage,
   GENERIC_PROVIDER_FAILURE_MESSAGE,
+  providerErrorMessageForKind,
+  type ProviderErrorKind,
 } from '../llm/provider_error_classify';
 
 import { resetAskApprovalGateway, setAskApprovalGateway } from './ask_gateway_registry';
@@ -95,6 +98,15 @@ export interface CreateCoordinatorAskHandlerOptions {
    * or LLM error). Defaults to a generic "/ask failed: <reason>".
    */
   formatFailureMessage?: (input: { failureKind: string; raw: AskFailure | string }) => string;
+  /**
+   * Fired when an /ask fails on a CLASSIFIED provider error (credits
+   * exhausted, invalid key, …). Lets the host surface the condition
+   * outside the chat bubble — mobile feeds the Settings key-health
+   * pill so it is already lit the moment chat hits the wall, instead
+   * of waiting for the next Settings-visit probe. Best-effort: errors
+   * thrown by the callback are swallowed.
+   */
+  onProviderFailure?: (input: { kind: ProviderErrorKind; message: string }) => void;
 }
 
 // Mirrors the orchestrator's own `DEFAULT_THREAD` constant. Kept as a
@@ -146,9 +158,22 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
     (({ failureKind, raw }: { failureKind: string; raw: AskFailure | string }): string => {
       switch (failureKind) {
         case 'provider_error': {
-          // Surface the underlying error message when the loop captured
-          // one (set by ask_coordinator.translateLoopResult). Run it
-          // through `humaniseProviderError` so quota / rate-limit /
+          // Prefer the STRUCTURED kind the loop attached
+          // (failure.detail.providerErrorKind): the loop already turned the
+          // raw error into a template, and re-classifying the TEMPLATE text
+          // is lossy (its wording need not match the raw-error patterns —
+          // that exact double-classification regressed the credits message
+          // back to the generic apology).
+          const structuredKind =
+            typeof raw === 'object' && raw !== null
+              ? (raw as AskFailure).detail?.providerErrorKind
+              : undefined;
+          if (typeof structuredKind === 'string') {
+            return providerErrorMessageForKind(structuredKind as ProviderErrorKind);
+          }
+          // Otherwise surface the underlying error message when the loop
+          // captured one (set by ask_coordinator.translateLoopResult). Run
+          // it through `humaniseProviderError` so quota / rate-limit /
           // auth / timeout failures become user-friendly one-liners
           // with actionable next steps instead of raw vendor stack
           // traces (RetryError + docs URLs + nested wrappers).
@@ -177,6 +202,33 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
         }
       }
     });
+
+  // Best-effort host notification for CLASSIFIED provider failures
+  // (credits exhausted / invalid key / …). Prefers the structured kind the
+  // agentic loop attached (failure.detail.providerErrorKind); falls back to
+  // re-classifying the failure MESSAGE so failures arriving via persisted
+  // error_json (the async/deferred path round-trips through JSON and may
+  // predate the kind field) still notify. Only called for
+  // failureKind === 'provider_error' — never classify denial/cancel text.
+  const notifyProviderFailure = (raw: AskFailure | string): void => {
+    if (opts.onProviderFailure === undefined) return;
+    try {
+      let kind: ProviderErrorKind | null = null;
+      let message = '';
+      if (typeof raw === 'object' && raw !== null) {
+        const m = (raw as { message?: unknown }).message;
+        message = typeof m === 'string' ? m : '';
+        const fromDetail = (raw as AskFailure).detail?.providerErrorKind;
+        if (typeof fromDetail === 'string') kind = fromDetail as ProviderErrorKind;
+      } else if (typeof raw === 'string') {
+        message = raw;
+      }
+      if (kind === null && message !== '') kind = classifyProviderErrorKind(message);
+      if (kind !== null) opts.onProviderFailure({ kind, message });
+    } catch {
+      // Best-effort — a host callback must never break the chat path.
+    }
+  };
 
   // askId → tracked metadata. Populated when handleAsk returns
   // pending_approval; cleaned when the deferred event fires (or when
@@ -303,6 +355,9 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
       const errPayload =
         record.errorJson !== undefined ? safeParse(record.errorJson) : { kind: record.status };
       const failureKind = extractFailureKind(errPayload, record.status);
+      if (failureKind === 'provider_error') {
+        notifyProviderFailure(errPayload as AskFailure | string);
+      }
       const text = formatFailure({
         failureKind,
         raw: errPayload as AskFailure | string,
@@ -363,6 +418,9 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
     if (result.kind === 'fast_path' && result.body.status === 'failed') {
       const raw = result.body.error ?? {};
       const failureKind = extractFailureKind(raw, 'failed');
+      if (failureKind === 'provider_error') {
+        notifyProviderFailure(raw as AskFailure | string);
+      }
       let missingCapabilities = extractMissingCapabilities(raw, query);
       if (missingCapabilities.length === 0) {
         missingCapabilities = missingCapabilitiesFromFailedAsk(query, failureKind, raw);

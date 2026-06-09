@@ -45,6 +45,9 @@ const CAP_A: CapabilityDefinition = {
   privacy_class: 'public',
   default_discoverability: 'public',
   approval_policy_hint: 'none',
+  intent_routable: true,
+  requires_verified_provider: false,
+  requires_subject_authorization: false,
   introduced_in: '2026-06-01',
 };
 // Same as CAP_A but with NO default_category_id (exactOptionalPropertyTypes
@@ -153,6 +156,101 @@ describe('catalog integrity — fail-loud on authoring bugs (spec §41)', () => 
     const booking: CapabilityDefinition = { ...CAP_A, id: 'book_thing', action_class: 'booking', approval_policy_hint: 'none' };
     expect(() => validateCatalogIntegrity([CAT_A], [booking])).toThrow(/must carry a non-"none" approval/i);
   });
+
+  it('rejects a subject-scoped capability marked intent_routable (taxonomy §3)', () => {
+    const subjectScoped: CapabilityDefinition = {
+      ...CAP_A,
+      id: 'subject_thing',
+      requires_subject_authorization: true,
+      intent_routable: true,
+    };
+    expect(() => validateCatalogIntegrity([CAT_A], [subjectScoped])).toThrow(
+      /must not be intent_routable/i,
+    );
+  });
+
+  it('rejects a sensitive capability failing the public-exposure predicate with a PUBLIC default (self-contradicting catalog)', () => {
+    // Such a default steers every new listing into a guaranteed
+    // public_sensitive_capability publish error.
+    const selfContradicting: CapabilityDefinition = {
+      ...CAP_A,
+      id: 'lab_results_status',
+      privacy_class: 'sensitive',
+      intent_routable: false,
+      requires_subject_authorization: true,
+      default_discoverability: 'public',
+    };
+    expect(() => validateCatalogIntegrity([CAT_A], [selfContradicting])).toThrow(
+      /fails the public-exposure predicate/i,
+    );
+    // A sensitive cap that PASSES the predicate (routable + not subject-scoped,
+    // e.g. a public status page) MAY default public.
+    const allowed: CapabilityDefinition = {
+      ...CAP_A,
+      id: 'status_page_thing',
+      privacy_class: 'sensitive',
+      intent_routable: true,
+      requires_subject_authorization: false,
+      default_discoverability: 'public',
+    };
+    expect(() => validateCatalogIntegrity([CAT_A], [allowed])).not.toThrow();
+  });
+
+  it('rejects requires_verified_provider + intent_routable until verified-provider routing exists (taxonomy §6 Stage B)', () => {
+    const credentialVerify: CapabilityDefinition = {
+      ...CAP_A,
+      id: 'credential_verify',
+      requires_verified_provider: true,
+      intent_routable: true,
+    };
+    expect(() => validateCatalogIntegrity([CAT_A], [credentialVerify])).toThrow(
+      /verified-provider routing exists/i,
+    );
+  });
+});
+
+describe('routing-policy fields (PUBLIC_SERVICES_TAXONOMY §3)', () => {
+  it('no shipped subject-scoped capability is intent_routable', () => {
+    for (const cap of CATALOG_CAPABILITIES) {
+      if (cap.requires_subject_authorization) {
+        expect(cap.intent_routable).toBe(false);
+      }
+    }
+  });
+
+  it('school_homework_status is official but never generic-routable, approved-only by default', () => {
+    const cap = getCatalogCapability('school_homework_status');
+    expect(cap?.intent_routable).toBe(false);
+    expect(cap?.requires_subject_authorization).toBe(true);
+    expect(cap?.default_discoverability).toBe('known_only'); // target per taxonomy §3
+  });
+
+  it('the canonical generic-discovery capabilities stay routable', () => {
+    for (const id of ['eta_query', 'price_check', 'appointment_availability', 'service_quote']) {
+      expect(getCatalogCapability(id)?.intent_routable).toBe(true);
+    }
+  });
+
+  it('bare generic-family ids (status_lookup etc.) stay CONCEPTUAL — not registered, not publishable (guardrail #4)', () => {
+    // PUBLIC_SERVICES_TAXONOMY guardrail #4: until tuple routing
+    // ({capability, category_id, object_type}) exists, broad families must not
+    // ship as callable bare capabilities — only their typed profiles
+    // (order_status, appointment_status, …) are real. A bare family id must
+    // classify as UNKNOWN (flat, unregistered), which the listing validator
+    // rejects as `unknown_capability`.
+    for (const familyId of [
+      'status_lookup',
+      'availability_lookup',
+      'schedule_lookup',
+      'hours_lookup',
+      'inventory_lookup',
+      'balance_lookup',
+      'usage_lookup',
+    ]) {
+      expect(getCatalogCapability(familyId)).toBeNull();
+      expect(classifyCatalogCapability(familyId)).toEqual({ kind: 'unknown' });
+    }
+  });
 });
 
 describe('catalog ⊇ resolver-registry consistency gate (spec §79)', () => {
@@ -168,6 +266,31 @@ describe('catalog ⊇ resolver-registry consistency gate (spec §79)', () => {
       // `category_ids` or AppView would drop a category the catalog allows
       // (or admit one it forbids). This closes the anti-spoof gate (Codex #3).
       expect([...entry.categoryIds].sort()).toEqual([...(cap?.category_ids ?? [])].sort());
+      // intentRoutable must mirror the catalog's intent_routable — AppView's
+      // generic searchCapabilities filters on the REGISTRY flag (it can't
+      // import the catalog), so a mismatch would route a capability the
+      // catalog forbids from generic discovery (or hide one it allows).
+      expect(entry.intentRoutable).toBe(cap?.intent_routable);
+      // privacyClass + requiresSubjectAuthorization mirror the catalog so the
+      // INGESTER can enforce the public-sensitive rule at the trust boundary
+      // (a direct-to-PDS publisher bypasses the listing validator).
+      expect(entry.privacyClass).toBe(cap?.privacy_class);
+      expect(entry.requiresSubjectAuthorization).toBe(cap?.requires_subject_authorization);
+      // description + domain are the LLM's actual routing signals in
+      // searchCapabilities — pin them to the catalog's short_description /
+      // default_category_id so the two vocabularies can't silently diverge.
+      expect(entry.description).toBe(cap?.short_description);
+      expect(entry.domain).toBe(cap?.default_category_id);
+    }
+  });
+
+  it('the registry mirrors EVERY catalog capability (no catalog cap missing from the registry)', () => {
+    // The §79 gate above checks registry ⊆ catalog; this checks catalog ⊆
+    // registry. Without it, a catalog capability absent from the registry
+    // would be pickable in mobile but unroutable + unfilterable in AppView.
+    const registryIds = new Set(CAPABILITY_REGISTRY.map((e) => e.canonical));
+    for (const cap of CATALOG_CAPABILITIES) {
+      expect(registryIds.has(cap.id)).toBe(true);
     }
   });
 });

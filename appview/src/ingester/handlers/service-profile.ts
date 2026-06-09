@@ -5,6 +5,8 @@ import { services } from '@/db/schema/index.js'
 import {
   allowedCategoriesForCapability,
   canonicalizeForIndex,
+  getCapabilityEntry,
+  isPublicExposureAllowed,
   resolveSearchableCapability,
 } from '@/shared/capability-registry.js'
 
@@ -82,13 +84,51 @@ export const serviceProfileHandler: RecordHandler = {
       record.capabilitySchemas,
       record.responsePolicy,
     )
-    const normalizedCapabilities = canon.capabilities
+    let normalizedCapabilities = canon.capabilities
     for (const unknown of canon.unknown) {
       ctx.metrics.incr('service.capability.unknown', { cap: unknown })
       ctx.logger.debug(
         { uri: op.uri, cap: unknown },
         '[ServiceProfile] dropping unknown capability from public index',
       )
+    }
+
+    // The index flag is DERIVED from the authoritative discoverability enum
+    // when present — never trusted from the redundant publisher-controlled
+    // boolean. Without this, a record written directly to the PDS with
+    // `{discoverability:'unlisted', isDiscoverable:true}` would leak into
+    // public search AND generic-routing coverage (both gate on
+    // isDiscoverable=true) despite declaring itself link-only. Legacy records
+    // without the enum keep the boolean (pre-enum behavior).
+    const effectiveIsDiscoverable = disc !== undefined ? disc === 'public' : record.isDiscoverable
+
+    // Trust-boundary mirror of the listing validator's
+    // `public_sensitive_capability` rule (PUBLIC_SERVICES_TAXONOMY §3 /
+    // guardrail #7). A publisher writing the AT record straight to its PDS
+    // bypasses Core/mobile validation entirely, so the ingester must drop a
+    // sensitive/regulated official capability from a PUBLIC row unless its
+    // policy explicitly allows generic exposure — the same pattern as the
+    // category anti-spoof drop above. Custom (namespaced) caps carry no
+    // registry privacy class and pass through (they are exact-NSID-only
+    // reachable anyway). Unlisted rows keep the capability: they are not in
+    // public search, only resolve-by-uri.
+    if (effectiveIsDiscoverable) {
+      const kept: string[] = []
+      for (const cap of normalizedCapabilities) {
+        const entry = getCapabilityEntry(cap)
+        if (entry !== null && !isPublicExposureAllowed(entry)) {
+          ctx.metrics.incr('service.capability.public_sensitive_dropped', { cap })
+          ctx.logger.debug(
+            { uri: op.uri, cap },
+            '[ServiceProfile] dropping sensitive capability from PUBLIC listing (taxonomy guardrail #7)',
+          )
+          delete canon.capabilitySchemas[cap]
+          delete canon.responsePolicy[cap]
+          continue
+        }
+        kept.push(cap)
+      }
+      normalizedCapabilities = kept
     }
 
     // Re-key per-capability categories (catalog §9.1) to the SAME canonical
@@ -191,7 +231,9 @@ export const serviceProfileHandler: RecordHandler = {
         capabilitySchemasJson:
           Object.keys(canon.capabilitySchemas).length > 0 ? canon.capabilitySchemas : null,
         capabilityCategoriesJson: canonicalCategories,
-        isDiscoverable: record.isDiscoverable,
+        // Derived from the discoverability enum (see above) — never the raw
+        // publisher boolean when the enum is present.
+        isDiscoverable: effectiveIsDiscoverable,
         discoverability: record.discoverability ?? null,
         searchContent,
         createdAt,

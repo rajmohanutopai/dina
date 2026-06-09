@@ -409,7 +409,10 @@ describe('runAgenticTurn — error handling', () => {
       userMessage: 'hi',
     });
     expect(result.finishReason).toBe('provider_error');
-    expect(result.providerErrorMessage).toMatch(/rate-limited/i);
+    // The rate-limit template hedges toward credits (the @google/genai
+    // wrapper makes 429-rate-limit vs 429-credits indistinguishable).
+    expect(result.providerErrorMessage).toMatch(/rate limit/i);
+    expect(result.providerErrorKind).toBe('rate_limited');
     // Project / id fragments from the raw text must not leak through.
     expect(result.providerErrorMessage).not.toContain('project xyz');
   });

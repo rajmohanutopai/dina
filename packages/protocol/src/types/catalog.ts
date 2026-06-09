@@ -98,6 +98,31 @@ export interface CapabilityDefinition {
   /** Default discoverability for a new listing (spec §5.2 / §19). */
   readonly default_discoverability: Discoverability;
   readonly approval_policy_hint: ApprovalPolicyHint;
+  /**
+   * Whether GENERIC intent discovery (`searchCapabilities`) may surface this
+   * capability (PUBLIC_SERVICES_TAXONOMY §3 / promotion Stage B). Orthogonal to
+   * visibility: an official capability can be a shared contract yet stay out of
+   * the generic LLM routing vocabulary forever (e.g. subject-scoped reads like
+   * `school_homework_status` — the provider is already known, so discovery goes
+   * via provider/profile, never generic search). Enforced by AppView
+   * `searchCapabilities` via the registry mirror (`intentRoutable`, §79 gate).
+   */
+  readonly intent_routable: boolean;
+  /**
+   * Whether listings advertising this capability are only meaningful from a
+   * provider that proved domain/place/institution ownership (taxonomy §3 —
+   * e.g. credential/license verification). V1: declarative only; provider/DID
+   * verification infra does not exist yet, so nothing enforces it at runtime.
+   */
+  readonly requires_verified_provider: boolean;
+  /**
+   * Whether invoking this capability reads data ABOUT A SUBJECT (a student's
+   * homework, a customer's order), so the requester needs a grant/relationship
+   * to that subject (taxonomy §3). Subject-scoped capabilities must never be
+   * generic-routable: catalog integrity enforces
+   * `requires_subject_authorization → !intent_routable` (fail-loud).
+   */
+  readonly requires_subject_authorization: boolean;
   /** Catalog version this capability was introduced in. */
   readonly introduced_in: string;
   /**

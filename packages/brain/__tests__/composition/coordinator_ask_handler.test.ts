@@ -233,6 +233,57 @@ describe('createCoordinatorAskHandler — synchronous outcomes', () => {
       dispose();
     }
   });
+
+  it('CLASSIFIED credits exhaustion: bubble says credits exhausted + onProviderFailure fires (chat → key-health pill bridge)', async () => {
+    // The live 2026-06-10 incident: Gemini prepaid balance hit zero and chat
+    // showed the GENERIC apology for hours. With the classifier upgrade the
+    // bubble must carry the top-up template, and the structured callback
+    // must fire so mobile can light the Settings pill immediately.
+    const llm = makeScripted();
+    const depleted: LLMProvider = {
+      ...llm.provider,
+      chat: async () => {
+        throw new Error(
+          'ApiError: {"error":{"code":429,"message":"Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing.","status":"RESOURCE_EXHAUSTED"}}',
+        );
+      },
+    };
+
+    const coord = buildCoord(depleted, 5_000);
+    const failures: Array<{ kind: string; message: string }> = [];
+    const { handler, dispose } = createCoordinatorAskHandler({
+      coordinator: coord,
+      requesterDid: REQUESTER,
+      onProviderFailure: (f) => failures.push(f),
+    });
+
+    try {
+      const r = await handler('anything');
+      expect(r.response).toMatch(/credits are exhausted/i);
+      expect(r.response).not.toMatch(/problem reaching the AI provider/i);
+      expect(failures).toHaveLength(1);
+      expect(failures[0].kind).toBe('credits_exhausted');
+    } finally {
+      dispose();
+    }
+  });
+
+  it('onProviderFailure does NOT fire for an unclassified provider crash', async () => {
+    const llm = makeScripted(); // empty queue → opaque "no responses queued" throw
+    const coord = buildCoord(llm.provider, 5_000);
+    const failures: unknown[] = [];
+    const { handler, dispose } = createCoordinatorAskHandler({
+      coordinator: coord,
+      requesterDid: REQUESTER,
+      onProviderFailure: (f) => failures.push(f),
+    });
+    try {
+      await handler('crash');
+      expect(failures).toEqual([]);
+    } finally {
+      dispose();
+    }
+  });
 });
 
 describe('createCoordinatorAskHandler — pending_approval deferred delivery', () => {

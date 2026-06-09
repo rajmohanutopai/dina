@@ -142,10 +142,18 @@ export class AppViewStub {
    * caps here — that was drift from production and taught the wrong architecture
    * in dev/demo.
    *
-   * `intent` is accepted but unused at launch (the covered set is tiny),
-   * matching the real endpoint's launch shortcut.
+   * SECOND gate (PUBLIC_SERVICES_TAXONOMY §3, mirrors production): only
+   * registry entries flagged `intentRoutable` enter the generic pool — an
+   * official-but-subject-scoped capability (`school_homework_status`,
+   * `order_status`) never appears here even when a discoverable profile
+   * advertises it.
+   *
+   * Like production, the result is RANKED by lexical token-overlap between
+   * the `intent` and each candidate's canonical+description+domain (stable
+   * sort — registry order for ties), so the candidate ORDER the LLM sees in
+   * dev/demo matches what it would see against the real endpoint.
    */
-  async searchCapabilities(_params: SearchCapabilitiesParams): Promise<CapabilityCandidate[]> {
+  async searchCapabilities(params: SearchCapabilitiesParams): Promise<CapabilityCandidate[]> {
     const covered = new Set<string>();
     for (const profile of this.profiles.values()) {
       if (!profile.isDiscoverable) continue;
@@ -154,16 +162,29 @@ export class AppViewStub {
         if (canonical !== null) covered.add(canonical);
       }
     }
-    // Only canonical registry capabilities enter generic discovery. Custom NSIDs
-    // may be present in `covered`, but are never emitted from this endpoint.
+    // Only canonical registry capabilities flagged intentRoutable enter
+    // generic discovery. Custom NSIDs may be present in `covered`, but are
+    // never emitted from this endpoint.
     const out: CapabilityCandidate[] = [];
     for (const entry of allCanonicalCapabilities()) {
-      if (covered.has(entry.canonical)) {
+      if (entry.intentRoutable && covered.has(entry.canonical)) {
         out.push({
           canonical: entry.canonical,
           description: entry.description,
           domain: entry.domain,
         });
+      }
+    }
+    // Intent ranking — byte-for-byte the production algorithm
+    // (appview/src/api/xrpc/search-capabilities.ts): token overlap, stable
+    // sort on ties.
+    const intent = params.intent;
+    if (typeof intent === 'string' && intent.trim() !== '') {
+      const intentTokens = tokenizeForRanking(intent);
+      if (intentTokens.size > 0) {
+        const scored = out.map((c, i) => ({ c, i, score: overlapScoreForRanking(intentTokens, c) }));
+        scored.sort((a, b) => b.score - a.score || a.i - b.i);
+        return scored.map((s) => s.c);
       }
     }
     return out;
@@ -310,4 +331,24 @@ export function drCarlDemoProfile(overrides: Partial<ServiceProfile> = {}): Serv
     },
     ...overrides,
   };
+}
+
+// ─── Intent-ranking helpers (byte-for-byte the production algorithm in
+//     appview/src/api/xrpc/search-capabilities.ts — parity guardrail #6) ─────
+
+/** Lowercased alnum word tokens, deduped. Pure. */
+function tokenizeForRanking(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const tok of text.toLowerCase().split(/[^a-z0-9]+/)) {
+    if (tok.length > 0) out.add(tok);
+  }
+  return out;
+}
+
+/** Count of intent tokens present in a candidate's searchable text. */
+function overlapScoreForRanking(intentTokens: Set<string>, c: CapabilityCandidate): number {
+  const hay = tokenizeForRanking(`${c.canonical} ${c.description} ${c.domain}`);
+  let score = 0;
+  for (const t of intentTokens) if (hay.has(t)) score++;
+  return score;
 }

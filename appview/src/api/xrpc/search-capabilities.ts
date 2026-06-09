@@ -16,9 +16,11 @@ import { allCanonicalCapabilities } from '@/shared/capability-registry.js'
  * (coverage): the LLM can only pick a capability that actually has a
  * provider behind it.
  *
- * Output = canonical capabilities that are BOTH:
+ * Output = canonical capabilities that are ALL of:
  *   (a) in the closed registry, AND
- *   (b) currently advertised by ≥1 discoverable, non-tombstoned provider
+ *   (b) flagged `intentRoutable` (PUBLIC_SERVICES_TAXONOMY §3 — official-but-
+ *       subject-scoped capabilities never enter generic routing), AND
+ *   (c) currently advertised by ≥1 discoverable, non-tombstoned provider
  *       (the coverage filter — an unsupported intent ends at the honest
  *       empty-state immediately, no wasted provider search).
  *
@@ -104,9 +106,17 @@ export async function searchCapabilities(
   // exact service_uri via service.getByUri, and (later) via provider/place
   // browse — just never via generic intent. (Restored to the original spec
   // §Layer-4 contract: "in the closed registry".)
+  //
+  // SECOND gate (PUBLIC_SERVICES_TAXONOMY §3): only canonical capabilities
+  // flagged `intentRoutable` enter the generic pool. An official capability
+  // can be a shared contract yet stay out of generic routing forever —
+  // subject-scoped reads (`school_homework_status`, `order_status`) route via
+  // the already-known provider, never via "what service answers this?". The
+  // gate holds even if such a capability is somehow published publicly:
+  // discoverability and routability are enforced independently.
   const capabilities: CapabilityCandidate[] = []
   for (const entry of allCanonicalCapabilities()) {
-    if (covered.has(entry.canonical)) {
+    if (entry.intentRoutable && covered.has(entry.canonical)) {
       capabilities.push({
         canonical: entry.canonical,
         description: entry.description,
