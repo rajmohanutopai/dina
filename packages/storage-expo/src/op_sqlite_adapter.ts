@@ -18,16 +18,26 @@
 
 import type { DatabaseAdapter, DBRow } from '@dina/core';
 
-// op-sqlite types — imported dynamically in production. Typed as a
-// union because op-sqlite ≥ 15 returns `rows` as a flat array while
-// older versions used `{ _array: […] }`. The adapter's `query` method
-// handles both shapes at runtime.
+// op-sqlite types — imported dynamically in production. We use the SYNC API
+// (`executeSync`): the `DatabaseAdapter` contract is synchronous, and op-sqlite
+// ≥ 15's async `execute()` returns a `Promise<QueryResult>` whose `.rows` /
+// `.rowsAffected` are NOT readable synchronously — reading them off the promise
+// yields `undefined`, silently collapsing every SELECT to `[]` and every
+// `run()` count to 0 (breaking the durable-job CAS). The app-local adapter uses
+// the same `executeSync` path. `rows` is typed as a union because op-sqlite ≥ 15
+// returns it as a flat array while older versions used `{ _array: […] }`; the
+// `query` method handles both at runtime.
 interface OpSQLiteDB {
-  execute: (
+  executeSync: (
     sql: string,
     params?: unknown[],
   ) => {
     rows?: Record<string, unknown>[] | { _array: Record<string, unknown>[] };
+    /** `sqlite3_changes()` for the statement — the rows an UPDATE/DELETE/INSERT
+     *  actually touched. Load-bearing: every durable-job CAS (claim/complete/…)
+     *  guards on `WHERE … status=?` and trusts this count to know the transition
+     *  applied. op-sqlite ≥ 15 always populates it. */
+    rowsAffected?: number;
   };
   close: () => void;
 }
@@ -60,26 +70,26 @@ export class OpSQLiteAdapter implements DatabaseAdapter {
 
     // SQLCipher encryption
     if (dekHex) {
-      this.db.execute(`PRAGMA key = "x'${dekHex}'"`);
+      this.db.executeSync(`PRAGMA key = "x'${dekHex}'"`);
     }
 
     // Performance pragmas
-    this.db.execute('PRAGMA journal_mode = WAL');
-    this.db.execute('PRAGMA synchronous = NORMAL');
-    this.db.execute('PRAGMA foreign_keys = ON');
-    this.db.execute('PRAGMA busy_timeout = 5000');
+    this.db.executeSync('PRAGMA journal_mode = WAL');
+    this.db.executeSync('PRAGMA synchronous = NORMAL');
+    this.db.executeSync('PRAGMA foreign_keys = ON');
+    this.db.executeSync('PRAGMA busy_timeout = 5000');
 
     this._isOpen = true;
   }
 
   execute(sql: string, params?: unknown[]): void {
     this.assertOpen();
-    this.db!.execute(sql, params);
+    this.db!.executeSync(sql, params);
   }
 
   query<T extends DBRow = DBRow>(sql: string, params?: unknown[]): T[] {
     this.assertOpen();
-    const result = this.db!.execute(sql, params);
+    const result = this.db!.executeSync(sql, params);
     // op-sqlite 15+ returns `rows` as a flat `Array<Record<…>>`.
     // Older versions exposed `{ _array: […] }`. Reading the old shape
     // against the new return silently yielded `[]` for every SELECT,
@@ -95,18 +105,25 @@ export class OpSQLiteAdapter implements DatabaseAdapter {
 
   run(sql: string, params?: unknown[]): number {
     this.assertOpen();
-    this.db!.execute(sql, params);
-    return 1; // op-sqlite doesn't return affected rows easily
+    // Return the REAL changed-row count (`sqlite3_changes()`), not a constant.
+    // The durable-job state machine's CAS transitions (`UPDATE … WHERE …
+    // status=?`) read this to know whether the guarded row actually matched;
+    // a hardcoded `1` made every CAS report success, so two overlapping drains
+    // could both "claim"/"complete" the same job and lost leases counted as
+    // publishes. `?? 0` fails CLOSED (treat as "did not apply") if a future
+    // op-sqlite ever omits the field — safer than a false success.
+    const result = this.db!.executeSync(sql, params);
+    return result.rowsAffected ?? 0;
   }
 
   transaction(fn: () => void): void {
     this.assertOpen();
-    this.db!.execute('BEGIN');
+    this.db!.executeSync('BEGIN');
     try {
       fn();
-      this.db!.execute('COMMIT');
+      this.db!.executeSync('COMMIT');
     } catch (err) {
-      this.db!.execute('ROLLBACK');
+      this.db!.executeSync('ROLLBACK');
       throw err;
     }
   }
@@ -115,7 +132,7 @@ export class OpSQLiteAdapter implements DatabaseAdapter {
     if (!this._isOpen || !this.db) return;
     // WAL checkpoint before close
     try {
-      this.db.execute('PRAGMA wal_checkpoint(TRUNCATE)');
+      this.db.executeSync('PRAGMA wal_checkpoint(TRUNCATE)');
     } catch {
       /* ok */
     }

@@ -33,8 +33,12 @@
  */
 
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
+
+import { FEATURE_NAMES } from '@dina/core';
+
+import { IdentityModal } from '../../../src/components/identity/identity_modal';
 import { getBootedNode } from '../../../src/hooks/useNodeBootstrap';
 
 /**
@@ -52,19 +56,17 @@ import {
   ActivityIndicator,
 } from 'react-native';
 
-import { colors, spacing, radius, textStyles } from '../../../src/theme';
+import { BAND_COLOUR, BAND_LABEL } from '../../../src/peerlens/band_theme';
+import { shortHandle, truncateDid } from '../../../src/peerlens/handle_display';
 import {
   deriveReviewerProfileDisplay,
   formatLastActive,
 } from '../../../src/peerlens/reviewer_profile_data';
-import { BAND_COLOUR, BAND_LABEL } from '../../../src/peerlens/band_theme';
 import { useAuthoredAttestations } from '../../../src/peerlens/runners/use_authored_attestations';
 import { useReviewerProfile } from '../../../src/peerlens/runners/use_reviewer_profile';
-import { IdentityModal } from '../../../src/components/identity/identity_modal';
-import { shortHandle, truncateDid } from '../../../src/peerlens/handle_display';
+import { colors, spacing, radius, textStyles } from '../../../src/theme';
 
 import type { AuthoredAttestationRow } from '../../../src/peerlens/authored_attestations_data';
-import { FEATURE_NAMES } from '@dina/core';
 import type { PeerlensProfile } from '@dina/core';
 
 export interface ReviewerProfileScreenProps {
@@ -117,6 +119,9 @@ export interface ReviewerProfileScreenProps {
 }
 
 
+/** Authored reviews shown before the "View all reviews" expander. */
+const AUTHORED_PREVIEW_COUNT = 5;
+
 export default function ReviewerProfileScreen(
   props: ReviewerProfileScreenProps = {},
 ): React.ReactElement {
@@ -144,6 +149,8 @@ export default function ReviewerProfileScreen(
   // (when caller supplies `profile` / `error` props).
   const [autoError, setAutoError] = React.useState<string | null>(null);
   const [retryNonce, setRetryNonce] = React.useState(0);
+  // The authored list previews the latest N; "View all reviews" expands it.
+  const [showAllReviews, setShowAllReviews] = React.useState(false);
   // Auto-runner: fetch the profile from AppView when no controlled
   // props are supplied (i.e. production routing — tests pass
   // `profile` or `error` and the runner stays inert).
@@ -362,12 +369,17 @@ export default function ReviewerProfileScreen(
     display.handle !== null ? shortHandle(display.handle) : null;
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      testID="reviewer-profile-screen"
-    >
-      {/* ─── Header card: identity + score + band ─────────────────── */}
+    <>
+      {/* Self profile is the "Your reviews" hub; a peer's is "Reviewer". The
+          launchpad's "Your review activity" entry should land on a coherent
+          header. */}
+      <Stack.Screen options={{ title: isSelf ? 'Your reviews' : 'Reviewer' }} />
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        testID="reviewer-profile-screen"
+      >
+        {/* ─── Header card: identity + score + band ─────────────────── */}
       <View style={styles.headerCard}>
         <View style={styles.headerRow}>
           <Pressable
@@ -540,21 +552,98 @@ export default function ReviewerProfileScreen(
                 : "No reviews written yet."}
             </Text>
           ) : (
-            <View style={styles.authoredList}>
-              {authoredRows.map((row) => (
-                <AuthoredAttestationRowView
-                  key={row.uri}
-                  row={row}
-                  nowMs={nowMs}
-                  onPress={onSelectAuthoredSubject}
-                  onEdit={isSelf ? onEditAuthored : undefined}
+            <>
+              <View style={styles.authoredList}>
+                {/* Preview the latest N (rows arrive recency-sorted); expand on
+                    "View all". Avoids an unbounded scroll on the profile when a
+                    prolific reviewer has dozens. */}
+                {(showAllReviews
+                  ? authoredRows
+                  : authoredRows.slice(0, AUTHORED_PREVIEW_COUNT)
+                ).map((row) => (
+                  <AuthoredAttestationRowView
+                    key={row.uri}
+                    row={row}
+                    nowMs={nowMs}
+                    onPress={onSelectAuthoredSubject}
+                    onEdit={isSelf ? onEditAuthored : undefined}
+                  />
+                ))}
+              </View>
+              {!showAllReviews && authoredRows.length > AUTHORED_PREVIEW_COUNT && (
+                <ProfileLinkRow
+                  label={`View all reviews (${authoredRows.length})`}
+                  testID="reviewer-authored-view-all"
+                  onPress={() => setShowAllReviews(true)}
                 />
-              ))}
-            </View>
+              )}
+            </>
           )}
         </View>
       )}
+
+      {/* ─── Publishing + About (SELF only) ──────────────────────────
+          The owner's profile doubles as their review-publishing hub:
+          pending publishes, publish identity, and result preferences
+          live here (moved off the Network home). About links to the
+          PeerLens explainer. Peers see a read-only profile — none of
+          this. */}
+      {isSelf && (
+        <>
+          <View style={styles.section} testID="reviewer-publishing-section">
+            <Text style={styles.sectionTitle}>Publishing</Text>
+            <ProfileLinkRow
+              label="Pending reviews"
+              testID="reviewer-row-pending-reviews"
+              onPress={() => router.push('/peerlens/outbox')}
+            />
+            <ProfileLinkRow
+              label="Publish as"
+              testID="reviewer-row-publish-as"
+              onPress={() => router.push('/peerlens/namespace')}
+            />
+            <ProfileLinkRow
+              label="Review preferences"
+              testID="reviewer-row-review-preferences"
+              onPress={() => router.push('/peerlens-preferences')}
+            />
+          </View>
+          <View style={styles.section} testID="reviewer-about-section">
+            <Text style={styles.sectionTitle}>About</Text>
+            <ProfileLinkRow
+              label="Powered by PeerLens"
+              testID="reviewer-row-about"
+              onPress={() => router.push('/help?from=/peerlens')}
+            />
+          </View>
+        </>
+      )}
     </ScrollView>
+    </>
+  );
+}
+
+/** A tappable label + chevron row (Publishing / About sections). */
+function ProfileLinkRow({
+  label,
+  testID,
+  onPress,
+}: {
+  label: string;
+  testID: string;
+  onPress: () => void;
+}): React.JSX.Element {
+  return (
+    <Pressable
+      onPress={onPress}
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => [styles.linkRow, pressed && styles.linkRowPressed]}
+    >
+      <Text style={styles.linkRowLabel}>{label}</Text>
+      <Text style={styles.linkRowChevron}>{'›'}</Text>
+    </Pressable>
   );
 }
 
@@ -857,6 +946,19 @@ const styles = StyleSheet.create({
   },
   section: { gap: spacing.sm },
   sectionTitle: textStyles.bodyStrong,
+  linkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 44,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.bgSecondary,
+    borderRadius: radius.md,
+  },
+  linkRowPressed: { backgroundColor: colors.bgTertiary },
+  linkRowLabel: { ...textStyles.body, flexShrink: 1 },
+  linkRowChevron: { ...textStyles.body, color: colors.textMuted },
   chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',

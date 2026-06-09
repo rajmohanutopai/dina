@@ -830,7 +830,7 @@ export default function RootLayout() {
               * pattern used for `settings`, `help`, etc. above. */}
             <Tabs.Screen
               name="peerlens-preferences/index"
-              options={{ title: 'PeerLens preferences', href: null, headerLeft: renderHeaderBackButton }}
+              options={{ title: 'Review preferences', href: null, headerLeft: renderHeaderBackButton }}
             />
             <Tabs.Screen
               name="peerlens-preferences/region"

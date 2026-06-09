@@ -38,12 +38,13 @@ jest.mock('../../src/hooks/useNodeBootstrap', () => ({
   // A publisher must be present (non-undefined) or submit returns no_credentials;
   // the test-inject path ignores it but the credential gate checks it.
   getBootedNode: jest.fn().mockReturnValue({ did: 'did:plc:test-author', pdsPublisher: {} }),
+  subscribeBootedNode: jest.fn(() => () => undefined),
 }));
 
 import { InMemoryReviewPublishRepository, setReviewPublishRepository } from '@dina/core';
 
-import * as appview from '../../src/peerlens/appview_runtime';
 import WriteScreen from '../../app/peerlens/write';
+import * as appview from '../../src/peerlens/appview_runtime';
 
 const injectMock = appview.injectAttestation as jest.MockedFunction<
   typeof appview.injectAttestation

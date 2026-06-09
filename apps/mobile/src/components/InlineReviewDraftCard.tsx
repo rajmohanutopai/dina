@@ -89,6 +89,11 @@ export function InlineReviewDraftCard({
 
   if (lc.status === 'drafting') return <DraftingState message={message} lc={lc} />;
   if (job !== null) return <JobState message={message} lc={lc} job={job} />;
+  // `failed` WITHOUT a job is a DRAFTING failure (the LLM couldn't draft) — there
+  // was never a publish to retry. Checked after the job branch so a publish
+  // failure (which always has a job) still routes to <JobState>. Surfaces
+  // lc.error instead of silently dropping it into an empty editable ReadyState.
+  if (lc.status === 'failed') return <DraftFailedState message={message} lc={lc} />;
   if (lc.status === 'discarded') return <DiscardedState message={message} lc={lc} />;
   // ready (or a cancelled job that reverted) → editable draft
   return <ReadyState message={message} lc={lc} />;
@@ -162,6 +167,12 @@ function ReadyState({
         headline: headline.trim(),
         body: body.trim(),
       };
+      // Persist the merged edits onto the lifecycle BEFORE handing off to the
+      // durable job. Once a job exists the card flips to <JobState>; if the user
+      // later cancels/dismisses it, the card reverts to ReadyState and must show
+      // THESE edits — not the original LLM draft (lc.values was otherwise never
+      // updated with the inline edits, so they'd be silently lost).
+      setReviewDraftStatus(message.threadId, lc.draftId, 'ready', { values: merged });
       const record = buildAttestationRecord(merged) as Record<string, unknown>;
       const { rkey } = newPublishKeys();
       const draft: AttestationDraftBody = {
@@ -187,6 +198,8 @@ function ReadyState({
         setError(describePublishErrorCode('no_credentials'));
       } else if (outcome.kind === 'cap_exceeded') {
         setError('Your outbox is full. Dismiss some queued reviews and try again.');
+      } else if (outcome.kind === 'demo_scope') {
+        setError("Publishing isn’t available in the demo. Switch to your own space to publish.");
       } else if (outcome.kind === 'error') {
         setError(outcome.message);
       }
@@ -414,7 +427,7 @@ function JobState({
       <View style={styles.card} testID="review-draft-card-queued">
         <View style={styles.headerRow}>
           <Ionicons name="time-outline" size={18} color={colors.textMuted} />
-          <Text style={styles.title}>Queued in Outbox</Text>
+          <Text style={styles.title}>Queued to publish</Text>
         </View>
         <Text style={styles.subtitle}>Will publish {subjectName} when you’re back online.</Text>
         <View style={styles.actionRow}>
@@ -424,7 +437,7 @@ function JobState({
             style={styles.secondaryButton}
             accessibilityRole="button"
           >
-            <Text style={styles.secondaryButtonText}>View Outbox</Text>
+            <Text style={styles.secondaryButtonText}>View pending reviews</Text>
           </Pressable>
           <Pressable
             testID="review-draft-cancel"
@@ -489,6 +502,82 @@ function DiscardedState({
       <View style={styles.headerRow}>
         <Ionicons name="close-circle-outline" size={18} color={colors.textMuted} />
         <Text style={styles.titleMuted}>Discarded the draft of {subjectName}</Text>
+      </View>
+      <MessageTimestamp timestamp={message.timestamp} />
+    </View>
+  );
+}
+
+/**
+ * Drafting failed: the LLM couldn't produce a draft, so there's no `values` to
+ * edit and never a publish job to retry. Surfaces `lc.error` and offers a fresh
+ * start in the full write form (rather than the empty editable ReadyState, which
+ * would silently drop the error).
+ */
+function DraftFailedState({
+  message,
+  lc,
+}: {
+  message: ChatMessage;
+  lc: ReviewDraftLifecycle;
+}): React.JSX.Element {
+  const router = useRouter();
+  const subjectName =
+    typeof lc.subject.name === 'string' ? lc.subject.name : 'this subject';
+  const onWriteInForm = useCallback(() => {
+    // No drafted values to recover, but we DO know the subject — open the form in
+    // create-mode SEEDED with the subject (kind + name) so the user can actually
+    // publish. WriteScreen skips its chat-draft seed (lc.values is null on a
+    // drafting failure) and its createKind path picks these up; without them it
+    // would fall back to an empty form with subject:null and block on "Pick a
+    // subject" with no picker. We don't reset the lifecycle: the card stays on
+    // this failure until a real publish job exists (which then wins via JobState).
+    const subj = lc.subject as { kind?: unknown; name?: unknown };
+    router.push({
+      pathname: '/peerlens/write',
+      params: {
+        draftId: lc.draftId,
+        threadId: message.threadId,
+        ...(typeof subj.kind === 'string' ? { createKind: subj.kind } : {}),
+        ...(typeof subj.name === 'string' ? { initialName: subj.name } : {}),
+      },
+    });
+  }, [router, message.threadId, lc.draftId, lc.subject]);
+  const onDiscard = useCallback(() => {
+    // The user doesn't want to recover the failed draft — move it to the
+    // `discarded` terminal so the card doesn't stay stuck in the thread.
+    setReviewDraftStatus(message.threadId, lc.draftId, 'discarded', {
+      content: `Discarded the draft of ${subjectName}.`,
+    });
+  }, [message.threadId, lc.draftId, subjectName]);
+  return (
+    <View style={[styles.card, styles.cardError]} testID="review-draft-card-draft-failed">
+      <View style={styles.headerRow}>
+        <Ionicons name="alert-circle-outline" size={18} color={colors.error} />
+        <Text style={styles.title}>Couldn’t draft this review</Text>
+      </View>
+      <Text style={styles.subtitle}>
+        {typeof lc.error === 'string' && lc.error.length > 0
+          ? lc.error
+          : `Something went wrong drafting ${subjectName}.`}
+      </Text>
+      <View style={styles.actionRow}>
+        <Pressable
+          testID="review-draft-write-in-form"
+          onPress={onWriteInForm}
+          style={styles.secondaryButton}
+          accessibilityRole="button"
+        >
+          <Text style={styles.secondaryButtonText}>Write in form</Text>
+        </Pressable>
+        <Pressable
+          testID="review-draft-draft-failed-discard"
+          onPress={onDiscard}
+          style={styles.secondaryButton}
+          accessibilityRole="button"
+        >
+          <Text style={styles.secondaryButtonText}>Discard</Text>
+        </Pressable>
       </View>
       <MessageTimestamp timestamp={message.timestamp} />
     </View>

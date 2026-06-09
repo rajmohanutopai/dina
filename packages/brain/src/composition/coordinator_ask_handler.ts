@@ -37,6 +37,11 @@
  */
 
 import {
+  makeMissingCapabilityNotice,
+  type AskCommandHandler,
+  type MissingCapabilityNotice,
+} from '../chat/orchestrator';
+import {
   addDinaResponse,
   addLifecycleMessage,
   addMessage,
@@ -50,15 +55,11 @@ import {
   classifyProviderErrorMessage,
   GENERIC_PROVIDER_FAILURE_MESSAGE,
 } from '../llm/provider_error_classify';
+
 import { resetAskApprovalGateway, setAskApprovalGateway } from './ask_gateway_registry';
 
 import type { AskCoordinator } from './ask_coordinator';
 import type { AskFailure } from '../ask/ask_handler';
-import {
-  makeMissingCapabilityNotice,
-  type AskCommandHandler,
-  type MissingCapabilityNotice,
-} from '../chat/orchestrator';
 
 export interface CreateCoordinatorAskHandlerOptions {
   coordinator: AskCoordinator;
@@ -283,10 +284,17 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
       }
 
       if (hasAskPlaceholder) {
-        // One-bubble morph — patch the placeholder content + status.
-        updateAskLifecycle(targetThread, askId, { status: 'complete' }, answerText);
+        // One-bubble morph — patch the placeholder content + status. Carry the
+        // review-source provenance so the morphed (plain-bubble) row shows the pill.
+        updateAskLifecycle(
+          targetThread,
+          askId,
+          { status: 'complete' },
+          answerText,
+          reviewSourcesFor(parsed),
+        );
       } else if (answerText !== '') {
-        addDinaResponse(targetThread, answerText, []);
+        addDinaResponse(targetThread, answerText, reviewSourcesFor(parsed));
       }
       return;
     }
@@ -346,7 +354,7 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
       const answer = result.body.answer ?? {};
       return {
         response: extractAnswerText(answer),
-        sources: [],
+        sources: reviewSourcesFor(answer),
         missingCapabilities: extractMissingCapabilities(answer, query),
       };
     }
@@ -445,6 +453,18 @@ function extractAnswerText(value: unknown): string {
   return JSON.stringify(value);
 }
 
+/**
+ * The chat `sources` for a resolved answer — carries the `reviewsrc:<count>`
+ * provenance token (set by the ask coordinator when network reviews informed the
+ * answer) so the mobile dina bubble can render the "Ranked / Network reviews"
+ * source pill. Empty when the answer used no network reviews.
+ */
+function reviewSourcesFor(value: unknown): string[] {
+  if (typeof value !== 'object' || value === null) return [];
+  const token = (value as Record<string, unknown>).reviewSource;
+  return typeof token === 'string' && token.length > 0 ? [token] : [];
+}
+
 function extractFailureKind(raw: unknown, fallback: string): string {
   if (typeof raw !== 'object' || raw === null) return fallback;
   const v = raw as Record<string, unknown>;
@@ -476,26 +496,26 @@ function safeParse(s: string): unknown {
  * shape returns `[]` so the bridge falls back to the plain narrative
  * path.
  */
-function extractServiceQueries(value: unknown): Array<{
+function extractServiceQueries(value: unknown): {
   taskId: string;
   queryId: string;
   capability: string;
   serviceName: string;
   providerDid?: string;
   params?: Record<string, unknown>;
-}> {
+}[] {
   if (typeof value !== 'object' || value === null) return [];
   const v = value as Record<string, unknown>;
   const raw = v.serviceQueries;
   if (!Array.isArray(raw)) return [];
-  const out: Array<{
+  const out: {
     taskId: string;
     queryId: string;
     capability: string;
     serviceName: string;
     providerDid?: string;
     params?: Record<string, unknown>;
-  }> = [];
+  }[] = [];
   for (const entry of raw) {
     if (typeof entry !== 'object' || entry === null) continue;
     const e = entry as Record<string, unknown>;

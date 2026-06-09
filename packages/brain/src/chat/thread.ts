@@ -18,7 +18,9 @@
 
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+
 import { getChatMessageRepository } from '@dina/core';
+
 import type { CardSpec } from '@dina/protocol';
 
 export type MessageType =
@@ -449,11 +451,11 @@ function persistMessage(msg: ChatMessage): void {
         timestamp: msg.timestamp,
       })
       .catch((err) => {
-        // eslint-disable-next-line no-console
+         
         console.warn('[chat] persist failed:', err);
       });
   } catch (err) {
-    // eslint-disable-next-line no-console
+     
     console.warn('[chat] persist failed:', err);
   }
 }
@@ -517,11 +519,11 @@ export function deleteThread(threadId: string): boolean {
   if (repo !== null) {
     try {
       void repo.deleteThread(threadId).catch((err) => {
-        // eslint-disable-next-line no-console
+         
         console.warn('[chat] persist delete failed:', err);
       });
     } catch (err) {
-      // eslint-disable-next-line no-console
+       
       console.warn('[chat] persist delete failed:', err);
     }
   }
@@ -543,11 +545,11 @@ export function clearThreadMessages(threadId: string): void {
   if (repo !== null) {
     try {
       void repo.deleteThread(threadId).catch((err) => {
-        // eslint-disable-next-line no-console
+         
         console.warn('[chat] clear persist failed:', err);
       });
     } catch (err) {
-      // eslint-disable-next-line no-console
+       
       console.warn('[chat] clear persist failed:', err);
     }
   }
@@ -780,6 +782,7 @@ export function updateAskLifecycle(
   askId: string,
   patch: Partial<Omit<AskPendingLifecycle, 'kind' | 'askId'>>,
   newContent?: string,
+  sources?: string[],
 ): ChatMessage | null {
   const thread = threads.get(threadId);
   if (!thread) return null;
@@ -797,6 +800,11 @@ export function updateAskLifecycle(
   const newMsg: ChatMessage = {
     ...old,
     content: newContent ?? old.content,
+    // When the placeholder morphs to the resolved answer it renders as a plain
+    // dina bubble — so carry the resolved answer's source provenance (the chat
+    // review pill reads `sources`). Merge over the placeholder's identity-key
+    // sources (the askId index) so both survive.
+    ...(sources !== undefined ? { sources: [...(old.sources ?? []), ...sources] } : {}),
     metadata: {
       ...(old.metadata ?? {}),
       lifecycle: newLc as unknown as Record<string, unknown>,

@@ -7,9 +7,13 @@
 
 import { useEffect, useState } from 'react';
 
-import { getReviewPublishRepository, type PublishJob } from '@dina/core';
+import {
+  getReviewPublishRepository,
+  subscribeReviewPublishRegistry,
+  type PublishJob,
+} from '@dina/core';
 
-import { getBootedNode } from '../hooks/useNodeBootstrap';
+import { getBootedNode, subscribeBootedNode } from '../hooks/useNodeBootstrap';
 
 function readJob(threadId: string | undefined, draftId: string | undefined): PublishJob | null {
   if (threadId === undefined || draftId === undefined) return null;
@@ -26,10 +30,30 @@ export function useReviewPublishJob(
   const [job, setJob] = useState<PublishJob | null>(() => readJob(threadId, draftId));
 
   useEffect(() => {
-    setJob(readJob(threadId, draftId)); // re-read on identity change
-    const repo = getReviewPublishRepository();
-    if (repo === null) return;
-    return repo.subscribe(() => setJob(readJob(threadId, draftId)));
+    let unsubRepo: (() => void) | undefined;
+    // (Re)bind to whatever repo is current: re-read + re-subscribe. Called on
+    // mount AND whenever the global repo is swapped — so a card that mounted
+    // before createNode wired the repo (repo was null → no subscription) picks
+    // it up once it's installed, instead of staying frozen on the null read.
+    const bind = (): void => {
+      setJob(readJob(threadId, draftId));
+      unsubRepo?.();
+      unsubRepo = getReviewPublishRepository()?.subscribe(() =>
+        setJob(readJob(threadId, draftId)),
+      );
+    };
+    bind();
+    // Re-bind on EITHER the repo being (re)installed OR the booted node becoming
+    // ready: the readJob() depends on both, and during boot the repo registry
+    // fires before getBootedNode() is assigned (so the first bind reads a null
+    // node). subscribeBootedNode catches that second half.
+    const unsubRegistry = subscribeReviewPublishRegistry(bind);
+    const unsubNode = subscribeBootedNode(bind);
+    return () => {
+      unsubRepo?.();
+      unsubRegistry();
+      unsubNode();
+    };
   }, [threadId, draftId]);
 
   return job;

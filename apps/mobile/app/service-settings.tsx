@@ -12,6 +12,7 @@
  * depending on isDiscoverable).
  */
 
+import { Ionicons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState, useEffect, useCallback, useMemo, useSyncExternalStore } from 'react';
 import {
@@ -113,6 +114,16 @@ const DISCOVERY_BLOCKERS: ReadonlySet<string> = new Set([
 
 type Policy = 'auto' | 'review';
 
+// "Provider-specific" is surfaced in the visibility picker but DISABLED — it
+// would be a public service carrying a custom capability (on the provider's own
+// page, excluded from general search), which can't save without a params/result
+// schema the app can't author yet (validateServiceListing §8.1). Shown so the
+// concept is discoverable; tapping explains it's coming.
+const PROVIDER_SPECIFIC_BODY =
+  'Public services belonging to a specific provider, such as schools, clinics, or shops. They appear on that provider’s page, not in general Dina search.';
+const PROVIDER_SPECIFIC_COMING_SOON =
+  'Provider-specific services (published on a business, school, or clinic’s own page rather than in general Dina search) are coming in a later update. For now, choose Public, Unlisted, or Private / Approved Only.';
+
 export default function ServiceSettingsScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -158,6 +169,16 @@ export default function ServiceSettingsScreen() {
   // runtime. Filtered to capabilities NOT already configured so the
   // picker doesn't show duplicates.
   const localKnownCapabilities = useMemo(() => listLocalCapabilities(), []);
+
+  // Resolve a configured capability key to its friendly catalog name for
+  // display. A provider picks "Order status" from the catalog but the listing
+  // stores the id `order_status`; showing the raw id back is a regression in
+  // recognisability. Custom (reverse-DNS) keys aren't in the catalog, so the
+  // resolver returns the key unchanged and the row renders it as-is.
+  const capabilityDisplayName = useMemo(() => {
+    const byId = new Map(catalog.capabilities.map((def) => [def.id, def.display_name]));
+    return (key: string): string => byId.get(key) ?? key;
+  }, [catalog]);
 
   // Which listing this screen edits. `?rkey=<rkey>` edits that listing; no rkey
   // = CREATE a brand-new listing (its rkey is generated from the name on save).
@@ -555,36 +576,68 @@ export default function ServiceSettingsScreen() {
                 {
                   value: 'public',
                   title: 'Public',
-                  body: 'Anyone can find this service in Dina search.',
+                  body: 'Visible in Dina search. Anyone can find and access this service.',
+                },
+                {
+                  // Not a real `discoverability` value — surfaced so providers
+                  // know the concept exists, but disabled: it would be public +
+                  // a custom capability, which can't save without a schema the
+                  // app can't author yet (validateServiceListing §8.1).
+                  value: 'provider_specific',
+                  title: 'Provider-specific',
+                  body: PROVIDER_SPECIFIC_BODY,
+                  disabled: true,
                 },
                 {
                   value: 'unlisted',
                   title: 'Unlisted',
-                  body: 'Only people with the service link, QR, invite, or pairing can find it.',
+                  body: 'Hidden from Dina search. Anyone with the link or QR can access it.',
                 },
                 {
                   value: 'known_only',
-                  title: 'Private / known only',
-                  body: 'Not published to the network; only reachable through a direct connection you set up.',
+                  title: 'Private / Approved Only',
+                  body: 'Not listed and not link-shareable. Only people you explicitly approve can access it.',
                 },
-              ] as { value: Discoverability; title: string; body: string }[]
-            ).map((opt) => (
-              <Pressable
-                key={opt.value}
-                style={[styles.row, discoverability === opt.value ? styles.rowSelected : null]}
-                onPress={() => chooseDiscoverability(opt.value)}
-                testID={`service-settings-discoverability-${opt.value}`}
-                accessibilityRole="button"
-                accessibilityState={{ selected: discoverability === opt.value }}
-                accessibilityLabel={`${opt.title}. ${opt.body}`}
-              >
-                <View style={{ flex: 1, paddingRight: spacing.sm }}>
-                  <Text style={styles.rowTitle}>{opt.title}</Text>
-                  <Text style={styles.rowSubtitle}>{opt.body}</Text>
-                </View>
-                {discoverability === opt.value ? <Text style={styles.rowValue}>{'✓'}</Text> : null}
-              </Pressable>
-            ))}
+              ] as {
+                value: Discoverability | 'provider_specific';
+                title: string;
+                body: string;
+                disabled?: boolean;
+              }[]
+            ).map((opt) => {
+              const selected = opt.disabled !== true && discoverability === opt.value;
+              return (
+                <Pressable
+                  key={opt.value}
+                  style={[
+                    styles.row,
+                    selected ? styles.rowSelected : null,
+                    opt.disabled === true ? styles.rowDisabled : null,
+                  ]}
+                  onPress={() =>
+                    opt.disabled === true
+                      ? Alert.alert('Coming soon', PROVIDER_SPECIFIC_COMING_SOON)
+                      : chooseDiscoverability(opt.value as Discoverability)
+                  }
+                  testID={`service-settings-discoverability-${opt.value}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected, disabled: opt.disabled === true }}
+                  accessibilityLabel={`${opt.title}. ${opt.body}${
+                    opt.disabled === true ? '. Coming soon.' : ''
+                  }`}
+                >
+                  <View style={{ flex: 1, paddingRight: spacing.sm }}>
+                    <Text style={styles.rowTitle}>{opt.title}</Text>
+                    <Text style={styles.rowSubtitle}>{opt.body}</Text>
+                  </View>
+                  {opt.disabled === true ? (
+                    <Text style={styles.comingSoonPill}>Coming soon</Text>
+                  ) : selected ? (
+                    <Text style={styles.rowValue}>{'✓'}</Text>
+                  ) : null}
+                </Pressable>
+              );
+            })}
             {discoverability === 'public' && discoveryBlocked ? (
               <View style={styles.discoveryCaveat}>
                 <Text style={styles.discoveryCaveatTitle}>Not actually discoverable yet.</Text>
@@ -601,8 +654,8 @@ export default function ServiceSettingsScreen() {
                 { paddingHorizontal: spacing.md, paddingTop: spacing.sm },
               ]}
             >
-              Discoverability is not authorization. The provider still controls who may actually
-              use the service.
+              Discoverability is not authorization. The provider still controls who may actually use
+              the service.
             </Text>
           </View>
         </View>
@@ -649,59 +702,74 @@ export default function ServiceSettingsScreen() {
                 No capabilities configured yet. Tap “Add capability” to advertise one.
               </Text>
             ) : (
-              capabilities.map((cap, idx) => (
-                <View
-                  key={cap.key}
-                  style={[
-                    styles.capabilityRow,
-                    idx === capabilities.length - 1 && styles.capabilityRowLast,
-                  ]}
-                >
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={styles.capabilityName}>{cap.key}</Text>
-                  </View>
-                  <Pressable
-                    onPress={() => toggleCapabilityPolicy(cap.key)}
-                    style={({ pressed }) => [styles.policyToggle, pressed && styles.pressed]}
-                    testID={`service-settings-policy-${cap.key}`}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${cap.key} response policy: ${cap.policy}. Tap to toggle.`}
+              capabilities.map((cap, idx) => {
+                const friendly = capabilityDisplayName(cap.key);
+                const isCatalog = friendly !== cap.key;
+                return (
+                  <View
+                    key={cap.key}
+                    style={[
+                      styles.capabilityRow,
+                      idx === capabilities.length - 1 && styles.capabilityRowLast,
+                    ]}
                   >
-                    <View style={[styles.policyHalf, cap.policy === 'auto' && styles.policyActive]}>
-                      <Text
-                        style={[
-                          styles.policyText,
-                          cap.policy === 'auto' && styles.policyActiveText,
-                        ]}
-                      >
-                        Auto
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      {/* Catalog caps: friendly name + the raw key as a muted
+                        sub-line. Custom keys: just the key (mono). */}
+                      <Text style={isCatalog ? styles.capabilityLabel : styles.capabilityName}>
+                        {friendly}
                       </Text>
+                      {isCatalog ? (
+                        <Text style={styles.capabilityKeySub} numberOfLines={1}>
+                          {cap.key}
+                        </Text>
+                      ) : null}
                     </View>
-                    <View
-                      style={[styles.policyHalf, cap.policy === 'review' && styles.policyActive]}
+                    <Pressable
+                      onPress={() => toggleCapabilityPolicy(cap.key)}
+                      style={({ pressed }) => [styles.policyToggle, pressed && styles.pressed]}
+                      testID={`service-settings-policy-${cap.key}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${friendly} response policy: ${cap.policy}. Tap to toggle.`}
                     >
-                      <Text
-                        style={[
-                          styles.policyText,
-                          cap.policy === 'review' && styles.policyActiveText,
-                        ]}
+                      <View
+                        style={[styles.policyHalf, cap.policy === 'auto' && styles.policyActive]}
                       >
-                        Review
-                      </Text>
-                    </View>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => removeCapability(cap.key)}
-                    style={({ pressed }) => [styles.removeButton, pressed && styles.pressed]}
-                    testID={`service-settings-remove-capability-${cap.key}`}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Remove ${cap.key} capability`}
-                    hitSlop={8}
-                  >
-                    <Text style={styles.removeButtonText}>×</Text>
-                  </Pressable>
-                </View>
-              ))
+                        <Text
+                          style={[
+                            styles.policyText,
+                            cap.policy === 'auto' && styles.policyActiveText,
+                          ]}
+                        >
+                          Auto
+                        </Text>
+                      </View>
+                      <View
+                        style={[styles.policyHalf, cap.policy === 'review' && styles.policyActive]}
+                      >
+                        <Text
+                          style={[
+                            styles.policyText,
+                            cap.policy === 'review' && styles.policyActiveText,
+                          ]}
+                        >
+                          Review
+                        </Text>
+                      </View>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => removeCapability(cap.key)}
+                      style={({ pressed }) => [styles.removeButton, pressed && styles.pressed]}
+                      testID={`service-settings-remove-capability-${cap.key}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${friendly} capability`}
+                      hitSlop={8}
+                    >
+                      <Ionicons name="close" size={16} color={colors.textSecondary} />
+                    </Pressable>
+                  </View>
+                );
+              })
             )}
           </View>
           <Pressable
@@ -746,69 +814,85 @@ export default function ServiceSettingsScreen() {
                 Add capability
               </Text>
               <Text style={styles.modalSubtitle}>
-                Choose a category, then an official Dina capability. Advanced: define a custom
-                namespaced capability if none fits.
+                {discoverability === 'public'
+                  ? 'Choose a category, then an official Dina capability.'
+                  : 'Choose a category, then an official Dina capability, or define a custom one.'}
               </Text>
 
-              {/* Official catalog: Category → Capability (no typing ids). The
-                  chosen category travels onto the listing. Already-added
-                  capabilities are filtered so the picker doesn't show dupes. */}
-              <CapabilityPicker
-                catalog={{
-                  ...catalog,
-                  capabilities: catalog.capabilities.filter(
-                    (def) => !capabilities.some((c) => c.key === def.id),
-                  ),
-                }}
-                selectedCategoryId={pickerCategoryId}
-                onSelectCategory={setPickerCategoryId}
-                selectedCapabilityId={null}
-                onSelectCapability={(cap: CapabilityDefinition, categoryId: string) =>
-                  addCapability(cap.id, categoryId)
-                }
-              />
-
-              {/* Advanced custom — needs a category too (spec §5.1), so it's
-                  gated on a category having been picked above. */}
-              {pickerCategoryId !== null ? (
-                <>
-                  <Text style={styles.modalSectionHeader}>OR DEFINE A CUSTOM CAPABILITY</Text>
-                  <View style={styles.customCard}>
-                    <Text style={styles.label}>Capability key</Text>
-                    <TextInput
-                      value={customCapName}
-                      onChangeText={setCustomCapName}
-                      placeholder="e.g. com.example.inventory_lookup"
-                      placeholderTextColor={colors.textMuted}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      style={styles.customCapInput}
-                      testID="service-settings-custom-capability-input"
-                      accessibilityLabel="Custom capability key"
-                    />
-                    <Text style={styles.modalHelpText}>
-                      Use a reverse-DNS capability name you control, e.g.
-                      com.example.inventory_lookup. Custom capability keys are developer preview: a
-                      public custom capability needs a parameter/result schema before other Dinas
-                      can reliably call it.
-                    </Text>
-                    <Pressable
-                      onPress={() => addCapability(customCapName, pickerCategoryId)}
-                      disabled={customCapName.trim() === ''}
-                      style={({ pressed }) => [
-                        styles.modalAddButton,
-                        pressed && styles.pressed,
-                        customCapName.trim() === '' && styles.disabled,
-                      ]}
-                      testID="service-settings-add-custom-capability"
-                      accessibilityRole="button"
-                      accessibilityLabel="Add custom capability"
-                    >
-                      <Text style={styles.modalAddButtonText}>Add custom</Text>
-                    </Pressable>
-                  </View>
-                </>
-              ) : null}
+              {/* Single scroll context for the whole sheet body. The sheet is
+                  capped at 85% height; the title above and Cancel below stay
+                  pinned while the category list + capabilities + the note below
+                  scroll between them. Without this the tall content (11
+                  categories + capabilities) overflowed the sheet box and
+                  spilled over the tab bar. */}
+              <ScrollView
+                style={styles.modalScroll}
+                contentContainerStyle={styles.modalScrollContent}
+                keyboardShouldPersistTaps="handled"
+              >
+                {/* Official catalog: Category → Capability (no typing ids). The
+                    chosen category travels onto the listing. Already-added
+                    capabilities are filtered so the picker doesn't show dupes. */}
+                <CapabilityPicker
+                  catalog={{
+                    ...catalog,
+                    capabilities: catalog.capabilities.filter(
+                      (def) => !capabilities.some((c) => c.key === def.id),
+                    ),
+                  }}
+                  selectedCategoryId={pickerCategoryId}
+                  onSelectCategory={setPickerCategoryId}
+                  selectedCapabilityId={null}
+                  onSelectCapability={(cap: CapabilityDefinition, categoryId: string) =>
+                    addCapability(cap.id, categoryId)
+                  }
+                />
+                {/* Custom (namespaced) capability — allowed only when this
+                    listing is NOT public. A public custom cap needs a
+                    params/result schema the app can't author yet
+                    (validateServiceListing §8.1), so for Public the picker is
+                    catalog-only (and Provider-specific, the public+custom case,
+                    is the disabled "coming soon" visibility tier). For Unlisted
+                    / Private a custom cap saves fine with no schema. Needs a
+                    category too (spec §5.1), so it's gated on one being picked. */}
+                {discoverability !== 'public' && pickerCategoryId !== null ? (
+                  <>
+                    <Text style={styles.modalSectionHeader}>OR DEFINE A CUSTOM CAPABILITY</Text>
+                    <View style={styles.customCard}>
+                      <Text style={styles.label}>Capability key</Text>
+                      <TextInput
+                        value={customCapName}
+                        onChangeText={setCustomCapName}
+                        placeholder="e.g. com.example.inventory_lookup"
+                        placeholderTextColor={colors.textMuted}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        style={styles.customCapInput}
+                        testID="service-settings-custom-capability-input"
+                        accessibilityLabel="Custom capability key"
+                      />
+                      <Text style={styles.modalHelpText}>
+                        Use a logical FQDN (preferably something you own), e.g.
+                        com.example.inventory_lookup.
+                      </Text>
+                      <Pressable
+                        onPress={() => addCapability(customCapName, pickerCategoryId)}
+                        disabled={customCapName.trim() === ''}
+                        style={({ pressed }) => [
+                          styles.modalAddButton,
+                          pressed && styles.pressed,
+                          customCapName.trim() === '' && styles.disabled,
+                        ]}
+                        testID="service-settings-add-custom-capability"
+                        accessibilityRole="button"
+                        accessibilityLabel="Add custom capability"
+                      >
+                        <Text style={styles.modalAddButtonText}>Add custom</Text>
+                      </Pressable>
+                    </View>
+                  </>
+                ) : null}
+              </ScrollView>
 
               <Pressable
                 onPress={() => setAddModalVisible(false)}
@@ -913,6 +997,20 @@ const styles = StyleSheet.create({
     ...textStyles.bodyLargeStrong,
     color: colors.accent,
   },
+  // Disabled "Provider-specific" tier — greyed but still readable so the
+  // concept registers; tap shows a "coming soon" popup.
+  rowDisabled: {
+    opacity: 0.5,
+  },
+  comingSoonPill: {
+    ...textStyles.tiny,
+    color: colors.textMuted,
+    backgroundColor: colors.bgTertiary,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    overflow: 'hidden',
+  },
   rowTitle: {
     ...textStyles.bodyStrong,
     marginBottom: 2,
@@ -963,6 +1061,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0,
   },
   capabilityName: textStyles.mono,
+  // Friendly catalog name (primary) + the raw key beneath it (muted/mono).
+  capabilityLabel: textStyles.body,
+  capabilityKeySub: {
+    ...textStyles.mono,
+    fontSize: 11,
+    lineHeight: 15,
+    color: colors.textMuted,
+    marginTop: 1,
+  },
   policyToggle: {
     flexDirection: 'row',
     borderRadius: radius.sm,
@@ -1053,10 +1160,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.bgTertiary,
   },
-  removeButtonText: {
-    ...textStyles.h3,
-    color: colors.textSecondary,
-  },
   // Add-capability modal sheet. Backdrop dims the screen; sheet sits
   // centered with a small max-height so the keyboard for the custom
   // input doesn't shove it off-screen.
@@ -1071,6 +1174,15 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     padding: spacing.lg,
     maxHeight: '85%',
+  },
+  // The scrollable middle of the sheet. `flexShrink` lets it give up height
+  // to the pinned title/cancel so the sheet stays within `maxHeight` and the
+  // body scrolls instead of overflowing the box.
+  modalScroll: {
+    flexShrink: 1,
+  },
+  modalScrollContent: {
+    paddingBottom: spacing.xs,
   },
   modalTitle: {
     ...textStyles.h3,
@@ -1088,10 +1200,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
     marginLeft: spacing.xs,
   },
-  // CUSTOM-section card. Dashed accent border + tinted background
-  // sets it visually apart from the white "FROM CATALOGUE" card so
-  // the alternative path is unmistakable, not a continuation of the
-  // selection list.
+  // CUSTOM-section card. Dashed accent border + tinted background sets it
+  // apart from the white catalog card so the alternative path is unmistakable.
   customCard: {
     backgroundColor: colors.bgTertiary,
     borderRadius: radius.md,
@@ -1100,11 +1210,8 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
     padding: spacing.md,
   },
-  // Input inside the dashed CUSTOM card. The page's shared `input`
-  // style has no visible border (it relies on the parent form card's
-  // dividers for shape) — here that left the field looking like
-  // static example text. Solid white background + hairline border
-  // reads unambiguously as "type here".
+  // Input inside the dashed CUSTOM card — solid background + hairline border so
+  // it reads unambiguously as "type here" (the shared `input` style is borderless).
   customCapInput: {
     ...textStyles.body,
     backgroundColor: colors.bgSecondary,
@@ -1114,16 +1221,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
     minHeight: 44,
-  },
-  knownCapRow: {
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderLight,
-  },
-  knownCapDescription: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    marginTop: 2,
   },
   modalHelpText: {
     ...textStyles.tiny,

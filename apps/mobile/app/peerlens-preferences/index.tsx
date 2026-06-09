@@ -86,11 +86,11 @@ export default function PeerLensPreferencesIndex(): React.ReactElement {
 
   return (
     <>
-      <Stack.Screen options={{ title: 'PeerLens preferences', headerShown: true }} />
+      <Stack.Screen options={{ title: 'Review preferences', headerShown: true }} />
       <ScrollView style={styles.root} contentContainerStyle={styles.content}>
         <Text style={styles.subtitle}>
-          Dina uses these to personalise your PeerLens results on this device. Nothing here is sent
-          to PeerLens.
+          Dina uses these to personalise your review results on this device. Nothing here is sent
+          off your device.
         </Text>
 
         <View style={styles.card}>

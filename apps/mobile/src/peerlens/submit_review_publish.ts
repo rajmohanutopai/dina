@@ -63,31 +63,84 @@ export async function submitReviewPublish(input: SubmitReviewInput): Promise<Sub
   // 0. Never create a real publish job under a guided-demo scope.
   if (isDemo()) return { kind: 'demo_scope' };
 
-  // 1. Local lexicon validation — reject BEFORE persisting anything.
+  // The existing job for THIS submission (if any) drives both the dedup
+  // projection and the failed-supersede. Keyed by the chat back-reference when
+  // there is one, else by (did, rkey) — full-form submits carry no thread/draft,
+  // and the rkey is stable per compose session, so a corrected re-submit
+  // supersedes the stale failed job instead of leaving a duplicate that its "Try
+  // again" could publish. Captured once — every step below is synchronous until
+  // the inline attempt, so it can't change underneath us.
+  const existing =
+    input.threadId !== undefined && input.draftId !== undefined
+      ? input.repo.findLatestForDraft(input.did, input.threadId, input.draftId)
+      : input.repo.findLatestForRkey(input.did, input.rkey);
+
+  // 1. Already published → idempotent receipt — ONLY when found via the chat
+  // back-reference (thread+draft). A re-rendered / double-tapped chat card
+  // re-submits the SAME draft and must get its receipt back, never republish.
+  // We deliberately do NOT short-circuit a published row found by RKEY: full-form
+  // published jobs are pruned, so such a row is a RETAINED CHAT RECEIPT that
+  // merely shares the rkey — and the reviewer EDIT flow re-submits (no
+  // thread/draft) with the original's rkey precisely to REPLACE the record, so
+  // returning the old receipt here would silently drop the user's edit.
+  if (
+    input.threadId !== undefined &&
+    input.draftId !== undefined &&
+    existing?.status === 'published'
+  ) {
+    return { kind: 'published', uri: existing.publishedUri ?? '', cid: existing.publishedCid ?? '' };
+  }
+
+  // 2. Credential gate — BEFORE the queued projection. If this boot has no PDS
+  // account (credentials removed / not configured), surface the hard
+  // no_credentials state so the user gets a setup prompt, rather than returning
+  // `queued` for a job the worker can never drain (it also skips without a publisher).
+  if (input.publisher === undefined) return { kind: 'no_credentials' };
+
+  // 3. Already in flight → project it; don't mint a second job (double-tap /
+  // re-render race / form+inline both publishing the same draft → duplicates).
+  if (existing?.status === 'queued' || existing?.status === 'publishing') {
+    return { kind: 'queued', jobId: existing.jobId };
+  }
+
+  // 4. Local lexicon validation — reject BEFORE persisting anything.
   if (lexiconErrorFor(input.record) !== null) {
     return { kind: 'error', code: 'lexicon_invalid', message: describePublishErrorCode('lexicon_invalid') };
   }
 
-  // 2. Credential gate (locked): no configured PDS account → hard error, no queue.
-  if (input.publisher === undefined) return { kind: 'no_credentials' };
-
-  // 3. Per-identity cap (counts only THIS DID's active jobs).
+  // 5. Per-identity cap (counts only THIS DID's active jobs).
   if (input.repo.countActive(input.did) >= MAX_PUBLISH_QUEUE) return { kind: 'cap_exceeded' };
 
-  // 4. Create the durable job (single atomic write; carries thread/draft link).
+  // 6+7. SUPERSEDE a stale failed attempt + create the replacement ATOMICALLY.
+  // Supersede only NOW that every gate above has passed, so a rejected re-submit
+  // (lexicon/cap) never destroys the user's existing failed row (their only
+  // retry/dismiss handle). The failed row never published, so replacing it is
+  // safe; leaving it would let its "Try again" publish a second record after the
+  // replacement succeeds.
+  //
+  // Pre-serialize the JSON BEFORE the transaction so a `JSON.stringify` throw
+  // can't leave the discard committed with no replacement. The discard + create
+  // run in ONE repo transaction: if the insert throws, the discard rolls back
+  // and the failed row survives — never a window with neither job present.
+  const recordJSON = JSON.stringify(input.record);
+  const draftJSON = JSON.stringify(input.draft);
   const jobId = input.newJobId();
-  input.repo.create({
-    jobId,
-    ownerDid: input.did,
-    rkey: input.rkey,
-    recordJSON: JSON.stringify(input.record),
-    draftJSON: JSON.stringify(input.draft),
-    threadId: input.threadId,
-    draftId: input.draftId,
-    createdAt: input.nowMs,
+  const staleFailedId = existing?.status === 'failed' ? existing.jobId : null;
+  input.repo.transaction(() => {
+    if (staleFailedId !== null) input.repo.discard(staleFailedId);
+    input.repo.create({
+      jobId,
+      ownerDid: input.did,
+      rkey: input.rkey,
+      recordJSON,
+      draftJSON,
+      threadId: input.threadId,
+      draftId: input.draftId,
+      createdAt: input.nowMs,
+    });
   });
 
-  // 5. Inline fast-path: claim + one attempt for instant feedback. Offline →
+  // 8. Inline fast-path: claim + one attempt for instant feedback. Offline →
   // the attempt fails network-retryable and the job stays queued for the worker.
   if (!input.repo.claim(jobId, input.nowMs, PUBLISH_CLAIM_LEASE_MS)) {
     return { kind: 'queued', jobId }; // already claimed elsewhere — worker owns it
@@ -102,6 +155,10 @@ export async function submitReviewPublish(input: SubmitReviewInput): Promise<Sub
     now: input.now,
   });
   if (res.kind === 'published') return { kind: 'published', uri: res.uri, cid: res.cid };
-  if (res.kind === 'requeued') return { kind: 'queued', jobId };
-  return { kind: 'error', code: res.error.code, message: describePublishErrorCode(res.error.code) };
+  if (res.kind === 'failed') {
+    return { kind: 'error', code: res.error.code, message: describePublishErrorCode(res.error.code) };
+  }
+  // `requeued` (transient) or `lost` (lease reclaimed mid-write) → the job is in
+  // flight / owned by the worker; surface it as queued.
+  return { kind: 'queued', jobId };
 }

@@ -64,6 +64,7 @@ export {
   SQLiteReviewPublishRepository,
   setReviewPublishRepository,
   getReviewPublishRepository,
+  subscribeReviewPublishRegistry,
 } from './src/review/publish_job_repository';
 export type { ReviewPublishRepository } from './src/review/publish_job_repository';
 export type { DatabaseAdapter } from './src/storage/db_adapter';

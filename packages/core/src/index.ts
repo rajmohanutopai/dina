@@ -201,6 +201,7 @@ export {
   InMemoryReviewPublishRepository,
   setReviewPublishRepository,
   getReviewPublishRepository,
+  subscribeReviewPublishRegistry,
   rowToPublishJob,
 } from './review/publish_job_repository';
 export type { ReviewPublishRepository } from './review/publish_job_repository';

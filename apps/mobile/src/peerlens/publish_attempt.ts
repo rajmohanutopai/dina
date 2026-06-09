@@ -36,14 +36,22 @@ export interface PublishAttemptDeps {
 export type PublishAttemptResult =
   | { kind: 'published'; uri: string; cid: string }
   | { kind: 'requeued'; error: ClassifiedError }
-  | { kind: 'failed'; error: ClassifiedError };
+  | { kind: 'failed'; error: ClassifiedError }
+  /** The CAS transition didn't apply — the lease expired mid-write and another
+   *  tick reclaimed the row. This attempt makes no claim about durable state;
+   *  the owning tick records the real outcome (re-publish is idempotent). */
+  | { kind: 'lost' };
 
 /**
  * Attempt to publish a job that is ALREADY claimed (`status='publishing'`), and
- * record the result as the next transition:
- *   - success    → `published` receipt-on-message + prune, atomically
+ * record the result as the next transition. EVERY transition is a CAS guarded on
+ * `status='publishing'`: if it returns false (the lease lapsed and another tick
+ * reclaimed the row) we return `lost` rather than asserting an outcome we didn't
+ * durably apply.
+ *   - success    → `published` (receipt on the row; pruned if no chat card needs it)
  *   - retryable  → `requeued` with `attempts++` + backoff
  *   - permanent / retries exhausted → `failed`
+ *   - CAS lost   → `lost`
  */
 export async function attemptClaimedPublish(
   job: PublishJob,
@@ -51,23 +59,43 @@ export async function attemptClaimedPublish(
 ): Promise<PublishAttemptResult> {
   const publishToPDS = deps.publishToPDS ?? publishAttestationToPDS;
   const now = deps.now ?? Date.now;
+  // The lease token this attempt owns. Every terminal transition is FENCED on it
+  // (`AND claimed_at=?`): if the lease lapsed mid-write and another tick reclaimed
+  // + re-claimed the row, our claimedAt no longer matches → the CAS returns false
+  // → `lost`, so we never complete/requeue/fail a DIFFERENT attempt's row. A
+  // not-yet-claimed job should never reach here; treat it as lost defensively.
+  const claimedAt = job.claimedAt;
+  if (claimedAt === null) return { kind: 'lost' };
   try {
     const record = JSON.parse(job.recordJSON) as Record<string, unknown>;
     const { uri, cid } = await publishToPDS(deps.publisher, job.ownerDid, record, job.rkey);
-    // `complete` records the receipt (uri/cid) ON the job row and CAS-guards on
-    // status='publishing': a job reclaimed mid-write (lease expired) makes this a
-    // no-op rather than resurrecting a published row — the reclaimed job
-    // re-publishes idempotently via the stable rkey and completes next time.
-    // The card projects the `published` state straight off this row (Deviation
-    // #2), so there is no chat-message write to couple here.
-    deps.repo.complete(job.jobId, uri, cid, now());
-    return { kind: 'published', uri, cid };
+    // A job is projectable as a card receipt ONLY with BOTH back-reference halves
+    // — `useReviewPublishJob` requires thread AND draft. If either is missing the
+    // row is an orphan no card can show, so it's treated as a no-card publish and
+    // pruned (else those `published` rows leak). Inline-chat jobs (both set) are
+    // retained as the card's receipt (Deviation #2).
+    const hasCard = job.threadId !== null && job.draftId !== null;
+    if (hasCard) {
+      // CAS publishing→published, recording the receipt ON the row. False ⇒ the
+      // lease expired mid-write and another tick reclaimed it: the review IS
+      // public (idempotent rkey) but this attempt didn't own the transition →
+      // report `lost`, don't claim a publish we didn't durably set.
+      if (!deps.repo.complete(job.jobId, uri, cid, now(), claimedAt)) return { kind: 'lost' };
+      return { kind: 'published', uri, cid };
+    }
+    // No projectable card → complete + prune ATOMICALLY, so a crash / failed
+    // DELETE / throwing subscriber can't leave a published row with no projection.
+    let completed = false;
+    deps.repo.transaction(() => {
+      completed = deps.repo.complete(job.jobId, uri, cid, now(), claimedAt);
+      if (completed) deps.repo.prune(job.jobId);
+    });
+    return completed ? { kind: 'published', uri, cid } : { kind: 'lost' };
   } catch (err) {
     const c = classifyPublishError(err);
     const t = now();
     if (c.class === 'permanent') {
-      deps.repo.fail(job.jobId, c, t);
-      return { kind: 'failed', error: c };
+      return deps.repo.fail(job.jobId, c, t, claimedAt) ? { kind: 'failed', error: c } : { kind: 'lost' };
     }
     const nextAttempts = job.attempts + 1;
     if (nextAttempts >= MAX_PUBLISH_ATTEMPTS) {
@@ -76,10 +104,12 @@ export async function attemptClaimedPublish(
         code: 'retries_exhausted',
         message: c.message,
       };
-      deps.repo.fail(job.jobId, exhausted, t);
-      return { kind: 'failed', error: exhausted };
+      return deps.repo.fail(job.jobId, exhausted, t, claimedAt)
+        ? { kind: 'failed', error: exhausted }
+        : { kind: 'lost' };
     }
-    deps.repo.requeue(job.jobId, nextAttempts, t + publishBackoffMs(nextAttempts), c, t);
-    return { kind: 'requeued', error: c };
+    return deps.repo.requeue(job.jobId, nextAttempts, t + publishBackoffMs(nextAttempts), c, t, claimedAt)
+      ? { kind: 'requeued', error: c }
+      : { kind: 'lost' };
   }
 }

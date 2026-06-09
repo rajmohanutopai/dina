@@ -61,11 +61,12 @@ export async function runReviewPublishTick(deps: ReviewPublishWorkerDeps): Promi
   for (const due of deps.repo.listDue(deps.did, now())) {
     if (!deps.repo.claim(due.jobId, now(), PUBLISH_CLAIM_LEASE_MS)) continue; // lost to another claimer
     const job = deps.repo.getById(due.jobId);
-    if (job === null) continue; // discarded between listDue and claim
+    if (job === null || job.claimedAt === null) continue; // discarded / not claimed (raced)
 
     // A job reclaimed past the attempt cap is dead-lettered without re-publishing.
+    // Fenced on the claim we just took (`job.claimedAt`) like every terminal CAS.
     if (job.attempts >= MAX_PUBLISH_ATTEMPTS) {
-      deps.repo.fail(job.jobId, RETRIES_EXHAUSTED, now());
+      deps.repo.fail(job.jobId, RETRIES_EXHAUSTED, now(), job.claimedAt);
       result.failed++;
       continue;
     }
@@ -78,7 +79,9 @@ export async function runReviewPublishTick(deps: ReviewPublishWorkerDeps): Promi
     });
     if (res.kind === 'published') result.published++;
     else if (res.kind === 'requeued') result.requeued++;
-    else result.failed++;
+    else if (res.kind === 'failed') result.failed++;
+    // 'lost' → the lease lapsed mid-write and another tick owns the row; not
+    // counted (the owning tick records the real outcome).
   }
   return result;
 }

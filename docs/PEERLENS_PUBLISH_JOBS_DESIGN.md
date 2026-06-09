@@ -28,14 +28,39 @@ refinements folded in:
   before a terminal transition would otherwise be stuck forever (no user transition,
   the worker only claims `queued`). A claim lease + reaper requeues it; safe because
   the stable `rkey` makes the PDS write idempotent (replace).
-- **Service-owned chat metadata, transactional** (§4/§6/§7): `submitReviewPublish()`
-  writes the job row **and** the chat draft's `publishJobId` (and the published
-  receipt) in one `identity.sqlite` transaction. The UI never separately patches
-  post-submit lifecycle — that was itself a sync seam.
+- **Service-owned chat metadata, transactional** (§4/§6/§7) — <b>SUPERSEDED by Rev 3
+  below</b>: Rev 2 proposed writing the job row + the chat draft's `publishJobId` (+ receipt)
+  in one transaction. Rev 3 replaced this with the `(thread,draft)` back-reference +
+  receipt-on-row, removing the cross-table coupling entirely. (Kept here only as the decision
+  trail; §4/§6/§7 describe the as-built model.)
 - Submit-time guided-demo guard (§4); `record_json` shape locked (§2); collection
   hardcoded to `com.dinakernel.peerlens.attestation` (§2); UI copy distinguishes
   "published to your PDS" from "visible in AppView search" since indexing is async
   (§6); crash-recovery test added (§12).
+
+**Rev 3 (2026-06-09, AS-BUILT — this section is the authoritative contract where it
+differs from §2–§9 below).** Two deviations were taken during implementation; the
+prose in later sections that says otherwise is superseded here (see
+`implementation-notes.html` for full rationale):
+- **No `publishJobId` on the chat message; the card finds its job by the
+  `(thread_id, draft_id)` back-reference** (supersedes §4/§6's stored pointer).
+  Eliminates the create-path cross-table transaction entirely — the job row is one
+  atomic write that already carries the link.
+- **The published receipt lives ON the job row, not on the chat message; there is no
+  cross-table receipt transaction** (supersedes §7). The inline card projects the
+  `published` state (uri/cid) straight off the retained job row. Consequences:
+  - A job WITH a chat back-reference is RETAINED on `published` (the card reads it as
+    the receipt). A job with NO back-reference (full-form publish) is PRUNED
+    immediately after success — so those rows stay bounded.
+  - `complete()` / `fail()` / `requeue()` are CAS-checked: a lease reclaimed
+    mid-write yields a `lost` outcome (the owning tick records the real state),
+    never a false "published".
+- **Duplicate guard** (added §4): `submitReviewPublish` projects an existing
+  `queued`/`publishing`/`published` job for the same `(thread,draft)` instead of
+  minting a second one — a double-tap or form+inline race can't publish duplicates.
+- **Worker cadence is boot + foreground only** (no NetInfo/periodic tick yet); the
+  queued-card copy is worded as "in flight / will publish when back online", not a
+  promise of instant retry.
 
 ---
 
@@ -204,54 +229,61 @@ type SubmitOutcome =
   | { kind: 'queued'; jobId: string }                 // durable, worker will drain
   | { kind: 'error'; code: PublishErrorCode; message: string }      // permanent
   | { kind: 'no_credentials' }                        // hard error — nothing persisted
-  | { kind: 'cap_exceeded' };
+  | { kind: 'cap_exceeded' }
+  | { kind: 'demo_scope' };
 
 async function submitReviewPublish(input: {
   did: string;
-  credentials: PdsCredentialState;   // 'configured' | 'absent' (see below)
-  publisher: PDSPublisher | undefined;
+  publisher: PDSPublisher | undefined;   // undefined ⇒ no credentials
   rkey: string;
   record: Record<string, unknown>;
   draft: AttestationDraftBody;
   threadId?: string; draftId?: string;
+  // injectable seams (production defaults at the call site): repo, nowMs,
+  // newJobId, publishToPDS?, isDemoScope?, now?
 }): Promise<SubmitOutcome>;
 ```
 
 Flow:
 
 0. **Guided-demo guard.** If `isGuidedDemoScope(currentDataScope())` → never create a real
-   publish job; return `{kind:'error', code:'demo_scope'}` (or a no-op the demo UI ignores).
-   Defense-in-depth: the worker also refuses to drain under demo scope (§8), but the job
-   must not be *created* under it either.
-1. **Local validation** (same limits AppView enforces — text ≤ 2000 etc., shared with the
-   form validator). Invalid → `{kind:'error', code:'lexicon_invalid'}`. Nothing persisted.
-2. **Credential gate (locked decision).** If **no PDS account is configured at all** →
-   `{kind:'no_credentials'}`. Nothing persisted; UI shows a setup prompt. *Distinct from*
-   a configured-but-unreachable PDS (offline), which proceeds to queue. This distinction
-   already exists in code: `tryBuildPdsPublisher → {publisher, sessionReachable}` — "absent
-   credentials" ⇒ `publisher === undefined`; "offline" ⇒ `publisher` present,
-   `sessionReachable === false`.
+   publish job; return `{kind:'demo_scope'}`. Defense-in-depth: the worker also refuses to
+   drain under demo scope (§8), but the job must not be *created* under it either.
+0.5 **Duplicate guard (back-reference).** When `threadId`/`draftId` are present, look up the
+   existing job by `(thread_id, draft_id)`:
+   - `queued`/`publishing` → return `{kind:'queued', jobId}` — already in flight; don't mint
+     a second job (a double-tap / re-render race / form+inline both publishing the same
+     draft would otherwise create two jobs with different fresh rkeys → duplicate reviews).
+   - `published` → return `{kind:'published', uri, cid}` from the retained row (idempotent —
+     never republish).
+   - `failed` → **supersede it** (`discard` the stale row) then fall through to create the
+     replacement; the failed row never published, so a re-attempt (possibly edited) is safe,
+     but leaving it would put a stale "Try again" row in the Outbox that could publish a
+     second record after the replacement succeeds.
+1. **Local validation** (same limits AppView enforces — `lexiconErrorFor`, text ≤ 2000).
+   Invalid → `{kind:'error', code:'lexicon_invalid'}`. Nothing persisted.
+2. **Credential gate (locked decision).** If **no PDS account is configured** (`publisher
+   === undefined`) → `{kind:'no_credentials'}`. Nothing persisted; UI shows a setup prompt.
+   *Distinct from* a configured-but-unreachable PDS (offline): a publisher is present and the
+   inline attempt below simply fails network-retryable → the job queues.
 3. **Per-DID cap.** `countActive(did)` = jobs `WHERE owner_did=? AND status IN
-   ('queued','publishing')`. `>= MAX_QUEUE_SIZE` → `{kind:'cap_exceeded'}`. (Foreign-DID
-   rows never counted — they're a different `owner_did`.)
-4. **Create job + link the chat card — ONE identity-DB transaction.** The service writes
-   the `queued` job row (`data_scope='user'`, stable `rkey`) **and**, when `threadId`/
-   `draftId` are present, patches the chat message's `lifecycle.publishJobId` in the SAME
-   `db.transaction()`. The UI never patches `publishJobId` itself — a job created without
-   its card knowing (or vice-versa) would be the exact sync seam this design removes. The
-   in-memory thread cache is refreshed post-commit (best-effort, re-hydratable; the durable
-   `chat_messages` row is the truth).
-5. **Inline fast-path** (online, user scope): CAS-claim → `publishing` → attempt the PDS
-   write once so an online user sees instant success/failure:
-   - ok → `published`; the service writes the receipt onto the chat message + prunes the
-     job in one transaction (§7); return `{kind:'published'}`.
-   - retryable → back to `queued` w/ backoff, return `{kind:'queued'}`.
-   - permanent → `failed`, return `{kind:'error'}`.
-   - offline (no `sessionReachable`) → skip the inline attempt, leave `queued`, return
-     `{kind:'queued'}` — the worker drains on reconnect.
+   ('queued','publishing')`. `>= MAX_PUBLISH_QUEUE` → `{kind:'cap_exceeded'}`. (Foreign-DID
+   rows never counted — different `owner_did`.)
+4. **Create job.** ONE atomic row (`status='queued'`, `data_scope='user'`, stable `rkey`,
+   plus `thread_id`/`draft_id` when present). No chat-message write — the card finds this job
+   by the `(thread,draft)` back-reference (§6), so there is no cross-table coupling on create.
+5. **Inline fast-path** (always attempted — no reachability pre-check; an offline device
+   fails the fetch immediately → queued): CAS-claim → `publishing` → one attempt:
+   - ok → `published` (receipt on the row); return `{kind:'published'}`. A job with NO
+     `thread/draft` is pruned immediately (§7); an inline-chat job is retained as the card's
+     receipt.
+   - retryable → back to `queued` w/ backoff → `{kind:'queued'}`.
+   - permanent → `failed` → `{kind:'error'}`.
+   - CAS lost (lease reclaimed mid-write) → `{kind:'queued'}` (the worker owns it).
 
-The UI's job after `submit()` returns is only to re-render from job state (§6) and, for
-`no_credentials`, show the setup prompt. It performs no lifecycle writes.
+The UI's job after `submit()` returns is only to navigate / re-render from job state (§6)
+and, for `no_credentials`/`cap_exceeded`, show the inline message. It performs no lifecycle
+writes.
 
 ---
 
@@ -284,69 +316,71 @@ test (§10).
 
 ## 6. Projection: the inline chat draft card
 
-`ReviewDraftLifecycle` keeps **only the pre-submit phase** it genuinely owns; it gains a
-`publishJobId?` and **delegates post-submit status to the job**:
+`ReviewDraftLifecycle` keeps **only the pre-submit phase** it genuinely owns; it stores NO
+`publishJobId`. The card finds its job by the `(thread_id, draft_id)` **back-reference** on
+the job row and **delegates every post-submit state to the job**:
 
 ```
 ReviewDraftLifecycle (chat message metadata):
-  status: 'drafting' | 'ready'        ← LOCAL, before any job exists
-  values: WriteFormState              ← the editor's working copy
-  publishJobId?: string               ← written by submitReviewPublish() (§4), in the
-                                        SAME txn as the job row; thereafter the card READS the job
+  status: 'drafting' | 'ready' | 'discarded'   ← LOCAL only (pre-submit + the discarded terminal)
+  values: WriteFormState                       ← the editor's working copy
+  (no publishJobId — the job carries thread_id/draft_id; the card queries by those)
 ```
 
-`publishJobId` is set by the **service**, transactionally with the job row — never by the
-card after `submit()` returns. So there is no window where a job exists but its card
-doesn't know, or vice-versa.
+The card calls `useReviewPublishJob(threadId, draftId)` → `findLatestForDraft(...)` and
+subscribes to repo changes. Because the job row is a single atomic write that already
+carries the link, there is **no window** where a job exists but its card doesn't know — and
+no cross-table transaction on create.
 
 Card render logic:
 
 ```
-if (no publishJobId)  → drafting / ready (editable; Publish enabled)
-else read job(publishJobId).status:
-    queued      → "Queued in Outbox"   + [View Outbox] [Cancel queued publish]
-    publishing  → "Publishing…"        (spinner; NO cancel)
-    published   → receipt (uri/cid)    (from the chat message, see §7)
-    failed      → "Needs attention"    + [Try again] [Dismiss] + error message
-    discarded   → "Removed"
+if (lc.status === 'drafting')  → drafting (spinner)
+else if (a job exists)         → render by job.status:
+    queued      → "Queued in Outbox"   + [View Outbox] [Cancel]
+    publishing  → "Publishing…"        (spinner; NO cancel — write is on the wire)
+    published   → receipt (uri/cid read off the job row)
+    failed      → "Couldn't publish"   + [Try again] [Dismiss] + describePublishErrorCode(code)
+else if (lc.status === 'discarded') → "Removed"
+else                          → ready (editable; Publish enabled)
 ```
 
-**Copy: "published" ≠ "indexed."** `published` means the PDS write landed — the record is
-in the user's repo. AppView indexing (Jetstream → ingester) is **async**, seconds later.
-The receipt copy must say *"Published to your PDS"* (or *"Publishing to PeerLens…"*), not
-*"Live in PeerLens search"*, or the user will tap straight to a search that hasn't indexed
-yet. (A later enhancement could poll `attestationStatus` to flip "published" → "indexed",
-but V1 just states the honest PDS-write fact.)
+Cancel / Dismiss `discard` the job → the card falls back to its editable `ready` draft (no
+hydration dependency). "Try again" `retry`s the job in place. This removes the entire class
+of "card stuck in publishing" / "thread-not-hydrated no-op" bugs — the card has no
+post-submit status of its own; it reads the row.
 
-This removes the entire class of "card stuck in publishing" / "card not patched because
-the thread wasn't hydrated" bugs — the card has no status to get stuck; it reads the row.
-The `setReviewDraftStatus(... 'publishing'|'published'|'failed'|'discarded')` calls and the
-`hydrateThread`-before-patch dance go away; only the pre-submit `'ready'` patch (editor
-values) remains.
-
-**Reactivity:** the repository emits a change signal; `subscribeReviewJob(jobId, cb)` lets
-the card re-render on transitions. (Same subscribe shape `outbox_store` had, but over the
-table instead of a mirror.)
+**Copy: "published" ≠ "indexed."** `published` means the PDS write landed. AppView indexing
+(Jetstream → ingester) is **async**, seconds later. The receipt copy says *"Published your
+review"*, and the queued copy says *"in flight / will publish when back online"* — not a
+promise of instant search visibility or instant retry.
 
 ---
 
-## 7. Receipts + pruning
+## 7. Receipts + retention
 
-Terminal rows must not accumulate as a growing log. **All of these are owned by the
-service/worker and done transactionally** — the UI never writes them.
+The published receipt (`uri`/`cid`) lives **on the job row** — there is NO chat-message
+receipt write and NO cross-table transaction (the seam that would have needed a sync chat
+write inside the repo txn). Retention is bounded by which jobs a projection still needs:
 
-- On `published`: in ONE `identity.sqlite` transaction, write the `{uri, cid}` receipt onto
-  the **chat message** metadata (so it survives) **and** prune (`DELETE`) the job row. The
-  card's `published` branch reads the receipt from the message, not the job. (A job-row
-  delete that committed without its receipt landing on the message would orphan the chat
-  card — hence one transaction.)
-- On `discarded`: `DELETE` the job; if it had a chat card, clear its in-flight projection in
-  the same transaction.
-- `failed` rows persist (user-actionable) until the user retries (→ `queued`) or dismisses
-  (→ deleted).
+- On `published`: the receipt is recorded on the row by `complete()`. A job WITH a chat
+  back-reference (`thread_id`/`draft_id`) is **retained** — the inline card reads it as the
+  receipt. A job with NO back-reference (a full-form publish) is **pruned immediately** after
+  success — nothing projects it, so it can't accumulate.
+- On `discarded` (Cancel/Dismiss): `DELETE` the job. The card (a projection) then falls back
+  to its editable draft; the Outbox row disappears.
+- `failed` rows persist (user-actionable) until the user retries (→ `queued`), dismisses
+  (→ deleted), or re-submits the draft (the stale failed row is superseded — §4 step 0.5).
+- Every terminal transition (`complete`/`fail`/`requeue`) is CAS-guarded; a lease reclaimed
+  mid-write yields `lost` rather than a false outcome.
+- `prunePublished(ownerDid, olderThanMs)` exists as an escape hatch if retained inline-chat
+  published rows ever need a TTL sweep; unscheduled in V1.
 
-So at rest the table holds only `queued` + `publishing` + `failed` — exactly the rows the
-Outbox shows.
+So at rest the table holds `queued` + `publishing` + `failed` (the rows the Outbox shows)
+**plus** the `published` rows that still back an inline chat card (the card's receipt).
+Full-form `published` rows are pruned on success, so the only retained `published` rows are
+inline-chat receipts — bounded by the user's chat history, and TTL-prunable via
+`prunePublished` if ever needed.
 
 ---
 
@@ -407,42 +441,42 @@ transitions must complete inside `db.transaction()` (pinned exempt in
 ```ts
 export interface ReviewPublishRepository {
   create(job: NewPublishJob): void;
-  claim(jobId: string, nowMs: number, leaseMs: number): boolean; // CAS queued→publishing + lease; true if won
-  reclaimExpiredLeases(ownerDid: string, nowMs: number): number; // publishing+expired → queued; returns #reclaimed
-  markPublished(jobId: string, uri: string, cid: string): void;
-  requeue(jobId: string, attempts: number, nextAttemptAt: number, err: ClassifiedError): void;
-  markFailed(jobId: string, err: ClassifiedError): void;
-  retry(jobId: string): void;                    // failed→queued, attempts=0
-  discard(jobId: string): void;                  // queued|failed → delete
-  prune(jobId: string): void;                    // delete (post-published)
+  claim(jobId: string, nowMs: number, leaseMs: number): boolean;             // CAS queued→publishing + lease
+  reclaimExpiredLeases(ownerDid: string, nowMs: number): number;            // publishing+expired → queued
+  complete(jobId: string, uri: string, cid: string, nowMs: number): boolean; // CAS publishing→published (receipt on row)
+  requeue(jobId, attempts, nextAttemptAt, err: ClassifiedError, nowMs): boolean; // CAS publishing→queued
+  fail(jobId: string, err: ClassifiedError, nowMs: number): boolean;        // CAS publishing→failed
+  retry(jobId: string, nowMs: number): boolean;                            // failed→queued, attempts=0
+  discard(jobId: string): boolean;                                          // queued|failed → delete
+  prune(jobId: string): void;                                              // unconditional delete
   getById(jobId: string): PublishJob | null;
-  countActive(ownerDid: string): number;         // queued+publishing
-  listForOwner(ownerDid: string): PublishJob[];  // queued+publishing+failed (Outbox)
+  findLatestForDraft(ownerDid, threadId, draftId): PublishJob | null;       // the card's back-reference projection
+  countActive(ownerDid: string): number;                                   // queued+publishing (the cap)
+  listForOwner(ownerDid: string): PublishJob[];                            // queued+publishing+failed (Outbox)
   listDue(ownerDid: string, nowMs: number): PublishJob[];
-  purgeForeign(ownerDid: string): void;          // DELETE WHERE owner_did != ?
-  subscribe(cb: () => void): () => void;         // change signal for projections
-  readonly db: DatabaseAdapter;                  // exposed so the SERVICE can compose a
-                                                 // job write + chat-message write in ONE txn (§4/§7)
+  prunePublished(ownerDid: string, olderThanMs: number): number;           // retention escape hatch (unscheduled V1)
+  purgeForeign(ownerDid: string): void;                                    // DELETE WHERE owner_did != ?
+  transaction(fn: () => void): void;                                       // atomic block (SQLite) / snapshot-rollback (InMemory)
+  subscribe(cb: () => void): () => void;                                   // change signal for projections
 }
 ```
 
-**Cross-table transactions (job ↔ chat message).** The two transactional couplings — link
-`publishJobId` on create (§4), and write-receipt+prune on publish (§7) — span
-`peerlens_publish_jobs` **and** `chat_messages`, so they can't live inside a single repo
-method that only knows one table. `submitReviewPublish` (the service) owns them: it opens
-one `db.transaction(() => { reviewRepo.<job write>; chatRepo.<lifecycle write> })` on the
-shared `identityDB`. Both repos are constructed against the same adapter, so this is a real
-atomic commit. (The in-memory thread cache is refreshed after commit — best-effort,
-re-hydratable from `chat_messages`.)
+Every status transition is a **CAS returning a boolean** (`db.run(UPDATE … WHERE …
+AND status=?)` → affected-rows): the caller checks it and reports `lost` if the row was
+reclaimed mid-write. There is **no `db` handle on the interface and no cross-table coupling**
+— the back-reference (§6) removes the create-path transaction, and the receipt-on-row (§7)
+removes the publish-path one. `transaction(fn)` exists only so a caller could batch repo
+writes atomically; the publish flow uses single-row CAS transitions.
 
-Wiring (per the Explore map):
-- `boot_service.ts` (~L360): `reviewPublishRepository = databaseAdapter ? new
+Wiring (as built):
+- `boot_service.ts`: `reviewPublishRepository = databaseAdapter ? new
   SQLiteReviewPublishRepository(databaseAdapter) : new InMemoryReviewPublishRepository()`,
   passed into `createNode` options.
-- `bootstrap.ts` `installCoreGlobals` (~L445): `setReviewPublishRepository(options.reviewPublishRepository)`.
-- `init.ts` `initializePersistence` (~L187, beside `setChatMessageRepository`): wire the
-  SQLite impl against `identityDB`.
-- `CreateNodeOptions` gains `reviewPublishRepository?`.
+- `CreateNodeOptions` (bootstrap.ts) gains `reviewPublishRepository?`; `installCoreGlobals`
+  calls `setReviewPublishRepository(options.reviewPublishRepository)` and unwires it on
+  dispose — matching the `serviceConfigRepository` pattern exactly.
+- Exposed from the `@dina/core/runtime` curated barrel (which `bootstrap`/`boot_service`
+  import). The card/Outbox/worker resolve it via the global `getReviewPublishRepository()`.
 
 ---
 
@@ -452,13 +486,13 @@ Because it's greenfield, the cutover deletes the old path rather than running bo
 
 - **Phase A — engine (no UI):** migration v14 (incl. lease columns); `ReviewPublishRepository`
   (SQLite + InMemory + globals) with `claim`-with-lease + `reclaimExpiredLeases`;
-  `classifyPublishError`; `submitReviewPublish` (demo guard + transactional job↔chat link);
+  `classifyPublishError`; `submitReviewPublish` (demo guard + back-reference dedup);
   the worker (lease reap → claim → publish). Wire through boot. **Contract tests** (§12),
   including crash-recovery. The old `review_outbox_durable.ts`/`outbox_store.ts` still exist
   but are now dead weight.
 - **Phase B — entrypoint cutover:** `WriteScreen.Publish` and `InlineReviewDraftCard.Publish`
-  call `submitReviewPublish`; the card gains `publishJobId` + reads job status. Map the four
-  submit outcomes to UI (incl. the new `no_credentials` setup prompt).
+  call `submitReviewPublish`; the card reads its job via the `(thread,draft)` back-reference.
+  Map the submit outcomes to UI (incl. the `no_credentials` setup prompt).
 - **Phase C — delete the old world:** remove `outbox_store.ts` (mirror), the KV functions in
   `review_outbox_durable.ts`, `drainInFlight`, the `markSubmitting/markQueued/
   enqueueDeadLettered/hydrateBooted` helpers, the `peerlens_outbox` KV namespace, and the
@@ -491,10 +525,14 @@ Each past race-fix becomes a contract test on the new model (the
 - **No-credentials:** `submit()` with absent creds → `{kind:'no_credentials'}`, **0 rows
   written**. Offline (creds present, unreachable) → `{kind:'queued'}`, 1 row.
 - **Submit demo-scope guard:** `submit()` under `guided_demo:*` creates **0** job rows.
-- **Transactional couplings:** `submit()` from a chat draft writes the job row AND the
-  message's `publishJobId` atomically — a forced failure of the chat write rolls back the
-  job (no orphan job, no orphan card). Same for publish: receipt-on-message + job-prune
-  commit together or not at all.
+- **Duplicate guard (back-reference):** a second `submit()` for the same `(thread,draft)`
+  while a job is `queued`/`publishing` returns that job (no 2nd row); after `published` it
+  returns the existing receipt; a stale `failed` row is superseded (discarded) before the
+  replacement is created — exactly one publishable job per draft.
+- **CAS-lost outcome:** a transition whose CAS fails (lease reclaimed mid-write) yields
+  `lost` — never a false `published`; submit maps it to `queued`, the worker doesn't count it.
+- **Retention:** a `published` job with a chat back-reference is retained (card receipt); one
+  with no back-reference (full-form publish) is pruned immediately after success.
 - **Cancel rules:** `discard` allowed from `queued`/`failed`; rejected from `publishing`.
 - **Worker demo-scope skip:** worker tick under `guided_demo:*` claims nothing; jobs stay
   `queued`; resumes under `user`.

@@ -10,11 +10,7 @@ import { getReviewPublishRepository } from '@dina/core';
 
 import { getBootedNode } from '../hooks/useNodeBootstrap';
 
-import {
-  injectAttestation,
-  isTestPublishConfigured,
-  type InjectAttestationRequest,
-} from './appview_runtime';
+import { INJECT_SENTINEL_PUBLISHER, injectPublish, isTestPublishConfigured } from './inject_publish';
 import { submitReviewPublish, type SubmitOutcome } from './submit_review_publish';
 
 import type { AttestationDraftBody } from './review_draft_body';
@@ -32,35 +28,21 @@ function generateJobId(): string {
   return `pub-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/**
- * Dev/E2E publish: write straight into AppView's DB via the test-inject endpoint
- * instead of the PDS. Same `(uri, cid)` shape, so the job completes identically.
- * Active only when `EXPO_PUBLIC_DINA_TEST_INJECT_TOKEN` is set (404s in prod).
- */
-async function injectPublish(
-  _pds: unknown,
-  did: string,
-  record: Record<string, unknown>,
-  rkey: string,
-): Promise<{ uri: string; cid: string }> {
-  const result = await injectAttestation({
-    authorDid: did,
-    rkey,
-    cid: `bafyreim${Date.now().toString(36)}`,
-    record: record as InjectAttestationRequest['record'],
-  });
-  return { uri: result.uri, cid: result.cid };
-}
-
 export async function submitReviewFromUI(input: SubmitReviewUIInput): Promise<SubmitOutcome> {
   const repo = getReviewPublishRepository();
   const node = getBootedNode();
   if (repo === null || node === null) {
     return { kind: 'error', code: 'unknown', message: 'Local node is not ready yet.' };
   }
+  // In dev/E2E the inject endpoint stands in for a PDS account: there's a way to
+  // publish even with no real PDS publisher, so pass a sentinel so the credential
+  // gate doesn't reject the publish. In prod (inject off) this is just the real
+  // publisher, and `undefined` ⇒ no_credentials as before.
+  const injectActive = isTestPublishConfigured();
+  const publisher = node.pdsPublisher ?? (injectActive ? INJECT_SENTINEL_PUBLISHER : undefined);
   return submitReviewPublish({
     did: node.did,
-    publisher: node.pdsPublisher, // undefined ⇒ no_credentials (unless inject overrides the write)
+    publisher,
     rkey: input.rkey,
     record: input.record,
     draft: input.draft,
@@ -69,6 +51,6 @@ export async function submitReviewFromUI(input: SubmitReviewUIInput): Promise<Su
     repo,
     nowMs: Date.now(),
     newJobId: generateJobId,
-    publishToPDS: isTestPublishConfigured() ? injectPublish : undefined,
+    publishToPDS: injectActive ? injectPublish : undefined,
   });
 }

@@ -40,6 +40,7 @@ import { render } from '@testing-library/react-native';
 import React from 'react';
 
 import SubjectDetailScreen from '../../app/peerlens/[subjectId]';
+import BrowseScreen from '../../app/peerlens/browse';
 import TrustFeedScreen from '../../app/peerlens/index';
 import NamespaceScreen from '../../app/peerlens/namespace';
 import OutboxScreen from '../../app/peerlens/outbox';
@@ -47,7 +48,7 @@ import ReviewerProfileScreen from '../../app/peerlens/reviewer/[did]';
 import SearchScreen from '../../app/peerlens/search';
 import WriteScreen from '../../app/peerlens/write';
 
-import type { FeedItem } from '../../app/peerlens/index';
+import type { FeedItem } from '../../app/peerlens/browse';
 import type { SearchResult } from '../../app/peerlens/search';
 import type { FacetBar } from '../../src/peerlens/facets';
 import type { SubjectCardDisplay } from '../../src/peerlens/subject_card';
@@ -336,10 +337,14 @@ const SCREENS: readonly ScreenFixture[] = [
     inlineAffordancePrefixes: ['facet-chip-', 'viewer-filter-chip-'],
   },
   {
-    name: 'TrustFeedScreen (feed)',
+    name: 'Network home (launchpad)',
+    render: () => render(<TrustFeedScreen reviewsWritten={2} />),
+  },
+  {
+    name: 'BrowseScreen (feed)',
     render: () =>
       render(
-        <TrustFeedScreen
+        <BrowseScreen
           feed={[makeFeedItem('f1'), makeFeedItem('f2')]}
           facets={SOME_FACETS}
           q="aeron"
@@ -352,10 +357,10 @@ const SCREENS: readonly ScreenFixture[] = [
     inlineAffordancePrefixes: ['facet-chip-'],
   },
   {
-    name: 'TrustFeedScreen (empty with query)',
+    name: 'BrowseScreen (empty with query)',
     render: () =>
       render(
-        <TrustFeedScreen
+        <BrowseScreen
           feed={[]}
           facets={{ primary: [], overflow: [] }}
           q="aeron"

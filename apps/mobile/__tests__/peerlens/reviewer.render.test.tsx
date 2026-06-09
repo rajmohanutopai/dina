@@ -15,8 +15,8 @@
  * wiring between the projection and the rendered output.
  */
 
-import React from 'react';
 import { render, fireEvent, within } from '@testing-library/react-native';
+import React from 'react';
 
 // Mock the booted-node singleton: tests pin a known DID so the
 // reviewer screen's `isSelf` branch (which gates the Edit affordance
@@ -26,6 +26,7 @@ const MOCK_BOOTED_DID = 'did:plc:bootedaaaaaaaaaaaaaaaa';
 jest.mock('../../src/hooks/useNodeBootstrap', () => ({
   getBootedNode: jest.fn(() => ({ did: MOCK_BOOTED_DID })),
   getBootDegradations: jest.fn(() => []),
+  subscribeBootedNode: jest.fn(() => () => undefined),
 }));
 
 import ReviewerProfileScreen from '../../app/peerlens/reviewer/[did]';
@@ -517,5 +518,81 @@ describe('ReviewerProfileScreen — Edit affordance on own reviews', () => {
     );
     fireEvent.press(getByTestId(`reviewer-authored-edit-${ROW.uri}`));
     expect(onEdit).toHaveBeenCalledWith(ROW);
+  });
+});
+
+describe('ReviewerProfileScreen — authored list truncation (latest 5 + View all)', () => {
+  function authoredRow(n: number) {
+    return {
+      uri: `at://x/${n}`,
+      subjectId: `sub-${n}`,
+      subjectKind: 'product' as const,
+      subjectUri: null,
+      subjectDid: null,
+      subjectTitle: `Subject ${n}`,
+      category: null,
+      sentiment: 'positive' as const,
+      headline: `h${n}`,
+      body: '',
+      confidence: null,
+      createdAtMs: n,
+    };
+  }
+  const sevenRows = Array.from({ length: 7 }, (_, i) => authoredRow(i));
+
+  it('shows only the latest 5 + a "View all reviews (N)" expander when > 5', () => {
+    const { getByTestId, queryByTestId, getByText } = render(
+      <ReviewerProfileScreen profile={makeProfile()} authoredRows={sevenRows} nowMs={NOW} />,
+    );
+    expect(getByTestId('reviewer-authored-row-at://x/0')).toBeTruthy();
+    expect(getByTestId('reviewer-authored-row-at://x/4')).toBeTruthy();
+    expect(queryByTestId('reviewer-authored-row-at://x/5')).toBeNull(); // 6th hidden
+    expect(getByTestId('reviewer-authored-view-all')).toBeTruthy();
+    expect(getByText('View all reviews (7)')).toBeTruthy();
+  });
+
+  it('tapping "View all" reveals the rest and removes the expander', () => {
+    const { getByTestId, queryByTestId } = render(
+      <ReviewerProfileScreen profile={makeProfile()} authoredRows={sevenRows} nowMs={NOW} />,
+    );
+    fireEvent.press(getByTestId('reviewer-authored-view-all'));
+    expect(getByTestId('reviewer-authored-row-at://x/5')).toBeTruthy();
+    expect(getByTestId('reviewer-authored-row-at://x/6')).toBeTruthy();
+    expect(queryByTestId('reviewer-authored-view-all')).toBeNull();
+  });
+
+  it('shows all rows with no expander when ≤ 5', () => {
+    const fourRows = sevenRows.slice(0, 4);
+    const { getByTestId, queryByTestId } = render(
+      <ReviewerProfileScreen profile={makeProfile()} authoredRows={fourRows} nowMs={NOW} />,
+    );
+    expect(getByTestId('reviewer-authored-row-at://x/3')).toBeTruthy();
+    expect(queryByTestId('reviewer-authored-view-all')).toBeNull();
+  });
+});
+
+describe('ReviewerProfileScreen — self-only Publishing + About', () => {
+  it('renders Publishing + About sections (with their rows) for the owner (self)', () => {
+    const { getByTestId } = render(
+      <ReviewerProfileScreen
+        profile={makeProfile({ did: MOCK_BOOTED_DID })}
+        authoredRows={[]}
+        nowMs={NOW}
+      />,
+    );
+    expect(getByTestId('reviewer-publishing-section')).toBeTruthy();
+    expect(getByTestId('reviewer-row-pending-reviews')).toBeTruthy();
+    expect(getByTestId('reviewer-row-publish-as')).toBeTruthy();
+    expect(getByTestId('reviewer-row-review-preferences')).toBeTruthy();
+    expect(getByTestId('reviewer-about-section')).toBeTruthy();
+    expect(getByTestId('reviewer-row-about')).toBeTruthy();
+  });
+
+  it('hides Publishing + About on a PEER profile (read-only)', () => {
+    const { queryByTestId } = render(
+      <ReviewerProfileScreen profile={makeProfile()} authoredRows={[]} nowMs={NOW} />,
+    );
+    expect(queryByTestId('reviewer-publishing-section')).toBeNull();
+    expect(queryByTestId('reviewer-about-section')).toBeNull();
   });
 });

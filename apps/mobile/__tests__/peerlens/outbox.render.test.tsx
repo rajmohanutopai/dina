@@ -13,6 +13,7 @@ jest.mock('../../src/hooks/useNodeBootstrap', () => ({
   // null node → the live hook returns [] and drainReviewPublishNow no-ops, so
   // the controlled `jobs` prop is the only data + actions only touch the repo.
   getBootedNode: jest.fn().mockReturnValue(null),
+  subscribeBootedNode: jest.fn(() => () => undefined),
 }));
 
 import { InMemoryReviewPublishRepository, setReviewPublishRepository, type PublishJob } from '@dina/core';
@@ -98,7 +99,7 @@ describe('OutboxScreen — interactions (drive the repo)', () => {
     setReviewPublishRepository(repo);
     repo.create({ jobId: 'f1', ownerDid: DID, rkey: 'rk', recordJSON: '{}', draftJSON: '{}', createdAt: 1 });
     repo.claim('f1', 1, 60_000);
-    repo.fail('f1', { class: 'permanent', code: 'bad_request', message: 'x' }, 2);
+    repo.fail('f1', { class: 'permanent', code: 'bad_request', message: 'x' }, 2, 1);
 
     const { getByTestId } = render(
       <OutboxScreen jobs={[job({ jobId: 'f1', status: 'failed', lastErrorCode: 'bad_request' })]} />,
@@ -117,19 +118,23 @@ describe('OutboxScreen — interactions (drive the repo)', () => {
     expect(repo.getById('q1')).toBeNull();
   });
 
-  it('Try again resets a failed job back to queued', async () => {
+  it('Try again is a no-op when no drain can run (failed row preserved, not stranded)', async () => {
+    // This screen's mock has a null booted node → no publisher → the worker
+    // can't drain. Retry must NOT reset the row to `queued`: that would strand it
+    // as an undrainable job and hide the failure + Try-again handle. The failed
+    // row is preserved so the user keeps both. (Positive reset+drain path is
+    // covered in review_publish_actions.test.ts with a drainable node.)
     const repo = new InMemoryReviewPublishRepository();
     setReviewPublishRepository(repo);
     repo.create({ jobId: 'f1', ownerDid: DID, rkey: 'rk', recordJSON: '{}', draftJSON: '{}', createdAt: 1 });
     repo.claim('f1', 1, 60_000);
-    repo.fail('f1', { class: 'permanent', code: 'bad_request', message: 'x' }, 2);
+    repo.fail('f1', { class: 'permanent', code: 'bad_request', message: 'x' }, 2, 1);
 
     const { getByTestId } = render(
       <OutboxScreen jobs={[job({ jobId: 'f1', status: 'failed', lastErrorCode: 'bad_request' })]} />,
     );
     fireEvent.press(getByTestId('outbox-retry-f1'));
-    await Promise.resolve(); // retry is async (resets then drains; drain no-ops with a null node)
-    expect(repo.getById('f1')?.status).toBe('queued');
-    expect(repo.getById('f1')?.attempts).toBe(0);
+    await Promise.resolve();
+    expect(repo.getById('f1')?.status).toBe('failed'); // preserved — not stranded as queued
   });
 });

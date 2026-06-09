@@ -45,8 +45,10 @@ describe('CapabilityPicker', () => {
   });
 
   it('shows the capabilities of the selected category (+ the capability heading)', () => {
-    const { getByTestId, getByText, queryByTestId } = renderPicker({ selectedCategoryId: 'transit' });
-    expect(getByText('What can this service answer or do?')).toBeTruthy();
+    const { getByTestId, getByText, queryByTestId } = renderPicker({
+      selectedCategoryId: 'transit',
+    });
+    expect(getByText('What does this service do?')).toBeTruthy();
     expect(getByTestId('picker-capability-eta_query')).toBeTruthy();
     // price_check is commerce, not transit → absent.
     expect(queryByTestId('picker-capability-price_check')).toBeNull();

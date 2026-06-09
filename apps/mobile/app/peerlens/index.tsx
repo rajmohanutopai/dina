@@ -1,684 +1,181 @@
 /**
- * PeerLens — landing screen (TN-MOB-011 / Plan §8.1).
+ * PeerLens — the Network home (launchpad).
  *
- * the PeerLens tab's home — a search bar across the top, a facet bar
- * for quick category filtering, and the network feed below (recent
- * attestations from the user's 1-hop reviewers, Plan §7's "feed.network"
- * surface).
+ * The Network tab's home is a quiet set of entry points, not a feed. Three
+ * groups:
+ *   - Services — Find a service (→ Chat, the real discovery path) and Publish a
+ *     service / My services (→ /my-listings). Rendered by `NetworkServicesCard`.
+ *   - Reviews — Browse reviews (→ /peerlens/browse, the network feed + search).
+ *   - Your review activity (→ your reviewer profile, with the review count).
  *
- * Replaces the placeholder that shipped before TN-MOB-001/002 finished.
+ * The feed + search that used to live here moved to `browse.tsx`; the publishing
+ * controls (Pending reviews / Publish as / Review preferences) moved onto the
+ * self-profile ("Your reviews"). All destinations are existing routes — this
+ * screen is a pure presentational menu over them.
  *
- * Render contract — same presentational pattern as the other trust
- * screens (TN-MOB-014/015/017): all data is injected via props, the
- * runner that subscribes to the xRPC + manages query state wraps this
- * component.
+ * Presentational with default-prop seams: tests inject the handlers + the review
+ * count; production lands on the default export and the `useAuthoredAttestations`
+ * runner fills the count + `router.push` wires the rows.
  *
- *   - `q` + `onQChange` + `onSubmitSearch` — search bar wiring.
- *   - `feed` (subject-card display rows from `feed.network`) +
- *     `facets` (derived from the same set) + state flags.
- *   - `onSelectSubject` drills into `app/trust/<subjectId>`.
- *   - `onTapFacet` re-queries with the active facet — same handler
- *     as the search results screen, sharing the `FacetBarView`.
- *
- * Three render states:
- *   1. **Empty feed** — viewer has no recent attestations from
- *      contacts. Encourages search.
- *   2. **Loading** — initial fetch in flight.
- *   3. **Feed** — facet bar + scrolling card list.
- *
- * The empty state is intentionally hopeful, not error-shaped — most
- * V1-cohort users will land here with no contacts having posted yet,
- * and the right copy is "search to find subjects" not "something went
- * wrong".
- *
- * **First-run modal integration** (Plan §13.5 / TN-MOB-022 / TN-MOB-027):
- * the orientation modal mounts unconditionally as a sibling of the
- * feed body — visibility is driven by the injected `firstRunVisible`
- * prop and dismissal delegates to `onDismissFirstRun`. The runner
- * subscribes to `isFirstRunModalDismissed` at mount, sets the prop on
- * load, and on dismissal fires `markFirstRunModalDismissed` before
- * flipping the prop back. The screen itself stays presentational —
- * keystore I/O remains in the runner.
+ * The first-run orientation modal mounts as an overlay (prop-driven visibility),
+ * unchanged from the prior home.
  */
 
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  ScrollView,
-  ActivityIndicator,
-  TextInput,
-} from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
 
 import { NetworkServicesCard } from '../../src/components/network_services_card';
-import { colors, spacing, radius, textStyles } from '../../src/theme';
-import { FacetBarView } from '../../src/peerlens/components/facet_bar_view';
-import { FirstRunModalView } from '../../src/peerlens/components/first_run_modal_view';
-import { SubjectCardView } from '../../src/peerlens/components/subject_card_view';
-import { shortHandle } from '../../src/peerlens/handle_display';
-import { useNetworkFeed } from '../../src/peerlens/runners/use_network_feed';
-import { useAuthoredAttestations } from '../../src/peerlens/runners/use_authored_attestations';
-import { useReviewerProfile } from '../../src/peerlens/runners/use_reviewer_profile';
-import { deriveReviewerProfileDisplay } from '../../src/peerlens/reviewer_profile_data';
 import { getBootedNode } from '../../src/hooks/useNodeBootstrap';
-import { FEATURE_NAMES } from '@dina/core';
+import { FirstRunModalView } from '../../src/peerlens/components/first_run_modal_view';
+import { useAuthoredAttestations } from '../../src/peerlens/runners/use_authored_attestations';
+import { colors, spacing, radius, textStyles } from '../../src/theme';
 
-import type { FacetBar } from '../../src/peerlens/facets';
-// Re-export FeedItem from the runner module so existing test imports
-// (`import type { FeedItem } from '<screen>'`) keep working without
-// pulling on the screen's React tree.
-export type { FeedItem } from '../../src/peerlens/runners/use_network_feed';
-import type { FeedItem } from '../../src/peerlens/runners/use_network_feed';
-
-/**
- * Module-level constants used as default-prop sentinels. Defining them
- * outside the component avoids re-allocating on every render — that
- * keeps `feed`/`facets` reference-stable so memoised children and
- * effect deps don't see a fresh array each render.
- */
-const EMPTY_FEED: readonly FeedItem[] = [];
-const EMPTY_FACETS: FacetBar = { primary: [], overflow: [] };
-
-export interface TrustFeedScreenProps {
-  /** Current text in the search box. */
-  q?: string;
-  /** Fired on every text change so the runner can debounce. */
-  onQChange?: (next: string) => void;
-  /** Fired when the user submits the search (return key or magnifier tap). */
-  onSubmitSearch?: (q: string) => void;
-  /**
-   * The network-feed cards for this viewer. Defaults to `[]` so the
-   * screen can be rendered as an Expo Router default export with no
-   * runner — the empty state ("Your PeerLens network is quiet") fires.
-   */
-  feed?: readonly FeedItem[];
-  /** Derived facets from the feed set. Defaults to an empty bar. */
-  facets?: FacetBar;
-  /** Currently-active facet (drives chip selected state). */
-  activeFacet?: string | null;
-  /** Whether the runner is mid-fetch. */
-  isLoading?: boolean;
-  /** Tap handler for a feed card. */
-  onSelectSubject?: (subjectId: string) => void;
-  /** Tap handler for a facet chip. `null` for "All". */
-  onTapFacet?: (value: string | null) => void;
-  /** Tap handler for the overflow "More" chip. */
-  onShowMoreFacets?: () => void;
-  /**
-   * First-run orientation modal visibility. When true the screen
-   * overlays `FirstRunModalView` on top of the feed body. Default
-   * `false` so a screen mounted without explicit wiring (tests, mock
-   * runners) does NOT show the modal.
-   */
+export interface NetworkHomeProps {
+  /** Count shown under "Your review activity". Defaults to the authored runner. */
+  reviewsWritten?: number;
+  /** Provider-aware Services card copy. Defaults from the booted node role. */
+  isProvider?: boolean;
+  /** First-run orientation modal visibility (prop-driven). */
   firstRunVisible?: boolean;
-  /**
-   * Fired when the user taps the modal's dismiss CTA. Runner persists
-   * via `markFirstRunModalDismissed` then flips `firstRunVisible`
-   * back to false. Optional — when omitted the modal renders with no
-   * effective dismiss action (the modal's own renderer no-ops on
-   * undefined onDismiss).
-   */
   onDismissFirstRun?: () => void;
-  /**
-   * Pre-derived self-profile bundle for the "My PeerLens profile" card
-   * at the top of the screen. When omitted, the screen runs its own
-   * `useReviewerProfile` against the booted DID. Tests pass an
-   * explicit value (or `null` for the unbooted state) to keep the
-   * screen presentational.
-   */
-  selfDisplay?: SelfProfileCardData | null;
-  /**
-   * Fired when the user taps the self-profile card. Default
-   * implementation pushes `/trust/reviewer/<myDid>`.
-   */
-  onOpenMyProfile?: () => void;
-  /**
-   * Fired when the user taps the "Outbox" footer link. Default
-   * implementation pushes `/trust/outbox`. The screen is otherwise
-   * unreachable from anywhere else in the app — neither the global
-   * hamburger menu (Vault / Reminders / Settings / Help) nor any
-   * drill-down surfaces it.
-   */
-  onOpenOutbox?: () => void;
-  /**
-   * Fired when the user taps the "Namespaces" footer link. Default
-   * implementation pushes `/trust/namespace`. Same reachability
-   * argument as `onOpenOutbox`.
-   */
-  onOpenNamespaces?: () => void;
+  /** Row handlers — production defaults route to the existing screens. */
+  onFindService?: () => void;
+  onPublishOrManage?: () => void;
+  onBrowseReviews?: () => void;
+  onOpenActivity?: () => void;
 }
 
-/**
- * Data the self-profile card displays.
- *
- * Reddit-style framing: neutral counts only. We deliberately omit
- * the trust band ("VERY LOW" / "HIGH" / colour-coded badge) for the
- * SELF surface — a fresh account naturally lands in the lowest
- * band, and surfacing that as a red verdict on the user's own
- * landing screen reads as a personal judgment rather than
- * information. The full band display + score lives one tap away on
- * the reviewer profile screen, where it's a tool rather than a
- * verdict.
- */
-export interface SelfProfileCardData {
-  readonly handle: string | null;
-  /**
-   * Numeric PeerLens rating on `[0, 100]`, or `null` when unrated
-   * (fewer than the cold-start threshold of attestations). Rendered
-   * as "—" when null. NOT colour-coded — see component header.
-   */
-  readonly scoreDisplay: number | null;
-  readonly reviewsWritten: number;
-  readonly vouchCount: number;
-  readonly endorsementCount: number;
-}
-
-export default function TrustFeedScreen(
-  props: TrustFeedScreenProps,
-): React.ReactElement {
-  // `useRouter` is consulted as a navigation fallback when the caller
-  // didn't supply explicit `onSubmitSearch` / `onSelectSubject` props.
-  // Tests pass the callbacks directly (controlled mode); production —
-  // where Expo Router renders the default export with no props — gets
-  // sensible drill-down navigation via `router.push`.
+export default function TrustFeedScreen(props: NetworkHomeProps = {}): React.ReactElement {
   const router = useRouter();
-  // When no parent runner supplies `q`/`onQChange`, the screen owns the
-  // search input state so typed characters echo (the production landing
-  // route mounts the default export with no props — without this local
-  // state the TextInput's value would always be ''). Tests that pass
-  // controlled props bypass this entirely.
-  const isSearchControlled = props.q !== undefined || props.onQChange !== undefined;
-  const [localQ, setLocalQ] = React.useState('');
-  // Auto-runner: fetch the user's 1-hop network feed when no caller
-  // supplies controlled feed state. Tests that pass `feed` / `isLoading`
-  // explicitly stay presentational; production lands here with no props
-  // and the runner kicks in. Empty 1-hop network → empty `feed` →
-  // existing "Your PeerLens network is quiet" UX still fires.
-  const isFeedControlled =
-    props.feed !== undefined || props.isLoading !== undefined;
   const viewerDid = getBootedNode()?.did ?? '';
-  const [feedNonce, setFeedNonce] = React.useState(0);
-  const auto = useNetworkFeed({
-    viewerDid,
-    enabled: !isFeedControlled && viewerDid !== '',
-    retryNonce: feedNonce,
-  });
-  // Self-profile fetch — fuels the "your PeerLens profile" card at the
-  // top of the screen. Same xRPC call the reviewer-profile screen
-  // uses, just pointed at the viewer's own DID. Disabled when
-  // controlled (tests inject their own header) or pre-boot.
-  const isSelfControlled = props.selfDisplay !== undefined;
-  const self = useReviewerProfile({
-    did: viewerDid,
-    enabled: !isSelfControlled && viewerDid !== '',
-    retryNonce: feedNonce,
-  });
-  // Authored attestations — same source the reviewer profile screen
-  // uses to render the "Reviews you wrote" list. We fetch it here so
-  // the self-card's "Reviews" stat tracks the count of *displayable*
-  // rows rather than the API's unfiltered `reviewerStats.totalAttestationsBy`.
-  // Pre-F9 the two diverged whenever an authored hit had a missing
-  // subjectId (dropped by `deriveAuthoredAttestationRows`) — the API
-  // said 6, the reviewer profile (post-F1) said 5, but the self-card
-  // here still showed 6 because it wasn't on the F1 fix path. Same
-  // pattern, same data source, count consistency restored.
-  const selfAuthored = useAuthoredAttestations({
+  const bootedRole = getBootedNode()?.role;
+  const isReviewsControlled = props.reviewsWritten !== undefined;
+  const [nonce, setNonce] = React.useState(0);
+  const authored = useAuthoredAttestations({
     authorDid: viewerDid,
-    enabled: !isSelfControlled && viewerDid !== '',
-    retryNonce: feedNonce,
+    enabled: !isReviewsControlled && viewerDid !== '',
+    retryNonce: nonce,
   });
-  // Refetch on focus so a freshly-published attestation by a contact
-  // shows up the next time the user lands here — same pattern as the
-  // other trust runners (search / subject detail / reviewer profile).
+  // Refresh the count on focus so a just-published review is reflected.
   useFocusEffect(
     React.useCallback(() => {
-      if (isFeedControlled || viewerDid === '') return;
-      setFeedNonce((n) => n + 1);
-    }, [isFeedControlled, viewerDid]),
+      if (isReviewsControlled || viewerDid === '') return;
+      setNonce((n) => n + 1);
+    }, [isReviewsControlled, viewerDid]),
   );
-  // Project the runner's `PeerlensProfile` into the card's display shape.
-  // The full `deriveReviewerProfileDisplay` result has lots of fields
-  // the card doesn't need (per-sentiment counts, helpful ratio, etc.);
-  // we project to the minimal `SelfProfileCardData` shape so the
-  // controlled-prop path and the auto-runner path produce the same
-  // type. `null` means "no card" — pre-boot or unknown profile.
-  const autoSelfDisplay: SelfProfileCardData | null = React.useMemo(() => {
-    if (self.profile === null) return null;
-    const d = deriveReviewerProfileDisplay(self.profile);
-    // Prefer the displayable-rows count for `reviewsWritten` once
-    // the authored list has loaded (rows.length > 0). Same fallback
-    // pattern as `reviewer/[did].tsx` — when the rows are still
-    // loading or genuinely zero, use the API summary so the stat
-    // doesn't flash "0".
-    const reviewsWrittenDisplay =
-      selfAuthored.rows.length > 0 ? selfAuthored.rows.length : d.reviewsWritten;
-    return {
-      handle: d.handle,
-      // Surface the numeric score only when the cold-start threshold
-      // is met (`hasNumericScore`); otherwise render as `null` →
-      // em-dash. Doesn't colour-code or label-shame either way.
-      scoreDisplay: d.hasNumericScore ? d.scoreDisplay : null,
-      reviewsWritten: reviewsWrittenDisplay,
-      vouchCount: d.vouchCount,
-      endorsementCount: d.endorsementCount,
-    };
-  }, [self.profile, selfAuthored.rows]);
+
   const {
-    q = isSearchControlled ? '' : localQ,
-    onQChange = isSearchControlled ? undefined : setLocalQ,
-    onSubmitSearch = (next: string) => {
-      const trimmed = next.trim();
-      if (trimmed.length === 0) return;
-      router.push({ pathname: '/peerlens/search', params: { q: trimmed } });
-    },
-    feed = auto.feed.length > 0 ? auto.feed : EMPTY_FEED,
-    isLoading = auto.isLoading,
-    facets = EMPTY_FACETS,
-    activeFacet = null,
-    onSelectSubject = (subjectId: string) => {
-      router.push({ pathname: '/peerlens/[subjectId]', params: { subjectId } });
-    },
-    onTapFacet,
-    onShowMoreFacets,
+    reviewsWritten = authored.rows.length,
+    isProvider = bootedRole === 'provider' || bootedRole === 'both',
     firstRunVisible = false,
     onDismissFirstRun,
-    selfDisplay = autoSelfDisplay,
-    onOpenMyProfile = () => {
+    onFindService = () => router.push('/'),
+    onPublishOrManage = () => router.push('/my-listings'),
+    onBrowseReviews = () => router.push('/peerlens/browse'),
+    onOpenActivity = () => {
       if (viewerDid === '' || !viewerDid.startsWith('did:')) return;
-      router.push({
-        pathname: '/peerlens/reviewer/[did]',
-        params: { did: viewerDid },
-      });
-    },
-    onOpenOutbox = () => {
-      router.push('/peerlens/outbox');
-    },
-    onOpenNamespaces = () => {
-      router.push('/peerlens/namespace');
+      router.push({ pathname: '/peerlens/reviewer/[did]', params: { did: viewerDid } });
     },
   } = props;
 
-  // Provider-aware Services module copy. `getBootedNode()` is the same
-  // boot accessor the self-profile fetch reads above; a provider/both
-  // node manages listings ("My services"), a requester-only node is
-  // invited to publish. Pre-boot / requester → false (the safe default).
-  const bootedRole = getBootedNode()?.role;
-  const isServiceProvider = bootedRole === 'provider' || bootedRole === 'both';
+  const activitySubtitle =
+    reviewsWritten > 0
+      ? `${reviewsWritten} review${reviewsWritten === 1 ? '' : 's'} written`
+      : 'Reviews you’ve written';
 
   return (
     <View style={styles.container} testID="trust-feed-screen">
-      {/* ─── Services module (Network's first first-level module) ─────
-          Makes Dina Services a discoverable primary surface instead of a
-          hidden Settings preference. "Find a service" routes to Chat (the
-          real discovery path); "Publish/My services" routes to /my-listings
-          (the provider home: node role + every listing). See
-          network_services_card.tsx. */}
-      <NetworkServicesCard
-        isProvider={isServiceProvider}
-        onFindService={() => router.push('/')}
-        onPublishOrManage={() => router.push('/my-listings')}
-      />
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+        {/* ─── Services ───────────────────────────────────────────────── */}
+        <NetworkServicesCard
+          isProvider={isProvider}
+          onFindService={onFindService}
+          onPublishOrManage={onPublishOrManage}
+        />
 
-      {/* ─── Self-profile card ───────────────────────────────────────
-          Tappable card at the top of the PeerLens tab showing the
-          viewer's own neutral counts (Reddit-style: "90 Karma · 33
-          Contributions" framing). Deliberately NO band badge or
-          colour-coded score — a fresh account naturally falls in
-          the lowest band and a red "VERY LOW" pill on the user's
-          own landing screen reads as a personal verdict, not
-          information. Tap drills into the full reviewer profile
-          where the band display lives behind another tap. */}
-      {selfDisplay !== null && selfDisplay !== undefined ? (
-        <Pressable
-          onPress={onOpenMyProfile}
-          style={({ pressed }) => [
-            styles.selfCard,
-            pressed && styles.selfCardPressed,
-          ]}
-          testID="trust-feed-self-card"
-          accessibilityRole="button"
-          accessibilityLabel={
-            `Your ${FEATURE_NAMES.peerlens} profile — ${selfDisplay.reviewsWritten} reviews written, ` +
-            `${selfDisplay.vouchCount} vouches, ${selfDisplay.endorsementCount} endorsements`
-          }
-        >
-          <View style={styles.selfCardHeader}>
-            <Text style={styles.selfCardHeading}>
-              {selfDisplay.handle !== null
-                ? shortHandle(selfDisplay.handle)
-                : `Your ${FEATURE_NAMES.peerlens} profile`}
-            </Text>
-            <Ionicons
-              name="chevron-forward"
-              size={18}
-              color={colors.textMuted}
-            />
-          </View>
-          <View style={styles.selfCardStats} testID="trust-feed-self-stats">
-            <SelfStat
-              value={selfDisplay.scoreDisplay !== null ? String(selfDisplay.scoreDisplay) : '—'}
-              label={`${FEATURE_NAMES.peerlens} signal`}
-              testKey="score"
-            />
-            <SelfStat
-              value={String(selfDisplay.reviewsWritten)}
-              label={selfDisplay.reviewsWritten === 1 ? 'Review' : 'Reviews'}
-              testKey="reviews"
-            />
-            <SelfStat
-              value={String(selfDisplay.vouchCount)}
-              label={selfDisplay.vouchCount === 1 ? 'Vouch' : 'Vouches'}
-              testKey="vouches"
-            />
-            <SelfStat
-              value={String(selfDisplay.endorsementCount)}
-              label={selfDisplay.endorsementCount === 1 ? 'Endorsement' : 'Endorsements'}
-              testKey="endorsements"
-            />
-          </View>
-        </Pressable>
-      ) : null}
-
-      {/* ─── Search bar ─────────────────────────────────────────────── */}
-      <View style={styles.searchBarContainer}>
-        <View style={styles.searchBar}>
-          <Ionicons
-            name="search-outline"
-            size={18}
-            color={colors.textMuted}
-            style={styles.searchIcon}
+        {/* ─── Reviews ────────────────────────────────────────────────── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Reviews</Text>
+          <LaunchRow
+            testID="network-row-browse"
+            title="Browse reviews"
+            subtitle="Search reviews from other Dinas"
+            onPress={onBrowseReviews}
           />
-          <TextInput
-            value={q}
-            onChangeText={onQChange}
-            onSubmitEditing={
-              onSubmitSearch ? (e) => onSubmitSearch(e.nativeEvent.text) : undefined
-            }
-            placeholder="Search reviews, reviewers, places…"
-            placeholderTextColor={colors.textMuted}
-            style={styles.searchInput}
-            returnKeyType="search"
-            autoCorrect={false}
-            autoCapitalize="none"
-            testID="trust-search-input"
-            accessibilityLabel={`Search ${FEATURE_NAMES.peerlens}`}
-          />
-          {q.length > 0 ? (
-            <Pressable
-              onPress={() => onQChange?.('')}
-              style={({ pressed }) => [
-                styles.searchClearBtn,
-                pressed && styles.searchClearBtnPressed,
-              ]}
-              testID="trust-search-clear"
-              accessibilityRole="button"
-              accessibilityLabel="Clear search"
-              hitSlop={8}
-            >
-              <Ionicons name="close-circle" size={18} color={colors.textMuted} />
-            </Pressable>
-          ) : null}
         </View>
-      </View>
 
-      {/* ─── Facet bar ──────────────────────────────────────────────── */}
-      <FacetBarView
-        facets={facets}
-        activeValue={activeFacet}
-        onTap={onTapFacet}
-        onShowMore={onShowMoreFacets}
-      />
+        {/* ─── Your review activity ───────────────────────────────────── */}
+        <LaunchRow
+          testID="network-row-activity"
+          title="Your review activity"
+          subtitle={activitySubtitle}
+          onPress={onOpenActivity}
+        />
+      </ScrollView>
 
-      {/* ─── Body: loading / empty / feed ───────────────────────────── */}
-      {isLoading && feed.length === 0 ? (
-        <View style={styles.loading} testID="trust-feed-loading">
-          <ActivityIndicator color={colors.textMuted} />
-          <Text style={styles.loadingText}>Loading network feed…</Text>
-        </View>
-      ) : feed.length === 0 ? (
-        <View style={styles.empty} testID="trust-feed-empty">
-          <Ionicons name="people-outline" size={40} color={colors.textMuted} />
-          <Text style={styles.emptyTitle}>Your {FEATURE_NAMES.peerlens} network is quiet</Text>
-          <Text style={styles.emptyBody}>
-            Search above for what you want to review. If nothing matches, you can
-            create the first review for it from there.
-          </Text>
-          {/*
-            Why no unconditional "Write a review" CTA here: jumping
-            straight to /trust/write?createKind=product lets a user
-            mint a duplicate subject for something already in the
-            network — they never see existing matches first. The
-            search-first path is the only entry to writing: type
-            above → "Search '<q>'" → if results, tap an existing
-            subject and "Write a review" from its detail page; if no
-            results, the search empty state offers "Review '<q>'"
-            with the typed term pre-filled. Either way, the user has
-            checked for an existing subject before writing.
-          */}
-          {onSubmitSearch && q.trim().length > 0 && (
-            <Pressable
-              onPress={() => onSubmitSearch(q.trim())}
-              style={({ pressed }) => [
-                styles.searchCta,
-                pressed && styles.searchCtaPressed,
-              ]}
-              testID="trust-feed-search-cta"
-              accessibilityRole="button"
-              accessibilityLabel={`Search for ${q.trim()}`}
-            >
-              <Ionicons name="search" size={16} color={colors.bgSecondary} />
-              <Text style={styles.searchCtaLabel}>Search “{q.trim()}”</Text>
-            </Pressable>
-          )}
-        </View>
-      ) : (
-        <ScrollView
-          contentContainerStyle={styles.feedContainer}
-          testID="trust-feed-list"
-        >
-          {feed.map((item) => (
-            <SubjectCardView
-              key={item.subjectId}
-              subjectId={item.subjectId}
-              display={item.display}
-              onPress={onSelectSubject}
-            />
-          ))}
-        </ScrollView>
-      )}
-
-      {/* ─── Footer links — Outbox + Namespaces ────────────────────────
-          PeerLens-specific routes that aren't reachable from anywhere
-          else in the app. The global hamburger menu carries cross-
-          surface destinations (Vault / Reminders / Settings / Help)
-          and shouldn't be polluted with per-tab affordances; instead
-          we surface them as a small footer row pinned to the bottom
-          of the PeerLens home so the user always has a path in.
-          Light visual weight: muted text, no chrome. */}
-      <View style={styles.footerRow} testID="trust-feed-footer">
-        <Pressable
-          onPress={onOpenOutbox}
-          hitSlop={8}
-          accessibilityRole="link"
-          accessibilityLabel="Open outbox"
-          testID="trust-feed-footer-outbox"
-        >
-          <Text style={styles.footerLink}>Outbox</Text>
-        </Pressable>
-        <Text style={styles.footerSeparator}>·</Text>
-        <Pressable
-          onPress={onOpenNamespaces}
-          hitSlop={8}
-          accessibilityRole="link"
-          accessibilityLabel="Open namespaces"
-          testID="trust-feed-footer-namespaces"
-        >
-          <Text style={styles.footerLink}>Namespaces</Text>
-        </Pressable>
-      </View>
-
-      {/* ─── First-run orientation modal (absolute overlay) ───────── */}
-      <FirstRunModalView
-        visible={firstRunVisible}
-        onDismiss={onDismissFirstRun}
-      />
+      {/* First-run orientation modal — a SIBLING of the scroll view (not a
+          child of its content) so its `position:absolute` backdrop covers the
+          full Network viewport and blocks interaction, rather than sizing to
+          the scroll content container. */}
+      <FirstRunModalView visible={firstRunVisible} onDismiss={onDismissFirstRun} />
     </View>
   );
 }
 
-/**
- * Reddit-style stat cell: large neutral number above a small label.
- * No colour, no badge — neutral counts only. The display chrome
- * lives in `styles.*` so all four cells render identically.
- */
-function SelfStat(props: {
-  value: string;
-  label: string;
-  testKey: string;
-}): React.ReactElement {
+/** A launchpad menu row: title + subtitle + chevron. */
+function LaunchRow({
+  title,
+  subtitle,
+  testID,
+  onPress,
+}: {
+  title: string;
+  subtitle: string;
+  testID: string;
+  onPress: () => void;
+}): React.JSX.Element {
   return (
-    <View style={styles.selfStatCell} testID={`trust-feed-self-stat-${props.testKey}`}>
-      <Text style={styles.selfStatValue}>{props.value}</Text>
-      <Text style={styles.selfStatLabel}>{props.label}</Text>
-    </View>
+    <Pressable
+      onPress={onPress}
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+    >
+      <View style={styles.rowText}>
+        <Text style={styles.rowTitle}>{title}</Text>
+        <Text style={styles.rowSubtitle}>{subtitle}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgPrimary },
-  selfCard: {
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-    backgroundColor: colors.bgCard,
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    minHeight: 64,
-    gap: spacing.sm,
-  },
-  selfCardPressed: { opacity: 0.7 },
-  selfCardHeader: {
+  scroll: { flex: 1 },
+  // NOTE: NetworkServicesCard supplies its OWN `marginHorizontal: spacing.lg`,
+  // so the content keeps only VERTICAL padding and every other child carries the
+  // same `marginHorizontal` — otherwise the services card would be inset twice
+  // (narrower than the rows below it).
+  content: { paddingVertical: spacing.lg, gap: spacing.lg },
+  section: { gap: spacing.sm },
+  sectionTitle: { ...textStyles.bodyStrong, marginHorizontal: spacing.lg },
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  selfCardHeading: {
-    ...textStyles.body,
-    flex: 1,
-  },
-  // 2-column wrapped grid (Reddit-style). Four stats laid out as
-  // a single row collapsed "Endorsements" to a second line on
-  // narrow phones; the 2-column form gives each label ~half the
-  // card width which fits the longest copy ("Endorsements") without
-  // wrap. `gap` provides both row + column spacing in a single
-  // declaration, so the second row aligns under the first.
-  selfCardStats: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    rowGap: spacing.sm,
-    columnGap: spacing.md,
-    paddingTop: spacing.xs,
-  },
-  selfStatCell: {
-    // `(50% - half of column gap)` keeps two cells per row with the
-    // gap respected; on the iOS RN runtime `flexBasis: '48%'` is the
-    // robust equivalent (slightly conservative — RN's percentage
-    // sizing is fussy with borders + paddingHorizontal).
-    flexBasis: '47%',
-    flexGrow: 1,
-    alignItems: 'flex-start',
-    gap: 2,
-  },
-  selfStatValue: textStyles.h3,
-  selfStatLabel: textStyles.tiny,
-  searchBarContainer: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.bgCard,
+    marginHorizontal: spacing.lg,
+    backgroundColor: colors.bgSecondary,
     borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    minHeight: 44,
-  },
-  searchIcon: { marginRight: spacing.sm },
-  searchInput: {
-    ...textStyles.body,
-    flex: 1,
-    paddingVertical: spacing.sm,
-  },
-  searchClearBtn: {
-    paddingHorizontal: spacing.xs,
-    paddingVertical: spacing.xs,
-    marginLeft: spacing.xs,
-  },
-  searchClearBtnPressed: {
-    opacity: 0.5,
-  },
-  loading: {
-    flex: 1,
-    paddingVertical: spacing.xxl,
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  loadingText: textStyles.bodySmall,
-  empty: {
-    flex: 1,
-    paddingVertical: spacing.xxl,
-    paddingHorizontal: spacing.lg,
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  emptyTitle: {
-    ...textStyles.h3,
-    marginTop: spacing.md,
-  },
-  emptyBody: {
-    ...textStyles.bodySmall,
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  searchCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.accent,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radius.sm,
-    gap: spacing.xs,
-    minHeight: 44,
-    marginTop: spacing.md,
-  },
-  searchCtaPressed: { backgroundColor: colors.accentHover },
-  searchCtaLabel: {
-    ...textStyles.body,
-    color: colors.bgSecondary,
-  },
-  feedContainer: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xxl,
-    gap: spacing.md,
-  },
-  footerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
     paddingVertical: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    paddingHorizontal: spacing.md,
+    minHeight: 56,
   },
-  footerLink: textStyles.bodySmall,
-  footerSeparator: textStyles.bodySmall,
+  rowPressed: { backgroundColor: colors.bgTertiary },
+  rowText: { flexShrink: 1, gap: 2 },
+  rowTitle: { ...textStyles.body },
+  rowSubtitle: { ...textStyles.bodySmall, color: colors.textSecondary },
 });

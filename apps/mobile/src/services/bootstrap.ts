@@ -35,6 +35,7 @@ import {
   WorkflowService,
   bootstrapMsgBox,
   disconnectMsgBox,
+  getReviewPublishRepository,
   getServiceConfig,
   listServiceConfigs,
   hydrateServiceConfig,
@@ -1332,7 +1333,13 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
         // attached would let getServiceConfig re-hydrate the old config.
         resetServiceConfigState();
         setServiceConfigRepository(null);
-        setReviewPublishRepository(null);
+        // Clear the review-publish repo ONLY if the global is still ours. Under
+        // StrictMode / fast remounts an OLDER node can dispose AFTER a newer
+        // createNode already installed its repo; an unconditional clear would
+        // wipe the live node's repo and freeze every publish projection.
+        if (getReviewPublishRepository() === options.reviewPublishRepository) {
+          setReviewPublishRepository(null);
+        }
         resetCallerTypeState();
         resetMiddlewareState();
       }

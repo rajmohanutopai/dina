@@ -9,13 +9,8 @@
 import {
   createPersona,
   resetPersonaState,
-} from '@dina/core';
-import type { CreateWorkflowTaskInput, WorkflowTask } from '@dina/core';
-import {
-  setAccessiblePersonas,
-  resetReasoningProvider,
-} from '../../src/vault_context/assembly';
-import { clearVaults, storeItem } from '@dina/core';
+ clearVaults, storeItem } from '@dina/core';
+
 import {
   buildAgenticAskPipeline,
   type BuildAgenticAskPipelineInput,
@@ -26,6 +21,12 @@ import {
   workflowTaskAsSource,
   type AskCoordinatorCoreClient,
 } from '../../src/composition/ask_coordinator';
+import { resetIdentityExtractor } from '../../src/pipeline/identity_extraction';
+import {
+  setAccessiblePersonas,
+  resetReasoningProvider,
+} from '../../src/vault_context/assembly';
+
 import type {
   ChatMessage,
   ChatOptions,
@@ -33,7 +34,7 @@ import type {
   LLMProvider,
   ToolCall,
 } from '../../src/llm/adapters/provider';
-import { resetIdentityExtractor } from '../../src/pipeline/identity_extraction';
+import type { CreateWorkflowTaskInput, WorkflowTask } from '@dina/core';
 
 const REQUESTER = 'did:key:zCoordinatorTester';
 const SYSTEM_PROMPT = 'You answer questions with vault tools.';
@@ -162,11 +163,15 @@ function makeFakeCoreClient(): {
   return { client, tasks, setStatus };
 }
 
-function buildPipeline(args: { llm: LLMProvider; coreClient: BuildAgenticAskPipelineInput['coreClient'] }) {
+function buildPipeline(args: {
+  llm: LLMProvider;
+  coreClient: BuildAgenticAskPipelineInput['coreClient'];
+  appViewClient?: BuildAgenticAskPipelineInput['appViewClient'];
+}) {
   return buildAgenticAskPipeline({
     llm: args.llm,
     providerName: 'gemini',
-    appViewClient: fakeAppView(),
+    appViewClient: args.appViewClient ?? fakeAppView(),
     orchestratorHandle: fakeOrchestrator(),
     coreClient: args.coreClient,
     cloudConsentGranted: true,
@@ -507,6 +512,48 @@ describe('buildAgenticExecuteFn translation', () => {
 
     const out = await fn({ id: 'ask-1', question: 'q', requesterDid: REQUESTER });
     expect(out).toEqual({ kind: 'answer', answer: { text: 'hi' } });
+  });
+
+  it('tags the answer with reviewsrc:<count> when search_peerlens returned reviews', async () => {
+    const llm = makeScripted();
+    llm.push(toolCallResp({ id: 'p1', name: 'search_peerlens', arguments: { query: 'ergonomic chair' } }));
+    llm.push(answerResp('The ErgoFlex 2 is the best fit.'));
+
+    const { client } = makeFakeCoreClient();
+    const appViewClient = {
+      ...fakeAppView(),
+      async searchTrust() {
+        // 4 network reviews informed the answer → reviewsrc:4 (≥3 ⇒ "Ranked" pill).
+        return { results: [{}, {}, {}, {}], totalEstimate: 4 } as never;
+      },
+    };
+    const pipeline = buildPipeline({ llm: llm.provider, coreClient: client, appViewClient });
+    const fn = buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT });
+
+    const out = await fn({ id: 'ask-1', question: 'q', requesterDid: REQUESTER });
+    expect(out).toMatchObject({
+      kind: 'answer',
+      answer: { text: 'The ErgoFlex 2 is the best fit.', reviewSource: 'reviewsrc:4' },
+    });
+  });
+
+  it('does NOT tag reviewSource when search_peerlens returned nothing', async () => {
+    const llm = makeScripted();
+    llm.push(toolCallResp({ id: 'p1', name: 'search_peerlens', arguments: { query: 'obscure thing' } }));
+    llm.push(answerResp('I have no network reviews for that.'));
+
+    const { client } = makeFakeCoreClient();
+    const appViewClient = {
+      ...fakeAppView(),
+      async searchTrust() {
+        return { results: [], totalEstimate: 0 } as never;
+      },
+    };
+    const pipeline = buildPipeline({ llm: llm.provider, coreClient: client, appViewClient });
+    const fn = buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT });
+
+    const out = await fn({ id: 'ask-1', question: 'q', requesterDid: REQUESTER });
+    expect(out).toEqual({ kind: 'answer', answer: { text: 'I have no network reviews for that.' } });
   });
 
   it('translates approval_required loop bail → approval outcome (Pattern B re-run path)', async () => {

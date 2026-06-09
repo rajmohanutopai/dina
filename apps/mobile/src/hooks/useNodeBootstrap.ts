@@ -23,6 +23,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+
 import { buildBootInputs } from '../services/boot_capabilities';
 import {
   bootAppNode,
@@ -30,9 +31,9 @@ import {
   type BootDegradation,
   type BootServiceInputs,
 } from '../services/boot_service';
-import type { DinaNode } from '../services/bootstrap';
-import type { NodeRole } from '../services/bootstrap';
+
 import type { ProviderType } from '../ai/provider';
+import type { DinaNode , NodeRole } from '../services/bootstrap';
 
 export interface NodeBootstrapOptions {
   /**
@@ -88,6 +89,26 @@ let pendingTeardown: Promise<void> | null = null;
 
 export function getBootedNode(): DinaNode | null {
   return singleton;
+}
+
+// Listeners fired whenever the booted-node singleton is installed or cleared.
+// Imperative consumers that read `getBootedNode()` outside React state (e.g. the
+// publish-job projection hooks) subscribe here so they re-read once boot
+// completes — `node.start()` installs Core globals (and fires their registry)
+// BEFORE this singleton is assigned, so a card that mounts mid-boot would
+// otherwise read a null node and never re-check.
+const bootedNodeListeners = new Set<() => void>();
+
+function notifyBootedNodeChanged(): void {
+  for (const l of [...bootedNodeListeners]) l();
+}
+
+/** Subscribe to booted-node install/clear. Returns an unsubscribe. */
+export function subscribeBootedNode(cb: () => void): () => void {
+  bootedNodeListeners.add(cb);
+  return () => {
+    bootedNodeListeners.delete(cb);
+  };
 }
 
 /**
@@ -174,6 +195,7 @@ export function useNodeBootstrap(options: NodeBootstrapOptions = {}): NodeBootst
         ownedNode = node;
         singleton = node;
         cachedDegradations = degradations.slice();
+        notifyBootedNodeChanged(); // node is now reachable via getBootedNode()
         setState({ node, status: 'ready', error: null, degradations });
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
@@ -202,6 +224,7 @@ export function useNodeBootstrap(options: NodeBootstrapOptions = {}): NodeBootst
             if (singleton === node) {
               singleton = null;
               cachedDegradations = [];
+              notifyBootedNodeChanged(); // node gone — projections re-read null
             }
             pendingTeardown = null;
           }

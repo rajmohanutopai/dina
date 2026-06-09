@@ -80,7 +80,7 @@ describe('runReviewPublishTick', () => {
     const res = await runReviewPublishTick(deps(repo)); // now()=1_000_000 ≫ 1+LEASE
     expect(res.reclaimed).toBe(1);
     expect(res.published).toBe(1); // reclaimed → queued → drained same tick
-    expect(repo.getById('job-1')?.status).toBe('published');
+    expect(repo.getById('job-1')).toBeNull(); // no chat back-reference → pruned after publish
   });
 
   it('a retryable failure requeues with attempts++', async () => {
@@ -147,14 +147,31 @@ describe('runReviewPublishTick', () => {
     const [r1, r2] = await Promise.all([tick1, tick2]);
     expect(publishToPDS).toHaveBeenCalledTimes(1);
     expect(r1.published + r2.published).toBe(1);
-    expect(repo.getById('job-1')?.status).toBe('published');
+    expect(repo.getById('job-1')).toBeNull(); // no chat back-reference → pruned after publish
+  });
+
+  it('reports lost (no double-count) when the row is reclaimed mid-publish', async () => {
+    const repo = new InMemoryReviewPublishRepository();
+    repo.create(newJob());
+    // Simulate a >lease stall: while THIS attempt's PDS write is in flight, the
+    // row transitions out of 'publishing' (another tick reclaimed it). The
+    // completion CAS then fails → the attempt must NOT report a publish.
+    const publishToPDS = jest.fn(async () => {
+      // Move the row out of 'publishing' mid-write. The fence must match the
+      // tick's claim (claimed_at = the tick clock, 1_000_000) for this to apply.
+      repo.requeue('job-1', 1, 0, { class: 'retryable', code: 'network', message: 'x' }, 1, 1_000_000);
+      return { uri: 'at://x', cid: 'c' };
+    });
+    const res = await runReviewPublishTick(deps(repo, { publishToPDS }));
+    expect(res.published).toBe(0); // completion CAS lost → not counted as published
+    expect(repo.getById('job-1')?.status).toBe('queued'); // the reclaim won
   });
 
   it('does not drain a job still inside its backoff window', async () => {
     const repo = new InMemoryReviewPublishRepository();
     repo.create(newJob());
     repo.claim('job-1', 1, LEASE);
-    repo.requeue('job-1', 1, 2_000_000, { class: 'retryable', code: 'network', message: 'x' }, 1);
+    repo.requeue('job-1', 1, 2_000_000, { class: 'retryable', code: 'network', message: 'x' }, 1, 1);
     const publishToPDS = jest.fn(async () => ({ uri: 'x', cid: 'c' }));
     const res = await runReviewPublishTick(deps(repo, { now: () => 1_000_000, publishToPDS })); // < 2_000_000
     expect(publishToPDS).not.toHaveBeenCalled();

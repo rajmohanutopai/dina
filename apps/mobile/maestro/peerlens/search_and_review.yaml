@@ -1,10 +1,13 @@
 # MRS-09 — PeerLens: search the trust network (results OR clean empty state,
 # never a crash). Results come from the live test-appview.
 #
-# This is the sanity baseline: the Network tab renders, a search runs and
-# lands on the search screen (results or empty), and the write-a-review entry
-# is reachable. Publishing a review is left to the manual pass (it touches
-# the live AppView / outbox).
+# This is the sanity baseline: the Network tab renders as a launchpad, "Browse
+# reviews" opens the feed/search, a search runs and lands on the search screen
+# (results or empty), and the write-a-review entry is reachable. Publishing a
+# review is left to the manual pass (it touches the live AppView / outbox).
+#
+# NOTE: the Network home is now a launchpad menu — the feed + search moved to
+# the Browse reviews screen (/peerlens/browse), so we tap through it first.
 appId: com.dinakernel.mobile
 ---
 - launchApp
@@ -13,6 +16,13 @@ appId: com.dinakernel.mobile
 - extendedWaitUntil:
     visible:
       id: 'trust-feed-screen'
+    timeout: 15000
+# Network home → Browse reviews (the feed + search live here now).
+- tapOn:
+    id: 'network-row-browse'
+- extendedWaitUntil:
+    visible:
+      id: 'browse-screen'
     timeout: 15000
 - tapOn:
     id: 'trust-search-input'

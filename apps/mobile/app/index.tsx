@@ -47,6 +47,7 @@ import {
 import { useLiveThread, addSystemNotification } from '../src/hooks/useChatThread';
 import { useHasActiveAgent } from '../src/hooks/useHasActiveAgent';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
+import { reviewSourceLabel } from '../src/peerlens/review_source_label';
 import {
   dismissVerificationBanner,
   isVerificationBannerDismissed,
@@ -439,6 +440,8 @@ export default function ChatScreen() {
 
     const isUser = item.displayType === 'user';
     const isSystem = item.displayType === 'system';
+    // Source pill: when network reviews informed a Dina answer, attribute them.
+    const sourceLabel = !isUser && !isSystem ? reviewSourceLabel(item.sources) : null;
 
     // Parse action chip from user messages
     let chipLabel: string | null = null;
@@ -487,6 +490,11 @@ export default function ChatScreen() {
           >
             {displayContent}
           </InlineMarkdownText>
+        )}
+        {sourceLabel !== null && (
+          <View style={styles.sourcePill} testID="chat-source-pill">
+            <Text style={styles.sourcePillText}>{sourceLabel} · from other Dinas</Text>
+          </View>
         )}
         <Text style={[styles.timestamp, isUser && styles.timestampUser]}>
           {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -972,6 +980,18 @@ const styles = StyleSheet.create({
     ...textStyles.body,
     color: colors.textSecondary,
     textAlign: 'center',
+  },
+  sourcePill: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.xs,
+    paddingVertical: 2,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.sm,
+    backgroundColor: colors.bgTertiary,
+  },
+  sourcePillText: {
+    ...textStyles.tiny,
+    color: colors.textMuted,
   },
   timestamp: {
     ...textStyles.tiny,

@@ -35,13 +35,11 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md task 5.21-F.
  */
 
-import type { WorkflowTask } from '@dina/core';
 import {
   AskApprovalGateway,
   type ApprovalSource,
   type ApprovalSourceStatus,
 } from '../ask/ask_approval_gateway';
-import type { VaultApprovalWorkflowClient } from './persona_guard';
 import { AskApprovalResumer } from '../ask/ask_approval_resumer';
 import {
   createAskHandler,
@@ -65,9 +63,12 @@ import {
   type AgenticLoopResult,
 } from '../reasoning/agentic_loop';
 import { formatCurrentTimeBlock } from '../reasoning/ask_handler';
-import type { PreFlightRetrievalProvider } from '../reasoning/ask_handler';
-import type { PreFlightRetrievalResult } from './ask_retrieval_planner';
+
 import type { AgenticAskPipeline } from './agentic_ask';
+import type { PreFlightRetrievalResult } from './ask_retrieval_planner';
+import type { VaultApprovalWorkflowClient } from './persona_guard';
+import type { PreFlightRetrievalProvider } from '../reasoning/ask_handler';
+import type { WorkflowTask } from '@dina/core';
 
 /** CoreClient surface `createAskCoordinator` needs for the approval gateway. */
 export interface AskCoordinatorCoreClient extends VaultApprovalWorkflowClient {
@@ -387,6 +388,13 @@ function translateLoopResult(
     } else if (missingCapabilities.length > 0) {
       answer.missingCapabilities = missingCapabilities;
     }
+    // Provenance for the chat source pill: how many network ("ranked") reviews
+    // from other Dinas informed this answer. The mobile bubble turns the count
+    // into a label (Ranked reviews ≥ 3, Network reviews 1–2). 0 ⇒ no pill.
+    const reviewCount = extractReviewCountFromToolCalls(result.toolCalls);
+    if (reviewCount > 0) {
+      answer.reviewSource = `reviewsrc:${reviewCount}`;
+    }
     return { kind: 'answer', answer };
   }
   if (result.finishReason === 'approval_required') {
@@ -451,22 +459,22 @@ function translateLoopResult(
  */
 function extractServiceQueriesFromToolCalls(
   toolCalls: AgenticLoopResult['toolCalls'],
-): Array<{
+): {
   taskId: string;
   queryId: string;
   capability: string;
   serviceName: string;
   providerDid?: string;
   params?: Record<string, unknown>;
-}> {
-  const out: Array<{
+}[] {
+  const out: {
     taskId: string;
     queryId: string;
     capability: string;
     serviceName: string;
     providerDid?: string;
     params?: Record<string, unknown>;
-  }> = [];
+  }[] = [];
   for (const call of toolCalls) {
     if (call.name !== 'query_service') continue;
     if (!call.outcome.success) continue;
@@ -494,6 +502,31 @@ function extractServiceQueriesFromToolCalls(
     });
   }
   return out;
+}
+
+/**
+ * Count the network reviews that informed the answer, by mining successful
+ * `search_peerlens` tool calls. A `resolve` contributes its attestation total;
+ * a `search` contributes its returned-row count. Drives the chat source pill
+ * (ranked vs network) in `coordinator_ask_handler` → the mobile dina bubble.
+ */
+function extractReviewCountFromToolCalls(toolCalls: AgenticLoopResult['toolCalls']): number {
+  let count = 0;
+  for (const call of toolCalls) {
+    if (call.name !== 'search_peerlens' || !call.outcome.success) continue;
+    const r = call.outcome.result as {
+      subject?: { attestationSummary?: { total?: number } | null } | null;
+      search?: { results?: unknown[] } | null;
+    } | null;
+    if (r === null) continue;
+    const subjectTotal =
+      typeof r.subject?.attestationSummary?.total === 'number'
+        ? r.subject.attestationSummary.total
+        : 0;
+    const searchCount = Array.isArray(r.search?.results) ? r.search.results.length : 0;
+    count += subjectTotal + searchCount;
+  }
+  return count;
 }
 
 interface MissingCapabilityPayload {

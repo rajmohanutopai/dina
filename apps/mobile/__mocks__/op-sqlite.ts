@@ -12,7 +12,14 @@
  * actual SQL (open, CRUD, transactions) in tests.
  *
  * Surface mirrors only what `OpSQLiteAdapter` uses:
- *   open({ name, location }) -> { executeSync(sql, params?) -> { rows }, close() }
+ *   open({ name, location }) -> {
+ *     executeSync(sql, params?) -> { rows, rowsAffected }, close()
+ *   }
+ *
+ * `rowsAffected` mirrors op-sqlite's real result (mapped from better-sqlite3's
+ * `RunResult.changes`). The adapter's `run()` returns it so the durable-job CAS
+ * (`UPDATE … WHERE … status=?`) can tell a matched transition from a no-op —
+ * if this mock dropped it, the test SQLite would hide the exact production bug.
  *
  * Scope notes:
  *   - The SQLCipher `PRAGMA key` is a no-op here — these tests cover
@@ -26,7 +33,7 @@ import { join } from 'node:path';
 interface BetterSqliteStatement {
   reader: boolean;
   all: (...params: unknown[]) => Record<string, unknown>[];
-  run: (...params: unknown[]) => unknown;
+  run: (...params: unknown[]) => { changes: number; lastInsertRowid: number | bigint };
 }
 interface BetterSqliteDb {
   prepare: (sql: string) => BetterSqliteStatement;
@@ -50,34 +57,39 @@ function coerce(params: unknown[]): unknown[] {
   return params.map((p) => (typeof p === 'boolean' ? (p ? 1 : 0) : p === undefined ? null : p));
 }
 
+interface ExecResult {
+  rows: Record<string, unknown>[];
+  rowsAffected: number;
+}
+
 export function open(opts: OpenOptions): {
-  executeSync: (sql: string, params?: unknown[]) => { rows: Record<string, unknown>[] };
+  executeSync: (sql: string, params?: unknown[]) => ExecResult;
   close: () => void;
 } {
   const db = new Database(dbPath(opts));
   return {
-    executeSync(sql: string, params: unknown[] = []): { rows: Record<string, unknown>[] } {
+    executeSync(sql: string, params: unknown[] = []): ExecResult {
       const trimmed = sql.trim();
       // Encryption is out of scope for persistence-logic tests.
-      if (/^pragma\s+key\b/i.test(trimmed)) return { rows: [] };
+      if (/^pragma\s+key\b/i.test(trimmed)) return { rows: [], rowsAffected: 0 };
       const bound = coerce(params);
       if (bound.length === 0) {
         // No params: PRAGMA / DDL (possibly multi-statement) / SELECT.
         try {
           const stmt = db.prepare(trimmed);
-          if (stmt.reader) return { rows: stmt.all() };
-          stmt.run();
-          return { rows: [] };
+          if (stmt.reader) return { rows: stmt.all(), rowsAffected: 0 };
+          const info = stmt.run();
+          return { rows: [], rowsAffected: Number(info.changes) };
         } catch {
           // Multi-statement DDL etc. — better-sqlite3 prepare() rejects it.
           db.exec(trimmed);
-          return { rows: [] };
+          return { rows: [], rowsAffected: 0 };
         }
       }
       const stmt = db.prepare(trimmed);
-      if (stmt.reader) return { rows: stmt.all(...bound) };
-      stmt.run(...bound);
-      return { rows: [] };
+      if (stmt.reader) return { rows: stmt.all(...bound), rowsAffected: 0 };
+      const info = stmt.run(...bound);
+      return { rows: [], rowsAffected: Number(info.changes) };
     },
     close(): void {
       db.close();

@@ -23,6 +23,7 @@ jest.mock('../../src/hooks/useNodeBootstrap', () => ({
   // A publisher must be present (non-undefined) or submit returns no_credentials;
   // the inject path ignores it but the credential gate checks it.
   getBootedNode: jest.fn().mockReturnValue({ did: 'did:plc:test-author', pdsPublisher: {} }),
+  subscribeBootedNode: jest.fn(() => () => undefined),
 }));
 jest.mock('expo-router', () => ({
   __esModule: true,
@@ -118,9 +119,9 @@ function seedJob(status: 'queued' | 'publishing' | 'published' | 'failed', code 
   if (status === 'queued') return;
   repo.claim('j1', 1, 60_000);
   if (status === 'publishing') return;
-  if (status === 'published') repo.complete('j1', 'at://x', 'bafytest', 2);
+  if (status === 'published') repo.complete('j1', 'at://x', 'bafytest', 2, 1);
   if (status === 'failed')
-    repo.fail('j1', { class: 'permanent', code: code as 'unauthorized', message: 'boom' }, 2);
+    repo.fail('j1', { class: 'permanent', code: code as 'unauthorized', message: 'boom' }, 2, 1);
 }
 
 describe('InlineReviewDraftCard — ready / publish', () => {
@@ -149,6 +150,21 @@ describe('InlineReviewDraftCard — ready / publish', () => {
     expect(call.record.text).toContain('I sit in this');
     expect(call.record.sentiment).toBe('positive');
     expect(call.record.useCases).toEqual(['professional']);
+  });
+
+  it('persists the inline edits onto the lifecycle before handoff (so a later cancel keeps them)', async () => {
+    const { getByTestId } = render(<InlineReviewDraftCard message={postReadyDraft()} />);
+    fireEvent.changeText(getByTestId('review-draft-headline'), 'Edited headline');
+    fireEvent.press(getByTestId('review-draft-publish'));
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    // The draft lifecycle now carries the edited values — so if the resulting job
+    // is cancelled/dismissed the card reverts to THESE edits, not the LLM draft.
+    const card = getThread(THREAD).find((m) => readLifecycle(m)?.kind === 'review_draft');
+    if (card === undefined) throw new Error('no review_draft message');
+    const lc = readLifecycle(card) as ReviewDraftLifecycle;
+    expect((lc.values as { headline?: string } | null)?.headline).toBe('Edited headline');
   });
 
   it('publish creates a durable job that completes to published', async () => {
@@ -211,7 +227,7 @@ describe('InlineReviewDraftCard — job projection', () => {
     expect(render(<InlineReviewDraftCard message={msg} />).getByTestId('review-draft-card-publishing')).toBeTruthy();
   });
 
-  it('renders the queued state with View Outbox + Cancel', () => {
+  it('renders the queued state with View pending reviews + Cancel', () => {
     const msg = postReadyDraft();
     seedJob('queued');
     const { getByTestId } = render(<InlineReviewDraftCard message={msg} />);
@@ -250,5 +266,56 @@ describe('InlineReviewDraftCard — job projection', () => {
     };
     const msg = addLifecycleMessage(THREAD, 'Discarded.', lc);
     expect(render(<InlineReviewDraftCard message={msg} />).getByTestId('review-draft-card-discarded')).toBeTruthy();
+  });
+});
+
+describe('InlineReviewDraftCard — drafting failure (no job)', () => {
+  it('renders the draft-failed card + lc.error + Write in form (not an empty ReadyState)', () => {
+    const lc: ReviewDraftLifecycle = {
+      kind: 'review_draft',
+      status: 'failed',
+      draftId: DRAFT_ID,
+      subject: { kind: 'product', name: 'Aeron Chair' },
+      values: null,
+      error: 'Draft inference failed.',
+    };
+    const msg = addLifecycleMessage(THREAD, 'Could not draft.', lc);
+    const { getByTestId, getByText, queryByTestId } = render(<InlineReviewDraftCard message={msg} />);
+    expect(getByTestId('review-draft-card-draft-failed')).toBeTruthy();
+    expect(getByText('Draft inference failed.')).toBeTruthy(); // surfaced, not dropped
+    expect(getByTestId('review-draft-write-in-form')).toBeTruthy();
+    expect(queryByTestId('review-draft-card-ready')).toBeNull(); // NOT the empty editable fallback
+  });
+
+  it('Discard moves a drafting-failure card to the discarded terminal (not stuck)', () => {
+    const lc: ReviewDraftLifecycle = {
+      kind: 'review_draft',
+      status: 'failed',
+      draftId: DRAFT_ID,
+      subject: { kind: 'product', name: 'Aeron Chair' },
+      values: null,
+      error: 'Draft inference failed.',
+    };
+    const { getByTestId } = render(<InlineReviewDraftCard message={addLifecycleMessage(THREAD, 'x', lc)} />);
+    fireEvent.press(getByTestId('review-draft-draft-failed-discard'));
+    const card = getThread(THREAD).find((m) => readLifecycle(m)?.kind === 'review_draft');
+    if (card === undefined) throw new Error('no review_draft message');
+    expect((readLifecycle(card) as ReviewDraftLifecycle).status).toBe('discarded');
+  });
+
+  it('a publish JOB still wins over a stale failed lifecycle (JobState, not draft-failed)', () => {
+    const lc: ReviewDraftLifecycle = {
+      kind: 'review_draft',
+      status: 'failed',
+      draftId: DRAFT_ID,
+      subject: { kind: 'product', name: 'Aeron Chair' },
+      values: null,
+      error: 'stale drafting error',
+    };
+    const msg = addLifecycleMessage(THREAD, 'x', lc);
+    seedJob('failed', 'unauthorized'); // a real publish job exists for (thread, draft)
+    const { getByTestId, queryByTestId } = render(<InlineReviewDraftCard message={msg} />);
+    expect(getByTestId('review-draft-card-failed')).toBeTruthy(); // JobState wins (job checked first)
+    expect(queryByTestId('review-draft-card-draft-failed')).toBeNull();
   });
 });

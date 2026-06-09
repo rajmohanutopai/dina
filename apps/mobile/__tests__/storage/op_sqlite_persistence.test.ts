@@ -35,6 +35,28 @@ describe('OpSQLiteAdapter — real SQLite via the op-sqlite mock', () => {
     expect(adapter.isOpen).toBe(false);
   });
 
+  it('run() returns the REAL changed-row count, so a no-op CAS reports 0 (round-4 P1)', () => {
+    // The durable-job state machine guards every transition with
+    // `UPDATE … WHERE … status=?` and trusts run()'s count to know it applied.
+    // op-sqlite's run() used to return a constant 1, so a CAS whose WHERE matched
+    // ZERO rows still read as success — overlapping drains could both "claim" the
+    // same job. This pins the fix: matched → 1, no-op → 0.
+    const adapter = new OpSQLiteAdapter();
+    adapter.open('cas.sqlite', '', '', openFn);
+    adapter.execute('CREATE TABLE j (id TEXT PRIMARY KEY, status TEXT)');
+    adapter.run("INSERT INTO j (id, status) VALUES ('a', 'queued')");
+
+    // First claimer: WHERE matches (still queued) → 1 row changed.
+    expect(adapter.run("UPDATE j SET status='publishing' WHERE id='a' AND status='queued'")).toBe(1);
+    // Second claimer: WHERE no longer matches (already publishing) → 0 changed.
+    // The old constant-1 bug returned 1 here → a double claim.
+    expect(adapter.run("UPDATE j SET status='publishing' WHERE id='a' AND status='queued'")).toBe(0);
+    // DELETE of a missing row is likewise 0, not 1.
+    expect(adapter.run("DELETE FROM j WHERE id='missing'")).toBe(0);
+
+    adapter.close();
+  });
+
   it('rolls back a failed transaction (genuine SQLite semantics)', () => {
     const adapter = new OpSQLiteAdapter();
     adapter.open('tx.sqlite', '', '', openFn);

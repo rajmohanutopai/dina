@@ -234,10 +234,10 @@ export default function SettingsScreen() {
           style={styles.row}
           onPress={() => router.push('/peerlens-preferences')}
           accessibilityRole="button"
-          accessibilityLabel="Open PeerLens preferences"
+          accessibilityLabel="Open review preferences"
           testID="settings-row-peerlens-preferences"
         >
-          <Text style={styles.rowLabel}>PeerLens preferences</Text>
+          <Text style={styles.rowLabel}>Review preferences</Text>
           <Text style={styles.rowValue}>{'›'}</Text>
         </TouchableOpacity>
         <TouchableOpacity

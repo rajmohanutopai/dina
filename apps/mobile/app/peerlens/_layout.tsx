@@ -26,13 +26,14 @@
  *     would produce a duplicate header band.
  */
 
-import React from 'react';
-import { Stack, useRouter } from 'expo-router';
-import { Platform, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, navTitle } from '../../src/theme';
+import { Stack, useRouter } from 'expo-router';
+import React from 'react';
+import { Platform, Pressable } from 'react-native';
+
 import { openMenu } from '../../src/navigation/menu_state';
 import { StackIndexHeader } from '../../src/navigation/stack_index_header';
+import { colors, navTitle } from '../../src/theme';
 
 // CR-3 fix: render the index-screen header in JS via `Stack.Screen`
 // `header` prop. Custom JSX placed in `headerLeft`/`headerRight` of
@@ -164,8 +165,9 @@ export default function PeerlensStackLayout(): React.ReactElement {
       <Stack.Screen name="[subjectId]" options={{ title: 'Subject' }} />
       <Stack.Screen name="reviewer/[did]" options={{ title: 'Reviewer' }} />
       <Stack.Screen name="write" options={{ title: 'Write a review' }} />
-      <Stack.Screen name="outbox" options={{ title: 'Outbox' }} />
-      <Stack.Screen name="namespace" options={{ title: 'Namespaces' }} />
+      <Stack.Screen name="browse" options={{ title: 'Browse reviews' }} />
+      <Stack.Screen name="outbox" options={{ title: 'Pending reviews' }} />
+      <Stack.Screen name="namespace" options={{ title: 'Publish as' }} />
     </Stack>
   );
 }

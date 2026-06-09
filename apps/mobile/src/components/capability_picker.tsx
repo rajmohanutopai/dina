@@ -4,7 +4,7 @@
  * The product model is "Category → Official capability → listing": a normal
  * provider should NOT type capability ids. This picker drives the two steps:
  *   1. "What kind of service is this?"  — pick a category.
- *   2. "What can this service answer or do?" — pick an official capability in
+ *   2. "What does this service do?" — pick an official capability in
  *      that category. Capabilities are cross-category (§9.1), so the same
  *      capability surfaces under each of its categories; the CHOSEN category
  *      travels onto the listing (it controls policy/consent/ranking).
@@ -15,7 +15,7 @@
  */
 
 import React from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 
 import {
   capabilitiesInCategory,
@@ -86,13 +86,16 @@ export function CapabilityPicker(props: CapabilityPickerProps): React.ReactEleme
 
       {props.selectedCategoryId !== null ? (
         <View style={styles.capabilitySection}>
-          <Text style={styles.stepHeading}>What can this service answer or do?</Text>
+          <Text style={styles.stepHeading}>What does this service do?</Text>
           {caps.length === 0 ? (
             <Text style={styles.emptyText}>
               No official capabilities here yet. Use an advanced custom capability instead.
             </Text>
           ) : (
-            <ScrollView style={styles.capabilityList}>
+            // Plain column — the parent sheet owns the single scroll context.
+            // (A nested vertical ScrollView here swallowed row taps and, with
+            //  the sheet unscrolled, let the list overflow the sheet box.)
+            <View style={styles.capabilityList}>
               {caps.map((cap) => {
                 const selected = cap.id === props.selectedCapabilityId;
                 const badge = lifecycleLabel(cap.lifecycle);
@@ -100,7 +103,9 @@ export function CapabilityPicker(props: CapabilityPickerProps): React.ReactEleme
                   <Pressable
                     key={cap.id}
                     testID={`picker-capability-${cap.id}`}
-                    onPress={() => props.onSelectCapability(cap, props.selectedCategoryId as string)}
+                    onPress={() =>
+                      props.onSelectCapability(cap, props.selectedCategoryId as string)
+                    }
                     accessibilityRole="button"
                     accessibilityState={{ selected }}
                     accessibilityLabel={`${cap.display_name}. ${cap.short_description}`}
@@ -121,7 +126,7 @@ export function CapabilityPicker(props: CapabilityPickerProps): React.ReactEleme
                   </Pressable>
                 );
               })}
-            </ScrollView>
+            </View>
           )}
         </View>
       ) : null}
@@ -158,7 +163,8 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   capabilityList: {
-    maxHeight: 320,
+    // No maxHeight: the rows flow naturally and scroll with the parent sheet.
+    gap: 0,
   },
   capabilityRow: {
     paddingVertical: spacing.sm + 2,

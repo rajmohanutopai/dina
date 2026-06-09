@@ -35,18 +35,28 @@ export interface ReviewPublishRepository {
   /** Reclaim `publishing` rows whose lease lapsed (owner crashed) → `queued`,
    *  `attempts++`. Returns how many were reclaimed. */
   reclaimExpiredLeases(ownerDid: string, nowMs: number): number;
-  /** CAS `publishing → published` (the service prunes in the same txn). */
-  complete(jobId: string, uri: string, cid: string, nowMs: number): boolean;
-  /** CAS `publishing → queued` on a retryable failure (backoff). */
+  // The three terminal transitions are FENCED by the claim lease: each takes the
+  // `expectedClaimedAt` from the attempt's job snapshot and the CAS matches it
+  // (`AND claimed_at=?`), not just `status='publishing'`. Without the fence, a
+  // stale attempt that overran `PUBLISH_CLAIM_LEASE_MS` (so a later tick already
+  // reclaimed + re-claimed the row) would still match the NEW attempt's
+  // `publishing` row and could complete/requeue/fail it — even moving an in-flight
+  // retry back to `queued` (exposing Cancel) while its PDS write is on the wire.
+  // A reclaim only happens after the lease lapses (≥ lease ms), so `claimed_at`
+  // strictly differs between successive claims and is a sound fence token.
+  /** CAS `publishing → published`, fenced by the claim lease (the service prunes in the same txn). */
+  complete(jobId: string, uri: string, cid: string, nowMs: number, expectedClaimedAt: number): boolean;
+  /** CAS `publishing → queued` on a retryable failure (backoff), fenced by the claim lease. */
   requeue(
     jobId: string,
     attempts: number,
     nextAttemptAt: number,
     err: ClassifiedError,
     nowMs: number,
+    expectedClaimedAt: number,
   ): boolean;
-  /** CAS `publishing → failed` on a permanent failure / exhausted retries. */
-  fail(jobId: string, err: ClassifiedError, nowMs: number): boolean;
+  /** CAS `publishing → failed` on a permanent failure / exhausted retries, fenced by the claim lease. */
+  fail(jobId: string, err: ClassifiedError, nowMs: number, expectedClaimedAt: number): boolean;
   /** CAS `failed → queued` (user "Try again"): resets attempts + backoff. */
   retry(jobId: string, nowMs: number): boolean;
   /** Delete a `queued` or `failed` job (user cancel). True iff a row was deleted. */
@@ -58,6 +68,11 @@ export interface ReviewPublishRepository {
    *  (the card projects every post-submit state off this row). `null` once the
    *  draft was never submitted or its job was retention-pruned. */
   findLatestForDraft(ownerDid: string, threadId: string, draftId: string): PublishJob | null;
+  /** The most-recent job for an identity + AT-rkey (any status). The dedup /
+   *  supersede key for FULL-FORM submissions, which carry no chat back-reference;
+   *  the rkey is stable per compose session so a corrected re-submit supersedes
+   *  the stale failed job instead of minting a duplicate. */
+  findLatestForRkey(ownerDid: string, rkey: string): PublishJob | null;
   /** Count of cap-occupying jobs (`queued` + `publishing`) for an identity. */
   countActive(ownerDid: string): number;
   /** Outbox rows (`queued` + `publishing` + `failed`) for an identity, FIFO. */
@@ -78,13 +93,32 @@ export interface ReviewPublishRepository {
 }
 
 let repo: ReviewPublishRepository | null = null;
+const registryListeners = new Set<() => void>();
 
 export function setReviewPublishRepository(r: ReviewPublishRepository | null): void {
   repo = r;
+  // Notify projection hooks so a card/outbox that mounted BEFORE createNode wired
+  // the repo (repo was null, so its subscribe was skipped) re-binds to the new
+  // repo and re-reads. Without this the UI stays stuck on the initial null read.
+  for (const l of [...registryListeners]) l();
 }
 
 export function getReviewPublishRepository(): ReviewPublishRepository | null {
   return repo;
+}
+
+/**
+ * Subscribe to repository (re)installs. Fires whenever `setReviewPublishRepository`
+ * swaps the global — including the boot-time wiring after a hook already mounted
+ * against a null repo, and the dispose-time clear. Projection hooks use this to
+ * re-bind their per-repo `subscribe` to whatever repo is current. Returns an
+ * unsubscribe.
+ */
+export function subscribeReviewPublishRegistry(cb: () => void): () => void {
+  registryListeners.add(cb);
+  return () => {
+    registryListeners.delete(cb);
+  };
 }
 
 // ── shared change-notification (suppressed inside a transaction) ───────────
@@ -202,9 +236,9 @@ export class InMemoryReviewPublishRepository implements ReviewPublishRepository 
     return n;
   }
 
-  complete(jobId: string, uri: string, cid: string, nowMs: number): boolean {
+  complete(jobId: string, uri: string, cid: string, nowMs: number, expectedClaimedAt: number): boolean {
     const j = this.jobs.get(jobId);
-    if (!j || j.status !== 'publishing') return false;
+    if (!j || j.status !== 'publishing' || j.claimedAt !== expectedClaimedAt) return false;
     j.status = 'published';
     j.publishedUri = uri;
     j.publishedCid = cid;
@@ -223,9 +257,10 @@ export class InMemoryReviewPublishRepository implements ReviewPublishRepository 
     nextAttemptAt: number,
     err: ClassifiedError,
     nowMs: number,
+    expectedClaimedAt: number,
   ): boolean {
     const j = this.jobs.get(jobId);
-    if (!j || j.status !== 'publishing') return false;
+    if (!j || j.status !== 'publishing' || j.claimedAt !== expectedClaimedAt) return false;
     j.status = 'queued';
     j.attempts = attempts;
     j.nextAttemptAt = nextAttemptAt;
@@ -238,9 +273,9 @@ export class InMemoryReviewPublishRepository implements ReviewPublishRepository 
     return true;
   }
 
-  fail(jobId: string, err: ClassifiedError, nowMs: number): boolean {
+  fail(jobId: string, err: ClassifiedError, nowMs: number, expectedClaimedAt: number): boolean {
     const j = this.jobs.get(jobId);
-    if (!j || j.status !== 'publishing') return false;
+    if (!j || j.status !== 'publishing' || j.claimedAt !== expectedClaimedAt) return false;
     j.status = 'failed';
     j.claimedAt = null;
     j.claimExpiresAt = null;
@@ -288,6 +323,15 @@ export class InMemoryReviewPublishRepository implements ReviewPublishRepository 
     if (matches.length === 0) return null;
     matches.sort(byCreatedThenId);
     return { ...matches[matches.length - 1] }; // most-recent job for the draft (any status)
+  }
+
+  findLatestForRkey(ownerDid: string, rkey: string): PublishJob | null {
+    const matches = [...this.jobs.values()].filter(
+      (j) => j.ownerDid === ownerDid && j.rkey === rkey,
+    );
+    if (matches.length === 0) return null;
+    matches.sort(byCreatedThenId);
+    return { ...matches[matches.length - 1] }; // most-recent job for the rkey (any status)
   }
 
   countActive(ownerDid: string): number {
@@ -476,14 +520,14 @@ export class SQLiteReviewPublishRepository implements ReviewPublishRepository {
     return affected;
   }
 
-  complete(jobId: string, uri: string, cid: string, nowMs: number): boolean {
+  complete(jobId: string, uri: string, cid: string, nowMs: number, expectedClaimedAt: number): boolean {
     const affected = this.db.run(
       `UPDATE peerlens_publish_jobs
           SET status='published', published_uri=?, published_cid=?,
               claimed_at=NULL, claim_expires_at=NULL,
               last_error_code=NULL, last_error_message=NULL, updated_at=?
-        WHERE job_id=? AND status='publishing'`,
-      [uri, cid, nowMs, jobId],
+        WHERE job_id=? AND status='publishing' AND claimed_at=?`,
+      [uri, cid, nowMs, jobId, expectedClaimedAt],
     );
     if (affected > 0) this.notifier.mark();
     return affected > 0;
@@ -495,26 +539,27 @@ export class SQLiteReviewPublishRepository implements ReviewPublishRepository {
     nextAttemptAt: number,
     err: ClassifiedError,
     nowMs: number,
+    expectedClaimedAt: number,
   ): boolean {
     const affected = this.db.run(
       `UPDATE peerlens_publish_jobs
           SET status='queued', attempts=?, next_attempt_at=?,
               claimed_at=NULL, claim_expires_at=NULL,
               last_error_code=?, last_error_message=?, updated_at=?
-        WHERE job_id=? AND status='publishing'`,
-      [attempts, nextAttemptAt, err.code, err.message, nowMs, jobId],
+        WHERE job_id=? AND status='publishing' AND claimed_at=?`,
+      [attempts, nextAttemptAt, err.code, err.message, nowMs, jobId, expectedClaimedAt],
     );
     if (affected > 0) this.notifier.mark();
     return affected > 0;
   }
 
-  fail(jobId: string, err: ClassifiedError, nowMs: number): boolean {
+  fail(jobId: string, err: ClassifiedError, nowMs: number, expectedClaimedAt: number): boolean {
     const affected = this.db.run(
       `UPDATE peerlens_publish_jobs
           SET status='failed', claimed_at=NULL, claim_expires_at=NULL,
               last_error_code=?, last_error_message=?, updated_at=?
-        WHERE job_id=? AND status='publishing'`,
-      [err.code, err.message, nowMs, jobId],
+        WHERE job_id=? AND status='publishing' AND claimed_at=?`,
+      [err.code, err.message, nowMs, jobId, expectedClaimedAt],
     );
     if (affected > 0) this.notifier.mark();
     return affected > 0;
@@ -559,6 +604,16 @@ export class SQLiteReviewPublishRepository implements ReviewPublishRepository {
         WHERE owner_did=? AND thread_id=? AND draft_id=?
         ORDER BY created_at DESC, job_id DESC LIMIT 1`,
       [ownerDid, threadId, draftId],
+    );
+    return rows.length > 0 ? rowToPublishJob(rows[0]) : null;
+  }
+
+  findLatestForRkey(ownerDid: string, rkey: string): PublishJob | null {
+    const rows = this.db.query<JobRow>(
+      `SELECT * FROM peerlens_publish_jobs
+        WHERE owner_did=? AND rkey=?
+        ORDER BY created_at DESC, job_id DESC LIMIT 1`,
+      [ownerDid, rkey],
     );
     return rows.length > 0 ? rowToPublishJob(rows[0]) : null;
   }

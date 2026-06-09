@@ -33,6 +33,11 @@ interface OpSQLiteDB {
     params?: unknown[],
   ) => {
     rows?: Record<string, unknown>[] | { _array: Record<string, unknown>[] };
+    /** `sqlite3_changes()` for the statement — the rows an UPDATE/DELETE/INSERT
+     *  actually touched. Load-bearing: every durable-job CAS (claim/complete/…)
+     *  guards on `WHERE … status=?` and trusts this count to know the transition
+     *  applied. op-sqlite ≥ 15 always populates it. */
+    rowsAffected?: number;
   };
   close: () => void;
 }
@@ -99,8 +104,15 @@ export class OpSQLiteAdapter implements DatabaseAdapter {
 
   run(sql: string, params?: unknown[]): number {
     this.assertOpen();
-    this.db!.executeSync(sql, params);
-    return 1; // op-sqlite doesn't return affected rows easily
+    // Return the REAL changed-row count (`sqlite3_changes()`), not a constant.
+    // The durable-job state machine's CAS transitions (`UPDATE … WHERE …
+    // status=?`) read this to know whether the guarded row actually matched;
+    // a hardcoded `1` made every CAS report success, so two overlapping drains
+    // could both "claim"/"complete" the same job and lost leases counted as
+    // publishes. `?? 0` fails CLOSED (treat as "did not apply") if a future
+    // op-sqlite ever omits the field — safer than a false success.
+    const result = this.db!.executeSync(sql, params) as { rowsAffected?: number };
+    return result.rowsAffected ?? 0;
   }
 
   transaction(fn: () => void): void {
