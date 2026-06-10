@@ -51,5 +51,19 @@ def _auto_register() -> None:
     from .hermes_runner import HermesRunner
     register_runner("hermes", HermesRunner)
 
+    # Headless-CLI runners (Claude Code / Codex / Gemini CLI): always
+    # registerable — a missing binary surfaces at validate_config() with
+    # an install hint, same pattern as Hermes.
+    from .headless_cli_runner import (
+        ClaudeCodeRunner,
+        CodexRunner,
+        GeminiRunner,
+        OpenClawCliRunner,
+    )
+    register_runner("claude-code", ClaudeCodeRunner)
+    register_runner("codex", CodexRunner)
+    register_runner("gemini", GeminiRunner)
+    register_runner("openclaw-cli", OpenClawCliRunner)
+
 
 _auto_register()

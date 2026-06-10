@@ -552,16 +552,36 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
             match = matchedProfiles[0];
           }
           if (match !== undefined) {
+            // When the caller pinned an EXPLICIT service_uri and we resolved
+            // that exact listing, the LISTING is authoritative for schema
+            // hash + display name. The LLM routinely mixes sources here —
+            // live incident 2026-06-10: user pasted an unlisted listing's
+            // link, the LLM passed that service_uri but the schema_hash +
+            // service_name it had picked up from the PUBLIC sibling listing
+            // in search results → provider correctly rejected
+            // `schema_version_mismatch` and the error card showed the wrong
+            // listing's name. A (uri, hash) pair from two different listings
+            // is never right; the freshly-resolved listing's hash IS the
+            // currently-published version.
+            const uriPinned = serviceUri !== undefined;
             // Resolve alias↔canonical: AppView returns canonical-keyed
             // schemas, but `capability` may be the requester's alias.
             const published = schemaForCapability(match.capabilitySchemas, capability);
             if (published !== undefined) {
-              if (
-                schemaHash === undefined &&
-                typeof published.schemaHash === 'string' &&
-                published.schemaHash !== ''
-              ) {
-                schemaHash = published.schemaHash;
+              const publishedHash =
+                typeof published.schemaHash === 'string' && published.schemaHash !== ''
+                  ? published.schemaHash
+                  : undefined;
+              if (publishedHash !== undefined && (schemaHash === undefined || uriPinned)) {
+                if (uriPinned && schemaHash !== undefined && schemaHash !== publishedHash) {
+                  options.logger?.({
+                    event: 'tool_executor.query_service.schema_hash_overridden',
+                    service_uri: serviceUri,
+                    caller_hash: schemaHash,
+                    listing_hash: publishedHash,
+                  });
+                }
+                schemaHash = publishedHash;
               }
               if (published.params !== undefined && typeof published.params === 'object') {
                 paramsSchema = published.params as RequesterAutofillSchema;
@@ -574,7 +594,11 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
                 ttl = published.defaultTtlSeconds;
               }
             }
-            if (serviceName === undefined && typeof match.name === 'string' && match.name !== '') {
+            if (
+              typeof match.name === 'string' &&
+              match.name !== '' &&
+              (serviceName === undefined || uriPinned)
+            ) {
               serviceName = match.name;
             }
           }

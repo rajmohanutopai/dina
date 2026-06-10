@@ -820,23 +820,30 @@ def audit(ctx: click.Context, limit: int, action_filter: str) -> None:
 @click.option("--device-name", default=None, help="[headless] Device name")
 @click.option("--pairing-code", default=None, help="[headless] Pairing code from the Dina app (Settings → Agents)")
 @click.option("--config-dir", default=None, help="[headless] Config directory (default: .dina/cli in cwd)")
+@click.option(
+    "--setup-code", default=None,
+    help="The `dina1:…` setup code from the Dina app (Settings → Agents). "
+         "Carries relay URL, Home Node DID, transport, device name and the "
+         "pairing code in one string. Individual flags override its fields.",
+)
 @click.pass_context
 def configure(
     ctx: click.Context, role: str, config_file: str | None,
     headless: bool, core_url: str | None, msgbox_url: str | None,
     homenode_did: str | None, transport_mode: str | None,
     device_name: str | None, pairing_code: str | None,
-    config_dir: str | None,
+    config_dir: str | None, setup_code: str | None,
 ) -> None:
     """Set up connection to a Dina Home Node.
 
     \b
-    Interactive (default):
+    Interactive (default — paste the setup code from the Dina app):
       dina configure
       dina configure --role agent
 
     \b
     Headless (no prompts — for automation/CI):
+      dina configure --headless --setup-code 'dina1:…' --role agent
       dina configure --headless --core-url http://localhost:8100 \\
         --pairing-code 123456 --device-name sanity-agent --role agent
 
@@ -854,6 +861,22 @@ def configure(
         "generate_keypair": true           // true = always generate new keypair
       }
     """
+    # `--setup-code` works in BOTH modes: decode it up front and let it
+    # supply defaults; explicit flags still win field-by-field.
+    setup = None
+    if setup_code is not None:
+        from .setup_code import SetupCodeError, parse_setup_code
+
+        try:
+            setup = parse_setup_code(setup_code)
+        except SetupCodeError as exc:
+            raise click.UsageError(f"--setup-code rejected: {exc}")
+        msgbox_url = msgbox_url or setup.msgbox_url
+        homenode_did = homenode_did or setup.homenode_did
+        transport_mode = transport_mode or setup.transport
+        device_name = device_name or (setup.device_name or None)
+        pairing_code = pairing_code or setup.code
+
     # ── Headless mode: all params from CLI flags, zero prompts ──
     if headless:
         _configure_headless(
@@ -879,6 +902,48 @@ def configure(
     click.echo("Dina CLI Configuration")
     click.echo("=" * 40)
     click.echo()
+
+    # ── Quick paste: one setup code replaces every connection prompt ──
+    # The Dina app (Settings → Agents) bundles relay URL + Home Node DID +
+    # transport + suggested name + the pairing code into one `dina1:…`
+    # string. Pasting it here skips straight to keypair + pairing. Enter
+    # falls through to the manual prompts (LAN/dev setups). Skipped when
+    # `--setup-code` already supplied the string on the command line.
+    if setup is None and not cfg_input:
+        from .setup_code import SetupCodeError, looks_like_setup_code, parse_setup_code
+
+        pasted = click.prompt(
+            "Paste the setup code from your Dina app (Settings → Agents),\n"
+            "or press Enter to set up manually",
+            default="",
+            show_default=False,
+        ).strip()
+        if pasted:
+            try:
+                setup = parse_setup_code(pasted)
+            except SetupCodeError as exc:
+                if looks_like_setup_code(pasted):
+                    # It WAS a setup code, just a broken one — make the user
+                    # re-copy rather than silently dropping into manual mode
+                    # with half-remembered values.
+                    raise click.UsageError(f"Setup code rejected: {exc}")
+                click.echo(f"  Not a setup code ({exc}) — continuing with manual setup.")
+        if setup is not None:
+            # Same field-by-field merge as the --setup-code flag path:
+            # explicit flags win, the pasted string fills the rest.
+            msgbox_url = msgbox_url or setup.msgbox_url
+            homenode_did = homenode_did or setup.homenode_did
+            transport_mode = transport_mode or setup.transport
+            device_name = device_name or (setup.device_name or None)
+            pairing_code = pairing_code or setup.code
+    if setup is not None:
+        click.echo("  Setup code accepted:")
+        click.echo(f"    MsgBox:    {msgbox_url}")
+        click.echo(f"    Home Node: {homenode_did}")
+        click.echo(f"    Transport: {transport_mode}")
+        click.echo(f"    Device:    {device_name or _default_device_name()}")
+        click.echo("    Pairing:   code embedded ✓")
+        click.echo()
 
     # Config location: local (this directory), global (~), or custom path.
     from .config import _GLOBAL_CONFIG_DIR, _LOCAL_CONFIG_DIR, set_config_dir
@@ -928,6 +993,12 @@ def configure(
         click.echo(f"  Home Node: {homenode_did or '(none)'}")
         click.echo(f"  Transport: {transport_mode_val}")
         click.echo(f"  Device: {device_name}")
+    elif setup is not None:
+        # Everything came in the setup code (pasted or --setup-code, with
+        # explicit flags already merged in) — no further prompts.
+        core_url = core_url or existing.get("core_url", "http://localhost:8100")
+        transport_mode_val = transport_mode or "msgbox"
+        device_name = device_name or existing.get("device_name") or _default_device_name()
     else:
         core_url = click.prompt(
             "Core URL",
@@ -974,6 +1045,7 @@ def configure(
         _configure_signature(
             core_url, device_name, role,
             msgbox_url=msgbox_url, homenode_did=homenode_did, transport_mode=transport_mode_val,
+            pairing_code=pairing_code or "",
         )
 
     values: dict[str, Any] = {
@@ -1326,8 +1398,14 @@ def _configure_signature_noninteractive(
 def _configure_signature(
     core_url: str, device_name: str, role: str = "user",
     msgbox_url: str = "", homenode_did: str = "", transport_mode: str = "msgbox",
+    pairing_code: str = "",
 ) -> None:
-    """Generate keypair and pair with Core using Ed25519 public key."""
+    """Generate keypair and pair with Core using Ed25519 public key.
+
+    `pairing_code` is pre-filled when the user pasted a setup code —
+    `_pair_with_key` then skips its own prompt (and falls back to
+    prompting if that embedded code is rejected, e.g. expired).
+    """
     from .signing import CLIIdentity
 
     identity = CLIIdentity()
@@ -1337,7 +1415,7 @@ def _configure_signature(
         if not click.confirm("  Generate a new keypair?", default=False):
             # Re-pair with existing key
             _pair_with_key(
-                core_url, identity, device_name, role,
+                core_url, identity, device_name, role, pairing_code=pairing_code,
                 msgbox_url=msgbox_url, homenode_did=homenode_did, transport_mode=transport_mode,
             )
             return
@@ -1354,7 +1432,7 @@ def _configure_signature(
     click.echo()
 
     _pair_with_key(
-        core_url, identity, device_name, role,
+        core_url, identity, device_name, role, pairing_code=pairing_code,
         msgbox_url=msgbox_url, homenode_did=homenode_did, transport_mode=transport_mode,
     )
 
@@ -1437,6 +1515,147 @@ def _pair_with_key(
             )
             click.echo("  Keypair saved. Pair later with: dina configure", err=True)
             return
+
+
+# ── init (one-command agent quickstart) ──────────────────────────────
+
+
+@cli.command("init")
+@click.option(
+    "--setup-code", default=None,
+    help="The `dina1:…` setup code from the Dina app (Settings → Agents). Prompted for if omitted.",
+)
+@click.option(
+    "--role", default="agent", type=click.Choice(["user", "agent"]),
+    help="Device role (default: agent — init is the agent-host quickstart)",
+)
+@click.option("--yes", is_flag=True, default=False, help="Install the skill for all detected platforms without prompting")
+@click.option("--skip-skill", is_flag=True, default=False, help="Pair only; don't touch any agent platform configs")
+@click.pass_context
+def init_cmd(ctx: click.Context, setup_code: str | None, role: str, yes: bool, skip_skill: bool) -> None:
+    """One-command quickstart: pair with your Dina, then teach this machine's agents to use it.
+
+    \b
+    Step 1 — Pair: `dina configure` (paste the setup code from the Dina
+             app, Settings → Agents). Skipped if this host is already
+             paired — re-pair explicitly with `dina configure`.
+    Step 2 — Skill: detect agent platforms (Claude Code, OpenClaw, Codex,
+             Gemini CLI) and install the Dina skill into each one you
+             confirm. Same transparency contract as `dina skill install`.
+    """
+    from .config import _load_saved
+    from .signing import CLIIdentity
+
+    saved = _load_saved()
+    identity = CLIIdentity()
+    # "Already paired" = a keypair exists AND a saved config points it at a
+    # node. (Pairing state itself lives on the Home Node; `device_id` is NOT
+    # persisted by the interactive flow, so don't key off it.)
+    if identity.exists and (saved.get("msgbox_url") or saved.get("core_url")):
+        click.echo(f"Step 1 — Pair: already paired ({identity.did()}).")
+        click.echo("  Re-pair explicitly with: dina configure")
+    else:
+        click.echo("Step 1 — Pair with your Dina")
+        ctx.invoke(configure, role=role, setup_code=setup_code)
+
+    click.echo()
+    if skip_skill:
+        click.echo("Step 2 — Skill: skipped (--skip-skill).")
+        return
+    click.echo("Step 2 — Teach this machine's agents to use Dina")
+    ctx.invoke(skill_install, target_keys=(), dry_run=False, yes=yes)
+
+
+# ── skill (agent platform integration) ───────────────────────────────
+
+
+@cli.group()
+def skill() -> None:
+    """Teach an agent platform to route through Dina.
+
+    One canonical skill document, rendered per platform: Claude Code and
+    OpenClaw get a full SKILL.md in their skills directory; Codex and
+    Gemini CLI get a thin managed block in AGENTS.md / GEMINI.md.
+    """
+
+
+@skill.command("show")
+@click.option("--thin", is_flag=True, default=False, help="Print the thin variant (trigger rules only)")
+@click.option(
+    "--target", default=None,
+    type=click.Choice(["claude-code", "openclaw", "codex", "gemini"]),
+    help="Print exactly what `skill install` would write for this platform",
+)
+def skill_show(thin: bool, target: str | None) -> None:
+    """Print the Dina skill to stdout (paste anywhere an agent reads instructions)."""
+    from .skill import skill_body_full, skill_body_thin, target_by_key
+
+    if target is not None:
+        t = target_by_key(target)
+        assert t is not None  # constrained by click.Choice
+        click.echo(t.render(), nl=False)
+        return
+    click.echo(skill_body_thin() if thin else skill_body_full(), nl=False)
+
+
+@skill.command("install")
+@click.option(
+    "--target", "target_keys", multiple=True,
+    type=click.Choice(["claude-code", "openclaw", "codex", "gemini"]),
+    help="Install only for this platform (repeatable). Skips detection.",
+)
+@click.option("--dry-run", is_flag=True, default=False, help="Show what would be written, write nothing")
+@click.option("--yes", is_flag=True, default=False, help="Install for all detected platforms without prompting")
+def skill_install(target_keys: tuple[str, ...], dry_run: bool, yes: bool) -> None:
+    """Detect agent platforms on this machine and install the Dina skill.
+
+    \b
+    Transparency contract (this command edits your agents' configuration —
+    the exact class of action Dina exists to gate):
+      - every path is printed BEFORE anything is written
+      - --dry-run previews without writing
+      - nothing is installed for a platform you didn't confirm
+      - AGENTS.md / GEMINI.md edits stay inside the marked Dina block;
+        everything outside it is preserved byte-for-byte
+    """
+    from .skill import detect_targets, install_target, target_by_key
+
+    home = Path.home()
+    if target_keys:
+        targets = [t for k in target_keys if (t := target_by_key(k)) is not None]
+    else:
+        targets = detect_targets(home)
+        if not targets:
+            click.echo("No agent platforms detected (~/.claude, ~/.openclaw, ~/.codex, ~/.gemini).")
+            click.echo("Use --target <platform> to install anyway, or `dina skill show` to copy the text.")
+            return
+        click.echo("Detected agent platforms:")
+        for t in targets:
+            click.echo(f"  {t.label:<12} → {t.path(home)}")
+        click.echo()
+        if not yes and not dry_run:
+            targets = [
+                t for t in targets
+                if click.confirm(f"Install Dina skill for {t.label}?", default=True)
+            ]
+            if not targets:
+                click.echo("Nothing selected.")
+                return
+
+    for t in targets:
+        result = install_target(t, home, dry_run=dry_run)
+        verb = {
+            "created": "created",
+            "updated": "updated",
+            "unchanged": "already up to date",
+            "dry-run": "would write",
+        }[result.action]
+        click.echo(f"  {t.label:<12} {verb}: {result.path}")
+
+    if dry_run:
+        click.echo("\nDry run — nothing was written.")
+    else:
+        click.echo("\nDone. The skill text always matches this CLI version; re-run after upgrading dina-agent.")
 
 
 # ── init-identity ────────────────────────────────────────────────────
@@ -2162,55 +2381,7 @@ def agent_daemon(poll_interval: int, lease_duration: int, runner: str) -> None:
     run_daemon(poll_interval=poll_interval, lease_duration=lease_duration, runner_name=runner)
 
 
-# ---------------------------------------------------------------------------
-# setup-agent: configure integration with an agent runner
-# ---------------------------------------------------------------------------
-
-
-@cli.group("setup-agent")
-def setup_agent_group() -> None:
-    """Configure integration with an agent runner (OpenClaw or Hermes).
-
-    \b
-    Assumes device is already paired (dina configure --role agent).
-    Registers dina mcp-server with the runner and stores config.
-
-    \b
-    Usage:
-      dina setup-agent openclaw --url ws://localhost:3000
-      dina setup-agent hermes
-      dina setup-agent hermes --model google/gemini-2.5-flash --start
-    """
-    pass
-
-
-@setup_agent_group.command("openclaw")
-@click.option("--url", default="", help="OpenClaw Gateway URL (ws://...)")
-@click.option("--token", default="", help="OpenClaw Gateway auth token")
-@click.option("--hook-token", default="", help="Hook submission token")
-@click.option("--start", is_flag=True, help="Start the agent daemon after setup")
-def setup_openclaw_cmd(url: str, token: str, hook_token: str, start: bool) -> None:
-    """Configure Dina integration with OpenClaw."""
-    from .setup_agent import setup_openclaw
-    click.echo("Setting up OpenClaw integration...")
-    setup_openclaw(
-        openclaw_url=url,
-        openclaw_token=token,
-        hook_token=hook_token,
-        start_daemon=start,
-    )
-    click.echo("Done.")
-
-
-@setup_agent_group.command("hermes")
-@click.option("--model", default="", help="Hermes model (default: google/gemini-2.5-flash)")
-@click.option("--start", is_flag=True, help="Start the agent daemon after setup")
-def setup_hermes_cmd(model: str, start: bool) -> None:
-    """Configure Dina integration with Hermes."""
-    from .setup_agent import setup_hermes
-    click.echo("Setting up Hermes integration...")
-    setup_hermes(
-        hermes_model=model,
-        start_daemon=start,
-    )
-    click.echo("Done.")
+# `dina setup-agent` (MCP-era OpenClaw/Hermes registration) was retired:
+# agents learn to call the dina CLI via `dina skill install` now, and
+# runner selection lives on `dina agent-daemon --runner <name>` /
+# DINA_AGENT_RUNNER / the `agent_runner` config key.

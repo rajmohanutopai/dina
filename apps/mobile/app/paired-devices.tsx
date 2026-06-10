@@ -5,16 +5,19 @@
  * (or a thing that wraps it like OpenClaw or `dina-cli`); there is
  * no Dina-to-Dina pairing — that's Contacts (DIDs).
  *
- * Mints a new 8-character pairing code that the agent presents via
- * `dina configure --pairing-code`. The screen talks to Core via the
- * in-process ceremony / registry modules — no HTTP round-trip needed
- * because Admin UI runs inside the same JS runtime as Core.
+ * Mints a pairing code and wraps it (with relay URL + node DID) into a
+ * one-paste `dina1:…` setup string the agent consumes via
+ * `dina configure` (interactive paste) or `--setup-code`. The screen
+ * talks to Core via the in-process ceremony / registry modules — no
+ * HTTP round-trip needed because Admin UI runs inside the same JS
+ * runtime as Core.
  *
  * Reached via the "Agents" row on the main Settings screen. Route
  * stays `/paired-devices` to avoid breaking the deep-link surface.
  * Hidden from the tab bar.
  */
 
+import { Stack } from 'expo-router';
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
@@ -27,9 +30,9 @@ import {
   Alert,
   Share,
 } from 'react-native';
-import { Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
+
+import { getNodeDID } from '@dina/core';
 import {
   generatePairingCode,
   listDevices,
@@ -38,12 +41,20 @@ import {
   type PairedDevice,
 } from '@dina/core/devices';
 
+import { buildAgentSetupCode } from '../src/services/agent_setup_code';
+import { resolveMsgBoxURL } from '../src/services/msgbox_wiring';
+import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 
 interface LiveCode {
   code: string;
   expiresAt: number; // unix seconds
   deviceName: string;
   role: DeviceRole;
+  /**
+   * The one-paste `dina1:…` string bundling relay URL + node DID +
+   * this pairing code — the only pairing artifact the UI shows.
+   */
+  setupCode: string;
 }
 
 export default function PairedDevicesScreen() {
@@ -62,7 +73,7 @@ export default function PairedDevicesScreen() {
   const [generating, setGenerating] = useState(false);
   const [liveCode, setLiveCode] = useState<LiveCode | null>(null);
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
-  const [copied, setCopied] = useState(false);
+  const [sharedSetup, setSharedSetup] = useState(false);
 
   const refreshDevices = useCallback(() => {
     try {
@@ -139,11 +150,14 @@ export default function PairedDevicesScreen() {
     }
   }, [liveCode, now]);
 
-  const handleCopy = useCallback(() => {
+  // Share the one-paste setup string (AirDrop / Notes / clipboard apps).
+  // Short-lived + single-use, same sensitivity envelope as the embedded
+  // pairing code — the share sheet is the user's trust decision.
+  const handleShareSetup = useCallback(() => {
     if (liveCode === null) return;
-    Share.share({ message: liveCode.code }).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    Share.share({ message: liveCode.setupCode }).catch(() => {});
+    setSharedSetup(true);
+    setTimeout(() => setSharedSetup(false), 2000);
   }, [liveCode]);
 
   const handleGenerate = useCallback(() => {
@@ -161,26 +175,40 @@ export default function PairedDevicesScreen() {
       // device sysdiagnose). Log only the metadata that can't be used
       // to pair: device name + role.
       const { code, expiresAt } = generatePairingCode({ deviceName: name, role });
-      setLiveCode({ code, expiresAt, deviceName: name, role });
+      // The setup string IS the product — there is no bare-number
+      // fallback (greenfield: every dina-agent understands `dina1:`,
+      // and the number alone was never enough to configure anyway).
+      // If the node identity isn't ready, fail loudly and let the user
+      // retry rather than handing them a third of a setup.
+      const nodeDid = getNodeDID();
+      if (nodeDid === null) {
+        throw new Error('Node identity not ready yet — wait for boot to finish and retry.');
+      }
+      const setupCode = buildAgentSetupCode({
+        msgboxUrl: resolveMsgBoxURL(),
+        homenodeDid: nodeDid,
+        deviceName: name,
+        code,
+      });
+      setLiveCode({ code, expiresAt, deviceName: name, role, setupCode });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.warn('[paired-devices] generate failed:', message);
-      Alert.alert('Could not generate code', message);
+      Alert.alert('Could not generate setup code', message);
     } finally {
       setGenerating(false);
     }
   }, [deviceName, role]);
-
-  // Clipboard dep isn't shipped yet — user long-presses the code to
-  // use the OS-native selection. Added as a follow-up once
-  // expo-clipboard lands in package.json.
 
   const secondsRemaining = liveCode === null ? 0 : Math.max(0, liveCode.expiresAt - now);
 
   return (
     <>
       <Stack.Screen options={{ title: 'Agents' }} />
-      <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
+      >
         <Section title={`CONNECTED (${devices.length})`}>
           {devices.length === 0 ? (
             <Text style={styles.empty}>No agents connected yet.</Text>
@@ -228,19 +256,19 @@ export default function PairedDevicesScreen() {
 
         <Section title="AUTHORIZE A NEW AGENT">
           <Text style={styles.help}>
-            Agents act on your behalf. They run as{' '}
-            <Text style={styles.mono}>dina-agent</Text>, submit Ed25519
-            signed requests to this device, and only do what you allow.
+            Agents act on your behalf. They run as <Text style={styles.mono}>dina-agent</Text>,
+            submit Ed25519 signed requests to this device, and only do what you allow.
             {'\n\n'}
             To pair a new agent:{'\n'}
-            1. Install on the agent host:{' '}
-            <Text style={styles.mono}>pip install dina-agent</Text>.{'\n'}
-            2. Generate a pairing code below.{'\n'}
-            3. On the agent host, run:{' '}
-            <Text style={styles.mono}>dina configure</Text>.
+            1. Install on the agent host: <Text style={styles.mono}>pip install dina-agent</Text>.
+            {'\n'}
+            2. Generate a setup code below.{'\n'}
+            3. On the agent host, run <Text style={styles.mono}>dina init</Text> and paste the
+            setup code when asked — it pairs, then installs the Dina skill for the agents on that
+            machine.
             {'\n\n'}
-            The agent then registers its own keypair against this code. The
-            code expires shortly after it's issued.
+            The agent then registers its own keypair against the embedded pairing code. The code
+            expires shortly after it's issued.
           </Text>
 
           <Text style={styles.label}>Agent name</Text>
@@ -273,24 +301,37 @@ export default function PairedDevicesScreen() {
             {generating ? (
               <ActivityIndicator color={colors.white} />
             ) : (
-              <Text style={styles.primaryButtonText}>Generate Pairing Code</Text>
+              <Text style={styles.primaryButtonText}>Generate Setup Code</Text>
             )}
           </Pressable>
         </Section>
 
         {liveCode !== null && (
-          <Section title="CURRENT CODE">
-            <Text selectable style={styles.code}>
-              {formatCode(liveCode.code)}
+          <Section title="SETUP CODE">
+            <Text style={styles.help}>
+              Paste this one string into <Text style={styles.mono}>dina configure</Text> on the
+              agent host — it carries the relay address, this node's identity, and the pairing code,
+              so there's nothing else to type.
+            </Text>
+            <Text
+              testID="paired-devices-setup-code"
+              selectable
+              numberOfLines={2}
+              ellipsizeMode="middle"
+              style={styles.setupCode}
+            >
+              {liveCode.setupCode}
             </Text>
             <Pressable
-              testID="paired-devices-copy-code"
-              onPress={handleCopy}
+              testID="paired-devices-share-setup"
+              onPress={handleShareSetup}
               style={({ pressed }) => [styles.copyButton, pressed && styles.copyButtonPressed]}
               accessibilityRole="button"
-              accessibilityLabel="Copy pairing code"
+              accessibilityLabel="Share setup code"
             >
-              <Text style={styles.copyButtonText}>{copied ? 'Copied!' : 'Copy Code'}</Text>
+              <Text style={styles.copyButtonText}>
+                {sharedSetup ? 'Shared!' : 'Share Setup Code'}
+              </Text>
             </Pressable>
             <Text style={styles.codeMeta}>
               Pairing <Text style={styles.mono}>{liveCode.deviceName}</Text> as{' '}
@@ -317,14 +358,6 @@ function Section(props: { title: string; children: React.ReactNode }): React.Rea
       <View style={styles.card}>{props.children}</View>
     </View>
   );
-}
-
-function formatCode(code: string): string {
-  // 8-character Crockford-Base32 codes read easier split 4-4:
-  // `ABCD EFGH`. Anything else falls through unchanged.
-  if (code.length === 8) return `${code.slice(0, 4)} ${code.slice(4)}`;
-  if (code.length === 6) return `${code.slice(0, 3)} ${code.slice(3)}`;
-  return code;
 }
 
 function formatDuration(seconds: number): string {
@@ -384,16 +417,6 @@ const styles = StyleSheet.create({
     ...textStyles.bodyStrong,
     color: colors.white,
   },
-  code: {
-    ...textStyles.display,
-    fontFamily: textStyles.mono.fontFamily,
-    fontStyle: 'normal',
-    color: colors.accent,
-    textAlign: 'center',
-    letterSpacing: 8,
-    fontVariant: ['tabular-nums'],
-    marginVertical: spacing.sm,
-  },
   copyButton: {
     alignSelf: 'center',
     marginTop: spacing.xs,
@@ -404,6 +427,14 @@ const styles = StyleSheet.create({
   },
   copyButtonPressed: { opacity: 0.7 },
   copyButtonText: textStyles.buttonSmall,
+  setupCode: {
+    ...textStyles.monoSmall,
+    color: colors.textPrimary,
+    backgroundColor: colors.bgPrimary,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
+    marginBottom: spacing.xs,
+  },
   codeMeta: {
     ...textStyles.bodySmall,
     color: colors.textSecondary,

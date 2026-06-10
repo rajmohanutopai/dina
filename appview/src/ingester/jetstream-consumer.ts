@@ -150,6 +150,22 @@ export class JetstreamConsumer {
   private isShuttingDown = false
   private eventsSinceCursorSave = 0
   private readonly CURSOR_SAVE_INTERVAL = 100
+  /**
+   * GHOST-LISTING FIX (live incident 2026-06-10): the cursor used to
+   * advance ONLY every CURSOR_SAVE_INTERVAL events. On a low-traffic
+   * firehose that threshold is never reached, so `this.cursor` stayed at
+   * its boot value — and every idle-timeout reconnect (~10 min on the
+   * test infra) replayed the ENTIRE window since boot. Replayed
+   * create/delete pairs race through the concurrent queue, so a deleted
+   * service profile kept resurrecting in the index while its PDS record
+   * was gone ("ghost listing"). Two changes close it:
+   *   1. a TIME-based cursor save (below) so quiet streams still advance,
+   *   2. `reconnectWithBackoff` advances the cursor to the safe position
+   *      BEFORE reconnecting, so a reconnect never re-reads processed
+   *      history.
+   */
+  private readonly CURSOR_SAVE_INTERVAL_MS = 30_000
+  private cursorSaveTimer: ReturnType<typeof setInterval> | null = null
   private queue: BoundedIngestionQueue | null = null
   private highestSeenTimeUs: number = 0
 
@@ -244,6 +260,41 @@ export class JetstreamConsumer {
         logger.warn({ err }, 'periodic spool cleanup failed')
       }
     }, 60 * 60 * 1000)
+
+    // Ghost-listing fix part 1: time-based cursor advancement. The
+    // event-count saver (every CURSOR_SAVE_INTERVAL events) stays for
+    // high-traffic streams; this timer covers quiet streams where the
+    // count is never reached. Safe position = lowest unprocessed
+    // timestamp (queue), falling back to the highest fully-seen event.
+    this.cursorSaveTimer = setInterval(() => {
+      void this.advanceAndSaveCursor('timer')
+    }, this.CURSOR_SAVE_INTERVAL_MS)
+  }
+
+  /**
+   * Advance the in-memory cursor to the current safe position and
+   * persist it. Never moves the cursor BACKWARDS (a replayed old event
+   * must not regress a newer saved position). `forceSave` persists even
+   * when the value didn't advance — the event-count path keeps its
+   * long-standing save-every-interval contract; the idle timer and
+   * reconnect paths skip the redundant write.
+   */
+  private async advanceAndSaveCursor(
+    reason: string,
+    opts: { forceSave?: boolean } = {},
+  ): Promise<void> {
+    try {
+      const safeCursor = this.queue?.getSafeCursor() ?? null
+      const target = safeCursor ?? this.highestSeenTimeUs
+      const advanced = target > this.cursor
+      if (advanced) this.cursor = target
+      if (advanced || opts.forceSave === true) {
+        await this.saveCursor()
+        logger.debug({ cursor: this.cursor, reason, advanced }, 'Cursor saved')
+      }
+    } catch (err) {
+      logger.warn({ err, reason }, 'cursor advance failed')
+    }
   }
 
   /**
@@ -470,9 +521,7 @@ export class JetstreamConsumer {
     this.eventsSinceCursorSave++
     if (this.eventsSinceCursorSave >= this.CURSOR_SAVE_INTERVAL) {
       // HIGH-03 fix: queue may be null during spool replay (before connect())
-      const safeCursor = this.queue?.getSafeCursor() ?? null
-      this.cursor = safeCursor ?? this.highestSeenTimeUs
-      await this.saveCursor()
+      await this.advanceAndSaveCursor('event_count', { forceSave: true })
       this.eventsSinceCursorSave = 0
     }
   }
@@ -646,13 +695,20 @@ export class JetstreamConsumer {
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), this.MAX_RECONNECT_DELAY_MS)
     this.reconnectAttempts++
     logger.info({ delay, attempt: this.reconnectAttempts }, 'Reconnecting to Jetstream')
-    setTimeout(() => this.connect(), delay)
+    setTimeout(() => {
+      // Ghost-listing fix part 2: advance the cursor to the safe position
+      // BEFORE resubscribing, so the new connection resumes from what we
+      // actually processed instead of replaying the whole stale window
+      // (idle-timeout disconnects on quiet streams hit this every cycle).
+      void this.advanceAndSaveCursor('reconnect').finally(() => this.connect())
+    }, delay)
   }
 
   private setupGracefulShutdown(): void {
     const shutdown = async () => {
       this.isShuttingDown = true
       logger.info('Shutting down ingester...')
+      if (this.cursorSaveTimer !== null) clearInterval(this.cursorSaveTimer)
       this.ws?.close()
       const safeCursor = this.queue?.getSafeCursor()
       this.cursor = safeCursor ?? this.cursor

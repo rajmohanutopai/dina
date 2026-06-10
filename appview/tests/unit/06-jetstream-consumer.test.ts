@@ -952,3 +952,62 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(resolverCalls).toBe(0)
   })
 })
+
+// ---------------------------------------------------------------------------
+// GHOST-LISTING FIX (live incident 2026-06-10): cursor advancement.
+// The cursor used to move ONLY every CURSOR_SAVE_INTERVAL (100) events, so a
+// quiet firehose never advanced it and every idle-timeout reconnect replayed
+// the whole window — replayed create/delete races resurrected deleted
+// service profiles ("ghost listings", resurrection bursts every ~600s in the
+// deployed ingester logs).
+// ---------------------------------------------------------------------------
+describe('SS6.5 JetstreamConsumer -- cursor advancement (ghost-listing fix)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('UT-JC-CUR-1: advanceAndSaveCursor moves to safe queue position and persists', async () => {
+    const { consumer, db } = createTestConsumer()
+    ;(consumer as any).highestSeenTimeUs = 5_000
+    mockQueueGetSafeCursor.mockReturnValue(4_000)
+    await (consumer as any).advanceAndSaveCursor('test')
+    expect((consumer as any).cursor).toBe(4_000)
+    expect(db.insert).toHaveBeenCalled() // persisted
+  })
+
+  it('UT-JC-CUR-2: falls back to highestSeenTimeUs when the queue is drained', async () => {
+    const { consumer } = createTestConsumer()
+    ;(consumer as any).highestSeenTimeUs = 7_777
+    mockQueueGetSafeCursor.mockReturnValue(null) // empty queue
+    await (consumer as any).advanceAndSaveCursor('test')
+    expect((consumer as any).cursor).toBe(7_777)
+  })
+
+  it('UT-JC-CUR-3: never regresses — a stale safe position below the cursor is ignored', async () => {
+    const { consumer, db } = createTestConsumer()
+    ;(consumer as any).cursor = 9_000
+    ;(consumer as any).highestSeenTimeUs = 8_000
+    mockQueueGetSafeCursor.mockReturnValue(6_000)
+    await (consumer as any).advanceAndSaveCursor('test')
+    expect((consumer as any).cursor).toBe(9_000)
+    expect(db.insert).not.toHaveBeenCalled() // no pointless write
+  })
+
+  it('UT-JC-CUR-4: reconnectWithBackoff advances the cursor before resubscribing', async () => {
+    vi.useFakeTimers()
+    try {
+      const { consumer } = createTestConsumer()
+      ;(consumer as any).highestSeenTimeUs = 12_345
+      mockQueueGetSafeCursor.mockReturnValue(null)
+      let connectedWithCursor: number | null = null
+      ;(consumer as any).connect = () => {
+        connectedWithCursor = (consumer as any).cursor
+      }
+      ;(consumer as any).reconnectWithBackoff()
+      await vi.runAllTimersAsync()
+      expect(connectedWithCursor).toBe(12_345) // resumed from processed position, not the stale boot cursor
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

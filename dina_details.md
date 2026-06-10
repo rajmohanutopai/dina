@@ -440,3 +440,8 @@ known_only is when i know that this user is authenticated to use my service - it
 
 # Testing Manual Release Tests
 We use Maestro to test the manual release tests - there is already maestro based test cases. Also, maestro is installed in this machine - if it is not found, it might be because you are not looking at the proper location (/opt/homebrew/opt/maestro/bin/maestro i think might have it)
+
+## Maestro gotchas (learned 2026-06-10)
+- `tapOn` reports COMPLETED even when the target is BELOW the viewport — iOS clamps the touch into the tab bar (phantom "Network" navigation). Always `scrollUntilVisible: {centerElement: true}` before tapping on screens whose lists grow (e.g. Agents). Flows written against an empty screen rot as state accumulates.
+- Never use `hideKeyboard` (its fallback tap has the same clamping flaw) — dismiss with `pressKey: Enter` + a pacing `takeScreenshot`. Avoid bare `launchApp` mid-session; deep-link via `xcrun simctl openurl` instead.
+- When Maestro step results look impossible, `xcrun simctl io <udid> screenshot` is ground truth — trust the raw screen, not the step output. To extract long strings from the app (e.g. the dina1: setup code): long-press the selectable Text → tap "Copy" → read with `xcrun simctl pbpaste <udid>`.

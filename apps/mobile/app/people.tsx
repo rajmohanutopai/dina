@@ -42,6 +42,7 @@ import { getProfile as getTrustProfile } from '../src/peerlens/appview_runtime';
 import { buildContactCard } from '../src/services/contact_card';
 import { getDisplayNameOverride } from '../src/services/display_name_override';
 import { loadInfraPreferences } from '../src/services/infra_preferences';
+import { relationsOnly } from '../src/services/people_relations';
 import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 
 type SubTab = 'contacts' | 'relations';
@@ -178,7 +179,11 @@ function ContactsView({
   );
 }
 
-function RelationsView({ people }: { people: Person[] }) {
+function RelationsView({ people: allPeople }: { people: Person[] }) {
+  // Being a contact is NOT being a relation: service providers added for
+  // grants (e.g. a bus depot) stay in Contacts; Relations shows only
+  // people with relational evidence. See people_relations.ts.
+  const people = relationsOnly(allPeople);
   if (people.length === 0) {
     return (
       <View style={styles.emptyState}>

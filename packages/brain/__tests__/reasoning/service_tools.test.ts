@@ -578,6 +578,83 @@ describe('createQueryServiceTool', () => {
     expect(calls[0].serviceUri).toBe(UNLISTED_URI);
   });
 
+  it('uri-pinned: the resolved LISTING overrides an LLM-mixed schema_hash + service_name (live incident 2026-06-10)', async () => {
+    // The LLM pasted-link flow: search_provider_services returned the PUBLIC
+    // sibling listing, and the LLM passed query_service the UNLISTED uri from
+    // the user's message but the public listing's schema_hash + name. The
+    // (uri, hash) pair from two different listings guaranteed a provider-side
+    // schema_version_mismatch and an error card titled with the WRONG listing.
+    // With an explicit service_uri, the resolved listing is authoritative.
+    const UNLISTED_URI = 'at://did:plc:drcarl/com.dinakernel.service.profile/unlisted-1';
+    const { orchestrator, calls } = makeOrch();
+    const logEntries: Array<Record<string, unknown>> = [];
+    const tool = createQueryServiceTool({
+      orchestrator,
+      logger: (e) => logEntries.push(e),
+      appViewClient: {
+        async searchServices() {
+          return []; // unlisted ⇒ not in public search
+        },
+        async resolveServiceByUri() {
+          return {
+            ...autoFetchProfile,
+            uri: UNLISTED_URI,
+            name: 'Hidden Link-Only Clinic',
+            capabilitySchemas: {
+              appointment_status: {
+                params: { type: 'object' },
+                result: { type: 'object' },
+                schemaHash: 'sha256:unlisted-listing-hash',
+              },
+            },
+          };
+        },
+      },
+    });
+    await tool.execute({
+      operator_did: 'did:plc:drcarl',
+      capability: 'appointment_status',
+      params: {},
+      service_uri: UNLISTED_URI,
+      schema_hash: 'sha256:public-sibling-hash', // LLM mixed this in from search
+      service_name: 'Dr Carl', // …and this
+    });
+    expect(calls[0].schemaHash).toBe('sha256:unlisted-listing-hash');
+    expect(calls[0].serviceName).toBe('Hidden Link-Only Clinic');
+    expect(
+      logEntries.some((e) => e.event === 'tool_executor.query_service.schema_hash_overridden'),
+    ).toBe(true);
+  });
+
+  it('uri-pinned but unresolvable (known_only offer path): the caller-supplied hash survives', async () => {
+    // known_only listings are never on the AppView, so resolveServiceByUri
+    // returns null. The OFFER carried the correct schema_hash — the override
+    // must NOT fire and the offer's hash must go through unchanged.
+    const KNOWN_URI = 'at://did:plc:drcarl/com.dinakernel.service.profile/known-1';
+    const { orchestrator, calls } = makeOrch();
+    const tool = createQueryServiceTool({
+      orchestrator,
+      appViewClient: {
+        async searchServices() {
+          return [];
+        },
+        async resolveServiceByUri() {
+          return null; // known_only — never indexed
+        },
+      },
+    });
+    await tool.execute({
+      operator_did: 'did:plc:drcarl',
+      capability: 'appointment_status',
+      params: {},
+      service_uri: KNOWN_URI,
+      schema_hash: 'sha256:from-the-offer',
+      grant_id: 'grant-abc',
+    });
+    expect(calls[0].schemaHash).toBe('sha256:from-the-offer');
+    expect(calls[0].serviceUri).toBe(KNOWN_URI);
+  });
+
   it('unlisted: ignores a resolved listing whose did ≠ operator_did (a link cannot redirect)', async () => {
     const UNLISTED_URI = 'at://did:plc:drcarl/com.dinakernel.service.profile/unlisted-1';
     const { orchestrator, calls } = makeOrch();

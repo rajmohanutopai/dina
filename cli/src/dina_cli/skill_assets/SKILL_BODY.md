@@ -1,21 +1,3 @@
----
-name: dina
-description: Sovereign personal AI — encrypted vault, persona access control, PII scrubbing, session-scoped grants, action gating.
-metadata:
-  openclaw:
-    emoji: "🛡️"
-    homepage: https://github.com/rajmohanutopai/dina
-    requires:
-      bins:
-        - dina
-    install:
-      - id: pip
-        kind: pip
-        package: dina-agent
-        bins: [dina]
-        label: "Install Dina CLI (pip install dina-agent)"
----
-
 # Dina
 
 Sovereign personal AI. The user's data is in an encrypted vault on their Home Node. Dina controls access — you query through her, never directly. Data is organized into personas (compartments) with tiered access: some are free, some require the user's explicit approval.

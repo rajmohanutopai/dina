@@ -1143,6 +1143,197 @@ delta <b>0</b>. Live-trigger verification impossible right now (credits are heal
 carries the verbatim incident payload instead. Lite brain-server: callback left unset (no pill UI), but its
 bubbles get the better templates automatically.</div>
 
+<h3>Post-goal (user-requested): one-paste agent setup code (dina1:)</h3>
+<div class="item decision"><span class="tag decision">decision</span> <b>QR rejected, paste-string chosen:</b> the
+advisor's QR flow assumed a camera in the app — there is none (no camera/barcode native module; adding one =
+new EAS build + store binary, the opposite of "zero days"), and the data flows phone→agent anyway (the phone
+holds relay URL, node DID, and mints the code; the agent terminal can't scan). Same friction kill with zero
+native changes: <code>dina1:&lt;base64url(JSON)&gt;</code> bundling msgbox_url + homenode_did + transport +
+device_name + pairing code. Builder <code>apps/mobile/src/services/agent_setup_code.ts</code> (RN-safe
+hand-rolled b64url, mirrors atproto_oauth), parser <code>cli/src/dina_cli/setup_code.py</code>; both pin one
+byte-identical cross-language vector. Security envelope unchanged: the pairing code is the only secret (DID
+public, relay well-known); 5-min TTL / single-use / burn-after-3 / role-fixed-at-initiate all still apply.</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>Manual fallback REMOVED (user call,
+greenfield):</b> initial version kept the bare numeric code as "manual fallback". User challenge: (1) greenfield
+— no old agents to stay compatible with; (2) the number alone never sufficed (you'd still hand-type wss URL +
+did:plc — always a no-go); (3) automation should consume the full string. So: the Agents screen now shows ONLY
+the setup string ("Generate Setup Code"); missing node DID = loud Alert, not silent degradation; and headless
+gained first-class <code>--setup-code</code> (interactive paste prompt + Enter-falls-to-manual remain; explicit
+flags override the string field-by-field in both modes).</div>
+<div class="item iter"><span class="tag iter">iter</span> <b>Verified live TWICE on the real stack</b> (sim app
++ test-mailbox relay): (a) interactive — pasted the string as the ONLY input to <code>dina configure</code> →
+keypair → "Paired! dev-6e5fd406…" → MsgBox Connected → app shows CONNECTED(1) paste-demo; (b) headless — Maestro
+long-press-copied the APP-BUILT string off the screen, <code>simctl pbpaste</code> → <code>dina configure
+--headless --role agent --setup-code …</code> → "Paired! dev-a940090e…" → CONNECTED(2) headless-demo. Production
+builder + production parser, no reconstruction. Maestro gotcha: after CONNECTED list grows, the SETUP CODE
+section lands below the fold — assert via scrollUntilVisible, not bare visibility. Tests: cli 196 (12 parser +
+3 flow incl. flag-override + corrupted-string-fails-loud), mobile builder 4 (pinned vector, UTF-8 names), tsc 0,
+lint ≤ baseline. Follow-up seam: the same payload becomes QR content whenever a scanner lands for other
+features; <code>dina init</code> wraps --setup-code + OpenClaw skill install (week-two scope).</div>
+
+<h3>Post-goal (user-requested): multi-agent skill distribution (dina skill)</h3>
+<div class="item decision"><span class="tag decision">decision</span> <b>Reframe:</b> "support lots of agents
+(Claude Code / Codex / Gemini / OpenClaw)" is NOT N integrations — the dina CLI is already the universal surface
+(every agent runs shell), and every platform reads instructions from a markdown file in a known location. So the
+skill problem = ONE canonical document + per-platform renderers. The user had already written the hard part
+(<code>docker/openclaw/skills/SKILL.md</code>, esp. the pending-approval contract); it had drifted (v0.8.0,
+DINA_CORE_URL direct HTTP, Telegram approvals, OpenClaw-Gateway task env) and shipped nowhere (docker rig only,
+not in the wheel).</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>Shipped:</b> canonical assets INSIDE the
+pip package (<code>dina_cli/skill_assets/SKILL_BODY.md</code> full reference + <code>SKILL_THIN.md</code>
+trigger-rules variant; package-data wired in pyproject) — drift now structurally impossible (skill version ==
+installed CLI). <code>skill.py</code> renderers: claude-code/openclaw → frontmatter + FULL body into their
+skills dir (loaded on demand); codex/gemini → THIN managed block (BEGIN/END markers, byte-preserving idempotent
+upsert) appended to AGENTS.md/GEMINI.md (always-in-context, token budget matters). CLI:
+<code>dina skill show [--thin|--target X]</code> (generic paste-anywhere fallback = works with ANY agent by
+definition) + <code>dina skill install [--dry-run|--yes|--target]</code> with the transparency contract (paths
+printed before writing, per-platform confirm, dry-run) — the installer edits agent configs, the exact action
+class Dina gates, so it must be the best-behaved installer the user owns. Drift fixes in the canonical body:
+setup-code pairing flow, approvals on the Dina app (not Telegram), MsgBox-only (no DINA_CORE_URL), task →
+generic runner, personas marked user-configurable. Docker rig copy regenerated FROM the renderer + a parity test
+pins byte-equality (same pattern as the capability-registry gate).</div>
+<div class="item iter"><span class="tag iter">iter</span> Tests 14 new (content invariants incl.
+"Telegram/DINA_CORE_URL must never come back", thin&lt;¼ full, block idempotency + surroundings preserved,
+installer create/update/unchanged/dry-run, CLI detection/explicit/none-detected, docker parity). cli suite
+<b>210 passed</b>. Live smoke vs sandboxed HOME: detection → confirm → created both targets, AGENTS.md block
+correct. Not done (scoped out): <code>dina init</code> umbrella (configure+skill in one), retiring
+<code>setup_agent.py</code>'s MCP-era OpenClaw/Hermes registration — flagged for the user.</div>
+
+<h3>Post-goal (user-requested): services live-test P1 fixes + test-infra redeploy</h3>
+<div class="item decision"><span class="tag decision">decision</span> <b>F-1 ghost listings — root cause from the
+DEPLOYED ingester logs (not theory):</b> Jetstream cursor advanced only every 100 events; the quiet test
+firehose never hit it, so every idle reconnect (~5-10 min) replayed the ENTIRE window since boot — exact 600s
+"Record processed" bursts, replayed create/delete racing through the concurrent queue, deleted listing
+resurrected each cycle with refreshed lastSeen (hence rank 1). Fix in
+<code>appview/src/ingester/jetstream-consumer.ts</code>: 30s time-based cursor advancement + reconnect advances
+to the safe queue position BEFORE resubscribing + cursor never regresses; event-count path keeps its pinned
+always-save contract (forceSave). 4 new unit tests (incl. reconnect-resumes-from-processed-position).</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>F-2 sharper root cause:</b> the
+unlisted resolve-by-URI branch ALREADY existed — the live failure was the LLM mixing sources (service_uri from
+the pasted link + schema_hash/service_name from the PUBLIC sibling via search) and caller-args winning over
+hydration. Fix in <code>service_tools.ts</code>: an explicitly-pinned service_uri that RESOLVES makes the
+listing authoritative for hash + name (override logged); unresolvable URIs (known_only offers) keep the caller's
+hash — both pinned by tests. cli/brain/appview suites green (brain 3269, appview 1915+4, tools 52).</div>
+<div class="item iter"><span class="tag iter">iter</span> <b>Deployed</b> (deploy_shared_infra.sh update test,
+migrations idempotent, health green) + provider cores/daemons restarted per the MsgBox-bounce runbook.
+<b>Live re-verified all three:</b> F-4 taxonomy gate live (appointment_status gone from intent suggestions);
+F-2 pasted-link ask now resolves "via Hidden Link-Only ETA · 12 min" (fix_07 screenshot); F-1 re-ran the pause
+experiment — the 14:28 reconnect re-delivered exactly ONE boundary delete (idempotent, inclusive cursor), no
+burst, and a 12-min multi-cycle soak stayed clean (old code resurrected within 1-4 cycles). <b>Casualty:</b>
+price/drcarl provider could not rejoin — its vault dir was already missing on disk (old process ran on
+since-deleted state; seed unrecoverable; fresh boot 401s on PDS, did:plc fallback refused by design). Noted in
+report; drcarlclinic would need re-provisioning. Still open: F-3 failover/liveness ranking + stale same-name
+test providers.</div>
+
+<h3>Post-goal (user-reported): "Bus depot is not a relation" — Relations-tab membership rule</h3>
+<div class="item decision"><span class="tag decision">decision</span> <b>Being a contact ≠ being a relation.</b>
+Adding a service provider as a contact (for a known_only grant) creates a person row
+(createdFrom='user', confirmed, DID-bound, one name surface) and the Relations sub-tab rendered EVERY person —
+so "Bus Depot 42" sat between the user's daughter and Mia. Rule shipped
+(<code>apps/mobile/src/services/people_relations.ts</code>, wired into RelationsView): a DID-bound person shows
+under Relations only with RELATIONAL EVIDENCE — relationshipHint, or any vault-extracted surface beyond plain
+names (role_phrase/nickname/alias). Vault-born persons (no DID) always qualify. Self-healing: when the vault
+starts referencing a contact, they graduate into Relations automatically — no person-vs-organization modeling
+needed yet. 5 tests (depot hidden, Mia/Emma shown, evidence graduates a contact, list shape). Verified live:
+Relations = Mia + Emma only; Contacts still shows Bus Depot 42 (VERIFIED). Related cosmetic noted earlier, not
+fixed (badge wording "Paired" for DID-linked persons overloads device-pairing vocabulary).</div>
+
+<h3>Post-goal (user-requested): PRODUCTION release + greenfield state reset (2026-06-10)</h3>
+<div class="item decision"><span class="tag decision">decision</span> <b>Prod was further behind than "old code":
+its DB schema predated the peerlens rename</b> (still trust_edges/trust_policies/trust_v1_params, NO peerlens_*
+tables) because the rename was never authored as a migration — test got current schema by greenfield recreation.
+So "truncate" was insufficient for prod; with explicit user authorization: <code>DROP SCHEMA public CASCADE</code>
++ drop drizzle journal + re-run migrator → fresh current schema (3 peerlens_* tables verified). appview_config /
+flag rows need no seeding — missing rows fall back to FLAG_DEFAULTS (verified: test runs with 0 config rows).</div>
+<div class="item iter"><span class="tag iter">iter</span> <b>Procedure (rehearsed on test first):</b> truncate all
+AppView data tables (PRESERVING appview_config + params tables on test), wipe msgbox-data volume, restart
+ingester (fresh cursor = live-tail only, no replay — pairs with today's cursor fix), restart provider cores +
+daemons per the MsgBox-bounce runbook, reload mobile app → nodes republished; test index repopulated with EXACTLY
+the two live nodes (all 11 corpse rows incl. 9 old-namespace com.dina.* listings gone). Then prod:
+<code>update prod</code> deploy (health green) → schema reset → migrator → msgbox wipe → restarts.
+<b>Prod verified:</b> all 3 health endpoints 200; service.search returns <code>{"services":[],
+"rankingVersion":"v1"}</code> (current code, current schema, empty-but-functional); searchCapabilities empty
+(correct — no providers yet); zero errors in web/ingester logs. Production is now code-current + greenfield.
+Note: classifier correctly blocked both destructive steps until the user explicitly authorized
+("yes reset prod schema and msgbox") — mass test-DB DELETE and prod DROP SCHEMA each got named approval.</div>
+
+<h3>Post-goal (user-requested): HeadlessCliRunner — any agent as a task executor</h3>
+<div class="item decision"><span class="tag decision">decision</span> <b>The task-direction twin of the skill
+insight:</b> the daemon was already runner-agnostic (claim → execute → normalize) and the AgentRunner protocol
+reduces to "given a prompt, run the agent, return a result" — and every modern agent has a one-shot CLI mode
+(<code>claude -p</code>, <code>codex exec</code>, <code>gemini -p</code>). So multi-agent task = ONE generic
+<code>HeadlessCliRunner</code> with per-platform argv templates (~170 lines), registered as
+<code>claude-code / codex / gemini</code> alongside openclaw/hermes. INLINE model (like Hermes): execute blocks
+on the subprocess, daemon reports completion + ends the session.</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>Own CLI-flavored envelope:</b> the
+daemon's standard prompt instructs MCP task tools (<code>dina_task_complete</code>…) which headless agents don't
+have — the runner ignores it and renders its own (dina ask/validate/remember under the session +
+pending-approval contract + "your stdout IS the result"); a test pins that MCP tool names never leak in.
+<b>Injection-safe by construction:</b> list-form exec, prompt is exactly ONE argv element (test feeds
+<code>x"; rm -rf /</code> via the description and asserts argv length). Documented limitation: a mid-task
+approval still pending at <code>DINA_HEADLESS_TIMEOUT</code> (900s default) fails the run with a re-run hint —
+the approval itself persists on the node.</div>
+<div class="item iter"><span class="tag iter">iter</span> Tests 12 new (registry, install-hint validate, envelope
+contract, argv safety, success/cap/exit/timeout/missing-binary mapping, inline no-ops) — cli <b>226 passed</b>.
+<b>LIVE:</b> <code>get_runner('claude-code').execute(…)</code> spawned the REAL Claude Code CLI headlessly →
+<code>state=completed, summary=HEADLESS-OK</code>; registry health shows claude-code + codex binaries present on
+this host. Select via <code>dina agent-daemon --runner claude-code</code> or <code>DINA_AGENT_RUNNER</code>.
+Deliberately NOT routed: structured service tasks (eta_query lane) keep their purpose-built runners via
+requested_runner/runner_filter.</div>
+<div class="item iter"><span class="tag iter">iter</span> <b>Web verification (2026-06-10, official docs):</b>
+every location/flag shipped tonight is current — Claude Code <code>~/.claude/skills/&lt;name&gt;/SKILL.md</code>
+(description field IS the trigger; ours carries "Use when…" language), Codex <code>codex exec</code> + global
+<code>~/.codex/AGENTS.md</code> (32KiB combined cap — our 1.5KB thin block fine; <code>AGENTS.override.md</code>
+wins if present; exec prints ONLY the final message to stdout = clean summaries), Gemini global
+<code>~/.gemini/GEMINI.md</code> concatenated into EVERY prompt (validates thin-variant choice), OpenClaw
+<code>~/.openclaw/skills/</code> = the documented "managed skills" tier (workspace skills override per-agent).
+Two operational findings → one improvement: (1) headless agents prompt for tool permissions (batch = hang/deny),
+so the runner gained <code>DINA_HEADLESS_ARGS_&lt;PLATFORM&gt;</code> env hook (shlex'd, injected before the
+prompt element; env-only so task content can never reach flags; e.g. <code>--allowedTools … --permission-mode
+acceptEdits</code>); (2) from 2026-06-15 <code>claude -p</code> on subscription plans draws from a separate
+Agent SDK monthly credit — billing note for daemon deployments. cli <b>227 passed</b>.</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>"Is the Gateway still right for
+OpenClaw?" — both, deliberately:</b> docs confirm Gateway WS is STILL OpenClaw's canonical control plane and
+still protocol v3 (matches our openclaw.py — nothing deprecated upstream). But OpenClaw now also ships a
+one-shot CLI (<code>openclaw agent --message …</code>, or <code>--local</code> embedded) that speaks the Gateway
+FOR us. Added <code>openclaw-cli</code> to the headless platform table (3 lines): handshake/auth/protocol drift
+become OpenClaw's binary's problem. The bespoke <code>openclaw</code> Gateway runner STAYS for fire-and-forget
+runs that outlive a subprocess timeout (run_id + reconciler); openclaw-cli is the low-maintenance default for
+ordinary tasks. Registry now: claude-code, codex, gemini, hermes, openclaw, openclaw-cli. cli 227 passed.</div>
+
+<h3>Post-goal (user-requested): dina init umbrella + setup-agent retirement</h3>
+<div class="item decision"><span class="tag decision">decision</span> <b>dina init = the one-command quickstart:</b>
+Step 1 pairs (invokes configure; --setup-code supported; role defaults to <code>agent</code>), Step 2 runs the
+skill installer. Already-paired hosts skip Step 1. App help text updated: step 3 now says <code>dina init</code>.
+<b>Live bug caught by the live run (not the unit tests):</b> the already-paired check first keyed off
+<code>saved.device_id</code> — which the interactive pairing flow NEVER persists (config.json keys: core_url,
+device_name, role, msgbox_url, homenode_did, transport_mode), so real-world init would always re-pair. My unit
+test had mocked device_id into existence, masking it. Fixed predicate: <code>identity.exists &amp;&amp;
+(msgbox_url || core_url)</code>; test now mocks the REAL config shape.</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>setup-agent retired:</b> deleted
+<code>setup_agent.py</code> + the <code>dina setup-agent openclaw|hermes</code> group (MCP-era: registered
+<code>dina mcp-server</code> into runner configs — agents learn Dina via <code>dina skill install</code> now).
+The still-load-bearing piece (runner selection) was never unique to it: <code>dina agent-daemon --runner</code>,
+<code>DINA_AGENT_RUNNER</code>, and the <code>agent_runner</code> config key all remain. No tests covered
+setup-agent; a retirement test now pins that the command is gone.</div>
+<div class="item iter"><span class="tag iter">iter</span> <b>Verified:</b> cli <b>214 passed</b> (5 new init
+tests incl. fresh-pair-through-to-skill, already-paired skip, --skip-skill, retirement). LIVE both legs:
+(a) already-paired sandbox → "already paired (did:key:z6Mkhxb…)" → skills installed; (b) after the simulator
+reboot, the FULL fresh quickstart end-to-end with production code on every link: app minted the code
+(Maestro-driven), long-press-copied the app-built <code>dina1:</code> string, ONE command
+<code>dina init --setup-code …</code> → keypair → <b>"Paired! dev-56ed5599…" over the real MsgBox relay</b> →
+connection test green → detected Claude Code + Codex → both skills installed → app shows
+<b>CONNECTED (3) init-demo</b>. The strategy-note arc (pip install → init → paste → done) is now demonstrated,
+not claimed.</div>
+<div class="item iter"><span class="tag iter">iter</span> <b>Maestro root cause CORRECTED (it was never driver
+corruption):</b> tonight's CONNECTED list growth (0→2 agents) pushed the Agents form below the fold; Maestro
+happily "taps" an OFF-VIEWPORT element by its reported coordinates, iOS clamps the touch into the tab bar, and
+the Network tab catches it — every "mystery navigation to Network" was that. (hideKeyboard's fallback tap does
+the same.) Working recipe, now proven: <code>scrollUntilVisible {centerElement: true}</code> BEFORE every tap on
+this screen, dismiss keyboard with <code>pressKey: Enter</code> + a pacing screenshot, never hideKeyboard, never
+bare launchApp mid-session. Generalizes to any flow against screens whose content grows with state — add to the
+Maestro playbook alongside the T-1..T-6 findings.</div>
+
 <h3>Post-goal (user-requested): live Maestro demo with a corrupted key — and the @google/genai wrapper discovery</h3>
 <div class="item decision"><span class="tag decision">decision</span> <b>Demo method:</b> corrupted the dev key's
 tail in <code>.env</code> (kept prefix/length), restarted Metro (same <code>expo start --no-dev -c --port

@@ -613,9 +613,11 @@ def test_configure_signature_mode(tmp_path):
          patch("dina_cli.main.save_config") as mock_save, \
          patch("dina_cli.main._load_saved", return_value={}):
         mock_save.return_value = tmp_path / "config.json"
-        # Prompts (in order): config_location → core_url → msgbox_url →
-        # homenode_did → transport mode → device_name → test connection?
+        # Prompts (in order): setup code (Enter = manual) → config_location →
+        # core_url → msgbox_url → homenode_did → transport mode →
+        # device_name → test connection?
         user_input = "\n".join([
+            "",           # setup code (blank — manual setup)
             "",           # config_location (default: global)
             "",           # core_url (default)
             "",           # msgbox_url (blank — LAN only)
@@ -637,6 +639,104 @@ def test_configure_signature_mode(tmp_path):
     assert "auth_mode" not in saved
     assert "brain_url" not in saved
     assert "brain_token" not in saved
+
+
+def test_configure_quick_paste_setup_code(tmp_path):
+    """Pasting a `dina1:` setup code skips every connection prompt: the
+    relay URL, Home Node DID, transport, device name AND the pairing code
+    all come from the one string (the code is threaded into
+    `_configure_signature` so `_pair_with_key` never prompts)."""
+    import base64 as _b64
+
+    payload = {
+        "v": 1,
+        "msgbox_url": "wss://relay.example.com/ws",
+        "homenode_did": "did:plc:home",
+        "transport": "msgbox",
+        "device_name": "openclaw-agent",
+        "code": "ABCD2EFG",
+    }
+    compact = json.dumps(payload, separators=(",", ":"))
+    setup_str = "dina1:" + _b64.urlsafe_b64encode(compact.encode()).decode().rstrip("=")
+
+    runner = CliRunner()
+    with patch("dina_cli.main._configure_signature") as mock_sig, \
+         patch("dina_cli.main.save_config") as mock_save, \
+         patch("dina_cli.main._load_saved", return_value={}):
+        mock_save.return_value = tmp_path / "config.json"
+        # Prompts: setup code (pasted) → config_location → test connection?
+        # — NO core_url / msgbox / DID / transport / device-name prompts.
+        user_input = "\n".join([
+            setup_str,  # the one paste
+            "",         # config_location (default: global)
+            "n",        # don't test connection
+        ])
+        result = runner.invoke(cli, ["configure"], input=user_input, env={})
+
+    assert result.exit_code == 0, result.output
+    # The per-field prompts must NOT have appeared.
+    assert "MsgBox WebSocket URL" not in result.output
+    assert "Home Node DID (did:plc" not in result.output
+    saved = mock_save.call_args[0][0]
+    assert saved["msgbox_url"] == "wss://relay.example.com/ws"
+    assert saved["homenode_did"] == "did:plc:home"
+    assert saved["transport_mode"] == "msgbox"
+    assert saved["device_name"] == "openclaw-agent"
+    # The embedded pairing code reached the pairing step.
+    assert mock_sig.call_args.kwargs["pairing_code"] == "ABCD2EFG"
+
+
+def test_configure_headless_setup_code(tmp_path):
+    """`--headless --setup-code dina1:…` is the greenfield automation path:
+    the one string supplies relay + DID + transport + name + pairing code,
+    and explicit flags still override field-by-field."""
+    import base64 as _b64
+
+    payload = {
+        "v": 1,
+        "msgbox_url": "wss://relay.example.com/ws",
+        "homenode_did": "did:plc:home",
+        "transport": "msgbox",
+        "device_name": "openclaw-agent",
+        "code": "ABCD2EFG",
+    }
+    compact = json.dumps(payload, separators=(",", ":"))
+    setup_str = "dina1:" + _b64.urlsafe_b64encode(compact.encode()).decode().rstrip("=")
+
+    runner = CliRunner()
+    with patch("dina_cli.main._configure_headless") as mock_headless:
+        result = runner.invoke(
+            cli,
+            [
+                "configure", "--headless", "--role", "agent",
+                "--setup-code", setup_str,
+                "--device-name", "flag-wins",  # explicit flag overrides the string
+            ],
+            env={},
+        )
+    assert result.exit_code == 0, result.output
+    kwargs = mock_headless.call_args.kwargs
+    assert kwargs["msgbox_url"] == "wss://relay.example.com/ws"
+    assert kwargs["homenode_did"] == "did:plc:home"
+    assert kwargs["transport_mode"] == "msgbox"
+    assert kwargs["pairing_code"] == "ABCD2EFG"
+    assert kwargs["device_name"] == "flag-wins"
+    assert kwargs["role"] == "agent"
+
+
+def test_configure_rejects_corrupted_setup_code(tmp_path):
+    """A string that claims to be a setup code but doesn't parse must fail
+    loudly (re-copy) — NOT silently fall through to manual prompts."""
+    runner = CliRunner()
+    with patch("dina_cli.main._configure_signature"), \
+         patch("dina_cli.main.save_config") as mock_save, \
+         patch("dina_cli.main._load_saved", return_value={}):
+        mock_save.return_value = tmp_path / "config.json"
+        result = runner.invoke(
+            cli, ["configure"], input="dina1:%%%broken%%%\n", env={},
+        )
+    assert result.exit_code != 0
+    assert "Setup code rejected" in result.output
 
 
 # CLI follow-up #1: the interactive connection test must honor the SELECTED
@@ -686,6 +786,7 @@ def test_configure_connection_test_uses_msgbox_transport(tmp_path):
          patch("dina_cli.main.DinaClient", _FakeClient):
         mock_save.return_value = tmp_path / "config.json"
         user_input = "\n".join([
+            "",                                # setup code (blank — manual setup)
             "",                                # config_location
             "",                                # core_url (default)
             "wss://relay.example.com/ws",      # msgbox_url

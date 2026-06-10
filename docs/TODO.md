@@ -1,6 +1,9 @@
 # Mobile remaining
 MOBILE_FEATURES.md has currnt vs perfect
 
+# Bug Relation etc is not perfect
+docs/PEOPLE_GRAPH_TAXONOMY.md
+
 # Improving Talk/Remember Enrichment
   That's where I see real improvement room:
      
