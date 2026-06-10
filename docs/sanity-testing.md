@@ -1,5 +1,19 @@
 # Sanity Testing Guide
 
+> **⚠ STATUS (2026-06-10): NEEDS REWORK — describes the legacy Go/Python-era rig.**
+> This suite predates three product decisions and does not exercise the shipping stack:
+> 1. **Approvals moved to the mobile app** (chat cards / Activity tab) — Telegram is no longer
+>    an approval or notification surface.
+> 2. **MCP agent integration is deprecated** — agents integrate via the `dina` CLI
+>    (`dina init` one-paste setup-code pairing + `dina skill install`), not `dina mcp-server`
+>    registered into OpenClaw.
+> 3. **Cores here are the legacy Go stack** (ports 18100/18300) — the product is the TS
+>    home-node-lite + mobile.
+> Until reworked, the live-fire equivalents are: `docs/MANUAL_RELEASE_TESTS.md` (MRS golden
+> path, esp. MRS-06/07/08 + MT-89..92) and the services live-test procedure in
+> `docs/reports/services-visibility-2026-06-10/REPORT.md`. Kept for reference of the
+> Telegram/Gmail credential setup, which a reworked suite may reuse.
+
 End-to-end tests that exercise Dina through real Telegram bots, real OpenClaw agents, real Gmail, and detached task execution.
 
 ## Architecture

@@ -41,16 +41,27 @@ from .agent_runner import RunnerResult
 
 # argv templates — "{prompt}" is replaced as a SINGLE argv element
 # (list-form exec, no shell), so prompt content can never inject.
+# "{args}" marks where operator extra args (DINA_HEADLESS_ARGS_<PLATFORM>)
+# are spliced — its position is PER-PLATFORM because some templates pass
+# the prompt as an option VALUE (`--message X`, `-p X`): splicing between
+# the option and its value would corrupt the command (found live testing
+# openclaw-cli, which needs `--agent main --local` BEFORE `--message`).
 PLATFORMS: dict[str, dict[str, Any]] = {
-    "claude-code": {"bin": "claude", "argv": ["claude", "-p", "{prompt}"]},
-    "codex": {"bin": "codex", "argv": ["codex", "exec", "{prompt}"]},
-    "gemini": {"bin": "gemini", "argv": ["gemini", "-p", "{prompt}"]},
+    # claude: -p is the print-mode flag, prompt is positional — args fit between.
+    "claude-code": {"bin": "claude", "argv": ["claude", "-p", "{args}", "{prompt}"]},
+    # codex: prompt is positional after the subcommand.
+    "codex": {"bin": "codex", "argv": ["codex", "exec", "{args}", "{prompt}"]},
+    # gemini: -p TAKES the prompt as its value — args must come first.
+    "gemini": {"bin": "gemini", "argv": ["gemini", "{args}", "-p", "{prompt}"]},
     # One agent turn via OpenClaw's own CLI (which speaks the Gateway
     # protocol for us — handshake/auth/version drift become OpenClaw's
     # problem, not ours). The bespoke Gateway runner ("openclaw") stays
-    # for fire-and-forget runs that outlive a subprocess timeout; pick
-    # --agent / --local via DINA_HEADLESS_ARGS_OPENCLAW_CLI.
-    "openclaw-cli": {"bin": "openclaw", "argv": ["openclaw", "agent", "--message", "{prompt}"]},
+    # for fire-and-forget runs that outlive a subprocess timeout. A session
+    # selector is REQUIRED (e.g. DINA_HEADLESS_ARGS_OPENCLAW_CLI="--agent main --local").
+    "openclaw-cli": {
+        "bin": "openclaw",
+        "argv": ["openclaw", "agent", "{args}", "--message", "{prompt}"],
+    },
 }
 
 # Default per-task wall clock. Generous because agentic tasks legitimately
@@ -153,8 +164,9 @@ class HeadlessCliRunner:
         rendered = build_headless_prompt(task, session_name)
         argv: list[str] = []
         for a in self._spec["argv"]:
-            if a == "{prompt}":
+            if a == "{args}":
                 argv.extend(self._extra_args())
+            elif a == "{prompt}":
                 argv.append(rendered)
             else:
                 argv.append(a)

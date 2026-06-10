@@ -1225,6 +1225,26 @@ since-deleted state; seed unrecoverable; fresh boot 401s on PDS, did:plc fallbac
 report; drcarlclinic would need re-provisioning. Still open: F-3 failover/liveness ranking + stale same-name
 test providers.</div>
 
+<h3>Post-goal (user-offered test bed): MT-89/90/91 verified with REAL agents — and two finds</h3>
+<div class="item iter"><span class="tag iter">iter</span> <b>MT-90 live (all four platforms on the real
+machine):</b> <code>dina skill install</code> detected ~/.claude + ~/.openclaw + ~/.codex + ~/.gemini, dry-run
+wrote nothing, real install created/updated all four, re-run idempotent (1 managed block). Discovery proof at
+both ends: <code>openclaw skills list</code> shows "✓ ready 🛡️ dina (openclaw-managed)" AND the skill appeared
+in the live Claude Code session's own skill list (this very assistant) with the authored trigger description.
+<b>MT-91 live BOTH runners through the FULL chain</b> (iPhone Task chip → workflow task → MsgBox claim by the
+paired init-demo daemon → headless CLI executes → result card once): claude-code → "AGENT-TASK-OK";
+openclaw-cli (DINA_HEADLESS_ARGS_OPENCLAW_CLI='--agent main --local') → "OPENCLAW-TASK-OK".</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>Find 1 — runner {args} position bug
+(caught by the live openclaw probe, fixed):</b> extra args spliced immediately before {prompt}, which corrupts
+templates where the prompt is an option VALUE (openclaw <code>--message X</code>, gemini <code>-p X</code> —
+args became the option's value). Fix: explicit per-platform <code>{args}</code> marker in the argv templates +
+a table-shape test pinning "args never sit between an option and its value-prompt". cli 227 green.</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>Find 2 — MsgBox WS staleness (P1
+candidate, reported not fixed):</b> after ~3.5h idle the app's relay WebSocket was dead with NO auto-reconnect —
+the daemon's claims got frames_seen=0 and the user saw "task delegation timed out" (honest UX, good). App reload
+restores. Recorded in MANUAL_RELEASE_TESTS Known Partial Areas with the operational workaround; fix candidate =
+WS heartbeat + reconnect.</div>
+
 <h3>Post-goal (user-reported): "Bus depot is not a relation" — Relations-tab membership rule</h3>
 <div class="item decision"><span class="tag decision">decision</span> <b>Being a contact ≠ being a relation.</b>
 Adding a service provider as a contact (for a known_only grant) creates a person row

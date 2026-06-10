@@ -89,7 +89,7 @@ def test_execute_substitutes_prompt_as_single_argv_element():
 
     argv = captured["argv"]
     assert argv[:2] == ["codex", "exec"]
-    assert len(argv) == 3  # exactly one prompt slot, regardless of content
+    assert len(argv) == 3  # exactly one prompt slot ({args} empty), regardless of content
     assert 'x"; rm -rf / #' in argv[2]
     assert f"--session {SESSION}" in argv[2]  # our envelope, not the daemon's
 
@@ -162,7 +162,16 @@ def test_reconcile_and_cancel_are_inline_noops():
 def test_platform_table_shapes():
     for key, spec in PLATFORMS.items():
         assert spec["argv"].count("{prompt}") == 1, key
+        assert spec["argv"].count("{args}") == 1, key
         assert spec["bin"] == spec["argv"][0], key
+        # {args} must never sit between an option and its value-prompt:
+        # if the element before {prompt} is an option (starts with '-'),
+        # {args} must come BEFORE that option (found live: openclaw
+        # `--message` / gemini `-p` take the prompt as their VALUE).
+        argv = spec["argv"]
+        p = argv.index("{prompt}")
+        if p > 0 and argv[p - 1].startswith("-"):
+            assert argv.index("{args}") < p - 1, key
 
 
 def test_operator_extra_args_injected_before_prompt(monkeypatch):

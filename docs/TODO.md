@@ -1,6 +1,12 @@
 # Mobile remaining
 MOBILE_FEATURES.md has currnt vs perfect
 
+# Services
+  - Tier 1 provider: a new feature, post-release by definition.
+  - People-graph classifier: additive column via migration — explicitly designed to land on top of day-1 installs.
+  - Tier 2 structured envelope: lives in the dina-agent CLI, which releases independently via pip — it never touches the app binary timeline at all.
+
+
 # Bug Relation etc is not perfect
 docs/PEOPLE_GRAPH_TAXONOMY.md
 
