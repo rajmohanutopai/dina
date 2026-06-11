@@ -1389,5 +1389,252 @@ cases ✅; #7 validator ✅; <b>#8 SKIPPED — provider/place/domain/DID verific
 test against (it remains the documented known gap)</b>; #9 unlisted (exact-URI resolves / search excludes /
 invocation-follows-policy via <code>isListingPublic</code> + Core ingress) already covered by existing tests ✅.</div>
 
+<h2>Goal: Tier 1 prompt-provider (SERVICE_PROVIDER_TIERS.md) + salon demo (2026-06-11)</h2>
+
+<h3>Tier1 Item 1 — #351 MsgBox WS heartbeat (the named Tier 1 blocker)</h3>
+<div class="item decision"><span class="tag decision">decision</span> <b>App-level ping/pong, not WS protocol
+pings.</b> RN's WebSocket API exposes no ping() and protocol pongs are invisible to JS, so client-side staleness
+detection is impossible at the protocol layer. Added <code>{"type":"ping"}</code> → <code>{"type":"pong"}</code>
+to the relay (<code>msgbox/internal/handler.go routePing</code>; not rate-limited — no amplification, 1 small
+pong per ping) and a keepalive tick in <code>packages/core/src/relay/msgbox_ws.ts</code> (shared by mobile AND
+lite core-server). Client sends ping every 30s post-auth; tracks last-inbound-frame time; forces close+reconnect
+on silence.</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>Adaptive staleness threshold = safe in
+any deploy order.</b> Once a pong has been seen on a connection the relay is known keepalive-capable → tight 90s
+(3 missed pongs) bound. Against an old relay that ignores pings → 10-min fallback idle bound. Worst case drops
+from ~3.5h (observed) to 10 min even with a stale relay; to ~90s once the relay is updated. Pings double as
+NAT/proxy keepalive traffic, attacking the root cause too.</div>
+<div class="item decision"><span class="tag decision">decision</span> Deep-review add: <b>auth-limbo recycling</b>
+— a socket that connected but never completed the handshake (challenge lost) was invisible to every timeout; now
+recycled after 120s (<code>AUTH_STALE_MS</code>). Same bug class, found reviewing my own diff.</div>
+<div class="item deviation"><span class="tag deviation">deviation</span> Python CLI daemons (<code>dina-agent</code>)
+have their own WS client (<code>cli/src/dina_cli/transport.py</code>, <code>websockets</code> lib) — NOT fixed in
+this pass. The <code>websockets</code> library defaults to protocol-level ping_interval=20s which the relay's
+HTTP stack answers at the protocol layer, so daemons already have partial protection; the observed daemon failure
+mode (post-redeploy restart requirement) is a different issue. Scoped out; noted for the sanity-suite rework.</div>
+<div class="item open"><span class="tag open">open question</span> <b>Test-infra + prod relay deploys are
+PENDING</b> — the auto-mode permission gate blocked <code>deploy_shared_infra.sh update test</code> this turn.
+Client code is safe against the old relay (fallback bound). Run <code>deploy/managed/infra/deploy_shared_infra.sh
+update test</code> (then <code>prod</code>) and restart bus42 provider + daemons after the bounce.</div>
+<div class="item"><span class="tag test">tests</span> Go: <code>TestHandler_PingRepliedWithPong</code> +
+<code>PingNoSideEffects</code> (full msgbox suite green). TS: 8 fake-timer tests in
+<code>msgbox_ws_keepalive.test.ts</code> (cadence, pre-auth silence, pong-refresh, tight + fallback staleness,
+inbound-refresh, disconnect cleanup, auth-limbo). packages/core: 4704 tests green; workspace typecheck clean.</div>
+
+<h3>Tier1 Item 2 — `instruction` field (the "howToAnswer" of the spec)</h3>
+<div class="item decision"><span class="tag decision">decision</span> <b>Field named <code>instruction</code>, not
+<code>howToAnswer</code></b> — the tiers doc uses "instruction" in every prose sentence; <code>howToAnswer</code>
+was its UI label, which the mobile editor keeps ("How should Dina answer?"). Shape:
+<code>instruction?: string</code> + <code>instructionUpdatedAt?: number</code> (unix ms) on
+<code>ServiceCapabilityConfig</code>; <code>mcpServer</code>/<code>mcpTool</code> became OPTIONAL-but-paired.
+<b>The lane IS the binding's presence</b>: mcpServer set → agent lane; absent → Tier 1 (no separate enum to
+drift).</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>Instruction is provider-PRIVATE.</b>
+Never published to PDS/AppView (it can carry pricing rules / personal guidance). Holds by construction —
+<code>toPublisherConfig</code> + <code>buildRecord</code> pick fields explicitly — and is now PINNED by
+<code>instruction_privacy.test.ts</code> (serialized-record marker scan), so a "just spread the entry" refactor
+fails in CI.</div>
+<div class="item decision"><span class="tag decision">decision</span> Validation split mirrors the existing
+pattern: structural (core <code>validateServiceConfig</code> — types, mcp pair rule) vs policy (protocol
+<code>validateServiceListing</code> — new <code>missing_execution_plane</code>: every capability on an ACTIVE
+listing needs (mcpServer+mcpTool) OR a non-empty instruction; drafts/paused exempt). Mobile pre-save guard
+mirrors it with a friendly alert.</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>As-of discipline:</b>
+<code>instructionUpdatedAt</code> bumps ONLY when the text actually changed on save (re-saving an untouched
+listing must not make stale guidance look fresh). The runtime renders the age into the prompt ("last updated 2
+hours ago") and instructs honest-fallback (<code>unknown</code> + confirm-with-provider) over stale-confident.</div>
+<div class="item decision"><span class="tag decision">decision</span> Salon demo schemas: added
+<code>appointment_availability</code> + <code>appointment_book</code> to the BRAIN registry (authoritative,
+auto-attached by the mobile form) AND as catalog defaults (byte-identical, pinned by a test). Human-cadence
+strings ("today", "4:30 PM") not strict formats — Tier 1 is prompt-driven on both ends. appointment_book params
+deliberately carry NO requester-name/identity field: the authenticated <code>from_did</code> is the identity
+(same confused-deputy rule as the MsgBox envelope).</div>
+<div class="item open"><span class="tag open">open question</span> <b>MAX_SERVICE_TTL=300s bounds the review
+round trip</b> — the salon owner must approve within ~5 min or the requester's card expires (demo: fine; real
+bookings want an "ack now, confirm later" follow-up message pattern — the async-by-design lane the tiers doc
+hints at; NOT in V1's wire contract).</div>
+
+<h3>Tier1 Item 3 — brain `runCapability` (capability_runtime + tier1_runner)</h3>
+<div class="item decision"><span class="tag decision">decision</span> <b>Read-only by design:</b> the runtime's
+ONLY tool is <code>vault_search</code> (persona-bounded by <code>getAccessiblePersonas()</code> — locked
+personas return nothing). No vault-write tool in V1: the provider's paper book stays the source of truth for
+bookings they approve; recording the booking as a vault note is a candidate follow-up, deliberately NOT shipped
+(a mutating Tier 1 would be a much weaker safety story).</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>Structure enforcement = parse-first,
+native-schema retry second.</b> Tools + responseSchema are mutually exclusive on Gemini/OpenAI, so the agentic
+turn runs free-text; the answer is fence-tolerantly parsed + validated against the capability's result schema;
+on mismatch ONE synthesis call re-emits via native structured output (responseSchema, no tools) carrying the
+validation error. Still-invalid → task fails → clean error envelope. The Response Bridge's frozen
+schemaSnapshot (GAP-SH-03) stays the final gate — runner validation is defense-in-depth with a retry, not a
+replacement.</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>Execution-time config resolution</b>
+(tier1_runner): instruction + schema resolved from the LIVE listing when the task is claimed, not frozen at
+task creation — review approvals can sit for minutes and "the provider's CURRENT words" is the Tier 1 contract.
+Output contract drift is still pinned by the frozen snapshot at the bridge. Result schema preference: listing's
+PUBLISHED schema (what the requester saw) over the registry default — pinned by a test that fails if the
+preference inverts.</div>
+<div class="item decision"><span class="tag decision">decision</span> <b><code>operator_approved</code> payload
+flag:</b> without it, an instruction like "ask me first" makes the model REFUSE post-approval bookings (it can't
+know the asking happened). <code>executeAndRespond</code> stamps the flag on the approval→delegation handoff;
+the prompt then says the human gate has passed — produce the confirmed result. Live demo-critical.</div>
+<div class="item decision"><span class="tag decision">decision</span> Privacy prompt rules are hard-coded into
+the system prompt (result goes to an EXTERNAL requester; only instruction-authorized info; never unrelated vault
+content / other customers). Schema-constrained output shapes the rest. V1 vault scope = open personas; noted
+for the security review.</div>
+
+<h3>Tier1 Item 4 — routing: the reserved `dina.local` lane + un-gating</h3>
+<div class="item decision"><span class="tag decision">decision</span> <b>Reserved runner name
+<code>dina.local</code></b> (<code>LOCAL_RUNNER_NAME</code> in @dina/protocol): capabilities with no mcpServer
+route their delegation tasks there. The claim SQL carves it out of claim-any ('' filter) AND foreign filters —
+an external dina-agent daemon can NEVER claim a Tier 1 task (it would fail it with a capability it can't run).
+<code>LocalDelegationRunner</code> now claims with <code>runnerFilter</code> defaulting to the reserved lane
+(pass '' for the old claim-everything demo behavior).</div>
+<div class="item deviation"><span class="tag deviation">deviation</span> <b>Found + closed a dual-implementation
+drift hole:</b> packages/core's jest only exercises <code>InMemoryWorkflowRepository</code> (its in-memory DB
+adapter can't run SELECTs), so the REAL SQLite claim WHERE-clause had no automated coverage anywhere. Added
+<code>workflow_claim_lanes.test.ts</code> in core-server — the same 9 lane scenarios run against the REAL
+better-sqlite3 repository AND the in-memory twin (describe.each contract test, per the contract-tests-over-
+scenario-tests rule). It immediately caught a bug in my own test helper.</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>Un-gated:</b> mobile boot now ALWAYS
+wires <code>makeTier1CapabilityRunner</code> (not demo-gated, no env flag). Inert unless a Tier 1 capability
+exists; coexists with paired agents (separate lanes). The LLM resolves PER EXECUTION via
+<code>peekAgenticRouter()</code> + <code>RoutedLLMProvider(taskType:'reason')</code> — follows Settings BYOK
+hot-swaps, fails fast with a requester-visible error when no AI is configured.</div>
+<div class="item deviation"><span class="tag deviation">deviation</span> <b>Lite core-server is NOT a Tier 1
+provider in V1</b> — its Brain (the LLM) is a separate process from Core (where LocalDelegationRunner lives), so
+Tier 1 there needs a core→brain delegation hop. Mobile IS the product story ("a phone and a sentence"); lite
+providers keep using agent daemons. dina.local tasks on lite would expire with an error envelope. Follow-up.</div>
+<div class="item decision"><span class="tag decision">decision</span> Boot degradation updated: the old
+"provider role but no runner" warning can no longer fire (runner always wired); added
+<code>execution.agent_lane_unmanned</code> for env-seeded agent-bound capabilities without
+<code>hasPairedAgent</code> — the bus42-style rig keeps its warning, UI-configured salons don't get a false
+one.</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>Approval card now answers "who wants
+what":</b> the card previously labeled the REQUESTER with the provider's own listing name ("Maya's Salon wants
+to run appointment_book" — wrong actor). Now: requester = contact displayName for the authenticated from_did
+(never a self-asserted param), body = "Raj asks Maya's Salon: appointment_book", plus a params preview line
+("time: 4:30 PM · date: today") built from the validated+stripped params, rendered as plain text only.
+ApprovalNotifier payload grew <code>params</code>; chat metadata grew <code>requesterLabel</code>/<code>paramsPreview</code>.</div>
+<div class="item"><span class="tag test">tests</span> Suites green after items 2–4: protocol 511 · core 4709
+(+ claim-lane additions) · brain 3310 (incl. 14 runtime + 7 glue + 2 privacy + 17 appointment tests) ·
+core-server claim-lanes 18/18 cross-impl · mobile typecheck + service tests. Fixed two PRE-EXISTING failures at
+HEAD (verified by stashing my changes): stale <code>mcp_server</code> assertion in
+approve_event_to_delegation (d95165e1 fallout) and an order-flaky heap assertion in degradation.test (now
+asserts the threshold CONTRACT, not the suite's heap).</div>
+
+<h3>Tier1 Item 5 — the salon demo, LIVE (iOS owner × Android customer, real test infra) — and two found bugs</h3>
+<div class="item"><span class="tag test">verified live</span> <b>The full viral-clip script passed end-to-end
+(2026-06-11):</b> ① owner /remember "Today's open haircut slots are 4:30 PM and 5:15 PM" ② owner creates
+"Alonso's Salon" in the new listing editor — appointment_availability (Auto · My Dina · instruction) +
+appointment_book (Review pre-seeded from the catalog hint · My Dina · "ask me first") · Public · published to
+test AppView (instruction verified ABSENT from the live record) ③ Android stranger asks "Any haircut slots
+after 4 today" → card: <b>"Alonso's Salon · Ok · We have open haircut slots today at 4:30 PM and 5:15 PM"</b>
+(the phone's dina.local runner answered from instruction + vault) ④ "Book the 4:30 PM haircut" → owner's
+approval card "did:plc:ntdo… asks Alonso's Salon: appointment_book — date · service: haircut · time: 16:30"
+⑤ Approve → ⑥ customer card <b>"Confirmed · 16:30 · Your haircut appointment … has been confirmed"</b>. The
+operator_approved flag did its job: "ask me first" became a confirmation, not a re-ask.</div>
+<div class="item deviation"><span class="tag deviation">found bug #1 (P1, pre-existing)</span> <b>Form-created
+listings were unreachable</b> — first live query died with <code>schema_version_mismatch</code>. The mobile
+editor stored <code>computeSchemaHash(paramsSchema)</code> while the publisher publishes the canonical hash of
+<code>{params, result, description}</code>; the provider's checkSchemaHash compares the requester's echo of the
+PUBLISHED hash against the LOCAL one → permanent mismatch. Never seen before because all previously-invoked
+listings were harness-created. Fix: exported <code>canonicalCapabilitySchemaHash</code> from the publisher (THE
+single recipe), the form now derives the hash from the exact schema entry being saved (heals old configs on
+re-save), pinned by <code>schema_hash_contract.test.ts</code> (4 tests incl. "params-only ≠ published").</div>
+<div class="item deviation"><span class="tag deviation">found bug #2 (P1, pre-existing)</span> <b>Review-policy
+approvals dropped three payload fields in the event hop</b> — booking failed AFTER approve with "listing self is
+not active": <code>parseApprovedPayload</code> (workflow_event_consumer) never extracted
+<code>service_uri</code> (multi-listing pin → approved task resolved the wrong listing), <code>schema_snapshot</code>
+(GAP-SH-04's frozen contract silently lost on EVERY approved execution), or <code>mcp_tool</code> (agent-lane
+dispatch key). Affected the agent lane too — any multi-listing review approval was broken. Fixed extraction +
+round-trip regression test (approval → event → consumer → fresh delegation payload asserts all three +
+operator_approved + requested_runner='dina.local').</div>
+<div class="item decision"><span class="tag decision">decision</span> Demo-bed facts: Metro must run
+<code>start:e2e</code> (dev-mode overlay eats idb taps — re-learned); chat chip coords shift with chip count
+(Task chip absent → wider pills); Android <code>input text</code> doesn't decode %27/%3F (clear via
+keycombination CTRL+A + DEL). iOS node = alon18 (salon owner, role Both); Android = fresh customer; the
+env-seeded "SF Transit Authority Live" self-listing shares the salon DID (2 listings — which is exactly what
+exposed bug #2).</div>
+
+<h3>Tier1 ULTRACODE round — 27-agent adversarial review: 21 confirmed findings, 0 refuted, all P1/P2 fixed</h3>
+<div class="item deviation"><span class="tag deviation">P1 fixed (security)</span> <b>Tier 1 vault_search was
+unscoped across ALL unlocked personas</b> — mobile auto-opens health/financial for the OWNER, the runtime
+registered <code>createVaultSearchTool()</code> with no guard, attacker-controlled free-string params reach the
+model verbatim, and the result schema's free-text <code>message</code> was the exfiltration channel (verifier
+traced the full path; the prompt's "Hard rules" are NOT a boundary). Fix: new <b>hard allow-list scope</b> on
+the vault tool (<code>allowedPersonas</code> — silent exclusion, distinct from the throwing
+<code>personaGuard</code>); the runtime defaults FAIL-CLOSED to <code>defaultTier1PersonaScope()</code>
+(non-sensitive, non-locked tiers), overridable only to narrow. Pinned by attacker-steered tests (the scripted
+model searches for the sensitive content by name; the tool feedback must not contain it).</div>
+<div class="item deviation"><span class="tag deviation">P1 fixed (regression — mine)</span> <b>The always-on
+dina.local runner claimed and INSTA-FAILED untagged free_form_task delegations</b> (delegate_to_agent tasks
+carry no requested_runner; a non-empty filter matched unset → the in-process runner ate the paired agent's
+tasks with "runner only handles service_query_execution"). Fix: the reserved lane is now EXACT-match (three
+claim modes in BOTH repo impls — '' excludes the lane, 'dina.local' matches only itself, other filters keep
+unset-matches back-compat) + the HTTP claim route 403s an external <code>runner_filter='dina.local'</code>
+(hijack/forgery vector). Cross-impl contract tests extended to 24 incl. the free_form protection + empty-string
+rows; a composed integration test drives handleQuery → REAL runner → REAL tier1 glue and asserts the untagged
+task stays queued.</div>
+<div class="item deviation"><span class="tag deviation">P1 fixed (ui)</span> <b>onSave dropped serviceArea + all
+V1 policy hints from existing listings</b> — `next` was rebuilt from screen fields alone. Now seeded from the
+existing config with managed fields overridden.</div>
+<div class="item deviation"><span class="tag deviation">P2s fixed</span> ① TTL expiry no longer yanks a
+RUNNING task with a live lease (grace until lease lapse — both repo impls; a computed answer isn't discarded
+moments before completion). ② checkSchemaHash now compares the requester's echo against the CANONICAL recompute
+(stored hash = advisory fallback) and the orchestrator's sender-side pre-validation uses the canonical recipe
+(it never matched before — the fast local params guard was silently dead). ③ LocalDelegationRunner: lease
+fencing (heartbeat rejection → result discarded with a loud onError, no write-after-requeue), flush() now
+awaits the REAL in-flight execution (busy no-ops no longer overwrite tickInFlight), and Tier 1 runs carry a
+TTL-derived AbortController deadline through runAgenticTurn + the synthesis call (a hung provider fetch can't
+wedge the lane). ④ Stale agentic router: re-boot without a provider now calls resetAgenticRouter() (a deleted
+key can't keep answering external queries). ⑤ Editor: schema entries cloned before the hash heal (no mutation
+of Core's live config on aborted saves); the saved agent binding rides screen state (dina→agent round-trip
+restores the REAL runner/tool instead of fabricating 'openclaw').</div>
+<div class="item deviation"><span class="tag deviation">P3s fixed</span> Synthesis retry only runs on a
+COMPLETED turn (no facts-free schema-valid answers from cancelled/capped turns); unchanged instruction text
+preserves instructionUpdatedAt INCLUDING undefined (no freshness laundering); empty-capabilities alert matches
+the validator (known_only or pause are the real remedies); humanizeParams strips C0/C1 + bidi/format chars,
+caps values, and renders {…}/[…] placeholders so omitted data is VISIBLE on the approval card; all 6 demo
+put_service_config harnesses + send_service_query now use canonicalCapabilitySchemaHash.</div>
+<div class="item open"><span class="tag open">open (accepted, documented)</span> Lite core-server has no
+dina.local claimer (instruction-only listings there expire with an error envelope — V1 providers are mobile);
+full lease fencing via abort-threading runner→runtime is partial (deadline bounds the run; heartbeat-loss
+discards results loudly); coverage-audit MEDIUM gaps (deny-path delivery test, hot-swap test, schema-none case)
+queued, HIGH gaps all closed this round.</div>
+<div class="item"><span class="tag test">tests</span> Post-fix suites: brain 3328 · core 4710 · core-server 2401
+· mobile 3010 (one order-dependent flake in recovery_phrase render — passes in isolation, unrelated surface,
+re-verifying) · workspace typecheck clean. New tests this round: vault-scope (vault_tool 3 + runtime 3 incl.
+attacker-steered), claim-lane contract 24 (exact-match + free_form + empty-string), route 403, handler lane
+routing + capability_not_executable + canonical-heal (5), composed Tier 1 auto-path E2E (2).</div>
+
+<h3>Architecture-debt round (user-approved #1 + #2 from the deep review)</h3>
+<div class="item decision"><span class="tag decision">decision</span> <b>#1 — THE payload codec
+(`@dina/protocol/types/service_execution`).</b> The `service_query_execution` payload was triple-encoded: built
+by hand in 2 places (createExecutionTaskRaw, createApprovalTask), parsed by hand in 4 (approval consumer, Core's
+Response-Bridge extraction in workflow/service.ts, tier1_runner, the runner's loose parse) — the exact structure
+that produced the dropped-fields P1. Now: ONE `buildServiceQueryExecutionPayload` + ONE
+`parseServiceQueryExecutionPayload` (wire-compatible: snake_case, always-present base fields with '' defaults,
+conditional extras; ''→undefined normalization at parse). Handler builders, the approval consumer
+(`ApprovedExecutionPayload` is now an alias of the codec type, discriminant stripped), Core's bridge extraction,
+and tier1_runner all ride it. `local_delegation_runner.parsePayload` intentionally stays loose (reads only
+type/capability/params, kind-agnostic). Wire shape pinned by an 8-test golden suite in protocol; a field added
+to the payload now goes through the codec or fails CI.</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>#2 — per-listing vault pin
+(`ServiceConfig.vaultPersona`).</b> The listing editor's new "ANSWERS FROM" section pins a listing's Tier 1
+executions to ONE persona ("All shared memory" default). The pin is INTERSECTED with the runtime's fail-closed
+tier scope at execution time — narrowing only: pinning a sensitive/locked persona yields an EMPTY scope, never
+access (test-pinned). Provider-private like `instruction` (never published — privacy test extended). Threading:
+config.vaultPersona → tier1_runner → RunCapabilityArgs.allowedPersonas → vault tool scope. The picker offers
+only non-sensitive personas (options that DO something).</div>
+<div class="item"><span class="tag test">tests + live</span> protocol 527 · core 4710 · brain 3331 · core-server
+2401 · brain-server 55 · mobile 3013 (194/194) · workspace typecheck + lint clean. LIVE: salon listing pinned to
+'general' via the new UI (Maestro, testID-driven) → re-saved → Android ask answered "4:30 PM and 5:15 PM" through
+the codec-built payload + pinned scope. Note: a SimuIator SpringBoard crash mid-test suspended the app and
+correctly surfaced as the requester's "No response — try again" TTL signal (not a product bug; .ips on file).</div>
+<div class="item open"><span class="tag open">open question</span> Codec adoption is TS-side complete; the
+Python daemon still reads raw payload JSON (wire unchanged, so fine) — porting the codec to `dina_agent` is
+optional polish. tier1_runner's task factory in tests now carries identity fields (the codec REQUIRES from_did/
+query_id — production always had them).</div>
+
 </body>
 </html>

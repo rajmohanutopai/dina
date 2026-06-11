@@ -26,7 +26,7 @@ import {
   getContact,
 } from '../../../core/src/contacts/directory';
 import { setPeopleRepository } from '../../../core/src/people/repository';
-import { makeFakePeopleRepo } from '@dina/test-harness';
+import { makeFakePeopleRepo, makeStubRememberRuntime } from '@dina/test-harness';
 
 type TestCoreClient = StagingDrainCoreClient & Pick<CoreClient, 'memoryTouch' | 'updateContact'>;
 
@@ -97,7 +97,7 @@ describe('staging drain end-to-end — GAP-RT-02 / PC-BRAIN-13', () => {
     // via `flush()` so the test is deterministic.
     const scheduler = new StagingDrainScheduler({
       core,
-      drain: { topicTouch },
+      drain: { topicTouch, rememberRuntime: makeStubRememberRuntime('health') },
       setInterval: () => 1,
       clearInterval: () => {
         /* noop */
@@ -160,7 +160,7 @@ describe('staging drain end-to-end — GAP-RT-02 / PC-BRAIN-13', () => {
     const topicTouch = buildStagingEnrichment({ core });
     const scheduler = new StagingDrainScheduler({
       core,
-      drain: { topicTouch },
+      drain: { topicTouch, rememberRuntime: makeStubRememberRuntime('health') },
       setInterval: () => 1,
       clearInterval: () => {
         /* noop */
@@ -212,7 +212,7 @@ describe('staging drain end-to-end — GAP-RT-02 / PC-BRAIN-13', () => {
     const topicTouch = buildStagingEnrichment({ core });
     const scheduler = new StagingDrainScheduler({
       core,
-      drain: { topicTouch },
+      drain: { topicTouch, rememberRuntime: makeStubRememberRuntime('health') },
       setInterval: () => 1,
       clearInterval: () => {
         /* noop */

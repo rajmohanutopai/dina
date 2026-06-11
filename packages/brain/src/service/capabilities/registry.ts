@@ -16,7 +16,19 @@
 
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+
 import { resolveCanonicalCapability } from '@dina/protocol';
+
+import {
+  AppointmentAvailabilityParamsSchema,
+  AppointmentAvailabilityResultSchema,
+  AppointmentBookParamsSchema,
+  AppointmentBookResultSchema,
+  validateAppointmentAvailabilityParams,
+  validateAppointmentAvailabilityResult,
+  validateAppointmentBookParams,
+  validateAppointmentBookResult,
+} from './appointment';
 import {
   EtaQueryParamsSchema,
   EtaQueryResultSchema,
@@ -54,6 +66,26 @@ const CAPABILITIES: Readonly<Record<string, CapabilityDef>> = Object.freeze({
     resultSchema: EtaQueryResultSchema as unknown as Record<string, unknown>,
     validateParams: validateEtaQueryParams,
     validateResult: validateEtaQueryResult,
+  },
+  appointment_availability: {
+    name: 'appointment_availability',
+    description: 'Available appointment or consultation slots (salons, consultants, clinics).',
+    defaultTtlSeconds: 120,
+    paramsSchema: AppointmentAvailabilityParamsSchema as unknown as Record<string, unknown>,
+    resultSchema: AppointmentAvailabilityResultSchema as unknown as Record<string, unknown>,
+    validateParams: validateAppointmentAvailabilityParams,
+    validateResult: validateAppointmentAvailabilityResult,
+  },
+  appointment_book: {
+    name: 'appointment_book',
+    description: 'Book an appointment slot. Always review-gated by the provider.',
+    // Review policy means a human approves before the answer exists —
+    // give the round trip the full wire maximum (MAX_SERVICE_TTL).
+    defaultTtlSeconds: 300,
+    paramsSchema: AppointmentBookParamsSchema as unknown as Record<string, unknown>,
+    resultSchema: AppointmentBookResultSchema as unknown as Record<string, unknown>,
+    validateParams: validateAppointmentBookParams,
+    validateResult: validateAppointmentBookResult,
   },
 });
 

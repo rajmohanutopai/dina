@@ -13,6 +13,8 @@
  * Source: `core/internal/service/workflow.go` (commit 9c01611+).
  */
 
+import { parseServiceQueryExecutionPayload } from '@dina/protocol';
+
 import {
   AllowedOrigins,
   WorkflowTaskKind,
@@ -489,33 +491,22 @@ export class WorkflowService {
     const send = this.responseBridgeSender;
     if (send === null) return;
     if (task.kind !== WorkflowTaskKind.Delegation) return;
-    let payload: Record<string, unknown>;
-    try {
-      payload = JSON.parse(task.payload) as Record<string, unknown>;
-    } catch {
-      return;
-    }
-    if (payload.type !== 'service_query_execution') return;
-    const fromDID = typeof payload.from_did === 'string' ? payload.from_did : '';
-    const queryId = typeof payload.query_id === 'string' ? payload.query_id : '';
-    const capability = typeof payload.capability === 'string' ? payload.capability : '';
-    if (fromDID === '' || queryId === '' || capability === '') return;
-    const ttlSeconds =
-      typeof payload.ttl_seconds === 'number' && Number.isFinite(payload.ttl_seconds)
-        ? payload.ttl_seconds
-        : 60;
-    const serviceName = typeof payload.service_name === 'string' ? payload.service_name : '';
-    const schemaSnapshot = parseSchemaSnapshot(payload.schema_snapshot);
+    // THE codec (`@dina/protocol`) — same parser the consumer + tier1
+    // runner use, so a payload field can't exist for one hop and not
+    // another. Null = not a service execution (other delegation kinds)
+    // or unanswerable (missing identity fields) — nothing to bridge.
+    const payload = parseServiceQueryExecutionPayload(task.payload);
+    if (payload === null) return;
 
     const ctx: ServiceQueryBridgeContext = {
       taskId: task.id,
-      fromDID,
-      queryId,
-      capability,
-      ttlSeconds,
+      fromDID: payload.from_did,
+      queryId: payload.query_id,
+      capability: payload.capability,
+      ttlSeconds: payload.ttl_seconds ?? 60,
       resultJSON,
-      serviceName,
-      schemaSnapshot,
+      serviceName: payload.service_name ?? '',
+      schemaSnapshot: payload.schema_snapshot,
     };
 
     // Durable stash BEFORE send. The prefix `bridge_pending:` lets

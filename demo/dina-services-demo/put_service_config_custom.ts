@@ -31,7 +31,7 @@ import { join } from 'node:path';
 
 import { Crypto, HttpClient, createCanonicalRequestSigner } from '@dina/adapters-node';
 import { HttpCoreTransport, deriveDIDKey, getPublicKey } from '@dina/core';
-import { computeSchemaHash } from '@dina/brain';
+import { canonicalCapabilitySchemaHash } from '@dina/brain';
 import type { ServiceConfig } from '@dina/core';
 
 const paramsSchema = {
@@ -80,7 +80,7 @@ async function main(): Promise<void> {
   });
 
   const capability = process.env.DINA_CUSTOM_CAPABILITY ?? 'com.acme.widget_price';
-  const schemaHash = computeSchemaHash(paramsSchema);
+  const schemaHash = canonicalCapabilitySchemaHash({ params: paramsSchema as Record<string, unknown>, result: resultSchema as unknown as Record<string, unknown>, description: 'Look up the unit price + lead time for an Acme widget SKU.' });
   const name = process.env.DINA_SERVICE_NAME ?? 'Acme Widget Pricing';
   const rkey = process.env.DINA_SERVICE_RKEY ?? 'acme-widget';
 

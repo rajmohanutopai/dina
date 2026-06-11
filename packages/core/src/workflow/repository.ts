@@ -24,8 +24,11 @@
  * `__tests__/port_async_gate.test.ts` EXEMPTED list.
  */
 
-import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
+import { LOCAL_RUNNER_NAME } from '@dina/protocol';
+
 import { WorkflowTaskState, isTerminal, type WorkflowEvent, type WorkflowTask } from './domain';
+
+import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
 /**
  * Unit conventions in this file:
@@ -564,22 +567,34 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
     const leaseExpiresAt = nowMs + leaseMs;
     let claimed: WorkflowTask | null = null;
     this.db.transaction(() => {
-      // Runner routing: an empty filter (param 2) matches any task; a
-      // non-empty filter matches only tasks whose requested_runner is unset
-      // or equals it. Keeps single-runner providers unchanged while routing
-      // each capability to its own daemon on a multi-runner provider.
+      // Runner routing — three claim modes (docs/SERVICE_PROVIDER_TIERS.md):
+      //   ''            → any task EXCEPT the reserved 'dina.local' lane
+      //                   (a generic external daemon claiming a Tier 1
+      //                   task would fail a capability it can't run).
+      //   'dina.local'  → EXACT match only. The reserved lane does NOT
+      //                   get the "non-empty filter also takes untagged
+      //                   tasks" convenience: untagged delegations (e.g.
+      //                   delegate_to_agent free_form_task) belong to the
+      //                   paired external agent — the always-on in-process
+      //                   runner must never claim-and-fail them.
+      //   other filter  → unset/'' requested_runner OR exact match (the
+      //                   single-runner back-compat behavior).
+      const runnerClause =
+        runnerFilter === ''
+          ? `(requested_runner IS NULL OR requested_runner != ?)`
+          : runnerFilter === LOCAL_RUNNER_NAME
+            ? `requested_runner = ?`
+            : `(requested_runner IS NULL OR requested_runner = '' OR requested_runner = ?)`;
+      const runnerParam = runnerFilter === '' ? LOCAL_RUNNER_NAME : runnerFilter;
       const rows = this.db.query(
         `SELECT ${TASK_COLUMNS} FROM workflow_tasks
          WHERE kind = 'delegation'
            AND state = 'queued'
            AND (expires_at IS NULL OR expires_at > ?)
-           AND (? = ''
-                OR requested_runner IS NULL
-                OR requested_runner = ''
-                OR requested_runner = ?)
+           AND ${runnerClause}
          ORDER BY created_at ASC
          LIMIT 1`,
-        [nowSec, runnerFilter, runnerFilter],
+        [nowSec, runnerParam],
       );
       if (rows.length === 0) return;
       const candidate = rowToTask(rows[0]);
@@ -785,13 +800,23 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
     // Find candidates first so callers can observe which tasks were
     // expired (audit + downstream notifications). Then update in a single
     // transaction.
+    //
+    // GRACE FOR LIVE EXECUTORS: a `running` task whose lease is still
+    // alive has an executor actively working (and heartbeating) — yanking
+    // it to `failed` mid-run discards a fully-computed result moments
+    // before completion (the executor's complete() then hits a terminal
+    // task). Such tasks get expired only once their lease lapses (a dead
+    // executor) — the lease-expiry sweeper has requeued them by then, or
+    // this sweep catches them on the next tick.
+    const liveLeaseGuard = `NOT (state = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at > ?)`;
     const candidates = this.db
       .query(
         `SELECT ${TASK_COLUMNS} FROM workflow_tasks
        WHERE state NOT IN ('completed','failed','cancelled','recorded')
          AND expires_at IS NOT NULL
-         AND expires_at <= ?`,
-        [nowSec],
+         AND expires_at <= ?
+         AND ${liveLeaseGuard}`,
+        [nowSec, nowMs],
       )
       .map(rowToTask);
     if (candidates.length === 0) return [];
@@ -804,8 +829,9 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
              updated_at = ?
          WHERE state NOT IN ('completed','failed','cancelled','recorded')
            AND expires_at IS NOT NULL
-           AND expires_at <= ?`,
-        [nowMs, nowSec],
+           AND expires_at <= ?
+           AND ${liveLeaseGuard}`,
+        [nowMs, nowSec, nowMs],
       );
       // Emit a `failed` workflow_event per expired task so downstream
       // consumers (WorkflowEventConsumer → chat formatter) can surface
@@ -1087,22 +1113,21 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     }
     const nowSec = Math.floor(nowMs / 1000);
     // Pick the oldest queued delegation task that hasn't expired. Runner
-    // routing mirrors the SQL store: an empty filter matches any task; a
-    // non-empty filter matches only tasks whose requested_runner is unset
-    // or equals it.
+    // routing mirrors the SQL store's three claim modes (see the SQL
+    // comment): '' = any EXCEPT the reserved 'dina.local' lane;
+    // 'dina.local' = EXACT match only (untagged tasks belong to the
+    // external agent); other filters = unset/'' or exact match.
+    const matchesFilter = (requested: string | undefined): boolean => {
+      if (runnerFilter === '') return requested !== LOCAL_RUNNER_NAME;
+      if (runnerFilter === LOCAL_RUNNER_NAME) return requested === LOCAL_RUNNER_NAME;
+      return requested === undefined || requested === '' || requested === runnerFilter;
+    };
     const candidates: WorkflowTask[] = [];
     for (const t of this.tasks.values()) {
       if (t.kind !== 'delegation') continue;
       if (t.status !== 'queued') continue;
       if (t.expires_at !== undefined && t.expires_at <= nowSec) continue;
-      if (
-        runnerFilter !== '' &&
-        t.requested_runner !== undefined &&
-        t.requested_runner !== '' &&
-        t.requested_runner !== runnerFilter
-      ) {
-        continue;
-      }
+      if (!matchesFilter(t.requested_runner)) continue;
       candidates.push(t);
     }
     if (candidates.length === 0) return null;
@@ -1258,8 +1283,14 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
   expireTasks(nowSec: number, nowMs: number): WorkflowTask[] {
     const expired: WorkflowTask[] = [];
     for (const t of this.tasks.values()) {
+      // Live-executor grace — mirrors the SQL store: a running task with
+      // an unexpired lease is actively being worked; expire it only once
+      // the lease lapses.
+      const hasLiveLease =
+        t.status === 'running' && t.lease_expires_at !== undefined && t.lease_expires_at > nowMs;
       if (
         !isTerminal(t.status as WorkflowTaskState) &&
+        !hasLiveLease &&
         t.expires_at !== undefined &&
         t.expires_at <= nowSec
       ) {

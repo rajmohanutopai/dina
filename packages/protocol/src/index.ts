@@ -39,6 +39,18 @@ export type {
   PricingHint,
   FreshnessHint,
 } from './types/capability';
+export { LOCAL_RUNNER_NAME } from './types/capability';
+export {
+  SERVICE_QUERY_EXECUTION_TYPE,
+  buildServiceQueryExecutionPayload,
+  parseServiceQueryExecutionPayload,
+  parseServiceExecutionSchemaSnapshot,
+} from './types/service_execution';
+export type {
+  ServiceQueryExecutionPayload,
+  ServiceQueryExecutionPayloadInput,
+  ServiceExecutionSchemaSnapshot,
+} from './types/service_execution';
 export type {
   CategoryLifecycle,
   CapabilityLifecycle,

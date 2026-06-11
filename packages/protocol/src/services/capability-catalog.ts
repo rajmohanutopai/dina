@@ -139,6 +139,61 @@ const APPOINTMENT_STATUS_RESULT = Object.freeze({
   required: ['status'],
   additionalProperties: true,
 });
+// Appointment family (Tier 1 flagship — docs/SERVICE_PROVIDER_TIERS.md).
+// These match the authoritative @dina/brain registry schemas byte-for-byte
+// (registry is what listings actually publish; these are catalog defaults).
+const APPOINTMENT_AVAILABILITY_PARAMS = Object.freeze({
+  type: 'object',
+  properties: {
+    service: { type: 'string' },
+    date: { type: 'string' },
+    time_after: { type: 'string' },
+    time_before: { type: 'string' },
+  },
+});
+const APPOINTMENT_AVAILABILITY_RESULT = Object.freeze({
+  type: 'object',
+  required: ['status'],
+  properties: {
+    status: { type: 'string', enum: ['ok', 'no_slots', 'unknown'] },
+    slots: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['time'],
+        properties: {
+          time: { type: 'string' },
+          date: { type: 'string' },
+          note: { type: 'string' },
+        },
+      },
+    },
+    date: { type: 'string' },
+    as_of: { type: 'string' },
+    message: { type: 'string' },
+  },
+});
+const APPOINTMENT_BOOK_PARAMS = Object.freeze({
+  type: 'object',
+  required: ['time'],
+  properties: {
+    service: { type: 'string' },
+    date: { type: 'string' },
+    time: { type: 'string' },
+    notes: { type: 'string' },
+  },
+});
+const APPOINTMENT_BOOK_RESULT = Object.freeze({
+  type: 'object',
+  required: ['status'],
+  properties: {
+    status: { type: 'string', enum: ['confirmed', 'declined', 'unavailable', 'unknown'] },
+    time: { type: 'string' },
+    date: { type: 'string' },
+    service: { type: 'string' },
+    message: { type: 'string' },
+  },
+});
 
 // ─── Capabilities (curated V1 set) ──────────────────────────────────────────
 
@@ -224,6 +279,8 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     requires_verified_provider: false,
     requires_subject_authorization: false,
     introduced_in: '2026-06-01',
+    params_schema: APPOINTMENT_AVAILABILITY_PARAMS,
+    result_schema: APPOINTMENT_AVAILABILITY_RESULT,
   }),
   Object.freeze({
     id: 'appointment_book',
@@ -244,6 +301,8 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     requires_verified_provider: false,
     requires_subject_authorization: false,
     introduced_in: '2026-06-01',
+    params_schema: APPOINTMENT_BOOK_PARAMS,
+    result_schema: APPOINTMENT_BOOK_RESULT,
   }),
 
   // ── Commerce + logistics (distinct contracts: order vs parcel vs ETA). ──

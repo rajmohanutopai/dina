@@ -27,7 +27,11 @@ export type {
   ApprovalReconcilerOptions,
   ReconciliationTickResult,
 } from './service/approval_reconciliation';
-export { ServiceHandler, snapshotForCapability } from './service/service_handler';
+export {
+  ServiceHandler,
+  snapshotForCapability,
+  findCapabilityConfig,
+} from './service/service_handler';
 export type {
   ServiceHandlerOptions,
   ServiceHandlerCoreClient,
@@ -36,6 +40,19 @@ export type {
   ServiceRejectResponder,
   SchemaSnapshot,
 } from './service/service_handler';
+// Tier 1 prompt-provider execution plane (docs/SERVICE_PROVIDER_TIERS.md).
+export {
+  buildCapabilityRuntime,
+  renderInstructionAge,
+  extractJSONObject,
+} from './service/capability_runtime';
+export type {
+  CapabilityRuntime,
+  CapabilityRuntimeOptions,
+  RunCapabilityArgs,
+} from './service/capability_runtime';
+export { makeTier1CapabilityRunner } from './service/tier1_runner';
+export type { Tier1RunnerOptions } from './service/tier1_runner';
 export { validateAgainstSchema } from './service/capabilities/schema_validator';
 export * from './guardian/silence';
 export * from './llm/router';
@@ -301,6 +318,7 @@ export {
   SERVICE_PROFILE_RKEY,
   buildRecord as buildServiceProfileRecord,
   shouldPublishProfile,
+  canonicalCapabilitySchemaHash,
 } from './service/service_publisher';
 export type {
   ServicePublisherOptions,

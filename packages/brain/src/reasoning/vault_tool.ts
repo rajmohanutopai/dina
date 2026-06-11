@@ -21,14 +21,15 @@
  * (same guarantee the pre-assembly path gives).
  */
 
-import { ApprovalRequiredError, type AgentTool } from './tool_registry';
+import { getItem, listRecentItems , listPersonas } from '@dina/core';
+
 import {
   executeToolSearch,
   getAccessiblePersonas,
   getVaultReadBackend,
 } from '../vault_context/assembly';
-import { getItem, listRecentItems } from '@dina/core';
-import { listPersonas } from '@dina/core';
+
+import { ApprovalRequiredError, type AgentTool } from './tool_registry';
 
 /**
  * Pluggable per-call gate for content-reading vault tools.
@@ -60,6 +61,23 @@ export interface VaultSearchToolOptions {
   maxResults?: number;
   /** Optional pluggable gate — see `VaultPersonaGuard` docstring. */
   personaGuard?: VaultPersonaGuard;
+  /**
+   * Hard allow-list SCOPE — distinct from `personaGuard` (which gates
+   * via the approval workflow and THROWS). Personas outside the
+   * returned list are SILENTLY excluded: a named-persona search
+   * returns `accessible: false`, the fan-out path searches only the
+   * intersection with `getAccessiblePersonas()`. Re-evaluated per
+   * call so registry changes apply without rebuilding the tool.
+   *
+   * The Tier 1 capability runtime uses this to answer EXTERNAL
+   * service queries from non-sensitive personas only — mobile
+   * auto-opens sensitive personas for the owner, so "accessible"
+   * alone is NOT a privacy boundary for stranger-driven executions
+   * (dina_details.md §13.4).
+   *
+   * Return `null` for unrestricted (default).
+   */
+  allowedPersonas?: () => readonly string[] | null;
 }
 
 export interface VaultBrowseToolOptions {
@@ -121,6 +139,11 @@ const BROWSE_FIELD_CHARS = 500;
 export function createVaultSearchTool(options: VaultSearchToolOptions = {}): AgentTool {
   const cap = options.maxResults ?? DEFAULT_MAX_RESULTS;
   const personaGuard = options.personaGuard;
+  /** Per-call allow-list (null = unrestricted). See `allowedPersonas` docs. */
+  const resolveScope = (): ReadonlySet<string> | null => {
+    const allowed = options.allowedPersonas?.();
+    return allowed === null || allowed === undefined ? null : new Set(allowed);
+  };
 
   return {
     name: 'vault_search',
@@ -151,14 +174,14 @@ export function createVaultSearchTool(options: VaultSearchToolOptions = {}): Age
       personas_searched: string[];
       query: string;
       accessible: boolean;
-      results: Array<{
+      results: {
         id: string;
         content_l0: string;
         content_l1?: string;
         body?: string;
         score: number;
         persona: string;
-      }>;
+      }[];
     }> {
       const query = String(args.query ?? '');
       if (query === '') throw new Error('vault_search: query is required');
@@ -177,6 +200,19 @@ export function createVaultSearchTool(options: VaultSearchToolOptions = {}): Age
       // legacy "accessible:false on locked" signal so the LLM can
       // tell the user the vault is locked.
       if (namedPersona !== null) {
+        // Scope FIRST (silent refusal, no approval semantics): a persona
+        // outside the allow-list reads as inaccessible — the LLM gets the
+        // same signal as a locked vault and moves on.
+        const namedScope = resolveScope();
+        if (namedScope !== null && !namedScope.has(namedPersona)) {
+          return {
+            persona: namedPersona,
+            personas_searched: [],
+            query,
+            accessible: false,
+            results: [],
+          };
+        }
         await checkPersonaGuard(personaGuard, namedPersona);
         const accessible = getAccessiblePersonas().includes(namedPersona);
         const rows = await executeToolSearch(namedPersona, query, limit);
@@ -194,16 +230,24 @@ export function createVaultSearchTool(options: VaultSearchToolOptions = {}): Age
       // 'health' for "what was my BP?" and miss items the drain routed
       // to 'general'. Per-row persona stays in each result so the LLM
       // can still cite the source vault.
-      const accessiblePersonas = getAccessiblePersonas();
-      const accessibleSet = new Set(accessiblePersonas);
-      const merged: Array<{
+      //
+      // The fan-out set is INTERSECTED with the allow-list scope when one
+      // is wired (Tier 1 external-query executions): out-of-scope personas
+      // are silently absent — never searched, never listed in
+      // personas_searched.
+      const scope = resolveScope();
+      const accessiblePersonas =
+        scope === null
+          ? getAccessiblePersonas()
+          : getAccessiblePersonas().filter((p) => scope.has(p));
+      const merged: {
         id: string;
         content_l0: string;
         content_l1?: string;
         body?: string;
         score: number;
         persona: string;
-      }> = [];
+      }[] = [];
 
       // Gate every sensitive / locked persona for non-owner callers.
       //
@@ -290,23 +334,23 @@ export function createListPersonasTool(): AgentTool {
       required: [],
     },
     async execute(): Promise<{
-      personas: Array<{
+      personas: {
         name: string;
         item_count?: number;
         types?: string[];
         recent_summaries?: string[];
         status?: string;
-      }>;
+      }[];
     }> {
       const accessible = new Set(getAccessiblePersonas());
       const all = listPersonas();
-      const out: Array<{
+      const out: {
         name: string;
         item_count?: number;
         types?: string[];
         recent_summaries?: string[];
         status?: string;
-      }> = [];
+      }[] = [];
 
       for (const p of all) {
         const entry: {
@@ -382,7 +426,7 @@ export function createBrowseVaultTool(options: VaultBrowseToolOptions = {}): Age
     },
     async execute(args): Promise<{
       persona: string;
-      items: Array<Record<string, string>>;
+      items: Record<string, string>[];
       note?: string;
     }> {
       const persona =
@@ -409,7 +453,7 @@ export function createBrowseVaultTool(options: VaultBrowseToolOptions = {}): Age
         return { persona, items: [] };
       }
 
-      const simplified: Array<Record<string, string>> = [];
+      const simplified: Record<string, string>[] = [];
       for (const item of rawItems.slice(0, BROWSE_LIMIT)) {
         const entry: Record<string, string> = {};
         pushIfPresent(entry, 'summary', item.summary);

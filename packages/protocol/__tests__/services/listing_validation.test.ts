@@ -293,3 +293,87 @@ describe('subject_auth_needs_review — stranger-reachable subject-scoped caps m
     expect(r.ok).toBe(true);
   });
 });
+
+describe('missing_execution_plane — every active capability needs a way to answer (Tier 1)', () => {
+  const bare = (
+    category: string,
+    extra: Partial<ServiceCapabilityConfig> = {},
+  ): ServiceCapabilityConfig => ({
+    responsePolicy: 'auto',
+    category,
+    ...extra,
+  });
+
+  it('flags an active capability with neither agent binding nor instruction', () => {
+    const r = validateServiceListing(
+      mkConfig({ price_check: bare('commerce') }, { discoverability: 'unlisted' }),
+    );
+    expect(codes(r)).toContain('missing_execution_plane');
+  });
+
+  it('accepts a Tier 1 capability: instruction only, no mcpServer/mcpTool', () => {
+    const r = validateServiceListing(
+      mkConfig(
+        {
+          appointment_availability: bare('appointments', {
+            instruction: 'Use my appointment notes to answer availability.',
+          }),
+        },
+        { discoverability: 'public' },
+      ),
+    );
+    expect(r.ok).toBe(true);
+  });
+
+  it('accepts an agent-bound capability without an instruction (existing lane)', () => {
+    const r = validateServiceListing(
+      mkConfig({ eta_query: cap('transit') }, { discoverability: 'public' }),
+    );
+    expect(r.ok).toBe(true);
+  });
+
+  it('whitespace-only instruction does NOT count as a plane', () => {
+    const r = validateServiceListing(
+      mkConfig(
+        { appointment_availability: bare('appointments', { instruction: '   ' }) },
+        { discoverability: 'unlisted' },
+      ),
+    );
+    expect(codes(r)).toContain('missing_execution_plane');
+  });
+
+  it('paused/draft listings may carry half-configured capabilities', () => {
+    for (const status of ['paused', 'draft'] as const) {
+      const r = validateServiceListing(
+        mkConfig({ price_check: bare('commerce') }, { discoverability: 'unlisted', status }),
+      );
+      expect(codes(r)).not.toContain('missing_execution_plane');
+    }
+  });
+
+  it('applies on known_only listings too (they answer real queries)', () => {
+    const r = validateServiceListing(
+      mkConfig({ price_check: bare('commerce') }, { discoverability: 'known_only' }),
+    );
+    expect(codes(r)).toContain('missing_execution_plane');
+  });
+
+  it('the salon demo listing validates: Tier 1 availability (auto) + Tier 1 booking (review) on a PUBLIC listing', () => {
+    const r = validateServiceListing(
+      mkConfig(
+        {
+          appointment_availability: bare('appointments', {
+            instruction: 'Use my appointment notes to answer haircut availability.',
+          }),
+          appointment_book: {
+            responsePolicy: 'review',
+            category: 'appointments',
+            instruction: 'If someone wants to book, ask me first.',
+          },
+        },
+        { discoverability: 'public' },
+      ),
+    );
+    expect(r.ok).toBe(true);
+  });
+});

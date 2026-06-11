@@ -67,6 +67,7 @@ function handlerAdapter(service: WorkflowService): ServiceHandlerCoreClient {
         initialState: input.initialState as WorkflowTaskState | undefined,
         expiresAtSec: input.expiresAtSec,
         priority: input.priority as WorkflowTask['priority'] | undefined,
+        requestedRunner: input.requestedRunner,
       });
       return { task, deduped: false };
     },
@@ -166,6 +167,16 @@ describe('WorkflowEventConsumer.onApproved → executeAndRespond (BRAIN-P4-P01)'
         ttl_seconds: 60,
         service_name: 'Bus 42',
         schema_hash: undefined,
+        // WM-BRAIN-06a: the tool name must survive the approval hop or
+        // the approved delegation can't be dispatched by the agent.
+        mcp_tool: 'get_route',
+        // Multi-runner routing (d95165e1): the capability's mcpServer
+        // rides the approval payload so the approved delegation carries
+        // requested_runner. (Assertion was stale — added when the
+        // consumer extraction grew the field.)
+        mcp_server: 'transit',
+        schema_snapshot: undefined,
+        service_uri: undefined,
       },
     });
     expect(tick.delivered).toBe(1);
@@ -305,5 +316,79 @@ describe('WorkflowEventConsumer.onApproved → executeAndRespond (BRAIN-P4-P01)'
     expect(second.skipped).toBeGreaterThan(0);
     // Delegation task unchanged — no duplicate (id is deterministic).
     expect(service.store().getById('svc-exec-from-approval-u3')).not.toBeNull();
+  });
+
+  // Regression for the live Tier 1 salon-booking failure: the approval
+  // payload's multi-listing pin (service_uri) and frozen schema snapshot
+  // (GAP-SH-04) were DROPPED by parseApprovedPayload, so the approved
+  // delegation resolved the default 'self' listing (capability not
+  // configured there) and lost its output contract. Both must round-trip
+  // approval -> event -> consumer -> fresh delegation payload.
+  it('service_uri + schema_snapshot survive the approval -> delegation handoff', async () => {
+    const repo = new InMemoryWorkflowRepository();
+    const service = new WorkflowService({ repository: repo, nowMsFn: () => NOW_MS });
+    const coreAdapter = handlerAdapter(service);
+
+    const SALON_URI = 'at://did:plc:salon/com.dinakernel.service.profile/alonso-s-salon';
+    const SALON_CONFIG: ServiceConfig = {
+      isDiscoverable: true,
+      name: "Alonso's Salon",
+      capabilities: {
+        appointment_book: {
+          responsePolicy: 'review',
+          instruction: 'If someone wants to book, ask me first.',
+        },
+      },
+      capabilitySchemas: {
+        appointment_book: {
+          params: { type: 'object', properties: { time: { type: 'string' } } },
+          result: { type: 'object', required: ['status'], properties: { status: { type: 'string' } } },
+          schemaHash: 'a'.repeat(64),
+        },
+      },
+    };
+
+    const handler = new ServiceHandler({
+      coreClient: coreAdapter,
+      readConfig: () => SALON_CONFIG,
+      nowSecFn: () => NOW_SEC,
+      generateUUID: () => 'u9',
+    });
+
+    await handler.handleQuery(REQUESTER, {
+      query_id: 'q-9',
+      capability: 'appointment_book',
+      params: { time: '4:30 PM' },
+      ttl_seconds: 300,
+      schema_hash: 'a'.repeat(64),
+      service_uri: SALON_URI,
+    });
+    expect(repo.getById('approval-u9')).not.toBeNull();
+
+    service.approve('approval-u9');
+    const consumer = new WorkflowEventConsumer({
+      coreClient: consumerAdapter(service),
+      deliver: () => {
+        /* unused */
+      },
+      onApproved: async ({ task, payload }) => {
+        await handler.executeAndRespond(task.id, payload);
+      },
+    });
+    await consumer.runTick();
+
+    const exec = repo.getById('svc-exec-from-approval-u9');
+    expect(exec).not.toBeNull();
+    const execPayload = JSON.parse(exec!.payload) as Record<string, unknown>;
+    expect(execPayload.service_uri).toBe(SALON_URI);
+    expect(execPayload.schema_snapshot).toEqual({
+      params: { type: 'object', properties: { time: { type: 'string' } } },
+      result: { type: 'object', required: ['status'], properties: { status: { type: 'string' } } },
+      schema_hash: 'a'.repeat(64),
+    });
+    // The operator's approval rode along for the Tier 1 runtime.
+    expect(execPayload.operator_approved).toBe(true);
+    // Tier 1 lane: no mcpServer -> reserved local runner.
+    expect(exec!.requested_runner).toBe('dina.local');
   });
 });

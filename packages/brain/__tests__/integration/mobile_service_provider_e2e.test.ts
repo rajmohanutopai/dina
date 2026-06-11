@@ -281,6 +281,13 @@ describe('Service-query — provider-side cross-node E2E', () => {
       repository: workflowRepo,
       workflowService,
       agentDID: RUNNER_AGENT_DID,
+      // This E2E predates Tier 1: its tasks carry the capability's
+      // mcpServer as requested_runner and the local runner is the SOLE
+      // executor — claim-any mode ('') is the documented configuration
+      // for that topology. The default filter is now the reserved
+      // 'dina.local' lane (exact match), which these agent-tagged tasks
+      // intentionally do not ride.
+      runnerFilter: '',
       runner: transitRunner,
       pollIntervalMs: 10_000,
       setInterval: () => 1,
@@ -401,6 +408,13 @@ describe('Service-query — provider-side cross-node E2E', () => {
       repository: workflowRepo,
       workflowService,
       agentDID: RUNNER_AGENT_DID,
+      // This E2E predates Tier 1: its tasks carry the capability's
+      // mcpServer as requested_runner and the local runner is the SOLE
+      // executor — claim-any mode ('') is the documented configuration
+      // for that topology. The default filter is now the reserved
+      // 'dina.local' lane (exact match), which these agent-tagged tasks
+      // intentionally do not ride.
+      runnerFilter: '',
       runner: throwingRunner,
       setInterval: () => 1,
       clearInterval: () => {
@@ -462,6 +476,13 @@ describe('Service-query — provider-side cross-node E2E', () => {
       repository: workflowRepo,
       workflowService,
       agentDID: RUNNER_AGENT_DID,
+      // This E2E predates Tier 1: its tasks carry the capability's
+      // mcpServer as requested_runner and the local runner is the SOLE
+      // executor — claim-any mode ('') is the documented configuration
+      // for that topology. The default filter is now the reserved
+      // 'dina.local' lane (exact match), which these agent-tagged tasks
+      // intentionally do not ride.
+      runnerFilter: '',
       runner: driftedRunner,
       setInterval: () => 1,
       clearInterval: () => {

@@ -20,11 +20,11 @@
  * — boot will pick the new provider naturally when it runs.
  */
 
-import type { LLMRouter, ProviderName } from '@dina/brain/llm';
 
 import { createLLMProvider } from './provider';
 
 import type { ProviderType } from './provider';
+import type { LLMRouter, ProviderName } from '@dina/brain/llm';
 
 let activeRouter: LLMRouter | null = null;
 
@@ -34,6 +34,16 @@ export function registerAgenticRouter(router: LLMRouter): void {
 
 export function resetAgenticRouter(): void {
   activeRouter = null;
+}
+
+/**
+ * Read the live router without taking ownership. The Tier 1 capability
+ * runner resolves its LLM per execution through this, so it follows
+ * Settings hot-swaps the same way /ask does — and cleanly reports
+ * "no AI configured" when boot never built a provider.
+ */
+export function peekAgenticRouter(): LLMRouter | null {
+  return activeRouter;
 }
 
 /**

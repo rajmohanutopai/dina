@@ -22,6 +22,10 @@ function seedDelegation(
     status: 'queued',
     priority: 'normal',
     description: '',
+    // Production stamps Tier 1 tasks with the reserved lane; the runner's
+    // default filter EXACT-matches it (untagged tasks belong to the
+    // external agent).
+    requested_runner: 'dina.local',
     // Default payload shape is service_query_execution — runner filters
     // to that type per issue #14.
     payload: JSON.stringify({ type: 'service_query_execution', ...payload }),
@@ -162,6 +166,7 @@ describe('LocalDelegationRunner', () => {
       status: 'queued',
       priority: 'normal',
       description: '',
+      requested_runner: 'dina.local',
       payload: '{"not_a_capability": true}',
       result_summary: '',
       policy: '{}',
@@ -193,6 +198,7 @@ describe('LocalDelegationRunner', () => {
       status: 'queued',
       priority: 'normal',
       description: '',
+      requested_runner: 'dina.local',
       // Some future non-service_query delegation kind.
       payload: JSON.stringify({
         type: 'timer_callback',

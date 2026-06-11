@@ -651,3 +651,53 @@ describe('vault tools — personaGuard (Pattern A approval bail)', () => {
     });
   });
 });
+
+describe('createVaultSearchTool — allowedPersonas hard scope (Tier 1 security boundary)', () => {
+  beforeEach(() => {
+    clearVaults();
+    resetReasoningProvider();
+    setAccessiblePersonas(['general', 'health']);
+    storeItem('general', {
+      type: 'user_memory',
+      summary: 'salon slots 4:30 PM and 5:15 PM',
+      body: 'salon slots 4:30 PM and 5:15 PM',
+    });
+    storeItem('health', {
+      type: 'user_memory',
+      summary: 'HbA1c result 5.9 — salon visit after the clinic',
+      body: 'HbA1c result 5.9 — salon visit after the clinic',
+    });
+  });
+
+  it('fan-out searches ONLY the intersection with the allow-list', async () => {
+    const tool = createVaultSearchTool({ allowedPersonas: () => ['general'] });
+    const result = (await tool.execute({ query: 'salon' })) as {
+      personas_searched: string[];
+      results: Array<{ persona: string; content_l0: string }>;
+    };
+    expect(result.personas_searched).toEqual(['general']);
+    expect(result.results.length).toBeGreaterThanOrEqual(1);
+    for (const row of result.results) {
+      expect(row.persona).toBe('general');
+      expect(row.content_l0).not.toMatch(/HbA1c/);
+    }
+  });
+
+  it('a NAMED out-of-scope persona is silently refused (reads as inaccessible, never throws)', async () => {
+    const tool = createVaultSearchTool({ allowedPersonas: () => ['general'] });
+    const result = (await tool.execute({ query: 'HbA1c', persona: 'health' })) as {
+      accessible: boolean;
+      results: unknown[];
+    };
+    expect(result.accessible).toBe(false);
+    expect(result.results).toHaveLength(0);
+  });
+
+  it('null scope = unrestricted (owner-path behavior unchanged)', async () => {
+    const tool = createVaultSearchTool({ allowedPersonas: () => null });
+    const result = (await tool.execute({ query: 'salon' })) as {
+      personas_searched: string[];
+    };
+    expect(result.personas_searched).toEqual(['general', 'health']);
+  });
+});

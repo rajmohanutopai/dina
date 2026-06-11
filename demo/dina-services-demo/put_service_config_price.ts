@@ -35,7 +35,7 @@ import { join } from 'node:path';
 
 import { Crypto, HttpClient, createCanonicalRequestSigner } from '@dina/adapters-node';
 import { HttpCoreTransport, deriveDIDKey, getPublicKey } from '@dina/core';
-import { computeSchemaHash } from '@dina/brain';
+import { canonicalCapabilitySchemaHash } from '@dina/brain';
 import type { ServiceConfig } from '@dina/core';
 
 const priceParamsSchema = {
@@ -87,7 +87,7 @@ async function main(): Promise<void> {
     signer,
   });
 
-  const schemaHash = computeSchemaHash(priceParamsSchema);
+  const schemaHash = canonicalCapabilitySchemaHash({ params: priceParamsSchema as Record<string, unknown>, result: priceResultSchema as unknown as Record<string, unknown>, description: 'Check the current price and stock availability of a product at a store.' });
   const name = process.env.DINA_SERVICE_NAME ?? 'Corner Market';
   // Publish as a 2nd listing on this DID (distinct rkey ⇒ distinct
   // service.profile record). DINA_SERVICE_RKEY=self reverts to the old

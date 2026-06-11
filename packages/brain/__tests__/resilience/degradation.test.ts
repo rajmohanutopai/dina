@@ -44,10 +44,13 @@ describe('Resilience & Degradation', () => {
       expect(result.heapUsedMB).toBeGreaterThan(0);
     });
 
-    it('reports healthy status', () => {
+    it('healthy tracks the 512MB threshold contract', () => {
+      // Assert the CONTRACT (healthy ⇔ heap < threshold), not the
+      // absolute heap: late in a full --runInBand run the shared jest
+      // worker legitimately exceeds 512MB and the old `toBe(true)`
+      // assertion flaked on suite ORDER, not on any product behaviour.
       const result = checkMemoryHealth();
-      // In test environment, heap should be well under 512MB
-      expect(result.healthy).toBe(true);
+      expect(result.healthy).toBe(result.heapUsedMB < 512);
     });
   });
 

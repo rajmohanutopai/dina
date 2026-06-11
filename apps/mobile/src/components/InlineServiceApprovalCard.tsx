@@ -21,14 +21,17 @@
 
 import React, { useCallback, useState } from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
-import type { ChatMessage } from '@dina/brain/chat';
-import { addSystemMessage } from '@dina/brain/chat';
-import {
+
+import { addSystemMessage ,
   getServiceApproveCommandHandler,
   getServiceDenyCommandHandler,
 } from '@dina/brain/chat';
+
 import { colors, fonts, radius, spacing, textStyles } from '../theme';
+
 import { MessageTimestamp } from './MessageTimestamp';
+
+import type { ChatMessage } from '@dina/brain/chat';
 
 export interface InlineServiceApprovalCardProps {
   message: ChatMessage;
@@ -41,6 +44,10 @@ interface ServiceApprovalMetadata {
   fromDID: string;
   serviceName: string;
   approveCommand: string;
+  /** Contact display name for the REQUESTER (else short DID upstream). */
+  requesterLabel: string;
+  /** Human one-liner of the validated query params ("time: 4:30 PM"). */
+  paramsPreview: string;
 }
 
 function readMetadata(m: ChatMessage): ServiceApprovalMetadata | null {
@@ -56,6 +63,8 @@ function readMetadata(m: ChatMessage): ServiceApprovalMetadata | null {
     fromDID: md.fromDID,
     serviceName: typeof md.serviceName === 'string' ? md.serviceName : '',
     approveCommand: typeof md.approveCommand === 'string' ? md.approveCommand : '',
+    requesterLabel: typeof md.requesterLabel === 'string' ? md.requesterLabel : '',
+    paramsPreview: typeof md.paramsPreview === 'string' ? md.paramsPreview : '',
   };
 }
 
@@ -117,16 +126,30 @@ export function InlineServiceApprovalCard({
 
   if (meta === null) return null;
 
-  const requesterLabel = meta.serviceName !== '' ? meta.serviceName : shortDID(meta.fromDID);
+  // The REQUESTER is who's asking — contact name (from the authenticated
+  // from_did) when known, short DID otherwise. Older messages predating
+  // `requesterLabel` fall back to the short DID; `serviceName` is the
+  // provider's OWN listing and is shown as the thing being asked OF.
+  const requesterLabel = meta.requesterLabel !== '' ? meta.requesterLabel : shortDID(meta.fromDID);
   const disabled = pending || resolved !== null;
 
   return (
     <View style={styles.card}>
       <Text style={styles.label}>Service approval</Text>
       <Text testID={`service-approval-card-body-${meta.taskId}`} style={styles.body}>
-        <Text style={styles.requester}>{requesterLabel}</Text> wants to run{' '}
-        <Text testID={`service-approval-card-capability-${meta.taskId}`} style={styles.capability}>{meta.capability}</Text>.
+        <Text style={styles.requester}>{requesterLabel}</Text> asks
+        {meta.serviceName !== '' ? ` ${meta.serviceName}` : ''}:{' '}
+        <Text testID={`service-approval-card-capability-${meta.taskId}`} style={styles.capability}>{meta.capability}</Text>
       </Text>
+      {meta.paramsPreview !== '' ? (
+        <Text
+          testID={`service-approval-card-params-${meta.taskId}`}
+          style={styles.params}
+          numberOfLines={3}
+        >
+          {meta.paramsPreview}
+        </Text>
+      ) : null}
       {resolved === null && (
         <View style={styles.row}>
           <TouchableOpacity
@@ -182,6 +205,10 @@ const styles = StyleSheet.create({
   capability: {
     ...textStyles.mono,
     fontFamily: fonts.monoMedium,
+  },
+  params: {
+    ...textStyles.caption,
+    marginTop: spacing.xs,
   },
   row: {
     flexDirection: 'row',

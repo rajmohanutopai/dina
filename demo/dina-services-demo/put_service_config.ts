@@ -12,7 +12,7 @@ import { join } from 'node:path';
 
 import { Crypto, HttpClient, createCanonicalRequestSigner } from '@dina/adapters-node';
 import { HttpCoreTransport, deriveDIDKey, getPublicKey } from '@dina/core';
-import { listCapabilities, computeSchemaHash } from '@dina/brain';
+import { listCapabilities, canonicalCapabilitySchemaHash } from '@dina/brain';
 import type { ServiceConfig } from '@dina/core';
 
 async function main(): Promise<void> {
@@ -65,14 +65,14 @@ async function main(): Promise<void> {
         mcpTool: 'eta_query',
         responsePolicy: 'auto',
         category: 'transit',
-        schemaHash: computeSchemaHash(eta.paramsSchema),
+        schemaHash: canonicalCapabilitySchemaHash({ params: eta.paramsSchema, result: eta.resultSchema, description: eta.description }),
       },
     },
     capabilitySchemas: {
       eta_query: {
         params: eta.paramsSchema,
         result: eta.resultSchema,
-        schemaHash: computeSchemaHash(eta.paramsSchema),
+        schemaHash: canonicalCapabilitySchemaHash({ params: eta.paramsSchema, result: eta.resultSchema, description: eta.description }),
         description: eta.description,
         defaultTtlSeconds: eta.defaultTtlSeconds,
       },

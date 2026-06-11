@@ -13,8 +13,9 @@
  * Source: MsgBox Protocol — Home Node Implementation Guide
  */
 
-import { sign, getPublicKey } from '../crypto/ed25519';
 import { bytesToHex } from '@noble/hashes/utils.js';
+
+import { sign, getPublicKey } from '../crypto/ed25519';
 
 // ---------------------------------------------------------------
 // Envelope types (unified format for all MsgBox frames)
@@ -40,6 +41,31 @@ export type EnvelopeHandler = (envelope: MsgBoxEnvelope) => void;
 
 const BASE_DELAY_MS = 1000;
 const MAX_DELAY_MS = 60_000; // 60s cap (matching Go)
+
+// ---------------------------------------------------------------
+// Keepalive / staleness constants (issue #351)
+//
+// A NAT or reverse proxy can silently kill the idle TCP connection
+// without a close frame ever reaching us — the socket then looks OPEN
+// forever while every send disappears into a half-open void (observed
+// live: ~3.5h idle → claims with frames_seen=0 until manual restart).
+//
+// Fix: send an app-level `{"type":"ping"}` every PING_INTERVAL_MS once
+// authenticated (the relay replies `{"type":"pong"}`); track the last
+// inbound frame of ANY kind; when inbound goes silent past a threshold,
+// force-close so the normal reconnect path re-handshakes. The threshold
+// adapts: once a pong has been seen on this connection the relay is
+// known to speak keepalive and 3 missed pongs (90s) means dead; against
+// an older relay that ignores pings we fall back to a 10-minute idle
+// bound — worst-case staleness drops from hours to minutes either way.
+// ---------------------------------------------------------------
+
+export const KEEPALIVE_TICK_MS = 15_000;
+export const PING_INTERVAL_MS = 30_000;
+export const PONG_STALE_MS = 90_000;
+export const FALLBACK_STALE_MS = 600_000;
+/** A socket that connected but never finished auth is also dead air. */
+export const AUTH_STALE_MS = 120_000;
 
 /**
  * `WebSocket.readyState` enum values (browser + RN polyfill agree on
@@ -100,8 +126,13 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let shouldReconnect = true;
 let stateHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
+// Keepalive state (issue #351) — reset per connection in onopen.
+let lastInboundAtMs = 0;
+let lastPingSentAtMs = 0;
+let pongSeen = false;
+
 // Identity for auth handshake
-let homeNodeDID: string = '';
+let homeNodeDID = '';
 let homeNodePrivateKey: Uint8Array | null = null;
 
 // Message handlers
@@ -298,7 +329,7 @@ export function sendEnvelope(envelope: MsgBoxEnvelope): boolean {
     // ("INVALID_STATE_ERR" on RN), which surfaces as a LogBox toast
     // that intercepts taps and looks to the user like the whole UI
     // is frozen.
-    // eslint-disable-next-line no-console
+     
     console.warn(
       `[WS] sendEnvelope DROP type=${envelope.type} id=${envelope.id?.slice(0, 8)} dir=${envelope.direction ?? '-'} state ws=${ws !== null} conn=${connected} auth=${authenticated} ready=${ws?.readyState ?? '-'}`,
     );
@@ -310,7 +341,7 @@ export function sendEnvelope(envelope: MsgBoxEnvelope): boolean {
     // Trace event — `console.log` (not `.error`) so RN's LogBox stays
     // empty on a healthy session. Only genuine failures should trip
     // LogBox; routine "frame went out OK" is metro-only telemetry.
-    // eslint-disable-next-line no-console
+     
     console.log(
       `[WS] sendEnvelope OK type=${envelope.type} id=${envelope.id?.slice(0, 8)} dir=${envelope.direction ?? '-'} to=${envelope.to_did?.slice(0, 30)} bytes=${wire.byteLength}`,
     );
@@ -321,7 +352,7 @@ export function sendEnvelope(envelope: MsgBoxEnvelope): boolean {
     // covers the bottom tab bar + intercepts taps. The caller already
     // gets a falsy return and `sendOrRetryUntilExpired` will replay,
     // so escalating to console.error every time was wrong.
-    // eslint-disable-next-line no-console
+     
     console.warn(
       `[WS] sendEnvelope THREW type=${envelope.type} id=${envelope.id?.slice(0, 8)} err=${(err as Error).message}`,
     );
@@ -336,6 +367,13 @@ export async function disconnect(): Promise<void> {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
+  if (stateHeartbeatTimer !== null) {
+    // Normally cleared by onclose, but ws.close() below may be a no-op
+    // when the socket reference was already dropped — clear directly so
+    // the keepalive timer can't outlive an explicit disconnect.
+    clearInterval(stateHeartbeatTimer);
+    stateHeartbeatTimer = null;
+  }
   if (ws) {
     try {
       ws.close();
@@ -349,6 +387,7 @@ export async function disconnect(): Promise<void> {
   authChallengeSeen = false;
   currentURL = null;
   reconnectAttempt = 0;
+  pongSeen = false;
 }
 
 /** Complete the handshake (for backward compat with existing tests). */
@@ -391,21 +430,26 @@ function doConnect(url: string): void {
     connected = true;
     reconnectAttempt = 0; // reset backoff on successful connect
     // Healthy connect — trace, not error (see sendEnvelope OK comment).
-    // eslint-disable-next-line no-console
+     
     console.log(`[WS] onopen url=${url} did=${homeNodeDID.slice(0, 30)}`);
     // Wait for auth_challenge from server — handled in onmessage
 
-    // Start a 15s heartbeat trace so we can see at-a-glance whether
-    // the socket is alive AND authenticated. Without this the only
-    // signal of liveness is inbound traffic — and a relay that's
-    // silently buffered our subscribe gives no signal at all.
+    // Keepalive state is per-connection (issue #351).
+    lastInboundAtMs = Date.now();
+    lastPingSentAtMs = 0;
+    pongSeen = false;
+
+    // 15s keepalive tick: state trace + ping cadence + staleness check.
+    // Without this the only signal of liveness is inbound traffic — and
+    // a half-open socket gives no signal at all.
     if (stateHeartbeatTimer !== null) clearInterval(stateHeartbeatTimer);
     stateHeartbeatTimer = setInterval(() => {
-      // eslint-disable-next-line no-console
+       
       console.log(
         `[WS] state did=${homeNodeDID.slice(0, 30)} ws=${ws !== null} ready=${ws?.readyState ?? '-'} conn=${connected} auth=${authenticated}`,
       );
-    }, 15000);
+      keepaliveTick();
+    }, KEEPALIVE_TICK_MS);
   };
 
   ws.onmessage = (event) => {
@@ -436,7 +480,7 @@ function doConnect(url: string): void {
     // Close is the lifecycle's normal terminator (server reaped, app
     // backgrounded, OS suspended the socket) — trace level. Reconnect
     // logic below handles any actually-needed recovery.
-    // eslint-disable-next-line no-console
+     
     console.log(
       `[WS] onclose did=${homeNodeDID.slice(0, 30)} code=${ev?.code ?? '-'} reason=${ev?.reason ?? '-'} wasAuth=${authenticated} willReconnect=${shouldReconnect}`,
     );
@@ -463,33 +507,118 @@ function doConnect(url: string): void {
     // escalates to a fatal RedBox on the dev-client (and breaks the e2e loop)
     // for what is usually just an ENOTCONN on a network-reachability change.
     // Same rationale as the auth-frame downgrade in handleFrameText().
-    // eslint-disable-next-line no-console
+     
     console.warn(`[WS] onerror msg=${msg !== '' ? msg : '(no message)'}`);
     // Error triggers close, which triggers reconnect
   };
 }
 
+/**
+ * Per-tick keepalive work (issue #351). Only active once authenticated:
+ * sends an app-level ping on the PING_INTERVAL cadence and force-closes
+ * the socket when inbound traffic has gone silent past the staleness
+ * threshold so the normal onclose → scheduleReconnect path recovers.
+ */
+function keepaliveTick(): void {
+  if (!connected || ws === null || ws.readyState !== WS_OPEN) return;
+  const now = Date.now();
+
+  // Auth limbo: the TCP connect succeeded but the handshake never
+  // completed (challenge or our response lost in transit). The relay
+  // won't route to us in this state and nothing else times it out —
+  // recycle the socket so a fresh connect re-runs the handshake.
+  if (!authenticated) {
+    if (now - lastInboundAtMs > AUTH_STALE_MS) {
+       
+      console.warn(
+        `[WS] auth never completed after ${now - lastInboundAtMs}ms — forcing reconnect`,
+      );
+      forceReconnect();
+    }
+    return;
+  }
+
+  // Staleness first: a dead socket gets reconnected, not pinged again.
+  const staleAfterMs = pongSeen ? PONG_STALE_MS : FALLBACK_STALE_MS;
+  if (now - lastInboundAtMs > staleAfterMs) {
+     
+    console.warn(
+      `[WS] stale — no inbound for ${now - lastInboundAtMs}ms (threshold=${staleAfterMs}, pongSeen=${pongSeen}) — forcing reconnect`,
+    );
+    forceReconnect();
+    return;
+  }
+
+  if (now - lastPingSentAtMs >= PING_INTERVAL_MS) {
+    lastPingSentAtMs = now;
+    try {
+      // Binary frame like every post-auth send (text frames are dropped
+      // by the relay). Not an envelope — bypasses sendEnvelope on purpose.
+      ws.send(new TextEncoder().encode(JSON.stringify({ type: 'ping', ts: now })));
+    } catch (err) {
+      // A throwing send is a hard dead-socket signal — don't wait out
+      // the staleness window.
+       
+      console.warn(`[WS] ping send threw (${(err as Error).message}) — forcing reconnect`);
+      forceReconnect();
+    }
+  }
+}
+
+/**
+ * Tear the current socket down so the standard onclose handler runs
+ * (state reset + scheduleReconnect). The polyfill fires onclose locally
+ * on .close() even when the peer is unreachable, so this is reliable
+ * for half-open connections.
+ */
+function forceReconnect(): void {
+  if (ws === null) return;
+  try {
+    ws.close();
+  } catch {
+    // close() threw — run the onclose bookkeeping ourselves so the
+    // reconnect loop still engages.
+    connected = false;
+    authenticated = false;
+    authChallengeSeen = false;
+    ws = null;
+    if (stateHeartbeatTimer !== null) {
+      clearInterval(stateHeartbeatTimer);
+      stateHeartbeatTimer = null;
+    }
+    if (shouldReconnect) scheduleReconnect();
+  }
+}
+
 /** Parse + route a decoded JSON frame. Shared between string + Blob paths. */
 function handleFrameText(text: string): void {
+  lastInboundAtMs = Date.now();
   let msg: { type?: string } & Record<string, unknown>;
   try {
     msg = JSON.parse(text) as { type?: string } & Record<string, unknown>;
   } catch {
-    // eslint-disable-next-line no-console
+     
     console.error(`[WS] frame_unparseable preview=${text.slice(0, 120)}`);
+    return;
+  }
+  if (msg.type === 'pong') {
+    // Keepalive reply (issue #351) — lastInboundAtMs already refreshed
+    // above; remember that this relay speaks keepalive so the tight
+    // staleness threshold applies.
+    pongSeen = true;
     return;
   }
   if (msg.type === 'auth_challenge' && !authenticated) {
     // Healthy handshake step — trace. Was `.error` and lit LogBox up
     // every cold launch; that buried real warnings under noise.
-    // eslint-disable-next-line no-console
+     
     console.log('[WS] frame=auth_challenge — replying');
     handleAuthChallenge(msg as unknown as { nonce: string; ts: number });
     return;
   }
   if (msg.type === 'auth_success') {
     // Same rationale as auth_challenge — happy-path trace.
-    // eslint-disable-next-line no-console
+     
     console.log('[WS] frame=auth_success — authenticated');
     authenticated = true;
     fireAuthenticated();
@@ -499,13 +628,13 @@ function handleFrameText(text: string): void {
     // Production relay skips the explicit `auth_success` and just
     // streams buffered envelopes — so this branch is the *normal*
     // promotion path on a real backend. Trace, not error.
-    // eslint-disable-next-line no-console
+     
     console.log('[WS] envelope arrived pre-auth_success — flipping to authenticated');
     authenticated = true;
     fireAuthenticated();
   }
   if (authenticated) {
-    // eslint-disable-next-line no-console
+     
     console.log(
       `[WS] dispatch type=${msg.type} id=${typeof msg.id === 'string' ? msg.id.slice(0, 8) : '-'} dir=${typeof msg.direction === 'string' ? msg.direction : '-'} from=${typeof msg.from_did === 'string' ? msg.from_did.slice(0, 30) : '-'}`,
     );
@@ -515,7 +644,7 @@ function handleFrameText(text: string): void {
     // emits an auth_challenge before we accept any other frame). The
     // misbehaving-relay scenario is rare; keep this at `.log` so the
     // first few seconds after connect don't light up LogBox.
-    // eslint-disable-next-line no-console
+     
     console.log(
       `[WS] frame dropped pre-auth type=${msg.type} authChalSeen=${authChallengeSeen}`,
     );
@@ -536,7 +665,7 @@ function handleAuthChallenge(challenge: { nonce: string; ts: number }): void {
   // a LogBox toast. We re-arm by waiting for the next auth_challenge
   // — the relay re-sends it on its own retry cadence.
   if (ws.readyState !== WS_OPEN) {
-    // eslint-disable-next-line no-console
+     
     console.warn(
       `[WS] auth_challenge ignored — ws not open (readyState=${ws.readyState})`,
     );
@@ -552,7 +681,7 @@ function handleAuthChallenge(challenge: { nonce: string; ts: number }): void {
       }),
     );
   } catch (err) {
-    // eslint-disable-next-line no-console
+     
     console.warn(`[WS] auth_response send failed: ${(err as Error).message}`);
     return;
   }
@@ -632,7 +761,7 @@ function isEnvelopeLike(msg: unknown): msg is MsgBoxEnvelope {
 function dispatchEnvelope(env: MsgBoxEnvelope): void {
   // Finding #9: Validate to_did matches our DID — reject misdirected envelopes
   if (env.to_did && homeNodeDID && env.to_did !== homeNodeDID) {
-    // eslint-disable-next-line no-console
+     
     console.error(
       `[WS] dispatch DROP misdirected to=${env.to_did.slice(0, 30)} self=${homeNodeDID.slice(0, 30)} id=${env.id?.slice(0, 8)}`,
     );
@@ -641,7 +770,7 @@ function dispatchEnvelope(env: MsgBoxEnvelope): void {
 
   // Finding #9: Reject expired envelopes (expires_at is unix seconds)
   if (env.expires_at && env.expires_at < Math.floor(Date.now() / 1000)) {
-    // eslint-disable-next-line no-console
+     
     console.error(
       `[WS] dispatch DROP expired exp=${env.expires_at} now=${Math.floor(Date.now() / 1000)} id=${env.id?.slice(0, 8)}`,
     );
@@ -652,20 +781,20 @@ function dispatchEnvelope(env: MsgBoxEnvelope): void {
     case 'd2d':
       if (d2dHandler) d2dHandler(env);
       else
-        // eslint-disable-next-line no-console
+         
         console.error(`[WS] dispatch DROP no d2dHandler id=${env.id?.slice(0, 8)}`);
       break;
     case 'rpc':
       if (env.direction === 'request' && rpcHandler) rpcHandler(env);
       else if (env.direction === 'request')
-        // eslint-disable-next-line no-console
+         
         console.error(`[WS] dispatch DROP no rpcHandler id=${env.id?.slice(0, 8)}`);
       else
         // RPC responses on the home node are an expected case (the
         // home node only consumes incoming *requests*; responses
         // come back along the same socket but are routed by id, not
         // by handler) — trace, not error.
-        // eslint-disable-next-line no-console
+         
         console.log(
           `[WS] dispatch IGNORE rpc dir=${env.direction ?? '-'} (home node only routes requests) id=${env.id?.slice(0, 8)}`,
         );

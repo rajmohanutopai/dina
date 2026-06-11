@@ -154,7 +154,7 @@ import {
   StagingDrainScheduler,
   type StagingDrainOptions,
 } from '@dina/brain/runtime';
-import { stagingGetItem } from '@dina/core';
+import { stagingGetItem, getContact } from '@dina/core';
 import { wireChatRememberRuntime } from '@dina/home-node/chat-runtime';
 import { buildHomeNodeServiceRuntime } from '@dina/home-node/service-runtime';
 import { validateCardSpec } from '@dina/protocol';
@@ -1507,12 +1507,61 @@ function extractChatText(body: string): string | null {
   return body;
 }
 
+/**
+ * Humanize (validated, stripped) query params for the approval card —
+ * "time: 4:30 PM · date: today · service: haircut". This is a
+ * SECURITY-DECISION surface fed STRANGER-AUTHORED text, so beyond
+ * rendering as plain <Text>: C0/C1 control + Unicode bidi/format
+ * characters are stripped (a U+202E override could visually reorder
+ * the line the operator approves; newlines would eat the card's
+ * 3-line budget and push later params out of view), each value is
+ * capped, and non-primitive values surface as a visible placeholder —
+ * the operator must SEE that data was omitted, not approve blind.
+ */
+function humanizeParams(params: unknown): string {
+  if (params === null || typeof params !== 'object' || Array.isArray(params)) return '';
+  const sanitize = (s: string): string =>
+    // C0 controls, DEL+C1, bidi embeddings/overrides (U+202A–U+202E),
+    // bidi isolates (U+2066–U+2069), zero-width/format (U+200B–U+200F).
+    // eslint-disable-next-line no-control-regex
+    s.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, ' ');
+  const capValue = (s: string): string => (s.length > 60 ? `${s.slice(0, 57)}…` : s);
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(params as Record<string, unknown>)) {
+    if (v === null || v === undefined) continue;
+    const key = capValue(sanitize(k));
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+      parts.push(`${key}: ${capValue(sanitize(String(v)))}`);
+    } else if (Array.isArray(v)) {
+      parts.push(`${key}: […]`);
+    } else {
+      parts.push(`${key}: {…}`);
+    }
+  }
+  const joined = parts.join(' · ');
+  return joined.length > 140 ? `${joined.slice(0, 137)}…` : joined;
+}
+
 function defaultApprovalNotifier(threadId: string): ApprovalNotifier {
-  return ({ taskId, fromDID, serviceName, capability, approveCommand }) => {
+  return ({ taskId, fromDID, serviceName, capability, approveCommand, params }) => {
+    // Who's asking: the authenticated sender DID, shown as their contact
+    // name when known. NEVER a self-asserted param — the from_did is the
+    // identity (same discipline as the D2D envelope rule).
+    let requesterLabel = shortDID(fromDID);
+    try {
+      const contact = getContact(fromDID);
+      if (contact !== null && contact.displayName !== '') {
+        requesterLabel = contact.displayName;
+      }
+    } catch {
+      /* contact directory not hydrated yet — short DID is fine */
+    }
+    const paramsPreview = humanizeParams(params);
+    const what = paramsPreview !== '' ? `${capability} — ${paramsPreview}` : capability;
     const line =
       serviceName !== ''
-        ? `${serviceName} wants to run ${capability}. Approve? ${approveCommand}`
-        : `Pending approval: ${capability} (${taskId}). ${approveCommand}`;
+        ? `${requesterLabel} asks ${serviceName}: ${what}. Approve? ${approveCommand}`
+        : `${requesterLabel} asks: ${what} (${taskId}). ${approveCommand}`;
     // Review #13: emit an `approval`-type message so the Chat UI can
     // render an approval card (approve / deny buttons) rather than a
     // plain dina text line that looks like a normal reply. Metadata
@@ -1523,6 +1572,8 @@ function defaultApprovalNotifier(threadId: string): ApprovalNotifier {
       fromDID,
       serviceName,
       approveCommand,
+      requesterLabel,
+      ...(paramsPreview !== '' ? { paramsPreview } : {}),
     });
   };
 }

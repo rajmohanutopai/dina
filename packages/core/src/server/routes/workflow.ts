@@ -15,6 +15,8 @@
  *   POST /v1/workflow/events/:id/ack      — ack + retire from queue
  */
 
+import { LOCAL_RUNNER_NAME } from '@dina/protocol';
+
 import {
   grantAgentPersonaAccessFromApproval,
   isAgentPersonaAccessApproval,
@@ -206,6 +208,16 @@ async function claimTask(req: CoreRequest): Promise<CoreResponse> {
   // multi-runner provider: a filtered claim only takes tasks whose
   // `requested_runner` matches (or is unset). Empty filter ⇒ claim anything.
   const runnerFilter = extractRunnerFilter(req.body);
+  // The reserved 'dina.local' lane is IN-PROCESS ONLY (Tier 1 prompt-
+  // provider executions — the node's own LocalDelegationRunner claims it
+  // directly through the repository, never over HTTP). An external agent
+  // naming the lane would hijack tasks meant to run on the provider's
+  // own Dina and forge their results. Hard-reject, don't coerce.
+  if (runnerFilter === LOCAL_RUNNER_NAME) {
+    return j(403, {
+      error: `runner_filter "${LOCAL_RUNNER_NAME}" is reserved for in-process execution`,
+    });
+  }
   const task = service.store().claimDelegationTask(agentDID, Date.now(), leaseMs, runnerFilter);
   if (task === null) return j(204, undefined);
   // dina-agent (Python) reads `body.id` / `body.payload` directly off

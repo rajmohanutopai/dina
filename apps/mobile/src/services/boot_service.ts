@@ -480,16 +480,28 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
   }
 
   // --- Local delegation runner (issue #9, #20; review #12) ------------
-  // The runner is required ONLY when there's no other execution plane:
-  //   - `localDelegationRunner` handles it in-process (demo mode), OR
-  //   - the app explicitly asserts a paired dina-agent is wired via
-  //     `hasPairedAgent: true`. Merely having peer pubkeys or a device
-  //     resolver is NOT proof of a runnable agent (those can hold
-  //     pubkeys for friend contacts / other home nodes too).
+  // Since Tier 1 (docs/SERVICE_PROVIDER_TIERS.md) the boot path ALWAYS
+  // supplies a `localDelegationRunner` claiming the reserved
+  // 'dina.local' lane, so instruction-backed capabilities always have an
+  // execution plane. What can still go dark is the AGENT lane: a
+  // capability bound to an mcpServer with no paired dina-agent daemon
+  // queues its tasks to expiry. Boot can only see the env-seeded config
+  // here (UI-saved configs hydrate later), so flag the env-provider rig
+  // case; UI-configured agent capabilities surface per-task instead
+  // (queued task + requester-visible expiry).
   if (isProvider && inputs.localDelegationRunner === undefined && inputs.hasPairedAgent !== true) {
     addDegradation(
       'execution.no_runner',
       'Provider role selected but no LocalDelegationRunner supplied AND hasPairedAgent is not asserted — inbound queries will be queued without execution.',
+    );
+  }
+  const envAgentLaneCaps = Object.entries(inputs.initialServiceConfig?.capabilities ?? {})
+    .filter(([, cap]) => typeof cap.mcpServer === 'string' && cap.mcpServer !== '')
+    .map(([name]) => name);
+  if (isProvider && envAgentLaneCaps.length > 0 && inputs.hasPairedAgent !== true) {
+    addDegradation(
+      'execution.agent_lane_unmanned',
+      `Agent-bound capabilities (${envAgentLaneCaps.join(', ')}) are configured but hasPairedAgent is not asserted — their tasks will queue until a dina-agent daemon claims them.`,
     );
   }
 

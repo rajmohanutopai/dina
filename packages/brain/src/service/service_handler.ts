@@ -21,7 +21,22 @@
 
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+
 import { WorkflowConflictError } from '@dina/core';
+import {
+  validateServiceQueryBody,
+  resolveCanonicalCapability,
+  parseServiceListingUri,
+  effectiveListingStatus,
+  LOCAL_RUNNER_NAME,
+  buildServiceQueryExecutionPayload,
+} from '@dina/protocol';
+import type { ServiceQueryExecutionPayload } from '@dina/protocol';
+
+import { getCapability, getTTL } from './capabilities/registry';
+import { validateAgainstSchema } from './capabilities/schema_validator';
+import { canonicalCapabilitySchemaHash } from './service_publisher';
+
 import type { CoreClient } from '@dina/core';
 import type {
   ServiceConfig,
@@ -29,14 +44,6 @@ import type {
   ServiceCapabilitySchemas,
   ServiceQueryBody,
 } from '@dina/protocol';
-import {
-  validateServiceQueryBody,
-  resolveCanonicalCapability,
-  parseServiceListingUri,
-  effectiveListingStatus,
-} from '@dina/protocol';
-import { getCapability, getTTL } from './capabilities/registry';
-import { validateAgainstSchema } from './capabilities/schema_validator';
 
 /**
  * Resolve an inbound `capability` to the config key the provider actually
@@ -119,6 +126,13 @@ export type ApprovalNotifier = (notice: {
   capability: string;
   serviceName: string;
   approveCommand: string;
+  /**
+   * The query's params (already schema-validated + stripped to declared
+   * properties). Carried so the operator surface can render a human
+   * preview ("book 4:30 PM today") instead of a bare capability name.
+   * STRANGER-CONTROLLED content — render as plain text only.
+   */
+  params?: unknown;
 }) => void | Promise<void>;
 
 /**
@@ -267,6 +281,23 @@ export class ServiceHandler {
       return;
     }
 
+    // Defensive: a capability with NO execution plane (no agent binding,
+    // no Tier 1 instruction) can only end in TTL expiry — tell the
+    // requester now. `validateServiceListing` blocks saving this on an
+    // active listing (`missing_execution_plane`), so this only fires for
+    // configs written before that rule or through a bypassing client.
+    const hasAgentPlane =
+      typeof cap.mcpServer === 'string' &&
+      cap.mcpServer !== '' &&
+      typeof cap.mcpTool === 'string' &&
+      cap.mcpTool !== '';
+    const hasInstructionPlane =
+      typeof cap.instruction === 'string' && cap.instruction.trim() !== '';
+    if (!hasAgentPlane && !hasInstructionPlane) {
+      await this.sendError(fromDID, query, 'unavailable', 'capability_not_executable');
+      return;
+    }
+
     const schemaErr = this.checkSchemaHash(config, query);
     if (schemaErr !== null) {
       await this.sendError(fromDID, query, 'error', schemaErr);
@@ -298,31 +329,15 @@ export class ServiceHandler {
    * Called by Guardian when a `workflow.approved` event fires for an
    * approval task. Spawns a FRESH delegation task with a deterministic id
    * so retries are idempotent, then cancels the approval task.
+   *
+   * `payload` is the codec-parsed approval payload
+   * (`parseServiceQueryExecutionPayload`) — every field it carries is
+   * forwarded into the fresh delegation, so adding a field to the codec
+   * automatically survives this hop.
    */
   async executeAndRespond(
     approvalTaskId: string,
-    payload: {
-      from_did: string;
-      query_id: string;
-      capability: string;
-      params: unknown;
-      ttl_seconds?: number;
-      schema_hash?: string;
-      service_name?: string;
-      /** WM-BRAIN-06a: forwarded from the approval task payload. */
-      mcp_tool?: string;
-      /** The runner (capability `mcpServer`) — forwarded so the approved
-       *  exec task carries `requested_runner` for multi-runner routing. */
-      mcp_server?: string;
-      /** GAP-SH-04: frozen schema block captured at approval-creation
-       *  time. Forwarded verbatim into the fresh delegation so the
-       *  response bridge validates against the same contract that was
-       *  agreed when the operator approved. */
-      schema_snapshot?: SchemaSnapshot;
-      /** P1: chosen listing (multi-listing per DID), forwarded from the
-       *  approval task payload into the fresh delegation. */
-      service_uri?: string;
-    },
+    payload: Omit<ServiceQueryExecutionPayload, 'type'> & { type?: string },
   ): Promise<void> {
     if (!payload.from_did || !payload.query_id || !payload.capability) {
       throw new Error(`executeAndRespond: approval task ${approvalTaskId} has incomplete payload`);
@@ -346,6 +361,9 @@ export class ServiceHandler {
         serviceName: payload.service_name,
         schemaSnapshot: payload.schema_snapshot,
         serviceUri: payload.service_uri,
+        // This delegation exists BECAUSE the operator approved — let the
+        // Tier 1 runtime (and any agent) know the human gate is passed.
+        operatorApproved: true,
         taskId: execTaskId,
       });
     } catch (err) {
@@ -440,25 +458,31 @@ export class ServiceHandler {
     /** AT-URI of the chosen listing (multi-listing per DID). Carried onto the
      *  task payload so the agent knows which listing the query is for. */
     serviceUri?: string;
+    /** True when this delegation was spawned by `executeAndRespond` —
+     *  i.e. the operator personally approved the request. The Tier 1
+     *  runtime reads `payload.operator_approved` so an instruction like
+     *  "ask me first" doesn't make the model re-request a confirmation
+     *  that already happened. */
+    operatorApproved?: boolean;
     taskId: string;
   }): Promise<void> {
-    const payload: Record<string, unknown> = {
-      type: 'service_query_execution',
+    // ONE builder for the payload — `buildServiceQueryExecutionPayload`
+    // (@dina/protocol). Hand-rolled shapes at each hop are how the
+    // approval handoff silently dropped service_uri/schema_snapshot/
+    // mcp_tool; a new field now goes through the codec or nowhere.
+    const payload = buildServiceQueryExecutionPayload({
       from_did: args.fromDID,
       query_id: args.queryId,
       capability: args.capability,
       params: args.params,
       ttl_seconds: args.ttlSeconds,
-      service_name: args.serviceName ?? '',
-      schema_hash: args.schemaHash ?? '',
-      mcp_tool: args.mcpTool ?? '',
-    };
-    if (args.schemaSnapshot !== undefined) {
-      payload.schema_snapshot = args.schemaSnapshot;
-    }
-    if (args.serviceUri !== undefined && args.serviceUri !== '') {
-      payload.service_uri = args.serviceUri;
-    }
+      ...(args.serviceName !== undefined ? { service_name: args.serviceName } : {}),
+      ...(args.schemaHash !== undefined ? { schema_hash: args.schemaHash } : {}),
+      ...(args.mcpTool !== undefined ? { mcp_tool: args.mcpTool } : {}),
+      ...(args.schemaSnapshot !== undefined ? { schema_snapshot: args.schemaSnapshot } : {}),
+      ...(args.serviceUri !== undefined ? { service_uri: args.serviceUri } : {}),
+      ...(args.operatorApproved === true ? { operator_approved: true } : {}),
+    });
     const expiresAtSec = this.nowSecFn() + args.ttlSeconds;
     await this.core.createWorkflowTask({
       id: args.taskId,
@@ -467,7 +491,13 @@ export class ServiceHandler {
       payload: JSON.stringify(payload),
       origin: 'd2d',
       correlationId: args.queryId,
-      requestedRunner: args.mcpServer,
+      // Tier 1 prompt-provider lane: a capability with no agent binding
+      // routes to the RESERVED local runner. The reserved name keeps the
+      // task away from external agent daemons (their claim-any path
+      // explicitly excludes it — see claimDelegationTask) so only this
+      // node's own LocalDelegationRunner executes it.
+      requestedRunner:
+        args.mcpServer !== undefined && args.mcpServer !== '' ? args.mcpServer : LOCAL_RUNNER_NAME,
       expiresAtSec,
       // Tasks enter `queued` so paired dina-agents can claim them via
       // POST /v1/workflow/tasks/claim. In-process execution is not
@@ -493,33 +523,25 @@ export class ServiceHandler {
     const config = this.readConfig(this.rkeyForQuery(query));
     const serviceName = config?.name ?? '';
     const snapshot = snapshotForCapability(config, query.capability);
-    const payload: Record<string, unknown> = {
-      type: 'service_query_execution',
+    // The approval payload is the SAME codec shape as the execution
+    // payload — `executeAndRespond` parses it back and forwards every
+    // field into the fresh delegation. mcp_tool/mcp_server ride at the
+    // top level (WM-BRAIN-06a / multi-runner routing); schema_snapshot
+    // survives the handoff (GAP-SH-04); service_uri pins the listing
+    // (P1, multi-listing).
+    const payload = buildServiceQueryExecutionPayload({
       from_did: fromDID,
       query_id: query.query_id,
       capability: query.capability,
       params: query.params,
       ttl_seconds: ttl,
       service_name: serviceName,
-      schema_hash: query.schema_hash ?? '',
-      // WM-BRAIN-06a: mcp_tool at top level, outside the schema snapshot.
-      // `executeAndRespond` reads this back to dispatch the delegation.
-      mcp_tool: cap.mcpTool,
-      // mcp_server (the runner) likewise rides the approval payload so the
-      // approved exec task carries `requested_runner` for multi-runner routing.
-      mcp_server: cap.mcpServer,
-    };
-    // GAP-SH-04: approval-path payload also carries the schema snapshot
-    // so it survives the approval → delegation handoff in
-    // `executeAndRespond`.
-    if (snapshot !== undefined) {
-      payload.schema_snapshot = snapshot;
-    }
-    // P1: carry the chosen listing through the approval → delegation handoff
-    // so `executeAndRespond` can forward it to the fresh delegation task.
-    if (query.service_uri !== undefined && query.service_uri !== '') {
-      payload.service_uri = query.service_uri;
-    }
+      ...(query.schema_hash !== undefined ? { schema_hash: query.schema_hash } : {}),
+      ...(cap.mcpTool !== undefined ? { mcp_tool: cap.mcpTool } : {}),
+      ...(cap.mcpServer !== undefined ? { mcp_server: cap.mcpServer } : {}),
+      ...(snapshot !== undefined ? { schema_snapshot: snapshot } : {}),
+      ...(query.service_uri !== undefined ? { service_uri: query.service_uri } : {}),
+    });
     await this.core.createWorkflowTask({
       id: taskId,
       kind: 'approval',
@@ -555,6 +577,9 @@ export class ServiceHandler {
           capability: query.capability,
           serviceName,
           approveCommand: `/service_approve ${taskId}`,
+          // Stripped + validated upstream in handleQuery — safe to surface
+          // as a preview, still stranger-authored text.
+          params: query.params,
         });
       } catch (err) {
         this.log({
@@ -662,6 +687,15 @@ export class ServiceHandler {
     if (query.schema_hash === undefined || query.schema_hash === '') {
       return 'schema_hash_required';
     }
+    // The requester echoes the PUBLISHED hash, and the publisher always
+    // recomputes the canonical {params, result, description} hash at
+    // publish time (stored hashes are advisory — serialiseSchemas).
+    // Compare against the SAME canonical recompute first, so a config
+    // whose CACHED hash predates the canonical recipe (params-only
+    // writers) doesn't reject its own published listing. The stored
+    // hash stays accepted as a fallback for requesters holding an older
+    // published record.
+    if (canonicalCapabilitySchemaHash(published) === query.schema_hash) return null;
     if (published.schemaHash === query.schema_hash) return null;
     return 'schema_version_mismatch';
   }
@@ -740,7 +774,7 @@ export class ServiceHandler {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function findCapabilityConfig(
+export function findCapabilityConfig(
   config: ServiceConfig | null,
   capability: string,
 ): ServiceCapabilityConfig | null {

@@ -16,16 +16,21 @@
 
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+
 import { MAX_SERVICE_TTL, resolveSearchableCapability } from '@dina/protocol';
+
 import {
   AppViewError,
   type AppViewClient,
   type SearchServicesParams,
   type ServiceProfile,
 } from '../appview_client/http';
-import type { CoreClient, ServiceQueryResult } from '@dina/core';
+
 import { pickTopCandidate, type Location, type RankOptions } from './candidate_ranker';
-import { getCapability, getTTL, computeSchemaHash } from './capabilities/registry';
+import { getCapability, getTTL } from './capabilities/registry';
+import { canonicalCapabilitySchemaHash } from './service_publisher';
+
+import type { CoreClient, ServiceQueryResult } from '@dina/core';
 
 /**
  * Canonicalize a requester-supplied capability ONCE at the orchestrator
@@ -179,7 +184,17 @@ function validateParamsSenderSide(
   const cap = getCapability(capability);
   if (cap === undefined) return;
   if (providerSchemaHash !== undefined && providerSchemaHash !== '') {
-    const ours = computeSchemaHash(cap.paramsSchema);
+    // The provider's published hash is the CANONICAL recipe over
+    // {params, result, description} (serialiseSchemas). Comparing a
+    // params-only hash here never matched a canonical-hash provider, so
+    // this fast sender-side guard was silently skipped for every
+    // registry capability — mis-shaped tool calls left the device and
+    // failed a network round-trip later.
+    const ours = canonicalCapabilitySchemaHash({
+      params: cap.paramsSchema,
+      result: cap.resultSchema,
+      description: cap.description,
+    });
     if (ours !== providerSchemaHash) {
       // Version mismatch — defer to the provider's validator.
       return;

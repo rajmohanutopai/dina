@@ -40,19 +40,8 @@ import {
   computeSchemaHash,
   createGeminiEmbeddingProvider,
   getCapability,
+  makeTier1CapabilityRunner,
  executeToolSearch } from '@dina/brain';
-import { resolveMobileHostedDinaEndpoints , makeSendD2D, makeOutboxRedeliver } from '@dina/home-node';
-import {
-  deriveDIDKey,
-  getApprovalManager,
-  getPublicKey,
-  type IdentityKeypair,
-} from '@dina/core';
-import { createLLMProvider, getConfiguredProviders } from '../ai/provider';
-import { loadActiveProvider } from '../ai/active_provider';
-import { registerAgenticRouter } from '../ai/agentic_swap';
-import { loadModelOverrides } from '../ai/model_overrides';
-import type { ProviderType } from '../ai/provider';
 import {
   type AgenticAskHandlerOptions,
   type AskCoordinator,
@@ -62,7 +51,6 @@ import {
   type createQueryServiceTool,
   type ToolRegistry,
 } from '@dina/brain';
-import { buildHomeNodeAskRuntime } from '@dina/home-node/ask-runtime';
 import {
   LLMRouter,
   RoutedLLMProvider,
@@ -73,17 +61,13 @@ import {
   setReviewDraftStarter,
   type ProviderName,
 } from '@dina/brain/runtime';
-import { startReviewDraft } from '../peerlens/review_draft';
-import { MOBILE_PERSONA_DESCRIPTIONS, type BootServiceInputs } from './boot_service';
-import type { NodeRole } from './bootstrap';
 import {
-  DEFAULT_MSGBOX_URL,
-  makeResolveSender,
-  makeWSFactory,
-  resolveMsgBoxURL,
-} from './msgbox_wiring';
-import { DIDResolver, hydrateDeviceRegistry } from '@dina/core/runtime';
-import {
+  deriveDIDKey,
+  getApprovalManager,
+  getPublicKey,
+  getServiceConfig,
+  type IdentityKeypair,
+
   AppViewServiceResolver,
   addContactIfNotExists,
   getPeopleRepository,
@@ -91,17 +75,33 @@ import {
   listPersonas,
   setOutboxRedeliverFn,
   startOutboxDrainer,
-  type DrainerHandle,
-} from '@dina/core';
-import { getApiKey } from '../ai/provider';
+  type DrainerHandle} from '@dina/core';
+import { DIDResolver, hydrateDeviceRegistry } from '@dina/core/runtime';
+import { resolveMobileHostedDinaEndpoints , makeSendD2D, makeOutboxRedeliver } from '@dina/home-node';
+import { buildHomeNodeAskRuntime } from '@dina/home-node/ask-runtime';
+
+import { loadActiveProvider } from '../ai/active_provider';
+import { registerAgenticRouter, peekAgenticRouter, resetAgenticRouter } from '../ai/agentic_swap';
+import { loadModelOverrides } from '../ai/model_overrides';
+import { createLLMProvider, getConfiguredProviders , getApiKey } from '../ai/provider';
+import { startReviewDraft } from '../peerlens/review_draft';
 import { getIdentityAdapter } from '../storage/init';
 
 import { AppViewStub, demoServiceProfile } from './appview_stub';
+import { MOBILE_PERSONA_DESCRIPTIONS, type BootServiceInputs } from './boot_service';
 import { loadPersistedDid } from './identity_record';
 import { loadOrGenerateSeeds } from './identity_store';
 import { loadInfraPreferences, resolveServicesAppViewURL } from './infra_preferences';
+import {
+  DEFAULT_MSGBOX_URL,
+  makeResolveSender,
+  makeWSFactory,
+  resolveMsgBoxURL,
+} from './msgbox_wiring';
 import { loadRolePreference } from './role_preference';
 
+import type { NodeRole } from './bootstrap';
+import type { ProviderType } from '../ai/provider';
 import type { ServiceConfig } from '@dina/protocol';
 
 /**
@@ -459,6 +459,11 @@ export async function buildBootInputs(
     registerPersonaSelector(createGeminiClassifier(classifierProvider));
   } else {
     resetPersonaSelector();
+    // Also drop any PREVIOUS boot's agentic router: the Tier 1 capability
+    // runner resolves its LLM per execution via peekAgenticRouter(), so a
+    // stale registration would keep answering external service queries
+    // with a deleted/rotated key after a re-boot with no provider.
+    resetAgenticRouter();
   }
 
   // GAP-RT-02: wire the staging drain's topic-touch + preference
@@ -589,6 +594,25 @@ export async function buildBootInputs(
   const { publisher: pdsPublisher, sessionReachable: pdsSessionReachable } =
     await tryBuildPdsPublisher(did, infra, { validateSession: isProviderRole });
 
+  // Tier 1 prompt-provider execution plane (docs/SERVICE_PROVIDER_TIERS.md)
+  // — ALWAYS wired, not demo-gated. The runner claims ONLY the reserved
+  // 'dina.local' lane, so it coexists with a paired external dina-agent
+  // (which claims its own runner_filter lanes) and is inert on nodes with
+  // no instruction-backed capabilities. The LLM resolves PER EXECUTION
+  // through the hot-swappable agentic router — a provider key added or
+  // rotated in Settings after boot is picked up without a restart; with
+  // no AI configured the task fails fast with a requester-visible error
+  // instead of queuing to expiry.
+  const localDelegationRunner = makeTier1CapabilityRunner({
+    getLLM: () => {
+      const router = peekAgenticRouter();
+      if (router === null) return null;
+      return new RoutedLLMProvider({ router, taskType: 'reason', label: 'routed:reason:tier1' });
+    },
+    readConfig: (rkey) => getServiceConfig(rkey),
+    ...(options.logger !== undefined ? { logger: options.logger } : {}),
+  });
+
   return {
     did,
     signingKeypair,
@@ -605,6 +629,7 @@ export async function buildBootInputs(
     sendD2D,
     hasPairedAgent,
     initialServiceConfig,
+    localDelegationRunner,
     pdsPublisher,
     pdsSessionReachable,
   };

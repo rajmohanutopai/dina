@@ -11,7 +11,7 @@ import { readFile } from 'node:fs/promises';
 
 import { Crypto, HttpClient, createCanonicalRequestSigner } from '@dina/adapters-node';
 import { deriveDIDKey, getPublicKey } from '@dina/core';
-import { computeSchemaHash, listCapabilities } from '@dina/brain';
+import { listCapabilities, canonicalCapabilitySchemaHash } from '@dina/brain';
 
 async function main(): Promise<void> {
   const targetDid =
@@ -44,7 +44,7 @@ async function main(): Promise<void> {
       `capability "${capability}" not in local registry — pass schema_hash as argv[6] (from the published listing)`,
     );
   }
-  const schemaHash = cap !== undefined ? computeSchemaHash(cap.paramsSchema) : schemaHashOverride!;
+  const schemaHash = cap !== undefined ? canonicalCapabilitySchemaHash({ params: cap.paramsSchema, result: cap.resultSchema, description: cap.description }) : schemaHashOverride!;
   // service_uri = the "link / QR / invite" access grant for a specific
   // listing. When present, egress trusts it (authority must == recipient)
   // and skips the AppView public-discovery check — the path for invoking

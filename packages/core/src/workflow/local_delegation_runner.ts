@@ -1,18 +1,21 @@
 /**
- * Local delegation runner — optional in-process alternative to the
- * external `dina-agent` execution plane.
+ * Local delegation runner — the in-process execution plane.
  *
- * Production topology: Dina NEVER executes. Delegation tasks sit in
- * the home node's workflow store until a paired `dina-agent` instance
- * claims them via `POST /v1/workflow/tasks/claim`, runs the capability
- * through OpenClaw, and reports back via `/complete` or `/fail`.
+ * Two production roles:
+ *   1. **Tier 1 prompt-provider lane** (docs/SERVICE_PROVIDER_TIERS.md):
+ *      capabilities with no MCP/agent binding route their tasks to the
+ *      reserved `dina.local` runner, and THIS runner claims that lane —
+ *      the provider's own Dina answers from instruction + vault. This is
+ *      the default `runnerFilter`.
+ *   2. Demos / single-process tests (`runnerFilter: ''` claims any lane).
  *
- * This runner is the OPT-IN alternative for demos, single-process
- * tests, and early-development work where standing up a full dina-agent
- * is overkill. It loops on `claimDelegationTask`, invokes a
- * caller-supplied `runCapability(capability, params) => Promise<result>`,
- * heartbeats while the capability runs, and completes / fails the task
- * at the end.
+ * Agent-bound capabilities still follow the external topology: tasks sit
+ * in the workflow store until a paired `dina-agent` claims them via
+ * `POST /v1/workflow/tasks/claim` with its own runner_filter.
+ *
+ * The loop: claim → invoke the caller-supplied
+ * `runCapability(capability, params, task) => Promise<result>` →
+ * heartbeat while it runs → complete / fail the task at the end.
  *
  * Design contract:
  *   - One runner == one agent DID. Each runner claims for itself only.
@@ -29,6 +32,8 @@
  *   - Start/stop are idempotent. `runTick()` runs a single claim
  *     attempt for deterministic tests.
  */
+
+import { LOCAL_RUNNER_NAME } from '@dina/protocol';
 
 import type { WorkflowTask } from './domain';
 import type { WorkflowRepository } from './repository';
@@ -57,6 +62,17 @@ export interface LocalDelegationRunnerOptions {
   agentDID: string;
   /** Capability dispatcher. */
   runner: LocalCapabilityRunner;
+  /**
+   * Which `requested_runner` lane to claim. Defaults to the reserved
+   * `dina.local` (Tier 1 prompt-provider tasks — the lane external agent
+   * daemons can never claim). The reserved lane is EXACT-match: untagged
+   * delegations (e.g. delegate_to_agent free_form_task) belong to the
+   * paired external agent, never to this runner. Pass `''` to claim ANY
+   * lane (single-process test/demo nodes where this is the sole
+   * executor) — but never run that alongside external per-capability
+   * daemons: being unfiltered it would race them for routed tasks.
+   */
+  runnerFilter?: string;
   /** How often to poll for new claims. Default 5_000 ms. */
   pollIntervalMs?: number;
   /** Initial lease length (ms). Default 30_000. */
@@ -84,6 +100,7 @@ export class LocalDelegationRunner {
   private readonly service: WorkflowService;
   private readonly agentDID: string;
   private readonly runCapability: LocalCapabilityRunner;
+  private readonly runnerFilter: string;
   private readonly pollIntervalMs: number;
   private readonly leaseMs: number;
   private readonly heartbeatIntervalMs: number;
@@ -109,6 +126,7 @@ export class LocalDelegationRunner {
     this.service = options.workflowService;
     this.agentDID = options.agentDID;
     this.runCapability = options.runner;
+    this.runnerFilter = options.runnerFilter ?? LOCAL_RUNNER_NAME;
     this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     this.leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
@@ -144,6 +162,11 @@ export class LocalDelegationRunner {
     // for the first claim.
     this.tickInFlight = this.runTick();
     this.handle = this.setIntervalFn(() => {
+      // While an execution is in flight, runTick() is a busy no-op
+      // promise — do NOT let it overwrite tickInFlight, or flush()
+      // awaits the no-op and returns while the real LLM run and its
+      // completion write are still pending.
+      if (this.busy) return;
       this.tickInFlight = this.runTick();
     }, this.pollIntervalMs);
     const maybe = this.handle as { unref?: () => void };
@@ -180,17 +203,20 @@ export class LocalDelegationRunner {
       const nowMs = this.nowMsFn();
       let task: WorkflowTask | null;
       try {
-        // Claim WITHOUT a runner_filter (empty ⇒ matches any requested_runner).
-        // This is the in-process, single-process executor (mobile / demos /
-        // tests; "production uses external dina-agent" — see bootstrap.ts). It
-        // is the SOLE runner on such a node and dispatches by capability
-        // internally, so it must take every service_query_execution task
-        // regardless of the requested_runner set from the capability's
-        // mcpServer. Do NOT enable this alongside external per-capability
-        // daemons on the same node — being unfiltered it would race them for
-        // routed tasks (multi-runner routing lives in the external-daemon claim
-        // path, which DOES pass runner_filter).
-        task = this.repo.claimDelegationTask(this.agentDID, nowMs, this.leaseMs);
+        // Default claim lane is the reserved `dina.local` (Tier 1
+        // prompt-provider tasks — docs/SERVICE_PROVIDER_TIERS.md),
+        // matched EXACTLY: untagged delegations belong to the paired
+        // external agent. Single-process test/demo nodes that need to
+        // claim EVERY lane pass `runnerFilter: ''` — but never alongside
+        // external per-capability daemons (an unfiltered claim would
+        // race them for routed tasks; the external-daemon claim path
+        // always passes its own filter).
+        task = this.repo.claimDelegationTask(
+          this.agentDID,
+          nowMs,
+          this.leaseMs,
+          this.runnerFilter,
+        );
       } catch (err) {
         this.onError(err);
         return;
@@ -223,9 +249,24 @@ export class LocalDelegationRunner {
 
       this.onClaimed(task);
 
+      // Lease fence: when a heartbeat write fails (returns false), the
+      // lease-expiry sweeper has re-queued the task and another claim
+      // may already be executing it. Writing OUR result after that
+      // would race the rightful executor — discard it instead (the
+      // re-queued task re-runs cleanly) and say so via onError.
+      const claimedId = task.id;
+      let leaseLost = false;
       const hbHandle = this.setIntervalFn(() => {
         try {
-          this.repo.heartbeatTask(task!.id, this.agentDID, this.nowMsFn(), this.leaseMs);
+          const ok = this.repo.heartbeatTask(claimedId, this.agentDID, this.nowMsFn(), this.leaseMs);
+          if (!ok && !leaseLost) {
+            leaseLost = true;
+            this.onError(
+              new Error(
+                `lease lost for task ${claimedId} (heartbeat rejected) — result will be discarded; the re-queued task re-runs`,
+              ),
+            );
+          }
         } catch (e) {
           this.onError(e);
         }
@@ -234,6 +275,7 @@ export class LocalDelegationRunner {
       try {
         const result = await this.runCapability(payload.capability, payload.params, task);
         this.clearIntervalFn(hbHandle);
+        if (leaseLost) return; // fenced — see above
         // safeComplete is responsible for both serialization failure
         // (issue #15) and status derivation (issue #16).
         const completed = this.safeComplete(task, result);
@@ -242,6 +284,7 @@ export class LocalDelegationRunner {
         }
       } catch (err) {
         this.clearIntervalFn(hbHandle);
+        if (leaseLost) return; // fenced — don't fail a task we no longer own
         this.safeFail(task, err);
         this.onFailed(task, err);
       }

@@ -417,11 +417,37 @@ export function validateServiceConfig(value: unknown): asserts value is ServiceC
       throw new Error(`service_config: capabilities.${name} must be an object`);
     }
     const entry = entryU as Record<string, unknown>;
-    if (typeof entry.mcpServer !== 'string' || entry.mcpServer === '') {
-      throw new Error(`service_config: capabilities.${name}.mcpServer is required`);
+    // Execution plane is OPTIONAL per field (Tier 1 prompt-provider
+    // capabilities carry an `instruction` instead of an MCP binding),
+    // but mcpServer/mcpTool come as a pair when present. The POLICY
+    // rule "a capability needs at least one execution plane" is
+    // status-aware and lives in `validateServiceListing`
+    // (`missing_execution_plane`) — same split as `no_capabilities`.
+    if (entry.mcpServer !== undefined && (typeof entry.mcpServer !== 'string' || entry.mcpServer === '')) {
+      throw new Error(`service_config: capabilities.${name}.mcpServer must be a non-empty string when present`);
     }
-    if (typeof entry.mcpTool !== 'string' || entry.mcpTool === '') {
-      throw new Error(`service_config: capabilities.${name}.mcpTool is required`);
+    if (entry.mcpTool !== undefined && (typeof entry.mcpTool !== 'string' || entry.mcpTool === '')) {
+      throw new Error(`service_config: capabilities.${name}.mcpTool must be a non-empty string when present`);
+    }
+    if ((entry.mcpServer === undefined) !== (entry.mcpTool === undefined)) {
+      throw new Error(
+        `service_config: capabilities.${name}.mcpServer and .mcpTool must be set together`,
+      );
+    }
+    if (entry.instruction !== undefined && typeof entry.instruction !== 'string') {
+      throw new Error(
+        `service_config: capabilities.${name}.instruction must be a string when present`,
+      );
+    }
+    if (
+      entry.instructionUpdatedAt !== undefined &&
+      (typeof entry.instructionUpdatedAt !== 'number' ||
+        !Number.isFinite(entry.instructionUpdatedAt) ||
+        entry.instructionUpdatedAt < 0)
+    ) {
+      throw new Error(
+        `service_config: capabilities.${name}.instructionUpdatedAt must be a non-negative number when present`,
+      );
     }
     if (entry.responsePolicy !== 'auto' && entry.responsePolicy !== 'review') {
       throw new Error(
@@ -433,6 +459,12 @@ export function validateServiceConfig(value: unknown): asserts value is ServiceC
         `service_config: capabilities.${name}.schemaHash must be a string when present`,
       );
     }
+  }
+  if (
+    v.vaultPersona !== undefined &&
+    (typeof v.vaultPersona !== 'string' || v.vaultPersona === '')
+  ) {
+    throw new Error('service_config: vaultPersona must be a non-empty string when present');
   }
   if (v.capabilitySchemas !== undefined) {
     if (!v.capabilitySchemas || typeof v.capabilitySchemas !== 'object') {

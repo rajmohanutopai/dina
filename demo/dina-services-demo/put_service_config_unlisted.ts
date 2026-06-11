@@ -13,7 +13,7 @@ import { join } from 'node:path';
 
 import { Crypto, HttpClient, createCanonicalRequestSigner } from '@dina/adapters-node';
 import { HttpCoreTransport, deriveDIDKey, getPublicKey } from '@dina/core';
-import { computeSchemaHash } from '@dina/brain';
+import { canonicalCapabilitySchemaHash } from '@dina/brain';
 import type { ServiceConfig } from '@dina/core';
 
 const etaParamsSchema = {
@@ -58,7 +58,7 @@ async function main(): Promise<void> {
     signer,
   });
 
-  const schemaHash = computeSchemaHash(etaParamsSchema);
+  const schemaHash = canonicalCapabilitySchemaHash({ params: etaParamsSchema as Record<string, unknown>, result: etaResultSchema as unknown as Record<string, unknown>, description: 'Hidden ETA (unlisted).' });
   const disc = (process.env.DINA_DISCOVERABILITY ?? 'unlisted') as
     | 'public'
     | 'unlisted'

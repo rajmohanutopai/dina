@@ -3,6 +3,7 @@
  */
 
 import { ServiceHandler, type ServiceHandlerCoreClient } from '../../src/service/service_handler';
+import { canonicalCapabilitySchemaHash } from '../../src/service/service_publisher';
 // ServiceHandler catches `WorkflowConflictError` from `@dina/core`.
 // The test throws the same class so `instanceof` matches.
 import { WorkflowConflictError } from '@dina/core';
@@ -17,6 +18,8 @@ interface CreateCall {
   correlationId?: string;
   expiresAtSec?: number;
   initialState?: string;
+  /** Runner-lane routing — 'dina.local' for Tier 1, the mcpServer otherwise. */
+  requestedRunner?: string;
 }
 
 function stubCore(overrides?: { nextCreateError?: Error; nextCancelError?: Error }): {
@@ -1218,5 +1221,161 @@ describe('ServiceHandler — readConfig(rkey) selects the execution listing (P1a
     expect(core.createCalls).toHaveLength(1);
     const payload = JSON.parse(core.createCalls[0].payload as string);
     expect(payload.service_name).toBe('Bus 42 (self)');
+  });
+});
+
+describe('ServiceHandler — Tier 1 execution-plane routing (docs/SERVICE_PROVIDER_TIERS.md)', () => {
+  const tier1Config: ServiceConfig = {
+    isDiscoverable: true,
+    name: "Alonso's Salon",
+    capabilities: {
+      appointment_availability: {
+        responsePolicy: 'auto',
+        category: 'appointments',
+        instruction: 'Use my appointment notes.',
+      },
+      eta_query: {
+        mcpServer: 'transit',
+        mcpTool: 'get_eta',
+        responsePolicy: 'auto',
+      },
+    },
+  };
+
+  it("auto path: an instruction-only capability routes to requestedRunner 'dina.local'", async () => {
+    const core = stubCore();
+    const handler = new ServiceHandler({
+      coreClient: core.client,
+      readConfig: () => tier1Config,
+      generateUUID: () => 'u-t1',
+    });
+    await handler.handleQuery(REQUESTER, {
+      query_id: 'q-t1',
+      capability: 'appointment_availability',
+      params: { service: 'haircut' },
+      ttl_seconds: 120,
+    });
+    expect(core.createCalls).toHaveLength(1);
+    expect(core.createCalls[0].requestedRunner).toBe('dina.local');
+  });
+
+  it('auto path: an agent-bound capability routes to its mcpServer', async () => {
+    const core = stubCore();
+    const handler = new ServiceHandler({
+      coreClient: core.client,
+      readConfig: () => tier1Config,
+      generateUUID: () => 'u-t2',
+    });
+    await handler.handleQuery(REQUESTER, {
+      query_id: 'q-t2',
+      capability: 'eta_query',
+      params: { route_id: '42' },
+      ttl_seconds: 60,
+    });
+    expect(core.createCalls).toHaveLength(1);
+    expect(core.createCalls[0].requestedRunner).toBe('transit');
+  });
+
+  it('a capability with NO execution plane is rejected `capability_not_executable` and creates NO task', async () => {
+    const core = stubCore();
+    const logs: Array<Record<string, unknown>> = [];
+    const noPlane: ServiceConfig = {
+      isDiscoverable: true,
+      name: 'Broken Svc',
+      capabilities: {
+        price_check: { responsePolicy: 'auto', category: 'commerce' },
+      },
+    };
+    const handler = new ServiceHandler({
+      coreClient: core.client,
+      readConfig: () => noPlane,
+      logger: (e) => {
+        logs.push(e);
+      },
+      generateUUID: () => 'u-t3',
+    });
+    await handler.handleQuery(REQUESTER, {
+      query_id: 'q-t3',
+      capability: 'price_check',
+      params: { query: 'mangoes' },
+      ttl_seconds: 60,
+    });
+    expect(core.createCalls).toHaveLength(0);
+    const rejection = logs.find((l) => l.event === 'service.query.rejected');
+    expect(rejection).toBeDefined();
+    expect(rejection!.message).toBe('capability_not_executable');
+  });
+
+  it('whitespace-only instruction does NOT count as an execution plane', async () => {
+    const core = stubCore();
+    const logs: Array<Record<string, unknown>> = [];
+    const wsConfig: ServiceConfig = {
+      isDiscoverable: true,
+      name: 'WS Svc',
+      capabilities: {
+        price_check: { responsePolicy: 'auto', category: 'commerce', instruction: '   ' },
+      },
+    };
+    const handler = new ServiceHandler({
+      coreClient: core.client,
+      readConfig: () => wsConfig,
+      logger: (e) => {
+        logs.push(e);
+      },
+      generateUUID: () => 'u-t4',
+    });
+    await handler.handleQuery(REQUESTER, {
+      query_id: 'q-t4',
+      capability: 'price_check',
+      params: {},
+      ttl_seconds: 60,
+    });
+    expect(core.createCalls).toHaveLength(0);
+    expect(logs.find((l) => l.event === 'service.query.rejected')?.message).toBe(
+      'capability_not_executable',
+    );
+  });
+
+  it('canonical-recipe hash is accepted even when the STORED hash is stale (params-only writer heal)', async () => {
+    // A config written with the old params-only recipe: stored hash is
+    // garbage, but the requester echoes the canonical hash the publisher
+    // actually published. checkSchemaHash must accept it.
+    const params = { type: 'object', properties: { q: { type: 'string' } } };
+    const result = { type: 'object', properties: { a: { type: 'string' } } };
+    const canonical = canonicalCapabilitySchemaHash({ params, result, description: 'd' });
+    const healedConfig: ServiceConfig = {
+      isDiscoverable: true,
+      name: 'Heal Svc',
+      capabilities: {
+        appointment_availability: {
+          responsePolicy: 'auto',
+          category: 'appointments',
+          instruction: 'answer from notes',
+          schemaHash: 'stale-params-only-hash',
+        },
+      },
+      capabilitySchemas: {
+        appointment_availability: {
+          params,
+          result,
+          schemaHash: 'stale-params-only-hash',
+          description: 'd',
+        },
+      },
+    };
+    const core = stubCore();
+    const handler = new ServiceHandler({
+      coreClient: core.client,
+      readConfig: () => healedConfig,
+      generateUUID: () => 'u-t5',
+    });
+    await handler.handleQuery(REQUESTER, {
+      query_id: 'q-t5',
+      capability: 'appointment_availability',
+      params: { q: 'slots' },
+      ttl_seconds: 60,
+      schema_hash: canonical,
+    });
+    expect(core.createCalls).toHaveLength(1);
   });
 });

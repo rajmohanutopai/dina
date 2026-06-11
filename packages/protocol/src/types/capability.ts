@@ -46,12 +46,48 @@ export type FreshnessHint =
   | 'long_ttl'
   | 'provider_defined';
 
+/**
+ * Reserved runner name for the in-process Tier 1 prompt-provider lane.
+ * Capabilities with no `mcpServer` binding route their execution tasks
+ * to this runner; only the node's own LocalDelegationRunner claims it
+ * (external agent daemons — filtered OR unfiltered — never do). See
+ * docs/SERVICE_PROVIDER_TIERS.md.
+ */
+export const LOCAL_RUNNER_NAME = 'dina.local';
+
 /** Configuration for a single capability published by this node. */
 export interface ServiceCapabilityConfig {
-  /** Name of the MCP server that backs this capability, e.g. `transit`. */
-  mcpServer: string;
-  /** MCP tool within that server to invoke. */
-  mcpTool: string;
+  /**
+   * Name of the MCP server / agent runner that backs this capability,
+   * e.g. `transit`, `openclaw`. OMITTED for Tier 1 prompt-provider
+   * capabilities — those carry an `instruction` instead and execute
+   * in-process on the provider's own Dina (docs/SERVICE_PROVIDER_TIERS.md).
+   * A capability must have at least one execution plane: (mcpServer +
+   * mcpTool) or a non-empty instruction — enforced by
+   * `validateServiceListing` (`missing_execution_plane`).
+   */
+  mcpServer?: string;
+  /** MCP tool within that server to invoke. Required iff `mcpServer` is set. */
+  mcpTool?: string;
+  /**
+   * Tier 1 prompt-provider lane: the provider's own words on how Dina
+   * should answer this capability — e.g. "Use my appointment notes to
+   * answer haircut availability. If someone wants to book, ask me
+   * first." It is a prompt, not config: free text, written by the
+   * provider, combined at execution time with the query params, the
+   * provider's vault, and the capability's result schema.
+   *
+   * PROVIDER-PRIVATE: never published to the PDS/AppView profile record
+   * (it may carry internal pricing rules or personal guidance). Pinned
+   * by publisher tests.
+   */
+  instruction?: string;
+  /**
+   * Unix ms when `instruction` was last edited. As-of discipline: the
+   * execution prompt tells the model how old the guidance is so it
+   * prefers "unsure — ask the provider" over stale-confident answers.
+   */
+  instructionUpdatedAt?: number;
   /** Whether responses are auto-sent or gated by operator review. */
   responsePolicy: ServiceResponsePolicy;
   /**
@@ -150,6 +186,18 @@ export interface ServiceConfig {
    * profiles without it are invisible to geo-scoped searches.
    */
   serviceArea?: { lat: number; lng: number; radiusKm: number };
+  /**
+   * Tier 1 vault scope pin: the SINGLE persona this listing's
+   * prompt-provider executions may read notes from. NARROWS the runtime's
+   * fail-closed default (all non-sensitive personas) — it can never widen
+   * it: the pin is intersected with the tier scope at execution time, so
+   * pinning a sensitive/locked persona yields an EMPTY scope, not access.
+   * Unset = the tier default.
+   *
+   * PROVIDER-PRIVATE like `instruction`: execution config, never
+   * published to the PDS/AppView record (pinned by tests).
+   */
+  vaultPersona?: string;
   // ── Optional V1 policy hints (spec §5.3) — informational, NOT enforced. ──
   accessPolicyHint?: AccessPolicyHint;
   rateLimitHint?: RateLimitHint;

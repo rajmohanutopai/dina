@@ -615,6 +615,10 @@ export function addApprovalMessage(
     fromDID: string;
     serviceName: string;
     approveCommand: string;
+    /** Who's asking — contact display name when known, else short DID. */
+    requesterLabel?: string;
+    /** Human one-liner of the (validated, stripped) query params. */
+    paramsPreview?: string;
   },
 ): ChatMessage {
   // `kind: 'service_approval'` discriminates this from the

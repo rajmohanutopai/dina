@@ -95,6 +95,7 @@ export type ListingValidationCode =
   | 'public_custom_needs_schema'
   | 'public_sensitive_capability'
   | 'subject_auth_needs_review'
+  | 'missing_execution_plane'
   | 'no_capabilities';
 
 export interface ListingValidationError {
@@ -192,6 +193,29 @@ export function validateServiceListing(
         code: 'missing_category',
         capability: raw,
         message: `Choose a category for "${raw}".`,
+      });
+    }
+
+    // Every capability on an ACTIVE listing needs an execution plane:
+    // either an agent binding (mcpServer + mcpTool) or a Tier 1
+    // instruction ("how should Dina answer?"). Without one, inbound
+    // queries would queue forever and the requester only learns via
+    // TTL expiry. Status-aware like `no_capabilities`: a paused/draft
+    // listing may carry half-configured capabilities while the
+    // provider works on them. Applies to ALL discoverabilities —
+    // known_only listings answer real queries too.
+    const hasAgentPlane =
+      typeof capConfig.mcpServer === 'string' &&
+      capConfig.mcpServer !== '' &&
+      typeof capConfig.mcpTool === 'string' &&
+      capConfig.mcpTool !== '';
+    const hasInstructionPlane =
+      typeof capConfig.instruction === 'string' && capConfig.instruction.trim() !== '';
+    if (effectiveListingStatus(config) === 'active' && !hasAgentPlane && !hasInstructionPlane) {
+      errors.push({
+        code: 'missing_execution_plane',
+        capability: raw,
+        message: `"${raw}" has no way to answer: write instructions for Dina ("how should Dina answer?") or connect an agent for it.`,
       });
     }
 

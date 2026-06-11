@@ -634,6 +634,37 @@ describe('WorkflowRepository — claimDelegationTask runner routing (multi-runne
     r.create(delegation('d-price', 'stub_price'));
     expect(r.getById('d-price')?.requested_runner).toBe('stub_price');
   });
+
+  // ── Tier 1 reserved lane (docs/SERVICE_PROVIDER_TIERS.md) ──
+  // 'dina.local' tasks execute in-process on the provider's own Dina;
+  // an external daemon must never claim one — not even claim-any.
+
+  it("claim-any ('') NEVER takes a dina.local task", () => {
+    const r = buildRepo();
+    r.create(delegation('d-tier1', 'dina.local'));
+    expect(r.claimDelegationTask(AGENT, NOW_MS, LEASE_MS, '')).toBeNull();
+  });
+
+  it("a foreign filter NEVER takes a dina.local task", () => {
+    const r = buildRepo();
+    r.create(delegation('d-tier1', 'dina.local'));
+    expect(r.claimDelegationTask(AGENT, NOW_MS, LEASE_MS, 'openclaw')).toBeNull();
+  });
+
+  it("the 'dina.local' filter claims its own lane", () => {
+    const r = buildRepo();
+    r.create(delegation('d-tier1', 'dina.local'));
+    const claimed = r.claimDelegationTask(AGENT, NOW_MS, LEASE_MS, 'dina.local');
+    expect(claimed?.id).toBe('d-tier1');
+  });
+
+  it('claim-any skips dina.local but still takes the next claimable task', () => {
+    const r = buildRepo();
+    r.create(delegation('d-tier1', 'dina.local', 1000)); // older — would win FIFO
+    r.create(delegation('d-agent', 'openclaw', 2000));
+    const claimed = r.claimDelegationTask(AGENT, NOW_MS, LEASE_MS, '');
+    expect(claimed?.id).toBe('d-agent');
+  });
 });
 
 describe('WorkflowRepository — heartbeatTask', () => {

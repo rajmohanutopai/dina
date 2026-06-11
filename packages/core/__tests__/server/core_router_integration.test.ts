@@ -279,6 +279,42 @@ describe('CoreRouter integration', () => {
       return resp.body as WorkflowTask;
     }
 
+    it("rejects runner_filter 'dina.local' — the reserved lane is in-process only", async () => {
+      // Seed a Tier 1 task on the reserved lane, then try to claim it
+      // over HTTP as an external agent naming the lane. An agent that
+      // could claim it would execute (and forge results for) a task
+      // meant to run on the provider's own Dina.
+      await router.handle(
+        signedReq(
+          'POST',
+          '/v1/workflow/tasks',
+          {
+            id: 'del-tier1',
+            kind: 'delegation',
+            description: '',
+            payload: '{"type":"service_query_execution","capability":"x","params":{}}',
+            initial_state: 'queued',
+            requested_runner: 'dina.local',
+          },
+          brain,
+        ),
+      );
+      const resp = await router.handle(
+        signedReq(
+          'POST',
+          '/v1/workflow/tasks/claim',
+          { lease_ms: 30_000, runner_filter: 'dina.local' },
+          agent,
+        ),
+      );
+      expect(resp.status).toBe(403);
+      // And a claim-any from the same agent must skip the reserved task.
+      const any = await router.handle(
+        signedReq('POST', '/v1/workflow/tasks/claim', { lease_ms: 30_000 }, agent),
+      );
+      expect(any.status).toBe(204);
+    });
+
     it('agent-role device can claim queued delegation', async () => {
       // Seed a queued delegation task (by brain) then claim (by agent).
       await router.handle(

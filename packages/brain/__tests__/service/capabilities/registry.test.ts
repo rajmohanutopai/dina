@@ -24,7 +24,7 @@ import {
 describe('capabilities registry', () => {
   describe('SUPPORTED_CAPABILITIES', () => {
     it('lists exactly the registered capabilities', () => {
-      expect(SUPPORTED_CAPABILITIES).toEqual(['eta_query']);
+      expect(SUPPORTED_CAPABILITIES).toEqual(['eta_query', 'appointment_availability', 'appointment_book']);
     });
 
     it('is immutable', () => {
@@ -82,7 +82,7 @@ describe('capabilities registry', () => {
   describe('listCapabilities', () => {
     it('returns one entry per registered capability', () => {
       const list = listCapabilities();
-      expect(list.map((c) => c.name)).toEqual(['eta_query']);
+      expect(list.map((c) => c.name)).toEqual(['eta_query', 'appointment_availability', 'appointment_book']);
     });
   });
 });

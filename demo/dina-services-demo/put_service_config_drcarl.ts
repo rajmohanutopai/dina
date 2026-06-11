@@ -20,7 +20,7 @@ import { join } from 'node:path';
 
 import { Crypto, HttpClient, createCanonicalRequestSigner } from '@dina/adapters-node';
 import { HttpCoreTransport, deriveDIDKey, getPublicKey } from '@dina/core';
-import { computeSchemaHash } from '@dina/brain';
+import { canonicalCapabilitySchemaHash } from '@dina/brain';
 import type { ServiceConfig } from '@dina/core';
 
 // Ad-hoc params/result schemas for appointment_status (no brain registry
@@ -73,7 +73,7 @@ async function main(): Promise<void> {
     signer,
   });
 
-  const schemaHash = computeSchemaHash(apptParamsSchema);
+  const schemaHash = canonicalCapabilitySchemaHash({ params: apptParamsSchema as Record<string, unknown>, result: apptResultSchema as unknown as Record<string, unknown>, description: 'Check the status or next availability of an appointment with a provider.' });
 
   const config: ServiceConfig = {
     isDiscoverable: true,

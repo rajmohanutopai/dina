@@ -2044,3 +2044,61 @@ func TestHandler_D2DEnvelopeUsesD2DBucket(t *testing.T) {
 	}
 }
 
+
+// --- TST-MBX-0090: ping frame → pong reply on same connection ---
+// TRACE: {"suite": "MBX", "case": "0090", "section": "07", "sectionName": "Envelope Parsing & Hardening", "subsection": "02", "scenario": "01", "title": "ping_replied_with_pong"}
+func TestHandler_PingRepliedWithPong(t *testing.T) {
+	senderDID := "did:key:zPinger001"
+
+	ws, _, _, cleanup := startTestMsgBox(t, senderDID)
+	defer cleanup()
+
+	sendBinary(t, ws, []byte(`{"type":"ping","id":"p1"}`))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	msgType, data, err := ws.Read(ctx)
+	if err != nil {
+		t.Fatalf("read pong: %v", err)
+	}
+	if msgType != websocket.MessageBinary {
+		t.Errorf("pong frame type = %v, want binary", msgType)
+	}
+	var pong struct {
+		Type string `json:"type"`
+		TS   int64  `json:"ts"`
+	}
+	if err := json.Unmarshal(data, &pong); err != nil {
+		t.Fatalf("pong unmarshal: %v (raw=%s)", err, data)
+	}
+	if pong.Type != "pong" {
+		t.Errorf("pong type = %q, want \"pong\"", pong.Type)
+	}
+	if pong.TS == 0 {
+		t.Error("pong ts missing")
+	}
+}
+
+// --- TST-MBX-0091: ping is not buffered, not forwarded, connection stays usable ---
+// TRACE: {"suite": "MBX", "case": "0091", "section": "07", "sectionName": "Envelope Parsing & Hardening", "subsection": "02", "scenario": "02", "title": "ping_no_side_effects"}
+func TestHandler_PingNoSideEffects(t *testing.T) {
+	senderDID := "did:key:zPinger002"
+	recipientDID := "did:plc:recipient090"
+
+	ws, _, buf, cleanup := startTestMsgBox(t, senderDID)
+	defer cleanup()
+
+	// Several pings, then a real D2D frame.
+	for i := 0; i < 3; i++ {
+		sendBinary(t, ws, []byte(`{"type":"ping"}`))
+	}
+	sendBinary(t, ws, makeD2DFrame(senderDID, recipientDID, []byte("after-pings")))
+
+	if !waitFor(t, 2*time.Second, func() bool { return buf.TotalCount() >= 1 }) {
+		t.Fatalf("timeout: buffer count = %d, want >= 1", buf.TotalCount())
+	}
+	// Only the D2D frame may be buffered — pings must never enter the buffer.
+	if buf.TotalCount() != 1 {
+		t.Errorf("buffer count = %d, want 1 (pings must not buffer)", buf.TotalCount())
+	}
+}

@@ -31,9 +31,10 @@ import {
 
 import {
   listCapabilities as listLocalCapabilities,
-  computeSchemaHash,
+  canonicalCapabilitySchemaHash,
   type CapabilityDef,
 } from '@dina/brain';
+import { listPersonas } from '@dina/core';
 import {
   validateServiceListing,
   effectiveDiscoverability,
@@ -64,6 +65,7 @@ import {
 import { slugifyRkey } from '../src/services/listing_rkey';
 import { subscribeRuntimeWarnings, getRuntimeWarnings } from '../src/services/runtime_warnings';
 import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
+
 
 import type { ServiceConfig } from '@dina/core';
 
@@ -153,8 +155,30 @@ export default function ServiceSettingsScreen() {
   const [description, setDescription] = useState('');
   // Per-capability `category` is the concrete vertical chosen in the picker —
   // it travels onto the published listing (controls policy/consent/ranking).
+  //
+  // `lane` is the capability's execution plane (docs/SERVICE_PROVIDER_TIERS.md):
+  //   - 'dina'  → Tier 1 prompt-provider: the provider writes an `instruction`
+  //               ("how should Dina answer?") and THEIR OWN Dina answers from
+  //               it + their vault notes. No infrastructure. The DEFAULT.
+  //   - 'agent' → a paired dina-agent daemon executes (mcpServer binding).
+  // `instruction` is kept across lane toggles so switching back doesn't lose
+  // the provider's text; only the saved mcpServer presence decides the lane.
   const [capabilities, setCapabilities] = useState<
-    { key: string; policy: Policy; category?: string }[]
+    {
+      key: string;
+      policy: Policy;
+      category?: string;
+      lane: 'dina' | 'agent';
+      instruction: string;
+      /**
+       * The saved agent binding, carried through the screen state so a
+       * dina → save → agent round-trip RESTORES the real runner/tool
+       * instead of fabricating the 'openclaw'/<key> default (which
+       * silently dead-ends a multi-runner provider's listing).
+       */
+      mcpServer?: string;
+      mcpTool?: string;
+    }[]
   >([]);
   // Official capability catalog (SERVICE_CAPABILITY_CATALOG_DESIGN.md). Starts as
   // the bundled fallback; the live AppView catalog is fetched on mount and wins
@@ -170,6 +194,20 @@ export default function ServiceSettingsScreen() {
   // runtime. Filtered to capabilities NOT already configured so the
   // picker doesn't show duplicates.
   const localKnownCapabilities = useMemo(() => listLocalCapabilities(), []);
+  // Tier 1 vault pin (docs/SERVICE_PROVIDER_TIERS.md): which persona this
+  // listing's "My Dina answers" executions may read notes from. '' = the
+  // runtime's default (all non-sensitive personas). Pinnable choices
+  // exclude sensitive/locked tiers — the runtime intersects with the tier
+  // scope anyway (a pin can narrow, never widen), so the picker only
+  // offers options that DO something.
+  const [vaultPersona, setVaultPersona] = useState<string>('');
+  const pinnablePersonas = useMemo(
+    () =>
+      listPersonas()
+        .filter((per) => per.tier !== 'sensitive' && per.tier !== 'locked')
+        .map((per) => per.name),
+    [],
+  );
 
   // Resolve a configured capability key to its friendly catalog name for
   // display. A provider picks "Order status" from the catalog but the listing
@@ -262,6 +300,7 @@ export default function ServiceSettingsScreen() {
     setStatus(cfg.status ?? 'active');
     setName(cfg.name);
     setDescription(cfg.description ?? '');
+    setVaultPersona(cfg.vaultPersona ?? '');
     setCapabilities(
       Object.entries(cfg.capabilities).map(([key, cap]) => {
         // Back-compat: an existing config may predate per-capability category.
@@ -281,6 +320,19 @@ export default function ServiceSettingsScreen() {
             (canonical !== null
               ? findCapability(catalog, canonical)?.default_category_id
               : undefined),
+          // Saved mcpServer presence IS the lane (Tier 1 caps omit it).
+          lane: (typeof cap.mcpServer === 'string' && cap.mcpServer !== ''
+            ? 'agent'
+            : 'dina') as 'dina' | 'agent',
+          instruction: cap.instruction ?? '',
+          // Keep the real binding in screen state so lane round-trips
+          // don't fabricate a default one (see the state docstring).
+          ...(typeof cap.mcpServer === 'string' && cap.mcpServer !== ''
+            ? { mcpServer: cap.mcpServer }
+            : {}),
+          ...(typeof cap.mcpTool === 'string' && cap.mcpTool !== ''
+            ? { mcpTool: cap.mcpTool }
+            : {}),
         };
       }),
     );
@@ -294,20 +346,50 @@ export default function ServiceSettingsScreen() {
     );
   }, []);
 
-  const addCapability = useCallback((key: string, category?: string) => {
-    const trimmed = key.trim();
-    if (trimmed === '') return;
-    setCapabilities((list) => {
-      if (list.some((c) => c.key === trimmed)) return list;
-      return [
-        ...list,
-        { key: trimmed, policy: 'auto', ...(category !== undefined ? { category } : {}) },
-      ];
-    });
-    setAddModalVisible(false);
-    setPickerCategoryId(null);
-    setCustomCapName('');
+  const toggleCapabilityLane = useCallback((key: string) => {
+    setCapabilities((list) =>
+      list.map((c) => (c.key === key ? { ...c, lane: c.lane === 'dina' ? 'agent' : 'dina' } : c)),
+    );
   }, []);
+
+  const setCapabilityInstruction = useCallback((key: string, text: string) => {
+    setCapabilities((list) => list.map((c) => (c.key === key ? { ...c, instruction: text } : c)));
+  }, []);
+
+  const addCapability = useCallback(
+    (key: string, category?: string) => {
+      const trimmed = key.trim();
+      if (trimmed === '') return;
+      // Seed the response policy from the catalog's approval hint —
+      // a booking/write capability (e.g. appointment_book,
+      // `always_approval`) starts as `review` so the save doesn't
+      // dead-end on the validator's `write_needs_approval`.
+      const canonical = resolveCatalogCapability(trimmed);
+      const hint =
+        canonical !== null ? findCapability(catalog, canonical)?.approval_policy_hint : undefined;
+      const seededPolicy: Policy = hint === 'always_approval' ? 'review' : 'auto';
+      setCapabilities((list) => {
+        if (list.some((c) => c.key === trimmed)) return list;
+        return [
+          ...list,
+          {
+            key: trimmed,
+            policy: seededPolicy,
+            // Tier 1 is the no-infrastructure default: a new capability is
+            // answered by the provider's own Dina until they explicitly
+            // connect an agent for it (docs/SERVICE_PROVIDER_TIERS.md).
+            lane: 'dina' as const,
+            instruction: '',
+            ...(category !== undefined ? { category } : {}),
+          },
+        ];
+      });
+      setAddModalVisible(false);
+      setPickerCategoryId(null);
+      setCustomCapName('');
+    },
+    [catalog],
+  );
 
   const removeCapability = useCallback((key: string) => {
     setCapabilities((list) => list.filter((c) => c.key !== key));
@@ -351,12 +433,29 @@ export default function ServiceSettingsScreen() {
     // clearer UI message than a wire error. Gated on `status === 'active'`: a
     // paused/draft listing isn't published, so an empty one is allowed (you can
     // pause an in-progress listing without first adding a capability).
-    if (status === 'active' && discoverability === 'public' && capabilities.length === 0) {
+    // Mirrors the validator's `no_capabilities` rule, which gates on
+    // isListingPublishable = active && !known_only — so it fires for
+    // UNLISTED too, and the remedies offered must actually pass.
+    if (status === 'active' && discoverability !== 'known_only' && capabilities.length === 0) {
       Alert.alert(
         'No capabilities',
-        'A published listing must advertise at least one capability. Add one first, or set its visibility to Unlisted or Private.',
+        'A live listing must advertise at least one capability. Add one first, set its visibility to Private / Approved Only, or pause the listing.',
       );
       return;
+    }
+    // Tier 1 lane needs the provider's words — an active capability with
+    // neither an agent binding nor an instruction can only time out on the
+    // requester. Mirrors the validator's `missing_execution_plane` with a
+    // friendlier in-screen message (Core rejects it anyway).
+    if (status === 'active') {
+      const missing = capabilities.find((c) => c.lane === 'dina' && c.instruction.trim() === '');
+      if (missing !== undefined) {
+        Alert.alert(
+          'Tell Dina how to answer',
+          `"${capabilityDisplayName(missing.key)}" is answered by your Dina, but you haven't written instructions yet. Add a sentence or two (e.g. "Use my appointment notes to answer availability. If someone wants to book, ask me first."), or switch it to a connected agent.`,
+        );
+        return;
+      }
     }
     setSaving(true);
     try {
@@ -377,8 +476,15 @@ export default function ServiceSettingsScreen() {
       const caps: ServiceConfig['capabilities'] = Object.fromEntries(
         Object.entries(existing?.capabilities ?? {}).filter(([k]) => liveKeys.has(k)),
       );
+      // Shallow-CLONE each preserved schema entry: `existing` is Core's
+      // live in-memory config object (in-process transport returns it by
+      // reference), and the canonical-hash heal below writes
+      // `schemaEntry.schemaHash`. Mutating the live entry would change
+      // kernel state even when the save is later aborted by validation.
       const schemas: NonNullable<ServiceConfig['capabilitySchemas']> = Object.fromEntries(
-        Object.entries(existing?.capabilitySchemas ?? {}).filter(([k]) => liveKeys.has(k)),
+        Object.entries(existing?.capabilitySchemas ?? {})
+          .filter(([k]) => liveKeys.has(k))
+          .map(([k, v]) => [k, { ...v }]),
       );
       // Overlay the policy + schema for each capability still in the
       // screen list. For caps NOT in `existing` (newly added via Add
@@ -392,21 +498,75 @@ export default function ServiceSettingsScreen() {
           prior === undefined
             ? localKnownCapabilities.find((cap) => cap.name === c.key)
             : undefined;
-        // schema_hash precedence:
-        //   1) any hash on the existing entry (preserved across saves)
-        //   2) recomputed from the registry's paramsSchema (matches
-        //      what ServicePublisher would compute on publish)
+        // Attach capabilitySchemas for a NEWLY added registry capability
+        // (existing schema entries were preserved above). The hash is
+        // filled below from the entry itself.
+        if (def !== undefined && !(c.key in schemas)) {
+          schemas[c.key] = {
+            params: def.paramsSchema,
+            result: def.resultSchema,
+            schemaHash: '',
+            description: def.description,
+            defaultTtlSeconds: def.defaultTtlSeconds,
+          };
+        }
+        // schema_hash is ALWAYS derived from the schema entry actually
+        // being saved — the publisher's canonical {params, result,
+        // description} recipe (`canonicalCapabilitySchemaHash`). Never a
+        // cached prior value and never params-only: a stale/params-only
+        // local hash diverges from the published record's hash, and the
+        // provider then rejects every hash-carrying query with
+        // `schema_version_mismatch` (found live in the Tier 1 salon
+        // demo). Recomputing on every save also HEALS configs written
+        // with the old params-only recipe. Caps with no schema entry
+        // (free-text custom) keep any prior hash (nothing to derive from).
+        const schemaEntry = schemas[c.key];
         const schemaHash =
-          prior?.schemaHash ??
-          (def !== undefined ? computeSchemaHash(def.paramsSchema) : undefined);
+          schemaEntry !== undefined
+            ? canonicalCapabilitySchemaHash(schemaEntry)
+            : prior?.schemaHash;
+        if (schemaEntry !== undefined && schemaHash !== undefined) {
+          schemaEntry.schemaHash = schemaHash;
+        }
+        // Execution plane by lane (docs/SERVICE_PROVIDER_TIERS.md):
+        //   'dina'  → Tier 1: instruction only, NO mcpServer/mcpTool —
+        //             the absence of the binding routes tasks to the
+        //             reserved in-process 'dina.local' runner.
+        //   'agent' → agent binding. Default runner is the conventional
+        //             paired dina-agent name ('openclaw' — see cli
+        //             agent_daemon default); the transit demo overrides
+        //             this explicitly. Any prior instruction text is
+        //             preserved (inert on this lane) so toggling back
+        //             to "My Dina" doesn't lose the provider's words.
+        const trimmedInstruction = c.instruction.trim();
+        // As-of discipline: bump the timestamp ONLY when the text
+        // actually changed — re-saving an untouched listing must not
+        // make stale guidance look fresh. Unchanged text PRESERVES the
+        // prior value INCLUDING undefined (a CLI-authored instruction
+        // with no timestamp stays "age unknown" — honest — rather than
+        // getting laundered to "moments ago" by an incidental save).
+        const instructionUpdatedAt =
+          trimmedInstruction === ''
+            ? undefined
+            : trimmedInstruction === (prior?.instruction ?? '').trim()
+              ? prior?.instructionUpdatedAt
+              : Date.now();
         caps[c.key] = {
-          // Default runner is the conventional paired dina-agent name
-          // ('openclaw' — see cli agent_daemon default). A task's
-          // requested_runner is set from this mcpServer, so hardcoding a
-          // specific runner (e.g. 'transit') would route every capability
-          // to that one daemon. The transit demo overrides this explicitly.
-          mcpServer: prior?.mcpServer ?? 'openclaw',
-          mcpTool: prior?.mcpTool ?? c.key,
+          ...(c.lane === 'agent'
+            ? {
+                // Screen-state binding first (survives dina→agent
+                // round-trips within AND across saves), then the stored
+                // prior, then the conventional paired-daemon default.
+                mcpServer: c.mcpServer ?? prior?.mcpServer ?? 'openclaw',
+                mcpTool: c.mcpTool ?? prior?.mcpTool ?? c.key,
+              }
+            : {}),
+          ...(trimmedInstruction !== ''
+            ? {
+                instruction: trimmedInstruction,
+                ...(instructionUpdatedAt !== undefined ? { instructionUpdatedAt } : {}),
+              }
+            : {}),
           responsePolicy: c.policy,
           ...(schemaHash !== undefined ? { schemaHash } : {}),
           // The concrete category chosen in the picker travels onto the listing
@@ -418,20 +578,14 @@ export default function ServiceSettingsScreen() {
               ? { category: prior.category }
               : {}),
         };
-        // Attach capabilitySchemas only when we have a registry def
-        // AND it's not already in the existing schemas map. Mirrors
-        // the published profile shape AppView consumers expect.
-        if (def !== undefined && !(c.key in schemas)) {
-          schemas[c.key] = {
-            params: def.paramsSchema,
-            result: def.resultSchema,
-            schemaHash: schemaHash ?? computeSchemaHash(def.paramsSchema),
-            description: def.description,
-            defaultTtlSeconds: def.defaultTtlSeconds,
-          };
-        }
       }
       const next: ServiceConfig = {
+        // Seed from the EXISTING config so fields this screen does not
+        // manage (serviceArea, accessPolicyHint/rateLimitHint/pricingHint/
+        // freshnessHint, anything a CLI added) survive the save — the
+        // screen previously rebuilt the object from its own fields alone
+        // and silently dropped a listing's service area on every edit.
+        ...(existing ?? {}),
         // Legacy boolean derived from the explicit value for back-compat.
         isDiscoverable: discoverability === 'public',
         // Explicit discovery visibility chosen in the "who can find this?"
@@ -443,7 +597,12 @@ export default function ServiceSettingsScreen() {
         name: name.trim(),
         description: description.trim() !== '' ? description.trim() : undefined,
         capabilities: caps,
-        ...(Object.keys(schemas).length > 0 ? { capabilitySchemas: schemas } : {}),
+        ...(Object.keys(schemas).length > 0
+          ? { capabilitySchemas: schemas }
+          : { capabilitySchemas: undefined }),
+        // Explicit override of the seeded value — clearing the pin back to
+        // "All shared memory" must actually remove it from the config.
+        vaultPersona: vaultPersona !== '' ? vaultPersona : undefined,
       };
       // Fail-closed catalog validation (spec §8.1): a capability must be
       // official-or-namespaced (never an unknown flat name), carry an allowed
@@ -738,9 +897,67 @@ export default function ServiceSettingsScreen() {
         </View>
 
         <View style={styles.section}>
+          <Text style={styles.sectionHeader}>ANSWERS FROM</Text>
+          <Text style={styles.sectionSubtitle}>
+            When your Dina answers for this service, which memory may it use? Pinning one keeps
+            every other note out of reach — private memories are never available to services
+            either way.
+          </Text>
+          <View style={styles.card}>
+            <View style={styles.personaPinRow}>
+              <Pressable
+                onPress={() => setVaultPersona('')}
+                style={({ pressed }) => [
+                  styles.personaChip,
+                  vaultPersona === '' && styles.personaChipActive,
+                  pressed && styles.pressed,
+                ]}
+                testID="service-settings-vault-persona-all"
+                accessibilityRole="button"
+                accessibilityLabel="Answers may use all shared memory"
+              >
+                <Text
+                  style={[
+                    styles.personaChipText,
+                    vaultPersona === '' && styles.personaChipTextActive,
+                  ]}
+                >
+                  All shared memory
+                </Text>
+              </Pressable>
+              {pinnablePersonas.map((per) => (
+                <Pressable
+                  key={per}
+                  onPress={() => setVaultPersona(per)}
+                  style={({ pressed }) => [
+                    styles.personaChip,
+                    vaultPersona === per && styles.personaChipActive,
+                    pressed && styles.pressed,
+                  ]}
+                  testID={`service-settings-vault-persona-${per}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Answers may use only the ${per} memory`}
+                >
+                  <Text
+                    style={[
+                      styles.personaChipText,
+                      vaultPersona === per && styles.personaChipTextActive,
+                    ]}
+                  >
+                    {per}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionHeader}>CAPABILITIES</Text>
           <Text style={styles.sectionSubtitle}>
-            Choose whether each capability runs automatically or waits for your approval.
+            For each capability: who answers it (your Dina, from your instructions and notes — or
+            a connected agent), and whether answers go out automatically or wait for your
+            approval.
           </Text>
           <View style={styles.card}>
             {capabilities.length === 0 ? (
@@ -755,64 +972,114 @@ export default function ServiceSettingsScreen() {
                   <View
                     key={cap.key}
                     style={[
-                      styles.capabilityRow,
+                      styles.capabilityBlock,
                       idx === capabilities.length - 1 && styles.capabilityRowLast,
                     ]}
                   >
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      {/* Catalog caps: friendly name + the raw key as a muted
-                        sub-line. Custom keys: just the key (mono). */}
-                      <Text style={isCatalog ? styles.capabilityLabel : styles.capabilityName}>
-                        {friendly}
-                      </Text>
-                      {isCatalog ? (
-                        <Text style={styles.capabilityKeySub} numberOfLines={1}>
-                          {cap.key}
+                    <View style={styles.capabilityHeaderRow}>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        {/* Catalog caps: friendly name + the raw key as a muted
+                          sub-line. Custom keys: just the key (mono). */}
+                        <Text style={isCatalog ? styles.capabilityLabel : styles.capabilityName}>
+                          {friendly}
                         </Text>
-                      ) : null}
+                        {isCatalog ? (
+                          <Text style={styles.capabilityKeySub} numberOfLines={1}>
+                            {cap.key}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <Pressable
+                        onPress={() => toggleCapabilityPolicy(cap.key)}
+                        style={({ pressed }) => [styles.policyToggle, pressed && styles.pressed]}
+                        testID={`service-settings-policy-${cap.key}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${friendly} response policy: ${cap.policy}. Tap to toggle.`}
+                      >
+                        <View
+                          style={[styles.policyHalf, cap.policy === 'auto' && styles.policyActive]}
+                        >
+                          <Text
+                            style={[
+                              styles.policyText,
+                              cap.policy === 'auto' && styles.policyActiveText,
+                            ]}
+                          >
+                            Auto
+                          </Text>
+                        </View>
+                        <View
+                          style={[styles.policyHalf, cap.policy === 'review' && styles.policyActive]}
+                        >
+                          <Text
+                            style={[
+                              styles.policyText,
+                              cap.policy === 'review' && styles.policyActiveText,
+                            ]}
+                          >
+                            Review
+                          </Text>
+                        </View>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => removeCapability(cap.key)}
+                        style={({ pressed }) => [styles.removeButton, pressed && styles.pressed]}
+                        testID={`service-settings-remove-capability-${cap.key}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove ${friendly} capability`}
+                        hitSlop={8}
+                      >
+                        <Ionicons name="close" size={16} color={colors.textSecondary} />
+                      </Pressable>
                     </View>
-                    <Pressable
-                      onPress={() => toggleCapabilityPolicy(cap.key)}
-                      style={({ pressed }) => [styles.policyToggle, pressed && styles.pressed]}
-                      testID={`service-settings-policy-${cap.key}`}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${friendly} response policy: ${cap.policy}. Tap to toggle.`}
-                    >
-                      <View
-                        style={[styles.policyHalf, cap.policy === 'auto' && styles.policyActive]}
+
+                    {/* Execution plane (docs/SERVICE_PROVIDER_TIERS.md):
+                        "My Dina" = Tier 1 prompt-provider (instruction +
+                        the provider's own notes); "Agent" = a paired
+                        dina-agent daemon executes. */}
+                    <View style={styles.laneRow}>
+                      <Text style={styles.laneLabel}>Answered by</Text>
+                      <Pressable
+                        onPress={() => toggleCapabilityLane(cap.key)}
+                        style={({ pressed }) => [styles.policyToggle, pressed && styles.pressed]}
+                        testID={`service-settings-lane-${cap.key}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${friendly} answered by: ${cap.lane === 'dina' ? 'my Dina' : 'a connected agent'}. Tap to toggle.`}
                       >
-                        <Text
-                          style={[
-                            styles.policyText,
-                            cap.policy === 'auto' && styles.policyActiveText,
-                          ]}
-                        >
-                          Auto
-                        </Text>
-                      </View>
-                      <View
-                        style={[styles.policyHalf, cap.policy === 'review' && styles.policyActive]}
-                      >
-                        <Text
-                          style={[
-                            styles.policyText,
-                            cap.policy === 'review' && styles.policyActiveText,
-                          ]}
-                        >
-                          Review
-                        </Text>
-                      </View>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => removeCapability(cap.key)}
-                      style={({ pressed }) => [styles.removeButton, pressed && styles.pressed]}
-                      testID={`service-settings-remove-capability-${cap.key}`}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Remove ${friendly} capability`}
-                      hitSlop={8}
-                    >
-                      <Ionicons name="close" size={16} color={colors.textSecondary} />
-                    </Pressable>
+                        <View style={[styles.policyHalf, cap.lane === 'dina' && styles.policyActive]}>
+                          <Text
+                            style={[styles.policyText, cap.lane === 'dina' && styles.policyActiveText]}
+                          >
+                            My Dina
+                          </Text>
+                        </View>
+                        <View style={[styles.policyHalf, cap.lane === 'agent' && styles.policyActive]}>
+                          <Text
+                            style={[styles.policyText, cap.lane === 'agent' && styles.policyActiveText]}
+                          >
+                            Agent
+                          </Text>
+                        </View>
+                      </Pressable>
+                    </View>
+
+                    {cap.lane === 'dina' ? (
+                      <TextInput
+                        style={styles.instructionInput}
+                        value={cap.instruction}
+                        onChangeText={(t) => setCapabilityInstruction(cap.key, t)}
+                        placeholder={'How should Dina answer? e.g. "Use my appointment notes to answer availability. If someone wants to book, ask me first."'}
+                        placeholderTextColor={colors.textSecondary}
+                        multiline
+                        testID={`service-settings-instruction-${cap.key}`}
+                        accessibilityLabel={`Instructions for how Dina answers ${friendly}`}
+                      />
+                    ) : (
+                      <Text style={styles.laneHint}>
+                        A connected agent executes this capability. Manage agents under
+                        Settings → Agents.
+                      </Text>
+                    )}
                   </View>
                 );
               })
@@ -1102,6 +1369,65 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.borderLight,
+  },
+  // Per-capability block: header row + execution-plane selector +
+  // instruction editor (Tier 1) stacked under one bottom border.
+  capabilityBlock: {
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight,
+  },
+  capabilityHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  laneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+  },
+  laneLabel: {
+    ...textStyles.caption,
+  },
+  laneHint: {
+    ...textStyles.caption,
+    marginTop: spacing.xs,
+  },
+  personaPinRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+  },
+  personaChip: {
+    paddingVertical: 6,
+    paddingHorizontal: spacing.sm,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  personaChipActive: {
+    backgroundColor: colors.textPrimary,
+    borderColor: colors.textPrimary,
+  },
+  personaChipText: {
+    ...textStyles.caption,
+  },
+  personaChipTextActive: {
+    color: colors.bgPrimary,
+  },
+  instructionInput: {
+    ...textStyles.body,
+    marginTop: spacing.xs,
+    paddingVertical: 6,
+    paddingHorizontal: spacing.sm,
+    minHeight: 64,
+    textAlignVertical: 'top',
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    borderRadius: 8,
   },
   capabilityRowLast: {
     borderBottomWidth: 0,

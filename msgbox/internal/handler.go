@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
@@ -158,8 +159,25 @@ func (h *Handler) handleJSONEnvelope(conn *MsgBoxConn, data []byte) {
 		h.routeRPC(conn, data, &env)
 	case "cancel":
 		h.routeCancel(conn, &env)
+	case "ping":
+		h.routePing(conn)
 	default:
 		slog.Debug("msgbox.unknown_envelope_type", "type", env.Type, "from", conn.DID)
+	}
+}
+
+// routePing replies to a client keepalive probe (issue #351). Home nodes
+// behind NATs/proxies send {"type":"ping"} periodically; the pong lets the
+// client distinguish "idle but alive" from a half-open TCP connection a
+// middlebox silently killed. Never forwarded, never buffered, and not
+// rate-limited: pings are ~1/30s per connection and answering them is
+// cheaper than the reconnect storm a limited ping would cause.
+func (h *Handler) routePing(conn *MsgBoxConn) {
+	pong, _ := json.Marshal(map[string]any{"type": "pong", "ts": time.Now().Unix()})
+	ctx, cancel := context.WithTimeout(conn.Ctx, 5*time.Second)
+	defer cancel()
+	if err := conn.WS.Write(ctx, websocket.MessageBinary, pong); err != nil {
+		slog.Debug("msgbox.pong_write_failed", "did", conn.DID, "error", err)
 	}
 }
 

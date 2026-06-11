@@ -20,7 +20,7 @@ no code, no daemon, no server.
 | Infrastructure | phone, on and connected | + one always-on machine with the agent CLI | + whatever the integration needs |
 | Update mechanism | **talking to their own Dina** (`/remember price changed`) — zero new behavior | same, plus the agent's own data sources | code/config deploys |
 | Volume envelope | dozens/day | hundreds/day | whatever the backend takes |
-| Status | **to build** (instruction field + brain runCapability + local-runner routing; LocalDelegationRunner + Response-Bridge validation already exist) | mostly built (runners shipped; needs the **structured envelope** for `service_query_execution` tasks) | shipped (bus42/stub pattern, MCP binding) |
+| Status | **SHIPPED + live-proven 2026-06-11** (instruction field, brain `runCapability`, reserved `dina.local` lane, mobile editor lane UI; salon demo passed E2E: availability auto-answer + review-gated booking round trip on real infra) | mostly built (runners shipped; needs the **structured envelope** for `service_query_execution` tasks) | shipped (bus42/stub pattern, MCP binding) |
 
 **Structure safety is tier-independent**: every tier's output passes the frozen
 `schemaSnapshot` validation at the Response Bridge — a Tier 1 LLM answer that doesn't
@@ -161,22 +161,41 @@ themselves; Dina is the channel).
    *commits* the provider (a booking) routes through an approval card instead of
    auto-answering. Async human confirmation is how these businesses already operate.
 
-## Design requirements distilled (Tier 1 build)
+## Design requirements distilled (Tier 1 build) — STATUS 2026-06-11: SHIPPED
 
-1. **Instruction field** (`howToAnswer`) per capability on the service config + listing
-   editor UI. It is a prompt, not config — free text.
-2. **Brain `runCapability`**: agentic call = instruction + params + vault search +
-   capability result schema (native structured output where the provider supports it) →
-   JSON. Plugged into the existing `LocalDelegationRunner` (already wired in mobile boot,
-   currently demo-gated).
-3. **Routing**: capabilities without an `mcpServer` binding and with no paired agent route
-   to the local runner instead of warning `provider has no execution plane`.
-4. **As-of / staleness discipline**: instructions carry their last-updated time; the prompt
-   is told to prefer "unsure/ask the provider" over stale-confident; responses may carry
-   "as of <when>".
-5. **Prerequisite: relay reliability** — Tier 1 rides on the phone's MsgBox WebSocket;
-   the idle-staleness finding (no auto-reconnect, found live 2026-06-10) graduates from P2
-   to a Tier 1 blocker. Heartbeat + reconnect first.
-6. **Tier 2 follow-up**: the structured task envelope for headless runners
+1. ✅ **Instruction field** — `instruction` + `instructionUpdatedAt` on
+   `ServiceCapabilityConfig` (`mcpServer`/`mcpTool` now optional-but-paired; the lane IS
+   the binding's presence). Provider-PRIVATE: never published (pinned by test). Editor:
+   per-capability "Answered by: My Dina | Agent" + "How should Dina answer?" free-text.
+   Validator: `missing_execution_plane` on active listings.
+2. ✅ **Brain `runCapability`** (`capability_runtime.ts` + `tier1_runner.ts`): agentic turn
+   with a READ-ONLY `vault_search` tool → fence-tolerant parse → result-schema validation →
+   ONE native-structured-output synthesis retry → result. Frozen `schemaSnapshot` at the
+   Response Bridge stays the final gate. `operator_approved` rides the approval→delegation
+   payload so "ask me first" instructions confirm (not re-ask) after approval.
+3. ✅ **Routing** — reserved `dina.local` runner lane (`LOCAL_RUNNER_NAME`): no-binding
+   capabilities route there; claim-any/foreign agent daemons can never claim it (SQL + in-
+   memory parity-tested); `LocalDelegationRunner` claims it by default and is ALWAYS wired
+   in mobile boot (un-gated; LLM resolved per-execution via the hot-swappable router).
+4. ✅ **As-of discipline** — timestamp bumps only on text change; prompt renders the age
+   and instructs honest-fallback (`unknown` + confirm-with-provider) over stale-confident;
+   `as_of` field in the availability result schema.
+5. ✅ **Relay reliability** — app-level ping/pong (relay `routePing` + client keepalive
+   tick: 30s pings, 90s tight / 10-min fallback staleness, auth-limbo recycle). Relay
+   deploy to test/prod pending operator action.
+6. **Tier 2 follow-up (open)**: the structured task envelope for headless runners
    (params JSON + JSON-only stdout contract + extraction) so paired agents can serve
    declared capabilities; the Response Bridge already protects the requester either way.
+7. **Lite core-server Tier 1 (open)**: lite splits Core/Brain into two processes, so the
+   in-process runner needs a core→brain delegation hop there. Mobile is the V1 provider
+   surface ("a phone and a sentence"); lite providers keep using agent daemons.
+
+**Live proof (2026-06-11):** the salon demo passed end-to-end on real test infra — iOS
+owner (instruction + `/remember` slots, listing created in the editor) × Android stranger
+customer: availability auto-answered by the phone ("4:30 PM and 5:15 PM"), booking
+review-gated ("…asks Alonso's Salon: appointment_book — time: 16:30" → Approve →
+"Confirmed · 16:30"). Two pre-existing P1s found live and fixed: form-stored schema hash
+diverged from the published canonical hash (every form-created listing was unreachable —
+`schema_version_mismatch`), and the approval event hop dropped
+`service_uri`/`schema_snapshot`/`mcp_tool` (multi-listing review approvals executed
+against the wrong listing; GAP-SH-04 silently lost post-approval).

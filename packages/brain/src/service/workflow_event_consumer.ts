@@ -19,9 +19,13 @@
  * Source: SERVICE_DISCOVERY_DESIGN.md BRAIN-P2-W03 / MOBILE-009.
  */
 
-import type { CoreClient, WorkflowEvent, WorkflowTask } from '@dina/core';
+import { parseServiceQueryExecutionPayload } from '@dina/protocol';
+
 import { formatServiceQueryResult, type ServiceQueryEventDetails } from './result_formatter';
-import type { ServiceResponseBody } from '@dina/protocol';
+
+
+import type { CoreClient, WorkflowEvent, WorkflowTask } from '@dina/core';
+import type { ServiceResponseBody, ServiceQueryExecutionPayload } from '@dina/protocol';
 
 /**
  * How the formatted response reaches the surface (chat thread, Telegram,
@@ -40,18 +44,15 @@ export type WorkflowEventDeliverer = (args: {
  * approval task. The `approved`-event dispatcher needs the same shape
  * that `ServiceHandler.executeAndRespond` already accepts.
  */
-export interface ApprovedExecutionPayload {
-  from_did: string;
-  query_id: string;
-  capability: string;
-  params: unknown;
-  ttl_seconds?: number;
-  schema_hash?: string;
-  service_name?: string;
-  /** The runner (capability `mcpServer`) — forwarded so the approved exec
-   *  task carries `requested_runner` for multi-runner provider routing. */
-  mcp_server?: string;
-}
+/**
+ * The approval payload IS the codec shape (`@dina/protocol`'s
+ * `ServiceQueryExecutionPayload`) — the hop that used to hand-extract a
+ * field subset here silently dropped service_uri/schema_snapshot/
+ * mcp_tool (found live in the Tier 1 salon-booking demo). The alias is
+ * kept so call sites read naturally; the `type` discriminant is
+ * dropped because consumers of an APPROVED event already know.
+ */
+export type ApprovedExecutionPayload = Omit<ServiceQueryExecutionPayload, 'type'>;
 
 /**
  * Fired when a workflow task transitions `pending_approval → queued`.
@@ -658,52 +659,18 @@ function peekPayloadType(raw: string): string {
 
 /**
  * Extract the `service_query_execution` envelope from an approval task's
- * payload. Returns `null` when the payload is malformed or missing any
- * required field — the consumer treats that as a dispatch-failure so
- * Core can redrive after an operator re-issues the task.
+ * payload — via THE codec (`@dina/protocol`'s
+ * `parseServiceQueryExecutionPayload`), so every field the handler
+ * persists survives this hop by construction. Returns `null` when the
+ * payload is a different approval kind (e.g. intent_validation — those
+ * flow through their own consumers) or is missing a required identity
+ * field; the consumer treats that as a dispatch-failure so Core can
+ * redrive after an operator re-issues the task.
  */
 function parseApprovedPayload(raw: string): ApprovedExecutionPayload | null {
-  let parsed: Record<string, unknown>;
-  try {
-    const p = JSON.parse(raw);
-    if (p === null || typeof p !== 'object') return null;
-    parsed = p as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-  const from_did = parsed.from_did;
-  const query_id = parsed.query_id;
-  const capability = parsed.capability;
-  if (
-    typeof from_did !== 'string' ||
-    from_did === '' ||
-    typeof query_id !== 'string' ||
-    query_id === '' ||
-    typeof capability !== 'string' ||
-    capability === ''
-  ) {
-    return null;
-  }
-  return {
-    from_did,
-    query_id,
-    capability,
-    params: parsed.params,
-    ttl_seconds: typeof parsed.ttl_seconds === 'number' ? parsed.ttl_seconds : undefined,
-    // Treat empty-string schema_hash / service_name as absent — the handler
-    // writes them as '' when no value is available, and downstream consumers
-    // expect a missing field in that case.
-    schema_hash:
-      typeof parsed.schema_hash === 'string' && parsed.schema_hash !== ''
-        ? parsed.schema_hash
-        : undefined,
-    service_name:
-      typeof parsed.service_name === 'string' && parsed.service_name !== ''
-        ? parsed.service_name
-        : undefined,
-    mcp_server:
-      typeof parsed.mcp_server === 'string' && parsed.mcp_server !== ''
-        ? parsed.mcp_server
-        : undefined,
-  };
+  const parsed = parseServiceQueryExecutionPayload(raw);
+  if (parsed === null) return null;
+  // Drop the discriminant — consumers of an APPROVED event already know.
+  const { type: _type, ...payload } = parsed;
+  return payload;
 }
