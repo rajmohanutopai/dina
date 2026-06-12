@@ -19,8 +19,15 @@
 const DANGEROUS =
   /(SECRET|TOKEN|PASSWORD|PASSPHRASE|API_?KEY|PRIVATE|MNEMONIC|SEED|PDS_|TEST_INJECT|DINA_DEV|DEV_MODE)/i;
 
+// Known-public names that collide with the broad patterns above. A plain
+// endpoint URL is public config — it ships in the bundle by design. Keep
+// this list EXACT names only (no patterns), so a future
+// EXPO_PUBLIC_DINA_PDS_PASSWORD still fails the build.
+const ALLOWED = new Set(['EXPO_PUBLIC_DINA_PDS_URL']);
+
 const offenders = Object.keys(process.env)
   .filter((k) => k.startsWith('EXPO_PUBLIC_'))
+  .filter((k) => !ALLOWED.has(k))
   .filter((k) => DANGEROUS.test(k))
   .sort();
 

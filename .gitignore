@@ -260,8 +260,9 @@ legacy/go-core/dina-core
 appview/test-results*.json
 appview/dist/
 
-# Claude Code session artifacts
-.claude/scheduled_tasks.lock
+# Claude Code session artifacts — plans + local settings are private
+# working state, never for the public repo.
+.claude/
 
 # Test stack artifacts (from prepare_non_unit_env.sh)
 .test-stack.json
@@ -368,3 +369,8 @@ bus42-agent/
 demo/dina-services-demo/eta-agent/
 .d2d-live-scratch/
 .qa-screens/
+
+# Marketing — strategy, launch plans, channel playbooks, demographics
+# research, video scripts/footage, press kit. Private working material
+# (includes founder-personal launch constraints) — never for the public repo.
+marketing/
