@@ -60,6 +60,7 @@ import { useAutoLock } from '../src/hooks/useAutoLock';
 import { clearThread } from '../src/hooks/useChatThread';
 import { useNodeBootstrap } from '../src/hooks/useNodeBootstrap';
 import { useUnreadBadge } from '../src/hooks/useNotificationsBadge';
+import { useRelayWake } from '../src/hooks/useRelayWake';
 import { useReminderFireWatcher } from '../src/hooks/useReminderFireWatcher';
 import { sealVault, useIsUnlocked } from '../src/hooks/useUnlock';
 import {
@@ -457,6 +458,13 @@ export default function RootLayout() {
   // uses, so the next foreground re-entry prompts for a passphrase
   // even when `startupMode === 'auto'`.
   useAutoLock(unlocked);
+
+  // Foreground → reconnect the relay immediately (#351 complement). iOS
+  // suspends JS on background, killing the MsgBox socket; without this
+  // the next keepalive tick has to notice staleness (up to ~90s) before
+  // reconnecting, leaving the Home Node unreachable to agents/peers right
+  // after the user reopens the app. `wakeRelay()` self-noops when healthy.
+  useRelayWake(unlocked);
 
   // Explicit demo-mode toggle: reads the Expo public env var and
   // passes it through to the composer. Default off so a production

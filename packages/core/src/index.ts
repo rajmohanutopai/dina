@@ -752,6 +752,7 @@ export {
   setIdentity as setMsgBoxIdentity,
   setWSFactory,
   connectToMsgBox,
+  wakeRelay,
   disconnect as disconnectMsgBox,
   isConnected as isMsgBoxConnected,
   isAuthenticated as isMsgBoxAuthenticated,

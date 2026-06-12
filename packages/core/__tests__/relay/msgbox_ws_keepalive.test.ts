@@ -21,6 +21,8 @@ import {
   setWSFactory,
   setIdentity,
   isAuthenticated,
+  isConnected,
+  wakeRelay,
   KEEPALIVE_TICK_MS,
   PING_INTERVAL_MS,
   PONG_STALE_MS,
@@ -229,5 +231,94 @@ describe('MsgBox WS keepalive (issue #351)', () => {
     jest.advanceTimersByTime(FALLBACK_STALE_MS * 2);
     expect(pingsSent(ws)).toHaveLength(pingsAtDisconnect);
     expect(sockets.length).toBe(1); // no reconnect after explicit disconnect
+  });
+});
+
+describe('wakeRelay — foreground reconnect (issue #351 complement)', () => {
+  let sockets: MockWS[];
+
+  function setup(): void {
+    const pubKey = getPublicKey(TEST_ED25519_SEED);
+    setIdentity(deriveDIDKey(pubKey), TEST_ED25519_SEED);
+    setWSFactory(() => {
+      const ws = makeMockWS();
+      sockets.push(ws);
+      return ws;
+    });
+  }
+
+  async function connectAndAuth(): Promise<MockWS> {
+    setup();
+    await connectToMsgBox('wss://relay.test/ws');
+    const ws = sockets[sockets.length - 1];
+    ws.onopen?.();
+    ws.onmessage?.({ data: JSON.stringify({ type: 'auth_challenge', nonce: 'n1', ts: 1 }) });
+    ws.onmessage?.({ data: JSON.stringify({ type: 'auth_success' }) });
+    expect(isAuthenticated()).toBe(true);
+    return ws;
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    sockets = [];
+    resetConnectionState();
+  });
+
+  afterEach(() => {
+    resetConnectionState();
+    jest.useRealTimers();
+  });
+
+  it('is a no-op when the relay is already authenticated on an OPEN socket', async () => {
+    const ws = await connectAndAuth();
+    wakeRelay();
+    expect(sockets.length).toBe(1); // no new socket
+    expect(ws.closeCalls).toBe(0); // existing one untouched
+    expect(isAuthenticated()).toBe(true);
+  });
+
+  it('reconnects IMMEDIATELY when the socket died (the background→foreground case)', async () => {
+    const ws = await connectAndAuth();
+    // Simulate iOS killing the socket while suspended: it's CLOSED but
+    // no onclose ran (JS was paused), so our state still thinks it's up.
+    ws.readyState = 3; // CLOSED
+    wakeRelay();
+    // A fresh socket is created synchronously (no backoff wait, no
+    // staleness-threshold wait).
+    expect(sockets.length).toBe(2);
+    const fresh = sockets[1];
+    fresh.onopen?.();
+    fresh.onmessage?.({ data: JSON.stringify({ type: 'auth_challenge', nonce: 'n2', ts: 2 }) });
+    fresh.onmessage?.({ data: JSON.stringify({ type: 'auth_success' }) });
+    expect(isAuthenticated()).toBe(true);
+  });
+
+  it('bypasses a pending backoff timer (no double-connect)', async () => {
+    await connectAndAuth();
+    // Force the socket closed → schedules a backoff reconnect.
+    sockets[0].close();
+    expect(isConnected()).toBe(false);
+    // wakeRelay should reconnect NOW and cancel the pending backoff so it
+    // doesn't fire a SECOND socket later.
+    wakeRelay();
+    const afterWake = sockets.length;
+    expect(afterWake).toBe(2);
+    // Advance well past any backoff window — no third socket from a
+    // leftover timer.
+    jest.advanceTimersByTime(FALLBACK_STALE_MS);
+    expect(sockets.length).toBe(afterWake);
+  });
+
+  it('does NOT reconnect after an explicit disconnect()', async () => {
+    await connectAndAuth();
+    await disconnect();
+    wakeRelay();
+    expect(sockets.length).toBe(1); // shouldReconnect=false → no-op
+  });
+
+  it('is a no-op before any connect (nothing to wake)', () => {
+    setup();
+    wakeRelay();
+    expect(sockets.length).toBe(0);
   });
 });

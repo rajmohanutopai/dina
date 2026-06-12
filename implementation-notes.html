@@ -1636,5 +1636,35 @@ Python daemon still reads raw payload JSON (wire unchanged, so fine) — porting
 optional polish. tier1_runner's task factory in tests now carries identity fields (the codec REQUIRES from_did/
 query_id — production always had them).</div>
 
+<h3>#359 — AppState foreground-reconnect (the #351 complement)</h3>
+<div class="item decision"><span class="tag decision">decision</span> <b>The keepalive (#351) only covers a
+socket going stale WHILE the app runs.</b> The other half — surfaced by the user probing "what happens when the
+app is backgrounded then foregrounded?" — is the resume edge: iOS suspends JS on background, freezing every timer
+(keepalive tick AND any pending backoff reconnect) and tearing the socket down. On foreground the timers resume
+but recovery is IMPLICIT — the next tick has to first NOTICE staleness (up to the 90s/10-min threshold) before it
+force-reconnects, leaving a window where the Home Node is unreachable to agents/peers while the user is staring at
+the app (a <code>/task</code> delegation or inbound Talk would time out). New <code>wakeRelay()</code> in
+<code>msgbox_ws.ts</code> collapses that window to ~0: no-op when already authenticated on an OPEN socket;
+otherwise it cancels any pending backoff, detaches handlers off the half-open socket (so its async onclose can't
+race a competing reconnect), and reconnects from attempt 0 (user's back → no backoff penalty).</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>Two-phase hook, matching
+<code>useAutoLock</code>:</b> pure <code>installRelayWake({ wakeFn })</code> (Node-testable, no RN/AppState) +
+thin <code>useRelayWake(unlocked)</code> that wires the <code>AppState</code> listener, mounted next to
+<code>useAutoLock</code> in <code>_layout.tsx</code> and gated on unlocked (no relay before unlock; a long
+background that sealed the vault re-boots a fresh relay on re-unlock anyway). <code>inactive</code> is the trap:
+it's a transient overlay (Control Center, app switcher) and must NOT move <code>lastState</code> off
+'background', else iOS's real <code>background → inactive → active</code> resume lands as
+<code>inactive → active</code> and the wake is skipped — so the hook returns early on it. Wake fires on any
+durable transition INTO active; <code>wakeRelay()</code> self-noops when healthy, so an over-eager call is free.</div>
+<div class="item"><span class="tag test">tests</span> 5 fake-timer tests added to
+<code>msgbox_ws_keepalive.test.ts</code> (no-op when healthy; immediate reconnect when the socket died; bypass
+pending backoff with no double-connect; no reconnect after explicit disconnect; no-op before connect) — 13/13 in
+file. 7 pure-function tests in new <code>apps/mobile/__tests__/hooks/useRelayWake.test.ts</code> (cold first
+active; background→active resume; ignore background/inactive; full iOS background→inactive→active sequence wakes
+once; inactive-as-transient; coalesce active duplicates; dispose resets). core + mobile typecheck clean; all
+changed files lint-clean (one pre-existing unrelated <code>focused</code> warning in <code>_layout.tsx</code> left
+untouched). <b>Not yet live-driven on the sim</b> — pure-logic + contract coverage only; queued for the next MRS
+pass (background the app mid-<code>/task</code> → foreground → assert sub-2s delivery).</div>
+
 </body>
 </html>

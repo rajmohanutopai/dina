@@ -306,6 +306,66 @@ export function isAuthenticated(): boolean {
 }
 
 /**
+ * Foreground/resume nudge (issue #351 complement).
+ *
+ * The keepalive tick (`keepaliveTick`) handles a socket going stale WHILE
+ * the app runs. But when a mobile Home Node is backgrounded, the OS
+ * suspends JS — every timer (the keepalive tick AND any pending backoff
+ * reconnect) freezes — and tears the socket down. On foreground the
+ * timers resume, but recovery is then implicit: the next keepalive tick
+ * has to NOTICE staleness (up to the 90s/10-min threshold) before it
+ * force-reconnects, leaving a window where the Home Node is unreachable
+ * to agents/peers even though the user is looking at the app.
+ *
+ * `wakeRelay()` collapses that window to ~0: call it from an
+ * `AppState: 'active'` listener. If the relay is already authenticated on
+ * an OPEN socket it is a no-op; otherwise it tears down any half-open
+ * socket left by the suspended period and reconnects IMMEDIATELY (from
+ * attempt 0 — the user is back, no backoff penalty), bypassing both the
+ * staleness threshold and any pending backoff timer.
+ *
+ * No-op when the relay was never connected or was deliberately
+ * `disconnect()`ed (`shouldReconnect === false`).
+ */
+export function wakeRelay(): void {
+  if (!shouldReconnect || currentURL === null) return; // never up / deliberately closed
+  if (authenticated && ws !== null && ws.readyState === WS_OPEN) return; // already healthy
+
+  // Cancel a pending backoff reconnect so we don't race a double-connect.
+  if (reconnectTimer !== null) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  // Stop the previous connection's keepalive tick — the fresh connect's
+  // onopen installs a new one.
+  if (stateHeartbeatTimer !== null) {
+    clearInterval(stateHeartbeatTimer);
+    stateHeartbeatTimer = null;
+  }
+  // Tear down any half-open socket the suspended period left behind.
+  // Detach handlers FIRST so its async `onclose` can't schedule a
+  // competing reconnect after we've kicked a fresh one.
+  if (ws !== null) {
+    ws.onopen = null;
+    ws.onmessage = null;
+    ws.onclose = null;
+    ws.onerror = null;
+    try {
+      ws.close();
+    } catch {
+      /* already dead — fine */
+    }
+    ws = null;
+  }
+  connected = false;
+  authenticated = false;
+  authChallengeSeen = false;
+  reconnectAttempt = 0; // foreground: retry from zero, no backoff penalty
+  console.log('[WS] wakeRelay — forcing immediate reconnect on foreground');
+  doConnect(currentURL);
+}
+
+/**
  * Send a raw envelope over the WebSocket as a **Binary** frame.
  *
  * The MsgBox relay only forwards binary frames after the auth handshake;
