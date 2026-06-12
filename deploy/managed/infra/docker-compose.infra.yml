@@ -162,9 +162,41 @@ services:
       timeout: 5s
       retries: 5
 
+  grants:
+    build:
+      context: ../../..
+      dockerfile: apps/grants-service/Dockerfile
+    restart: always
+    environment:
+      GRANTS_PORT: "8300"
+      GRANTS_DB_PATH: /data/grants.sqlite
+      GRANTS_ENABLED_IOS: ${GRANTS_ENABLED_IOS:-true}
+      GRANTS_ENABLED_ANDROID: "false"
+      GRANTS_PAUSED: ${GRANTS_PAUSED:-false}
+      GRANTS_GRANT_USD: ${GRANTS_GRANT_USD:-0.25}
+      GRANTS_MODEL_PIN: ${GRANTS_MODEL_PIN:-deepseek/deepseek-v4-pro}
+      GRANTS_EST_CONVERSATIONS: ${GRANTS_EST_CONVERSATIONS:-40}
+      GRANTS_MAX_PER_DAY: ${GRANTS_MAX_PER_DAY:-500}
+      # Crown-jewel secrets — set in infra-{test,prod}.env, NEVER here.
+      OPENROUTER_PROVISIONING_KEY: ${OPENROUTER_PROVISIONING_KEY:-}
+      APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
+      DEVICECHECK_KEY_ID: ${DEVICECHECK_KEY_ID:-}
+      DEVICECHECK_PRIVATE_KEY: ${DEVICECHECK_PRIVATE_KEY:-}
+      DEVICECHECK_ENV: ${DEVICECHECK_ENV:-development}
+      # Boots paused without secrets (infra smoke / staged rollout).
+      GRANTS_ALLOW_DEGRADED: ${GRANTS_ALLOW_DEGRADED:-0}
+    volumes:
+      - grants-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8300/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   caddy-data:
   caddy-config:
   pds-data:
   msgbox-data:
   postgres-data:
+  grants-data:

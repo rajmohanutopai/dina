@@ -98,6 +98,10 @@ const KEYCHAIN_SERVICES: readonly string[] = [
   'dina.infra.pds_email',
   'dina.infra.appview_url',
   'dina.security.background_timeout_s',
+  // Starter Credits custody — the minted bearer key must NEVER survive
+  // a reinstall onto a new owner (review P2).
+  'dina.credits.key',
+  'dina.credits.state',
 ];
 
 /**

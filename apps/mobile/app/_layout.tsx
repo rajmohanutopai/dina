@@ -60,6 +60,7 @@ import { useAutoLock } from '../src/hooks/useAutoLock';
 import { clearThread } from '../src/hooks/useChatThread';
 import { useNodeBootstrap } from '../src/hooks/useNodeBootstrap';
 import { useUnreadBadge } from '../src/hooks/useNotificationsBadge';
+import { useCreditsClaim } from '../src/hooks/useCreditsClaim';
 import { useRelayWake } from '../src/hooks/useRelayWake';
 import { useReminderFireWatcher } from '../src/hooks/useReminderFireWatcher';
 import { sealVault, useIsUnlocked } from '../src/hooks/useUnlock';
@@ -465,6 +466,10 @@ export default function RootLayout() {
   // reconnecting, leaving the Home Node unreachable to agents/peers right
   // after the user reopens the app. `wakeRelay()` self-noops when healthy.
   useRelayWake(unlocked);
+
+  // Starter Credits — fire-and-forget claim (enhancement, never a gate;
+  // all sequencing lives in the credits state machine).
+  useCreditsClaim(unlocked);
 
   // Explicit demo-mode toggle: reads the Expo public env var and
   // passes it through to the composer. Default off so a production

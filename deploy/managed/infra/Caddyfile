@@ -8,6 +8,10 @@ mailbox.dinakernel.com {
 	reverse_proxy msgbox:7700
 }
 
+grants.dinakernel.com {
+	reverse_proxy grants:8300
+}
+
 appview.dinakernel.com {
 	reverse_proxy appview-web:3000
 }

@@ -163,6 +163,22 @@ export class AISDKAdapter implements LLMProvider {
       return part;
     });
 
+    // Token telemetry for cost calibration — metadata ONLY (counts +
+    // provider + RESOLVED model id), never prompt/response content. The
+    // resolved id (e.g. `deepseek/deepseek-v4-flash`) is the only
+    // unambiguous proof of which model OpenRouter actually billed —
+    // `this.name` alone is just the provider ('openrouter'). Parity with
+    // the GeminiGenaiAdapter's [LLM-USAGE] line.
+    const resolvedModelId =
+      typeof this.model === 'string'
+        ? this.model
+        : ((this.model as { modelId?: string }).modelId ?? this.name);
+    const cachedTokens =
+      (result.usage as { cachedInputTokens?: number }).cachedInputTokens ?? 0;
+    console.log(
+      `[LLM-USAGE] provider=${this.name} model=${resolvedModelId} in=${result.usage.inputTokens ?? 0} out=${result.usage.outputTokens ?? 0} cached=${cachedTokens} tools=${toolCalls.length}`,
+    );
+
     return {
       content: result.text,
       toolCalls,

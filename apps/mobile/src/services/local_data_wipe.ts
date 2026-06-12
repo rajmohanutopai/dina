@@ -22,14 +22,16 @@
 import { Paths, type Directory, type File } from 'expo-file-system';
 import * as Notifications from 'expo-notifications';
 
-import { clearWrappedSeed } from './wrapped_seed_store';
-import { clearIdentitySeeds } from './identity_store';
-import { clearPersistedDid } from './identity_record';
-import { clearDisplayNameOverride } from './display_name_override';
-import { clearAutoPassphrase } from './startup_preferences';
-import { clearOrphanKeychainState, deleteInstallMarker } from './install_marker';
+import { clearCreditsState } from '../ai/credits';
 import { resetUnlockState } from '../hooks/useUnlock';
 import { shutdownAllPersistence } from '../storage/init';
+
+import { clearDisplayNameOverride } from './display_name_override';
+import { clearPersistedDid } from './identity_record';
+import { clearIdentitySeeds } from './identity_store';
+import { clearOrphanKeychainState, deleteInstallMarker } from './install_marker';
+import { clearAutoPassphrase } from './startup_preferences';
+import { clearWrappedSeed } from './wrapped_seed_store';
 
 /**
  * Tier 1 — "Sign out from this device".
@@ -127,6 +129,9 @@ export async function eraseEverythingLocal(): Promise<void> {
   // survives, so call the broad sweep to match the label.
   try {
     await clearOrphanKeychainState();
+    // Starter Credits custody: the grant key + state die with the
+    // identity (docs/CREDITS_DESIGN.md §key-as-secret).
+    await clearCreditsState();
   } catch {
     // Best-effort — `clearOrphanKeychainState` already swallows per-
     // service failures internally; this catch handles a host that

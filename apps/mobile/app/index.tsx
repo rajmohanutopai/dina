@@ -29,6 +29,7 @@ import {
 
 import { InlineApprovalCard } from '../src/components/InlineApprovalCard';
 import { InlineBriefingCard } from '../src/components/InlineBriefingCard';
+import { InlineCreditsCard } from '../src/components/InlineCreditsCard';
 import { InlineDemoApprovalCard } from '../src/components/InlineDemoApprovalCard';
 import { InlineDemoReviewCard } from '../src/components/InlineDemoReviewCard';
 import { InlineMarkdownText } from '../src/components/InlineMarkdownText';
@@ -45,6 +46,7 @@ import {
   useGuidedDemoActive,
 } from '../src/guided_demo/active_context';
 import { useLiveThread, addSystemNotification } from '../src/hooks/useChatThread';
+import { useCredits } from '../src/hooks/useCredits';
 import { useHasActiveAgent } from '../src/hooks/useHasActiveAgent';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
 import { reviewSourceLabel } from '../src/peerlens/review_source_label';
@@ -199,6 +201,10 @@ export default function ChatScreen() {
   // - `messages` re-renders on every thread write, including async
   //   arrivals from `WorkflowEventConsumer.deliver` (Bus 42 replies).
   const { messages: threadMessages, send, sending } = useLiveThread('main');
+  // Starter Credits cards (wall / low-balance) — re-evaluated as the
+  // thread grows so exhaustion surfaces at the send that hit the cap
+  // (each send/answer/error appends a message → refreshBalance runs).
+  const credits = useCredits(threadMessages.length);
   // Gate the /task chip on having a paired delegation-capable agent.
   // Without one, `delegate_to_agent` would dispatch a workflow task no
   // one claims and the user would wait 60 s for "agent did not complete"
@@ -643,6 +649,20 @@ export default function ChatScreen() {
         </View>
       )}
 
+
+      {/* Starter Credits — single pinned instance at thread bottom
+          (spec: docs/CREDITS_DESIGN.md §UI 3+4). Wall wins over the
+          low-balance nudge; non-LLM features stay usable either way. */}
+      {(credits.showWall || credits.showLowBalance) && (
+        <View style={{ paddingHorizontal: 12 }}>
+          <InlineCreditsCard
+            variant={credits.showWall ? 'wall' : 'low-balance'}
+            estConversationsLeft={credits.estConversationsLeft ?? undefined}
+            onSetUp={() => router.push('/ai-providers')}
+            onDismiss={credits.dismissLowBalance}
+          />
+        </View>
+      )}
 
       {/* Input area */}
       <View style={styles.inputContainer}>

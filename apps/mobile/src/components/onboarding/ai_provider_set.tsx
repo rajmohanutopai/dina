@@ -17,8 +17,11 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { loadActiveProvider, saveActiveProvider } from '../../ai/active_provider';
+import { getDeviceCheckToken } from '../../ai/attestation';
+import { fetchCreditsConfig } from '../../ai/credits';
 import {
   PROVIDERS,
   getConfiguredProviders,
@@ -27,11 +30,11 @@ import {
   verifyKey,
   type ProviderType,
 } from '../../ai/provider';
-import { loadActiveProvider, saveActiveProvider } from '../../ai/active_provider';
-import type { StepLocation } from '../../onboarding/state';
 import { colors, radius, spacing, textStyles } from '../../theme';
 
 import { OnboardingShell } from './shell';
+
+import type { StepLocation } from '../../onboarding/state';
 
 export interface AiProviderSetProps {
   location: StepLocation;
@@ -51,12 +54,24 @@ export function AiProviderSet({ location, onBack, onContinue }: AiProviderSetPro
   const [keyInput, setKeyInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Starter Credits beat — shown ONLY when a grant is genuinely
+  // claimable (config enabled AND attestation possible). Dormant on
+  // sims/dev clients (attestation seam returns null) — never advertise
+  // free conversations we can't mint (docs/CREDITS_DESIGN.md).
+  const [creditsAvailable, setCreditsAvailable] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const list = await getConfiguredProviders();
       if (cancelled) return;
+      void (async () => {
+        const [cfg, token] = await Promise.all([
+          fetchCreditsConfig(Platform.OS === 'android' ? 'android' : 'ios'),
+          getDeviceCheckToken(),
+        ]);
+        if (!cancelled) setCreditsAvailable(cfg.enabled && token !== null);
+      })();
       if (list.length > 0) {
         // Prefer the persisted active provider if it's in the configured set.
         const active = await loadActiveProvider();
@@ -166,6 +181,28 @@ export function AiProviderSet({ location, onBack, onContinue }: AiProviderSetPro
       onPrimary={() => void connectAndContinue()}
       onBack={onBack}
     >
+      {creditsAvailable ? (
+        <View style={styles.creditsBeat} testID="onboarding-credits-beat">
+          <Text style={styles.creditsTitle}>Your first conversations are on us.</Text>
+          <Text style={styles.creditsBody}>
+            No account. No card. No API key. Just start talking to Dina.
+          </Text>
+          <Text style={styles.creditsSmall}>
+            Starter conversations run directly through OpenRouter — Dina does not proxy or
+            store them. For maximum privacy, use your own AI provider key or a local model.
+          </Text>
+          <Pressable
+            testID="onboarding-credits-start"
+            accessibilityRole="button"
+            onPress={onContinue}
+            style={styles.creditsButton}
+          >
+            <Text style={styles.creditsButtonText}>Start free</Text>
+          </Pressable>
+          <Text style={styles.creditsOr}>— or bring your own key —</Text>
+        </View>
+      ) : null}
+
       <View style={styles.providerList}>
         {PROVIDER_ORDER.map((type) => {
           const isSel = selected === type;
@@ -218,6 +255,24 @@ export function AiProviderSet({ location, onBack, onContinue }: AiProviderSetPro
 }
 
 const styles = StyleSheet.create({
+  creditsBeat: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+  },
+  creditsTitle: { ...textStyles.h3, color: colors.textPrimary },
+  creditsBody: { ...textStyles.body, color: colors.textPrimary, marginTop: 6 },
+  creditsSmall: { ...textStyles.caption, color: colors.textSecondary, marginTop: 8 },
+  creditsButton: {
+    backgroundColor: colors.textPrimary,
+    borderRadius: 22,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  creditsButtonText: { ...textStyles.body, color: colors.bgPrimary, fontWeight: '600' },
+  creditsOr: { ...textStyles.caption, color: colors.textSecondary, textAlign: 'center', marginTop: 12 },
   center: { paddingVertical: spacing.xl, alignItems: 'center' },
   connectedCard: {
     flexDirection: 'row',

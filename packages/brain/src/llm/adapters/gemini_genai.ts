@@ -309,6 +309,14 @@ function mapResponse(response: GenerateContentResponse, model: string): ChatResp
   const usage = response.usageMetadata ?? {};
   const inputTokens = usage.promptTokenCount ?? 0;
   const outputTokens = usage.candidatesTokenCount ?? 0;
+  // Token telemetry for cost calibration — metadata ONLY (counts + model),
+  // never prompt/response content. Every LLM call across every flow (ask,
+  // remember, enrichment, capability runtime) passes through here.
+  const cachedTokens =
+    (usage as { cachedContentTokenCount?: number }).cachedContentTokenCount ?? 0;
+  console.log(
+    `[LLM-USAGE] model=${model} in=${inputTokens} out=${outputTokens} cached=${cachedTokens} tools=${toolCalls.length}`,
+  );
 
   const finishReason: ChatResponse['finishReason'] =
     candidate?.finishReason === 'MAX_TOKENS'

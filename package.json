@@ -7,6 +7,7 @@
   "workspaces": [
     "packages/*",
     "apps/home-node-lite/*",
+    "apps/grants-service",
     "apps/mobile"
   ],
   "engines": {
@@ -15,7 +16,7 @@
   "packageManager": "npm@11.3.0",
   "scripts": {
     "build": "tsc --build",
-    "test": "if find packages apps/home-node-lite apps/mobile -maxdepth 2 -name package.json 2>/dev/null | grep -q .; then npm test --workspaces --if-present; else echo 'TS workspace is empty — npm test skipped. (Phase 1 will populate packages/.)'; fi",
+    "test": "if find packages apps/home-node-lite apps/mobile -maxdepth 2 -name package.json 2>/dev/null | grep -q .; then npm test --workspaces --if-present; else echo 'TS workspace is empty \u2014 npm test skipped. (Phase 1 will populate packages/.)'; fi",
     "lint": "eslint --no-error-on-unmatched-pattern \"packages/**/*.{ts,tsx,mts,cts}\" \"apps/**/*.{ts,tsx,mts,cts}\"",
     "format": "prettier --check \"packages/**/*.{ts,tsx,json,md}\" \"apps/**/*.{ts,tsx,json,md}\"",
     "format:fix": "prettier --write \"packages/**/*.{ts,tsx,json,md}\" \"apps/**/*.{ts,tsx,json,md}\"",

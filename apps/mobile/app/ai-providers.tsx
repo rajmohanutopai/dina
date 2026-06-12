@@ -47,6 +47,7 @@ import {
   verifyKey,
   getConfiguredProviders,
 } from '../src/ai/provider';
+import { CreditsTile } from '../src/components/CreditsTile';
 import { KeyHealthPill } from '../src/components/key_health_pill';
 import { ModelPickerSheet } from '../src/components/ModelPickerSheet';
 import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
@@ -196,6 +197,10 @@ export default function AIProvidersScreen(): React.JSX.Element {
       contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
     >
       <View style={styles.section}>
+        {/* Starter Credits tile — present only while the grant is the
+            live OpenRouter source (BYOK wins; tile yields then). */}
+        <CreditsTile />
+
         <Text style={styles.sectionDesc}>
           Bring your own API key. Your key stays on this device.
         </Text>

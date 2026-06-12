@@ -1666,5 +1666,232 @@ changed files lint-clean (one pre-existing unrelated <code>focused</code> warnin
 untouched). <b>Not yet live-driven on the sim</b> — pure-logic + contract coverage only; queued for the next MRS
 pass (background the app mid-<code>/task</code> → foreground → assert sub-2s delivery).</div>
 
+<h2>Goal: Starter Credits — implement docs/CREDITS_DESIGN.md (2026-06-12 →)</h2>
+
+<h3>Item 0 — Architecture &amp; placement (before code)</h3>
+<div class="item decision"><span class="tag decision">decision</span> <b>Grants service mirrors the appview
+stack</b> (TS + vitest + zod + pino), NOT msgbox (which turned out to be Go). New top-level <code>grants/</code>
+directory; deployed as one more service in <code>deploy/managed/infra/docker-compose.infra.yml</code> behind
+Caddy at <code>grants.dinakernel.com</code> / <code>test-grants.dinakernel.com</code>.</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>Ledger = SQLite (better-sqlite3), not
+the fleet Postgres.</b> The ledger is a 4-column ops table (<code>grant_id, or_key_id, platform,
+granted_at</code>) with zero relational needs; a self-contained file + volume keeps the service's blast radius
+and infra coupling at zero (no shared DB credentials in the box that holds the OpenRouter provisioning
+secret — deliberate isolation, spec §"isolated because it holds two secrets").</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>Credits = keySource, not a new
+ProviderType.</b> <code>ProviderType</code> stays the closed union; the grant key lives in its own keychain
+service (<code>dina.credits.key</code>, device-only/non-sync) and the provider layer resolves
+openrouter-with-grant-key when the credits source is active. Spec-aligned ("key source, not new provider").</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>Wire types live in
+<code>@dina/protocol</code></b> (<code>src/types/credits.ts</code> + validators): it IS wire format shared by
+two implementations (service + app). No frozen-vector changes — credits is a new optional surface, not an
+L1–L4 protocol change, so no conformance major bump; documented in the types file header.</div>
+<div class="item open"><span class="tag open">open question</span> <b>OpenRouter provisioning key is NOT in the
+repo's env</b> (the sanity key is a runtime key, <code>is_provisioning_key: false</code> — verified live
+earlier today). Implementation proceeds against the documented provisioning API behind a port
+(<code>KeyProvisioner</code>) with a faithful fake; LIVE verification (build-plan step 1) needs the founder to
+mint a provisioning key in the OpenRouter dashboard. Flagged as the one external dependency.</div>
+<div class="item open"><span class="tag open">open question</span> <b>DeviceCheck/App Attest need native code +
+real hardware.</b> Expo has no DeviceCheck module; the client gets a clean <code>attestation</code> port that
+returns <code>unavailable</code> on sim/dev (→ typed <code>attestation_failed</code> refusal path, graceful);
+the native module + real-device E2E ride the next dev-client/EAS build (spec build-plan step 6 already says
+sim can't attest). Service-side verification is implemented behind a port with a faithful fake now.</div>
+
+<h3>Item 1 — @dina/protocol credits wire contract</h3>
+<div class="item decision"><span class="tag decision">decision</span> <code>src/types/credits.ts</code>:
+parse-don't-validate (null on violation, never throw — client falls back to compiled defaults, service 400s);
+snake_case wire; unknown-field tolerance for forward compat. <b>The anonymous-claim invariant is enforced IN
+the parser</b> — identity-shaped fields are never read even if sent — and pinned by a test that smuggles
+<code>did</code> fields in and asserts the parsed object carries none. Refusal codes split into
+TERMINAL (stop client retries: already_claimed/attestation_failed/platform_disabled) vs transient.
+<b>Conformance note:</b> new optional surface, no frozen-vector changes, no protocol major bump — rationale in
+the module header. <b>Tests:</b> 36 new (protocol total 563), full suite + dep-hygiene green; dist rebuilt for
+downstream.</div>
+
+<h3>Item 2 — grants service (apps/grants-service)</h3>
+<div class="item decision"><span class="tag decision">decision</span> Lives as a WORKSPACE APP (mirrors
+brain-server: Fastify + jest + @dina/protocol), not a standalone vitest service — the spec said "appview
+stack" but the workspace pattern wins on imports (@dina/protocol without linking), shared lint/tsc, and the
+established tiny-Fastify-server precedent. Root <code>workspaces</code> gained
+<code>apps/grants-service</code>.</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>ES256 JWT hand-rolled over
+node:crypto</b> (no JWT library): smallest dependency surface in the box that holds the two crown-jewel
+secrets; verified in tests against node:crypto's own verifier (ieee-p1363/JOSE encoding). DeviceCheck
+<code>check()</code> validates the token AND reads claimed-bits in ONE call (invalid → typed refusal, never a
+throw); Apple's 200-with-non-JSON "no bit state" answer handled as valid-not-claimed.</div>
+<div class="item tradeoff"><span class="tag tradeoff">tradeoff</span> <b>Pipeline failure ordering:</b>
+provision BEFORE set-claimed-bit. Bit-first + provisioning failure burns the device's once-only claim for
+nothing (unrecoverable bad faith with a brand-new user); key-first + bit-set failure risks a BOUNDED
+double-grant (~$0.25) which is logged loudly ("double-grant" alert string pinned by test). Fail on the
+generous side. Ledger failure never blocks a granted user (ops data only).</div>
+<div class="item decision"><span class="tag decision">decision</span> Privacy pinned structurally: the ledger
+test asserts the table has EXACTLY the four ops columns (adding did/device/ip fails CI); pipeline log lines
+carry only platform + refusal code (test greps captured logs for token/key); fastify serializers strip query
+strings + redact body paths; provisioner label = <code>grant-&lt;uuid&gt;</code> (nothing identity-bearing).
+Config guard refuses GRANTS_GRANT_USD outside (0, 5] — the fat-finger cap typo is the most expensive
+possible.</div>
+<div class="item iter"><span class="tag iter">Deep review Items 1–2</span> (1) <b>Correct way?</b> Ports +
+pure pipeline + tolerant adapters = yes; every refusal typed end-to-end. (2) <b>Smells found &amp; fixed:</b>
+the claim route handed pino's <code>app.log</code> straight to the pipeline whose log shape is (msg, fields) —
+pino's signature is (obj, msg), so structured fields would have been silently dropped as printf args; fixed
+with an explicit adapter. Test-log noise fixed via a logLevel option ('silent' in tests) instead of
+env-poking. (3) <b>Test issues?</b> One test-side bug (re-wrapping a KeyObject with createPublicKey) fixed.
+42/42 green + tsc + lint clean.</div>
+<div class="item open"><span class="tag open">open question</span> OpenRouter provisioning response field
+names are implemented TOLERANTLY (documented + flat variants, fails closed) but need the live-verification
+pass with a real provisioning key before prod deploy (spec build-plan step 1 — founder-side dashboard
+action).</div>
+
+<h3>Item 3 — mobile client plumbing (apps/mobile/src/ai/credits.ts + provider.ts)</h3>
+<div class="item decision"><span class="tag decision">decision</span> <b>Grant = a second key SOURCE for the
+existing `openrouter` provider, not a new ProviderType.</b> One shared <code>resolveProviderKey()</code> in
+provider.ts: BYOK keychain ALWAYS wins; the grant slot (<code>dina.credits.key</code>, AFTER_FIRST_UNLOCK_
+THIS_DEVICE_ONLY) is the fallback, and when it's the source the model is FORCE-PINNED for every tier
+(overrides + tier table ignored). <code>getConfiguredProviders()</code> counts a grant as configuring
+openrouter → boot's existing <code>pickProvider</code> fallback selects credits on a fresh install with ZERO
+boot-path changes.</div>
+<div class="item decision"><span class="tag decision">decision</span> credits.ts: compiled
+<code>CREDITS_MODEL_ALLOWLIST = ['deepseek/deepseek-v4-pro']</code> clamps BOTH getConfig and the claim
+response's model_pin (hostile/typo'd pins degrade to the default, key still stored); unreachable config →
+<code>enabled:false</code> (never advertise free conversations we can't mint); claim state machine persisted
+in keychain JSON (<code>unclaimed / claimed / terminal_refused / unavailable</code>) — terminal refusals
+short-circuit before any network on later runs; attestation is a SEAM (<code>getDeviceCheckToken → null</code>
+on sim/dev → status 'unavailable', BYOK affordance path); balance read serverlessly from OpenRouter /key with
+the grant key; exhaustion latches at &lt; quarter-conversation of remaining budget; low-balance dismissal
+persisted forever. AVG_USD_PER_CONVERSATION = 0.0063 (measured).</div>
+<div class="item tradeoff"><span class="tag tradeoff">tradeoff</span> grants base URL derived locally from
+EXPO_PUBLIC_DINA_ENDPOINT_MODE (+ EXPO_PUBLIC_DINA_GRANTS_URL override) instead of extending
+packages/home-node/endpoints.ts — avoids a cross-package ripple mid-goal; consolidate on the next endpoints
+change.</div>
+<div class="item iter"><span class="tag iter">Deep review Item 3</span> (1) Correct way? The key-source seam
+is the minimal-churn architecture and BYOK-wins is enforced at ONE choke point both createModel and
+createLLMProvider share. (2) Smells? for-loop → for-of (lint); none else. (3) Tests: 18 new credits tests
+(clamping incl. hostile pins, terminal-vs-transient retry semantics w/ injected sleep, malformed-grant
+never-stored, custody wipe, exhaustion latch, BYOK-only-never-polls); full ai suite 111/111; mobile tsc +
+lint clean.</div>
+<div class="item open"><span class="tag open">open question</span> NOT yet wired (next items): the
+fire-and-forget claim call after onboarding (where: post-onboarding boot hook, gated on attestation seam);
+<code>clearCreditsState()</code> into the identity-erase flow; backup/export EXCLUSION test for
+dina.credits.* keychain services; the 4 UI surfaces (Item 4); deploy config (Item 5).</div>
+
+<h3>Item 4 (part 1) — InlineCreditsCard (low-balance + wall)</h3>
+<div class="item decision"><span class="tag decision">decision</span> ONE component, two variants
+(<code>chat-card-credits-low-balance</code> / <code>chat-card-credits-wall</code> testIDs per the card-testID
+scheme). <b>The copy rules are pinned by tests</b> — a render-snapshot grep FAILS the build on: "free
+forever" (3.1.1), any top-up/buy/purchase mention (pre-IAP), currency symbols, "fully private"/"no logging"
+(honesty rules), urgency language. 4/4 green. Wall variant has no Later button (terminal state); low-balance
+Later → dismissLowBalanceCard() persists forever.</div>
+<div class="item open"><span class="tag open">open question — CONTINUATION ROADMAP (post-compaction)</span>
+Remaining for the goal: <b>(a)</b> Item 4 part 2 — providers-screen "Dina Starter Credits" tile (quarter-ring
+meter, pinned-model line, honest privacy line; render when grant exists &amp; BYOK openrouter absent),
+onboarding beat (informational, in ai_provider_set step; non-blocking), chat wiring for the two cards
+(low-balance: estConversationsLeft ≤ 5 &amp;&amp; !dismissed &amp;&amp; !exhausted, once per thread bottom;
+wall: credits state.exhausted &amp;&amp; active source is grant), fire-and-forget
+<code>runClaimFlow('ios', {getDeviceCheckToken})</code> post-onboarding (attestation seam returns null on
+sim), clearCreditsState() in identity erase, export-exclusion test (dina.credits.* never in backup archive).
+<b>(b)</b> Item 5 — deploy: Dockerfile for apps/grants-service (root build context like appview), compose
+service + volume in deploy/managed/infra/docker-compose.infra.yml, Caddyfile vhost
+(test-)grants.dinakernel.com, infra env examples (GRANTS_*, OPENROUTER_PROVISIONING_KEY, APPLE_TEAM_ID
+9DCZ8PHCDP, DEVICECHECK_KEY_ID/PRIVATE_KEY). <b>(c)</b> Item 6 — ultracode workflow review + detailed test
+plan (spec scenarios: claim×{happy, already, invalid-att, paused, ceiling, rate-limit, provisioning-down},
+client×{BYOK-wins, pin-clamp, terminal-stop, exhaustion latch}, UI copy rules, getConfig platform gating,
+degraded boot). Status so far: protocol 563 ✓, grants-service 42 ✓, mobile credits 18 + cards 4 ✓, all tsc +
+lint clean.</div>
+
+<h3>Item 4 (part 2) — UI integration complete</h3>
+<div class="item decision"><span class="tag decision">decision</span> <b>Cards render PINNED above the
+composer</b> (app/index.tsx, between the typing indicator and the input area) — the spec's "single instance
+pinned at thread bottom" reading; wall wins over low-balance; non-LLM features untouched. Driver =
+<code>useCredits</code> (pure <code>computeCreditsView</code> + thin loader; 7 tests): grantActive ≡ grant key
+present ∧ no BYOK OpenRouter key — the SAME precedence resolveProviderKey enforces, so the view can't diverge
+from what the loop bills. Claim = <code>useCreditsClaim(unlocked)</code> in _layout (one-liner;
+all sequencing in the state machine). Erase = <code>clearCreditsState()</code> added to
+<code>eraseEverythingLocal</code>.</div>
+<div class="item decision"><span class="tag decision">decision</span> <b>Onboarding beat is conditional AND
+currently dormant:</b> shown only when getConfig.enabled ∧ attestation token obtainable
+(<code>onboarding-credits-beat</code> + "Start free" → onContinue without a key). On sims/dev the attestation
+seam returns null → the beat never shows and the BYOK step stays MANDATORY exactly as today — we never
+advertise free conversations we can't mint. When the native DeviceCheck module ships, the beat lights up with
+zero further wiring.</div>
+<div class="item deviation"><span class="tag deviation">deviation</span> Spec's low-balance card is
+"inline after a completed answer"; implemented as the pinned-above-composer slot (same single-instance
+guarantee, simpler than threading a synthetic message through the chat model). Revisit if the inline-in-thread
+placement is wanted verbatim.</div>
+<div class="item decision"><span class="tag decision">decision</span> Export exclusion is STRUCTURAL: the
+backup/export path (native_backup_wiring / restore_import) never touches the keychain at all (verified by
+grep — zero Keychain imports), so dina.credits.* cannot leak into archives by construction; the custody test
+covers wipe-on-erase instead.</div>
+
+<h3>Item 5 — deploy config</h3>
+<div class="item decision"><span class="tag decision">decision</span> Dockerfile = two-stage from REPO ROOT
+context (workspace deps: @dina/protocol dist grafted into the runtime image's node_modules). Compose service
+<code>grants</code> (port 8300, <code>grants-data</code> volume for the SQLite ledger, healthcheck on
+/healthz, ANDROID HARD-PINNED "false" in compose — not env-overridable there); Caddy vhost
+grants.dinakernel.com → grants:8300; infra.env.example documents the secrets (OpenRouter MANAGEMENT key, .p8
+PEM) + GRANTS_* knobs + GRANTS_ALLOW_DEGRADED for secret-less smoke boots. `docker compose config` validates.
+NOT deployed — needs the founder's provisioning key + DeviceCheck .p8 first (and the live OpenRouter
+provisioning-API verification).</div>
+
+<h3>Item 6 — test plan (scenario → covering test) + ultracode review</h3>
+<div class="item"><span class="tag test">test plan</span> <b>Wire contract:</b> happy/unknown-field/floor +
+every rejection branch per parser; anonymous-claim smuggled-DID; terminal-vs-transient split →
+credits_types.test.ts (36). <b>Service claim matrix:</b> happy (key+bit+ledger+wire shape, anonymous label),
+malformed-body 400, android platform_disabled-before-attestation, kill-switch 503, daily-ceiling 503 (and
+0=unlimited), unsupported-kind 403, invalid-token 403, already-claimed 409 (no provisioning), provisioning-down
+503 + BIT NOT BURNED, bit-set-fail → key still delivered + double-grant logged, ledger-fail → never blocks,
+log-privacy grep → claim_pipeline.test.ts (15). <b>Adapters:</b> real-SQLite ledger (count windows, dup PK,
+IDENTITY-FREE SCHEMA PIN), ES256 JWT verified by node:crypto, DeviceCheck 200-bits/200-text/400 handling,
+update_two_bits non-200 throw, OpenRouter response-shape tolerance + fail-closed → adapters.test.ts (14).
+<b>HTTP:</b> per-platform getConfig (+fail-closed unknown platform, kill switch), claim happy/400 THROUGH
+fastify+pipeline, 429→typed rate_limited, getConfig not claim-limited, healthz → server_routes.test.ts (10).
+<b>Service config:</b> defaults (android OFF), overrides, fat-finger cap guard, named missing secrets,
+ios-off skips Apple secrets, degraded boot, garbage rejection → config.test.ts (8). <b>Client:</b> clamp
+matrix (hostile pin/numerics/garbage), unreachable-config→disabled, claim happy/unavailable/terminal-stops-
+forever/transient-backoff/disabled-config-skips-attestation/malformed-never-stored/off-allowlist-pin-clamped,
+balance estimate + exhaustion latch + BYOK-never-polls + dismissal persistence, custody wipe →
+credits.test.ts (18). <b>View gates:</b> no-grant/BYOK-wins/healthy/threshold/dismissed/exhausted-wins/null-
+balance → useCredits.test.ts (7). <b>UI copy rules (App Review):</b> banned-phrase render grep both variants +
+behavior → inline_credits_card.test.tsx (4). <b>NOT automatable here:</b> real DeviceCheck round-trip
+(hardware), live OpenRouter provisioning (founder key), salon-on-V4-Pro schema-strict path (live rig) — all
+flagged for the #360 device pass.</div>
+
+<h3>Ultracode review round (41 agents, 34 confirmed findings) — fixes applied</h3>
+<div class="item decision"><span class="tag decision">P1s fixed</span> <b>(1) deploy_shared_infra.sh had ZERO
+grants support</b> — and worse, the hand-edited Caddyfile would be regenerated away and the repo-root build
+context would break ALL infra updates on the remote. Fixed end-to-end: GRANTS_HOST block in
+generate_caddyfile (gated, like MOBILE_HOST), grants-src/ build-context subset rsync (root manifests +
+protocol + service), prepare_compose context rewrite, sync_grants_env (marker-delimited idempotent block in
+the remote .env; missing provisioning key ⇒ forced DEGRADED boot instead of a crash loop), grants /healthz
+probe, GRANTS_HOST added to infra-{test,prod}.env + example. bash -n clean. <b>(2) Runtime image couldn't
+load @dina/protocol</b> (its package main points at TS source) — Dockerfile rebuilt to the fleet's actual
+runtime pattern: tsx over sources, tsc as a build-stage type gate. <b>(3) Transient Apple failures bricked
+devices permanently</b> — DeviceState now returns 'unavailable' for 5xx/429/401/network (401 deliberately
+biased transient: never brick a real device over OUR config slip) → new wire code
+<code>attestation_unavailable</code> (503, transient) → client retries next launch; only true 4xx forged
+tokens stay terminal. <b>(4) "Start free" first session couldn't think</b> (claim raced boot's pickProvider) —
+runClaimFlow gained an <code>onClaimed</code> hook; useCreditsClaim activates openrouter-on-grant mid-session
+via the SAME trio the providers screen uses (saveActiveProvider + wireBrainChatProvider +
+swapAgenticActiveProvider), gated on "user configured nothing else". <b>(5) Protocol parsers were dead
+code</b> — client now consumes parseClaimGrantResponse / parseClaimGrantRefusal / TERMINAL_REFUSALS / NSID
+constants; the hand-rolled divergent parsing is gone.</div>
+<div class="item decision"><span class="tag decision">P2s fixed</span> Exhaustion now surfaces mid-session
+(refreshKey = threadMessages.length → refreshBalance after every append; comment matched to reality);
+wall-card escape path closed (grantActive requires activeProvider ∈ {null, openrouter} — switching to
+gemini/claude BYOK hides it); orphan keychain sweep now wipes dina.credits.* on reinstall (a previous owner's
+bearer key can't be inherited); DEVICECHECK_PRIVATE_KEY \n-unescaped; malformed/oversized bodies → typed 400
+bad_request (was 500); FakeLedger.countSince now records its window arg + a pipeline test pins the trailing-
+24h query; claim concurrency guard (in-flight coalescing).</div>
+<div class="item decision"><span class="tag decision">P3s fixed</span> extractKey now FAILS CLOSED on a
+missing key id (a grant we can't later revoke must not mint); CreditsTile renders the stored
+(server-confirmed) pin; getConfig sends Cache-Control public/300.</div>
+<div class="item open"><span class="tag open">accepted/remaining (documented, not fixed)</span> Onboarding
+beat is button-gated, not auto-advancing (deviation already recorded); claimGrant rate-limit keys on
+X-Forwarded-For behind trustProxy (standard behind Caddy; revisit if exposed directly); mobile
+provider-layer grant integration (resolveProviderKey precedence) is covered by the credits unit tests +
+view-gate tests but has no dedicated through-the-provider test — flagged for the device-validation pass;
+DeviceCheckClient request-construction assertions are minimal. FINAL STATE: protocol 563 ✓ · grants 49 ✓ ·
+mobile credits/hooks/cards/onboarding slices 157 ✓ · tsc + lint clean everywhere · compose config valid ·
+bash -n clean.</div>
+
 </body>
 </html>

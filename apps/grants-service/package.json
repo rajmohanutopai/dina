@@ -1,0 +1,25 @@
+{
+  "name": "@dina/grants-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dina Starter Credits — grants service (docs/CREDITS_DESIGN.md). Anonymous claim → attested device → spend-capped OpenRouter key. Deliberately tiny: this box holds the provisioning + attestation secrets and nothing else.",
+  "main": "dist/src/bin.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "tsx src/bin.ts",
+    "test": "jest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dina/protocol": "*",
+    "@fastify/rate-limit": "^10.3.0",
+    "better-sqlite3": "^12.4.1",
+    "fastify": "^5.8.5",
+    "pino": "^10.3.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

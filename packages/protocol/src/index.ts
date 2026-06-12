@@ -63,6 +63,24 @@ export type {
   DeprecatedCapability,
   CapabilityCatalog,
 } from './types/catalog';
+export {
+  parseCreditsConfig,
+  parseClaimGrantRequest,
+  parseClaimGrantResponse,
+  parseClaimGrantRefusal,
+  TERMINAL_REFUSALS,
+  CREDITS_GET_CONFIG_NSID,
+  CREDITS_CLAIM_GRANT_NSID,
+} from './types/credits';
+export type {
+  CreditsPlatform,
+  CreditsAttestation,
+  CreditsConfig,
+  ClaimGrantRequest,
+  ClaimGrantResponse,
+  ClaimGrantRefusal,
+  ClaimRefusalCode,
+} from './types/credits';
 
 // Wire constants.
 export {

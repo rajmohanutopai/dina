@@ -18,6 +18,7 @@ import {
 
 import * as Keychain from '../services/keychain';
 
+import { getGrantCredential } from './credits';
 import { peekModelOverride } from './model_overrides';
 
 import type { LanguageModel } from 'ai';
@@ -235,6 +236,12 @@ export async function getConfiguredProviders(): Promise<ProviderType[]> {
     const key = await getApiKey(type);
     if (key) configured.push(type);
   }
+  // Starter Credits: a granted key makes `openrouter` usable even with
+  // no BYOK key — boot's pickProvider fallback then selects it on a
+  // fresh install (the spec's "default active provider = credits").
+  if (!configured.includes('openrouter') && (await getGrantCredential()) !== null) {
+    configured.push('openrouter');
+  }
   return configured;
 }
 
@@ -357,14 +364,34 @@ export async function verifyKey(
  *  Gemini stays on the AI SDK model for this surface.
  *
  *  For multi-turn tool-use, use `createLLMProvider` instead. */
+/**
+ * Resolve the usable key for a provider, including the Starter Credits
+ * fallback for `openrouter`: a user BYOK key ALWAYS wins; the granted
+ * key applies only when no BYOK key exists. When the grant is the
+ * source, the returned `grantPin` pins EVERY tier to the credits model
+ * (spec: free tier pinned, picker hidden — overrides ignored).
+ */
+async function resolveProviderKey(
+  provider: ProviderType,
+): Promise<{ apiKey: string; grantPin?: string } | null> {
+  const byok = await getApiKey(provider);
+  if (byok) return { apiKey: byok };
+  if (provider === 'openrouter') {
+    const grant = await getGrantCredential();
+    if (grant !== null) return { apiKey: grant.key, grantPin: grant.modelPin };
+  }
+  return null;
+}
+
 export async function createModel(
   provider: ProviderType,
   opts: CreateProviderOptions = {},
 ): Promise<LanguageModel | null> {
-  const apiKey = await getApiKey(provider);
-  if (!apiKey) return null;
+  const resolved = await resolveProviderKey(provider);
+  if (resolved === null) return null;
+  const { apiKey } = resolved;
 
-  const pseudo = resolveModelId(provider, opts);
+  const pseudo = resolved.grantPin ?? resolveModelId(provider, opts);
 
   switch (provider) {
     case 'openai': {
@@ -425,10 +452,11 @@ export async function createLLMProvider(
   provider: ProviderType,
   opts: CreateProviderOptions = {},
 ): Promise<LLMProvider | null> {
-  const apiKey = await getApiKey(provider);
-  if (!apiKey) return null;
+  const resolved = await resolveProviderKey(provider);
+  if (resolved === null) return null;
+  const { apiKey } = resolved;
 
-  const pseudo = resolveModelId(provider, opts);
+  const pseudo = resolved.grantPin ?? resolveModelId(provider, opts);
 
   switch (provider) {
     case 'openai': {

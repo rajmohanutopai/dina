@@ -169,6 +169,17 @@ ${MOBILE_HOST} {
 }
 EOF
     fi
+
+    # Starter Credits grants service (docs/CREDITS_DESIGN.md). Gated on
+    # GRANTS_HOST so envs that haven't configured grants are untouched.
+    if [ -n "${GRANTS_HOST:-}" ]; then
+        cat >> "$SCRIPT_DIR/Caddyfile" << EOF
+
+${GRANTS_HOST} {
+	reverse_proxy grants:8300
+}
+EOF
+    fi
 }
 
 # ── Reload Caddy so a regenerated Caddyfile (e.g. new host blocks) takes
@@ -196,6 +207,9 @@ prepare_compose() {
         # Fix build context paths
         sed -i 's|context: ../../msgbox|context: ../msgbox|g' docker-compose.infra.yml
         sed -i 's|context: ../../appview|context: ../appview|g' docker-compose.infra.yml
+        # Grants builds from a repo-root context locally; on the remote
+        # the synced subset lives at ../grants-src (see sync_files).
+        sed -i 's|context: ../../..$|context: ../grants-src|' docker-compose.infra.yml
     "
 }
 
@@ -226,7 +240,55 @@ sync_files() {
         "$PROJECT_ROOT/appview/" \
         "$REMOTE:$REMOTE_DIR/appview/"
 
+    # Grants service build context (root manifests + protocol + service).
+    # Synced unconditionally so a later GRANTS_HOST enablement needs no
+    # re-sync; harmless ~1MB when grants is unconfigured.
+    ssh "$REMOTE" "mkdir -p $REMOTE_DIR/grants-src/packages $REMOTE_DIR/grants-src/apps"
+    rsync -az "$PROJECT_ROOT/package.json" "$PROJECT_ROOT/package-lock.json" \
+        "$REMOTE:$REMOTE_DIR/grants-src/"
+    rsync -az --delete \
+        --exclude='node_modules' --exclude='dist' \
+        "$PROJECT_ROOT/packages/protocol/" \
+        "$REMOTE:$REMOTE_DIR/grants-src/packages/protocol/"
+    rsync -az --delete \
+        --exclude='node_modules' --exclude='dist' --exclude='*.sqlite*' \
+        "$PROJECT_ROOT/apps/grants-service/" \
+        "$REMOTE:$REMOTE_DIR/grants-src/apps/grants-service/"
+
     info "Files synced"
+}
+
+# -- Step 5b: Forward grants config + secrets into the remote .env --
+# Compose interpolates ONLY the remote deploy/.env; the local infra env
+# never leaves this machine. Marker-delimited block, idempotent, runs on
+# every deploy/update so rotations propagate. When the provisioning key
+# is absent locally, the service is forced into DEGRADED boot (paused,
+# getConfig-only) instead of a missing-secrets crash loop.
+sync_grants_env() {
+    info "Syncing grants env block..."
+    local degraded="0"
+    if [ -z "${OPENROUTER_PROVISIONING_KEY:-}" ]; then
+        degraded="1"
+        warn "  OPENROUTER_PROVISIONING_KEY unset - grants boots DEGRADED (paused)"
+    fi
+    local block
+    block=$(printf '%s\n' \
+        "# >>> grants (managed by deploy_shared_infra.sh - do not edit)" \
+        "GRANTS_ENABLED_IOS=${GRANTS_ENABLED_IOS:-true}" \
+        "GRANTS_PAUSED=${GRANTS_PAUSED:-false}" \
+        "GRANTS_GRANT_USD=${GRANTS_GRANT_USD:-0.25}" \
+        "GRANTS_MODEL_PIN=${GRANTS_MODEL_PIN:-deepseek/deepseek-v4-pro}" \
+        "GRANTS_EST_CONVERSATIONS=${GRANTS_EST_CONVERSATIONS:-40}" \
+        "GRANTS_MAX_PER_DAY=${GRANTS_MAX_PER_DAY:-500}" \
+        "OPENROUTER_PROVISIONING_KEY=${OPENROUTER_PROVISIONING_KEY:-}" \
+        "APPLE_TEAM_ID=${APPLE_TEAM_ID:-}" \
+        "DEVICECHECK_KEY_ID=${DEVICECHECK_KEY_ID:-}" \
+        "DEVICECHECK_PRIVATE_KEY=${DEVICECHECK_PRIVATE_KEY:-}" \
+        "DEVICECHECK_ENV=${DEVICECHECK_ENV:-development}" \
+        "GRANTS_ALLOW_DEGRADED=${degraded}" \
+        "# <<< grants")
+    printf '%s\n' "$block" | ssh "$REMOTE" "cd $REMOTE_DIR/deploy && touch .env && \
+        sed -i '/# >>> grants/,/# <<< grants/d' .env && cat >> .env && chmod 600 .env"
 }
 
 # ── Step 5: Generate secrets if not present ──
@@ -283,7 +345,9 @@ health_check() {
     info "Running health checks..."
     sleep 5
 
-    for svc in "$MSGBOX_HOST/healthz" "$APPVIEW_HOST/health" "$PDS_HOST/xrpc/_health"; do
+    local hosts=("$MSGBOX_HOST/healthz" "$APPVIEW_HOST/health" "$PDS_HOST/xrpc/_health")
+    if [ -n "${GRANTS_HOST:-}" ]; then hosts+=("$GRANTS_HOST/healthz"); fi
+    for svc in "${hosts[@]}"; do
         if curl -sf "https://$svc" >/dev/null 2>&1; then
             info "  ✓ https://$svc"
         else
@@ -312,6 +376,7 @@ case "$ACTION" in
         generate_caddyfile
         sync_files
         generate_secrets
+        sync_grants_env
         prepare_compose
         start_services
         reload_caddy
@@ -322,6 +387,7 @@ case "$ACTION" in
         confirm_deploy
         generate_caddyfile
         sync_files
+        sync_grants_env
         prepare_compose
         ssh "$REMOTE" "
             cd $REMOTE_DIR/deploy
