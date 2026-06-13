@@ -50,7 +50,8 @@ import {
 import { CreditsTile } from '../src/components/CreditsTile';
 import { KeyHealthPill } from '../src/components/key_health_pill';
 import { ModelPickerSheet } from '../src/components/ModelPickerSheet';
-import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
+import { ProviderPicker } from '../src/components/ProviderPicker';
+import { colors, spacing, radius, textStyles } from '../src/theme';
 
 import type { ProviderType } from '../src/ai/provider';
 
@@ -210,166 +211,157 @@ export default function AIProvidersScreen(): React.JSX.Element {
           alphabetically by label so a user looking for a specific
           one always finds it in a stable position.
         */}
-        {(() => {
-          const all = Object.keys(PROVIDERS) as ProviderType[];
-          return [...all].sort((a, b) => {
-            if (a === active) return -1;
-            if (b === active) return 1;
-            return PROVIDERS[a].label.localeCompare(PROVIDERS[b].label);
-          });
-        })().map((type) => {
-          const info = PROVIDERS[type];
-          const state = providerStates[type];
-          const isActive = active === type;
-          const isEditing = editingProvider === type;
+        <ProviderPicker
+          variant="card"
+          rows={(() => {
+            const all = Object.keys(PROVIDERS) as ProviderType[];
+            return [...all].sort((a, b) => {
+              if (a === active) return -1;
+              if (b === active) return 1;
+              return PROVIDERS[a].label.localeCompare(PROVIDERS[b].label);
+            });
+          })().map((type) => {
+            const info = PROVIDERS[type];
+            const state = providerStates[type];
+            const isActive = active === type;
+            const isEditing = editingProvider === type;
 
-          // The header is tappable ONLY for unconfigured providers
-          // (to open the Add-key form). For configured providers it's
-          // a static row — selection happens via the explicit "Use
-          // this provider" button below. Without this guard, brushing
-          // the provider name triggered a silent active-swap, which
-          // surprised users who expected to inspect the tile.
-          const headerOnPress = state.configured
-            ? undefined
-            : () => {
-                setEditingProvider(isEditing ? null : type);
-                setKeyInput('');
-              };
-          const HeaderTag = state.configured ? View : TouchableOpacity;
-          const headerProps = state.configured
-            ? { style: styles.providerHeader }
-            : {
-                style: styles.providerHeader,
-                onPress: headerOnPress,
-                activeOpacity: 0.7 as const,
-                testID: `ai-providers-add-key-${type}`,
-                accessibilityRole: 'button' as const,
-              };
-
-          return (
-            <View key={type} style={styles.providerCard}>
-              <HeaderTag {...headerProps}>
-                <View style={styles.providerInfo}>
-                  <View style={styles.providerNameRow}>
-                    <Text style={styles.providerName}>{info.label}</Text>
-                    {isActive && (
-                      <View style={styles.activeBadge}>
-                        <Text style={styles.activeBadgeText}>ACTIVE</Text>
-                      </View>
-                    )}
-                  </View>
+            return {
+              type,
+              label: info.label,
+              // ACTIVE only when this provider has its OWN configured key. When a
+              // grant is the source, active==='openrouter' but it's unconfigured —
+              // the "Dina Starter Credits" tile is the sole ACTIVE indicator then,
+              // so the openrouter row must not also claim ACTIVE (avoids the
+              // confusing double-ACTIVE).
+              badge: isActive && state.configured ? 'ACTIVE' : undefined,
+              subtitle: (
+                <>
                   <Text style={styles.providerDesc}>{info.description}</Text>
                   {/* Probe only the ACTIVE configured key (cost discipline —
                       a probe burns ~1 token when healthy). Problem-only pill:
                       credits exhausted / key not working. */}
-                  {isActive && state.configured && <KeyHealthPill provider={type} />}
-                </View>
-                {state.loading ? (
-                  <ActivityIndicator size="small" color={colors.textMuted} />
-                ) : state.configured ? (
-                  <Text style={styles.keyPreview}>{state.keyPreview}</Text>
-                ) : (
-                  <Text style={styles.addKey}>Add key</Text>
-                )}
-              </HeaderTag>
-
-              {isEditing && !state.configured && (
-                <View style={styles.keyForm}>
-                  <TextInput
-                    testID={`ai-providers-key-input-${type}`}
-                    style={styles.keyInput}
-                    value={keyInput}
-                    onChangeText={setKeyInput}
-                    placeholder={`Paste your ${info.label} API key`}
-                    placeholderTextColor={colors.textMuted}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    secureTextEntry
-                  />
-                  <View style={styles.keyActions}>
-                    <TouchableOpacity
-                      testID={`ai-providers-cancel-${type}`}
-                      accessibilityRole="button"
-                      style={styles.cancelButton}
-                      onPress={() => {
-                        setEditingProvider(null);
-                        setKeyInput('');
-                      }}
-                    >
-                      <Text style={styles.cancelText}>Cancel</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      testID={`ai-providers-save-${type}`}
-                      accessibilityRole="button"
-                      style={[styles.saveButton, saving && styles.saveButtonDisabled]}
-                      onPress={() => void handleSaveKey(type)}
-                      disabled={saving || !keyInput.trim()}
-                    >
-                      {saving ? (
-                        <ActivityIndicator size="small" color={colors.white} />
-                      ) : (
-                        <Text style={styles.saveText}>Save</Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-
-              {state.configured && (
-                <>
-                  <TouchableOpacity
-                    testID={`ai-providers-models-${type}`}
-                    style={styles.modelRow}
-                    onPress={() => setModelSheetProvider(type)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Configure models for ${info.label}`}
-                  >
-                    <Text style={styles.modelRowLabel}>Models</Text>
-                    <View style={styles.modelRowRight}>
-                      <Text style={styles.modelRowValue}>
-                        {/* Use catalog display names so pseudo-ids
-                            like `gpt-5.5+thinking` render as
-                            "gpt-5.5 (thinking)" — the picker stores
-                            the pseudo-id but the user shouldn't see
-                            the `+thinking` plumbing. */}
-                        {modelVersion >= 0
-                          ? `${getModelDisplayName(
-                              type,
-                              peekModelOverride(type, 'primary') ?? getProviderTiers(type).primary,
-                            )}\n${getModelDisplayName(
-                              type,
-                              peekModelOverride(type, 'lite') ?? getProviderTiers(type).lite,
-                            )}`
-                          : ''}
-                      </Text>
-                      <Text style={styles.modelRowChevron}>›</Text>
-                    </View>
-                  </TouchableOpacity>
-                  <View style={styles.configuredActions}>
-                    {!isActive && (
-                      <TouchableOpacity
-                        testID={`ai-providers-use-${type}`}
-                        accessibilityRole="button"
-                        style={styles.useButton}
-                        onPress={() => void handleSelectActive(type)}
-                      >
-                        <Text style={styles.useText}>Use this provider</Text>
-                      </TouchableOpacity>
-                    )}
-                    <TouchableOpacity
-                      testID={`ai-providers-remove-${type}`}
-                      accessibilityRole="button"
-                      style={styles.removeButton}
-                      onPress={() => handleRemoveKey(type)}
-                    >
-                      <Text style={styles.removeText}>Remove key</Text>
-                    </TouchableOpacity>
-                  </View>
+                  {isActive && state.configured ? <KeyHealthPill provider={type} /> : null}
                 </>
-              )}
-            </View>
-          );
-        })}
+              ),
+              trailing: state.loading ? (
+                <ActivityIndicator size="small" color={colors.textMuted} />
+              ) : state.configured ? (
+                <Text style={styles.keyPreview}>{state.keyPreview}</Text>
+              ) : (
+                <Text style={styles.addKey}>Add key</Text>
+              ),
+              // Header tappable ONLY for unconfigured providers (opens the
+              // Add-key form). Configured rows are static; active-swap is the
+              // explicit "Use this provider" button below — without this
+              // guard, brushing the name triggered a silent active-swap.
+              onPress: state.configured
+                ? undefined
+                : () => {
+                    setEditingProvider(isEditing ? null : type);
+                    setKeyInput('');
+                  },
+              testID: state.configured ? undefined : `ai-providers-add-key-${type}`,
+              expanded: (
+                <>
+                  {isEditing && !state.configured ? (
+                    <View style={styles.keyForm}>
+                      <TextInput
+                        testID={`ai-providers-key-input-${type}`}
+                        style={styles.keyInput}
+                        value={keyInput}
+                        onChangeText={setKeyInput}
+                        placeholder={`Paste your ${info.label} API key`}
+                        placeholderTextColor={colors.textMuted}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        secureTextEntry
+                      />
+                      <View style={styles.keyActions}>
+                        <TouchableOpacity
+                          testID={`ai-providers-cancel-${type}`}
+                          accessibilityRole="button"
+                          style={styles.cancelButton}
+                          onPress={() => {
+                            setEditingProvider(null);
+                            setKeyInput('');
+                          }}
+                        >
+                          <Text style={styles.cancelText}>Cancel</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          testID={`ai-providers-save-${type}`}
+                          accessibilityRole="button"
+                          style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+                          onPress={() => void handleSaveKey(type)}
+                          disabled={saving || !keyInput.trim()}
+                        >
+                          {saving ? (
+                            <ActivityIndicator size="small" color={colors.white} />
+                          ) : (
+                            <Text style={styles.saveText}>Save</Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {state.configured ? (
+                    <>
+                      <TouchableOpacity
+                        testID={`ai-providers-models-${type}`}
+                        style={styles.modelRow}
+                        onPress={() => setModelSheetProvider(type)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Configure models for ${info.label}`}
+                      >
+                        <Text style={styles.modelRowLabel}>Models</Text>
+                        <View style={styles.modelRowRight}>
+                          <Text style={styles.modelRowValue}>
+                            {/* Catalog display names so pseudo-ids like
+                                `gpt-5.5+thinking` render as "gpt-5.5
+                                (thinking)" — the picker stores the pseudo-id
+                                but the user shouldn't see the plumbing. */}
+                            {modelVersion >= 0
+                              ? `${getModelDisplayName(
+                                  type,
+                                  peekModelOverride(type, 'primary') ?? getProviderTiers(type).primary,
+                                )}\n${getModelDisplayName(
+                                  type,
+                                  peekModelOverride(type, 'lite') ?? getProviderTiers(type).lite,
+                                )}`
+                              : ''}
+                          </Text>
+                          <Text style={styles.modelRowChevron}>›</Text>
+                        </View>
+                      </TouchableOpacity>
+                      <View style={styles.configuredActions}>
+                        {!isActive ? (
+                          <TouchableOpacity
+                            testID={`ai-providers-use-${type}`}
+                            accessibilityRole="button"
+                            style={styles.useButton}
+                            onPress={() => void handleSelectActive(type)}
+                          >
+                            <Text style={styles.useText}>Use this provider</Text>
+                          </TouchableOpacity>
+                        ) : null}
+                        <TouchableOpacity
+                          testID={`ai-providers-remove-${type}`}
+                          accessibilityRole="button"
+                          style={styles.removeButton}
+                          onPress={() => handleRemoveKey(type)}
+                        >
+                          <Text style={styles.removeText}>Remove key</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  ) : null}
+                </>
+              ),
+            };
+          })}
+        />
       </View>
 
       {modelSheetProvider !== null && (
@@ -395,37 +387,9 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: spacing.md,
   },
-  providerCard: {
-    backgroundColor: colors.bgCard,
-    borderRadius: radius.md,
-    marginBottom: spacing.sm,
-    overflow: 'hidden',
-    ...shadows.sm,
-  },
-  providerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.md,
-  },
-  providerInfo: { flex: 1, marginRight: spacing.md },
-  providerNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  providerName: textStyles.bodyLargeStrong,
   providerDesc: {
     ...textStyles.bodySmall,
     color: colors.textSecondary,
-    marginTop: 2,
-  },
-  activeBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    backgroundColor: colors.accent,
-  },
-  activeBadgeText: {
-    ...textStyles.caption,
-    color: colors.white,
-    fontSize: 10,
-    letterSpacing: 0.5,
   },
   addKey: { ...textStyles.bodySmallStrong, color: colors.accent },
   keyPreview: {

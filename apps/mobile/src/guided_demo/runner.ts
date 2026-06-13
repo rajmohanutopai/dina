@@ -38,8 +38,9 @@ import {
 } from './content';
 
 /** Gap between paired remembers (people; health+finance) so the user reads the
- *  first "Stored in <vault>" reply before the next one fires. */
-const INTER_MESSAGE_PAUSE_MS = 2000;
+ *  first "Stored in <vault>" reply before the next one fires. Bumped from 2000
+ *  — health/finance ran too fast to read on a real device. */
+const INTER_MESSAGE_PAUSE_MS = 3500;
 
 /** Stable action ids for the non-chat steps (chat ids come from DemoStep.id). */
 export const D2D_MESSAGE_STEP = 'd2d_message';

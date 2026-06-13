@@ -7,6 +7,7 @@
  */
 
 import { loadConfig } from './config';
+import { DevStubDeviceState } from './dev_devicecheck_stub';
 import { DeviceCheckClient } from './devicecheck';
 import { SqliteGrantLedger } from './ledger';
 import { OpenRouterProvisioner } from './openrouter_provisioner';
@@ -19,12 +20,17 @@ async function main(): Promise<void> {
   const config = loadConfig(process.env, { requireSecrets: !degraded });
   if (degraded) config.paused = true;
 
-  const deviceState: DeviceState = new DeviceCheckClient({
-    teamId: config.appleTeamId,
-    keyId: config.deviceCheckKeyId,
-    privateKeyPem: config.deviceCheckPrivateKey,
-    env: config.deviceCheckEnv,
-  });
+  // DEV/E2E ONLY: bypass Apple so a simulator can drive a real mint.
+  // Never set in production (deploy_shared_infra.sh does not set it).
+  const fakeDeviceCheck = process.env.GRANTS_FAKE_DEVICECHECK === '1';
+  const deviceState: DeviceState = fakeDeviceCheck
+    ? new DevStubDeviceState()
+    : new DeviceCheckClient({
+        teamId: config.appleTeamId,
+        keyId: config.deviceCheckKeyId,
+        privateKeyPem: config.deviceCheckPrivateKey,
+        env: config.deviceCheckEnv,
+      });
   const provisioner: KeyProvisioner = new OpenRouterProvisioner({
     provisioningKey: config.openrouterProvisioningKey,
   });
@@ -41,6 +47,9 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown);
 
   await app.listen({ port: config.port, host: config.host });
+  if (fakeDeviceCheck) {
+    app.log.warn('⚠️  GRANTS_FAKE_DEVICECHECK=1 — Apple attestation BYPASSED. DEV/E2E ONLY.');
+  }
   app.log.info(
     {
       port: config.port,
@@ -48,6 +57,7 @@ async function main(): Promise<void> {
       android: config.enabledAndroid,
       paused: config.paused,
       degraded,
+      fakeDeviceCheck,
     },
     'grants service up',
   );

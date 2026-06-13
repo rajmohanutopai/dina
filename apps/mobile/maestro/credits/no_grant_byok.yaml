@@ -1,0 +1,24 @@
+# Credits MRS — NO GRANT -> BYOK is the door.
+#
+# The mirror of happy_path.yaml: on a build WITHOUT
+# EXPO_PUBLIC_DINA_FAKE_ATTEST, getDeviceCheckToken() returns null, so
+# creditsAvailable = (cfg.enabled && token !== null) is false. The
+# onboarding "Connect your AI" step then hides the "Start free" beat and
+# shows ONLY the mandatory BYOK provider picker — i.e. with no grant, the
+# user lands on BYOK. (Verified condition: ai_provider_set.tsx:73.)
+#
+# Precondition: the app is at the "Connect your AI" onboarding step
+# (drive onboarding_create.yaml up to it first; needs a fresh/erased
+# install). Start Metro WITHOUT the fake-attest env for this flow.
+appId: com.dinakernel.mobile
+---
+# The BYOK provider picker is present (the door when there's no grant)…
+- assertVisible:
+    id: 'onboarding-ai-provider-gemini'
+- assertVisible:
+    id: 'onboarding-ai-provider-openrouter'
+# …and the Starter Credits beat is absent (no grant to offer).
+- assertNotVisible:
+    id: 'onboarding-credits-beat'
+- assertNotVisible:
+    id: 'onboarding-credits-start'

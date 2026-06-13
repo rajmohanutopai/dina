@@ -1,0 +1,7 @@
+{
+  "name": "dina-attest",
+  "version": "1.0.0",
+  "description": "Dina device attestation (Apple DeviceCheck) — fills the getDeviceCheckToken() seam for Starter Credits.",
+  "private": true,
+  "main": "index.ts"
+}

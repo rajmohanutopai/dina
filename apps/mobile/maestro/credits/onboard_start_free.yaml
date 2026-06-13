@@ -1,0 +1,65 @@
+# Credits VISUAL — Test A: fresh onboard -> credits beat -> "Start free"
+# -> real grant mints -> the granted CreditsTile renders.
+#
+# Metro env for this flow: EXPO_PUBLIC_DINA_FAKE_ATTEST set,
+# EXPO_PUBLIC_DINA_GRANTS_URL=http://localhost:8300, and
+# EXPO_PUBLIC_DINA_DEV_GEMINI_API_KEY="" (suppress auto-connect so the
+# onboarding AI step shows the picker + credits beat, not "connected").
+appId: com.dinakernel.mobile
+---
+# --- Erase the current identity -> welcome (stopApp: true avoids the
+#     wedged half-loaded state that makes taps hit phantom hierarchy) ---
+- launchApp: { stopApp: true }
+- extendedWaitUntil: { visible: { id: 'index-mode-chip-remember' }, timeout: 25000 }
+- tapOn: { id: 'root-layout-menu' }
+- tapOn: { id: 'root-layout-menu-row-settings' }
+- extendedWaitUntil: { visible: { id: 'settings-row-admin' }, timeout: 15000 }
+- tapOn: { id: 'settings-row-admin' }
+- scrollUntilVisible: { element: { id: 'admin-erase-everything' }, direction: DOWN, timeout: 15000, visibilityPercentage: 40, waitToSettleTimeoutMs: 600, centerElement: true }
+- tapOn: { id: 'admin-erase-everything' }
+- tapOn: { text: '^Erase everything$' }     # native confirm alert button
+
+# --- Fresh onboarding ---
+- extendedWaitUntil: { visible: { id: 'shell-primary' }, timeout: 25000 }
+- tapOn: { id: 'shell-primary' }
+- tapOn: { id: 'mode-choice-card-create-a-new-dina' }
+- tapOn: { id: 'owner-name-input' }
+- inputText: 'Alonso'
+- hideKeyboard
+- tapOn: { id: 'shell-primary' }
+- evalScript: ${output.handle = 'alonso' + Math.floor(Math.random() * 1000000)}
+- tapOn: { id: 'handle-prefix-input' }
+- eraseText
+- inputText: ${output.handle}
+- extendedWaitUntil: { visible: { id: 'handle-status-available' }, timeout: 25000 }
+- hideKeyboard
+- tapOn: { id: 'shell-primary' }
+- tapOn: { id: 'passphrase-input' }
+- inputText: 'dina-test-pass-123'
+- tapOn: { id: 'passphrase-confirm-input' }
+- inputText: 'dina-test-pass-123'
+- hideKeyboard
+- tapOn: { id: 'shell-primary' }
+- tapOn: { id: 'shell-primary' }            # recovery reveal -> continue
+- tapOn: { id: 'shell-secondary' }          # "I'll do this later"
+
+# --- Connect your AI: the credits beat is OFFERED (grant available) ---
+- extendedWaitUntil: { visible: { id: 'onboarding-credits-beat' }, timeout: 20000 }
+- assertVisible: { id: 'onboarding-credits-start' }
+- takeScreenshot: 'A1_credits_beat'
+- tapOn: { id: 'onboarding-credits-start' }   # "Start free" (no BYOK -> grant becomes active)
+
+# --- Provision -> guided-demo skip -> home (the claim auto-fires on unlock) ---
+- extendedWaitUntil: { visible: { id: 'guided-demo-entry' }, timeout: 90000 }
+- tapOn: { id: 'guided-demo-skip' }
+- extendedWaitUntil: { visible: { id: 'index-mode-chip-remember' }, timeout: 15000 }
+- extendedWaitUntil: { visible: { id: 'index-mode-chip-remember' }, timeout: 8000 }   # let the mint + balance settle
+
+# --- Settings -> Manage providers -> the granted tile renders ---
+- tapOn: { id: 'root-layout-menu' }
+- tapOn: { id: 'root-layout-menu-row-settings' }
+- extendedWaitUntil: { visible: { id: 'settings-row-manage-providers' }, timeout: 15000 }
+- tapOn: { id: 'settings-row-manage-providers' }
+- extendedWaitUntil: { visible: { id: 'ai-providers-credits-tile' }, timeout: 15000 }
+- assertVisible: { id: 'ai-providers-credits-meter' }
+- takeScreenshot: 'A2_credits_tile'

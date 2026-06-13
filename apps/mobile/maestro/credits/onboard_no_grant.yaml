@@ -1,0 +1,48 @@
+# Credits VISUAL — Test B: fresh onboard with NO grant available ->
+# the AI step shows the BYOK picker and NO credits beat.
+# Metro env: NO EXPO_PUBLIC_DINA_FAKE_ATTEST (token null -> beat hidden),
+# EXPO_PUBLIC_DINA_DEV_GEMINI_API_KEY="" (picker shown, not auto-connected).
+appId: com.dinakernel.mobile
+---
+# --- Erase the current identity -> welcome ---
+- launchApp: { stopApp: true }
+- extendedWaitUntil: { visible: { id: 'index-mode-chip-remember' }, timeout: 25000 }
+- tapOn: { id: 'root-layout-menu' }
+- tapOn: { id: 'root-layout-menu-row-settings' }
+- extendedWaitUntil: { visible: { id: 'settings-row-admin' }, timeout: 15000 }
+- tapOn: { id: 'settings-row-admin' }
+# Danger zone is below the fold; scroll straight to it (assertVisible
+# does not scroll, so don't gate on a below-fold element first).
+- scrollUntilVisible: { element: { id: 'admin-erase-everything' }, direction: DOWN, timeout: 20000, visibilityPercentage: 20, waitToSettleTimeoutMs: 600, centerElement: true }
+- tapOn: { id: 'admin-erase-everything' }
+- tapOn: { text: '^Erase everything$' }
+
+# --- Fresh onboarding up to the AI step ---
+- extendedWaitUntil: { visible: { id: 'shell-primary' }, timeout: 30000 }
+- tapOn: { id: 'shell-primary' }
+- tapOn: { id: 'mode-choice-card-create-a-new-dina' }
+- tapOn: { id: 'owner-name-input' }
+- inputText: 'Alonso'
+- hideKeyboard
+- tapOn: { id: 'shell-primary' }
+- extendedWaitUntil: { visible: { id: 'handle-suggestions' }, timeout: 25000 }
+- tapOn: { id: 'handle-suggestion-.*' }
+- extendedWaitUntil: { visible: { id: 'handle-status-available' }, timeout: 15000 }
+- hideKeyboard
+- tapOn: { id: 'shell-primary' }
+- tapOn: { id: 'passphrase-input' }
+- inputText: 'dina-test-pass-123'
+- pressKey: Enter
+- inputText: 'dina-test-pass-123'
+- pressKey: Enter
+- tapOn: { id: 'shell-primary' }
+- tapOn: { id: 'shell-primary' }            # recovery reveal -> continue
+- extendedWaitUntil: { visible: { id: 'shell-secondary' }, timeout: 12000 }
+- tapOn: { id: 'shell-secondary' }
+
+# --- Connect your AI: NO beat, BYOK picker IS the door ---
+- extendedWaitUntil: { visible: { id: 'onboarding-ai-provider-gemini' }, timeout: 20000 }
+- assertVisible: { id: 'onboarding-ai-provider-openrouter' }
+- assertNotVisible: { id: 'onboarding-credits-beat' }
+- assertNotVisible: { id: 'onboarding-credits-start' }
+- takeScreenshot: '/tmp/B1_byok_no_beat'

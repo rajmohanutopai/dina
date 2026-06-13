@@ -306,6 +306,10 @@ row then appears on the wall/low-balance cards, driven by getConfig.
 4. Client: keySource plumbing, anonymous claim flow, balance read,
    model pinning + config clamping, key-as-secret handling (device-only
    keychain, export-excluded), provider tile.
+   ✅ Native attestation: local Expo Module `dina-attest`
+      (modules/dina-attest, iOS-only, DeviceCheck — no entitlement).
+      Autolinking discovery verified; Swift compiles on the next EAS
+      build. getDeviceCheckToken graceful on every no-token path.
 5. UI: onboarding beat, low-balance card, wall card (+ tests per card).
 6. E2E on TestFlight with real DeviceCheck/App Attest (sim can't attest
    — REAL device required; folds into #360's device-validation pass).

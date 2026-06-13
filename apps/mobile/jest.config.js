@@ -27,6 +27,11 @@ module.exports = {
     '^expo-notifications$': '<rootDir>/__mocks__/expo-notifications.ts',
     '^@expo/vector-icons$': '<rootDir>/__mocks__/expo-vector-icons.ts',
     '^expo-router$': '<rootDir>/__mocks__/expo-router.ts',
+    // expo-modules-core ships ESM Jest can't parse; map it to a mock so any
+    // test importing the native-bridge chain (e.g. src/ai/attestation.ts via
+    // the onboarding AiProviderSet) loads. Tests needing native behaviour
+    // override locally with jest.mock (see __tests__/ai/attestation.test.ts).
+    '^expo-modules-core$': '<rootDir>/__mocks__/expo-modules-core.ts',
     // op-sqlite is a native module that can't load in Jest; back it with a
     // real (Node) SQLite so the unlock/persistence path is actually
     // exercised instead of silently swallowing a load failure.

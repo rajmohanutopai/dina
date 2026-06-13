@@ -37,8 +37,8 @@ export function InlineCreditsCard(props: InlineCreditsCardProps): React.JSX.Elem
     <View style={styles.card} testID={`chat-card-credits-${variant}`}>
       <Text style={styles.title} testID={`credits-${variant}-title`}>
         {isWall
-          ? 'That’s the last of your free conversations — thanks for spending them with Dina. 🌱'
-          : `☕ Your starter conversations are almost used up — about ${props.estConversationsLeft ?? 5} left.`}
+          ? 'You’ve used all your free starter conversations.'
+          : `Your starter conversations are almost used up. About ${props.estConversationsLeft ?? 5} left.`}
       </Text>
 
       <Text style={styles.body} testID={`credits-${variant}-body`}>
@@ -49,7 +49,7 @@ export function InlineCreditsCard(props: InlineCreditsCardProps): React.JSX.Elem
 
       <View style={styles.options}>
         <Text style={styles.option}>▸ Use your own AI provider key</Text>
-        <Text style={styles.option}>▸ Run a local model (most private)</Text>
+        <Text style={styles.option}>▸ Run a local model</Text>
       </View>
 
       <View style={styles.buttonRow}>

@@ -25,7 +25,7 @@ describe('InlineCreditsCard — low-balance', () => {
       />,
     );
     expect(getByTestId('chat-card-credits-low-balance')).toBeTruthy();
-    expect(getByText(/about 5 left/)).toBeTruthy();
+    expect(getByText(/about 5 left/i)).toBeTruthy();
     fireEvent.press(getByTestId('credits-low-balance-setup'));
     expect(onSetUp).toHaveBeenCalled();
     fireEvent.press(getByTestId('credits-low-balance-later'));
@@ -56,12 +56,12 @@ describe('copy rules (3.1.1 + honesty) — both variants', () => {
     expect(text).not.toMatch(/top.?up|coming soon|buy|purchase/i);
     // Currency stays internal.
     expect(text).not.toMatch(/₹|\$|rupee|dollar|credit balance/i);
-    // Honesty: "fully private" is reserved; cards use "most private".
-    expect(text).not.toMatch(/fully private|nothing logged|no logging/i);
+    // Honesty: NO privacy-superiority claims (no "fully/more/most private",
+    // no "nothing logged") — BYOK/local copy stays neutral.
+    expect(text).not.toMatch(/fully private|more private|most private|nothing logged|no logging/i);
     // No urgency language.
     expect(text).not.toMatch(/running out!|hurry|expires?/i);
-    // The neutral BYOK line is present.
+    // The neutral BYOK line is present (no privacy claim attached).
     expect(text).toMatch(/Use your own AI provider key/);
-    expect(text).toMatch(/most private/);
   });
 });

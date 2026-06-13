@@ -1893,5 +1893,73 @@ DeviceCheckClient request-construction assertions are minimal. FINAL STATE: prot
 mobile credits/hooks/cards/onboarding slices 157 ✓ · tsc + lint clean everywhere · compose config valid ·
 bash -n clean.</div>
 
+<h3>Item 7 — native attestation module (fills the last engineering gap)</h3>
+<div class="item decision"><span class="tag decision">decision</span> <b>Local Expo Module</b>
+(<code>apps/mobile/modules/dina-attest/</code>) — the Expo-recommended way to add native code in a prebuild
+workflow (autolinked, survives prebuild, New-Arch-native via expo-modules-core; the app has
+<code>newArchEnabled: true</code>, which rules out most community RN DeviceCheck packages). <b>iOS-only</b>
+(<code>"platforms": ["apple"]</code>, no Android/Kotlin) because Android grants are disabled at v1 — and the
+JS seam guards <code>Platform.OS !== 'ios'</code> before ever touching the native lookup. <b>DeviceCheck
+(<code>DCDevice.generateToken</code>) needs NO entitlement</b> — verified against Apple's docs — so the
+production EAS build needs no capability/Info.plist change, only a native rebuild that includes the module.</div>
+<div class="item decision"><span class="tag decision">decision</span> Swift written to the EXACT idiom of
+this repo's installed expo modules (read from node_modules): <code>Exception</code> subclass +
+<code>promise.reject(instance)</code> (matches expo-asset), <code>public class … : Module</code> /
+<code>public func definition()</code> (matches expo-application), podspec at <code>ios/</code> with
+<code>source_files = "**/*.{h,m,swift}"</code> + <code>s.dependency 'ExpoModulesCore'</code> +
+<code>s.frameworks = 'DeviceCheck'</code> (matches EXApplication.podspec). The JS seam imports only the TYPE
+from the module index (runtime-erased) + <code>requireOptionalNativeModule('DinaAttest')</code> from
+expo-modules-core — no runtime coupling to the module's JS.</div>
+<div class="item decision"><span class="tag decision">verified without a device</span> Ran
+<code>npx expo-modules-autolinking search --platform apple</code> → the resolver lists
+<code>'dina-attest' { apple: { modules: ['DinaAttestModule'] } }</code>, so a build WILL compile + register
+it (the highest-value de-risk short of an actual build). <code>npm ls</code> confirms the module's package.json
+doesn't disturb the workspace. getDeviceCheckToken is graceful on every no-token path (non-iOS, module absent
+in the running binary, simulator isSupported=false, Apple error → null → transient retry) — 8 tests pin all
+of them; the current sim dev client (built before this module) keeps returning null exactly as before
+(non-breaking).</div>
+<div class="item iter"><span class="tag iter">Deep review Item 7</span> (1) <b>Correct way?</b> Yes — local
+Expo Module is the canonical mechanism; DeviceCheck is the spec's v1 'devicecheck' kind; iOS-only matches the
+Android-off decision; autolinking discovery confirmed. (2) <b>Smells/workarounds?</b> None — the lazy
+memoized + try/catch native lookup is justified defense for non-native runtimes, not a hack; type-only import
+keeps zero runtime coupling. (3) <b>Test issues?</b> 8 JS tests cover every fallback branch + memoization;
+the Swift itself is unit-untestable off-hardware (inherent — DeviceCheck has no simulator support),
+documented. <b>tsc + lint clean; ai+hooks suites 131 green.</b></div>
+<div class="item open"><span class="tag open">remaining (now purely build/ops, no code)</span> A fresh EAS
+build (prebuild auto-includes the pod — no <code>eas build</code> command change) to COMPILE the Swift; a
+real-device run to confirm the DeviceCheck round-trip (sim can't attest); and the grants service deployed
+with the DeviceCheck .p8 + APPLE_TEAM_ID so it can validate the token. With those, the onboarding beat lights
+up and grants flow end-to-end.</div>
+
+<h2 id="credits-e2e">Credits live e2e on the simulator (2026-06-13)</h2>
+<div class="item">Built a sim-drivable happy-path harness (the simulator can't run real DeviceCheck): a
+dev attestation override <code>EXPO_PUBLIC_DINA_FAKE_ATTEST</code> in <code>src/ai/attestation.ts</code> (static
+<code>process.env</code> read so Expo inlines it; dead in any build that doesn't set it), and a server-side
+<code>GRANTS_FAKE_DEVICECHECK=1</code> stub (<code>apps/grants-service/src/dev_devicecheck_stub.ts</code>) that
+bypasses Apple but keeps the REAL OpenRouter provisioner. Harness scripts under
+<code>apps/mobile/maestro/harness/</code> (run_local_grants.sh boots :8300 with the real management key from
+infra-test.env; cleanup_local_grants.sh revokes minted keys from the ledger).</div>
+<div class="item ok"><span class="tag ok">PROVEN LIVE</span> Server-side: getConfig→enabled, claimGrant→HTTP
+200 with a real $0.25 key (correct limit/model), PII-clean logs (only <code>platform</code>). App-side: the
+real iOS app, via expo/fetch, fetched config from the local grants server and minted a real key end-to-end
+(grant-minted count 1→2 in the server log). Both test keys revoked after.</div>
+<div class="item fix"><span class="tag fix">PROD BUG found + fixed</span> <code>grantsBaseUrl()</code> read the
+override + endpoint-mode via an aliased <code>env.EXPO_PUBLIC_*</code> param; Expo's inliner only replaces the
+STATIC <code>process.env.EXPO_PUBLIC_*</code> form, so the aliased read resolved to <code>undefined</code> at
+runtime — pinning BOTH the dev override AND the release URL to <code>test-grants.dinakernel.com</code> in a
+production build. Fixed to static reads (the convention everywhere else). The 16MB bundle confirmed the literal
+survived un-inlined before the fix; localhost:8300 inlines after.</div>
+<div class="item fix"><span class="tag fix">TEST-INFRA BUG found + fixed</span> The earlier attestation rewrite
+(<code>import { requireOptionalNativeModule } from 'expo-modules-core'</code>) broke every component test that
+transitively imports the credits/attestation chain (e.g. <code>ai_provider_set.test.tsx</code>) — Jest can't
+parse that package's ESM. Added <code>__mocks__/expo-modules-core.ts</code> + a moduleNameMapper entry;
+attestation.test.ts keeps its local jest.mock (precedence). 45 credits/onboarding/attestation tests green.</div>
+<div class="item open"><span class="tag open">tile / Test B-C visual</span> The granted CreditsTile is gated on
+<code>grantActive</code> (active provider ∈ {null, openrouter}); the onboarded test sim has a BYOK provider
+active, so the grant is correctly dormant and the tile is hidden. The clean visual of tile + onboarding beat +
+no-grant BYOK picker needs a FRESH onboarding (erases the sim identity) or a real device. Conditional renders
+covered by RTL (ai_provider_set, inline_credits_card, useCredits) + cited code (index.tsx:656-661 wall →
+router.push('/ai-providers')). Maestro flows: maestro/credits/{happy_path,no_grant_byok}.yaml.</div>
+
 </body>
 </html>

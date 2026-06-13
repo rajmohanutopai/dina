@@ -1,0 +1,34 @@
+# Credits VISUAL — Test B (fresh start, identity already erased).
+# NO fake-attest in the bundle -> the AI step shows the BYOK picker and
+# NO credits beat. Proves "no grant -> BYOK is the door."
+appId: com.dinakernel.mobile
+---
+- launchApp: { stopApp: true }
+- extendedWaitUntil: { visible: { id: 'shell-primary' }, timeout: 30000 }
+- tapOn: { id: 'shell-primary' }
+- tapOn: { id: 'mode-choice-card-create-a-new-dina' }
+- tapOn: { id: 'owner-name-input' }
+- inputText: 'Alonso'
+- hideKeyboard
+- tapOn: { id: 'shell-primary' }
+- extendedWaitUntil: { visible: { id: 'handle-suggestions' }, timeout: 25000 }
+- tapOn: { id: 'handle-suggestion-.*' }
+- extendedWaitUntil: { visible: { id: 'handle-status-available' }, timeout: 15000 }
+- hideKeyboard
+- tapOn: { id: 'shell-primary' }
+- tapOn: { id: 'passphrase-input' }
+- inputText: 'dina-test-pass-123'
+- pressKey: Enter
+- inputText: 'dina-test-pass-123'
+- pressKey: Enter
+- tapOn: { id: 'shell-primary' }
+- tapOn: { id: 'shell-primary' }            # recovery reveal -> continue
+- extendedWaitUntil: { visible: { id: 'shell-secondary' }, timeout: 12000 }
+- tapOn: { id: 'shell-secondary' }
+
+# --- Connect your AI: NO beat, BYOK picker IS the door ---
+- extendedWaitUntil: { visible: { id: 'onboarding-ai-provider-gemini' }, timeout: 20000 }
+- assertVisible: { id: 'onboarding-ai-provider-openrouter' }
+- assertNotVisible: { id: 'onboarding-credits-beat' }
+- assertNotVisible: { id: 'onboarding-credits-start' }
+- takeScreenshot: '/tmp/B1_byok_no_beat'

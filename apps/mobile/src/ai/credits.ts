@@ -74,13 +74,18 @@ const DEFAULT_STATE: CreditsState = {
 
 // ---------------------------------------------------------------- config
 
-function grantsBaseUrl(env: Record<string, string | undefined> = process.env): string {
-  // Mirrors the endpoint-mode convention (packages/home-node/endpoints).
-  // Kept local to avoid a cross-package ripple; consolidate when
-  // endpoints.ts next changes. Override wins for tests/dev.
-  const override = env.EXPO_PUBLIC_DINA_GRANTS_URL;
+function grantsBaseUrl(): string {
+  // Read EXPO_PUBLIC_* via the STATIC `process.env.X` form — Expo's bundler
+  // only inlines that exact member expression. An aliased read (the old
+  // `env.X` through a default param) is left untouched by the transform and
+  // resolves to `undefined` in a release bundle, which silently pinned BOTH
+  // the dev override AND the prod URL to the test default (the app would hit
+  // test-grants.dinakernel.com in production). Caught by the credits Maestro
+  // e2e, 2026-06-13. Tests mock fetch, so the resolved URL is irrelevant to
+  // them; this is the convention used everywhere else (endpoint mode, appview).
+  const override = process.env.EXPO_PUBLIC_DINA_GRANTS_URL;
   if (override !== undefined && override !== '') return override;
-  return env.EXPO_PUBLIC_DINA_ENDPOINT_MODE === 'release'
+  return process.env.EXPO_PUBLIC_DINA_ENDPOINT_MODE === 'release'
     ? 'https://grants.dinakernel.com'
     : 'https://test-grants.dinakernel.com';
 }

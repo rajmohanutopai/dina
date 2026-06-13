@@ -1,0 +1,50 @@
+# Credits MRS — HAPPY PATH (grant mints + activates).
+#
+# Requires (driven by the harness, not Maestro):
+#   - local grants-service on :8300 with GRANTS_FAKE_DEVICECHECK=1 (real
+#     OpenRouter mint), and
+#   - Metro started with EXPO_PUBLIC_DINA_FAKE_ATTEST +
+#     EXPO_PUBLIC_DINA_GRANTS_URL=http://localhost:8300
+#
+# On launch, useCreditsClaim (app/_layout.tsx) fires the fire-and-forget
+# claim: fake attest token -> POST :8300/claimGrant -> real $0.25 key ->
+# keychain -> activateGrantIfUnconfigured. The AUTHORITATIVE proof is the
+# grants-service log line "grant minted" (checked by the runner); this
+# flow additionally asserts the granted UI surfaces.
+appId: com.dinakernel.mobile
+---
+# Fresh bundle (picks up the injected EXPO_PUBLIC_* env from the restarted Metro).
+- launchApp:
+    stopApp: true
+
+# Home reached => vault unlocked => the claim has fired.
+- extendedWaitUntil:
+    visible:
+      id: 'index-mode-chip-remember'
+    timeout: 20000
+
+# Give the fire-and-forget claim time to mint + read balance.
+- extendedWaitUntil:
+    visible:
+      id: 'index-mode-chip-remember'
+    timeout: 6000
+
+# Settings -> Manage AI providers -> the Starter Credits tile.
+- tapOn:
+    id: 'root-layout-menu'
+- tapOn:
+    id: 'root-layout-menu-row-settings'
+- extendedWaitUntil:
+    visible:
+      id: 'settings-row-manage-providers'
+    timeout: 15000
+- tapOn:
+    id: 'settings-row-manage-providers'
+
+# The grant is active -> CreditsTile renders with the "≈ N conversations" meter.
+- extendedWaitUntil:
+    visible:
+      id: 'ai-providers-credits-tile'
+    timeout: 15000
+- assertVisible:
+    id: 'ai-providers-credits-meter'

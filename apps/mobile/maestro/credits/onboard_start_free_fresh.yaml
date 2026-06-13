@@ -1,0 +1,59 @@
+# Credits VISUAL — Test A (fresh start, identity already erased by hand).
+# Onboard -> credits beat -> "Start free" -> real grant mints -> tile.
+# Metro env: EXPO_PUBLIC_DINA_FAKE_ATTEST set, GRANTS_URL=localhost:8300,
+# EXPO_PUBLIC_DINA_DEV_GEMINI_API_KEY="" (so the AI step shows the beat).
+appId: com.dinakernel.mobile
+---
+- launchApp: { stopApp: true }
+- extendedWaitUntil: { visible: { id: 'shell-primary' }, timeout: 30000 }
+- tapOn: { id: 'shell-primary' }
+- tapOn: { id: 'mode-choice-card-create-a-new-dina' }
+- tapOn: { id: 'owner-name-input' }
+- inputText: 'Alonso'
+- hideKeyboard
+- tapOn: { id: 'shell-primary' }
+# The "alonso" prefill is taken on re-runs -> tap an available suggestion
+# the app computes (handle-suggestion-<handle>), which flips to available.
+- extendedWaitUntil: { visible: { id: 'handle-suggestions' }, timeout: 25000 }
+- tapOn: { id: 'handle-suggestion-.*' }
+- extendedWaitUntil: { visible: { id: 'handle-status-available' }, timeout: 15000 }
+- hideKeyboard
+- tapOn: { id: 'shell-primary' }
+- tapOn: { id: 'passphrase-input' }
+- inputText: 'dina-test-pass-123'
+- pressKey: Enter                            # returnKeyType "next" -> focus confirm
+- inputText: 'dina-test-pass-123'            # types into the now-focused confirm
+- pressKey: Enter                            # returnKeyType "done" -> dismiss keyboard
+- takeScreenshot: '/tmp/P1_passphrase_filled'
+- tapOn: { id: 'shell-primary' }             # Continue
+- takeScreenshot: '/tmp/P2_after_pp'
+# Recovery reveal -> Continue
+- tapOn: { id: 'shell-primary' }
+- takeScreenshot: '/tmp/P3_after_reveal'
+# Recovery verify -> "I'll do this later"
+- extendedWaitUntil: { visible: { id: 'shell-secondary' }, timeout: 12000 }
+- tapOn: { id: 'shell-secondary' }
+- takeScreenshot: '/tmp/P4_after_skip'
+
+# --- Connect your AI: the Starter Credits beat is OFFERED ---
+- extendedWaitUntil: { visible: { id: 'onboarding-credits-beat' }, timeout: 20000 }
+- assertVisible: { id: 'onboarding-credits-start' }
+- takeScreenshot: '/tmp/A1_credits_beat'
+- tapOn: { id: 'onboarding-credits-start' }   # "Start free"
+
+# --- Provision -> guided-demo skip -> home (claim auto-fires on unlock) ---
+- extendedWaitUntil: { visible: { id: 'guided-demo-entry' }, timeout: 90000 }
+- tapOn: { id: 'guided-demo-skip' }
+- extendedWaitUntil: { visible: { id: 'index-mode-chip-remember' }, timeout: 15000 }
+- extendedWaitUntil: { visible: { id: 'index-mode-chip-remember' }, timeout: 8000 }
+
+# --- Settings -> Manage providers -> the granted tile renders ---
+- tapOn: { id: 'root-layout-menu' }
+- tapOn: { id: 'root-layout-menu-row-settings' }
+# On a grant, Settings shows "Add an AI provider" (the grant runs via the
+# credits slot, not a configured BYOK key) — it still pushes /ai-providers.
+- extendedWaitUntil: { visible: { id: 'settings-add-provider' }, timeout: 15000 }
+- tapOn: { id: 'settings-add-provider' }
+- extendedWaitUntil: { visible: { id: 'ai-providers-credits-tile' }, timeout: 15000 }
+- assertVisible: { id: 'ai-providers-credits-meter' }
+- takeScreenshot: '/tmp/A2_credits_tile'

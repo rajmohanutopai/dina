@@ -34,7 +34,7 @@ export function CreditsTile(): React.JSX.Element | null {
           <Text style={styles.activeBadgeText}>ACTIVE</Text>
         </View>
       </View>
-      <Text style={styles.subtitle}>Free conversations, on the house</Text>
+      <Text style={styles.subtitle}>Free conversations to get you started</Text>
 
       <Text style={styles.meter} testID="ai-providers-credits-meter">
         {credits.showWall
@@ -44,13 +44,10 @@ export function CreditsTile(): React.JSX.Element | null {
             : '◔ checking your balance…'}
       </Text>
 
-      <Text style={styles.detail}>
-        Model — {pin.split('/')[1] ?? pin}{' '}
-        · pinned for reliability
-      </Text>
+      <Text style={styles.detail}>Model: {pin.split('/')[1] ?? pin}</Text>
       <Text style={styles.detail} testID="ai-providers-credits-privacy">
-        Privacy — runs directly through OpenRouter; Dina does not proxy or store these
-        conversations. Your own key or a local model is more private.
+        Privacy: runs directly through OpenRouter. Dina does not proxy or store these
+        conversations.
       </Text>
     </View>
   );

@@ -19,6 +19,7 @@
  * and stubbed with "Coming soon" alerts where they don't.
  */
 
+import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import {
   Alert,
@@ -30,27 +31,32 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
-import { colors, radius, shadows, spacing, textStyles } from '../src/theme';
+
 import { getBootedNode, getBootDegradations } from '../src/hooks/useNodeBootstrap';
-import { getRuntimeWarnings, subscribeRuntimeWarnings } from '../src/services/runtime_warnings';
-import { loadPersistedDid } from '../src/services/identity_record';
-import { signOutLocal, eraseEverythingLocal } from '../src/services/local_data_wipe';
-import { sendChatMessage } from '../src/services/chat_d2d';
 import { shareArchive } from '../src/hooks/useShareExport';
+import { sendChatMessage } from '../src/services/chat_d2d';
 import {
-  isRestoreConfigured,
-  pickBackupBytes,
-  previewBackup,
-  restoreBackup,
-} from '../src/services/restore_import';
-import { wireNativeBackup } from '../src/services/native_backup_wiring';
+  clearBootHistory,
+  getBootHistory,
+  type BootDiagRecord,
+} from '../src/services/diagnostics_history';
 import {
   getDisplayNameOverride,
   hydrateDisplayNameOverride,
   setDisplayNameOverride,
   subscribeDisplayNameOverride,
 } from '../src/services/display_name_override';
+import { loadPersistedDid } from '../src/services/identity_record';
+import { signOutLocal, eraseEverythingLocal } from '../src/services/local_data_wipe';
+import { wireNativeBackup } from '../src/services/native_backup_wiring';
+import {
+  isRestoreConfigured,
+  pickBackupBytes,
+  previewBackup,
+  restoreBackup,
+} from '../src/services/restore_import';
+import { getRuntimeWarnings, subscribeRuntimeWarnings } from '../src/services/runtime_warnings';
+import { colors, radius, shadows, spacing, textStyles } from '../src/theme';
 
 export default function AdminScreen(): React.ReactElement {
   const router = useRouter();
@@ -61,6 +67,16 @@ export default function AdminScreen(): React.ReactElement {
     getRuntimeWarnings,
     getRuntimeWarnings,
   );
+
+  // Persisted recent-boot history (survives relaunch). The live channels
+  // above are current-boot only; this is what lets us debug a PAST boot.
+  const [history, setHistory] = useState<BootDiagRecord[]>([]);
+  const refreshHistory = useCallback(() => {
+    void getBootHistory().then(setHistory);
+  }, []);
+  useEffect(() => {
+    refreshHistory();
+  }, [refreshHistory]);
 
   const [persistedDid, setPersistedDid] = useState<string | null>(null);
   React.useEffect(() => {
@@ -219,13 +235,39 @@ export default function AdminScreen(): React.ReactElement {
             ))
           )}
 
+          <Text style={[styles.diagGroupLabel, styles.diagGroupSpacer]}>Recent boots</Text>
+          {history.length === 0 ? (
+            <Text style={styles.diagEmpty}>No history yet</Text>
+          ) : (
+            history.map((rec, i) => (
+              <View key={`${rec.at}-${i}`} style={styles.diagItem}>
+                <Text style={styles.diagCode}>{new Date(rec.at).toLocaleString()}</Text>
+                <Text style={styles.diagMessage}>
+                  {rec.degradations.length === 0 && rec.warnings.length === 0
+                    ? 'clean'
+                    : [...rec.degradations, ...rec.warnings].map((e) => e.code).join(', ')}
+                </Text>
+              </View>
+            ))
+          )}
+
           <Pressable
             testID="admin-copy-diagnostics"
             accessibilityRole="button"
-            onPress={() => copy(JSON.stringify({ degradations, runtimeWarnings }, null, 2))}
+            onPress={() => copy(JSON.stringify({ degradations, runtimeWarnings, history }, null, 2))}
             style={({ pressed }) => [styles.copyAll, pressed && styles.pressed]}
           >
             <Text style={styles.copyAllText}>Copy JSON for support</Text>
+          </Pressable>
+          <Pressable
+            testID="admin-clear-diag-history"
+            accessibilityRole="button"
+            onPress={() => {
+              void clearBootHistory().then(refreshHistory);
+            }}
+            style={({ pressed }) => [styles.clearHistoryBtn, pressed && styles.pressed]}
+          >
+            <Text style={styles.clearHistoryText}>Clear boot history</Text>
           </Pressable>
         </Section>
 
@@ -385,7 +427,7 @@ function BackupRestoreSection(): React.ReactElement {
   }, [picked, restorePass]);
 
   return (
-    <View>
+    <View style={styles.backupBox}>
       <Text style={styles.backupNote}>
         An export is an encrypted copy of your data (contacts, memories, reminders, settings).
         It never includes your keys or API secrets. Restore brings it back onto a device after you’ve set up
@@ -944,6 +986,15 @@ const styles = StyleSheet.create({
     ...textStyles.bodySmallStrong,
     color: colors.accent,
   },
+  clearHistoryBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    alignSelf: 'flex-end',
+  },
+  clearHistoryText: {
+    ...textStyles.bodySmall,
+    color: colors.textSecondary,
+  },
   dangerNote: {
     paddingHorizontal: spacing.md,
     paddingTop: spacing.md,
@@ -973,6 +1024,11 @@ const styles = StyleSheet.create({
   },
   pressed: { opacity: 0.7 },
   // Backup & restore (issues.txt §3)
+  backupBox: {
+    // sectionCard has no padding (other sections self-pad via `row`); the
+    // backup content is bare Views, so pad it to match the card inset.
+    padding: spacing.md,
+  },
   backupNote: {
     ...textStyles.bodySmall,
     color: colors.textSecondary,

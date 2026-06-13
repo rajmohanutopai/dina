@@ -58,9 +58,9 @@ import { FEATURES, FeatureIcon, type FeatureKey } from '../src/features';
 import { useGuidedDemoActive } from '../src/guided_demo/active_context';
 import { useAutoLock } from '../src/hooks/useAutoLock';
 import { clearThread } from '../src/hooks/useChatThread';
+import { useCreditsClaim } from '../src/hooks/useCreditsClaim';
 import { useNodeBootstrap } from '../src/hooks/useNodeBootstrap';
 import { useUnreadBadge } from '../src/hooks/useNotificationsBadge';
-import { useCreditsClaim } from '../src/hooks/useCreditsClaim';
 import { useRelayWake } from '../src/hooks/useRelayWake';
 import { useReminderFireWatcher } from '../src/hooks/useReminderFireWatcher';
 import { sealVault, useIsUnlocked } from '../src/hooks/useUnlock';
@@ -80,6 +80,7 @@ import {
 import { installReminderPushBridge } from '../src/notifications/reminder_push_bridge';
 import { isTrustTabHidden } from '../src/peerlens/flags';
 import { startReviewPublishWorker } from '../src/peerlens/review_publish_autodrain';
+import { recordBoot } from '../src/services/diagnostics_history';
 import { bootstrapInferredPreferences } from '../src/services/preferences_bootstrap';
 import {
   subscribeRuntimeWarnings,
@@ -637,6 +638,18 @@ export default function RootLayout() {
     getRuntimeWarnings,
   );
 
+  // Persist a snapshot of each boot's degradations + warnings so the history
+  // survives relaunch (Admin → Diagnostics shows it). The live channels are
+  // in-memory only, so a past boot's "limited mode" is otherwise lost — and a
+  // user can't report what degraded. Records once per boot, on reaching ready.
+  const bootRecordedRef = React.useRef(false);
+  useEffect(() => {
+    if (bootState.status === 'ready' && !bootRecordedRef.current) {
+      bootRecordedRef.current = true;
+      void recordBoot(bootState.degradations, runtimeWarnings);
+    }
+  }, [bootState.status, bootState.degradations, runtimeWarnings]);
+
   // Block render until fonts are loaded so the first app screen uses
   // Dina's shared type scale on first paint instead of flashing to a
   // fallback face. The blank off-white view is invisible behind the
@@ -732,7 +745,7 @@ export default function RootLayout() {
                 letterSpacing: 0.2,
                 marginTop: 2,
               },
-              tabBarIcon: ({ focused }) => null,
+              tabBarIcon: () => null,
             }}
           >
             <Tabs.Screen
@@ -1153,27 +1166,30 @@ function formatDegradations(list: BootDegradation[]): string[] {
 }
 
 /**
- * Codes that represent expected demo-build defaults rather than real
- * runtime issues. Ship in `bootState.degradations` for the admin
- * screen + bug reports, but suppress from the user-facing yellow
- * banner so a normal demo launch reads as "Dina is fine" instead of
- * "something is degraded \u2014 what did I break?".
+ * ALLOW-LIST: the only degradation codes that fire the user-facing yellow
+ * "limited mode" banner. Everything else (AppView/MsgBox reachability,
+ * capability fallbacks, did:key fallback, demo stubs, \u2026) is infra/transient
+ * the user can't act on \u2014 it stays in `bootState.degradations` for the admin
+ * Diagnostics screen + persisted history, but must NOT alarm the user.
  *
- * Why each is here:
- *   - `discovery.stub` \u2014 running against the in-memory AppView
- *     fixture is the *expected* state for the demo build; surfacing
- *     it as a warning every launch made the banner permanent
- *     wallpaper.
+ * We switched from a suppress-list to an allow-list deliberately: on a
+ * consumer launch a degradation should be diagnostic-only BY DEFAULT, and
+ * only genuinely critical, user-relevant ones surface. A boot that briefly
+ * couldn't reach AppView/MsgBox (which then recovers) must not flash a scary
+ * banner \u2014 the symptom that prompted this (a "limited mode \u00b7 N" banner that
+ * cleared after unlock).
+ *
+ *   - `persistence.in_memory` \u2014 the vault DB didn't open, so data won't
+ *     survive a restart. This is the one the user genuinely needs to know.
  */
-const BANNER_SUPPRESS_CODES = new Set<string>(['discovery.stub']);
+const BANNER_WORTHY_CODES = new Set<string>(['persistence.in_memory']);
 
 /**
- * Filter out demo-expected codes so the yellow banner only fires on
- * degradations that actually want operator attention. The full list
- * remains in `bootState.degradations` for diagnostics.
+ * Keep only the banner-worthy degradations for the yellow banner. The full
+ * list remains in `bootState.degradations` (admin Diagnostics + history).
  */
 function bannerWorthyDegradations(list: BootDegradation[]): BootDegradation[] {
-  return list.filter((d) => !BANNER_SUPPRESS_CODES.has(d.code));
+  return list.filter((d) => BANNER_WORTHY_CODES.has(d.code));
 }
 
 function formatRuntimeWarnings(list: readonly RuntimeWarning[]): string[] {

@@ -31,6 +31,7 @@ import {
   type ProviderType,
 } from '../../ai/provider';
 import { colors, radius, spacing, textStyles } from '../../theme';
+import { ProviderPicker } from '../ProviderPicker';
 
 import { OnboardingShell } from './shell';
 
@@ -183,13 +184,13 @@ export function AiProviderSet({ location, onBack, onContinue }: AiProviderSetPro
     >
       {creditsAvailable ? (
         <View style={styles.creditsBeat} testID="onboarding-credits-beat">
-          <Text style={styles.creditsTitle}>Your first conversations are on us.</Text>
+          <Text style={styles.creditsTitle}>Your first conversations are free.</Text>
           <Text style={styles.creditsBody}>
             No account. No card. No API key. Just start talking to Dina.
           </Text>
           <Text style={styles.creditsSmall}>
-            Starter conversations run directly through OpenRouter — Dina does not proxy or
-            store them. For maximum privacy, use your own AI provider key or a local model.
+            Starter conversations run directly through OpenRouter. Dina does not proxy or
+            store them.
           </Text>
           <Pressable
             testID="onboarding-credits-start"
@@ -199,33 +200,24 @@ export function AiProviderSet({ location, onBack, onContinue }: AiProviderSetPro
           >
             <Text style={styles.creditsButtonText}>Start free</Text>
           </Pressable>
-          <Text style={styles.creditsOr}>— or bring your own key —</Text>
+          <Text style={styles.creditsOr}>or bring your own key</Text>
         </View>
       ) : null}
 
-      <View style={styles.providerList}>
-        {PROVIDER_ORDER.map((type) => {
-          const isSel = selected === type;
-          return (
-            <Pressable
-              key={type}
-              testID={`onboarding-ai-provider-${type}`}
-              accessibilityRole="button"
-              accessibilityState={{ selected: isSel }}
-              onPress={() => {
-                setSelected(type);
-                setError(null);
-              }}
-              style={[styles.providerRow, isSel && styles.providerRowSelected]}
-            >
-              <Text style={[styles.providerLabel, isSel && styles.providerLabelSelected]}>
-                {PROVIDERS[type].label}
-              </Text>
-              {isSel ? <Text style={styles.providerTick}>✓</Text> : null}
-            </Pressable>
-          );
-        })}
-      </View>
+      <ProviderPicker
+        variant="compact"
+        rows={PROVIDER_ORDER.map((type) => ({
+          type,
+          label: PROVIDERS[type].label,
+          selected: selected === type,
+          testID: `onboarding-ai-provider-${type}`,
+          onPress: () => {
+            setSelected(type);
+            setError(null);
+          },
+          trailing: selected === type ? <Text style={styles.providerTick}>✓</Text> : undefined,
+        }))}
+      />
 
       {selected !== null ? (
         <TextInput
@@ -289,21 +281,6 @@ const styles = StyleSheet.create({
   connectedLabel: { ...textStyles.bodyStrong, color: colors.textPrimary },
   changeRow: { paddingVertical: spacing.md, alignItems: 'center' },
   changeText: { ...textStyles.link, color: colors.textSecondary },
-  providerList: { gap: spacing.sm },
-  providerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.bgCard,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-  },
-  providerRowSelected: { borderColor: colors.accent },
-  providerLabel: { ...textStyles.bodyStrong, color: colors.textPrimary },
-  providerLabelSelected: { color: colors.accent },
   providerTick: { ...textStyles.bodyLargeStrong, color: colors.accent },
   keyInput: {
     ...textStyles.body,
