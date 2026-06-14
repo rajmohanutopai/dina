@@ -1,3 +1,23 @@
+# Bug Fix
+⏺ Honest answer: yes, potentially — it's the same card and the same async-post path, not a demo-only thing. I checked the real path:
+
+  Real fired reminders go: useReminderFireWatcher (a 30s foreground timer on native, or the brain-server SSE stream on web) → postReminder → postReminderCard → addMessage('reminder', …) → the same 
+  InlineReminderCard. That's timer/network-driven, so the card can land mid-scroll, measured before layout settles — exactly the condition that drops the last line in the demo.
+  
+  So the clip can happen for real reminders too. Two important caveats that make it intermittent, not guaranteed:
+  1. Only long text — a reminder short enough to fit one line never clips. It's the wrapping case (e.g. enriched reminders like "…have the cold brew ready") that's at risk.
+  2. Only when it lands during the bad layout window — if the thread is settled when the card renders, it wraps fine (that's why the sync birthday reminders are always OK). So real reminders will sometimes clip,
+  not every time.
+  
+  And critically: the \n fix is demo-only — it's hard-coded into DEMO_D2D.reminder. Real reminders have dynamic text, so they're not covered by it.
+  
+  The proper fix is to make InlineReminderCard itself robust to the async measure (so any reminder wraps reliably). I couldn't crack that cleanly today — the only thing that reliably showed full text was a
+  re-render with a changing child, and my distilled versions of it didn't reproduce it. So I'd treat it as a real, low-severity, intermittent product bug worth a dedicated post-launch fix, not a demo cosmetic.
+  
+  Your call on timing:
+  - Log it for post-launch (it's intermittent + cosmetic; long reminders occasionally show a clipped last line until you scroll/re-render) — my recommendation given you're heading to launch.
+
+
 # Mobile remaining
 MOBILE_FEATURES.md has currnt vs perfect
 

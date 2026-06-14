@@ -18,7 +18,10 @@ import * as Keychain from './keychain';
 
 const SERVICE = 'dina.diag.history';
 const USERNAME = 'dina_diag';
-const MAX_RECORDS = 12;
+// Admin → Diagnostics shows only the most recent few inline; the full
+// ring is what "Copy JSON for support" exports, so keep enough depth to
+// be useful in a bug report without unbounded keychain growth.
+const MAX_RECORDS = 50;
 
 export interface DiagEntry {
   code: string;

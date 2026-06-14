@@ -111,11 +111,13 @@ export function makeGuidedDemoSeams(): GuidedDemoSeams {
     },
     seedReminders(reminders) {
       // Scripted reminder cards (the birthday enrichment) as display-only
-      // 'reminder' messages — same shape as the D2D reminder, scope-bound. Both
-      // reference Emma's birthday (Nov 7), so render the ABSOLUTE next Nov 7 —
-      // a relative "now + N days" would print e.g. JUN 15 while the body says
-      // "Nov 7", and the guided demo would visibly contradict itself.
+      // 'reminder' messages — same shape as the D2D reminder, scope-bound.
+      // Anchored to the ABSOLUTE next Nov 7 (a relative "now + N days" would
+      // print e.g. JUN 15 while the body says "Nov 7" and contradict itself).
+      // `daysBefore` shifts a card earlier: the lead "in a week" reminder fires
+      // 7 days before (→ Oct 31); the day-of reminder fires on Nov 7.
       const birthdayMs = nextNovember7(new Date()).getTime();
+      const DAY_MS = 86_400_000;
       for (const [i, reminder] of reminders.entries()) {
         addMessage(MAIN_THREAD, 'reminder', reminder.text, {
           metadata: {
@@ -124,7 +126,7 @@ export function makeGuidedDemoSeams(): GuidedDemoSeams {
             shortId: `gd${i}`,
             reminderKind: 'event',
             persona: 'general',
-            dueAt: birthdayMs,
+            dueAt: birthdayMs - (reminder.daysBefore ?? 0) * DAY_MS,
             recurring: '',
             scheduled: true, // confirmation card → no Snooze / Mark-done actions
           },
@@ -223,12 +225,18 @@ export function makeGuidedDemoSeams(): GuidedDemoSeams {
     },
     async postD2DMessage(from, message, reminder) {
       // Dina-to-Dina Talk (simulation): show the incoming peer message, pause
-      // while Dina processes it, then post the enriched reminder as a real
-      // reminder card (scheduled → display-only, no actions). The reminder text
-      // is pre-enriched from the cold-brew memory (the real path would do this
-      // via staging + vault search; here it's deterministic seed data).
+      // while Dina processes it, then post the enriched reminder card. The
+      // reminder text is pre-enriched from the cold-brew memory (real path:
+      // staging + vault search) and is hard-broken (see DEMO_D2D.reminder) to
+      // dodge an async-measure clip specific to this card.
       addMessage(MAIN_THREAD, 'system', `${from} (a contact) messaged you: "${message}"`);
       await sleep(DINA_THINKING_MS);
+      // "Tomorrow morning" per the message + reminder copy — fire at 8am local
+      // tomorrow, NOT now+24h (which lands at tonight's time tomorrow, e.g. 9pm,
+      // contradicting "morning"). Same copy-consistency rule as the birthday cards.
+      const tomorrowMorning = new Date();
+      tomorrowMorning.setDate(tomorrowMorning.getDate() + 1);
+      tomorrowMorning.setHours(8, 0, 0, 0);
       addMessage(MAIN_THREAD, 'reminder', reminder, {
         metadata: {
           kind: 'reminder',
@@ -236,7 +244,7 @@ export function makeGuidedDemoSeams(): GuidedDemoSeams {
           shortId: 'd2d',
           reminderKind: 'social',
           persona: 'general',
-          dueAt: Date.now() + 86_400_000, // ~tomorrow
+          dueAt: tomorrowMorning.getTime(),
           recurring: '',
           scheduled: true, // confirmation card → no Snooze / Mark-done actions
         },

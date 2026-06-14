@@ -34,14 +34,14 @@ const VAULT_CARDS: CapabilityCard[] = [
     icon: 'identity',
     title: 'Remember something',
     description:
-      'Store a fact, preference, event, or note. Dina classifies it into the right vault: health into Health, finance into Financial, everyday into General. Sensitive vaults stay locked, so a connected agent will need your approval to read them.',
+      'Store a fact, preference, or event. Dina files it into the right vault (Health, Financial, General) and keeps sensitive ones locked.',
     example: '"Emma\'s birthday is March 15."',
   },
   {
     icon: 'vault',
     title: 'Ask a question',
     description:
-      'Dina looks in your vault first, then reaches out to PeerLens for reviewed opinions and the Dina services network for live answers. Vault search is hybrid keyword + semantic across your unlocked vaults.',
+      'Dina answers from your vault first, then reaches out to reviews and the services network when it needs more.',
     example: '"When is Emma\'s birthday?"',
   },
 ];
@@ -51,8 +51,8 @@ const REMINDER_CARDS: CapabilityCard[] = [
     icon: 'reminders',
     title: 'Reminders, set automatically',
     description:
-      'When something you tell Dina has a date in it, Dina sets a reminder without being asked, and folds in what it already knows so the reminder is genuinely useful, not just a bare alarm.',
-    example: '"Emma\'s birthday is Nov 7." The day before, Dina reminds you, and because it knows Emma loves dinosaurs, it suggests a dinosaur-themed gift.',
+      'Mention a date and Dina sets the reminder for you, enriched with what it already knows instead of a bare alarm.',
+    example: '"Emma\'s birthday is Nov 7." The day before, Dina reminds you and suggests a dinosaur gift, because it knows she loves them.',
   },
 ];
 
@@ -61,9 +61,9 @@ const TALK_CARDS: CapabilityCard[] = [
     icon: 'talk',
     title: 'Your Dina talks to theirs',
     description:
-      'Tell your Dina to reach a contact. Your Dina hands off to their Dina over an end-to-end encrypted peer-to-peer channel; no server in between. The other Dina announces the message with context from its own vault, so the recipient is prepared without having to remember anything. If a reminder would help either side, both Dinas quietly set one up.',
+      'Message a contact and your Dina hands off to theirs over an encrypted peer-to-peer channel, no server in between. Their Dina adds context from its own vault, so the recipient is ready.',
     example:
-      '"Tell Sancho I\'ll be there in 15." Sancho\'s Dina alerts him with the context it has on you. Both Dinas set a reminder for their owners.',
+      '"Tell Sancho I\'ll be there in 15." His Dina alerts him with context, and both set a reminder.',
   },
 ];
 
@@ -72,7 +72,7 @@ const AGENT_CARDS: CapabilityCard[] = [
     icon: 'agentTasks',
     title: 'Run real work through agents',
     description:
-      'Agents work with Dina in two directions. Dina can hand work to an agent (fetch new email, book the flight) and the agent executes. Or an agent acts on its own and submits its intent to Dina first, so Dina can apply your rules, approve, or ask you. Install dina-agent (pip install dina-agent) and pair it; both flows are supported.',
+      'Hand work to a connected agent (fetch email, book a flight), or let an agent act and submit its intent to Dina first. Install dina-agent and pair it.',
     example:
       'Ask Dina to email Sancho a quick note. The mail agent drafts it and sends it on your behalf.',
   },
@@ -80,42 +80,52 @@ const AGENT_CARDS: CapabilityCard[] = [
     icon: 'security',
     title: 'You approve sensitive actions',
     description:
-      'Sensitive vaults (health, financial, anything you flag) stay locked by default. When a connected agent needs access or wants to take a risky action, Dina surfaces it for your approval before anything happens.',
+      'When an agent wants a locked vault or a risky action, Dina asks you first. Nothing happens without your approval.',
     example:
-      'Your mail agent drafts a reply to Sancho on your behalf and submits it to Dina. Dina reviews it and decides it needs your approval. An approval notification is shown in the mobile app.',
+      'Your mail agent drafts a reply and submits it. Dina decides it needs your approval before sending.',
   },
 ];
 
 const SERVICES_CARDS: CapabilityCard[] = [
   {
     icon: 'peerlens',
-    title: `${FEATURE_NAMES.peerlens} reviews`,
+    title: 'Ranked Reviews',
     description:
-      'So far everything\'s been inside Dina. PeerLens is the network on top of it. You can review anything on it. Products, restaurants, YouTube videos, books, people. All reviews are signed by their reviewers, and weighted by whether they actually paid for or used the thing. Stale opinions fade. The ranking works like PageRank: a review from someone many people trust counts more than one from a stranger. Even the query your Dina sends to PeerLens is shaped by what it knows about you, so the reviews that come back are already filtered to your context. When several answers fit, PeerLens decides which one Dina takes first.',
-    example: '"Is the Calmly mattress any good?" or "Is this YouTube tutorial worth watching?" PeerLens pulls signed reviews and weights them by who said them.',
+      'Reviews of anything (products, places, videos, people) signed by real reviewers and ranked by trust, not ad spend. A review from someone many people trust counts more. You can publish your own reviews too, so others benefit.',
+    example: '"Is the Calmly mattress any good?" Dina pulls signed reviews and weights them by who said them.',
   },
   {
     icon: 'services',
     title: 'A directory of Dina services',
     description:
-      'There\'s a public directory of every Public Dina Service. Each entry says what it answers, who runs it, and where. Any Dina can opt in to become a public service from its settings. When you ask Dina something, it searches the directory. Looking for a bus ETA? It finds the transit authority. Want sourdough? It finds the bakery nearby. Dina also filters the candidates by your settings (budget, location, languages), and PeerLens ranks what\'s left.',
+      'A public directory of Dina services. Ask Dina anything and it finds the right one (transit for a bus ETA, the bakery for sourdough), filtered by your settings.',
     example:
-      '"When does bus 42 reach Castro?" Dina searches the directory, finds SF Transit\'s Dina, and routes the query there.',
-  },
-  {
-    icon: 'services',
-    title: 'Behind every service, a real operator',
-    description:
-      'Each Dina service has a person or organisation behind it, and that person has their own Dina and their own agents. When SF Transit\'s Dina answers a bus ETA, its agent is the one doing the work. It reads from the transit database, the GPS feed, the maps. Your Dina just hands off the question; the operator\'s agent answers it.',
-    example:
-      'The bus driver has Dina on her phone. Her Dina has an agent reading the GPS and maps. When your Dina asks "Where\'s bus 42?", her agent answers in real time.',
+      '"When does bus 42 reach Castro?" Dina finds SF Transit\'s Dina and routes the query there.',
   },
   {
     icon: 'identity',
     title: 'Queries shaped by your context',
     description:
-      'Dina applies what it knows about you to every external query. Ask for a chair and Dina searches for one with lumbar support under $500, because it has seen your back-pain notes and your budget. Results come back already shaped to your situation.',
+      'Dina shapes every external query with what it knows about you, so results come back fit to your situation.',
     example: '"Find me a chair." Dina searches for "chair with lumbar support, under $500".',
+  },
+];
+
+const PROVIDER_CARDS: CapabilityCard[] = [
+  {
+    icon: 'services',
+    title: 'Publish from your vault',
+    description:
+      'Offer a service answered straight from your vault. A phone and a sentence, no business account, no server.',
+    example:
+      'A salon answers "free after 4?" from the owner\'s own notes, and books only after they tap Approve.',
+  },
+  {
+    icon: 'agentTasks',
+    title: 'Back it with an agent',
+    description:
+      'For live data, connect an agent. It does the work; you stay in control with approvals.',
+    example: 'A transit service answers bus ETAs from a live GPS agent.',
   },
 ];
 
@@ -198,7 +208,8 @@ export default function HelpScreen(): React.ReactElement {
         <CardSection title="Reminders" cards={REMINDER_CARDS} onPress={onCardPress} />
         <CardSection title={FEATURE_NAMES.talk} cards={TALK_CARDS} onPress={onCardPress} />
         <CardSection title={FEATURE_NAMES.agentTasks} cards={AGENT_CARDS} onPress={onCardPress} />
-        <CardSection title={`${FEATURE_NAMES.services} and ${FEATURE_NAMES.peerlens}`} cards={SERVICES_CARDS} onPress={onCardPress} />
+        <CardSection title={`${FEATURE_NAMES.services} and Ranked Reviews`} cards={SERVICES_CARDS} onPress={onCardPress} />
+        <CardSection title="Offer your own service" cards={PROVIDER_CARDS} onPress={onCardPress} />
         <CardSection title="Privacy and control" cards={PRIVACY_CARDS} onPress={onCardPress} />
 
         <View style={styles.footer}>

@@ -106,7 +106,6 @@ const CHAT_STEPS = DEMO_STEPS.filter((s) => s.kind === undefined || s.kind === '
 // (the people step and the private step each have two).
 const TOTAL_SENDS = CHAT_STEPS.reduce((n, s) => n + (s.remembers?.length ?? 1), 0);
 const RECOMMEND_STEP_COUNT = DEMO_STEPS.filter((s) => s.kind === 'recommend').length;
-const SERVICE_STEP_COUNT = DEMO_STEPS.filter((s) => s.kind === 'service').length;
 
 describe('useGuidedDemoGate', () => {
   beforeEach(() => {
@@ -235,7 +234,7 @@ describe('useGuidedDemoGate', () => {
     await act(async () => {
       await result.current.startDemo();
     });
-    expect(result.current.stepCount).toBe(DEMO_STEPS.length + 4);
+    expect(result.current.stepCount).toBe(DEMO_STEPS.length + 6);
     expect(result.current.step).toBe(1);
     expect(result.current.currentAction?.id).toBe(DEMO_STEPS[0]?.id);
     expect(result.current.demoComplete).toBe(false);
@@ -257,26 +256,27 @@ describe('useGuidedDemoGate', () => {
     expect(result.current.currentAction?.id).toBe(DEMO_STEPS[1]?.id);
   });
 
-  it('runs to completion → approval created, publish card posted, complete flag set', async () => {
+  it('runs to completion → approvals created, salon finale posted, complete flag set', async () => {
     const { make, rec } = fakeSeams();
     const { result } = renderHook(() => useGuidedDemoGate(true, { makeSeams: make }));
     await waitFor(() => expect(result.current.phase).toBe('entry'));
     await act(async () => {
       await result.current.startDemo();
     });
-    for (let i = 0; i < DEMO_STEPS.length + 4; i += 1) {
+    for (let i = 0; i < DEMO_STEPS.length + 6; i += 1) {
       await act(async () => {
         await result.current.advanceDemo();
       });
     }
-    // Total sends across chat steps (the people + private steps each send two).
-    expect(rec.sends).toBe(TOTAL_SENDS);
+    // Content sends across chat steps (people + private each send two) PLUS the
+    // salon-setup "remember hours" send.
+    expect(rec.sends).toBe(TOTAL_SENDS + 1);
     expect(rec.recommendations).toBe(RECOMMEND_STEP_COUNT);
-    expect(rec.serviceCards).toBe(SERVICE_STEP_COUNT);
-    expect(rec.approvals).toHaveLength(1);
+    expect(rec.serviceCards).toBe(2); // salon: published card + booking-confirmed card
+    expect(rec.approvals).toHaveLength(2); // agent Health-read + salon booking
     expect(rec.d2dMessages).toBe(1); // Dina-to-Dina Talk step
     expect(rec.reviewCards).toBe(1); // PeerLens review card
-    expect(rec.cards).toBe(1); // publish-service draft (review now uses postReviewCard)
+    expect(rec.cards).toBe(1); // salon finale: the customer query (postDemoCard)
     expect(result.current.demoComplete).toBe(true);
     expect(result.current.currentAction).toBeNull();
   });

@@ -9,7 +9,7 @@ import {
   DEMO_SERVICE_RESPONSE,
   DEMO_AGENT,
   DEMO_TASK,
-  DEMO_PUBLISH_DRAFT,
+  DEMO_SALON,
   buildChairRecommendation,
   nextNovember7,
 } from '../../src/guided_demo/content';
@@ -43,7 +43,6 @@ describe('demo content fixtures', () => {
       'remember_private',
       'remember_emma_birthday',
       'chair_ask',
-      'chair_availability',
     ]);
     const byId = Object.fromEntries(DEMO_STEPS.map((s) => [s.id, s]));
     // The opening step remembers a family member AND a friend (two remembers),
@@ -77,11 +76,9 @@ describe('demo content fixtures', () => {
     // A single nav step peeks at People › Relations (the next step returns).
     expect(byId['show_relations'].kind).toBe('navigate');
     expect(byId['show_relations'].navigateTo).toBe('people-relations');
-    // Only the availability check is a service step (real resolved card).
-    expect(DEMO_STEPS.filter((s) => s.kind === 'service').map((s) => s.id)).toEqual([
-      'chair_availability',
-    ]);
-    expect(byId['chair_availability'].message).toMatch(/ErgoFlex Study Chair/);
+    // The chair-availability service step was removed; the services beat is now
+    // the salon finale (see runner.test buildDemoPlan + DEMO_SALON).
+    expect(DEMO_STEPS.filter((s) => s.kind === 'service')).toHaveLength(0);
     expect(DEMO_STEPS[0].kind).toBeUndefined(); // chat is the default
   });
 
@@ -108,7 +105,7 @@ describe('demo content fixtures', () => {
     expect(answer).toContain('ErgoFlex');
     expect(answer).toContain('$500'); // the user's budget
     expect(answer).toContain('over your budget'); // SpinePro excluded on price
-    expect(answer).toContain('PeerLens'); // explicitly the PeerLens flow
+    expect(answer).toContain('reviewers'); // explicitly the ranked-reviews flow
     // Verified-Truth: only the seeded reviews — never invents peers/products.
     expect(answer).not.toMatch(/Rajmohan|Sancho|Aeron/);
   });
@@ -128,8 +125,14 @@ describe('demo content fixtures', () => {
     // purchase: Dina never touches money).
     expect(DEMO_TASK.message).toMatch(/Email my manager/i);
     expect(DEMO_TASK.message).not.toMatch(/buy/i);
-    // The published service is the canon bus-driver ETA service (eta_query).
-    expect(DEMO_PUBLISH_DRAFT.name).toMatch(/Bus.*ETA/i);
-    expect(DEMO_PUBLISH_DRAFT.capability).toBe('eta_query');
+    // The salon finale: a service published from the (scripted) Salon vault,
+    // then a booking the owner approves.
+    expect(DEMO_SALON.vault).toBe('Salon');
+    expect(DEMO_SALON.hours.toLowerCase()).toContain('salon');
+    expect(DEMO_SALON.customer).toMatch(/4pm/i);
+    // The two structured cards: published (vault-scoped) + booking confirmed.
+    expect(DEMO_SALON.publishedResult.visibility).toBe('Public');
+    expect(DEMO_SALON.bookingResult.status).toBe('confirmed');
+    expect(DEMO_SALON.bookingResult.reply_sent.toLowerCase()).toContain('see you');
   });
 });

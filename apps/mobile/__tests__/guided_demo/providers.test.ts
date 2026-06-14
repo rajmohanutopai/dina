@@ -47,7 +47,7 @@ describe('makeGuidedDemoSeams', () => {
   it('seedReminders posts display-only reminder cards (scheduled, scope-bound)', () => {
     const seams = makeGuidedDemoSeams();
     seams.seedReminders([
-      { text: 'Emma birthday in a week' },
+      { text: 'Emma birthday in a week', daysBefore: 7 },
       { text: "Today is Emma's birthday" },
     ]);
     const thread = getThread('main');
@@ -56,10 +56,11 @@ describe('makeGuidedDemoSeams', () => {
     expect(thread[0].metadata?.kind).toBe('reminder');
     expect(thread[0].metadata?.scheduled).toBe(true);
     expect(thread[0].content).toMatch(/Emma birthday/);
-    // Both cards render the ABSOLUTE next Nov 7, matching the "Nov 7" copy —
-    // not a relative now+N offset that would print a contradictory date.
+    // Cards anchor to the ABSOLUTE next Nov 7 (matching the "Nov 7" copy), and
+    // `daysBefore` shifts the lead card earlier: the "in a week" reminder fires
+    // 7 days before Nov 7 (→ Oct 31); the day-of reminder fires on Nov 7.
     const nov7 = nextNovember7(new Date()).getTime();
-    expect(thread[0].metadata?.dueAt).toBe(nov7);
+    expect(thread[0].metadata?.dueAt).toBe(nov7 - 7 * 86_400_000);
     expect(thread[1].metadata?.dueAt).toBe(nov7);
   });
 

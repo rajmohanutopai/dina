@@ -61,7 +61,7 @@ export function InlineDemoReviewCard({
 
   return (
     <View style={styles.card} testID="demo-review-card">
-      <Text style={styles.label}>PeerLens review</Text>
+      <Text style={styles.label}>Ranked Reviews</Text>
       <View style={styles.headerRow}>
         <Text style={styles.product}>{meta.product}</Text>
         <Text style={styles.stars}>{stars(meta.rating)}</Text>
@@ -69,7 +69,7 @@ export function InlineDemoReviewCard({
       <Text style={styles.body}>{`"${meta.text}"`}</Text>
       {published ? (
         <Text testID="demo-review-published" style={styles.published}>
-          Published to PeerLens.
+          Published to the network.
         </Text>
       ) : (
         <TouchableOpacity

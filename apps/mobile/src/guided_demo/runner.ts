@@ -21,7 +21,7 @@ import { markGuidedDemoStep } from '@dina/core';
 import {
   DEMO_AGENT,
   DEMO_D2D,
-  DEMO_PUBLISH_DRAFT,
+  DEMO_SALON,
   DEMO_REVIEW,
   DEMO_SERVICE_CAPABILITY,
   DEMO_SERVICE_PROVIDER_DID,
@@ -46,7 +46,11 @@ const INTER_MESSAGE_PAUSE_MS = 3500;
 export const D2D_MESSAGE_STEP = 'd2d_message';
 export const AGENT_APPROVAL_STEP = 'agent_approval';
 export const PEERLENS_REVIEW_STEP = 'peerlens_review';
-export const PUBLISH_DRAFT_STEP = 'publish_draft';
+/** Salon finale — three beats: publish from vault, customer booking + approval,
+ *  reply back. (Replaces the old abstract publish-draft step.) */
+export const SALON_SETUP_STEP = 'salon_setup';
+export const SALON_BOOKING_STEP = 'salon_booking';
+export const SALON_REPLY_STEP = 'salon_reply';
 
 /** A single agent-approval request the runner asks the user to act on. */
 export interface DemoApprovalRequest {
@@ -132,7 +136,9 @@ export type DemoAction =
   | { kind: 'd2d'; id: string; caption: string }
   | { kind: 'approval'; id: string; caption: string }
   | { kind: 'review'; id: string; caption: string }
-  | { kind: 'publish'; id: string; caption: string };
+  | { kind: 'salon_setup'; id: string; caption: string }
+  | { kind: 'salon_booking'; id: string; caption: string }
+  | { kind: 'salon_reply'; id: string; caption: string };
 
 /**
  * Build the ordered action plan: the scripted content steps (chat or service,
@@ -167,11 +173,21 @@ export function buildDemoPlan(steps: readonly DemoStep[] = DEMO_STEPS): DemoActi
       id: PEERLENS_REVIEW_STEP,
       caption: DEMO_REVIEW.caption,
     },
+    // ── Salon finale: publish a service of your own, get queried, approve. ──
     {
-      kind: 'publish',
-      id: PUBLISH_DRAFT_STEP,
-      caption:
-        'Provide a service of your own. A bus driver could publish live bus ETAs for other Dinas to query, answered by your OpenClaw or another agent, public or private.',
+      kind: 'salon_setup',
+      id: SALON_SETUP_STEP,
+      caption: DEMO_SALON.setupCaption,
+    },
+    {
+      kind: 'salon_booking',
+      id: SALON_BOOKING_STEP,
+      caption: DEMO_SALON.bookingCaption,
+    },
+    {
+      kind: 'salon_reply',
+      id: SALON_REPLY_STEP,
+      caption: DEMO_SALON.replyCaption,
     },
   ];
 }
@@ -210,18 +226,54 @@ export function buildDemoApprovalRequest(now: number): DemoApprovalRequest {
 /** Human-readable summary of the PeerLens review the user contributes back. */
 export function describePeerLensReview(): string {
   return (
-    `PeerLens review · ${DEMO_REVIEW.product} · ${DEMO_REVIEW.rating}/5 · ` +
+    `Ranked Reviews · ${DEMO_REVIEW.product} · ${DEMO_REVIEW.rating}/5 · ` +
     `"${DEMO_REVIEW.text}" Draft only, you choose when to publish.`
   );
 }
 
-/** Human-readable summary of the publish-service draft card. */
-export function describePublishDraft(): string {
-  return (
-    `Draft service · ${DEMO_PUBLISH_DRAFT.name} ` +
-    `(${DEMO_PUBLISH_DRAFT.capability}, ${DEMO_PUBLISH_DRAFT.visibility}, ` +
-    `${DEMO_PUBLISH_DRAFT.responsePolicy}). Draft only, nothing is published.`
-  );
+/** The salon booking-approval request (real approval manager, demo subject —
+ *  teardown-denied). A customer's Dina wants to book a slot; the owner approves. */
+export function buildSalonApprovalRequest(now: number): DemoApprovalRequest {
+  return {
+    id: `guided-demo-salon-${now}`,
+    action: 'confirm_booking',
+    requesterDid: 'did:plc:demosaloncustomer',
+    persona: 'general',
+    reason: `A customer wants to book ${DEMO_SALON.slot}.`,
+    preview: `Booking request: ${DEMO_SALON.slot}. Approve to confirm and reply.`,
+    what: `Confirm a ${DEMO_SALON.slot} appointment`,
+    why: 'A customer asked your salon for this slot; approving books it and replies.',
+  };
+}
+
+/** "Service published" card — rendered through the same resolved service-card
+ *  path as the (removed) chair availability card, so publishing is a proper
+ *  fielded card, not a plain line. */
+export function buildSalonPublishedCard(now: number): DemoServiceCard {
+  return {
+    taskId: `guided-demo-salon-pub-${now}`,
+    capability: 'service_listing',
+    serviceName: DEMO_SALON.serviceName,
+    providerDid: 'did:plc:demosalon',
+    params: {},
+    result: { ...DEMO_SALON.publishedResult },
+    question: '', // you published — you weren't asked, so no user question
+    content: DEMO_SALON.publishedContent,
+  };
+}
+
+/** "Booking confirmed" card — rendered after the owner approves. */
+export function buildSalonBookingCard(now: number): DemoServiceCard {
+  return {
+    taskId: `guided-demo-salon-book-${now}`,
+    capability: 'appointment_booking',
+    serviceName: DEMO_SALON.serviceName,
+    providerDid: 'did:plc:demosalon',
+    params: {},
+    result: { ...DEMO_SALON.bookingResult },
+    question: '',
+    content: DEMO_SALON.bookingContent,
+  };
 }
 
 export interface GuidedDemoRunnerOptions {
@@ -348,8 +400,27 @@ export class GuidedDemoRunner {
           text: DEMO_REVIEW.text,
         });
         break;
-      case 'publish':
-        this.seams.postDemoCard(describePublishDraft());
+      case 'salon_setup':
+        // Provider side: remember the salon's hours (→ scripted Salon vault),
+        // then a structured "Service published" card. All scope-bound; nothing
+        // real is created or published.
+        await this.seams.send('remember', DEMO_SALON.hours, DEMO_SALON.vault);
+        await this.seams.delay();
+        await this.seams.postServiceCard(buildSalonPublishedCard(this.now()));
+        break;
+      case 'salon_booking': {
+        // A customer's Dina queries the published salon, then a REAL booking
+        // approval card (demo subject, teardown-denied — nothing is granted).
+        this.seams.postDemoCard(DEMO_SALON.customer);
+        await this.seams.delay();
+        const salonId = this.seams.requestApproval(buildSalonApprovalRequest(this.now()));
+        this.pendingApprovals.push(salonId);
+        break;
+      }
+      case 'salon_reply':
+        // Owner approved → Dina books it and replies; a structured "Booking
+        // confirmed" card (positive tone) closes the demo.
+        await this.seams.postServiceCard(buildSalonBookingCard(this.now()));
         break;
     }
     // Persist progress for crash recovery, then advance the cursor.

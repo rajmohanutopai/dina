@@ -58,6 +58,53 @@ import {
 import { getRuntimeWarnings, subscribeRuntimeWarnings } from '../src/services/runtime_warnings';
 import { colors, radius, shadows, spacing, textStyles } from '../src/theme';
 
+/**
+ * Admin → Diagnostics unifies every diagnostic source (boot
+ * degradations, runtime warnings, boot history) into ONE chronological
+ * log. Left inline it grows without bound and swamps the page, so we
+ * show only the most recent few; the FULL set always rides along in the
+ * "Copy JSON for support" payload (capped by the history ring, 50).
+ */
+const LOG_PREVIEW = 4;
+
+interface LogLine {
+  at: number;
+  kind: 'degraded' | 'warn' | 'clean';
+  code: string;
+  message: string;
+  key: string;
+}
+
+/**
+ * Flatten the three diagnostic sources into one newest-first log. Boot
+ * history already snapshots each boot's degradations + warnings (so the
+ * current boot's degradations arrive here via history[0]); live runtime
+ * warnings accumulate post-boot and are layered on top.
+ */
+function buildLogLines(
+  runtimeWarnings: readonly { code: string; message: string; at: number }[],
+  history: readonly BootDiagRecord[],
+): LogLine[] {
+  const lines: LogLine[] = [];
+  for (const w of runtimeWarnings) {
+    lines.push({ at: w.at, kind: 'warn', code: w.code, message: w.message, key: `rt-${w.code}-${w.at}` });
+  }
+  for (const rec of history) {
+    if (rec.degradations.length === 0 && rec.warnings.length === 0) {
+      lines.push({ at: rec.at, kind: 'clean', code: 'boot', message: 'Clean boot', key: `boot-${rec.at}` });
+    } else {
+      rec.degradations.forEach((d, i) =>
+        lines.push({ at: rec.at, kind: 'degraded', code: d.code, message: d.message, key: `dg-${rec.at}-${i}` }),
+      );
+      rec.warnings.forEach((w, i) =>
+        lines.push({ at: rec.at, kind: 'warn', code: w.code, message: w.message, key: `wn-${rec.at}-${i}` }),
+      );
+    }
+  }
+  lines.sort((a, b) => b.at - a.at);
+  return lines;
+}
+
 export default function AdminScreen(): React.ReactElement {
   const router = useRouter();
   const node = getBootedNode();
@@ -77,6 +124,11 @@ export default function AdminScreen(): React.ReactElement {
   useEffect(() => {
     refreshHistory();
   }, [refreshHistory]);
+
+  // Unified, newest-first diagnostic log. Inline we show only the most
+  // recent few; Copy-JSON-for-support carries the full underlying data.
+  const logLines = buildLogLines(runtimeWarnings, history);
+  const visibleLogs = logLines.slice(0, LOG_PREVIEW);
 
   const [persistedDid, setPersistedDid] = useState<string | null>(null);
   React.useEffect(() => {
@@ -211,42 +263,16 @@ export default function AdminScreen(): React.ReactElement {
 
         {/* Diagnostics */}
         <Section title="Diagnostics">
-          <Text style={styles.diagGroupLabel}>Boot degradations</Text>
-          {degradations.length === 0 ? (
-            <Text style={styles.diagEmpty}>All boot inputs wired ✓</Text>
+          <Text style={styles.diagGroupLabel}>Recent logs</Text>
+          {logLines.length === 0 ? (
+            <Text style={styles.diagEmpty}>No logs yet</Text>
           ) : (
-            degradations.map((d) => (
-              <View key={d.code} style={styles.diagItem}>
-                <Text style={styles.diagCode}>{d.code}</Text>
-                <Text style={styles.diagMessage}>{d.message}</Text>
-              </View>
-            ))
-          )}
-
-          <Text style={[styles.diagGroupLabel, styles.diagGroupSpacer]}>Runtime warnings</Text>
-          {runtimeWarnings.length === 0 ? (
-            <Text style={styles.diagEmpty}>No active warnings</Text>
-          ) : (
-            runtimeWarnings.map((w) => (
-              <View key={w.code} style={styles.diagItem}>
-                <Text style={styles.diagCode}>{w.code}</Text>
-                <Text style={styles.diagMessage}>{w.message}</Text>
-              </View>
-            ))
-          )}
-
-          <Text style={[styles.diagGroupLabel, styles.diagGroupSpacer]}>Recent boots</Text>
-          {history.length === 0 ? (
-            <Text style={styles.diagEmpty}>No history yet</Text>
-          ) : (
-            history.map((rec, i) => (
-              <View key={`${rec.at}-${i}`} style={styles.diagItem}>
-                <Text style={styles.diagCode}>{new Date(rec.at).toLocaleString()}</Text>
-                <Text style={styles.diagMessage}>
-                  {rec.degradations.length === 0 && rec.warnings.length === 0
-                    ? 'clean'
-                    : [...rec.degradations, ...rec.warnings].map((e) => e.code).join(', ')}
+            visibleLogs.map((line) => (
+              <View key={line.key} style={styles.diagItem}>
+                <Text style={[styles.diagCode, line.kind === 'clean' && styles.diagCodeClean]}>
+                  {new Date(line.at).toLocaleString()} · {line.code}
                 </Text>
+                <Text style={styles.diagMessage}>{line.message}</Text>
               </View>
             ))
           )}
@@ -267,7 +293,7 @@ export default function AdminScreen(): React.ReactElement {
             }}
             style={({ pressed }) => [styles.clearHistoryBtn, pressed && styles.pressed]}
           >
-            <Text style={styles.clearHistoryText}>Clear boot history</Text>
+            <Text style={styles.clearHistoryText}>Clear log history</Text>
           </Pressable>
         </Section>
 
@@ -985,6 +1011,11 @@ const styles = StyleSheet.create({
   copyAllText: {
     ...textStyles.bodySmallStrong,
     color: colors.accent,
+  },
+  diagCodeClean: {
+    // Routine "clean boot" lines stay quiet so real degradations/warnings
+    // (which keep the warning colour) are what catches the eye.
+    color: colors.textSecondary,
   },
   clearHistoryBtn: {
     paddingHorizontal: spacing.md,

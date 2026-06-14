@@ -6,7 +6,7 @@
 # run after onboarding on a clean device/sim.
 #
 # This flow asserts the gate flow + that exiting returns to a normal, empty
-# Chat. The scripted CONTENT (Emma/chair/agent/publish) + demo-data providers
+# Chat. The scripted CONTENT (Emma/chair/agent/salon) + demo-data providers
 # are exercised by the in-app steps once seeded; the data-scope isolation +
 # cleanup invariants are unit/real-SQLite covered (core/scope + storage-node
 # *_scope_isolation suites).

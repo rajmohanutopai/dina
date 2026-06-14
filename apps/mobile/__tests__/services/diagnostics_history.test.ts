@@ -31,14 +31,14 @@ describe('diagnostics_history', () => {
     expect(h[1].degradations).toEqual([{ code: 'persistence.in_memory', message: 'db failed' }]);
   });
 
-  it('caps the ring at 12 records, keeping the most recent', async () => {
-    for (let i = 0; i < 20; i++) {
+  it('caps the ring at 50 records, keeping the most recent', async () => {
+    for (let i = 0; i < 60; i++) {
       await recordBoot([{ code: `c${i}`, message: 'm' }], [], () => i);
     }
     const h = await getBootHistory();
-    expect(h).toHaveLength(12);
-    expect(h[0].degradations[0].code).toBe('c19'); // most recent retained
-    expect(h[11].degradations[0].code).toBe('c8'); // oldest kept
+    expect(h).toHaveLength(50);
+    expect(h[0].degradations[0].code).toBe('c59'); // most recent retained
+    expect(h[49].degradations[0].code).toBe('c10'); // oldest kept
   });
 
   it('clearBootHistory empties the ring', async () => {

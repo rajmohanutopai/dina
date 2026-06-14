@@ -10,15 +10,17 @@ import {
   D2D_MESSAGE_STEP,
   AGENT_APPROVAL_STEP,
   PEERLENS_REVIEW_STEP,
-  PUBLISH_DRAFT_STEP,
+  SALON_SETUP_STEP,
+  SALON_BOOKING_STEP,
+  SALON_REPLY_STEP,
   GuidedDemoRunner,
   buildDemoPlan,
   buildDemoApprovalRequest,
-  describePublishDraft,
+  buildSalonApprovalRequest,
   type DemoApprovalRequest,
   type GuidedDemoSeams,
 } from '../../src/guided_demo/runner';
-import { DEMO_STEPS, type DemoStep } from '../../src/guided_demo/content';
+import { DEMO_STEPS, DEMO_SALON, type DemoStep } from '../../src/guided_demo/content';
 
 interface Recorded {
   sends: Array<{ mode: string; message: string; vault: string }>;
@@ -122,24 +124,37 @@ beforeEach(() => {
 });
 
 describe('buildDemoPlan', () => {
-  it('mirrors the content steps then d2d, approval, review, publish', () => {
+  it('mirrors the content steps then d2d, approval, review, and the salon finale', () => {
     const plan = buildDemoPlan();
-    expect(plan).toHaveLength(DEMO_STEPS.length + 4);
+    expect(plan).toHaveLength(DEMO_STEPS.length + 6);
     // Each content step maps to chat / recommend / service per step.kind.
     expect(plan.slice(0, DEMO_STEPS.length).map((a) => a.kind)).toEqual(
       DEMO_STEPS.map((s) => planKind(s.kind)),
     );
-    expect(plan[plan.length - 4]).toMatchObject({ kind: 'd2d', id: D2D_MESSAGE_STEP });
-    expect(plan[plan.length - 3]).toMatchObject({ kind: 'approval', id: AGENT_APPROVAL_STEP });
-    expect(plan[plan.length - 2]).toMatchObject({ kind: 'review', id: PEERLENS_REVIEW_STEP });
-    expect(plan[plan.length - 1]).toMatchObject({ kind: 'publish', id: PUBLISH_DRAFT_STEP });
+    expect(plan[plan.length - 6]).toMatchObject({ kind: 'd2d', id: D2D_MESSAGE_STEP });
+    expect(plan[plan.length - 5]).toMatchObject({ kind: 'approval', id: AGENT_APPROVAL_STEP });
+    expect(plan[plan.length - 4]).toMatchObject({ kind: 'review', id: PEERLENS_REVIEW_STEP });
+    expect(plan[plan.length - 3]).toMatchObject({ kind: 'salon_setup', id: SALON_SETUP_STEP });
+    expect(plan[plan.length - 2]).toMatchObject({ kind: 'salon_booking', id: SALON_BOOKING_STEP });
+    expect(plan[plan.length - 1]).toMatchObject({ kind: 'salon_reply', id: SALON_REPLY_STEP });
     // content step ids mirror 1:1
     expect(plan.slice(0, DEMO_STEPS.length).map((a) => a.id)).toEqual(
       DEMO_STEPS.map((s) => s.id),
     );
-    // exactly one recommend step (chair pick) + one service step (availability)
+    // exactly one recommend step (chair pick); the chair-availability service
+    // step was removed in favour of the salon finale.
     expect(RECOMMEND_STEPS).toHaveLength(1);
-    expect(SERVICE_STEPS).toHaveLength(1);
+    expect(SERVICE_STEPS).toHaveLength(0);
+  });
+});
+
+describe('buildSalonApprovalRequest', () => {
+  it('is a booking-confirmation request, id keyed by clock', () => {
+    const req = buildSalonApprovalRequest(99);
+    expect(req).toMatchObject({ id: 'guided-demo-salon-99', action: 'confirm_booking' });
+    expect(req.requesterDid).toMatch(/^did:plc:/);
+    expect(req.what.toLowerCase()).toContain('appointment');
+    expect(req.why.length).toBeGreaterThan(0);
   });
 });
 
@@ -163,7 +178,7 @@ describe('GuidedDemoRunner.advance', () => {
   it('runs each content step through its real seam, marking progress', async () => {
     const { seams, rec } = fakeSeams();
     const runner = new GuidedDemoRunner(seams, { now: () => 1 });
-    expect(runner.total).toBe(DEMO_STEPS.length + 4);
+    expect(runner.total).toBe(DEMO_STEPS.length + 6);
     expect(runner.position).toBe(0);
 
     for (const step of DEMO_STEPS) {
@@ -219,26 +234,9 @@ describe('GuidedDemoRunner.advance', () => {
     expect(answer).toContain('ErgoFlex');
     expect(answer).toContain('$500'); // user's budget
     expect(answer).toContain('over your budget'); // SpinePro rejected
-    expect(answer).toContain('PeerLens'); // explicitly the PeerLens flow
+    expect(answer).toContain('reviewers'); // explicitly the ranked-reviews flow
     // grounded only — never invents peer names
     expect(answer).not.toMatch(/Rajmohan|Sancho|Aeron/);
-  });
-
-  it('posts a real resolved service card with the furniture result', async () => {
-    const { seams, rec } = fakeSeams();
-    const runner = new GuidedDemoRunner(seams, { now: () => 1, plan: buildDemoPlan() });
-    // Run up to and including the single service step.
-    const serviceIdx = buildDemoPlan().findIndex((a) => a.kind === 'service');
-    for (let i = 0; i <= serviceIdx; i += 1) await runner.advance();
-    expect(rec.serviceCards).toEqual([
-      {
-        capability: 'product_availability',
-        serviceName: 'Demo Furniture Availability Provider',
-        question: SERVICE_STEPS[0]!.message,
-      },
-    ]);
-    // The user's question was posted (as a user message) before the card.
-    expect(rec.serviceCards[0]?.question).toMatch(/ErgoFlex Study Chair/);
   });
 
   it('creates a real approval on the approval step', async () => {
@@ -255,7 +253,7 @@ describe('GuidedDemoRunner.advance', () => {
     expect(rec.userMessages.some((m) => /Email my manager/.test(m))).toBe(true);
   });
 
-  it('posts the D2D message, review card, then publish-draft card, then completes', async () => {
+  it('posts the D2D message, review card, then the salon finale, then completes', async () => {
     const { seams, rec } = fakeSeams();
     const runner = new GuidedDemoRunner(seams, { now: () => 1 });
     await runner.runAll();
@@ -264,11 +262,17 @@ describe('GuidedDemoRunner.advance', () => {
     // The Talk step posts a peer message + enriched reminder.
     expect(rec.d2dMessages).toHaveLength(1);
     expect(rec.d2dMessages[0]?.from).toBe('Alonso');
-    // The review goes through postReviewCard (its own card); only the publish
-    // draft uses postDemoCard now.
+    // The review goes through postReviewCard (its own card).
     expect(rec.reviewCards).toHaveLength(1);
     expect(rec.reviewCards[0]?.product).toBe('ErgoFlex Study Chair');
-    expect(rec.cards).toEqual([describePublishDraft()]);
+    // Salon finale: the published + booking-confirmed beats render as structured
+    // service cards; only the customer query is a plain card (the booking
+    // approval is a separate approval card).
+    expect(rec.cards).toEqual([DEMO_SALON.customer]);
+    expect(rec.serviceCards.map((c) => c.capability)).toEqual([
+      'service_listing',
+      'appointment_booking',
+    ]);
     // advancing past the end is a no-op
     expect(await runner.advance()).toBeNull();
   });
@@ -315,7 +319,7 @@ describe('GuidedDemoRunner.resumeAfter', () => {
   it('resuming after the last step marks the demo complete', () => {
     const { seams } = fakeSeams();
     const runner = new GuidedDemoRunner(seams, { now: () => 1 });
-    runner.resumeAfter(PUBLISH_DRAFT_STEP);
+    runner.resumeAfter(SALON_REPLY_STEP);
     expect(runner.isComplete).toBe(true);
   });
 });

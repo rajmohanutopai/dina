@@ -502,7 +502,7 @@ export default function ChatScreen() {
           {/* Small italic brand tagline + supporting body. No big hero
               greeting — keeps the empty state quiet so the action
               card below carries the discovery work. */}
-          <Text style={styles.heroTagline}>Your sovereign personal AI</Text>
+          <Text style={styles.heroTagline}>{'Your sovereign AI.\nYour open network.'}</Text>
           <Text style={styles.heroSubtitle}>
             Ask, remember, or hand off a task. Everything stays on your device.
           </Text>

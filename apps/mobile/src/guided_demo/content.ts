@@ -57,14 +57,16 @@ export interface DemoRemember {
   person?: { name: string; relation: string };
 }
 
-/** One scripted reminder enrichment card. Both birthday cards reference Emma's
- *  birthday (Nov 7), so the rendered due date is the ABSOLUTE next Nov 7 (via
- *  {@link nextNovember7}), not an offset from "now". A relative offset rendered
- *  e.g. "JUN 15" on 2026-06-08 while the body says "Nov 7" — the header
- *  contradicting the copy. The "in a week" vs "today" distinction is body flavor;
- *  the displayed event date is the birthday either way. */
+/** One scripted reminder enrichment card. The due date is anchored to the
+ *  ABSOLUTE next Nov 7 (via {@link nextNovember7}), not an offset from "now"
+ *  (a relative "now + N days" would print e.g. "JUN 15" while the body says
+ *  "Nov 7" and contradict the copy). `daysBefore` then shifts a card EARLIER
+ *  than the birthday: the lead "in a week" reminder fires 7 days before Nov 7
+ *  (→ Oct 31), while the day-of reminder omits it and fires on Nov 7. */
 export interface DemoReminder {
   text: string;
+  /** Days before the event this reminder fires. Omitted/0 = on the day. */
+  daysBefore?: number;
 }
 
 export interface DemoStep {
@@ -153,7 +155,7 @@ export const DEMO_STEPS: readonly DemoStep[] = [
     // Scripted enrichment cards — the "it connected the dinosaurs fact" payoff
     // without a live LLM round-trip.
     reminders: [
-      { text: "Emma's birthday is in a week (Nov 7). She loves dinosaurs, so maybe a dinosaur-themed gift." },
+      { text: "Emma's birthday is in a week (Nov 7). She loves dinosaurs, so maybe a dinosaur-themed gift.", daysBefore: 7 },
       { text: "Today is Emma's birthday! Wish your daughter a happy birthday." },
     ],
     caption:
@@ -165,15 +167,7 @@ export const DEMO_STEPS: readonly DemoStep[] = [
     mode: 'ask',
     message: 'Find me a good office chair.',
     caption:
-      'Ask about anything out there, a product, a video, anything. Dina includes your preferences automatically, then checks PeerLens, a network of reviews and suggestions, to help you choose.',
-  },
-  {
-    id: 'chair_availability',
-    kind: 'service',
-    mode: 'ask',
-    message: 'Where can I get the ErgoFlex Study Chair?',
-    caption:
-      'Next is the Service Network, all the other Dinas offering services. Dina finds the best provider and talks to their Dina to get a custom answer. That provider cannot message you, because it is not your contact.',
+      'Ask about anything out there, a product, a video, anything. Dina includes your preferences automatically, then checks ranked reviews from real people to help you choose.',
   },
 ] as const;
 
@@ -232,12 +226,12 @@ export function buildChairRecommendation(): { question: string; answer: string }
   const pick = inBudgetGoodBack ?? DEMO_PEERLENS_CHAIRS[0];
   const rejects = DEMO_PEERLENS_CHAIRS.filter((c) => c.product !== pick.product).map((c) => {
     const why =
-      c.price > DEMO_CHAIR_BUDGET ? `$${c.price}, over your budget` : `PeerLens flags ${c.review}`;
+      c.price > DEMO_CHAIR_BUDGET ? `$${c.price}, over your budget` : `reviewers flag ${c.review}`;
     return `${c.product} (${why})`;
   });
   const answer =
     `For your lower-back pain and the $${DEMO_CHAIR_BUDGET} budget you set this month, ` +
-    `PeerLens reviewers point me to the ${pick.product} ($${pick.price}), ` +
+    `reviewers point me to the ${pick.product} ($${pick.price}), ` +
     `rated well for ${pick.review} (trust: ${pick.trust}). ` +
     `I set aside ${rejects.join(' and ')}. ` +
     `Want me to check if it's available near you?`;
@@ -303,8 +297,13 @@ export const DEMO_AGENT = {
 export const DEMO_D2D = {
   from: 'Alonso',
   message: 'Heading over tomorrow morning, looking forward to it!',
-  /** The reminder Dina sets, enriched from the cold-brew memory from step 1. */
-  reminder: 'Alonso is coming over tomorrow morning. He loves his cold brew, so maybe have some ready.',
+  /** The reminder Dina sets, enriched from the cold-brew memory from step 1.
+   *  Explicit line breaks + a TRAILING newline: this card is measured async and
+   *  drops its last rendered line, so the trailing empty line absorbs the drop
+   *  and all the real text shows. (Pragmatic demo workaround for a stubborn RN
+   *  async-measure quirk specific to this card; the sync birthday reminders are
+   *  unaffected. Not worth a deeper fix for a demo item.) */
+  reminder: 'Alonso is coming over tomorrow morning.\nHe loves his cold brew, so maybe\nhave some ready.\n',
   caption:
     'Talk to your friends over end-to-end encrypted channels. Dina reads what comes in, tells you what matters, and sets reminders enriched with what it already knows. Only people you have both added as contacts can reach you.',
 } as const;
@@ -316,16 +315,47 @@ export const DEMO_REVIEW = {
   rating: 5,
   text: 'Solid lower-back support, worth it.',
   caption:
-    'Got value from something? Add a PeerLens review so others benefit. Real people reviewing real things is what makes PeerLens trustworthy.',
+    'Got value from something? Add your own review so others benefit. Real people reviewing real things is what makes it trustworthy.',
 } as const;
 
-/** The publish-service draft shown in the final step (draft only, never
- *  auto-published). The bus-driver service from the canon
- *  (docs/BUSDRIVER_SERVICES_SCENARIO.md): a driver publishes live bus ETAs that
- *  other Dinas can query (capability `eta_query`), answered by their agent. */
-export const DEMO_PUBLISH_DRAFT = {
-  name: 'Bus 42 live ETA',
-  capability: 'eta_query',
-  visibility: 'public',
-  responsePolicy: 'auto',
+/** The salon service the user publishes in the FINALE — the flagship Tier-1
+ *  scenario ("a phone and a sentence"). Everything here is scripted + scope-
+ *  bound: no real persona, no real publish to the AppView, no real grant — all
+ *  torn down on Exit. Beats: remember hours (→ scripted Salon vault) → publish
+ *  (vault-scoped) → a customer's Dina asks for a slot → owner approves → reply. */
+export const DEMO_SALON = {
+  /** What the user remembers — seeds the (scripted) Salon vault. */
+  hours: 'My salon is open Tue–Sat, 10am–6pm. Last slot 5pm.',
+  vault: 'Salon',
+  /** Service display name — the title on both salon cards. */
+  serviceName: 'Your Salon',
+  /** "Service published" card — structured result rendered through the same
+   *  service-card path as the (removed) chair-availability card. Field-shape
+   *  keys → fielded rows; `status` → a chip. */
+  publishedResult: {
+    status: 'published',
+    answers_from: 'Salon vault',
+    visibility: 'Public',
+    booking: 'Owner approval',
+  },
+  publishedContent: 'Your salon is published, answering only from your Salon vault.',
+  /** The incoming customer query — a stranger's Dina (services are open to any
+   *  Dina via the directory, unlike contact-gated Talk). */
+  customer: 'A customer\'s Dina asks your salon: "Any opening around 4pm Thursday?"',
+  slot: '4pm Thursday',
+  /** "Booking confirmed" card — shown after the owner approves. `confirmed`
+   *  status → positive (green) tone. */
+  bookingResult: {
+    status: 'confirmed',
+    appointment: '4pm Thursday',
+    reply_sent: 'See you at 4pm Thursday',
+  },
+  bookingContent: 'Booked 4pm Thursday. Reply sent to the customer.',
+  /** Captions for the three finale beats. */
+  setupCaption:
+    'Last, offer a service of your own. Tell Dina your salon hours, then publish. A phone and a sentence, no business account.',
+  bookingCaption:
+    'Now a customer\'s Dina asks your salon for a slot. It reads only your Salon vault, and books nothing without your OK.',
+  replyCaption:
+    'You approved, so Dina booked it and replied. A whole service, run from your phone.',
 } as const;

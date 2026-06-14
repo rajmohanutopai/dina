@@ -9,9 +9,9 @@
  * To change an icon or route: edit FEATURES below.
  */
 
+import { Ionicons , MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
-import { Ionicons } from '@expo/vector-icons';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+
 import { FEATURE_NAMES, type FeatureKey } from '@dina/core';
 
 export type { FeatureKey };
@@ -73,6 +73,10 @@ export const FEATURES: Record<FeatureKey, FeatureDef> = {
   },
   peerlens: {
     name: FEATURE_NAMES.peerlens,
+    // First-impression copy stays name-light: the welcome pill reads
+    // "Ranked Reviews" (the in-app results label; see review_source_label),
+    // not the brand "PeerLens" — which is taught later in help / the demo.
+    pillLabel: 'Ranked Reviews',
     // Bottom-tab surface label. The canonical feature name stays
     // "PeerLens" (the trust subsystem); "Network" is the top-level
     // surface that contains PeerLens + Services. NOTE: the bottom-tab

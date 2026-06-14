@@ -1,5 +1,5 @@
 /**
- * InlineDemoReviewCard — the guided demo's PeerLens review card. The Publish
+ * InlineDemoReviewCard — the guided demo's Ranked Reviews card. The Publish
  * button is INERT (flips to a local confirmation; no real publish path).
  */
 
@@ -16,7 +16,7 @@ function cardMessage(metadata: Record<string, unknown>): ChatMessage {
     id: 'm1',
     threadId: 'main',
     type: 'system',
-    content: 'PeerLens review · ErgoFlex Study Chair · 5/5',
+    content: 'Ranked Reviews · ErgoFlex Study Chair · 5/5',
     metadata,
     timestamp: 1,
   } as ChatMessage;
