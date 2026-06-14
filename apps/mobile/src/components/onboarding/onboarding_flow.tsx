@@ -144,14 +144,24 @@ export function OnboardingFlow(): React.ReactElement {
           initialMode={step.draft.startupMode ?? 'auto'}
           onBack={goBack}
           onContinue={(passphrase, mode) => {
-            // Generate the mnemonic once, right before the reveal, so
-            // the user isn't holding a mnemonic they never saw if they
-            // went back and forward through passphrase screens.
+            // Recovery phrase is generated SILENTLY here — no first-run reveal/
+            // verify wall (it scared off new users). It's backed up later via
+            // the deferred, value-proportionate backup prompt. provisionIdentity
+            // marks the identity 'pending' so that prompt knows to ask. Skip
+            // straight to the (mandatory) AI step → provisioning.
             const mnemonic = step.draft.mnemonic ?? generateNewMnemonic();
-            setStep({
-              kind: 'create_mnemonic_reveal',
-              draft: { ...step.draft, passphrase, startupMode: mode, mnemonic },
-            });
+            const complete: CreateDraft = {
+              ownerName: step.draft.ownerName ?? 'Dina',
+              handle: step.draft.handle ?? '',
+              passphrase,
+              startupMode: mode,
+              mnemonic,
+            };
+            goToAiStep(
+              { kind: 'provisioning_create', draft: complete },
+              { kind: 'create_passphrase', draft: complete },
+              { current: 4, total: 5, label: 'Connect AI' },
+            );
           }}
         />
       );
@@ -364,11 +374,22 @@ export function OnboardingFlow(): React.ReactElement {
           initialMode={step.draft.startupMode ?? 'auto'}
           onBack={goBack}
           onContinue={(passphrase, mode) => {
+            // Silent recovery phrase + deferred backup prompt (same as the
+            // create flow). No first-run reveal/verify wall — straight to the
+            // AI step → provisioning.
             const mnemonic = step.draft.mnemonic ?? generateNewMnemonic();
-            setStep({
-              kind: 'external_mnemonic_reveal',
-              draft: { ...step.draft, passphrase, startupMode: mode, mnemonic },
-            });
+            const complete: ExternalAtprotoDraft = {
+              identifier: step.draft.identifier ?? '',
+              ...(step.draft.verifiedLink ? { verifiedLink: step.draft.verifiedLink } : {}),
+              passphrase,
+              startupMode: mode,
+              mnemonic,
+            };
+            goToAiStep(
+              { kind: 'provisioning_external', draft: complete },
+              { kind: 'external_passphrase', draft: complete },
+              { current: 3, total: 4, label: 'Connect AI' },
+            );
           }}
         />
       );

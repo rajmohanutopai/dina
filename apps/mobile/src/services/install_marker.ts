@@ -75,6 +75,8 @@ function buildMarkerBody(now: number): string {
  *   - dina.node_role                  services/role_preference.ts
  *   - dina.verification_status        services/verification_status.ts
  *   - dina.verification_banner_dismissed services/verification_status.ts
+ *   - dina.backup_prompt.snooze_until services/backup_prompt.ts
+ *   - dina.diag.history               services/diagnostics_history.ts
  *   - dina.infra.*                    services/infra_preferences.ts (5 keys)
  *   - dina.security.background_timeout_s services/security_preferences.ts
  *   - dina.llm.<provider>             ai/provider.ts (per-provider LLM keys)
@@ -92,6 +94,8 @@ const KEYCHAIN_SERVICES: readonly string[] = [
   'dina.node_role',
   'dina.verification_status',
   'dina.verification_banner_dismissed',
+  'dina.backup_prompt.snooze_until',
+  'dina.diag.history',
   'dina.infra.pds_url',
   'dina.infra.pds_handle',
   'dina.infra.pds_password',

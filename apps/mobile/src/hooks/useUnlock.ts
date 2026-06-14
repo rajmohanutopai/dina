@@ -369,9 +369,17 @@ export function clearForcePromptOnUnlock(): void {
  * Idempotent — calling on an already-sealed vault is a no-op for the
  * teardown side-effects, but still arms the force-prompt flag so the
  * UX matches the user's intent ("from now until I re-enter, prompt").
+ *
+ * `forcePrompt` (default `true`): explicit Sign out / Lock arm the
+ * force-prompt flag so the next vault access prompts for the passphrase.
+ * The background auto-lock passes `false` — a user who chose
+ * `startupMode === 'auto'` should be silently re-unlocked from the
+ * keychain on resume, not made to re-type the passphrase after every
+ * idle background lock (that defeats "unlock automatically" — #367).
+ * Sealing still happens either way; only the re-prompt differs.
  */
-export async function sealVault(): Promise<void> {
-  forcePromptOnNextUnlock = true;
+export async function sealVault(opts: { forcePrompt?: boolean } = {}): Promise<void> {
+  forcePromptOnNextUnlock = opts.forcePrompt ?? true;
   if (state.step !== 'complete') {
     // Already sealed (or mid-unlock); nothing to tear down. Still
     // reset state so a partial-unlock leftover (`failed` / mid-step)

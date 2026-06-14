@@ -199,14 +199,14 @@ describe('GuidedDemoRunner.advance', () => {
     expect(runner.isComplete).toBe(false);
   });
 
-  it('pauses ~2s between the two opening remembers (Emma, then Alonso)', async () => {
+  it('pauses between the two opening remembers (Emma, then Alonso)', async () => {
     const { seams, rec } = fakeSeams();
     const runner = new GuidedDemoRunner(seams, { now: () => 1 });
     await runner.advance(); // the opening multi-send step
     expect(rec.sends).toHaveLength(2);
-    // One inter-message pause (between the two sends), a short gap not the long
-    // "thinking" delay.
-    expect(rec.delays).toEqual([2000]);
+    // One inter-message pause (between the two sends) — the readable 3.5s gap
+    // (#368), not the long "thinking" delay.
+    expect(rec.delays).toEqual([3500]);
   });
 
   it('recommends ErgoFlex (grounded in the demo PeerLens chairs, no fake peers)', async () => {

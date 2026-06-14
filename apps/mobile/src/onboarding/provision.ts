@@ -69,6 +69,7 @@ import { applyDinaPlcUpdate } from '@dina/home-node';
 
 import { unlock } from '../hooks/useUnlock';
 import { resolveExistingAtprotoIdentity } from '../services/atproto_identity';
+import { setDisplayNameOverride } from '../services/display_name_override';
 import { savePersistedDid, loadPersistedDid } from '../services/identity_record';
 import { saveIdentitySeeds } from '../services/identity_store';
 import {
@@ -81,9 +82,9 @@ import {
   saveAppViewURL,
 } from '../services/infra_preferences';
 import { saveLinkedAtprotoIdentity } from '../services/linked_identity_record';
-import { setDisplayNameOverride } from '../services/display_name_override';
 import { resolveMsgBoxURL } from '../services/msgbox_wiring';
 import { persistStartupChoice } from '../services/startup_preferences';
+import { markVerificationPending } from '../services/verification_status';
 import { saveWrappedSeed } from '../services/wrapped_seed_store';
 
 import { seedDefaultPersonas } from './default_personas';
@@ -370,6 +371,22 @@ export async function provisionIdentity(opts: ProvisionOptions): Promise<Provisi
   // this AFTER unlock() succeeds so a wrong passphrase can't be cached
   // through a failed provisioning attempt.
   await persistStartupChoice(opts.startupMode ?? 'manual', opts.passphrase);
+
+  // A brand-new identity's recovery phrase was generated silently (no first-run
+  // wall) — mark it pending so the deferred, value-proportionate backup prompt
+  // (see services/backup_prompt) asks once the vault is worth protecting. NOT
+  // set on recovery (recoverIdentity), where the user already has their phrase.
+  //
+  // Best-effort: this runs AFTER identity/PDS/local state are committed and the
+  // vault is unlocked, so a Keychain hiccup here must NOT fail an onboarding
+  // that already materially succeeded. Worst case the backup prompt simply
+  // never fires (absent status reads as verified) — far better than a phantom
+  // "provisioning failed". (review P2)
+  try {
+    await markVerificationPending();
+  } catch {
+    /* non-fatal — provisioning already succeeded */
+  }
 
   progress(opts.onProgress, 'done');
 

@@ -165,6 +165,15 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
   useEffect(() => {
     if (unlocked) {
       setMode('unlocked');
+      // Re-arm the auto-unlock effect for a FUTURE re-lock. autoRanRef is a
+      // once-per-`locked`-entry guard that stops a bad cached passphrase from
+      // looping (locked→unlocking→failed→locked). But it must reset after a
+      // SUCCESSFUL unlock, or a later background auto-lock re-enters `locked`
+      // with the guard still set → auto-unlock is skipped and the user is
+      // prompted despite `startupMode === 'auto'` (#367). Resetting only on
+      // success preserves the anti-loop guard (a failed unlock never reaches
+      // here, so the guard stays set and won't retry the bad passphrase).
+      autoRanRef.current = null;
       return;
     }
     // unlocked → false transition. Only act on a real seal/wipe — i.e.

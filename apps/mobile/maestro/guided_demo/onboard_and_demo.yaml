@@ -51,19 +51,8 @@ appId: com.dinakernel.mobile
     text: 'This encrypts your vault.*'
 - tapOn:
     id: 'shell-primary'
-# Recovery reveal → Continue, verify → "I'll do this later"
-- extendedWaitUntil:
-    visible:
-      id: 'shell-primary'
-    timeout: 15000
-- tapOn:
-    id: 'shell-primary'
-- extendedWaitUntil:
-    visible:
-      id: 'shell-secondary'
-    timeout: 15000
-- tapOn:
-    id: 'shell-secondary'
+# Recovery reveal/verify removed from onboarding (silent phrase + deferred
+# backup prompt) — the passphrase step now goes straight to "Connect your AI".
 # Mandatory "Connect your AI" step. Gemini is auto-connected via the dev env
 # key (EXPO_PUBLIC_DINA_DEV_GEMINI_API_KEY), so it shows the connected state →
 # Continue. (In production with no key, the user picks a provider + pastes one.)

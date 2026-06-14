@@ -11,10 +11,11 @@
  *   - On `background` state transition → record a `backgroundedAt`
  *     wall-clock stamp AND start a configurable timer (default
  *     `DEFAULT_BACKGROUND_TIMEOUT_S`, settable via `setBackgroundTimeout`).
- *     When the timer fires, call `sealVault()` and arm the
- *     force-prompt flag so the next foreground re-entry prompts for
- *     the passphrase even when `startupMode === 'auto'` (mirrors the
- *     explicit Sign out path).
+ *     When the timer fires, call `sealVault({ forcePrompt: false })`:
+ *     drop the in-memory DEKs but DON'T arm the force-prompt flag, so a
+ *     user with `startupMode === 'auto'` is silently re-unlocked from the
+ *     keychain on resume rather than re-typing the passphrase after every
+ *     idle lock (#367). Only explicit Sign out / Lock arms the prompt.
  *
  *   - On `active` (foreground) → cancel any pending timer AND
  *     reconcile against wall clock: if `now - backgroundedAt` already
@@ -90,7 +91,12 @@ export interface InstallAutoLockOptions {
  * unit-tested without a React Native runtime.
  */
 export function installAutoLock(opts: InstallAutoLockOptions = {}): AutoLockSubscription {
-  const sealFn = opts.sealFn ?? sealVault;
+  // Seal WITHOUT arming the force-prompt flag: a background idle-lock should
+  // still drop the in-memory DEKs, but a user who chose `startupMode === 'auto'`
+  // must be silently re-unlocked from the keychain on resume — not made to
+  // re-type the passphrase after every idle lock (#367). Only explicit
+  // Sign out / Lock (default `sealVault()`) arms the prompt.
+  const sealFn = opts.sealFn ?? (() => sealVault({ forcePrompt: false }));
   const getTimeoutS = opts.getTimeoutS ?? getBackgroundTimeout;
   const now = opts.now ?? (() => Date.now());
   const scheduleTimer = opts.scheduleTimer ?? ((cb, ms) => setTimeout(cb, ms));

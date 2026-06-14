@@ -120,18 +120,23 @@ export function locateStep(step: Step): StepLocation | null {
       return null;
     case 'choose':
       return null;
+    // Recovery-phrase reveal/verify are no longer in the create path (the
+    // phrase is generated silently + backed up later via the deferred prompt),
+    // so the create flow is 5 steps: name, handle, passphrase, AI, setting up.
     case 'create_name':
-      return { current: 1, total: 7, label: 'Your name' };
+      return { current: 1, total: 5, label: 'Your name' };
     case 'create_handle':
-      return { current: 2, total: 7, label: 'Pick a handle' };
+      return { current: 2, total: 5, label: 'Pick a handle' };
     case 'create_passphrase':
-      return { current: 3, total: 7, label: 'Passphrase' };
+      return { current: 3, total: 5, label: 'Passphrase' };
+    // Unreachable in the live flow (kept for the type union); the AI step
+    // carries {4,5} and provisioning {5,5}.
     case 'create_mnemonic_reveal':
-      return { current: 4, total: 7, label: 'Recovery phrase' };
+      return { current: 4, total: 5, label: 'Recovery phrase' };
     case 'create_mnemonic_verify':
-      return { current: 5, total: 7, label: 'Confirm phrase' };
+      return { current: 4, total: 5, label: 'Confirm phrase' };
     case 'provisioning_create':
-      return { current: 7, total: 7, label: 'Setting up' };
+      return { current: 5, total: 5, label: 'Setting up' };
     case 'recover_mnemonic':
       return { current: 1, total: 5, label: 'Recovery phrase' };
     case 'recover_handle':
@@ -140,16 +145,19 @@ export function locateStep(step: Step): StepLocation | null {
       return { current: 3, total: 5, label: 'New passphrase' };
     case 'provisioning_recover':
       return { current: 5, total: 5, label: 'Restoring' };
+    // External (link existing ATProto) is now 4 steps: identity, local vault,
+    // AI, connecting — recovery-phrase reveal/verify removed (silent + deferred).
     case 'external_identity':
-      return { current: 1, total: 6, label: 'Existing identity' };
+      return { current: 1, total: 4, label: 'Existing identity' };
     case 'external_passphrase':
-      return { current: 2, total: 6, label: 'Local vault' };
+      return { current: 2, total: 4, label: 'Local vault' };
+    // Unreachable in the live flow; AI carries {3,4}, provisioning {4,4}.
     case 'external_mnemonic_reveal':
-      return { current: 3, total: 6, label: 'Recovery phrase' };
+      return { current: 3, total: 4, label: 'Recovery phrase' };
     case 'external_mnemonic_verify':
-      return { current: 4, total: 6, label: 'Confirm phrase' };
+      return { current: 3, total: 4, label: 'Confirm phrase' };
     case 'provisioning_external':
-      return { current: 6, total: 6, label: 'Connecting' };
+      return { current: 4, total: 4, label: 'Connecting' };
     // Shared AI step — carries the right "N of M" for whichever flow it's in.
     case 'ai_provider':
       return step.location;

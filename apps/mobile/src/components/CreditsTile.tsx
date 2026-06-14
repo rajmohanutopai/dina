@@ -46,8 +46,8 @@ export function CreditsTile(): React.JSX.Element | null {
 
       <Text style={styles.detail}>Model: {pin.split('/')[1] ?? pin}</Text>
       <Text style={styles.detail} testID="ai-providers-credits-privacy">
-        Privacy: runs directly through OpenRouter. Dina does not proxy or store these
-        conversations.
+        Privacy: runs directly through OpenRouter. Dina&apos;s servers never proxy or store
+        these conversations.
       </Text>
     </View>
   );

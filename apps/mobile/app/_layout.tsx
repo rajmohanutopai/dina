@@ -57,6 +57,7 @@ import { UnlockGate } from '../src/components/unlock_gate';
 import { FEATURES, FeatureIcon, type FeatureKey } from '../src/features';
 import { useGuidedDemoActive } from '../src/guided_demo/active_context';
 import { useAutoLock } from '../src/hooks/useAutoLock';
+import { useBackupPrompt } from '../src/hooks/useBackupPrompt';
 import { clearThread } from '../src/hooks/useChatThread';
 import { useCreditsClaim } from '../src/hooks/useCreditsClaim';
 import { useNodeBootstrap } from '../src/hooks/useNodeBootstrap';
@@ -460,6 +461,11 @@ export default function RootLayout() {
   // uses, so the next foreground re-entry prompts for a passphrase
   // even when `startupMode === 'auto'`.
   useAutoLock(unlocked);
+
+  // Recovery-phrase backup nudge (deferred + value-proportionate). Pops the
+  // backup-reminder page at a quiet moment once the vault holds enough to be
+  // worth protecting — replaces the old first-run phrase wall + yellow banner.
+  useBackupPrompt(unlocked);
 
   // Foreground → reconnect the relay immediately (#351 complement). iOS
   // suspends JS on background, killing the MsgBox socket; without this
@@ -939,6 +945,16 @@ export default function RootLayout() {
                 href: null,
 
                 headerLeft: renderHeaderBackButton,
+              }}
+            />
+            <Tabs.Screen
+              name="backup-reminder"
+              options={{
+                // Popped by useBackupPrompt at a quiet moment; its own buttons
+                // (Back up now / Remind me later) are the only exits, so no
+                // header. href: null keeps it off the tab bar but routable.
+                href: null,
+                headerShown: false,
               }}
             />
             <Tabs.Screen

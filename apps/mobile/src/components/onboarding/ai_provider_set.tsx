@@ -21,7 +21,7 @@ import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, Vi
 
 import { loadActiveProvider, saveActiveProvider } from '../../ai/active_provider';
 import { getDeviceCheckToken } from '../../ai/attestation';
-import { fetchCreditsConfig } from '../../ai/credits';
+import { fetchCreditsConfig, runClaimFlow } from '../../ai/credits';
 import {
   PROVIDERS,
   getConfiguredProviders,
@@ -60,6 +60,43 @@ export function AiProviderSet({ location, onBack, onContinue }: AiProviderSetPro
   // sims/dev clients (attestation seam returns null) — never advertise
   // free conversations we can't mint (docs/CREDITS_DESIGN.md).
   const [creditsAvailable, setCreditsAvailable] = useState(false);
+  // "Start free" claims the grant HERE, before leaving the step — otherwise a
+  // later post-unlock claim failure (paused / rate-limited / already-claimed /
+  // offline) leaves a user who was promised free AI with no usable provider and
+  // no surface (review P2). On success we pin openrouter and continue; on
+  // failure we keep them on this step to retry or BYOK.
+  const [claimingCredits, setClaimingCredits] = useState(false);
+  const [creditsError, setCreditsError] = useState<string | null>(null);
+
+  const startFree = async (): Promise<void> => {
+    setClaimingCredits(true);
+    setCreditsError(null);
+    try {
+      // Single attempt (backoffMs [0]) keeps the tap snappy — retry is one more
+      // tap. The post-unlock useCreditsClaim still runs, but on success here it
+      // just short-circuits (already claimed).
+      const status = await runClaimFlow(Platform.OS === 'android' ? 'android' : 'ios', {
+        getDeviceCheckToken,
+        backoffMs: [0],
+      });
+      if (status === 'claimed') {
+        // Grant key is stored; pin openrouter so boot wires it as the live
+        // provider (same precedence the providers screen uses; BYOK still wins).
+        await saveActiveProvider('openrouter');
+        onContinue();
+        return;
+      }
+      setCreditsError(
+        'Free credits could not be activated right now. Tap Start free to try again, or pick a provider and add a key below.',
+      );
+    } catch {
+      setCreditsError(
+        'Free credits could not be activated right now. Tap Start free to try again, or add a key below.',
+      );
+    } finally {
+      setClaimingCredits(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -189,17 +226,27 @@ export function AiProviderSet({ location, onBack, onContinue }: AiProviderSetPro
             No account. No card. No API key. Just start talking to Dina.
           </Text>
           <Text style={styles.creditsSmall}>
-            Starter conversations run directly through OpenRouter. Dina does not proxy or
-            store them.
+            Starter conversations run directly through OpenRouter. Dina&apos;s servers never
+            proxy or store them.
           </Text>
           <Pressable
             testID="onboarding-credits-start"
             accessibilityRole="button"
-            onPress={onContinue}
-            style={styles.creditsButton}
+            onPress={() => void startFree()}
+            disabled={claimingCredits}
+            style={[styles.creditsButton, claimingCredits && styles.creditsButtonDisabled]}
           >
-            <Text style={styles.creditsButtonText}>Start free</Text>
+            {claimingCredits ? (
+              <ActivityIndicator color={colors.bgPrimary} />
+            ) : (
+              <Text style={styles.creditsButtonText}>Start free</Text>
+            )}
           </Pressable>
+          {creditsError !== null ? (
+            <Text testID="onboarding-credits-error" style={styles.creditsErrorText}>
+              {creditsError}
+            </Text>
+          ) : null}
           <Text style={styles.creditsOr}>or bring your own key</Text>
         </View>
       ) : null}
@@ -263,7 +310,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 12,
   },
+  creditsButtonDisabled: { opacity: 0.6 },
   creditsButtonText: { ...textStyles.body, color: colors.bgPrimary, fontWeight: '600' },
+  creditsErrorText: { ...textStyles.caption, color: colors.error, marginTop: 10, textAlign: 'center' },
   creditsOr: { ...textStyles.caption, color: colors.textSecondary, textAlign: 'center', marginTop: 12 },
   center: { paddingVertical: spacing.xl, alignItems: 'center' },
   connectedCard: {

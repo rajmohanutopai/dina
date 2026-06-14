@@ -74,6 +74,18 @@ describe('sealVault', () => {
     expect(shouldForcePromptOnUnlock()).toBe(true);
   });
 
+  it('does NOT arm force-prompt when sealed with { forcePrompt: false } (#367 background auto-lock)', async () => {
+    // The background idle auto-lock seals WITHOUT arming the prompt: a
+    // user who chose `startupMode === 'auto'` must be silently re-unlocked
+    // from the keychain on resume, not made to re-type after every idle
+    // lock. Sealing still happens (isUnlocked → false); only the prompt
+    // is suppressed. Sign out / Lock keep the default (arm = true).
+    expect(shouldForcePromptOnUnlock()).toBe(false);
+    await sealVault({ forcePrompt: false });
+    expect(shouldForcePromptOnUnlock()).toBe(false);
+    expect(isUnlocked()).toBe(false);
+  });
+
   it('clearForcePromptOnUnlock drops the signal (gate consumes it after honouring once)', async () => {
     await sealVault();
     expect(shouldForcePromptOnUnlock()).toBe(true);

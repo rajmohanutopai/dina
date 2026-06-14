@@ -8,7 +8,7 @@
 import Constants from 'expo-constants';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { getBackgroundTimeout, setBackgroundTimeout } from '@dina/core';
@@ -65,6 +65,12 @@ export default function SettingsScreen() {
     openrouter: { configured: false, keyPreview: null, loading: true },
   });
   const [active, setActive] = useState<ProviderType | null>(peekActiveProvider());
+  // First-load gate for the AI-provider card only. `providerStates[active]`
+  // starts unconfigured, so the first render shows "Add an AI provider" even
+  // when one IS configured, then swaps to the real card once loadStates()
+  // resolves. Gate the card (not the whole screen — other rows are sync) so
+  // that swap isn't visible.
+  const [aiHydrated, setAiHydrated] = useState(false);
   // Refreshed on focus so the row disappears as soon as the user
   // completes the deferred Confirm flow and navigates back.
   const [verificationPending, setVerificationPending] = useState(false);
@@ -93,7 +99,7 @@ export default function SettingsScreen() {
       // doesn't propagate to the compact card here. `loadStates` is
       // idempotent: it just re-reads the keychain + active-provider
       // pointer and updates local state if changed.
-      void loadStates();
+      void loadStates().finally(() => setAiHydrated(true));
       return () => {
         cancelled = true;
       };
@@ -152,7 +158,7 @@ export default function SettingsScreen() {
   }, [active]);
 
   useEffect(() => {
-    loadStates();
+    void loadStates().finally(() => setAiHydrated(true));
   }, [loadStates]);
 
   return (
@@ -167,7 +173,11 @@ export default function SettingsScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>AI PROVIDER</Text>
 
-        {active !== null && providerStates[active].configured ? (
+        {!aiHydrated ? (
+          <View style={[styles.providerCard, styles.providerCardLoading]}>
+            <ActivityIndicator color={colors.textMuted} />
+          </View>
+        ) : active !== null && providerStates[active].configured ? (
           <View style={styles.providerCard}>
             <View style={styles.providerHeader}>
               <View style={styles.providerInfo}>
@@ -343,7 +353,7 @@ export default function SettingsScreen() {
             ];
             Alert.alert(
               'Auto-lock when backgrounded',
-              'Seal the vault after this much time in the background. The app prompts for your passphrase the next time you bring it foreground.',
+              'Seal the vault after this much time in the background, clearing its keys from memory. If you chose "Unlock automatically", it reopens silently; otherwise it asks for your passphrase next time you bring it foreground.',
               [
                 ...presets.map((p) => ({
                   text: p.label + (p.s === autoLockSeconds ? '  ✓' : ''),
@@ -472,6 +482,11 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     overflow: 'hidden',
     ...shadows.sm,
+  },
+  providerCardLoading: {
+    paddingVertical: spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   providerHeader: {
     flexDirection: 'row',

@@ -25,15 +25,9 @@ appId: com.dinakernel.mobile
 - inputText: 'dina-test-pass-123'            # types into the now-focused confirm
 - pressKey: Enter                            # returnKeyType "done" -> dismiss keyboard
 - takeScreenshot: '/tmp/P1_passphrase_filled'
-- tapOn: { id: 'shell-primary' }             # Continue
+- tapOn: { id: 'shell-primary' }             # passphrase Continue -> straight to Connect AI
 - takeScreenshot: '/tmp/P2_after_pp'
-# Recovery reveal -> Continue
-- tapOn: { id: 'shell-primary' }
-- takeScreenshot: '/tmp/P3_after_reveal'
-# Recovery verify -> "I'll do this later"
-- extendedWaitUntil: { visible: { id: 'shell-secondary' }, timeout: 12000 }
-- tapOn: { id: 'shell-secondary' }
-- takeScreenshot: '/tmp/P4_after_skip'
+# Recovery reveal/verify removed from onboarding (silent phrase + deferred backup).
 
 # --- Connect your AI: the Starter Credits beat is OFFERED ---
 - extendedWaitUntil: { visible: { id: 'onboarding-credits-beat' }, timeout: 20000 }

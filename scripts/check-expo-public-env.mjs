@@ -17,7 +17,7 @@
  */
 
 const DANGEROUS =
-  /(SECRET|TOKEN|PASSWORD|PASSPHRASE|API_?KEY|PRIVATE|MNEMONIC|SEED|PDS_|TEST_INJECT|DINA_DEV|DEV_MODE)/i;
+  /(SECRET|TOKEN|PASSWORD|PASSPHRASE|API_?KEY|PRIVATE|MNEMONIC|SEED|PDS_|TEST_INJECT|DINA_DEV|DEV_MODE|FAKE|ATTEST)/i;
 
 // Known-public names that collide with the broad patterns above. A plain
 // endpoint URL is public config — it ships in the bundle by design. Keep

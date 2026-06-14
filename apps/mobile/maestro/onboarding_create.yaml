@@ -59,11 +59,11 @@ appId: com.dinakernel.mobile
 - tapOn:
     id: 'shell-primary'
 
-# Recovery phrase: reveal → Continue, then verify → "I'll do this later"
-- tapOn:
-    id: 'shell-primary'
-- tapOn:
-    id: 'shell-secondary'
+# Recovery-phrase reveal/verify is NO LONGER in onboarding — the phrase is
+# generated silently and backed up later via the deferred backup prompt (see
+# services/backup_prompt). After the passphrase step the flow goes STRAIGHT to
+# "Connect your AI". (If a recovery-phrase screen reappears here, the
+# silent-phrase change regressed.)
 
 # Mandatory "Connect your AI" step (before provisioning — the vault never
 # unlocks without a working LLM). Gemini auto-connects via the dev env key

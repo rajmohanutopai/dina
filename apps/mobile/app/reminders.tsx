@@ -27,12 +27,18 @@ import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 export default function RemindersScreen() {
   const router = useRouter();
   const [sections, setSections] = useState<ReminderGroup[]>([]);
+  // First-load gate — without it the "No reminders yet" empty-state renders
+  // for a frame before the async fetch resolves, flashing past on every focus
+  // even when reminders exist.
+  const [hydrated, setHydrated] = useState(false);
 
   const refresh = useCallback(() => {
     // Async since the identity-hub work: on web the data layer round-trips
     // to the brain-server; on mobile it resolves in-process. Fire-and-forget
     // from the effect/handlers — failures leave the prior list in place.
-    void getUpcomingReminders().then((items) => setSections(groupByDay(items)));
+    void getUpcomingReminders()
+      .then((items) => setSections(groupByDay(items)))
+      .finally(() => setHydrated(true));
   }, []);
 
   useFocusEffect(
@@ -61,6 +67,13 @@ export default function RemindersScreen() {
     },
     [refresh],
   );
+
+  // Hold a blank screen (matching bg) until the first fetch resolves, so the
+  // empty-state never flashes ahead of real data. The mobile fetch is
+  // in-process (~1 frame); this just prevents that frame from showing.
+  if (!hydrated) {
+    return <View style={styles.container} />;
+  }
 
   if (sections.length === 0) {
     return (

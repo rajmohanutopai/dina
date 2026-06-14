@@ -8,8 +8,7 @@
  * Styled with Dina warm design system (FAF8F5 palette).
  */
 
-import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useState, useRef, useCallback } from 'react';
 import {
@@ -50,11 +49,6 @@ import { useCredits } from '../src/hooks/useCredits';
 import { useHasActiveAgent } from '../src/hooks/useHasActiveAgent';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
 import { reviewSourceLabel } from '../src/peerlens/review_source_label';
-import {
-  dismissVerificationBanner,
-  isVerificationBannerDismissed,
-  loadVerificationStatus,
-} from '../src/services/verification_status';
 import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 
 import type { ChatMessage } from '@dina/brain/chat';
@@ -224,32 +218,10 @@ export default function ChatScreen() {
   // Mode-switch popover (opened by tapping the pill once a mode is
   // active). Replaces the legacy chip bar above the input.
   const [modePopoverOpen, setModePopoverOpen] = useState(false);
-  // Verification-status banner. Refreshed on every focus so the
-  // banner disappears the instant the user returns from
-  // /confirm-recovery-phrase. `useFocusEffect` is the expo-router
-  // equivalent of "did this screen become visible again".
-  const [verificationPending, setVerificationPending] = useState(false);
-  useFocusEffect(
-    useCallback(() => {
-      let cancelled = false;
-      void Promise.all([loadVerificationStatus(), isVerificationBannerDismissed()]).then(
-        ([status, dismissed]) => {
-          // Show the banner only if verification is still pending AND the user
-          // hasn't explicitly closed it.
-          if (!cancelled) setVerificationPending(status === 'pending' && !dismissed);
-        },
-      );
-      return () => {
-        cancelled = true;
-      };
-    }, []),
-  );
-  // Closing the confirm-your-phrase banner persists the dismissal (Settings →
-  // Confirm recovery phrase still works for users who want it later).
-  const onDismissVerifyBanner = useCallback(() => {
-    setVerificationPending(false);
-    void dismissVerificationBanner();
-  }, []);
+  // Recovery-phrase backup is no longer surfaced as a passive banner here —
+  // it's a deferred, value-proportionate page popped by useBackupPrompt once
+  // the vault is worth protecting (see services/backup_prompt). Settings →
+  // Confirm recovery phrase remains the proactive entry point.
   const flatListRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
 
@@ -512,53 +484,14 @@ export default function ChatScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={90}
+      // Android: rely on the manifest's `windowSoftInputMode=adjustResize`
+      // (undefined behavior) — `behavior='height'` fights adjustResize and
+      // leaves the composer under the keyboard (#370). iOS: `padding` lifts
+      // the composer; offset accounts for the 88pt tab bar.
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
     >
       <StatusBar style="dark" />
-
-      {/* Hidden during a guided demo (the dock is the only surface) and once the
-          user dismisses it. The tappable area navigates to confirm; the X
-          dismisses (persisted). */}
-      {verificationPending && !demoActive ? (
-        <View style={styles.verifyBanner}>
-          <Pressable
-            onPress={() =>
-              router.push({ pathname: '/confirm-recovery-phrase', params: { from: '/' } })
-            }
-            testID="index-verify-banner"
-            accessibilityRole="button"
-            accessibilityLabel="Confirm your recovery phrase"
-            style={({ pressed }) => [
-              styles.verifyBannerMain,
-              pressed && styles.verifyBannerPressed,
-            ]}
-          >
-            <Ionicons
-              name="alert-circle-outline"
-              size={18}
-              color="#8A5A00"
-              style={{ marginRight: spacing.sm }}
-            />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.verifyBannerTitle}>Confirm your recovery phrase</Text>
-              <Text style={styles.verifyBannerBody}>
-                Quick check that your written copy is good.
-              </Text>
-            </View>
-          </Pressable>
-          <Pressable
-            onPress={onDismissVerifyBanner}
-            testID="index-verify-banner-close"
-            accessibilityRole="button"
-            accessibilityLabel="Dismiss recovery phrase reminder"
-            hitSlop={10}
-            style={({ pressed }) => [styles.verifyBannerClose, pressed && styles.verifyBannerPressed]}
-          >
-            <Ionicons name="close" size={18} color={colors.warningTextDeep} />
-          </Pressable>
-        </View>
-      ) : null}
 
       {messages.length === 0 ? (
         <ScrollView
@@ -828,43 +761,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.bgPrimary,
-  },
-
-  // Recovery-phrase pending banner. Shown above everything else when
-  // the user tapped "I'll do this later" during onboarding.
-  verifyBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.warningBgSoft,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.warning,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
-    marginHorizontal: spacing.md,
-    marginTop: spacing.sm,
-    borderRadius: radius.sm,
-  },
-  // Tappable area (navigates to confirm) — sits left of the close button.
-  verifyBannerMain: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  verifyBannerClose: {
-    paddingLeft: spacing.sm,
-    paddingVertical: 2,
-  },
-  verifyBannerPressed: {
-    opacity: 0.85,
-  },
-  verifyBannerTitle: {
-    ...textStyles.bodySmallStrong,
-    color: colors.warningTextDeepest,
-  },
-  verifyBannerBody: {
-    ...textStyles.caption,
-    color: colors.warningTextDeep,
-    marginTop: 1,
   },
 
   // Empty state / hero

@@ -82,6 +82,11 @@ export default function AIProvidersScreen(): React.JSX.Element {
   // Bumped after the model picker closes so the inline preview reads
   // the new override without a navigation/focus event.
   const [modelVersion, setModelVersion] = useState(0);
+  // First-load gate — render a spinner until loadStates() resolves. Without
+  // it the list flashes its un-hydrated state (alphabetical order, per-row
+  // spinners, no ACTIVE badge) and then reshuffles (active floats to top)
+  // once the keychain reads land — the "old page for 0.3s" flicker.
+  const [hydrated, setHydrated] = useState(false);
 
   // Hydrate overrides for the inline preview text. Boot already does
   // this on a fresh app launch, but the user might land here before
@@ -129,7 +134,9 @@ export default function AIProvidersScreen(): React.JSX.Element {
 
   useFocusEffect(
     useCallback(() => {
-      void loadStates();
+      // `.finally` flips `hydrated` only after loadStates() fully settles
+      // (states + active resolved), so the gate lifts onto the final layout.
+      void loadStates().finally(() => setHydrated(true));
     }, [loadStates]),
   );
 
@@ -191,6 +198,14 @@ export default function AIProvidersScreen(): React.JSX.Element {
     await swapAgenticActiveProvider(provider);
     setActive(provider);
   };
+
+  if (!hydrated) {
+    return (
+      <View style={[styles.container, styles.centerLoading]}>
+        <ActivityIndicator color={colors.accent} />
+      </View>
+    );
+  }
 
   return (
     <ScrollView
@@ -380,6 +395,7 @@ export default function AIProvidersScreen(): React.JSX.Element {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgPrimary },
+  centerLoading: { alignItems: 'center', justifyContent: 'center' },
   content: { padding: spacing.md },
   section: { marginBottom: spacing.lg },
   sectionDesc: {

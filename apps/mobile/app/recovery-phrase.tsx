@@ -24,23 +24,19 @@
  *   - Never logs the words — even on error paths.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  AppState,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+
 import { entropyToMnemonic, unwrapSeed } from '@dina/core';
-import { loadWrappedSeed } from '../src/services/wrapped_seed_store';
+
+import { MnemonicVerify } from '../src/components/onboarding/mnemonic_verify';
 import { PassphraseField } from '../src/components/PassphraseField';
+import { markVerified } from '../src/services/verification_status';
+import { loadWrappedSeed } from '../src/services/wrapped_seed_store';
 import { colors, fonts, radius, spacing, textStyles } from '../src/theme';
 
-type Mode = 'gate' | 'unlocking' | 'revealed';
+type Mode = 'gate' | 'unlocking' | 'revealed' | 'verify';
 
 /**
  * After this many ms with the words visible we drop back to the gate.
@@ -59,6 +55,11 @@ export default function RecoveryPhraseScreen(): React.ReactElement {
     typeof from === 'string' && from.startsWith('/') && !from.startsWith('//')
       ? from
       : '/settings';
+  // Reached from the periodic backup prompt: this IS the user's backup, so it
+  // runs reveal → verification quiz before completing. Only PASSING the quiz
+  // (proves they actually copied the words — review P2) calls markVerified()
+  // and stops the prompt; a reveal-only "I saw them" is NOT enough.
+  const fromBackup = from === '/backup-reminder';
   const [mode, setMode] = useState<Mode>('gate');
   const [passphrase, setPassphrase] = useState('');
   const [error, setError] = useState('');
@@ -142,6 +143,25 @@ export default function RecoveryPhraseScreen(): React.ReactElement {
     }
   }, [passphrase]);
 
+  // Backup flow only: after the user has seen + written the words, confirm a
+  // few of them. Passing IS the backup completion (review P2). `words` are held
+  // in memory (not displayed) for the check; on success we mark verified.
+  if (mode === 'verify') {
+    return (
+      <MnemonicVerify
+        mnemonic={words}
+        compact
+        onViewPhrase={() => setMode('revealed')}
+        onBack={() => setMode('revealed')}
+        onVerified={() => {
+          void markVerified();
+          wipeRevealed();
+          router.replace('/' as never);
+        }}
+      />
+    );
+  }
+
   if (mode === 'revealed') {
     return (
       <ScrollView
@@ -179,14 +199,23 @@ export default function RecoveryPhraseScreen(): React.ReactElement {
         <Pressable
           testID="recovery-phrase-done"
           onPress={() => {
+            if (fromBackup) {
+              // Backup flow: reveal → quiz. Keep the words in memory and move
+              // to the verification challenge; only PASSING it marks verified
+              // (review P2 — reveal alone doesn't prove they copied them).
+              setMode('verify');
+              return;
+            }
             wipeRevealed();
             router.replace(backTarget as never);
           }}
           accessibilityRole="button"
-          accessibilityLabel="Hide recovery phrase and go back"
+          accessibilityLabel={
+            fromBackup ? 'Continue to confirm your recovery phrase' : 'Hide recovery phrase and go back'
+          }
           style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryButtonPressed]}
         >
-          <Text style={styles.primaryButtonText}>Done</Text>
+          <Text style={styles.primaryButtonText}>{fromBackup ? 'Continue' : 'Done'}</Text>
         </Pressable>
       </ScrollView>
     );

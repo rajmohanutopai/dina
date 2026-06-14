@@ -35,10 +35,8 @@ appId: com.dinakernel.mobile
 - pressKey: Enter
 - inputText: 'dina-test-pass-123'
 - pressKey: Enter
-- tapOn: { id: 'shell-primary' }
-- tapOn: { id: 'shell-primary' }            # recovery reveal -> continue
-- extendedWaitUntil: { visible: { id: 'shell-secondary' }, timeout: 12000 }
-- tapOn: { id: 'shell-secondary' }
+- tapOn: { id: 'shell-primary' }            # passphrase Continue -> straight to Connect AI
+                                            # (recovery reveal/verify removed from onboarding)
 
 # --- Connect your AI: NO beat, BYOK picker IS the door ---
 - extendedWaitUntil: { visible: { id: 'onboarding-ai-provider-gemini' }, timeout: 20000 }

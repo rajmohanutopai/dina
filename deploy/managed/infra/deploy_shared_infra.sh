@@ -266,6 +266,19 @@ sync_files() {
 # getConfig-only) instead of a missing-secrets crash loop.
 sync_grants_env() {
     info "Syncing grants env block..."
+    # Fail-closed for production (review P1): App Store builds attest against
+    # Apple's PRODUCTION DeviceCheck endpoint, so a prod grants service left on
+    # the 'development' default silently rejects every real-device token. If
+    # this prod deploy actually ships DeviceCheck creds, refuse unless
+    # DEVICECHECK_ENV=production is explicit. (A paused/credential-less prod —
+    # no DEVICECHECK_KEY_ID — has no DeviceCheck to misconfigure, so it passes.)
+    if [ "$ENV_NAME" = "prod" ] && [ -n "${DEVICECHECK_KEY_ID:-}" ] && \
+       [ "${DEVICECHECK_ENV:-}" != "production" ]; then
+        echo "Error: prod deploy ships DeviceCheck creds but DEVICECHECK_ENV != production (got '${DEVICECHECK_ENV:-<unset>}')." >&2
+        echo "       App Store device tokens validate ONLY against Apple's production endpoint; a 'development' grants service rejects them all." >&2
+        echo "       Set DEVICECHECK_ENV=production in deploy/managed/infra/infra-prod.env, then retry." >&2
+        exit 1
+    fi
     local degraded="0"
     if [ -z "${OPENROUTER_PROVISIONING_KEY:-}" ]; then
         degraded="1"
