@@ -80,10 +80,19 @@ export function AiProviderSet({ location, onBack, onContinue }: AiProviderSetPro
         backoffMs: [0],
       });
       if (status === 'claimed') {
-        // Grant key is stored; pin openrouter so boot wires it as the live
+        // Grant key is stored (a fresh grant OR one that survived a re-onboard
+        // and was just re-adopted); pin openrouter so boot wires it as the live
         // provider (same precedence the providers screen uses; BYOK still wins).
         await saveActiveProvider('openrouter');
         onContinue();
+        return;
+      }
+      if (status === 'terminal_refused') {
+        // Once-per-device grant already spent AND no key survives locally —
+        // retrying can never succeed, so don't invite it; point at BYOK.
+        setCreditsError(
+          'This device has already used its free credits. Pick a provider and add your own key below.',
+        );
         return;
       }
       setCreditsError(
@@ -212,7 +221,7 @@ export function AiProviderSet({ location, onBack, onContinue }: AiProviderSetPro
     <OnboardingShell
       location={location}
       title="Connect your AI"
-      subtitle="Dina runs on an AI model you bring (your key stays on this device). Pick a provider and paste an API key. The app needs it to think."
+      subtitle="Dina runs on an AI model you bring (your key stays on this device). Pick a provider and paste an API key."
       primaryLabel={busy ? 'Checking…' : 'Connect'}
       primaryBusy={busy}
       primaryDisabled={selected === null || trimmed === '' || busy}

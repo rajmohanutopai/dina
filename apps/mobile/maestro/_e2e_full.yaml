@@ -1,0 +1,131 @@
+# Self-contained E2E for the custom-vault fix: onboard a fresh identity, then
+# create a Standard vault, route a same-session remember to it, and confirm it
+# survives a cold restart. One flow = one session, so the app stays foregrounded
+# throughout (separate invocations let the dev-client drop to the home screen).
+appId: com.dinakernel.mobile
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: 'shell-primary'
+    timeout: 240000
+
+# ── Onboarding: create a new Dina ──
+- tapOn:
+    id: 'shell-primary'
+- tapOn:
+    id: 'mode-choice-card-create-a-new-dina'
+- tapOn:
+    id: 'owner-name-input'
+- inputText: 'Alonso'
+- hideKeyboard
+- tapOn:
+    id: 'shell-primary'
+
+# Unique handle (top-level evalScript → output is in scope here)
+- evalScript: ${output.handle = 'salontest' + Math.floor(Math.random() * 1000000)}
+- tapOn:
+    id: 'handle-prefix-input'
+- eraseText
+- inputText: ${output.handle}
+- extendedWaitUntil:
+    visible:
+      id: 'handle-status-available'
+    timeout: 40000
+- hideKeyboard
+- tapOn:
+    id: 'shell-primary'
+
+# Passphrase (auto-unlock default)
+- tapOn:
+    id: 'passphrase-input'
+- inputText: 'dina-test-pass-123'
+- tapOn:
+    id: 'passphrase-confirm-input'
+- inputText: 'dina-test-pass-123'
+# Continue sits above the keyboard — tap it directly (hideKeyboard is flaky on
+# the iOS sim with the Passwords AutoFill bar).
+- tapOn:
+    id: 'shell-primary'
+
+# Connect AI — Gemini auto-connects via the dev env key
+- extendedWaitUntil:
+    visible:
+      id: 'onboarding-ai-connected'
+    timeout: 30000
+- tapOn:
+    id: 'shell-primary'
+
+# Provisioning → guided-demo entry → skip into chat
+- extendedWaitUntil:
+    visible:
+      id: 'guided-demo-entry'
+    timeout: 120000
+- tapOn:
+    id: 'guided-demo-skip'
+- extendedWaitUntil:
+    visible:
+      id: 'index-mode-chip-remember'
+    timeout: 20000
+
+# ── Create a Standard "salon" vault ──
+- tapOn:
+    id: 'root-layout-menu'
+- tapOn:
+    id: 'root-layout-menu-row-vault'
+- extendedWaitUntil:
+    visible:
+      id: 'vault-new-vault'
+    timeout: 20000
+- tapOn:
+    id: 'vault-new-vault'
+- tapOn:
+    id: 'vault-name-input'
+- inputText: 'salon'
+- tapOn:
+    id: 'vault-tier-standard'
+- tapOn:
+    id: 'vault-description-input'
+- inputText: 'My salon business: opening hours, appointments, client bookings, services and prices'
+- tapOn:
+    id: 'vault-create'
+- extendedWaitUntil:
+    visible:
+      id: 'vault-open-salon'
+    timeout: 20000
+
+# ── SAME session: remember salon hours → must route to the Salon vault ──
+- tapOn:
+    id: 'root-layout-back'
+- extendedWaitUntil:
+    visible:
+      id: 'index-mode-chip-remember'
+    timeout: 15000
+- tapOn:
+    id: 'index-mode-chip-remember'
+- tapOn:
+    id: 'chat-input'
+- inputText: 'My salon is open Tuesday to Saturday, 10am to 6pm, last appointment at 5pm'
+- tapOn:
+    id: 'send-button'
+- extendedWaitUntil:
+    visible:
+      text: '.*Stored in [Ss]alon [Vv]ault.*'
+    timeout: 60000
+
+# ── Cold restart: the salon vault survives ──
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'index-mode-chip-remember'
+    timeout: 90000
+- tapOn:
+    id: 'root-layout-menu'
+- tapOn:
+    id: 'root-layout-menu-row-vault'
+- extendedWaitUntil:
+    visible:
+      id: 'vault-open-salon'
+    timeout: 20000

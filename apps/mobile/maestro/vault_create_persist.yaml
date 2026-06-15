@@ -1,0 +1,80 @@
+# Custom-vault lifecycle — the fix for "new Standard vault was locked /
+# remember went to work / vault gone after restart".
+#
+# 1. Create a Standard "salon" vault → it appears in the list (open for the
+#    owner, not locked-until-reboot).
+# 2. SAME session: remember salon hours → routes to the Salon vault (proves
+#    the vault is open + wired AND the remember runtime sees it live).
+# 3. Cold restart → the salon vault still exists (durable registry).
+#
+# Assumes the app is onboarded (run onboarding_create.yaml first). No clearState.
+appId: com.dinakernel.mobile
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'index-mode-chip-remember'
+    timeout: 60000
+
+# ── Create a Standard "salon" vault via the overflow menu ──
+- tapOn:
+    id: 'root-layout-menu'
+- tapOn:
+    id: 'root-layout-menu-row-vault'
+- extendedWaitUntil:
+    visible:
+      id: 'vault-new-vault'
+    timeout: 20000
+- tapOn:
+    id: 'vault-new-vault'
+- tapOn:
+    id: 'vault-name-input'
+- inputText: 'salon'
+- tapOn:
+    id: 'vault-tier-standard'
+- tapOn:
+    id: 'vault-description-input'
+- inputText: 'My salon business: opening hours, appointments, client bookings, services and prices'
+- hideKeyboard
+- tapOn:
+    id: 'vault-create'
+# It lands in the list (created + visible).
+- extendedWaitUntil:
+    visible:
+      id: 'vault-open-salon'
+    timeout: 20000
+
+# ── SAME session: remember salon hours → must route to the Salon vault ──
+- tapOn:
+    id: 'root-layout-back'
+- extendedWaitUntil:
+    visible:
+      id: 'index-mode-chip-remember'
+    timeout: 15000
+- tapOn:
+    id: 'index-mode-chip-remember'
+- tapOn:
+    id: 'chat-input'
+- inputText: 'My salon is open Tuesday to Saturday, 10am to 6pm, last appointment at 5pm'
+- tapOn:
+    id: 'send-button'
+- extendedWaitUntil:
+    visible:
+      text: '.*Stored in [Ss]alon [Vv]ault.*'
+    timeout: 60000
+
+# ── Cold restart: the salon vault survives ──
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'index-mode-chip-remember'
+    timeout: 60000
+- tapOn:
+    id: 'root-layout-menu'
+- tapOn:
+    id: 'root-layout-menu-row-vault'
+- extendedWaitUntil:
+    visible:
+      id: 'vault-open-salon'
+    timeout: 20000

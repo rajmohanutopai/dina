@@ -180,6 +180,28 @@ ${GRANTS_HOST} {
 }
 EOF
     fi
+
+    # Optional: public landing page on the apex (+ www → apex redirect).
+    # Gated on LANDING_HOST — NOT on DOMAIN — because prod AND test both set
+    # DOMAIN=dinakernel.com (test just uses test-* sub-hosts). Only the env
+    # that actually owns the apex DNS (prod) may serve it; otherwise the test
+    # box would try to provision a Let's Encrypt cert for an apex that points
+    # at prod and the ACME challenge would fail. The page is the static
+    # deploy/managed/infra/www/index.html, synced with the rest of $SCRIPT_DIR
+    # and mounted into Caddy at /srv/www (see docker-compose.infra.yml).
+    if [ -n "${LANDING_HOST:-}" ]; then
+        cat >> "$SCRIPT_DIR/Caddyfile" << EOF
+
+${LANDING_HOST} {
+	root * /srv/www
+	file_server
+}
+
+www.${LANDING_HOST} {
+	redir https://${LANDING_HOST}{uri}
+}
+EOF
+    fi
 }
 
 # ── Reload Caddy so a regenerated Caddyfile (e.g. new host blocks) takes

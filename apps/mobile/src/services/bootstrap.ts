@@ -103,7 +103,6 @@ export type AppD2DSender = (
 import {
   createCoordinatorAskHandler,
   makeAgenticAskHandler,
-  buildResultCardSpec,
   makeServiceApproveHandler,
   makeServiceDenyHandler,
   ServicePublisher,
@@ -137,16 +136,11 @@ import {
   resetAskCommandHandler,
 } from '@dina/brain/chat';
 import {
-  addDinaResponse,
   addApprovalMessage,
   addMessage,
-  addLifecycleMessage,
   addSystemMessage,
   hydrateThread,
-  findMessageByTaskId,
-  updateMessageLifecycle,
-  readLifecycle,
-  type ServiceQueryStatus,
+  createServiceQueryDeliverer,
 } from '@dina/brain/chat';
 import {
   installWorkflowApprovalInboxBridge,
@@ -157,7 +151,6 @@ import {
 import { stagingGetItem, getContact } from '@dina/core';
 import { wireChatRememberRuntime } from '@dina/home-node/chat-runtime';
 import { buildHomeNodeServiceRuntime } from '@dina/home-node/service-runtime';
-import { validateCardSpec } from '@dina/protocol';
 
 import { peekActiveProvider } from '../ai/active_provider';
 import { reportKeyHealthIncident } from '../ai/key_health';
@@ -629,108 +622,14 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
   // 'ask'); the resolver maps that to a thread. Without a resolver
   // we fall back to the fixed `chatThreadId` — preserving current
   // behaviour while giving multi-thread apps a hook.
-  const threadResolver = options.threadResolver;
-  const deliver: WorkflowEventDeliverer = ({ text, event, task, details }) => {
-    const sources: string[] = [];
-    if (event.task_id !== '') sources.push(event.task_id);
-    if (details.capability !== undefined && details.capability !== '') {
-      sources.push(details.capability);
-    }
-    let target = threadId;
-    if (threadResolver !== undefined) {
-      const originChannel = extractOriginChannel(task.payload);
-      const resolved = threadResolver({
-        originChannel,
-        eventKind: event.event_kind,
-        task: { id: task.id, kind: task.kind },
-      });
-      if (resolved !== null && resolved !== '') target = resolved;
-    }
-
-    // Lifecycle pattern — the orchestrator (or AskCoordinator bridge)
-    // posted a `'dina'` message tagged with `metadata.lifecycle.kind ===
-    // 'service_query'` when the query was dispatched. Patch it in place
-    // instead of appending a new message. The two-messages-for-one-query
-    // race is gone.
-    const existing = findMessageByTaskId(target, task.id);
-    const lc = existing !== null ? readLifecycle(existing) : null;
-
-    // Only `service_query` workflow tasks become lifecycle cards — other
-    // task kinds (delegation, etc.) keep using the plain dina path.
-    if (task.kind === 'service_query') {
-      const status = mapResponseStatusToCardStatus(details.response_status);
-      const resultBody = parseEventResult(details.result);
-      const serviceName =
-        details.service_name !== undefined && details.service_name !== ''
-          ? details.service_name
-          : lc?.kind === 'service_query'
-            ? lc.serviceName
-            : 'service';
-      const capability =
-        details.capability !== undefined && details.capability !== ''
-          ? details.capability
-          : extractCapabilityFromPayload(task.payload);
-
-      // Card-4 + Card-5: pre-compute the declarative display card so the
-      // renderer uses a persisted spec rather than recomputing on every
-      // render. On a resolved success, PREFER a provider-authored card
-      // (Card-5) — but re-validate it as UNTRUSTED first (drops provider
-      // trust badges, enforces https-only links, strips unknown blocks).
-      // Fall back to the deterministic mapper over `result` when the
-      // provider sent no card or it failed validation (renderer then has
-      // its own render-time fallback, then the generic text card).
-      const cardSpec =
-        status === 'resolved'
-          ? (validateCardSpec(details.card, { trusted: false }) ??
-            (resultBody !== null
-              ? buildResultCardSpec({ capability, serviceName, result: resultBody })
-              : null))
-          : null;
-
-      if (lc !== null && lc.kind === 'service_query') {
-        const patch: Partial<{
-          status: ServiceQueryStatus;
-          result: Record<string, unknown>;
-          cardSpec: NonNullable<typeof cardSpec>;
-          error: string;
-          serviceName: string;
-          resolvedAt: number;
-        }> = { status, serviceName, resolvedAt: Date.now() };
-        if (resultBody !== null) patch.result = resultBody;
-        if (cardSpec !== null) patch.cardSpec = cardSpec;
-        if (typeof details.error === 'string' && details.error !== '') {
-          patch.error = details.error;
-        }
-        updateMessageLifecycle(target, task.id, patch, text);
-        return;
-      }
-
-      // Workflow event landed before any chat artifact existed (e.g.
-      // peer answered before the LLM completed). Post a fresh lifecycle
-      // message in terminal state so the user still sees one card.
-      // `queryId` isn't present on the event details — recover it from
-      // the task payload (the requester stamped it there at dispatch
-      // time). Falls back to empty when the payload is malformed.
-      const lifecycle: import('@dina/brain/chat').ServiceQueryLifecycle = {
-        kind: 'service_query',
-        status,
-        taskId: task.id,
-        queryId: extractQueryIdFromPayload(task.payload),
-        capability,
-        serviceName,
-      };
-      if (resultBody !== null) lifecycle.result = resultBody;
-      if (cardSpec !== null) lifecycle.cardSpec = cardSpec;
-      if (typeof details.error === 'string' && details.error !== '') {
-        lifecycle.error = details.error;
-      }
-      addLifecycleMessage(target, text, lifecycle);
-      return;
-    }
-
-    // Non-service_query workflow events keep the normal dina-bubble path.
-    addDinaResponse(target, text, sources.length > 0 ? sources : undefined);
-  };
+  //
+  // The reconciliation itself (patch-in-place by task.id, one card per
+  // query) lives in the shared `createServiceQueryDeliverer` so mobile
+  // and home-node-lite stay byte-identical (no duplication).
+  const deliver: WorkflowEventDeliverer = createServiceQueryDeliverer({
+    threadId,
+    ...(options.threadResolver !== undefined ? { threadResolver: options.threadResolver } : {}),
+  });
   // 2-5. Shared service runtime — handler + dispatcher (with
   // service.query registered) + orchestrator + workflow-event consumer
   // + approval reconciler. The mobile-specific bits feed in through
@@ -1373,98 +1272,6 @@ function validate(o: CreateNodeOptions): void {
   // Provider role can omit pdsPublisher for nodes that expose services
   // only to known peers (no public discoverability). Runtime handles
   // the absent case by skipping the profile sync in `start()`.
-}
-
-/**
- * Map the workflow event's `response_status` (success / unavailable /
- * error / expired / anything else) onto the four terminal states a
- * `service_query` chat card understands. Anything we don't recognise
- * collapses to `failed` so the card still leaves the spinner.
- */
-function mapResponseStatusToCardStatus(status: string | undefined): ServiceQueryStatus {
-  switch (status) {
-    case 'success':
-      return 'resolved';
-    case 'expired':
-      return 'expired';
-    case 'unavailable':
-    case 'error':
-    default:
-      return 'failed';
-  }
-}
-
-/**
- * The workflow event's `details.result` arrives as either a parsed JSON
- * object or its string form (Core's mixed delivery). Coerce to a plain
- * object so the chat card's renderer can read fields like
- * `eta_minutes`, `map_url` without re-parsing. Returns `null` when the
- * payload is missing or unparseable.
- */
-function parseEventResult(raw: unknown): Record<string, unknown> | null {
-  if (raw === undefined || raw === null) return null;
-  if (typeof raw === 'object' && !Array.isArray(raw)) {
-    return raw as Record<string, unknown>;
-  }
-  if (typeof raw === 'string' && raw !== '') {
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
-      /* swallow — the formatter already produced a text fallback */
-    }
-  }
-  return null;
-}
-
-/**
- * Pull `query_id` out of a `service_query` workflow task's JSON
- * payload. Used by the deliver path when the workflow event lands
- * before the LLM dispatch has had a chance to post a lifecycle
- * message — the lifecycle metadata still wants a queryId for
- * downstream surfaces (notifications, audit), so we recover it from
- * the payload that the requester stamped at dispatch time.
- */
-function extractQueryIdFromPayload(payload: string): string {
-  try {
-    const parsed = JSON.parse(payload) as { query_id?: unknown };
-    return typeof parsed.query_id === 'string' ? parsed.query_id : '';
-  } catch {
-    return '';
-  }
-}
-
-/**
- * Recover the capability the requester stamped into the task payload at
- * dispatch time. Mirrors `extractQueryIdFromPayload` — service-query
- * workflow events don't always echo `capability` in `details`, but the
- * card (and the Card-4 cardSpec mapper) wants it. Returns '' when the
- * payload is absent or unparsable.
- */
-function extractCapabilityFromPayload(payload: string): string {
-  try {
-    const parsed = JSON.parse(payload) as { capability?: unknown };
-    return typeof parsed.capability === 'string' ? parsed.capability : '';
-  } catch {
-    return '';
-  }
-}
-
-/**
- * Best-effort extract of `origin_channel` from a workflow task's
- * JSON payload. Returns `''` when the payload is malformed or the
- * field is missing — the caller falls back to the fixed thread id
- * (review #6 partial).
- */
-function extractOriginChannel(payload: string): string {
-  try {
-    const parsed = JSON.parse(payload) as { origin_channel?: unknown };
-    return typeof parsed.origin_channel === 'string' ? parsed.origin_channel : '';
-  } catch {
-    return '';
-  }
 }
 
 /**

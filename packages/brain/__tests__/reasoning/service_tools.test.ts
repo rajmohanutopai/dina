@@ -508,6 +508,76 @@ describe('createQueryServiceTool', () => {
     expect(calls[0].schemaHash).toBeUndefined();
   });
 
+  // -------------------------------------------------------------------
+  // Single-dispatch guard — one provider per capability per request.
+  // Repro (live, 2026-06-15): with two "Alonso Salon" listings registered on
+  // different DIDs, the agent fired query_service to BOTH for one question →
+  // two chat cards (one resolved, one stale-DID "failed"). The tool now refuses
+  // a 2nd dispatch of the same capability within a request.
+  // -------------------------------------------------------------------
+
+  it('refuses a 2nd query_service for the same capability (different provider) this request', async () => {
+    const { orchestrator, calls } = makeOrch();
+    const tool = createQueryServiceTool({ orchestrator });
+    await tool.execute({
+      operator_did: 'did:plc:salonA',
+      capability: 'appointment_availability',
+      params: { date: 'saturday' },
+    });
+    await expect(
+      tool.execute({
+        operator_did: 'did:plc:salonB', // a DIFFERENT provider, same capability
+        capability: 'appointment_availability',
+        params: { date: 'saturday' },
+      }),
+    ).rejects.toThrow(/already dispatched/i);
+    // Exactly ONE provider was queried — the first one.
+    expect(calls).toHaveLength(1);
+    expect(calls[0].toDID).toBe('did:plc:salonA');
+  });
+
+  it('still allows a 2nd query_service for a DIFFERENT capability', async () => {
+    const { orchestrator, calls } = makeOrch();
+    const tool = createQueryServiceTool({ orchestrator });
+    await tool.execute({
+      operator_did: 'did:plc:salonA',
+      capability: 'appointment_availability',
+      params: {},
+    });
+    await tool.execute({
+      operator_did: 'did:plc:busco',
+      capability: 'eta_query',
+      params: { route_id: '42', location: { lat: 1, lng: 2 } },
+    });
+    expect(calls).toHaveLength(2);
+  });
+
+  it('a FAILED first dispatch does not burn the single-dispatch budget', async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    let first = true;
+    const orchestrator: Pick<ServiceQueryOrchestrator, 'issueQueryToDID'> = {
+      async issueQueryToDID(req) {
+        if (first) {
+          first = false;
+          throw new Error('send_failed');
+        }
+        calls.push(req as unknown as Record<string, unknown>);
+        return { queryId: 'q', taskId: 't', toDID: req.toDID, serviceName: req.toDID, deduped: false };
+      },
+    };
+    const tool = createQueryServiceTool({ orchestrator });
+    await expect(
+      tool.execute({ operator_did: 'did:plc:salonA', capability: 'appointment_availability', params: {} }),
+    ).rejects.toThrow(/send_failed/);
+    // The first never succeeded → a retry of the SAME capability is allowed.
+    await tool.execute({
+      operator_did: 'did:plc:salonA',
+      capability: 'appointment_availability',
+      params: {},
+    });
+    expect(calls).toHaveLength(1);
+  });
+
   it('WM-BRAIN-06d: matching profile without a schemaHash → dispatch without hash', async () => {
     const { orchestrator, calls } = makeOrch();
     const tool = createQueryServiceTool({

@@ -91,6 +91,30 @@ describe('buildRememberRuntime', () => {
     expect(sys).toContain('vault_search');
   });
 
+  it('resolves personas LIVE via a getter — a vault created mid-session is routable', async () => {
+    // Regression for the "create salon vault → remember salon hours → went to
+    // the wrong vault" bug: the runtime used to freeze the persona list at
+    // construction, so a vault added after boot never appeared in the prompt.
+    const { provider, systemPromptSeen } = scripted([
+      { content: 'ok', toolCalls: [] },
+      { content: 'ok', toolCalls: [] },
+    ]);
+    const live: { name: string; description?: string }[] = [
+      { name: 'general', description: 'everyday notes' },
+    ];
+    const { run } = buildRememberRuntime({ llm: provider, personas: () => live });
+
+    await run({ memoryText: 'first' });
+    expect(systemPromptSeen[0]).toContain('general — everyday notes');
+    expect(systemPromptSeen[0] ?? '').not.toContain('salon');
+
+    // The user creates a new vault AFTER the runtime was built.
+    live.push({ name: 'salon', description: 'salon hours and bookings' });
+
+    await run({ memoryText: 'second' });
+    expect(systemPromptSeen[1]).toContain('salon — salon hours and bookings');
+  });
+
   it('captures tool calls into the side-effects collector', async () => {
     const tcs: ToolCall[] = [
       { id: 't1', name: 'route_to_persona', arguments: { persona: 'finance' } },

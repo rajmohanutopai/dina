@@ -29,6 +29,7 @@ import {
   saveServiceConfig,
   type ServiceListing,
 } from '../src/hooks/useServiceConfigForm';
+import { reloadApp } from '../src/services/reload_app';
 import { saveRolePreference } from '../src/services/role_preference';
 import { colors, radius, shadows, spacing, textStyles } from '../src/theme';
 
@@ -85,7 +86,11 @@ export default function MyListingsScreen(): React.ReactElement {
       await saveRolePreference(next);
       Alert.alert(
         'Role updated',
-        `Saved as ${next}. Force-quit and reopen Dina to apply the change.`,
+        `Saved as ${next}. Dina needs to restart to apply this.`,
+        [
+          { text: 'Later', style: 'cancel' },
+          { text: 'Restart now', onPress: () => void reloadApp() },
+        ],
       );
     } catch (err) {
       Alert.alert('Error', (err as Error).message ?? 'Failed to save role');

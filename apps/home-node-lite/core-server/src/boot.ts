@@ -35,6 +35,7 @@
  */
 
 import {
+  configureRateLimiter,
   createCoreRouter,
   deriveDIDKey,
   HEALTHZ_PATH,
@@ -210,6 +211,24 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     registerService(config.services.brainDid, 'brain');
     logger.info({ brainDid: config.services.brainDid }, 'brain service DID registered');
   }
+
+  // Per-DID auth rate limiter. The Fastify per-IP limiter (server.ts) already
+  // honours DINA_RATE_LIMIT, but the auth middleware has a SEPARATE per-DID
+  // limiter that defaults to ~50/min and was never configured here — so the
+  // co-located Brain (which legitimately polls Core: the workflow-event
+  // consumer @1s, the staging drain, the reminder fire loop, the ask
+  // coordinator) trips it within a minute and every signed request 401s with
+  // "Rate limit exceeded". Mobile already calls `configureRateLimiter` at boot
+  // for exactly this reason; the lite Core server must too. Drive it from the
+  // same DINA_RATE_LIMIT knob so one env var controls both layers.
+  configureRateLimiter({
+    maxRequests: config.runtime.rateLimitPerMinute,
+    windowSeconds: 60,
+  });
+  logger.info(
+    { maxRequestsPerMinute: config.runtime.rateLimitPerMinute },
+    'per-DID auth rate limiter configured',
+  );
 
   // Admin service registration. `/v1/pair/initiate` and other
   // device-management routes are admin-only by authz policy; lite by
@@ -504,6 +523,9 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       msgboxURL: config.msgbox.url,
       appViewURL: config.endpoints.appViewBaseUrl,
       coreRouter,
+      // Co-located Brain (has the LLM) for the Tier-1 dina.local lane. Defaults
+      // to the brain's default host:port when DINA_BRAIN_URL is unset.
+      brainUrl: config.services?.brainUrl ?? 'http://127.0.0.1:8200',
       logger,
     });
   }

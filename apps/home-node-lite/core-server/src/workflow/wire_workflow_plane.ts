@@ -27,6 +27,7 @@
 import {
   AppViewServiceResolver,
   InProcessTransport,
+  LocalDelegationRunner,
   SQLiteWorkflowRepository,
   getServiceConfig,
   registerPublicKeyResolver,
@@ -56,6 +57,7 @@ import type { DatabaseAdapter } from '@dina/core/storage';
 
 import type { Logger } from '../logger';
 import type { PdsIdentity } from '../identity/provision_pds';
+import { makeHttpTier1Runner } from './http_tier1_runner';
 
 export interface WireWorkflowPlaneOptions {
   /** Identity DB adapter from `initializeStorage`. */
@@ -73,6 +75,13 @@ export interface WireWorkflowPlaneOptions {
   appViewURL: string;
   /** Core router — used to build the InProcessTransport CoreClient. */
   coreRouter: CoreRouter;
+  /**
+   * Base URL of the co-located lite Brain. Core claims the reserved
+   * `dina.local` Tier-1 lane in-process (it can't be claimed over HTTP) and
+   * forwards each claimed capability execution to the Brain (which has the
+   * LLM) via `makeHttpTier1Runner`.
+   */
+  brainUrl: string;
   /** Boot logger; receives structured events from sweepers + runtime. */
   logger: Logger;
 }
@@ -95,8 +104,16 @@ export interface WiredWorkflowPlane {
 }
 
 export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkflowPlane {
-  const { identityDB, pdsIdentity, signingKeypair, msgboxURL, appViewURL, coreRouter, logger } =
-    options;
+  const {
+    identityDB,
+    pdsIdentity,
+    signingKeypair,
+    msgboxURL,
+    appViewURL,
+    coreRouter,
+    brainUrl,
+    logger,
+  } = options;
 
   // Self-key resolver — every signed request that lands locally
   // (Response Bridge outbound, dina-agent calling /v1/workflow/...)
@@ -167,14 +184,15 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
     );
   };
 
+  const workflowRepository = new SQLiteWorkflowRepository(identityDB);
   const shared: SharedWiredWorkflowPlane = wireSharedWorkflowPlane({
-    workflowRepository: new SQLiteWorkflowRepository(identityDB),
+    workflowRepository,
     sendD2D,
     runtime: {
       core: new InProcessTransport(coreRouter),
       appView,
       readConfig: (rkey?: string): ServiceConfig | null => getServiceConfig(rkey),
-      deliver: ({ text, event, task, details }) => {
+      deliver: async ({ text, event, task, details }) => {
         // Metadata-only: `text` is rendered user/service response content and
         // must never hit the logs (PII rule). Log its length, not its body.
         logger.info(
@@ -188,6 +206,27 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
           },
           'workflow event delivered',
         );
+        // Split-lite chat delivery: the requester's chat thread lives in the
+        // BRAIN process, but Core owns the workflow-event consumer (it must —
+        // for provider-side approval dispatch). So Core forwards each
+        // requester-side `service_query` delivery to the Brain, which grafts it
+        // onto the chat thread via the shared `createServiceQueryDeliverer`
+        // (one card per query, patched in place). Mobile does this in-process;
+        // only the split stack needs the hop. Provider-side execution tasks
+        // (`service_query_execution`) have no requester chat card here → skip.
+        // Throw on failure so the consumer backs off + retries (the Brain
+        // endpoint is idempotent by task id).
+        if (task.kind !== 'service_query') return;
+        const res = await fetch(`${brainUrl}/api/v1/chat/service-result`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ text, event, task, details }),
+        });
+        if (!res.ok) {
+          throw new Error(
+            `forward service-result to brain failed: ${res.status} ${await res.text().catch(() => '')}`,
+          );
+        }
       },
       approvalNotifier,
       inboundNotifier,
@@ -208,6 +247,24 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
 
   const dispatcher = shared.runtime.dispatcher;
 
+  // Tier-1 ("My Dina answers") execution lane. Core owns the reserved
+  // `dina.local` lane in-process — it's EXACT-match and can never be claimed
+  // over HTTP (the workflow claim route 403s it by design), so the runner
+  // lives here, next to the workflow repo. Core has no LLM, so its run
+  // callback forwards each claimed capability execution to the co-located
+  // Brain (`makeHttpTier1Runner`), which runs the SHARED
+  // `makeTier1CapabilityRunner` runtime — the same code mobile runs
+  // in-process. Inert until a `dina.local` task (an inbound service.query for
+  // a My-Dina-lane capability) is claimed.
+  const tier1Runner = new LocalDelegationRunner({
+    repository: workflowRepository,
+    workflowService: shared.workflowService,
+    agentDID: pdsIdentity.did,
+    runner: makeHttpTier1Runner({ brainUrl, logger }),
+    // runnerFilter defaults to the reserved 'dina.local' lane.
+  });
+  tier1Runner.start();
+
   return {
     async onBypassedD2D(info): Promise<void> {
       const raw: Partial<DinaMessage> = {
@@ -221,6 +278,13 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
         info.body as Record<string, unknown>,
       );
     },
-    dispose: shared.dispose,
+    async dispose(): Promise<void> {
+      // stop() only clears the claim timer; an in-flight Tier-1 capability
+      // execution may still be running. flush() awaits it so we don't tear
+      // down the workflow plane (shared.dispose) out from under a live run.
+      tier1Runner.stop();
+      await tier1Runner.flush();
+      await shared.dispose();
+    },
   };
 }

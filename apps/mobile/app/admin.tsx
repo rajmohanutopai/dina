@@ -49,6 +49,7 @@ import {
 import { loadPersistedDid } from '../src/services/identity_record';
 import { signOutLocal, eraseEverythingLocal } from '../src/services/local_data_wipe';
 import { wireNativeBackup } from '../src/services/native_backup_wiring';
+import { reloadApp } from '../src/services/reload_app';
 import {
   isRestoreConfigured,
   pickBackupBytes,
@@ -411,7 +412,11 @@ function BackupRestoreSection(): React.ReactElement {
           setRestorePass('');
           Alert.alert(
             'Restored',
-            `Restored ${preview.totalPersonas} persona(s). Close and reopen Dina to load your data.`,
+            `Restored ${preview.totalPersonas} persona(s). Dina needs to restart to load your data.`,
+            [
+              { text: 'Later', style: 'cancel' },
+              { text: 'Restart now', onPress: () => void reloadApp() },
+            ],
           );
         };
 

@@ -579,8 +579,10 @@ export type { Relationship, DataResponsibility } from './contacts/directory';
 export {
   closePersona,
   createPersona,
+  deletePersona,
   getPersona,
   getPersonaTier,
+  hydratePersonas,
   isPersonaOpen,
   listPersonas,
   openBootPersonas,
@@ -591,6 +593,12 @@ export {
   validatePersonaName,
 } from './persona/service';
 export type { PersonaState } from './persona/service';
+export {
+  SQLitePersonaRepository,
+  getPersonaRepository,
+  setPersonaRepository,
+} from './persona/repository';
+export type { PersonaRepository, StoredPersona } from './persona/repository';
 export { DATA_CATEGORIES } from './persona/names';
 export type { DataCategory } from './persona/names';
 export * from './vault/lifecycle';

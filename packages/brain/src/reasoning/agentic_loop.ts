@@ -551,6 +551,20 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
       }
 
       transcript = pushToolResult(transcript, call.id, call.name, outcome);
+
+      // Terminal tool: a SUCCESSFUL fire-and-forget dispatch (e.g.
+      // `query_service`) ends the turn. Continuing would only burn iterations
+      // waiting for an answer that arrives asynchronously (delivered to the
+      // chat thread later) — and a max_iterations bail would WRONGLY mark the
+      // ask failed even though the service card resolves moments later. Return
+      // `completed` so the ask settles cleanly. Any tool calls the model
+      // batched AFTER this one in the same response are intentionally skipped
+      // (one fire-and-forget action per turn).
+      if (outcome.success === true && tools.isTerminal(call.name)) {
+        answer = resp.content;
+        console.log('[agentic_loop] terminal tool — finalizing turn', { tool: call.name });
+        return done('completed');
+      }
     }
   }
 

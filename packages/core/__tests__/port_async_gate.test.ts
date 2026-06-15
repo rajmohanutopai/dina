@@ -74,6 +74,12 @@ const EXEMPTED_PORTS: readonly { file: string; interfaceName: string; reason: st
       'Small adapter over the EXEMPT sync DatabaseAdapter. The in-memory contact directory enforces GAP-PERSIST-01 — SQL write MUST happen before in-memory mutation so a failed write leaves memory consistent with disk. That ordering contract requires sync semantics: an async repo would force in-memory state to either lag the resolved promise (stale reads) or commit before the disk write succeeds (split-brain on failure). 167 call-sites read from the directory synchronously; converting would propagate awaits with zero I/O benefit. Source comment in repository.ts pins the rationale.',
   },
   {
+    file: 'persona/repository.ts',
+    interfaceName: 'PersonaRepository',
+    reason:
+      'Small adapter over the EXEMPT sync DatabaseAdapter. The persona service enforces SQL-write-before-in-memory-mutation (GAP-PERSIST) so a failed write leaves the in-memory registry consistent with disk; that ordering contract requires sync semantics. Mirrors ContactRepository. Source comment in repository.ts pins the rationale.',
+  },
+  {
     file: 'workflow/repository.ts',
     interfaceName: 'WorkflowRepository',
     reason:
@@ -267,6 +273,7 @@ describe('Port async gate (task 2.8)', () => {
       'StagingRepository',
       'VaultRepository',
       'ContactRepository',
+      'PersonaRepository',
       'WorkflowRepository',
       'DBProvider',
       'DatabaseAdapter',

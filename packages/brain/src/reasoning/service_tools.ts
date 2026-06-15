@@ -19,6 +19,7 @@ import type { AppViewClient, ServiceProfile } from '../appview_client/http';
 import type { ServiceQueryOrchestrator } from '../service/service_query_orchestrator';
 import type { Contact, ServiceOfferView } from '@dina/core';
 import { getCapabilityEntry, resolveCanonicalCapability } from '@dina/protocol';
+import { rankCandidates } from '../service/candidate_ranker';
 import { autofillRequesterFields, type RequesterAutofillSchema } from './requester_autofill';
 import { defaultFetch } from '../runtime/fetch';
 
@@ -291,7 +292,7 @@ export function createSearchProviderServicesTool(
   return {
     name: 'search_provider_services',
     description:
-      'Find provider services on the Dina network that advertise a given capability (e.g. "eta_query" for transit ETAs). Returns a ranked list of service profiles with their DIDs, names, and per-capability schema blocks (params shape, hash, description, TTL). Pass lat/lng when the user mentioned a location.',
+      'Find provider services on the Dina network that advertise a given capability (e.g. "eta_query" for transit ETAs). Returns service profiles RANKED BEST-FIRST (trust + proximity) with their DIDs, names, and per-capability schema blocks (params shape, hash, description, TTL). Pass lat/lng when the user mentioned a location. IMPORTANT: dispatch query_service to the SINGLE TOP result only — the registry may list the same provider more than once or several similar providers; querying more than one wastes the user\'s request. Pick a lower-ranked entry only if the user explicitly named that specific provider.',
     parameters: {
       type: 'object',
       properties: {
@@ -316,12 +317,24 @@ export function createSearchProviderServicesTool(
         radiusKm: typeof args.radius_km === 'number' ? args.radius_km : undefined,
         q: typeof args.q === 'string' ? args.q : undefined,
       });
-      // Drop our own listing (see selfDid doc) — never offer self to the LLM.
-      const visible =
-        options.selfDid !== undefined && options.selfDid !== ''
-          ? profiles.filter((p) => p.did !== options.selfDid)
-          : profiles;
-      return visible.slice(0, limit).map(toLLMProfile);
+      // Rank deterministically (trust + proximity) so the model is handed a
+      // best-first list and the SENDER — not the registry's arbitrary order —
+      // decides which provider to query. `rankCandidates` also drops self
+      // (excludeDid) + non-discoverable + non-matching entries. Combined with
+      // query_service being terminal (one dispatch per turn), this means the
+      // sender reliably queries the single best provider even when the
+      // registry returns several (e.g. duplicate listings of the same salon).
+      const viewer =
+        typeof args.lat === 'number' && typeof args.lng === 'number'
+          ? { lat: args.lat, lng: args.lng }
+          : undefined;
+      const ranked = rankCandidates(capability, profiles, {
+        ...(viewer !== undefined ? { viewer } : {}),
+        ...(options.selfDid !== undefined && options.selfDid !== ''
+          ? { excludeDid: options.selfDid }
+          : {}),
+      });
+      return ranked.slice(0, limit).map((c) => toLLMProfile(c.profile));
     },
   };
 }
@@ -415,10 +428,28 @@ export interface QueryServiceToolOptions {
  * Bus 42…") and NOT block waiting for the answer.
  */
 export function createQueryServiceTool(options: QueryServiceToolOptions): AgentTool {
+  // Single-dispatch guard (request-scoped). `createQueryServiceTool` is built
+  // fresh per `/ask` (agentic_ask `buildToolsForAsk`), so this Set tracks the
+  // capabilities already dispatched WITHIN THE CURRENT request. Discovery can
+  // surface several providers for one capability (e.g. two "Alonso Salon"
+  // listings on different DIDs); without this guard the model fans out a
+  // `query_service` to each, producing two chat cards for one question — one
+  // resolves, the other (a stale/offline DID) times out into a "failed" card.
+  // We answer with ONE provider per capability per request; a 2nd dispatch is
+  // refused with an instructive error the model relays. Recorded ON SUCCESS
+  // only, so a dispatch that fails validation doesn't burn the budget.
+  const dispatchedCapabilities = new Set<string>();
   return {
     name: 'query_service',
+    // Fire-and-forget: the answer is delivered asynchronously to the chat
+    // thread, so a successful dispatch ENDS the turn. Without this the model
+    // kept calling tools after dispatching (waiting for an answer that never
+    // lands in-loop) → max_iterations → the ask was wrongly marked failed even
+    // though the service card resolves moments later. Terminal also means a
+    // 2nd query_service in the SAME turn is never reached (one provider/turn).
+    terminal: true,
     description:
-      'Send a structured service query to a specific provider DID. Fire-and-forget: returns a task_id immediately; the answer is delivered asynchronously to the chat thread. Use after search_provider_services has identified the target.',
+      'Send a structured service query to a specific provider DID. Fire-and-forget: returns a task_id immediately; the answer is delivered asynchronously to the chat thread. Use after search_provider_services has identified the target. Query exactly ONE provider per request — the single best-ranked match; do NOT call this more than once for the same capability in a turn.',
     parameters: {
       type: 'object',
       properties: {
@@ -473,6 +504,17 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
       const capability = String(args.capability ?? '');
       if (operatorDID === '' || capability === '') {
         throw new Error('query_service: operator_did and capability are required');
+      }
+      // Single-dispatch guard: one provider per capability per request. Key on
+      // the canonical capability so an alias can't slip a second dispatch past.
+      const dedupeKey = resolveCanonicalCapability(capability) ?? capability;
+      if (dispatchedCapabilities.has(dedupeKey)) {
+        throw new Error(
+          `query_service: a "${capability}" query was already dispatched this request. ` +
+            `Dina queries ONE provider per request — do NOT query another provider for the ` +
+            `same need. Wait for that provider's answer (it arrives asynchronously). If the ` +
+            `user explicitly asks to also try a different provider, that is a separate request.`,
+        );
       }
       // Review #12: `params` is declared required by the tool schema
       // and every known capability expects a concrete shape (eta_query
@@ -672,6 +714,9 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
         // grant_id + the authenticated caller DID.
         grantId,
       });
+      // Record the successful dispatch so a 2nd query_service for the same
+      // capability this request is refused (single-provider-per-request).
+      dispatchedCapabilities.add(dedupeKey);
       return {
         task_id: result.taskId,
         query_id: result.queryId,

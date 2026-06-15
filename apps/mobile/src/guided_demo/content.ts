@@ -353,7 +353,7 @@ export const DEMO_SALON = {
   bookingContent: 'Booked 4pm Thursday. Reply sent to the customer.',
   /** Captions for the three finale beats. */
   setupCaption:
-    'Last, offer a service of your own. Tell Dina your salon hours, then publish. A phone and a sentence, no business account.',
+    'Last, offer a service of your own. Tell Dina your salon hours, then publish. Other Dinas will be able to find your service based on their human\'s requirements.',
   bookingCaption:
     'Now a customer\'s Dina asks your salon for a slot. It reads only your Salon vault, and books nothing without your OK.',
   replyCaption:

@@ -41,10 +41,18 @@ export interface RememberRuntimeInput {
   /**
    * Installed personas with descriptions. Rendered into the system
    * prompt's `{{personas_list}}`. The LLM uses this to pick a
-   * destination via `route_to_persona`. Updated when the user
-   * installs / removes a persona; the drain re-resolves per item.
+   * destination via `route_to_persona`.
+   *
+   * Accepts a STATIC array (tests) OR a live getter (the app). The app
+   * passes a getter so a vault the user creates mid-session becomes a
+   * routing target on the very next /remember — without it the list was
+   * frozen at boot and a "create salon vault → remember salon hours" in
+   * one session routed to the default vault instead. Mirrors
+   * ask_runtime's `installedPersonas` getter.
    */
-  personas: Array<{ name: string; description?: string }>;
+  personas:
+    | readonly { name: string; description?: string }[]
+    | (() => readonly { name: string; description?: string }[]);
   /** Default persona when the loop doesn't call `route_to_persona`. */
   defaultPersona?: string;
   /** Override timezone for relative-date resolution. Defaults to runtime. */
@@ -101,13 +109,12 @@ export function buildRememberRuntime(input: RememberRuntimeInput): {
   run: (turn: RememberTurnInput) => Promise<RememberTurnResult>;
 } {
   const defaultPersona = input.defaultPersona ?? DEFAULT_PERSONA;
-  const personasList = input.personas
-    .map((p) =>
-      p.description !== undefined && p.description.trim() !== ''
-        ? `${p.name} — ${p.description}`
-        : p.name,
-    )
-    .join(', ');
+  // Resolve personas LIVE per run (not once at construction) so a vault the
+  // user just created is an eligible routing target immediately. Static
+  // arrays are wrapped in a constant getter for backward compatibility.
+  const personasInput = input.personas;
+  const resolvePersonas: () => readonly { name: string; description?: string }[] =
+    typeof personasInput === 'function' ? personasInput : () => personasInput;
   const today =
     input.today ??
     new Date().toISOString().slice(0, 10);
@@ -121,13 +128,24 @@ export function buildRememberRuntime(input: RememberRuntimeInput): {
       }
     })();
 
-  const systemPrompt = REMEMBER_AGENTIC.replace('{{personas_list}}', personasList)
-    .replace('{{today}}', today)
-    .replace('{{timezone}}', timezone);
+  function buildSystemPrompt(): string {
+    const personasList = resolvePersonas()
+      .map((p) =>
+        p.description !== undefined && p.description.trim() !== ''
+          ? `${p.name} — ${p.description}`
+          : p.name,
+      )
+      .join(', ');
+    return REMEMBER_AGENTIC.replace('{{personas_list}}', personasList)
+      .replace('{{today}}', today)
+      .replace('{{timezone}}', timezone);
+  }
 
   return {
     async run(turn: RememberTurnInput): Promise<RememberTurnResult> {
       const collect = emptyRememberSideEffects();
+      // Built per-run so a persona created since construction is included.
+      const systemPrompt = buildSystemPrompt();
 
       const tools = new ToolRegistry();
       tools.register(createRouteToPersonaTool({ collect }));

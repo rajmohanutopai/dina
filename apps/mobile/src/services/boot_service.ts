@@ -532,10 +532,15 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     const llm = inputs.stagingEnrichment.llm;
     let rememberRuntime: ReturnType<typeof buildRememberRuntime> | undefined;
     try {
-      const personas = listPersonas().map((p) => ({
-        name: p.name,
-        description: MOBILE_PERSONA_DESCRIPTIONS[p.name] ?? '',
-      }));
+      // LIVE getter (not a boot snapshot): a vault the user creates
+      // mid-session must be a routing target on the very next /remember.
+      // Builtins use the canonical mobile descriptions; user-created vaults
+      // fall back to their own stored description.
+      const personas = (): { name: string; description: string }[] =>
+        listPersonas().map((p) => ({
+          name: p.name,
+          description: MOBILE_PERSONA_DESCRIPTIONS[p.name] ?? p.description ?? '',
+        }));
       rememberRuntime = buildRememberRuntime({ llm, personas, defaultPersona: 'general' });
     } catch (err) {
       addDegradation(

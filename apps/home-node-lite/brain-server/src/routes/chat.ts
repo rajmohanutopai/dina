@@ -20,7 +20,15 @@
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
-import { handleChat, deleteThread, getThread, subscribeToThread } from '@dina/brain/chat';
+import {
+  handleChat,
+  deleteThread,
+  getThread,
+  subscribeToThread,
+  createServiceQueryDeliverer,
+} from '@dina/brain/chat';
+import type { WorkflowEvent, WorkflowTask } from '@dina/core';
+import type { ServiceQueryEventDetails } from '@dina/brain';
 
 export interface RegisterChatRoutesOptions {
   /** Route prefix override (defaults to `/api/v1`). */
@@ -37,6 +45,20 @@ interface ChatBody {
 
 interface ResetBody {
   threadId?: unknown;
+}
+
+/**
+ * Body of `POST /chat/service-result` — the chat-delivery half of a cross-Dina
+ * service query. Core owns the workflow-event consumer (it must, for
+ * provider-side approval dispatch), but in split lite the chat thread lives in
+ * THIS process, so Core's consumer forwards each `service_query` delivery here
+ * and we graft it onto the thread via the SHARED reconciler.
+ */
+interface ServiceResultBody {
+  text?: unknown;
+  event?: unknown;
+  task?: unknown;
+  details?: unknown;
 }
 
 export function registerChatRoutes(
@@ -75,6 +97,48 @@ export function registerChatRoutes(
       const threadId = typeof body.threadId === 'string' ? body.threadId : 'main';
       const removed = deleteThread(threadId);
       return reply.status(200).send({ ok: true, removed });
+    },
+  );
+
+  // ────────────────────────────────────────────────────────────────
+  // POST /api/v1/chat/service-result  —  cross-Dina service answer → chat
+  //
+  // Core's workflow-event consumer forwards each `service_query` delivery here
+  // (it can't reach this process's chat thread). We apply the SAME reconciler
+  // mobile runs in-process (`createServiceQueryDeliverer`) so the pending card
+  // is patched in place — one card per query, no stacking. Idempotent: a
+  // re-forward (Core delivery retry) patches the same card by task id.
+  // ────────────────────────────────────────────────────────────────
+  const serviceDeliver = createServiceQueryDeliverer({ threadId: 'main' });
+  app.post(
+    `${prefix}/chat/service-result`,
+    async (req: FastifyRequest<{ Body: ServiceResultBody }>, reply: FastifyReply) => {
+      const body = req.body ?? {};
+      if (
+        typeof body.text !== 'string' ||
+        body.event === null ||
+        typeof body.event !== 'object' ||
+        body.task === null ||
+        typeof body.task !== 'object'
+      ) {
+        return reply.status(400).send({ error: 'text, event, task are required' });
+      }
+      try {
+        // `WorkflowEventDeliverer` may return Promise<void> — await it so a
+        // future async deliverer's failure surfaces as a 500 (→ Core retries)
+        // instead of an unhandled rejection. The current deliverer is sync.
+        await serviceDeliver({
+          text: body.text,
+          event: body.event as WorkflowEvent,
+          task: body.task as WorkflowTask,
+          details: (body.details ?? {}) as ServiceQueryEventDetails,
+        });
+        return reply.status(200).send({ ok: true });
+      } catch (err) {
+        return reply.status(500).send({
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     },
   );
 

@@ -20,6 +20,8 @@ import {
   requiresPassphrase,
 } from '../vault/lifecycle';
 
+import { getPersonaRepository } from './repository';
+
 export interface PersonaState {
   name: string;
   tier: PersonaTier;
@@ -62,7 +64,12 @@ export function validatePersonaName(name: string): string | null {
  * Throws if a persona with the same name already exists.
  * Names are validated: only lowercase alphanumeric + underscores.
  */
-export function createPersona(name: string, tier: PersonaTier, description?: string): PersonaState {
+export function createPersona(
+  name: string,
+  tier: PersonaTier,
+  description?: string,
+  opts?: { persist?: boolean },
+): PersonaState {
   const validationError = validatePersonaName(name);
   if (validationError) {
     throw new Error(`persona: ${validationError}`);
@@ -74,16 +81,83 @@ export function createPersona(name: string, tier: PersonaTier, description?: str
     throw new Error(`persona: "${normalized}" already exists`);
   }
 
+  const now = Date.now();
   const state: PersonaState = {
     name: normalized,
     tier,
     isOpen: false,
     description: description ?? '',
-    createdAt: Date.now(),
+    createdAt: now,
   };
+
+  // GAP-PERSIST: when the caller asks for durability (the user-create
+  // path), write the row BEFORE mutating the in-memory registry so a
+  // failed write never leaves a memory-only persona that vanishes on the
+  // next restart. Builtins are NOT persisted — they stay code-seeded (see
+  // onboarding/default_personas.ts), so seedDefaultPersonas() omits the
+  // flag and only user-created personas reach the table.
+  if (opts?.persist) {
+    const repo = getPersonaRepository();
+    // Fail CLOSED: the caller explicitly asked for durability. If no repository
+    // is installed (boot race / degraded storage), silently keeping a
+    // memory-only persona would resurrect the "custom vault vanishes on
+    // restart" bug. Refuse rather than create a row that never reaches disk.
+    if (!repo) {
+      throw new Error(
+        `persona: cannot create "${normalized}" durably — no persona repository installed ` +
+          `(persist:true requires storage to be ready; a memory-only persona would vanish on restart)`,
+      );
+    }
+    repo.upsert({
+      name: normalized,
+      tier,
+      description: state.description,
+      createdAt: now,
+      updatedAt: now,
+      isBuiltin: false,
+    });
+  }
 
   personas.set(normalized, state);
   return state;
+}
+
+/**
+ * Delete a persona from the registry and (if wired) the durable store.
+ * No-op for an unknown name. SQL delete runs before the in-memory delete
+ * so a failed write leaves memory consistent with disk.
+ */
+export function deletePersona(name: string): void {
+  const normalized = name.trim().toLowerCase();
+  const repo = getPersonaRepository();
+  if (repo) repo.remove(normalized);
+  personas.delete(normalized);
+}
+
+/**
+ * Restore persisted user-created personas into the in-memory registry.
+ * Call on boot AFTER seedDefaultPersonas() (so builtins exist) and
+ * BEFORE the boot open-loop (so the restored personas get opened/wired).
+ * Builtin rows are skipped (they're code-seeded); already-registered
+ * names are left untouched. Returns the names that were restored.
+ */
+export function hydratePersonas(): string[] {
+  const repo = getPersonaRepository();
+  if (!repo) return [];
+  const restored: string[] = [];
+  for (const p of repo.list()) {
+    if (p.isBuiltin) continue;
+    if (personas.has(p.name)) continue;
+    personas.set(p.name, {
+      name: p.name,
+      tier: p.tier,
+      isOpen: false,
+      description: p.description,
+      createdAt: p.createdAt,
+    });
+    restored.push(p.name);
+  }
+  return restored;
 }
 
 /** List all personas. */

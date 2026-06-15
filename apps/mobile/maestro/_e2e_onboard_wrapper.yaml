@@ -1,0 +1,10 @@
+# Wrapper: launch the app to Welcome, then run the canonical onboarding flow.
+appId: com.dinakernel.mobile
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: 'shell-primary'
+    timeout: 240000
+- runFlow: onboarding_create.yaml

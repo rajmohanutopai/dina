@@ -13,13 +13,15 @@
 import {
   createPersona,
   listPersonas,
-  isPersonaOpen,
+  openPersona,
   setPersonaDescription,
   personaExists,
   resetPersonaState,
   type PersonaTier,
   type PersonaState,
 } from '@dina/core';
+
+import { isPersistenceReady, openPersonaDB } from '../storage/init';
 
 export interface PersonaUIState {
   name: string;
@@ -63,24 +65,55 @@ export function getPersonaUIStates(): PersonaUIState[] {
  *
  * Returns null on success, or an error message on failure.
  */
-export function addPersona(name: string, tier: PersonaTier, description?: string): string | null {
-  // Validate name
+export async function addPersona(
+  name: string,
+  tier: PersonaTier,
+  description?: string,
+): Promise<string | null> {
+  // Validate name. Mirror Core's PERSONA_NAME_REGEX exactly — letters,
+  // numbers, underscores (NO hyphens; Core lowercases + rejects '-'), so
+  // the UI can't promise a name Core then throws on.
   const trimmed = name.trim();
   if (!trimmed) return 'Persona name is required';
   if (trimmed.length < 2) return 'Name must be at least 2 characters';
   if (trimmed.length > 30) return 'Name must be at most 30 characters';
-  if (!/^[a-zA-Z0-9_-]+$/.test(trimmed))
-    return 'Name can only contain letters, numbers, hyphens, underscores';
+  if (!/^[a-zA-Z0-9_]+$/.test(trimmed))
+    return 'Name can only contain letters, numbers, and underscores';
 
   // Check for duplicates
   if (personaExists(trimmed)) return `Persona "${trimmed}" already exists`;
 
+  // A durable create AND a usable vault both require the full storage layer
+  // (persona repo + vault DB). If it isn't ready, fail cleanly rather than
+  // land a memory-only persona that vanishes on restart.
+  if (!isPersistenceReady()) {
+    return 'Storage is still starting up — please try again in a moment';
+  }
+
   try {
-    createPersona(trimmed, tier, description);
-    return null; // success
+    // persist:true → durable registry row so the vault survives a restart
+    // (hydratePersonas restores it on the next unlock).
+    createPersona(trimmed, tier, description, { persist: true });
   } catch (err) {
     return err instanceof Error ? err.message : String(err);
   }
+
+  // Make the new vault usable IMMEDIATELY for the owner. Wire its SQLCipher
+  // vault DB FIRST and only mark the persona open + report success once the DB
+  // is ready — otherwise the UI would show an "open" vault that silently can't
+  // receive writes. The persona row is already durable, so a failure here is
+  // recoverable: the next unlock's open-loop reopens it.
+  const normalized = trimmed.toLowerCase();
+  try {
+    await openPersonaDB(normalized); // wire the writable SQLCipher vault DB
+  } catch (err) {
+    console.warn(`[personas] vault DB open failed for "${normalized}":`, err);
+    return 'Could not open the new vault right now — it was saved; reopen the app to use it';
+  }
+  // approved=true → the in-app owner bypasses the tier gate. Marked open only
+  // after the DB is wired, so an open vault is always a writable vault.
+  openPersona(normalized, true);
+  return null;
 }
 
 /**

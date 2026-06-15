@@ -83,6 +83,27 @@ function failingTool(): AgentTool {
   };
 }
 
+/**
+ * A terminal fire-and-forget tool (e.g. `query_service`). `runs` records each
+ * execution. `failFirst` makes the first call throw (to test that a FAILED
+ * terminal dispatch does NOT end the turn).
+ */
+function terminalDispatchTool(runs: string[], opts: { failFirst?: boolean } = {}): AgentTool {
+  let calls = 0;
+  return {
+    name: 'dispatch',
+    description: 'Fire-and-forget dispatch',
+    parameters: { type: 'object', properties: {}, required: [] },
+    terminal: true,
+    execute: async () => {
+      calls += 1;
+      if (opts.failFirst === true && calls === 1) throw new Error('dispatch failed');
+      runs.push('dispatch');
+      return { status: 'pending' };
+    },
+  };
+}
+
 describe('runAgenticTurn — no-tool-call path', () => {
   it('returns the final text when the LLM answers directly', async () => {
     const { provider, calls } = scriptedProvider([{ content: 'The answer is 42.', toolCalls: [] }]);
@@ -101,6 +122,71 @@ describe('runAgenticTurn — no-tool-call path', () => {
     expect(result.toolCalls).toHaveLength(0);
     expect(calls).toHaveLength(1);
     expect(calls[0].hasTools).toBe(true); // tool defs are always exposed
+  });
+});
+
+describe('runAgenticTurn — terminal tool (fire-and-forget convergence)', () => {
+  it('ends the turn after a SUCCESSFUL terminal dispatch — no further iterations', async () => {
+    const runs: string[] = [];
+    // The provider would keep calling `dispatch` forever; the terminal flag
+    // must stop the loop after the first successful dispatch (otherwise it
+    // burns to max_iterations and the ask is wrongly marked failed).
+    const { provider, calls } = scriptedProvider([
+      { content: '', toolCalls: [{ id: 'c1', name: 'dispatch', arguments: {} }] },
+      { content: '', toolCalls: [{ id: 'c2', name: 'dispatch', arguments: {} }] }, // must NOT be reached
+      { content: '', toolCalls: [{ id: 'c3', name: 'dispatch', arguments: {} }] },
+    ]);
+    const tools = new ToolRegistry();
+    tools.register(terminalDispatchTool(runs));
+
+    const result = await runAgenticTurn({
+      provider,
+      tools,
+      systemPrompt: 's',
+      userMessage: 'find me a salon',
+      options: { maxIterations: 6 },
+    });
+
+    expect(result.finishReason).toBe('completed'); // NOT max_iterations
+    expect(runs).toHaveLength(1); // dispatched exactly once
+    expect(calls).toHaveLength(1); // provider consulted once — loop did not re-iterate
+    expect(result.toolCalls).toHaveLength(1);
+  });
+
+  it('skips tool calls batched AFTER the terminal one in the same response', async () => {
+    const runs: string[] = [];
+    // One response batches [dispatch, dispatch] — only the first runs, then
+    // the turn ends (one fire-and-forget action per turn).
+    const { provider } = scriptedProvider([
+      {
+        content: '',
+        toolCalls: [
+          { id: 'c1', name: 'dispatch', arguments: {} },
+          { id: 'c2', name: 'dispatch', arguments: {} },
+        ],
+      },
+    ]);
+    const tools = new ToolRegistry();
+    tools.register(terminalDispatchTool(runs));
+
+    const result = await runAgenticTurn({ provider, tools, systemPrompt: 's', userMessage: 'u' });
+    expect(result.finishReason).toBe('completed');
+    expect(runs).toHaveLength(1); // the 2nd batched dispatch never ran
+  });
+
+  it('a FAILED terminal dispatch does NOT end the turn — the loop continues', async () => {
+    const runs: string[] = [];
+    const { provider } = scriptedProvider([
+      { content: '', toolCalls: [{ id: 'c1', name: 'dispatch', arguments: {} }] }, // throws
+      { content: 'Sorry, I could not reach that service.', toolCalls: [] }, // normal answer
+    ]);
+    const tools = new ToolRegistry();
+    tools.register(terminalDispatchTool(runs, { failFirst: true }));
+
+    const result = await runAgenticTurn({ provider, tools, systemPrompt: 's', userMessage: 'u' });
+    expect(result.finishReason).toBe('completed');
+    expect(result.answer).toBe('Sorry, I could not reach that service.');
+    expect(runs).toHaveLength(0); // the dispatch never succeeded
   });
 });
 

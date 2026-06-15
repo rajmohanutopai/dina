@@ -282,6 +282,17 @@ async function runClaimFlowInner(
       }
       const refusal = parseClaimGrantRefusal(await res.json().catch(() => null));
       if (refusal !== null && TERMINAL_REFUSALS.includes(refusal.error)) {
+        // `already_claimed` means the server already minted THIS device's
+        // one-time grant. The granted key lives in the Keychain, which
+        // survives an app reinstall / re-onboard even though our local STATUS
+        // does not — so a returning user can hit this 409 with a perfectly
+        // usable key still on the device. Adopt it instead of dead-ending;
+        // only fall through to the terminal "already used" state when the key
+        // is genuinely gone.
+        if (refusal.error === 'already_claimed' && (await getGrantKey()) !== null) {
+          await saveState({ status: 'claimed' });
+          return 'claimed';
+        }
         await saveState({ status: 'terminal_refused' });
         return 'terminal_refused';
       }

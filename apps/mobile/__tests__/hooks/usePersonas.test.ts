@@ -1,8 +1,22 @@
 /**
  * T4.17 — Settings personas: data hook tests.
  *
+ * `addPersona` is async (it persists + opens + wires the vault DB for the
+ * owner on create), so the return-checking tests await it. Created vaults
+ * are OPEN immediately for the in-app owner (mirrors
+ * openAllPersonasForInAppUser) — the counts test reflects that.
+ *
  * Source: ARCHITECTURE.md Task 4.17
  */
+
+// `addPersona` now fails closed unless storage is ready (persona repo + vault
+// DB). Mock the vault-DB side as ready and wire an in-memory persona repo so a
+// durable create succeeds — mirroring a booted node instead of the old
+// memory-only path that let custom vaults vanish on restart.
+jest.mock('../../src/storage/init', () => ({
+  isPersistenceReady: () => true,
+  openPersonaDB: jest.fn(async () => {}),
+}));
 
 import {
   getPersonaUIStates,
@@ -13,18 +27,32 @@ import {
   getTierOptions,
   resetPersonas,
 } from '../../src/hooks/usePersonas';
+import { setPersonaRepository, type PersonaRepository, type StoredPersona } from '@dina/core';
+
+function inMemoryPersonaRepo(): PersonaRepository {
+  const rows = new Map<string, StoredPersona>();
+  return {
+    upsert: (p) => void rows.set(p.name, p),
+    remove: (name) => void rows.delete(name),
+    list: () => [...rows.values()],
+  };
+}
 
 describe('Persona Settings Hook (4.17)', () => {
-  beforeEach(() => resetPersonas());
+  beforeEach(() => {
+    resetPersonas();
+    setPersonaRepository(inMemoryPersonaRepo());
+  });
+  afterEach(() => setPersonaRepository(null));
 
   describe('getPersonaUIStates', () => {
     it('returns empty list when no personas', () => {
       expect(getPersonaUIStates()).toHaveLength(0);
     });
 
-    it('returns personas with UI-friendly fields', () => {
-      addPersona('general', 'default');
-      addPersona('health', 'sensitive');
+    it('returns personas with UI-friendly fields', async () => {
+      await addPersona('general', 'default');
+      await addPersona('health', 'sensitive');
 
       const states = getPersonaUIStates();
       expect(states).toHaveLength(2);
@@ -45,8 +73,8 @@ describe('Persona Settings Hook (4.17)', () => {
   });
 
   describe('addPersona', () => {
-    it('creates a standard persona', () => {
-      const err = addPersona('work', 'standard');
+    it('creates a standard persona', async () => {
+      const err = await addPersona('work', 'standard');
       expect(err).toBeNull();
 
       const states = getPersonaUIStates();
@@ -55,44 +83,56 @@ describe('Persona Settings Hook (4.17)', () => {
       expect(states[0].tier).toBe('standard');
     });
 
-    it('creates with description', () => {
-      addPersona('health', 'sensitive', 'Medical records');
+    it('opens the new vault immediately for the owner', async () => {
+      await addPersona('work', 'standard');
+      // The owner has full access by definition — a freshly created vault is
+      // OPEN right away (not locked until next boot), so a remember can
+      // route into it instead of falling back to a default vault.
+      expect(getPersonaUI('work')!.isOpen).toBe(true);
+    });
+
+    it('creates with description', async () => {
+      await addPersona('health', 'sensitive', 'Medical records');
 
       const state = getPersonaUI('health');
       expect(state!.description).toBe('Medical records');
     });
 
-    it('rejects empty name', () => {
-      expect(addPersona('', 'standard')).toContain('required');
+    it('rejects empty name', async () => {
+      expect(await addPersona('', 'standard')).toContain('required');
     });
 
-    it('rejects too-short name', () => {
-      expect(addPersona('a', 'standard')).toContain('at least 2');
+    it('rejects too-short name', async () => {
+      expect(await addPersona('a', 'standard')).toContain('at least 2');
     });
 
-    it('rejects too-long name', () => {
-      expect(addPersona('a'.repeat(31), 'standard')).toContain('at most 30');
+    it('rejects too-long name', async () => {
+      expect(await addPersona('a'.repeat(31), 'standard')).toContain('at most 30');
     });
 
-    it('rejects invalid characters', () => {
-      expect(addPersona('work stuff!', 'standard')).toContain('letters');
+    it('rejects invalid characters', async () => {
+      expect(await addPersona('work stuff!', 'standard')).toContain('letters');
     });
 
-    it('rejects duplicate name', () => {
-      addPersona('work', 'standard');
-      expect(addPersona('work', 'standard')).toContain('already exists');
+    it('rejects hyphens (mirrors Core, which only allows a-z 0-9 _)', async () => {
+      expect(await addPersona('my-salon', 'standard')).toContain('letters');
     });
 
-    it('normalizes name to lowercase', () => {
-      addPersona('Work', 'standard');
+    it('rejects duplicate name', async () => {
+      await addPersona('work', 'standard');
+      expect(await addPersona('work', 'standard')).toContain('already exists');
+    });
+
+    it('normalizes name to lowercase', async () => {
+      await addPersona('Work', 'standard');
       const state = getPersonaUI('work');
       expect(state).not.toBeNull();
     });
   });
 
   describe('updateDescription', () => {
-    it('updates persona description', () => {
-      addPersona('work', 'standard', 'Old description');
+    it('updates persona description', async () => {
+      await addPersona('work', 'standard', 'Old description');
       updateDescription('work', 'New description');
 
       expect(getPersonaUI('work')!.description).toBe('New description');
@@ -104,13 +144,14 @@ describe('Persona Settings Hook (4.17)', () => {
   });
 
   describe('getPersonaCounts', () => {
-    it('returns correct counts', () => {
+    it('returns correct counts', async () => {
       expect(getPersonaCounts()).toEqual({ total: 0, open: 0, closed: 0 });
 
-      addPersona('general', 'default');
-      addPersona('work', 'standard');
+      await addPersona('general', 'default');
+      await addPersona('work', 'standard');
 
-      expect(getPersonaCounts()).toEqual({ total: 2, open: 0, closed: 2 });
+      // Both open on create for the in-app owner.
+      expect(getPersonaCounts()).toEqual({ total: 2, open: 2, closed: 0 });
     });
   });
 
@@ -137,8 +178,8 @@ describe('Persona Settings Hook (4.17)', () => {
   });
 
   describe('locked tier', () => {
-    it('locked persona shows correct UI flags', () => {
-      addPersona('secret', 'locked');
+    it('locked persona shows correct UI flags', async () => {
+      await addPersona('secret', 'locked');
 
       const state = getPersonaUI('secret');
       expect(state!.needsPassphrase).toBe(true);

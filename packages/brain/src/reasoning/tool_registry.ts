@@ -40,6 +40,16 @@ export interface AgentTool {
    * Throwing is acceptable — the registry wraps exceptions into errors.
    */
   execute(args: Record<string, unknown>): Promise<unknown>;
+  /**
+   * When true, a SUCCESSFUL execution ends the agentic turn — the loop
+   * finalizes (finishReason `completed`) instead of feeding the result back
+   * for another iteration. Use for fire-and-forget actions whose result
+   * arrives asynchronously, where continuing would only burn iterations
+   * waiting for an answer that never lands in-loop (e.g. `query_service`: its
+   * answer is delivered to the chat thread later). Default (undefined/false):
+   * the result is fed back and the loop continues.
+   */
+  terminal?: boolean;
 }
 
 export type ToolExecutionOutcome =
@@ -91,6 +101,14 @@ export class ToolRegistry {
 
   has(name: string): boolean {
     return this.tools.has(name);
+  }
+
+  /**
+   * True when the named tool is a terminal tool (a successful execution should
+   * end the agentic turn). Unknown tools → false. See `AgentTool.terminal`.
+   */
+  isTerminal(name: string): boolean {
+    return this.tools.get(name)?.terminal === true;
   }
 
   size(): number {

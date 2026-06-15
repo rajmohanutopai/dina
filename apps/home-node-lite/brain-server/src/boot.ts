@@ -63,6 +63,7 @@ import { buildCoreClient, type CoreClientStatus } from './core_client';
 import { buildBrainServerLLMRuntime } from './llm_provider';
 import { createLogger, type Logger } from './logger';
 import { registerAskRoutes } from './routes/ask';
+import { registerCapabilityRoutes } from './routes/capability';
 import { registerChatRoutes } from './routes/chat';
 import { registerReminderApiRoutes, startReminderFireLoop } from './routes/reminders';
 import { registerWebRoutes } from './routes/web';
@@ -187,6 +188,19 @@ export async function bootServer(
   // 2. logger.
   const logger = createLogger(config);
   logger.info({ host: config.network.host, port: config.network.port }, 'brain-server boot');
+
+  // The node owner's DID. Used as BOTH the ask command handler's
+  // `requesterDid` AND the ask pipeline's `ownerDid` so the persona guard's
+  // owner shortcut fires (requesterDid === ownerDid ⇒ no vault approval). The
+  // SPA user IS the owner — the gatekeeper protects against external agents
+  // only (memory: user-vs-agent-persona-access). Without passing `ownerDid`
+  // here, the owner's own /ask hit `approval_required` on the first
+  // vault_search and the agentic turn bailed before it could discover/dispatch
+  // a service query.
+  const ownerDid =
+    process.env.DINA_OWNER_DID && process.env.DINA_OWNER_DID.trim() !== ''
+      ? process.env.DINA_OWNER_DID.trim()
+      : 'did:key:dina-lite-owner';
 
   // 4. core_client. Missing key material keeps readiness red; it does
   // not install a dummy signer or fake Core client.
@@ -495,6 +509,9 @@ export async function bootServer(
         logger: (entry) => logger.info(entry, 'brain-server ask'),
         installedPersonas: () => lookupPersonas,
         retrievalFetchers,
+        // Owner shortcut for the vault persona guard — the SPA user is the
+        // owner, so their /ask must never hit `approval_required` on vault_search.
+        ownerDid,
         // Default fastPathMs (3 s). Async overflow is no longer a
         // problem: the SPA's chat_transport.web.ts subscribes to
         // `/api/v1/chat/stream` (SSE) and reflects every server-side
@@ -525,13 +542,11 @@ export async function bootServer(
     // vault items verbatim — no LLM synthesis. Mobile wires this in
     // its `globalWiring` step; we mirror that here so /ask through
     // the chat HTTP surface uses the agentic Gemini-backed pipeline.
-    const requesterDid =
-      process.env.DINA_OWNER_DID && process.env.DINA_OWNER_DID.trim() !== ''
-        ? process.env.DINA_OWNER_DID.trim()
-        : 'did:key:dina-lite-owner';
+    // requesterDid MUST equal the pipeline's `ownerDid` (above) so the persona
+    // guard's owner shortcut fires for the SPA user's own /ask.
     const askCommandHandler = createCoordinatorAskHandler({
       coordinator: askCoordinator,
-      requesterDid,
+      requesterDid: ownerDid,
     });
     setAskCommandHandler(askCommandHandler.handler);
     app.addHook('onClose', async () => {
@@ -550,6 +565,19 @@ export async function bootServer(
   // operators don't accidentally expose it to the public listener.
   registerChatRoutes(app, {
     exposeDevUI: process.env.DINA_BRAIN_DEV_UI === '1',
+  });
+
+  // Tier-1 capability execution endpoint. The lite Core's reserved
+  // `dina.local` runner posts claimed service-query executions here because
+  // Core has no LLM. Runs the SHARED `makeTier1CapabilityRunner` — the same
+  // runtime mobile runs in-process; vault_search + the persona registry it
+  // needs are the module globals wired above (setVaultReadBackend + the
+  // persona mirror). Core resolves + passes the listing config in the request,
+  // so this route needs no Core round-trip.
+  const capabilityLLM = buildBrainServerLLMRuntime(config.llm);
+  registerCapabilityRoutes(app, {
+    getLLM: () => capabilityLLM?.llm ?? null,
+    logger: (entry) => logger.info(entry, 'capability'),
   });
 
   // Reminder data layer for the SPA — proxies to core-server (which owns

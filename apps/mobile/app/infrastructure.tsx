@@ -24,6 +24,7 @@ import {
   savePdsUrl,
   saveServicesAppViewURL,
 } from '../src/services/infra_preferences';
+import { reloadApp } from '../src/services/reload_app';
 import { colors, radius, shadows, spacing, textStyles } from '../src/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { IdentityModal } from '../src/components/identity/identity_modal';
@@ -91,7 +92,11 @@ export default function InfrastructureScreen(): React.ReactElement {
       ]);
       Alert.alert(
         'Infrastructure saved',
-        'Force-quit and reopen Dina to apply these endpoint changes.',
+        'Dina needs to restart to apply these endpoint changes.',
+        [
+          { text: 'Later', style: 'cancel' },
+          { text: 'Restart now', onPress: () => void reloadApp() },
+        ],
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

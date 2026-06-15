@@ -51,7 +51,7 @@ export function Welcome(props: WelcomeProps): React.ReactElement {
       <View style={styles.pillars}>
         <Pillar
           feature="identity"
-          body="One identity, with all your data, memories, and connections anchored to it."
+          body="One identity you own, with all your data, memories, and connections anchored to it."
           spec="Open AT Protocol · did:plc"
         />
         <Pillar
@@ -70,7 +70,7 @@ export function Welcome(props: WelcomeProps): React.ReactElement {
         />
         <Pillar
           feature="agentTasks"
-          body="Give Dina a task and it gets delegated to your connected agents."
+          body="Give Dina a task and she gets it done through your connected agents."
         />
         <Pillar
           feature="security"
@@ -79,12 +79,12 @@ export function Welcome(props: WelcomeProps): React.ReactElement {
         <Pillar
           feature="peerlens"
           title="Ranked Reviews"
-          body="Reviews signed by real people, ranked by how many others trust them. Used by Dina when you search for products or services."
+          body="Reviews signed by real people, ranked by both usefulness and trust. Used by Dina when you search for products or services."
           spec="Open AT Protocol · AppView"
         />
         <Pillar
           feature="services"
-          body="A network of Dinas acting as service providers. Ask a question, and the right service provider answers you directly. Or publish your own, answered straight from your vault or through an agent working for you."
+          body="Any Dina can operate as a service provider, and your Dina finds the right one based on your need. Ask a question, and that provider answers you directly. Or publish your own, answered straight from your vault or through an agent working for you."
           spec="Open AT Protocol · AppView"
         />
       </View>

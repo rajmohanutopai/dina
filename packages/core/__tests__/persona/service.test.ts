@@ -5,7 +5,14 @@
  */
 
 import {
+  setPersonaRepository,
+  type PersonaRepository,
+  type StoredPersona,
+} from '../../src/persona/repository';
+import {
   createPersona,
+  deletePersona,
+  hydratePersonas,
   listPersonas,
   getPersona,
   getPersonaTier,
@@ -17,6 +24,24 @@ import {
   personaExists,
   resetPersonaState,
 } from '../../src/persona/service';
+
+/** In-memory PersonaRepository for asserting write-through + hydrate. */
+function makeMockRepo(seed: StoredPersona[] = []): {
+  repo: PersonaRepository;
+  rows: Map<string, StoredPersona>;
+} {
+  const rows = new Map<string, StoredPersona>(seed.map((p) => [p.name, p]));
+  const repo: PersonaRepository = {
+    upsert: (p) => {
+      rows.set(p.name, p);
+    },
+    remove: (name) => {
+      rows.delete(name);
+    },
+    list: () => [...rows.values()],
+  };
+  return { repo, rows };
+}
 
 describe('Persona Service', () => {
   beforeEach(() => resetPersonaState());
@@ -170,6 +195,79 @@ describe('Persona Service', () => {
 
     it('throws for unknown persona', () => {
       expect(() => setPersonaDescription('missing', 'desc')).toThrow('not found');
+    });
+  });
+
+  describe('durable persistence', () => {
+    afterEach(() => setPersonaRepository(null));
+
+    it('createPersona({persist:true}) writes through to the repository', () => {
+      const { repo, rows } = makeMockRepo();
+      setPersonaRepository(repo);
+      createPersona('salon', 'standard', 'Salon hours', { persist: true });
+      const row = rows.get('salon');
+      expect(row).toBeDefined();
+      expect(row!.tier).toBe('standard');
+      expect(row!.description).toBe('Salon hours');
+      expect(row!.isBuiltin).toBe(false);
+    });
+
+    it('createPersona WITHOUT persist does not write (the builtin seed path)', () => {
+      const { repo, rows } = makeMockRepo();
+      setPersonaRepository(repo);
+      createPersona('general', 'default', 'Personal');
+      expect(rows.size).toBe(0);
+    });
+
+    it('createPersona({persist:true}) FAILS CLOSED when no repository is installed', () => {
+      // No setPersonaRepository — durability was requested but is impossible.
+      // Must throw rather than land a memory-only persona that vanishes on
+      // restart (the original "custom vault disappears" bug).
+      expect(() => createPersona('salon', 'standard', undefined, { persist: true })).toThrow(
+        /no persona repository|vanish on restart|durabl/i,
+      );
+      // And it must NOT have been registered in memory either.
+      expect(getPersona('salon')).toBeNull();
+    });
+
+    it('createPersona WITHOUT persist still succeeds with no repository (builtin seed path)', () => {
+      // The fail-closed gate is ONLY for persist:true — code-seeded builtins
+      // must still register in memory without a repo.
+      const state = createPersona('general', 'default');
+      expect(state.name).toBe('general');
+      expect(getPersona('general')).not.toBeNull();
+    });
+
+    it('hydratePersonas restores user rows, skipping builtins and already-registered', () => {
+      const { repo } = makeMockRepo([
+        { name: 'salon', tier: 'standard', description: 'S', createdAt: 1, updatedAt: 1, isBuiltin: false },
+        { name: 'general', tier: 'default', description: 'G', createdAt: 0, updatedAt: 0, isBuiltin: true },
+        { name: 'work', tier: 'standard', description: 'W', createdAt: 2, updatedAt: 2, isBuiltin: false },
+      ]);
+      setPersonaRepository(repo);
+      // 'work' is already registered this boot (e.g. code-seeded) — hydrate must
+      // not clobber it; 'general' is a builtin row — skipped; 'salon' is restored.
+      createPersona('work', 'standard');
+      const restored = hydratePersonas();
+      expect(restored).toEqual(['salon']);
+      expect(getPersona('salon')!.tier).toBe('standard');
+      // Restored closed; the boot open-loop (openAllPersonasForInAppUser) opens it.
+      expect(getPersona('salon')!.isOpen).toBe(false);
+    });
+
+    it('deletePersona removes from the registry AND the repository', () => {
+      const { repo, rows } = makeMockRepo();
+      setPersonaRepository(repo);
+      createPersona('salon', 'standard', '', { persist: true });
+      expect(rows.has('salon')).toBe(true);
+      deletePersona('salon');
+      expect(personaExists('salon')).toBe(false);
+      expect(rows.has('salon')).toBe(false);
+    });
+
+    it('hydratePersonas is a no-op when no repository is wired', () => {
+      setPersonaRepository(null);
+      expect(hydratePersonas()).toEqual([]);
     });
   });
 });

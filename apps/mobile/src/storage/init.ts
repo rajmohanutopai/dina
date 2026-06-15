@@ -41,12 +41,14 @@ import {
   SQLiteDeviceRepository,
   SQLiteKVRepository,
   SQLitePeopleRepository,
+  SQLitePersonaRepository,
   SQLiteQuarantineRepository,
   SQLiteReminderRepository,
   SQLiteStagingRepository,
   SQLiteTopicRepository,
   SQLiteVaultRepository,
   bootstrapPersistence,
+  hydratePersonas,
   hydrateQuarantineFromRepository,
   hydrateRemindersFromRepo,
   hydrateStagingFromRepository,
@@ -63,6 +65,7 @@ import {
   setKVRepository,
   setMemoryService,
   setPeopleRepository,
+  setPersonaRepository,
   setQuarantineRepository,
   setReminderRepository,
   setStagingRepository,
@@ -171,6 +174,11 @@ export async function initializePersistence(
   // Sancho-specific context, even though the user had stored
   // notes about him.
   setPeopleRepository(new SQLitePeopleRepository(identityDB));
+
+  // Durable persona registry — user-created vaults persist here so a
+  // restart restores them (hydratePersonas below). Without it, boot only
+  // re-seeds the 4 code-defined defaults and a custom vault vanishes.
+  setPersonaRepository(new SQLitePersonaRepository(identityDB));
 
   // Guided-demo cleanup wiring — register every scoped table's deleter so
   // `deleteDataScope`/`tearDownDataScope` can remove a demo run end-to-end.
@@ -290,6 +298,13 @@ export async function initializePersistence(
   // silently drops every contact the user has stored.
   hydrateContactDirectory();
 
+  // Restore user-created personas into the registry BEFORE the unlock's
+  // open-loop (openAllPersonasForInAppUser) runs, so a custom vault gets
+  // opened + its DEK/vault repo wired exactly like the builtins. Builtins
+  // are re-seeded from code (seedDefaultPersonas), so this only re-adds the
+  // user-created ones the durable registry holds.
+  hydratePersonas();
+
   // Same gap, applied to reminders. `createReminder` write-throughs to
   // SQL but reads (`listPending`, `listByPersona`) only check the
   // in-memory Map — without this hydrate, the Reminders tab is empty
@@ -407,6 +422,10 @@ export async function shutdownAllPersistence(): Promise<void> {
     resetTopicRepositories();
     setQuarantineRepository(null);
     resetQuarantineState();
+    // Drop the persona repository too — otherwise a previous session's handle
+    // survives teardown and a post-shutdown createPersona(persist:true) would
+    // write to a closed DB instead of failing closed.
+    setPersonaRepository(null);
     openPersonaAdapters.clear();
     setMemoryService(null);
     provider = null;

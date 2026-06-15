@@ -11,6 +11,13 @@ export {
 } from './src/contacts/repository';
 export type { ContactRepository } from './src/contacts/repository';
 export {
+  SQLitePersonaRepository,
+  setPersonaRepository,
+  getPersonaRepository,
+} from './src/persona/repository';
+export type { PersonaRepository, StoredPersona } from './src/persona/repository';
+export { hydratePersonas } from './src/persona/service';
+export {
   SQLiteServiceOfferRepository,
   setServiceOfferRepository,
   getServiceOfferRepository,

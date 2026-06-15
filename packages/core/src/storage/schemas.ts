@@ -778,6 +778,29 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_ppj_lease        ON peerlens_publish_jobs(status, claim_expires_at);
     `,
   },
+  {
+    // Durable persona registry. Personas were in-memory only — a vault the
+    // user created via the app vanished on restart because boot re-seeds
+    // ONLY the code-defined defaults (onboarding/default_personas.ts). This
+    // table is the source of truth for USER-created personas; builtins stay
+    // code-seeded so their classifier descriptions stay in lockstep
+    // cross-stack, so `is_builtin` is carried but hydrate skips builtin
+    // rows. Written by createPersona({persist:true}); read by
+    // hydratePersonas() on unlock before the boot open-loop. See
+    // packages/core/src/persona/repository.ts.
+    version: 15,
+    name: 'personas',
+    sql: `
+      CREATE TABLE IF NOT EXISTS personas (
+        name TEXT PRIMARY KEY,
+        tier TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        is_builtin INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      ) WITHOUT ROWID
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

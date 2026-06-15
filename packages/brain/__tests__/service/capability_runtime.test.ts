@@ -402,3 +402,226 @@ describe('Tier 1 vault scope — per-listing persona pin (narrowing only)', () =
     expect(toolFeedback).not.toContain('clinic note');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Graceful degradation on non-convergence. Real-world repro (live, 2026-06-15):
+// the provider forgot to put any notes in the pinned salon vault, so every
+// vault_search came back empty and the model re-searched to the iteration cap.
+// The runtime used to THROW ("agentic turn ended without an answer
+// (max_iterations)") → the requester's /ask looped to its own budget and
+// showed "try a simpler query". It must instead degrade DETERMINISTICALLY to
+// the schema's honest "unknown" — graceful, and zero hallucination (no model
+// call invents slots the vault never had).
+// ---------------------------------------------------------------------------
+
+/** A provider that NEVER converges — every turn asks for another vault_search. */
+function neverConvergesProvider(): LLMProvider {
+  return {
+    name: 'test',
+    supportsStreaming: false,
+    supportsToolCalling: true,
+    supportsEmbedding: false,
+    async chat() {
+      return {
+        content: '',
+        toolCalls: [{ id: 't', name: 'vault_search', arguments: { query: 'salon hours' } }],
+        model: 'test',
+        usage: { inputTokens: 1, outputTokens: 1 },
+        finishReason: 'tool_use' as const,
+      };
+    },
+    // eslint-disable-next-line require-yield
+    async *stream() {
+      throw new Error('not used');
+    },
+    async embed() {
+      throw new Error('not used');
+    },
+  };
+}
+
+describe('buildCapabilityRuntime — graceful degradation on max_iterations', () => {
+  beforeEach(() => {
+    clearVaults(['salon']);
+    resetPersonaState();
+    resetReasoningProvider();
+    createPersona('salon', 'standard');
+    setAccessiblePersonas(['salon']);
+    // salon vault intentionally EMPTY → vault_search finds nothing.
+  });
+
+  it('returns the schema HONEST unknown (not a throw) when the loop hits the iteration cap', async () => {
+    const runtime = buildCapabilityRuntime({
+      getLLM: () => neverConvergesProvider(),
+      nowMsFn: () => NOW,
+      maxIterations: 3, // keep the test fast; any value reproduces it
+    });
+    const result = (await runtime.run({ ...SALON_ARGS, allowedPersonas: ['salon'] })) as {
+      status: string;
+      message?: string;
+      slots?: unknown;
+    };
+    expect(result.status).toBe('unknown');
+    // Deterministic + honest: NO fabricated availability, and it points the
+    // customer back to the provider.
+    expect(result.slots).toBeUndefined();
+    expect(result.message ?? '').toContain("Maya's Salon");
+    expect(result.message ?? '').toMatch(/check with/i);
+  });
+
+  it('still fails loudly when the schema cannot represent an honest unknown', async () => {
+    // A bespoke result schema whose status enum lacks "unknown" → there is no
+    // honest fallback to emit, so we must NOT invent one — fail loudly.
+    const strictSchema = {
+      type: 'object',
+      required: ['status'],
+      properties: { status: { type: 'string', enum: ['ok', 'no_slots'] } },
+    } as Record<string, unknown>;
+    const runtime = buildCapabilityRuntime({
+      getLLM: () => neverConvergesProvider(),
+      nowMsFn: () => NOW,
+      maxIterations: 3,
+    });
+    await expect(
+      runtime.run({ ...SALON_ARGS, resultSchema: strictSchema, allowedPersonas: ['salon'] }),
+    ).rejects.toThrow(/ended without an answer/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Forced synthesis salvages a non-converging loop. Distinct from the case
+// above: here the vault DOES have the notes (vault_search returns the hours),
+// but the model still re-tool-calls to the iteration cap instead of emitting a
+// final answer — the exact gemini-flash behaviour observed live (2026-06-15).
+// Before degrading to honest-unknown, the runtime gives the model ONE shot to
+// synthesize from the facts it already gathered, via NATIVE structured output
+// (which cannot emit a function call). Anti-hallucination: the synthesis prompt
+// carries ONLY the gathered tool results — no facts, no answer.
+// ---------------------------------------------------------------------------
+
+const FORCE_MARKER = 'Produce the FINAL result now';
+
+describe('buildCapabilityRuntime — forced synthesis on max_iterations', () => {
+  beforeEach(() => {
+    clearVaults(['salon']);
+    resetPersonaState();
+    resetReasoningProvider();
+    createPersona('salon', 'standard');
+    setAccessiblePersonas(['salon']);
+    // The provider DID leave notes — vault_search WILL find the hours. The
+    // failure mode is purely non-convergence (the model never stops searching).
+    storeItem('salon', {
+      type: 'user_memory',
+      summary: 'Salon hours',
+      body: 'Salon hours: open Tuesday to Saturday 9am to 6pm. This Saturday all slots are free.',
+    });
+  });
+
+  it('synthesizes a valid answer from gathered vault facts via native structured output', async () => {
+    const finalAnswer = {
+      status: 'ok',
+      date: 'this Saturday',
+      message: 'Open 9am to 6pm; all slots are free this Saturday.',
+    };
+    let forcedUserMsg: string | null = null;
+    let forcedSchema: Record<string, unknown> | undefined;
+    const provider: LLMProvider = {
+      name: 'test',
+      supportsStreaming: false,
+      supportsToolCalling: true,
+      supportsEmbedding: false,
+      async chat(messages, options?: ChatOptions) {
+        const lastUser = messages[messages.length - 1]?.content ?? '';
+        if (lastUser.includes(FORCE_MARKER)) {
+          forcedUserMsg = lastUser;
+          forcedSchema = options?.responseSchema;
+          return {
+            content: JSON.stringify(finalAnswer),
+            toolCalls: [],
+            model: 'test',
+            usage: { inputTokens: 1, outputTokens: 1 },
+            finishReason: 'end' as const,
+          };
+        }
+        // Every agentic-loop turn: re-search, never answer.
+        return {
+          content: '',
+          toolCalls: [{ id: 't', name: 'vault_search', arguments: { query: 'salon hours' } }],
+          model: 'test',
+          usage: { inputTokens: 1, outputTokens: 1 },
+          finishReason: 'tool_use' as const,
+        };
+      },
+      // eslint-disable-next-line require-yield
+      async *stream() {
+        throw new Error('not used');
+      },
+      async embed() {
+        throw new Error('not used');
+      },
+    };
+    const runtime = buildCapabilityRuntime({
+      getLLM: () => provider,
+      nowMsFn: () => NOW,
+      maxIterations: 3,
+    });
+    const result = await runtime.run({ ...SALON_ARGS, allowedPersonas: ['salon'] });
+    expect(result).toEqual(finalAnswer);
+    // The synthesis call happened…
+    expect(forcedUserMsg).not.toBeNull();
+    // …it carried the GATHERED vault facts (so the model synthesizes from real
+    // notes, never thin air — the anti-hallucination invariant)…
+    expect(forcedUserMsg ?? '').toContain('Salon hours');
+    // …and it used NATIVE structured output (can't emit a function call).
+    expect(forcedSchema).toEqual(SALON_ARGS.resultSchema);
+  });
+
+  it('falls back to honest unknown when forced synthesis still cannot produce a valid result', async () => {
+    // Facts were gathered, but the synthesis call returns non-JSON prose →
+    // there is nothing valid to return → degrade DETERMINISTICALLY (no invented
+    // slots), exactly as the empty-vault path does.
+    const provider: LLMProvider = {
+      name: 'test',
+      supportsStreaming: false,
+      supportsToolCalling: true,
+      supportsEmbedding: false,
+      async chat(messages) {
+        const lastUser = messages[messages.length - 1]?.content ?? '';
+        if (lastUser.includes(FORCE_MARKER)) {
+          return {
+            content: 'Sorry, I cannot format this as JSON.',
+            toolCalls: [],
+            model: 'test',
+            usage: { inputTokens: 1, outputTokens: 1 },
+            finishReason: 'end' as const,
+          };
+        }
+        return {
+          content: '',
+          toolCalls: [{ id: 't', name: 'vault_search', arguments: { query: 'salon hours' } }],
+          model: 'test',
+          usage: { inputTokens: 1, outputTokens: 1 },
+          finishReason: 'tool_use' as const,
+        };
+      },
+      // eslint-disable-next-line require-yield
+      async *stream() {
+        throw new Error('not used');
+      },
+      async embed() {
+        throw new Error('not used');
+      },
+    };
+    const runtime = buildCapabilityRuntime({
+      getLLM: () => provider,
+      nowMsFn: () => NOW,
+      maxIterations: 3,
+    });
+    const result = (await runtime.run({ ...SALON_ARGS, allowedPersonas: ['salon'] })) as {
+      status: string;
+      slots?: unknown;
+    };
+    expect(result.status).toBe('unknown');
+    expect(result.slots).toBeUndefined();
+  });
+});

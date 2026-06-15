@@ -104,6 +104,10 @@ const CorsSchema = z.object({
  */
 const ServicesSchema = z.object({
   brainDid: z.string().optional(),
+  // Base URL of the co-located lite Brain. Core's Tier-1 `dina.local` runner
+  // posts claimed capability executions here (the Brain has the LLM). Optional
+  // — defaults to the brain's default port at boot when unset.
+  brainUrl: z.string().url().optional(),
 });
 
 /** Full server config — every subsection required. */
@@ -270,6 +274,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): LoadedCoreServ
     },
     services: {
       brainDid: readString(env, 'DINA_BRAIN_DID'),
+      brainUrl: readString(env, 'DINA_BRAIN_URL'),
     },
   };
 

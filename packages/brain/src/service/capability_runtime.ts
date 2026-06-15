@@ -30,7 +30,7 @@
 
 import { listPersonas } from '@dina/core';
 
-import { runAgenticTurn } from '../reasoning/agentic_loop';
+import { runAgenticTurn, type AgenticLoopResult } from '../reasoning/agentic_loop';
 import { ToolRegistry } from '../reasoning/tool_registry';
 import { createVaultSearchTool } from '../reasoning/vault_tool';
 
@@ -186,6 +186,83 @@ function validateCandidate(
   return validateAgainstSchema(candidate, resultSchema, 'result');
 }
 
+/**
+ * The schema's HONEST fallback when a run can't produce a real answer — an
+ * explicit `status:"unknown"` plus a "check with the provider directly"
+ * message. DETERMINISTIC: built in code, never by the model, so it cannot
+ * fabricate slots/prices/times the vault never had (the whole point — see
+ * the `max_iterations` branch in `run`). Returns `null` when the result
+ * schema can't represent it; the caller then fails loudly rather than guess.
+ *
+ * The canonical capabilities follow the status-required + `unknown`-enum
+ * convention (eta_query / price_check / appointment_availability), so this
+ * validates for them; a bespoke schema lacking an `unknown` status → null.
+ */
+export function buildHonestUnknownResult(
+  resultSchema: Record<string, unknown> | undefined,
+  serviceName: string,
+): unknown | null {
+  const who = serviceName.trim() !== '' ? serviceName.trim() : 'the provider';
+  const message = `I couldn't confirm this right now — please check with ${who} directly.`;
+  const withMessage = { status: 'unknown', message };
+  if (validateCandidate(resultSchema, withMessage) === null) return withMessage;
+  // Schema may not allow a free-text `message` field — fall back to bare status.
+  const bare = { status: 'unknown' };
+  if (validateCandidate(resultSchema, bare) === null) return bare;
+  return null;
+}
+
+/**
+ * Force a final schema-valid result when the agentic loop GATHERED context but
+ * never converged — the model kept tool-calling instead of answering (weaker
+ * models, e.g. gemini flash, do this; withholding tools doesn't help because
+ * the model re-emits a function call from the tool-call history). Re-asks via
+ * NATIVE structured output (`responseSchema`), which CANNOT emit a function
+ * call, feeding the gathered tool results as PLAIN TEXT in a fresh message (no
+ * function-call history that providers reject when tools are absent).
+ *
+ * Anti-hallucination: the model may use ONLY the gathered facts; if they don't
+ * answer the question it must return the honest "unknown" fallback. Returns the
+ * parsed candidate (caller validates) or `null` on any failure.
+ */
+async function forceFinalAnswer(
+  llm: LLMProvider,
+  systemPrompt: string,
+  toolCalls: AgenticLoopResult['toolCalls'],
+  args: RunCapabilityArgs,
+  signal: AbortSignal,
+): Promise<unknown | null> {
+  const gathered = toolCalls
+    .map((t) => {
+      if (!t.outcome.success) return '';
+      try {
+        return JSON.stringify((t.outcome as { result: unknown }).result);
+      } catch {
+        return '';
+      }
+    })
+    .filter((s) => s !== '')
+    .join('\n');
+  const ask = `You searched the provider's notes for this "${args.capability}" query but did not produce a final answer. Here is everything you found:
+${gathered === '' ? '(nothing relevant was found)' : gathered}
+
+Query params (JSON): ${JSON.stringify(args.params ?? {})}
+
+Produce the FINAL result now as a single JSON object that validates against the schema. Use ONLY the facts above — if they do not answer the question, return the honest fallback: status "unknown" with a short message telling the customer to confirm with the provider. Never invent specifics (slots, prices, times). JSON only.`;
+  try {
+    const synth = await llm.chat([{ role: 'user', content: ask }], {
+      systemPrompt,
+      temperature: 0,
+      maxTokens: 1024,
+      signal,
+      ...(args.resultSchema !== undefined ? { responseSchema: args.resultSchema } : {}),
+    });
+    return extractJSONObject(synth.content);
+  } catch {
+    return null;
+  }
+}
+
 /** Build the Tier 1 capability runtime. */
 export function buildCapabilityRuntime(options: CapabilityRuntimeOptions): CapabilityRuntime {
   const nowMsFn = options.nowMsFn ?? Date.now;
@@ -266,12 +343,63 @@ export function buildCapabilityRuntime(options: CapabilityRuntimeOptions): Capab
           error: candidateErr,
         });
 
-        // The synthesis retry re-emits the SUBSTANCE of the first-pass
-        // answer — it cannot invent facts it never had. A turn that did
-        // not actually complete (cancelled / budget caps) has no
-        // substance to re-emit; synthesizing from it would produce a
-        // schema-valid but facts-free answer. Fail honestly instead.
+        // A turn that did NOT complete (the agentic loop hit its iteration /
+        // tool-call cap — typically because vault_search kept coming back
+        // empty so the model re-searched to the cap) has no substance to
+        // re-emit. Do NOT ask the model to "produce its best answer" here —
+        // that's exactly how a facts-free run fabricates slots/prices the
+        // vault never had. Instead degrade DETERMINISTICALLY to the schema's
+        // honest "unknown — confirm with the provider" fallback: graceful for
+        // the requester (it gets a usable answer instead of "couldn't reach"),
+        // zero hallucination (no model call). Fail loudly only when the
+        // schema can't represent that honest answer.
         if (turn.finishReason !== 'completed') {
+          if (turn.finishReason === 'max_iterations' || turn.finishReason === 'max_tool_calls') {
+            // The loop GATHERED context (vault_search results) but never
+            // emitted a final answer — the model kept tool-calling to the
+            // cap (weaker models do this). Before degrading, give it ONE
+            // shot to synthesize from what it already found, via native
+            // structured output (can't emit a function call) over the
+            // gathered tool results as plain text. Anti-hallucination: the
+            // prompt restricts it to the gathered facts and instructs the
+            // honest "unknown" fallback when they don't answer the query.
+            const forced = await forceFinalAnswer(
+              llm,
+              systemPrompt,
+              turn.toolCalls,
+              args,
+              controller.signal,
+            );
+            const forcedErr = validateCandidate(args.resultSchema, forced);
+            if (forced !== null && forcedErr === null) {
+              log({
+                event: 'capability_runtime.forced_answer',
+                capability: args.capability,
+                finish: turn.finishReason,
+                tool_calls: turn.toolCalls.length,
+              });
+              return forced;
+            }
+            log({
+              event: 'capability_runtime.forced_answer_invalid',
+              capability: args.capability,
+              finish: turn.finishReason,
+              error: forcedErr ?? 'no candidate',
+            });
+            // Forced synthesis failed too — degrade DETERMINISTICALLY to the
+            // schema's honest "unknown — confirm with the provider" fallback:
+            // graceful for the requester, zero hallucination (no further model
+            // call). Fail loudly only when the schema can't represent it.
+            const honest = buildHonestUnknownResult(args.resultSchema, args.serviceName);
+            if (honest !== null) {
+              log({
+                event: 'capability_runtime.degraded_to_unknown',
+                capability: args.capability,
+                finish: turn.finishReason,
+              });
+              return honest;
+            }
+          }
           throw new Error(
             `runCapability(${args.capability}): agentic turn ended without an answer (${turn.finishReason})`,
           );

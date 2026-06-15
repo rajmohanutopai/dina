@@ -18,6 +18,7 @@ import {
   refreshBalance,
   runClaimFlow,
 } from '../../src/ai/credits';
+import { setGenericPassword } from 'react-native-keychain';
 
 function fetchJson(status: number, body: unknown): typeof fetch {
   return jest.fn(async () => ({
@@ -140,6 +141,21 @@ describe('runClaimFlow', () => {
     const status2 = await runClaimFlow('ios', { ...att, fetchImpl: f2, backoffMs: [0] });
     expect(status2).toBe('terminal_refused');
     expect(f2).not.toHaveBeenCalled();
+  });
+
+  it('already_claimed but the granted key survived locally → re-adopts it (status=claimed)', async () => {
+    // A re-onboard wipes our local STATUS but the Keychain grant key persists.
+    // The server 409s the duplicate claim; we must adopt the surviving grant
+    // instead of dead-ending the returning user.
+    await setGenericPassword('dina', 'sk-or-v1-survivor', { service: 'dina.credits.key' });
+    __resetCreditsCachesForTest(); // forget cachedKey so getGrantKey re-reads the seeded key
+    const f = fetchSeq([
+      { status: 200, body: GOOD_CONFIG },
+      { status: 409, body: { error: 'already_claimed' } },
+    ]);
+    const status = await runClaimFlow('ios', { ...att, fetchImpl: f, backoffMs: [0] });
+    expect(status).toBe('claimed');
+    expect(await getGrantKey()).toBe('sk-or-v1-survivor');
   });
 
   it('transient refusals retry through the backoff schedule then give up (status unchanged)', async () => {

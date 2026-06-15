@@ -183,8 +183,8 @@ function AddVaultForm({
     if (trimmedName.length === 0) return null; // empty: no message, button just stays disabled
     if (trimmedName.length < 2) return 'Name must be at least 2 characters.';
     if (trimmedName.length > 30) return 'Name must be at most 30 characters.';
-    if (!/^[a-zA-Z0-9_-]+$/.test(trimmedName)) {
-      return 'Use only letters, numbers, hyphens, and underscores.';
+    if (!/^[a-zA-Z0-9_]+$/.test(trimmedName)) {
+      return 'Use only letters, numbers, and underscores.';
     }
     return null;
   }, [trimmedName]);
@@ -194,12 +194,17 @@ function AddVaultForm({
     setError(null);
     const trimmed = name.trim().toLowerCase();
     const desc = description.trim();
-    const err = addPersona(trimmed, tier, desc.length > 0 ? desc : undefined);
-    if (err !== null) {
-      setError(err);
-      return;
-    }
-    onCreated();
+    // addPersona is async (it persists + opens + wires the vault DB on
+    // create); run it in a fire-and-forget async IIFE so the callback stays
+    // sync for onPress, surfacing any error into the form.
+    void (async () => {
+      const err = await addPersona(trimmed, tier, desc.length > 0 ? desc : undefined);
+      if (err !== null) {
+        setError(err);
+        return;
+      }
+      onCreated();
+    })();
   }, [name, tier, description, onCreated]);
 
   return (
