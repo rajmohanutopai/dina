@@ -1,3 +1,220 @@
+# Bug fix
+  1. P1: Confirmed bookings can still skip persistence
+     packages/brain/src/service/capability_runtime.ts:399 requires record_to_vault intent before committing. If the model returns a valid { status: "confirmed" } without calling the tool, packages/brain/src/
+     service/capability_runtime.ts:541 but writes nothing. That can double-book the slot later.
+     Recommended fix: for appointment_book, commit automatically on successful validated result when mutationAllowed && operatorApproved && vaultFactBuilder && mutationSuccessStatuses pass. The tool-trigger can
+     stay for optional future mutations, but booking should be auto_on_success.
+
+  2. P2: Required imported file is still untracked
+     packages/brain/src/service/capability_runtime.ts:39, packages/brain/src/service/tier1_runner.ts:31, and tests import packages/brain/src/service/capabilities/vault_facts.ts, but that file is currently
+     untracked. If it is missed in the commit, CI/fresh checkout breaks. Add it explicitly.
+
+  3. P3: Top-level runtime comment is stale
+     packages/brain/src/service/capability_runtime.ts:13 still says Tier 1 is read-only and can never mutate. That is no longer true for approved mutating capabilities. Update the comment so future reviewers do
+     not reason from the old invariant.
+
+  What Is Fixed
+
+  - The stale vaultPersona save issue is fixed: apps/mobile/app/service-settings.tsx:727 now includes it in callback deps.
+  - The false slot-taken issue for unavailable / declined / unknown is fixed via mutation_success_statuses.
+  - The prompt-injection path through model-authored summary/body is fixed: persisted facts are now deterministic in vault_facts.ts.
+
+  Verification
+
+  - @dina/brain capability runtime test: 41 passed
+  - @dina/brain typecheck: passed
+  - @dina/protocol typecheck: passed
+  - @dina/app typecheck: passed
+  - @dina/home-node-lite-brain-server typecheck: passed
+  - @dina/home-node-lite-core-server typecheck: passed
+  - @dina/protocol catalog test: 31 passed
+  - git diff --check: clean
+
+  My view: the architecture is now much safer, but I would fix finding #1 before calling booking/service mutation correct.
+
+─ Worked for 5m 17s ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+› but wont that be an issue - the idea is that no other vault etc can be written into
+
+
+• No, not if implemented the right way.
+
+  The important separation is:
+
+  Who decides a write is needed?
+
+  - Current code: the LLM must call record_to_vault.
+  - Better for booking: the runtime commits automatically after a validated successful booking.
+
+  Where can it write?
+
+  - Must still be decided only by code.
+  - The LLM never chooses the vault.
+  - The requester never chooses the vault.
+  - The runtime writes only to the listing’s pinned safe vault.
+
+  So the rule should be:
+
+  if (
+    capability === 'appointment_book' &&
+    mutationAllowed === true &&
+    operatorApproved === true &&
+    result.status === 'confirmed' &&
+    vaultFactBuilder exists &&
+    safePinnedPersona exists &&
+    vaultWriter exists
+  ) {
+    write deterministic booking fact to safePinnedPersona;
+  }
+
+  That does not widen access. It actually tightens correctness.
+
+  The unsafe version would be:
+
+  if confirmed, write somewhere default
+
+  That is bad.
+
+  The safe version is:
+
+  if confirmed, write only to the already selected single vault;
+  if no valid pinned vault exists, do not return confirmed.
+
+  For booking, I would make this invariant:
+
+  A confirmed booking must either be recorded in the pinned service vault, or the service query must fail.
+
+  Otherwise Dina tells the requester “confirmed” but the provider’s own Dina forgets it, which is worse than refusing.
+
+  So your principle remains intact:
+
+  - no arbitrary vault writes
+  - no LLM-selected persona
+  - no requester-controlled write target
+  - no sensitive/locked vault writes
+  - no write for read/quote capabilities
+  - no write unless provider approved the mutating action
+
+  The only change is removing the fragile dependency on the model remembering to call record_to_vault. For appointment_book, persistence should be a runtime consequence of confirmed success, not a model behavior.
+
+
+› appointment_book is one of the 1000s of options - how can we write some logic specific to it
+
+
+• Correct. You should not put appointment_book special logic in the runtime.
+
+  The right architecture is catalog-driven mutation policy, not capability-specific code.
+
+  Current issue is not “appointment_book needs hardcode.” The issue is: for any capability that represents a real mutation, the runtime needs to know whether success should automatically produce a durable local
+  fact.
+
+  Use a generic policy shape.
+
+  mutation_policy: {
+    mode: 'auto_on_success',
+    success_statuses: ['confirmed'],
+    fact_template: 'booking_slot_taken'
+  }
+
+  Then runtime does generic logic:
+
+  if (
+    mutation_policy.mode === 'auto_on_success' &&
+    result.status in mutation_policy.success_statuses &&
+    safePinnedVault exists &&
+    deterministicFactBuilder exists
+  ) {
+    write deterministic fact to pinned vault;
+  }
+
+  So:
+
+  - appointment_book is not hardcoded in runtime.
+  - The runtime only understands generic mutation policy.
+  - The catalog declares what success means.
+  - The fact builder/template declares what gets written.
+  - The vault target is still the selected single safe vault.
+
+  For 1000 capabilities, you do not create 1000 bespoke runtime branches. You group them by mutation pattern:
+
+  - booking_slot_taken
+  - reservation_confirmed
+  - order_created
+  - quote_sent
+  - availability_changed
+  - inventory_reserved
+  - task_created
+  - status_updated
+
+  Most capabilities reuse one of these templates.
+
+  Example:
+
+  appointment_book:
+    action_class: 'booking'
+    mutation_policy:
+      mode: 'auto_on_success'
+      success_statuses: ['confirmed']
+      fact_template: 'booking_slot_taken'
+
+  table_reservation:
+    action_class: 'booking'
+    mutation_policy:
+      mode: 'auto_on_success'
+      success_statuses: ['confirmed']
+      fact_template: 'reservation_confirmed'
+
+  Custom capabilities should probably default to:
+
+  mutation_policy: {
+    mode: 'none'
+  }
+
+  unless the provider supplies a schema-backed/template-backed mutation policy later.
+
+  So my correction is:
+
+  Do not add if capability === 'appointment_book'.
+
+  Add a generic auto_on_success mutation policy. appointment_book is just the first capability using it.
+
+# Bug Fix
+  Your owner /ask loop (composition/agentic_ask.ts:269-273) registers four vault-read tools:
+
+  ┌───────────────────────────────────────────┬────────────┬─────────────────┐
+  │                   Tool                    │ Owner /ask │ Service runtime │
+  ├───────────────────────────────────────────┼────────────┼─────────────────┤
+  │ vault_search (keyword)                    │ ✅         │ ✅              │
+  ├───────────────────────────────────────────┼────────────┼─────────────────┤
+  │ browse_vault (recent items, no keywords)  │ ✅         │ ❌              │
+  ├───────────────────────────────────────────┼────────────┼─────────────────┤
+  │ get_full_content (uncapped L2 body by id) │ ✅         │ ❌              │
+  ├───────────────────────────────────────────┼────────────┼─────────────────┤
+  │ list_personas                             │ ✅         │ ❌              │
+  └───────────────────────────────────────────┴────────────┴─────────────────┘
+
+  The service runtime registers only vault_search (capability_runtime.ts:421). Two concrete consequences:
+
+  1. No keyword-free fallback. Customer asks "what's open this weekend?" but the note says "Sat 16:00 free." If the keyword phrasing misses, the owner's Dina can browse_vault and just read recent notes — the
+  service Dina can only re-phrase the search, and if that keeps coming up empty it degrades to "unknown — confirm with the provider." That's a real recall gap for exactly your booking/availability demo.
+  2. Body truncation with no escape hatch. vault_search returns the full body only for the top hit and content_l1 only for the top 5 (vault_tool.ts:270-271). A fact in the full body of the 6th result is invisible,
+  and there's no get_full_content to go fetch it.
+
+  Why it's narrowed — and how to close it safely
+
+  It's only vault_search because that's the only read tool with the hard allowedPersonas scope (the single-selected-vault security boundary). browse_vault and get_full_content currently accept only a personaGuard,
+  not the allow-list. That's the actual blocker, not a deliberate "keep it weak" decision.
+
+  The fix that gives the service Dina a strong toolkit without widening the security surface: add allowedPersonas scoping to createBrowseVaultTool + createGetFullContentTool, then register both in the runtime
+  under the same runScope. They'd read/return only from the one pinned vault — same boundary as today, just letting the model retrieve thoroughly within it.
+
+  My recommendation: do that breadth fix (highest value, security-neutral). Switching to semantic/hybrid mode is a separate, broader change (needs embeddings present, affects your own /ask too) — worth doing but
+  I'd treat it as step 2.
+
+  Want me to implement the breadth fix — scope browse_vault + get_full_content to the single vault and register them in the capability runtime? And should I also flip the service runtime's search to hybrid mode
+  while I'm there?
+
 # Bug Fix
 ⏺ Honest answer: yes, potentially — it's the same card and the same async-post path, not a demo-only thing. I checked the real path:
 

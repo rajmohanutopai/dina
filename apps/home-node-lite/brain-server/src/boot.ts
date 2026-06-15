@@ -577,6 +577,9 @@ export async function bootServer(
   const capabilityLLM = buildBrainServerLLMRuntime(config.llm);
   registerCapabilityRoutes(app, {
     getLLM: () => capabilityLLM?.llm ?? null,
+    // Core client → an APPROVED capability can persist its outcome to the
+    // provider's vault (record_to_vault write tool) over Core HTTP.
+    ...(clients.core !== undefined ? { core: clients.core } : {}),
     logger: (entry) => logger.info(entry, 'capability'),
   });
 

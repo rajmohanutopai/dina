@@ -206,6 +206,8 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     default_category_id: 'transit',
     display_name: 'ETA / arrival time',
     short_description: 'Estimated arrival time for a transit route at a stop.',
+    default_instruction:
+      'Use my latest vault notes on routes and schedules to give the arrival time. If my vault does not cover that route or stop, tell them to check the official source. Never guess a time.',
     lifecycle: 'stable' as const,
     action_class: 'read' as const,
     privacy_class: 'public' as const,
@@ -225,6 +227,8 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     default_category_id: 'appointments',
     display_name: 'Appointment status',
     short_description: 'Check the status or next availability of an appointment.',
+    default_instruction:
+      'Find this customer in my vault and report the status or next time of their appointment. If my vault has no record for them, say so. Never invent one.',
     lifecycle: 'stable' as const,
     action_class: 'read' as const,
     privacy_class: 'sensitive' as const,
@@ -247,6 +251,8 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     default_category_id: 'commerce',
     display_name: 'Price and availability',
     short_description: 'Current price and stock availability of a product at a store.',
+    default_instruction:
+      'Answer with the current price and stock from my latest vault notes. If it is not in my vault, tell them to check with me. Never guess a price.',
     lifecycle: 'stable' as const,
     action_class: 'read' as const,
     privacy_class: 'public' as const,
@@ -268,6 +274,8 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     default_category_id: 'appointments',
     display_name: 'Appointment availability',
     short_description: 'Available appointment/consultation slots.',
+    default_instruction:
+      'Use my latest vault (current hours, recent changes, and any booked slots) to tell the customer what is open. Do not offer a slot my vault shows as already taken. If my vault does not cover it, tell them to confirm with me directly. Never invent a slot.',
     lifecycle: 'stable' as const,
     action_class: 'read' as const,
     privacy_class: 'personal' as const,
@@ -289,6 +297,8 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     default_category_id: 'appointments',
     display_name: 'Book appointment',
     short_description: 'Book an appointment slot. Requires explicit approval.',
+    default_instruction:
+      'If the requested time is free in my vault, confirm the booking and record it in my vault so that slot is no longer offered. If the time is not free, suggest the nearest open slot instead of confirming. Bookings wait for my approval before they are confirmed.',
     lifecycle: 'beta' as const,
     action_class: 'booking' as const,
     privacy_class: 'sensitive' as const,
@@ -303,6 +313,10 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     introduced_in: '2026-06-01',
     params_schema: APPOINTMENT_BOOK_PARAMS,
     result_schema: APPOINTMENT_BOOK_RESULT,
+    // Only a CONFIRMED booking persists the "slot taken" write. declined /
+    // unavailable / unknown must NOT mark the slot booked (see the runtime's
+    // commit gate) — otherwise a non-success result would falsely block the slot.
+    mutation_success_statuses: Object.freeze(['confirmed']),
   }),
 
   // ── Commerce + logistics (distinct contracts: order vs parcel vs ETA). ──
@@ -313,6 +327,8 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     default_category_id: 'commerce',
     display_name: 'Order status',
     short_description: 'Status of an existing merchant order.',
+    default_instruction:
+      'Find this customer in my vault and report the status of their order. If my vault has no record for them, say so. Never make one up.',
     lifecycle: 'stable' as const,
     action_class: 'read' as const,
     privacy_class: 'personal' as const,
@@ -333,6 +349,8 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     default_category_id: 'logistics',
     display_name: 'Package tracking',
     short_description: 'Track a shipment/parcel by tracking number.',
+    default_instruction:
+      'Use the tracking number to find the shipment in my vault and report where it is. If my vault has nothing for that number, say so.',
     lifecycle: 'stable' as const,
     action_class: 'read' as const,
     privacy_class: 'personal' as const,
@@ -353,6 +371,8 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     default_category_id: 'logistics',
     display_name: 'Delivery ETA',
     short_description: 'ETA for an active delivery.',
+    default_instruction:
+      'Find the active delivery for this customer in my vault and give the ETA. If my vault has no record for them, say so.',
     lifecycle: 'stable' as const,
     action_class: 'read' as const,
     privacy_class: 'personal' as const,
@@ -374,6 +394,8 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     default_category_id: 'developer_ops',
     display_name: 'Service health status',
     short_description: 'Health of an API/service/system.',
+    default_instruction:
+      'Report the current status from my latest vault notes. If my vault does not have it, say so. Do not guess.',
     lifecycle: 'stable' as const,
     action_class: 'read' as const,
     privacy_class: 'sensitive' as const,
@@ -394,6 +416,8 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     default_category_id: 'developer_ops',
     display_name: 'Deploy status',
     short_description: 'Status of a deployment.',
+    default_instruction:
+      'Report the current deployment status from my latest vault notes. If my vault does not have it, say so. Do not guess.',
     lifecycle: 'stable' as const,
     action_class: 'read' as const,
     privacy_class: 'sensitive' as const,
@@ -415,6 +439,8 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     default_category_id: 'school',
     display_name: 'Homework status',
     short_description: 'Homework/assignments for a student.',
+    default_instruction:
+      'Find this student in my vault and report their homework and assignments. If my vault has no record for them, say so. Never invent one.',
     lifecycle: 'beta' as const,
     action_class: 'read' as const,
     privacy_class: 'sensitive' as const,
@@ -438,6 +464,8 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     default_category_id: 'home_local',
     display_name: 'Service quote',
     short_description: 'Quote for a requested repair/service job.',
+    default_instruction:
+      'Give a rough quote from the pricing in my vault for what the customer described. If it is outside what my vault covers, tell them I will follow up with a custom quote. Do not guess a number.',
     lifecycle: 'beta' as const,
     action_class: 'quote' as const,
     privacy_class: 'personal' as const,
@@ -459,6 +487,8 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     default_category_id: 'home_iot',
     display_name: 'Device status',
     short_description: 'Status of a device/sensor on a personal node.',
+    default_instruction:
+      'Find this device or sensor in my vault and report its status. If my vault has no record for it, say so.',
     lifecycle: 'beta' as const,
     action_class: 'read' as const,
     privacy_class: 'personal' as const,

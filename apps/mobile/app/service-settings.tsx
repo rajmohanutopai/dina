@@ -194,13 +194,14 @@ export default function ServiceSettingsScreen() {
   // runtime. Filtered to capabilities NOT already configured so the
   // picker doesn't show duplicates.
   const localKnownCapabilities = useMemo(() => listLocalCapabilities(), []);
-  // Tier 1 vault pin (docs/SERVICE_PROVIDER_TIERS.md): which persona this
-  // listing's "My Dina answers" executions may read notes from. '' = the
-  // runtime's default (all non-sensitive personas). Pinnable choices
-  // exclude sensitive/locked tiers — the runtime intersects with the tier
-  // scope anyway (a pin can narrow, never widen), so the picker only
-  // offers options that DO something.
-  const [vaultPersona, setVaultPersona] = useState<string>('');
+  // Tier 1 vault pin (docs/SERVICE_PROVIDER_TIERS.md): which SINGLE vault this
+  // listing's "My Dina answers" executions may read from AND write to. The
+  // selection is ALWAYS one concrete vault — there is no "all memory" fan-out
+  // (the runtime reads/writes exactly this one persona, ∩ its safe-tier
+  // filter). Defaults to `general` (the main vault); pinnable choices exclude
+  // sensitive/locked tiers (the runtime intersects with the tier scope anyway,
+  // so a sensitive pin would yield no access).
+  const [vaultPersona, setVaultPersona] = useState<string>('general');
   const pinnablePersonas = useMemo(
     () =>
       listPersonas()
@@ -300,7 +301,15 @@ export default function ServiceSettingsScreen() {
     setStatus(cfg.status ?? 'active');
     setName(cfg.name);
     setDescription(cfg.description ?? '');
-    setVaultPersona(cfg.vaultPersona ?? '');
+    // Old configs (or ones authored before the single-vault rule) may carry an
+    // empty/absent pin that used to mean "all shared memory". That fan-out is
+    // gone — map it to the `general` default so the picker shows one concrete
+    // selection and the save re-persists it explicitly.
+    setVaultPersona(
+      typeof cfg.vaultPersona === 'string' && cfg.vaultPersona !== ''
+        ? cfg.vaultPersona
+        : 'general',
+    );
     setCapabilities(
       Object.entries(cfg.capabilities).map(([key, cap]) => {
         // Back-compat: an existing config may predate per-capability category.
@@ -365,8 +374,8 @@ export default function ServiceSettingsScreen() {
       // `always_approval`) starts as `review` so the save doesn't
       // dead-end on the validator's `write_needs_approval`.
       const canonical = resolveCatalogCapability(trimmed);
-      const hint =
-        canonical !== null ? findCapability(catalog, canonical)?.approval_policy_hint : undefined;
+      const catalogEntry = canonical !== null ? findCapability(catalog, canonical) : undefined;
+      const hint = catalogEntry?.approval_policy_hint;
       const seededPolicy: Policy = hint === 'always_approval' ? 'review' : 'auto';
       setCapabilities((list) => {
         if (list.some((c) => c.key === trimmed)) return list;
@@ -379,7 +388,10 @@ export default function ServiceSettingsScreen() {
             // answered by the provider's own Dina until they explicitly
             // connect an agent for it (docs/SERVICE_PROVIDER_TIERS.md).
             lane: 'dina' as const,
-            instruction: '',
+            // Seed the catalog's default instruction so the capability works as
+            // expected out of the box (the provider can edit it). Custom / un-
+            // cataloged capabilities fall back to empty.
+            instruction: catalogEntry?.default_instruction ?? '',
             ...(category !== undefined ? { category } : {}),
           },
         ];
@@ -600,9 +612,11 @@ export default function ServiceSettingsScreen() {
         ...(Object.keys(schemas).length > 0
           ? { capabilitySchemas: schemas }
           : { capabilitySchemas: undefined }),
-        // Explicit override of the seeded value — clearing the pin back to
-        // "All shared memory" must actually remove it from the config.
-        vaultPersona: vaultPersona !== '' ? vaultPersona : undefined,
+        // Always persist a concrete single vault — the picker no longer offers
+        // an "all memory" option. Fall back to `general` (the runtime's own
+        // default) if the state is somehow empty, so the listing always pins
+        // exactly one vault for both reads and writes.
+        vaultPersona: vaultPersona !== '' ? vaultPersona : 'general',
       };
       // Fail-closed catalog validation (spec §8.1): a capability must be
       // official-or-namespaced (never an unknown flat name), carry an allowed
@@ -706,6 +720,11 @@ export default function ServiceSettingsScreen() {
     discoverability,
     status,
     capabilities,
+    // The selected single vault (Tier-1 "answers from this vault"). MUST be in
+    // the deps — without it the memoized callback keeps a stale closure over the
+    // initial value, so selecting a different vault then saving would silently
+    // persist the old one.
+    vaultPersona,
     localKnownCapabilities,
     isCreate,
     editingRkey,
@@ -899,32 +918,12 @@ export default function ServiceSettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionHeader}>ANSWERS FROM</Text>
           <Text style={styles.sectionSubtitle}>
-            When your Dina answers for this service, which memory may it use? Pinning one keeps
-            every other note out of reach — private memories are never available to services
-            either way.
+            Pick the one vault your Dina answers this service from. It reads and writes only this
+            vault, never any other. Private (sensitive or locked) vaults are never available to
+            services.
           </Text>
           <View style={styles.card}>
             <View style={styles.personaPinRow}>
-              <Pressable
-                onPress={() => setVaultPersona('')}
-                style={({ pressed }) => [
-                  styles.personaChip,
-                  vaultPersona === '' && styles.personaChipActive,
-                  pressed && styles.pressed,
-                ]}
-                testID="service-settings-vault-persona-all"
-                accessibilityRole="button"
-                accessibilityLabel="Answers may use all shared memory"
-              >
-                <Text
-                  style={[
-                    styles.personaChipText,
-                    vaultPersona === '' && styles.personaChipTextActive,
-                  ]}
-                >
-                  All shared memory
-                </Text>
-              </Pressable>
               {pinnablePersonas.map((per) => (
                 <Pressable
                   key={per}

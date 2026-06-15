@@ -133,6 +133,26 @@ export interface CapabilityDefinition {
    */
   readonly params_schema?: Readonly<Record<string, unknown>>;
   readonly result_schema?: Readonly<Record<string, unknown>>;
+  /**
+   * Default `instruction` (the provider's `howToAnswer`) seeded into a new
+   * listing when this capability is added, so it works as expected out of the
+   * box without the provider writing prose. The provider can edit it freely.
+   * Says "vault" (Dina's term for the provider's encrypted store) and, for a
+   * write capability, directs recording the outcome so future reads reflect it.
+   * Absent → the listing seeds an empty instruction (legacy behaviour).
+   */
+  readonly default_instruction?: string;
+  /**
+   * For a vault-MUTATING capability (`action_class` write/booking/payment): the
+   * `result.status` value(s) that represent a SUCCESSFUL mutation. The Tier-1
+   * runtime commits a staged `record_to_vault` write ONLY when the final
+   * result's status is in this set — e.g. `appointment_book` → `['confirmed']`,
+   * so a `declined` / `unavailable` / `unknown` outcome never falsely marks a
+   * slot taken. Fail-closed: a mutating capability that omits this can never
+   * persist a write (we don't commit a mutation we can't confirm succeeded).
+   * Irrelevant for read/quote capabilities (they expose no write tool).
+   */
+  readonly mutation_success_statuses?: readonly string[];
 }
 
 /** A retired/deprecated capability kept for back-compat resolution. */

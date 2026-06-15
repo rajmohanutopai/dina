@@ -75,6 +75,7 @@ import {
   listPersonas,
   setOutboxRedeliverFn,
   startOutboxDrainer,
+  storeItem,
   type DrainerHandle} from '@dina/core';
 import { DIDResolver, hydrateDeviceRegistry } from '@dina/core/runtime';
 import { resolveMobileHostedDinaEndpoints , makeSendD2D, makeOutboxRedeliver } from '@dina/home-node';
@@ -610,6 +611,12 @@ export async function buildBootInputs(
       return new RoutedLLMProvider({ router, taskType: 'reason', label: 'routed:reason:tier1' });
     },
     readConfig: (rkey) => getServiceConfig(rkey),
+    // WRITE seam — lets an APPROVED capability's instruction persist its
+    // outcome to the provider's own vault (e.g. "record the booking so the
+    // slot is no longer offered"). In-process here; appends a searchable note.
+    vaultWriter: async (persona, fact) => {
+      storeItem(persona, { type: 'note', summary: fact.summary, body: fact.body });
+    },
     ...(options.logger !== undefined ? { logger: options.logger } : {}),
   });
 

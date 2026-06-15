@@ -19,13 +19,19 @@
 
 import { makeTier1CapabilityRunner } from '@dina/brain';
 import type { LLMProvider } from '@dina/brain';
-import type { WorkflowTask } from '@dina/core';
+import type { CoreClient, VaultItemInput, WorkflowTask } from '@dina/core';
 import type { ServiceConfig } from '@dina/protocol';
 import type { FastifyInstance } from 'fastify';
 
 export interface RegisterCapabilityRoutesOptions {
   /** Resolves the live LLM (null when no AI is configured → fail-fast). */
   getLLM: () => LLMProvider | null;
+  /**
+   * Core client — when supplied, an APPROVED capability execution can persist
+   * its outcome to the provider's vault (the `record_to_vault` write tool),
+   * over Core's HTTP store. Omit to keep executions read-only.
+   */
+  core?: Pick<CoreClient, 'vaultStore'>;
   logger?: (entry: Record<string, unknown>) => void;
 }
 
@@ -57,6 +63,19 @@ export function registerCapabilityRoutes(
     const runner = makeTier1CapabilityRunner({
       getLLM: options.getLLM,
       readConfig: () => config,
+      ...(options.core !== undefined
+        ? {
+            vaultWriter: async (persona: string, fact: { summary: string; body: string }) => {
+              // /v1/vault/store reads summary/body (storeItem). VaultItemInput
+              // types `content`, which the route ignores — cast to what it reads.
+              await options.core!.vaultStore(persona, {
+                type: 'note',
+                summary: fact.summary,
+                body: fact.body,
+              } as unknown as VaultItemInput);
+            },
+          }
+        : {}),
       ...(options.logger !== undefined ? { logger: options.logger } : {}),
     });
 

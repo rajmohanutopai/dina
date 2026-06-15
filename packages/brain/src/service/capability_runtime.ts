@@ -31,12 +31,24 @@
 import { listPersonas } from '@dina/core';
 
 import { runAgenticTurn, type AgenticLoopResult } from '../reasoning/agentic_loop';
-import { ToolRegistry } from '../reasoning/tool_registry';
+import { ToolRegistry, type AgentTool } from '../reasoning/tool_registry';
 import { createVaultSearchTool } from '../reasoning/vault_tool';
 
 import { validateAgainstSchema } from './capabilities/schema_validator';
 
+import type { VaultFactBuilder } from './capabilities/vault_facts';
 import type { LLMProvider } from '../llm/adapters/provider';
+
+/**
+ * Host seam for the Tier-1 WRITE path. Appends a searchable fact (summary +
+ * body) to ONE persona of the provider's own vault. Supplied by the host
+ * (mobile: in-process Core; lite: Core over HTTP). Absent on hosts that don't
+ * wire it → the write tool is never exposed (read-only, as before).
+ */
+export type CapabilityVaultWriter = (
+  persona: string,
+  fact: { summary: string; body: string },
+) => Promise<void>;
 
 export interface RunCapabilityArgs {
   /** Canonical capability name (e.g. `appointment_availability`). */
@@ -57,6 +69,43 @@ export interface RunCapabilityArgs {
    * me first" — this flag tells the model the asking already happened.
    */
   operatorApproved?: boolean;
+  /**
+   * True when this capability is a VAULT-MUTATING action (`booking` / `write` /
+   * `payment` action_class), set by the runner from the catalog. This is a
+   * SEPARATE permission from `operatorApproved`: approving a response is not
+   * approving a vault mutation. The `record_to_vault` write tool is exposed
+   * ONLY when this is true AND `operatorApproved` is true — so a read/quote
+   * capability under review policy can never write (no prompt-injection path
+   * to the provider's vault).
+   */
+  mutationAllowed?: boolean;
+  /**
+   * For a mutating capability, the `result.status` value(s) that mean the
+   * mutation SUCCEEDED — the only outcomes that may commit a staged
+   * `record_to_vault` write. Set by the runner from the catalog
+   * (`mutation_success_statuses`, e.g. appointment_book → `['confirmed']`).
+   * A non-success result (declined / unavailable / unknown) — even when
+   * schema-valid — discards the staged write instead of persisting it, so a
+   * failed booking never falsely marks a slot taken. Omitted / empty → a staged
+   * write never commits (fail-closed: don't persist an unconfirmed mutation).
+   */
+  mutationSuccessStatuses?: readonly string[];
+  /**
+   * Deterministic builder for the fact a successful mutation persists — set by
+   * the runner from the capability registry (`getVaultFactBuilder`). The model
+   * NEVER authors the persisted text (a malicious param could otherwise inject a
+   * broader/false fact); it only TRIGGERS the write via `record_to_vault`, and
+   * the runtime calls THIS builder over the validated params/result +
+   * `requesterDid` to construct exactly what is stored. Absent → the write tool
+   * is never exposed (a mutating capability with no builder cannot persist).
+   */
+  vaultFactBuilder?: VaultFactBuilder;
+  /**
+   * Requester DID, authenticated at Core ingress (`from_did`). Threaded only so
+   * the deterministic fact can record WHO booked. Never self-asserted; never
+   * used for authorization here.
+   */
+  requesterDid?: string;
   /**
    * Wall-clock budget for this execution (ms). Derived from the query's
    * `ttl_seconds` by the tier1 runner — there is no point computing an
@@ -98,6 +147,16 @@ export interface CapabilityRuntimeOptions {
    * to NARROW further (e.g. pin a listing to one persona).
    */
   allowedPersonas?: () => readonly string[];
+  /**
+   * Optional WRITE seam. When supplied, an OPERATOR-APPROVED execution
+   * (`operatorApproved === true`) exposes a `record_to_vault` tool so the
+   * provider's instruction can persist the outcome (e.g. mark a booked slot
+   * taken) — append-only, scoped to the listing's pinned persona. Read /
+   * auto-policy executions NEVER get it, so the read-only safety property holds
+   * for un-approved external queries. Behaviour is instruction-driven: the LLM
+   * only writes if the instruction tells it to; nothing is hardcoded.
+   */
+  vaultWriter?: CapabilityVaultWriter;
 }
 
 /**
@@ -263,6 +322,112 @@ Produce the FINAL result now as a single JSON object that validates against the 
   }
 }
 
+/** Whether the model TRIGGERED a vault write this turn. Just intent — the
+ *  persisted content is built deterministically at commit time, never staged
+ *  from the model (see `createVaultWriteTool`). */
+interface VaultWriteIntent {
+  requested: boolean;
+}
+
+/**
+ * The Tier-1 `record_to_vault` write tool. It is a TRIGGER, not a content
+ * channel: the model calls it (per its instruction) to record the outcome, but
+ * it passes NO text — there is no `summary`/`body`/persona arg. The actual fact
+ * is built deterministically by the runtime (`vaultFactBuilder`) from the
+ * validated params/result + authenticated requester DID, so a malicious param
+ * can never inject the persisted content. Append-only, hard-scoped to ONE
+ * persona the runtime pins. Nothing is written unless the run then returns a
+ * SUCCESSFUL result (see `commitVaultWriteIfSuccess`).
+ */
+function createVaultWriteTool(opts: {
+  intent: VaultWriteIntent;
+  log: (entry: Record<string, unknown>) => void;
+}): AgentTool {
+  return {
+    name: 'record_to_vault',
+    description:
+      "Record the outcome of THIS request to your own service vault so future answers reflect it (e.g. mark the booked slot as taken). Call it when your instruction tells you to record or update something. You do NOT pass any text — the booking details are recorded automatically from the confirmed result. The record is saved only if you then return a successful result. Append-only.",
+    parameters: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+    async execute(): Promise<{ recorded: true }> {
+      // Intent only — the deterministic fact is built + committed after a
+      // successful final result. Metadata-only log (no content — PII rule).
+      opts.intent.requested = true;
+      opts.log({ event: 'capability_runtime.vault_write_requested' });
+      return { recorded: true };
+    },
+  };
+}
+
+/**
+ * True when `result.status` is one of the capability's success statuses — the
+ * ONLY case in which a vault write may persist. Fail-closed: no declared
+ * success statuses (or a non-object / missing status) → not a success, so
+ * nothing is written. This is what stops a booking that came back `declined` /
+ * `unavailable` / `unknown` from still marking the slot taken.
+ */
+function isSuccessfulMutation(
+  result: unknown,
+  successStatuses: readonly string[] | undefined,
+): boolean {
+  if (successStatuses === undefined || successStatuses.length === 0) return false;
+  if (result === null || typeof result !== 'object' || Array.isArray(result)) return false;
+  const status = (result as { status?: unknown }).status;
+  return typeof status === 'string' && successStatuses.includes(status);
+}
+
+/**
+ * Persist the deterministic vault fact — ONLY when the model requested a write
+ * AND the final result is a successful mutation. The fact is built in code
+ * (`args.vaultFactBuilder`) from the validated params/result + requester DID, so
+ * the model never authors the stored text. A writer failure propagates (the run
+ * throws) so we never confirm a mutation we couldn't record. No-op when no write
+ * was requested.
+ */
+async function commitVaultWriteIfSuccess(opts: {
+  result: unknown;
+  intent: VaultWriteIntent;
+  persona: string | undefined;
+  args: RunCapabilityArgs;
+  writer: CapabilityVaultWriter | undefined;
+  log: (entry: Record<string, unknown>) => void;
+}): Promise<void> {
+  const { result, intent, persona, args, writer, log } = opts;
+  if (!intent.requested) return;
+  intent.requested = false; // consume — never double-commit
+  if (
+    writer === undefined ||
+    persona === undefined ||
+    persona === '' ||
+    args.vaultFactBuilder === undefined
+  ) {
+    return;
+  }
+  if (!isSuccessfulMutation(result, args.mutationSuccessStatuses)) {
+    log({
+      event: 'capability_runtime.vault_write_discarded_non_success',
+      capability: args.capability,
+    });
+    return;
+  }
+  const fact = args.vaultFactBuilder({
+    params: args.params,
+    result: result as Record<string, unknown>,
+    ...(args.requesterDid !== undefined && args.requesterDid !== ''
+      ? { requesterDid: args.requesterDid }
+      : {}),
+  });
+  if (fact === null) {
+    log({ event: 'capability_runtime.vault_write_no_fact', capability: args.capability });
+    return;
+  }
+  await writer(persona, fact);
+  log({ event: 'capability_runtime.vault_write_committed', persona, capability: args.capability });
+}
+
 /** Build the Tier 1 capability runtime. */
 export function buildCapabilityRuntime(options: CapabilityRuntimeOptions): CapabilityRuntime {
   const nowMsFn = options.nowMsFn ?? Date.now;
@@ -293,15 +458,53 @@ export function buildCapabilityRuntime(options: CapabilityRuntimeOptions): Capab
       // verbatim, so the prompt's "Hard rules" are guidance, not a
       // boundary — the scope is. A per-run pin (the listing's
       // `vaultPersona`) INTERSECTS the base scope: narrowing only.
+      // The read scope is the listing's SELECTED vault(s) ONLY — never a
+      // fan-out across the provider's other memory. A stranger's service query
+      // must not be able to surface unrelated notes (work, personal general,
+      // etc.). `baseScope` is the safe-TIER FILTER (non-sensitive/non-locked);
+      // `args.allowedPersonas` is the listing's pin (the provider's selection).
+      // runScope = pin ∩ safe. NO selection → read NOTHING (fail closed); a
+      // sensitive/locked selection → empty (the pin can narrow, never widen).
+      // The persona is program-pinned here, never the LLM's choice.
       const baseScope = options.allowedPersonas ?? defaultTier1PersonaScope;
       const runScope = (): readonly string[] => {
-        const base = baseScope();
-        if (args.allowedPersonas === undefined) return base;
-        const pin = new Set(args.allowedPersonas);
-        return base.filter((p) => pin.has(p));
+        if (args.allowedPersonas === undefined || args.allowedPersonas.length === 0) return [];
+        const base = new Set(baseScope());
+        return args.allowedPersonas.filter((p) => base.has(p));
       };
       const tools = new ToolRegistry();
       tools.register(createVaultSearchTool({ allowedPersonas: runScope }));
+
+      // WRITE tool — a TRIGGER only (the model passes no text; the persisted
+      // fact is built deterministically at commit, see `commitVaultWriteIfSuccess`).
+      // Exposed ONLY when ALL hold:
+      //   1. mutationAllowed — the capability is a vault-MUTATING action
+      //      (booking/write/payment); a read/quote capability never gets a
+      //      write tool even after approval (separate permission from approval).
+      //   2. operatorApproved — the provider personally approved THIS execution.
+      //   3. the host wired a writer.
+      //   4. a USER-SELECTED, SAFE write target exists: `runScope()[0]` when the
+      //      listing PINNED a persona (`args.allowedPersonas`). runScope is
+      //      base ∩ pin, so a sensitive/locked pin yields [] (no write) and the
+      //      target is always within the listing's pin — the "pin narrows, never
+      //      widens" invariant holds for WRITES too. No pin → no write (never a
+      //      fallback persona). The LLM never picks the target (no persona arg);
+      //      the runtime hard-pins it — program-enforced, not via the prompt.
+      //   5. a deterministic fact builder exists for the capability — without it
+      //      there is nothing to write (the model is never trusted to author the
+      //      content), so the tool is not exposed (fail-closed).
+      const writeIntent: VaultWriteIntent = { requested: false };
+      const writePersona = args.allowedPersonas !== undefined ? runScope()[0] : undefined;
+      if (
+        args.mutationAllowed === true &&
+        args.operatorApproved === true &&
+        options.vaultWriter !== undefined &&
+        args.vaultFactBuilder !== undefined &&
+        typeof writePersona === 'string' &&
+        writePersona !== ''
+      ) {
+        tools.register(createVaultWriteTool({ intent: writeIntent, log }));
+      }
 
       // Deadline: there is no point computing an answer the requester's
       // TTL has already abandoned, and a hung provider fetch must not
@@ -335,7 +538,17 @@ export function buildCapabilityRuntime(options: CapabilityRuntimeOptions): Capab
 
         const candidate = extractJSONObject(turn.answer);
         const candidateErr = validateCandidate(args.resultSchema, candidate);
-        if (candidateErr === null) return candidate;
+        if (candidateErr === null) {
+          await commitVaultWriteIfSuccess({
+            result: candidate,
+            intent: writeIntent,
+            persona: writePersona,
+            args,
+            writer: options.vaultWriter,
+            log,
+          });
+          return candidate;
+        }
         log({
           event: 'capability_runtime.invalid_first_pass',
           capability: args.capability,
@@ -377,6 +590,14 @@ export function buildCapabilityRuntime(options: CapabilityRuntimeOptions): Capab
                 capability: args.capability,
                 finish: turn.finishReason,
                 tool_calls: turn.toolCalls.length,
+              });
+              await commitVaultWriteIfSuccess({
+                result: forced,
+                intent: writeIntent,
+                persona: writePersona,
+                args,
+                writer: options.vaultWriter,
+                log,
               });
               return forced;
             }
@@ -420,7 +641,17 @@ export function buildCapabilityRuntime(options: CapabilityRuntimeOptions): Capab
         });
         const retried = extractJSONObject(synth.content);
         const retriedErr = validateCandidate(args.resultSchema, retried);
-        if (retriedErr === null) return retried;
+        if (retriedErr === null) {
+          await commitVaultWriteIfSuccess({
+            result: retried,
+            intent: writeIntent,
+            persona: writePersona,
+            args,
+            writer: options.vaultWriter,
+            log,
+          });
+          return retried;
+        }
         throw new Error(
           `runCapability(${args.capability}): result failed schema validation after retry — ${retriedErr}`,
         );

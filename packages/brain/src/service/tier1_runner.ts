@@ -19,10 +19,25 @@
  * the requester.
  */
 
-import { parseServiceListingUri, parseServiceQueryExecutionPayload } from '@dina/protocol';
+import {
+  getCatalogCapability,
+  parseServiceListingUri,
+  parseServiceQueryExecutionPayload,
+  resolveCatalogCapability,
+} from '@dina/protocol';
 
 
 import { getCapability } from './capabilities/registry';
+import { getVaultFactBuilder } from './capabilities/vault_facts';
+
+/**
+ * Vault-MUTATING action classes — capabilities whose execution may persist to
+ * the provider's vault (the `record_to_vault` write tool). `read` / `quote` /
+ * `agentic` never write. Drives the runtime's `mutationAllowed` permission,
+ * kept SEPARATE from operator approval (approving a response ≠ approving a
+ * mutation).
+ */
+const MUTATING_ACTION_CLASSES: ReadonlySet<string> = new Set(['booking', 'write', 'payment']);
 import {
   buildCapabilityRuntime,
   type CapabilityRuntimeOptions,
@@ -85,6 +100,37 @@ export function makeTier1CapabilityRunner(options: Tier1RunnerOptions): LocalCap
     const ttlSeconds =
       payload.ttl_seconds !== undefined && payload.ttl_seconds > 0 ? payload.ttl_seconds : 120;
 
+    // Vault-mutation permission — from the CATALOG action_class, NOT from the
+    // approval flag. Only booking/write/payment capabilities may persist to the
+    // vault (and only then if the operator also approved this execution). A
+    // read/quote capability can never write, even under review policy.
+    const canonical = resolveCatalogCapability(capability) ?? capability;
+    const catalogEntry = getCatalogCapability(canonical);
+    const actionClass = catalogEntry?.action_class;
+    const mutationAllowed = actionClass !== undefined && MUTATING_ACTION_CLASSES.has(actionClass);
+    // The result statuses that mean the mutation SUCCEEDED — the only ones that
+    // commit a vault write (e.g. appointment_book → ['confirmed']). The runtime
+    // fail-closes when this is absent, so a non-success booking
+    // (declined/unavailable/unknown) never persists a "slot taken" write.
+    const mutationSuccessStatuses = catalogEntry?.mutation_success_statuses;
+    // Deterministic fact builder — the model NEVER authors persisted vault text
+    // (a malicious param could otherwise prompt-inject a false/broad fact). The
+    // model only triggers `record_to_vault`; the runtime calls this builder over
+    // the validated params/result + authenticated requester DID to construct what
+    // is stored. A mutating capability with no builder cannot write (fail-closed).
+    const vaultFactBuilder = getVaultFactBuilder(canonical);
+
+    // Vault scope (read AND write) is the listing's SELECTED vault — ALWAYS a
+    // single concrete persona, never a fan-out across the provider's memory.
+    // Default to `general` (the main vault) when the provider has not pinned a
+    // dedicated one, so a service still reads exactly ONE vault instead of
+    // every shared note. The runtime intersects this with its safe-tier filter
+    // (a sensitive/locked pin yields empty — no access).
+    const vaultPersona =
+      typeof config?.vaultPersona === 'string' && config.vaultPersona !== ''
+        ? config.vaultPersona
+        : 'general';
+
     return runtime.run({
       capability,
       params,
@@ -95,13 +141,16 @@ export function makeTier1CapabilityRunner(options: Tier1RunnerOptions): LocalCap
       ...(resultSchema !== undefined ? { resultSchema } : {}),
       serviceName: config?.name ?? '',
       operatorApproved: payload.operator_approved === true,
+      mutationAllowed,
+      ...(mutationSuccessStatuses !== undefined ? { mutationSuccessStatuses } : {}),
+      ...(vaultFactBuilder !== undefined ? { vaultFactBuilder } : {}),
+      // Authenticated requester DID (Core ingress) — recorded in the
+      // deterministic booking fact ("…for <did>"). Never self-asserted.
+      ...(payload.from_did !== '' ? { requesterDid: payload.from_did } : {}),
       deadlineMs: ttlSeconds * 1000,
-      // Per-listing vault pin: this listing's executions read ONLY the
-      // designated persona (intersected with the runtime's fail-closed
-      // tier scope — a pin can narrow, never widen).
-      ...(typeof config?.vaultPersona === 'string' && config.vaultPersona !== ''
-        ? { allowedPersonas: [config.vaultPersona] }
-        : {}),
+      // Single selected vault — see `vaultPersona` above. Read + write both
+      // scope to exactly this one persona (∩ the runtime's safe-tier filter).
+      allowedPersonas: [vaultPersona],
     });
   };
 }
