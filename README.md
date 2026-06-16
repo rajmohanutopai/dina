@@ -1,9 +1,11 @@
-# Dina: Your Personal AI, With an Identity
+# Dina: Your sovereign AI. Your open network.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tests: 4500+ passing](https://img.shields.io/badge/Tests-4%2C500+%20passing-brightgreen)]()
 [![Status: Technical Preview](https://img.shields.io/badge/Status-Technical%20Preview-orange)]()
 [![Stack: TypeScript + legacy Go/Python](https://img.shields.io/badge/Stack-TypeScript%20%2B%20legacy%20Go%2FPython-blue)]()
+
+> **Dina is your AI control plane: your memory, your approvals, your services, your network**
 
 > **Dina is a personal AI with its own identity, encrypted memory boundaries, and a simple rule: she works for you and nobody else.** She can talk to other Dinas over encrypted channels. When many Dinas connect, they can form PeerLens through signed attestations, so decisions are guided by trust rather than ads.
 
