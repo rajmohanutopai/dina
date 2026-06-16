@@ -54,11 +54,25 @@ export default function PeopleScreen() {
   const router = useRouter();
   // Honor a `?tab=relations` deep-link (used by the guided demo to show the
   // just-added person under Relations). Reacts to param changes too.
-  const params = useLocalSearchParams<{ tab?: string }>();
+  const params = useLocalSearchParams<{ tab?: string; pick?: string }>();
+  // `?pick=talk` arrives from the chat composer's Talk chip: land on Contacts
+  // and hint that tapping a contact opens their D2D thread.
+  const pickTalk = params.pick === 'talk';
+  // Tab deep-link (guided demo): jump straight to Contacts / Relations.
   useEffect(() => {
-    if (params.tab === 'relations') setSubTab('relations');
-    else if (params.tab === 'contacts') setSubTab('contacts');
+    if (params.tab === 'contacts') setSubTab('contacts');
+    else if (params.tab === 'relations') setSubTab('relations');
   }, [params.tab]);
+  // Force Contacts on EVERY Talk entry, not just the first. Using
+  // `useFocusEffect` (fires once per navigation into this screen) instead of a
+  // mount-once ref means a second Talk tap reliably lands on Contacts, while a
+  // manual switch to Relations WITHIN the session is not re-yanked (a tab tap is
+  // not a focus event). The hint stays driven by `pickTalk`.
+  useFocusEffect(
+    useCallback(() => {
+      if (pickTalk) setSubTab('contacts');
+    }, [pickTalk]),
+  );
 
   const refresh = useCallback(() => {
     setContacts(listContacts());
@@ -107,11 +121,18 @@ export default function PeopleScreen() {
       <OwnIdentityCard />
       <SubTabBar value={subTab} onChange={setSubTab} />
       {subTab === 'contacts' ? (
-        <ContactsView
-          contacts={contacts}
-          onLongPress={onLongPress}
-          onAdd={() => router.push('/add-contact' as never)}
-        />
+        <>
+          {pickTalk && (
+            <View style={styles.talkPickHint} testID="people-talk-pick-hint">
+              <Text style={styles.talkPickHintText}>Tap a contact to start a conversation.</Text>
+            </View>
+          )}
+          <ContactsView
+            contacts={contacts}
+            onLongPress={onLongPress}
+            onAdd={() => router.push('/add-contact' as never)}
+          />
+        </>
       ) : (
         <RelationsView people={people} />
       )}
@@ -605,6 +626,22 @@ const styles = StyleSheet.create({
   shareButtonText: {
     ...textStyles.bodySmallStrong,
     color: colors.white,
+  },
+  // "Tap a contact to start a conversation" hint shown when arriving from the
+  // chat composer's Talk chip (`?pick=talk`).
+  talkPickHint: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.bgSecondary,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  talkPickHintText: {
+    ...textStyles.bodySmall,
+    color: colors.textSecondary,
   },
   // Segmented [Contacts | Relations] strip below the OwnIdentityCard.
   // A thin pill row rather than a full segmented control — keeps the

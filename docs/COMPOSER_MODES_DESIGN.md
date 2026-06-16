@@ -23,11 +23,19 @@ the LLM-routing guesswork for the launch:
 - **Talk** is a navigation shortcut (pick a contact, open the existing D2D
   thread), not a free-text question to your own Dina.
 
-The mechanism is a single per-call override: a mode carries `forcedSources`
-that **bypasses the Intent Classifier** and feeds the existing downstream
-pipeline unchanged. The agentic loop still discovers the exact capability and
-provider dynamically through the AppView. Nothing else in the ask path
-changes.
+The mechanism: a mode carries a per-call `forcedSources` override that bypasses
+the Intent Classifier, and the explicit lane is **enforced** (not merely
+hinted) via tool-policy gating plus result validation, so an explicit mode
+cannot quietly fall back to a general-knowledge answer (section 6.5). The
+agentic loop still discovers the exact capability and provider dynamically
+through the AppView.
+
+Crucially, **a mode chooses the EXTERNAL lane only; it never disables personal
+context enrichment** (section 6.6). Vault/persona enrichment runs in every
+mode, subject to privacy rules: "Find me a chair" in Reviews mode still uses
+your back-pain and budget context to personalize, but the answer must come from
+Ranked Reviews. That is the differentiator: Dina personalizes WHILE invoking
+other Dinas, services, reviews, and agents.
 
 ## 2. Motivation
 
@@ -80,10 +88,12 @@ Non-goals:
 | **Reviews** | free text → your Dina | **forced `peerlens`** | `/reviews <text>` | **deterministic lane** |
 | **Talk** | pick a contact | n/a (navigation) | none (router push) | deterministic |
 
-"Deterministic lane" means the LANE is guaranteed; within the Services lane
-the agentic loop still discovers the exact capability and provider through the
-AppView (`searchCapabilities` then `searchServices`), which remains the
-authority on which capabilities have live providers.
+"Deterministic lane" means the LANE is guaranteed: enforced by tool policy plus
+result validation (section 6.5), not just a prompt hint. Within the Services
+lane the agentic loop still discovers the exact capability and provider through
+the AppView (`searchCapabilities` then `searchServices`), which remains the
+authority on which capabilities have live providers. Personal context
+enrichment runs in every lane (section 6.6).
 
 Task remains gated on a paired delegation-capable agent
 (`useHasActiveAgent`, `apps/mobile/app/index.tsx:205-206`); when absent the
@@ -150,10 +160,12 @@ a contact row to `/chat/<did>`).
 
 A mode could prepend a natural-language directive ("you must use a service")
 to the query, but that is still LLM-interpreted and non-deterministic. Forcing
-the `sources` array is deterministic: the existing
+the `sources` array is the right routing SIGNAL, but determinism comes from the
+enforcement layer in section 6.5, not from `sources` alone: the existing
 `formatIntentHintBlock(hint)` (`packages/brain/src/reasoning/ask_handler.ts:158-204`)
-already turns `sources` into the routing block the agentic loop obeys. We
-reuse that exact machinery and only change WHERE `sources` comes from.
+turns `sources` into the routing block that biases the loop, and section 6.5's
+tool policy plus result validation make the lane binding. We reuse that
+machinery and only change WHERE `sources` comes from.
 
 ### 6.2 Per-call, not per-handler
 
@@ -211,6 +223,74 @@ when `sources` includes `peerlens`, instructing the loop to use
 This also strengthens the classifier-driven `Ask` path when it independently
 chooses `peerlens`.
 
+### 6.5 Enforcement: forced sources are necessary but not sufficient
+
+`forcedSources` only changes the ROUTING HINT in the system prompt, and that
+hint is advisory: `formatIntentHintBlock` ends with a line telling the model
+the hint is guidance and it may still call any tool
+(`packages/brain/src/reasoning/ask_handler.ts:202`). So forcing `sources`
+alone is better than today but is NOT a guarantee: the loop could still answer
+off-lane or from general knowledge. An explicit mode must GUARANTEE the lane.
+We enforce it in two layers:
+
+1. **Tool-policy gating + imperative directive.** In an explicit mode, pass a
+   RESTRICTED tool allowlist to `runAgenticTurn`, and for explicit modes
+   replace the advisory tail with an imperative one:
+   - Services: service-discovery + query tools (`search_capabilities`,
+     `search_provider_services`, `query_service`) plus enrichment helpers
+     (`geocode`, `find_preferred_provider`, `vault_search`). Directive: "You
+     are in Services mode. Answer from a service result, or report that no
+     service exists. Do not answer from general knowledge."
+   - Reviews: `search_peerlens` plus enrichment helpers. Directive: "You are
+     in Reviews mode. Answer from network reviews, or say there are none. Do
+     not invent a review-style answer."
+2. **Result validation (the hard gate).** After the loop, verify the lane was
+   actually exercised, and if not, return the canonical no-result surface
+   instead of the model's free text:
+   - Services: the turn must carry a `serviceQueries` dispatch or a
+     `missingCapabilities` notice (the existing return shape,
+     `orchestrator.ts:558-565`). If neither, surface the missing-service card,
+     not an LLM answer.
+   - Reviews: the answer must be backed by a `search_peerlens` result; if the
+     tool returned nothing, the reply says so plainly.
+
+Net: `forcedSources` sets the routing; tool-policy + result validation ENFORCE
+it. This is what makes "deterministic lane" actually true.
+
+### 6.6 Invariant: a mode chooses the EXTERNAL lane, not whether Dina personalizes
+
+This is a load-bearing rule and a core Dina differentiator. An explicit mode
+constrains the external SOURCE/DESTINATION; it does NOT turn off personal
+context enrichment. Vault / persona / preference enrichment (the preflight
+retrieval planner, the multi-persona walk, contact preferences) runs in EVERY
+mode, subject to the usual privacy/persona rules. Apple/Siri personalize
+within Apple's world; Dina personalizes WHILE invoking other Dinas, services,
+reviews, and agents.
+
+> Mode = required destination/source. Context enrichment = always available,
+> subject to vault / persona / privacy rules.
+
+| Mode | Required external lane | Enrichment still applies |
+|------|------------------------|--------------------------|
+| Ask | classifier decides | yes |
+| Services | find/query a service, or "no service exists" | yes (preferred provider, location, history, allergies, child's name) |
+| Reviews | answer from PeerLens, or "no review data" | yes (back pain, budget, dislikes shape the subject + ranking) |
+| Task | delegate to an agent | yes (vault context enriches the task) |
+| Talk | message a chosen contact | yes, but only user-approved / policy-allowed context reaches the peer (see the D2D context-card privacy gate, `project_d2d_recommendation_lane`) |
+| Remember | store memory/reminder | n/a |
+
+Examples:
+
+- **Services**: "Can I get an appointment?" may use the preferred doctor,
+  location, allergies, and past-appointment history from the vault to shape the
+  query, but the final action must be find/query a service or report none.
+- **Reviews**: "Find me a chair" may use lower-back-pain, a sub-$500 budget,
+  and "dislikes mesh" to personalize, but the external answer must come from
+  Ranked Reviews (or say there is no review data).
+- **Talk**: "Ask Raj if the Oreos are okay" may draft an enriched message, but
+  must not silently expose sensitive context to the peer unless policy/approval
+  allows it.
+
 ## 7. Component design
 
 ### 7.1 Composer (`apps/mobile/app/index.tsx`)
@@ -227,6 +307,16 @@ chooses `peerlens`.
   rather than wrap/overflow.
 - `sendMessage` (line 232) is unchanged in shape: `fullText = prefix + content`
   already produces `/services <q>` / `/reviews <q>` for the new text modes.
+- **Prefix must not leak into the chat bubble.** The user bubble must read just
+  `<q>`, not `/services <q>`. The renderer already strips a known `ACTIONS`
+  prefix for display (`app/index.tsx:442-449`: chip label + clean content), so
+  adding `services`/`reviews` to `ACTIONS` inherits that for the mobile view.
+  BUT the orchestrator stores the RAW command as the user message
+  (`orchestrator.ts:116`), so the prefix persists in the thread and would leak
+  on any non-mobile render (lite SPA, re-hydration). For App Store polish,
+  store the clean text plus a `mode` in metadata (or strip the prefix before
+  storing), not the raw `/services …` string. This is a required change, not
+  optional.
 - Testability seam: the composer needs to communicate the lane to the brain.
   Two equivalent options, decided in section 13:
   (a) **prefix-only** (`/services`, `/reviews`) parsed by the brain, or
@@ -313,8 +403,9 @@ entry point and any "pick mode" affordance/title).
   Test cross-Dina. The mode does not change this; the empty-result UX is the
   existing `missing_capability` card.
 - **No provider found.** Services lane with no live provider yields the
-  existing `missing_capability` card, not a generic LLM guess (the forced
-  routing block tells the loop not to fabricate).
+  existing `missing_capability` card, not a generic LLM guess. This is
+  guaranteed by the result-validation gate (section 6.5), not merely by the
+  advisory routing block.
 - **Empty input.** `/services` / `/reviews` with no text returns the usage hint
   (parser), matching `/service`.
 - **Reviews with no network data.** `search_peerlens` returns empty; the loop
@@ -328,10 +419,17 @@ entry point and any "pick mode" affordance/title).
 
 - No new external surface. Services/Reviews still go through the AppView and
   D2D exactly as today; the only change is which lane the owner picked.
-- Loyalty/privacy unchanged: the vault is consulted under the same guard; the
-  forced sources only widen/narrow which substrates the loop reads.
-- Talk remains contact-gated (the D2D receive pipeline already gates inbound on
-  contact/quarantine; outbound is to a chosen contact).
+- Loyalty/privacy unchanged: the vault is consulted under the same guard. The
+  enrichment invariant (section 6.6) does NOT loosen privacy: enrichment runs
+  under the existing vault/persona rules, and what is SHARED externally is
+  still gated. In Services/Reviews the vault context only shapes the local
+  query/ranking; it is not shipped to the provider beyond the query params the
+  schema already allows.
+- Talk: enrichment may draft an outgoing message, but sensitive context reaches
+  the peer only with user approval / policy (this is the D2D context-card
+  privacy gate, `project_d2d_recommendation_lane`). Talk remains contact-gated
+  (the D2D receive pipeline gates inbound on contact/quarantine; outbound is to
+  a chosen contact).
 
 ## 11. Testing strategy
 
@@ -346,6 +444,17 @@ entry point and any "pick mode" affordance/title).
 - **Forced-sources bypass (`reasoning/ask_handler` tests):** with
   `forcedSources` the classifier is NOT called and the right routing block is
   present; without it the classifier runs as today.
+- **Lane enforcement (the key tests, section 6.5):** in Services mode, a turn
+  where the loop calls no service tool (e.g. a stubbed model that tries to
+  answer from general knowledge) must NOT return that free text: it returns the
+  missing-service surface. In Reviews mode, no `search_peerlens` result must
+  yield a "no reviews" reply, never an invented one. Assert the restricted tool
+  allowlist per mode.
+- **Enrichment still runs (section 6.6):** a Services/Reviews turn still
+  performs vault/context enrichment (assert the enrichment fetchers are called)
+  even though the answer source is locked to the lane.
+- **Prefix not in the bubble:** the stored/displayed user message for a
+  Services/Reviews send is the clean text, not `/services …`.
 - **PeerLens routing block:** present iff `sources` includes `peerlens`.
 - **Live eval (extend `intent_classifier.eval.test.ts` or a new
   `ask_routing.eval.test.ts`, gated off by default):** Services/Reviews modes
@@ -355,15 +464,15 @@ entry point and any "pick mode" affordance/title).
 
 | File | Change | Size |
 |------|--------|------|
-| `apps/mobile/app/index.tsx` | ACTIONS + scrollable chip row + Talk nav action | M |
+| `apps/mobile/app/index.tsx` | ACTIONS + scrollable chip row + Talk nav action + clean user-bubble text (no prefix leak) | M |
 | `apps/mobile/app/people.tsx` | accept a "pick" entry for Talk (return to chat) | S |
 | `packages/brain/src/chat/command_parser.ts` | parse `/services`, `/reviews` (collision guard vs `/service`) | S |
-| `packages/brain/src/chat/orchestrator.ts` | route new commands → ask handler with `forcedSources`; extend `AskCommandContext` | S |
-| `packages/brain/src/reasoning/ask_handler.ts` | classifier bypass on `forcedSources`; `PEERLENS_ROUTING_BLOCK` | S |
-| `packages/brain/src/composition/agentic_ask.ts` | thread context through (if needed) | S |
-| tests (composer + parser + ask_handler) | per section 11 | M |
+| `packages/brain/src/chat/orchestrator.ts` | route new commands → ask handler with `forcedSources`; extend `AskCommandContext`; store clean user text + `mode` metadata (no prefix in stored message) | S |
+| `packages/brain/src/reasoning/ask_handler.ts` | classifier bypass on `forcedSources`; **per-mode tool allowlist + imperative directive + result-validation gate (section 6.5)**; `PEERLENS_ROUTING_BLOCK` | M |
+| `packages/brain/src/composition/agentic_ask.ts` | thread context + per-mode tool set through | S |
+| tests (composer + parser + ask_handler + enforcement + enrichment) | per section 11 | M |
 
-Total: M. No migration, no protocol bump.
+Total: M (the enforcement gate in `ask_handler.ts` is the meatiest piece). No migration, no protocol bump.
 
 ## 13. Decisions and open questions
 
@@ -374,6 +483,14 @@ Decided (this design):
 - Reviews queries the network (forced PeerLens); writing a review stays its own
   flow.
 - Ask stays smart (classifier retained).
+- **Explicit modes ENFORCE the answer lane** (tool policy + result validation,
+  section 6.5), not just hint it. `forcedSources` alone is insufficient because
+  the routing block is advisory.
+- **A mode chooses the external lane only; it never disables context
+  enrichment** (section 6.6). Enrichment runs in every mode under existing
+  privacy rules. This is a core invariant, not a nice-to-have.
+- **Mode prefixes must not leak into the visible/stored user message**
+  (section 7.1). Store clean text + a `mode` in metadata.
 
 Open:
 

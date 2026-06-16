@@ -201,10 +201,13 @@ describe('chat_transport.web — SSE contract', () => {
     mockFetch({ status: 200, body: plainChatResponse('ack', 'REMEMBER') });
     await runChatTurn('/remember Emma loves dinosaurs', 'main');
 
-    // Server emits the two messages handleChat would have written.
+    // Server emits the two messages handleChat would have written. The user
+    // message is the CLEAN payload + the mode in metadata (no slash prefix) —
+    // docs/COMPOSER_MODES_DESIGN.md section 7.1. Mirroring must preserve both,
+    // so the web SPA renders the clean bubble + a mode chip, just like mobile.
     lastEventSource?.emitMessage(
       JSON.stringify(
-        serverChatMessage('main', 'user', '/remember Emma loves dinosaurs'),
+        serverChatMessage('main', 'user', 'Emma loves dinosaurs', { metadata: { mode: 'remember' } }),
       ),
     );
     lastEventSource?.emitMessage(
@@ -213,7 +216,11 @@ describe('chat_transport.web — SSE contract', () => {
 
     const msgs = getThread('main');
     expect(msgs).toHaveLength(2);
-    expect(msgs[0]).toMatchObject({ type: 'user', content: '/remember Emma loves dinosaurs' });
+    expect(msgs[0]).toMatchObject({
+      type: 'user',
+      content: 'Emma loves dinosaurs',
+      metadata: { mode: 'remember' },
+    });
     expect(msgs[1]).toMatchObject({ type: 'dina', content: 'Got it — saved to your vault.' });
   });
 

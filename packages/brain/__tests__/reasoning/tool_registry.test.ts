@@ -190,3 +190,34 @@ describe('ApprovalRequiredError handling', () => {
     }
   });
 });
+
+describe('ToolRegistry — subset (lane scoping)', () => {
+  it('returns a new registry with ONLY the named tools that exist', () => {
+    const r = new ToolRegistry();
+    r.register(makeTool({ name: 'alpha' }));
+    r.register(makeTool({ name: 'beta' }));
+    r.register(makeTool({ name: 'gamma' }));
+
+    const scoped = r.subset(['alpha', 'gamma', 'does_not_exist']);
+    expect(scoped.has('alpha')).toBe(true);
+    expect(scoped.has('gamma')).toBe(true);
+    expect(scoped.has('beta')).toBe(false); // excluded
+    expect(scoped.has('does_not_exist')).toBe(false); // unknown name skipped
+    expect(scoped.size()).toBe(2);
+  });
+
+  it('does not mutate the source registry', () => {
+    const r = new ToolRegistry();
+    r.register(makeTool({ name: 'alpha' }));
+    r.register(makeTool({ name: 'beta' }));
+    r.subset(['alpha']);
+    expect(r.has('beta')).toBe(true);
+    expect(r.size()).toBe(2);
+  });
+
+  it('an empty allowlist yields an empty registry', () => {
+    const r = new ToolRegistry();
+    r.register(makeTool({ name: 'alpha' }));
+    expect(r.subset([]).size()).toBe(0);
+  });
+});

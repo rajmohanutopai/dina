@@ -45,13 +45,15 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 5c tasks 5.17 + 5.18.
  */
 
-import type { AskRecord, AskRegistry } from './ask_registry';
 import {
   inboundRequestId,
   newRequestId,
   withTrace,
   type TraceContext,
 } from '../diagnostics/trace_correlation';
+
+import type { AskRecord, AskRegistry } from './ask_registry';
+import type { IntentSource } from '../reasoning/intent_classifier';
 
 export const ASK_FAST_PATH_TIMEOUT_MS = 3_000;
 
@@ -98,6 +100,14 @@ export type AskExecuteFn = (input: {
    * session-scope shortcut keys on (agent, session, persona).
    */
   sessionId?: string;
+  /**
+   * Explicit composer lane (Services → ['provider_services'], Reviews →
+   * ['peerlens']). When set, the executeFn forces the lane: it skips intent
+   * inference, scopes tools to the lane, and gates the result so the answer
+   * comes from the lane or a clean no-result/outage reply
+   * (docs/COMPOSER_MODES_DESIGN.md 6.5-6.6). Absent for plain Ask.
+   */
+  forcedSources?: readonly IntentSource[];
   signal?: AbortSignal;
 }) => Promise<ExecuteOutcome>;
 
@@ -108,6 +118,8 @@ export interface AskSubmitRequest {
   requestIdHeader?: string | null;
   /** Dina-agent `X-Session` header value — propagated through to `AskExecuteFn`. */
   sessionId?: string;
+  /** Explicit composer lane — propagated through to `AskExecuteFn`. See there. */
+  forcedSources?: readonly IntentSource[];
   /** TTL override. */
   ttlMs?: number;
 }
@@ -216,6 +228,9 @@ export function createAskHandler(
       question: req.question,
       requesterDid: req.requesterDid,
     };
+    if (req.forcedSources !== undefined && req.forcedSources.length > 0) {
+      enqueueInput.forcedSources = req.forcedSources;
+    }
     if (req.ttlMs !== undefined) enqueueInput.ttlMs = req.ttlMs;
     await registry.enqueue(enqueueInput);
 
@@ -235,6 +250,9 @@ export function createAskHandler(
           requesterDid: req.requesterDid,
           ...(req.sessionId !== undefined && req.sessionId !== ''
             ? { sessionId: req.sessionId }
+            : {}),
+          ...(req.forcedSources !== undefined && req.forcedSources.length > 0
+            ? { forcedSources: req.forcedSources }
             : {}),
         });
       } catch (err) {

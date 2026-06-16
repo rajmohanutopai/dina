@@ -56,12 +56,13 @@
  * "no auto re-issuer on approval_resumed" gap.
  */
 
+import type { AskExecuteFn, ExecuteOutcome } from './ask_handler';
+import type { AskEvent, AskRegistry } from './ask_registry';
 import type {
   AgenticLoopResult,
   PausedAgenticState,
 } from '../reasoning/agentic_loop';
-import type { AskExecuteFn, ExecuteOutcome } from './ask_handler';
-import type { AskEvent, AskRegistry } from './ask_registry';
+import type { IntentSource } from '../reasoning/intent_classifier';
 
 export type AskApprovalResumerEvent =
   | { kind: 'resumed_completed'; askId: string }
@@ -88,6 +89,15 @@ export interface ResumeContext {
   askId: string;
   /** DID of the original requester — needed for `createPersonaGuard`. */
   requesterDid: string;
+  /** The original question — lets the answer-shaper recover missing-capability
+   *  context on resume (same input the first-turn translation used). */
+  question: string;
+  /**
+   * Explicit composer lane carried from the original ask, so a forced
+   * Services/Reviews ask stays enforced across an approval-resume (the closure
+   * re-applies the lane block + tool scope + result gate). Absent for plain Ask.
+   */
+  forcedSources?: readonly IntentSource[];
 }
 
 /**
@@ -119,6 +129,19 @@ export interface AskApprovalResumerOptions {
    * `executeFn` is provided.
    */
   resumeFromPausedFn?: ResumeFromPausedFn;
+  /**
+   * Maps a COMPLETED Pattern-A loop result into the persisted answer object.
+   * Without it the resumer stores only `{ text }`, dropping the rich metadata
+   * (serviceQueries / reviewSource / missingCapabilities) the first-turn path
+   * produces — so a resumed Services/Reviews answer would lose its cards. The
+   * coordinator injects one backed by the same `translateLoopResult` the normal
+   * executeFn path uses, keeping this generic primitive free of coordinator
+   * imports. Defaults to `{ text: result.answer }`.
+   */
+  shapeCompletedAnswer?: (
+    result: AgenticLoopResult,
+    context: ResumeContext,
+  ) => Record<string, unknown>;
   /** Diagnostic hook — fires on every resumer decision. */
   onEvent?: (event: AskApprovalResumerEvent) => void;
 }
@@ -127,6 +150,10 @@ export class AskApprovalResumer {
   private readonly registry: AskRegistry;
   private readonly executeFn?: AskExecuteFn;
   private readonly resumeFromPausedFn?: ResumeFromPausedFn;
+  private readonly shapeCompletedAnswer?: (
+    result: AgenticLoopResult,
+    context: ResumeContext,
+  ) => Record<string, unknown>;
   private readonly onEvent?: (event: AskApprovalResumerEvent) => void;
 
   constructor(opts: AskApprovalResumerOptions) {
@@ -143,6 +170,9 @@ export class AskApprovalResumer {
     this.registry = opts.registry;
     if (hasExecute) this.executeFn = opts.executeFn;
     if (hasResume) this.resumeFromPausedFn = opts.resumeFromPausedFn;
+    if (typeof opts.shapeCompletedAnswer === 'function') {
+      this.shapeCompletedAnswer = opts.shapeCompletedAnswer;
+    }
     this.onEvent = opts.onEvent;
   }
 
@@ -201,12 +231,17 @@ export class AskApprovalResumer {
         return;
       }
 
+      const ctx: ResumeContext = {
+        askId: record.id,
+        requesterDid: record.requesterDid,
+        question: record.question,
+        ...(record.forcedSources !== undefined && record.forcedSources.length > 0
+          ? { forcedSources: record.forcedSources }
+          : {}),
+      };
       let result: AgenticLoopResult;
       try {
-        result = await this.resumeFromPausedFn(pausedState, {
-          askId: record.id,
-          requesterDid: record.requesterDid,
-        });
+        result = await this.resumeFromPausedFn(pausedState, ctx);
       } catch (err) {
         const detail = stringifyError(err);
         this.onEvent?.({ kind: 'execute_crashed', askId, detail });
@@ -216,7 +251,7 @@ export class AskApprovalResumer {
         });
         return;
       }
-      await this.applyAgenticResult(askId, result);
+      await this.applyAgenticResult(askId, result, ctx);
       return;
     }
 
@@ -228,6 +263,9 @@ export class AskApprovalResumer {
           id: record.id,
           question: record.question,
           requesterDid: record.requesterDid,
+          ...(record.forcedSources !== undefined && record.forcedSources.length > 0
+            ? { forcedSources: record.forcedSources }
+            : {}),
         });
       } catch (err) {
         const detail = stringifyError(err);
@@ -291,10 +329,22 @@ export class AskApprovalResumer {
    *     fresh blob so the next resume picks up at the new bail point).
    *   - everything else    → markFailed with structured failure.
    */
-  private async applyAgenticResult(askId: string, result: AgenticLoopResult): Promise<void> {
+  private async applyAgenticResult(
+    askId: string,
+    result: AgenticLoopResult,
+    ctx: ResumeContext,
+  ): Promise<void> {
     try {
       if (result.finishReason === 'completed') {
-        await this.registry.markComplete(askId, JSON.stringify({ text: result.answer }));
+        // Shape the rich answer the SAME way the first-turn path does
+        // (serviceQueries / reviewSource / missingCapabilities + forced-lane
+        // gate), via the injected shaper. Without it a resumed Services/Reviews
+        // answer would persist text-only and lose its cards. Falls back to
+        // text-only when no shaper is wired (legacy callers).
+        const answer = this.shapeCompletedAnswer
+          ? this.shapeCompletedAnswer(result, ctx)
+          : { text: result.answer };
+        await this.registry.markComplete(askId, JSON.stringify(answer));
         this.onEvent?.({ kind: 'resumed_completed', askId });
         return;
       }

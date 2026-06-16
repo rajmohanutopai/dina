@@ -115,6 +115,13 @@ export function createSearchPeerlensTool(
       subject?: ResolvePeerlensResponse;
       search?: SearchPeerlensResponse;
       note?: string;
+      /**
+       * Set true when an AppView call THREW (the network was unreachable). The
+       * Reviews-lane result gate uses this to report an OUTAGE rather than
+       * "no reviews exist" (docs/COMPOSER_MODES_DESIGN.md — outage vs absence).
+       * An empty-but-successful lookup leaves this unset.
+       */
+      failed?: boolean;
     }> {
       const subject = typeof args.subject === 'string' && args.subject !== '' ? args.subject : '';
       const query = typeof args.query === 'string' && args.query !== '' ? args.query : '';
@@ -122,7 +129,12 @@ export function createSearchPeerlensTool(
         throw new Error('search_peerlens: pass at least one of `subject` or `query`');
       }
 
-      const out: { subject?: ResolvePeerlensResponse; search?: SearchPeerlensResponse; note?: string } = {};
+      const out: {
+        subject?: ResolvePeerlensResponse;
+        search?: SearchPeerlensResponse;
+        note?: string;
+        failed?: boolean;
+      } = {};
 
       if (subject !== '') {
         try {
@@ -141,6 +153,7 @@ export function createSearchPeerlensTool(
             subject,
           });
           out.note = 'PeerLens lookup failed — no verified peer data available for that subject.';
+          out.failed = true;
         }
       }
 
@@ -172,6 +185,7 @@ export function createSearchPeerlensTool(
           if (out.note === undefined) {
             out.note = 'PeerLens search failed — no verified peer data for that query.';
           }
+          out.failed = true;
         }
       }
 

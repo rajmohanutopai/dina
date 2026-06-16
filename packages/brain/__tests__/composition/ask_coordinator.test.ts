@@ -21,6 +21,7 @@ import {
   workflowTaskAsSource,
   type AskCoordinatorCoreClient,
 } from '../../src/composition/ask_coordinator';
+import { createCoordinatorAskHandler } from '../../src/composition/coordinator_ask_handler';
 import { resetIdentityExtractor } from '../../src/pipeline/identity_extraction';
 import {
   setAccessiblePersonas,
@@ -592,5 +593,113 @@ describe('buildAgenticExecuteFn translation', () => {
     expect(() => buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT })).toThrow(
       'pipeline.buildToolsForAsk is missing',
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Forced composer lanes through the PRODUCTION bridge (P1 / P3#8 regression).
+//
+// The earlier composer-modes work enforced lanes only in
+// `makeAgenticAskHandler`, but mobile + HNL run `createCoordinatorAskHandler`
+// → coordinator → buildAgenticExecuteFn, which ignored forcedSources. These
+// tests drive the REAL bridge end-to-end so a regression that drops the
+// forcedSources thread anywhere in that chain fails here.
+// ---------------------------------------------------------------------------
+describe('createCoordinatorAskHandler — forced composer lanes (production bridge)', () => {
+  function buildBridge(llm: LLMProvider) {
+    const { client } = makeFakeCoreClient();
+    const pipeline = buildPipeline({ llm, coreClient: client });
+    const coordinator = createAskCoordinator({
+      pipeline,
+      coreClient: client,
+      executeFn: buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT }),
+      systemPrompt: SYSTEM_PROMPT,
+      fastPathMs: 5_000,
+    });
+    return createCoordinatorAskHandler({ coordinator, requesterDid: REQUESTER });
+  }
+
+  it('Services lane: an off-lane general-knowledge answer is replaced with no-service', async () => {
+    // No service tool called, just free text → the gate must overwrite it. Before
+    // the fix the production path returned "Kebabs cost $8" verbatim (P1).
+    const llm = makeScripted();
+    llm.push(answerResp('Kebabs usually cost about $8.'));
+    const { handler, dispose } = buildBridge(llm.provider);
+    try {
+      const r = await handler('price of a kebab nearby', {
+        threadId: 'main',
+        forcedSources: ['provider_services'],
+      });
+      expect(r.response).not.toMatch(/\$8/);
+      expect(r.response).toMatch(/couldn't find a Dina service/i);
+    } finally {
+      dispose();
+    }
+  });
+
+  it('Reviews lane: an answer not backed by the review network is replaced', async () => {
+    const llm = makeScripted();
+    llm.push(answerResp('The Sony XM5 is excellent.'));
+    const { handler, dispose } = buildBridge(llm.provider);
+    try {
+      const r = await handler('is the sony xm5 any good?', {
+        threadId: 'main',
+        forcedSources: ['peerlens'],
+      });
+      expect(r.response).not.toMatch(/excellent/i);
+      expect(r.response).toMatch(/network reviews/i);
+    } finally {
+      dispose();
+    }
+  });
+
+  it('plain Ask (no forced source) passes the answer through unchanged', async () => {
+    // Control: the gate is lane-scoped — a normal Ask is never rewritten.
+    const llm = makeScripted();
+    llm.push(answerResp('The sky is blue.'));
+    const { handler, dispose } = buildBridge(llm.provider);
+    try {
+      const r = await handler('what colour is the sky?', { threadId: 'main' });
+      expect(r.response).toBe('The sky is blue.');
+    } finally {
+      dispose();
+    }
+  });
+
+  it('fast-path complete returns serviceQueries to the orchestrator (so the card renders)', async () => {
+    // A service query can dispatch WITHIN the 3s fast-path window. The bridge's
+    // fast-path complete return must surface serviceQueries — the orchestrator
+    // posts the service_query lifecycle card from result.serviceQueries. Before
+    // the fix this branch dropped them and the card never rendered. Uses a stub
+    // executeFn returning an answer carrying serviceQueries so the test targets
+    // the bridge's extraction, not the live query_service tool.
+    const { provider } = makeScripted();
+    const { client } = makeFakeCoreClient();
+    const pipeline = buildPipeline({ llm: provider, coreClient: client });
+    const coordinator = createAskCoordinator({
+      pipeline,
+      coreClient: client,
+      executeFn: async () => ({
+        kind: 'answer',
+        answer: {
+          text: 'Asking the restaurant…',
+          serviceQueries: [
+            { taskId: 'task-1', queryId: 'q-1', capability: 'price_check', serviceName: 'Kebab Co' },
+          ],
+        },
+      }),
+      systemPrompt: SYSTEM_PROMPT,
+      fastPathMs: 5_000,
+    });
+    const { handler, dispose } = createCoordinatorAskHandler({ coordinator, requesterDid: REQUESTER });
+    try {
+      const r = await handler('price of a kebab', {
+        threadId: 'main',
+        forcedSources: ['provider_services'],
+      });
+      expect((r.serviceQueries ?? []).map((q) => q.taskId)).toEqual(['task-1']);
+    } finally {
+      dispose();
+    }
   });
 });

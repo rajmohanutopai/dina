@@ -4,8 +4,10 @@
  * Commands:
  *   /remember <text>                    → store a memory in the vault
  *   /ask <question>                     → search vault + reason about a question
+ *   /services <free text>               → forced public-service discovery lane
+ *   /reviews <free text>                → forced Ranked-Reviews (PeerLens) lane
  *   /search <query>                     → vault search (FTS only, no LLM)
- *   /service <capability> <free text>   → route to a public service
+ *   /service <capability> <free text>   → route to a public service (capability-explicit)
  *   /help                               → show available commands
  *
  * Implicit intent detection:
@@ -18,6 +20,8 @@
 export type ChatIntent =
   | 'remember'
   | 'ask'
+  | 'services'
+  | 'reviews'
   | 'task'
   | 'search'
   | 'service'
@@ -113,6 +117,15 @@ function parseSlashCommand(text: string): ParsedCommand {
       return { intent: 'remember', payload, explicit: true, originalText: text };
     case 'ask':
       return { intent: 'ask', payload, explicit: true, originalText: text };
+    // Explicit composer lanes. They route through the same agentic /ask
+    // handler but with a forced source (Services → provider_services,
+    // Reviews → peerlens) so the lane is guaranteed, not classifier-inferred.
+    // Distinct from the capability-explicit `/service <capability>` below: the
+    // switch matches the whole token, so `services` !== `service` (no collision).
+    case 'services':
+      return { intent: 'services', payload, explicit: true, originalText: text };
+    case 'reviews':
+      return { intent: 'reviews', payload, explicit: true, originalText: text };
     case 'task':
       return { intent: 'task', payload, explicit: true, originalText: text };
     case 'search':
@@ -173,7 +186,7 @@ function parseServiceCommand(payload: string, originalText: string): ParsedComma
  * will accept — we reject suspicious-looking input at the chat boundary.
  */
 function isValidCapabilityName(name: string): boolean {
-  return /^[A-Za-z][A-Za-z0-9_.\-]*$/.test(name);
+  return /^[A-Za-z][A-Za-z0-9_.-]*$/.test(name);
 }
 
 /**
@@ -217,7 +230,7 @@ function parseServiceApproveCommand(payload: string, originalText: string): Pars
  * Reject anything that looks like shell-injection / path traversal.
  */
 function isValidTaskId(id: string): boolean {
-  return /^[A-Za-z0-9_.\-]+$/.test(id);
+  return /^[A-Za-z0-9_.-]+$/.test(id);
 }
 
 /**
@@ -270,12 +283,20 @@ export function isQuestion(text: string): boolean {
 /**
  * Get the list of available commands for /help.
  */
-export function getAvailableCommands(): Array<{ command: string; description: string }> {
+export function getAvailableCommands(): { command: string; description: string }[] {
   return [
     { command: '/remember <text>', description: 'Store a memory in your vault' },
     {
       command: '/ask <question>',
       description: 'Ask a question — searches your vault and reasons about it',
+    },
+    {
+      command: '/services <text>',
+      description: 'Find a public service on the network — e.g. /services price of kebab nearby',
+    },
+    {
+      command: '/reviews <text>',
+      description: 'Ask the Ranked Reviews network — e.g. /reviews is the Sony XM5 any good?',
     },
     { command: '/search <query>', description: 'Search your vault (keyword search, no LLM)' },
     {

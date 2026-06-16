@@ -7,13 +7,17 @@ import {
   DEFAULT_ASK_SYSTEM_PROMPT,
   formatCurrentTimeBlock,
   formatIntentHintBlock,
+  formatForcedLaneBlock,
+  PROVIDER_SERVICES_ROUTING_BLOCK,
+  PEERLENS_ROUTING_BLOCK,
 } from '../../src/reasoning/ask_handler';
-import { ToolRegistry, type AgentTool } from '../../src/reasoning/tool_registry';
-import type { ChatResponse, LLMProvider, ToolCall } from '../../src/llm/adapters/provider';
 import { IntentClassifier, type IntentClassification } from '../../src/reasoning/intent_classifier';
+import { ToolRegistry, type AgentTool } from '../../src/reasoning/tool_registry';
+
+import type { ChatResponse, LLMProvider, ToolCall } from '../../src/llm/adapters/provider';
 import type { TocEntry } from '@dina/core';
 
-function scriptedProvider(script: Array<Partial<ChatResponse>>): LLMProvider {
+function scriptedProvider(script: Partial<ChatResponse>[]): LLMProvider {
   let i = 0;
   return {
     name: 'test',
@@ -312,7 +316,7 @@ describe('makeAgenticAskHandler', () => {
   });
 
   it('onTurn trace fires with usage + tool-call summary', async () => {
-    const traces: Array<Record<string, unknown>> = [];
+    const traces: Record<string, unknown>[] = [];
     const handler = makeAgenticAskHandler({
       provider: scriptedProvider([{ content: 'ok', toolCalls: [] }]),
       tools: new ToolRegistry(),
@@ -726,5 +730,321 @@ describe('formatCurrentTimeBlock (MT-15-I3)', () => {
     // The base system prompt must still be there underneath — we're
     // PREPENDING, not replacing.
     expect(seenSystemPrompt).toContain(DEFAULT_ASK_SYSTEM_PROMPT.slice(0, 80));
+  });
+});
+
+describe('makeAgenticAskHandler — explicit lane enforcement (Services/Reviews)', () => {
+  /** A tool that records each execution + returns a fixed result. */
+  function recordingTool(
+    name: string,
+    result: unknown,
+  ): AgentTool & { calls: Record<string, unknown>[] } {
+    const calls: Record<string, unknown>[] = [];
+    const tool: AgentTool = {
+      name,
+      description: `${name} (test)`,
+      parameters: { type: 'object', properties: {}, required: [] },
+      execute: async (args) => {
+        calls.push(args);
+        return result;
+      },
+    };
+    return Object.assign(tool, { calls });
+  }
+  function tc(name: string, args: Record<string, unknown> = {}): ToolCall {
+    return { id: `c-${name}`, name, arguments: args };
+  }
+
+  it('Services mode SKIPS the classifier (source is forced, not inferred)', async () => {
+    const classifier = new IntentClassifier({ llm: async () => '{}', tocFetcher: async () => [] });
+    const spy = jest.spyOn(classifier, 'classify');
+    const handler = makeAgenticAskHandler({
+      provider: scriptedProvider([{ content: 'no tool', toolCalls: [] }]),
+      tools: new ToolRegistry(),
+      intentClassifier: classifier,
+    });
+    await handler('price of kebab', { threadId: 'main', forcedSources: ['provider_services'] });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('Services mode: an off-lane (general-knowledge) answer is replaced with no-service', async () => {
+    const handler = makeAgenticAskHandler({
+      provider: scriptedProvider([{ content: 'Kebabs usually cost about $8.', toolCalls: [] }]),
+      tools: new ToolRegistry(),
+    });
+    const result = await handler('price of kebab at a turkish restaurant', {
+      threadId: 'main',
+      forcedSources: ['provider_services'],
+    });
+    expect(result.response).not.toMatch(/\$8/);
+    expect(result.response).toMatch(/couldn't find a Dina service/i);
+  });
+
+  it('Services mode: a dispatched service query passes through (ack kept)', async () => {
+    const tools = new ToolRegistry();
+    tools.register(queryServiceTool('svc-1'));
+    const handler = makeAgenticAskHandler({
+      provider: scriptedProvider([
+        {
+          content: '',
+          toolCalls: [
+            tc('query_service', {
+              operator_did: 'did:plc:x',
+              capability: 'price_check',
+              params: {},
+            }),
+          ],
+        },
+        { content: 'Asking the restaurant…', toolCalls: [] },
+      ]),
+      tools,
+    });
+    const result = await handler('price of kebab', {
+      threadId: 'main',
+      forcedSources: ['provider_services'],
+    });
+    expect(result.response).toBe('Asking the restaurant…');
+    expect((result.serviceQueries ?? []).map((q) => q.taskId)).toEqual(['svc-1']);
+  });
+
+  it('Services mode: tool policy excludes off-lane tools, keeps enrichment', async () => {
+    const reminder = recordingTool('schedule_reminder', { ok: true });
+    const vault = recordingTool('vault_search', []);
+    const tools = new ToolRegistry();
+    tools.register(reminder);
+    tools.register(vault);
+    tools.register(queryServiceTool('svc-2'));
+    const handler = makeAgenticAskHandler({
+      provider: scriptedProvider([
+        {
+          content: '',
+          toolCalls: [
+            tc('schedule_reminder', { text: 'x' }),
+            tc('vault_search', { query: 'kebab' }),
+          ],
+        },
+        {
+          content: '',
+          toolCalls: [
+            tc('query_service', {
+              operator_did: 'did:plc:x',
+              capability: 'price_check',
+              params: {},
+            }),
+          ],
+        },
+        { content: 'Asking…', toolCalls: [] },
+      ]),
+      tools,
+    });
+    await handler('price of kebab', { threadId: 'main', forcedSources: ['provider_services'] });
+    // schedule_reminder is NOT in the Services lane → scoped out → never runs.
+    expect(reminder.calls).toHaveLength(0);
+    // vault_search IS enrichment → stays available (invariant 6.6).
+    expect(vault.calls.length).toBeGreaterThan(0);
+  });
+
+  it('Reviews mode: an answer not backed by search_peerlens is replaced', async () => {
+    const handler = makeAgenticAskHandler({
+      provider: scriptedProvider([{ content: 'The Sony XM5 is excellent.', toolCalls: [] }]),
+      tools: new ToolRegistry(),
+    });
+    const result = await handler('is the sony xm5 good?', {
+      threadId: 'main',
+      forcedSources: ['peerlens'],
+    });
+    expect(result.response).not.toMatch(/excellent/i);
+    expect(result.response).toMatch(/network reviews/i);
+  });
+
+  it('Reviews mode: a search_peerlens-backed answer passes through', async () => {
+    const peerlens = recordingTool('search_peerlens', {
+      subject: {
+        trustLevel: 'high',
+        attestationSummary: { total: 9, positive: 8, neutral: 1, negative: 0 },
+      },
+    });
+    const tools = new ToolRegistry();
+    tools.register(peerlens);
+    const handler = makeAgenticAskHandler({
+      provider: scriptedProvider([
+        { content: '', toolCalls: [tc('search_peerlens', { subject: 'product:Sony XM5' })] },
+        { content: 'Your network rates the XM5 highly (9 reviews).', toolCalls: [] },
+      ]),
+      tools,
+    });
+    const result = await handler('is the sony xm5 good?', {
+      threadId: 'main',
+      forcedSources: ['peerlens'],
+    });
+    expect(peerlens.calls).toHaveLength(1);
+    expect(result.response).toMatch(/network rates the XM5/i);
+  });
+
+  it('formatForcedLaneBlock: Services is imperative + carries the provider routing block', () => {
+    const block = formatForcedLaneBlock(['provider_services']);
+    expect(block).toMatch(/EXPLICIT MODE: Services/);
+    expect(block).toContain(PROVIDER_SERVICES_ROUTING_BLOCK);
+  });
+
+  it('formatForcedLaneBlock: Reviews is the imperative PeerLens block', () => {
+    expect(formatForcedLaneBlock(['peerlens'])).toBe(PEERLENS_ROUTING_BLOCK);
+    expect(PEERLENS_ROUTING_BLOCK).toMatch(/EXPLICIT MODE: Reviews/);
+    expect(PEERLENS_ROUTING_BLOCK).toMatch(/do NOT invent/i);
+  });
+
+  it('formatForcedLaneBlock: an unknown forced source returns empty (no crash)', () => {
+    // Composer modes only force provider_services / peerlens today; any other
+    // source returns '' (the caller appends nothing) rather than throwing.
+    expect(formatForcedLaneBlock(['general_knowledge'])).toBe('');
+  });
+
+  it('Services mode: a missing-capability result still forces no-service in the response body (no off-lane leak)', async () => {
+    // Discovery ran and found the capability is real but has no live provider:
+    // missingCapabilities is populated, serviceQueries is empty. The loop's free
+    // text (general knowledge) must NOT survive as the response — the
+    // missing_capability card speaks for the gap, but the response string (which
+    // the orchestrator also persists as that card's content) must be the clean
+    // no-service reply. Regression guard for the INV-1 leak fix.
+    const search = recordingTool('search_provider_services', []); // empty → missing capability
+    const tools = new ToolRegistry();
+    tools.register(search);
+    const handler = makeAgenticAskHandler({
+      provider: scriptedProvider([
+        { content: '', toolCalls: [tc('search_provider_services', { capability: 'price_check' })] },
+        { content: 'Kebabs usually cost about $8.', toolCalls: [] },
+      ]),
+      tools,
+    });
+    const result = await handler('price of kebab at a turkish restaurant', {
+      threadId: 'main',
+      forcedSources: ['provider_services'],
+    });
+    // The off-lane sentence must be gone from the response body…
+    expect(result.response).not.toMatch(/\$8/);
+    expect(result.response).toMatch(/couldn't find a Dina service/i);
+    // …yet the missing-capability notice is still surfaced (for the dev-path card).
+    expect((result.missingCapabilities ?? []).length).toBeGreaterThan(0);
+  });
+
+  it('Reviews mode SKIPS the classifier (source is forced, not inferred)', async () => {
+    const classifier = new IntentClassifier({ llm: async () => '{}', tocFetcher: async () => [] });
+    const spy = jest.spyOn(classifier, 'classify');
+    const handler = makeAgenticAskHandler({
+      provider: scriptedProvider([{ content: 'no tool', toolCalls: [] }]),
+      tools: new ToolRegistry(),
+      intentClassifier: classifier,
+    });
+    await handler('is the sony xm5 good?', { threadId: 'main', forcedSources: ['peerlens'] });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('Reviews mode: tool policy excludes off-lane tools, keeps enrichment', async () => {
+    const reminder = recordingTool('schedule_reminder', { ok: true });
+    const vault = recordingTool('vault_search', []);
+    const peerlens = recordingTool('search_peerlens', {
+      subject: { trustLevel: 'high', attestationSummary: { total: 5, positive: 5, neutral: 0, negative: 0 } },
+    });
+    const tools = new ToolRegistry();
+    tools.register(reminder);
+    tools.register(vault);
+    tools.register(peerlens);
+    const handler = makeAgenticAskHandler({
+      provider: scriptedProvider([
+        {
+          content: '',
+          toolCalls: [
+            tc('schedule_reminder', { text: 'x' }),
+            tc('vault_search', { query: 'headphones' }),
+            tc('search_peerlens', { subject: 'product:Sony XM5' }),
+          ],
+        },
+        { content: 'Your network rates the XM5 highly.', toolCalls: [] },
+      ]),
+      tools,
+    });
+    await handler('is the sony xm5 good?', { threadId: 'main', forcedSources: ['peerlens'] });
+    // schedule_reminder is NOT in the Reviews lane → scoped out → never runs.
+    expect(reminder.calls).toHaveLength(0);
+    // vault_search IS enrichment → stays available in every lane (invariant 6.6).
+    expect(vault.calls.length).toBeGreaterThan(0);
+  });
+
+  it('Reviews mode: an AppView outage (failure note) reads as an OUTAGE, not absence (P2b)', async () => {
+    // search_peerlens succeeded as a tool but the AppView call THREW, so it
+    // returns a failure `note` (no subject / no search data). That is the
+    // network being unreachable — it must NOT be reported as "no reviews exist".
+    const peerlens = recordingTool('search_peerlens', { note: 'PeerLens lookup failed', failed: true });
+    const tools = new ToolRegistry();
+    tools.register(peerlens);
+    const handler = makeAgenticAskHandler({
+      provider: scriptedProvider([
+        { content: '', toolCalls: [tc('search_peerlens', { subject: 'product:Sony XM5' })] },
+        { content: 'The Sony XM5 is excellent.', toolCalls: [] },
+      ]),
+      tools,
+    });
+    const result = await handler('is the sony xm5 good?', {
+      threadId: 'main',
+      forcedSources: ['peerlens'],
+    });
+    expect(peerlens.calls).toHaveLength(1); // it WAS called…
+    expect(result.response).not.toMatch(/excellent/i); // …the verdict is dropped…
+    expect(result.response).toMatch(/couldn't reach the review network/i); // …as an outage
+  });
+
+  it('Reviews mode: an EMPTY-but-successful search reads as absence (no reviews yet) (P2a)', async () => {
+    // The network WAS reached and returned zero rows / total 0 — genuine
+    // absence. The verdict is dropped to the clean no-reviews reply (not the
+    // outage message): presence of a `search`/`subject` key is not evidence.
+    const peerlens = recordingTool('search_peerlens', {
+      search: { results: [] },
+      subject: { attestationSummary: { total: 0 } },
+    });
+    const tools = new ToolRegistry();
+    tools.register(peerlens);
+    const handler = makeAgenticAskHandler({
+      provider: scriptedProvider([
+        { content: '', toolCalls: [tc('search_peerlens', { query: 'sony xm5' })] },
+        { content: 'The Sony XM5 is excellent.', toolCalls: [] },
+      ]),
+      tools,
+    });
+    const result = await handler('is the sony xm5 good?', {
+      threadId: 'main',
+      forcedSources: ['peerlens'],
+    });
+    expect(result.response).not.toMatch(/excellent/i);
+    expect(result.response).toMatch(/don't have any network reviews/i);
+    expect(result.response).not.toMatch(/couldn't reach/i); // absence, not outage
+  });
+
+  it('Services mode: a discovery OUTAGE (non-400 failure) reads as an outage, not no-service (P2c)', async () => {
+    // search_provider_services FAILED with a 500/timeout (not an AppView 400 /
+    // no-candidate). That is the network being unreachable — it must NOT be
+    // reported as "no Dina service for that".
+    const search: AgentTool = {
+      name: 'search_provider_services',
+      description: 'search (test)',
+      parameters: { type: 'object', properties: {}, required: [] },
+      execute: async () => {
+        throw new Error('AppView responded 503 Service Unavailable');
+      },
+    };
+    const tools = new ToolRegistry();
+    tools.register(search);
+    const handler = makeAgenticAskHandler({
+      provider: scriptedProvider([
+        { content: '', toolCalls: [tc('search_provider_services', { capability: 'eta_query' })] },
+        { content: 'A kebab is usually about $8.', toolCalls: [] },
+      ]),
+      tools,
+    });
+    const result = await handler('price of kebab nearby', {
+      threadId: 'main',
+      forcedSources: ['provider_services'],
+    });
+    expect(result.response).not.toMatch(/\$8/);
+    expect(result.response).toMatch(/couldn't reach the services network/i);
   });
 });

@@ -451,11 +451,9 @@ function persistMessage(msg: ChatMessage): void {
         timestamp: msg.timestamp,
       })
       .catch((err) => {
-         
         console.warn('[chat] persist failed:', err);
       });
   } catch (err) {
-     
     console.warn('[chat] persist failed:', err);
   }
 }
@@ -519,11 +517,9 @@ export function deleteThread(threadId: string): boolean {
   if (repo !== null) {
     try {
       void repo.deleteThread(threadId).catch((err) => {
-         
         console.warn('[chat] persist delete failed:', err);
       });
     } catch (err) {
-       
       console.warn('[chat] persist delete failed:', err);
     }
   }
@@ -545,11 +541,9 @@ export function clearThreadMessages(threadId: string): void {
   if (repo !== null) {
     try {
       void repo.deleteThread(threadId).catch((err) => {
-         
         console.warn('[chat] clear persist failed:', err);
       });
     } catch (err) {
-       
       console.warn('[chat] clear persist failed:', err);
     }
   }
@@ -575,9 +569,17 @@ export function clearThreadMessages(threadId: string): void {
 
 /**
  * Add a user message (convenience).
+ *
+ * `metadata` carries display hints such as `{ mode: 'services' }` for explicit
+ * composer-mode commands, so the bubble renders a clean payload + a mode chip
+ * instead of the raw slash prefix (docs/COMPOSER_MODES_DESIGN.md section 7.1).
  */
-export function addUserMessage(threadId: string, content: string): ChatMessage {
-  return addMessage(threadId, 'user', content);
+export function addUserMessage(
+  threadId: string,
+  content: string,
+  metadata?: Record<string, unknown>,
+): ChatMessage {
+  return addMessage(threadId, 'user', content, metadata !== undefined ? { metadata } : undefined);
 }
 
 /**

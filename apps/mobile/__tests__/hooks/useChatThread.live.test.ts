@@ -55,7 +55,10 @@ describe('useLiveThread bridge — sendMessage routes through Brain', () => {
     expect(types).toContain('dina');
     const userMsg = messages.find((m) => m.type === 'user');
     const dinaMsg = messages.find((m) => m.type === 'dina');
-    expect(userMsg?.content).toBe('/ask what is the capital of France?');
+    // The user bubble stores the CLEAN payload + the mode in metadata (no
+    // slash prefix leaks) — docs/COMPOSER_MODES_DESIGN.md section 7.1.
+    expect(userMsg?.content).toBe('what is the capital of France?');
+    expect(userMsg?.metadata?.mode).toBe('ask');
     expect(dinaMsg?.content).toBe('answer to: what is the capital of France?');
   });
 });

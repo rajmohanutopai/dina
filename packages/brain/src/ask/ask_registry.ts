@@ -41,6 +41,8 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 5b tasks 5.19 + 5.20.
  */
 
+import type { IntentSource } from '../reasoning/intent_classifier';
+
 export type AskStatus = 'in_flight' | 'complete' | 'failed' | 'expired' | 'pending_approval';
 
 export interface AskRecord {
@@ -54,6 +56,13 @@ export interface AskRecord {
   updatedAtMs: number;
   /** ms since epoch; set at enqueue time; NOT mutated across transitions. */
   readonly deadlineMs: number;
+  /**
+   * Explicit composer lane (Services → ['provider_services'], Reviews →
+   * ['peerlens']) carried from the original submission so an approval-resume
+   * re-applies the forced lane (docs/COMPOSER_MODES_DESIGN.md 6.5). Absent for
+   * plain Ask. In-memory only — ask records are not durably persisted.
+   */
+  readonly forcedSources?: readonly IntentSource[];
   /** JSON-stringified answer when `complete`. */
   answerJson?: string;
   /** JSON-stringified error when `failed`. */
@@ -79,6 +88,8 @@ export interface AskEnqueueInput {
   id: string;
   question: string;
   requesterDid: string;
+  /** Explicit composer lane — preserved on the record for approval-resume. */
+  forcedSources?: readonly IntentSource[];
   /** TTL override (ms). Defaults to the registry-level default. */
   ttlMs?: number;
 }
@@ -194,6 +205,9 @@ export class AskRegistry {
       createdAtMs: now,
       updatedAtMs: now,
       deadlineMs: now + ttl,
+      ...(input.forcedSources !== undefined && input.forcedSources.length > 0
+        ? { forcedSources: input.forcedSources }
+        : {}),
     };
     await this.adapter.insert(record);
     this.onEvent?.({
@@ -417,6 +431,10 @@ function cloneAsk(r: AskRecord): AskRecord {
     createdAtMs: r.createdAtMs,
     updatedAtMs: r.updatedAtMs,
     deadlineMs: r.deadlineMs,
+    // forcedSources must survive insert/update/get round-trips (cloneAsk rebuilds
+    // explicit fields) so the forced composer lane reaches the approval-resume.
+    // Set in the literal because it is readonly (can't be assigned after).
+    ...(r.forcedSources !== undefined ? { forcedSources: r.forcedSources } : {}),
   };
   if (r.answerJson !== undefined) clone.answerJson = r.answerJson;
   if (r.errorJson !== undefined) clone.errorJson = r.errorJson;

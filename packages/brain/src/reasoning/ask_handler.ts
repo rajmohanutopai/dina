@@ -23,13 +23,26 @@ import {
   type AskCommandHandler,
   type MissingCapabilityNotice,
 } from '../chat/orchestrator';
-import type { LLMProvider } from '../llm/adapters/provider';
 import { VAULT_CONTEXT } from '../llm/prompts';
+
 import { runAgenticTurn, type AgenticLoopOptions } from './agentic_loop';
-import type { ToolRegistry } from './tool_registry';
-import { IntentClassifier, type IntentClassification } from './intent_classifier';
+import {
+  applyForcedLanePrompt,
+  enforceForcedLaneAnswer,
+  isReviewsLane,
+  isServicesLane,
+  scopeToolsForLane,
+  PROVIDER_SERVICES_ROUTING_BLOCK,
+} from './forced_lane';
+import {
+  IntentClassifier,
+  type IntentClassification,
+} from './intent_classifier';
+
 import type { GuardScanner } from './guard_scanner';
+import type { ToolRegistry } from './tool_registry';
 import type { PreFlightRetrievalResult } from '../composition/ask_retrieval_planner';
+import type { LLMProvider } from '../llm/adapters/provider';
 
 /**
  * Pre-flight retrieval provider — runs ONCE per ask before the
@@ -103,7 +116,7 @@ export interface AgenticAskHandlerOptions {
   onTurn?: (trace: {
     query: string;
     answer: string;
-    toolCalls: Array<{ name: string; outcome: { success: boolean } }>;
+    toolCalls: { name: string; outcome: { success: boolean } }[];
     finishReason: string;
     tokens: { input: number; output: number };
   }) => void;
@@ -119,44 +132,15 @@ export interface AgenticAskHandlerOptions {
  */
 export const DEFAULT_ASK_SYSTEM_PROMPT = VAULT_CONTEXT;
 
-/**
- * Provider-services routing guidance appended to the hint block
- * whenever `sources` includes `provider_services`.
- *
- * The classifier's `sources` says "this query touches live
- * provider services" — but does NOT pre-resolve which provider.
- * This guidance tells the agent how to resolve at tool time:
- *
- *   Path 1 — "my dentist", "my lawyer" etc. (established service
- *            relationship). Try `find_preferred_provider(category)`
- *            FIRST. The user has designated a go-to contact; honour
- *            the choice instead of re-ranking each time.
- *
- *   Path 2 — public-facing services (bus, weather, nearby pharmacy).
- *            There is no "my X" — skip `find_preferred_provider`;
- *            go straight to `geocode` (if a place is mentioned) +
- *            `search_provider_services` + `query_service`.
- *            `geocode` + `search_provider_services` can run in
- *            parallel on the first turn when both are needed.
- *
- *   Fall-through — if Path 1 returns no candidates (empty
- *            `providers`), treat it as Path 2 and fall back to the
- *            geocode + search flow. The `find_preferred_provider`
- *            tool's own description + empty-result `message` carry
- *            the same instruction, but surfacing it in the system
- *            prompt makes the decision more reliable under weaker
- *            models that don't carefully re-read tool responses.
- *
- * The wording is load-bearing; see `PROVIDER_SERVICES_ROUTING_BLOCK`
- * below. Exported so tests can assert against stable strings.
- */
-export const PROVIDER_SERVICES_ROUTING_BLOCK = `Provider-services routing — pick the right path on your FIRST tool call. Do NOT waste turns on search_vault when the question is about external live state (ETA, appointment status, stock price, etc.) — the vault does not hold that data.
-
-Path 1: the user's OWN providers and OWN records ("my dentist", "is my appointment confirmed", "where is my order/delivery", "my lawyer", "my accountant"). Anything about the user's EXISTING appointment, order, delivery, or account is subject-scoped: it lives with a provider the user already has a relationship with, and such capabilities are deliberately NOT generically discoverable. Call find_preferred_provider(category) FIRST. Categories are lowercase single tokens: dental, legal, tax, medical, automotive, plumbing, electrical, etc. If it returns candidates, pass the contact_did + a matching capability to query_service.
-
-Path 2: finding a NEW public-facing service ("bus 42 to Castro", "nearest clinic", "find me a plumber quote"). There is no "my X" relationship here. Skip find_preferred_provider. DISCOVER the capability — do NOT guess a capability string. Call search_capabilities(intent) with the user's question; it returns every GENERICALLY-DISCOVERABLE canonical capability that has a provider, each with a description. Subject-scoped capabilities (appointment/order/delivery status, homework, device status) are intentionally absent from that list — if the question is about the user's own records, use Path 1 instead. The list is NOT pre-filtered to your intent — read the descriptions and pick ONLY the capability that genuinely matches. Then geocode (if a place is mentioned) + search_provider_services(capability, lat, lng, q) + query_service. Only after BOTH search_capabilities has no genuine match AND find_preferred_provider has no candidates should you tell the user there is no Dina service for that yet — do NOT pick an unrelated capability, do NOT invent one, do NOT search blind.
-
-Fall-through works BOTH ways: if Path 1 returns no candidates for a find-me-a-provider question, continue with search_capabilities; if a Path 2 question turns out to be about the user's own appointment/order/delivery, try find_preferred_provider before giving the no-service answer.`;
+// Forced-lane enforcement (system-prompt block, tool allowlist, result gate)
+// lives in `./forced_lane` — the SINGLE source of truth shared with the
+// production coordinator path (composition/ask_coordinator.ts). Re-exported here
+// so existing importers (tests, callers) keep resolving them from ask_handler.
+export {
+  PROVIDER_SERVICES_ROUTING_BLOCK,
+  PEERLENS_ROUTING_BLOCK,
+  formatForcedLaneBlock,
+} from './forced_lane';
 
 /**
  * Render a classifier-produced `IntentClassification` as a system-prompt
@@ -271,7 +255,7 @@ export function formatCurrentTimeBlock(nowMsFn: () => number = Date.now): string
 
 export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCommandHandler {
   const baseSystemPrompt = options.systemPrompt ?? DEFAULT_ASK_SYSTEM_PROMPT;
-  return async (query) => {
+  return async (query, context) => {
     // MT-15-I3: prepend the current time so tools like
     // `schedule_reminder` can resolve relative phrases ("in 3 minutes",
     // "tomorrow at 9am") without forcing the user into a clarification
@@ -281,9 +265,18 @@ export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCom
     const timeBlock = formatCurrentTimeBlock();
     let systemPrompt = `${timeBlock}\n\n${baseSystemPrompt}`;
 
-    // WM-BRAIN-05: run the classifier first (fail-open) so the
-    // reasoning agent gets a routing nudge. No classifier → skip.
-    if (options.intentClassifier !== undefined) {
+    // Explicit composer lane (Services/Reviews): force the source, SKIP the
+    // classifier, and append the IMPERATIVE lane block. The lane is bound below
+    // by the per-mode tool allowlist + the result-validation gate. When there
+    // is no forced source, run the classifier (advisory nudge) as before.
+    const forcedSources = context?.forcedSources;
+    const isServicesMode = isServicesLane(forcedSources);
+    const isReviewsMode = isReviewsLane(forcedSources);
+    if (isServicesMode || isReviewsMode) {
+      systemPrompt = applyForcedLanePrompt(systemPrompt, forcedSources);
+    } else if (options.intentClassifier !== undefined) {
+      // WM-BRAIN-05: run the classifier first (fail-open) so the
+      // reasoning agent gets a routing nudge. No classifier → skip.
       let hint: IntentClassification;
       try {
         hint = await options.intentClassifier.classify(query);
@@ -314,9 +307,15 @@ export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCom
       }
     }
 
+    // Lane tool policy: scope the loop to the lane's tools + enrichment helpers
+    // for explicit modes, so it physically cannot wander off-lane. Enrichment
+    // tools stay in scope (invariant 6.6). Ask (no forced source) gets the full
+    // registry unchanged.
+    const toolsForTurn = scopeToolsForLane(options.tools, forcedSources);
+
     const result = await runAgenticTurn({
       provider: options.provider,
-      tools: options.tools,
+      tools: toolsForTurn,
       systemPrompt,
       userMessage,
       options: options.loopOptions,
@@ -380,19 +379,15 @@ export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCom
       }
       if (!call.outcome.success) continue;
       if (call.name !== 'query_service') continue;
-      const payload = call.outcome.result as
-        | {
-            task_id?: string;
-            query_id?: string;
-            to_did?: string;
-            service_name?: string;
-          }
-        | null;
+      const payload = call.outcome.result as {
+        task_id?: string;
+        query_id?: string;
+        to_did?: string;
+        service_name?: string;
+      } | null;
       if (!payload || typeof payload.task_id !== 'string' || payload.task_id === '') continue;
       sources.push(payload.task_id);
-      const args = call.arguments as
-        | { capability?: string; params?: unknown }
-        | null;
+      const args = call.arguments as { capability?: string; params?: unknown } | null;
       const capability = typeof args?.capability === 'string' ? args.capability : '';
       const params =
         args?.params !== undefined && args.params !== null && typeof args.params === 'object'
@@ -423,7 +418,11 @@ export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCom
     // gets stripped because of Anti-Her, the scanner substitutes the
     // human-redirect message. Fail-open — any exception returns the
     // raw answer.
-    if (options.guardScanner !== undefined && answer !== '' && result.finishReason === 'completed') {
+    if (
+      options.guardScanner !== undefined &&
+      answer !== '' &&
+      result.finishReason === 'completed'
+    ) {
       try {
         const decision = await options.guardScanner({
           userPrompt: query,
@@ -442,6 +441,18 @@ export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCom
         missingCapabilities.push(makeMissingCapabilityNotice(capability, query));
       }
     }
+
+    // Lane enforcement (explicit composer modes): the answer MUST come from the
+    // chosen lane, never general knowledge (docs/COMPOSER_MODES_DESIGN.md 6.5).
+    // The tool allowlist + imperative directive bias the loop; this gate is the
+    // hard guarantee. Shared with the production coordinator path so both enforce
+    // identically (incl. outage-vs-absence). No-op when no lane is forced.
+    answer = enforceForcedLaneAnswer({
+      forcedSources,
+      answer,
+      serviceQueryCount: serviceQueries.length,
+      toolCalls: result.toolCalls,
+    });
 
     return { response: answer, sources, serviceQueries, missingCapabilities };
   };
@@ -517,7 +528,7 @@ function extractNamespacedCapability(text: string): string | null {
 
 function missingCapabilityFromAskFallback(
   query: string,
-  toolCalls: Array<{ name: string; outcome: { success: boolean } }>,
+  toolCalls: { name: string; outcome: { success: boolean } }[],
 ): string | null {
   const triedServiceDiscovery = toolCalls.some(
     (call) =>

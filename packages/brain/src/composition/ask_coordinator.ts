@@ -63,11 +63,18 @@ import {
   type AgenticLoopResult,
 } from '../reasoning/agentic_loop';
 import { formatCurrentTimeBlock } from '../reasoning/ask_handler';
+import {
+  applyForcedLanePrompt,
+  enforceForcedLaneAnswer,
+  scopeToolsForLane,
+} from '../reasoning/forced_lane';
+
 
 import type { AgenticAskPipeline } from './agentic_ask';
 import type { PreFlightRetrievalResult } from './ask_retrieval_planner';
 import type { VaultApprovalWorkflowClient } from './persona_guard';
 import type { PreFlightRetrievalProvider } from '../reasoning/ask_handler';
+import type { IntentSource } from '../reasoning/intent_classifier';
 import type { WorkflowTask } from '@dina/core';
 
 /** CoreClient surface `createAskCoordinator` needs for the approval gateway. */
@@ -197,10 +204,19 @@ export function createAskCoordinator(opts: CreateAskCoordinatorOptions): AskCoor
     registry,
     executeFn: opts.executeFn,
     resumeFromPausedFn: async (pausedState, ctx) => {
-      const tools = buildToolsForAsk({
-        askId: ctx.askId,
-        requesterDid: ctx.requesterDid,
-      });
+      // Re-apply the forced composer lane across an approval-resume so a forced
+      // Services/Reviews ask stays enforced (tool scope + prompt). No-op for
+      // plain Ask. forcedSources rides on the ask record (see ask_registry) so
+      // it survives the pending_approval round-trip. The result gate + rich
+      // answer shaping happen in `shapeCompletedAnswer` below (via the same
+      // translateLoopResult the first-turn path uses).
+      const tools = scopeToolsForLane(
+        buildToolsForAsk({
+          askId: ctx.askId,
+          requesterDid: ctx.requesterDid,
+        }),
+        ctx.forcedSources,
+      );
       // MT-15-I3 — same time-block prepend as the initial-turn path.
       // The resume goes back to the LLM with the previously-completed
       // tool result already in transcript, so a stale `now_iso` here
@@ -209,9 +225,20 @@ export function createAskCoordinator(opts: CreateAskCoordinatorOptions): AskCoor
       return resumeAgenticTurn({
         provider,
         tools,
-        systemPrompt: `${formatCurrentTimeBlock()}\n\n${systemPrompt}`,
+        systemPrompt: applyForcedLanePrompt(
+          `${formatCurrentTimeBlock()}\n\n${systemPrompt}`,
+          ctx.forcedSources,
+        ),
         pausedState,
       });
+    },
+    // On a completed resume, shape the FULL answer (text + serviceQueries +
+    // reviewSource + missingCapabilities) AND apply the forced-lane gate, using
+    // the exact same translateLoopResult the executeFn path uses — so a resumed
+    // Services/Reviews answer keeps its cards instead of degrading to text-only.
+    shapeCompletedAnswer: (result, ctx) => {
+      const outcome = translateLoopResult(result, ctx.question, ctx.forcedSources);
+      return outcome.kind === 'answer' ? outcome.answer : { text: result.answer };
     },
   });
 
@@ -275,13 +302,19 @@ export function buildAgenticExecuteFn(args: {
   }
   const { pipeline, systemPrompt, preFlight } = args;
   return async (input) => {
-    const tools = buildToolsForAsk({
-      askId: input.id,
-      requesterDid: input.requesterDid,
-      ...(input.sessionId !== undefined && input.sessionId !== ''
-        ? { sessionId: input.sessionId }
-        : {}),
-    });
+    // Explicit composer lane (Services/Reviews): scope the tools to the lane's
+    // allowlist (+ enrichment) so the loop physically cannot wander off-lane.
+    // No-op for plain Ask. Shared with `makeAgenticAskHandler` via forced_lane.
+    const tools = scopeToolsForLane(
+      buildToolsForAsk({
+        askId: input.id,
+        requesterDid: input.requesterDid,
+        ...(input.sessionId !== undefined && input.sessionId !== ''
+          ? { sessionId: input.sessionId }
+          : {}),
+      }),
+      input.forcedSources,
+    );
     // MT-15-I3 — prepend the current-time block per turn so tools like
     // `schedule_reminder` can resolve relative phrases ("in 3 minutes",
     // "tomorrow at 9am") without forcing an LLM clarification round-
@@ -289,7 +322,11 @@ export function buildAgenticExecuteFn(args: {
     // here (rather than once at builder time) because a long-running
     // session must stay synced with wall-clock — `now_iso` baked in at
     // `buildAgenticExecuteFn` time would silently age across turns.
-    const promptForTurn = `${formatCurrentTimeBlock()}\n\n${systemPrompt}`;
+    // Then append the imperative forced-lane block when a lane is forced.
+    const promptForTurn = applyForcedLanePrompt(
+      `${formatCurrentTimeBlock()}\n\n${systemPrompt}`,
+      input.forcedSources,
+    );
 
     let userMessage = input.question;
     if (preFlight !== undefined) {
@@ -329,7 +366,7 @@ export function buildAgenticExecuteFn(args: {
       const message = err instanceof Error ? err.message : String(err);
       return { kind: 'failure', failure: { kind: 'execute_crashed', message } };
     }
-    return translateLoopResult(result, input.question);
+    return translateLoopResult(result, input.question, input.forcedSources);
   };
 }
 
@@ -365,9 +402,10 @@ export function workflowTaskAsSource(core: AskCoordinatorCoreClient): ApprovalSo
   };
 }
 
-function translateLoopResult(
+export function translateLoopResult(
   result: AgenticLoopResult,
   query: string,
+  forcedSources?: readonly IntentSource[],
 ): ReturnType<AskExecuteFn> extends Promise<infer R> ? R : never {
   if (result.finishReason === 'completed') {
     // Surface successful `query_service` dispatches alongside the
@@ -380,7 +418,18 @@ function translateLoopResult(
       query,
       serviceQueries.length > 0,
     );
-    const answer: AskAnswer = { text: result.answer };
+    // Forced-lane result gate (Services/Reviews): the answer MUST come from the
+    // lane or be a clean no-result/outage reply, never general knowledge. Shared
+    // with `makeAgenticAskHandler` so both ask paths enforce identically. No-op
+    // for plain Ask. This bakes the gated text into the PERSISTED answer, so the
+    // fast-path 200 AND the deferred/async delivery both carry it.
+    const gatedText = enforceForcedLaneAnswer({
+      forcedSources,
+      answer: result.answer,
+      serviceQueryCount: serviceQueries.length,
+      toolCalls: result.toolCalls,
+    });
+    const answer: AskAnswer = { text: gatedText };
     if (serviceQueries.length > 0) {
       answer.serviceQueries = serviceQueries;
     } else if (missingCapabilities.length > 0) {

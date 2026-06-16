@@ -4,11 +4,10 @@
  * Source: ARCHITECTURE.md Tasks 4.7–4.9
  */
 
+import { resetStagingState, inboxSize, storeItem, clearVaults } from '@dina/core';
+import { createReminder, resetReminderState } from '@dina/core/reminders';
 import { makeVaultItem, resetFactoryCounters, MockCoreClient } from '@dina/test-harness';
 
-import { createReminder, resetReminderState } from '@dina/core/reminders';
-import { resetStagingState, inboxSize } from '@dina/core';
-import { storeItem, clearVaults } from '@dina/core';
 import {
   handleChat,
   resetChatDefaults,
@@ -17,11 +16,11 @@ import {
   setAskCommandHandler,
   resetAskCommandHandler,
   setRememberCoreClient,
+  type AskCommandContext,
 } from '../../src/chat/orchestrator';
 import { getThread, resetThreads } from '../../src/chat/thread';
 import { resetReasoningLLM } from '../../src/pipeline/chat_reasoning';
 import { setAccessiblePersonas } from '../../src/vault_context/assembly';
-
 
 describe('Chat Orchestrator', () => {
   let rememberCore: MockCoreClient;
@@ -73,6 +72,9 @@ describe('Chat Orchestrator', () => {
       expect(thread).toHaveLength(2);
       expect(thread[0].type).toBe('user');
       expect(thread[1].type).toBe('dina');
+      // Clean payload + mode chip — no slash prefix leaks (INV-3, design 7.1).
+      expect(thread[0].content).toBe('Test memory');
+      expect(thread[0].metadata?.mode).toBe('remember');
     });
 
     it('drain-hook flow: posts "Stored in <persona> vault." + a scheduled reminder card', async () => {
@@ -206,10 +208,81 @@ describe('Chat Orchestrator', () => {
       await handleChat('/task list my pull requests', 'task-thread');
       const thread = getThread('task-thread');
       const userMsg = thread.find((m) => m.type === 'user');
-      // The thread shows what the user typed — never the wrapped
-      // directive — so the chat UI stays clean.
-      expect(userMsg?.content).toBe('/task list my pull requests');
+      // The bubble shows the CLEAN payload + a mode chip (metadata.mode),
+      // never the slash prefix and never the wrapped directive — so the chat
+      // UI stays clean (docs/COMPOSER_MODES_DESIGN.md section 7.1).
+      expect(userMsg?.content).toBe('list my pull requests');
+      expect(userMsg?.metadata?.mode).toBe('task');
       expect(userMsg?.content ?? '').not.toMatch(/TASK MODE/);
+    });
+  });
+
+  describe('explicit composer lanes (/services, /reviews)', () => {
+    it('/services forces provider_services + clean storage + mode chip', async () => {
+      let received: AskCommandContext | undefined;
+      setAskCommandHandler(async (_q, ctx) => {
+        received = ctx;
+        return { response: 'ok', sources: [], serviceQueries: [] };
+      });
+      const result = await handleChat('/services price of kebab nearby', 'svc-thread');
+      expect(result.intent).toBe('services');
+      expect(received?.forcedSources).toEqual(['provider_services']);
+      const userMsg = getThread('svc-thread').find((m) => m.type === 'user');
+      expect(userMsg?.content).toBe('price of kebab nearby');
+      expect(userMsg?.metadata?.mode).toBe('services');
+    });
+
+    it('/reviews forces peerlens + clean storage + mode chip', async () => {
+      let received: AskCommandContext | undefined;
+      setAskCommandHandler(async (_q, ctx) => {
+        received = ctx;
+        return { response: 'ok', sources: [], serviceQueries: [] };
+      });
+      const result = await handleChat('/reviews is the Sony XM5 good?', 'rev-thread');
+      expect(result.intent).toBe('reviews');
+      expect(received?.forcedSources).toEqual(['peerlens']);
+      const userMsg = getThread('rev-thread').find((m) => m.type === 'user');
+      expect(userMsg?.content).toBe('is the Sony XM5 good?');
+      expect(userMsg?.metadata?.mode).toBe('reviews');
+    });
+
+    it('/ask does NOT force a source (classifier-driven), stores clean + mode', async () => {
+      let received: AskCommandContext | undefined;
+      setAskCommandHandler(async (_q, ctx) => {
+        received = ctx;
+        return { response: 'ok', sources: [], serviceQueries: [] };
+      });
+      await handleChat('/ask what is the capital of France?', 'ask-thread');
+      expect(received?.forcedSources).toBeUndefined();
+      const userMsg = getThread('ask-thread').find((m) => m.type === 'user');
+      expect(userMsg?.content).toBe('what is the capital of France?');
+      expect(userMsg?.metadata?.mode).toBe('ask');
+    });
+
+    it('bare /services with no text → lane-specific prompt, no handler call', async () => {
+      let called = false;
+      setAskCommandHandler(async () => {
+        called = true;
+        return { response: 'should not run', sources: [], serviceQueries: [] };
+      });
+      const result = await handleChat('/services', 'svc-empty');
+      expect(called).toBe(false);
+      expect(result.response).toBe('What service do you need?');
+      // P3: a bare command must NOT leave an empty user bubble in the thread.
+      expect(getThread('svc-empty').some((m) => m.type === 'user')).toBe(false);
+    });
+
+    it('bare /reviews with no text → lane-specific prompt, no handler call', async () => {
+      let called = false;
+      setAskCommandHandler(async () => {
+        called = true;
+        return { response: 'should not run', sources: [], serviceQueries: [] };
+      });
+      const result = await handleChat('/reviews', 'rev-empty');
+      expect(called).toBe(false);
+      expect(result.response).toBe('What would you like reviews on?');
+      // P3: a bare command must NOT leave an empty user bubble in the thread.
+      expect(getThread('rev-empty').some((m) => m.type === 'user')).toBe(false);
     });
   });
 

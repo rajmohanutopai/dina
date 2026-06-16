@@ -25,6 +25,7 @@ import {
   ScrollView,
 } from 'react-native';
 
+import { ACTIONS, resolveUserChip } from '../src/components/composer_modes';
 import { InlineApprovalCard } from '../src/components/InlineApprovalCard';
 import { InlineBriefingCard } from '../src/components/InlineBriefingCard';
 import { InlineCreditsCard } from '../src/components/InlineCreditsCard';
@@ -145,42 +146,11 @@ function toDisplayType(m: ChatMessage): UiMessage['displayType'] {
   return 'system';
 }
 
-// Action definitions for the chat-mode selector. Three first-class
-// categories: Ask, Remember, Task. The user must pick one before they
-// can send \u2014 keeps Dina from sliding into open-ended chatbot territory
-// (Anti-Her principle: every interaction is transactional).
-//
-// Task routes through `/task ` (chat orchestrator now has its own
-// intent for it). Task mode reuses the agentic-loop pipeline but
-// prepends a directive so the LLM routes the user's request through
-// the `delegate_to_agent` tool instead of answering itself \u2014 i.e. it
-// hands the work off to a paired `dina-agent`. Same composition as
-// /ask so context enrichment (vault search, contacts, geocode)
-// still runs before the delegation; the difference is the destination.
-const ACTIONS = [
-  {
-    key: 'ask',
-    label: 'Ask',
-    description: 'Search across everything you\u2019ve stored in your vault',
-    prefix: '/ask ',
-    placeholder: "e.g. When is Emma's birthday?",
-  },
-  {
-    key: 'remember',
-    label: 'Remember',
-    description: 'Store a fact, preference, or anything you want Dina to keep',
-    prefix: '/remember ',
-    placeholder: "e.g. Emma's birthday is March 15",
-  },
-  {
-    key: 'task',
-    label: 'Task',
-    description: 'Hand work to an agent. Fetch email, run a workflow, \u2026',
-    prefix: '/task ',
-    placeholder: 'e.g. Fetch my new email',
-  },
-] as const;
-
+// The chat-mode chips (Ask / Remember / Task / Services / Reviews) + the
+// user-bubble chip resolver live in `src/components/composer_modes`. The user
+// must pick a mode before they can send \u2014 keeps Dina transactional rather than
+// an open-ended chatbot (Anti-Her). Talk is rendered separately below as a
+// navigation chip (contact picker), not a text mode.
 export default function ChatScreen() {
   const router = useRouter();
   // While the guided demo's bottom dock is up, reserve extra space at the end of
@@ -264,6 +234,14 @@ export default function ChatScreen() {
     setInputText('');
     setTimeout(() => inputRef.current?.focus(), 100);
   }, []);
+
+  // Talk is a NAV action, not a text mode: it opens the contact picker (People
+  // → Contacts) where tapping a contact lands on the per-contact D2D thread.
+  // Talk is "message a specific person", not free-text to your own Dina, so it
+  // never enters the ask pipeline (docs/COMPOSER_MODES_DESIGN.md section 7.7).
+  const onTalk = useCallback(() => {
+    router.push({ pathname: '/people', params: { pick: 'talk' } });
+  }, [router]);
 
   const renderMessage = useCallback(({ item }: { item: UiMessage }) => {
     // Skip empty Dina rows. A resolved ask placeholder is blanked when a
@@ -428,17 +406,14 @@ export default function ChatScreen() {
     // Source pill: when network reviews informed a Dina answer, attribute them.
     const sourceLabel = !isUser && !isSystem ? reviewSourceLabel(item.sources) : null;
 
-    // Parse action chip from user messages
+    // Mode chip on a user message: clean content + a mode chip, never a leaked
+    // slash prefix (docs/COMPOSER_MODES_DESIGN.md 7.1). Logic lives in the pure,
+    // unit-tested `resolveUserChip` (prefers metadata.mode, legacy prefix-strip
+    // fallback) so the contract is covered without rendering this whole screen.
     let chipLabel: string | null = null;
     let displayContent = item.content;
     if (isUser) {
-      for (const action of ACTIONS) {
-        if (item.content.startsWith(action.prefix)) {
-          chipLabel = action.label;
-          displayContent = item.content.slice(action.prefix.length);
-          break;
-        }
-      }
+      ({ chipLabel, displayContent } = resolveUserChip(item.content, item.metadata?.mode));
     }
 
     return (
@@ -619,7 +594,13 @@ export default function ChatScreen() {
         <View style={[styles.inputWrapper, activeAction === null && styles.inputWrapperChips]}>
           {activeAction === null ? (
             <>
-              <View style={styles.modeChips}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                style={styles.modeChipsScroll}
+                contentContainerStyle={styles.modeChips}
+              >
                 {availableActions.map((action) => (
                   <TouchableOpacity
                     key={action.key}
@@ -632,7 +613,20 @@ export default function ChatScreen() {
                     <Text style={styles.modeChipLabel}>{action.label}</Text>
                   </TouchableOpacity>
                 ))}
-              </View>
+                {/* Talk is a nav chip, not a text mode — it opens the contact
+                    picker (see onTalk), so it sits after the text-mode chips. */}
+                <TouchableOpacity
+                  key="talk"
+                  style={styles.modeChip}
+                  onPress={onTalk}
+                  activeOpacity={0.7}
+                  testID="index-mode-chip-talk"
+                  accessibilityRole="button"
+                  accessibilityLabel="Talk to a contact"
+                >
+                  <Text style={styles.modeChipLabel}>Talk</Text>
+                </TouchableOpacity>
+              </ScrollView>
               {/* Decorative ghost send button — anchors the wrapper
                   visually as a message bar so the chips read as the
                   input rather than free-floating buttons. Inert: no
@@ -650,7 +644,7 @@ export default function ChatScreen() {
                 testID="index-mode-pill"
                 accessibilityRole="button"
                 accessibilityLabel={`${activeAction.label} mode. Double tap to switch.`}
-                accessibilityHint="Switch between Ask, Remember, and Task modes"
+                accessibilityHint="Switch the chat mode"
               >
                 <Text style={styles.modePillLabel}>{activeAction.label}</Text>
                 <Text
@@ -747,6 +741,25 @@ export default function ChatScreen() {
                 </TouchableOpacity>
               );
             })}
+            {/* Talk is a NAV action, not a text mode — but it must be reachable
+                from the switcher too, otherwise a user already in Ask/Services/
+                etc. can't get to it (the chip strip is hidden while a mode is
+                active). Tapping it closes the popover and opens the contact
+                picker instead of setting a text mode. */}
+            <TouchableOpacity
+              key="talk"
+              style={styles.popoverRow}
+              onPress={() => {
+                setModePopoverOpen(false);
+                onTalk();
+              }}
+              activeOpacity={0.7}
+              testID="index-popover-row-talk"
+              accessibilityRole="button"
+            >
+              <Text style={styles.popoverLabel}>Talk</Text>
+              <Text style={styles.popoverDesc}>Message a contact</Text>
+            </TouchableOpacity>
           </Pressable>
         </Pressable>
       </Modal>
@@ -944,16 +957,22 @@ const styles = StyleSheet.create({
   // Mode selector — 3-chip row that fills the input wrapper when no
   // mode is active. Once a mode is picked, the wrapper switches to
   // the pill + TextInput + send layout.
+  // The chip row scrolls horizontally now that there are 6 modes; it takes the
+  // available width in the input wrapper, the ghost send button sits after it.
+  modeChipsScroll: {
+    flexGrow: 1,
+    flexShrink: 1,
+  },
   modeChips: {
-    flex: 1,
     flexDirection: 'row',
     gap: 8,
+    alignItems: 'center',
   },
   modeChip: {
-    flex: 1,
     backgroundColor: colors.bgPrimary,
     borderRadius: radius.full,
     paddingVertical: 8,
+    paddingHorizontal: 16,
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',

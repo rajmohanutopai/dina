@@ -619,6 +619,48 @@ describe('AskApprovalResumer', () => {
       expect(h.resumerEvents).toContainEqual({ kind: 'resumed_completed', askId: 'ask-1' });
     });
 
+    it('persists the SHAPED rich answer (serviceQueries etc.) + threads question/forcedSources on resume', async () => {
+      // Regression for the approval-resume metadata-loss finding: without a
+      // shapeCompletedAnswer the resumer stored text-only, dropping the cards.
+      const paused = makePausedState();
+      let seenCtx: { question?: string; forcedSources?: readonly string[] } | null = null;
+      const registry = new AskRegistry({
+        adapter: new InMemoryAskAdapter(),
+        nowMsFn: () => FROZEN_NOW_MS,
+        onEvent: (event: AskEvent) => resumer?.handle(event),
+      });
+      let resumer: AskApprovalResumer | null = null;
+      resumer = new AskApprovalResumer({
+        registry,
+        resumeFromPausedFn: async () => makeAgenticResult({ answer: 'Asking the restaurant…' }),
+        // The coordinator injects this; here we assert it (a) receives the
+        // threaded ctx and (b) its output is what gets persisted.
+        shapeCompletedAnswer: (_result, ctx) => {
+          seenCtx = { question: ctx.question, forcedSources: ctx.forcedSources };
+          return {
+            text: 'Asking the restaurant…',
+            serviceQueries: [{ taskId: 'task-1', queryId: 'q-1', capability: 'price_check', serviceName: 'Kebab Co' }],
+          };
+        },
+        onEvent: () => undefined,
+      });
+      await registry.enqueue({
+        id: 'ask-1',
+        question: 'price of a kebab',
+        requesterDid: REQUESTER_DID,
+        forcedSources: ['provider_services'],
+      });
+      await registry.markPendingApproval('ask-1', 'appr-1', JSON.stringify(paused));
+      await registry.resumeAfterApproval('ask-1');
+      await flushAsync();
+
+      const final = await registry.get('ask-1');
+      expect(final?.status).toBe('complete');
+      const answer = JSON.parse(final?.answerJson ?? '{}');
+      expect(answer.serviceQueries?.[0]?.taskId).toBe('task-1'); // rich, not text-only
+      expect(seenCtx).toEqual({ question: 'price of a kebab', forcedSources: ['provider_services'] });
+    });
+
     it('re-parks with new approvalId AND new paused state when loop bails again', async () => {
       const firstPaused = makePausedState({ approvalId: 'appr-1' });
       const secondPaused = makePausedState({

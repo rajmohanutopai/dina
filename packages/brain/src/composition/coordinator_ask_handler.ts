@@ -398,6 +398,13 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
       result = await coordinator.handleAsk({
         question: query,
         requesterDid,
+        // Forced composer lane (Services/Reviews) — propagate so the coordinator's
+        // executeFn enforces the lane (skip inference, scope tools, gate result).
+        // Without this the production /ask path silently ran plain Ask behavior
+        // for Services/Reviews (docs/COMPOSER_MODES_DESIGN.md 6.5).
+        ...(context?.forcedSources !== undefined && context.forcedSources.length > 0
+          ? { forcedSources: context.forcedSources }
+          : {}),
       });
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
@@ -410,6 +417,11 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
       return {
         response: extractAnswerText(answer),
         sources: reviewSourcesFor(answer),
+        // A service query can dispatch WITHIN the fast-path window — surface it
+        // so the orchestrator posts the service_query lifecycle card (it reads
+        // result.serviceQueries). The deferred/async path already does this;
+        // omitting it here dropped the card on fast-path completions.
+        serviceQueries: extractServiceQueries(answer),
         missingCapabilities: extractMissingCapabilities(answer, query),
       };
     }

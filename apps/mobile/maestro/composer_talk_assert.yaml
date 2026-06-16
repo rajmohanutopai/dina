@@ -1,0 +1,15 @@
+# Talk navigation assertion (companion to run_composer_modes.sh).
+#
+# Runs AFTER the runner has scrolled the chip strip and tapped Talk via idb/adb
+# (Maestro can't drive this horizontal ScrollView). It does NOT launch the app —
+# it asserts the post-tap state: Talk navigated to the contact picker
+# (People -> Contacts) with the pick hint, and did NOT enter the ask pipeline
+# (docs/COMPOSER_MODES_DESIGN.md 7.7 / INV-4).
+appId: com.dinakernel.mobile
+---
+- extendedWaitUntil:
+    visible:
+      id: 'people-talk-pick-hint'
+    timeout: 15000
+- assertVisible:
+    text: 'Tap a contact to start a conversation.'

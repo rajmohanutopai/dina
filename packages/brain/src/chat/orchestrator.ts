@@ -16,26 +16,18 @@
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
-import { listRemindersByPersonaRouted } from '../reminders/backend';
 import { CoreHttpError } from '../errors';
 import { reason } from '../pipeline/chat_reasoning';
+import { listRemindersByPersonaRouted } from '../reminders/backend';
 import { executeToolSearch } from '../vault_context/assembly';
 
 import { parseCommand, getAvailableCommands, type ChatIntent } from './command_parser';
-import {
-  plainResponse,
-  richResponse,
-  errorResponse,
-  type BotResponse,
-} from './response_types';
-import {
-  addUserMessage,
-  addDinaResponse,
-  addLifecycleMessage,
-} from './thread';
 import { postReminderCard } from './reminder_card';
+import { plainResponse, richResponse, errorResponse, type BotResponse } from './response_types';
+import { addUserMessage, addDinaResponse, addLifecycleMessage } from './thread';
 
 import type { ServiceQueryDispatch } from '../reasoning/ask_handler';
+import type { IntentSource } from '../reasoning/intent_classifier';
 import type { CoreClient } from '@dina/core';
 
 export interface ChatResponse {
@@ -109,12 +101,42 @@ export function makeMissingCapabilityNotice(
  * Parses the input, routes to the appropriate handler,
  * stores both user message and response in the thread.
  */
+/**
+ * Composer-chip intents whose user bubble shows a CLEAN payload + a mode chip
+ * (driven by `metadata.mode`), never the raw slash prefix. See
+ * docs/COMPOSER_MODES_DESIGN.md section 7.1.
+ */
+const COMPOSER_MODE_INTENTS = new Set<ChatIntent>([
+  'ask',
+  'remember',
+  'task',
+  'services',
+  'reviews',
+]);
+
 export async function handleChat(text: string, threadId?: string): Promise<ChatResponse> {
   const thread = threadId ?? DEFAULT_THREAD;
   const parsed = parseCommand(text);
 
-  // Store user message
-  addUserMessage(thread, text);
+  // Store the user message. For an explicit composer-mode command (the chips:
+  // Ask / Remember / Task / Services / Reviews) store the CLEAN payload plus
+  // the mode in metadata, so the slash prefix never leaks into the bubble or
+  // persisted history (the bubble shows the mode as a chip, not "/services …").
+  // Routing already consumed `parsed` above, so dropping the prefix from the
+  // stored text is purely cosmetic and safe. Non-composer commands (/search,
+  // /service, /help, …) and implicit text keep their verbatim content.
+  //
+  // A BARE composer command ("/services" with no text) carries an empty payload;
+  // storing it would leave a blank user bubble above the lane prompt (P3). Skip
+  // the write in that case — the handler's lane-specific prompt is the only
+  // user-facing reply for a bare command.
+  if (parsed.explicit && COMPOSER_MODE_INTENTS.has(parsed.intent)) {
+    if (parsed.payload.trim() !== '') {
+      addUserMessage(thread, parsed.payload, { mode: parsed.intent });
+    }
+  } else {
+    addUserMessage(thread, text);
+  }
 
   let typed: BotResponse;
   let sources: string[] = [];
@@ -130,6 +152,25 @@ export async function handleChat(text: string, threadId?: string): Promise<ChatR
       ({ typed, sources, serviceQueries, missingCapabilities } = await handleAsk(
         parsed.payload,
         thread,
+      ));
+      break;
+
+    // Explicit composer lanes — same agentic /ask pipeline, but the source is
+    // forced (not classifier-inferred) and the lane is enforced downstream
+    // (tool policy + result validation). Context enrichment still runs.
+    case 'services':
+      ({ typed, sources, serviceQueries, missingCapabilities } = await handleAsk(
+        parsed.payload,
+        thread,
+        ['provider_services'],
+      ));
+      break;
+
+    case 'reviews':
+      ({ typed, sources, serviceQueries, missingCapabilities } = await handleAsk(
+        parsed.payload,
+        thread,
+        ['peerlens'],
       ));
       break;
 
@@ -336,7 +377,6 @@ function formatPersonaDisplayName(name: string): string {
     .join(' ');
 }
 
-
 /** Handle /remember: store text via staging ingest. */
 async function handleRemember(text: string, thread: string): Promise<BotResponse> {
   if (!text) return plainResponse('What would you like me to remember?');
@@ -445,6 +485,7 @@ async function handleRemember(text: string, thread: string): Promise<BotResponse
 async function handleAsk(
   query: string,
   threadId: string,
+  forcedSources?: IntentSource[],
 ): Promise<{
   typed: BotResponse;
   sources: string[];
@@ -452,8 +493,16 @@ async function handleAsk(
   missingCapabilities: MissingCapabilityNotice[];
 }> {
   if (!query) {
+    // Tailor the empty-input prompt to the explicit lane (only reachable by a
+    // bare `/services` / `/reviews`; the composer always sends content).
+    const emptyPrompt =
+      forcedSources?.includes('provider_services') === true
+        ? 'What service do you need?'
+        : forcedSources?.includes('peerlens') === true
+          ? 'What would you like reviews on?'
+          : 'What would you like to know?';
     return {
-      typed: plainResponse('What would you like to know?'),
+      typed: plainResponse(emptyPrompt),
       sources: [],
       serviceQueries: [],
       missingCapabilities: [],
@@ -466,7 +515,10 @@ async function handleAsk(
   // When absent, fall back to the single-shot `reason()` pipeline so
   // `/ask` still works in test / early-boot paths.
   if (askHandler !== null) {
-    const r = await askHandler(query, { threadId });
+    const r = await askHandler(query, {
+      threadId,
+      ...(forcedSources !== undefined ? { forcedSources } : {}),
+    });
     return {
       typed: plainResponse(r.response),
       sources: r.sources,
@@ -538,6 +590,14 @@ export interface AskCommandContext {
    * happen after the handler returns.
    */
   threadId: string;
+  /**
+   * When set (explicit Services/Reviews composer modes), the handler uses
+   * these sources VERBATIM and SKIPS the Intent Classifier, AND enforces the
+   * lane via per-mode tool policy + result validation (it must answer from the
+   * lane or report no result, never from general knowledge). Personal context
+   * enrichment still runs. See docs/COMPOSER_MODES_DESIGN.md sections 6.5-6.6.
+   */
+  forcedSources?: IntentSource[];
 }
 
 export type AskCommandHandler = (

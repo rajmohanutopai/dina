@@ -104,6 +104,23 @@ export class ToolRegistry {
   }
 
   /**
+   * Return a NEW registry containing ONLY the named tools that exist here
+   * (unknown names are silently skipped). Used to scope the agentic loop to a
+   * single lane for the explicit Services/Reviews composer modes
+   * (docs/COMPOSER_MODES_DESIGN.md section 6.5): the loop physically cannot
+   * call a tool outside the allowlist. The returned registry shares the same
+   * `AgentTool` instances (no deep copy) — it is a read-only view for one turn.
+   */
+  subset(names: readonly string[]): ToolRegistry {
+    const scoped = new ToolRegistry();
+    for (const name of names) {
+      const tool = this.tools.get(name);
+      if (tool !== undefined) scoped.register(tool);
+    }
+    return scoped;
+  }
+
+  /**
    * True when the named tool is a terminal tool (a successful execution should
    * end the agentic turn). Unknown tools → false. See `AgentTool.terminal`.
    */

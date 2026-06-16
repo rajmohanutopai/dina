@@ -29,6 +29,33 @@ describe('Chat Command Parser', () => {
       expect(cmd.explicit).toBe(true);
     });
 
+    it('/services routes to the services lane', () => {
+      const cmd = parseCommand('/services price of kebab nearby');
+      expect(cmd.intent).toBe('services');
+      expect(cmd.payload).toBe('price of kebab nearby');
+      expect(cmd.explicit).toBe(true);
+    });
+
+    it('/reviews routes to the reviews lane', () => {
+      const cmd = parseCommand('/reviews is the Sony XM5 any good?');
+      expect(cmd.intent).toBe('reviews');
+      expect(cmd.payload).toBe('is the Sony XM5 any good?');
+      expect(cmd.explicit).toBe(true);
+    });
+
+    it('/service (singular, capability-explicit) is NOT confused with /services', () => {
+      // Exact-token switch: 'service' !== 'services'. The singular form keeps
+      // its capability-first parse; the plural form is the free-text lane.
+      const singular = parseCommand('/service eta_query when is bus 42');
+      expect(singular.intent).toBe('service');
+      expect(singular.capability).toBe('eta_query');
+      expect(singular.payload).toBe('when is bus 42');
+      const plural = parseCommand('/services when is bus 42');
+      expect(plural.intent).toBe('services');
+      expect(plural.payload).toBe('when is bus 42');
+      expect(plural.capability).toBeUndefined();
+    });
+
     it('/search routes to search intent', () => {
       const cmd = parseCommand('/search meeting notes');
       expect(cmd.intent).toBe('search');
@@ -140,6 +167,14 @@ describe('Chat Command Parser', () => {
       expect(commands.length).toBeGreaterThanOrEqual(4);
       expect(commands.map((c) => c.command)).toContain('/help');
       expect(commands.every((c) => c.description.length > 0)).toBe(true);
+    });
+
+    it('documents the explicit composer lanes (/services, /reviews) in /help', () => {
+      // A regression that dropped either lane from /help would leave the chips
+      // undiscoverable to text-channel users — pin both.
+      const cmds = getAvailableCommands().map((c) => c.command);
+      expect(cmds).toContain('/services <text>');
+      expect(cmds).toContain('/reviews <text>');
     });
   });
 });
