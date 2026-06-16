@@ -27,8 +27,11 @@
  * Port of `brain/src/service/intent_classifier.py`.
  */
 
-import type { TocEntry } from '@dina/core';
+import { CATALOG_CAPABILITIES } from '@dina/protocol';
+
 import { extractJSON } from '../llm/output_parser';
+
+import type { TocEntry } from '@dina/core';
 
 /** One of the four substrates the reasoning agent can consult. */
 export const INTENT_SOURCES = [
@@ -71,6 +74,21 @@ export interface IntentClassification {
 /** LLM surface — `(system, prompt) => completion`. Matches the same
  *  seam used by `TopicExtractor` and the enrichment pipeline. */
 export type IntentClassifierLLM = (system: string, prompt: string) => Promise<string>;
+
+/**
+ * The intent-routable canonical capabilities, rendered as
+ * `id: short_description` lines for the classifier prompt. Sourced from the
+ * protocol catalog (the single source of truth the AppView registry derives
+ * from), filtered to `intent_routable` — exactly the "discover a NEW public
+ * service" set. Subject-scoped capabilities (order/appointment status,
+ * homework, device status, …) are `intent_routable: false` and excluded; they
+ * route via the "my X" relationship path, not generic discovery. The list
+ * tracks catalog additions automatically on each release — no hand-maintained
+ * enumeration to drift. It stays tiny (~7 one-line entries today).
+ */
+const ROUTABLE_CAPABILITY_LINES = CATALOG_CAPABILITIES.filter((c) => c.intent_routable)
+  .map((c) => `      ${c.id}: ${c.short_description}`)
+  .join('\n');
 
 /**
  * System prompt — port of `intent_classifier.py::_SYSTEM_PROMPT`. The
@@ -121,13 +139,33 @@ Output schema (every key required):
   }
 
 Rules:
-  - If the query is purely informational ("what is X"), prefer sources =
-    ["vault","general_knowledge"].
-  - If the query is about an established service relationship ("my
-    dentist", "my lawyer", "my accountant", etc.), include
-    "provider_services" in sources — the downstream agent will look
-    up the user's preferred contact for that category via its own
-    tool; you don't need to resolve the specific provider here.
+  - Include "provider_services" whenever a LIVE service on the network
+    could answer — in EITHER of these cases:
+      (a) Discovering a NEW public service for live or local state the
+          vault and general knowledge can't answer authoritatively. The
+          discoverable service kinds are:
+${ROUTABLE_CAPABILITY_LINES}
+          If the query matches one of these kinds — OR anything else
+          that needs live, local, or commercial state the vault can't
+          hold (a named business, place, store, route, provider) —
+          include "provider_services" and set temporal "live_state". The
+          downstream agent confirms the exact capability + provider; you
+          only decide that a live service is worth checking.
+      (b) An established service relationship ("my dentist", "my
+          lawyer", "my accountant") — the downstream agent resolves the
+          user's preferred contact for that category; you don't need to
+          resolve the specific provider here.
+  - Treat a query as purely informational (sources =
+    ["vault","general_knowledge"], no "provider_services") ONLY when it
+    is general factual knowledge with no live, local, or commercial
+    answer ("what is the capital of Turkey", "how does a kebab differ
+    from shawarma"). A "what is the price/availability/hours of X"
+    question about a real-world business is NOT purely informational —
+    it is provider_services case (a).
+  - When unsure whether a live service could answer, INCLUDE
+    "provider_services": discovery is cheap (it returns nothing when no
+    provider matches), and missing a real provider is worse than one
+    extra lookup.
   - Empty or unclear queries → sources = ["vault"], everything else
     empty / "".
   - Return ONLY the JSON object.`;

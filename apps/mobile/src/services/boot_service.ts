@@ -37,7 +37,7 @@ import type {
 import type { IdentityKeypair } from '@dina/core';
 
 import { buildRememberRuntime } from '@dina/brain';
-import { postReminderCard } from '@dina/brain/chat';
+import { addMessage, postReminderCard } from '@dina/brain/chat';
 import { listPersonas } from '@dina/core';
 import {
   MemoryService,
@@ -74,7 +74,7 @@ import {
  * exported for `boot_capabilities.ts` to consume.
  */
 export const MOBILE_PERSONA_DESCRIPTIONS: Record<string, string> = {
-  general: 'Everyday notes. Anything that doesn\'t clearly fit a more specific vault.',
+  general: "Everyday notes. Anything that doesn't clearly fit a more specific vault.",
   work: 'Job, projects, colleagues, work calendar items, professional context.',
   health: 'Medical, fitness, symptoms, medications, doctors, allergies.',
   finance: 'Money, budgets, spending, income, bills, debt, investments, taxes.',
@@ -560,6 +560,17 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
         onD2DReminderCreated: (reminder) => {
           postReminderCard('main', reminder, { scheduled: true });
         },
+        // Surface the peer's actual message as a left-aligned bubble in the
+        // main chat the moment it lands (known contacts only — unknown
+        // senders go through the quarantine card). Renders via type='dina' +
+        // metadata.source='d2d', attributed to the sender (not "Dina"). The
+        // sender's wire time orders a burst correctly (MT-19-I2).
+        onD2DMessage: ({ senderDid, senderName, body, messageType, timestamp }) => {
+          addMessage('main', 'dina', body, {
+            metadata: { source: 'd2d', senderDID: senderDid, senderName, messageType },
+            ...(timestamp > 0 ? { timestamp } : {}),
+          });
+        },
       };
     }
   } else {
@@ -701,15 +712,11 @@ const DEMO_EXPECTED_CODES: ReadonlySet<string> = new Set(['discovery.stub']);
 
 /** Default logger — surfaces to console so boot-time degradations are visible. */
 function defaultLogger(entry: Record<string, unknown>): void {
-  const isDegradation =
-    entry.event === 'boot.degradation' || entry.event === 'boot.sendD2D.noop';
-  const isDemoExpected =
-    typeof entry.code === 'string' && DEMO_EXPECTED_CODES.has(entry.code);
+  const isDegradation = entry.event === 'boot.degradation' || entry.event === 'boot.sendD2D.noop';
+  const isDemoExpected = typeof entry.code === 'string' && DEMO_EXPECTED_CODES.has(entry.code);
   if (isDegradation && !isDemoExpected) {
-     
     console.warn('[dina:boot]', entry);
   } else {
-     
     console.log('[dina:boot]', entry);
   }
 }

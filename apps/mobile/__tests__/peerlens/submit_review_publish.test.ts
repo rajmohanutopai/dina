@@ -146,18 +146,28 @@ describe('submitReviewPublish — inline fast-path', () => {
     expect(j?.publishedCid).toBe('cid1');
   });
 
-  it('success without a chat draft → published, then pruned (no retained orphan)', async () => {
+  it('success without a chat draft → published, retained as a receipt (dashboard projects it inline)', async () => {
     const repo = new InMemoryReviewPublishRepository();
     const out = await submitReviewPublish(baseInput({ repo, newJobId: () => 'j2' })); // no thread/draft
     expect(out.kind).toBe('published');
-    expect(repo.getById('j2')).toBeNull(); // pruned — no card needs it as a receipt
+    // Full-form publishes now RETAIN a `published` receipt (prune-when-listed)
+    // so the reviewer dashboard shows them inline until AppView indexes the
+    // review; they're reconcile-pruned later, not on publish.
+    const j = repo.getById('j2');
+    expect(j?.status).toBe('published');
+    expect(j?.publishedUri).toBe('at://x');
   });
 
-  it('success with only ONE back-reference half → pruned (card needs both, so unprojectable)', async () => {
+  it('success with only ONE back-reference half → retained as a published receipt', async () => {
     const repo = new InMemoryReviewPublishRepository();
     const out = await submitReviewPublish(baseInput({ repo, threadId: 't1', newJobId: () => 'jhalf' })); // no draftId
     expect(out.kind).toBe('published');
-    expect(repo.getById('jhalf')).toBeNull(); // unprojectable orphan → pruned, not leaked
+    // No longer pruned: the chat card can't project a half-reference row, but the
+    // reviewer dashboard projects all published receipts by owner+URI, so it's
+    // retained (reconcile-/TTL-pruned later), not deleted on publish.
+    const j = repo.getById('jhalf');
+    expect(j?.status).toBe('published');
+    expect(j?.publishedUri).toBe('at://x');
   });
 
   it('a second submit for the same chat draft reuses the in-flight job (no duplicate)', async () => {
@@ -289,6 +299,23 @@ describe('submitReviewPublish — inline fast-path', () => {
     expect(publishToPDS).toHaveBeenCalledTimes(1); // the edit actually re-published
     expect(out).toEqual({ kind: 'published', uri: 'at://edited', cid: 'cidedited' });
     expect(repo.getById('chat-1')?.status).toBe('published'); // original receipt untouched
+  });
+
+  it('an EDIT of a FULL-FORM review (same rkey) prunes the stale receipt + republishes', async () => {
+    const repo = new InMemoryReviewPublishRepository();
+    // Original full-form publish (no thread/draft), rkey 'mob-2' → retained receipt.
+    const first = await submitReviewPublish(baseInput({ repo, rkey: 'mob-2', newJobId: () => 'orig' }));
+    expect(first.kind).toBe('published');
+    expect(repo.getById('orig')?.status).toBe('published');
+    // Edit: same rkey, no thread/draft → supersedes the stale FULL-FORM receipt
+    // (unlike a chat receipt, which survives) and republishes as a new receipt.
+    const publishToPDS = jest.fn(async () => ({ uri: 'at://edited', cid: 'cidedited' }));
+    const out = await submitReviewPublish(
+      baseInput({ repo, rkey: 'mob-2', newJobId: () => 'edit', publishToPDS }),
+    );
+    expect(out.kind).toBe('published');
+    expect(repo.getById('orig')).toBeNull(); // stale full-form receipt pruned
+    expect(repo.getById('edit')?.status).toBe('published'); // new receipt retained
   });
 
   it('a throwing create during supersede preserves the existing failed job (atomic discard+create)', async () => {

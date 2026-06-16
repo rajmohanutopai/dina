@@ -25,7 +25,6 @@ import {
   ScrollView,
 } from 'react-native';
 
-
 import { InlineApprovalCard } from '../src/components/InlineApprovalCard';
 import { InlineBriefingCard } from '../src/components/InlineBriefingCard';
 import { InlineCreditsCard } from '../src/components/InlineCreditsCard';
@@ -41,10 +40,7 @@ import { InlineReviewDraftCard } from '../src/components/InlineReviewDraftCard';
 import { InlineServiceApprovalCard } from '../src/components/InlineServiceApprovalCard';
 import { InlineServiceQueryCard } from '../src/components/InlineServiceQueryCard';
 import { InlineVaultReadApprovalCard } from '../src/components/InlineVaultReadApprovalCard';
-import {
-  GUIDED_DEMO_LIST_CLEARANCE,
-  useGuidedDemoActive,
-} from '../src/guided_demo/active_context';
+import { GUIDED_DEMO_LIST_CLEARANCE, useGuidedDemoActive } from '../src/guided_demo/active_context';
 import { useLiveThread, addSystemNotification } from '../src/hooks/useChatThread';
 import { useCredits } from '../src/hooks/useCredits';
 import { useHasActiveAgent } from '../src/hooks/useHasActiveAgent';
@@ -115,9 +111,7 @@ function toDisplayType(m: ChatMessage): UiMessage['displayType'] {
   // reply, dispatched here on the metadata block. Mirrors the
   // approval-card pattern (kind discriminator on metadata, no new
   // MessageType).
-  const lifecycle = m.metadata?.lifecycle as
-    | { kind?: unknown; status?: unknown }
-    | undefined;
+  const lifecycle = m.metadata?.lifecycle as { kind?: unknown; status?: unknown } | undefined;
   if (m.type === 'dina' && lifecycle?.kind === 'service_query') {
     return 'service-query';
   }
@@ -128,11 +122,7 @@ function toDisplayType(m: ChatMessage): UiMessage['displayType'] {
   // 'pending'. Once the bridge patches it to 'complete', content
   // becomes the answer text and we fall through to the regular
   // 'dina' branch so the same row renders as a normal reply.
-  if (
-    m.type === 'dina' &&
-    lifecycle?.kind === 'ask_pending' &&
-    lifecycle.status === 'pending'
-  ) {
+  if (m.type === 'dina' && lifecycle?.kind === 'ask_pending' && lifecycle.status === 'pending') {
     return 'ask-pending';
   }
   // review_draft card — chat-driven `/ask write a review of <X>`
@@ -213,9 +203,7 @@ export default function ChatScreen() {
   // — a dead-end UX. Hide the chip + popover row instead so the
   // requirement is discovered up-front (Settings → Agents).
   const hasActiveAgent = useHasActiveAgent();
-  const availableActions = hasActiveAgent
-    ? ACTIONS
-    : ACTIONS.filter((a) => a.key !== 'task');
+  const availableActions = hasActiveAgent ? ACTIONS : ACTIONS.filter((a) => a.key !== 'task');
   // The reminder fire watcher used to mount here, but it now lives in
   // `app/_layout.tsx` so it ticks across every tab. Keeping it Chat-only
   // meant a reminder firing while the user was on Notifications /
@@ -261,10 +249,7 @@ export default function ChatScreen() {
         // pipeline (it writes a friendly reply to the thread). This
         // catches the rare unexpected throw so it surfaces as a message
         // instead of a silent unhandled rejection.
-        addSystemNotification(
-          'Something went wrong reaching Dina. Please try again.',
-          'main',
-        );
+        addSystemNotification('Something went wrong reaching Dina. Please try again.', 'main');
       }
 
       setTimeout(() => {
@@ -433,6 +418,13 @@ export default function ChatScreen() {
 
     const isUser = item.displayType === 'user';
     const isSystem = item.displayType === 'system';
+    // A peer's D2D message surfaced in the main thread (type='dina' +
+    // metadata.source='d2d'). Attribute it to the sender, not "Dina", and
+    // render its text literally — it's the peer's words, not LLM output.
+    const fromD2DPeer = !isUser && !isSystem && item.metadata?.source === 'd2d';
+    const d2dSenderName =
+      typeof item.metadata?.senderName === 'string' ? item.metadata.senderName : '';
+    const peerLabel = d2dSenderName !== '' ? d2dSenderName : 'A contact';
     // Source pill: when network reviews informed a Dina answer, attribute them.
     const sourceLabel = !isUser && !isSystem ? reviewSourceLabel(item.sources) : null;
 
@@ -455,14 +447,16 @@ export default function ChatScreen() {
         // tests can assert "a Dina/user message appeared" without matching
         // on volatile LLM text. `chat-msg-dina` / `chat-msg-user` /
         // `chat-msg-system`. Cards use `chat-card-<type>` (see Inline*Card).
-        testID={`chat-msg-${item.displayType}`}
+        testID={`chat-msg-${fromD2DPeer ? 'd2d' : item.displayType}`}
         style={[
           styles.messageBubble,
           isUser ? styles.userBubble : styles.dinaBubble,
           isSystem && styles.systemBubble,
         ]}
       >
-        {!isUser && !isSystem && <Text style={styles.senderLabel}>Dina</Text>}
+        {!isUser && !isSystem && (
+          <Text style={styles.senderLabel}>{fromD2DPeer ? peerLabel : 'Dina'}</Text>
+        )}
         {isSystem && <Text style={styles.systemLabel}>System</Text>}
         {isUser && chipLabel && (
           <View style={styles.msgChip}>
@@ -474,13 +468,15 @@ export default function ChatScreen() {
           // the user typed (typing `**foo**` should stay visible as-is,
           // not silently bolded).
           <Text style={[styles.messageText, styles.userText]}>{displayContent}</Text>
+        ) : fromD2DPeer ? (
+          // A peer's literal words — render verbatim (no markdown
+          // interpretation), in the standard left-bubble text colour.
+          <Text style={styles.messageText}>{displayContent}</Text>
         ) : (
           // Dina + system bubbles: the LLM frequently emits `**bold**`
           // for entity emphasis (names, numbers, dates). Render it
           // inline instead of leaking literal asterisks into the UI.
-          <InlineMarkdownText
-            style={[styles.messageText, isSystem && styles.systemText]}
-          >
+          <InlineMarkdownText style={[styles.messageText, isSystem && styles.systemText]}>
             {displayContent}
           </InlineMarkdownText>
         )}
@@ -557,7 +553,7 @@ export default function ChatScreen() {
                   <Text style={styles.actionArrow}>{'\u2192'}</Text>
                 </View>
                 <Text style={styles.actionCardDesc}>
-                  {'Tour Dina\'s capabilities: your vault, agents, people, and network services.'}
+                  {"Tour Dina's capabilities: your vault, agents, people, and network services."}
                 </Text>
               </TouchableOpacity>
             )}
@@ -597,7 +593,6 @@ export default function ChatScreen() {
         </View>
       )}
 
-
       {/* Starter Credits — single pinned instance at thread bottom
           (spec: docs/CREDITS_DESIGN.md §UI 3+4). Wall wins over the
           low-balance nudge; non-LLM features stay usable either way. */}
@@ -621,12 +616,7 @@ export default function ChatScreen() {
             separate toolbar. Once a mode is picked, the chips collapse
             into a pill at the left of the wrapper; tap the pill to
             swap modes via a popover. */}
-        <View
-          style={[
-            styles.inputWrapper,
-            activeAction === null && styles.inputWrapperChips,
-          ]}
-        >
+        <View style={[styles.inputWrapper, activeAction === null && styles.inputWrapperChips]}>
           {activeAction === null ? (
             <>
               <View style={styles.modeChips}>
@@ -647,13 +637,8 @@ export default function ChatScreen() {
                   visually as a message bar so the chips read as the
                   input rather than free-floating buttons. Inert: no
                   message to send until the user picks a mode. */}
-              <View
-                style={[styles.sendButton, styles.sendButtonDisabled]}
-                pointerEvents="none"
-              >
-                <Text style={[styles.sendArrow, styles.sendArrowDisabled]}>
-                  {'↑'}
-                </Text>
+              <View style={[styles.sendButton, styles.sendButtonDisabled]} pointerEvents="none">
+                <Text style={[styles.sendArrow, styles.sendArrowDisabled]}>{'↑'}</Text>
               </View>
             </>
           ) : (
@@ -755,9 +740,7 @@ export default function ChatScreen() {
                   testID={`index-popover-row-${action.key}`}
                   accessibilityRole="button"
                 >
-                  <Text
-                    style={[styles.popoverLabel, isActive && styles.popoverLabelActive]}
-                  >
+                  <Text style={[styles.popoverLabel, isActive && styles.popoverLabelActive]}>
                     {action.label}
                   </Text>
                   <Text style={styles.popoverDesc}>{action.description}</Text>

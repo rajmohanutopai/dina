@@ -21,16 +21,16 @@
  * unchanged from the prior home.
  */
 
-import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
+import { View, StyleSheet, ScrollView } from 'react-native';
 
+import { NetworkReviewsCard } from '../../src/components/network_reviews_card';
 import { NetworkServicesCard } from '../../src/components/network_services_card';
 import { getBootedNode } from '../../src/hooks/useNodeBootstrap';
 import { FirstRunModalView } from '../../src/peerlens/components/first_run_modal_view';
 import { useAuthoredAttestations } from '../../src/peerlens/runners/use_authored_attestations';
-import { colors, spacing, radius, textStyles } from '../../src/theme';
+import { colors, spacing } from '../../src/theme';
 
 export interface NetworkHomeProps {
   /** Count shown under "Your review activity". Defaults to the authored runner. */
@@ -45,6 +45,7 @@ export interface NetworkHomeProps {
   onPublishOrManage?: () => void;
   onBrowseReviews?: () => void;
   onOpenActivity?: () => void;
+  onHowItWorks?: () => void;
 }
 
 export default function TrustFeedScreen(props: NetworkHomeProps = {}): React.ReactElement {
@@ -78,6 +79,7 @@ export default function TrustFeedScreen(props: NetworkHomeProps = {}): React.Rea
       if (viewerDid === '' || !viewerDid.startsWith('did:')) return;
       router.push({ pathname: '/peerlens/reviewer/[did]', params: { did: viewerDid } });
     },
+    onHowItWorks = () => router.push('/peerlens/about'),
   } = props;
 
   const activitySubtitle =
@@ -96,22 +98,11 @@ export default function TrustFeedScreen(props: NetworkHomeProps = {}): React.Rea
         />
 
         {/* ─── Reviews ────────────────────────────────────────────────── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Reviews</Text>
-          <LaunchRow
-            testID="network-row-browse"
-            title="Browse reviews"
-            subtitle="Search reviews from other Dinas"
-            onPress={onBrowseReviews}
-          />
-        </View>
-
-        {/* ─── Your review activity ───────────────────────────────────── */}
-        <LaunchRow
-          testID="network-row-activity"
-          title="Your review activity"
-          subtitle={activitySubtitle}
-          onPress={onOpenActivity}
+        <NetworkReviewsCard
+          activitySubtitle={activitySubtitle}
+          onBrowse={onBrowseReviews}
+          onOpenActivity={onOpenActivity}
+          onHowItWorks={onHowItWorks}
         />
       </ScrollView>
 
@@ -124,58 +115,14 @@ export default function TrustFeedScreen(props: NetworkHomeProps = {}): React.Rea
   );
 }
 
-/** A launchpad menu row: title + subtitle + chevron. */
-function LaunchRow({
-  title,
-  subtitle,
-  testID,
-  onPress,
-}: {
-  title: string;
-  subtitle: string;
-  testID: string;
-  onPress: () => void;
-}): React.JSX.Element {
-  return (
-    <Pressable
-      onPress={onPress}
-      testID={testID}
-      accessibilityRole="button"
-      accessibilityLabel={title}
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-    >
-      <View style={styles.rowText}>
-        <Text style={styles.rowTitle}>{title}</Text>
-        <Text style={styles.rowSubtitle}>{subtitle}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgPrimary },
   scroll: { flex: 1 },
-  // NOTE: NetworkServicesCard supplies its OWN `marginHorizontal: spacing.lg`,
-  // so the content keeps only VERTICAL padding and every other child carries the
-  // same `marginHorizontal` — otherwise the services card would be inset twice
-  // (narrower than the rows below it).
-  content: { paddingVertical: spacing.lg, gap: spacing.lg },
-  section: { gap: spacing.sm },
-  sectionTitle: { ...textStyles.bodyStrong, marginHorizontal: spacing.lg },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginHorizontal: spacing.lg,
-    backgroundColor: colors.bgSecondary,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-    minHeight: 56,
-  },
-  rowPressed: { backgroundColor: colors.bgTertiary },
-  rowText: { flexShrink: 1, gap: 2 },
-  rowTitle: { ...textStyles.body },
-  rowSubtitle: { ...textStyles.bodySmall, color: colors.textSecondary },
+  // NOTE: both NetworkServicesCard and NetworkReviewsCard supply their OWN
+  // `marginHorizontal: spacing.lg`, so the content keeps only VERTICAL padding —
+  // otherwise the cards would be inset twice (narrower than intended).
+  // The inter-card gap is set to MATCH the top lead-in (content paddingTop `lg`
+  // + the Services card's own `marginTop: md` = 40) so the rhythm is even:
+  // Network→Services and Services→Reviews are the same distance.
+  content: { paddingVertical: spacing.lg, gap: spacing.lg + spacing.md },
 });

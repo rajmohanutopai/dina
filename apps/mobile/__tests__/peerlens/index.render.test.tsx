@@ -19,13 +19,16 @@ describe('Network home (launchpad) — structure', () => {
     expect(getByTestId('network-services-publish')).toBeTruthy();
   });
 
-  it('renders the Reviews → Browse row and the Your-review-activity row', () => {
+  it('renders the Reviews card rows: Browse, Your activity, How it works', () => {
     const { getByTestId, getByText } = render(<TrustFeedScreen reviewsWritten={2} />);
-    expect(getByText('Reviews')).toBeTruthy(); // section heading
+    expect(getByTestId('network-reviews-card')).toBeTruthy();
+    expect(getByText('Reviews')).toBeTruthy(); // card heading
     expect(getByTestId('network-row-browse')).toBeTruthy();
     expect(getByTestId('network-row-activity')).toBeTruthy();
+    expect(getByTestId('network-row-howitworks')).toBeTruthy();
     expect(getByText('Browse reviews')).toBeTruthy();
     expect(getByText('Your review activity')).toBeTruthy();
+    expect(getByText('How Ranked Reviews work')).toBeTruthy();
   });
 
   it('does NOT render the old feed / search / footer on the home', () => {
@@ -88,6 +91,15 @@ describe('Network home — navigation seams', () => {
     );
     fireEvent.press(getByTestId('network-row-activity'));
     expect(onOpenActivity).toHaveBeenCalledTimes(1);
+  });
+
+  it('How-it-works row fires onHowItWorks', () => {
+    const onHowItWorks = jest.fn();
+    const { getByTestId } = render(
+      <TrustFeedScreen reviewsWritten={2} onHowItWorks={onHowItWorks} />,
+    );
+    fireEvent.press(getByTestId('network-row-howitworks'));
+    expect(onHowItWorks).toHaveBeenCalledTimes(1);
   });
 
   it('Find / Publish service rows fire their handlers', () => {

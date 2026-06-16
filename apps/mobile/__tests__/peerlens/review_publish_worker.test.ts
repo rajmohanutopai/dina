@@ -80,7 +80,12 @@ describe('runReviewPublishTick', () => {
     const res = await runReviewPublishTick(deps(repo)); // now()=1_000_000 ≫ 1+LEASE
     expect(res.reclaimed).toBe(1);
     expect(res.published).toBe(1); // reclaimed → queued → drained same tick
-    expect(repo.getById('job-1')).toBeNull(); // no chat back-reference → pruned after publish
+    // Full-form (no chat back-reference) jobs are now RETAINED as a `published`
+    // receipt (prune-when-listed) so the reviewer dashboard can show them inline
+    // until AppView indexes the review — they're no longer pruned on publish.
+    const j = repo.getById('job-1');
+    expect(j?.status).toBe('published');
+    expect(j?.publishedUri).toBe('at://x');
   });
 
   it('a retryable failure requeues with attempts++', async () => {
@@ -147,7 +152,8 @@ describe('runReviewPublishTick', () => {
     const [r1, r2] = await Promise.all([tick1, tick2]);
     expect(publishToPDS).toHaveBeenCalledTimes(1);
     expect(r1.published + r2.published).toBe(1);
-    expect(repo.getById('job-1')).toBeNull(); // no chat back-reference → pruned after publish
+    // Retained as a `published` receipt (prune-when-listed), not pruned.
+    expect(repo.getById('job-1')?.status).toBe('published');
   });
 
   it('reports lost (no double-count) when the row is reclaimed mid-publish', async () => {

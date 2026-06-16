@@ -14,10 +14,23 @@ jest.mock('../../src/peerlens/review_publish_autodrain', () => ({
   drainReviewPublishNow: jest.fn(async () => undefined),
 }));
 
-import { cancelReviewPublishJob, retryReviewPublishJob } from '../../src/peerlens/review_publish_actions';
-import { canDrainReviewPublish, drainReviewPublishNow } from '../../src/peerlens/review_publish_autodrain';
-
 const DID = 'did:plc:owner';
+jest.mock('../../src/hooks/useNodeBootstrap', () => ({
+  __esModule: true,
+  getBootedNode: jest.fn(() => ({ did: 'did:plc:owner' })),
+  subscribeBootedNode: jest.fn(() => () => undefined),
+}));
+
+import {
+  cancelReviewPublishJob,
+  dismissReviewPublishReceipt,
+  pruneStaleReviewReceipts,
+  retryReviewPublishJob,
+} from '../../src/peerlens/review_publish_actions';
+import { canDrainReviewPublish, drainReviewPublishNow } from '../../src/peerlens/review_publish_autodrain';
+import { getBootedNode } from '../../src/hooks/useNodeBootstrap';
+
+const mockGetBootedNode = getBootedNode as jest.MockedFunction<typeof getBootedNode>;
 const mockCanDrain = canDrainReviewPublish as jest.MockedFunction<typeof canDrainReviewPublish>;
 const mockDrain = drainReviewPublishNow as jest.MockedFunction<typeof drainReviewPublishNow>;
 
@@ -95,5 +108,51 @@ describe('retryReviewPublishJob', () => {
     expect(await retryReviewPublishJob('f1')).toBe(false);
     expect(mockCanDrain).not.toHaveBeenCalled();
     expect(mockDrain).not.toHaveBeenCalled();
+  });
+});
+
+/** A repo holding one `published` receipt (claimed → completed), updated at `at`. */
+function publishedRepo(at: number): InMemoryReviewPublishRepository {
+  const repo = new InMemoryReviewPublishRepository();
+  repo.create({ jobId: 'p1', ownerDid: DID, rkey: 'rk', recordJSON: '{}', draftJSON: '{}', createdAt: 1 });
+  repo.claim('p1', 1, 60_000);
+  repo.complete('p1', 'at://x', 'cid', at, 1); // publishing → published, updatedAt = at
+  return repo;
+}
+
+describe('dismissReviewPublishReceipt', () => {
+  it('prunes a published receipt and returns true (review stays public)', () => {
+    const repo = publishedRepo(2);
+    setReviewPublishRepository(repo);
+    expect(repo.getById('p1')?.status).toBe('published');
+    expect(dismissReviewPublishReceipt('p1')).toBe(true);
+    expect(repo.getById('p1')).toBeNull(); // local placeholder gone; PDS record untouched
+  });
+
+  it('returns false when no repo is wired', () => {
+    expect(dismissReviewPublishReceipt('p1')).toBe(false);
+  });
+});
+
+describe('pruneStaleReviewReceipts', () => {
+  it('prunes published receipts older than the TTL cutoff (now − ttl)', () => {
+    const repo = publishedRepo(1_000); // ancient updatedAt
+    setReviewPublishRepository(repo);
+    expect(pruneStaleReviewReceipts(10 * 60_000)).toBe(1);
+    expect(repo.getById('p1')).toBeNull();
+  });
+
+  it('keeps recent published receipts (updatedAt within the TTL window)', () => {
+    const repo = publishedRepo(Date.now()); // just published
+    setReviewPublishRepository(repo);
+    expect(pruneStaleReviewReceipts(10 * 60_000)).toBe(0);
+    expect(repo.getById('p1')?.status).toBe('published');
+  });
+
+  it('is a no-op without a repo or a booted node', () => {
+    expect(pruneStaleReviewReceipts(10 * 60_000)).toBe(0); // no repo wired
+    setReviewPublishRepository(publishedRepo(1_000));
+    mockGetBootedNode.mockReturnValueOnce(null);
+    expect(pruneStaleReviewReceipts(10 * 60_000)).toBe(0); // no booted node
   });
 });

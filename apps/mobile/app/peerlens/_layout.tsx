@@ -168,6 +168,7 @@ export default function PeerlensStackLayout(): React.ReactElement {
       <Stack.Screen name="browse" options={{ title: 'Browse reviews' }} />
       <Stack.Screen name="outbox" options={{ title: 'Pending reviews' }} />
       <Stack.Screen name="namespace" options={{ title: 'Publish as' }} />
+      <Stack.Screen name="about" options={{ title: 'About Ranked Reviews' }} />
     </Stack>
   );
 }

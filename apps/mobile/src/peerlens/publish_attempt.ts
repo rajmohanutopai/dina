@@ -69,28 +69,18 @@ export async function attemptClaimedPublish(
   try {
     const record = JSON.parse(job.recordJSON) as Record<string, unknown>;
     const { uri, cid } = await publishToPDS(deps.publisher, job.ownerDid, record, job.rkey);
-    // A job is projectable as a card receipt ONLY with BOTH back-reference halves
-    // — `useReviewPublishJob` requires thread AND draft. If either is missing the
-    // row is an orphan no card can show, so it's treated as a no-card publish and
-    // pruned (else those `published` rows leak). Inline-chat jobs (both set) are
-    // retained as the card's receipt (Deviation #2).
-    const hasCard = job.threadId !== null && job.draftId !== null;
-    if (hasCard) {
-      // CAS publishing→published, recording the receipt ON the row. False ⇒ the
-      // lease expired mid-write and another tick reclaimed it: the review IS
-      // public (idempotent rkey) but this attempt didn't own the transition →
-      // report `lost`, don't claim a publish we didn't durably set.
-      if (!deps.repo.complete(job.jobId, uri, cid, now(), claimedAt)) return { kind: 'lost' };
-      return { kind: 'published', uri, cid };
-    }
-    // No projectable card → complete + prune ATOMICALLY, so a crash / failed
-    // DELETE / throwing subscriber can't leave a published row with no projection.
-    let completed = false;
-    deps.repo.transaction(() => {
-      completed = deps.repo.complete(job.jobId, uri, cid, now(), claimedAt);
-      if (completed) deps.repo.prune(job.jobId);
-    });
-    return completed ? { kind: 'published', uri, cid } : { kind: 'lost' };
+    // CAS publishing→published, recording the receipt (uri/cid) ON the row — and
+    // KEEP the row for BOTH chat-card and full-form publishes. The chat card
+    // projects it as its receipt; the reviewer dashboard projects full-form
+    // `published` rows inline as "Publishing…" until AppView indexes the review.
+    // (prune-when-listed: the dashboard reconcile-prunes the receipt once the
+    // review's URI shows in the authored list, with `prunePublished` TTL as the
+    // backstop — so these no longer leak the way the old inline prune guarded.)
+    // False ⇒ the lease lapsed mid-write and another tick reclaimed it: the
+    // review IS public (idempotent rkey) but this attempt didn't own the
+    // transition → report `lost`, don't claim a publish we didn't durably set.
+    if (!deps.repo.complete(job.jobId, uri, cid, now(), claimedAt)) return { kind: 'lost' };
+    return { kind: 'published', uri, cid };
   } catch (err) {
     const c = classifyPublishError(err);
     const t = now();

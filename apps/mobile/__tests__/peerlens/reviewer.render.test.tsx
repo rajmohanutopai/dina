@@ -29,9 +29,29 @@ jest.mock('../../src/hooks/useNodeBootstrap', () => ({
   subscribeBootedNode: jest.fn(() => () => undefined),
 }));
 
-import ReviewerProfileScreen from '../../app/peerlens/reviewer/[did]';
+// Mock the publish-job actions so the pending-row Clear/Cancel + the
+// reconcile-prune effect can be asserted as fired (they no-op without a repo
+// otherwise). The live queue hook reads an empty repo in tests, so pending
+// rows come exclusively from the `pendingItems` prop.
+jest.mock('../../src/peerlens/review_publish_actions', () => ({
+  __esModule: true,
+  cancelReviewPublishJob: jest.fn(() => true),
+  dismissReviewPublishReceipt: jest.fn(() => true),
+  pruneStaleReviewReceipts: jest.fn(() => 0),
+}));
 
-import type { PeerlensProfile } from '@dina/core';
+import ReviewerProfileScreen, { pendingReviewItems } from '../../app/peerlens/reviewer/[did]';
+import {
+  cancelReviewPublishJob,
+  dismissReviewPublishReceipt,
+} from '../../src/peerlens/review_publish_actions';
+
+import type { PeerlensProfile, PublishJob } from '@dina/core';
+
+const mockCancel = cancelReviewPublishJob as jest.MockedFunction<typeof cancelReviewPublishJob>;
+const mockDismiss = dismissReviewPublishReceipt as jest.MockedFunction<
+  typeof dismissReviewPublishReceipt
+>;
 
 const NOW = 1_700_000_000_000;
 
@@ -119,6 +139,89 @@ describe('ReviewerProfileScreen — render states', () => {
     );
     expect(getByTestId('reviewer-profile-empty')).toBeTruthy();
     expect(queryByTestId('reviewer-profile-write-cta')).toBeNull();
+  });
+
+  // Own profile with no AppView row yet renders the SAME dashboard (zeros), not
+  // a separate page — with the inline empty + a Write-a-review CTA.
+  it('own notFound profile renders the dashboard (not a separate page) with the write CTA', () => {
+    const { getByTestId, queryByTestId } = render(
+      <ReviewerProfileScreen profile={null} notFound isSelf authoredRows={[]} />,
+    );
+    expect(getByTestId('reviewer-profile-screen')).toBeTruthy();
+    expect(getByTestId('reviewer-profile-write-cta')).toBeTruthy();
+    expect(getByTestId('reviewer-authored-empty')).toBeTruthy();
+    expect(queryByTestId('reviewer-profile-empty')).toBeNull();
+  });
+
+  // Optimistic display: a just-submitted review (local queue) shows inline as a
+  // greyed "Pending" row — not a misleading empty list.
+  it('own notFound profile with a pending review shows it inline as a Pending row', () => {
+    const { getByTestId, getByText, queryByTestId } = render(
+      <ReviewerProfileScreen
+        profile={null}
+        notFound
+        isSelf
+        authoredRows={[]}
+        pendingItems={[
+          { jobId: 'job-1', status: 'publishing', title: 'Great ergonomic chair', publishedUri: null },
+        ]}
+      />,
+    );
+    expect(getByTestId('reviewer-profile-screen')).toBeTruthy();
+    expect(getByTestId('reviewer-pending-row-job-1')).toBeTruthy();
+    expect(getByText('Great ergonomic chair')).toBeTruthy();
+    // Not the "no reviews yet" line — there IS a pending review.
+    expect(queryByTestId('reviewer-authored-empty')).toBeNull();
+  });
+
+  it('queued pending row offers Cancel; a publishing one offers no clear', () => {
+    const { getByTestId, queryByTestId } = render(
+      <ReviewerProfileScreen
+        profile={makeProfile()}
+        pendingItems={[
+          { jobId: 'q1', status: 'queued', title: 'Queued review', publishedUri: null },
+          { jobId: 'p1', status: 'publishing', title: 'In-flight review', publishedUri: null },
+        ]}
+      />,
+    );
+    expect(getByTestId('reviewer-pending-clear-q1')).toBeTruthy(); // queued → Cancel
+    expect(queryByTestId('reviewer-pending-clear-p1')).toBeNull(); // publishing → mid-write, no clear
+  });
+
+  it('dedups a published pending receipt already present in the live authored list', () => {
+    const liveRow = {
+      uri: 'at://x',
+      subjectId: 'sub-1',
+      subjectKind: 'product' as const,
+      subjectUri: null,
+      subjectDid: null,
+      subjectTitle: 'A subject',
+      category: null,
+      sentiment: 'positive' as const,
+      headline: 'h',
+      body: '',
+      confidence: null,
+      createdAtMs: NOW - 60_000,
+    };
+    const { queryByTestId } = render(
+      <ReviewerProfileScreen
+        profile={makeProfile()}
+        authoredRows={[liveRow]}
+        pendingItems={[
+          { jobId: 'r1', status: 'published', title: 'Already listed', publishedUri: 'at://x' },
+        ]}
+      />,
+    );
+    // The receipt's URI is already in the live list → its pending row is hidden.
+    expect(queryByTestId('reviewer-pending-row-r1')).toBeNull();
+  });
+
+  it('no pending rows when there are none', () => {
+    const { getByTestId, queryByTestId } = render(
+      <ReviewerProfileScreen profile={makeProfile()} pendingItems={[]} />,
+    );
+    expect(getByTestId('reviewer-profile-screen')).toBeTruthy();
+    expect(queryByTestId('reviewer-pending-list')).toBeNull();
   });
 
   it('renders loaded state with all sections when profile is provided', () => {
@@ -601,9 +704,9 @@ describe('ReviewerProfileScreen — authored list truncation (latest 5 + View al
   });
 });
 
-describe('ReviewerProfileScreen — self-only Publishing + About', () => {
-  it('renders Publishing + About sections (with their rows) for the owner (self)', () => {
-    const { getByTestId } = render(
+describe('ReviewerProfileScreen — self-only Publishing', () => {
+  it('renders the Publishing section (with its rows) for the owner (self)', () => {
+    const { getByTestId, queryByTestId } = render(
       <ReviewerProfileScreen
         profile={makeProfile({ did: MOCK_BOOTED_DID })}
         authoredRows={[]}
@@ -614,15 +717,148 @@ describe('ReviewerProfileScreen — self-only Publishing + About', () => {
     expect(getByTestId('reviewer-row-pending-reviews')).toBeTruthy();
     expect(getByTestId('reviewer-row-publish-as')).toBeTruthy();
     expect(getByTestId('reviewer-row-review-preferences')).toBeTruthy();
-    expect(getByTestId('reviewer-about-section')).toBeTruthy();
-    expect(getByTestId('reviewer-row-about')).toBeTruthy();
+    // The "How Ranked Reviews work" explainer link moved to the Network home
+    // Reviews card — it is no longer on the dashboard.
+    expect(queryByTestId('reviewer-about-section')).toBeNull();
   });
 
-  it('hides Publishing + About on a PEER profile (read-only)', () => {
+  it('hides the Publishing section on a PEER profile (read-only)', () => {
     const { queryByTestId } = render(
       <ReviewerProfileScreen profile={makeProfile()} authoredRows={[]} nowMs={NOW} />,
     );
     expect(queryByTestId('reviewer-publishing-section')).toBeNull();
-    expect(queryByTestId('reviewer-about-section')).toBeNull();
+  });
+});
+
+describe('ReviewerProfileScreen — pending-row actions + reconcile', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('Cancel on a queued pending row fires cancelReviewPublishJob(jobId)', () => {
+    const { getByTestId } = render(
+      <ReviewerProfileScreen
+        profile={makeProfile()}
+        authoredRows={[]}
+        pendingItems={[{ jobId: 'q1', status: 'queued', title: 'Queued', publishedUri: null }]}
+      />,
+    );
+    fireEvent.press(getByTestId('reviewer-pending-clear-q1'));
+    expect(mockCancel).toHaveBeenCalledWith('q1');
+    expect(mockDismiss).not.toHaveBeenCalled();
+  });
+
+  it('Clear on a published receipt row fires dismissReviewPublishReceipt(jobId)', () => {
+    const { getByTestId } = render(
+      <ReviewerProfileScreen
+        profile={makeProfile()}
+        authoredRows={[]}
+        pendingItems={[
+          { jobId: 'r1', status: 'published', title: 'Done', publishedUri: 'at://only-local' },
+        ]}
+      />,
+    );
+    fireEvent.press(getByTestId('reviewer-pending-clear-r1'));
+    expect(mockDismiss).toHaveBeenCalledWith('r1');
+    expect(mockCancel).not.toHaveBeenCalled();
+  });
+
+  it('reconcile-prunes a published receipt once its URI appears in the live list', () => {
+    const liveRow = {
+      uri: 'at://x',
+      subjectId: 'sub-1',
+      subjectKind: 'product' as const,
+      subjectUri: null,
+      subjectDid: null,
+      subjectTitle: 'A subject',
+      category: null,
+      sentiment: 'positive' as const,
+      headline: 'h',
+      body: '',
+      confidence: null,
+      createdAtMs: NOW - 60_000,
+    };
+    render(
+      <ReviewerProfileScreen
+        profile={makeProfile()}
+        authoredRows={[liveRow]}
+        pendingItems={[{ jobId: 'r1', status: 'published', title: 'Listed', publishedUri: 'at://x' }]}
+      />,
+    );
+    // "Prune when listed": the receipt whose URI is now in the authored list is
+    // dismissed (the live row replaces it).
+    expect(mockDismiss).toHaveBeenCalledWith('r1');
+  });
+
+  it('does NOT reconcile-prune a receipt not yet in the live list', () => {
+    render(
+      <ReviewerProfileScreen
+        profile={makeProfile()}
+        authoredRows={[]}
+        pendingItems={[
+          { jobId: 'r1', status: 'published', title: 'Awaiting', publishedUri: 'at://pending' },
+        ]}
+      />,
+    );
+    expect(mockDismiss).not.toHaveBeenCalled();
+  });
+});
+
+describe('pendingReviewItems (helper)', () => {
+  const DID = 'did:plc:me';
+  function job(over: Partial<PublishJob>): PublishJob {
+    return {
+      jobId: 'j',
+      ownerDid: DID,
+      status: 'queued',
+      draftJSON: '{}',
+      publishedUri: null,
+      rkey: 'r',
+      recordJSON: '{}',
+      attempts: 0,
+      lastErrorCode: null,
+      lastErrorMessage: null,
+      nextAttemptAt: null,
+      claimedAt: null,
+      claimExpiresAt: null,
+      threadId: null,
+      draftId: null,
+      createdAt: 1,
+      updatedAt: 1,
+      publishedCid: null,
+      ...over,
+    } as PublishJob;
+  }
+
+  it('includes queued/publishing/published, excludes failed; newest first; DID-scoped', () => {
+    const items = pendingReviewItems(
+      [
+        job({ jobId: 'a', status: 'queued', createdAt: 1, draftJSON: JSON.stringify({ headline: 'A' }) }),
+        job({ jobId: 'b', status: 'publishing', createdAt: 2, draftJSON: JSON.stringify({ headline: 'B' }) }),
+        job({ jobId: 'c', status: 'published', createdAt: 3, draftJSON: JSON.stringify({ headline: 'C' }) }),
+        job({ jobId: 'f', status: 'failed', createdAt: 4 }), // excluded
+        job({ jobId: 'other', ownerDid: 'did:plc:other', status: 'queued', createdAt: 5 }), // excluded
+      ],
+      DID,
+    );
+    expect(items.map((i) => i.jobId)).toEqual(['c', 'b', 'a']); // newest first, no f/other
+    expect(items.map((i) => i.title)).toEqual(['C', 'B', 'A']);
+  });
+
+  it('labels from headline, else "Review of <subject>", else "Your review"', () => {
+    const items = pendingReviewItems(
+      [
+        job({ jobId: 'h', draftJSON: JSON.stringify({ headline: 'Nice chair' }) }),
+        job({ jobId: 's', draftJSON: JSON.stringify({ subjectTitle: 'Aeron' }) }),
+        job({ jobId: 'e', draftJSON: '{}' }),
+        job({ jobId: 'bad', draftJSON: 'not json' }),
+      ],
+      DID,
+    );
+    const byId = Object.fromEntries(items.map((i) => [i.jobId, i.title]));
+    expect(byId.h).toBe('Nice chair');
+    expect(byId.s).toBe('Review of Aeron');
+    expect(byId.e).toBe('Your review');
+    expect(byId.bad).toBe('Your review');
   });
 });

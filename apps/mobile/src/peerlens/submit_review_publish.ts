@@ -79,10 +79,10 @@ export async function submitReviewPublish(input: SubmitReviewInput): Promise<Sub
   // back-reference (thread+draft). A re-rendered / double-tapped chat card
   // re-submits the SAME draft and must get its receipt back, never republish.
   // We deliberately do NOT short-circuit a published row found by RKEY: full-form
-  // published jobs are pruned, so such a row is a RETAINED CHAT RECEIPT that
-  // merely shares the rkey — and the reviewer EDIT flow re-submits (no
-  // thread/draft) with the original's rkey precisely to REPLACE the record, so
-  // returning the old receipt here would silently drop the user's edit.
+  // published jobs are now RETAINED as receipts (prune-when-listed), and the
+  // reviewer EDIT flow re-submits (no thread/draft) with the original's rkey
+  // precisely to REPLACE the record — returning the old receipt here would
+  // silently drop the user's edit. (The stale receipt is superseded at step 6.)
   if (
     input.threadId !== undefined &&
     input.draftId !== undefined &&
@@ -125,9 +125,21 @@ export async function submitReviewPublish(input: SubmitReviewInput): Promise<Sub
   const recordJSON = JSON.stringify(input.record);
   const draftJSON = JSON.stringify(input.draft);
   const jobId = input.newJobId();
+  // Supersede the row this re-submit replaces (same rkey): a stale `failed`
+  // attempt (discard) OR — now that full-form publishes retain a `published`
+  // receipt — the prior FULL-FORM receipt of the review being EDITED (prune).
+  // A chat-origin receipt (thread+draft set) is NEVER pruned here: the inline
+  // card still projects "published" from it, and an edit can ride a chat rkey.
+  // Either way the old row is removed in the SAME transaction as the new
+  // `create`, so there is never a window with a duplicate rkey or neither row.
   const staleFailedId = existing?.status === 'failed' ? existing.jobId : null;
+  const stalePublishedId =
+    existing?.status === 'published' && existing.threadId === null && existing.draftId === null
+      ? existing.jobId
+      : null;
   input.repo.transaction(() => {
     if (staleFailedId !== null) input.repo.discard(staleFailedId);
+    if (stalePublishedId !== null) input.repo.prune(stalePublishedId);
     input.repo.create({
       jobId,
       ownerDid: input.did,

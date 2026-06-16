@@ -119,6 +119,21 @@ export const ACTIVE_STATUSES: readonly PublishJobStatus[] = ['queued', 'publishi
 /** Statuses the Outbox screen surfaces (active + user-actionable failures). */
 export const OUTBOX_STATUSES: readonly PublishJobStatus[] = ['queued', 'publishing', 'failed'];
 
+/**
+ * Every NON-terminal-deleted status (outbox + `published` receipts). The
+ * reviewer dashboard reads this to show in-flight reviews inline AND the
+ * just-published `published` receipts that AppView hasn't indexed yet (the
+ * prune-when-listed model — the receipt is the optimistic signal until the
+ * review appears in the authored list, then it's reconcile-pruned). `discarded`
+ * rows are deleted, so they never appear.
+ */
+export const LIVE_STATUSES: readonly PublishJobStatus[] = [
+  'queued',
+  'publishing',
+  'failed',
+  'published',
+];
+
 /** Per-identity active-queue cap. Mirrors the old `MAX_QUEUE_SIZE`. */
 export const MAX_PUBLISH_QUEUE = 50;
 

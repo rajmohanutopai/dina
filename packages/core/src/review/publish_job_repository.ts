@@ -18,6 +18,7 @@
 import {
   ACTIVE_STATUSES,
   OUTBOX_STATUSES,
+  LIVE_STATUSES,
   type ClassifiedError,
   type NewPublishJob,
   type PublishErrorCode,
@@ -77,6 +78,10 @@ export interface ReviewPublishRepository {
   countActive(ownerDid: string): number;
   /** Outbox rows (`queued` + `publishing` + `failed`) for an identity, FIFO. */
   listForOwner(ownerDid: string): PublishJob[];
+  /** All live rows INCLUDING `published` receipts (`queued` + `publishing` +
+   *  `failed` + `published`) for an identity, FIFO. The reviewer dashboard reads
+   *  this to show in-flight + just-published-awaiting-index reviews inline. */
+  listForOwnerWithReceipts(ownerDid: string): PublishJob[];
   /** `queued` jobs due to attempt now (past their backoff gate), FIFO. */
   listDue(ownerDid: string, nowMs: number): PublishJob[];
   /** Retention escape hatch: delete `published` jobs whose receipt is older than
@@ -349,6 +354,13 @@ export class InMemoryReviewPublishRepository implements ReviewPublishRepository 
       .map((j) => ({ ...j }));
   }
 
+  listForOwnerWithReceipts(ownerDid: string): PublishJob[] {
+    return [...this.jobs.values()]
+      .filter((j) => j.ownerDid === ownerDid && LIVE_STATUSES.includes(j.status))
+      .sort(byCreatedThenId)
+      .map((j) => ({ ...j }));
+  }
+
   listDue(ownerDid: string, nowMs: number): PublishJob[] {
     return [...this.jobs.values()]
       .filter(
@@ -467,6 +479,7 @@ function sqlInList(statuses: readonly string[]): string {
 }
 const ACTIVE_SQL = sqlInList(ACTIVE_STATUSES);
 const OUTBOX_SQL = sqlInList(OUTBOX_STATUSES);
+const LIVE_SQL = sqlInList(LIVE_STATUSES);
 
 export class SQLiteReviewPublishRepository implements ReviewPublishRepository {
   private readonly notifier = new Notifier();
@@ -631,6 +644,17 @@ export class SQLiteReviewPublishRepository implements ReviewPublishRepository {
       .query<JobRow>(
         `SELECT * FROM peerlens_publish_jobs
           WHERE owner_did=? AND status IN ${OUTBOX_SQL}
+          ORDER BY created_at ASC, job_id ASC`,
+        [ownerDid],
+      )
+      .map(rowToPublishJob);
+  }
+
+  listForOwnerWithReceipts(ownerDid: string): PublishJob[] {
+    return this.db
+      .query<JobRow>(
+        `SELECT * FROM peerlens_publish_jobs
+          WHERE owner_did=? AND status IN ${LIVE_SQL}
           ORDER BY created_at ASC, job_id ASC`,
         [ownerDid],
       )

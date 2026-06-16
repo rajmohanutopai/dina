@@ -11,12 +11,16 @@
  *   classify — `.classify()` end-to-end seams (ToC fetcher + LLM fail)
  */
 
+import { CATALOG_CAPABILITIES } from '@dina/protocol';
+
 import {
   IntentClassifier,
+  INTENT_CLASSIFIER_SYSTEM_PROMPT,
   parseIntentClassification,
   renderTocForPrompt,
   type IntentClassification,
 } from '../../src/reasoning/intent_classifier';
+
 import type { TocEntry } from '@dina/core';
 
 function fakeLLM(response: string): jest.Mock {
@@ -392,5 +396,29 @@ describe('IntentClassifier.classify', () => {
     expect(out.sources).toEqual(['vault']);
     const [, userPrompt] = llm.mock.calls[0];
     expect(userPrompt).toContain('(empty — user has not captured any topics yet)');
+  });
+});
+
+describe('system prompt — routable-capability injection', () => {
+  it('injects every intent_routable canonical capability (id + description)', () => {
+    const routable = CATALOG_CAPABILITIES.filter((c) => c.intent_routable);
+    expect(routable.length).toBeGreaterThan(0);
+    for (const c of routable) {
+      // `id: short_description` line, sourced from the catalog (single source).
+      expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toContain(`${c.id}: ${c.short_description}`);
+    }
+  });
+
+  it('excludes subject-scoped (non-routable) capabilities from the discovery list', () => {
+    const nonRoutable = CATALOG_CAPABILITIES.filter((c) => !c.intent_routable);
+    expect(nonRoutable.length).toBeGreaterThan(0);
+    for (const c of nonRoutable) {
+      // The list renders as `id: …`; a non-routable id must not appear in that form.
+      expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).not.toContain(`${c.id}: ${c.short_description}`);
+    }
+  });
+
+  it('keeps the general backstop so new/unlisted capabilities still route', () => {
+    expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toMatch(/live, local, or commercial state/i);
   });
 });

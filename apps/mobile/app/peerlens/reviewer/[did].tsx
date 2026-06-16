@@ -35,18 +35,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
-
-import { FEATURE_NAMES } from '@dina/core';
-
-import { IdentityModal } from '../../../src/components/identity/identity_modal';
-import { getBootedNode } from '../../../src/hooks/useNodeBootstrap';
-
-/**
- * How long the screen waits for `profile` before surfacing a friendly
- * "couldn't reach PeerLens" error. See same constant in
- * `[subjectId].tsx` for the rationale.
- */
-const LOAD_BUDGET_MS = 5000;
 import {
   View,
   Text,
@@ -56,18 +44,35 @@ import {
   ActivityIndicator,
 } from 'react-native';
 
+import { FEATURE_NAMES } from '@dina/core';
+
+import { IdentityModal } from '../../../src/components/identity/identity_modal';
+import { getBootedNode } from '../../../src/hooks/useNodeBootstrap';
 import { BAND_COLOUR, BAND_LABEL } from '../../../src/peerlens/band_theme';
 import { shortHandle, truncateDid } from '../../../src/peerlens/handle_display';
+import {
+  cancelReviewPublishJob,
+  dismissReviewPublishReceipt,
+  pruneStaleReviewReceipts,
+} from '../../../src/peerlens/review_publish_actions';
 import {
   deriveReviewerProfileDisplay,
   formatLastActive,
 } from '../../../src/peerlens/reviewer_profile_data';
 import { useAuthoredAttestations } from '../../../src/peerlens/runners/use_authored_attestations';
 import { useReviewerProfile } from '../../../src/peerlens/runners/use_reviewer_profile';
+import { useReviewPublishWithReceipts } from '../../../src/peerlens/useReviewPublishOutbox';
 import { colors, spacing, radius, textStyles } from '../../../src/theme';
 
 import type { AuthoredAttestationRow } from '../../../src/peerlens/authored_attestations_data';
-import type { PeerlensProfile } from '@dina/core';
+import type { PeerlensProfile, PublishJob, PublishJobStatus } from '@dina/core';
+
+/**
+ * How long the screen waits for `profile` before surfacing a friendly
+ * "couldn't reach PeerLens" error. See same constant in
+ * `[subjectId].tsx` for the rationale.
+ */
+const LOAD_BUDGET_MS = 5000;
 
 export interface ReviewerProfileScreenProps {
   /**
@@ -130,15 +135,113 @@ export interface ReviewerProfileScreenProps {
    */
   isSelf?: boolean;
   /**
-   * Fired by the empty-state "Write a review" CTA. Default pushes the Browse
-   * screen (whose search → "Write the first review for …" is the create path).
+   * Fired by the empty-state "Write a review" CTA. Default pushes the review
+   * creation screen in CREATE mode (`?createKind=product`) so the "What are you
+   * reviewing?" section renders — the kind picker (switchable to place / org /
+   * etc.), Name, and the product Identifier field (ASIN / ISBN / SKU). A bare
+   * `/peerlens/write` is review-only mode and hides that section, so a new user
+   * would have no way to say WHAT they're reviewing.
    */
   onWriteReview?: () => void;
+  /**
+   * Optimistic pending reviews (own profile) — in-flight + just-published-
+   * awaiting-index jobs from the local publish queue, shown as greyed "Pending"
+   * rows inline in the list so a fresh publish doesn't read as "no reviews"
+   * during the ingest lag. Defaults to the live queue (own profile only); tests
+   * pass it directly.
+   */
+  pendingItems?: readonly PendingReviewItem[];
 }
 
 
 /** Authored reviews shown before the "View all reviews" expander. */
 const AUTHORED_PREVIEW_COUNT = 5;
+
+/** Retention TTL for `published` receipts the dashboard never reconciled (the
+ *  user published, then never reopened the profile). 10 min ≫ AppView ingest. */
+const RECEIPT_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Optimistic "publishing" labels from the local publish outbox — the reviews
+ * the owner just submitted that AppView hasn't ingested/scored yet. Without
+ * this, a fresh publish shows "No reviews yet" until AppView catches up, which
+ * reads as a failure. Only `queued`/`publishing` jobs (terminal ones are
+ * pruned), and only the owner's own (the outbox is the local node's queue).
+ */
+/**
+ * A zeroed profile for the viewer's OWN dashboard when AppView has no profile
+ * row yet (brand-new user, or a just-published review not yet scored). Lets the
+ * SAME "Your reviews" dashboard render with zeros + the inline "no reviews yet"
+ * state + the Write-a-review CTA, instead of a separate empty screen.
+ */
+function emptySelfProfile(did: string): PeerlensProfile {
+  return {
+    did,
+    overallTrustScore: 0,
+    attestationSummary: { total: 0, positive: 0, neutral: 0, negative: 0 },
+    vouchCount: 0,
+    endorsementCount: 0,
+    reviewerStats: {
+      totalAttestationsBy: 0,
+      corroborationRate: 0,
+      evidenceRate: 0,
+      helpfulRatio: 0,
+    },
+    activeDomains: [],
+    lastActive: null,
+  } as unknown as PeerlensProfile;
+}
+
+/** A just-submitted review from the local publish queue, shown inline on the OWN
+ *  dashboard as a greyed "Pending" row until AppView indexes it. */
+export interface PendingReviewItem {
+  jobId: string;
+  status: PublishJobStatus;
+  /** Headline, else "Review of <subject>", else "Your review". */
+  title: string;
+  /** The at:// URI once published — for dedup + reconcile against the live list. */
+  publishedUri: string | null;
+}
+
+/** A short label for a pending row, from the job's draft. */
+function pendingLabel(job: PublishJob): string {
+  try {
+    const d = JSON.parse(job.draftJSON) as { headline?: unknown; subjectTitle?: unknown };
+    const headline =
+      typeof d.headline === 'string' && d.headline.trim() !== '' ? d.headline.trim() : '';
+    if (headline !== '') return headline;
+    const subject =
+      typeof d.subjectTitle === 'string' && d.subjectTitle.trim() !== '' ? d.subjectTitle.trim() : '';
+    return subject !== '' ? `Review of ${subject}` : 'Your review';
+  } catch {
+    return 'Your review';
+  }
+}
+
+/**
+ * Structured pending rows for the OWN dashboard: queued / publishing / published
+ * (the in-flight + just-published-awaiting-index reviews), NEWEST FIRST. The
+ * caller dedups `published` rows whose URI is already in the live authored list
+ * and reconcile-prunes those receipts.
+ */
+export function pendingReviewItems(
+  jobs: readonly PublishJob[],
+  ownDid: string | null,
+): PendingReviewItem[] {
+  return jobs
+    .filter(
+      (j) =>
+        (j.status === 'queued' || j.status === 'publishing' || j.status === 'published') &&
+        (ownDid === null || j.ownerDid === ownDid),
+    )
+    .map((j) => ({
+      jobId: j.jobId,
+      status: j.status,
+      title: pendingLabel(j),
+      publishedUri: j.publishedUri ?? null,
+    }))
+    .reverse(); // repo returns FIFO (oldest first); show newest pending at top
+}
 
 export default function ReviewerProfileScreen(
   props: ReviewerProfileScreenProps = {},
@@ -189,6 +292,11 @@ export default function ReviewerProfileScreen(
     retryNonce,
   });
   const router = useRouter();
+  // Live publish queue INCLUDING `published` receipts — for the optimistic
+  // inline "Pending" rows of reviews the owner just submitted that AppView
+  // hasn't indexed yet. Called unconditionally (Rules of Hooks); filtered to
+  // own + mapped below.
+  const liveJobs = useReviewPublishWithReceipts();
   // Refresh on focus so a recently-vouched / recently-revoked
   // attestation moves the reviewer's score the next time the user lands
   // here — the runner's deps are stable on a steady DID otherwise.
@@ -212,7 +320,8 @@ export default function ReviewerProfileScreen(
       setAutoError(null);
       setRetryNonce((n) => n + 1);
     },
-    onWriteReview = () => router.push('/peerlens/browse'),
+    onWriteReview = () =>
+      router.push({ pathname: '/peerlens/write', params: { createKind: 'product' } }),
     nowMs = Date.now(),
     authoredRows = authored.rows,
     onSelectAuthoredSubject = (subjectId: string) => {
@@ -255,6 +364,40 @@ export default function ReviewerProfileScreen(
       router.push({ pathname: '/peerlens/write', params });
     },
   } = props;
+
+  // Optimistic pending reviews for the OWN profile (local queue, not yet in
+  // AppView). Controlled override wins (tests); otherwise derive from the live
+  // queue only when viewing your own DID.
+  const ownDidForPending = getBootedNode()?.did ?? null;
+  const isOwnProfile =
+    props.isSelf ??
+    (ownDidForPending !== null && (profile?.did ?? paramDid ?? '') === ownDidForPending);
+  const allPendingItems =
+    props.pendingItems ?? (isOwnProfile ? pendingReviewItems(liveJobs, ownDidForPending) : []);
+  // The live authored list's URIs — a `published` receipt whose review already
+  // appears there is reconciled away (deduped below + reconcile-pruned in an
+  // effect): "prune when listed".
+  const authoredUris = React.useMemo(
+    () => new Set((authoredRows ?? []).map((r) => r.uri)),
+    [authoredRows],
+  );
+  const pendingItems = allPendingItems.filter(
+    (p) => p.publishedUri === null || !authoredUris.has(p.publishedUri),
+  );
+
+  // Reconcile-prune: once a `published` receipt's review shows in the authored
+  // list, delete the local receipt (the live row replaces it). TTL backstop on
+  // mount for receipts the user never returned to reconcile.
+  React.useEffect(() => {
+    for (const p of allPendingItems) {
+      if (p.status === 'published' && p.publishedUri !== null && authoredUris.has(p.publishedUri)) {
+        dismissReviewPublishReceipt(p.jobId);
+      }
+    }
+  }, [allPendingItems, authoredUris]);
+  React.useEffect(() => {
+    if (isOwnProfile) pruneStaleReviewReceipts(RECEIPT_TTL_MS);
+  }, [isOwnProfile]);
 
   React.useEffect(() => {
     // Auto-timeout fallback only fires in degraded states the runner
@@ -365,39 +508,34 @@ export default function ReviewerProfileScreen(
   // (no attestations). A neutral panel — never the red "Couldn't load" + dead
   // Retry. On the viewer's OWN profile, offer the "Write a review" onramp so a
   // new user isn't dead-ended ("how do I create a review?").
-  if (notFound) {
-    const ownDid = getBootedNode()?.did ?? null;
-    const selfEmpty =
-      props.isSelf ??
-      (ownDid !== null && paramDid !== undefined && paramDid !== '' && paramDid === ownDid);
+  // ANOTHER person with no profile yet → a neutral "no profile" panel. We do
+  // NOT short-circuit the viewer's OWN profile: it renders the SAME "Your
+  // reviews" dashboard with zeros (synthesized below) + the inline "no reviews
+  // yet" + the Write-a-review CTA, so it's one consistent page, not a new one.
+  if (notFound && !isOwnProfile) {
     return (
       <View style={styles.container} testID="reviewer-profile-empty">
         <View style={styles.errorPanel}>
           <Ionicons name="document-text-outline" size={36} color={colors.textMuted} />
-          <Text style={styles.errorTitle}>{selfEmpty ? 'No reviews yet' : 'No profile yet'}</Text>
+          <Text style={styles.errorTitle}>No profile yet</Text>
           <Text style={styles.errorBody}>
-            {selfEmpty
-              ? 'You haven’t written any reviews yet. Reviews you write — or receive — show up here.'
-              : 'No PeerLens profile for this person yet. Once they make or receive attestations, it’ll fill in.'}
+            No PeerLens profile for this person yet. Once they make or receive attestations, it’ll
+            fill in.
           </Text>
-          {selfEmpty && (
-            <Pressable
-              onPress={onWriteReview}
-              style={({ pressed }) => [styles.retryBtn, pressed && styles.retryBtnPressed]}
-              testID="reviewer-profile-write-cta"
-              accessibilityRole="button"
-              accessibilityLabel="Write a review"
-            >
-              <Ionicons name="create-outline" size={16} color={colors.bgSecondary} />
-              <Text style={styles.retryLabel}>Write a review</Text>
-            </Pressable>
-          )}
         </View>
       </View>
     );
   }
 
-  if (profile === null) {
+  // Own profile with no AppView profile row yet (new user, or a just-published
+  // review not yet scored): synthesize a zero-profile so the dashboard renders
+  // instead of a separate empty page. `profile === null && !notFound` is still
+  // loading → falls through to the spinner below.
+  const effectiveProfile: PeerlensProfile | null =
+    profile ??
+    (notFound && isOwnProfile ? emptySelfProfile(ownDidForPending ?? paramDid ?? '') : null);
+
+  if (effectiveProfile === null) {
     return (
       <View style={styles.container} testID="reviewer-profile-loading">
         <View style={styles.loading}>
@@ -408,7 +546,7 @@ export default function ReviewerProfileScreen(
     );
   }
 
-  const display = deriveReviewerProfileDisplay(profile);
+  const display = deriveReviewerProfileDisplay(effectiveProfile);
   const lastActive = formatLastActive(display.lastActiveMs, nowMs);
   // Self-profile detection — when the user is looking at their OWN
   // DID, the band badge ("VERY LOW" by default for new accounts) reads
@@ -591,22 +729,48 @@ export default function ReviewerProfileScreen(
       )}
 
       {/* ─── Reviews written ────────────────────────────────────────
-          Lists the actual attestations this DID has authored.
-          Each row drills into the subject. Hidden during the initial
-          load (`null`) so the screen doesn't flash an empty section,
-          and replaced with a "no reviews yet" line for genuinely
-          empty results. */}
-      {authoredRows !== null && (
+          Lists the actual attestations this DID has authored. For a PEER the
+          section stays hidden during the initial load (`null`) so it doesn't
+          flash empty; for the OWN dashboard it always renders (title + the
+          persistent Write-a-review CTA), with a "no reviews yet" line once the
+          list resolves empty. */}
+      {(authoredRows !== null || isSelf) && (
         <View style={styles.section} testID="reviewer-authored-section">
           <Text style={styles.sectionTitle}>
             {isSelf ? 'Reviews you wrote' : 'Reviews written'}
           </Text>
-          {authoredRows.length === 0 ? (
-            <Text style={styles.authoredEmpty} testID="reviewer-authored-empty">
-              {isSelf
-                ? "You haven't written any reviews yet."
-                : "No reviews written yet."}
-            </Text>
+          {/* Persistent "Write a review" CTA on the OWN dashboard — works whether
+              the list is empty (new-user onramp) or already has reviews (write
+              another), so there's no need for a separate empty page. */}
+          {isSelf && (
+            <Pressable
+              onPress={onWriteReview}
+              style={({ pressed }) => [styles.writeReviewBtn, pressed && styles.retryBtnPressed]}
+              testID="reviewer-profile-write-cta"
+              accessibilityRole="button"
+              accessibilityLabel="Write a review"
+            >
+              <Ionicons name="create-outline" size={16} color={colors.bgSecondary} />
+              <Text style={styles.retryLabel}>Write a review</Text>
+            </Pressable>
+          )}
+          {/* Pending (just-submitted) reviews — greyed, clear-only, newest first,
+              above the live list. Replaced by the real row once AppView indexes
+              them (deduped by URI in `pendingItems`). */}
+          {pendingItems.length > 0 && (
+            <View style={styles.authoredList} testID="reviewer-pending-list">
+              {pendingItems.map((p) => (
+                <PendingReviewRowView key={p.jobId} item={p} />
+              ))}
+            </View>
+          )}
+          {authoredRows === null ? null : authoredRows.length === 0 ? (
+            // Only "no reviews" when there are no pending ones either.
+            pendingItems.length === 0 ? (
+              <Text style={styles.authoredEmpty} testID="reviewer-authored-empty">
+                {isSelf ? "You haven't written any reviews yet." : 'No reviews written yet.'}
+              </Text>
+            ) : null
           ) : (
             <>
               <View style={styles.authoredList}>
@@ -638,44 +802,77 @@ export default function ReviewerProfileScreen(
         </View>
       )}
 
-      {/* ─── Publishing + About (SELF only) ──────────────────────────
+      {/* ─── Publishing (SELF only) ──────────────────────────────────
           The owner's profile doubles as their review-publishing hub:
           pending publishes, publish identity, and result preferences
-          live here (moved off the Network home). About links to the
-          PeerLens explainer. Peers see a read-only profile — none of
-          this. */}
+          live here (moved off the Network home). Peers see a read-only
+          profile — none of this. ("How Ranked Reviews work" now lives on
+          the Network home Reviews card, not here.) */}
       {isSelf && (
-        <>
-          <View style={styles.section} testID="reviewer-publishing-section">
-            <Text style={styles.sectionTitle}>Publishing</Text>
-            <ProfileLinkRow
-              label="Pending reviews"
-              testID="reviewer-row-pending-reviews"
-              onPress={() => router.push('/peerlens/outbox')}
-            />
-            <ProfileLinkRow
-              label="Publish as"
-              testID="reviewer-row-publish-as"
-              onPress={() => router.push('/peerlens/namespace')}
-            />
-            <ProfileLinkRow
-              label="Review preferences"
-              testID="reviewer-row-review-preferences"
-              onPress={() => router.push('/peerlens-preferences')}
-            />
-          </View>
-          <View style={styles.section} testID="reviewer-about-section">
-            <Text style={styles.sectionTitle}>About</Text>
-            <ProfileLinkRow
-              label="Powered by PeerLens"
-              testID="reviewer-row-about"
-              onPress={() => router.push('/help?from=/peerlens')}
-            />
-          </View>
-        </>
+        <View style={styles.section} testID="reviewer-publishing-section">
+          <Text style={styles.sectionTitle}>Publishing</Text>
+          <ProfileLinkRow
+            label="Pending reviews"
+            testID="reviewer-row-pending-reviews"
+            onPress={() => router.push('/peerlens/outbox')}
+          />
+          <ProfileLinkRow
+            label="Publish as"
+            testID="reviewer-row-publish-as"
+            onPress={() => router.push('/peerlens/namespace')}
+          />
+          <ProfileLinkRow
+            label="Review preferences"
+            testID="reviewer-row-review-preferences"
+            onPress={() => router.push('/peerlens-preferences')}
+          />
+        </View>
       )}
     </ScrollView>
     </>
+  );
+}
+
+/**
+ * A greyed, non-interactive "Pending" row for a review still publishing /
+ * awaiting AppView index. Clear-only: cancel a `queued` review (don't publish),
+ * or dismiss a `published` receipt (already public — drop the local placeholder).
+ * A `publishing` row is mid-write → no clear.
+ */
+function PendingReviewRowView({ item }: { item: PendingReviewItem }): React.JSX.Element {
+  const onClear =
+    item.status === 'queued'
+      ? (): void => {
+          cancelReviewPublishJob(item.jobId);
+        }
+      : item.status === 'published'
+        ? (): void => {
+            dismissReviewPublishReceipt(item.jobId);
+          }
+        : null;
+  return (
+    <View style={styles.pendingRow} testID={`reviewer-pending-row-${item.jobId}`}>
+      <View style={styles.pendingRowText}>
+        <Text style={styles.pendingTitle} numberOfLines={1}>
+          {item.title}
+        </Text>
+        <Text style={styles.pendingTag}>Publishing…</Text>
+      </View>
+      {onClear !== null && (
+        <Pressable
+          onPress={onClear}
+          hitSlop={8}
+          style={({ pressed }) => [styles.pendingClearBtn, pressed && { opacity: 0.6 }]}
+          testID={`reviewer-pending-clear-${item.jobId}`}
+          accessibilityRole="button"
+          accessibilityLabel={item.status === 'queued' ? 'Cancel pending review' : 'Dismiss'}
+        >
+          <Text style={styles.pendingClearLabel}>
+            {item.status === 'queued' ? 'Cancel' : 'Clear'}
+          </Text>
+        </Pressable>
+      )}
+    </View>
   );
 }
 
@@ -910,6 +1107,20 @@ const styles = StyleSheet.create({
     ...textStyles.body,
     color: colors.bgSecondary,
   },
+  // Dashboard "Write a review" CTA — left-aligned pill in the authored section
+  // (not centered like the error/empty Retry).
+  writeReviewBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: colors.accent,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.sm,
+    gap: spacing.xs,
+    minHeight: 44,
+    marginBottom: spacing.sm,
+  },
   headerCard: {
     backgroundColor: colors.bgCard,
     padding: spacing.md,
@@ -918,6 +1129,24 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     gap: spacing.sm,
   },
+  // Greyed "Pending" review row — visibly inert (muted bg/text), clear-only.
+  pendingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.bgTertiary,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    opacity: 0.85,
+  },
+  pendingRowText: { flex: 1, gap: 2 },
+  pendingTitle: { ...textStyles.body, color: colors.textSecondary },
+  pendingTag: { ...textStyles.eyebrow, color: colors.textMuted },
+  pendingClearBtn: { paddingVertical: spacing.xs, paddingHorizontal: spacing.sm },
+  pendingClearLabel: { ...textStyles.link, color: colors.textSecondary },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',

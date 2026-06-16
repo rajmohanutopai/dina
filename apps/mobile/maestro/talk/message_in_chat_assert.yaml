@@ -1,0 +1,33 @@
+# Talk — receiver assertion: the peer's RAW message lands in the MAIN chat.
+#
+# Validates the D2D "message appears in chat" fix: a known contact's message
+# is posted to the main thread as a left bubble attributed to the sender
+# (testID `chat-msg-d2d`), and the wire body — which arrives JSON-encoded
+# (`social.update` body `{text}` → `{"text":"…"}` on the wire) — is unwrapped
+# to clean text, NOT shown raw.
+#
+# Pairs with the headless sender harness, which posts a `{text}` body:
+#   GEMINI_API_KEY=… npx tsx apps/mobile/maestro/harness/live_d2d_send_to_mobile.ts \
+#      --to did:plc:<mobile> --text "What is your view on buying Oreos" --name Raju
+# The sender DID must ALREADY be a contact on the mobile app (else the message
+# is quarantined, not posted as a bubble — that path is `quarantine_assert.yaml`).
+#
+# Pass the expected text in:
+#   maestro test -e MSG_TEXT="What is your view on buying Oreos" \
+#      apps/mobile/maestro/talk/message_in_chat_assert.yaml
+appId: com.dinakernel.mobile
+---
+- launchApp
+- tapOn:
+    id: 'tab-chat'
+# The message arrives over MsgBox + drains through a real LLM — give it room.
+- extendedWaitUntil:
+    visible:
+      id: 'chat-msg-d2d'
+    timeout: 150000
+# The bubble shows the human text, not the raw JSON wire payload.
+- assertVisible:
+    text: '.*${MSG_TEXT}.*'
+# Regression guard: the JSON wrapper must NOT be on screen.
+- assertNotVisible:
+    text: '.*\{"text".*'

@@ -1,7 +1,11 @@
 /**
- * Project the Outbox: every publish job for the booted identity that's still
- * in play (queued / publishing / failed), FIFO. Re-renders on any repo change.
- * The Outbox screen is a pure projection of this — no separate mirror.
+ * Project review publish jobs for the booted identity, re-rendering on any repo
+ * change. Two views:
+ *   - `useReviewPublishOutbox` — Outbox screen: in-play jobs (queued /
+ *     publishing / failed), FIFO.
+ *   - `useReviewPublishWithReceipts` — reviewer dashboard: the above PLUS
+ *     `published` receipts (just-published reviews AppView hasn't indexed yet),
+ *     so they show inline as "Pending" until the review lands in the list.
  */
 
 import { useEffect, useState } from 'react';
@@ -14,29 +18,33 @@ import {
 
 import { getBootedNode, subscribeBootedNode } from '../hooks/useNodeBootstrap';
 
-function readOutbox(): PublishJob[] {
+type Mode = 'outbox' | 'receipts';
+
+function readJobs(mode: Mode): PublishJob[] {
   const repo = getReviewPublishRepository();
   const node = getBootedNode();
   if (repo === null || node === null || node.did.length === 0) return [];
-  return repo.listForOwner(node.did);
+  return mode === 'receipts'
+    ? repo.listForOwnerWithReceipts(node.did)
+    : repo.listForOwner(node.did);
 }
 
-export function useReviewPublishOutbox(): PublishJob[] {
-  const [rows, setRows] = useState<PublishJob[]>(() => readOutbox());
+function useLiveJobs(mode: Mode): PublishJob[] {
+  const [rows, setRows] = useState<PublishJob[]>(() => readJobs(mode));
 
   useEffect(() => {
     let unsubRepo: (() => void) | undefined;
-    // (Re)bind on mount AND on any repo swap, so an Outbox opened before the
-    // repo was wired re-reads + subscribes once createNode installs it.
+    // (Re)bind on mount AND on any repo swap, so a screen opened before the repo
+    // was wired re-reads + subscribes once createNode installs it.
     const bind = (): void => {
-      setRows(readOutbox());
+      setRows(readJobs(mode));
       unsubRepo?.();
-      unsubRepo = getReviewPublishRepository()?.subscribe(() => setRows(readOutbox()));
+      unsubRepo = getReviewPublishRepository()?.subscribe(() => setRows(readJobs(mode)));
     };
     bind();
-    // Re-bind on repo (re)install AND on the booted node becoming ready — see the
-    // note in useReviewPublishJob: during boot the repo registry fires before the
-    // node singleton is set, so the first read sees a null node.
+    // Re-bind on repo (re)install AND on the booted node becoming ready — during
+    // boot the repo registry fires before the node singleton is set, so the first
+    // read sees a null node.
     const unsubRegistry = subscribeReviewPublishRegistry(bind);
     const unsubNode = subscribeBootedNode(bind);
     return () => {
@@ -44,7 +52,15 @@ export function useReviewPublishOutbox(): PublishJob[] {
       unsubRegistry();
       unsubNode();
     };
-  }, []);
+  }, [mode]);
 
   return rows;
+}
+
+export function useReviewPublishOutbox(): PublishJob[] {
+  return useLiveJobs('outbox');
+}
+
+export function useReviewPublishWithReceipts(): PublishJob[] {
+  return useLiveJobs('receipts');
 }

@@ -1,0 +1,67 @@
+# MRS — PeerLens: "Your review activity" dashboard + Write-a-review onramp.
+#
+# Validates the DETERMINISTIC half of the pending-reviews work:
+#   - Network home → "Your review activity" lands on the reviewer dashboard
+#     (the SAME page for a new user — no separate empty screen), with the
+#     "Reviews you wrote" section and a persistent "Write a review" CTA.
+#   - The CTA opens the review CREATE form (createKind=product) showing the
+#     "What are you reviewing?" section incl. the product Identifier (ASIN) field.
+#
+# Publishing → the optimistic greyed "Pending" row → reconcile-when-listed is
+# left to the MANUAL pass: it touches the live PDS/AppView (real publish job +
+# ingest timing), exactly as `search_and_review.yaml` leaves publishing manual.
+# The optimistic UI + lifecycle are covered deterministically by Jest
+# (reviewer.render.test, submit_review_publish.test, review_publish_actions.test,
+# publish_job_repository.test).
+appId: com.dinakernel.mobile
+---
+- launchApp
+- tapOn:
+    id: 'tab-network'
+- extendedWaitUntil:
+    visible:
+      id: 'trust-feed-screen'
+    timeout: 15000
+
+# Network home → "Your review activity" (own reviewer dashboard).
+- tapOn:
+    id: 'network-row-activity'
+- extendedWaitUntil:
+    visible:
+      id: 'reviewer-profile-screen'
+    timeout: 20000
+
+# The dashboard renders the "Reviews you wrote" section (same page whether empty
+# or populated — not a separate "no reviews" screen).
+- extendedWaitUntil:
+    visible:
+      id: 'reviewer-authored-section'
+    timeout: 10000
+
+# The persistent "Write a review" CTA is present (scroll it into view first —
+# it sits below the stats on a fresh dashboard).
+- scrollUntilVisible:
+    element:
+      id: 'reviewer-profile-write-cta'
+    direction: DOWN
+    centerElement: true
+    timeout: 15000
+- tapOn:
+    id: 'reviewer-profile-write-cta'
+
+# CTA opens the CREATE form (createKind=product) with the subject section.
+- extendedWaitUntil:
+    visible:
+      id: 'write-screen'
+    timeout: 15000
+- assertVisible:
+    id: 'write-subject-section'
+# Product kind is pre-selected; its Identifier field is the ASIN/ISBN/SKU input.
+- assertVisible:
+    id: 'write-subject-kind-product'
+- assertVisible:
+    id: 'write-subject-name-input'
+- assertVisible:
+    id: 'write-subject-identifier-input'
+
+# Stop here — actually publishing (→ Pending row → reconcile) is the manual pass.

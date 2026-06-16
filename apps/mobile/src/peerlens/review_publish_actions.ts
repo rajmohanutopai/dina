@@ -5,6 +5,8 @@
  * dead-letter and drains immediately.
  */
 
+import { getBootedNode } from '../hooks/useNodeBootstrap';
+
 import { getReviewPublishRepository } from '@dina/core';
 
 import { canDrainReviewPublish, drainReviewPublishNow } from './review_publish_autodrain';
@@ -18,6 +20,35 @@ import { canDrainReviewPublish, drainReviewPublishNow } from './review_publish_a
 export function cancelReviewPublishJob(jobId: string): boolean {
   const repo = getReviewPublishRepository();
   return repo !== null && repo.discard(jobId);
+}
+
+/**
+ * Dismiss a `published` receipt: delete the row. The review IS public (this only
+ * drops the local "Publishing…" placeholder the reviewer dashboard shows while
+ * AppView indexes it). Unlike `cancelReviewPublishJob` (discard, queued/failed
+ * only), this prunes — the row is already `published`. Returns false if the repo
+ * isn't wired. (No CAS: prune is unconditional; callers pass a receipt jobId.)
+ */
+export function dismissReviewPublishReceipt(jobId: string): boolean {
+  const repo = getReviewPublishRepository();
+  if (repo === null) return false;
+  repo.prune(jobId);
+  return true;
+}
+
+/**
+ * Retention sweep: prune the booted identity's `published` receipts older than
+ * `olderThanMs` (by receipt time). Backstop for receipts the reviewer dashboard
+ * never got to reconcile (published, then the user never reopened the profile),
+ * so they don't accumulate. No-op without a repo / booted node.
+ */
+export function pruneStaleReviewReceipts(olderThanMs: number): number {
+  const repo = getReviewPublishRepository();
+  const node = getBootedNode();
+  if (repo === null || node === null || node.did.length === 0) return 0;
+  // `prunePublished` takes an ABSOLUTE cutoff (deletes receipts with
+  // `updated_at < cutoff`); convert the TTL DURATION to `now − ttl`.
+  return repo.prunePublished(node.did, Date.now() - olderThanMs);
 }
 
 /**

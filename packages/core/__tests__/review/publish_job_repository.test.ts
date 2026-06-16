@@ -267,6 +267,18 @@ describe.each(factories)('ReviewPublishRepository contract — $name', ({ make }
     expect(repo.listForOwner(DID).map((j) => j.jobId)).toEqual(['a', 'b']);
   });
 
+  it('listForOwnerWithReceipts adds published receipts (queued+publishing+failed+published), FIFO', () => {
+    repo.create(newJob({ jobId: 'a', createdAt: 1 }));
+    repo.create(newJob({ jobId: 'b', createdAt: 2 }));
+    repo.claim('b', 1_000, LEASE);
+    repo.create(newJob({ jobId: 'c', createdAt: 3 }));
+    repo.claim('c', 1_000, LEASE);
+    repo.complete('c', 'at://x', 'cid', 2_000, 1_000); // published — INCLUDED here as a receipt
+    repo.create(newJob({ jobId: 'other', ownerDid: 'did:plc:other', createdAt: 1 }));
+    // Same as listForOwner PLUS the published receipt 'c'; DID-scoped, FIFO.
+    expect(repo.listForOwnerWithReceipts(DID).map((j) => j.jobId)).toEqual(['a', 'b', 'c']);
+  });
+
   it('listDue returns queued jobs past their backoff gate, FIFO', () => {
     repo.create(newJob({ jobId: 'ready', createdAt: 1 })); // nextAttemptAt null → due
     repo.create(newJob({ jobId: 'gated', createdAt: 2 }));

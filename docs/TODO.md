@@ -1,3 +1,37 @@
+
+
+
+
+# D2D for normal questions
+
+  The line that matters: Dina helps her own user answer. She never answers for them, and never replies to the peer on her own. Auto-replying to "what's your view on Oreos?" would break three laws at once —
+  Absolute Loyalty (she'd be speaking for you to a third party), Never Replace a Human (two Dinas chatting with no human in the loop is exactly the bot-to-bot dead-internet failure), and it risks leaking your
+  private vault (your health note about sugar, your purchase history) to the peer without consent.
+
+  So I'd frame D2D Talk as three lanes, by intent:
+
+  1. Logistics ("I'm coming over tomorrow") → enrich + reminder. ✅ working.
+  2. Chit-chat ("hey, how are you") → just show the message, do nothing. ✅ working.
+  3. A question / opinion request ("what's your view on buying Oreos?") → the missing lane.
+
+  For lane 3, here's the nice part: "what do you think of buying X" is literally a recommendation request — which is exactly what Ranked Reviews is for. So Dina's role is to quietly prepare you to answer, not to
+  answer:
+
+  - When you open the chat, she surfaces your own context (did you buy/review Oreos? any relevant preference?) plus the network's Ranked Review on it.
+  - Optionally she drafts a reply from that context that you edit and send. The reply is yours, sent with your tap.
+
+  That's the natural bridge between D2D Talk and Ranked Reviews, and it stays inside the laws:
+  - Silence First: this is "Engagement" priority, not "Fiduciary" — no interrupt, no notification; the help appears when you look at the chat.
+  - Loyalty / privacy: the context is for your eyes; nothing about you goes back to the peer unless you approve it.
+  - Never Replace a Human: Dina is the prep, you are the voice.
+
+  But Dina will only bring in her information only if she thinks it will be valuable in the conversation. Otherwise she wouldnt
+
+# Review Creation
+  There's no product catalog search / autocomplete / barcode scan — you type the name and paste the ASIN/identifier manually. The "search the existing product and pick it (dedupe by ASIN/UPC/URL)" flow is a known
+  TODO (the canonical-identifier dedup note), not built yet. So today it's manual structured entry, not "search Amazon and select." If you want a richer product-pick/dedupe step, that's a separate piece — say the
+  word and I can scope it.
+
 # Bug fix
   1. P1: Confirmed bookings can still skip persistence
      packages/brain/src/service/capability_runtime.ts:399 requires record_to_vault intent before committing. If the model returns a valid { status: "confirmed" } without calling the tool, packages/brain/src/

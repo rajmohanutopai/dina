@@ -19,23 +19,32 @@
  * which talk to Core instead of the in-memory queue.
  */
 
-import { listContacts, getContact, updateContact, getVaultRepository } from '@dina/core';
+import {
+  listContacts,
+  getContact,
+  updateContact,
+  getVaultRepository,
+  getPeopleRepository,
+} from '@dina/core';
+import { type Reminder } from '@dina/core/reminders';
+
 import { enrichItem as enrichVaultItem } from '../enrichment/pipeline';
 import {
   touchTopicsForItem,
   type TopicTouchPipelineOptions,
 } from '../enrichment/topic_touch_pipeline';
-import { processEvent } from '../pipeline/event_processor';
-import { type Reminder } from '@dina/core/reminders';
-import { listRemindersByPersonaRouted } from '../reminders/backend';
 import { scoreSender } from '../peerlens/scorer';
+import { processEvent } from '../pipeline/event_processor';
+import { listRemindersByPersonaRouted } from '../reminders/backend';
 import { getAccessiblePersonas } from '../vault_context/assembly';
-import { recallSenderSubjectMemories, resolveSenderIdentity } from '../vault_context/subject_recall';
-import { getPeopleRepository } from '@dina/core';
+import {
+  recallSenderSubjectMemories,
+  resolveSenderIdentity,
+} from '../vault_context/subject_recall';
 
 import type { StagingProcessResult } from './processor';
-import type { CoreClient, ApplyExtractionResponse, ExtractionResult } from '@dina/core';
 import type { RememberTurnInput, RememberTurnResult } from '../composition/remember_runtime';
+import type { CoreClient, ApplyExtractionResponse, ExtractionResult } from '@dina/core';
 
 /**
  * Minimal subset of `CoreClient` the drain needs.
@@ -63,6 +72,30 @@ const LEASE_HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
  * workers on the same inbox stay consistent.
  */
 const LEASE_HEARTBEAT_EXTENSION_SECONDS = 15 * 60;
+
+/**
+ * Pull the human-readable text out of a D2D message body. Chat /
+ * coordination bodies arrive JSON-encoded on the wire (e.g.
+ * `{"text":"What is your view on buying Oreos"}` from `sendChatMessage`'s
+ * `coordination.request`), so a raw render leaks the JSON. We extract the
+ * first text-bearing field; any non-JSON / unrecognised body falls back to
+ * the raw string so nothing is ever dropped.
+ */
+function d2dMessageText(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+      for (const field of ['text', 'message', 'body', 'summary']) {
+        const value = parsed[field];
+        if (typeof value === 'string' && value.trim() !== '') return value;
+      }
+    } catch {
+      /* not JSON — fall through to the raw string */
+    }
+  }
+  return raw;
+}
 
 function vectorToJsonArray(vector: Float32Array | undefined): number[] | undefined {
   return vector === undefined ? undefined : Array.from(vector);
@@ -92,6 +125,28 @@ export interface D2DReceivedNotification {
   /** How many vault items the nudge assembler pulled in as context
    *  (0 when assembly skipped — unknown sender or empty vault). */
   nudgeItems: number;
+}
+
+/**
+ * The raw inbound D2D message itself, handed to the host so it can post
+ * it as a chat bubble. Distinct from `D2DReceivedNotification` (the
+ * Silence-First-gated nudge) and the reminder hook (a scheduled card):
+ * this fires for EVERY known-contact D2D item so the actual conversation
+ * is visible, whatever the nudge tier decides.
+ */
+export interface D2DInboundMessage {
+  /** Staging item id — an idempotency key for the host. */
+  itemId: string;
+  /** Sender's DID (a known contact). */
+  senderDid: string;
+  /** Resolved sender display name, or '' if it couldn't be resolved. */
+  senderName: string;
+  /** The message text to show in the bubble. */
+  body: string;
+  /** D2D message type (e.g. 'social.update'), for the host's metadata. */
+  messageType: string;
+  /** Sender's wire timestamp (ms since epoch), or 0 if unknown. */
+  timestamp: number;
 }
 
 /**
@@ -148,6 +203,16 @@ export interface StagingDrainOptions {
    * Fail-soft: a throwing host hook is logged, never blocks the drain.
    */
   onD2DReminderCreated?: (reminder: Reminder) => Promise<void> | void;
+  /**
+   * [pipeline hook] Fires once per inbound D2D-channel item from a known
+   * contact, carrying the RAW peer message so the host can post it as a
+   * chat bubble. This is the message itself — separate from `onD2DReceived`
+   * (the Silence-First nudge) and `onD2DReminderCreated` (a scheduled card)
+   * — so the conversation stays visible even when Silence First suppresses
+   * a nudge. The drain stays headless: it emits; the host renders.
+   * Fail-soft: a throwing host hook is logged, never blocks the tick.
+   */
+  onD2DMessage?: (message: D2DInboundMessage) => Promise<void> | void;
   /** [deps] Structured log sink. Defaults to no-op. */
   logger?: (entry: Record<string, unknown>) => void;
   /**
@@ -246,11 +311,11 @@ export async function runStagingDrainTick(
   const setIntervalFn =
     options.setInterval ?? ((fn, ms): ReturnType<typeof setInterval> => setInterval(fn, ms));
   const clearIntervalFn =
-    options.clearInterval ??
-    ((h): void => clearInterval(h as ReturnType<typeof setInterval>));
+    options.clearInterval ?? ((h): void => clearInterval(h as ReturnType<typeof setInterval>));
   // Macrotask yield between heavy per-item ops so the single JS thread stays
   // responsive to UI input/render during ingest (see `yieldToHost` doc).
-  const yieldToHost = options.yieldToHost ?? ((): Promise<void> => new Promise((r) => setTimeout(r, 0)));
+  const yieldToHost =
+    options.yieldToHost ?? ((): Promise<void> => new Promise((r) => setTimeout(r, 0)));
 
   let items: unknown[];
   try {
@@ -300,11 +365,9 @@ export async function runStagingDrainTick(
     // inject deterministic fakes — `StagingDrainScheduler` forwards
     // its own pair through.
     let leaseHeartbeat: unknown = setIntervalFn(() => {
-      core
-        .stagingExtendLease(itemId, LEASE_HEARTBEAT_EXTENSION_SECONDS)
-        .catch(() => {
-          /* best-effort — Python swallows extend-lease failures too */
-        });
+      core.stagingExtendLease(itemId, LEASE_HEARTBEAT_EXTENSION_SECONDS).catch(() => {
+        /* best-effort — Python swallows extend-lease failures too */
+      });
     }, LEASE_HEARTBEAT_INTERVAL_MS);
     const stopHeartbeat = (): void => {
       if (leaseHeartbeat !== null) {
@@ -346,8 +409,7 @@ export async function runStagingDrainTick(
           'staging drain requires an LLM-backed rememberRuntime — Dina is LLM-driven; configure an AI provider',
         );
       }
-      const memoryText =
-        classifyInput.body !== '' ? classifyInput.body : classifyInput.subject;
+      const memoryText = classifyInput.body !== '' ? classifyInput.body : classifyInput.subject;
       // Structured recall: for a D2D arrival (originDid set), resolve
       // the sender → person and pull their subject-linked memories so
       // the agentic loop can enrich a terse "I'm coming over" with the
@@ -748,9 +810,7 @@ export async function runStagingDrainTick(
               skipped: applied.skipped,
             };
           } catch (err) {
-            postErrors.push(
-              `people_graph: ${err instanceof Error ? err.message : String(err)}`,
-            );
+            postErrors.push(`people_graph: ${err instanceof Error ? err.message : String(err)}`);
           }
         }
 
@@ -804,6 +864,33 @@ export async function runStagingDrainTick(
       // it through Core's `/v1/notify`. Silent / engagement tiers
       // don't produce a notification (Silence First — Law 1).
       if (ingressChannel.toLowerCase() === 'd2d') {
+        // Surface the raw peer message as a chat bubble the moment it lands,
+        // for known contacts. This is the message ITSELF — emitted before the
+        // reminder / nudge side effects below so it sorts first, and ungated
+        // by Silence First so the conversation is always visible. Fail-soft:
+        // a throwing host hook is logged, never blocks the tick.
+        if (options.onD2DMessage !== undefined && d2dContactDid !== '') {
+          const messageBody = d2dMessageText(pickString('body')) || pickString('summary');
+          if (messageBody !== '') {
+            try {
+              await options.onD2DMessage({
+                itemId,
+                senderDid: d2dContactDid,
+                senderName: getContact(d2dContactDid)?.displayName ?? senderIdentity?.name ?? '',
+                body: messageBody,
+                messageType: pickString('type'),
+                timestamp: originalTimestamp,
+              });
+            } catch (msgErr) {
+              log({
+                event: 'staging.drain.d2d_message_hook_failed',
+                item_id: itemId,
+                error: msgErr instanceof Error ? msgErr.message : String(msgErr),
+              });
+            }
+          }
+        }
+
         // Hand each reminder the post-publish step planned from this
         // inbound message to the host's hook, so it can surface it (e.g.
         // a scheduled card in chat) the moment the message lands. The
@@ -817,9 +904,9 @@ export async function runStagingDrainTick(
           // whole block fail-soft (read AND each hook call) so an optional
           // card never flips the staging item to `failed`.
           try {
-            const planned = (
-              await listRemindersByPersonaRouted(personas[0] ?? 'general')
-            ).filter((r) => r.source_item_id === itemId);
+            const planned = (await listRemindersByPersonaRouted(personas[0] ?? 'general')).filter(
+              (r) => r.source_item_id === itemId,
+            );
             for (const r of planned) {
               try {
                 await options.onD2DReminderCreated(r);
@@ -841,8 +928,7 @@ export async function runStagingDrainTick(
         }
 
         try {
-          const contactForSender =
-            d2dContactDid !== '' ? getContact(d2dContactDid) : null;
+          const contactForSender = d2dContactDid !== '' ? getContact(d2dContactDid) : null;
           const evResult = await processEvent({
             event: 'd2d_received',
             data: {
@@ -892,10 +978,7 @@ export async function runStagingDrainTick(
               log({
                 event: 'staging.drain.d2d_notify_failed',
                 item_id: itemId,
-                error:
-                  notifyErr instanceof Error
-                    ? notifyErr.message
-                    : String(notifyErr),
+                error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr),
               });
             }
           }

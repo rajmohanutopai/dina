@@ -20,38 +20,20 @@
  * This asserts both paths.
  */
 
-
-import {
-  createCoreRouter,
-  InProcessTransport,
-  stagingIngest,
-  resetStagingState,
-} from '@dina/core';
+import { createCoreRouter, InProcessTransport, stagingIngest, resetStagingState } from '@dina/core';
 import { clearVaults, storeItem } from '@dina/core';
-import {
-  resetReasoningProvider,
-  setAccessiblePersonas,
-} from '../../src/vault_context/assembly';
+import { resetReasoningProvider, setAccessiblePersonas } from '../../src/vault_context/assembly';
 import { StagingDrainScheduler } from '../../src/staging/scheduler';
 import type {
   StagingDrainCoreClient,
   D2DReceivedNotification,
+  D2DInboundMessage,
 } from '../../src/staging/drain';
-import {
-  configureRateLimiter,
-  registerPublicKeyResolver,
-} from '@dina/core';
-import {
-  addContact,
-  resetContactDirectory,
-  setPeopleRepository,
-} from '@dina/core';
+import { configureRateLimiter, registerPublicKeyResolver } from '@dina/core';
+import { addContact, resetContactDirectory, setPeopleRepository } from '@dina/core';
 import { makeFakePeopleRepo, makeStubRememberRuntime } from '@dina/test-harness';
 import { resetReminderState } from '@dina/core/reminders';
-import {
-  clearCheckpoints,
-  readCheckpoint,
-} from '../../src/scratchpad/lifecycle';
+import { clearCheckpoints, readCheckpoint } from '../../src/scratchpad/lifecycle';
 import { resetNudgeFrequency } from '../../src/nudge/assembler';
 
 import {
@@ -193,6 +175,7 @@ describe('D2D arrival → nudge notification (Sancho Moment)', () => {
 
     const core = buildCoreClient();
     const delivered: D2DReceivedNotification[] = [];
+    const messages: D2DInboundMessage[] = [];
 
     // Engagement-tier content: a casual catch-up message. No urgency
     // markers → deterministic silence-first defaults to tier 3.
@@ -203,7 +186,10 @@ describe('D2D arrival → nudge notification (Sancho Moment)', () => {
       data: {
         type: 'message',
         summary: 'saw a cool movie last night',
-        body: 'Thought you might enjoy it too',
+        // Chat bodies arrive JSON-encoded on the wire (sendChatMessage's
+        // coordination.request). The hook must surface the inner text, not
+        // the raw `{"text":"..."}` payload.
+        body: JSON.stringify({ text: 'Thought you might enjoy it too' }),
         ingress_channel: 'd2d',
         origin_did: 'did:plc:sancho',
       },
@@ -216,6 +202,9 @@ describe('D2D arrival → nudge notification (Sancho Moment)', () => {
         onD2DReceived: async (n) => {
           delivered.push(n);
         },
+        onD2DMessage: (m) => {
+          messages.push(m);
+        },
       },
       intervalMs: 10_000,
       setInterval: () => 1,
@@ -225,13 +214,22 @@ describe('D2D arrival → nudge notification (Sancho Moment)', () => {
     });
     await scheduler.runTick();
 
-    // Silent log → no envelope delivered. Silence-First: Law 1.
+    // Silent log → no nudge envelope delivered. Silence-First: Law 1.
     expect(delivered).toHaveLength(0);
+    // BUT the raw message itself still surfaces to chat — it's the
+    // conversation, ungated by the nudge tier. This is the whole point:
+    // an engagement-tier message must still appear as a bubble.
+    expect(messages).toHaveLength(1);
+    const msg = messages[0];
+    expect(msg?.body).toBe('Thought you might enjoy it too');
+    expect(msg?.senderDid).toBe('did:plc:sancho');
+    expect(msg?.senderName).toBe('Sancho');
   });
 
-  it('non-D2D items never call onD2DReceived (drain branch gating)', async () => {
+  it('non-D2D items never call onD2DReceived / onD2DMessage (drain branch gating)', async () => {
     const core = buildCoreClient();
     const delivered: D2DReceivedNotification[] = [];
+    const messages: D2DInboundMessage[] = [];
 
     // User /remember — ingress_channel NOT 'd2d'.
     stagingIngest({
@@ -252,6 +250,9 @@ describe('D2D arrival → nudge notification (Sancho Moment)', () => {
         onD2DReceived: async (n) => {
           delivered.push(n);
         },
+        onD2DMessage: (m) => {
+          messages.push(m);
+        },
       },
       intervalMs: 10_000,
       setInterval: () => 1,
@@ -262,5 +263,7 @@ describe('D2D arrival → nudge notification (Sancho Moment)', () => {
     await scheduler.runTick();
 
     expect(delivered).toHaveLength(0);
+    // A /remember note is not a peer message — it must NOT post a peer bubble.
+    expect(messages).toHaveLength(0);
   });
 });
