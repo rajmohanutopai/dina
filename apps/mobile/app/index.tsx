@@ -31,6 +31,7 @@ import { InlineBriefingCard } from '../src/components/InlineBriefingCard';
 import { InlineCreditsCard } from '../src/components/InlineCreditsCard';
 import { InlineDemoApprovalCard } from '../src/components/InlineDemoApprovalCard';
 import { InlineDemoReviewCard } from '../src/components/InlineDemoReviewCard';
+import { InlineDemoServicePreviewCard } from '../src/components/InlineDemoServicePreviewCard';
 import { InlineMarkdownText } from '../src/components/InlineMarkdownText';
 import { InlineMissingCapabilityCard } from '../src/components/InlineMissingCapabilityCard';
 import { InlineNudgeCard } from '../src/components/InlineNudgeCard';
@@ -68,6 +69,7 @@ type UiMessage = ChatMessage & {
     | 'vault-read-approval'
     | 'demo-approval'
     | 'demo-review'
+    | 'demo-service-preview'
     | 'service-query'
     | 'missing-capability'
     | 'ask-pending'
@@ -102,6 +104,12 @@ function toDisplayType(m: ChatMessage): UiMessage['displayType'] {
   // posted as a 'system' message tagged with metadata.kind 'demo_review'.
   if (m.metadata?.kind === 'demo_review') {
     return 'demo-review';
+  }
+  // Guided-demo read-only services-page preview (InlineDemoServicePreviewCard) —
+  // the salon listing shown before the publish popup. Posted as a 'system'
+  // message tagged with metadata.kind 'demo_service_preview'.
+  if (m.metadata?.kind === 'demo_service_preview') {
+    return 'demo-service-preview';
   }
   // Lifecycle-tracked dina message — same MessageType as a plain dina
   // reply, dispatched here on the metadata block. Mirrors the
@@ -329,6 +337,13 @@ export default function ChatScreen() {
       return (
         <View testID="chat-card-demo-review">
           <InlineDemoReviewCard message={item} />
+        </View>
+      );
+    }
+    if (item.displayType === 'demo-service-preview') {
+      return (
+        <View testID="chat-card-demo-service-preview">
+          <InlineDemoServicePreviewCard message={item} />
         </View>
       );
     }

@@ -7,12 +7,19 @@
 
 import { useEffect, useState } from 'react';
 import { getProfile, type PeerlensProfile as WireProfile } from '../appview_runtime';
-import { FEATURE_NAMES } from '@dina/core';
 import type { PeerlensProfile } from '@dina/core';
 
 export interface ReviewerProfileState {
   profile: PeerlensProfile | null;
   error: string | null;
+  /**
+   * True when the fetch SUCCEEDED but there is simply no profile yet (AppView
+   * returned `null` — the DID has no `did_profiles` row because the person
+   * hasn't made/received any attestations). This is an EMPTY state, NOT an
+   * error: the screen renders a friendly "no reviews yet" panel (with a "Write
+   * a review" CTA on the viewer's own profile), never a red error + Retry.
+   */
+  notFound: boolean;
   isLoading: boolean;
 }
 
@@ -29,6 +36,7 @@ export function useReviewerProfile(
   const [state, setState] = useState<ReviewerProfileState>({
     profile: null,
     error: null,
+    notFound: false,
     isLoading: false,
   });
 
@@ -36,22 +44,18 @@ export function useReviewerProfile(
     if (!enabled) return;
     if (!did || !did.startsWith('did:')) return;
     let cancelled = false;
-    setState({ profile: null, error: null, isLoading: true });
+    setState({ profile: null, error: null, notFound: false, isLoading: true });
     getProfile(did)
       .then((wire: WireProfile | null) => {
         if (cancelled) return;
         // AppView's `getProfile` returns literal `null` (200 OK with
         // body `null`) for unknown DIDs — they don't have a row in
-        // `did_profiles` yet. The runner must surface this as a
-        // friendly "no profile yet" error, not crash the screen with
-        // a `Cannot read property 'lastActive' of null` runtime error.
+        // `did_profiles` yet. This is the EMPTY state (no attestations
+        // yet), NOT a load error: flag `notFound` so the screen renders a
+        // friendly empty panel (+ a "Write a review" CTA on the viewer's
+        // own profile) instead of a red "Couldn't load" + dead Retry.
         if (wire === null || wire === undefined) {
-          setState({
-            profile: null,
-            error:
-              `We don't have a ${FEATURE_NAMES.peerlens} profile for this person yet. Once they make or receive attestations, their profile will fill in.`,
-            isLoading: false,
-          });
+          setState({ profile: null, error: null, notFound: true, isLoading: false });
           return;
         }
         // Wire shape matches `PeerlensProfile` from `@dina/core` byte-for-
@@ -65,7 +69,7 @@ export function useReviewerProfile(
               ? Date.parse(wire.lastActive)
               : null,
         } as unknown as PeerlensProfile;
-        setState({ profile, error: null, isLoading: false });
+        setState({ profile, error: null, notFound: false, isLoading: false });
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -73,7 +77,7 @@ export function useReviewerProfile(
           err instanceof Error
             ? err.message
             : "Couldn't load this reviewer. Try again in a moment.";
-        setState({ profile: null, error: msg, isLoading: false });
+        setState({ profile: null, error: msg, notFound: false, isLoading: false });
       });
     return () => {
       cancelled = true;

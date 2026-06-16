@@ -13,7 +13,7 @@ import { InlineCreditsCard } from '../../src/components/InlineCreditsCard';
 const noop = (): void => undefined;
 
 describe('InlineCreditsCard — low-balance', () => {
-  it('renders the count, both options, and Set up / Later', () => {
+  it('renders the count, the BYOK keep-going option, and Set up / Later', () => {
     const onSetUp = jest.fn();
     const onDismiss = jest.fn();
     const { getByTestId, getByText } = render(
@@ -26,6 +26,7 @@ describe('InlineCreditsCard — low-balance', () => {
     );
     expect(getByTestId('chat-card-credits-low-balance')).toBeTruthy();
     expect(getByText(/about 5 left/i)).toBeTruthy();
+    expect(getByText(/use your own AI provider key/i)).toBeTruthy();
     fireEvent.press(getByTestId('credits-low-balance-setup'));
     expect(onSetUp).toHaveBeenCalled();
     fireEvent.press(getByTestId('credits-low-balance-later'));
@@ -61,7 +62,10 @@ describe('copy rules (3.1.1 + honesty) — both variants', () => {
     expect(text).not.toMatch(/fully private|more private|most private|nothing logged|no logging/i);
     // No urgency language.
     expect(text).not.toMatch(/running out!|hurry|expires?/i);
+    // No local-model option on mobile — there is no on-device inference, so the
+    // card must never suggest "run a local model" as a keep-going path.
+    expect(text).not.toMatch(/local model/i);
     // The neutral BYOK line is present (no privacy claim attached).
-    expect(text).toMatch(/Use your own AI provider key/);
+    expect(text).toMatch(/use your own AI provider key/i);
   });
 });

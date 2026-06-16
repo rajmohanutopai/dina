@@ -11,6 +11,7 @@ import {
   AGENT_APPROVAL_STEP,
   PEERLENS_REVIEW_STEP,
   SALON_SETUP_STEP,
+  SALON_PUBLISH_STEP,
   SALON_BOOKING_STEP,
   SALON_REPLY_STEP,
   GuidedDemoRunner,
@@ -26,6 +27,8 @@ interface Recorded {
   sends: Array<{ mode: string; message: string; vault: string }>;
   recommendations: Array<{ question: string; answer: string }>;
   serviceCards: Array<{ capability: string; serviceName: string; question: string }>;
+  servicePreviewCards: Array<{ serviceName: string; capability: string; status: string }>;
+  publishConfirms: number;
   approvals: DemoApprovalRequest[];
   denied: string[];
   cards: string[];
@@ -38,11 +41,17 @@ interface Recorded {
   seededReminders: string[];
 }
 
-function fakeSeams(): { seams: GuidedDemoSeams; rec: Recorded } {
+function fakeSeams(opts: { confirmPublish?: boolean } = {}): {
+  seams: GuidedDemoSeams;
+  rec: Recorded;
+} {
+  const publishResult = opts.confirmPublish ?? true;
   const rec: Recorded = {
     sends: [],
     recommendations: [],
     serviceCards: [],
+    servicePreviewCards: [],
+    publishConfirms: 0,
     approvals: [],
     denied: [],
     cards: [],
@@ -73,6 +82,17 @@ function fakeSeams(): { seams: GuidedDemoSeams; rec: Recorded } {
         serviceName: card.serviceName,
         question: card.question,
       });
+    },
+    postServicePreviewCard(card) {
+      rec.servicePreviewCards.push({
+        serviceName: card.serviceName,
+        capability: card.capability,
+        status: card.status,
+      });
+    },
+    async confirmPublish() {
+      rec.publishConfirms += 1;
+      return publishResult;
     },
     requestApproval(req) {
       rec.approvals.push(req);
@@ -126,15 +146,16 @@ beforeEach(() => {
 describe('buildDemoPlan', () => {
   it('mirrors the content steps then d2d, approval, review, and the salon finale', () => {
     const plan = buildDemoPlan();
-    expect(plan).toHaveLength(DEMO_STEPS.length + 6);
+    expect(plan).toHaveLength(DEMO_STEPS.length + 7);
     // Each content step maps to chat / recommend / service per step.kind.
     expect(plan.slice(0, DEMO_STEPS.length).map((a) => a.kind)).toEqual(
       DEMO_STEPS.map((s) => planKind(s.kind)),
     );
-    expect(plan[plan.length - 6]).toMatchObject({ kind: 'd2d', id: D2D_MESSAGE_STEP });
-    expect(plan[plan.length - 5]).toMatchObject({ kind: 'approval', id: AGENT_APPROVAL_STEP });
-    expect(plan[plan.length - 4]).toMatchObject({ kind: 'review', id: PEERLENS_REVIEW_STEP });
-    expect(plan[plan.length - 3]).toMatchObject({ kind: 'salon_setup', id: SALON_SETUP_STEP });
+    expect(plan[plan.length - 7]).toMatchObject({ kind: 'd2d', id: D2D_MESSAGE_STEP });
+    expect(plan[plan.length - 6]).toMatchObject({ kind: 'approval', id: AGENT_APPROVAL_STEP });
+    expect(plan[plan.length - 5]).toMatchObject({ kind: 'review', id: PEERLENS_REVIEW_STEP });
+    expect(plan[plan.length - 4]).toMatchObject({ kind: 'salon_setup', id: SALON_SETUP_STEP });
+    expect(plan[plan.length - 3]).toMatchObject({ kind: 'salon_publish', id: SALON_PUBLISH_STEP });
     expect(plan[plan.length - 2]).toMatchObject({ kind: 'salon_booking', id: SALON_BOOKING_STEP });
     expect(plan[plan.length - 1]).toMatchObject({ kind: 'salon_reply', id: SALON_REPLY_STEP });
     // content step ids mirror 1:1
@@ -178,7 +199,7 @@ describe('GuidedDemoRunner.advance', () => {
   it('runs each content step through its real seam, marking progress', async () => {
     const { seams, rec } = fakeSeams();
     const runner = new GuidedDemoRunner(seams, { now: () => 1 });
-    expect(runner.total).toBe(DEMO_STEPS.length + 6);
+    expect(runner.total).toBe(DEMO_STEPS.length + 7);
     expect(runner.position).toBe(0);
 
     for (const step of DEMO_STEPS) {
@@ -265,9 +286,17 @@ describe('GuidedDemoRunner.advance', () => {
     // The review goes through postReviewCard (its own card).
     expect(rec.reviewCards).toHaveLength(1);
     expect(rec.reviewCards[0]?.product).toBe('ErgoFlex Study Chair');
-    // Salon finale: the published + booking-confirmed beats render as structured
-    // service cards; only the customer query is a plain card (the booking
-    // approval is a separate approval card).
+    // Salon finale: setup posts a READ-ONLY services preview (not published
+    // yet), then publish (popup confirmed) + booking-confirmed render as
+    // structured service cards. Only the customer query is a plain card.
+    expect(rec.servicePreviewCards).toEqual([
+      {
+        serviceName: DEMO_SALON.serviceName,
+        capability: DEMO_SALON.preview.capability,
+        status: DEMO_SALON.preview.status,
+      },
+    ]);
+    expect(rec.publishConfirms).toBe(1);
     expect(rec.cards).toEqual([DEMO_SALON.customer]);
     expect(rec.serviceCards.map((c) => c.capability)).toEqual([
       'service_listing',
@@ -275,6 +304,26 @@ describe('GuidedDemoRunner.advance', () => {
     ]);
     // advancing past the end is a no-op
     expect(await runner.advance()).toBeNull();
+  });
+
+  it('salon_setup shows a read-only preview; publishing waits for the popup confirm', async () => {
+    // Decline the popup → the publish step does NOT advance and posts no
+    // published card (nothing is shown as live until the user confirms).
+    const declined = fakeSeams({ confirmPublish: false });
+    const runner = new GuidedDemoRunner(declined.seams, { now: () => 1 });
+    // Run up to and including salon_setup.
+    const plan = buildDemoPlan();
+    const setupIdx = plan.findIndex((a) => a.kind === 'salon_setup');
+    for (let i = 0; i <= setupIdx; i += 1) await runner.advance();
+    // Preview card posted; nothing published yet.
+    expect(declined.rec.servicePreviewCards).toHaveLength(1);
+    expect(declined.rec.serviceCards).toHaveLength(0);
+    // Now on salon_publish. Decline keeps us on the same step (re-tappable).
+    expect(runner.currentAction?.kind).toBe('salon_publish');
+    await runner.advance();
+    expect(declined.rec.publishConfirms).toBe(1);
+    expect(declined.rec.serviceCards).toHaveLength(0); // still nothing published
+    expect(runner.currentAction?.kind).toBe('salon_publish'); // stayed put
   });
 
   it('only advances the cursor when the seam succeeds (send throws → no progress)', async () => {

@@ -231,9 +231,7 @@ export function AiProviderSet({ location, onBack, onContinue }: AiProviderSetPro
       {creditsAvailable ? (
         <View style={styles.creditsBeat} testID="onboarding-credits-beat">
           <Text style={styles.creditsTitle}>Your first conversations are free.</Text>
-          <Text style={styles.creditsBody}>
-            No account. No card. No API key. Just start talking to Dina.
-          </Text>
+          <Text style={styles.creditsBody}>Just start talking to Dina.</Text>
           <Text style={styles.creditsSmall}>
             Starter conversations run directly through OpenRouter. Dina&apos;s servers never
             proxy or store them.

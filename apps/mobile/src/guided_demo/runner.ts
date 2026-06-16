@@ -49,6 +49,7 @@ export const PEERLENS_REVIEW_STEP = 'peerlens_review';
 /** Salon finale — three beats: publish from vault, customer booking + approval,
  *  reply back. (Replaces the old abstract publish-draft step.) */
 export const SALON_SETUP_STEP = 'salon_setup';
+export const SALON_PUBLISH_STEP = 'salon_publish';
 export const SALON_BOOKING_STEP = 'salon_booking';
 export const SALON_REPLY_STEP = 'salon_reply';
 
@@ -80,6 +81,15 @@ export interface DemoServiceCard {
   content: string;
 }
 
+/** A READ-ONLY services-page preview card — the salon listing shown before the
+ *  publish popup (status: "Not published yet"). No actions; purely informational. */
+export interface DemoServicePreviewCard {
+  serviceName: string;
+  capability: string;
+  answersFrom: string;
+  status: string;
+}
+
 /**
  * Side-effect seams the runner drives. Production binds these to the real
  * composer / approval manager / chat thread (`makeGuidedDemoSeams`); tests
@@ -105,6 +115,13 @@ export interface GuidedDemoSeams {
   /** Post the user's question + a REAL resolved service-query card. Async for
    *  the same realistic "Dina is checking" pause before the card lands. */
   postServiceCard(card: DemoServiceCard): Promise<void>;
+  /** Post a READ-ONLY "your services page" preview card (the salon listing as it
+   *  would appear in My Listings) — shown after the hours are stored, before the
+   *  publish popup, so the user sees what they are about to publish. */
+  postServicePreviewCard(card: DemoServicePreviewCard): void;
+  /** Show the publish confirmation popup (real native Alert). Resolves true when
+   *  the user confirms, false on cancel/dismiss. */
+  confirmPublish(): Promise<boolean>;
   /** Create a real, pending agent-approval request → returns its id. */
   requestApproval(req: DemoApprovalRequest): string;
   /** Deny a previously created approval (teardown if the user never acted). */
@@ -137,6 +154,7 @@ export type DemoAction =
   | { kind: 'approval'; id: string; caption: string }
   | { kind: 'review'; id: string; caption: string }
   | { kind: 'salon_setup'; id: string; caption: string }
+  | { kind: 'salon_publish'; id: string; caption: string }
   | { kind: 'salon_booking'; id: string; caption: string }
   | { kind: 'salon_reply'; id: string; caption: string };
 
@@ -178,6 +196,11 @@ export function buildDemoPlan(steps: readonly DemoStep[] = DEMO_STEPS): DemoActi
       kind: 'salon_setup',
       id: SALON_SETUP_STEP,
       caption: DEMO_SALON.setupCaption,
+    },
+    {
+      kind: 'salon_publish',
+      id: SALON_PUBLISH_STEP,
+      caption: DEMO_SALON.publishCaption,
     },
     {
       kind: 'salon_booking',
@@ -243,6 +266,17 @@ export function buildSalonApprovalRequest(now: number): DemoApprovalRequest {
     preview: `Booking request: ${DEMO_SALON.slot}. Approve to confirm and reply.`,
     what: `Confirm a ${DEMO_SALON.slot} appointment`,
     why: 'A customer asked your salon for this slot; approving books it and replies.',
+  };
+}
+
+/** Read-only "your services page" preview — the salon listing as it would appear
+ *  in My Listings, shown BEFORE the publish popup (status: not published yet). */
+export function buildSalonPreviewCard(): DemoServicePreviewCard {
+  return {
+    serviceName: DEMO_SALON.serviceName,
+    capability: DEMO_SALON.preview.capability,
+    answersFrom: DEMO_SALON.preview.answersFrom,
+    status: DEMO_SALON.preview.status,
   };
 }
 
@@ -402,12 +436,21 @@ export class GuidedDemoRunner {
         break;
       case 'salon_setup':
         // Provider side: remember the salon's hours (→ scripted Salon vault),
-        // then a structured "Service published" card. All scope-bound; nothing
-        // real is created or published.
+        // then a READ-ONLY services-page preview so the user SEES the listing
+        // before publishing. Nothing is live yet. All scope-bound.
         await this.seams.send('remember', DEMO_SALON.hours, DEMO_SALON.vault);
         await this.seams.delay();
+        this.seams.postServicePreviewCard(buildSalonPreviewCard());
+        break;
+      case 'salon_publish': {
+        // Explicit publish act: a confirmation popup, then the "Service
+        // published" card. Decline → stay on this step (re-tappable) so nothing
+        // is shown as published until the user actually confirms.
+        const published = await this.seams.confirmPublish();
+        if (!published) return action; // no mark/advance — user can publish later
         await this.seams.postServiceCard(buildSalonPublishedCard(this.now()));
         break;
+      }
       case 'salon_booking': {
         // A customer's Dina queries the published salon, then a REAL booking
         // approval card (demo subject, teardown-denied — nothing is granted).

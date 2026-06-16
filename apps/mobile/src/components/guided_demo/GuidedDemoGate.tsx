@@ -77,9 +77,16 @@ export function GuidedDemoGate({
         : action.kind === 'recommend' || action.kind === 'service'
           ? 'ask'
           : undefined;
-  // navigate steps carry an explicit button label ("Show me" / "Back to chat").
+  // navigate steps carry an explicit button label ("Show me" / "Back to chat");
+  // the salon publish step's button reads "Publish" (it opens the publish popup).
   const nextLabel =
-    action !== null && action.kind === 'navigate' ? action.step.nextLabel : undefined;
+    action === null
+      ? undefined
+      : action.kind === 'navigate'
+        ? action.step.nextLabel
+        : action.kind === 'salon_publish'
+          ? 'Publish'
+          : undefined;
   return (
     <GuidedDemoActiveContext.Provider value={gate.demoActive}>
       <View style={styles.fill}>

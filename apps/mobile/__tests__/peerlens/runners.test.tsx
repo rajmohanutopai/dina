@@ -265,6 +265,26 @@ describe('useReviewerProfile', () => {
     await flushAsync();
     expect(profileMock).not.toHaveBeenCalled();
   });
+
+  it('flags notFound (NOT error) when getProfile resolves null — no attestations yet', async () => {
+    // AppView returns null for a DID with no did_profiles row. That's the
+    // empty state, not a load failure: notFound=true, error=null. The screen
+    // renders a friendly empty panel + (own profile) a "Write a review" CTA.
+    profileMock.mockResolvedValueOnce(null);
+    let captured: ReturnType<typeof useReviewerProfile> | null = null;
+    render(
+      <Probe
+        hook={() => useReviewerProfile({ did: 'did:plc:newuser', enabled: true })}
+        onState={(s) => {
+          captured = s;
+        }}
+      />,
+    );
+    await flushAsync();
+    expect(captured!.notFound).toBe(true);
+    expect(captured!.error).toBeNull();
+    expect(captured!.profile).toBeNull();
+  });
 });
 
 // ─── useSubjectDetail ─────────────────────────────────────────────────────

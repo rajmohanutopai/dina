@@ -30,7 +30,7 @@ import { type Reminder } from '@dina/core/reminders';
 import { listRemindersByPersonaRouted } from '../reminders/backend';
 import { scoreSender } from '../peerlens/scorer';
 import { getAccessiblePersonas } from '../vault_context/assembly';
-import { recallSenderSubjectMemories } from '../vault_context/subject_recall';
+import { recallSenderSubjectMemories, resolveSenderIdentity } from '../vault_context/subject_recall';
 import { getPeopleRepository } from '@dina/core';
 
 import type { StagingProcessResult } from './processor';
@@ -354,6 +354,14 @@ export async function runStagingDrainTick(
       // sender's remembered preferences — works in-process (mobile) and
       // out-of-process (lite, via Core HTTP backends). Fail-soft.
       let relatedMemories: string[] = [];
+      // Resolved sender NAME (+ relationship) for a D2D arrival — so the loop
+      // attributes "I'm coming over" to the right person ("Raju is coming
+      // over") instead of "Someone", even when there are no subject-linked
+      // facts to recall. `resolveSenderIdentity` is dual-path: in-process
+      // (mobile) reads Core's directory directly; out-of-process (lite) routes
+      // through the contact HTTP backend (Brain's in-process directory is
+      // empty). Fail-soft → no Sender line. Context only — the loop phrases it.
+      let senderIdentity: { name: string; relationship?: string } | undefined;
       if (originDid !== '') {
         try {
           relatedMemories = await recallSenderSubjectMemories(
@@ -364,6 +372,15 @@ export async function runStagingDrainTick(
         } catch (err) {
           log({
             event: 'staging.drain.subject_recall_failed',
+            item_id: itemId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        try {
+          senderIdentity = (await resolveSenderIdentity(originDid)) ?? undefined;
+        } catch (err) {
+          log({
+            event: 'staging.drain.sender_resolve_failed',
             item_id: itemId,
             error: err instanceof Error ? err.message : String(err),
           });
@@ -384,6 +401,7 @@ export async function runStagingDrainTick(
             subject: classifyInput.subject,
           },
           ...(relatedMemories.length > 0 ? { relatedMemories } : {}),
+          ...(senderIdentity !== undefined ? { senderIdentity } : {}),
         });
       } catch (err) {
         log({

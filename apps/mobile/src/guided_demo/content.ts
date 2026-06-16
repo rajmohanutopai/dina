@@ -351,9 +351,26 @@ export const DEMO_SALON = {
     reply_sent: 'See you at 4pm Thursday',
   },
   bookingContent: 'Booked 4pm Thursday. Reply sent to the customer.',
-  /** Captions for the three finale beats. */
+  /** Read-only "services page" preview shown after the hours are stored, BEFORE
+   *  the publish popup — so the user sees the listing they are about to publish. */
+  preview: {
+    capability: 'Book appointment',
+    answersFrom: 'Salon vault',
+    status: 'Not published yet',
+  },
+  /** The publish confirmation popup (real native Alert in the demo). */
+  publishPrompt: {
+    title: 'Publish Your Salon?',
+    message:
+      'Other Dinas will be able to find your salon and ask about openings. It answers only from your Salon vault, and bookings still wait for your approval.',
+    confirm: 'Publish',
+    cancel: 'Not now',
+  },
+  /** Captions for the finale beats. */
   setupCaption:
-    'Last, offer a service of your own. Tell Dina your salon hours, then publish. Other Dinas will be able to find your service based on their human\'s requirements.',
+    'Last, offer a service of your own. Tell Dina your salon hours — they go to a private Salon vault that only your salon answers from.',
+  publishCaption:
+    'This is your services page — your salon listing. It is not live yet. Tap Publish to make it discoverable to other Dinas; it still answers only from your Salon vault.',
   bookingCaption:
     'Now a customer\'s Dina asks your salon for a slot. It reads only your Salon vault, and books nothing without your OK.',
   replyCaption:

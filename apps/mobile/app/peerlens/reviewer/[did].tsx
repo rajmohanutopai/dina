@@ -116,6 +116,24 @@ export interface ReviewerProfileScreenProps {
    * belong to the booted node — see `isSelf` below.
    */
   onEditAuthored?: (row: AuthoredAttestationRow) => void;
+  /**
+   * True when the fetch succeeded but the DID has no profile yet (no
+   * attestations). Renders the friendly EMPTY state instead of the error
+   * panel. Resolved from the runner (`useReviewerProfile().notFound`) in
+   * production; tests pass it directly.
+   */
+  notFound?: boolean;
+  /**
+   * Whether this profile is the viewer's OWN. When true AND `notFound`, the
+   * empty state shows a "Write a review" CTA (the new-user onramp). Defaults to
+   * a booted-DID === route-DID comparison.
+   */
+  isSelf?: boolean;
+  /**
+   * Fired by the empty-state "Write a review" CTA. Default pushes the Browse
+   * screen (whose search → "Write the first review for …" is the create path).
+   */
+  onWriteReview?: () => void;
 }
 
 
@@ -189,10 +207,12 @@ export default function ReviewerProfileScreen(
     profile = auto.profile,
     namespace = paramNamespace ?? null,
     error = runnerEngaged ? auto.error : autoError,
+    notFound = runnerEngaged ? auto.notFound : false,
     onRetry = () => {
       setAutoError(null);
       setRetryNonce((n) => n + 1);
     },
+    onWriteReview = () => router.push('/peerlens/browse'),
     nowMs = Date.now(),
     authoredRows = authored.rows,
     onSelectAuthoredSubject = (subjectId: string) => {
@@ -334,6 +354,42 @@ export default function ReviewerProfileScreen(
             >
               <Ionicons name="refresh" size={16} color={colors.bgSecondary} />
               <Text style={styles.retryLabel}>Retry</Text>
+            </Pressable>
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  // EMPTY (not an error): the fetch succeeded but the DID has no profile yet
+  // (no attestations). A neutral panel — never the red "Couldn't load" + dead
+  // Retry. On the viewer's OWN profile, offer the "Write a review" onramp so a
+  // new user isn't dead-ended ("how do I create a review?").
+  if (notFound) {
+    const ownDid = getBootedNode()?.did ?? null;
+    const selfEmpty =
+      props.isSelf ??
+      (ownDid !== null && paramDid !== undefined && paramDid !== '' && paramDid === ownDid);
+    return (
+      <View style={styles.container} testID="reviewer-profile-empty">
+        <View style={styles.errorPanel}>
+          <Ionicons name="document-text-outline" size={36} color={colors.textMuted} />
+          <Text style={styles.errorTitle}>{selfEmpty ? 'No reviews yet' : 'No profile yet'}</Text>
+          <Text style={styles.errorBody}>
+            {selfEmpty
+              ? 'You haven’t written any reviews yet. Reviews you write — or receive — show up here.'
+              : 'No PeerLens profile for this person yet. Once they make or receive attestations, it’ll fill in.'}
+          </Text>
+          {selfEmpty && (
+            <Pressable
+              onPress={onWriteReview}
+              style={({ pressed }) => [styles.retryBtn, pressed && styles.retryBtnPressed]}
+              testID="reviewer-profile-write-cta"
+              accessibilityRole="button"
+              accessibilityLabel="Write a review"
+            >
+              <Ionicons name="create-outline" size={16} color={colors.bgSecondary} />
+              <Text style={styles.retryLabel}>Write a review</Text>
             </Pressable>
           )}
         </View>

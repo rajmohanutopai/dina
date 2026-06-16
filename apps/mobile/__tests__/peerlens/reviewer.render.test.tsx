@@ -91,6 +91,36 @@ describe('ReviewerProfileScreen — render states', () => {
     expect(getByTestId('reviewer-profile-retry')).toBeTruthy();
   });
 
+  // notFound is the EMPTY state (no attestations yet) — must NOT render as an
+  // error with a dead Retry. Regression: a new user opening "Your review
+  // activity" hit "Couldn't load this profile" + Retry.
+  it('renders the EMPTY state (not the error panel) when notFound', () => {
+    const { getByTestId, queryByTestId } = render(
+      <ReviewerProfileScreen profile={null} notFound />,
+    );
+    expect(getByTestId('reviewer-profile-empty')).toBeTruthy();
+    expect(queryByTestId('reviewer-profile-error')).toBeNull();
+    expect(queryByTestId('reviewer-profile-loading')).toBeNull();
+    expect(queryByTestId('reviewer-profile-retry')).toBeNull();
+  });
+
+  it('own empty profile offers a "Write a review" CTA that fires onWriteReview', () => {
+    const onWriteReview = jest.fn();
+    const { getByTestId } = render(
+      <ReviewerProfileScreen profile={null} notFound isSelf onWriteReview={onWriteReview} />,
+    );
+    fireEvent.press(getByTestId('reviewer-profile-write-cta'));
+    expect(onWriteReview).toHaveBeenCalledTimes(1);
+  });
+
+  it('another person’s empty profile has NO write CTA (neutral, not self)', () => {
+    const { getByTestId, queryByTestId } = render(
+      <ReviewerProfileScreen profile={null} notFound isSelf={false} />,
+    );
+    expect(getByTestId('reviewer-profile-empty')).toBeTruthy();
+    expect(queryByTestId('reviewer-profile-write-cta')).toBeNull();
+  });
+
   it('renders loaded state with all sections when profile is provided', () => {
     const { getByTestId } = render(
       <ReviewerProfileScreen profile={makeProfile()} nowMs={NOW} />,

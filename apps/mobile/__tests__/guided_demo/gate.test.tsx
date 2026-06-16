@@ -39,6 +39,8 @@ function fakeSeams(): {
     sends: number;
     recommendations: number;
     serviceCards: number;
+    servicePreviewCards: number;
+    publishConfirms: number;
     approvals: string[];
     denied: string[];
     cards: number;
@@ -50,6 +52,8 @@ function fakeSeams(): {
     sends: 0,
     recommendations: 0,
     serviceCards: 0,
+    servicePreviewCards: 0,
+    publishConfirms: 0,
     approvals: [] as string[],
     denied: [] as string[],
     cards: 0,
@@ -65,6 +69,13 @@ function fakeSeams(): {
     },
     async postServiceCard() {
       rec.serviceCards += 1;
+    },
+    postServicePreviewCard() {
+      rec.servicePreviewCards += 1;
+    },
+    async confirmPublish() {
+      rec.publishConfirms += 1;
+      return true;
     },
     requestApproval(req) {
       rec.approvals.push(req.id);
@@ -234,7 +245,7 @@ describe('useGuidedDemoGate', () => {
     await act(async () => {
       await result.current.startDemo();
     });
-    expect(result.current.stepCount).toBe(DEMO_STEPS.length + 6);
+    expect(result.current.stepCount).toBe(DEMO_STEPS.length + 7);
     expect(result.current.step).toBe(1);
     expect(result.current.currentAction?.id).toBe(DEMO_STEPS[0]?.id);
     expect(result.current.demoComplete).toBe(false);
@@ -263,7 +274,7 @@ describe('useGuidedDemoGate', () => {
     await act(async () => {
       await result.current.startDemo();
     });
-    for (let i = 0; i < DEMO_STEPS.length + 6; i += 1) {
+    for (let i = 0; i < DEMO_STEPS.length + 7; i += 1) {
       await act(async () => {
         await result.current.advanceDemo();
       });
@@ -272,6 +283,8 @@ describe('useGuidedDemoGate', () => {
     // salon-setup "remember hours" send.
     expect(rec.sends).toBe(TOTAL_SENDS + 1);
     expect(rec.recommendations).toBe(RECOMMEND_STEP_COUNT);
+    expect(rec.servicePreviewCards).toBe(1); // salon: read-only services preview
+    expect(rec.publishConfirms).toBe(1); // salon: publish popup confirmed once
     expect(rec.serviceCards).toBe(2); // salon: published card + booking-confirmed card
     expect(rec.approvals).toHaveLength(2); // agent Health-read + salon booking
     expect(rec.d2dMessages).toBe(1); // Dina-to-Dina Talk step

@@ -20,6 +20,8 @@
  * Source: docs/GUIDED_DEMO_DATA_SCOPE_DESIGN.md § Phase 5.
  */
 
+import { Alert } from 'react-native';
+
 import { router } from 'expo-router';
 
 import { addLifecycleMessage, addMessage } from '@dina/brain/chat';
@@ -32,7 +34,7 @@ import {
 
 import { addSystemNotification } from '../hooks/useChatThread';
 
-import { nextNovember7, type DemoMode, type DemoNavTarget } from './content';
+import { DEMO_SALON, nextNovember7, type DemoMode, type DemoNavTarget } from './content';
 import { describePeerLensReview, type GuidedDemoSeams } from './runner';
 
 
@@ -165,6 +167,40 @@ export function makeGuidedDemoSeams(): GuidedDemoSeams {
         params: card.params,
         result: card.result,
         resolvedAt: Date.now(),
+      });
+    },
+    postServicePreviewCard(card) {
+      // Read-only "your services page" preview — a scope-bound system chat row
+      // tagged `demo_service_preview`; the chat renderer dispatches it to
+      // InlineDemoServicePreviewCard. The text is a plain-renderer fallback.
+      addMessage(
+        MAIN_THREAD,
+        'system',
+        `${card.serviceName} — ${card.capability}. Answers from ${card.answersFrom}. ${card.status}.`,
+        {
+          metadata: {
+            kind: 'demo_service_preview',
+            serviceName: card.serviceName,
+            capability: card.capability,
+            answersFrom: card.answersFrom,
+            status: card.status,
+          },
+        },
+      );
+    },
+    confirmPublish() {
+      // Real native confirmation popup. Resolves true on Publish, false on
+      // cancel/dismiss (the runner then leaves the user on the publish step).
+      return new Promise<boolean>((resolve) => {
+        Alert.alert(
+          DEMO_SALON.publishPrompt.title,
+          DEMO_SALON.publishPrompt.message,
+          [
+            { text: DEMO_SALON.publishPrompt.cancel, style: 'cancel', onPress: () => resolve(false) },
+            { text: DEMO_SALON.publishPrompt.confirm, onPress: () => resolve(true) },
+          ],
+          { cancelable: true, onDismiss: () => resolve(false) },
+        );
       });
     },
     requestApproval(req) {

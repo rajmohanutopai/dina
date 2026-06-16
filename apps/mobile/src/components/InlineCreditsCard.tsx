@@ -6,7 +6,8 @@
  *   - "conversations", never "credits"/currency; estimates carry "≈".
  *   - In-app BYOK copy is the NEUTRAL "Use your own AI provider key"
  *     (no "free forever" in-app — guideline 3.1.1).
- *   - "most private" is reserved for the local-model row.
+ *   - NO local-model option on mobile: there is no on-device inference, so the
+ *     only "keep going" path offered here is bringing your own provider key.
  *   - NO mention of purchasable top-ups until IAP exists (#362).
  *   - Warm, zero-guilt tone; no red, no urgency language.
  *
@@ -23,7 +24,7 @@ export interface InlineCreditsCardProps {
   variant: CreditsCardVariant;
   /** Estimated conversations left (low-balance variant). */
   estConversationsLeft?: number;
-  /** Navigate to the AI-providers screen (key / local model setup). */
+  /** Navigate to the AI-providers screen (provider key setup). */
   onSetUp: () => void;
   /** Low-balance only: dismiss forever. */
   onDismiss?: () => void;
@@ -43,14 +44,9 @@ export function InlineCreditsCard(props: InlineCreditsCardProps): React.JSX.Elem
 
       <Text style={styles.body} testID={`credits-${variant}-body`}>
         {isWall
-          ? 'Everything you’ve saved stays yours, on this device. To keep talking:'
-          : 'Two ways to keep going:'}
+          ? 'Everything you’ve saved stays yours, on this device. To keep talking, use your own AI provider key.'
+          : 'To keep going, use your own AI provider key.'}
       </Text>
-
-      <View style={styles.options}>
-        <Text style={styles.option}>▸ Use your own AI provider key</Text>
-        <Text style={styles.option}>▸ Run a local model</Text>
-      </View>
 
       <View style={styles.buttonRow}>
         <TouchableOpacity
@@ -89,8 +85,6 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 15, fontWeight: '600', color: '#2B2620', lineHeight: 21 },
   body: { fontSize: 14, color: '#5C544A', marginTop: 8, lineHeight: 20 },
-  options: { marginTop: 8, gap: 4 },
-  option: { fontSize: 14, color: '#2B2620', lineHeight: 20 },
   buttonRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 14 },
   primaryButton: {
     backgroundColor: '#2B2620',

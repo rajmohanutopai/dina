@@ -10,6 +10,8 @@ import {
   setVaultRepository,
   resetVaultRepositories,
   InMemoryVaultRepository,
+  addContact,
+  resetContactDirectory,
   type Person,
 } from '@dina/core';
 import { makeVaultItem, makeFakePeopleRepo } from '@dina/test-harness';
@@ -17,8 +19,12 @@ import { makeVaultItem, makeFakePeopleRepo } from '@dina/test-harness';
 import {
   setPeopleReadBackend,
   setVaultReadBackend,
+  setContactReadBackend,
 } from '../../src/vault_context/assembly';
-import { recallSenderSubjectMemories } from '../../src/vault_context/subject_recall';
+import {
+  recallSenderSubjectMemories,
+  resolveSenderIdentity,
+} from '../../src/vault_context/subject_recall';
 
 describe('recallSenderSubjectMemories', () => {
   afterEach(() => {
@@ -78,5 +84,55 @@ describe('recallSenderSubjectMemories', () => {
     expect(await recallSenderSubjectMemories('', ['general'], 5)).toEqual([]);
     expect(await recallSenderSubjectMemories('did:plc:nobody', ['general'], 5)).toEqual([]);
     expect(await recallSenderSubjectMemories('did:plc:nobody', [], 5)).toEqual([]);
+  });
+});
+
+describe('resolveSenderIdentity', () => {
+  afterEach(() => {
+    setContactReadBackend(null);
+    setPeopleRepository(null);
+    resetContactDirectory();
+  });
+
+  it('out-of-process (lite): resolves name + relationship via the contact backend', async () => {
+    // The lite gap: Brain's in-process directory is empty; contacts live in
+    // Core and are reached over `contactLookup`. No in-process directory here.
+    setContactReadBackend({
+      contactLookup: async (q: string) =>
+        q === 'did:plc:raju'
+          ? ({ did: 'did:plc:raju', displayName: 'Raju', relationship: 'friend' } as never)
+          : null,
+    });
+    expect(await resolveSenderIdentity('did:plc:raju')).toEqual({
+      name: 'Raju',
+      relationship: 'friend',
+    });
+  });
+
+  it('out-of-process: bare name when the contact relationship is unknown', async () => {
+    setContactReadBackend({
+      contactLookup: async () =>
+        ({ did: 'did:plc:x', displayName: 'Albert', relationship: 'unknown' } as never),
+    });
+    expect(await resolveSenderIdentity('did:plc:x')).toEqual({ name: 'Albert' });
+  });
+
+  it('out-of-process: null when the backend has no such contact', async () => {
+    setContactReadBackend({ contactLookup: async () => null });
+    expect(await resolveSenderIdentity('did:plc:nobody')).toBeNull();
+  });
+
+  it('in-process (mobile): resolves through Core’s local contact directory', async () => {
+    setPeopleRepository(makeFakePeopleRepo()); // addContact needs a wired people repo
+    addContact('did:plc:raju', 'Raju', 'verified', 'summary', 'friend');
+    expect(await resolveSenderIdentity('did:plc:raju')).toEqual({
+      name: 'Raju',
+      relationship: 'friend',
+    });
+  });
+
+  it('returns null for a non-DID (no lookup attempted)', async () => {
+    expect(await resolveSenderIdentity('')).toBeNull();
+    expect(await resolveSenderIdentity('not-a-did')).toBeNull();
   });
 });

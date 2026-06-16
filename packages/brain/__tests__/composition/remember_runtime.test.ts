@@ -397,4 +397,68 @@ describe('buildRememberRuntime', () => {
     expect(userMessageSeen).toContain('source=gmail');
     expect(userMessageSeen).toContain('sender=alice@example.com');
   });
+
+  // Regression (986c25cf, 2026-06-04): the LLM-only rewrite dropped the
+  // `Sender:` line the old reminder_planner injected, so a terse D2D arrival
+  // from a known contact with no recalled facts rendered as "Someone is coming
+  // over" instead of naming the sender. These re-home the deleted
+  // reminder_planner_sender.test.ts contract onto the agentic runtime.
+  function capturingProvider(): { provider: LLMProvider; seen: () => string } {
+    let userMessageSeen = '';
+    const provider: LLMProvider = {
+      name: 'test',
+      supportsStreaming: false,
+      supportsToolCalling: true,
+      supportsEmbedding: false,
+      async chat(messages: Array<{ role: string; content: unknown }>) {
+        const user = messages.find((m) => m.role === 'user');
+        if (user !== undefined && typeof user.content === 'string') userMessageSeen = user.content;
+        return {
+          content: '',
+          toolCalls: [],
+          model: 'test',
+          usage: { inputTokens: 0, outputTokens: 0 },
+          finishReason: 'end' as const,
+        };
+      },
+      async *stream() {
+        throw new Error('not used');
+      },
+      async embed() {
+        throw new Error('not used');
+      },
+    };
+    return { provider, seen: () => userMessageSeen };
+  }
+
+  it('injects a "Sender: name (relationship)" line for a known D2D contact — even with NO recalled facts', async () => {
+    const { provider, seen } = capturingProvider();
+    const { run } = buildRememberRuntime({ llm: provider, personas: [{ name: 'general' }] });
+    await run({
+      memoryText: 'I am coming over day after tomorrow morning',
+      sourceItemId: 'd2d-raju',
+      // No relatedMemories — the bug case (recall returned nothing). The name
+      // must STILL reach the prompt via the resolved sender identity.
+      senderIdentity: { name: 'Raju', relationship: 'friend' },
+    });
+    expect(seen()).toContain('Sender: Raju (friend)');
+  });
+
+  it('renders a bare "Sender: name" when the contact has no relationship', async () => {
+    const { provider, seen } = capturingProvider();
+    const { run } = buildRememberRuntime({ llm: provider, personas: [{ name: 'general' }] });
+    await run({
+      memoryText: 'on my way',
+      senderIdentity: { name: 'Albert' },
+    });
+    expect(seen()).toContain('Sender: Albert');
+    expect(seen()).not.toContain('Albert (');
+  });
+
+  it('omits the Sender line entirely when no sender identity is supplied (typed /remember)', async () => {
+    const { provider, seen } = capturingProvider();
+    const { run } = buildRememberRuntime({ llm: provider, personas: [{ name: 'general' }] });
+    await run({ memoryText: 'buy milk' });
+    expect(seen()).not.toContain('Sender:');
+  });
 });

@@ -12,9 +12,9 @@
  * read backends (Core HTTP). The caller doesn't need to know which.
  */
 
-import { getPeopleRepository, getVaultRepository } from '@dina/core';
+import { getContact, getPeopleRepository, getVaultRepository } from '@dina/core';
 
-import { getPeopleReadBackend, getVaultReadBackend } from './assembly';
+import { getContactReadBackend, getPeopleReadBackend, getVaultReadBackend } from './assembly';
 
 /** Extract the recall-relevant text from a vault item / wire item. */
 function itemText(item: { content_l0?: string; summary?: string }): string {
@@ -43,6 +43,15 @@ export async function recallSenderSubjectMemories(
   }
   if (personId === '') return [];
 
+  return fetchSubjectMemories(personId, personas, limit);
+}
+
+/** Inner step 2 of recall — split out only to keep the resolver readable. */
+async function fetchSubjectMemories(
+  personId: string,
+  personas: string[],
+  limit: number,
+): Promise<string[]> {
   // 2. Fetch subject-linked memories across the candidate personas.
   const vaultBackend = getVaultReadBackend();
   const out: string[] = [];
@@ -65,4 +74,29 @@ export async function recallSenderSubjectMemories(
     }
   }
   return out;
+}
+
+/**
+ * Resolve an inbound sender DID → display name (+ relationship), for the
+ * `Sender:` enrichment line on a D2D arrival. Dual-path like
+ * `recallSenderSubjectMemories`:
+ *   - out-of-process (home-node-lite): the contact directory lives in Core —
+ *     resolve via the HTTP backend so we don't read Brain's empty in-process
+ *     directory (the dual-identity trap the read-backends exist to avoid);
+ *   - in-process (mobile): read Core's local contact directory directly.
+ * Returns null for a non-DID, no resolvable contact, or a contact with no name.
+ * The relationship is omitted when `unknown`/empty (→ a bare `Sender: <name>`).
+ */
+export async function resolveSenderIdentity(
+  senderDid: string,
+): Promise<{ name: string; relationship?: string } | null> {
+  if (senderDid === '' || !senderDid.startsWith('did:')) return null;
+  const backend = getContactReadBackend();
+  const contact: unknown =
+    backend !== null ? await backend.contactLookup(senderDid) : getContact(senderDid);
+  const c = contact as { displayName?: unknown; relationship?: unknown } | null;
+  const name = typeof c?.displayName === 'string' ? c.displayName.trim() : '';
+  if (name === '') return null;
+  const rel = typeof c?.relationship === 'string' ? c.relationship.trim() : '';
+  return rel !== '' && rel !== 'unknown' ? { name, relationship: rel } : { name };
 }

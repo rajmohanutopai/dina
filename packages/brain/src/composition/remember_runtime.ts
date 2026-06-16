@@ -87,6 +87,17 @@ export interface RememberTurnInput {
    * message body never names the sender ("I'm coming over").
    */
   relatedMemories?: string[];
+  /**
+   * The resolved identity of a D2D sender — `displayName (+ relationship)`,
+   * pre-resolved by the caller from `origin_did` via the contact directory /
+   * people graph. Rendered as a `Sender:` context line so the agentic loop can
+   * attribute a terse arrival ("I'm coming over") to the right person ("Raju is
+   * coming over") instead of "Someone", EVEN WHEN there are no subject-linked
+   * facts to recall. Context only — the model still phrases the reminder; this
+   * is enrichment, not a deterministic rule. (Restores the `Sender:` line the
+   * pre-agentic reminder_planner injected, dropped in the LLM-only rewrite.)
+   */
+  senderIdentity?: { name: string; relationship?: string };
 }
 
 export interface RememberTurnResult {
@@ -215,6 +226,14 @@ function renderUserMessage(turn: RememberTurnInput): string {
   }
   if (meta.length > 0) {
     lines.push('', `[metadata: ${meta.join(', ')}]`);
+  }
+  // Resolved sender identity for a D2D arrival — a literal "Sender: <name>
+  // (<relationship>)" line so the loop attributes the message to the right
+  // person even with no recalled facts. Bare name when no relationship.
+  const sid = turn.senderIdentity;
+  if (sid !== undefined && sid.name.trim() !== '') {
+    const rel = sid.relationship?.trim();
+    lines.push('', rel !== undefined && rel !== '' ? `Sender: ${sid.name} (${rel})` : `Sender: ${sid.name}`);
   }
   // Structured recall: what we already know about the sender (from the
   // people graph's subject links). Lets the agent enrich a terse arrival
