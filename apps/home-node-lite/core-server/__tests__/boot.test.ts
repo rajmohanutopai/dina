@@ -358,6 +358,24 @@ describe('ordered boot (task 4.3)', () => {
       }
     });
 
+    it('publishes a usable did:key node identity on the default (non-PDS) boot path', async () => {
+      // Regression: a plain `npm start` core-server (DINA_PDS_PROVISION
+      // unset) must NOT report `{did:null}` — `setNodeDID`/`setNodeHandle`
+      // are now wired into the non-PDS branch too, so device pairing and a
+      // thin web client (web thin-client §4.2) both get a real DID. The
+      // handle is null because a did:key node has no public PDS handle.
+      const booted = await bootTestServer();
+      try {
+        const res = await booted.app.inject({ method: 'GET', url: '/v1/identity' });
+        expect(res.statusCode).toBe(200);
+        const body = res.json() as { did: string | null; handle: string | null };
+        expect(body.did).toMatch(/^did:key:/);
+        expect(body.handle).toBeNull();
+      } finally {
+        await booted.app.close();
+      }
+    });
+
     it('serves signed CoreRouter routes through the booted Fastify process', async () => {
       registerBrainCaller();
       const booted = await bootTestServer();

@@ -336,6 +336,19 @@ export default function SettingsScreen() {
           <Text style={styles.rowLabel}>View recovery phrase</Text>
           <Text style={styles.rowValue}>{'›'}</Text>
         </TouchableOpacity>
+        {/* "Change passphrase" — re-wraps the master seed under a new
+            passphrase. Data + recovery phrase are untouched (the
+            passphrase only wraps the seed). */}
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/change-passphrase')}
+          accessibilityRole="button"
+          accessibilityLabel="Change passphrase"
+          testID="settings-row-change-passphrase"
+        >
+          <Text style={styles.rowLabel}>Change passphrase</Text>
+          <Text style={styles.rowValue}>{'›'}</Text>
+        </TouchableOpacity>
         {/* MT-40-I1: pick how long the app waits in the background
             before sealing the vault. The auto-lock listener
             (`useAutoLock`) reads `getBackgroundTimeout()` afresh on

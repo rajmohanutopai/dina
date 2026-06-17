@@ -16,6 +16,19 @@ describe('Authorization Matrix', () => {
   const allowedCases: Array<{ caller: CallerType; method: string; path: string; label: string }> = [
     { caller: 'brain', method: 'POST', path: '/v1/vault/query', label: 'Brain → vault/query' },
     { caller: 'brain', method: 'POST', path: '/v1/vault/store', label: 'Brain → vault/store' },
+    // Web thin-client proxy reads — the brain-server proxies these to Core
+    // for the SPA. Regression guard: both were absent from the allowlist
+    // (default-deny → 403) until the live thin-client run caught it.
+    { caller: 'brain', method: 'GET', path: '/v1/vault/list', label: 'Brain → vault/list' },
+    { caller: 'brain', method: 'GET', path: '/v1/vault/subjects', label: 'Brain → vault/subjects' },
+    // Action-risk policy via the web thin-client proxy (gated by D4).
+    { caller: 'brain', method: 'GET', path: '/v1/policy/actions', label: 'Brain → policy/actions' },
+    {
+      caller: 'brain',
+      method: 'PUT',
+      path: '/v1/policy/actions/send_email',
+      label: 'Brain → policy/actions/:action',
+    },
     {
       caller: 'brain',
       method: 'POST',

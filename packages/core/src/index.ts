@@ -889,6 +889,9 @@ export type {
   ActionPolicyEntry,
   ActionPolicyResult,
   RiskLevel,
+  PairInitiateResult,
+  DeviceRole,
+  PairedDevice,
   PersonaListEntry,
   Reminder,
   RecurringFrequency,
@@ -912,6 +915,8 @@ export {
 
 export { InProcessTransport } from './client/in-process-transport';
 export { HttpCoreTransport } from './client/http-transport';
+export { BrowserCoreProxyClient } from './client/browser-core-proxy-client';
+export type { BrowserCoreProxyClientOptions } from './client/browser-core-proxy-client';
 // Working-memory / ToC primitives (WM-CORE-04..06). Exposed so
 // apps/home-node-lite/core-server can register `GET /v1/memory/toc`
 // against the service + assert EWMA math against the scoring helpers.

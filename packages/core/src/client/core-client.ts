@@ -48,6 +48,15 @@ export interface CoreClient {
    */
   healthz(): Promise<CoreHealth>;
 
+  /**
+   * This node's public identity — DID + (optional) PDS handle. Backed by
+   * `GET /v1/identity` (public auth). The out-of-process Brain proxies it
+   * to a thin web client at `/api/v1/identity` so the client can discover
+   * + adopt the node's identity without re-onboarding. Never carries the
+   * PDS password / email / seed. (Web thin-client design §4.2.)
+   */
+  identity(): Promise<NodeIdentity>;
+
   // ─── Vault CRUD (task 1.29a) ──────────────────────────────────────────
 
   /**
@@ -659,6 +668,25 @@ export interface CoreClient {
    * Throws on BRAIN_DENIED actions (server returns 403).
    */
   deleteActionOverride(action: string): Promise<void>;
+
+  // ─── Devices + agent pairing ──────────────────────────────────────────
+
+  /**
+   * Mint a short-lived pairing code for an upcoming device/agent
+   * (`POST /v1/pair/initiate`). The web thin-client's "Agents → generate
+   * setup code" flow calls this through the brain-server proxy; mobile
+   * dispatches it in-process. The returned `code` is embedded (with the
+   * node DID + relay URL) into the `dina1:…` setup code the operator
+   * shares with the agent host.
+   */
+  pairInitiate(deviceName: string, role: DeviceRole): Promise<PairInitiateResult>;
+
+  /**
+   * List the node's paired devices/agents (`GET /v1/devices/list`).
+   * Read-only; backs the web "Agents → CONNECTED (n)" list. Mobile reads
+   * the in-process device registry directly.
+   */
+  listPairedDevices(): Promise<PairedDevice[]>;
 }
 
 /**
@@ -687,6 +715,18 @@ export interface CoreHealth {
   /** Core build version string (git SHA prefix or semver tag). */
   version: string;
 }
+
+// `NodeIdentity` (the `identity()` return type) is defined in
+// `../pairing/ceremony` alongside `getNodeIdentity()` — the single source
+// of truth shared by the core route, the brain proxy, and this client.
+// Re-exported here so the transports import it from `./core-client`
+// alongside every other client type (their single import block). The
+// package barrel surfaces it to `@dina/core` consumers via
+// `export * from './pairing/ceremony'`, so it is intentionally NOT added
+// to index.ts's explicit `./client/core-client` re-export list (that
+// would double-export the same symbol).
+export type { NodeIdentity } from '../pairing/ceremony';
+import type { NodeIdentity } from '../pairing/ceremony';
 
 // ─── Vault method types (task 1.29a) ─────────────────────────────────────
 //
@@ -1323,4 +1363,21 @@ export interface ActionPolicyEntry {
 
 export interface ActionPolicyResult {
   actions: ActionPolicyEntry[];
+}
+
+// ─── Devices + pairing types ────────────────────────────────────────────────
+
+export type { DeviceRole, PairedDevice } from '../devices/registry';
+import type { DeviceRole, PairedDevice } from '../devices/registry';
+
+/** Result of minting a pairing code (`POST /v1/pair/initiate`). */
+export interface PairInitiateResult {
+  /** The 8-char pairing code the agent presents to complete pairing. */
+  code: string;
+  /** Unix seconds when the code expires. */
+  expiresAt: number;
+  /** The device name the code was minted for. */
+  deviceName: string;
+  /** The role the device will be registered as. */
+  role: string;
 }

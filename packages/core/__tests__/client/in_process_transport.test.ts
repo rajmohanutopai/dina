@@ -17,6 +17,12 @@ function buildRouter(): CoreRouter {
     { auth: 'public' },
   );
 
+  r.get(
+    '/v1/identity',
+    () => ({ status: 200, body: { did: 'did:plc:test-node', handle: 'node.test.example' } }),
+    { auth: 'public' },
+  );
+
   r.post(
     '/v1/vault/query',
     (req) => {
@@ -847,6 +853,12 @@ describe('InProcessTransport (task 1.30)', () => {
     const h = await t.healthz();
     expect(h.status).toBe('ok');
     expect(h.did).toBe('did:key:test');
+  });
+
+  it('identity round-trips DID + handle via CoreRouter.handle', async () => {
+    const t = new InProcessTransport(buildRouter());
+    const id = await t.identity();
+    expect(id).toEqual({ did: 'did:plc:test-node', handle: 'node.test.example' });
   });
 
   it('vaultQuery sends persona + query body', async () => {

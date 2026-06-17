@@ -66,7 +66,15 @@ import { registerAskRoutes } from './routes/ask';
 import { registerCapabilityRoutes } from './routes/capability';
 import { registerChatRoutes } from './routes/chat';
 import { registerReminderApiRoutes, startReminderFireLoop } from './routes/reminders';
+import { registerIdentityApiRoutes } from './routes/identity';
+import { registerVaultApiRoutes } from './routes/vault';
+import { registerPersonaApiRoutes } from './routes/personas';
+import { registerServiceConfigApiRoutes } from './routes/service_config';
+import { registerWorkflowApiRoutes } from './routes/workflow';
+import { registerPolicyApiRoutes } from './routes/policy';
+import { registerProviderApiRoutes } from './routes/providers';
 import { registerWebRoutes } from './routes/web';
+import { createWebAccessGate } from './web_access_gate';
 
 /**
  * Per-persona hints used by the agentic /remember loop's system prompt.
@@ -106,6 +114,15 @@ export interface BrainServerDependencyStatus {
   core: CoreClientStatus;
   askRoutes: 'configured' | 'disabled';
   reminderRoutes: 'configured' | 'disabled';
+  identityRoutes: 'configured' | 'disabled';
+  vaultRoutes: 'configured' | 'disabled';
+  personaRoutes: 'configured' | 'disabled';
+  serviceConfigRoutes: 'configured' | 'disabled';
+  workflowRoutes: 'configured' | 'disabled';
+  policyRoutes: 'configured' | 'disabled';
+  providerRoutes: 'configured' | 'disabled';
+  /** Web access gate (D4): `'gated'` (default) or `'dev_open'` (DINA_BRAIN_DEV_OPEN=1). */
+  webAccessGate: 'gated' | 'dev_open';
   serviceRuntime: 'configured' | 'disabled';
   stagingDrain: 'running' | 'disabled';
   /**
@@ -242,6 +259,14 @@ export async function bootServer(
     core: coreResult.status,
     askRoutes: 'disabled',
     reminderRoutes: 'disabled',
+    identityRoutes: 'disabled',
+    vaultRoutes: 'disabled',
+    personaRoutes: 'disabled',
+    serviceConfigRoutes: 'disabled',
+    workflowRoutes: 'disabled',
+    policyRoutes: 'disabled',
+    providerRoutes: 'disabled',
+    webAccessGate: 'gated',
     serviceRuntime: 'disabled',
     stagingDrain: 'disabled',
     webUI: 'disabled',
@@ -427,7 +452,30 @@ export async function bootServer(
     chatRememberRuntime?.dispose();
     await compositions.service?.dispose();
   });
+
+  // Web access gate (D4): issue a per-process session cookie on /web/* and
+  // require it on /api/v1/*. The SPA's same-origin cookie auto-attaches to
+  // fetch + SSE, so no client change is needed; other local processes +
+  // cross-origin pages can't authenticate. `DINA_BRAIN_DEV_OPEN=1` turns
+  // the gate OFF for dev/test (the design's explicit unauthenticated mode);
+  // the shipped default is gated. Registered FIRST so it runs before any
+  // route handler. See `web_access_gate.ts`.
+  // Read from the injectable `env` arg (defaults to process.env in
+  // production) so tests can flip dev-open via the bootServer env param.
+  const webAccessGate = createWebAccessGate({
+    devOpen: env.DINA_BRAIN_DEV_OPEN === '1',
+  });
+  app.addHook('onRequest', webAccessGate.onRequest);
+  dependencyStatus.webAccessGate = webAccessGate.devOpen ? 'dev_open' : 'gated';
+
   app.get('/healthz', async () => ({ status: 'ok', role: 'brain' }));
+
+  // AI-provider status for the SPA (D7) — read-only, redacted; reads the
+  // brain's own LLM config (no Core dependency). The web AI-providers
+  // screen shows the server's provider state instead of holding a browser
+  // key. Gated by the web access gate like the rest of /api/v1.
+  registerProviderApiRoutes(app, { llm: config.llm });
+  dependencyStatus.providerRoutes = 'configured';
 
   if (options.serviceRuntime !== undefined) {
     if (clients.core === undefined) {
@@ -602,6 +650,39 @@ export async function bootServer(
     });
     app.addHook('onClose', async () => stopFireLoop());
     dependencyStatus.reminderRoutes = 'configured';
+
+    // Node-identity data layer for the SPA — proxies `GET /api/v1/identity`
+    // to core-server so a thin web client can discover + adopt this node's
+    // DID + handle without re-onboarding (web thin-client §4.2). Mobile
+    // reads `getNodeIdentity()` in-process and never hits this.
+    registerIdentityApiRoutes(app, { core: clients.core });
+    dependencyStatus.identityRoutes = 'configured';
+
+    // Vault + persona data layers for the SPA — thin proxies over the
+    // existing CoreClient (design D1). core-server runs the real persona
+    // gatekeeper + crypto; mobile reads these in-process. personaUnlock is
+    // deliberately absent (passphrase surface lands with the access gate,
+    // P3).
+    registerVaultApiRoutes(app, { core: clients.core });
+    registerPersonaApiRoutes(app, { core: clients.core });
+    dependencyStatus.vaultRoutes = 'configured';
+    dependencyStatus.personaRoutes = 'configured';
+
+    // Service-config data layer for the SPA (P2) — listings settings form
+    // reads/writes the node's published service configs via the proxy.
+    registerServiceConfigApiRoutes(app, { core: clients.core });
+    dependencyStatus.serviceConfigRoutes = 'configured';
+
+    // Workflow/approvals data layer for the SPA (P2) — service-inbox lists
+    // + approves/cancels pending tasks via the proxy.
+    registerWorkflowApiRoutes(app, { core: clients.core });
+    dependencyStatus.workflowRoutes = 'configured';
+
+    // Action-risk policy data layer for the SPA (P3) — Settings → Policy
+    // reads/edits per-action risk via the proxy. Safe behind the web
+    // access gate (the brain allowlist now covers /v1/policy).
+    registerPolicyApiRoutes(app, { core: clients.core });
+    dependencyStatus.policyRoutes = 'configured';
   }
 
   // SPA bundle serving. Opt-in via `DINA_BRAIN_WEB_UI=1` — same gate

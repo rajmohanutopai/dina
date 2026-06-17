@@ -463,3 +463,55 @@ Key insights: Tier 1's competitor is "call the guy and wait", not an API; ~70% o
 Implemented end-to-end: `instruction` + `instructionUpdatedAt` on ServiceCapabilityConfig (mcpServer/mcpTool now optional-but-paired; the LANE is the binding's presence — mcpServer set = agent, absent = Tier 1); validator `missing_execution_plane` (active listings need a plane); reserved runner `dina.local` (claim-any/foreign daemons can NEVER claim it — SQL + InMemory parity-gated by core-server's `workflow_claim_lanes.test.ts`); LocalDelegationRunner always wired in mobile boot (LLM per execution via the hot-swappable agentic router); brain `capability_runtime` = read-only vault_search agentic turn → fence-tolerant parse → result-schema gate → ONE native-responseSchema synthesis retry; `tier1_runner` resolves instruction/schema from the LIVE listing at claim time; `operator_approved` payload flag makes "ask me first" instructions CONFIRM (not re-ask) after the approval card. The instruction is provider-PRIVATE (never published — pinned by test). The listing editor: per-capability "Answered by: My Dina | Agent" + "How should Dina answer?"; booking-class capabilities seed Review from the catalog hint.
 Live proof: iOS owner (/remember "slots 4:30 + 5:15", listing in the editor, Public) × Android stranger — availability auto-answered by the phone; "Book the 4:30" → approval card "…asks Alonso's Salon: appointment_book — time: 16:30" → Approve → "Confirmed · 16:30". Found+fixed live, both pre-existing P1s: (1) the form stored params-only schemaHash but the publisher publishes canonical {params,result,description} → EVERY form-created listing was unreachable (`schema_version_mismatch`); single recipe is now `canonicalCapabilitySchemaHash`, re-save heals old configs; (2) `parseApprovedPayload` dropped service_uri/schema_snapshot/mcp_tool → multi-listing review approvals executed against the 'self' listing + GAP-SH-04 contract silently lost post-approval.
 MsgBox keepalive (#351, the Tier 1 prerequisite): app-level ping/pong shipped (relay `routePing` + client 30s pings, 90s/10-min adaptive staleness, auth-limbo recycle) — relay DEPLOY to test/prod still pending. Lite core-server is not a Tier 1 provider yet (Core/Brain split needs a delegation hop); Tier 2 structured envelope still open.
+
+
+# How to test locally (most of our testing should be done locally using home node lite - it is much easier because it is on chrome)
+  Local Dina testing — quick version
+     
+  cd dina-nodes
+  ./provision.sh          # once
+  ./start.sh              # boot all 4 Dinas
+  ./status.sh             # shows web addresses
+  ./connect.sh alonso sancho   # let two Dinas talk
+  ./stop.sh               # done (data kept)
+  
+  - Each Dina = a person's phone, own browser tab: alonso :8401 (you), sancho :8402 (friend), chairmaker :8403, albert :8404.
+  - Ignore the yellow "limited mode" banner. Test in the chat box — that's the real, saved path. Other screens (vault/people lists) may look empty for now; that's the parked web work.
+  - Try, in alonso's chat:
+    - /remember Emma's birthday is Nov 7th → stored + auto reminder
+    - /remember my bank is Barclay's ending 0102 → Finance vault, no approval (you asked)
+    - After connect.sh: "tell Sancho I'm coming tomorrow morning" → check sancho's tab.
+  - Stuck? tail -f nodes/alonso/logs/brain.log. Two-Dina messages take ~15s.
+  
+  Full detail lives in dina-nodes/TESTING.md. Ready to move to the release fixes whenever you are.
+
+# Agents (dina-agent) — setup + run
+
+location - dina-nodes/ (agents and some dina setup is kept here)
+
+An "agent" = the `dina-agent` CLI (`dina`) paired to ONE Dina node over MsgBox
+(the cloud relay; never raw HTTP). It's the OpenClaw stand-in.
+
+Setup (one-time):
+1. Dina app → Settings → Agents → name it → Generate Setup Code (`dina1:…`).
+   The code is single-use + expires ~5 min. (Web in-browser node can't host an
+   agent — pair to the mobile app or a lite core-server node.)
+2. On the agent host: `python3 -m venv .venv && . .venv/bin/activate && pip install dina-agent`
+   (or `pip install -e cli/`).
+3. `dina configure` → paste the code (or `dina configure --headless --setup-code 'dina1:…' --role agent`).
+   Success = `Paired!` + the app's Agents page shows CONNECTED (1). Verify: `dina status`.
+   Config lands at `<DINA_CONFIG_DIR>/.dina/cli/` (config.json + ed25519 key).
+
+Use it — two directions:
+- Agent → Dina (one-shot, inside a session):
+  `S=$(dina session start --json | jq -r .session_id)`
+  `dina ask --session $S "…"` · `dina validate --session $S send_email "…"` · `dina remember …` · `dina audit`
+  Locked vault (health/finance) → approval card on the phone; SAFE auto, BLOCKED denied.
+- Dina → agent (delegated /task): run the worker `dina agent-daemon --runner claude-code`
+  — it does NOT auto-start; keep it running. It claims /task work and executes via the runner
+  (`claude-code`=`claude -p`, also `codex`/`gemini`/`openclaw-cli`). The daemon is the dispatcher,
+  the runner is the hands.
+
+Inspect what happened: agent's full work = its `claude -p` session at `~/.claude/projects/…/*.jsonl`;
+node-side actions/approvals = `dina audit`; claim/complete/errors = the daemon log (metadata only).
+

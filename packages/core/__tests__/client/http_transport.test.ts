@@ -97,6 +97,25 @@ describe('HttpCoreTransport (task 1.31)', () => {
     expect(calls[0]?.init.body).toBeUndefined();
   });
 
+  it('identity GETs /v1/identity and returns { did, handle }', async () => {
+    const { client, calls } = makeStubClient(() =>
+      ok({ did: 'did:plc:alonso', handle: 'alonso.test-pds.dinakernel.com' }),
+    );
+    const stub = makeStubSigner();
+    const t = new HttpCoreTransport({
+      baseUrl: 'http://core:8100',
+      httpClient: client,
+      signer: stub.signer,
+    });
+
+    const id = await t.identity();
+
+    expect(id).toEqual({ did: 'did:plc:alonso', handle: 'alonso.test-pds.dinakernel.com' });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe('http://core:8100/v1/identity');
+    expect(calls[0]?.init.method).toBe('GET');
+  });
+
   it('strips trailing slash from baseUrl', async () => {
     const { client, calls } = makeStubClient(() => ok({ status: 'ok', did: 'd', version: 'v' }));
     const stub = makeStubSigner();

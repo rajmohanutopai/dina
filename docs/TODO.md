@@ -1,6 +1,53 @@
 
+# very important - to avoid context leak to external systems like agents, services and reviews
+docs/CONTEXT_FIREWALL_DESIGN.md
+
+# Services not working properly for difficult questions
+Book me a seat in the sports center
+returned error
+  - AppView semantic ranking quality.
+  - Why eta_query / price_check appear before appointment_book.
+  - Why sports center returns Alonso Salon.
+  - Full provider-fit scoring.
+  - Better “service not implemented” cards for ambiguous cases.
+
+  There are different failure states:
+
+  1. missing_details
+     Example: “Book me a seat”
+     Dina should ask: “Which place and what time?”
+
+  2. no_matching_provider
+     Example: “Book me a seat in the sports center”
+     Dina understands the service type, but no sports-center provider exists.
+     This should show a card:
+     “No matching service found. If you or someone else offers this, publish a service.”
+
+  3. missing_capability
+     Example: user asks for something Dina has no official capability for.
+     This is the true “not implemented yet” card.
+
+  4. bad_provider_fit
+     Example: AppView returns Alonso Salon for sports-center booking.
+     Dina should reject the provider fit and show “No matching service found,” not call the salon.
+
+  So yes: the card should be used for this user-facing situation, but the copy/reason should be “no matching service/provider,” not “appointment booking is not implemented.”
+
+  Best shape:
+
+  ServiceGapCard
+
+  - reason: missing_capability
+  - reason: no_matching_provider
+  - reason: missing_required_details
+  - reason: provider_unavailable
+
+  For today’s release, the current text fallback is acceptable. But the better UX is a card for no_matching_provider, because that is exactly where Dina can say: “No one is offering this service yet. Publish one.”
 
 
+
+# Home Node Lite as Local thin client
+remaining items on docs/WEB_THIN_CLIENT_DESIGN.md
 
 # D2D for normal questions
 

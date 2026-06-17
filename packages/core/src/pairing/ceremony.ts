@@ -86,6 +86,45 @@ export function getNodeDID(): string | null {
 }
 
 /**
+ * Node handle (e.g. `alice.test-pds.dinakernel.com`) — the human-readable
+ * counterpart to the DID, set at startup from the PDS identity when the node
+ * is PDS-provisioned. `null` for local did:key nodes that have no handle.
+ * Exposed (with the DID) via `GET /v1/identity` so a thin web client can show
+ * + adopt the node's identity without re-onboarding. Never includes the PDS
+ * password / email — those stay in `pds_identity.json`, off the wire.
+ */
+let nodeHandle: string | null = null;
+
+/** Set the node handle (called at startup after PDS identity loads). */
+export function setNodeHandle(handle: string | null): void {
+  nodeHandle = handle && handle.trim() !== '' ? handle : null;
+}
+
+/** This node's handle (set at startup), or null when there is none. */
+export function getNodeHandle(): string | null {
+  return nodeHandle;
+}
+
+/**
+ * This node's public identity — the DID and (optional) PDS handle. The
+ * single shape returned by `GET /v1/identity` (core) and proxied at
+ * `/api/v1/identity` (brain), and the return type of
+ * `CoreClient.identity()`. Both `null` before identity is loaded at
+ * startup; `handle` stays `null` for local did:key nodes. Never carries
+ * the PDS password / email / seed — those stay in `pds_identity.json`,
+ * off the wire.
+ */
+export interface NodeIdentity {
+  did: string | null;
+  handle: string | null;
+}
+
+/** Snapshot this node's public identity (DID + handle). */
+export function getNodeIdentity(): NodeIdentity {
+  return { did: nodeDID, handle: nodeHandle };
+}
+
+/**
  * Generate an 8-character Crockford-Base32 pairing code.
  *
  * Retries up to 5 times on collision (matching Go's collision retry).
@@ -292,10 +331,11 @@ export function verifyPairingIdentityBinding(
   }
 }
 
-/** Clear all pending codes and reset node DID (for testing). */
+/** Clear all pending codes and reset node DID + handle (for testing). */
 export function clearPairingState(): void {
   pendingCodes.clear();
   nodeDID = null;
+  nodeHandle = null;
 }
 
 /**

@@ -5,7 +5,7 @@
  * auth middleware exactly.
  *
  * Caller types:
- *   brain:     vault/query, vault/store, staging/*, pii/scrub, vault/kv, memory/*
+ *   brain:     vault/query, vault/list, vault/subjects, vault/store, staging/*, pii/scrub, vault/kv, memory/*
  *   admin:     persona/unlock, persona/lock, devices, export, pair, approvals
  *   connector: staging/ingest only
  *   device:    all read endpoints (query, list), approvals
@@ -30,6 +30,8 @@ const AUTHZ_RULES: { prefix: string; allowed: Set<CallerType> }[] = [
   { prefix: '/v1/vault/store/batch', allowed: new Set(['brain']) },
   { prefix: '/v1/vault/store', allowed: new Set(['brain']) },
   { prefix: '/v1/vault/query', allowed: new Set(['brain', 'device', 'agent']) },
+  { prefix: '/v1/vault/list', allowed: new Set(['brain', 'device']) },
+  { prefix: '/v1/vault/subjects', allowed: new Set(['brain', 'device']) },
   { prefix: '/v1/vault/item/', allowed: new Set(['brain', 'device']) },
   { prefix: '/v1/vault/kv/', allowed: new Set(['brain', 'device']) },
 
@@ -48,14 +50,25 @@ const AUTHZ_RULES: { prefix: string; allowed: Set<CallerType> }[] = [
   // Identity — Admin + Brain (read)
   { prefix: '/v1/did', allowed: new Set(['admin', 'brain']) },
 
-  // Devices — Admin only
+  // Devices — read-only LIST is brain-readable (backs the web "Agents"
+  // view through the brain proxy, gated by the D4 web access gate); the
+  // more-specific `/v1/devices/list` prefix MUST precede the admin-only
+  // `/v1/devices` (which still gates POST register) so the list rule wins.
+  { prefix: '/v1/devices/list', allowed: new Set(['admin', 'brain', 'device']) },
   { prefix: '/v1/devices', allowed: new Set(['admin']) },
 
-  // Device pairing — Admin generates the code; `/v1/pair/complete`
-  // is explicitly `auth: 'public'` on the route itself (the code
-  // itself is the credential), so we only list the admin-gated
-  // initiate endpoint here.
-  { prefix: '/v1/pair/initiate', allowed: new Set(['admin']) },
+  // Device pairing — `brain` may mint a code so the web "Agents → generate
+  // setup code" flow works through the brain proxy (gated by the D4 web
+  // access gate). Residual risk: a compromised brain could self-mint +
+  // self-complete a pairing into a persistent rogue agent. Accepted because
+  // (a) the brain already holds vault read/write via its other allowlist
+  // entries, so this isn't the worst case, (b) the gate keeps external
+  // callers off /api/v1, and (c) it mirrors mobile's trust model (the
+  // user-driven UI triggers in-process minting). Future hardening: require
+  // an owner re-confirm (biometric/passphrase) before web pairing.
+  // `/v1/pair/complete` is `auth: 'public'` on the route (the code is the
+  // credential), so only initiate is listed here.
+  { prefix: '/v1/pair/initiate', allowed: new Set(['admin', 'brain']) },
 
   // Export/Import — Admin only
   { prefix: '/v1/export', allowed: new Set(['admin']) },
@@ -111,6 +124,16 @@ const AUTHZ_RULES: { prefix: string; allowed: Set<CallerType> }[] = [
   // handler — see `ownerDecisionGuard` in server/routes/workflow.ts.
   { prefix: '/v1/workflow/tasks/', allowed: new Set(['brain', 'admin', 'agent']) },
   { prefix: '/v1/workflow/', allowed: new Set(['brain', 'admin']) },
+
+  // Action-risk policy — the user edits action risk levels (Settings →
+  // Policy). Mobile drives it via trusted in-process dispatch; the web SPA
+  // drives it through the brain-server proxy (gated by the D4 web access
+  // gate), so the out-of-process brain needs this entry. Admin too (admin
+  // UI). Not an authority escalation in practice: a compromised brain
+  // already holds vault read/write via its other allowlist entries, so
+  // policy access doesn't widen the worst case — and the web access gate
+  // keeps external callers off the brain's /api/v1 surface entirely.
+  { prefix: '/v1/policy/', allowed: new Set(['brain', 'admin']) },
 
   // Session lifecycle — paired dina-agent opens a session before
   // claiming a delegation task (vault scoping) and ends it after

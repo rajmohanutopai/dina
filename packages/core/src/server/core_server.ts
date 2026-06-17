@@ -35,6 +35,7 @@ import { registerIntentRoutes } from './routes/intent';
 import { registerSessionRoutes } from './routes/session';
 import { registerAskRoutes, setAskRouteHandler, type AskRouteHandler, type AskRouteOptions } from './routes/ask';
 import { registerPolicyRoutes } from './routes/policy';
+import { registerIdentityRoutes } from './routes/identity';
 export { setAskRouteHandler, type AskRouteHandler };
 import { setDeviceRoleResolver } from '../auth/caller_type';
 import { getDeviceByDID } from '../devices/registry';
@@ -67,6 +68,10 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
     }),
     { auth: 'public' },
   );
+
+  // Node identity (DID + handle) — public read surface for thin clients
+  // (web thin-client design §4.2). Source of truth for who this node is.
+  registerIdentityRoutes(router);
 
   registerVaultRoutes(router);
   registerStagingRoutes(router);

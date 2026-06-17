@@ -33,6 +33,342 @@ goals trimmed 2026-06-16: Service Capability Catalog, PeerLens Publish Jobs, PUB
 prompt-provider + salon demo, Starter Credits.)</p>
 
 <!-- ===================================================================== -->
+<h2 id="web-thin-client">Web Thin Client <span class="meta">(in-flight — current goal)</span></h2>
+<p class="meta">Spec: <code>docs/WEB_THIN_CLIENT_DESIGN.md</code> (rev 3). Make the WEB build of
+<code>apps/mobile</code> a <strong>thin client of the Home Node Lite core-server</strong> instead of its own
+limited in-browser node. Kills the "limited mode / no SQLite" banner, makes the web UI a faithful durable view of a
+real node, and unblocks agent pairing + <code>/task</code> from the web UI. <strong>Zero change to mobile native</strong>
+(all web-gated via <code>.web.ts</code> / <code>Platform.OS==='web'</code>).</p>
+<div class="item decision"><span class="tag decision">Resolved decisions (from the design review)</span>
+<ul>
+<li><strong>D1:</strong> per-domain proxy routes on the brain-server (validated + contract-tested), NOT a generic
+<code>{method,args}</code> passthrough. New capabilities (identity, contacts CRUD) get a typed <code>CoreClient</code>
+method + core route; existing ones (vault/personas/workflow/…) just get a brain proxy over the existing
+<code>CoreClient</code>.</li>
+<li><strong>D2:</strong> web is ALWAYS thin-client (gate on <code>Platform.OS==='web'</code>); a missing
+<code>/api/v1/identity</code> renders a "No Home Node reachable" screen, never onboarding.</li>
+<li><strong>D3:</strong> hide change-passphrase on web (server owns the seed). <strong>D4:</strong> access gate
+(session token + CSRF + 127.0.0.1) required for non-dev; <code>DINA_BRAIN_DEV_OPEN=1</code> is the only unauth path.
+<strong>D6:</strong> PeerLens publish = server-side build (submit route + worker/drainer + PDS publisher + status
+projection), not a proxy. <strong>D7:</strong> provider keys server-side only.</li>
+<li><strong>Naming:</strong> the browser client is <code>BrowserCoreProxyClient</code> (unsigned, same-origin, talks
+only to brain-server <code>/api/v1</code>) — NEVER reuse the signed Brain&rarr;Core <code>HttpCoreTransport</code> name;
+the browser must hold no signing key.</li>
+</ul></div>
+<div class="item tradeoff"><span class="tag tradeoff">Phased plan (tracking)</span>
+<ul>
+<li><strong>P1 (in progress):</strong> <code>GET /api/v1/identity</code> (the vertical-slice template:
+<code>CoreClient.identity()</code> + core route + brain proxy) &rarr; <code>BrowserCoreProxyClient</code> + web boot
+gating (skip <code>createCoreRouter</code>/in-memory repos) &rarr; UnlockGate web bypass + "No Home Node" screen &rarr;
+vault + personas proxies.</li>
+<li><strong>P2:</strong> contacts (<code>contactList/Add/Delete</code> new CoreClient methods) + service-config +
+workflow/approvals proxies. <strong>P3:</strong> access gate + provider-key routes/UI. <strong>P4:</strong> PeerLens
+publish server-side build. <strong>P5:</strong> notifications, D2D quarantine, devices, export + tests + docs
+(<code>web/SECURITY.md</code>) + live <code>dina-nodes</code> cross-Dina pass.</li>
+</ul></div>
+<div class="item deviation"><span class="tag deviation">Iteration log</span>
+<ul>
+<li><strong>2026-06-17 — start.</strong> Re-read spec; verified seams: web boot composes a full in-process node
+(<code>boot_service.ts</code>) regardless of platform; <code>CoreClient</code> (core-client.ts:43, ~69 methods) is the
+swap point; brain-server has a signed <code>CoreClient</code> to core (<code>core_client.ts buildCoreClient</code>) +
+the <code>register*Routes(app,…)</code> registration pattern. Identity source = core <code>pds_identity.json</code>
+(<code>did</code>+<code>handle</code>, plus secrets to NOT expose) and runtime <code>getNodeDID()</code>. Starting the
+identity vertical slice.</li>
+<li><strong>2026-06-17 — P1 slice 1 DONE: <code>GET /api/v1/identity</code> (the seam template).</strong> Every other
+proxy domain copies this shape.
+<ul>
+<li><strong>Single source of truth.</strong> Added <code>nodeHandle</code> + <code>setNodeHandle/getNodeHandle</code> +
+<code>NodeIdentity{did,handle}</code> + <code>getNodeIdentity()</code> to <code>pairing/ceremony.ts</code> (next to the
+existing <code>getNodeDID</code>). The core route, both transports, and the brain proxy ALL funnel through
+<code>getNodeIdentity()</code> — nothing recomputes identity.</li>
+<li><strong>Core route.</strong> <code>routes/identity.ts</code> &rarr; <code>GET /v1/identity</code>, <code>auth:'public'</code>
+(DID is in the PLC directory, handle is the public ATProto handle; neither is a secret). Wired into
+<code>createCoreRouter</code> before the vault routes.</li>
+<li><strong>CoreClient seam.</strong> <code>identity(): Promise&lt;NodeIdentity&gt;</code> added to the interface +
+<strong>all three</strong> impls: <code>InProcessTransport</code> (mobile, router dispatch), <code>HttpCoreTransport</code>
+(brain&rarr;core; signs the public route, signature ignored — kept for uniform error mapping), <code>MockCoreClient</code>
+(<code>identityResult</code> field).</li>
+<li><strong>Boot wiring.</strong> core-server boot calls <code>setNodeHandle(pdsIdentity.handle)</code> immediately after
+<code>setNodeDID</code>, in the PDS-provision branch.</li>
+<li><strong>Brain proxy.</strong> <code>brain-server/routes/identity.ts</code> &rarr; <code>GET /api/v1/identity</code> returns
+<code>core.identity()</code> verbatim; maps any CoreClient failure to <code>502</code>. Registered alongside the reminder
+routes (gated on <code>clients.core !== undefined</code>); added <code>dependencyStatus.identityRoutes</code>.</li>
+<li><strong>Tests (all green).</strong> Core route (loaded / did:key-null-handle / fresh-boot-both-null / blank-handle
+normalised / reachable-without-auth) via the REAL <code>createCoreRouter</code>; InProcess + Http transport round-trips;
+brain proxy (success / null-handle passthrough / 502 / exactly-one-call). Workspace <code>npm run typecheck</code> clean;
+core <code>__tests__/server</code> + <code>__tests__/client</code> = 330 green; brain-server <code>identity_routes</code> +
+<code>scaffold</code> (full boot) green.</li>
+</ul></li>
+<li><strong>Deep review — notes &amp; decisions.</strong>
+<ul>
+<li><strong>Decision:</strong> <code>NodeIdentity</code> lives in <code>pairing/ceremony.ts</code> (where the getters are),
+re-exported through <code>core-client.ts</code> so transports import it from their one client-types block; it reaches
+<code>@dina/core</code> consumers via the barrel's <code>export * from './pairing/ceremony'</code>, so it is deliberately
+NOT in index.ts's explicit <code>./client/core-client</code> list (avoids a double-export of the same symbol).</li>
+<li><strong>Deviation (intentional):</strong> mobile bootstrap does NOT call <code>setNodeHandle</code> (zero
+mobile-native change) &rarr; mobile <code>getNodeIdentity()</code> returns <code>handle:null</code>. Harmless: the web
+thin-client path never calls mobile's in-process <code>identity()</code>; mobile UI reads its own onboarding identity.
+Revisit only if a mobile caller needs the handle.</li>
+<li><strong>FIXED (independent review caught it):</strong> a non-PDS <code>did:key</code> core-server used to never set
+the node DID (<code>setNodeDID</code> was called <em>only</em> in the PDS branch), so a plain <code>npm start</code>
+core-server — exactly what a developer testing the web thin-client runs — returned <code>{did:null, handle:null}</code>
+and a thin client could never adopt it (pairing was independently broken there too). Wired
+<code>setNodeDID</code>/<code>setNodeHandle(null)</code> into the <code>!pdsProvisionEnabled</code> branch of
+core-server boot, using the same DID resolution MsgBox uses (<code>config.msgbox.homeNodeDid ?? deriveDIDKey(root)</code>).
+Added a boot-level regression test (boots a real non-PDS server, asserts <code>GET /v1/identity</code> &rarr;
+<code>did:key:…</code> + <code>handle:null</code>). Also made the <code>MockCoreClient</code> default
+<code>identityResult</code> internally consistent (a <code>did:plc</code> carries a handle; a <code>did:key</code> would
+carry <code>null</code>).</li>
+</ul></li>
+<li><strong>Independent adversarial review (sub-agent) verdict: ship it.</strong> Confirmed single-source-of-truth,
+public-auth is safe (only <code>did</code>+<code>handle</code> ever leave; <code>pds_identity.json</code>'s
+password/email/pdsUrl/seed never enter the node-identity globals), signing the public route in http-transport is
+harmless, no PII/secret in logs. The one real finding (non-PDS null identity) is fixed above; the rest were confirmed
+intentional (the export/import-type pair, NodeIdentity's home, 502 mapping).</li>
+<li><strong>2026-06-17 — P1 slice 2: vault + persona brain-server proxy routes (D1, no new CoreClient methods).</strong>
+The vault/persona <code>CoreClient</code> methods already exist, so this is pure brain-side proxy (mirrors
+<code>reminders.ts</code>): <code>POST /api/v1/vault/query</code>, <code>GET /api/v1/vault/item/:id</code> (404&rarr;null),
+<code>POST /api/v1/vault/store</code>, <code>GET /api/v1/vault/list</code>, <code>GET /api/v1/vault/subjects</code>,
+<code>DELETE /api/v1/vault/item/:id</code>; <code>GET /api/v1/personas</code> + <code>GET /api/v1/personas/:persona/status</code>.
+Persona is a required query/path param (400 if missing); Core failure &rarr; 502; Core remains the persona-gatekeeper +
+crypto authority (the proxy does NOT re-implement authz). Registered alongside identity (gated on
+<code>clients.core</code>); added <code>dependencyStatus.vaultRoutes</code> + <code>personaRoutes</code>.
+<strong>Deferred:</strong> <code>personaUnlock</code> (passphrase surface) lands with the web access gate (D3/D4, P3).
+<strong>Deep-review fix:</strong> hardened numeric query parsing (<code>parsePositiveInt</code>) so a bogus
+<code>?limit=abc</code> is dropped (Core default) instead of forwarded as <code>NaN</code>. Tests: 11 new (vault 8 +
+personas 3) covering each route, the missing-persona 400 matrix, null&rarr;404, and 502; brain-server suite + workspace
+typecheck green.</li>
+<li><strong>2026-06-17 — P1 slice 3: <code>BrowserCoreProxyClient</code> (the web <code>CoreClient</code>) — DONE.</strong>
+New <code>packages/core/src/client/browser-core-proxy-client.ts</code> implementing the full ~60-method
+<code>CoreClient</code> interface over <strong>unsigned, same-origin</strong> <code>fetch</code> to <code>/api/v1/*</code>
+(injectable <code>fetch</code> + <code>baseUrl</code>, default <code>/api/v1</code>; follows the existing
+<code>fetch?: typeof globalThis.fetch</code> + <code>defaultFetch()</code> pattern already used in
+<code>plc_submit</code>/<code>delivery</code>). Wired: identity, vault (query/get/store/list/subjects/delete),
+personas (list/status). Every other method throws a loud, greppable <code>notProxied(name)</code> — a wrong/empty answer
+would be worse than a visible failure during migration. <strong>Explicitly NOT <code>HttpCoreTransport</code></strong>
+(that one signs with Brain's key; the browser holds no key and never talks to core-server directly). Exported from the
+barrel.
+<ul>
+<li><strong>Placement deviation from the spec sketch:</strong> the design listed it as
+<code>services/browser_core_proxy_client.web.ts</code>; I put the pure injectable class in
+<code>packages/core/src/client/</code> alongside the other 3 <code>CoreClient</code> impls (InProcess/Http/Mock). It has no
+browser-only globals (fetch is injected), so it needs no <code>.web.ts</code> gate and is unit-testable in node/jest. The
+<code>Platform.OS==='web'</code> gate stays at the boot call-site (next slice), which is the right seam.</li>
+<li><strong>Tests:</strong> 12 unit (URL/method/body construction per wired method, 404&rarr;null, non-2xx&rarr;throw
+with status+detail, trailing-slash baseUrl, notProxied throws, NEVER signs) + a 6-case
+<strong>browser&harr;brain wire-contract</strong> test (<code>BrowserCoreProxyClient</code> &rarr; real Fastify
+<code>/api/v1/*</code> routes via <code>inject</code> &rarr; <code>MockCoreClient</code>). The contract test is the
+cross-layer guard: client + routes were written to the same spec independently, so a path/param/body drift would pass
+both unit suites yet break at runtime — this catches it. All green; workspace typecheck clean.</li>
+</ul></li>
+<li><strong>2026-06-17 — P1 slice 4 analysis: the boot flip is bigger than a one-line swap.</strong> Read
+<code>boot_service.ts</code> (<code>bootAppNode</code>) + <code>bootstrap.ts</code> (<code>createNode</code>/<code>DinaNode</code>).
+Finding: a <code>DinaNode</code> is heavy — it carries <code>workflowService</code>, <code>orchestrator</code>,
+<code>dispatcher</code>, and <code>runners</code> (events, approvals, taskExpiry, leaseExpiry, bridgeRetry, stagingDrain) that
+<strong>continuously poll Core</strong>, plus MsgBox + MemoryService wiring. On web (thin client) ALL of that runs on the
+brain-server, not the browser — so the web path must NOT call <code>createNode</code> (its pollers would hammer the proxy
+client, and most of its <code>CoreClient</code> calls are <code>notProxied</code>). The design's one-line
+<code>isWeb ? BrowserCoreProxyClient : InProcessTransport</code> sketch understates this: web needs a separate
+<strong>thin-node boot</strong> that returns a minimal <code>DinaNode</code>-shaped shell (real <code>coreClient</code> =
+<code>BrowserCoreProxyClient</code>; no-op/absent runners + subsystems) so the UI's <code>node.coreClient</code> reads work
+while nothing polls in-browser.
+<ul>
+<li><strong>Plan (next slice, fully web-gated so mobile-native is untouched):</strong> (1) a web-only
+<code>boot_web_thin_node.web.ts</code> exporting <code>bootWebThinNode()</code> that fetches <code>/api/v1/identity</code>,
+builds the thin shell around <code>BrowserCoreProxyClient</code>, and returns <code>{ node, degradations: [] }</code> (no
+"in-memory" degradations &rarr; no banner, per design §4 principle 1); (2) gate the caller
+(<code>useNodeBootstrap</code>) on <code>Platform.OS==='web'</code> to use it; (3) audit every <code>node.*</code> consumer
+(runners/workflowService/orchestrator) so the thin shell satisfies what the web UI actually reads, or web-gate those
+screens; (4) <code>UnlockGate</code> web bypass (no local wrapped seed &rarr; skip straight to app) + a "No Home Node
+reachable" screen when <code>/api/v1/identity</code> fails (D2).</li>
+<li><strong>Verification is LIVE, not jest:</strong> this slice is Expo/RN boot orchestration — the real test is the web
+bundle served by a running brain-server+core-server (the <code>dina-nodes</code> test bed) driven in Chrome: boot with no
+banner, identity adopted, vault/persona reads work, "No Home Node" shows when the node is down. jest covers the thin-shell
+unit + the (already-proven) proxy wire contract; Chrome covers the boot.</li>
+</ul></li>
+<li><strong>2026-06-17 — P1 slice 4a: thin-node boot CORE landed (jest-verified part).</strong>
+<ul>
+<li><strong>New <code>apps/mobile/src/services/web_thin_node.ts</code></strong> — <code>bootWebThinNode()</code> +
+<code>makeWebThinNode()</code>. Builds a <code>DinaNode</code>-shaped shell around <code>BrowserCoreProxyClient</code>:
+real <code>coreClient</code>/<code>did</code>/<code>role</code>; <code>start/stop/drainOnce/dispose</code> = no-ops (nothing
+polls in-browser); <code>workflowService/orchestrator/handler/dispatcher/runners.*</code> = a <code>Proxy</code> that
+<strong>throws on any access</strong> (a web path reaching them is a bug — chat/ask proxy to the server). Returns
+<code>degradations: []</code> so the limited-mode banner can't reappear. <code>bootWebThinNode</code> probes
+<code>/api/v1/identity</code>; a null DID or network error throws (caller will show "No Home Node"). <strong>Chosen
+option A</strong> (no-op shell, web-only file) over making <code>DinaNode</code> fields optional — keeps the mobile-native
+<code>DinaNode</code>/<code>createNode</code> type + code byte-identical. Confirmed safe: the ONLY non-boot reader of those
+subsystem fields is <code>boot_capabilities.ts:1021</code> (<code>node.orchestrator</code> in the in-browser agentic tool,
+which never runs on web).</li>
+<li><strong><code>useNodeBootstrap.ts</code></strong> — branch at the boot call: <code>Platform.OS==='web' ?
+bootWebThinNode() : bootAppNode(await buildBootInputs(...))</code>. Web skips <code>buildBootInputs</code> entirely
+(keychain seed + native SQLite are native-only). Native path unchanged (else branch identical to before).</li>
+<li><strong>Tests:</strong> 8 (identity discovery + no degradations, coreClient proxies through the same origin, null-DID
+throws, network-failure propagates, role override, no-op lifecycle, null stagingDrain/localRunner, subsystems throw).
+Mobile-app typecheck clean.</li>
+</ul></li>
+<li><strong>2026-06-17 — P1 slice 4b DONE + LIVE-VERIFIED (Chrome × <code>dina-nodes</code>). P1 complete.</strong>
+<ul>
+<li><strong>Unlock-gate bypass (web).</strong> <code>UnlockGate</code> sets mode <code>'unlocked'</code> on web (no local
+wrapped seed to probe, server vault already unlocked) and skips the seed re-probe that would bounce it to onboarding.
+<code>_layout</code> boots on <code>isWeb || unlocked</code>; <code>unlocked</code> stays <em>false</em> on web by design, so
+the native-only hooks (<code>useAutoLock</code>/<code>useBackupPrompt</code>/<code>useRelayWake</code>/
+<code>useCreditsClaim</code>/<code>useReminderFireWatcher</code>) stay naturally inert there — no auto-lock of a
+non-existent local vault, no seed-backup prompt, no double-fired reminders. (Audit confirmed only <code>_layout</code> +
+<code>UnlockGate</code> read <code>useIsUnlocked</code>; no screen gates content on it.)</li>
+<li><strong>"No Home Node reachable" screen</strong> (<code>no_home_node_screen.tsx</code>, D2) — <code>_layout</code>
+early-returns it on web when <code>bootState.status==='error'</code>, with a Try-again (reload) + the failure detail.</li>
+<li><strong>TWO real integration bugs the mocked jest tests could NOT catch — found ONLY by the live run, now fixed +
+regression-tested:</strong>
+<ol>
+<li><code>GET /v1/vault/list</code> + <code>/v1/vault/subjects</code> were <strong>absent from the Brain service-key
+allowlist</strong> (<code>authz.ts</code>) → 403 "brain not authorized". The MockCoreClient bypassed real authz so unit
+tests were green while the live proxy 403'd. Added both to the brain (+device) allowlist; added explicit allow cases to
+<code>authz_matrix.test.ts</code>.</li>
+<li>The TS core registers <strong>no persona-status route</strong> (only the <code>personas</code> list) and the web UI
+never calls <code>personaStatus</code> — the live call 404'd. Dropped the unnecessary
+<code>/api/v1/personas/:p/status</code> proxy + its <code>BrowserCoreProxyClient</code> method (now
+<code>notProxied</code>); the switcher reads tier+isOpen from <code>personasList</code>. Updated the 3 affected tests.</li>
+</ol></li>
+<li><strong>Live verification (Chrome, web bundle served by a real <code>dina-nodes</code> core+brain):</strong>
+(1) web boots straight into the chat home — <strong>NO "limited mode / no SQLite" banner, NO passphrase prompt</strong>
+(the original reported bug is gone); (2) boot success ⇒ <code>/api/v1/identity</code> adopted; (3) curl proved the full
+proxy chain with real data — <code>vault/store</code>→<code>vault/list</code> round-trips, identity + personas return live
+values; (4) killed the core (brain still serving the bundle) → reload showed the <strong>"No Home Node reachable"</strong>
+screen with the exact <code>BrowserCoreProxyClient: GET /identity failed 502</code> detail; (5) restored core + "Try
+again" → recovered to a clean boot.</li>
+<li><strong>No mobile↔home-node-lite duplication:</strong> shared logic lives in <code>packages/core</code>
+(<code>CoreClient</code> + <code>BrowserCoreProxyClient</code>); mobile contributes only web boot/UI gating, brain-server
+only thin proxy routes. The client↔route mirror is the inherent wire symmetry (same as the existing
+Http/InProcess transports) and is guarded by the <code>browser_proxy_contract</code> test.</li>
+<li><strong>Final gates:</strong> workspace <code>npm run typecheck</code> clean; all affected suites green (packages/core
+client+auth+routes 360, brain-server routes 41, mobile web_thin_node + unlock 30). Nothing committed.</li>
+</ul></li>
+<li><strong>P1 status: COMPLETE.</strong> Web is a durable thin client of the node for identity + vault + personas; the
+banner is gone; the boot is web-gated (mobile-native untouched).</li>
+<li><strong>2026-06-17 — P2: service-config + workflow/approvals proxies DONE + live-verified.</strong> First audited
+which <code>CoreClient</code> methods the <em>browser</em> UI actually calls (excluding <code>boot_capabilities.ts</code> —
+those are agentic tools that run server-side on web). The clean wins (already on <code>coreClient</code>):
+<ul>
+<li><strong>service-config</strong> (<code>useServiceConfigForm</code>): new brain proxy
+<code>routes/service_config.ts</code> (<code>configs</code> list, <code>config</code>/<code>config/:rkey</code> get with
+404→null, put self/per-listing, delete) + un-<code>notProxied</code> the 4 <code>BrowserCoreProxyClient</code> methods.
+Brain already allowlisted for <code>/v1/service/</code>.</li>
+<li><strong>workflow/approvals</strong> (<code>useServiceInbox</code>): new brain proxy <code>routes/workflow.ts</code>
+(<code>tasks</code> list with required kind+state, <code>tasks/:id</code> get 404→null, <code>:id/approve</code>,
+<code>:id/cancel</code>) + un-<code>notProxied</code> those 4 client methods (create/complete/fail stay notProxied —
+agent/server-side). Brain already allowlisted for <code>/v1/workflow/tasks/</code>.</li>
+<li><strong>Tests:</strong> browser-proxy unit (+10 service-config/workflow), brain-proxy route suites
+(service_config 4, workflow 6), and the <code>browser_proxy_contract</code> wire test extended with both domains. All
+green; workspace typecheck clean. Live: restarted the node → <code>/api/v1/service/configs</code> 200,
+<code>service/config</code> self 404, <code>workflow/tasks</code> filter 200 + missing-kind 400.</li>
+</ul></li>
+<li><strong>P2 scope decisions (honest deferrals):</strong>
+<ul>
+<li><strong>contacts/people — DEFERRED (own slice).</strong> The People tab + Add-Contact read in-process module-globals
+(<code>listContacts()</code>, <code>getPeopleRepository()</code>), NOT <code>coreClient</code> — so web needs a refactor to
+route those screens through <code>coreClient</code> + new contact methods, the design's flagged "Contacts gap." Bigger than
+a proxy; tracked separately.</li>
+<li><strong>action-policy — DEFERRED to P3 (security surface).</strong> <code>policy.tsx</code> uses
+<code>getActionPolicy/setActionRisk/deleteActionOverride</code>, but <code>/v1/policy</code> is NOT in the brain allowlist
+(default-deny). On mobile it works via trusted in-process dispatch; the web path would need a brain allowlist entry —
+which would let a compromised brain lower agent risk levels. That broadening must land WITH the P3 access gate (session
+token + CSRF + loopback), not before. Kept <code>notProxied</code>.</li>
+</ul></li>
+<li><strong>2026-06-17 — P3a: web access gate (D4) DONE + live-verified.</strong> New
+<code>brain-server/src/web_access_gate.ts</code>: the brain mints a per-process crypto-random secret, sets it as an
+<code>HttpOnly; SameSite=Strict</code> cookie when it serves <code>/web/*</code>, and an <code>onRequest</code> hook
+requires that cookie on every <code>/api/v1/*</code> request (401 otherwise). Registered first in boot;
+<code>dependencyStatus.webAccessGate</code> = <code>gated</code> | <code>dev_open</code>.
+<ul>
+<li><strong>Why a cookie (vs bearer):</strong> a browser auto-attaches a same-origin cookie to BOTH <code>fetch</code> AND
+<code>EventSource</code>, so the SPA + the SSE reminder stream keep working with <strong>zero client changes</strong> (a
+bearer header would break EventSource, which can't set headers). <code>SameSite=Strict</code> = built-in CSRF defense on
+loopback (no sibling same-site origin); <code>HttpOnly</code> = XSS can't read it; no cookie = other local processes get
+401. Belt-and-suspenders: <code>BrowserCoreProxyClient</code> sets <code>credentials:'same-origin'</code> explicitly
+(also the fetch default).</li>
+<li><strong>Dev/test escape:</strong> <code>DINA_BRAIN_DEV_OPEN=1</code> turns the gate OFF (read from the injectable
+<code>bootServer(env)</code> arg, not <code>process.env</code> directly, so it's test-injectable + defaults to process.env
+in prod). Shipped default = gated. The existing non-loopback bind guard stays as defense-in-depth.</li>
+<li><strong>Tests:</strong> <code>web_access_gate.test.ts</code> (cookie issuance on /web/ with the right attrs,
+no-re-issue when valid, 401 on missing/wrong cookie, 200 with cookie, /healthz ungated, dev-open bypass) via real Fastify
+<code>inject</code>. The 2 scaffold full-boot tests that drive <code>/api/v1/ask</code> now pass
+<code>DINA_BRAIN_DEV_OPEN:'1'</code> (they test route wiring, not the gate). Workspace typecheck clean; 44 brain route/gate
+tests green.</li>
+<li><strong>Live (gate ON, default):</strong> <code>/api/v1/identity</code> <strong>401 without cookie</strong>;
+<code>/web/</code> issues the cookie; same call <strong>200 with cookie</strong>; the Chrome SPA boots normally (cookie
+auto-flow is transparent). Confirms same-machine + cross-origin callers are blocked while the served SPA is unaffected.</li>
+</ul></li>
+<li><strong>2026-06-17 — P3b-1: action-policy un-blocked behind the gate — DONE + live-verified.</strong> Added
+<code>/v1/policy/</code> to the Brain allowlist (the gate is the compensating control for external callers; a compromised
+brain already holds vault access, so this isn't a worst-case escalation) + new brain proxy <code>routes/policy.ts</code>
+(GET actions, PUT <code>:action {risk}</code>, DELETE <code>:action</code>) + un-<code>notProxied</code> the 3
+<code>BrowserCoreProxyClient</code> methods. Tests: browser-proxy unit (+3), <code>policy_routes</code> (5),
+<code>authz_matrix</code> (+2 allow cases), wire-contract (+1 round-trip). Live (gate ON): <code>policy/actions</code> 401
+without cookie / 200 with; PUT set-risk returns the entry. Workspace typecheck clean.</li>
+<li><strong>Next:</strong>
+<ul>
+<li><strong>P3b-2 — provider status (D7 read-side) DONE + live-verified.</strong> Scoping call (judgment): the
+thin-client LLM runs server-side + is env-configured, so D7's core goal "key never in the browser" is already met for
+self-hosted. The right MVP (mirrors D3 hiding change-passphrase on web) is a <strong>read-only, redacted</strong> provider
+status the web AI-providers screen reads instead of holding a browser key. New brain route
+<code>routes/providers.ts</code> &rarr; <code>GET /api/v1/providers/status</code> &rarr; <code>{provider, configured,
+source, model, last4}</code> from the brain's own <code>config.llm</code> (no Core dep); the API key is NEVER returned
+(only last 4 for display, asserted by a hard test guard). Gated by D4. Tests: <code>provider_routes</code> (2, incl. the
+no-leak guard) + scaffold green; workspace typecheck clean. Live (gate ON): <code>providers/status</code> 401 without
+cookie / 200 with &rarr; <code>{provider:"gemini",configured:true,source:"env",last4:"…"}</code>.
+<strong>Deferred (own follow-up):</strong> BYOK WRITE path (POST/DELETE key &rarr; Core encrypted store) + dynamic LLM
+reload — invasive (the LLM runtime is built once at boot from <code>config.apiKey</code>; a runtime key change would need
+the ask-coordinator rebuilt). Plus the web AI-providers screen consuming the status (read-only on web).</li>
+<li><strong><code>personaUnlock</code> — still deferred (server-side access-model decision, not a proxy).</strong> Per the
+"user-via-app = all personas open" principle, the right fix is the gated web SPA (the user) getting access to
+sensitive/locked personas server-side — NOT a passphrase-over-the-wire prompt. That's a lite persona-access-tier change,
+tracked on its own.</li>
+<li><strong>P4</strong> PeerLens publish (server-side build, D6) — the largest remaining chunk (submit route + drainer +
+PDS publisher + status projection). <strong>P5</strong> contacts/people refactor (off module-globals) + notifications +
+D2D quarantine + devices + export + <code>web/SECURITY.md</code>.</li>
+</ul></li>
+</ul></div>
+
+<!-- ===================================================================== -->
+<h2 id="change-passphrase">Change Passphrase <span class="meta">(uncommitted)</span></h2>
+<p class="meta">Settings &rarr; Security &rarr; <strong>Change passphrase</strong> (2026-06-17). The capability existed only as
+dead code (<code>useSecurity.doChangePassphrase</code> + the <code>changePassphrase</code> crypto primitive) but was never
+wired to a screen <em>and</em> never persisted. Built the durable path + UI. mobile: new service 10 tests, new screen 5
+tests, legacy <code>useSecurity</code> suite still green (39 total); tsc clean.</p>
+<div class="item decision"><span class="tag decision">Decisions / invariants</span>
+<ul>
+<li>A passphrase only <strong>wraps the master seed</strong> (Argon2id KEK &rarr; AES-256-GCM). Changing it is a re-wrap of
+the SAME seed, so every persona DEK (HKDF-derived from the seed) is untouched and all vault data keeps decrypting — no
+content re-encryption, no migration. The 24-word recovery phrase (which encodes the seed, not the passphrase) is unchanged.</li>
+<li>Durable order (the bug the legacy hook had): load wrapped seed &rarr; re-wrap (wrong current passphrase fails the GCM
+tag here, writes NOTHING) &rarr; <code>saveWrappedSeed</code> (the unlock source of truth) &rarr; <em>then</em> refresh the
+auto-unlock cache. Seed-first so the new passphrase is live even if the cache write fails.</li>
+<li>"Unlock automatically" users get <code>saveAutoPassphrase(new)</code> so silent boot keeps working; manual-mode users
+get nothing cached. The cache refresh is <strong>best-effort</strong> (try/caught): a failure can't report the change as
+failed — worst case the gate falls back to a one-time manual prompt and re-caches.</li>
+<li>Generic wrong-passphrase surface ("That current passphrase is incorrect.") — no oracle about which step failed, matching
+the recovery-phrase + unlock gates.</li>
+</ul></div>
+<div class="item tradeoff"><span class="tag tradeoff">Implementation</span>
+<ul>
+<li>New durable service <code>apps/mobile/src/services/change_passphrase.ts</code> (<code>changeVaultPassphrase</code>) over
+the real <code>wrapped_seed_store</code> + <code>startup_preferences</code> — NOT the in-memory <code>useSecurity</code> hook
+(which is left in place for its tests + reused pure helpers <code>validatePassphrase</code>/<code>getPassphraseStrength</code>,
+now annotated as legacy).</li>
+<li>New screen <code>apps/mobile/app/change-passphrase.tsx</code> (current/new/confirm via <code>PassphraseField</code> +
+strength meter + success state) registered as a drill-down route in <code>_layout.tsx</code>; row added to Settings &rarr;
+SECURITY under "View recovery phrase".</li>
+<li>Client-side guards (empty current, new&ne;confirm) short-circuit before the service; the service re-validates + rejects
+no-op (new == current) before any keychain touch.</li>
+</ul></div>
+<div class="item deviation"><span class="tag deviation">Not yet usable in the running web build</span>
+<ul>
+<li>The Home-Node-Lite web app serves a <strong>pre-built</strong> bundle (<code>apps/home-node-lite/web/dist</code>, last
+exported 2026-06-15) — the new row won't appear there until <code>cd apps/mobile &amp;&amp; npm run web:export</code> rebuilds
+it. Instant on the iOS dev-client sim via Metro hot reload.</li>
+</ul></div>
+
+<!-- ===================================================================== -->
 <h2 id="composer-modes">Explicit Composer Modes <span class="meta">(uncommitted)</span></h2>
 <p class="meta">Spec: <code>docs/COMPOSER_MODES_DESIGN.md</code> — explicit composer chips
 <strong>Ask · Remember · Task · Services · Reviews · Talk</strong> (2026-06-16). Brain + mobile shipped, deep-reviewed, a

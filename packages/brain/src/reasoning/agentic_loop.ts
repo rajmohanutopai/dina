@@ -525,6 +525,21 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
           outcome.success === true ? 'success' : ((outcome as { code?: string }).code ?? 'failure'),
         outcomeLen: JSON.stringify(outcome).length,
       });
+      // Opt-in, PII-safe verbose tool I/O for debugging service routing
+      // (DINA_AGENTIC_DEBUG=1; off by default). ONLY the two public
+      // service-DISCOVERY tools get args + a truncated outcome preview —
+      // their I/O is AppView directory data (capability list / public
+      // provider profiles), never vault content. Every other tool stays
+      // metadata-only above so PII never reaches stdout (CLAUDE.md).
+      if (
+        process.env.DINA_AGENTIC_DEBUG === '1' &&
+        (call.name === 'search_capabilities' || call.name === 'search_provider_services')
+      ) {
+        console.log('[agentic_debug]', call.name, {
+          args: call.arguments,
+          outcomePreview: JSON.stringify(outcome).slice(0, 1500),
+        });
+      }
       toolLog.push(buildToolLogEntry(call.name, call.arguments, outcome));
 
       if (isApprovalRequired(outcome)) {

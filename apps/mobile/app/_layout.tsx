@@ -54,6 +54,7 @@ import { markNotificationRead } from '@dina/brain/notifications';
 import { DinaWordmark } from '../src/components/DinaWordmark';
 import { GuidedDemoGate } from '../src/components/guided_demo/GuidedDemoGate';
 import { UnlockGate } from '../src/components/unlock_gate';
+import { NoHomeNodeScreen } from '../src/components/no_home_node_screen';
 import { FEATURES, FeatureIcon, type FeatureKey } from '../src/features';
 import { useGuidedDemoActive } from '../src/guided_demo/active_context';
 import { useAutoLock } from '../src/hooks/useAutoLock';
@@ -483,8 +484,14 @@ export default function RootLayout() {
   // build never picks up Bus 42 demo state by accident (findings
   // #1, #15).
   const demoMode = process.env.EXPO_PUBLIC_DINA_DEMO === '1';
+  // WEB = thin client: the server node owns (and has already unlocked) the
+  // vault, so there is no local unlock step — boot as soon as the app
+  // mounts. `unlocked` stays false on web (no local seed), which keeps the
+  // native-only side-effect hooks below (auto-lock, backup prompt, relay
+  // wake, credits claim, reminder fire-watcher) naturally inert there.
+  const isWeb = Platform.OS === 'web';
   const bootState = useNodeBootstrap({
-    enabled: unlocked,
+    enabled: isWeb || unlocked,
     overrides: { demoMode },
   });
 
@@ -662,6 +669,14 @@ export default function RootLayout() {
   // native splash screen on first launch.
   if (!iconsFontLoaded) {
     return <View style={{ flex: 1, backgroundColor: colors.bgPrimary }} />;
+  }
+
+  // WEB boot failure = the brain-server is unreachable (or the node has no
+  // identity yet). There is no local node to fall back to, so show the
+  // dedicated "No Home Node reachable" screen with a retry instead of the
+  // native "Dina failed to start" banner over an empty tab tree (D2).
+  if (isWeb && bootState.status === 'error') {
+    return <NoHomeNodeScreen detail={bootState.error?.message} />;
   }
 
   return (
@@ -1076,6 +1091,16 @@ export default function RootLayout() {
                 title: 'Recovery phrase',
                 // Drill-down from Settings → Security. Highest-stakes
                 // reveal in the app — never a tab target.
+                href: null,
+
+                headerLeft: renderHeaderBackButton,
+              }}
+            />
+            <Tabs.Screen
+              name="change-passphrase"
+              options={{
+                title: 'Change passphrase',
+                // Drill-down from Settings → Security. Never a tab target.
                 href: null,
 
                 headerLeft: renderHeaderBackButton,

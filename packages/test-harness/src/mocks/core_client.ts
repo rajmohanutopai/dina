@@ -24,6 +24,7 @@ import { WorkflowConflictError } from '@dina/core';
 import type {
   CoreClient,
   CoreHealth,
+  NodeIdentity,
   VaultQuery,
   VaultQueryResult,
   VaultQueryItem,
@@ -81,6 +82,9 @@ import type {
   ActionPolicyEntry,
   ActionPolicyResult,
   RiskLevel,
+  DeviceRole,
+  PairedDevice,
+  PairInitiateResult,
   ServiceOfferView,
 } from '@dina/core';
 
@@ -112,6 +116,13 @@ export class MockCoreClient implements CoreClient {
     status: 'ok',
     did: 'did:key:mock-core',
     version: '0.0.0-test',
+  };
+  // Representative PDS-provisioned node: a did:plc HAS a public handle.
+  // (A did:key node would carry `handle: null` — keep this fixture
+  // internally consistent so it never models a handle on a keyless DID.)
+  identityResult: NodeIdentity = {
+    did: 'did:plc:mock-core',
+    handle: 'mock.test-pds.dinakernel.com',
   };
   vaultQueryResult: VaultQueryResult = { items: [], count: 0 };
   vaultGetResult: VaultQueryItem | null = null;
@@ -254,6 +265,13 @@ export class MockCoreClient implements CoreClient {
    *  filtered by providerDid / capability at call time. */
   serviceOffersResult: ServiceOfferView[] = [];
   actionPolicyResult: ActionPolicyResult = { actions: [] };
+  pairInitiateResult: PairInitiateResult = {
+    code: 'MOCKCODE',
+    expiresAt: 1776700300,
+    deviceName: 'mock-agent',
+    role: 'agent',
+  };
+  pairedDevicesResult: PairedDevice[] = [];
 
   /**
    * In-memory reminder store backing `reminderCreate` /
@@ -304,6 +322,10 @@ export class MockCoreClient implements CoreClient {
 
   async healthz(): Promise<CoreHealth> {
     return this.dispatch('healthz', [], () => this.healthResult);
+  }
+
+  async identity(): Promise<NodeIdentity> {
+    return this.dispatch('identity', [], () => this.identityResult);
   }
 
   async vaultQuery(persona: string, query: VaultQuery): Promise<VaultQueryResult> {
@@ -676,6 +698,18 @@ export class MockCoreClient implements CoreClient {
 
   async deleteActionOverride(action: string): Promise<void> {
     return this.dispatch('deleteActionOverride', [action], () => undefined);
+  }
+
+  async pairInitiate(deviceName: string, role: DeviceRole): Promise<PairInitiateResult> {
+    return this.dispatch('pairInitiate', [deviceName, role], () => ({
+      ...this.pairInitiateResult,
+      deviceName,
+      role,
+    }));
+  }
+
+  async listPairedDevices(): Promise<PairedDevice[]> {
+    return this.dispatch('listPairedDevices', [], () => this.pairedDevicesResult);
   }
 
   async cancelWorkflowTask(id: string, reason = ''): Promise<WorkflowTask> {

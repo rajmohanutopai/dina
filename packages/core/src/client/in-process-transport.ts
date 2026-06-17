@@ -26,6 +26,7 @@ import { WorkflowConflictError } from './core-client';
 import type {
   CoreClient,
   CoreHealth,
+  NodeIdentity,
   VaultQuery,
   VaultQueryResult,
   VaultQueryItem,
@@ -83,6 +84,9 @@ import type {
   ActionPolicyEntry,
   ActionPolicyResult,
   RiskLevel,
+  DeviceRole,
+  PairedDevice,
+  PairInitiateResult,
   ServiceOfferView,
 } from './core-client';
 import type { CoreRouter, CoreRequest, CoreResponse } from '../server/router';
@@ -171,6 +175,11 @@ export class InProcessTransport implements CoreClient {
   async healthz(): Promise<CoreHealth> {
     const res = await this.router.handle(blankRequest({ method: 'GET', path: '/healthz' }));
     return expectOk<CoreHealth>(res, 'healthz');
+  }
+
+  async identity(): Promise<NodeIdentity> {
+    const res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/identity' }));
+    return expectOk<NodeIdentity>(res, 'identity');
   }
 
   async vaultQuery(persona: string, query: VaultQuery): Promise<VaultQueryResult> {
@@ -1123,4 +1132,26 @@ export class InProcessTransport implements CoreClient {
     }
   }
 
+  async pairInitiate(deviceName: string, role: DeviceRole): Promise<PairInitiateResult> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'POST',
+        path: '/v1/pair/initiate',
+        body: { device_name: deviceName, role },
+      }),
+    );
+    const ok = expectOk<{ code: string; expires_at: number; device_name: string; role: string }>(
+      res,
+      'pairInitiate',
+    );
+    return { code: ok.code, expiresAt: ok.expires_at, deviceName: ok.device_name, role: ok.role };
+  }
+
+  async listPairedDevices(): Promise<PairedDevice[]> {
+    const res = await this.router.handle(
+      blankRequest({ method: 'GET', path: '/v1/devices/list' }),
+    );
+    const ok = expectOk<{ devices?: PairedDevice[] }>(res, 'listPairedDevices');
+    return Array.isArray(ok.devices) ? ok.devices : [];
+  }
 }

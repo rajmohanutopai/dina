@@ -1,17 +1,31 @@
 /**
- * Device pairing route — POST /v1/devices registers a paired device
- * (role in rich/thin/cli/agent). The list/get/delete helpers were
- * speculative ports; paired devices are managed via the registry
- * module directly.
+ * Device routes:
+ *   - POST /v1/devices       registers a paired device (rich/thin/cli/agent).
+ *   - GET  /v1/devices/list  read-only list of paired devices. Backs the
+ *                            web "Agents → CONNECTED (n)" view (mobile reads
+ *                            the registry in-process). Read-only, so it's
+ *                            allowlisted for `brain` (the more specific
+ *                            prefix wins over the admin-only `/v1/devices`).
  */
 
-import type { CoreRouter } from '../router';
-import { registerDevice, type DeviceRole } from '../../devices/registry';
+import type { CoreResponse, CoreRouter } from '../router';
+import { listDevices, registerDevice, type DeviceRole } from '../../devices/registry';
 import { registerDevice as registerDeviceAuth } from '../../auth/caller_type';
 
 const VALID_ROLES = new Set<string>(['rich', 'thin', 'cli', 'agent']);
 
 export function registerDevicesRoutes(router: CoreRouter): void {
+  // GET /v1/devices/list — read-only paired-device list. Registered before
+  // the POST so the more-specific `/v1/devices/list` authz prefix resolves
+  // first (brain-readable) ahead of the admin-only `/v1/devices`.
+  router.get(
+    '/v1/devices/list',
+    async (): Promise<CoreResponse> => ({
+      status: 200,
+      body: { devices: listDevices() },
+    }),
+  );
+
   router.post('/v1/devices', async (req) => {
     const body = (req.body as Record<string, unknown> | undefined) ?? {};
     const name = typeof body.name === 'string' ? body.name : '';

@@ -41,6 +41,7 @@ import {
   HEALTHZ_PATH,
   registerService,
   setNodeDID,
+  setNodeHandle,
   type CoreRouter,
 } from '@dina/core';
 import { listServiceConfigs } from '@dina/core';
@@ -317,6 +318,21 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       elapsedMs: Date.now() - pdsStartGlobal,
       pendingReason: 'DINA_PDS_PROVISION not set — using local did:key identity',
     });
+    // Publish that locally-derived did:key as the node identity so device
+    // pairing (`generatePairingCode` needs nodeDID) AND `GET /v1/identity`
+    // both work on a plain `npm start` core-server — the PDS branch below
+    // is the ONLY other place `setNodeDID` is called, so without this a
+    // non-PDS node reports `{did:null}` and a thin web client can never
+    // adopt it (web thin-client §4.2). Same DID resolution the MsgBox
+    // connect uses (env override, else derived did:key); handle is null
+    // because a did:key node has no public PDS handle. Wrapped-seed boot
+    // has no materialized seed yet, so it defers until the seed is unsealed.
+    if (identity?.kind === 'loaded_convenience' || identity?.kind === 'generated') {
+      const derivations = deriveIdentity({ masterSeed: identity.seed });
+      const localDID = config.msgbox.homeNodeDid ?? deriveDIDKey(derivations.root.publicKey);
+      setNodeDID(localDID);
+      setNodeHandle(null);
+    }
   }
   if (pdsProvisionEnabled) {
     const pdsStart = Date.now();
@@ -352,6 +368,10 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         // pairing devices know which home node they're joining. With
         // a PDS-provisioned did:plc, that's our canonical identity.
         setNodeDID(pdsIdentity.did);
+        // Publish the human-readable handle alongside the DID so a thin
+        // web client can show + adopt this node's identity via
+        // `GET /v1/identity` without re-onboarding (web thin-client §4.2).
+        setNodeHandle(pdsIdentity.handle);
       } catch (err) {
         // FAIL CLOSED — never fall back to a did:key identity. When the
         // operator opted into provisioning (`DINA_PDS_PROVISION=1` +

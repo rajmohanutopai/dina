@@ -106,6 +106,15 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
   // can create an identity; advanced endpoint overrides live under
   // Settings → Infrastructure.
   useEffect(() => {
+    // WEB = thin client: the vault lives on the server node and is already
+    // unlocked. There is no local wrapped seed to probe and no passphrase
+    // to enter, so render the app straight away (web thin-client design
+    // §4.2). The boot itself + a "No Home Node reachable" fallback are
+    // owned by `_layout` via `useNodeBootstrap`/`bootWebThinNode`.
+    if (Platform.OS === 'web') {
+      setMode('unlocked');
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -163,6 +172,11 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
   }, []);
 
   useEffect(() => {
+    // WEB stays in the fixed 'unlocked' mode set on mount — there is no
+    // local seal/lock lifecycle on a thin client (server owns the vault),
+    // so skip the seed re-probe that would otherwise bounce web to
+    // 'onboarding' when `useIsUnlocked()` reads false.
+    if (Platform.OS === 'web') return;
     if (unlocked) {
       setMode('unlocked');
       // Re-arm the auto-unlock effect for a FUTURE re-lock. autoRanRef is a

@@ -31,6 +31,7 @@ import { WorkflowConflictError } from './core-client';
 import type {
   CoreClient,
   CoreHealth,
+  NodeIdentity,
   VaultQuery,
   VaultQueryResult,
   VaultQueryItem,
@@ -88,6 +89,9 @@ import type {
   ActionPolicyEntry,
   ActionPolicyResult,
   RiskLevel,
+  DeviceRole,
+  PairedDevice,
+  PairInitiateResult,
   ServiceOfferView,
 } from './core-client';
 
@@ -169,6 +173,12 @@ export class HttpCoreTransport implements CoreClient {
 
   async healthz(): Promise<CoreHealth> {
     return this.call<CoreHealth>('GET', '/healthz', undefined, undefined, 'healthz');
+  }
+
+  async identity(): Promise<NodeIdentity> {
+    // `/v1/identity` is a public route; the signed headers are accepted
+    // but ignored. We still go through `call()` for uniform error mapping.
+    return this.call<NodeIdentity>('GET', '/v1/identity', undefined, undefined, 'identity');
   }
 
   async vaultQuery(persona: string, query: VaultQuery): Promise<VaultQueryResult> {
@@ -1067,6 +1077,33 @@ export class HttpCoreTransport implements CoreClient {
     if (res.status !== 204 && res.status !== 200) {
       throw new Error(`deleteActionOverride(${action}) failed: ${res.status}`);
     }
+  }
+
+  async pairInitiate(deviceName: string, role: DeviceRole): Promise<PairInitiateResult> {
+    const raw = await this.call<{ code: string; expires_at: number; device_name: string; role: string }>(
+      'POST',
+      '/v1/pair/initiate',
+      undefined,
+      { device_name: deviceName, role },
+      'pairInitiate',
+    );
+    return {
+      code: raw.code,
+      expiresAt: raw.expires_at,
+      deviceName: raw.device_name,
+      role: raw.role,
+    };
+  }
+
+  async listPairedDevices(): Promise<PairedDevice[]> {
+    const raw = await this.call<{ devices?: PairedDevice[] }>(
+      'GET',
+      '/v1/devices/list',
+      undefined,
+      undefined,
+      'listPairedDevices',
+    );
+    return Array.isArray(raw.devices) ? raw.devices : [];
   }
 
   // -------------------------------------------------------------------------

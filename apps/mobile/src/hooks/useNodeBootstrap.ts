@@ -23,6 +23,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 
 import { buildBootInputs } from '../services/boot_capabilities';
 import {
@@ -31,6 +32,7 @@ import {
   type BootDegradation,
   type BootServiceInputs,
 } from '../services/boot_service';
+import { bootWebThinNode } from '../services/web_thin_node';
 
 import type { ProviderType } from '../ai/provider';
 import type { DinaNode , NodeRole } from '../services/bootstrap';
@@ -186,8 +188,15 @@ export function useNodeBootstrap(options: NodeBootstrapOptions = {}): NodeBootst
 
       setState((s) => ({ ...s, status: 'booting', error: null }));
       try {
-        const inputs = await buildBootInputs(overridesRef.current ?? {});
-        const { node, degradations } = await bootAppNode(inputs);
+        // WEB = thin client: the browser runs no node (no seed, no
+        // SQLite, no in-browser Brain). It wraps a BrowserCoreProxyClient
+        // that proxies to the same-origin brain-server. `buildBootInputs`
+        // (keychain seed + native SQLite) is native-only, so the web path
+        // skips it entirely. Mobile-native is untouched (the else branch).
+        const { node, degradations } =
+          Platform.OS === 'web'
+            ? await bootWebThinNode()
+            : await bootAppNode(await buildBootInputs(overridesRef.current ?? {}));
         if (disposed) {
           await node.dispose();
           return;

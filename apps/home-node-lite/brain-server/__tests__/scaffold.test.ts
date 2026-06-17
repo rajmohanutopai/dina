@@ -278,6 +278,9 @@ describe('brain-server — boot (task 5.1)', () => {
         DINA_BRAIN_PORT: '0',
         DINA_BRAIN_LOG_LEVEL: 'silent',
         DINA_BRAIN_PRETTY_LOGS: 'false',
+        // Route-wiring test drives /api/v1/ask directly (no SPA cookie);
+        // run the web access gate open, as dev/test does (design D4).
+        DINA_BRAIN_DEV_OPEN: '1',
       },
       { askCoordinator: coordinator },
     );
@@ -372,6 +375,9 @@ describe('brain-server — boot (task 5.1)', () => {
           DINA_BRAIN_PORT: '0',
           DINA_BRAIN_LOG_LEVEL: 'silent',
           DINA_BRAIN_PRETTY_LOGS: 'false',
+          // Route-wiring test drives /api/v1/ask directly (no SPA cookie);
+          // run the web access gate open, as dev/test does (design D4).
+          DINA_BRAIN_DEV_OPEN: '1',
           DINA_CORE_URL: 'http://core.example:8100/',
           DINA_SERVICE_KEY_DIR: keyDir,
         },

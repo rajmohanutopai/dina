@@ -58,6 +58,19 @@ export const NO_REVIEWS_ANSWER = "I don't have any network reviews for that yet.
 export const REVIEWS_OUTAGE_ANSWER =
   "I couldn't reach the review network just now, so I can't pull reviews for that yet. Please try again in a moment.";
 
+/**
+ * A forced lane ran out of iterations / tool calls before it could answer
+ * (`max_iterations` / `max_tool_calls`). Deliberately NOT framed as "no such
+ * capability" — discovery may well have SUCCEEDED and the model simply failed
+ * to converge (it kept searching instead of deciding). So we give an honest,
+ * lane-framed "couldn't finish" message rather than the generic
+ * "Try a simpler query" string, and we do NOT mint a missing_capability card.
+ */
+export const SERVICES_INCOMPLETE_ANSWER =
+  "I couldn't finish that service request in time. Try adding a detail like a date, time, or location — or there may not be a matching service yet.";
+export const REVIEWS_INCOMPLETE_ANSWER =
+  "I couldn't pull together reviews for that in time. Try a more specific product, place, or business.";
+
 // ── Routing blocks (system-prompt lane instructions) ────────────────────────
 /**
  * Provider-services routing guidance. Imperative for the forced Services lane;
@@ -69,6 +82,8 @@ export const PROVIDER_SERVICES_ROUTING_BLOCK = `Provider-services routing — pi
 Path 1: the user's OWN providers and OWN records ("my dentist", "is my appointment confirmed", "where is my order/delivery", "my lawyer", "my accountant"). Anything about the user's EXISTING appointment, order, delivery, or account is subject-scoped: it lives with a provider the user already has a relationship with, and such capabilities are deliberately NOT generically discoverable. Call find_preferred_provider(category) FIRST. Categories are lowercase single tokens: dental, legal, tax, medical, automotive, plumbing, electrical, etc. If it returns candidates, pass the contact_did + a matching capability to query_service.
 
 Path 2: finding a NEW public-facing service ("bus 42 to Castro", "nearest clinic", "find me a plumber quote"). There is no "my X" relationship here. Skip find_preferred_provider. DISCOVER the capability — do NOT guess a capability string. Call search_capabilities(intent) with the user's question; it returns every GENERICALLY-DISCOVERABLE canonical capability that has a provider, each with a description. Subject-scoped capabilities (appointment/order/delivery status, homework, device status) are intentionally absent from that list — if the question is about the user's own records, use Path 1 instead. The list is NOT pre-filtered to your intent — read the descriptions and pick ONLY the capability that genuinely matches. Then geocode (if a place is mentioned) + search_provider_services(capability, lat, lng, q) + query_service. Only after BOTH search_capabilities has no genuine match AND find_preferred_provider has no candidates should you tell the user there is no Dina service for that yet — do NOT pick an unrelated capability, do NOT invent one, do NOT search blind.
+
+DECIDE after discovery — do not loop. Once search_provider_services has returned, immediately do exactly ONE of these and then STOP searching: (a) call query_service on the best-matching provider; or (b) if the capability needs a parameter you do not have (e.g. a date or time to book a slot), ask the user ONE short clarifying question; or (c) if none of the returned providers genuinely matches the request, tell the user plainly there is no clearly-matching service. Never repeat a search you have already run with the same arguments, and never fall back to vault_search / list_personas / find_person once discovery is done — those cannot find an external service. Running out of steps is a failure; commit to one of (a)/(b)/(c) instead.
 
 Fall-through works BOTH ways: if Path 1 returns no candidates for a find-me-a-provider question, continue with search_capabilities; if a Path 2 question turns out to be about the user's own appointment/order/delivery, try find_preferred_provider before giving the no-service answer.`;
 
@@ -93,6 +108,21 @@ export function isReviewsLane(forcedSources?: readonly IntentSource[]): boolean 
 /** True when a forced lane is in effect (Services or Reviews). */
 export function isForcedLane(forcedSources?: readonly IntentSource[]): boolean {
   return isServicesLane(forcedSources) || isReviewsLane(forcedSources);
+}
+
+/**
+ * Lane-appropriate message for when a forced lane bails on the step / tool
+ * budget (`max_iterations` / `max_tool_calls`) without answering. Returns `null`
+ * for a non-forced (plain Ask) turn, so the caller keeps the generic failure.
+ * Keeps a forced Services/Reviews turn from ever dead-ending on the generic
+ * "Try a simpler query" text (release bug: the budget bail skipped the lane gate).
+ */
+export function forcedLaneIncompleteAnswer(
+  forcedSources?: readonly IntentSource[],
+): string | null {
+  if (isServicesLane(forcedSources)) return SERVICES_INCOMPLETE_ANSWER;
+  if (isReviewsLane(forcedSources)) return REVIEWS_INCOMPLETE_ANSWER;
+  return null;
 }
 
 /**
