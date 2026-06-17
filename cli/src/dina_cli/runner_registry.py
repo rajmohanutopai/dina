@@ -65,5 +65,12 @@ def _auto_register() -> None:
     register_runner("gemini", GeminiRunner)
     register_runner("openclaw-cli", OpenClawCliRunner)
 
+    # Dummy runner — deterministic approval-gate diagnostic (no external
+    # binary). `dina agent-daemon --runner dummy` logs the exact delegated
+    # task + issues one sensitive (health) ask, so a missing approval can be
+    # isolated to delegation-leak vs gate vs device-UI. See dummy_runner.py.
+    from .dummy_runner import DummyRunner
+    register_runner("dummy", DummyRunner)
+
 
 _auto_register()
