@@ -23,6 +23,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  type GestureResponderEvent,
 } from 'react-native';
 
 import { ACTIONS, resolveUserChip } from '../src/components/composer_modes';
@@ -41,6 +42,7 @@ import { InlineReviewDraftCard } from '../src/components/InlineReviewDraftCard';
 import { InlineServiceApprovalCard } from '../src/components/InlineServiceApprovalCard';
 import { InlineServiceQueryCard } from '../src/components/InlineServiceQueryCard';
 import { InlineVaultReadApprovalCard } from '../src/components/InlineVaultReadApprovalCard';
+import { MessageActionMenu } from '../src/components/MessageActionMenu';
 import { GUIDED_DEMO_LIST_CLEARANCE, useGuidedDemoActive } from '../src/guided_demo/active_context';
 import { useLiveThread, addSystemNotification } from '../src/hooks/useChatThread';
 import { useCredits } from '../src/hooks/useCredits';
@@ -184,6 +186,11 @@ export default function ChatScreen() {
   // Mode-switch popover (opened by tapping the pill once a mode is
   // active). Replaces the legacy chip bar above the input.
   const [modePopoverOpen, setModePopoverOpen] = useState(false);
+  // Deep-press (long-press) action menu for a chat bubble — the text to act on
+  // plus the screen-space press point so the floating menu anchors to it.
+  const [actionMenu, setActionMenu] = useState<{ content: string; x: number; y: number } | null>(
+    null,
+  );
   // Recovery-phrase backup is no longer surfaced as a passive banner here —
   // it's a deferred, value-proportionate page popped by useBackupPrompt once
   // the vault is worth protecting (see services/backup_prompt). Settings →
@@ -242,6 +249,43 @@ export default function ChatScreen() {
   const onTalk = useCallback(() => {
     router.push({ pathname: '/people', params: { pick: 'talk' } });
   }, [router]);
+
+  // Deep-press on a chat bubble → open the action menu anchored to the press
+  // point. Captures the visible text so Copy acts on exactly what's on screen.
+  const onBubbleLongPress = useCallback((content: string, evt: GestureResponderEvent) => {
+    if (content.trim() === '') return;
+    const { pageX, pageY } = evt.nativeEvent;
+    setActionMenu({ content, x: pageX, y: pageY });
+    // Fire a subtle Taptic "tic" the moment the menu pops, matching the iOS
+    // context-menu feel (the deep-press confirmation in your finger). Lazy +
+    // guarded like clipboard: the expo-haptics native module ships with the next
+    // dev-client / EAS build; until then it's a clean no-op (and the simulator
+    // has no haptics regardless — this is felt on a real device).
+    void (async () => {
+      try {
+        const Haptics = await import('expo-haptics');
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      } catch {
+        // haptics native module not in this build yet — no-op
+      }
+    })();
+  }, []);
+
+  // Copy the long-pressed message to the clipboard. expo-clipboard is loaded
+  // LAZILY (dynamic import) on the Copy tap, not at module load: its native
+  // module ships with the next dev-client / EAS build, and a top-level import
+  // would throw at screen load on an older build. The whole thing is guarded so
+  // a missing native module just makes Copy a clean no-op until the rebuild.
+  const copyMessage = useCallback(async (text: string) => {
+    setActionMenu(null);
+    if (text === '') return;
+    try {
+      const Clipboard = await import('expo-clipboard');
+      await Clipboard.setStringAsync(text);
+    } catch {
+      // clipboard native module not in this build yet — no-op
+    }
+  }, []);
 
   const renderMessage = useCallback(({ item }: { item: UiMessage }) => {
     // Skip empty Dina rows. A resolved ask placeholder is blanked when a
@@ -417,12 +461,16 @@ export default function ChatScreen() {
     }
 
     return (
-      <View
+      <Pressable
         // E2E: a stable, type-keyed handle for transient chat bubbles so
         // tests can assert "a Dina/user message appeared" without matching
         // on volatile LLM text. `chat-msg-dina` / `chat-msg-user` /
         // `chat-msg-system`. Cards use `chat-card-<type>` (see Inline*Card).
         testID={`chat-msg-${fromD2DPeer ? 'd2d' : item.displayType}`}
+        // Deep-press opens the action menu (Copy). onLongPress only — a normal
+        // tap does nothing, so list scrolling is unaffected.
+        onLongPress={(e) => onBubbleLongPress(displayContent, e)}
+        delayLongPress={300}
         style={[
           styles.messageBubble,
           isUser ? styles.userBubble : styles.dinaBubble,
@@ -463,9 +511,9 @@ export default function ChatScreen() {
         <Text style={[styles.timestamp, isUser && styles.timestampUser]}>
           {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </Text>
-      </View>
+      </Pressable>
     );
-  }, []);
+  }, [onBubbleLongPress]);
 
   return (
     <KeyboardAvoidingView
@@ -763,6 +811,23 @@ export default function ChatScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Deep-press (long-press) action menu for a chat bubble — Copy. Floats
+          above the list, anchored to the press point; backdrop tap dismisses. */}
+      <MessageActionMenu
+        anchor={actionMenu}
+        actions={[
+          {
+            key: 'copy',
+            label: 'Copy',
+            icon: 'copy-outline',
+            onPress: () => {
+              void copyMessage(actionMenu?.content ?? '');
+            },
+          },
+        ]}
+        onDismiss={() => setActionMenu(null)}
+      />
     </KeyboardAvoidingView>
   );
 }

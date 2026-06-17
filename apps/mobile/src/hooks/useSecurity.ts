@@ -99,10 +99,15 @@ export function validatePassphrase(passphrase: string): PassphraseValidation {
 }
 
 /**
- * Change the passphrase.
+ * Change the passphrase (LEGACY, in-memory only).
  *
- * Unwraps the seed with old passphrase, re-wraps with new.
- * Returns the new wrapped seed on success, or an error message on failure.
+ * Unwraps the seed with old passphrase, re-wraps with new — but only
+ * updates the in-memory `currentWrappedSeed`; it does NOT persist the
+ * result and depends on `initSecurity` having been called (which nothing
+ * does). The wired, durable path the UI calls is
+ * `changeVaultPassphrase` in `services/change_passphrase.ts`, which
+ * loads from + saves to the real wrapped-seed store and refreshes the
+ * auto-unlock cache. Prefer that; this is kept for its existing tests.
  */
 export async function doChangePassphrase(
   oldPassphrase: string,

@@ -33,6 +33,45 @@ goals trimmed 2026-06-16: Service Capability Catalog, PeerLens Publish Jobs, PUB
 prompt-provider + salon demo, Starter Credits.)</p>
 
 <!-- ===================================================================== -->
+<h2 id="change-passphrase">Change Passphrase <span class="meta">(uncommitted)</span></h2>
+<p class="meta">Settings &rarr; Security &rarr; <strong>Change passphrase</strong> (2026-06-17). The capability existed only as
+dead code (<code>useSecurity.doChangePassphrase</code> + the <code>changePassphrase</code> crypto primitive) but was never
+wired to a screen <em>and</em> never persisted. Built the durable path + UI. mobile: new service 10 tests, new screen 5
+tests, legacy <code>useSecurity</code> suite still green (39 total); tsc clean.</p>
+<div class="item decision"><span class="tag decision">Decisions / invariants</span>
+<ul>
+<li>A passphrase only <strong>wraps the master seed</strong> (Argon2id KEK &rarr; AES-256-GCM). Changing it is a re-wrap of
+the SAME seed, so every persona DEK (HKDF-derived from the seed) is untouched and all vault data keeps decrypting — no
+content re-encryption, no migration. The 24-word recovery phrase (which encodes the seed, not the passphrase) is unchanged.</li>
+<li>Durable order (the bug the legacy hook had): load wrapped seed &rarr; re-wrap (wrong current passphrase fails the GCM
+tag here, writes NOTHING) &rarr; <code>saveWrappedSeed</code> (the unlock source of truth) &rarr; <em>then</em> refresh the
+auto-unlock cache. Seed-first so the new passphrase is live even if the cache write fails.</li>
+<li>"Unlock automatically" users get <code>saveAutoPassphrase(new)</code> so silent boot keeps working; manual-mode users
+get nothing cached. The cache refresh is <strong>best-effort</strong> (try/caught): a failure can't report the change as
+failed — worst case the gate falls back to a one-time manual prompt and re-caches.</li>
+<li>Generic wrong-passphrase surface ("That current passphrase is incorrect.") — no oracle about which step failed, matching
+the recovery-phrase + unlock gates.</li>
+</ul></div>
+<div class="item tradeoff"><span class="tag tradeoff">Implementation</span>
+<ul>
+<li>New durable service <code>apps/mobile/src/services/change_passphrase.ts</code> (<code>changeVaultPassphrase</code>) over
+the real <code>wrapped_seed_store</code> + <code>startup_preferences</code> — NOT the in-memory <code>useSecurity</code> hook
+(which is left in place for its tests + reused pure helpers <code>validatePassphrase</code>/<code>getPassphraseStrength</code>,
+now annotated as legacy).</li>
+<li>New screen <code>apps/mobile/app/change-passphrase.tsx</code> (current/new/confirm via <code>PassphraseField</code> +
+strength meter + success state) registered as a drill-down route in <code>_layout.tsx</code>; row added to Settings &rarr;
+SECURITY under "View recovery phrase".</li>
+<li>Client-side guards (empty current, new&ne;confirm) short-circuit before the service; the service re-validates + rejects
+no-op (new == current) before any keychain touch.</li>
+</ul></div>
+<div class="item deviation"><span class="tag deviation">Not yet usable in the running web build</span>
+<ul>
+<li>The Home-Node-Lite web app serves a <strong>pre-built</strong> bundle (<code>apps/home-node-lite/web/dist</code>, last
+exported 2026-06-15) — the new row won't appear there until <code>cd apps/mobile &amp;&amp; npm run web:export</code> rebuilds
+it. Instant on the iOS dev-client sim via Metro hot reload.</li>
+</ul></div>
+
+<!-- ===================================================================== -->
 <h2 id="composer-modes">Explicit Composer Modes <span class="meta">(uncommitted)</span></h2>
 <p class="meta">Spec: <code>docs/COMPOSER_MODES_DESIGN.md</code> — explicit composer chips
 <strong>Ask · Remember · Task · Services · Reviews · Talk</strong> (2026-06-16). Brain + mobile shipped, deep-reviewed, a

@@ -44,7 +44,7 @@ export function InlineCreditsCard(props: InlineCreditsCardProps): React.JSX.Elem
 
       <Text style={styles.body} testID={`credits-${variant}-body`}>
         {isWall
-          ? 'Everything you’ve saved stays yours, on this device. To keep talking, use your own AI provider key.'
+          ? 'Everything you’ve saved stays yours, on this device. To keep going, use your own AI provider key. It stays on your device too, so Dina keeps working only for you.'
           : 'To keep going, use your own AI provider key.'}
       </Text>
 

@@ -66,6 +66,7 @@ import { formatCurrentTimeBlock } from '../reasoning/ask_handler';
 import {
   applyForcedLanePrompt,
   enforceForcedLaneAnswer,
+  forcedLaneIncompleteAnswer,
   scopeToolsForLane,
 } from '../reasoning/forced_lane';
 
@@ -485,6 +486,21 @@ export function translateLoopResult(
       ),
     };
   }
+  // Forced-lane budget bail. When a forced Services/Reviews turn runs out of
+  // iterations or tool calls (the model kept searching instead of deciding —
+  // see forced_lane PROVIDER_SERVICES_ROUTING_BLOCK "DECIDE after discovery"),
+  // return a lane-framed "couldn't finish" answer instead of the generic
+  // "Try a simpler query" failure. We do NOT mint a missing_capability card:
+  // discovery may have succeeded (non-empty provider results), so this is a
+  // convergence failure, not a "no such capability" case. Plain Ask is
+  // unaffected — forcedLaneIncompleteAnswer returns null for a non-forced turn.
+  if (result.finishReason === 'max_iterations' || result.finishReason === 'max_tool_calls') {
+    const laneText = forcedLaneIncompleteAnswer(forcedSources);
+    if (laneText !== null) {
+      return { kind: 'answer', answer: { text: laneText } };
+    }
+  }
+
   return {
     kind: 'failure',
     failure: withMissingCapabilityDetail(

@@ -11,13 +11,17 @@
 import {
   NO_REVIEWS_ANSWER,
   NO_SERVICE_ANSWER,
+  PROVIDER_SERVICES_ROUTING_BLOCK,
+  REVIEWS_INCOMPLETE_ANSWER,
   REVIEWS_LANE_TOOLS,
   REVIEWS_OUTAGE_ANSWER,
+  SERVICES_INCOMPLETE_ANSWER,
   SERVICES_LANE_TOOLS,
   SERVICES_OUTAGE_ANSWER,
   applyForcedLanePrompt,
   classifyPeerlensResult,
   enforceForcedLaneAnswer,
+  forcedLaneIncompleteAnswer,
   formatForcedLaneBlock,
   isForcedLane,
   isPeerlensBacked,
@@ -274,5 +278,31 @@ describe('enforceForcedLaneAnswer — plain Ask', () => {
         toolCalls: [],
       }),
     ).toBe('The sky is blue.');
+  });
+});
+
+describe('forcedLaneIncompleteAnswer (budget-bail message)', () => {
+  it('Services lane → the services "couldn\'t finish" message', () => {
+    expect(forcedLaneIncompleteAnswer(['provider_services'])).toBe(SERVICES_INCOMPLETE_ANSWER);
+  });
+  it('Reviews lane → the reviews "couldn\'t finish" message', () => {
+    expect(forcedLaneIncompleteAnswer(['peerlens'])).toBe(REVIEWS_INCOMPLETE_ANSWER);
+  });
+  it('plain Ask (no forced lane) → null (caller keeps the generic failure)', () => {
+    expect(forcedLaneIncompleteAnswer(undefined)).toBeNull();
+    expect(forcedLaneIncompleteAnswer([])).toBeNull();
+  });
+  it('the bail message is NOT the "no such capability" message (not a missing-cap case)', () => {
+    expect(SERVICES_INCOMPLETE_ANSWER).not.toBe(NO_SERVICE_ANSWER);
+  });
+});
+
+describe('Services prompt contract — DECIDE-after-discovery directive', () => {
+  it('tells the model to stop searching and commit after discovery', () => {
+    expect(PROVIDER_SERVICES_ROUTING_BLOCK).toContain('DECIDE after discovery');
+    // The three exits the convergence fix relies on.
+    expect(PROVIDER_SERVICES_ROUTING_BLOCK).toContain('query_service');
+    expect(PROVIDER_SERVICES_ROUTING_BLOCK).toContain('clarifying question');
+    expect(PROVIDER_SERVICES_ROUTING_BLOCK.toLowerCase()).toContain('never repeat a search');
   });
 });

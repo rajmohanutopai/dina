@@ -1082,6 +1082,16 @@ export default function RootLayout() {
               }}
             />
             <Tabs.Screen
+              name="change-passphrase"
+              options={{
+                title: 'Change passphrase',
+                // Drill-down from Settings → Security. Never a tab target.
+                href: null,
+
+                headerLeft: renderHeaderBackButton,
+              }}
+            />
+            <Tabs.Screen
               name="confirm-recovery-phrase"
               options={{
                 title: 'Confirm phrase',

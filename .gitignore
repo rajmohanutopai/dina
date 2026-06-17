@@ -349,6 +349,15 @@ demo/dina-services-demo/provider-vault/
 demo/dina-services-demo/venv/
 demo/dina-services-demo/.dina/
 
+# Local Home Node Lite instances — the throwaway single node (.lite-node/)
+# and the named multi-Dina test bed (dina-nodes/). Each node folder holds
+# Ed25519 service keys + an encrypted SQLCipher vault + PDS creds (real
+# secrets) plus logs/pidfiles — NEVER commit live node data. The launcher
+# scripts (dina-nodes/*.sh, *.ts, README) are kept out of git too for now;
+# drop the `nodes/` line below if you ever want to track just the scripts.
+.lite-node/
+dina-nodes/
+
 # idb/adb manual-test screenshots — regenerable binary artifacts (the result.md reports are kept).
 apps/mobile/__chrome__/results/**/*.png
 
