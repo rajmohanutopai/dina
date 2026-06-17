@@ -23,11 +23,17 @@
  * extra layer of indirection for no testability gain.
  */
 
-import { addMessage } from '../chat/thread';
+import { addMessage, getThread } from '../chat/thread';
 
 import { appendNotification } from './inbox';
 
-import type { ApprovalManager, ApprovalRequest , WorkflowRepository , WorkflowTask } from '@dina/core';
+import { WorkflowTaskState } from '@dina/core';
+import type {
+  ApprovalManager,
+  ApprovalRequest,
+  WorkflowRepository,
+  WorkflowTask,
+} from '@dina/core';
 
 /**
  * Subscribe an inbox bridge to an ApprovalManager. Every
@@ -99,12 +105,9 @@ export function installApprovalInboxBridge(approvalManager: ApprovalManager): ()
  *
  * Returns a disposer that detaches the listener.
  */
-export function installWorkflowApprovalInboxBridge(
-  workflowRepo: WorkflowRepository,
-): () => void {
+export function installWorkflowApprovalInboxBridge(workflowRepo: WorkflowRepository): () => void {
   return workflowRepo.subscribeApprovalCreated((task: WorkflowTask) => {
-    const title =
-      task.description !== '' ? task.description : `Approval requested (${task.id})`;
+    const title = task.description !== '' ? task.description : `Approval requested (${task.id})`;
     appendNotification({
       id: task.id,
       kind: 'approval',
@@ -114,9 +117,7 @@ export function installWorkflowApprovalInboxBridge(
       deepLink: 'dina://approvals',
       // `expires_at` on workflow_tasks is unix seconds; the inbox uses ms.
       expiresAt:
-        task.expires_at !== undefined && task.expires_at > 0
-          ? task.expires_at * 1_000
-          : undefined,
+        task.expires_at !== undefined && task.expires_at > 0 ? task.expires_at * 1_000 : undefined,
       // `created_at` is already ms — pass through so reorders by
       // chronology pin the row at the right place.
       now: task.created_at,
@@ -135,10 +136,12 @@ export function installWorkflowApprovalInboxBridge(
  * for owner-initiated asks — same `MessageType: 'approval'` row, same
  * metadata shape, same Approve/Deny button wiring.
  *
- * Scope: ONLY fires for `payload.type === 'vault_read_request'`. The
- * intent_validation flow (`dina validate`) already shows up in the
- * Approvals tab and is operator-driven, not chat-driven; surfacing
- * those in chat would clutter the primary thread without adding signal.
+ * Scope: fires for both vault-read approval payloads:
+ * `payload.type === 'vault_read_request'` from Brain's persona guard and
+ * `payload.type === 'agent_persona_access'` from Core's direct agent vault
+ * gate. The intent_validation flow (`dina validate`) already shows up in
+ * the Approvals tab and is operator-driven, not chat-driven; surfacing those
+ * in chat would clutter the primary thread without adding signal.
  *
  * Defaults: writes to the `'main'` thread (the chat orchestrator's
  * DEFAULT_THREAD constant — keep both in lockstep). Callers can
@@ -153,51 +156,99 @@ export function installWorkflowApprovalChatBridge(
   } = {},
 ): () => void {
   const targetThread = options.threadId ?? 'main';
-  return workflowRepo.subscribeApprovalCreated((task: WorkflowTask) => {
-    // Only render vault_read_request approvals in the chat thread.
-    // Intent-validation (dina validate) approvals stay in the
-    // Approvals tab; the chat thread shouldn't surface every agent
-    // policy decision.
-    let payload: Record<string, unknown> = {};
-    try {
-      const parsed = JSON.parse(task.payload);
-      if (parsed !== null && typeof parsed === 'object') {
-        payload = parsed as Record<string, unknown>;
-      }
-    } catch {
-      /* malformed payload — skip */
-      return;
-    }
-    if (payload.type !== 'vault_read_request') return;
-
-    const persona = typeof payload.persona === 'string' ? payload.persona : '';
-    const agentDid = typeof payload.requester_did === 'string' ? payload.requester_did : '';
-    // WHY the agent wants access — carried on the request payload (the
-    // persona-guard writes a `reason`; the task `description` is the fallback).
-    // Surfaced on the card so the user can actually decide, instead of a generic
-    // "an agent wants access". (Empty string when neither is present.)
-    const reason =
-      typeof payload.reason === 'string' && payload.reason.trim() !== ''
-        ? payload.reason.trim()
-        : typeof task.description === 'string'
-          ? task.description.trim()
-          : '';
-    const shortAgent = agentDid.length > 32 ? `${agentDid.slice(0, 32)}…` : agentDid;
-    const body = `🔐 An agent wants to access /${persona}\n${shortAgent}`;
-
-    addMessage(targetThread, 'approval', body, {
+  const maybePost = (task: WorkflowTask): void => {
+    const card = toVaultAccessApprovalCard(task);
+    if (card === null) return;
+    if (hasApprovalCard(targetThread, task.id)) return;
+    addMessage(targetThread, 'approval', card.body, {
       metadata: {
         approvalKind: 'vault_read',
         approvalTaskId: task.id,
-        persona,
-        agentDid,
-        reason,
+        persona: card.persona,
+        agentDid: card.agentDid,
+        reason: card.reason,
         // `InlineVaultReadApprovalCard` reads these to render the Approve/Deny
         // buttons + the reason, and to drive the same scope dialog the Approvals
         // tab uses (This time only / Allow for this session / Cancel).
       },
       timestamp: task.created_at,
     });
+  };
+
+  // Cold-start replay: the repository subscription only sees future
+  // creates. If mobile reconnects after an agent already minted a
+  // pending approval, replay the still-pending rows into chat so the
+  // user is not forced to discover them only in Activity.
+  for (const task of workflowRepo.listByKindAndState(
+    'approval',
+    WorkflowTaskState.PendingApproval,
+    100,
+  )) {
+    maybePost(task);
+  }
+
+  return workflowRepo.subscribeApprovalCreated(maybePost);
+}
+
+interface VaultAccessApprovalCard {
+  persona: string;
+  agentDid: string;
+  reason: string;
+  body: string;
+}
+
+function toVaultAccessApprovalCard(task: WorkflowTask): VaultAccessApprovalCard | null {
+  // Only render vault/persona access approvals in the chat thread.
+  // Intent-validation (dina validate) approvals stay in the Approvals
+  // tab; the chat thread shouldn't surface every agent policy decision.
+  let payload: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(task.payload);
+    if (parsed !== null && typeof parsed === 'object') {
+      payload = parsed as Record<string, unknown>;
+    }
+  } catch {
+    /* malformed payload — skip */
+    return null;
+  }
+
+  const payloadType = typeof payload.type === 'string' ? payload.type : '';
+  if (payloadType !== 'vault_read_request' && payloadType !== 'agent_persona_access') {
+    return null;
+  }
+
+  const persona = typeof payload.persona === 'string' ? payload.persona : '';
+  const agentDid =
+    typeof payload.agent_did === 'string'
+      ? payload.agent_did
+      : typeof payload.requester_did === 'string'
+        ? payload.requester_did
+        : '';
+  const reason =
+    payloadType === 'agent_persona_access' && typeof payload.scope === 'string'
+      ? payload.scope.trim()
+      : typeof payload.reason === 'string' && payload.reason.trim() !== ''
+        ? payload.reason.trim()
+        : typeof task.description === 'string'
+          ? task.description.trim()
+          : '';
+  const shortAgent = agentDid.length > 32 ? `${agentDid.slice(0, 32)}…` : agentDid;
+  return {
+    persona,
+    agentDid,
+    reason,
+    body: `🔐 An agent wants to access /${persona}\n${shortAgent}`,
+  };
+}
+
+function hasApprovalCard(threadId: string, approvalTaskId: string): boolean {
+  return getThread(threadId).some((message) => {
+    const metadata = message.metadata as Record<string, unknown> | undefined;
+    return (
+      message.type === 'approval' &&
+      metadata?.approvalKind === 'vault_read' &&
+      metadata.approvalTaskId === approvalTaskId
+    );
   });
 }
 

@@ -46,6 +46,8 @@ export interface DelegateToAgentToolOptions {
   sleep?: (ms: number) => Promise<void>;
   /** Clock hook for tests. */
   nowMsFn?: () => number;
+  /** Dina-agent CLI session id/name to bind onto the delegation task. */
+  sessionName?: string;
 }
 
 export interface DelegateOutcome {
@@ -63,14 +65,13 @@ export interface DelegateOutcome {
  * or HTTP) so it can create + poll workflow tasks. The registry call
  * signature stays sync; the tool body awaits.
  */
-export function createDelegateToAgentTool(
-  opts: DelegateToAgentToolOptions,
-): AgentTool {
+export function createDelegateToAgentTool(opts: DelegateToAgentToolOptions): AgentTool {
   const generateTaskId = opts.generateTaskId ?? (() => `task-${bytesToHex(randomBytes(8))}`);
   const pollIntervalMs = opts.pollIntervalMs ?? 1000;
   const timeoutMs = opts.timeoutMs ?? 60_000;
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const nowMsFn = opts.nowMsFn ?? (() => Date.now());
+  const sessionName = opts.sessionName?.trim() ?? '';
 
   return {
     name: 'delegate_to_agent',
@@ -136,6 +137,7 @@ export function createDelegateToAgentTool(
         }),
         initialState: 'queued',
         expiresAtSec: Math.floor(startMs / 1000) + ttlSec,
+        ...(sessionName !== '' ? { sessionName } : {}),
         // Origins are allow-listed in `core/workflow/domain.ts` —
         // `dinamobile` is the right attribution for "user-driven turn
         // through the mobile chat UI" (the agentic loop fires on

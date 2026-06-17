@@ -71,9 +71,8 @@ import { createFindPersonTool } from '../reasoning/people_tool';
 import { createPersonaGuard, type VaultApprovalWorkflowClient } from './persona_guard';
 
 import type { LLMProvider } from '../llm/adapters/provider';
-import type { ProviderName , TaskType } from '../llm/router';
+import type { ProviderName, TaskType } from '../llm/router';
 import type { AgenticAskHandlerOptions } from '../reasoning/ask_handler';
-
 
 /**
  * Input: fully-resolved target-agnostic handles. The caller
@@ -195,9 +194,7 @@ export interface AgenticAskPipeline {
   handlerOptions: Omit<AgenticAskHandlerOptions, 'provider' | 'tools'>;
 }
 
-export function buildAgenticAskPipeline(
-  input: BuildAgenticAskPipelineInput,
-): AgenticAskPipeline {
+export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): AgenticAskPipeline {
   // Central LLM router — every call (classify + reason + guard_scan +
   // any future task_type) funnels through here for PII scrub + tier
   // selection + cloud-consent gate.
@@ -264,7 +261,7 @@ export function buildAgenticAskPipeline(
   // (askId, requesterDid). Without an `approvalManager` the static
   // registry has no guard — sensitive personas surface as
   // `accessible:false` rather than bailing the loop.
-  const buildToolsWithGuard = (guard?: VaultPersonaGuard): ToolRegistry => {
+  const buildToolsWithGuard = (guard?: VaultPersonaGuard, sessionName?: string): ToolRegistry => {
     const reg = new ToolRegistry();
     reg.register(createListPersonasTool());
     reg.register(createFindPersonTool());
@@ -329,7 +326,12 @@ export function buildAgenticAskPipeline(
     // (host has no paired agents). See
     // `reasoning/delegate_agent_tool.ts`.
     if (input.workflowClient !== undefined) {
-      reg.register(createDelegateToAgentTool({ core: input.workflowClient }));
+      reg.register(
+        createDelegateToAgentTool({
+          core: input.workflowClient,
+          ...(sessionName !== undefined && sessionName !== '' ? { sessionName } : {}),
+        }),
+      );
     }
     return reg;
   };
@@ -369,7 +371,7 @@ export function buildAgenticAskPipeline(
         guardOpts.sessionId = ctx.sessionId;
       }
       const guard = createPersonaGuard(guardOpts);
-      return buildToolsWithGuard(guard);
+      return buildToolsWithGuard(guard, ctx.sessionId);
     };
   }
 

@@ -27,7 +27,11 @@ import {
   resetVaultRepositories,
 } from '../../../src/vault/repository';
 import { InMemoryWorkflowRepository } from '../../../src/workflow/repository';
-import { WorkflowService, setWorkflowService } from '../../../src/workflow/service';
+import {
+  WorkflowService,
+  getWorkflowService,
+  setWorkflowService,
+} from '../../../src/workflow/service';
 
 const AGENT_DID = 'did:key:agentX';
 
@@ -38,12 +42,12 @@ function build(): CoreRouter {
   return router;
 }
 
-function agentQueryHealth(): CoreRequest {
+function agentQueryHealth(headers: Record<string, string> = {}): CoreRequest {
   return {
     method: 'POST',
     path: '/v1/vault/query',
     query: { persona: 'health' },
-    headers: {},
+    headers,
     body: { text: 'private health question', mode: 'fts5' },
     rawBody: new Uint8Array(),
     params: {},
@@ -142,5 +146,18 @@ describe('workflow approve/deny — agent callers are refused (no self-approval)
     const taskId = await newPendingApprovalTaskId(router);
     const approve = await router.handle(approveReq(taskId, 'device'));
     expect(approve.status).toBe(200);
+  });
+
+  it('agent persona-access approval tasks preserve the X-Session header', async () => {
+    const router = build();
+    const gate = await router.handle(agentQueryHealth({ 'x-session': 'sess-health-123' }));
+    expect(gate.status).toBe(403);
+    const taskId = (gate.body as { task_id?: string }).task_id;
+    expect(taskId).toBeTruthy();
+
+    const task = getWorkflowService()
+      ?.store()
+      .getById(taskId as string);
+    expect(task?.session_name).toBe('sess-health-123');
   });
 });

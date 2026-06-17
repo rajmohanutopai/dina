@@ -288,6 +288,32 @@ describe('useServiceInbox', () => {
     expect(entry.paramsPreview).toBe('Allergist is Dr Rao');
   });
 
+  it('classifies agent persona-access approvals as vault_read approvals', async () => {
+    const { client } = stubClient({
+      list: [
+        makeTask({
+          id: 'agent-access-health-1',
+          description: 'Agent did:key:z6MkAgentOpenClaw requests read access to "health"',
+          payload: JSON.stringify({
+            type: 'agent_persona_access',
+            agent_did: 'did:key:z6MkAgentOpenClaw',
+            persona: 'health',
+            mode: 'read',
+            scope: 'private health question',
+          }),
+        }),
+      ],
+    });
+    setInboxCoreClient(client);
+    const [entry] = await listPendingApprovals();
+    expect(entry.kind).toBe('vault_read');
+    expect(entry.capability).toBe('health');
+    expect(entry.serviceName).toBe('Vault access');
+    expect(entry.description).toBe('private health question');
+    expect(entry.requesterDID).toBe('did:key:z6MkAgentOpenClaw');
+    expect(entry.paramsPreview).toBe('private health question');
+  });
+
   it('denyPending(intent_validation) cancels the task without service.respond', async () => {
     // Agents poll /v1/intent/:id/status, not a D2D inbox — there is
     // no requester to notify, so we skip sendServiceRespond entirely
@@ -296,9 +322,7 @@ describe('useServiceInbox', () => {
     setInboxCoreClient(client);
     await denyPending('prop-intent-1', 'denied_by_operator', 'intent_validation');
     expect(calls.responded).toEqual([]);
-    expect(calls.cancelled).toEqual([
-      { id: 'prop-intent-1', reason: 'denied_by_operator' },
-    ]);
+    expect(calls.cancelled).toEqual([{ id: 'prop-intent-1', reason: 'denied_by_operator' }]);
     // Badge-clear contract: resolving this task on the Approvals tab
     // must clear the matching notification entry so the tab-bar badge
     // doesn't stay stuck at "1" with the list showing "All caught up".
@@ -401,27 +425,13 @@ describe('useServiceInbox', () => {
       setInboxCoreClient(client);
       const entries = await listResolvedApprovals();
       const states = calls.filters.map((f) => f.state).sort();
-      expect(states).toEqual([
-        'cancelled',
-        'completed',
-        'failed',
-        'queued',
-        'recorded',
-        'running',
-      ]);
+      expect(states).toEqual(['cancelled', 'completed', 'failed', 'queued', 'recorded', 'running']);
       // The Completed tab is the inverse of the Pending tab — it must
       // never re-query the pending bucket.
       expect(states).not.toContain('pending_approval');
       // Every fan-out query carries kind=approval.
       expect(calls.filters.every((f) => f.kind === 'approval')).toBe(true);
-      expect(entries.map((e) => e.id).sort()).toEqual([
-        'c1',
-        'f1',
-        'q1',
-        'r1',
-        'rec1',
-        'x1',
-      ]);
+      expect(entries.map((e) => e.id).sort()).toEqual(['c1', 'f1', 'q1', 'r1', 'rec1', 'x1']);
     });
 
     it('maps each terminal state to its display outcome', async () => {
