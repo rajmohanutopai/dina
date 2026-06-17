@@ -90,7 +90,7 @@ describe('Notifications inbox bridges (5.66)', () => {
         requester_did: 'did:key:z6MkBob',
         persona: 'general',
         reason: '',
-        preview: 'Update Bob\'s phone number',
+        preview: "Update Bob's phone number",
         created_at: 0,
       });
       expect(listNotifications()[0]!.body).toBe("Update Bob's phone number");
@@ -336,6 +336,27 @@ describe('Notifications inbox bridges (5.66)', () => {
       return approvalTask({ payload, ...rest });
     }
 
+    function agentPersonaAccessTask(
+      overrides: Partial<WorkflowTask> & {
+        payloadOverrides?: Record<string, unknown>;
+      } = {},
+    ): WorkflowTask {
+      const { payloadOverrides, ...rest } = overrides;
+      const payload = JSON.stringify({
+        type: 'agent_persona_access',
+        persona: 'health',
+        mode: 'read',
+        scope: 'private health question',
+        agent_did: 'did:key:z6MkAgentOpenClawAcmeAcmeAcmeAcme',
+        ...payloadOverrides,
+      });
+      return approvalTask({
+        description: 'Agent did:key:z6MkAgentOpenClaw requests read access to "health"',
+        payload,
+        ...rest,
+      });
+    }
+
     it('writes an approval-kind chat message when a vault_read_request task is created', () => {
       const repo = new InMemoryWorkflowRepository();
       installWorkflowApprovalChatBridge(repo);
@@ -361,6 +382,41 @@ describe('Notifications inbox bridges (5.66)', () => {
       expect(meta.agentDid).toBe('did:key:z6MkAgentOpenClawAcmeAcmeAcmeAcme');
       // WHY the agent wants access is forwarded so the card is decidable.
       expect(meta.reason).toBe('Agentic /ask requires read of persona "health"');
+    });
+
+    it('writes an approval-kind chat message when an agent_persona_access task is created', () => {
+      const repo = new InMemoryWorkflowRepository();
+      installWorkflowApprovalChatBridge(repo);
+
+      repo.create(agentPersonaAccessTask({ id: 'agent-access-health-1' }));
+
+      const messages = getThread('main');
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatchObject({
+        type: 'approval',
+        threadId: 'main',
+      });
+      expect(messages[0]!.content).toContain('/health');
+      expect(messages[0]!.content).toContain('did:key:z6MkAgentOpenClaw');
+      const meta = messages[0]!.metadata as Record<string, unknown>;
+      expect(meta.approvalKind).toBe('vault_read');
+      expect(meta.approvalTaskId).toBe('agent-access-health-1');
+      expect(meta.persona).toBe('health');
+      expect(meta.agentDid).toBe('did:key:z6MkAgentOpenClawAcmeAcmeAcmeAcme');
+      expect(meta.reason).toBe('private health question');
+    });
+
+    it('replays already-pending vault approvals when installed after task creation', () => {
+      const repo = new InMemoryWorkflowRepository();
+      repo.create(agentPersonaAccessTask({ id: 'agent-access-before-bridge' }));
+
+      installWorkflowApprovalChatBridge(repo);
+
+      const messages = getThread('main');
+      expect(messages).toHaveLength(1);
+      const meta = messages[0]!.metadata as Record<string, unknown>;
+      expect(meta.approvalTaskId).toBe('agent-access-before-bridge');
+      expect(meta.approvalKind).toBe('vault_read');
     });
 
     it('does NOT write a chat message for intent_validation tasks', () => {

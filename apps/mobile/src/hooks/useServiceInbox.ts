@@ -28,8 +28,9 @@ import { markNotificationRead } from '@dina/brain/notifications';
  *   persona; approve drains the staged memory, deny drops it.
  * - `vault_read` — `ask` request that touches a sensitive/locked persona;
  *   approve allows the vault read for this request, deny cancels it. Backed
- *   by a workflow task (`kind=approval`, `payload.type=vault_read_request`)
- *   created by `persona_guard.ts` — same store as every other approval kind.
+ *   by a workflow task (`kind=approval`, `payload.type=vault_read_request`
+ *   or Core's direct `payload.type=agent_persona_access`) — same store as
+ *   every other approval kind.
  * - `unknown` — payload doesn't match a known shape; render with what
  *   we can read and surface a generic deny.
  */
@@ -313,11 +314,7 @@ export async function denyPending(
   const core = requireClient();
   const denyReason = reason.trim() === '' ? 'denied_by_operator' : reason.trim();
 
-  if (
-    kind === 'vault_read' ||
-    kind === 'intent_validation' ||
-    kind === 'staging_persona_access'
-  ) {
+  if (kind === 'vault_read' || kind === 'intent_validation' || kind === 'staging_persona_access') {
     // Plain cancel — no service.respond peer to notify. The agent
     // observes intent_validation through polling; staging approvals are
     // local and Core handles the pending_unlock denial.
@@ -387,8 +384,7 @@ function toEntry(task: WorkflowTask): InboxEntry {
 
   if (payloadType === 'vault_read_request') {
     const persona = typeof parsed.persona === 'string' ? parsed.persona : '';
-    const requesterDID =
-      typeof parsed.requester_did === 'string' ? parsed.requester_did : '';
+    const requesterDID = typeof parsed.requester_did === 'string' ? parsed.requester_did : '';
     const reason = typeof parsed.reason === 'string' ? parsed.reason : '';
     const preview = typeof parsed.preview === 'string' ? parsed.preview : '';
     return {
@@ -399,6 +395,23 @@ function toEntry(task: WorkflowTask): InboxEntry {
       description: reason,
       requesterDID,
       paramsPreview: preview,
+      createdAt: task.created_at,
+      ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
+    };
+  }
+
+  if (payloadType === 'agent_persona_access') {
+    const persona = typeof parsed.persona === 'string' ? parsed.persona : '';
+    const agentDID = typeof parsed.agent_did === 'string' ? parsed.agent_did : '';
+    const scope = typeof parsed.scope === 'string' ? parsed.scope : '';
+    return {
+      id: task.id,
+      kind: 'vault_read',
+      capability: persona,
+      serviceName: 'Vault access',
+      description: scope || task.description || '',
+      requesterDID: agentDID,
+      paramsPreview: scope,
       createdAt: task.created_at,
       ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
     };

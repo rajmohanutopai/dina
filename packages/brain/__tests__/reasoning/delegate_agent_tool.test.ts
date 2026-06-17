@@ -194,6 +194,25 @@ describe('delegate_to_agent', () => {
     expect(out.error).toMatch(/disappeared/);
   });
 
+  it('persists the current Dina session name on created delegation tasks', async () => {
+    const fake = makeFake();
+    fake.pollResponses.set('fixed-id', [stubTask('fixed-id', 'completed')]);
+    const tool = createDelegateToAgentTool({
+      core: { createWorkflowTask: fake.createWorkflowTask, getWorkflowTask: fake.getWorkflowTask },
+      generateTaskId: () => 'fixed-id',
+      pollIntervalMs: 0,
+      timeoutMs: 100,
+      sleep: async () => undefined,
+      nowMsFn: () => 0,
+      sessionName: 'sess-health-123',
+    });
+
+    await tool.execute({ task_description: 'read health summary' });
+
+    expect(fake.created).toHaveLength(1);
+    expect(fake.created[0].sessionName).toBe('sess-health-123');
+  });
+
   it('exposes a JSON-Schema-shaped parameters block for the LLM', () => {
     const fake = makeFake();
     const tool = buildTool(fake);
@@ -257,9 +276,7 @@ describe('delegate_to_agent', () => {
       expect(Array.isArray(payload._pii_entities)).toBe(true);
       // Entity table must contain the actual values so a rehydrate
       // pass can substitute them back in.
-      const values: string[] = payload._pii_entities.map(
-        (e: { value: string }) => e.value,
-      );
+      const values: string[] = payload._pii_entities.map((e: { value: string }) => e.value);
       expect(values).toContain('alice@example.com');
       expect(values.some((v) => v.includes('555'))).toBe(true);
     });

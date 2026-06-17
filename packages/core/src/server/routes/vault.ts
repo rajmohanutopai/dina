@@ -47,7 +47,14 @@ function agentGate(
     // fail closed rather than match a stray empty-DID grant.
     return { status: 403, body: { error: 'access_denied', reason: 'agent caller has no DID' } };
   }
-  const decision = requireAgentPersonaAccess({ agentDID, persona, mode, scope });
+  const sessionId = req.headers['x-session'] ?? '';
+  const decision = requireAgentPersonaAccess({
+    agentDID,
+    persona,
+    mode,
+    scope,
+    ...(sessionId !== '' ? { sessionId } : {}),
+  });
   if (decision.kind === 'approval_required') {
     return {
       status: 403,
