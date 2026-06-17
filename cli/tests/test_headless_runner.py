@@ -164,21 +164,26 @@ def test_platform_table_shapes():
         assert spec["argv"].count("{prompt}") == 1, key
         assert spec["argv"].count("{args}") == 1, key
         assert spec["bin"] == spec["argv"][0], key
-        # {args} must never sit between an option and its value-prompt:
-        # if the element before {prompt} is an option (starts with '-'),
-        # {args} must come BEFORE that option (found live: openclaw
-        # `--message` / gemini `-p` take the prompt as their VALUE).
+        # {args} must never split a flag from a prompt it passes as VALUE.
+        # That only happens when {prompt} is the LAST element AND preceded by
+        # an option (gemini `-p {prompt}`, openclaw `--message {prompt}`) —
+        # then {args} must come BEFORE that option. claude's `-p` is a boolean
+        # print flag whose prompt is POSITIONAL and must sit right after it
+        # (claude's variadic `--allowedTools` would otherwise swallow a
+        # trailing prompt → "Input must be provided"), so {args} trails there.
         argv = spec["argv"]
         p = argv.index("{prompt}")
-        if p > 0 and argv[p - 1].startswith("-"):
+        if p == len(argv) - 1 and p > 0 and argv[p - 1].startswith("-"):
             assert argv.index("{args}") < p - 1, key
 
 
-def test_operator_extra_args_injected_before_prompt(monkeypatch):
+def test_operator_extra_args_for_claude_land_after_prompt(monkeypatch):
     """Headless agents need operator-granted tool permissions for real
-    autonomous work (e.g. claude -p hangs/denies on tool use otherwise).
-    Env-supplied flags land between the fixed argv and the prompt; task
-    content can never reach them."""
+    autonomous work (e.g. claude -p denies tool use otherwise). For claude the
+    prompt is POSITIONAL and must sit immediately after `-p`, with operator
+    flags AFTER it — claude's `--allowedTools` is variadic and would otherwise
+    swallow the prompt, leaving claude with no input (exit 1, "Input must be
+    provided … when using --print"). Task content can never reach the flags."""
     monkeypatch.setenv(
         "DINA_HEADLESS_ARGS_CLAUDE_CODE", "--allowedTools Read,Bash --permission-mode acceptEdits"
     )
@@ -194,6 +199,39 @@ def test_operator_extra_args_injected_before_prompt(monkeypatch):
 
     argv = captured["argv"]
     assert argv[:2] == ["claude", "-p"]
-    assert argv[2:6] == ["--allowedTools", "Read,Bash", "--permission-mode", "acceptEdits"]
-    assert TASK["description"] in argv[6]  # prompt still last, still one element
-    assert len(argv) == 7
+    assert TASK["description"] in argv[2]  # prompt is the positional right after -p
+    # Always-on dina-scoped grant first, then operator flags (claude merges
+    # repeated --allowedTools, so the baseline dina grant survives + Read added).
+    assert argv[3:] == [
+        "--allowedTools",
+        "Bash(dina:*)",
+        "--allowedTools",
+        "Read,Bash",
+        "--permission-mode",
+        "acceptEdits",
+    ]
+
+
+def test_claude_grants_dina_cli_bash_even_with_no_operator_config(monkeypatch):
+    """The runner must work OUT OF THE BOX: with no DINA_HEADLESS_ARGS set,
+    claude-code still gets `--allowedTools Bash(dina:*)` so the agent can run
+    the `dina` CLI. Without this the agent is refused by Claude Code's own
+    permission gate ("requires approval") and never reaches the vault. Scope is
+    `dina`-only — NOT blanket Bash — so the agent gets no arbitrary local shell."""
+    monkeypatch.delenv("DINA_HEADLESS_ARGS_CLAUDE_CODE", raising=False)
+    runner = HeadlessCliRunner("claude-code")
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        captured["argv"] = argv
+        return _completed()
+
+    with patch("dina_cli.headless_cli_runner.subprocess.run", side_effect=fake_run):
+        runner.execute(TASK, "", SESSION)
+
+    argv = captured["argv"]
+    assert argv[:2] == ["claude", "-p"]
+    assert TASK["description"] in argv[2]
+    assert argv[3:] == ["--allowedTools", "Bash(dina:*)"]
+    # Belt-and-braces: the default must NOT be blanket Bash.
+    assert "Bash" not in argv[3:]

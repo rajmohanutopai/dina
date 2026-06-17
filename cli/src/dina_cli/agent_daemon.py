@@ -52,6 +52,27 @@ def run_daemon(
     print(f"[agent-daemon] Started (poll={poll_interval}s, lease={lease_duration}s, runner={runner.runner_name})", file=sys.stderr)
     print(f"[agent-daemon] Core: {cfg.core_url}", file=sys.stderr)
     print(f"[agent-daemon] Device: {client._identity.did()}", file=sys.stderr)
+    # Surface the EXACT pairing the daemon (and, via DINA_CONFIG_DIR, every
+    # child runner's `dina ask`) will use. The #1 silent failure is the daemon
+    # loading an incomplete config (e.g. the global ~/.dina/cli) that has no
+    # MsgBox info, so requests can't reach a NAT'd phone Home Node.
+    from . import config as _config
+
+    print(
+        f"[agent-daemon] Config: {_config.CONFIG_DIR} "
+        f"(transport={cfg.transport_mode}, homenode={cfg.homenode_did or '—'})",
+        file=sys.stderr,
+    )
+    if cfg.transport_mode == "msgbox" and (not cfg.msgbox_url or not cfg.homenode_did):
+        print(
+            "[agent-daemon] WARNING: transport=msgbox but msgbox_url/homenode_did "
+            "are missing from this config. The agent's `dina ask`/`dina validate` "
+            "calls cannot reach a NAT'd Home Node (e.g. a phone) and will fail. "
+            f"Re-pair with `dina configure`, or launch the daemon from the agent's "
+            f"folder / set DINA_CONFIG_DIR so it loads the correct pairing "
+            f"(currently {_config.CONFIG_DIR}).",
+            file=sys.stderr,
+        )
 
     # Start reconciler thread only if the runner needs it.
     reconciler_stop = threading.Event()
@@ -81,7 +102,17 @@ def run_daemon(
             continue
 
         task_id = task.get("id", "")
-        session_name = task.get("session_name", "")
+        # Owner-created delegations (the app's Task composer) carry NO CLI
+        # session — the owner's chat has no `dina session`. An empty
+        # session_name renders a malformed `dina ask … --session ` (no value)
+        # in the runner prompt; a headless agent then either errors or has to
+        # hand-roll its own session first (several extra round-trips that often
+        # blow the delegation's wait window before the vault-read approval is
+        # even requested). Synthesize a stable per-task session so the runner
+        # gets a valid `--session <id>` on the first call and the approval gate
+        # fires immediately. Source: real `claude -p` repro — the alert only
+        # appeared after claude bootstrapped a session by hand.
+        session_name = task.get("session_name", "") or (task_id or "agent-task")
 
         # Log metadata only — the task description can carry user content / PII,
         # which must not reach stderr/logs (CLI.5). The runner reads the

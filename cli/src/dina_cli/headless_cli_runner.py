@@ -47,8 +47,37 @@ from .agent_runner import RunnerResult
 # the option and its value would corrupt the command (found live testing
 # openclaw-cli, which needs `--agent main --local` BEFORE `--message`).
 PLATFORMS: dict[str, dict[str, Any]] = {
-    # claude: -p is the print-mode flag, prompt is positional — args fit between.
-    "claude-code": {"bin": "claude", "argv": ["claude", "-p", "{args}", "{prompt}"]},
+    # claude: `-p` is the print-mode flag and the prompt is positional, BUT the
+    # prompt must come immediately after `-p`, with operator args LAST. Claude's
+    # `--allowedTools` (the arg you need so the agent can run `dina ask` via
+    # Bash) is variadic and swallows the token that follows it — so the old
+    # `-p {args} {prompt}` order made `--allowedTools` eat the prompt, leaving
+    # claude with no prompt → exit 1 ("Input must be provided … when using
+    # --print"). Proven live: `-p {prompt} {args}` works, `-p {args} {prompt}`
+    # fails whenever args are present. (A plain no-tool haiku happened to work
+    # only because no args were set, so the prompt stayed positional.)
+    "claude-code": {
+        "bin": "claude",
+        "argv": ["claude", "-p", "{prompt}", "{args}"],
+        # ALWAYS granted (accumulates with any operator DINA_HEADLESS_ARGS —
+        # multiple --allowedTools flags merge in claude). The whole point of
+        # this runner is to let the agent drive the `dina` CLI; without a Bash
+        # grant, `claude -p` in default permission mode REFUSES `dina ask` /
+        # `dina validate` ("requires approval" — that's Claude Code's OWN Bash
+        # gate, not Dina's), so the agent never reaches the vault and the task
+        # silently fails.
+        #
+        # Scope: ONLY `dina ...` commands — NOT blanket `Bash`. We deliberately
+        # do not hand the agent arbitrary local shell by default (a delegated
+        # task description it didn't author could otherwise drive `rm`, `curl`,
+        # file exfiltration, etc.). `Bash(dina:*)` matches any `dina` subcommand
+        # and nothing else; the prompt tells the agent to run them bare (no
+        # pipes/redirects), which is what the scope requires (`dina ask … | head`
+        # would be rejected on the `head` segment — and the agent self-corrects
+        # to the bare form on a denial). Operators who genuinely need broader
+        # shell for a task opt in via DINA_HEADLESS_ARGS_CLAUDE_CODE.
+        "grant_args": ["--allowedTools", "Bash(dina:*)"],
+    },
     # codex: prompt is positional after the subcommand.
     "codex": {"bin": "codex", "argv": ["codex", "exec", "{args}", "{prompt}"]},
     # gemini: -p TAKES the prompt as its value — args must come first.
@@ -80,6 +109,11 @@ DINA SESSION: {session_name}
 OBJECTIVE: {description}
 
 INSTRUCTIONS:
+0. Run every `dina` command EXACTLY as shown — bare, with NO pipes (`|`),
+   redirects (`>`, `2>&1`), or `head`/`tail`. Their output is already concise,
+   and your shell permission only allows bare `dina ...` commands; a piped or
+   redirected form will be DENIED. If a command is ever denied, retry it in the
+   bare form.
 1. You are executing a delegated task for the user's Dina. For anything
    about the user (their data, schedule, contacts, history) use the
    `dina` CLI: `dina ask "<question>" --session {session_name}`.
@@ -141,21 +175,27 @@ class HeadlessCliRunner:
         }
 
     def _extra_args(self) -> list[str]:
-        """Operator-supplied flags, injected BEFORE the prompt element.
+        """Platform `grant_args` (always on) + operator-supplied flags.
 
-        Headless agents prompt for tool permissions by default, which in
-        batch mode means hanging or denying — real autonomous tasks need
-        the operator to grant a baseline, e.g.:
+        `grant_args` is the baseline permission the runner needs to be
+        functional at all — e.g. claude-code's `--allowedTools Bash`, so the
+        agent can actually run the `dina` CLI instead of being refused by
+        Claude Code's own permission gate ("requires approval"). It is ALWAYS
+        included; operator flags accumulate on top (claude merges repeated
+        --allowedTools), so a baseline that ships working can still be
+        broadened:
 
-          DINA_HEADLESS_ARGS_CLAUDE_CODE='--allowedTools "Read,Bash" --permission-mode acceptEdits'
+          DINA_HEADLESS_ARGS_CLAUDE_CODE='--allowedTools "Read" --permission-mode acceptEdits'
           DINA_HEADLESS_ARGS_CODEX='--sandbox workspace-write'
 
-        Deliberately env-only (trusted operator input, same trust class as
-        CLI flags) — task content can never reach these args.
+        Operator input is env-only (trusted, same class as CLI flags) — task
+        content can never reach these args.
         """
+        grant: list[str] = list(self._spec.get("grant_args", []))
         key = "DINA_HEADLESS_ARGS_" + self.runner_name.upper().replace("-", "_")
         raw = os.environ.get(key, "")
-        return shlex.split(raw) if raw else []
+        operator = shlex.split(raw) if raw else []
+        return [*grant, *operator]
 
     def execute(self, task: dict, prompt: str, session_name: str) -> RunnerResult:
         # Build our own envelope — see build_headless_prompt docstring.
@@ -170,12 +210,27 @@ class HeadlessCliRunner:
                 argv.append(rendered)
             else:
                 argv.append(a)
+        # Pin the daemon's config dir into the child env. The child agent
+        # runs `dina ask`/`dina validate` as its OWN subprocess; without this
+        # those resolve their pairing by cwd (DINA_CONFIG_DIR → ./.dina/cli →
+        # ~/.dina/cli). A child whose Bash runs from a different directory then
+        # silently falls back to the GLOBAL ~/.dina/cli — often an incomplete
+        # or stale pairing with no msgbox_url/homenode_did — so its `dina ask`
+        # cannot use the MsgBox relay and tries direct HTTP to core_url, which
+        # never reaches a NAT'd phone. Pinning DINA_CONFIG_DIR forces the child
+        # onto the SAME pairing + transport as the daemon. (Bug: alert never
+        # minted on a phone-paired Home Node because the agent's internal
+        # `dina ask` went direct instead of msgbox.)
+        from . import config as _config
+
+        child_env = {**os.environ, "DINA_CONFIG_DIR": str(_config.CONFIG_DIR)}
         try:
             proc = subprocess.run(
                 argv,
                 capture_output=True,
                 text=True,
                 timeout=self._timeout,
+                env=child_env,
             )
         except subprocess.TimeoutExpired:
             return RunnerResult(
