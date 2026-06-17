@@ -310,9 +310,14 @@ describe('WorkflowEventConsumer.runTick', () => {
     expect(state.getCalls).toEqual(['svc-q-1']);
   });
 
-  it('skips and acks completed events on non-service_query tasks (approval / delegation)', async () => {
+  it('delivers delegation completions but skips other non-service_query kinds (e.g. approval)', async () => {
+    // Async /task delivery: a delegation `completed` event now posts the
+    // agent's result to chat (was previously skip+ack, which silently
+    // dropped the result and left the owner staring at the brain's 60s
+    // timeout). Other non-service_query kinds (e.g. a completed event on an
+    // approval task) still skip.
     const approvalTask = svcQueryTask('appr-1', { kind: 'approval' });
-    const delegTask = svcQueryTask('deleg-1', { kind: 'delegation' });
+    const delegTask = svcQueryTask('deleg-1', { kind: 'delegation', result: 'agent finished: 42' });
     const { client, state } = stubCore({
       listResult: [
         completedEvent({ event_id: 20, task_id: 'appr-1' }),
@@ -331,10 +336,46 @@ describe('WorkflowEventConsumer.runTick', () => {
       },
     });
     const result = await c.runTick();
-    expect(result.skipped).toBe(2);
-    expect(result.delivered).toBe(0);
-    expect(delivered).toHaveLength(0);
+    // approval completion → skipped; delegation completion → delivered.
+    expect(result.skipped).toBe(1);
+    expect(result.delivered).toBe(1);
+    expect(delivered).toEqual(['agent finished: 42']);
+    // Both events retired from the delivery queue regardless of outcome.
     expect(state.ackCalls).toEqual([20, 21]);
+  });
+
+  it('formats delegation terminal results for chat (completed result / failed error / cancelled)', async () => {
+    const tasks = new Map([
+      ['deleg-ok', svcQueryTask('deleg-ok', { kind: 'delegation', result: 'Here is the haiku' })],
+      [
+        'deleg-bare',
+        svcQueryTask('deleg-bare', { kind: 'delegation', result: '', result_summary: '' }),
+      ],
+      ['deleg-fail', svcQueryTask('deleg-fail', { kind: 'delegation', error: 'tool exited 1' })],
+      ['deleg-cancel', svcQueryTask('deleg-cancel', { kind: 'delegation' })],
+    ]);
+    const { client } = stubCore({
+      listResult: [
+        completedEvent({ event_id: 1, event_kind: 'completed', task_id: 'deleg-ok' }),
+        completedEvent({ event_id: 2, event_kind: 'completed', task_id: 'deleg-bare' }),
+        completedEvent({ event_id: 3, event_kind: 'failed', task_id: 'deleg-fail' }),
+        completedEvent({ event_id: 4, event_kind: 'cancelled', task_id: 'deleg-cancel' }),
+      ],
+      tasks,
+    });
+    const delivered: string[] = [];
+    const c = new WorkflowEventConsumer({
+      coreClient: client,
+      deliver: ({ text }) => {
+        delivered.push(text);
+      },
+    });
+    const result = await c.runTick();
+    expect(result.delivered).toBe(4);
+    expect(delivered[0]).toBe('Here is the haiku');
+    expect(delivered[1]).toMatch(/finished the task/i); // generic ack when no body
+    expect(delivered[2]).toMatch(/couldn't finish.*tool exited 1/i);
+    expect(delivered[3]).toMatch(/cancelled/i);
   });
 
   it('skips and acks completed events whose task is missing (archived)', async () => {
@@ -458,19 +499,19 @@ describe('WorkflowEventConsumer.runTick', () => {
   });
 
   it('fires onTaskOutcome per event (delivered / skipped)', async () => {
-    // After issue #11: `failed` events on service_query tasks now
-    // deliver instead of skipping. Use a non-service_query failed event
-    // (kind='delegation') to exercise the skip path.
+    // service_query + delegation events deliver; other kinds skip. Use a
+    // failed event on an APPROVAL task to exercise the skip path (delegation
+    // would now deliver — see the delegation-formatting test above).
     const qTask = svcQueryTask('svc-q-1');
-    const delegTask = svcQueryTask('deleg-1', { kind: 'delegation' });
+    const apprTask = svcQueryTask('appr-1', { kind: 'approval' });
     const { client } = stubCore({
       listResult: [
-        completedEvent({ event_id: 1, event_kind: 'failed', task_id: 'deleg-1' }), // skipped
+        completedEvent({ event_id: 1, event_kind: 'failed', task_id: 'appr-1' }), // skipped
         completedEvent({ event_id: 2, task_id: 'svc-q-1' }), // delivered
       ],
       tasks: new Map([
         ['svc-q-1', qTask],
-        ['deleg-1', delegTask],
+        ['appr-1', apprTask],
       ]),
     });
     const events: Array<{ id: number; outcome: string }> = [];

@@ -346,13 +346,26 @@ export class WorkflowEventConsumer {
     }
 
     // event_kind in ('completed', 'failed', 'cancelled')
-    if (task.kind !== 'service_query') {
+    //   - service_query → lifecycle card (bus-driver / cross-Home-Node).
+    //   - delegation (/task → paired agent) → plain result bubble. This is
+    //     the async delivery path: `delegate_to_agent` returns 'delegated'
+    //     immediately, and the agent's terminal result lands HERE when it
+    //     finishes (after any mid-task vault-read approval). Without this the
+    //     result was silently dropped (ack+skip) and the owner only ever saw
+    //     the brain's 60s "did not complete" timeout.
+    //   - any other kind isn't chat-deliverable → ack + skip.
+    let details: ServiceQueryEventDetails;
+    let text: string;
+    if (task.kind === 'service_query') {
+      details = this.composeDetails(event, task);
+      text = formatServiceQueryResult(details);
+    } else if (task.kind === 'delegation') {
+      details = {};
+      text = formatDelegationResult(event.event_kind, task);
+    } else {
       await this.ackAndTrack(event, 'skipped', result);
       return;
     }
-
-    const details = this.composeDetails(event, task);
-    const text = formatServiceQueryResult(details);
 
     try {
       await this.deliver({ text, event, task, details });
@@ -673,4 +686,27 @@ function parseApprovedPayload(raw: string): ApprovedExecutionPayload | null {
   // Drop the discriminant — consumers of an APPROVED event already know.
   const { type: _type, ...payload } = parsed;
   return payload;
+}
+
+/**
+ * Render a delegation (`/task` → paired agent) terminal event into the
+ * chat-thread text. The agent's output lives on the TASK (`result` /
+ * `result_summary`), not the event details (the `completed` event only
+ * carries `{state:'completed'}`), so we read it off the freshly-fetched task.
+ *
+ * - completed → the agent's result (or a generic ack if it returned nothing).
+ * - failed    → a short "couldn't finish" line + the error.
+ * - cancelled → a neutral cancellation line.
+ */
+function formatDelegationResult(eventKind: string, task: WorkflowTask): string {
+  if (eventKind === 'completed') {
+    const body = (task.result ?? '').trim() || (task.result_summary ?? '').trim();
+    return body !== '' ? body : 'Your agent finished the task.';
+  }
+  if (eventKind === 'failed') {
+    const err = (task.error ?? '').trim() || (task.result_summary ?? '').trim();
+    return err !== '' ? `Your agent couldn't finish the task: ${err}` : "Your agent couldn't finish the task.";
+  }
+  // cancelled
+  return 'The delegated task was cancelled.';
 }
