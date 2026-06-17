@@ -148,6 +148,57 @@ describe('guided demo screens', () => {
     expect(onExit).toHaveBeenCalledTimes(1);
   });
 
+  it('collapses to a thin bar: hides caption + step count, keeps advance + Exit, re-expands', () => {
+    const onExit = jest.fn();
+    const onAdvance = jest.fn();
+    render(
+      <GuidedDemoBanner
+        onExit={onExit}
+        onAdvance={onAdvance}
+        caption="First, tell Dina about someone."
+        step={1}
+        stepCount={6}
+        demoComplete={false}
+        nextMode="remember"
+      />,
+    );
+    // Expanded: caption + step count visible.
+    expect(screen.getByTestId('guided-demo-caption')).toBeTruthy();
+    expect(screen.getByText(/1\/6/)).toBeTruthy();
+
+    // Collapse → caption + step count gone; advance + Exit still wired.
+    fireEvent.press(screen.getByTestId('guided-demo-collapse'));
+    expect(screen.queryByTestId('guided-demo-caption')).toBeNull();
+    expect(screen.queryByText(/1\/6/)).toBeNull();
+    expect(screen.getByText('Remember')).toBeTruthy(); // advance stays in the thin bar
+    fireEvent.press(screen.getByTestId('guided-demo-next'));
+    expect(onAdvance).toHaveBeenCalledTimes(1);
+    fireEvent.press(screen.getByTestId('guided-demo-exit'));
+    expect(onExit).toHaveBeenCalledTimes(1);
+
+    // Re-expand → caption + step count back.
+    fireEvent.press(screen.getByTestId('guided-demo-collapse'));
+    expect(screen.getByTestId('guided-demo-caption')).toBeTruthy();
+    expect(screen.getByText(/1\/6/)).toBeTruthy();
+  });
+
+  it('collapsed complete state keeps the End Demo CTA inline', () => {
+    const onExit = jest.fn();
+    render(
+      <GuidedDemoBanner onExit={onExit} onAdvance={jest.fn()} caption={null} step={6} stepCount={6} demoComplete />,
+    );
+    fireEvent.press(screen.getByTestId('guided-demo-collapse'));
+    // Body caption row is gone; the End Demo CTA rides in the thin bar.
+    expect(screen.queryByTestId('guided-demo-complete')).toBeNull();
+    fireEvent.press(screen.getByTestId('guided-demo-exit-cta'));
+    expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
+  it('indicator-only banner (no stepper) has no collapse chevron', () => {
+    render(<GuidedDemoBanner onExit={jest.fn()} />);
+    expect(screen.queryByTestId('guided-demo-collapse')).toBeNull();
+  });
+
   it('teardown surface renders a non-interactive "ending demo" indicator', () => {
     render(<GuidedDemoTeardown />);
     expect(screen.getByTestId('guided-demo-tearing-down')).toBeTruthy();

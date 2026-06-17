@@ -8,7 +8,7 @@
  *   GuidedDemoRecoveryPrompt — boot Continue / Delete after a crash mid-demo
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, fonts, radius, spacing, textStyles } from '../../theme';
@@ -87,6 +87,11 @@ export function GuidedDemoBanner({
   nextLabel?: string;
 }): React.JSX.Element {
   const showStepper = onAdvance !== undefined;
+  // Collapse toggle — lets a screen recording shrink the dock to a thin bar
+  // (chevron + advance + Exit) so the caption block doesn't eat the lower
+  // third of the frame. Persists across steps (the banner stays mounted for
+  // the whole demo). Defaults expanded so first-run users still get the copy.
+  const [collapsed, setCollapsed] = useState(false);
   // Compact dock pinned just ABOVE the tab bar, OVER the composer (Ask/Remember)
   // so those can't be tapped mid-demo. It only covers the composer (not the tab
   // bar), keeping the top of the screen + most of the chat visible. `insets`
@@ -114,13 +119,63 @@ export function GuidedDemoBanner({
         : nextMode === 'ask'
           ? 'Ask'
           : 'Next step  ›';
+  // The advance button (Remember / Ask / Next step ›). Shared so it can sit in
+  // the expanded action row OR, when collapsed, inline in the thin header bar.
+  const advanceButton = (
+    <Pressable
+      testID="guided-demo-next"
+      accessibilityRole="button"
+      accessibilityLabel={`Run next demo step${composerStyle ? `: ${advanceLabel}` : ''}`}
+      accessibilityState={{ disabled: actionInFlight }}
+      disabled={actionInFlight}
+      onPress={onAdvance}
+      style={({ pressed }) => [
+        composerStyle ? styles.chipBtn : styles.nextBtn,
+        (pressed || actionInFlight) && styles.pressed,
+      ]}
+    >
+      <Text style={composerStyle ? styles.chipText : styles.nextText}>{advanceLabel}</Text>
+    </Pressable>
+  );
+  // The terminal "End Demo" button — same dual placement as advanceButton.
+  const endDemoButton = (
+    <Pressable
+      testID="guided-demo-exit-cta"
+      accessibilityRole="button"
+      accessibilityLabel="End the demo and clear the sample data"
+      onPress={onExit}
+      style={({ pressed }) => [styles.nextBtn, pressed && styles.pressed]}
+    >
+      <Text style={styles.nextText}>End Demo</Text>
+    </Pressable>
+  );
+  const primaryButton = demoComplete === true ? endDemoButton : advanceButton;
+
   return (
     <View testID="guided-demo-banner" style={styles.dock}>
-      {/* Header row: small "Guided demo · N/M" tag (left) + Exit (right). */}
+      {/* Header row: chevron toggle + "Guided demo · N/M" tag + (collapsed:
+          inline advance/End button) + Exit. Collapsed drops the step count to
+          stay as quiet as possible. */}
       <View style={styles.dockHeaderRow}>
+        {showStepper && (
+          <Pressable
+            testID="guided-demo-collapse"
+            accessibilityRole="button"
+            accessibilityLabel={
+              collapsed ? 'Expand guided demo controls' : 'Collapse guided demo controls'
+            }
+            hitSlop={12}
+            onPress={() => setCollapsed((c) => !c)}
+            style={({ pressed }) => [styles.chevronBtn, pressed && styles.pressed]}
+          >
+            {/* ▴ = tap to expand (collapsed); ▾ = tap to collapse (expanded). */}
+            <Text style={styles.chevronText}>{collapsed ? '▴' : '▾'}</Text>
+          </Pressable>
+        )}
         <Text style={styles.eyebrow} numberOfLines={1}>
-          Guided demo{eyebrowSuffix}
+          Guided demo{collapsed ? '' : eyebrowSuffix}
         </Text>
+        {collapsed && showStepper && <View style={styles.collapsedAction}>{primaryButton}</View>}
         <Pressable
           testID="guided-demo-exit"
           accessibilityRole="button"
@@ -132,7 +187,8 @@ export function GuidedDemoBanner({
           <Text style={styles.exitText}>Exit</Text>
         </Pressable>
       </View>
-      {showStepper &&
+      {!collapsed &&
+        showStepper &&
         (demoComplete === true ? (
           <View style={styles.actionRow}>
             <Text
@@ -142,15 +198,7 @@ export function GuidedDemoBanner({
             >
               All done. Welcome to Dina.
             </Text>
-            <Pressable
-              testID="guided-demo-exit-cta"
-              accessibilityRole="button"
-              accessibilityLabel="End the demo and clear the sample data"
-              onPress={onExit}
-              style={({ pressed }) => [styles.nextBtn, pressed && styles.pressed]}
-            >
-              <Text style={styles.nextText}>End Demo</Text>
-            </Pressable>
+            {endDemoButton}
           </View>
         ) : (
           <>
@@ -166,22 +214,7 @@ export function GuidedDemoBanner({
                 affordance. Disabled while a step runs (no double-fire). */}
             <View style={styles.actionRow}>
               <Text style={styles.nextHint}>{composerStyle ? 'Next step' : ''}</Text>
-              <Pressable
-                testID="guided-demo-next"
-                accessibilityRole="button"
-                accessibilityLabel={`Run next demo step${composerStyle ? `: ${advanceLabel}` : ''}`}
-                accessibilityState={{ disabled: actionInFlight }}
-                disabled={actionInFlight}
-                onPress={onAdvance}
-                style={({ pressed }) => [
-                  composerStyle ? styles.chipBtn : styles.nextBtn,
-                  (pressed || actionInFlight) && styles.pressed,
-                ]}
-              >
-                <Text style={composerStyle ? styles.chipText : styles.nextText}>
-                  {advanceLabel}
-                </Text>
-              </Pressable>
+              {advanceButton}
             </View>
           </>
         ))}
@@ -314,6 +347,12 @@ const styles = StyleSheet.create({
   },
   exitBtn: { paddingVertical: spacing.xs, paddingLeft: spacing.md },
   exitText: { fontFamily: fonts.sansSemibold, fontSize: 13, color: colors.warningTextDeepest },
+  // Collapse/expand chevron — sits left of the eyebrow in the header row.
+  chevronBtn: { paddingVertical: spacing.xs, paddingRight: spacing.sm },
+  chevronText: { fontFamily: fonts.sansSemibold, fontSize: 13, color: colors.warningTextDeepest },
+  // Wrapper around the advance/End button when it rides inline in the collapsed
+  // thin bar, so it keeps a little breathing room from the Exit control.
+  collapsedAction: { marginLeft: spacing.sm },
   caption: {
     fontFamily: fonts.sans,
     fontSize: 13,
