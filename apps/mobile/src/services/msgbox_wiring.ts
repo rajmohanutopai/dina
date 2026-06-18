@@ -31,15 +31,16 @@ import type { WSFactory, WSLike } from '@dina/core/d2d';
 import {
   makeResolveSender,
   resolveHostedDinaEndpoints,
-  resolveMobileHostedDinaEndpoints,
   type MakeResolveSenderOptions,
 } from '@dina/home-node';
+
+import { mobileHostedEndpoints } from './hosted_endpoints';
 
 /** Default shared Dina mailbox for greenfield test installs. */
 export const DEFAULT_MSGBOX_URL = resolveHostedDinaEndpoints('test').msgboxWsUrl;
 
 export function resolveMsgBoxURL(): string {
-  return resolveMobileHostedDinaEndpoints().msgboxWsUrl;
+  return mobileHostedEndpoints().msgboxWsUrl;
 }
 
 /**

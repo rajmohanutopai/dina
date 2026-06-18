@@ -10,7 +10,9 @@
 
 import React, { useMemo, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
-import { pdsHostForEndpoints, resolveMobileHostedDinaEndpoints } from '@dina/home-node';
+import { pdsHostForEndpoints } from '@dina/home-node';
+
+import { mobileHostedEndpoints } from '../../services/hosted_endpoints';
 import { OnboardingShell } from './shell';
 import { locateStep, type Step } from '../../onboarding/state';
 import { colors, radius, spacing, textStyles } from '../../theme';
@@ -74,7 +76,7 @@ function buildPreview(name: string): string | null {
     .replace(/[^a-z0-9]/g, '')
     .slice(0, 12);
   if (sanitized.length < 2) return null;
-  const pdsHost = pdsHostForEndpoints(resolveMobileHostedDinaEndpoints());
+  const pdsHost = pdsHostForEndpoints(mobileHostedEndpoints());
   return `${sanitized}.${pdsHost}`;
 }
 

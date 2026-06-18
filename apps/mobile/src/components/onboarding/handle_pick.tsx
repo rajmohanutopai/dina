@@ -36,7 +36,9 @@ import {
   sanitizeHandlePrefix,
   validateHandleFormat,
 } from '@dina/core';
-import { pdsHostForEndpoints, resolveMobileHostedDinaEndpoints } from '@dina/home-node';
+import { pdsHostForEndpoints } from '@dina/home-node';
+
+import { mobileHostedEndpoints } from '../../services/hosted_endpoints';
 import { OnboardingShell } from './shell';
 import { locateStep, type Step } from '../../onboarding/state';
 import { colors, radius, spacing, textStyles } from '../../theme';
@@ -303,7 +305,7 @@ function SuggestionList({
 }
 
 function resolvePDSHost(): string {
-  return pdsHostForEndpoints(resolveMobileHostedDinaEndpoints());
+  return pdsHostForEndpoints(mobileHostedEndpoints());
 }
 
 const styles = StyleSheet.create({

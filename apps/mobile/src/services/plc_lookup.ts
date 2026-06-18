@@ -15,7 +15,8 @@
  */
 
 import { defaultFetch } from '@dina/core';
-import { resolveMobileHostedDinaEndpoints } from '@dina/home-node';
+
+import { mobileHostedEndpoints } from './hosted_endpoints';
 
 const TTL_MS = 60_000;
 
@@ -67,7 +68,7 @@ export async function lookupPlc(
   options?: { fetchFn?: typeof globalThis.fetch; plcDirectory?: string },
 ): Promise<PlcLookupResult> {
   const fetchFn = options?.fetchFn ?? defaultFetch();
-  const directory = (options?.plcDirectory ?? resolveMobileHostedDinaEndpoints().plcDirectoryUrl)
+  const directory = (options?.plcDirectory ?? mobileHostedEndpoints().plcDirectoryUrl)
     .replace(/\/$/, '');
 
   const cached = cache.get(did);

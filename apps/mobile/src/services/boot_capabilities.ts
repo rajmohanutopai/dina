@@ -78,7 +78,9 @@ import {
   storeItem,
   type DrainerHandle} from '@dina/core';
 import { DIDResolver, hydrateDeviceRegistry } from '@dina/core/runtime';
-import { resolveMobileHostedDinaEndpoints , makeSendD2D, makeOutboxRedeliver } from '@dina/home-node';
+import { makeSendD2D, makeOutboxRedeliver } from '@dina/home-node';
+
+import { mobileHostedEndpoints } from './hosted_endpoints';
 import { buildHomeNodeAskRuntime } from '@dina/home-node/ask-runtime';
 
 import { loadActiveProvider } from '../ai/active_provider';
@@ -525,7 +527,7 @@ export async function buildBootInputs(
   // Mirror the appViewClient priority so a CLEAN install can both DISCOVER and
   // SEND: an explicit override wins; demo mode skips the real resolver (it uses
   // the in-memory AppView stub); otherwise default to the SAME hosted AppView
-  // search uses (`resolveMobileHostedDinaEndpoints().appViewBaseUrl`). Without
+  // search uses (`mobileHostedEndpoints().appViewBaseUrl`). Without
   // this default, search succeeded against hosted AppView but egress fell back
   // to contact-gating → a public provider's query was denied because the
   // provider isn't a contact.
@@ -535,7 +537,7 @@ export async function buildBootInputs(
       : options.demoMode === true
         ? undefined
         : new AppViewServiceResolver({
-            appViewURL: resolveMobileHostedDinaEndpoints().appViewBaseUrl,
+            appViewURL: mobileHostedEndpoints().appViewBaseUrl,
           });
 
   const sendD2D: BootServiceInputs['sendD2D'] = makeSendD2D({
@@ -688,7 +690,7 @@ function demoAppView(): AppViewStub {
 
 function defaultAppView(): AppViewClient {
   return new AppViewClient({
-    appViewURL: resolveMobileHostedDinaEndpoints().appViewBaseUrl,
+    appViewURL: mobileHostedEndpoints().appViewBaseUrl,
   });
 }
 

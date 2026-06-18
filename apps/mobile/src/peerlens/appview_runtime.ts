@@ -18,12 +18,12 @@
  * hosted test or release fleet as one unit.
  */
 
-import { resolveMobileHostedDinaEndpoints } from '@dina/home-node';
+import { mobileHostedEndpoints } from '../services/hosted_endpoints';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 function configuredURL(): string {
-  return resolveMobileHostedDinaEndpoints().appViewBaseUrl;
+  return mobileHostedEndpoints().appViewBaseUrl;
 }
 
 const APPVIEW_URL = configuredURL();
