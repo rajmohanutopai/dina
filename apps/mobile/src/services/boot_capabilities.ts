@@ -1095,13 +1095,7 @@ function lazyWorkflowClient(): Parameters<typeof createDelegateToAgentTool>[0]['
       }
       return node.coreClient.createWorkflowTask(input);
     },
-    async getWorkflowTask(id) {
-       
-      const { getBootedNode } =
-        require('../hooks/useNodeBootstrap') as typeof import('../hooks/useNodeBootstrap');
-      const node = getBootedNode();
-      if (node === null) return null;
-      return node.coreClient.getWorkflowTask(id);
-    },
+    // No getWorkflowTask: delegate_to_agent fires-and-returns (async result
+    // delivery via WorkflowEventConsumer), so it never polls the task.
   };
 }

@@ -21,7 +21,7 @@ import {
   type DemoApprovalRequest,
   type GuidedDemoSeams,
 } from '../../src/guided_demo/runner';
-import { DEMO_STEPS, DEMO_SALON, type DemoStep } from '../../src/guided_demo/content';
+import { DEMO_STEPS, DEMO_SALON, DEMO_TASK, type DemoStep } from '../../src/guided_demo/content';
 
 interface Recorded {
   sends: Array<{ mode: string; message: string; vault: string }>;
@@ -39,6 +39,7 @@ interface Recorded {
   delays: (number | undefined)[];
   seededPeople: { name: string; relation: string }[];
   seededReminders: string[];
+  stageClears: number;
 }
 
 function fakeSeams(opts: { confirmPublish?: boolean } = {}): {
@@ -62,10 +63,14 @@ function fakeSeams(opts: { confirmPublish?: boolean } = {}): {
     delays: [],
     seededPeople: [],
     seededReminders: [],
+    stageClears: 0,
   };
   const seams: GuidedDemoSeams = {
     async send(mode, message, vault) {
       rec.sends.push({ mode, message, vault });
+    },
+    clearStage() {
+      rec.stageClears += 1;
     },
     seedPerson(person) {
       rec.seededPeople.push(person);
@@ -196,6 +201,41 @@ describe('buildDemoApprovalRequest', () => {
 });
 
 describe('GuidedDemoRunner.advance', () => {
+  it('clears the demo stage at the start of each step, honoring clearStageBefore:false', async () => {
+    const { seams, rec } = fakeSeams();
+    // Two minimal chat steps: the first clears by default, the second opts out
+    // (a recall/synthesis step that wants the prior bubbles to stay visible).
+    const plan = buildDemoPlan([
+      { id: 'a', mode: 'remember', message: 'x', caption: 'c' },
+      { id: 'b', mode: 'remember', message: 'y', caption: 'c', clearStageBefore: false },
+    ]);
+    const runner = new GuidedDemoRunner(seams, { now: () => 1, plan });
+    await runner.advance(); // step a: default → clears the stage once
+    expect(rec.stageClears).toBe(1);
+    await runner.advance(); // step b: clearStageBefore:false → no extra clear
+    expect(rec.stageClears).toBe(1);
+  });
+
+  it('clears the salon finale as two scenes: setup+publish, then booking+reply', async () => {
+    // The salon beats build on each other: salon_publish continues the listing
+    // salon_setup previewed, and salon_reply continues the booking salon_booking
+    // requested. Clearing before those two would blank the chat during the
+    // publish/booking await (the "pre-demo screen" the user saw) and break the
+    // single-flow. So setup + booking clear (scene starts); publish + reply don't.
+    const { seams, rec } = fakeSeams({ confirmPublish: true });
+    const runner = new GuidedDemoRunner(seams, { now: () => 1 });
+    const clearsByKind: Record<string, boolean> = {};
+    while (!runner.isComplete) {
+      const before = rec.stageClears;
+      const action = await runner.advance();
+      if (action !== null) clearsByKind[action.kind] = rec.stageClears > before;
+    }
+    expect(clearsByKind.salon_setup).toBe(true);
+    expect(clearsByKind.salon_publish).toBe(false);
+    expect(clearsByKind.salon_booking).toBe(true);
+    expect(clearsByKind.salon_reply).toBe(false);
+  });
+
   it('runs each content step through its real seam, marking progress', async () => {
     const { seams, rec } = fakeSeams();
     const runner = new GuidedDemoRunner(seams, { now: () => 1 });
@@ -269,9 +309,11 @@ describe('GuidedDemoRunner.advance', () => {
     expect(action?.kind).toBe('approval');
     expect(rec.approvals).toHaveLength(1);
     expect(rec.approvals[0]?.id).toBe('guided-demo-approval-42');
-    // The approval step is framed as a delegated task — the hand-off message is
-    // posted before the agent's access request.
+    // The approval step is framed as a delegated task — the hand-off message and
+    // the "sending to the agent" status line are both posted before the agent's
+    // access request.
     expect(rec.userMessages.some((m) => /Email my manager/.test(m))).toBe(true);
+    expect(rec.cards).toContain(DEMO_TASK.dispatch);
   });
 
   it('posts the D2D message, review card, then the salon finale, then completes', async () => {
@@ -297,7 +339,9 @@ describe('GuidedDemoRunner.advance', () => {
       },
     ]);
     expect(rec.publishConfirms).toBe(1);
-    expect(rec.cards).toEqual([DEMO_SALON.customer]);
+    // postDemoCard carries the agent-dispatch status line (approval step) then
+    // the salon customer query (salon_booking step), in order.
+    expect(rec.cards).toEqual([DEMO_TASK.dispatch, DEMO_SALON.customer]);
     expect(rec.serviceCards.map((c) => c.capability)).toEqual([
       'service_listing',
       'appointment_booking',

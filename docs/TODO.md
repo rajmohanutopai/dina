@@ -1,3 +1,12 @@
+# test-pds is not flippable
+in the pick your handle page itself, user should be able to choose between test, prod, their own infra. 
+
+# important 
+the main systems should have backup etc - database etc should be on Atlas etc
+
+
+# Found a major bug
+I deleted my Dina (erase everythig in device), logges in as a separate user, but I still see one service already linked to me.  I tried to connect to that, it didnt work, so worried that it is not linked via did:plc
 
 # very important - to avoid context leak to external systems like agents, services and reviews
 docs/CONTEXT_FIREWALL_DESIGN.md

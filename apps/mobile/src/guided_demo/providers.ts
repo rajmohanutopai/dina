@@ -24,7 +24,7 @@ import { Alert } from 'react-native';
 
 import { router } from 'expo-router';
 
-import { addLifecycleMessage, addMessage } from '@dina/brain/chat';
+import { addLifecycleMessage, addMessage, clearThreadMessages } from '@dina/brain/chat';
 import {
   currentDataScope,
   getApprovalManager,
@@ -78,6 +78,15 @@ export function makeGuidedDemoSeams(): GuidedDemoSeams {
       addMessage(MAIN_THREAD, 'user', `${prefixFor(mode)}${message}`);
       await sleep(REMEMBER_THINKING_MS);
       addMessage(MAIN_THREAD, 'dina', `Stored in ${vault} vault.`);
+    },
+    clearStage() {
+      // Wipe the demo chat stage between steps. `clearThreadMessages` empties
+      // the in-memory `main` thread AND persists the deletion via
+      // `repo.deleteThread('main')`, whose SQL filters on the active data scope
+      // (`guided_demo:*` while the demo runs) — so it removes ONLY demo rows.
+      // The user's real chat (`data_scope='user'`) isn't in memory during the
+      // demo and never matches the scoped delete, so it is never touched.
+      clearThreadMessages(MAIN_THREAD);
     },
     seedPerson(person) {
       // Write the person + relationship straight into the scoped People store

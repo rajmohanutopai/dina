@@ -42,7 +42,7 @@ export const ACTIONS = [
     label: 'Services',
     description: 'Find a public service on the network',
     prefix: '/services ',
-    placeholder: 'e.g. price of kebab at a Turkish restaurant',
+    placeholder: 'e.g. any salon openings around 4pm Thursday?',
   },
   {
     key: 'reviews',

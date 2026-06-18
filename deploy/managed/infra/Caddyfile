@@ -8,10 +8,19 @@ mailbox.dinakernel.com {
 	reverse_proxy msgbox:7700
 }
 
+appview.dinakernel.com {
+	reverse_proxy appview-web:3000
+}
+
 grants.dinakernel.com {
 	reverse_proxy grants:8300
 }
 
-appview.dinakernel.com {
-	reverse_proxy appview-web:3000
+dinakernel.com {
+	root * /srv/www
+	file_server
+}
+
+www.dinakernel.com {
+	redir https://dinakernel.com{uri}
 }

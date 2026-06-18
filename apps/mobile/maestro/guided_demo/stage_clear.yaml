@@ -1,0 +1,17 @@
+# Durable, self-contained proof of the guided-demo stage-clear feature on a
+# clean install: onboard a fresh Dina + run demo step 0 (onboard_and_demo.yaml),
+# then assert the stage-clear invariants (stage_clear_steps.yaml):
+#   A) a multi-message step keeps ALL its own bubbles;
+#   B) the stage is wiped between steps (across a navigate step AND between two
+#      consecutive chat steps).
+#
+# Run on a FRESH app state (onboard_and_demo onboards from the welcome screen):
+#   maestro --device <ios-udid> test apps/mobile/maestro/guided_demo/stage_clear.yaml
+#
+# When the app is already onboarded + parked at the crash-recovery prompt, run
+# the continuation directly instead (it taps "Continue demo" itself):
+#   maestro --device <ios-udid> test apps/mobile/maestro/guided_demo/stage_clear_steps.yaml
+appId: com.dinakernel.mobile
+---
+- runFlow: onboard_and_demo.yaml
+- runFlow: stage_clear_steps.yaml

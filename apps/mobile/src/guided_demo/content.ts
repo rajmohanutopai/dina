@@ -89,6 +89,16 @@ export interface DemoStep {
   navigateTo?: DemoNavTarget;
   /** Optional override for the dock's advance-button label (navigate steps). */
   nextLabel?: string;
+  /**
+   * Whether to wipe the (demo-scoped) chat stage when this step BEGINS, so each
+   * step demos one capability on a clean screen instead of an ever-growing
+   * pile of bubbles. Defaults to `true`. Set `false` for steps that
+   * intentionally build on what's already on screen — notably the
+   * recall/synthesis moments ("earlier you told me X — watch me use it"),
+   * where the prior bubbles are the proof. The clear is scope-bound to the
+   * `guided_demo:*` data scope (see runner) and never touches real chat.
+   */
+  clearStageBefore?: boolean;
 }
 
 /**
@@ -274,6 +284,10 @@ export const DEMO_SERVICE_REQUEST: DemoServiceParams = {
 export const DEMO_TASK = {
   /** What the user types to delegate the task. */
   message: 'Email my manager about my health condition.',
+  /** Status line posted right after the hand-off: Dina relays the task to the
+   *  connected agent BEFORE the agent comes back asking for Health access. Makes
+   *  Dina's gateway role explicit (the agent talks to you only through Dina). */
+  dispatch: 'Sending to your connected OpenClaw agent…',
   caption:
     'Hand off a task to OpenClaw or another agent. Dina is the safety layer: for locked data or risky actions, the agent can get your approval through Dina.',
 } as const;

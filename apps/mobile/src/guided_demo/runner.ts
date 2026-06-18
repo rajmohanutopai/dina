@@ -102,6 +102,13 @@ export interface GuidedDemoSeams {
    *  The outcomes (vault routing, people, enrichment) are still accurate, just
    *  scripted; the real app is one tap away for live behaviour. */
   send(mode: DemoMode, message: string, vault: string): Promise<void>;
+  /** Wipe the demo chat stage so each step demos on a clean screen instead of
+   *  an ever-growing pile of bubbles. SCOPE-BOUND: the impl clears the `main`
+   *  thread, whose persisted delete filters on the active `guided_demo:*` data
+   *  scope — it never touches the user's real (`data_scope='user'`) chat, which
+   *  isn't even in memory during the demo. Called by the runner at the start of
+   *  a step unless `step.clearStageBefore === false`. */
+  clearStage(): void;
   /** Seed a person + relationship into People › Relations (scope-bound), so the
    *  nav peek shows it without the live people-extraction. No-op without a repo. */
   seedPerson(person: { name: string; relation: string }): void;
@@ -144,19 +151,40 @@ export interface GuidedDemoSeams {
   delay(ms?: number): Promise<void>;
 }
 
+/** Fields shared by every demo action, regardless of `kind`. */
+interface DemoActionShared {
+  id: string;
+  caption: string;
+  /**
+   * Whether to wipe the (demo-scoped) chat stage when this action BEGINS.
+   * Defaults to `true` (each action demos one capability on a clean screen).
+   * Set `false` for an action that intentionally BUILDS on what the previous
+   * action left on screen:
+   *   - scripted content steps carry it up from {@link DemoStep.clearStageBefore}
+   *     (the recall/synthesis moments where the prior bubbles are the proof);
+   *   - the salon finale's `salon_publish` / `salon_reply` beats continue the
+   *     scene the beat before them set up. Clearing there blanks the chat during
+   *     the publish/booking `await` (the user sees the empty pre-demo screen) and
+   *     breaks the "one continuous flow" — the publish flow is a single action.
+   */
+  clearStageBefore?: boolean;
+}
+
 /** A step in the linear demo plan. Discriminated by `kind`. */
-export type DemoAction =
-  | { kind: 'chat'; id: string; caption: string; step: DemoStep }
-  | { kind: 'recommend'; id: string; caption: string; step: DemoStep }
-  | { kind: 'service'; id: string; caption: string; step: DemoStep }
-  | { kind: 'navigate'; id: string; caption: string; step: DemoStep }
-  | { kind: 'd2d'; id: string; caption: string }
-  | { kind: 'approval'; id: string; caption: string }
-  | { kind: 'review'; id: string; caption: string }
-  | { kind: 'salon_setup'; id: string; caption: string }
-  | { kind: 'salon_publish'; id: string; caption: string }
-  | { kind: 'salon_booking'; id: string; caption: string }
-  | { kind: 'salon_reply'; id: string; caption: string };
+export type DemoAction = DemoActionShared &
+  (
+    | { kind: 'chat'; step: DemoStep }
+    | { kind: 'recommend'; step: DemoStep }
+    | { kind: 'service'; step: DemoStep }
+    | { kind: 'navigate'; step: DemoStep }
+    | { kind: 'd2d' }
+    | { kind: 'approval' }
+    | { kind: 'review' }
+    | { kind: 'salon_setup' }
+    | { kind: 'salon_publish' }
+    | { kind: 'salon_booking' }
+    | { kind: 'salon_reply' }
+  );
 
 /**
  * Build the ordered action plan: the scripted content steps (chat or service,
@@ -174,7 +202,9 @@ export function buildDemoPlan(steps: readonly DemoStep[] = DEMO_STEPS): DemoActi
             : step.kind === 'navigate'
               ? 'navigate'
               : 'chat';
-      return { kind, id: step.id, caption: step.caption, step };
+      // Carry the step's own clear policy up to the action level so the runner
+      // reads one field for every action kind.
+      return { kind, id: step.id, caption: step.caption, step, clearStageBefore: step.clearStageBefore };
     }),
     {
       kind: 'd2d',
@@ -191,7 +221,11 @@ export function buildDemoPlan(steps: readonly DemoStep[] = DEMO_STEPS): DemoActi
       id: PEERLENS_REVIEW_STEP,
       caption: DEMO_REVIEW.caption,
     },
-    // ── Salon finale: publish a service of your own, get queried, approve. ──
+    // ── Salon finale: two continuous scenes, not four isolated clears. ──
+    // Scene 1 (publish): salon_setup clears (fresh start after the review card),
+    // then salon_publish BUILDS on the listing preview it left — so the preview
+    // stays under the publish popup and the published card joins it, with no
+    // blank chat during the publish await.
     {
       kind: 'salon_setup',
       id: SALON_SETUP_STEP,
@@ -201,7 +235,11 @@ export function buildDemoPlan(steps: readonly DemoStep[] = DEMO_STEPS): DemoActi
       kind: 'salon_publish',
       id: SALON_PUBLISH_STEP,
       caption: DEMO_SALON.publishCaption,
+      clearStageBefore: false,
     },
+    // Scene 2 (booking): salon_booking clears (a customer arrives — new scene),
+    // then salon_reply BUILDS on the approval card it left — the confirmation
+    // lands under the approved request, again with no blank chat during the await.
     {
       kind: 'salon_booking',
       id: SALON_BOOKING_STEP,
@@ -211,6 +249,7 @@ export function buildDemoPlan(steps: readonly DemoStep[] = DEMO_STEPS): DemoActi
       kind: 'salon_reply',
       id: SALON_REPLY_STEP,
       caption: DEMO_SALON.replyCaption,
+      clearStageBefore: false,
     },
   ];
 }
@@ -375,6 +414,19 @@ export class GuidedDemoRunner {
   async advance(): Promise<DemoAction | null> {
     const action = this.currentAction;
     if (action === null) return null;
+    // Declutter: wipe the demo stage as this action BEGINS (so the prior step's
+    // result stayed readable until the user tapped Next). Default on; an action
+    // opts out with `clearStageBefore: false` to build on what's already on
+    // screen — the recall/synthesis chat steps AND the salon finale's
+    // publish/reply beats (which continue the scene the prior beat set up; see
+    // buildDemoPlan + DemoActionShared). A multi-message action that DOES clear
+    // (approval / d2d / salon_setup / salon_booking) clears once here, never
+    // mid-flow — its own messages then accumulate within the single action.
+    // Scope-bound to guided_demo:* (see GuidedDemoSeams.clearStage); never
+    // touches real chat.
+    if (action.clearStageBefore !== false) {
+      this.seams.clearStage();
+    }
     switch (action.kind) {
       case 'chat': {
         // Scripted remembers (no live LLM): one or several per step, each posts
@@ -411,11 +463,13 @@ export class GuidedDemoRunner {
         if (action.step.navigateTo !== undefined) this.seams.navigate(action.step.navigateTo);
         break;
       case 'approval': {
-        // Task hand-off: the user delegates a task (email the manager); the agent
-        // then works on it and comes back asking to read Health. Pause between the
-        // hand-off and the approval card so it reads like the agent processed the
-        // task, not an instant canned prompt.
+        // Task hand-off: the user delegates a task (email the manager); Dina
+        // relays it to the connected agent, which then works on it and comes back
+        // asking to read Health. The "sending to the agent" status line makes
+        // Dina's gateway role explicit. Pause after it so it reads like the agent
+        // processed the task, not an instant canned prompt.
         this.seams.postUserMessage(DEMO_TASK.message);
+        this.seams.postDemoCard(DEMO_TASK.dispatch);
         await this.seams.delay();
         const id = this.seams.requestApproval(buildDemoApprovalRequest(this.now()));
         this.pendingApprovals.push(id);

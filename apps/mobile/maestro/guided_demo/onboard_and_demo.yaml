@@ -81,15 +81,23 @@ appId: com.dinakernel.mobile
     id: 'guided-demo-next'
 - tapOn:
     id: 'guided-demo-next'
-# The first step is a real /remember ("Emma is my daughter") through Gemini.
-# The caption only advances to step 2 once that turn completes — proving the
-# demo runs the real path + steps forward. The full multi-step run (incl. the
-# cross-input dinosaur reminder + the chair recommendation) is exercised by
-# drive_to_exit.yaml.
+# Step 1 (remember_people) is a SCRIPTED multi-remember: it posts "Emma is my
+# daughter…" then, after a pause, "Alonso… cold brew", each with a "Stored in
+# General vault." reply (see src/guided_demo/content.ts + providers.ts — the tour
+# posts deterministic replies, it does NOT call the live LLM). Both bubbles being
+# on screen together is the evidence the step ran AND that a multi-message step
+# keeps all its bubbles. The stage-clear behaviour across steps is exercised by
+# guided_demo/stage_clear.yaml (which runs this flow first).
 - extendedWaitUntil:
     visible:
-      text: '.*quietly remembers.*'
+      text: '.*Emma is my daughter.*'
     timeout: 60000
+- extendedWaitUntil:
+    visible:
+      text: '.*cold brew.*'
+    timeout: 30000
+- assertVisible:
+    text: '.*Stored in General vault.*'
 # Exit + cleanup is verified by guided_demo/exit_cleanup.yaml (a fresh Maestro
 # session — the long LLM-heavy session here destabilises the XCUITest driver,
 # so the teardown tap is run separately for reliability).

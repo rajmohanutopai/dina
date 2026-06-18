@@ -537,9 +537,7 @@ export default function ChatScreen() {
               greeting — keeps the empty state quiet so the action
               card below carries the discovery work. */}
           <Text style={styles.heroTagline}>{'Your sovereign AI.\nYour open network.'}</Text>
-          <Text style={styles.heroSubtitle}>
-            Ask, remember, or hand off a task. Everything stays on your device.
-          </Text>
+          <Text style={styles.heroSubtitle}>Ask Dina. Ask a service. Ask around.</Text>
 
           {/* During a guided demo the "What can Dina do?" card is an escape
               hatch (it routes to Help). Swap it for a non-interactive "Demo

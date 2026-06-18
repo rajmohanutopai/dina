@@ -1,0 +1,83 @@
+# Reusable continuation that PROVES the guided-demo stage-clear: each step wipes
+# the (demo-scoped) chat stage when it begins, so one capability shows on a clean
+# screen — EXCEPT a single multi-message step, which keeps all of its own bubbles.
+#
+# Precondition (both callers converge on it): the demo is parked at step 1
+# (`show_relations`, the navigate step) with step 0's two remembers
+# ("Emma is my daughter…" + "Alonso… cold brew") on the Chat screen. That's the
+# state left by guided_demo/onboard_and_demo.yaml (it taps Next once → runs
+# step 0) AND by the crash-recovery "Continue demo" prompt (resumeAfter parks the
+# cursor at step 1 and rehydrates step 0's scoped bubbles). The optional tap below
+# handles the recovery-prompt case; it no-ops when we're already in the banner.
+#
+# Demo plan (src/guided_demo/{content,runner}.ts):
+#   step0 remember_people   chat     Emma + Alonso (two remembers, one tap)
+#   step1 show_relations    navigate → People › Relations  (clears step0)
+#   step2 remember_private  chat     lower-back (Health) + spending (Finance)
+#   step3 remember_emma_birthday chat  Emma's birthday + reminder cards
+appId: com.dinakernel.mobile
+---
+# Resume case: dismiss the crash-recovery prompt by continuing the demo. No-op
+# (optional) when this sub-flow is chained after onboard_and_demo (already in-demo).
+- tapOn:
+    id: 'guided-demo-recovery-continue'
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: 'guided-demo-banner'
+    timeout: 25000
+
+# ── Invariant A: a multi-message step keeps ALL its bubbles ──────────────────
+# step0 posted BOTH remembers in one tap — both must be on screen together.
+- extendedWaitUntil:
+    visible:
+      text: '.*Emma is my daughter.*'
+    timeout: 30000
+- assertVisible:
+    text: '.*cold brew.*'
+
+# Advance step1 (navigate to People › Relations). Its clearStage wipes step0's
+# bubbles. The dock + Next button render at the Tabs level, so they persist on
+# the People tab. Wait for step2's caption to confirm step1 ran + Next re-enabled.
+- tapOn:
+    id: 'guided-demo-next'
+- extendedWaitUntil:
+    visible:
+      text: '.*something private.*'
+    timeout: 20000
+
+# Advance step2 (back to Chat + post Health + Finance remembers).
+- tapOn:
+    id: 'guided-demo-next'
+- extendedWaitUntil:
+    visible:
+      text: '.*lower back pain.*'
+    timeout: 30000
+
+# ── Invariant A again: step2 is also multi-message → both bubbles present ─────
+- assertVisible:
+    text: '.*spending under.*'
+
+# ── Invariant B: the stage CLEARED across steps ─────────────────────────────
+# step0's bubbles were wiped when step1 began → gone now (not merely scrolled:
+# clearStage deletes the scoped rows, so they leave the view tree entirely).
+- assertNotVisible:
+    text: '.*Emma is my daughter.*'
+
+# Advance step3 (birthday) — proves the clear between two CONSECUTIVE chat steps.
+- extendedWaitUntil:
+    visible:
+      text: '.*Add a date.*'
+    timeout: 20000
+- tapOn:
+    id: 'guided-demo-next'
+- extendedWaitUntil:
+    visible:
+      text: ".*Emma's birthday is on Nov 7.*"
+    timeout: 30000
+
+# ── Invariant B (chat→chat): step2's bubbles are gone after step3 began ──────
+- assertNotVisible:
+    text: '.*lower back pain.*'
+- assertNotVisible:
+    text: '.*spending under.*'

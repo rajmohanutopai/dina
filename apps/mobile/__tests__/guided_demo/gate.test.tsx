@@ -64,6 +64,9 @@ function fakeSeams(): {
     async send() {
       rec.sends += 1;
     },
+    clearStage() {
+      /* no-op for gate-level assertions */
+    },
     async postRecommendation() {
       rec.recommendations += 1;
     },
@@ -289,7 +292,9 @@ describe('useGuidedDemoGate', () => {
     expect(rec.approvals).toHaveLength(2); // agent Health-read + salon booking
     expect(rec.d2dMessages).toBe(1); // Dina-to-Dina Talk step
     expect(rec.reviewCards).toBe(1); // PeerLens review card
-    expect(rec.cards).toBe(1); // salon finale: the customer query (postDemoCard)
+    // postDemoCard fires twice: the agent-dispatch status line (approval step)
+    // and the salon customer query (salon_booking step).
+    expect(rec.cards).toBe(2);
     expect(result.current.demoComplete).toBe(true);
     expect(result.current.currentAction).toBeNull();
   });
@@ -307,6 +312,9 @@ describe('useGuidedDemoGate', () => {
     });
     const state = { sends: 0, scopeAtSend: '' };
     const seams: GuidedDemoSeams = {
+      clearStage() {
+        /* no-op for serialization/teardown assertions */
+      },
       async send() {
         state.sends += 1;
         await blocker;
