@@ -23,6 +23,12 @@ import {
   InMemoryTopicRepository,
 } from '../../../core/src/memory/repository';
 import { setVaultRepository, getVaultRepository } from '../../../core/src/vault/repository';
+import {
+  setChatMessageRepository,
+  getChatMessageRepository,
+  InMemoryChatMessageRepository,
+} from '../../../core/src/chat/repository';
+import { addMessage, getThread } from '../../../brain/src/chat/thread';
 
 describe('shutdownAllPersistence — memory teardown', () => {
   it('drops the module-global MemoryService', async () => {
@@ -47,5 +53,21 @@ describe('shutdownAllPersistence — memory teardown', () => {
     await shutdownAllPersistence();
     expect(getTopicRepository('health')).toBeNull();
     expect(getVaultRepository('health')).toBeNull();
+  });
+
+  it('clears the in-memory chat thread cache + drops the chat repo (cross-identity privacy)', async () => {
+    // Privacy regression: the chat UI renders from Brain's in-memory `threads`
+    // Map. Teardown MUST reset it, or a NEW identity (erase / sign-out then
+    // log in as someone else, same JS process) inherits the PREVIOUS user's
+    // conversation — exactly the leak reported in the field.
+    setChatMessageRepository(new InMemoryChatMessageRepository());
+    addMessage('main', 'user', 'previous identity private message');
+    expect(getThread('main').length).toBeGreaterThan(0);
+    expect(getChatMessageRepository()).not.toBeNull();
+
+    await shutdownAllPersistence();
+
+    expect(getThread('main')).toEqual([]);
+    expect(getChatMessageRepository()).toBeNull();
   });
 });

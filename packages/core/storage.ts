@@ -79,7 +79,7 @@ export {
   setStagingRepository,
 } from './src/staging/repository';
 export type { StagingRepository } from './src/staging/repository';
-export { hydrateStagingFromRepository } from './src/staging/service';
+export { hydrateStagingFromRepository, resetStagingState } from './src/staging/service';
 export {
   SQLiteQuarantineRepository,
   setQuarantineRepository,

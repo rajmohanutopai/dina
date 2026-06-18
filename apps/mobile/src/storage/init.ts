@@ -32,6 +32,11 @@ import {
   type ArchivePersonaSource,
   type PersonaTier,
 } from '@dina/core';
+// Chat thread cache lives in the Brain module (in-memory Map, authoritative
+// for rendering). `resetThreads()` clears it on teardown so a previous
+// identity's conversation can't survive into the next one (privacy: erase +
+// re-login leaked old chats because this cache was never reset).
+import { resetThreads } from '@dina/brain/chat';
 import {
   SQLiteAuditRepository,
   SQLiteChatMessageRepository,
@@ -54,6 +59,7 @@ import {
   hydrateStagingFromRepository,
   openPersonaVault,
   resetQuarantineState,
+  resetStagingState,
   resetTopicRepositories,
   resetVaultRepositories,
   setAuditRepository,
@@ -128,6 +134,19 @@ export async function initializePersistence(
   masterSeed: Uint8Array,
   userSalt: Uint8Array,
 ): Promise<void> {
+  // Defense-in-depth privacy reset: clear in-memory content caches before
+  // wiring this identity's stores. Tier-2 "erase" tears down through
+  // shutdownAllPersistence (which resets these), but Tier-1 "sign out" does
+  // NOT — so a sign-out followed by logging in as a DIFFERENT identity (same
+  // JS process, no restart) would otherwise inherit the previous user's
+  // chat / staging / quarantine caches. Resetting here makes every identity
+  // bring-up start clean; on a normal cold boot the caches are already empty,
+  // so these are no-ops. All three are in-memory-only resets (staging uses
+  // preserveRepositoryRows so it never touches a DB).
+  resetThreads();
+  resetStagingState({ preserveRepositoryRows: true });
+  resetQuarantineState();
+
   // Use Expo's document directory for database storage. `Paths.document`
   // returns a `Directory` whose `.uri` is a `file://…/` string — op-sqlite
   // wants a raw filesystem path without the scheme prefix.
@@ -422,6 +441,21 @@ export async function shutdownAllPersistence(): Promise<void> {
     resetTopicRepositories();
     setQuarantineRepository(null);
     resetQuarantineState();
+    // Chat threads — same class of leak as the quarantine map above. The
+    // chat UI renders from Brain's in-memory `threads` Map; without this
+    // reset it survives erase/sign-out (the JS process isn't restarted), so
+    // a NEW identity's chat shows the PREVIOUS user's messages (hydrateThread
+    // MERGEs by default, so an empty new-identity disk doesn't displace the
+    // stale cache). Drop the repo handle too so a post-teardown write can't
+    // land in a closed DB. Privacy bug: erase + re-login leaked old chats.
+    resetThreads();
+    setChatMessageRepository(null);
+    // Staging inbox — same cross-identity in-memory leak as chat/quarantine.
+    // It caches in-flight /remember content (raw, pre-classification). Null
+    // the repo first so the reset's repo.clear() is a no-op, and pass
+    // preserveRepositoryRows so we never write to the just-closed DB.
+    setStagingRepository(null);
+    resetStagingState({ preserveRepositoryRows: true });
     // Drop the persona repository too — otherwise a previous session's handle
     // survives teardown and a post-shutdown createPersona(persist:true) would
     // write to a closed DB instead of failing closed.
