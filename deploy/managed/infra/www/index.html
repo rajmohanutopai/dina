@@ -8,6 +8,11 @@
 <meta property="og:title" content="Dina: Your sovereign AI. Your open network.">
 <meta property="og:description" content="Your memory, your agent approvals, your services, your network. Encrypted on your device.">
 <meta property="og:type" content="website">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon/favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/assets/favicon/apple-touch-icon.png">
+<link rel="manifest" href="/assets/favicon/site.webmanifest">
+<meta name="theme-color" content="#FAF8F5">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;1,600&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -34,7 +39,7 @@
   --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.03), 0 4px 12px rgba(0,0,0,0.04);
   --shadow-md: 0 2px 4px rgba(0,0,0,0.03), 0 10px 32px rgba(0,0,0,0.07);
-  --shadow-phone: 0 4px 12px rgba(0,0,0,0.06), 0 24px 60px rgba(28,25,23,0.14);
+  --shadow-phone: 0 2px 10px rgba(28,25,23,0.04), 0 14px 40px rgba(28,25,23,0.07);
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { scroll-behavior: smooth; }
@@ -216,7 +221,15 @@ section { padding: clamp(32px, 5vh, 56px) clamp(16px, 4vw, 48px); }
   aspect-ratio: 886 / 1920; object-fit: cover; object-position: top center;
 }
 @media (hover: hover) and (pointer: fine) {
-  .gallery > .phone:hover { transform: translateY(-6px); box-shadow: 0 18px 44px rgba(28,25,23,0.20); }
+  .gallery > .phone { cursor: zoom-in; }
+}
+/* Hover-zoom: a floating copy of the phone rendered on <body> so it can grow
+   past the gallery's scroll-clip, like the earlier filmstrip pop-out. */
+.phone-zoom {
+  position: fixed; margin: 0; z-index: 9999; pointer-events: none;
+  transform: scale(1); transform-origin: center center; opacity: 1;
+  transition: transform .34s cubic-bezier(.34,1.12,.42,1), opacity .24s ease;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.12), 0 60px 120px rgba(28,25,23,0.34) !important;
 }
 .beat-dots { display: flex; gap: 6px; min-height: 22px; align-items: center; justify-content: center; }
 /* Carousel arrows: circular buttons flanking the phone, left and right. */
@@ -477,7 +490,7 @@ footer .footer-links { display: flex; gap: 24px; justify-content: center; margin
   <div class="hero-copy">
     <div class="hero-eyebrow">Technical Preview</div>
     <h1>Your sovereign AI.<br>Your open network.</h1>
-    <p>Your memory, your agent approvals, your services, your network. Dina runs on your device, holds your keys, and works for you. Ask Dina. Ask a service. Ask around.</p>
+    <p>Your memory, your agent approvals, your services, your network. Dina runs on your phone or your own server, holds your keys, and works for you. <span style="display:block; margin-top:12px;">Ask Dina. Ask a service. Ask around.</span></p>
     <div class="hero-actions">
       <!-- TODO: replace with the TestFlight public link or live App Store URL -->
       <a href="https://apps.apple.com/app/id6781713799" class="btn-primary">Get the app</a>
@@ -498,7 +511,7 @@ footer .footer-links { display: flex; gap: 24px; justify-content: center; margin
   <div class="tour-intro">
     <div class="section-label">A quick look</div>
     <div class="section-title">What you can do with Dina</div>
-    <div class="section-desc" style="margin: 0 auto;">Everything here works today. Where a capability has more than one screen, swipe the phone to step through it.</div>
+    <div class="section-desc" style="margin: 0 auto;">Every feature below is available today, in the Dina app or on your own server.</div>
   </div>
 </section>
 
@@ -506,27 +519,16 @@ footer .footer-links { display: flex; gap: 24px; justify-content: center; margin
 <section class="beat" data-beat>
   <div class="beat-media">
     <div class="gallery">
-      <div class="phone live-phone">
-        <div class="live-screen">
-          <div class="live-header">Dina</div>
-          <div class="live-thread">
-            <div class="msg msg-user"><span class="msg-tag">ASK</span><div class="bubble bubble-user">When is Emma's birthday?</div><span class="msg-time">10:18 AM</span></div>
-            <div class="typing" aria-hidden="true"><span></span><span></span><span></span></div>
-            <div class="msg msg-dina"><span class="msg-label">DINA</span><div class="bubble bubble-dina">November 7. You told me back in March, in your General vault, along with the note that she loves dinosaurs.</div><span class="msg-time">10:18 AM</span></div>
-          </div>
-          <div class="live-dock"><span class="live-chip">Ask</span><span class="live-chip">Remember</span><span class="live-chip">Services</span><span class="live-chip">Reviews</span></div>
-          <div class="live-tabs"><span class="live-tab active">Chat</span><span class="live-tab">People</span><span class="live-tab">Network</span><span class="live-tab">Activity</span></div>
-        </div>
-      </div>
+      <div class="phone"><img src="assets/screens/36-diagram-memory.png?r=4" alt="How your memory works: one fact saved to an encrypted vault feeds recall, automatic reminders, and context across all your vaults" loading="lazy"></div>
       <div class="phone"><img src="assets/screens/02-private-memory-locked-vaults.png" alt="A remembered fact routed to the right encrypted vault" loading="lazy"></div>
-      <div class="phone"><img src="assets/screens/26-remember-reminder.png?r=2" alt="A remembered date turns into automatic reminders" loading="lazy"></div>
+      <div class="phone"><img src="assets/screens/26-remember-reminder.png?r=3" alt="A remembered date turns into automatic reminders" loading="lazy"></div>
     </div>
     <div class="beat-dots" aria-hidden="true"><button class="is-active"></button><button></button><button></button></div>
   </div>
   <div class="beat-copy">
     <div class="beat-label">Your memory</div>
-    <div class="beat-cap is-active"><h3>Ask, and it remembers for you.</h3><p>Ask anything you have told it. Dina recalls the answer from your vaults, on device, in a moment.</p></div>
-    <div class="beat-cap"><h3>Your life, in vaults only you can open.</h3><p>Tell Dina a fact and it lands in the right encrypted vault, health, finance, work, everyday. You hold the keys.</p></div>
+    <div class="beat-cap is-active"><h3>One memory, working for you.</h3><p>Tell Dina once, and it does more than store the fact. It recalls the answer, sets the reminder, and brings the right context to every later question, drawing across all your vaults.</p></div>
+    <div class="beat-cap"><h3>Your life, in vaults only you can open.</h3><p>Each fact lands in its own encrypted vault, general, health, finance, work. You hold every key.</p></div>
     <div class="beat-cap"><h3>A date becomes a reminder.</h3><p>Mention something time-bound and Dina sets the reminder for you, so the right nudge finds you later.</p></div>
   </div>
 </section>
@@ -537,7 +539,7 @@ footer .footer-links { display: flex; gap: 24px; justify-content: center; margin
     <div class="gallery">
       <div class="phone"><img src="assets/screens/29-diagram-agents.png" alt="How agent approvals work: an agent submits its intent and Dina checks the risk tier" loading="lazy"></div>
       <div class="phone"><img src="assets/screens/04-connect-your-agents.png" alt="Handing a task to a connected agent" loading="lazy"></div>
-      <div class="phone"><img src="assets/screens/27-approve-health.png?r=2" alt="An approval prompt: the agent must ask before reading your Health vault to draft the email" loading="lazy"></div>
+      <div class="phone"><img src="assets/screens/27-approve-health.png?r=3" alt="An approval prompt: the agent must ask before reading your Health vault to draft the email" loading="lazy"></div>
       <div class="phone"><img src="assets/screens/22-agent-policies.png" alt="Agent risk tiers: safe auto-approves, moderate and high need approval" loading="lazy"></div>
     </div>
     <div class="beat-dots" aria-hidden="true"><button class="is-active"></button><button></button><button></button><button></button></div>
@@ -557,7 +559,7 @@ footer .footer-links { display: flex; gap: 24px; justify-content: center; margin
     <div class="gallery">
       <div class="phone"><img src="assets/screens/30-diagram-talk.png" alt="How Dina-to-Dina stays private: a message is sealed end to end, even from the relay" loading="lazy"></div>
       <div class="phone"><img src="assets/screens/06-dina-to-dina-messaging.png" alt="A message arriving from a friend's Dina" loading="lazy"></div>
-      <div class="phone"><img src="assets/screens/23-talk-reminder.png?r=2" alt="Dina turns the message into a reminder automatically" loading="lazy"></div>
+      <div class="phone"><img src="assets/screens/23-talk-reminder.png?r=3" alt="Dina turns the message into a reminder automatically" loading="lazy"></div>
     </div>
     <div class="beat-dots" aria-hidden="true"><button class="is-active"></button><button></button><button></button></div>
   </div>
@@ -624,8 +626,24 @@ footer .footer-links { display: flex; gap: 24px; justify-content: center; margin
   </div>
 </section>
 
+<!-- PHONE OR SERVER (always-on Home Node) -->
+<section id="run-anywhere" class="beat beat--flip" data-beat>
+  <div class="beat-media">
+    <div class="gallery">
+      <div class="phone"><img src="assets/screens/35-diagram-server.png" alt="One Dina, on your phone or your own server: the same code, headless on a VPS or Raspberry Pi, keeps your agents, services, and reminders running around the clock" loading="lazy"></div>
+    </div>
+  </div>
+  <div class="beat-copy">
+    <div class="beat-label">Phone or server</div>
+    <div class="beat-cap is-active">
+      <h3>Your phone, or your own server.</h3>
+      <p>The whole Home Node runs in your pocket, and the very same code runs headless on a server you own, a VPS or a Raspberry Pi, always on. That is what keeps your agents acting and your published services answering around the clock, even when your phone is asleep. Same identity, same vaults, same keys.</p>
+    </div>
+  </div>
+</section>
+
 <!-- SOVEREIGNTY (ownership) -->
-<section id="sovereignty" class="beat beat--flip" data-beat>
+<section id="sovereignty" class="beat" data-beat>
   <div class="beat-media">
     <div class="gallery">
       <div class="phone"><img src="assets/screens/31-diagram-sovereignty.png" alt="How sovereignty works: your key unlocks your identity and vaults, and you can move to any provider or your own server" loading="lazy"></div>
@@ -647,7 +665,7 @@ footer .footer-links { display: flex; gap: 24px; justify-content: center; margin
 </section>
 
 <!-- OPEN: BUILD ON IT, OR RUN IT YOURSELF -->
-<section id="protocol" class="beat" data-beat>
+<section id="protocol" class="beat beat--flip" data-beat>
   <div class="beat-media">
     <div class="gallery">
       <div class="phone"><img src="assets/screens/33-diagram-selfhost.png" alt="The self-host ladder: start on your device and the hosted network, then run your own PDS, your own MsgBox, and your own AppView" loading="lazy"></div>
@@ -670,7 +688,7 @@ footer .footer-links { display: flex; gap: 24px; justify-content: center; margin
 </section>
 
 <!-- SECURITY & CRYPTO -->
-<section id="security" class="beat beat--flip" data-beat>
+<section id="security" class="beat" data-beat>
   <div class="beat-media">
     <div class="gallery">
       <div class="phone"><img src="assets/screens/32-diagram-security.png" alt="How the crypto works: one seed derives a tree of keys, a vault per compartment, and sealed signed messaging the relay cannot read" loading="lazy"></div>
@@ -705,7 +723,7 @@ footer .footer-links { display: flex; gap: 24px; justify-content: center; margin
   <div class="section-inner">
     <div class="section-label">How it works</div>
     <div class="section-title">On your device, and a network you can leave.</div>
-    <div class="section-desc">Your Dina runs on your device. A shared network carries messages and trust between people. Nothing leaves your device unencrypted.</div>
+    <div class="section-desc">Your Dina runs on your device. A shared network carries messages and trust between people. Your data is encrypted before it ever leaves your device.</div>
 
     <div style="margin-bottom: 12px; margin-top: 32px;">
       <div class="section-label" style="margin-bottom: 12px;">On your device</div>
@@ -867,7 +885,53 @@ footer .footer-links { display: flex; gap: 24px; justify-content: center; margin
         }
       }
       activate(0);
+
+      // Hover-zoom: float an enlarged copy of the hovered phone on <body> so it
+      // grows past the gallery's scroll-clip (the earlier filmstrip pop-out).
+      var canHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+      if (canHover) {
+        slides.forEach(function (ph) {
+          var clone = null;
+          ph.addEventListener('pointerenter', function (e) {
+            // Mouse only: a touch tap/swipe also fires pointerenter, and its
+            // pointerleave may never arrive mid-scroll, leaving a stuck zoom that
+            // blocks swiping. Touch devices navigate by swipe + arrows instead.
+            if (e.pointerType && e.pointerType !== 'mouse') return;
+            if (clone) return;
+            var r = ph.getBoundingClientRect();
+            clone = ph.cloneNode(true);
+            clone.classList.add('phone-zoom');
+            clone.style.left = r.left + 'px';
+            clone.style.top = r.top + 'px';
+            clone.style.width = r.width + 'px';
+            document.body.appendChild(clone);
+            // let the browser register the 1x start, then grow to the enlarged size
+            setTimeout(function () {
+              if (clone) clone.style.transform = 'scale(1.55)';
+            }, 20);
+          });
+          ph.addEventListener('pointerleave', function () {
+            if (!clone) return;
+            clone = null;
+            removeAllZoom();
+          });
+        });
+      }
     });
+
+    // Safety net: never let a zoom clone get stuck. Clear them on scroll or on
+    // any touch interaction (belt-and-suspenders for the mouse-only gate above).
+    function removeAllZoom() {
+      document.querySelectorAll('.phone-zoom').forEach(function (c) {
+        c.style.opacity = '0';
+        c.style.transform = 'scale(1)';
+        setTimeout(function () { c.remove(); }, 320);
+      });
+    }
+    window.addEventListener('scroll', removeAllZoom, { passive: true });
+    document.addEventListener('pointerdown', function (e) {
+      if (e.pointerType && e.pointerType !== 'mouse') removeAllZoom();
+    }, { passive: true });
   })();
 </script>
 
