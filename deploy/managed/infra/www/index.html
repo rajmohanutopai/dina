@@ -3,8 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dina — Your Personal AI, With an Identity | dinakernel.com</title>
-<meta name="description" content="Dina is a sovereign personal AI. She remembers your world, guards your agents, talks to other Dinas, and works for you - nobody else.">
+<title>Dina: Your sovereign AI. Your open network. | dinakernel.com</title>
+<meta name="description" content="Dina is your sovereign AI. Your memory, your agent approvals, your services, your network. Encrypted on your device. The identity is yours.">
+<meta property="og:title" content="Dina: Your sovereign AI. Your open network.">
+<meta property="og:description" content="Your memory, your agent approvals, your services, your network. Encrypted on your device.">
+<meta property="og:type" content="website">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;1,600&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -31,6 +34,7 @@
   --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.03), 0 4px 12px rgba(0,0,0,0.04);
   --shadow-md: 0 2px 4px rgba(0,0,0,0.03), 0 10px 32px rgba(0,0,0,0.07);
+  --shadow-phone: 0 4px 12px rgba(0,0,0,0.06), 0 24px 60px rgba(28,25,23,0.14);
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { scroll-behavior: smooth; }
@@ -74,41 +78,62 @@ nav {
 
 /* === HERO === */
 .hero {
-  max-width: 900px; margin: 0 auto;
-  padding: clamp(60px, 12vh, 140px) clamp(16px, 4vw, 48px) clamp(40px, 8vh, 80px);
-  text-align: center;
+  display: grid; grid-template-columns: 1.05fr 0.95fr; gap: clamp(24px, 5vw, 72px);
+  align-items: center; max-width: 1140px; margin: 0 auto;
+  padding: clamp(48px, 9vh, 96px) clamp(16px, 4vw, 48px) clamp(32px, 6vh, 64px);
 }
 .hero-eyebrow {
   font-family: var(--font-heading); font-weight: 700; font-size: 0.72em;
   letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted);
-  margin-bottom: 20px;
+  margin-bottom: 18px;
 }
 .hero h1 {
   font-family: var(--font-display); font-weight: 600; font-style: italic;
-  font-size: clamp(2.4em, 5vw, 4em); line-height: 1.15; letter-spacing: -0.02em;
-  margin-bottom: 24px;
+  font-size: clamp(2.4em, 4.6vw, 3.7em); line-height: 1.12; letter-spacing: -0.02em;
+  margin-bottom: 22px;
 }
 .hero p {
-  font-size: 1.15em; color: var(--text-secondary); max-width: 600px;
-  margin: 0 auto 36px;
+  font-size: 1.12em; color: var(--text-secondary); max-width: 460px;
+  margin: 0 0 32px;
 }
-.hero-actions { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+.hero-actions { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+.hero-phone { display: flex; justify-content: center; }
+
 .btn-primary {
   font-family: var(--font-heading); font-weight: 700; font-size: 0.88em;
-  background: var(--text-primary); color: white; padding: 13px 32px;
-  border-radius: 10px; text-decoration: none; letter-spacing: 0.02em;
+  background: var(--text-primary); color: white; padding: 14px 30px;
+  border-radius: 11px; text-decoration: none; letter-spacing: 0.02em;
   border: 1px solid var(--text-primary);
   transition: var(--transition);
+  display: inline-flex; align-items: center; gap: 9px;
 }
 .btn-primary:hover { background: #44403C; border-color: #44403C; color: white; transform: translateY(-1px); }
+.btn-text {
+  font-family: var(--font-heading); font-weight: 700; font-size: 0.86em;
+  color: var(--text-secondary); text-decoration: none; letter-spacing: 0.02em;
+  padding: 10px 6px;
+}
+.btn-text:hover { color: var(--text-primary); }
 .btn-secondary {
   font-family: var(--font-heading); font-weight: 700; font-size: 0.88em;
   background: var(--bg-secondary); color: var(--text-primary);
-  padding: 13px 32px; border-radius: 10px; text-decoration: none;
+  padding: 13px 28px; border-radius: 10px; text-decoration: none;
   border: 1px solid var(--border); letter-spacing: 0.02em;
   transition: var(--transition);
 }
 .btn-secondary:hover { border-color: var(--text-muted); transform: translateY(-1px); }
+
+/* === PHONE FRAME === */
+.phone {
+  width: 100%; max-width: 290px;
+  border-radius: 36px; padding: 7px;
+  background: #1C1917;
+  box-shadow: var(--shadow-phone);
+}
+.phone img {
+  display: block; width: 100%; height: auto;
+  border-radius: 30px; background: var(--bg-primary);
+}
 
 /* === SECTION === */
 section { padding: clamp(32px, 5vh, 56px) clamp(16px, 4vw, 48px); }
@@ -128,51 +153,238 @@ section { padding: clamp(32px, 5vh, 56px) clamp(16px, 4vw, 48px); }
   margin-bottom: 28px;
 }
 
-/* === CAPABILITIES GRID === */
-.cap-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 20px;
+/* === PRODUCT TOUR — one section per functionality, each with a filmstrip === */
+.tour-intro { max-width: 1100px; margin: 0 auto; text-align: center; padding-bottom: 8px; }
+.fn { max-width: 1000px; margin: 0 auto; padding: clamp(24px, 4.5vh, 48px) clamp(16px, 4vw, 48px) clamp(4px, 1.5vh, 12px); }
+.fn-head { max-width: 600px; }
+.fn-title {
+  font-family: var(--font-display); font-weight: 600; font-style: italic;
+  font-size: clamp(1.55em, 2.9vw, 2.15em); line-height: 1.18; letter-spacing: -0.01em; margin: 10px 0 12px;
 }
-.cap-card {
-  background: var(--bg-secondary); border: 1px solid var(--border);
-  border-radius: var(--radius-lg); padding: 32px;
-  transition: var(--transition);
-}
-.cap-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
-.cap-icon {
-  width: 44px; height: 44px; border-radius: 12px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 1.3em; margin-bottom: 16px;
-}
-.cap-card h3 {
-  font-family: var(--font-heading); font-weight: 700; font-size: 1.05em;
-  margin-bottom: 8px;
-}
-.cap-card p { font-size: 0.92em; color: var(--text-secondary); line-height: 1.6; }
+.fn-desc { font-size: 1.02em; color: var(--text-secondary); max-width: 560px; }
 
-/* === SCENARIO === */
-.scenario {
-  background: var(--bg-secondary); border: 1px solid var(--border);
-  border-radius: var(--radius-lg); padding: 32px;
-  margin-bottom: 16px;
+/* Filmstrip: phones sit in a horizontal row, so capabilities grow sideways, not down. */
+.strip { display: flex; gap: 22px; align-items: center; }
+.strip .phone {
+  flex: 0 0 auto; width: clamp(220px, 78vw, 268px); scroll-snap-align: center;
+  position: relative; z-index: 1; cursor: zoom-in; transform-origin: center center; will-change: transform;
+  transition: transform 0.4s cubic-bezier(0.34, 1.12, 0.42, 1), box-shadow 0.4s ease;
 }
-.scenario-label {
+/* One-screen functionality: a centered hero that can pop big on hover. */
+.strip--solo { justify-content: center; overflow: visible; padding: clamp(28px, 5vh, 52px) 0; }
+.strip--solo .phone { width: clamp(240px, 82vw, 288px); }
+/* Multi-screen functionality (Services): scroll horizontally, snap, no visible bar. */
+.strip--scroll {
+  overflow-x: auto; justify-content: flex-start; scroll-snap-type: x mandatory;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch; padding: 50px 2px 42px;
+}
+.strip--scroll::-webkit-scrollbar { display: none; }
+/* Hover-to-enlarge, gated to real pointers so a tap never leaves a phone stuck. */
+@media (hover: hover) and (pointer: fine) {
+  .strip--solo .phone:hover {
+    transform: scale(1.32); z-index: 60;
+    box-shadow: 0 12px 26px rgba(0,0,0,0.09), 0 40px 84px rgba(28,25,23,0.28);
+  }
+  .strip--scroll .phone:hover {
+    transform: scale(1.14); z-index: 60;
+    box-shadow: 0 10px 22px rgba(0,0,0,0.09), 0 26px 56px rgba(28,25,23,0.26);
+  }
+}
+
+/* === BEAT — alternating image/text row; multi-screen capabilities swipe in place === */
+.beat {
+  display: grid; grid-template-columns: 1fr 1fr; gap: clamp(28px, 6vw, 84px);
+  align-items: center; max-width: 1000px; margin: 0 auto;
+  padding: clamp(40px, 7vh, 84px) clamp(16px, 4vw, 48px);
+}
+.beat--flip .beat-media { order: 2; }
+.beat-media { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.gallery {
+  width: 100%; max-width: 296px; display: flex;
+  overflow-x: auto; scroll-snap-type: x mandatory;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.gallery::-webkit-scrollbar { display: none; }
+.gallery > .phone {
+  flex: 0 0 100%; width: 100%; max-width: none; scroll-snap-align: center;
+  transition: transform .35s ease, box-shadow .35s ease;
+}
+/* Pin every gallery screen to one phone aspect so heights match exactly and the
+   image always fills the frame (no dark/grey bezel peeking at the bottom). */
+.gallery > .phone img {
+  display: block; width: 100%; height: auto;
+  aspect-ratio: 886 / 1920; object-fit: cover; object-position: top center;
+}
+@media (hover: hover) and (pointer: fine) {
+  .gallery > .phone:hover { transform: translateY(-6px); box-shadow: 0 18px 44px rgba(28,25,23,0.20); }
+}
+.beat-dots { display: flex; gap: 6px; min-height: 22px; align-items: center; justify-content: center; }
+/* Carousel arrows: circular buttons flanking the phone, left and right. */
+.gallery-wrap { position: relative; width: 100%; max-width: 296px; margin: 0 auto; }
+.beat-arrow {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 6;
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 1px solid var(--border); background: rgba(255,255,255,0.92);
+  color: var(--text-primary); cursor: pointer; font-size: 22px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--shadow-md); transition: background .2s, transform .15s;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.beat-arrow.prev { left: -20px; }
+.beat-arrow.next { right: -20px; }
+.beat-arrow:hover { background: #fff; }
+.beat-arrow:active { transform: translateY(-50%) scale(0.9); }
+@media (max-width: 480px) {
+  .beat-arrow.prev { left: -6px; }
+  .beat-arrow.next { right: -6px; }
+}
+.beat-dots button {
+  width: 22px; height: 22px; padding: 0; border: none; background: transparent;
+  cursor: pointer; position: relative; -webkit-tap-highlight-color: transparent;
+}
+.beat-dots button::before {
+  content: ''; position: absolute; top: 50%; left: 50%; width: 8px; height: 8px;
+  transform: translate(-50%, -50%); border-radius: 50%;
+  background: rgba(0,0,0,0.18); transition: background .2s, width .2s, height .2s;
+}
+.beat-dots button.is-active::before { background: var(--text-primary); width: 9px; height: 9px; }
+.beat-copy { max-width: 440px; }
+.beat-label {
   font-family: var(--font-heading); font-weight: 700; font-size: 0.68em;
-  letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted);
-  margin-bottom: 8px;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 14px;
 }
-.scenario h3 {
-  font-family: var(--font-heading); font-weight: 700; font-size: 1.2em;
-  margin-bottom: 16px;
+.beat-cap { display: none; }
+.beat-cap.is-active { display: block; animation: capFade .35s ease; }
+.beat-cap h3 {
+  font-family: var(--font-display); font-weight: 600; font-style: italic;
+  font-size: clamp(1.55em, 3vw, 2.15em); line-height: 1.18; letter-spacing: -0.01em; margin-bottom: 12px;
 }
-.scenario-step {
-  display: flex; gap: 16px; margin-bottom: 12px;
-  font-size: 0.92em; color: var(--text-secondary);
+.beat-cap p { font-size: 1.04em; color: var(--text-secondary); line-height: 1.6; }
+.beat-points { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.beat-points li { font-size: 0.96em; color: var(--text-secondary); line-height: 1.5; padding-left: 18px; position: relative; }
+.beat-points li::before { content: ''; position: absolute; left: 0; top: 9px; width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); }
+.beat-points strong { color: var(--text-primary); font-weight: 600; }
+.beat-link { margin-top: 18px; font-size: 0.95em; }
+
+/* === RANKED REVIEWS DIAGRAM === */
+.rd { max-width: 980px; margin: 0 auto; padding: clamp(8px,2vh,20px) clamp(16px,4vw,48px) clamp(40px,7vh,72px); text-align: center; }
+.rd-head { max-width: 600px; margin: 0 auto; }
+.rd-body { display: flex; align-items: center; justify-content: center; gap: clamp(24px,5vw,68px); flex-wrap: wrap; margin-top: 32px; }
+.rd-rings { width: clamp(248px, 38vw, 356px); height: auto; flex: 0 0 auto; }
+.rd-key { text-align: left; width: 280px; display: flex; flex-direction: column; gap: 18px; }
+.rd-key-top { display: flex; align-items: center; gap: 9px; font-family: var(--font-heading); font-weight: 700; font-size: 0.92em; color: var(--text-primary); }
+.rd-dot { width: 11px; height: 11px; border-radius: 50%; flex: 0 0 auto; }
+.rd-dot--hollow { background: transparent; border: 1.5px solid var(--text-muted); }
+.rd-key-sub { font-size: 0.82em; color: var(--text-muted); margin: 3px 0 7px 20px; }
+.rd-bar { height: 8px; border-radius: 4px; background: var(--bg-tertiary); margin-left: 20px; overflow: hidden; }
+.rd-bar > span { display: block; height: 100%; border-radius: 4px; background: var(--text-primary); }
+.rd-steps { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin-top: 40px; font-size: 0.92em; color: var(--text-secondary); max-width: 820px; margin-left: auto; margin-right: auto; }
+.rd-step { display: inline-flex; align-items: baseline; gap: 8px; }
+.rd-step b { font-family: var(--font-mono); font-size: 0.82em; color: var(--text-muted); font-weight: 500; }
+.rd-sep { color: var(--text-muted); }
+@media (max-width: 560px) { .rd-key { width: 100%; max-width: 320px; margin: 0 auto; } }
+
+/* === FLOW DIAGRAMS (agent approval, Dina-to-Dina) === */
+.fx { max-width: 980px; margin: 0 auto; padding: clamp(8px,2vh,20px) clamp(16px,4vw,48px) clamp(40px,7vh,72px); text-align: center; }
+.fx-head { max-width: 620px; margin: 0 auto; }
+.fx-flow { display: flex; align-items: stretch; justify-content: center; flex-wrap: wrap; gap: 0; margin-top: 32px; }
+.fx-node { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 20px 22px; width: 232px; text-align: left; }
+.fx-node h4 { font-family: var(--font-heading); font-weight: 700; font-size: 1em; margin-bottom: 6px; }
+.fx-node p { font-size: 0.86em; color: var(--text-secondary); line-height: 1.5; }
+.fx-conn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 0 12px; color: var(--text-muted); min-width: 52px; }
+.fx-chev { font-size: 22px; line-height: 1; }
+.fx-tiers { display: flex; flex-direction: column; gap: 14px; max-width: 580px; margin: 30px auto 0; text-align: left; }
+.fx-tier { display: flex; align-items: flex-start; gap: 12px; }
+.fx-tier-dot { width: 11px; height: 11px; border-radius: 50%; margin-top: 6px; flex: 0 0 auto; }
+.fx-tier-txt { font-size: 0.95em; color: var(--text-secondary); line-height: 1.55; }
+.fx-tier-txt b { font-family: var(--font-heading); font-weight: 700; color: var(--text-primary); }
+.fx-note { font-size: 0.88em; color: var(--text-muted); margin: 32px auto 0; max-width: 640px; }
+@media (max-width: 680px) {
+  .fx-flow { flex-direction: column; align-items: center; }
+  .fx-node { width: 100%; max-width: 330px; }
+  .fx-conn { padding: 8px 0; }
+  .fx-chev { transform: rotate(90deg); }
 }
-.scenario-step .step-num {
-  font-family: var(--font-mono); font-weight: 500; font-size: 0.8em;
-  color: var(--text-muted); min-width: 24px; padding-top: 2px;
+.beat-swipehint { font-size: 0.8em; color: var(--text-muted); margin-top: 16px; letter-spacing: 0.02em; }
+@keyframes capFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* === LIVE PHONE — a real chat that plays itself when scrolled into view === */
+.live-phone { overflow: visible; }
+.live-screen {
+  position: relative; width: 100%; aspect-ratio: 886 / 1920;
+  border-radius: 30px; background: var(--bg-primary); overflow: hidden;
+  display: flex; flex-direction: column; font-size: 9px; padding: 7% 5% 0;
 }
+.live-header {
+  font-family: var(--font-display); font-style: italic; font-weight: 600;
+  color: var(--text-muted); text-align: center; font-size: 1.7em; padding: 2px 0 12px;
+}
+.live-thread { display: flex; flex-direction: column; justify-content: flex-end; gap: 9px; flex: 1; padding-bottom: 6px; }
+.msg { display: flex; flex-direction: column; opacity: 0; }
+.msg-user { align-items: flex-end; }
+.msg-dina { align-items: flex-start; }
+.msg-tag {
+  font-family: var(--font-heading); font-weight: 700; font-size: 0.8em; letter-spacing: 0.08em;
+  background: #3f3b38; color: #fff; padding: 2px 6px; border-radius: 5px; margin-bottom: 4px;
+}
+.msg-label {
+  font-family: var(--font-heading); font-weight: 700; font-size: 0.78em; letter-spacing: 0.08em;
+  color: var(--text-muted); margin: 0 0 4px 2px;
+}
+.bubble { border-radius: 13px; padding: 8px 10px; line-height: 1.5; font-size: 1.08em; max-width: 84%; }
+.bubble-user { background: #1C1917; color: #fff; border-bottom-right-radius: 4px; }
+.bubble-dina { background: #F0EDE8; color: var(--text-primary); border-bottom-left-radius: 4px; max-width: 90%; }
+.msg-time { font-size: 0.72em; color: var(--text-muted); margin-top: 4px; }
+.typing {
+  align-self: flex-start; display: flex; gap: 4px; padding: 9px 11px;
+  background: #F0EDE8; border-radius: 13px; border-bottom-left-radius: 4px; opacity: 0;
+}
+.typing span { width: 5px; height: 5px; border-radius: 50%; background: var(--text-muted); }
+.live-dock { display: flex; gap: 5px; padding: 8px 0; overflow: hidden; }
+.live-chip {
+  font-family: var(--font-heading); font-weight: 600; font-size: 0.92em; white-space: nowrap;
+  border: 1px solid var(--border); border-radius: 999px; padding: 4px 9px; color: var(--text-secondary); background: #fff;
+}
+.live-tabs {
+  display: flex; justify-content: space-around; border-top: 1px solid var(--border);
+  padding: 7px 0 9px; color: var(--text-muted); font-size: 0.82em;
+}
+.live-tab.active { color: var(--text-primary); font-weight: 600; }
+
+/* The play sequence: user message pops in, Dina "types", then replies. */
+.live-phone.playing .msg-user { animation: msgIn .5s cubic-bezier(.34,1.2,.4,1) .25s forwards; }
+.live-phone.playing .typing { animation: typingShow 1.15s ease .95s forwards; }
+.live-phone.playing .msg-dina { animation: msgIn .55s cubic-bezier(.34,1.15,.4,1) 2.15s forwards; }
+.live-phone.playing .typing span { animation: blink 1s infinite ease-in-out; }
+.live-phone.playing .typing span:nth-child(2) { animation-delay: .15s; }
+.live-phone.playing .typing span:nth-child(3) { animation-delay: .3s; }
+@keyframes msgIn { from { opacity: 0; transform: translateY(11px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes typingShow { 0% { opacity: 0; } 16% { opacity: 1; } 84% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes blink { 0%,100% { opacity: .3; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-2px); } }
+
+/* Live phone reads a touch bigger than the flat screenshots on hover, and stays crisp. */
+@media (hover: hover) and (pointer: fine) {
+  .strip--solo .live-phone:hover {
+    transform: scale(1.42);
+    z-index: 60;
+    box-shadow: 0 16px 34px rgba(0,0,0,0.12), 0 56px 116px rgba(28,25,23,0.36);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-phone .msg { opacity: 1; animation: none; }
+  .live-phone .typing { display: none; }
+}
+.tour-copy .tour-group {
+  font-family: var(--font-heading); font-weight: 700; font-size: 0.68em;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted);
+  margin-bottom: 14px;
+}
+.tour-copy h3 {
+  font-family: var(--font-display); font-weight: 600; font-style: italic;
+  font-size: clamp(1.6em, 3vw, 2.2em); line-height: 1.18; letter-spacing: -0.01em;
+  margin-bottom: 14px;
+}
+.tour-copy p { font-size: 1.05em; color: var(--text-secondary); max-width: 420px; }
 
 /* === ARCHITECTURE === */
 .arch-grid {
@@ -181,18 +393,31 @@ section { padding: clamp(32px, 5vh, 56px) clamp(16px, 4vw, 48px); }
 }
 .arch-card {
   background: var(--bg-secondary); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 24px;
-  border-left: 4px solid var(--card-accent, var(--border));
+  border-radius: var(--radius-lg); padding: 28px;
+  box-shadow: var(--shadow-sm);
 }
 .arch-card h4 {
-  font-family: var(--font-heading); font-weight: 700; font-size: 0.92em;
-  margin-bottom: 4px;
-}
-.arch-card .arch-where {
-  font-family: var(--font-mono); font-size: 0.72em; color: var(--text-muted);
+  font-family: var(--font-heading); font-weight: 700; font-size: 1.02em;
   margin-bottom: 8px;
 }
-.arch-card p { font-size: 0.84em; color: var(--text-secondary); line-height: 1.5; }
+.arch-card p { font-size: 0.9em; color: var(--text-secondary); line-height: 1.6; }
+
+/* === LEVEL CARDS === */
+.cap-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px;
+}
+.cap-card {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 28px;
+  transition: var(--transition);
+}
+.cap-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.cap-card h3 {
+  font-family: var(--font-heading); font-weight: 700; font-size: 1.05em;
+  margin-bottom: 8px;
+}
+.cap-card p { font-size: 0.92em; color: var(--text-secondary); line-height: 1.6; }
 
 /* === CODE BLOCK === */
 .code-block {
@@ -210,16 +435,24 @@ footer {
   text-align: center; color: var(--text-muted); font-size: 0.88em;
 }
 footer a { color: var(--text-secondary); }
-footer .footer-links { display: flex; gap: 24px; justify-content: center; margin-bottom: 16px; }
+footer .footer-links { display: flex; gap: 24px; justify-content: center; margin-bottom: 16px; flex-wrap: wrap; }
 
 /* === DIVIDER === */
 .divider { border: none; border-top: 1px solid var(--border); margin: 0; }
 
 /* === RESPONSIVE === */
+@media (max-width: 820px) {
+  .hero { grid-template-columns: 1fr; text-align: center; gap: 40px; }
+  .hero p { margin-left: auto; margin-right: auto; }
+  .hero-actions { justify-content: center; }
+  .fn-head { max-width: none; }
+  .strip--solo { padding: 32px 0; }
+  .beat { grid-template-columns: 1fr; gap: 28px; text-align: center; padding: clamp(32px, 6vh, 56px) clamp(16px, 4vw, 48px); }
+  .beat--flip .beat-media { order: 0; }
+  .beat-copy { max-width: none; margin: 0 auto; }
+}
 @media (max-width: 640px) {
   .nav-links { display: none; }
-  .cap-grid { grid-template-columns: 1fr; }
-  .arch-grid { grid-template-columns: 1fr 1fr; }
 }
 </style>
 </head>
@@ -230,10 +463,10 @@ footer .footer-links { display: flex; gap: 24px; justify-content: center; margin
   <div class="nav-left">
     <a href="#" class="nav-logo">Dina</a>
     <div class="nav-links">
-      <a href="#capabilities">Capabilities</a>
-      <a href="#scenario">In Action</a>
-      <a href="#architecture">Architecture</a>
+      <a href="#tour">Tour</a>
       <a href="#sovereignty">Sovereignty</a>
+      <a href="#security">Security</a>
+      <a href="#protocol">Build</a>
     </div>
   </div>
   <a href="https://github.com/rajmohanutopai/dina" class="nav-cta">GitHub</a>
@@ -241,152 +474,250 @@ footer .footer-links { display: flex; gap: 24px; justify-content: center; margin
 
 <!-- HERO -->
 <div class="hero">
-  <div class="hero-eyebrow">Technical Preview</div>
-  <h1>Dina, your personal AI,<br>with an identity</h1>
-  <p>Dina remembers your world, guards your agents, talks to other Dinas, and works for you — nobody else. Your data stays encrypted on your machine. Your identity is yours forever.</p>
-  <div class="hero-actions">
-    <a href="https://github.com/rajmohanutopai/dina" class="btn-primary">Get Started</a>
-    <a href="https://rajmohanutopai.github.io/dina/dina.html" class="btn-secondary">Interactive Guide</a>
+  <div class="hero-copy">
+    <div class="hero-eyebrow">Technical Preview</div>
+    <h1>Your sovereign AI.<br>Your open network.</h1>
+    <p>Your memory, your agent approvals, your services, your network. Dina runs on your device, holds your keys, and works for you. Ask Dina. Ask a service. Ask around.</p>
+    <div class="hero-actions">
+      <!-- TODO: replace with the TestFlight public link or live App Store URL -->
+      <a href="https://apps.apple.com/app/id6781713799" class="btn-primary">Get the app</a>
+      <a href="https://github.com/rajmohanutopai/dina" class="btn-text">Open source &rsaquo;</a>
+    </div>
+  </div>
+  <div class="hero-phone">
+    <div class="phone">
+      <img src="assets/screens/01-welcome-sovereign-ai-open-network.png" alt="Dina welcome screen: a sovereign AI on an open network" loading="eager" width="600" height="1299">
+    </div>
   </div>
 </div>
 
 <hr class="divider">
 
-<!-- THE IDEA -->
-<section>
-  <div class="section-inner">
-    <div class="section-label">The Idea</div>
-    <div class="section-title">What if your AI truly belonged to you?</div>
-    <div class="section-desc">
-      Your data, encrypted on your machine. An identity that stays with you forever — even if you switch providers. An AI that remembers your world, understands your context, and works quietly in the background for you and only you.
+<!-- TOUR -->
+<section id="tour" style="padding-bottom: 0;">
+  <div class="tour-intro">
+    <div class="section-label">A quick look</div>
+    <div class="section-title">What you can do with Dina</div>
+    <div class="section-desc" style="margin: 0 auto;">Everything here works today. Where a capability has more than one screen, swipe the phone to step through it.</div>
+  </div>
+</section>
+
+<!-- MEMORY (remember + ask + reminder) -->
+<section class="beat" data-beat>
+  <div class="beat-media">
+    <div class="gallery">
+      <div class="phone live-phone">
+        <div class="live-screen">
+          <div class="live-header">Dina</div>
+          <div class="live-thread">
+            <div class="msg msg-user"><span class="msg-tag">ASK</span><div class="bubble bubble-user">When is Emma's birthday?</div><span class="msg-time">10:18 AM</span></div>
+            <div class="typing" aria-hidden="true"><span></span><span></span><span></span></div>
+            <div class="msg msg-dina"><span class="msg-label">DINA</span><div class="bubble bubble-dina">November 7. You told me back in March, in your General vault, along with the note that she loves dinosaurs.</div><span class="msg-time">10:18 AM</span></div>
+          </div>
+          <div class="live-dock"><span class="live-chip">Ask</span><span class="live-chip">Remember</span><span class="live-chip">Services</span><span class="live-chip">Reviews</span></div>
+          <div class="live-tabs"><span class="live-tab active">Chat</span><span class="live-tab">People</span><span class="live-tab">Network</span><span class="live-tab">Activity</span></div>
+        </div>
+      </div>
+      <div class="phone"><img src="assets/screens/02-private-memory-locked-vaults.png" alt="A remembered fact routed to the right encrypted vault" loading="lazy"></div>
+      <div class="phone"><img src="assets/screens/26-remember-reminder.png?r=2" alt="A remembered date turns into automatic reminders" loading="lazy"></div>
     </div>
-    <div class="section-desc" style="margin-top:-20px">
-      That's Dina.
+    <div class="beat-dots" aria-hidden="true"><button class="is-active"></button><button></button><button></button></div>
+  </div>
+  <div class="beat-copy">
+    <div class="beat-label">Your memory</div>
+    <div class="beat-cap is-active"><h3>Ask, and it remembers for you.</h3><p>Ask anything you have told it. Dina recalls the answer from your vaults, on device, in a moment.</p></div>
+    <div class="beat-cap"><h3>Your life, in vaults only you can open.</h3><p>Tell Dina a fact and it lands in the right encrypted vault, health, finance, work, everyday. You hold the keys.</p></div>
+    <div class="beat-cap"><h3>A date becomes a reminder.</h3><p>Mention something time-bound and Dina sets the reminder for you, so the right nudge finds you later.</p></div>
+  </div>
+</section>
+
+<!-- AGENTS (task + security + approvals) -->
+<section class="beat beat--flip" data-beat>
+  <div class="beat-media">
+    <div class="gallery">
+      <div class="phone"><img src="assets/screens/29-diagram-agents.png" alt="How agent approvals work: an agent submits its intent and Dina checks the risk tier" loading="lazy"></div>
+      <div class="phone"><img src="assets/screens/04-connect-your-agents.png" alt="Handing a task to a connected agent" loading="lazy"></div>
+      <div class="phone"><img src="assets/screens/27-approve-health.png?r=2" alt="An approval prompt: the agent must ask before reading your Health vault to draft the email" loading="lazy"></div>
+      <div class="phone"><img src="assets/screens/22-agent-policies.png" alt="Agent risk tiers: safe auto-approves, moderate and high need approval" loading="lazy"></div>
     </div>
-    <div class="section-desc" style="margin-top:-20px">
-      She has a cryptographic identity, encrypted memory across separate vaults, and she talks to other Dinas to help you coordinate your life. She decides whether someone can be trusted — by asking you, her human. One simple rule: she belongs to the person who created her. Loyalty enforced by mathematics.
+    <div class="beat-dots" aria-hidden="true"><button class="is-active"></button><button></button><button></button><button></button></div>
+  </div>
+  <div class="beat-copy">
+    <div class="beat-label">Your agents</div>
+    <div class="beat-cap is-active"><h3>Agent oversight.</h3><p>What an agent may do on its own, and what waits for your yes.</p></div>
+    <div class="beat-cap"><h3>Hand an agent a task.</h3><p>Give a connected agent a job, like emailing your manager. It works through your Dina, which grants each task only the access it needs.</p></div>
+    <div class="beat-cap"><h3>And it waits for your yes.</h3><p>That email needs your Health vault, so Dina pauses and asks. You approve once, for that task, and the grant ends with it.</p></div>
+    <div class="beat-cap"><h3>Every action has a risk tier.</h3><p>Safe tasks auto-approve. Moderate ones ask once a session. High-risk ones, like payments and transfers, ask every single time.</p></div>
+  </div>
+</section>
+
+<!-- TALK (talk + reminder) -->
+<section class="beat" data-beat>
+  <div class="beat-media">
+    <div class="gallery">
+      <div class="phone"><img src="assets/screens/30-diagram-talk.png" alt="How Dina-to-Dina stays private: a message is sealed end to end, even from the relay" loading="lazy"></div>
+      <div class="phone"><img src="assets/screens/06-dina-to-dina-messaging.png" alt="A message arriving from a friend's Dina" loading="lazy"></div>
+      <div class="phone"><img src="assets/screens/23-talk-reminder.png?r=2" alt="Dina turns the message into a reminder automatically" loading="lazy"></div>
+    </div>
+    <div class="beat-dots" aria-hidden="true"><button class="is-active"></button><button></button><button></button></div>
+  </div>
+  <div class="beat-copy">
+    <div class="beat-label">Talk</div>
+    <div class="beat-cap is-active"><h3>Dina-to-Dina messaging.</h3><p>Your Dina messages your contacts' Dinas over end-to-end encrypted channels, so only the two of you can read it.</p></div>
+    <div class="beat-cap"><h3>Your Dina talks to your friends' Dinas.</h3><p>A contact's Dina sends word over an end-to-end encrypted channel, and it arrives right in your chat.</p></div>
+    <div class="beat-cap"><h3>And turns it into a reminder.</h3><p>Dina reads the context and sets the reminder for you: Alonso is coming tomorrow, and he loves cold brew, so have some ready.</p></div>
+  </div>
+</section>
+
+<!-- RANKED REVIEWS (answer + browse) -->
+<section class="beat beat--flip" data-beat>
+  <div class="beat-media">
+    <div class="gallery">
+      <div class="phone"><img src="assets/screens/28-diagram-reviews.png" alt="How ranked reviews work: each review is weighed by closeness, the reviewer's standing, and whether they really used it" loading="lazy"></div>
+      <div class="phone live-phone">
+        <div class="live-screen">
+          <div class="live-header">Dina</div>
+          <div class="live-thread">
+            <div class="msg msg-user"><span class="msg-tag">ASK</span><div class="bubble bubble-user">Find me a good office chair.</div><span class="msg-time">10:19 AM</span></div>
+            <div class="typing" aria-hidden="true"><span></span><span></span><span></span></div>
+            <div class="msg msg-dina"><span class="msg-label">DINA</span><div class="bubble bubble-dina">For your lower-back pain and the $500 budget you set this month, reviewers point me to the ErgoFlex Study Chair ($420), rated well for lower-back support. I set aside the BudgetLite Chair (reviewers flag poor back support) and SpinePro ($850, over budget). Want me to check if it is available near you?</div><span class="msg-time">10:20 AM</span></div>
+          </div>
+          <div class="live-dock"><span class="live-chip">Ask</span><span class="live-chip">Remember</span><span class="live-chip">Services</span><span class="live-chip">Reviews</span></div>
+          <div class="live-tabs"><span class="live-tab active">Chat</span><span class="live-tab">People</span><span class="live-tab">Network</span><span class="live-tab">Activity</span></div>
+        </div>
+      </div>
+      <div class="phone"><img src="assets/screens/24-write-review.png" alt="Publishing your own ranked review" loading="lazy"></div>
+      <div class="phone"><img src="assets/screens/25-published-review.png" alt="A published review appearing in the network, ranked by trust" loading="lazy"></div>
+    </div>
+    <div class="beat-dots" aria-hidden="true"><button class="is-active"></button><button></button><button></button><button></button></div>
+  </div>
+  <div class="beat-copy">
+    <div class="beat-label">Ranked reviews</div>
+    <div class="beat-cap is-active"><h3>Dina ranked reviews.</h3><p>What makes one review count more than another.</p></div>
+    <div class="beat-cap"><h3>Answers ranked by people you trust.</h3><p>Ask about the real world, and Dina ranks what comes back by your network's real, lived experience.</p></div>
+    <div class="beat-cap"><h3>Add your own to the network.</h3><p>Rate something you have used and publish it, so the next person gets the same honest signal you wanted.</p></div>
+    <div class="beat-cap"><h3>And it shows up, ranked by trust.</h3><p>Your review surfaces in search for people in your network, weighted by how much they trust the source.</p></div>
+  </div>
+</section>
+
+<!-- SERVICES -->
+<section class="beat" data-beat>
+  <div class="beat-media">
+    <div class="gallery">
+      <div class="phone"><img src="assets/screens/07-publish-your-dina-as-a-service.png" alt="Publishing your own Dina as a service" loading="lazy"></div>
+      <div class="phone"><img src="assets/screens/11-service-pick-category.png?r=2" alt="Choosing a service category, from bookings to transit to healthcare" loading="lazy"></div>
+      <div class="phone"><img src="assets/screens/12-service-pick-vault.png?r=2" alt="Choosing the single vault a service answers from" loading="lazy"></div>
+      <div class="phone"><img src="assets/screens/13-service-visibility.png?r=2" alt="Setting who can find a service: public, unlisted, or approved only" loading="lazy"></div>
+      <div class="phone"><img src="assets/screens/09-go-live-from-your-dina.png" alt="Taking your service live from your phone" loading="lazy"></div>
+      <div class="phone"><img src="assets/screens/10-approve-before-dina-replies.png" alt="Approving a drafted reply before it is sent to a customer" loading="lazy"></div>
+    </div>
+    <div class="beat-dots" aria-hidden="true"><button class="is-active"></button><button></button><button></button><button></button><button></button><button></button></div>
+  </div>
+  <div class="beat-copy">
+    <div class="beat-label">Become a service</div>
+    <div class="beat-cap is-active"><h3>Publish your Dina as a service.</h3><p>Turn your Dina into something others can reach: a salon, a bus route, a desk.</p></div>
+    <div class="beat-cap"><h3>Offer any kind of service.</h3><p>Pick a category, then an official Dina capability, so other Dinas know exactly what yours can do.</p></div>
+    <div class="beat-cap"><h3>It answers from one vault.</h3><p>Your service reads and writes a single vault you choose. Sensitive and locked vaults stay off limits to it.</p></div>
+    <div class="beat-cap"><h3>You choose who can find it.</h3><p>Public, unlisted by link, or approved only. You control who can find it and who can use it, separately.</p></div>
+    <div class="beat-cap"><h3>Go live from your phone.</h3><p>Your listing publishes to the open network. People find you through their own Dina.</p></div>
+    <div class="beat-cap"><h3>Nothing goes out before you approve it.</h3><p>When a customer asks, Dina drafts the reply and holds it until you say yes.</p></div>
+  </div>
+</section>
+
+<!-- SOVEREIGNTY (ownership) -->
+<section id="sovereignty" class="beat beat--flip" data-beat>
+  <div class="beat-media">
+    <div class="gallery">
+      <div class="phone"><img src="assets/screens/31-diagram-sovereignty.png" alt="How sovereignty works: your key unlocks your identity and vaults, and you can move to any provider or your own server" loading="lazy"></div>
+      <div class="phone"><img src="assets/screens/19-admin-identity.png" alt="Your did:plc identity, shown in the admin screen" loading="lazy"></div>
+      <div class="phone"><img src="assets/screens/14-vaults.png" alt="Your encrypted vaults, each a separate compartment" loading="lazy"></div>
+      <div class="phone"><img src="assets/screens/18-recovery-phrase.png" alt="Reveal your 24-word recovery phrase" loading="lazy"></div>
+      <div class="phone"><img src="assets/screens/21-export-erase.png" alt="Export an encrypted backup, or erase everything on this device" loading="lazy"></div>
+    </div>
+    <div class="beat-dots" aria-hidden="true"><button class="is-active"></button><button></button><button></button><button></button><button></button></div>
+  </div>
+  <div class="beat-copy">
+    <div class="beat-label">Sovereignty</div>
+    <div class="beat-cap is-active"><h3>It stays yours, end to end.</h3><p>Your key unlocks your identity and your vaults, and you can move to any provider or your own server.</p></div>
+    <div class="beat-cap"><h3>It's yours, by a key only you hold.</h3><p>Your did:plc identity stays with you. Switch providers and it comes along; it is always yours to keep.</p></div>
+    <div class="beat-cap"><h3>Your data, in vaults you own.</h3><p>Separate encrypted compartments, and you hold every key. Nothing is readable without them.</p></div>
+    <div class="beat-cap"><h3>One phrase brings it all back.</h3><p>Your 24-word recovery phrase restores your identity and data on any device, anytime.</p></div>
+    <div class="beat-cap"><h3>Take it, or destroy it.</h3><p>Export an encrypted backup (your keys stay on your device), or wipe it all whenever you choose. Yours to move anywhere.</p></div>
+  </div>
+</section>
+
+<!-- OPEN: BUILD ON IT, OR RUN IT YOURSELF -->
+<section id="protocol" class="beat" data-beat>
+  <div class="beat-media">
+    <div class="gallery">
+      <div class="phone"><img src="assets/screens/33-diagram-selfhost.png" alt="The self-host ladder: start on your device and the hosted network, then run your own PDS, your own MsgBox, and your own AppView" loading="lazy"></div>
+      <div class="phone"><img src="assets/screens/34-diagram-protocol.png" alt="One open protocol: the frozen @dina/protocol wire contract, implementable in any language, with nine conformance vectors" loading="lazy"></div>
+    </div>
+    <div class="beat-dots" aria-hidden="true"><button class="is-active"></button><button></button></div>
+  </div>
+  <div class="beat-copy">
+    <div class="beat-label">Open by design</div>
+    <div class="beat-cap is-active">
+      <h3>Run everything yourself.</h3>
+      <p>Start on the hosted network, then run your own PDS, MsgBox, and AppView, one piece at a time, until the whole stack is yours.</p>
+    </div>
+    <div class="beat-cap">
+      <h3>Or write your own Dina.</h3>
+      <p>The whole protocol is open and frozen, so anyone can write a different app, in any language, that still talks to every other Dina. An open culture of AI, owned by the people who use it.</p>
+      <p class="beat-link"><a href="https://github.com/rajmohanutopai/dina/tree/main/packages/protocol">Explore @dina/protocol &rsaquo;</a></p>
+    </div>
+  </div>
+</section>
+
+<!-- SECURITY & CRYPTO -->
+<section id="security" class="beat beat--flip" data-beat>
+  <div class="beat-media">
+    <div class="gallery">
+      <div class="phone"><img src="assets/screens/32-diagram-security.png" alt="How the crypto works: one seed derives a tree of keys, a vault per compartment, and sealed signed messaging the relay cannot read" loading="lazy"></div>
+      <div class="phone"><img src="assets/screens/17-security-settings.png" alt="Security settings: AES-256-CBC vault encryption, AES-256-GCM seed wrap, SLIP-0010 plus HKDF key derivation, keys in the device keychain, storage on device only" loading="lazy"></div>
+    </div>
+    <div class="beat-dots" aria-hidden="true"><button class="is-active"></button><button></button></div>
+  </div>
+  <div class="beat-copy">
+    <div class="beat-label">Security &amp; crypto</div>
+    <div class="beat-cap is-active">
+      <h3>Loyalty enforced by math.</h3>
+      <p>One seed becomes a tree of keys: a vault per compartment, and sealed, signed messaging that only the recipient can open. The keys stay on your device.</p>
+    </div>
+    <div class="beat-cap">
+      <h3>The exact primitives, in the app.</h3>
+      <p>Open the security screen and see what is actually in use.</p>
+      <ul class="beat-points">
+        <li><strong>One seed, a tree of keys.</strong> A 256-bit seed (your 24-word phrase) derives Ed25519 signing keys via SLIP-0010 under m/9999', plus a separate AES vault key via HKDF-SHA256.</li>
+        <li><strong>A vault per compartment.</strong> Each persona is its own AES-256 SQLCipher database with its own key, isolated from the rest.</li>
+        <li><strong>Core alone holds the keys.</strong> Brain and any agent run as untrusted tenants, and private details are scrubbed before any model call.</li>
+        <li><strong>Sealed, signed messaging.</strong> NaCl sealed boxes (BLAKE2b nonce) around an inner Ed25519 signature. The relay only carries ciphertext.</li>
+      </ul>
+      <p class="beat-link"><a href="https://github.com/rajmohanutopai/dina/blob/main/SECURITY.md">Read the full security model &rsaquo;</a></p>
     </div>
   </div>
 </section>
 
 <hr class="divider">
 
-<!-- CAPABILITIES -->
-<section id="capabilities">
+<!-- HOW IT WORKS -->
+<section id="how">
   <div class="section-inner">
-    <div class="section-label">Capabilities</div>
-    <div class="section-title">What Dina does for you</div>
-    <div class="section-desc">Everything here works today. You can install Dina and try all of this right now.</div>
-
-    <div class="cap-grid">
-      <div class="cap-card">
-        <div class="cap-icon" style="background: #EFF6FF; color: var(--c-core);">🧠</div>
-        <h3>She Remembers Everything</h3>
-        <p>Tell Dina anything. She classifies it into encrypted persona vaults (general, work, health, finance), recalls it when you need it, and sets smart reminders — automatically.</p>
-      </div>
-
-      <div class="cap-card">
-        <div class="cap-icon" style="background: #F0FDF4; color: var(--c-brain);">🔒</div>
-        <h3>She Guards Your Agents</h3>
-        <p>Any AI agent submits its intent to Dina before acting. Safe tasks pass silently. Risky actions (sending email, moving money) are flagged for your approval on Telegram.</p>
-      </div>
-
-      <div class="cap-card">
-        <div class="cap-icon" style="background: #FDF4FF; color: var(--c-trust);">💬</div>
-        <h3>She Talks to Other Dinas</h3>
-        <p>Presence signals, coordination, social updates, safety alerts, trust vouching. End-to-end encrypted. Works from anywhere — no technical setup needed.</p>
-      </div>
-
-      <div class="cap-card">
-        <div class="cap-icon" style="background: #FFFBEB; color: var(--c-msgbox);">🛡️</div>
-        <h3>She Scrubs Your Privacy</h3>
-        <p>All LLM calls go with scrubbed data. Names, emails, SSNs replaced with tokens. After the AI responds, Dina rehydrates the originals. Raw data never leaves your machine.</p>
-      </div>
-
-      <div class="cap-card">
-        <div class="cap-icon" style="background: #FDF4FF; color: var(--c-trust);">🌐</div>
-        <h3>PeerLens</h3>
-        <p>Real reviews from real people with real experience — not anonymous star ratings that can be bought. When Dina advises a purchase, the recommendation comes from people your network actually trusts.</p>
-      </div>
-
-      <div class="cap-card">
-        <div class="cap-icon" style="background: #EFF6FF; color: var(--c-core);">📦</div>
-        <h3>Your Data is Yours</h3>
-        <p>Export everything with one command. Decrypt with a standalone script — no Dina required. Move to a new machine. Your recovery phrase restores same DID, same data, same identity.</p>
-      </div>
-
-      <div class="cap-card">
-        <div class="cap-icon" style="background: #FEF2F2; color: #DC2626;">❤️‍🩹</div>
-        <h3>She Never Replaces a Human</h3>
-        <p>Dina never simulates emotional intimacy. When you need connection, she connects you to other humans — never to herself. She's your assistant, not your companion.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<hr class="divider">
-
-<!-- IN ACTION -->
-<section id="scenario" style="background: var(--bg-tertiary);">
-  <div class="section-inner">
-    <div class="section-label">In Action</div>
-    <div class="section-title">The Purchase Journey</div>
-    <div class="section-desc">You say "I want to buy a chair." Dina does the rest.</div>
-
-    <div class="scenario">
-      <div class="scenario-label">What happens</div>
-      <h3>She knows what you actually need</h3>
-      <div class="scenario-step"><span class="step-num">01</span><span>You say: <em>"I want to buy a chair."</em></span></div>
-      <div class="scenario-step"><span class="step-num">02</span><span>Dina already knows you have <strong>chronic back pain</strong>, that you <strong>work from home 3 days a week</strong>, and that your spending pattern suggests a <strong>budget around $1,000–1,500</strong>.</span></div>
-      <div class="scenario-step"><span class="step-num">03</span><span>Dina infers: you need an <strong>ergonomic chair</strong>, not just any chair. You never said "ergonomic" — she figured it out from your context.</span></div>
-      <div class="scenario-step"><span class="step-num">04</span><span>Dina checks the <strong>PeerLens</strong> — reviews from real people who actually bought ergonomic chairs in your budget range.</span></div>
-      <div class="scenario-step"><span class="step-num">05</span><span>Answer: <em>"People who bought this chair report excellent lumbar support and back pain relief within two weeks — which matches exactly what you need."</em></span></div>
-    </div>
-
-  </div>
-</section>
-
-<hr class="divider">
-
-<section style="background: var(--bg-tertiary);">
-  <div class="section-inner">
-    <div class="section-label">In Action</div>
-    <div class="section-title">The Sancho Moment</div>
-    <div class="section-desc" style="max-width: 800px;">Named after a scene in <a href="https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf"><em>UTOPAI</em></a> — when your AI knows just the right thing to remind you, at just the right time.</div>
-
-    <div class="scenario">
-      <div class="scenario-label">What happens</div>
-      <h3>She remembers what you forgot</h3>
-      <div class="scenario-step"><span class="step-num">01</span><span>Your friend Sancho's Dina sends a message: <em>"Arriving at your home in 10 minutes."</em></span></div>
-      <div class="scenario-step"><span class="step-num">02</span><span>The message arrives securely — encrypted end-to-end between your two Dinas.</span></div>
-      <div class="scenario-step"><span class="step-num">03</span><span>Your Dina recalls that Sancho likes <strong>cardamom tea</strong> and that his <strong>mother has been unwell</strong> recently.</span></div>
-      <div class="scenario-step"><span class="step-num">04</span><span>Reminder: <em>"Sancho is arriving in 10 minutes. You may want to prepare cardamom tea and ask about his mother."</em></span></div>
-    </div>
-  </div>
-</section>
-
-<hr class="divider">
-
-<!-- ARCHITECTURE -->
-<section id="architecture">
-  <div class="section-inner">
-    <div class="section-label">Architecture</div>
-    <div class="section-title">How it works</div>
-    <div class="section-desc">Your Dina runs on your machine. The shared network handles messaging and trust. Nothing leaves your machine unencrypted.</div>
+    <div class="section-label">How it works</div>
+    <div class="section-title">On your device, and a network you can leave.</div>
+    <div class="section-desc">Your Dina runs on your device. A shared network carries messages and trust between people. Nothing leaves your device unencrypted.</div>
 
     <div style="margin-bottom: 12px; margin-top: 32px;">
-      <div class="section-label" style="margin-bottom: 12px;">On your machine</div>
+      <div class="section-label" style="margin-bottom: 12px;">On your device</div>
     </div>
     <div class="arch-grid" style="grid-template-columns: 1fr 1fr; margin-top: 0;">
-      <div class="arch-card" style="--card-accent: var(--c-core);">
+      <div class="arch-card">
         <h4>Core</h4>
-        <div class="arch-where">Your machine</div>
-        <p>Your identity, your encrypted vault, your keys. The only thing that can read your data. Everything else asks permission.</p>
+        <p>Your identity, your encrypted vaults, your keys. The only thing that can read your data. Everything else asks permission.</p>
       </div>
-      <div class="arch-card" style="--card-accent: var(--c-brain);">
+      <div class="arch-card">
         <h4>Brain</h4>
-        <div class="arch-where">Your machine</div>
-        <p>The thinking layer. Reasons over your data, talks to LLMs, scrubs private information before anything leaves, assembles reminders and advice.</p>
+        <p>The thinking layer. Reasons over your data, talks to language models, removes private details before anything leaves, assembles reminders and answers.</p>
       </div>
     </div>
 
@@ -394,55 +725,14 @@ footer .footer-links { display: flex; gap: 24px; justify-content: center; margin
       <div class="section-label" style="margin-bottom: 12px;">Shared network</div>
     </div>
     <div class="arch-grid" style="grid-template-columns: 1fr 1fr; margin-top: 0;">
-      <div class="arch-card" style="--card-accent: var(--c-msgbox);">
+      <div class="arch-card">
         <h4>MsgBox</h4>
-        <div class="arch-where">Shared network</div>
-        <p>Encrypted mailbox for Dina-to-Dina messaging. Delivers messages between people. Cannot read the contents — ever.</p>
+        <p>Encrypted mailbox for Dina-to-Dina messages. Carries them sealed between people, so only the recipient can open them. Run your own when you want to.</p>
       </div>
-      <div class="arch-card" style="--card-accent: var(--c-trust);">
-        <h4>PeerLens</h4>
-        <div class="arch-where">Shared network</div>
-        <p>Decentralised reviews and reputation built on AT Protocol. Real people, real experiences, verified by cryptography. Anyone can run their own.</p>
+      <div class="arch-card">
+        <h4>AppView</h4>
+        <p>Decentralized reviews, reputation, and service listings, built on the AT Protocol. Real people, real experience, verified by cryptography. Anyone can run their own, and other apps can read the same records.</p>
       </div>
-    </div>
-  </div>
-</section>
-
-<hr class="divider">
-
-<!-- SOVEREIGNTY -->
-<section id="sovereignty">
-  <div class="section-inner">
-    <div class="section-label">Sovereignty</div>
-    <div class="section-title">Your upgrade path</div>
-    <div class="section-desc">Sovereignty is a given. Start with zero infrastructure. Take full control when you're ready.</div>
-
-    <div class="cap-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
-      <div class="cap-card">
-        <h3>Level 0</h3>
-        <p><strong>Default.</strong> Home Node runs locally. Connects to hosted MsgBox + AppView + community PDS. Zero config. No public IP.</p>
-      </div>
-      <div class="cap-card">
-        <h3>Level 1</h3>
-        <p><strong>Own PDS.</strong> Run your own AT Protocol server. Trust records publish to your repo. One DID Document update.</p>
-      </div>
-      <div class="cap-card">
-        <h3>Level 2</h3>
-        <p><strong>Direct D2D.</strong> Expose a public endpoint. Other Dinas message you directly. No MsgBox needed.</p>
-      </div>
-      <div class="cap-card">
-        <h3>Level 3</h3>
-        <p><strong>Full sovereign.</strong> Own PDS + own MsgBox + direct D2D. Zero dependency on Dina project infrastructure.</p>
-      </div>
-    </div>
-
-    <div class="code-block" style="margin-top: 32px;">
-      <span class="comment"># Self-host the shared infrastructure on your own server</span><br>
-      <span class="cmd">cp</span> infra.env.example infra.env &nbsp;&nbsp;<span class="comment"># your domain, your server</span><br>
-      <span class="cmd">./deploy_shared_infra.sh</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># 5 minutes, fully sovereign</span><br>
-      <br>
-      <span class="comment"># Home Nodes connect with one line</span><br>
-      DINA_MSGBOX_URL=<span class="cmd">wss://mailbox.yourdomain.com</span>
     </div>
   </div>
 </section>
@@ -450,29 +740,26 @@ footer .footer-links { display: flex; gap: 24px; justify-content: center; margin
 <hr class="divider">
 
 <!-- GET STARTED -->
-<section style="text-align: center; padding: clamp(60px, 10vh, 100px) clamp(16px, 4vw, 48px);">
+<section style="text-align: center; padding: clamp(56px, 9vh, 96px) clamp(16px, 4vw, 48px);">
   <div class="section-inner">
-    <div class="section-title">Get started</div>
-    <div class="code-block" style="text-align: left; max-width: 520px; margin: 24px auto;">
-      <span class="cmd">git clone</span> https://github.com/rajmohanutopai/dina.git<br>
-      <span class="cmd">cd</span> dina<br>
-      <span class="cmd">legacy/bin/install.sh</span>
-    </div>
-    <div class="hero-actions" style="margin-top: 32px;">
-      <a href="https://github.com/rajmohanutopai/dina" class="btn-primary">View on GitHub</a>
+    <div class="section-title">Get Dina</div>
+    <div class="section-desc" style="margin: 12px auto 28px;">Install the app, or run the whole stack yourself. Both are yours to keep.</div>
+    <div class="hero-actions" style="justify-content: center;">
+      <!-- TODO: replace with the TestFlight public link or live App Store URL -->
+      <a href="https://apps.apple.com/app/id6781713799" class="btn-primary">Get the app</a>
+      <a href="https://github.com/rajmohanutopai/dina" class="btn-secondary">View on GitHub</a>
       <a href="https://discord.gg/gDRcrEwy" class="btn-secondary">Join Discord</a>
-      <a href="https://rajmohanutopai.github.io/dina/dina.html" class="btn-secondary">Interactive Guide</a>
     </div>
   </div>
 </section>
 
 <!-- ORIGIN -->
-<section style="background: var(--bg-tertiary); text-align: center; padding: clamp(48px, 8vh, 80px) clamp(16px, 4vw, 48px);">
+<section id="origin" style="background: var(--bg-tertiary); text-align: center; padding: clamp(48px, 8vh, 80px) clamp(16px, 4vw, 48px);">
   <div class="section-inner" style="max-width: 680px;">
     <div class="section-label">Origin</div>
-    <div class="section-title" style="font-size: clamp(1.5em, 2.8vw, 2em);">The Origin Story</div>
+    <div class="section-title" style="font-size: clamp(1.5em, 2.8vw, 2em);">Where Dina comes from</div>
     <p style="color: var(--text-secondary); font-size: 1.05em; margin-top: 16px;">
-      Dina was first described in <a href="https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf"><em>UTOPAI (2012-2017)</em></a>, a science fiction novel about a post-agi world, where everyone has a personal AI looking after their every need.
+      Dina was first described in <a href="https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf"><em>UTOPAI (2012-2017)</em></a>, a novel about a world after general AI, where everyone has a personal AI that looks after their world and answers only to them.
     </p>
   </div>
 </section>
@@ -485,10 +772,104 @@ footer .footer-links { display: flex; gap: 24px; justify-content: center; margin
     <a href="https://github.com/rajmohanutopai/dina">GitHub</a>
     <a href="https://discord.gg/gDRcrEwy">Discord</a>
     <a href="https://rajmohanutopai.github.io/dina/dina.html">Architecture</a>
-    <a href="https://rajmohanutopai.github.io/dina/all_test_results.html">Test Results</a>
+    <a href="/privacy/">Privacy</a>
   </div>
-  <p>Dina — The Architecture of Agency. MIT License.</p>
+  <p>Dina. The Architecture of Agency. MIT License.</p>
 </footer>
+
+<script>
+  // Each capability "beat" is an alternating row whose phone is a swipe gallery.
+  // The caption + dots track the active screen, and a live-phone only plays its
+  // conversation when it is BOTH the active screen AND the beat is on screen
+  // (so it replays each time you swipe to it or scroll back).
+  (function () {
+    var hasIO = 'IntersectionObserver' in window;
+    document.querySelectorAll('[data-beat]').forEach(function (beat) {
+      var gallery = beat.querySelector('.gallery');
+      if (!gallery) return;
+      var slides = [].slice.call(gallery.querySelectorAll('.phone'));
+      var caps = [].slice.call(beat.querySelectorAll('.beat-cap'));
+      var dots = [].slice.call(beat.querySelectorAll('.beat-dots button'));
+      var current = 0, beatInView = false;
+
+      function activate(i) {
+        current = i;
+        caps.forEach(function (c, j) { c.classList.toggle('is-active', j === i); });
+        dots.forEach(function (d, j) { d.classList.toggle('is-active', j === i); });
+        slides.forEach(function (s, j) {
+          if (s.classList.contains('live-phone')) {
+            s.classList.toggle('playing', j === i && beatInView);
+          }
+        });
+      }
+
+      if (!hasIO) {
+        // No IntersectionObserver: show everything, play all live phones.
+        caps.forEach(function (c) { c.classList.add('is-active'); });
+        slides.forEach(function (s) { if (s.classList.contains('live-phone')) s.classList.add('playing'); });
+        return;
+      }
+
+      // Track whether the beat is on screen (gates live-phone playback).
+      new IntersectionObserver(function (es) {
+        es.forEach(function (e) { beatInView = e.isIntersecting; });
+        activate(current);
+      }, { threshold: 0.35 }).observe(beat);
+
+      // Track which gallery slide is centered, against the gallery viewport.
+      if (slides.length > 1) {
+        var paused = false, dueAt = 0;
+        var AUTO_MS = 4800;
+        var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        var slideObs = new IntersectionObserver(function (es) {
+          es.forEach(function (e) { if (e.isIntersecting) activate(slides.indexOf(e.target)); });
+        }, { root: gallery, threshold: 0.6 });
+        slides.forEach(function (s) { slideObs.observe(s); });
+        dots.forEach(function (d, i) {
+          d.addEventListener('click', function () {
+            dueAt = 0; // manual nav resets the auto-advance clock
+            slides[i].scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+          });
+        });
+        // Wrap the gallery and flank it with prev/next arrows on the phone edges.
+        var wrap = document.createElement('div');
+        wrap.className = 'gallery-wrap';
+        gallery.parentNode.insertBefore(wrap, gallery);
+        wrap.appendChild(gallery);
+        var go = function (i) {
+          i = Math.max(0, Math.min(slides.length - 1, i));
+          slides[i].scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+        };
+        var prev = document.createElement('button');
+        prev.className = 'beat-arrow prev'; prev.setAttribute('aria-label', 'Previous'); prev.innerHTML = '&lsaquo;';
+        prev.addEventListener('click', function () { dueAt = 0; go(current - 1); });
+        var next = document.createElement('button');
+        next.className = 'beat-arrow next'; next.setAttribute('aria-label', 'Next'); next.innerHTML = '&rsaquo;';
+        next.addEventListener('click', function () { dueAt = 0; go(current + 1); });
+        wrap.appendChild(prev);
+        wrap.appendChild(next);
+        // Auto-advance while the phone is well within view; pause on hover so people can dwell.
+        wrap.addEventListener('pointerenter', function () { paused = true; });
+        wrap.addEventListener('pointerleave', function () { paused = false; });
+        function galleryInView() {
+          var r = gallery.getBoundingClientRect();
+          var vh = window.innerHeight || document.documentElement.clientHeight;
+          var shown = Math.min(r.bottom, vh) - Math.max(r.top, 0);
+          return r.height > 0 && shown / r.height >= 0.6;
+        }
+        if (!reduce) {
+          setInterval(function () {
+            if (paused || !galleryInView()) { dueAt = 0; return; }
+            var t = Date.now();
+            if (!dueAt) { dueAt = t + AUTO_MS; }
+            else if (t >= dueAt) { go((current + 1) % slides.length); dueAt = t + AUTO_MS; }
+          }, 500);
+        }
+      }
+      activate(0);
+    });
+  })();
+</script>
 
 </body>
 </html>

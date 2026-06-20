@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy Policy | Dina</title>
+<meta name="description" content="How Dina handles your data: local-first, encrypted with keys only you hold, no trackers, no ads.">
+<meta name="robots" content="index,follow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;1,600&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #FAF8F5;
+    --card: #FFFFFF;
+    --border: rgba(0,0,0,0.08);
+    --text: #1C1917;
+    --muted: #57534E;
+    --faint: #A8A29E;
+    --font-display: 'Cormorant Garamond', Georgia, serif;
+    --font-sans: 'Figtree', system-ui, -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 64px 24px 96px; }
+  .eyebrow {
+    font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase;
+    color: var(--faint); font-weight: 600; margin-bottom: 12px;
+  }
+  h1 {
+    font-family: var(--font-display); font-style: italic; font-weight: 600;
+    font-size: clamp(40px, 7vw, 60px); line-height: 1.05; margin-bottom: 8px;
+  }
+  .updated { color: var(--faint); font-size: 14px; margin-bottom: 40px; }
+  .lede {
+    font-size: 18px; color: var(--muted); margin-bottom: 36px;
+  }
+  h2 {
+    font-family: var(--font-display); font-weight: 600;
+    font-size: 26px; margin: 40px 0 12px;
+  }
+  p { color: var(--muted); margin-bottom: 14px; }
+  ul { margin: 0 0 16px; padding-left: 0; list-style: none; }
+  li {
+    color: var(--muted); margin-bottom: 12px; padding-left: 20px; position: relative;
+  }
+  li::before {
+    content: ""; position: absolute; left: 2px; top: 11px;
+    width: 6px; height: 6px; border-radius: 50%; background: var(--faint);
+  }
+  strong { color: var(--text); font-weight: 600; }
+  a { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
+  .summary {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 24px 28px; margin-bottom: 8px;
+  }
+  .summary li::before { background: var(--text); }
+  footer {
+    margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--border);
+    color: var(--faint); font-size: 14px;
+  }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+  <main class="wrap">
+    <div class="eyebrow">Dina</div>
+    <h1>Privacy Policy</h1>
+    <div class="updated">Last updated: 19 June 2026</div>
+
+    <p class="lede">Dina is built on one principle: your data is yours. This policy explains, plainly, what stays on your device, the few things that leave it, and what we never do.</p>
+
+    <div class="summary">
+      <ul>
+        <li>Your memories, notes, and identity keys are stored on your device, <strong>encrypted with keys only you hold</strong>.</li>
+        <li>We do <strong>not</strong> use analytics, trackers, or advertising, and we never sell or share your data.</li>
+        <li>Your private notes and memories stay on your device. Only deliberate actions like publishing, messaging, or asking the AI send data, and only what that task needs.</li>
+      </ul>
+    </div>
+
+    <h2>What stays on your device</h2>
+    <p>Your vault (memories, notes, and anything you tell Dina), your chat history, your reminders, and your encryption keys are stored locally and encrypted. You can export or delete them at any time.</p>
+
+    <h2>What's shared, and when</h2>
+    <p><strong>Your Dina servers.</strong> To give you a portable identity and a network, Dina connects to services we operate:</p>
+    <ul>
+      <li><strong>Identity.</strong> When you create a Dina, an identity (a did:plc and a handle) is created and stored. Your chosen display name is part of this and is public.</li>
+      <li><strong>What you publish.</strong> If you publish a service listing or a review, that content is public by design and is stored and indexed so others can find it. You choose what to publish.</li>
+      <li><strong>Messaging.</strong> Messages to other people's Dinas are end-to-end encrypted on your device before they are sent. Our relay passes along the encrypted message and routing details (who it is to and from, and when) but cannot read its contents.</li>
+      <li><strong>Free credits (optional).</strong> If you use included AI credits, your device provides an Apple DeviceCheck token so we can prevent abuse. It is not used to track you.</li>
+    </ul>
+    <p><strong>AI model providers.</strong> When you use a feature that needs AI (for example, Ask), your request and the context Dina includes to answer it are sent to an AI model provider to generate a response. If you connect your own provider key, that request goes to that provider under your own account. We do not use these requests for advertising or profiling.</p>
+
+    <h2>What we do not do</h2>
+    <p>We do not include analytics or crash-tracking SDKs, advertising, or third-party trackers. We do not access your device location, your address book, your photos, your microphone, or your camera. We do not sell your data or share it with data brokers.</p>
+
+    <h2>Your controls</h2>
+    <p>You hold the keys. You can export your data, delete it, or delete your Dina entirely from within the app.</p>
+
+    <h2>Data retention</h2>
+    <p>Local data lives on your device until you delete it. Published content (reviews, listings) remains until you remove it. Encrypted messages are held by the relay only until delivered.</p>
+
+    <h2>Children</h2>
+    <p>Dina is not directed to children under 13 (or the equivalent minimum age in your region) and we do not knowingly collect their data.</p>
+
+    <h2>Changes</h2>
+    <p>We will update this page when this policy changes and revise the date above.</p>
+
+    <h2>Contact</h2>
+    <p>Questions about privacy: <a href="mailto:dinakernel@gmail.com">dinakernel@gmail.com</a></p>
+
+    <footer>
+      Dina is open source. You can read exactly how it handles data:
+      <a href="https://github.com/rajmohanutopai/dina">github.com/rajmohanutopai/dina</a>
+    </footer>
+  </main>
+</body>
+</html>
