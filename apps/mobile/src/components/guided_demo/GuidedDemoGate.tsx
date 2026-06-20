@@ -95,7 +95,7 @@ export function GuidedDemoGate({
           <GuidedDemoBanner
             onExit={() => void gate.exitDemo()}
             onAdvance={() => void gate.advanceDemo()}
-            caption={gate.currentAction?.caption ?? null}
+            caption={gate.caption}
             step={gate.step}
             stepCount={gate.stepCount}
             demoComplete={gate.demoComplete}

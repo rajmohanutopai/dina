@@ -52,9 +52,13 @@ export interface GuidedDemoGateState {
   phase: GuidedDemoGatePhase;
   /** True while a guided-demo scope is active → show the banner. */
   demoActive: boolean;
-  /** The next scripted step to run, or null when the demo is complete. */
+  /** The next scripted step to run, or null when the demo is complete. Drives
+   *  the advance button (its label/mode), NOT the dock caption. */
   currentAction: DemoAction | null;
-  /** 1-based step number for display (`step` of `stepCount`). */
+  /** Caption of the step currently ON SCREEN (the running step, or the last
+   *  completed one), so the dock describes what the user sees, not the next step. */
+  caption: string | null;
+  /** 1-based number of the step currently on screen (`step` of `stepCount`). */
   step: number;
   stepCount: number;
   /** True once every scripted step has run. */
@@ -243,15 +247,29 @@ export function useGuidedDemoGate(
   // `runnerTick` participates so the snapshot recomputes on every runner change.
   void runnerTick;
   const runner = runnerRef.current;
+  // `currentAction` is the NEXT action — it drives the advance button (label/mode).
   const currentAction = runner?.currentAction ?? null;
   const stepCount = runner?.total ?? 0;
-  const step = runner === null ? 0 : Math.min(runner.position + 1, runner.total);
   const demoComplete = runner?.isComplete ?? false;
+
+  // The dock describes the step the user is LOOKING AT, not the one the button
+  // will run next. While a step runs it IS that step (its content is appearing,
+  // so `currentAction`); when idle it's the last completed step (`previousAction`);
+  // before anything has run, fall back to the first step as the intro prompt.
+  const displayedAction = actionInFlight ? currentAction : (runner?.previousAction ?? currentAction);
+  const caption = displayedAction?.caption ?? null;
+  const step =
+    runner === null
+      ? 0
+      : actionInFlight
+        ? Math.min(runner.position + 1, runner.total)
+        : Math.max(1, runner.position);
 
   return {
     phase,
     demoActive,
     currentAction,
+    caption,
     step,
     stepCount,
     demoComplete,

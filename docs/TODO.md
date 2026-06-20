@@ -1,3 +1,8 @@
+# Guided demo
+Guided demo bottom should show current page changes, not next page
+
+# First request takes time
+
 # test-pds is not flippable
 in the pick your handle page itself, user should be able to choose between test, prod, their own infra. 
 
@@ -10,6 +15,9 @@ I deleted my Dina (erase everythig in device), logges in as a separate user, but
 
 # very important - to avoid context leak to external systems like agents, services and reviews
 docs/CONTEXT_FIREWALL_DESIGN.md
+
+# initial agent setup requires phone to be ON
+if phone is asleep, initial setup fails
 
 # Services not working properly for difficult questions
 Book me a seat in the sports center
@@ -57,6 +65,13 @@ returned error
 
 # Home Node Lite as Local thin client
 remaining items on docs/WEB_THIN_CLIENT_DESIGN.md
+
+# Bangalore Salon issue
+  Your query named a city ("bangalore salon"), so Dina's services agent geocoded it and ran a location-scoped provider search (searchServices with lat/lng — see service_tools.ts). But the salon was published with
+  no service area (serviceArea/location/geo all null), and a location-scoped service.search excludes services that have no location. So it found zero providers → the "Provider not found / appointment_availability"
+  gap card. (A non-located query does find it, which is why my earlier search worked and the publish/ingest are fine.)
+  
+
 
 # D2D for normal questions
 

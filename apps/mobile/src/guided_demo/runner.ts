@@ -390,6 +390,13 @@ export class GuidedDemoRunner {
     return this.plan[this.index] ?? null;
   }
 
+  /** The action whose result is currently ON SCREEN — the last one that ran —
+   *  or null before any step has run. The dock uses this to describe the step
+   *  the user is looking at, rather than the next one the button will run. */
+  get previousAction(): DemoAction | null {
+    return this.index > 0 ? (this.plan[this.index - 1] ?? null) : null;
+  }
+
   /** True once every action has run. */
   get isComplete(): boolean {
     return this.index >= this.plan.length;
