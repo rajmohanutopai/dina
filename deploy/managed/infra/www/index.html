@@ -158,6 +158,41 @@ section { padding: clamp(32px, 5vh, 56px) clamp(16px, 4vw, 48px); }
   margin-bottom: 28px;
 }
 
+/* "The idea" — UTOPAI book cover beside the thesis prose. */
+.idea-intro {
+  display: flex; gap: clamp(24px, 4vw, 44px); align-items: flex-start;
+  text-align: left; margin-top: 18px; margin-bottom: 32px;
+}
+.idea-cover { flex: 0 0 auto; line-height: 0; }
+.idea-cover img {
+  width: 200px; max-width: 40vw; height: auto; border-radius: 6px;
+  box-shadow: 0 10px 30px rgba(28,25,23,0.20), 0 2px 8px rgba(0,0,0,0.08);
+}
+.idea-intro-text { flex: 1; min-width: 0; }
+@media (max-width: 720px) {
+  .idea-intro { flex-direction: column; align-items: center; text-align: center; }
+  .idea-cover img { width: 168px; }
+}
+.idea-payoff {
+  font-family: var(--font-display); font-style: italic; font-weight: 600;
+  font-size: clamp(1.5em, 3.4vw, 2.2em); line-height: 1.2; text-align: center;
+  color: var(--text-muted); margin: 44px 0 0;
+}
+.idea-payoff span { color: var(--text-primary); }
+/* "The idea" pillars — four quiet principles under the UTOPAI thesis. */
+.idea-pillars {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+  background: var(--border); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  overflow: hidden; text-align: left; margin-top: 8px;
+}
+.idea-pillar { background: var(--bg-primary); padding: 20px 22px; }
+.idea-pillar h4 {
+  font-family: var(--font-heading); font-weight: 700; font-size: 0.92em;
+  color: var(--text-primary); margin-bottom: 6px;
+}
+.idea-pillar p { font-size: 0.96em; color: var(--text-secondary); line-height: 1.55; margin: 0; }
+@media (max-width: 720px) { .idea-pillars { grid-template-columns: 1fr; } }
+
 /* === PRODUCT TOUR — one section per functionality, each with a filmstrip === */
 .tour-intro { max-width: 1100px; margin: 0 auto; text-align: center; padding-bottom: 8px; }
 .fn { max-width: 1000px; margin: 0 auto; padding: clamp(24px, 4.5vh, 48px) clamp(16px, 4vw, 48px) clamp(4px, 1.5vh, 12px); }
@@ -490,7 +525,7 @@ footer .footer-links { display: flex; gap: 24px; justify-content: center; margin
   <div class="hero-copy">
     <div class="hero-eyebrow">Technical Preview</div>
     <h1>Your sovereign AI.<br>Your open network.</h1>
-    <p>Your memory, your agent approvals, your services, your network. Dina runs on your phone or your own server, holds your keys, and works for you. <span style="display:block; margin-top:12px;">Ask Dina. Ask a service. Ask around.</span></p>
+    <p>Your own AI, loyal to you alone. It finds the product or service that fits you, guided by people who have actually used it. It runs on your phone or your own server, and you hold the keys. <span style="display:block; margin-top:12px;">Ask Dina. Ask a service. Ask around.</span></p>
     <div class="hero-actions">
       <!-- TODO: replace with the TestFlight public link or live App Store URL -->
       <a href="https://apps.apple.com/app/id6781713799" class="btn-primary">Get the app</a>
@@ -506,12 +541,42 @@ footer .footer-links { display: flex; gap: 24px; justify-content: center; margin
 
 <hr class="divider">
 
+<!-- THE IDEA (UTOPAI thesis) -->
+<section id="idea" style="background: var(--bg-tertiary); padding: clamp(56px, 9vh, 104px) clamp(16px, 4vw, 48px);">
+  <div class="section-inner" style="max-width: 880px; margin: 0 auto;">
+    <div class="section-label" style="text-align: center;">The idea</div>
+    <div class="idea-intro">
+      <a class="idea-cover" href="https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf" aria-label="Read the UTOPAI novel">
+        <img src="assets/utopai-cover.webp" alt="Cover of the novel UTOPAI by Rajmohan Harindranath" loading="lazy" width="200" height="272">
+      </a>
+      <div class="idea-intro-text">
+        <div class="section-title" style="margin-bottom: 14px;">The world UTOPAI imagined.</div>
+        <p style="font-size: 1.08em; color: var(--text-secondary); margin: 0 0 16px;">
+          Dina was first described in <a href="https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf"><em>UTOPAI</em></a>, a novel written between 2012 and 2017, set in a world after superintelligence. In it, everyone has their own AI that looks after their world and answers only to them.
+        </p>
+        <p style="font-size: 1.08em; color: var(--text-secondary); margin: 0;">
+          That AI does more than run errands. Because it knows you and serves you alone, it can go and find what genuinely fits your life: you ask, and it does the looking. It draws on real reviews from people you trust, and brings back what is right for you, whether a product or a service.
+        </p>
+      </div>
+    </div>
+    <div class="idea-pillars">
+      <div class="idea-pillar"><h4>On demand</h4><p>You ask, and your Dina goes out and finds what fits you, exactly when you need it.</p></div>
+      <div class="idea-pillar"><h4>Truth from people</h4><p>Dina recommends from real reviews, ranked by how much you trust each reviewer.</p></div>
+      <div class="idea-pillar"><h4>It searches as you</h4><p>Every answer is tuned to your preferences, so what comes back is right for you.</p></div>
+      <div class="idea-pillar"><h4>A world of Dinas</h4><p>Products and services alike come from people who run their own Dina, and your Dina finds the right one through ranked reviews.</p></div>
+    </div>
+    <p class="idea-payoff">Imagined in 2017.<br><span>Built and working today.</span></p>
+  </div>
+</section>
+
+<hr class="divider">
+
 <!-- TOUR -->
 <section id="tour" style="padding-bottom: 0;">
   <div class="tour-intro">
     <div class="section-label">A quick look</div>
     <div class="section-title">What you can do with Dina</div>
-    <div class="section-desc" style="margin: 0 auto;">Every feature below is available today, in the Dina app or on your own server.</div>
+    <div class="section-desc" style="margin: 0 auto;">Each one runs in the Dina app or on your own server.</div>
   </div>
 </section>
 
@@ -546,8 +611,8 @@ footer .footer-links { display: flex; gap: 24px; justify-content: center; margin
   </div>
   <div class="beat-copy">
     <div class="beat-label">Your agents</div>
-    <div class="beat-cap is-active"><h3>Agent oversight.</h3><p>What an agent may do on its own, and what waits for your yes.</p></div>
-    <div class="beat-cap"><h3>Hand an agent a task.</h3><p>Give a connected agent a job, like emailing your manager. It works through your Dina, which grants each task only the access it needs.</p></div>
+    <div class="beat-cap is-active"><h3>Agent oversight.</h3><p>Connect any agent you use. Before it acts, it submits its intent to Dina: safe steps pass through, anything sensitive waits for your yes.</p></div>
+    <div class="beat-cap"><h3>Bring your own agent.</h3><p>Point an agent you already use at Dina and give it a job, like emailing your manager. It works through Dina, which grants each task only the access it needs.</p></div>
     <div class="beat-cap"><h3>And it waits for your yes.</h3><p>That email needs your Health vault, so Dina pauses and asks. You approve once, for that task, and the grant ends with it.</p></div>
     <div class="beat-cap"><h3>Every action has a risk tier.</h3><p>Safe tasks auto-approve. Moderate ones ask once a session. High-risk ones, like payments and transfers, ask every single time.</p></div>
   </div>
