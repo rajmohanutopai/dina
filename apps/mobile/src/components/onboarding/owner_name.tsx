@@ -47,7 +47,7 @@ export function OwnerName(props: OwnerNameProps): React.ReactElement {
         onChangeText={setName}
         autoCapitalize="words"
         autoCorrect={false}
-        placeholder="e.g. Raj"
+        placeholder="e.g. John"
         placeholderTextColor={colors.textMuted}
         style={styles.input}
         testID="owner-name-input"

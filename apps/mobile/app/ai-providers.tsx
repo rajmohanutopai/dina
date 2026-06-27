@@ -18,12 +18,12 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   TextInput,
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { getProviderTiers } from '@dina/brain/llm';
@@ -208,9 +208,10 @@ export default function AIProvidersScreen(): React.JSX.Element {
   }
 
   return (
-    <ScrollView
+    <KeyboardAwareScrollView
       style={styles.container}
       contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
+      bottomOffset={24}
     >
       <View style={styles.section}>
         {/* Starter Credits tile — present only while the grant is the
@@ -389,7 +390,7 @@ export default function AIProvidersScreen(): React.JSX.Element {
           }}
         />
       )}
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 

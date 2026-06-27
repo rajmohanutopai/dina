@@ -117,7 +117,7 @@ export interface ProvisionOptions {
    */
   ownerName: string;
   /**
-   * Pre-picked handle (full DNS form, e.g. `raju.test-pds.dinakernel.com`).
+   * Pre-picked handle (full DNS form, e.g. `dina.test-pds.dinakernel.com`).
    * When set, used as-is. When omitted, falls back to `deriveHandle()`.
    */
   handle?: string;
@@ -472,7 +472,7 @@ function defaultEmailForHandle(handle: string): string {
   // PDS createAccount accepts any RFC-5322-shaped value; we don't use
   // the inbox, so a derived synthetic suffices. The handle already
   // includes the PDS host, so `${handle}` would mint mail like
-  // `raj.test-pds.dinakernel.com@…` — split out the local part.
+  // `john.test-pds.dinakernel.com@…` — split out the local part.
   const at = handle.indexOf('.');
   const local = at > 0 ? handle.slice(0, at) : handle;
   return `${local}@dina.invalid`;

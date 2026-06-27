@@ -48,6 +48,7 @@ import { Tabs, useRouter, usePathname, useGlobalSearchParams } from 'expo-router
 import React, { useEffect, useSyncExternalStore } from 'react';
 import { Modal, Platform, Pressable, TouchableOpacity, View, Text, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 
 import { markNotificationRead } from '@dina/brain/notifications';
 
@@ -665,6 +666,7 @@ export default function RootLayout() {
   }
 
   return (
+    <KeyboardProvider>
     <View style={{ flex: 1 }}>
       <UnlockGate>
         <GuidedDemoGate
@@ -1118,6 +1120,7 @@ export default function RootLayout() {
         }}
       />
     </View>
+    </KeyboardProvider>
   );
 }
 

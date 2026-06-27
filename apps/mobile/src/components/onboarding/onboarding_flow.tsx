@@ -12,6 +12,7 @@ import { generateNewMnemonic } from '../../hooks/useOnboarding';
 import {
   INITIAL_STEP,
   previousStep,
+  stepAfterCreateHandle,
   type CreateDraft,
   type ExternalAtprotoDraft,
   type RecoverDraft,
@@ -118,21 +119,12 @@ export function OnboardingFlow(): React.ReactElement {
           serverError={step.error}
           onBack={goBack}
           onContinue={(handle) => {
-            const draft = { ...step.draft, handle };
-            // If we bounced back here from a failed provisioning attempt,
-            // the rest of the draft (passphrase + verified mnemonic) is
-            // already complete — go straight back to provisioning rather
-            // than re-walking passphrase + mnemonic confirm.
-            if (
-              draft.passphrase !== undefined &&
-              draft.passphrase.length > 0 &&
-              draft.mnemonic !== undefined &&
-              draft.mnemonic.length > 0
-            ) {
-              setStep({ kind: 'provisioning_create', draft: draft as CreateDraft });
-            } else {
-              setStep({ kind: 'create_passphrase', draft });
-            }
+            // `stepAfterCreateHandle` enforces the mandatory-AI invariant: a
+            // complete draft routes through `ai_provider`, never straight to
+            // provisioning (the bug where backtracking to the handle screen
+            // finished onboarding with no AI connected — #389). Incomplete
+            // drafts continue to the passphrase step.
+            setStep(stepAfterCreateHandle({ ...step.draft, handle }));
           }}
         />
       );

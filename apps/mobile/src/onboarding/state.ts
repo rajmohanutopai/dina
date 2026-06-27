@@ -19,7 +19,7 @@ export interface CreateDraft {
   ownerName: string;
   /**
    * Full handle picked in the `create_handle` step (e.g.
-   * `raju.pds.dinakernel.com`). Carried through to provisioning so the
+   * `dina.pds.dinakernel.com`). Carried through to provisioning so the
    * PLC genesis op stamps the chosen handle in `alsoKnownAs` instead of
    * the silent always-suffix derivation that ran before the wizard
    * step existed.
@@ -215,4 +215,36 @@ export function previousStep(step: Step): Step | null {
     case 'error':
       return step.retry;
   }
+}
+
+/**
+ * Forward transition from the `create_handle` step.
+ *
+ * INVARIANT (regression guard for #389): the `ai_provider` step is MANDATORY —
+ * the vault never unlocks without a working LLM. When the draft is already
+ * complete (a provisioning retry bounced back here, OR the user backtracked to
+ * the handle screen from a later step), we skip re-entering the passphrase, but
+ * we must route through `ai_provider`, NEVER straight to `provisioning_create`.
+ * The old code jumped to provisioning here, so backing up to the handle screen
+ * and continuing finished onboarding with no AI connected.
+ *
+ * When the draft is incomplete (the normal first pass), continue to the
+ * passphrase step.
+ */
+export function stepAfterCreateHandle(draft: Partial<CreateDraft>): Step {
+  if (
+    draft.passphrase !== undefined &&
+    draft.passphrase.length > 0 &&
+    draft.mnemonic !== undefined &&
+    draft.mnemonic.length > 0
+  ) {
+    const complete = draft as CreateDraft;
+    return {
+      kind: 'ai_provider',
+      next: { kind: 'provisioning_create', draft: complete },
+      back: { kind: 'create_handle', draft },
+      location: { current: 4, total: 5, label: 'Connect AI' },
+    };
+  }
+  return { kind: 'create_passphrase', draft };
 }

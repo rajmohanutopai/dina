@@ -10,12 +10,12 @@ import {
   ActivityIndicator,
   Alert,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import {
   DEFAULT_APPVIEW_URL,
   DEFAULT_PDS_URL,
@@ -114,10 +114,11 @@ export default function InfrastructureScreen(): React.ReactElement {
   }
 
   return (
-    <ScrollView
+    <KeyboardAwareScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
+      bottomOffset={24}
     >
       <Text style={styles.subtitle}>
         Dina uses hosted defaults automatically. Change these only when you are using a
@@ -201,7 +202,7 @@ export default function InfrastructureScreen(): React.ReactElement {
           <Text style={styles.primaryText}>Save infrastructure</Text>
         )}
       </Pressable>
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 

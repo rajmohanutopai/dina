@@ -41,11 +41,11 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  ScrollView,
   TextInput,
   ActivityIndicator,
   Modal,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
 import { findMessageByDraftId, readLifecycle } from '@dina/brain/chat';
 import { listPersonas, isPersonaOpen } from '@dina/core';
@@ -1066,11 +1066,12 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
   return (
     <>
       <Stack.Screen options={stackOptions} />
-      <ScrollView
+      <KeyboardAwareScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
         testID="write-screen"
         keyboardShouldPersistTaps="handled"
+        bottomOffset={24}
       >
       {/* In-page H1 removed — the native Stack header already shows
           `headerTitle`. Stacking the H1 underneath created a duplicate
@@ -1447,11 +1448,12 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
         presentationStyle="pageSheet"
         onRequestClose={() => setStep(1)}
       >
-        <ScrollView
+        <KeyboardAwareScrollView
           style={styles.container}
           contentContainerStyle={styles.modalContent}
           testID="write-additional-data-modal"
           keyboardShouldPersistTaps="handled"
+          bottomOffset={24}
         >
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Additional details</Text>
@@ -2009,7 +2011,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
               <Text style={styles.modalDoneLabel}>Done</Text>
             </Pressable>
           </View>
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </Modal>
 
       {/* ─── Submit error ────────────────────────────────────────── */}
@@ -2069,7 +2071,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
           )}
         </Pressable>
       </View>
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </>
   );
 }

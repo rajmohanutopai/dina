@@ -11,7 +11,7 @@
  *   - Owner name is a *display* concept (greeting copy, persona owner);
  *     handle is a *public identifier* (DNS subdomain on the community
  *     PDS). They serve different purposes and the user might want
- *     different values — e.g. owner name "Raj Mohan", handle prefix "rm".
+ *     different values — e.g. owner name "Ada Lovelace", handle prefix "ada".
  *   - The check is async and needs its own loading + error states. A
  *     dedicated screen keeps the OwnerName step instant.
  *
@@ -161,7 +161,7 @@ export function HandlePicker(props: HandlePickProps): React.ReactElement {
           autoCapitalize="none"
           autoCorrect={false}
           autoComplete="off"
-          placeholder="raju"
+          placeholder="dina"
           placeholderTextColor={colors.textMuted}
           style={styles.input}
           maxLength={maxPrefixChars(pdsHost)}

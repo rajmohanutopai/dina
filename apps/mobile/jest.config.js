@@ -27,6 +27,11 @@ module.exports = {
     '^expo-notifications$': '<rootDir>/__mocks__/expo-notifications.ts',
     '^@expo/vector-icons$': '<rootDir>/__mocks__/expo-vector-icons.ts',
     '^expo-router$': '<rootDir>/__mocks__/expo-router.ts',
+    // Native keyboard module — can't load in Jest (native bridge on import);
+    // passthrough mock so screens wrapped in its KeyboardAvoidingView /
+    // KeyboardAwareScrollView still render in RTL tests.
+    '^react-native-keyboard-controller$':
+      '<rootDir>/__mocks__/react-native-keyboard-controller.ts',
     // expo-modules-core ships ESM Jest can't parse; map it to a mock so any
     // test importing the native-bridge chain (e.g. src/ai/attestation.ts via
     // the onboarding AiProviderSet) loads. Tests needing native behaviour

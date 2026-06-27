@@ -24,13 +24,13 @@ import React, { useCallback, useEffect, useState, useSyncExternalStore } from 'r
 import {
   Alert,
   Pressable,
-  ScrollView,
   Share,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
 import { getBootedNode, getBootDegradations } from '../src/hooks/useNodeBootstrap';
 import { shareArchive } from '../src/hooks/useShareExport';
@@ -208,7 +208,11 @@ export default function AdminScreen(): React.ReactElement {
 
   return (
     <>
-      <ScrollView contentContainerStyle={styles.scroll} style={styles.root}>
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.scroll}
+        style={styles.root}
+        bottomOffset={24}
+      >
         {/* Subtitle. The page already wears "Admin" in the native
             header — a second body-side title (the previous italic-
             display "Running as requester") read as ceremonious for
@@ -336,7 +340,7 @@ export default function AdminScreen(): React.ReactElement {
             </Text>
           </Pressable>
         </Section>
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </>
   );
 }

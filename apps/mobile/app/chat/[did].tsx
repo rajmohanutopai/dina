@@ -21,10 +21,10 @@ import {
   StyleSheet,
   FlatList,
   Platform,
-  KeyboardAvoidingView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import type { ChatMessage } from '@dina/brain/chat';
 import { useD2DChat } from '../../src/hooks/useD2DChat';
@@ -115,9 +115,12 @@ export default function ChatScreen() {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      // `padding` on both platforms — Android's adjustResize is neutralised by
+      // SDK 55 edge-to-edge, so behavior=undefined left the composer under the
+      // keyboard (#390). Offset subtracts the tab bar (88pt iOS, 64pt Android).
+      behavior="padding"
       style={styles.container}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 64}
     >
       <Stack.Screen
         options={{

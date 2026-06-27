@@ -19,12 +19,12 @@ import React, { useCallback, useState } from 'react';
 import {
   Alert,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { Redirect, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, shadows, spacing, textStyles } from '../../src/theme';
@@ -166,7 +166,11 @@ export default function VaultDetail(): React.ReactElement {
       <Stack.Screen
         options={{ title: formatPersonaDisplayName(persona.name), headerShown: true }}
       />
-      <ScrollView style={styles.root} contentContainerStyle={styles.content}>
+      <KeyboardAwareScrollView
+        style={styles.root}
+        contentContainerStyle={styles.content}
+        bottomOffset={24}
+      >
         {/* Tier badge — compact inline pill rather than a full-width
           * card. The persona name lives in the Stack title above.
           * Single badge keeps the vertical rhythm tight; the full
@@ -270,7 +274,7 @@ export default function VaultDetail(): React.ReactElement {
             ))
           )}
         </View>
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </>
   );
 }

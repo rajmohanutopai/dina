@@ -20,11 +20,11 @@ import {
   Pressable,
   TouchableOpacity,
   StyleSheet,
-  KeyboardAvoidingView,
   Platform,
   ScrollView,
   type GestureResponderEvent,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
 import { ACTIONS, resolveUserChip } from '../src/components/composer_modes';
 import { InlineApprovalCard } from '../src/components/InlineApprovalCard';
@@ -518,12 +518,15 @@ export default function ChatScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      // Android: rely on the manifest's `windowSoftInputMode=adjustResize`
-      // (undefined behavior) — `behavior='height'` fights adjustResize and
-      // leaves the composer under the keyboard (#370). iOS: `padding` lifts
-      // the composer; offset accounts for the 88pt tab bar.
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
+      // Both platforms: `padding` lifts the composer above the keyboard.
+      // Android can no longer rely on `windowSoftInputMode=adjustResize`
+      // (behavior=undefined): SDK 55 / Android 15 edge-to-edge neutralises
+      // adjustResize, so the OS stops shrinking the view and the composer
+      // ends up UNDER the keyboard (#390). `padding` makes KeyboardAvoidingView
+      // do the lift itself from the JS keyboard frame. Offset subtracts the
+      // tab bar (88pt iOS, 64pt Android) so we don't over-lift.
+      behavior="padding"
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 64}
     >
       <StatusBar style="dark" />
 

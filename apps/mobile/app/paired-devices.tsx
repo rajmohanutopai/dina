@@ -23,13 +23,13 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TextInput,
   Pressable,
   ActivityIndicator,
   Alert,
   Share,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { getNodeDID } from '@dina/core';
@@ -205,9 +205,10 @@ export default function PairedDevicesScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Agents' }} />
-      <ScrollView
+      <KeyboardAwareScrollView
         style={styles.container}
         contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
+        bottomOffset={24}
       >
         <Section title={`CONNECTED (${devices.length})`}>
           {devices.length === 0 ? (
@@ -342,7 +343,7 @@ export default function PairedDevicesScreen() {
             </Text>
           </Section>
         )}
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </>
   );
 }

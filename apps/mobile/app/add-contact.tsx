@@ -29,10 +29,10 @@ import {
   Pressable,
   StyleSheet,
   ActivityIndicator,
-  KeyboardAvoidingView,
   Platform,
   ScrollView,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { addContact, getContact } from '@dina/core';
 import { getProfile as getTrustProfile } from '../src/peerlens/appview_runtime';
@@ -135,7 +135,7 @@ export default function AddContactScreen() {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior="padding"
       style={styles.container}
     >
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">

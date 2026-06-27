@@ -28,6 +28,7 @@ import {
   TextInput,
   Modal,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useFocusEffect, useNavigation } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, textStyles } from '../src/theme';
@@ -281,7 +282,7 @@ export default function PolicyScreen() {
         animationType="fade"
         onRequestClose={() => setAddModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Add action</Text>
             <TextInput
@@ -313,7 +314,7 @@ export default function PolicyScreen() {
               </Pressable>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
       {errorMessage !== null ? (
         <View style={styles.errorBanner}>

@@ -20,14 +20,13 @@
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import {
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
 import { PassphraseField } from '../src/components/PassphraseField';
 import { getPassphraseStrength } from '../src/hooks/useSecurity';
@@ -120,7 +119,7 @@ export default function ChangePassphraseScreen(): React.ReactElement {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior="padding"
       style={styles.container}
     >
       <ScrollView

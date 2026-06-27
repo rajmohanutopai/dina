@@ -24,7 +24,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -33,6 +32,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
 import { setBackgroundTimeout } from '@dina/core';
 
@@ -302,7 +302,7 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
   const busy = mode === 'unlocking';
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior="padding"
       style={styles.root}
     >
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">

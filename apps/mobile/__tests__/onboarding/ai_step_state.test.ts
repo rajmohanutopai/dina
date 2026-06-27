@@ -14,6 +14,7 @@
 import {
   locateStep,
   previousStep,
+  stepAfterCreateHandle,
   type CreateDraft,
   type Step,
 } from '../../src/onboarding/state';
@@ -65,5 +66,45 @@ describe('ai_provider onboarding step', () => {
       current: 4,
       total: 4,
     });
+  });
+});
+
+describe('stepAfterCreateHandle — mandatory-AI invariant (regression #389)', () => {
+  const completeDraft: Partial<CreateDraft> = {
+    ownerName: 'Ada',
+    handle: 'ada',
+    passphrase: 'a-real-passphrase',
+    startupMode: 'auto',
+    mnemonic: ['word1', 'word2', 'word3'],
+  };
+
+  it('a COMPLETE draft routes through the mandatory AI step, NEVER straight to provisioning', () => {
+    // The bug: backtracking to the handle screen (draft already has passphrase
+    // + mnemonic) and tapping Continue jumped straight to provisioning_create,
+    // finishing onboarding with NO AI connected. It must go through ai_provider.
+    const next = stepAfterCreateHandle(completeDraft);
+    expect(next.kind).toBe('ai_provider');
+    if (next.kind === 'ai_provider') {
+      // ...and the AI step's forward target is provisioning (so connecting an
+      // LLM still lands the user in provisioning, not stuck).
+      expect(next.next.kind).toBe('provisioning_create');
+      expect(next.back.kind).toBe('create_handle');
+    }
+  });
+
+  it('never returns provisioning_create directly from the handle step', () => {
+    expect(stepAfterCreateHandle(completeDraft).kind).not.toBe('provisioning_create');
+  });
+
+  it('an INCOMPLETE draft (no passphrase yet) continues to the passphrase step', () => {
+    expect(stepAfterCreateHandle({ ownerName: 'Ada', handle: 'ada' }).kind).toBe(
+      'create_passphrase',
+    );
+  });
+
+  it('a draft with passphrase but no mnemonic still goes to passphrase (not AI/provisioning)', () => {
+    expect(
+      stepAfterCreateHandle({ ownerName: 'Ada', handle: 'ada', passphrase: 'pw' }).kind,
+    ).toBe('create_passphrase');
   });
 });

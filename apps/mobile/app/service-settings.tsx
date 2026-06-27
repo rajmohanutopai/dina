@@ -25,9 +25,9 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
-  KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
 import {
   listCapabilities as listLocalCapabilities,
@@ -743,7 +743,7 @@ export default function ServiceSettingsScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior="padding"
     >
       <Stack.Screen options={{ title: isCreate ? 'New listing' : 'Edit listing' }} />
       {loadError !== null ? (

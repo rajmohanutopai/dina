@@ -25,7 +25,7 @@ export function truncateDid(did: string): string {
  * Extract the username portion of a handle: the first DNS label.
  *
  *   `alice.pds.dinakernel.com` → `alice`
- *   `rajmohanddc9.test-pds.dinakernel.com` → `rajmohanddc9`
+ *   `johndoe9.test-pds.dinakernel.com` → `johndoe9`
  *
  * Why first-label-only: list rows render in tight contexts (avatar
  * row, chat title, search hit). The full FQDN crowds out everything

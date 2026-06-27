@@ -19,13 +19,13 @@ import {
   ActivityIndicator,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { generateText } from 'ai';
 
 import { PROVIDERS, createModel } from '../ai/provider';
@@ -313,10 +313,11 @@ export function ModelPickerSheet({
           tested live; an invalid model surfaces here.
         </Text>
 
-        <ScrollView
+        <KeyboardAwareScrollView
           style={styles.options}
           contentContainerStyle={styles.optionsContent}
           keyboardShouldPersistTaps="handled"
+          bottomOffset={24}
         >
           {TIERS.map((tier) => {
             const state = tiers[tier];
@@ -408,7 +409,7 @@ export function ModelPickerSheet({
               </View>
             );
           })}
-        </ScrollView>
+        </KeyboardAwareScrollView>
 
         <View style={styles.actions}>
           <TouchableOpacity

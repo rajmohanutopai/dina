@@ -17,7 +17,6 @@
 import React from 'react';
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -25,6 +24,8 @@ import {
   Text,
   View,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, spacing, textStyles } from '../../theme';
 import type { StepLocation } from '../../onboarding/state';
 
@@ -57,10 +58,11 @@ export interface OnboardingShellProps {
 export function OnboardingShell(props: OnboardingShellProps): React.ReactElement {
   const showBack = (props.canGoBack ?? true) && props.onBack !== undefined;
   const showPrimary = props.primaryLabel !== undefined && props.onPrimary !== undefined;
+  const insets = useSafeAreaInsets();
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior="padding"
       style={styles.root}
     >
       <View style={styles.headerRow}>
@@ -102,7 +104,7 @@ export function OnboardingShell(props: OnboardingShellProps): React.ReactElement
       </ScrollView>
 
       {showPrimary ? (
-        <View style={styles.footer}>
+        <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
           <Pressable
             onPress={props.onPrimary}
             disabled={props.primaryDisabled === true || props.primaryBusy === true}
