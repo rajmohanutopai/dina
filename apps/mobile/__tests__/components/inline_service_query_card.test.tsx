@@ -151,6 +151,72 @@ describe('InlineServiceQueryCard', () => {
     expect(screen.getByText(/No response from/)).toBeTruthy();
   });
 
+  // ── Collapsed failure for CONTACT (relationship) services ───────────────────
+  // CONTACT_SERVICES_ARCHITECTURE.md §2/§10: for a relationship service every
+  // negative path must look the SAME and reveal NO reason, so the requester
+  // can't infer the grantor's decision or their own rank. The flag is
+  // `lc.relationship === true` (set by chat_d2d.sendServiceQuery).
+
+  it('collapses a relationship FAILED card to a generic outcome (no reason leaked)', () => {
+    addLifecycleMessage(THREAD, 'failed', {
+      kind: 'service_query',
+      status: 'failed',
+      taskId: 'task-rel-failed',
+      queryId: 'q-rel-failed',
+      capability: 'availability_coordination',
+      serviceName: 'Sancho',
+      error: 'policy soft-reject', // would leak — must NOT render
+      relationship: true,
+    });
+
+    render(<InlineServiceQueryCard message={lastMessage()} />);
+
+    expect(screen.getByTestId('chat-card-service-failed')).toBeTruthy();
+    expect(screen.getByText(/Couldn't set up Sancho/)).toBeTruthy();
+    // The reason and the public "couldn't reach" wording are both suppressed.
+    expect(screen.queryByText('policy soft-reject')).toBeFalsy();
+    expect(screen.queryByText(/couldn't reach/)).toBeFalsy();
+  });
+
+  it('collapses a relationship EXPIRED card identically to FAILED (indistinguishable)', () => {
+    addLifecycleMessage(THREAD, 'expired', {
+      kind: 'service_query',
+      status: 'expired',
+      taskId: 'task-rel-expired',
+      queryId: 'q-rel-expired',
+      capability: 'availability_coordination',
+      serviceName: 'Sancho',
+      relationship: true,
+    });
+
+    render(<InlineServiceQueryCard message={lastMessage()} />);
+
+    // Same generic card as the failed case — a timeout is indistinguishable
+    // from a refusal to the requester.
+    expect(screen.getByTestId('chat-card-service-failed')).toBeTruthy();
+    expect(screen.getByText(/Couldn't set up Sancho/)).toBeTruthy();
+    expect(screen.queryByText(/No response from/)).toBeFalsy();
+  });
+
+  it('does NOT collapse a PUBLIC service failure — the reason is still shown', () => {
+    addLifecycleMessage(THREAD, 'failed', {
+      kind: 'service_query',
+      status: 'failed',
+      taskId: 'task-pub-failed',
+      queryId: 'q-pub-failed',
+      capability: 'eta_query',
+      serviceName: 'Demo ETA',
+      error: 'provider unavailable',
+      // relationship flag ABSENT → public service, no trust tier to leak.
+    });
+
+    render(<InlineServiceQueryCard message={lastMessage()} />);
+
+    expect(screen.getByText(/couldn't reach/)).toBeTruthy();
+    expect(screen.getByText('provider unavailable')).toBeTruthy();
+    expect(screen.queryByTestId('chat-card-service-failed')).toBeFalsy();
+  });
+
   it('falls back to the generic text card when there is no result and no cardSpec', () => {
     addLifecycleMessage(THREAD, 'Generic reply text', {
       kind: 'service_query',

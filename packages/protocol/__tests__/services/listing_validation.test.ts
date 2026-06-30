@@ -8,8 +8,10 @@
  */
 
 import {
+  effectiveDefaultOfferable,
   effectiveDiscoverability,
   effectiveListingStatus,
+  effectiveSurface,
   isListingPublic,
   isListingPublishable,
   validateServiceListing,
@@ -46,6 +48,64 @@ describe('effectiveDiscoverability — back-compat (spec §5.2)', () => {
   it('derives from isDiscoverable when not explicit', () => {
     expect(effectiveDiscoverability(mkConfig({}, { isDiscoverable: true }))).toBe('public');
     expect(effectiveDiscoverability(mkConfig({}, { isDiscoverable: false }))).toBe('known_only');
+  });
+});
+
+describe('effectiveSurface — listing surface axis (Contact Services §5.3)', () => {
+  it('defaults to services when absent (back-compat)', () => {
+    expect(effectiveSurface(mkConfig({}))).toBe('services');
+  });
+  it('explicit surface wins', () => {
+    expect(effectiveSurface(mkConfig({}, { surface: 'talk' }))).toBe('talk');
+    expect(effectiveSurface(mkConfig({}, { surface: 'services' }))).toBe('services');
+  });
+  it('is orthogonal to discoverability — a known_only listing can be either surface', () => {
+    expect(effectiveSurface(mkConfig({}, { discoverability: 'known_only', surface: 'talk' }))).toBe(
+      'talk',
+    );
+    expect(
+      effectiveSurface(mkConfig({}, { discoverability: 'known_only', surface: 'services' })),
+    ).toBe('services');
+    // surface does NOT alter discoverability, and vice versa
+    expect(effectiveDiscoverability(mkConfig({}, { surface: 'talk', discoverability: 'public' }))).toBe(
+      'public',
+    );
+  });
+});
+
+describe('effectiveDefaultOfferable — Contact Services default-grant flow (§5.1)', () => {
+  it('defaults to false when absent (safe default: manual-grant-only)', () => {
+    expect(effectiveDefaultOfferable(mkConfig({}))).toBe(false);
+  });
+  it('explicit value wins', () => {
+    expect(effectiveDefaultOfferable(mkConfig({}, { defaultOfferable: true }))).toBe(true);
+    expect(effectiveDefaultOfferable(mkConfig({}, { defaultOfferable: false }))).toBe(false);
+  });
+});
+
+describe('talk surface enforcement — talk ⇒ known_only (§5.3/§10)', () => {
+  it('a talk listing is NEVER publishable or generically reachable, whatever its discoverability', () => {
+    for (const d of ['public', 'unlisted', 'known_only'] as const) {
+      expect(isListingPublishable(mkConfig({}, { surface: 'talk', discoverability: d, status: 'active' }))).toBe(false);
+      expect(isListingPublic(mkConfig({}, { surface: 'talk', discoverability: d, status: 'active' }))).toBe(false);
+    }
+    // a services listing is unaffected (sanity)
+    expect(isListingPublic(mkConfig({}, { surface: 'services', discoverability: 'public', status: 'active' }))).toBe(true);
+  });
+  it('validateServiceListing rejects a talk + non-known_only listing at save', () => {
+    expect(codes(validateServiceListing(mkConfig({}, { surface: 'talk', discoverability: 'public' })))).toContain(
+      'talk_must_be_known_only',
+    );
+    expect(codes(validateServiceListing(mkConfig({}, { surface: 'talk', discoverability: 'unlisted' })))).toContain(
+      'talk_must_be_known_only',
+    );
+    expect(
+      codes(validateServiceListing(mkConfig({}, { surface: 'talk', discoverability: 'known_only' }))),
+    ).not.toContain('talk_must_be_known_only');
+    // services surface is never constrained by this rule
+    expect(
+      codes(validateServiceListing(mkConfig({}, { surface: 'services', discoverability: 'public' }))),
+    ).not.toContain('talk_must_be_known_only');
   });
 });
 

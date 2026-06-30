@@ -148,6 +148,28 @@ export interface ServiceCapabilitySchemas {
  */
 export type ServiceListingStatus = 'draft' | 'active' | 'paused';
 
+/**
+ * Where a listing is surfaced and managed in the app — a distinct axis from
+ * node role, from `discoverability` (who can find it), and from `status`
+ * (is it on):
+ *   - `services` — a provider/customer service, managed and shown in the
+ *     Services tab. The default when the field is absent (back-compat).
+ *   - `talk` — a relationship service ("Contact Service"), surfaced, granted,
+ *     and invoked inside the Talk thread with a specific contact. Never appears
+ *     in the Services tab; reachable per-contact via a grant.
+ *
+ * ORTHOGONAL to `discoverability`: a `known_only` listing can be `services`
+ * (a private provider service) OR `talk` (a relationship service). Do NOT
+ * conflate this axis with the `public`/`unlisted`/`known_only` words — that
+ * axis answers "who can find it", this one answers "where is it surfaced".
+ *
+ * Listing-level (not per-capability): the same capability — e.g.
+ * `availability_coordination` — can appear in different listings with
+ * different surfaces; the listing decides. Read the effective value via
+ * `effectiveSurface()`. See docs/CONTACT_SERVICES_ARCHITECTURE.md §3, §5.3.
+ */
+export type ServiceSurface = 'services' | 'talk';
+
 /** The full local service configuration. Mirrors the Go `ServiceConfig`. */
 export interface ServiceConfig {
   /**
@@ -173,6 +195,26 @@ export interface ServiceConfig {
    * and the combined live check via `isListingPublishable`.
    */
   status?: ServiceListingStatus;
+  /**
+   * Where this listing is surfaced and managed — the Services tab
+   * (`services`, the default when absent) or a Talk thread with a contact
+   * (`talk`, a relationship "Contact Service"). ORTHOGONAL to
+   * `discoverability` (a `known_only` listing can be either surface). Read the
+   * effective value via `effectiveSurface()`. Listing-level, not per-capability.
+   * See docs/CONTACT_SERVICES_ARCHITECTURE.md §5.3.
+   */
+  surface?: ServiceSurface;
+  /**
+   * Contact Services: whether this listing participates in the closeness-default
+   * grant flow (docs/CONTACT_SERVICES_ARCHITECTURE.md §5.1). When `true` and a
+   * contact requests it without a grant, the grant is auto-materialized for a
+   * `close` contact / prompted ("ask to enable") for `medium` / silently
+   * soft-rejected for `distant`/`unknown`. When absent/`false` (the default) the
+   * listing is manual-grant-only: an un-granted request is always soft-rejected
+   * and the owner must hand-issue an offer. Only consulted for `surface:'talk'`
+   * listings. Read the effective value via `effectiveDefaultOfferable()`.
+   */
+  defaultOfferable?: boolean;
   /** Human-readable service name. */
   name: string;
   description?: string;

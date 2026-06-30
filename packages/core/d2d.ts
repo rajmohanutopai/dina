@@ -5,6 +5,7 @@ export {
   MsgTypeSafetyAlert,
   MsgTypeServiceQuery,
   MsgTypeServiceResponse,
+  MsgTypeServiceGrantRequest,
   MsgTypeSocialUpdate,
   MsgTypeTrustVouchRequest,
   MsgTypeTrustVouchResponse,

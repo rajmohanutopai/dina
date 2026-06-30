@@ -50,6 +50,27 @@ describe('Authorization Matrix', () => {
       path: '/api/v1/ask',
       label: 'Agent → api/ask (MT-38: session-scoped vault query via Brain)',
     },
+    // Owner-private decision log: the OWNER's surfaces may read it.
+    {
+      caller: 'admin',
+      method: 'GET',
+      path: '/v1/contacts/service-decisions',
+      label: 'Admin → contacts/service-decisions (owner-private log)',
+    },
+    {
+      caller: 'device',
+      method: 'GET',
+      path: '/v1/contacts/service-decisions',
+      label: 'Device → contacts/service-decisions (owner-private log)',
+    },
+    // The broader contacts surface still admits Brain (only the decision-log
+    // sub-path is carved out).
+    {
+      caller: 'brain',
+      method: 'GET',
+      path: '/v1/contacts/lookup',
+      label: 'Brain → contacts/lookup (broad surface, not the private log)',
+    },
   ];
 
   for (const { caller, method, path, label } of allowedCases) {
@@ -88,6 +109,14 @@ describe('Authorization Matrix', () => {
       method: 'POST',
       path: '/v1/memory/topic/touch',
       label: 'Connector x memory/topic/touch',
+    },
+    // OWNER-PRIVATE invariant: Brain/LLM must NOT read social-tier decisions,
+    // even though it can read the broader /v1/contacts surface.
+    {
+      caller: 'brain',
+      method: 'GET',
+      path: '/v1/contacts/service-decisions',
+      label: 'Brain x contacts/service-decisions (owner-private log)',
     },
   ];
 

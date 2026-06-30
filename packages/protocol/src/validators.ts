@@ -156,6 +156,32 @@ export function parseServiceListingUri(
   return { did: authority, rkey }
 }
 
+/**
+ * Validate a `service.grant_request` body (the requester preflight for a
+ * contact service). Returns an error string, or `null` if valid. The requester
+ * names a CAPABILITY, never a listing rkey (it cannot know the private rkey).
+ * docs/CONTACT_SERVICES_ARCHITECTURE.md §5.2.
+ */
+export function validateServiceGrantRequestBody(body: unknown): string | null {
+  if (!body || typeof body !== 'object') {
+    return 'service.grant_request: body must be a JSON object';
+  }
+  const b = body as Record<string, unknown>;
+  if (typeof b.request_id !== 'string' || b.request_id === '') {
+    return 'service.grant_request: request_id is required';
+  }
+  if (typeof b.capability !== 'string' || b.capability === '') {
+    return 'service.grant_request: capability is required';
+  }
+  if (b.intent !== undefined && typeof b.intent !== 'string') {
+    return 'service.grant_request: intent must be a string when present';
+  }
+  if (b.requested_surface !== 'talk') {
+    return 'service.grant_request: requested_surface must be "talk"';
+  }
+  return null;
+}
+
 export function validateServiceQueryBody(body: unknown): string | null {
   if (!body || typeof body !== 'object') {
     return 'service.query: body must be a JSON object';
@@ -307,6 +333,10 @@ export function validateServiceOfferBody(body: unknown): string | null {
     (typeof b.expires_at !== 'number' || !Number.isFinite(b.expires_at))
   ) {
     return 'service.offer: expires_at must be a number (unix seconds) when present';
+  }
+  // Optional correlation token echoed from the originating grant_request.
+  if (b.request_id !== undefined && typeof b.request_id !== 'string') {
+    return 'service.offer: request_id must be a string when present';
   }
   return null;
 }

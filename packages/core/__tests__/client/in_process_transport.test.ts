@@ -1656,4 +1656,63 @@ describe('InProcessTransport (task 1.30)', () => {
       /did is required/,
     );
   });
+
+  it('issueServiceOffer POSTs snake_case body and maps {grant_id, service_uri} → camelCase', async () => {
+    // Capture the body the route received so we can assert the snake_case wire
+    // shape the route + every other stack expects.
+    let received: Record<string, unknown> | undefined;
+    const r = buildRouter();
+    r.post(
+      '/v1/service/offer',
+      (req) => {
+        received = req.body as Record<string, unknown>;
+        return {
+          status: 200,
+          body: {
+            grant_id: 'grant-xyz',
+            service_uri: 'at://did:plc:me/com.dinakernel.service.profile/avail-1',
+          },
+        };
+      },
+      { auth: 'public' },
+    );
+    const t = new InProcessTransport(r);
+
+    const res = await t.issueServiceOffer({
+      toDID: 'did:plc:emma',
+      rkey: 'avail-1',
+      capability: 'availability_coordination',
+      expiresAt: 1800000000,
+    });
+
+    // The route's snake_case fields are mapped to the client's camelCase shape.
+    expect(res).toEqual({
+      grantId: 'grant-xyz',
+      serviceUri: 'at://did:plc:me/com.dinakernel.service.profile/avail-1',
+    });
+    // The wire body is snake_case.
+    expect(received).toEqual({
+      to_did: 'did:plc:emma',
+      rkey: 'avail-1',
+      capability: 'availability_coordination',
+      expires_at: 1800000000,
+    });
+  });
+
+  it('issueServiceOffer omits expires_at when not supplied', async () => {
+    let received: Record<string, unknown> | undefined;
+    const r = buildRouter();
+    r.post(
+      '/v1/service/offer',
+      (req) => {
+        received = req.body as Record<string, unknown>;
+        return { status: 200, body: { grant_id: 'g', service_uri: 'at://x/y/z' } };
+      },
+      { auth: 'public' },
+    );
+    const t = new InProcessTransport(r);
+    await t.issueServiceOffer({ toDID: 'did:plc:emma', rkey: 'r', capability: 'c' });
+    expect(received).toEqual({ to_did: 'did:plc:emma', rkey: 'r', capability: 'c' });
+    expect(received).not.toHaveProperty('expires_at');
+  });
 });

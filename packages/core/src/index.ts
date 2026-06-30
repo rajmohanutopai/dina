@@ -513,6 +513,30 @@ export type {
   ReceivePipelineOptions,
 } from './d2d/receive_pipeline';
 
+// Contact Services — `ask_to_enable` grant-request event surface. Core decides
+// reach (closeness); the owner's yes is surfaced + issued on the phone.
+export {
+  onGrantRequestPending,
+  emitGrantRequestPending,
+  resetGrantRequestPendingListeners,
+} from './d2d/grant_request_events';
+export type {
+  GrantRequestPendingEvent,
+  GrantRequestPendingListener,
+} from './d2d/grant_request_events';
+
+// Contact Services — inbound `service.offer` surface. Lets the mobile boot
+// auto-replay a first-run request the instant the grant lands (no double-ask).
+export {
+  onServiceOfferReceived,
+  emitServiceOfferReceived,
+  resetServiceOfferReceivedListeners,
+} from './d2d/service_offer_events';
+export type {
+  ServiceOfferReceivedEvent,
+  ServiceOfferReceivedListener,
+} from './d2d/service_offer_events';
+
 // Wrapped-seed binary format — portable encode/decode pair used by
 // onboarding flows and seed-file fixtures. The Node-only file
 // adapters (`writeWrappedSeed`/`readWrappedSeed`) live behind
@@ -577,6 +601,8 @@ export {
   updateContact,
 } from './contacts/directory';
 export type { Relationship, DataResponsibility } from './contacts/directory';
+export { closeness } from './contacts/closeness';
+export type { Closeness } from './contacts/closeness';
 export {
   closePersona,
   createPersona,

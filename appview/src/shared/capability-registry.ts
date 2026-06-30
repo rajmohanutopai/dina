@@ -161,6 +161,16 @@ export const CAPABILITY_REGISTRY: readonly CanonicalCapability[] = Object.freeze
     requiresSubjectAuthorization: false,
   }),
   Object.freeze({
+    canonical: 'availability_coordination',
+    aliases: Object.freeze([]),
+    categoryIds: Object.freeze(['appointments']),
+    description: 'Coordinate a mutual meeting time with a contact.',
+    domain: 'appointments',
+    intentRoutable: false, // contact-scoped: coordinate with a KNOWN contact, never generic discovery
+    privacyClass: 'personal',
+    requiresSubjectAuthorization: false,
+  }),
+  Object.freeze({
     canonical: 'order_status',
     aliases: Object.freeze(['order_state']),
     categoryIds: Object.freeze(['commerce']),

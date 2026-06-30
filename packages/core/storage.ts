@@ -27,6 +27,17 @@ export type {
   ServiceOfferRepository,
 } from './src/contacts/service_offers_repository';
 export {
+  SQLiteServiceDecisionRepository,
+  setServiceDecisionRepository,
+  getServiceDecisionRepository,
+} from './src/contacts/service_decisions_repository';
+export type {
+  ServiceDecision,
+  ServiceDecisionInput,
+  ServiceDecisionOutcome,
+  ServiceDecisionRepository,
+} from './src/contacts/service_decisions_repository';
+export {
   SQLiteServiceGrantRepository,
   setServiceGrantRepository,
   getServiceGrantRepository,

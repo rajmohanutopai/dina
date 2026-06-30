@@ -801,6 +801,41 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       ) WITHOUT ROWID
     `,
   },
+  {
+    // OWNER-PRIVATE contact-service decision log (CONTACT_SERVICES_ARCHITECTURE.md
+    // §2/§10). The grantor's quiet, reviewable record of every inbound
+    // `service.grant_request` and how policy responded — "Alonso's Dina asked
+    // for availability_coordination — auto-declined by policy". It exists so the
+    // owner can spot a mis-tiered contact WITHOUT creating social leakage.
+    //
+    // Privacy invariant: this is sensitive relationship metadata. It lives in
+    // THIS node's encrypted identity DB, is NEVER sent to / synced to / derivable
+    // by the requester, and is a LOG (read in Activity), never a push. It is
+    // distinct from the infra `audit_log` (debugging) — this one is the
+    // product-visible surface.
+    //
+    //   id            — PK, monotonic surrogate (rowid).
+    //   requester_did — who asked (the relay-authed from_did).
+    //   capability    — the capability requested (canonical).
+    //   decision      — granted | auto_declined | prompt_shown | prompt_timed_out | error.
+    //   reason        — short non-PII policy tag (e.g. closeness=unknown, no_talk_listing).
+    //   created_at    — unix seconds.
+    version: 16,
+    name: 'contact_service_decisions',
+    sql: `
+      CREATE TABLE IF NOT EXISTS contact_service_decisions (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        requester_did TEXT NOT NULL,
+        capability    TEXT NOT NULL,
+        decision      TEXT NOT NULL
+                        CHECK (decision IN ('granted','auto_declined','prompt_shown','prompt_timed_out','error')),
+        reason        TEXT NOT NULL DEFAULT '',
+        created_at    INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_csd_created ON contact_service_decisions(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_csd_requester ON contact_service_decisions(requester_did, created_at DESC);
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

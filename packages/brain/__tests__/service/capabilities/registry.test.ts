@@ -20,11 +20,12 @@ import {
   validateEtaQueryParams,
   validateEtaQueryResult,
 } from '../../../src/service/capabilities/eta_query';
+import { isOfficialCapability } from '@dina/protocol';
 
 describe('capabilities registry', () => {
   describe('SUPPORTED_CAPABILITIES', () => {
     it('lists exactly the registered capabilities', () => {
-      expect(SUPPORTED_CAPABILITIES).toEqual(['eta_query', 'appointment_availability', 'appointment_book']);
+      expect(SUPPORTED_CAPABILITIES).toEqual(['eta_query', 'appointment_availability', 'appointment_book', 'availability_coordination']);
     });
 
     it('is immutable', () => {
@@ -58,6 +59,18 @@ describe('capabilities registry', () => {
       expect(cap?.name).toBe('eta_query');
       expect(cap?.validateParams).toBe(validateEtaQueryParams);
     });
+
+    it('returns the availability_coordination definition (Contact Services §6.1)', () => {
+      const cap = getCapability('availability_coordination');
+      expect(cap).toBeDefined();
+      expect(cap?.name).toBe('availability_coordination');
+      expect(cap?.defaultTtlSeconds).toBe(300);
+      // result schema is the symmetric accept/counter/needs_more_info shape
+      const resultEnum = (
+        cap?.resultSchema as { properties?: { status?: { enum?: string[] } } }
+      ).properties?.status?.enum;
+      expect(resultEnum).toEqual(['accepted', 'counter', 'needs_more_info']);
+    });
   });
 
   describe('getTTL', () => {
@@ -82,7 +95,25 @@ describe('capabilities registry', () => {
   describe('listCapabilities', () => {
     it('returns one entry per registered capability', () => {
       const list = listCapabilities();
-      expect(list.map((c) => c.name)).toEqual(['eta_query', 'appointment_availability', 'appointment_book']);
+      expect(list.map((c) => c.name)).toEqual(['eta_query', 'appointment_availability', 'appointment_book', 'availability_coordination']);
+    });
+  });
+
+  // CONTRACT — closes the brain↔protocol drift class. Every capability the brain
+  // REGISTERS must also be an OFFICIAL capability in the protocol catalog;
+  // otherwise a provider cannot publish/offer it (`validateServiceListing`
+  // rejects the listing with `unknown_capability`) even though the node fully
+  // supports the capability at runtime. This shipped once —
+  // `availability_coordination` was wired in the brain registry but missing from
+  // `capability-catalog.ts`, so a Talk availability listing failed validation;
+  // a live two-Dina sim test caught it. The existing catalog-integrity test only
+  // checks protocol↔protocol parity (registry ⊇ catalog), never brain↔protocol.
+  // This is that missing check.
+  describe('brain registry ⊆ protocol capability catalog', () => {
+    it('every brain-registered capability is an official protocol catalog capability', () => {
+      for (const name of SUPPORTED_CAPABILITIES) {
+        expect({ name, official: isOfficialCapability(name) }).toEqual({ name, official: true });
+      }
     });
   });
 });

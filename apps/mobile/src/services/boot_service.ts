@@ -84,6 +84,7 @@ import { createNode, type DinaNode, type NodeRole, type CreateNodeOptions } from
 import { createDemoServiceResponder } from './demo_service_responder';
 import { emitRuntimeWarning, clearRuntimeWarning } from './runtime_warnings';
 import { buildStagingEnrichment } from './staging_enrichment';
+import { talkThreadResolver } from './talk_thread_routing';
 
 export type BootLogger = (entry: Record<string, unknown>) => void;
 
@@ -608,6 +609,13 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     role: inputs.role ?? 'requester',
     peerPublicKeys: inputs.peerPublicKeys,
     deviceRoleResolver: inputs.deviceRoleResolver,
+    // Contact Services seam 4: route an inbound `service.response` back to the
+    // Talk thread the query was launched from. `talkThreadResolver` returns the
+    // peer DID for a `did:`-shaped origin (seam 5 stamps `origin_channel =
+    // peerDID`) and null otherwise (main-chat `query_service` origins: 'ask' /
+    // 'chat' / '') so those fall back to the default 'main' thread. Extracted to
+    // a named, tested function so the suite pins the REAL routing.
+    threadResolver: talkThreadResolver,
     // Review #15: wire publisher-sync failures into the runtime
     // warnings channel so the banner can surface them. Successful
     // syncs clear the warning — the bootstrap's config-change

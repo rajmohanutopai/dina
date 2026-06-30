@@ -20,8 +20,8 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { readLifecycle, type ChatMessage } from '@dina/brain/chat';
 import { buildResultCardSpec } from '@dina/brain';
+import { readLifecycle, type ChatMessage } from '@dina/brain/chat';
 import { validateCardSpec } from '@dina/protocol';
 
 import { colors, radius, shadows, spacing, textStyles } from '../theme';
@@ -97,6 +97,26 @@ export function InlineServiceQueryCard({
           params={lc.params}
           elapsedSeconds={elapsedSeconds}
         />
+        <MessageTimestamp timestamp={message.timestamp} />
+      </View>
+    );
+  }
+
+  // Collapsed-failure rule (CONTACT_SERVICES_ARCHITECTURE.md §2/§10): a CONTACT
+  // (relationship) service must render EVERY negative outcome IDENTICALLY and
+  // with NO reason. Refused, not-offered, timed-out, ignored, and offline are
+  // indistinguishable to the requester, so they can never infer the grantor's
+  // decision or their own social rank. We deliberately drop `error` here and
+  // converge `expired` + `failed` onto one muted card. Public services keep the
+  // real reason (no trust tier to leak) via the branches below.
+  if (lc.relationship === true && (status === 'expired' || status === 'failed')) {
+    return (
+      <View testID="chat-card-service-failed" style={[styles.card, styles.cardMuted]}>
+        <View style={styles.headerRow}>
+          <Ionicons name="time-outline" size={18} color={colors.textMuted} />
+          <Text style={styles.title}>Couldn't set up {serviceName}</Text>
+        </View>
+        <Text style={styles.subtitle}>Try again later.</Text>
         <MessageTimestamp timestamp={message.timestamp} />
       </View>
     );

@@ -82,6 +82,15 @@ const AUTHZ_RULES: { prefix: string; allowed: Set<CallerType> }[] = [
   // Audit — Admin + Brain
   { prefix: '/v1/audit/', allowed: new Set(['admin', 'brain']) },
 
+  // Owner-private contact-service decision log — OWNER surfaces only, NEVER
+  // Brain. This is sensitive social-tier metadata (who was soft-rejected, at
+  // what closeness); surfacing it to the Brain/LLM would violate the
+  // "owner-private" invariant (CONTACT_SERVICES_ARCHITECTURE.md §2/§10). Listed
+  // BEFORE the broader `/v1/contacts` rule so the more-specific prefix wins
+  // (first-match iteration). The mobile app reads this log in-process; this
+  // route is for owner-authenticated out-of-process / thin clients.
+  { prefix: '/v1/contacts/service-decisions', allowed: new Set(['admin', 'device']) },
+
   // Contacts — Admin + Brain
   { prefix: '/v1/contacts', allowed: new Set(['admin', 'brain']) },
 

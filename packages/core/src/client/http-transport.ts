@@ -855,6 +855,28 @@ export class HttpCoreTransport implements CoreClient {
     }
   }
 
+  async issueServiceOffer(params: {
+    toDID: string;
+    rkey: string;
+    capability: string;
+    expiresAt?: number;
+  }): Promise<{ grantId: string; serviceUri: string }> {
+    const body: Record<string, unknown> = {
+      to_did: params.toDID,
+      rkey: params.rkey,
+      capability: params.capability,
+    };
+    if (params.expiresAt !== undefined) body.expires_at = params.expiresAt;
+    const raw = await this.call<{ grant_id: string; service_uri: string }>(
+      'POST',
+      '/v1/service/offer',
+      undefined,
+      body,
+      'issueServiceOffer',
+    );
+    return { grantId: raw.grant_id, serviceUri: raw.service_uri };
+  }
+
   async contactLookup(query: string): Promise<Contact | null> {
     const clean = typeof query === 'string' ? query.trim() : '';
     if (clean === '') return null;

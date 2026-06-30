@@ -26,7 +26,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl, ScrollView } from 'react-native';
 
 import {
   getUnreadCount,
@@ -46,6 +46,7 @@ import {
   type InboxEntry,
   type ResolvedInboxEntry,
 } from '../src/components/approval_inbox';
+import { useServiceDecisions, type DecisionRow } from '../src/hooks/useServiceDecisions';
 import { resolveSafeDeepLink } from '../src/notifications/deep_link';
 import { type FilterKey } from '../src/notifications/screen_filter';
 import { colors, radius, spacing, textStyles } from '../src/theme';
@@ -56,7 +57,40 @@ const FILTERS: readonly { key: FilterKey; label: string }[] = [
   { key: 'unread', label: 'Unread' },
   { key: 'all', label: 'All' },
   { key: 'reminder', label: 'Reminders' },
+  // Owner-private contact-service decision log — quiet + reviewable, never a
+  // push (CONTACT_SERVICES_ARCHITECTURE.md §10). Last so it never leads.
+  { key: 'requests', label: 'Requests' },
 ];
+
+/**
+ * Human, NON-leaking summary of one owner-private grant-request decision. This
+ * surface is the GRANTOR's private truth (the requester never sees it), so it
+ * can name the contact and the real outcome.
+ */
+function decisionText(d: DecisionRow): { title: string; subtitle: string } {
+  const cap = d.capability.replace(/_/g, ' ');
+  switch (d.decision) {
+    case 'granted':
+      return { title: `${d.requesterName} can now use ${cap}`, subtitle: 'Auto-granted by policy.' };
+    case 'auto_declined':
+      return {
+        title: `${d.requesterName} asked for ${cap}`,
+        subtitle: 'Auto-declined by policy. Tag them closer to enable it.',
+      };
+    case 'prompt_shown':
+      return {
+        title: `${d.requesterName} asked for ${cap}`,
+        subtitle: 'You were asked to allow this.',
+      };
+    case 'prompt_timed_out':
+      return { title: `${d.requesterName} asked for ${cap}`, subtitle: 'The allow prompt expired.' };
+    case 'error':
+      return {
+        title: `A request for ${cap} couldn’t be processed`,
+        subtitle: 'No action needed.',
+      };
+  }
+}
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -76,7 +110,8 @@ const KIND_ICON: Record<NotificationKind, IoniconName> = {
 type Row =
   | { t: 'pending'; entry: InboxEntry }
   | { t: 'resolved'; entry: ResolvedInboxEntry }
-  | { t: 'notif'; item: NotificationItem };
+  | { t: 'notif'; item: NotificationItem }
+  | { t: 'decision'; decision: DecisionRow };
 
 function rowKey(row: Row): string {
   switch (row.t) {
@@ -86,6 +121,8 @@ function rowKey(row: Row): string {
       return `resolved:${row.entry.id}`;
     case 'notif':
       return `notif:${row.item.id}`;
+    case 'decision':
+      return `decision:${row.decision.id}`;
   }
 }
 
@@ -97,6 +134,9 @@ function rowTimestamp(row: Row): number {
       return row.entry.resolvedAt;
     case 'notif':
       return row.item.firedAt;
+    case 'decision':
+      // Stored in unix seconds; normalise to ms for any cross-row sort.
+      return row.decision.createdAt * 1000;
   }
 }
 
@@ -119,6 +159,7 @@ export default function NotificationsScreen(): React.JSX.Element {
   const [refreshing, setRefreshing] = useState(false);
 
   const approvals = useApprovalInbox();
+  const { decisions, reload: reloadDecisions } = useServiceDecisions();
 
   // Live subscription — re-pull on every event.  Cheap (N typically <100).
   useEffect(() => {
@@ -127,6 +168,14 @@ export default function NotificationsScreen(): React.JSX.Element {
     });
     return off;
   }, []);
+
+  // The owner-private decision log has no push channel (it's a quiet log, by
+  // design — §10). Re-read it whenever the owner opens the Requests filter so a
+  // decision recorded since the last visit shows without a manual pull. The
+  // in-process repo read is cheap (≤500 rows).
+  useEffect(() => {
+    if (filter === 'requests') reloadDecisions();
+  }, [filter, reloadDecisions]);
 
   // Build the FlatList data per filter.
   const rows = useMemo<Row[]>(() => {
@@ -143,6 +192,9 @@ export default function NotificationsScreen(): React.JSX.Element {
         return items
           .filter((i) => i.kind === 'reminder')
           .map((item) => ({ t: 'notif', item }));
+      case 'requests':
+        // Owner-private decision log only — already newest-first from the repo.
+        return decisions.map((decision): Row => ({ t: 'decision', decision }));
       case 'all': {
         // Merge pending cards + resolved cards + ALL notifications,
         // newest-first by their own timestamp.
@@ -155,21 +207,27 @@ export default function NotificationsScreen(): React.JSX.Element {
         return merged;
       }
     }
-  }, [filter, items, approvals.pending, approvals.resolved]);
+  }, [filter, items, approvals.pending, approvals.resolved, decisions]);
 
   const unreadCount = getUnreadCount();
   const pendingCount = approvals.pending.length;
 
   const emptyTitle =
-    items.length === 0 || filter !== 'unread' ? 'No notifications yet' : 'All caught up';
+    filter === 'requests'
+      ? 'No requests yet'
+      : items.length === 0 || filter !== 'unread'
+        ? 'No notifications yet'
+        : 'All caught up';
   const emptySubtitle =
-    items.length === 0
-      ? 'Reminders, approvals, and chat events will appear here.'
-      : filter === 'unread'
-        ? 'You’ve read everything in this view.'
-        : filter === 'reminder'
-          ? 'Reminders Dina sets from your Remember notes will appear here.'
-          : 'Reminders, approvals, and chat events will appear here.';
+    filter === 'requests'
+      ? 'When a contact’s Dina asks to use one of your services, the decision is logged here — privately, just for you.'
+      : items.length === 0
+        ? 'Reminders, approvals, and chat events will appear here.'
+        : filter === 'unread'
+          ? 'You’ve read everything in this view.'
+          : filter === 'reminder'
+            ? 'Reminders Dina sets from your Remember notes will appear here.'
+            : 'Reminders, approvals, and chat events will appear here.';
 
   const onRefresh = async (): Promise<void> => {
     setRefreshing(true);
@@ -179,6 +237,7 @@ export default function NotificationsScreen(): React.JSX.Element {
       // up re-listing the live store.  Also re-pull the approval inbox.
       await Promise.all([hydrateNotifications({ force: true }), approvals.reload()]);
       setItems(listNotifications());
+      reloadDecisions();
     } finally {
       setRefreshing(false);
     }
@@ -210,7 +269,14 @@ export default function NotificationsScreen(): React.JSX.Element {
           <Text style={styles.errorText}>{approvals.error}</Text>
         </View>
       ) : null}
-      <View style={styles.filterRow}>
+      {/* Horizontal scroll so the (now five) filter chips never clip on a
+          narrow phone — the row grows past the viewport and scrolls. */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filterScroll}
+        contentContainerStyle={styles.filterRow}
+      >
         {FILTERS.map((f) => {
           const active = filter === f.key;
           const count =
@@ -234,7 +300,7 @@ export default function NotificationsScreen(): React.JSX.Element {
             </Pressable>
           );
         })}
-      </View>
+      </ScrollView>
       <FlatList
         data={rows}
         keyExtractor={rowKey}
@@ -277,6 +343,28 @@ export default function NotificationsScreen(): React.JSX.Element {
           }
           if (row.t === 'resolved') {
             return <ResolvedApprovalCard entry={row.entry} />;
+          }
+          if (row.t === 'decision') {
+            const { title, subtitle } = decisionText(row.decision);
+            // Read-only by design: the decision log is reviewable, never
+            // actionable from here (no deep link, no inline action). Tagging a
+            // contact closer happens on their contact card, not in this feed.
+            return (
+              <View testID={`decision-row-${row.decision.id}`} style={styles.row}>
+                <View style={styles.iconWrap}>
+                  <Ionicons name="people-outline" size={18} color={colors.textSecondary} />
+                </View>
+                <View style={styles.rowBody}>
+                  <Text style={styles.rowTitle} numberOfLines={1}>
+                    {title}
+                  </Text>
+                  <Text style={styles.rowSubtitle} numberOfLines={2}>
+                    {subtitle}
+                  </Text>
+                  <Text style={styles.rowMeta}>{formatRelative(row.decision.createdAt * 1000)}</Text>
+                </View>
+              </View>
+            );
           }
           const item = row.item;
           const isUnread = item.readAt === null;
@@ -331,6 +419,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.bgPrimary,
+  },
+  // The horizontal ScrollView must not flex-grow vertically (it would eat the
+  // list); pin it to its content height.
+  filterScroll: {
+    flexGrow: 0,
   },
   filterRow: {
     flexDirection: 'row',

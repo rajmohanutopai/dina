@@ -82,6 +82,17 @@ export interface ServiceQueryLifecycle {
    *  The card derives "replied in Ns" from this minus the message's
    *  creation timestamp (which is dispatch time). */
   resolvedAt?: number;
+  /**
+   * True when this query targets a CONTACT (relationship / `surface:'talk'`,
+   * `known_only`) service rather than a public one. It gates the
+   * collapsed-failure rule (CONTACT_SERVICES_ARCHITECTURE.md §2/§10):
+   * for a relationship service every negative path — refused, not-offered,
+   * timed-out, ignored, offline — must render as ONE generic "couldn't
+   * complete" with NO reason, so the requester can never infer their social
+   * rank or the grantor's decision. Public-service cards keep showing the
+   * real reason (no trust tier to leak), so the flag is absent there.
+   */
+  relationship?: boolean;
 }
 
 /**

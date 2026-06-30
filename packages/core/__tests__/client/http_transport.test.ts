@@ -1237,4 +1237,62 @@ describe('HttpCoreTransport (task 1.31)', () => {
       /did is required/,
     );
   });
+
+  // Contact Services — issueServiceOffer parity with InProcessTransport: the
+  // wire body is snake_case, expires_at omitted when absent, and the route's
+  // {grant_id, service_uri} maps to {grantId, serviceUri}.
+  it('issueServiceOffer POSTs snake_case body and maps {grant_id, service_uri} → camelCase', async () => {
+    const { client, calls } = makeStubClient(() =>
+      ok({
+        grant_id: 'grant-xyz',
+        service_uri: 'at://did:plc:me/com.dinakernel.service.profile/avail-1',
+      }),
+    );
+    const stub = makeStubSigner();
+    const t = new HttpCoreTransport({
+      baseUrl: 'http://core',
+      httpClient: client,
+      signer: stub.signer,
+    });
+
+    const res = await t.issueServiceOffer({
+      toDID: 'did:plc:emma',
+      rkey: 'avail-1',
+      capability: 'availability_coordination',
+      expiresAt: 1800000000,
+    });
+
+    expect(res).toEqual({
+      grantId: 'grant-xyz',
+      serviceUri: 'at://did:plc:me/com.dinakernel.service.profile/avail-1',
+    });
+    expect(calls[0]?.init.method).toBe('POST');
+    expect(calls[0]?.url).toBe('http://core/v1/service/offer');
+    const body0 = calls[0]?.init.body;
+    if (body0 === undefined) throw new Error('expected a request body');
+    expect(JSON.parse(new TextDecoder().decode(body0))).toEqual({
+      to_did: 'did:plc:emma',
+      rkey: 'avail-1',
+      capability: 'availability_coordination',
+      expires_at: 1800000000,
+    });
+  });
+
+  it('issueServiceOffer omits expires_at when not supplied', async () => {
+    const { client, calls } = makeStubClient(() =>
+      ok({ grant_id: 'g', service_uri: 'at://x/y/z' }),
+    );
+    const stub = makeStubSigner();
+    const t = new HttpCoreTransport({
+      baseUrl: 'http://core',
+      httpClient: client,
+      signer: stub.signer,
+    });
+    await t.issueServiceOffer({ toDID: 'did:plc:emma', rkey: 'r', capability: 'c' });
+    const body1 = calls[0]?.init.body;
+    if (body1 === undefined) throw new Error('expected a request body');
+    const sent = JSON.parse(new TextDecoder().decode(body1));
+    expect(sent).toEqual({ to_did: 'did:plc:emma', rkey: 'r', capability: 'c' });
+    expect(sent).not.toHaveProperty('expires_at');
+  });
 });

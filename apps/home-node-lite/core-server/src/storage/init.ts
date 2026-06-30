@@ -16,7 +16,7 @@
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { NodeDBProvider } from '@dina/storage-node';
+
 import {
   SQLiteServiceConfigRepository,
   SQLiteD2DOutboxRepository,
@@ -35,6 +35,7 @@ import {
   SQLiteChatMessageRepository,
   SQLiteContactRepository,
   SQLiteServiceOfferRepository,
+  SQLiteServiceDecisionRepository,
   SQLiteServiceGrantRepository,
   SQLiteDeviceRepository,
   SQLiteKVRepository,
@@ -51,6 +52,7 @@ import {
   setChatMessageRepository,
   setContactRepository,
   setServiceOfferRepository,
+  setServiceDecisionRepository,
   setServiceGrantRepository,
   setDeviceRepository,
   setKVRepository,
@@ -62,6 +64,7 @@ import {
   type DatabaseAdapter,
   type DBProvider,
 } from '@dina/core/storage';
+import { NodeDBProvider } from '@dina/storage-node';
 
 import type { Logger } from '../logger';
 
@@ -70,11 +73,11 @@ import type { Logger } from '../logger';
  * `apps/mobile/src/onboarding/default_personas.ts` so the LLM-driven
  * persona classifier sees the same descriptions on either runtime.
  */
-const DEFAULT_PERSONAS: ReadonlyArray<{
+const DEFAULT_PERSONAS: readonly {
   name: string;
   tier: 'default' | 'standard' | 'sensitive' | 'locked';
   description: string;
-}> = [
+}[] = [
   {
     name: 'general',
     tier: 'default',
@@ -158,6 +161,7 @@ export async function initializeStorage(
   setKVRepository(new SQLiteKVRepository(identityDB));
   setContactRepository(new SQLiteContactRepository(identityDB));
   setServiceOfferRepository(new SQLiteServiceOfferRepository(identityDB));
+  setServiceDecisionRepository(new SQLiteServiceDecisionRepository(identityDB));
   setServiceGrantRepository(new SQLiteServiceGrantRepository(identityDB));
   setReminderRepository(new SQLiteReminderRepository(identityDB));
   setAuditRepository(new SQLiteAuditRepository(identityDB));

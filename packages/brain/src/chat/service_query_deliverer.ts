@@ -33,6 +33,7 @@ import {
   addDinaResponse,
   addLifecycleMessage,
   findMessageByTaskId,
+  hydrateThread,
   readLifecycle,
   updateMessageLifecycle,
   type ServiceQueryLifecycle,
@@ -63,13 +64,14 @@ export function createServiceQueryDeliverer(
   options: ServiceQueryDelivererOptions,
 ): WorkflowEventDeliverer {
   const { threadId, threadResolver } = options;
-  return ({ text, event, task, details }) => {
+  return async ({ text, event, task, details }) => {
     const sources: string[] = [];
     if (event.task_id !== '') sources.push(event.task_id);
     if (details.capability !== undefined && details.capability !== '') {
       sources.push(details.capability);
     }
     let target = threadId;
+    let diverted = false;
     if (threadResolver !== undefined) {
       const originChannel = extractOriginChannel(task.payload);
       const resolved = threadResolver({
@@ -77,7 +79,27 @@ export function createServiceQueryDeliverer(
         eventKind: event.event_kind,
         task: { id: task.id, kind: task.kind },
       });
-      if (resolved !== null && resolved !== '') target = resolved;
+      if (resolved !== null && resolved !== '') {
+        target = resolved;
+        diverted = true;
+      }
+    }
+
+    // Hydration race fix (P2-3): peer Talk threads hydrate LAZILY (on first
+    // open), so a `service.response` that arrives before the peer chat is
+    // opened would scan an EMPTY in-memory thread, miss the persisted pending
+    // card, and post a DUPLICATE terminal card. Hydrate the diverted (peer)
+    // thread from the repo first so the patch finds the persisted card. The
+    // default thread ('main') is already hydrated at boot, so only hydrate
+    // when the resolver diverted us to another thread. `hydrateThread` is a
+    // no-op when no repo is wired and a merge otherwise (never clobbers live
+    // entries), so it's safe even when the thread is already in memory.
+    if (diverted) {
+      try {
+        await hydrateThread(target);
+      } catch {
+        /* hydration is best-effort — fall through to the in-memory scan */
+      }
     }
 
     // Lifecycle pattern — patch the pending card in place instead of

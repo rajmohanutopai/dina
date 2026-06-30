@@ -6,20 +6,27 @@
  * it is NEVER staged to the vault.
  */
 
-import { receiveD2D } from '../../src/d2d/receive_pipeline';
-import { sealMessage, type DinaMessage } from '../../src/d2d/envelope';
-import { clearGatesState } from '../../src/d2d/gates';
-import { resetStagingState } from '../../src/staging/service';
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
 import { resetAuditState } from '../../src/audit/service';
-import { resetQuarantineState } from '../../src/d2d/quarantine';
-import { clearReplayCache } from '../../src/transport/adversarial';
-import { getPublicKey } from '../../src/crypto/ed25519';
 import {
   setServiceOfferRepository,
   type ServiceOffer,
   type ServiceOfferRepository,
 } from '../../src/contacts/service_offers_repository';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
+import { getPublicKey } from '../../src/crypto/ed25519';
+import { sealMessage, type DinaMessage } from '../../src/d2d/envelope';
+import { clearGatesState } from '../../src/d2d/gates';
+import { resetQuarantineState } from '../../src/d2d/quarantine';
+import { receiveD2D } from '../../src/d2d/receive_pipeline';
+import {
+  onServiceOfferReceived,
+  resetServiceOfferReceivedListeners,
+  type ServiceOfferReceivedEvent,
+} from '../../src/d2d/service_offer_events';
+import { resetStagingState } from '../../src/staging/service';
+import { clearReplayCache } from '../../src/transport/adversarial';
+
 
 const senderPriv = TEST_ED25519_SEED;
 const senderPub = getPublicKey(senderPriv);
@@ -75,10 +82,12 @@ beforeEach(() => {
   resetQuarantineState();
   clearReplayCache();
   setServiceOfferRepository(null);
+  resetServiceOfferReceivedListeners();
 });
 
 afterAll(() => {
   setServiceOfferRepository(null);
+  resetServiceOfferReceivedListeners();
 });
 
 describe('receive_pipeline — service.offer ingress', () => {
@@ -98,6 +107,58 @@ describe('receive_pipeline — service.offer ingress', () => {
       schemaHash: 'sha256:canonical',
     });
     expect(stored[0].paramsSchema).toEqual({ type: 'object' });
+  });
+
+  it('emits a service-offer-received event on accept (drives the first-run replay)', () => {
+    const { repo } = stubRepo();
+    setServiceOfferRepository(repo);
+    const events: ServiceOfferReceivedEvent[] = [];
+    const off = onServiceOfferReceived((e) => events.push(e));
+
+    receiveD2D(buildSealed(offerBody), recipientPub, recipientPriv, [senderPub], 'verified');
+    off();
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({
+      providerDID: PROVIDER_DID,
+      capability: 'appointment_status',
+      grantId: 'offer-1',
+      serviceUri: offerBody.service_uri,
+      serviceName: 'Dr Carl (private)',
+      schemaHash: 'sha256:canonical',
+      defaultTtlSeconds: 120,
+    });
+  });
+
+  it('carries the echoed request_id on the event when the offer has one (review #1 correlation)', () => {
+    const { repo } = stubRepo();
+    setServiceOfferRepository(repo);
+    const events: ServiceOfferReceivedEvent[] = [];
+    const off = onServiceOfferReceived((e) => events.push(e));
+
+    receiveD2D(
+      buildSealed({ ...offerBody, request_id: 'req-xyz' }),
+      recipientPub,
+      recipientPriv,
+      [senderPub],
+      'verified',
+    );
+    off();
+
+    expect(events).toHaveLength(1);
+    expect(events[0].requestId).toBe('req-xyz');
+  });
+
+  it('does NOT emit when the offer is rejected (non-contact) — no replay for a dropped offer', () => {
+    const { repo } = stubRepo();
+    setServiceOfferRepository(repo);
+    const events: ServiceOfferReceivedEvent[] = [];
+    const off = onServiceOfferReceived((e) => events.push(e));
+
+    receiveD2D(buildSealed(offerBody), recipientPub, recipientPriv, [senderPub], 'unknown');
+    off();
+
+    expect(events).toHaveLength(0);
   });
 
   it('REJECTS an offer from a non-contact (known_only is contacts-only)', () => {

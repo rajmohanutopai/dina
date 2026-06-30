@@ -19,6 +19,7 @@ export type {
   ServiceQueryBody,
   ServiceResponseBody,
   ServiceOfferBody,
+  ServiceGrantRequestBody,
 } from './types/d2d';
 export type {
   AuthChallengeFrame,
@@ -34,6 +35,7 @@ export type {
   ServiceCapabilitySchemas,
   ServiceConfig,
   ServiceListingStatus,
+  ServiceSurface,
   AccessPolicyHint,
   RateLimitHint,
   PricingHint,
@@ -105,6 +107,7 @@ export {
   MSG_TYPE_SERVICE_QUERY,
   MSG_TYPE_SERVICE_RESPONSE,
   MSG_TYPE_SERVICE_OFFER,
+  MSG_TYPE_SERVICE_GRANT_REQUEST,
   MAX_MESSAGE_BODY_SIZE,
   MAX_SERVICE_TTL,
   RPC_REQUEST_TYPE,
@@ -167,6 +170,7 @@ export {
   validateServiceQueryBody,
   validateServiceResponseBody,
   validateServiceOfferBody,
+  validateServiceGrantRequestBody,
   validateFutureSkew,
   verifyMessageSignature,
   parseServiceListingUri,

@@ -93,6 +93,24 @@ describe('validateServiceConfig', () => {
     expect(() => validateServiceConfig(bad)).toThrow(/isDiscoverable/);
   });
 
+  it('accepts a valid surface and rejects an invalid one (Contact Services §5.3)', () => {
+    expect(() => validateServiceConfig({ ...validConfig, surface: 'services' })).not.toThrow();
+    expect(() => validateServiceConfig({ ...validConfig, surface: 'talk' })).not.toThrow();
+    // absent is fine (defaults to 'services' via effectiveSurface)
+    expect(() => validateServiceConfig(validConfig)).not.toThrow();
+    expect(() => validateServiceConfig({ ...validConfig, surface: 'public' })).toThrow(/surface/);
+    expect(() => validateServiceConfig({ ...validConfig, surface: 'known_only' })).toThrow(/surface/);
+  });
+
+  it('accepts a boolean defaultOfferable and rejects a non-boolean (§5.1)', () => {
+    expect(() => validateServiceConfig({ ...validConfig, defaultOfferable: true })).not.toThrow();
+    expect(() => validateServiceConfig({ ...validConfig, defaultOfferable: false })).not.toThrow();
+    expect(() => validateServiceConfig(validConfig)).not.toThrow(); // absent → false via helper
+    expect(() => validateServiceConfig({ ...validConfig, defaultOfferable: 'yes' })).toThrow(
+      /defaultOfferable/,
+    );
+  });
+
   it('rejects empty name', () => {
     expect(() => validateServiceConfig({ ...validConfig, name: '' })).toThrow(/name/);
   });

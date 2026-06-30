@@ -765,6 +765,22 @@ export class MockCoreClient implements CoreClient {
     });
   }
 
+  /** Canned `issueServiceOffer` result; tests override to assert the grant
+   *  the owner's `ask_to_enable` "Allow" tap minted. Defaults to a stub. */
+  issueServiceOfferResult: { grantId: string; serviceUri: string } = {
+    grantId: 'grant-mock',
+    serviceUri: 'at://did:plc:self/com.dinakernel.service.profile/self',
+  };
+
+  async issueServiceOffer(params: {
+    toDID: string;
+    rkey: string;
+    capability: string;
+    expiresAt?: number;
+  }): Promise<{ grantId: string; serviceUri: string }> {
+    return this.dispatch('issueServiceOffer', [params], () => this.issueServiceOfferResult);
+  }
+
   async peopleApplyExtraction(
     result: ExtractionResult,
     persona?: string,

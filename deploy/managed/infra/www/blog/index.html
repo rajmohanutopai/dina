@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A world of possibilities with sovereign AI | Dina</title>
+<meta name="description" content="A novel published in 2017, brought to life in 2026. Sovereign AI: you own your identity and your data; your AI acts as you, and for you.">
+<link rel="canonical" href="https://dinakernel.com/blog">
+<meta property="og:title" content="A world of possibilities with sovereign AI">
+<meta property="og:description" content="A novel published in 2017, brought to life in 2026.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://dinakernel.com/blog">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;1,600&family=Figtree:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-primary: #FAF8F5;
+  --bg-secondary: #FFFFFF;
+  --border: rgba(0,0,0,0.08);
+  --text-primary: #1C1917;
+  --text-secondary: #57534E;
+  --text-muted: #A8A29E;
+  --accent: #1C1917;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'Figtree', system-ui, -apple-system, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.75;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--text-primary); text-decoration: underline; text-decoration-color: rgba(0,0,0,0.25); text-underline-offset: 3px; transition: 0.2s; }
+a:hover { text-decoration-color: var(--text-primary); }
+
+nav {
+  position: sticky; top: 0; z-index: 10;
+  background: rgba(250,248,245,0.85); backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 clamp(16px, 5vw, 40px); height: 58px;
+}
+.nav-logo { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 800; font-size: 1.15em; letter-spacing: -0.3px; text-decoration: none; color: var(--text-primary); }
+.nav-cta { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700; font-size: 0.78em; background: var(--text-primary); color: white; padding: 8px 18px; border-radius: 9px; text-decoration: none; letter-spacing: 0.02em; }
+.nav-cta:hover { background: #44403C; color: white; }
+
+.hero-banner { max-width: 1180px; margin: 0 auto; padding: 28px clamp(16px, 5vw, 24px) 0; }
+.hero-banner img { width: 100%; height: auto; display: block; }
+
+figure { margin: 32px 0 8px; }
+.shots { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+.shots img { width: 230px; max-width: 46%; height: auto; border-radius: 22px; box-shadow: 0 2px 10px rgba(28,25,23,0.05), 0 16px 44px rgba(28,25,23,0.09); display: block; }
+.shots.one img { width: 262px; max-width: 76%; }
+.shot-link { display: inline-block; text-decoration: none; transition: transform 0.2s; }
+.shot-link:hover { transform: translateY(-3px); }
+figcaption a { color: var(--text-secondary); }
+figcaption { text-align: center; font-size: 0.86em; color: var(--text-muted); margin: 14px auto 26px; max-width: 480px; }
+
+article { max-width: 680px; margin: 0 auto; padding: clamp(40px, 8vh, 72px) clamp(20px, 5vw, 24px) 40px; }
+.eyebrow { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700; font-size: 0.72em; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 18px; }
+.post-title {
+  font-family: 'Cormorant Garamond', Georgia, serif; font-weight: 600; font-style: italic;
+  font-size: clamp(2.1em, 6vw, 3.1em); line-height: 1.12; letter-spacing: -0.01em;
+  margin-bottom: 16px;
+}
+.deck {
+  font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-weight: 600;
+  font-size: clamp(1.3em, 3.4vw, 1.75em); line-height: 1.25; letter-spacing: -0.005em;
+  color: var(--text-secondary); margin: -2px 0 10px;
+}
+
+article h2 {
+  font-family: 'Cormorant Garamond', Georgia, serif; font-weight: 600; font-style: italic;
+  font-size: clamp(1.6em, 4vw, 2.1em); line-height: 1.2; letter-spacing: -0.01em;
+  margin: 48px 0 6px;
+}
+article h3 {
+  font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700;
+  font-size: 1.12em; margin: 32px 0 4px;
+}
+article p { margin: 18px 0; font-size: 1.08em; }
+article p.lede { font-size: 1.15em; color: var(--text-secondary); }
+article em { font-style: italic; }
+
+.pillars { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
+.pillar-chip { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 600; font-size: 0.8em; letter-spacing: 0.02em; color: var(--text-secondary); border: 1px solid var(--border); background: var(--bg-secondary); border-radius: 8px; padding: 6px 12px; }
+
+blockquote.note {
+  border-left: 3px solid var(--text-muted);
+  background: var(--bg-secondary);
+  border-radius: 0 10px 10px 0;
+  padding: 14px 18px; margin: 24px 0;
+  color: var(--text-secondary); font-size: 0.98em;
+}
+.callout { font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-size: 1.25em; color: var(--text-primary); margin: 22px 0; }
+
+.cta {
+  margin: 56px 0 8px; padding: 28px; border: 1px solid var(--border);
+  background: var(--bg-secondary); border-radius: 16px; text-align: center;
+}
+.cta-title { font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-weight: 600; font-size: 1.5em; margin-bottom: 14px; }
+.cta-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.btn-primary { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700; font-size: 0.86em; background: var(--text-primary); color: white; padding: 12px 26px; border-radius: 10px; text-decoration: none; border: 1px solid var(--text-primary); }
+.btn-primary:hover { background: #44403C; color: white; }
+.btn-secondary { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700; font-size: 0.86em; background: var(--bg-secondary); color: var(--text-primary); padding: 12px 26px; border-radius: 10px; text-decoration: none; border: 1px solid var(--border); }
+.btn-secondary:hover { border-color: var(--text-muted); }
+
+footer { border-top: 1px solid var(--border); padding: 28px 20px; text-align: center; color: var(--text-muted); font-size: 0.85em; }
+footer a { color: var(--text-secondary); }
+.back { display: inline-block; margin-top: 8px; font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 600; font-size: 0.85em; color: var(--text-secondary); }
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="nav-logo">Dina</a>
+  <a href="https://apps.apple.com/app/id6781713799" class="nav-cta">Get the app</a>
+</nav>
+
+<div class="hero-banner">
+  <img src="banner.webp" width="2172" height="724" alt="Dina — your sovereign AI, your open network. Your vaults, approvals, services, reviews, and private messaging, all under one identity you own.">
+</div>
+
+<article>
+  <div class="eyebrow">From the founder</div>
+  <h1 class="post-title">A world of possibilities with sovereign AI</h1>
+  <p class="deck">A novel published in 2017, brought to life in 2026.</p>
+
+  <p class="lede">In 2017, I wrote UTOP<em>AI</em>, a novella which imagined a world after AGI through the eyes of a reborn Don Quixote and Sancho Panza. Available on <a href="https://www.amazon.com/UTOPAI-Rajmohan-Harindranath-ebook/dp/B076CTJ85F">Amazon</a> and also as <a href="https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf">open source</a>.</p>
+
+  <p>One of the things I explored in this book was the importance of sovereign AI (I named it Dina in the story).</p>
+
+  <p><strong>What is a sovereign AI?</strong><br>
+  With sovereign AI, you create and own your identity. You own and control your data. Your AI acts as you, and acts for you. When interacting with other systems, services, or broader networks, it serves as your personal envoy.</p>
+
+  <div class="pillars">
+    <span class="pillar-chip">Ask Dina</span>
+    <span class="pillar-chip">Ask a Service</span>
+    <span class="pillar-chip">Ask Around</span>
+  </div>
+
+  <h2>Ask Dina</h2>
+  <p>First, you can ask your own AI.</p>
+  <p>You decide what you want it to know. Dina stores this information in separate encrypted vaults. You choose which data can be used freely, which data needs permission, and what data should always be sealed from others.</p>
+  <p>Not only that, you can modify or delete the data as you choose. Maybe even delete the whole vault, or export your data to another system.</p>
+  <p>Now, when you ask or tell your AI anything, the answers are enriched from this context.</p>
+  <p>You tell your AI about your daughter's birthday, and a reminder will be created automatically one week before. The AI will add context. Maybe you usually buy gifts late, maybe your daughter likes books, maybe you want to call your parents before the celebration.</p>
+  <p>The important point is that your AI knows you because you chose to tell it, under rules you control.</p>
+
+  <h3>Let agents act safely</h3>
+  <p>The encrypted vaults we discussed earlier unlock another capability: supporting task agents like OpenClaw, Claude Cowork, Hermes, or Codex. These agents are very powerful, so boundaries are very useful.</p>
+  <p>Dina can act as the gate between your private data and the agent. If an agent needs sensitive information, Dina can ask for your approval first. If an agent wants to take a sensitive action, Dina can require approval before allowing it.</p>
+  <p>You can even get these agents to do complex actions, because Dina connects to these agents too.</p>
+
+  <h2>Ask a Service</h2>
+  <p>Another capability which sovereign AI unlocks is publishing and accessing services.</p>
+  <p>Because a sovereign AI has a permanent identity, it can talk to other sovereign AIs through encrypted channels. But unlike us talking to another person in normal chat applications, here it is two or more AIs talking to each other. This means a service does not need to have a website, an app, or a platform.</p>
+  <p class="callout">A service can simply be something your AI knows how to provide.</p>
+  <p>Suppose you are a salon owner, and you want to publish a service which provides the customer with a salon booking interface.</p>
+  <p>With a communication interface between the provider and customer being their own respective AIs, it now becomes a very simple mechanism.</p>
+  <p>As the salon owner, you know your schedule: when you are free, which service takes 20 minutes, which ones take an hour, what type of customers will take extra time, your cancellation policy, and many other small details that make your business work.</p>
+  <p>To publish this as a service, you create a Salon Vault in Dina. You add your working hours, services, prices, booking rules, available slots, and cancellation policy. Then you publish this as a public service.</p>
+
+  <figure>
+    <div class="shots">
+      <img src="/assets/screens/08-service-data-in-plain-language.webp" alt="A salon owner tells Dina their hours in plain language: my salon is open Tuesday to Saturday, 10am to 6pm, last slot 5pm." loading="lazy">
+      <img src="/assets/screens/09-go-live-from-your-dina.webp" alt="Taking the salon service live to the open network from your phone." loading="lazy">
+    </div>
+    <figcaption>Set up the service in plain language, then take it live to the network from your phone.</figcaption>
+  </figure>
+  <p>We made it a public service, so any customer's Dina can discover it. You could have made it private, so only selected customers can reach it. You can also make it unlisted or provider-specific based on your requirements.</p>
+
+  <blockquote class="note">Please note that, today, the network is still small. Dina is in technical preview, and while the services functionality is available, people might not have published enough services yet.</blockquote>
+
+  <p>Coming back to the main topic: the service can only read and write the Salon Vault. It cannot touch your other data.</p>
+  <p>A customer asks their Dina:</p>
+  <p class="callout">Book me a salon appointment for Saturday at 5 PM.</p>
+  <p>The customer's Dina looks for nearby salons that match their preferences: price, quality, location, reviews. It finds your salon because your service matches what the customer actually wants.</p>
+  <p>The customer's Dina asks the salon owner's Dina whether Saturday at 5 PM is free, and if so, to please create an appointment.</p>
+  <p>The salon owner's (your) Dina finds that the vault is write-protected, and sends an approval request. If you approve, the customer now gets an Appointment Booked.</p>
+
+  <figure>
+    <div class="shots one">
+      <img src="/assets/screens/38-salon-booking-confirmed.webp" alt="A customer's Dina asks the salon for a 4pm Thursday opening; the owner approves, the booking is confirmed, and the reply is sent: see you at 4pm Thursday." loading="lazy">
+    </div>
+    <figcaption>A customer's Dina asks, you approve, the appointment is booked and the reply goes back. Two Dinas, no platform in the middle.</figcaption>
+  </figure>
+  <p>The customer didn't have to do anything. Everything was handled by their respective AIs. Without any non-sovereign platform or marketplace in the middle, two sovereign AIs talked to each other to set up a real-world service.</p>
+  <p>In a way, your knowledge now becomes a service. Your Dina became the API.</p>
+  <p>While this was a simple scenario, a service could ask task agents to do work and respond too.</p>
+  <p>This could be the basis of a different kind of economy: a real, AI-based pull economy.</p>
+
+  <h2>Ask Around</h2>
+  <p>Another capability which sovereign AI unlocks is ranked reviews.</p>
+  <p>While reviews are quite abundant now, they face some issues that a sovereign AI can help solve.</p>
+  <p>Currently, while reviews are everywhere, they are not related to any user identity. Also, reviews are mostly created by either very happy or very unhappy customers. The majority of customers do not create reviews. There is also the question of fake or bought reviews.</p>
+  <p>But with sovereign AI, every AI has a permanent identity. So reviews can be signed by a user-controlled identity. They are public, editable, and deletable by the person who created them.</p>
+  <p>With permission, AI can write reviews which reflect the user's actual experience. Because the effort from the user's perspective is negligible, even the middle-of-the-road customer can now leave useful reviews.</p>
+  <p>The most important functionality this unlocks is personalised ranking of reviews.</p>
+  <p>A review from someone close to me may matter more than a random review. A review from someone with similar interests may matter more than a generic review (even by a famous person). Reviews created without much provenance could be ranked lower.</p>
+  <p>This means recommendations can become more personal and better grounded.</p>
+  <p>A user might ask their Dina to search for an office chair. Dina will search for an ergonomic chair which helps with back pain (because it knows I have back pain), and within a budget of $500 (my budget is known). The search will be done on the personalised ranked-review system, ensuring the recommendation is much more relevant to the user.</p>
+
+  <figure>
+    <div class="shots">
+      <img src="/assets/screens/03-context-aware-ranked-review-search.webp" alt="Asked to find a good office chair, Dina answers from the user's lower-back pain and 500 dollar budget, recommending a chair rated well by trusted reviewers." loading="lazy">
+      <img src="/assets/screens/25-published-review.webp" alt="A review published to the network, signed by the author's own identity and ranked by trust." loading="lazy">
+    </div>
+    <figcaption>Dina answers from your real context and your trusted network, and anyone can publish a review signed by their own identity.</figcaption>
+  </figure>
+  <p>This is another aspect of the pull economy that a sovereign AI allows to happen.</p>
+
+  <h2>Pull Economy</h2>
+  <p>Today, businesses reach customers in many ways: websites, apps, ads, search results, and word of mouth. All of them are very important and useful.</p>
+  <p>Sovereign AI adds an additional path. Dina can pull the right options from the network based on customer queries. It can find and invoke services. Dina can look at ranked reviews to decide how good a product or service is. And since it uses the customer's own context, it can come up with a good choice for the customer.</p>
+  <p>A new channel, supported by AI, where discovery begins with the customer's intent.</p>
+
+  <h2>Dina, the App</h2>
+  <p>In 2017, this was a fictional concept in a novella.</p>
+  <p>Today, I have built the first working implementation of Dina.</p>
+
+  <figure>
+    <div class="shots one">
+      <a href="https://apps.apple.com/app/id6781713799" class="shot-link" aria-label="Get Dina on the App Store">
+        <img src="/assets/screens/01-welcome-sovereign-ai-open-network.webp" alt="The Dina app welcome screen on iOS: your sovereign AI, your open network." loading="lazy">
+      </a>
+    </div>
+    <figcaption>The Dina app, live on iOS. <a href="https://apps.apple.com/app/id6781713799">Get it on the App Store &rsaquo;</a></figcaption>
+  </figure>
+  <p>Dina is available as both an iOS mobile application and a server which you can run locally. I will release the Android version soon.</p>
+  <p>Dina is fully open source under the MIT License. Dina Ranked Reviews and Dina Services are open protocols.</p>
+  <p>It is currently in technical preview, with more than 10,500 tests backing the application.</p>
+  <p>Please try it out. And let us build an open protocol, an open network, and an open world.</p>
+
+  <div class="cta">
+    <div class="cta-title">Try Dina</div>
+    <div class="cta-actions">
+      <a href="https://apps.apple.com/app/id6781713799" class="btn-primary">Get the app</a>
+      <a href="https://github.com/rajmohanutopai/dina" class="btn-secondary">View on GitHub</a>
+    </div>
+  </div>
+</article>
+
+<footer>
+  <div><a href="/">dinakernel.com</a> · <a href="https://github.com/rajmohanutopai/dina">GitHub</a> · <a href="https://www.amazon.com/UTOPAI-Rajmohan-Harindranath-ebook/dp/B076CTJ85F">The novel</a></div>
+  <a href="/" class="back">&larr; Back to home</a>
+</footer>
+
+</body>
+</html>
