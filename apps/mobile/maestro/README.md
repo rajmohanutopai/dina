@@ -90,9 +90,10 @@ device: `maestro --device <udid> test …`.
 - `persona_routing.yaml` — **MRS-01**: a health fact lands in the Health
   vault, a finance fact in the Finance vault — and no approval prompt fires
   because the owner is asking in-app.
-- `reminder_enrichment.yaml` — **MRS-03** (flagship): a preference + a dated
-  event auto-creates a REMINDER card that weaves in the preference. The
-  enrichment wording is real-LLM, so keep this one in the on-demand lane.
+- `remember_reminder.yaml` — **MRS-03** (flagship): a preference + a dated
+  event auto-creates a REMINDER card that weaves in the preference (and a plain
+  fact creates NO reminder — the negative case). The enrichment wording is
+  real-LLM, so keep this one in the on-demand lane.
 
 ## Scenarios that need a second Dina or an agent
 

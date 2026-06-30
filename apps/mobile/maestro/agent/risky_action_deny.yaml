@@ -1,0 +1,44 @@
+# MRS-08 (deny half) — Approvals: a HIGH-risk agent action is DENIED on device.
+# The mirror of risky_action_approval.yaml: surface the card, tap Deny, confirm
+# through the destructive Alert, and assert the inbox clears. The driver
+# (`harness/agent_mrs_driver.sh deny`) issues `dina validate … transfer_money`
+# BEFORE this flow and polls `dina validate-status <id>` AFTER → expects
+# `denied`. Proves the operator can REFUSE an agent action, not just approve.
+appId: com.dinakernel.mobile
+---
+# Foreground without a cold restart — the proposal already exists server-side
+# (driver ran `dina validate` first); a cold boot races the filter tap.
+- launchApp:
+    stopApp: false
+- tapOn:
+    id: 'tab-activity'
+- tapOn:
+    id: 'filter-needs_action'
+# The HIGH-risk intent card.
+- extendedWaitUntil:
+    visible:
+      text: 'Agent action approval'
+    timeout: 25000
+- assertVisible:
+    text: 'transfer_money'
+- assertVisible:
+    text: 'HIGH'
+# Inline Deny opens a destructive confirm Alert ("Deny \"transfer_money\"?").
+- tapOn:
+    id: 'approvals-deny-.*'
+- extendedWaitUntil:
+    visible:
+      text: 'Deny "transfer_money"?'
+    timeout: 10000
+# Two "Deny" elements now: index 0 = the card button behind the scrim, index 1
+# = the Alert's destructive confirm.
+- tapOn:
+    text: 'Deny'
+    index: 1
+# The inbox clears — Needs-action returns to "All caught up".
+- extendedWaitUntil:
+    notVisible:
+      text: 'Agent action approval'
+    timeout: 15000
+- assertVisible:
+    text: 'All caught up'

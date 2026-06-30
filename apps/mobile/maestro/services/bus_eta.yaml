@@ -3,11 +3,13 @@
 # provider on the AppView, hands the query to the provider's Dina over D2D,
 # and a resolved ETA card lands in the chat.
 #
-# This is the app-side half. It needs a provider live FIRST (see
-# harness/live_services_provider.sh — boots a provider lite-Core + publishes
-# an eta_query listing to the test-AppView + runs the stub_eta daemon). With
-# the provider warm, the query resolves to `chat-card-service-response`
-# (the static resolved-card testID added to InlineServiceQueryCard).
+# This is the app-side half. It needs a provider live FIRST — boot a provider
+# lite-Core + publish an eta_query listing to the test-AppView + run the
+# stub_eta daemon, per services/SERVICES_HARNESS.md (the provider pieces live
+# in demo/dina-services-demo/: put_service_config.ts, run_daemon.py,
+# stub_eta_runner.py, paired eta-agent). With the provider warm, the query
+# resolves to `chat-card-service-response` (the static resolved-card testID
+# added to InlineServiceQueryCard).
 #
 # Pass = a resolved service card lands (not the pending handoff, not an
 # error). The card render path is CardSpec-or-fallback; both now carry the
