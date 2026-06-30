@@ -383,3 +383,7 @@ demo/dina-services-demo/eta-agent/
 # research, video scripts/footage, press kit. Private working material
 # (includes founder-personal launch constraints) — never for the public repo.
 marketing/
+
+# Landing-page local working scratch (snapshots, inbox, baseline/flair
+# experiments) under the managed-infra www dir — local-only, never committed.
+deploy/managed/infra/www/_local/
