@@ -327,6 +327,262 @@ tracked on its own.</li>
 PDS publisher + status projection). <strong>P5</strong> contacts/people refactor (off module-globals) + notifications +
 D2D quarantine + devices + export + <code>web/SECURITY.md</code>.</li>
 </ul></li>
+<li><strong>2026-06-30 — goal resumed: complete the thin client. T0 = restore green baseline.</strong> The held branch
+<code>web-thin-client-hold</code> tip did <strong>not compile</strong>: <code>CoreClient</code> grew
+<code>pairInitiate</code> + <code>listPairedDevices</code> (device-pairing work) after <code>BrowserCoreProxyClient</code>
+was written, so the class no longer satisfied the interface and 7/9 thin-client suites failed at TS-compile.
+<strong>Fix:</strong> added both methods using the SAME established <code>notProxied('…')</code> signal (loud, greppable,
+fail-fast) — they are genuinely the P5 devices/pairing slice and become real proxies there; until then a wrong/empty
+answer would be worse than a visible failure. <strong>Design note:</strong> no functional change vs. the design — the
+proxy already stubs every unconverted domain this way; this just keeps the stub set in sync with the grown interface.
+<strong>Tests after:</strong> brain-server thin-client suites 47, core <code>browser_core_proxy_client</code> + identity
+route 28, mobile <code>web_thin_node</code> 8 — all green; <code>tsc</code> on <code>@dina/core</code> +
+<code>brain-server</code> = 0 errors. <strong>Next:</strong> P2 Contacts (the one real <code>CoreClient</code> gap —
+<code>contactList/Add/Delete</code>) so the web people/add-contact screens work.</li>
+<li><strong>2026-06-30 — T1 DONE: Contacts vertical slice (the one real <code>CoreClient</code> gap, design §5).</strong>
+Closed the gap end-to-end so the web People tab + add-contact work.
+<ul>
+<li><strong>Core routes.</strong> Added <code>GET /v1/contacts</code> (list) + <code>DELETE /v1/contacts/:did</code>
+to <code>routes/contacts.ts</code> (the file already had by-preference/lookup/PUT/POST-add). Both injectable via
+<code>ContactRoutesOptions</code> (default = directory module-globals); DELETE is idempotent
+(<code>200 {deleted:false}</code> on unknown DID, NOT 404). Distinct literal paths, so no router ambiguity with
+<code>:did</code>.</li>
+<li><strong>CoreClient surface.</strong> Added <code>contactList()</code>, <code>contactAdd(did,name,trust?)→{contact,created}</code>,
+<code>contactDelete(did)→boolean</code> to the interface + a new <code>ContactAddResult</code> type +
+<code>TrustLevel</code> re-export. Implemented in <strong>all three</strong> transports: InProcess (router dispatch),
+Http (signed), Mock (canned fields + a synthesised default contact). Reads fail-soft
+(<code>[]</code>/<code>null</code>) like the existing contact reads; <code>contactAdd</code> (a mutation) surfaces errors.</li>
+<li><strong>Brain proxy.</strong> New <code>brain-server/routes/contacts.ts</code> (mirrors <code>service_config.ts</code>):
+list/add/delete/update/lookup/by-preference → core; lookup declared BEFORE the <code>:did</code> routes so the static
+path wins; missing did/category → 400; Core failure → 502. Registered in boot (gated on <code>clients.core</code>) +
+<code>dependencyStatus.contactsRoutes</code>.</li>
+<li><strong>Browser proxy.</strong> Un-stubbed <code>contactList/Add/Delete/Lookup/updateContact/findContactsByPreference</code>
+into real same-origin <code>/api/v1/contacts*</code> calls (<code>listServiceOffers</code> stays stubbed — out of scope).</li>
+<li><strong>Screen wiring (DECISION — design §9 over §5's "one surface").</strong> §5 recommends routing both platforms
+through <code>CoreClient</code>, but §9 is the load-bearing guarantee: native code paths stay <em>byte-for-byte
+unchanged</em>; web changes are <code>Platform.OS==='web'</code> branches. <strong>Reconciliation:</strong> the unified
+<code>CoreClient</code> contacts surface now EXISTS (so web goes through the proxy like everything else), but
+<code>people.tsx</code> + <code>add-contact.tsx</code> keep their sync directory calls on native and take a web-only
+<code>coreClient</code> branch (list/add/delete/dup-check via <code>getBootedNode().coreClient</code>). This satisfies
+both: a shared surface AND zero native behaviour change.</li>
+<li><strong>Tests (all green).</strong> Core route +14 (list happy/empty; delete known/unknown-idempotent/blank-400);
+browser proxy +9 (each method's URL/method/body, fail-soft, blank-DID-no-request); brain contacts route +9 (full
+contract via Fastify <code>inject</code> + MockCoreClient incl. static-path-wins + 502). Core client/route suites 214,
+brain-server 102→111, workspace <code>tsc</code> = 0 errors.</li>
+<li><strong>Known pre-existing debt (NOT mine):</strong> <code>core-client.ts</code>'s type re-export section has 22
+pre-existing <code>import/order</code> lint errors (verified on HEAD). The section interleaves
+<code>import type {X}; export type {X};</code> pairs, so <code>eslint --fix</code> would scramble them; a clean fix is a
+~100-line restructure unrelated to contacts. Left as-is; my added line is functionally correct + typechecks.</li>
+<li><strong>Deep review (independent adversarial sub-agent) — verdict SHIP; fast-follows applied.</strong> No correctness
+blocker (wire shapes agree across all 3 transports + brain proxy + core route; §9 native-unchanged confirmed; authz
+covered by the existing <code>/v1/contacts</code> Brain+Admin prefix). Fixed every legitimate finding it raised:
+<ul>
+<li><strong>Test gap (biggest):</strong> the production seams were untested. Added <code>http_transport.test.ts</code>
+cases for <code>contactList/Add/Delete</code> (incl. fail-soft <code>[]/false</code> on non-2xx + <code>contactAdd</code>
+throws) AND a <strong>real end-to-end round-trip</strong> in <code>core_router_integration.test.ts</code>:
+<code>createCoreRouter()</code> → signed brain auth → the real directory (SQLite people repo) → POST/GET-list/idempotent
+re-POST/DELETE/empty-list/idempotent-delete. This is the only test that proves the new routes are actually REGISTERED
+into the router the brain reaches.</li>
+<li><strong>Dead-502 smell:</strong> the brain route's <code>502</code> for contact READS is unreachable in production
+(<code>HttpCoreTransport</code> reads fail-soft, never throw), so the old 502 test passed only via mock/real
+divergence. Re-pointed the 502 test at a MUTATION (<code>contactAdd</code>, which genuinely throws) + documented reads
+are empty-on-failure by design (the boot-time "No Home Node" screen covers total outage).</li>
+<li><strong>Silent web no-op:</strong> <code>add-contact.tsx</code> on web with an unbooted node used to report success +
+navigate without writing — now shows an error. <code>people.tsx</code> web-delete now returns early instead of falling
+through to the in-process directory call.</li>
+<li><strong>Nits:</strong> brain route 400s a non-string <code>trust_level</code>; InProcess class-doc fail-soft list +
+the Mock's disconnected-stub caveat documented.</li>
+</ul>
+<strong>After fixes:</strong> core client/route suites 185, brain-server contacts 9, mobile + brain <code>tsc</code> 0
+errors. <strong>T1 COMPLETE.</strong></li>
+<li><strong>2026-06-30 — T2 DONE: People-graph (Relations tab) proxy.</strong> Much smaller than T1 — the
+<code>CoreClient</code> methods (<code>peopleList/peopleFindByName/peopleResolveByDid</code>) + core routes
+(<code>/v1/people</code>, <code>/find</code>, <code>/by-did</code>) already existed and are registered in
+<code>createCoreRouter</code>. So this was: new <strong>read-only</strong> <code>brain-server/routes/people.ts</code>
+proxy (registered in boot + <code>peopleRoutes</code> status); un-stubbed the 3 read methods in
+<code>BrowserCoreProxyClient</code> (fail-soft <code>[]/null</code>, empty-arg short-circuit); web-gated the
+<code>people.tsx</code> Relations load (<code>coreClient.peopleList()</code> on web, in-process
+<code>getPeopleRepository().listPeople()</code> on native — §9). <strong>Design note:</strong>
+<code>peopleApplyExtraction</code> stays <code>notProxied</code> — it is a Brain-internal post-publish WRITE path, never a
+web concern. Tests: brain people route +4 (list / find+400 / by-did+400 / 502), browser proxy +5
+(list/find/by-did URL+unwrap+fail-soft+empty-short-circuit). Brain-server 115, browser proxy 36, <code>tsc</code> 0.
+Deep review = 3-question self-check only (a faithful read-only mirror of the already-adversarially-reviewed contacts
+pattern, no new architectural surface).</li>
+<li><strong>2026-06-30 — T3 (Phase 5 domains): scoped honestly after an authz/backing audit.</strong> The four §5
+"Phase 5" rows are NOT uniform — only one is a tractable proxy:
+<ul>
+<li><strong>Devices/pairing — DONE.</strong> Both core routes admit the <code>brain</code> caller
+(<code>authz.ts</code>: <code>/v1/devices/list</code> = admin+brain+device, <code>/v1/pair/initiate</code> = admin+brain),
+so the proxy is authorized. New <code>brain-server/routes/devices.ts</code> (<code>GET /devices/list</code> +
+<code>POST /pair/initiate</code>, registered in boot); un-stubbed <code>listPairedDevices</code> (fail-soft) +
+<code>pairInitiate</code> (mutation, throws) in <code>BrowserCoreProxyClient</code> — this also CLOSES the T0
+<code>notProxied</code> stubs. Device <strong>revoke/register stay admin-only</strong> on core and are deliberately NOT
+proxied (the browser session is not an admin credential). <strong>Bug caught by the test:</strong> my route's role
+allow-list had <code>{device,agent}</code> — the real <code>DeviceRole</code> union is <code>rich|thin|cli|agent</code>;
+fixed. Tests: brain device route +4, browser proxy +4. Brain-server 119, browser proxy 40, <code>tsc</code> 0.</li>
+<li><strong>Notifications — NO PROXY NEEDED (design over-specified).</strong> <code>notifications.tsx</code> reads a
+CLIENT-LOCAL store (<code>listNotifications</code>/<code>subscribeNotifications</code>), not Core. Notifications are a
+client-side PROJECTION of events (reminders fired, approvals, decisions) that already arrive over the existing chat/
+reminder SSE streams on web. There is nothing to proxy; the §5 "notifications list/markRead → Core" row is incorrect.
+(Follow-up: verify the web SSE → local-notification wiring actually populates the tab; that's a client concern, not a
+proxy.)</li>
+<li><strong>D2D quarantine — DEFERRED (a new slice, not a proxy).</strong> There is NO core route and NO
+<code>CoreClient</code> method for quarantine today (mobile calls <code>unquarantineSender</code>/<code>blockSender</code>
+as in-process module-globals). Making it work on web is a contacts-SIZED slice (new <code>CoreClient</code> methods +
+core routes + proxy + screen-wire), not a thin proxy. Tracked as future work.</li>
+<li><strong>Export — OUT OF SCOPE for the brain proxy.</strong> <code>/v1/export</code> is <strong>admin-only</strong> in
+authz; the brain key can't proxy it and the browser session is not an admin credential. This matches the design's own
+note that full export/restore stays partly manual. Identity (<code>GET /api/v1/identity</code>) — the read the web boot
+needs — was already done.</li>
+<li><strong>Also deferred:</strong> the paired-devices SCREEN web-wiring. The transport (list + pair-code) is done, but
+the full screen also needs device <em>revoke</em> + the rest of the registry surface, which isn't on
+<code>CoreClient</code> yet. List + mint-code work end-to-end through the proxy.</li>
+</ul></li>
+<li><strong>2026-06-30 — T6 DONE: web-boot regression (DoD #5) + seed-row web-hiding (D3 + §8).</strong>
+<ul>
+<li><strong>DoD #5 test:</strong> added an explicit assertion to <code>web_thin_node.test.ts</code> that
+<code>bootWebThinNode()</code>'s <code>coreClient</code> is a <code>BrowserCoreProxyClient</code> (the conclusive proof
+it is NOT an <code>InProcessTransport(createCoreRouter)</code> — the only thing <code>createCoreRouter</code> feeds) +
+<code>degradations === []</code> with no <code>persistence.in_memory</code>. The web bundle provably composes no
+in-process node.</li>
+<li><strong>D3 + §8 — seed rows hidden on web.</strong> Web-gated (<code>Platform.OS!=='web'</code>) the three
+seed-bound SETTINGS rows: View recovery phrase, Confirm recovery phrase, and Change passphrase. On the thin client the
+seed lives on the SERVER; revealing the mnemonic would put it in browser memory (violates §8 "browser holds no seed"),
+and there is no local wrapped seed to re-wrap. Native is byte-for-byte unchanged. (Broadened beyond the spec's D3
+"change-passphrase only" because recovery-phrase reveal is the stronger security violation.) mobile <code>tsc</code> 0;
+web_thin_node 9 tests green.</li>
+</ul></li>
+<li><strong>2026-06-30 — T7 DONE: docs (DoD #10).</strong> Rewrote
+<code>apps/home-node-lite/web/SECURITY.md</code> to the now-TRUE thin-client model and fixed a WRONG claim: it said
+<code>/api/v1/*</code> "requires Ed25519 device-key signed requests just like mobile" — false, the browser holds NO key.
+Corrected: the browser→brain hop is <strong>unsigned + same-origin</strong>, gated by the D4
+<code>HttpOnly; SameSite=Strict</code> session cookie; the Ed25519-signed hop is brain→Core. Added the access-gate
+section (cookie, 401-without, <code>127.0.0.1</code> bind, <code>DINA_BRAIN_DEV_OPEN=1</code> escape) and strengthened
+"what is NOT in the browser" (no signing key, no seed/mnemonic — seed rows hidden — no BYOK key).
+<code>HOME_NODE_LITE_WEB_UI_TASKS.md</code> status flipped from "Not started" to "superseded by thin-client +
+server-required"; <code>dina-nodes/README.md</code> already carried the server-required note.</li>
+<li><strong>2026-06-30 — T4 (D7) RESOLVED: provider-key convergence.</strong> The design flagged D7 as the ONLY open
+decision. <strong>Decision:</strong> the key lives WITH the LLM that uses it — mobile runs the LLM on-device (key in the
+device keychain), the server/web runs it server-side (key in the brain's resolved LLM config: env now, Core encrypted
+store for BYOK later). The browser has NO LLM → holds NO key → there is no fork to reconcile, and a stolen browser
+session can at worst USE the model budget, never EXFILTRATE the key. The secure read-only
+<code>GET /api/v1/providers/status</code> route (redacted; never returns the key) already implements this. Recorded the
+decision in <code>routes/providers.ts</code>. <strong>Deferred (NOT part of the decision):</strong> the BYOK write path +
+dynamic LLM reload (invasive — runtime built once at boot), and the web AI-providers SCREEN read-only wiring (it would
+currently show browser-local key entry on web that the server ignores — a UX cleanup for when the write path lands).</li>
+<li><strong>2026-06-30 — T5 (PeerLens publish): the design's SANCTIONED FALLBACK shipped; full server build scoped.</strong>
+PeerLens READ/SEARCH already work on web (they go through AppView, itself a remote service). PUBLISH is the design's
+"largest single item" (D6): the durable publish-job worker/drainer + PDS-publish + error-classifier live mobile-side
+(~60 files under <code>apps/mobile/src/peerlens/</code>, e.g. <code>review_publish_worker.ts</code>,
+<code>review_publish_autodrain.ts</code>, <code>publish_attempt.ts</code>, <code>classify_publish_error.ts</code>),
+and the durable job <em>repository</em> exists in core (<code>packages/core/src/review/publish_job*.ts</code>). Making
+web publish work is a real SERVER-SIDE build, not a proxy.
+<ul>
+<li><strong>Decision — take the design's documented fallback (§5, D6, §7 phase 4), not a rushed half-build.</strong>
+"Hide the PeerLens write CTA on web behind a flag while read/search stay live." Implemented as a single greppable,
+one-line-flippable flag <code>PEERLENS_WRITE_ENABLED = Platform.OS !== 'web'</code>
+(<code>src/peerlens/web_publish_flag.ts</code>), gating the two write CTAs (<code>search-write-cta</code>,
+<code>subject-detail-write-cta</code>). Native is byte-for-byte unchanged (flag is true). <strong>Why not build the
+worker now:</strong> a correct migration (move the worker + PDS publish + classifier server-side + add a submit route +
+status projection the SPA polls) is a multi-file server build that deserves its own focused pass; a rushed partial would
+be exactly the workaround this goal forbids.</li>
+<li><strong>Tests:</strong> new <code>web_publish_gate.test.tsx</code> pins flag=false → CTA hidden + read/search empty
+state still renders. The full peerlens suite (1614 tests across 69 files) stays green (flag=true on native).</li>
+<li><strong>Remaining server build (actionable plan for the follow-up):</strong> (1) brain-server
+<code>routes/peerlens_publish.ts</code> — <code>POST /api/v1/peerlens/reviews</code> (submit → enqueue a
+<code>PublishJob</code> via Core's repo) + <code>GET …/reviews/:id/status</code> (status projection). (2) Move the
+worker/drainer + <code>publish_attempt</code> (PDS write) + <code>classify_publish_error</code> server-side (a brain
+background loop draining the Core job repo, like the reminder fire loop already does). (3)
+<code>BrowserCoreProxyClient</code> publish methods + flip the flag to <code>true</code> on web + wire the web outbox to
+poll status. (4) DoD #8 test: a web-submitted review lands in the server publish-job machine (verified server-side).</li>
+</ul></li>
+<li><strong>2026-06-30 — T8: comprehensive test pass + adversarial verification workflow → 2 BLOCKERs caught &amp; FIXED.</strong>
+Ran the FULL suite sequentially (OOM-safe, one package at a time): core <strong>4787</strong> / brain-server <strong>121</strong> /
+mobile <strong>3159</strong> (208 suites) / workspace <code>tsc</code> 0 — zero regression. Then a 5-agent read-only
+adversarial workflow (contacts · people+devices · security/gate · D6/D7 · docs) graded each dimension vs the DoD +
+<code>dina_details.md</code>. It found TWO real BLOCKERs the green suite had hidden — both now fixed + regression-tested:
+<ul>
+<li><strong>B1 (functional) — web Relations tab silently empty for everyone.</strong> The authz rule was
+<code>{ prefix: '/v1/people/', allowed: ['brain'] }</code> with a TRAILING SLASH; <code>peopleList</code> hits the bare
+<code>/v1/people</code>, and boundary-safe <code>hasPathPrefix('/v1/people','/v1/people/')</code> is false → default-deny →
+403 → the proxy <code>peopleList</code> fail-softs to <code>[]</code> (which is what HID it). <strong>Fix:</strong> drop
+the trailing slash (covers the bare path + all sub-routes). <strong>Why it slipped:</strong> the
+<code>authz_matrix</code> test had NO row for the new proxy paths — added rows for brain→<code>/v1/people</code>(+find/by-did),
+<code>/v1/devices/list</code>, <code>/v1/pair/initiate</code> as the regression guard.</li>
+<li><strong>B2 (security) — the D4 access gate did NOT isolate local processes (DoD #6 / §8 unmet).</strong> The gate
+<code>Set-Cookie</code>'d the session secret to ANY caller of <code>/web/*</code>, so a local process could
+<code>curl /web</code>, read the secret off the response header, and replay it on <code>/api/v1/*</code> — the in-file
+"other processes don't have the cookie" claim was false. <strong>Fix:</strong> Jupyter-style out-of-band token — the
+secret is now printed (tokenised URL) to the SERVER CONSOLE at boot; the cookie is minted ONLY for a request that proves
+the token (then 302 to the clean URL); an unauthenticated <code>/web</code> load gets <strong>401, no cookie</strong>.
+New tests assert the 401-no-cookie, the token→302+cookie flow, wrong-token→401, and that the secret never leaks in a
+body. <code>SECURITY.md</code> gate section rewritten to the token model (and its earlier WRONG "Ed25519-signed
+<code>/api/v1</code>" claim — fixed in T7 — stays corrected).</li>
+</ul>
+<strong>SHOULD-FIX also fixed:</strong> (a) the web PeerLens write gate now has a CHOKE POINT at the compose screen
+(<code>write.tsx</code> early-returns a notice on web) catching ALL entry points (search/subject/reviewer/edit/deep-link),
+not just 2 CTAs — pinned by a test; (b) <code>ai-providers.tsx</code> is web-gated to a read-only notice (no
+browser-local key entry), making <code>SECURITY.md</code>'s "no BYOK key in browser" TRUE; (c) the devices route's stale
+400 message ("device, agent" → the real <code>rich/thin/cli/agent</code>); (d) added the missing
+<code>InProcessTransport.contact{List,Add,Delete}</code> unit tests the plan claimed. <strong>Verified deferrals stay
+honest:</strong> paired-devices SCREEN web-wiring (transport built, screen not yet wired — needs revoke etc. on
+<code>CoreClient</code>), D2D quarantine (T3b), PeerLens publish worker (T5b), BYOK write path, export. After all fixes:
+core auth+transport 147, brain-server 121, mobile peerlens+ai+screens 1803 — all green.</li>
+</ul></li>
+
+<li><strong>2026-06-30 — R-round: 2nd human review pass → 8 web-parity findings, all fixed (1 deferred sub-item).</strong>
+A second reviewer found 8 places where a web screen still drove in-process/browser-local state instead of the proxy.
+Each is a real thin-client correctness/privacy gap; all fixed + tested, one server-resolver sub-item honestly deferred.
+<ul>
+<li><strong>R1 (P1) — web boot never installed the shared CoreClient singletons.</strong> Native wires
+<code>setInboxCoreClient</code> + <code>setServiceConfigCoreClient</code> in <code>bootstrap.installChatGlobals</code>; the web
+boot composes no node, so My Services + the approval inbox hit their not-configured error state even though the proxy
+routes exist. <strong>Fix:</strong> <code>bootWebThinNode</code> installs both singletons and the web node's
+<code>dispose()</code> clears them (no stale client across an identity switch). Scope is exactly the two coreClient-only
+setters — the orchestrator-backed chat-command handlers can't and shouldn't run on web. Test asserts the inbox/listing
+reads route through the proxy and fail closed again after dispose.</li>
+<li><strong>R1b (P1) — Settings read browser-local AI keys on web.</strong> <code>loadStates</code> called
+<code>getApiKey</code>/<code>getConfiguredProviders</code>/<code>wireBrainChatProvider</code> → the IndexedDB keychain shim,
+violating "no model key in the browser" (D7/§8). <strong>Fix:</strong> <code>loadStates</code> early-returns on web (never
+touches the keychain or wires a provider); the AI PROVIDER section renders a read-only "Managed on your Home Node" card
+that drills into the already-gated <code>/ai-providers</code> notice.</li>
+<li><strong>R5 (P2) — web approval DENY couldn't notify the requester.</strong>
+<code>useServiceInbox.denyPending</code> calls <code>sendServiceRespond</code>, but <code>BrowserCoreProxyClient</code> left
+it <code>notProxied</code> → the catch fell back to a LOCAL cancel, so a denied service query left the requester hanging
+(no <code>unavailable</code> D2D). <strong>Fix:</strong> new brain-server <code>POST /api/v1/service/respond</code> proxy
+(authz already admits the brain on <code>/v1/service/</code>) + real <code>sendServiceRespond</code> in the proxy client,
+body + snake_case response symmetric with the http-transport. Tests: route (forward/400/502) + a contract roundtrip.</li>
+<li><strong>R6 (P2) — the cross-layer contract test didn't cover the new routes.</strong> It registered
+identity/vault/personas/service/workflow/policy but not contacts/people/devices — the exact drift class it exists to
+catch. <strong>Fix:</strong> registered all three + added end-to-end roundtrips (contacts add→list→delete, people
+list+find+by-did, devices list+pair/initiate) and the service/respond roundtrip.</li>
+<li><strong>R3/R4/R7 (P2/P3) — screens reading browser-local state on web.</strong> (R3) the <em>Agents</em> Settings row
+linked to <code>/paired-devices</code> which still drives the in-process device registry — <strong>hidden on web</strong>
+until that screen is wired (transport built+tested; revoke + full screen deferred). (R4) <code>service-settings</code>'s
+vault-pin picker read personas via synchronous <code>listPersonas()</code> (empty on web) — replaced with a
+<code>usePinnablePersonas()</code> hook: native stays synchronous + byte-for-byte unchanged, web loads via
+<code>coreClient.personasList()</code>. (R7) the SECURITY rows said "Key storage: Device Keychain / Storage: On device
+only" + a "stay on this device" footer — web now shows server-held storage copy (the crypto-algorithm rows are true on
+both platforms and stay).</li>
+<li><strong>R8 (P2) — web Add-Contact resolved handles via direct browser fetch.</strong> <code>resolveHandle</code> does
+ATProto <code>.well-known</code> + <code>resolveHandle</code> xrpc + PLC lookups — node logic that would duplicate identity
+resolution in the browser and CORS-fail on arbitrary handle domains. <strong>Fix (principled §9):</strong> on web require a
+DID with a clear "add by DID / by-handle coming soon" message; native resolves in-process unchanged. The full
+server-side resolve proxy (shared resolver + brain route) is tracked as <strong>R8b (deferred)</strong> — the only
+non-complete sub-item. A render test asserts the web DID-first path makes NO network call.</li>
+<li><strong>R9 (P2/P3, 3rd-pass follow-ups) — more native-only security state + a stale doc.</strong> (a) Settings still ran
+<code>loadVerificationStatus()</code> on web and rendered the <em>Auto-lock when backgrounded</em> row — both are
+on-device-vault concepts (no browser recovery phrase to verify, no browser vault to seal). The verification probe is now
+skipped on web and the Auto-lock row is hidden, so the web SECURITY section shows only the (true-on-both) crypto-algorithm
+rows + the server-held storage labels. (b) The manual test plan still told the tester to "add a contact by handle" on web,
+which the R8 fix rejects — updated the scenario to DID / contact-card only (and the D3 web row now lists every
+native-only row that's hidden).</li>
+</ul>
+<strong>Deep review (each fix):</strong> all mirror an existing correct pattern, no workarounds — R1 scoped to the two
+coreClient setters; R5 path/auth/shape symmetric with the http transport; R4 keeps native's once-at-mount semantics so
+parity holds. <strong>Verified green:</strong> workspace <code>tsc</code> 0 · packages/core client 192 · brain-server
+<strong>128</strong> (+7) · mobile services/add_contact/nav/hooks 978 + peerlens/components/screens 1787 · changed files
+lint-clean.</li>
 </ul></div>
 
 <!-- ===================================================================== -->

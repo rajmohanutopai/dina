@@ -45,7 +45,7 @@ import {
 } from '@dina/protocol';
 
 import { CapabilityPicker } from '../src/components/capability_picker';
-import { getBootDegradations } from '../src/hooks/useNodeBootstrap';
+import { getBootDegradations, getBootedNode } from '../src/hooks/useNodeBootstrap';
 import {
   listServiceListings,
   loadServiceConfig,
@@ -127,6 +127,45 @@ const PROVIDER_SPECIFIC_BODY =
 const PROVIDER_SPECIFIC_COMING_SOON =
   'Provider-specific services (published on a business, school, or clinic’s own page rather than in general Dina search) are coming in a later update. For now, choose Public, Unlisted, or Private / Approved Only.';
 
+/** Filter a persona list down to the pinnable (non-sensitive/locked) names. */
+function pinnableFrom(list: readonly { name: string; tier: string }[]): string[] {
+  return list.filter((p) => p.tier !== 'sensitive' && p.tier !== 'locked').map((p) => p.name);
+}
+
+/**
+ * Pinnable vault personas for the Tier-1 vault-pin picker.
+ *
+ * Native reads the in-process persona registry synchronously
+ * (`listPersonas()`) — byte-for-byte unchanged (design §9). The web thin
+ * client has NO in-process registry (the real personas live on the server),
+ * so it loads them through the proxy `CoreClient.personasList()`. Both filter
+ * out sensitive/locked tiers — the runtime intersects with the tier scope
+ * anyway, so a sensitive pin would yield no access.
+ */
+function usePinnablePersonas(): string[] {
+  const [personas, setPersonas] = useState<string[]>(() =>
+    Platform.OS === 'web' ? [] : pinnableFrom(listPersonas()),
+  );
+  useEffect(() => {
+    if (Platform.OS !== 'web') return; // native already seeded synchronously
+    let cancelled = false;
+    void (async () => {
+      const node = getBootedNode();
+      if (node === null) return;
+      try {
+        const list = await node.coreClient.personasList();
+        if (!cancelled) setPersonas(pinnableFrom(list));
+      } catch {
+        // Leave empty — the picker still offers the default `general` pin.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return personas;
+}
+
 export default function ServiceSettingsScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -202,13 +241,7 @@ export default function ServiceSettingsScreen() {
   // sensitive/locked tiers (the runtime intersects with the tier scope anyway,
   // so a sensitive pin would yield no access).
   const [vaultPersona, setVaultPersona] = useState<string>('general');
-  const pinnablePersonas = useMemo(
-    () =>
-      listPersonas()
-        .filter((per) => per.tier !== 'sensitive' && per.tier !== 'locked')
-        .map((per) => per.name),
-    [],
-  );
+  const pinnablePersonas = usePinnablePersonas();
 
   // Resolve a configured capability key to its friendly catalog name for
   // display. A provider picks "Order status" from the catalog but the listing

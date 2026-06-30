@@ -6,7 +6,12 @@ React Native Web bundle does not — browsers have no equivalent. This
 document is the honest fine print operators should read **before**
 running the web client outside their own laptop.
 
-Source: `docs/HOME_NODE_LITE_WEB_UI_TASKS.md` Phase 2 "Storage shim".
+Source: `docs/WEB_THIN_CLIENT_DESIGN.md` (the thin-client conversion) +
+`docs/HOME_NODE_LITE_WEB_UI_TASKS.md`.
+
+> **Status (2026-06-30):** the thin-client model below is now **implemented**,
+> not aspirational — the web build boots no in-process node and drives a
+> durable server over `/api/v1/*`. This doc describes the shipped behaviour.
 
 ## Trust boundary
 
@@ -41,22 +46,41 @@ Two surfaces hold device-local material:
      also driving the browser's WebCrypto subsystem on the
      compromised origin.
 
-2. **Core vault data.** _Not stored in the browser at all._ All
-   vault reads/writes go to the brain-server over HTTPS, which in
-   turn talks to Core's SQLCipher file. The web client is a thin
-   UI shell over the same `/api/v1/*` endpoints mobile uses.
+2. **Node state (vault, identity, contacts, people, service config,
+   workflow, devices).** _Not stored in the browser at all._ The web
+   build is a **thin client**: it boots **no in-process node**
+   (`bootWebThinNode` — no `createCoreRouter`, no SQLite, no in-memory
+   repos) and drives a durable Home Node Lite server over the
+   brain-server's `/api/v1/*` proxy. The brain-server proxies to Core
+   (SQLCipher vault, `did:plc`); Core does all crypto. The browser holds
+   a `BrowserCoreProxyClient` — an **unsigned, same-origin** HTTP client,
+   nothing more.
+
+   > **Web vs. mobile transport differ.** Mobile runs the node
+   > **in-process** (`InProcessTransport` → `createCoreRouter`); web is the
+   > thin-client `/api/v1/*` proxy. Both consume the same `CoreClient`
+   > interface, which is why the SPA hooks are transport-agnostic — but the
+   > web bundle never instantiates the in-process node (asserted in
+   > `web_thin_node.test.ts`).
 
 ## What is NOT stored in the browser
 
-- The vault DEKs (those live in Core's process memory).
-- The master seed / 24-word recovery mnemonic. Onboarding shows the
-  mnemonic once on-screen and the operator copies it offline; the
-  browser only ever holds it transiently during the verify-words
-  step, after which `crypto.subtle.encrypt` wraps it for shipment
-  to Core.
-- Any persona-tagged vault content. Reads stream through the HTTPS
-  API per request and are GC'd as soon as the React component
-  unmounts.
+- **No signing key.** The `BrowserCoreProxyClient` is unsigned. The
+  Ed25519 service key that signs Core requests lives **only** on the
+  brain-server (the signed hop is brain→Core, never browser→brain). The
+  browser must never hold a signing key — that is why it talks to the
+  same-origin brain-server proxy and never to Core directly.
+- **No master seed / DEK / recovery mnemonic.** The seed lives on the
+  **server** in thin-client mode. The browser never sees it: there is no
+  in-browser onboarding (it adopts the server's already-provisioned
+  `did:plc`), and the seed-bound settings rows (View / Confirm recovery
+  phrase, Change passphrase) are **hidden on web** — revealing the
+  mnemonic would put it in browser memory, which this model forbids.
+- **No AI provider (BYOK) key.** Provider keys are stored server-side; the
+  browser holds at most a redacted status (`{provider, last4, active}`).
+- **No persona-tagged vault content.** Reads stream through the
+  `/api/v1/*` proxy per request and are GC'd as the React component
+  unmounts; the vault DEKs stay in Core's process memory.
 
 ## Mitigations vs. residual risks
 
@@ -66,7 +90,41 @@ Two surfaces hold device-local material:
 | Hostile script on the same origin (XSS, malicious ext.) | **Not mitigated.** Inside the trust boundary. Run the brain-server on a hostname you control end-to-end; never proxy through a CDN that injects ad/analytics scripts.      |
 | Another user logging into the same OS account           | Browser profile separation. The same-machine-different-OS-account case is the OS's responsibility; we don't reach below the browser.                                       |
 | Backup software exfiltrating browser data               | The IndexedDB rows are encrypted at rest — backups carry ciphertext only. Recovery requires the operator to restore the browser profile (which holds the wrap key) intact. |
-| Network adversary                                       | TLS to the brain-server (operator-issued cert). The brain-server's `/api/v1/*` requires Ed25519 device-key signed requests just like mobile.                               |
+| Network adversary                                       | TLS to the brain-server (operator-issued cert). The browser→brain `/api/v1/*` hop is **unsigned + same-origin**, gated by the access cookie below (NOT Ed25519 signing — the browser holds no key); the brain→Core hop is Ed25519-signed. |
+| Another local process driving the node API              | The **access gate** (below): without the session cookie, `/api/v1/*` returns 401. Same-origin + `127.0.0.1` binding alone do **not** stop a local process — the cookie does. |
+
+## Access gate — the `/api/v1/*` surface (D4)
+
+The `/api/v1/*` proxy is **gated by default** (`web_access_gate.ts`). Because
+the browser holds no signing key, authorization is a **server-minted browser
+session**, not a request signature:
+
+- At boot the brain mints a crypto-random token and prints a tokenised URL
+  (`…/web/?token=<token>`) to the **server console** — the out-of-band channel
+  only the operator who started the node can see (Jupyter's notebook-token
+  model).
+- The operator opens that URL. The gate validates the token, sets an
+  **`HttpOnly; SameSite=Strict`** session cookie, and 302-redirects to the clean
+  `/web/` URL (so the token doesn't linger in history/referrer). Browsers
+  auto-attach the cookie to every same-origin `/api/v1/*` request.
+- An **unauthenticated `/web` load (no cookie, no valid token) gets `401` and
+  NO cookie** — the secret is never handed to an arbitrary visitor. (Setting the
+  cookie unconditionally would let any local process `curl /web`, read the
+  secret off the `Set-Cookie` header, and replay it — the exact hole this
+  closes.)
+- **Every `/api/v1/*` request must carry the cookie; otherwise `401`.** Together
+  with the token-gated issuance, this stops *other local processes* (they never
+  saw the console token) and *cross-origin pages* (`SameSite=Strict` means the
+  cookie isn't sent from a different site) — same-origin + loopback binding
+  alone do **not** stop a local process.
+- On loopback there are no sibling same-site origins, so the cookie alone is
+  the CSRF defense — no separate CSRF token is needed.
+- The brain-server **binds `127.0.0.1`** by default. Any non-loopback exposure
+  additionally needs TLS + a CORS allow-list (and, for multi-user, device
+  pairing — out of scope here).
+- **Dev/test escape:** `DINA_BRAIN_DEV_OPEN=1` disables the gate entirely. This
+  is the **only** unauthenticated path and must never be set in a shipped web
+  build.
 
 ## What this means in practice
 

@@ -20,9 +20,6 @@
  * `HandleUpdateContact`.
  */
 
-import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
-import { CONTACTS_BY_PREFERENCE, CONTACTS_LOOKUP, CONTACT_UPDATE, CONTACTS_ROOT } from './paths';
-import type { Contact, TrustLevel } from '../../contacts/directory';
 import {
   findByPreferredFor as directoryFindByPreferredFor,
   setPreferredFor as directorySetPreferredFor,
@@ -32,7 +29,15 @@ import {
   resolveByName as directoryResolveByName,
   findByAlias as directoryFindByAlias,
   addContactIfNotExists as directoryAddContactIfNotExists,
+  listContacts as directoryListContacts,
+  deleteContact as directoryDeleteContact,
 } from '../../contacts/directory';
+
+import { CONTACTS_BY_PREFERENCE, CONTACTS_LOOKUP, CONTACT_UPDATE, CONTACTS_ROOT } from './paths';
+
+import type { Contact, TrustLevel } from '../../contacts/directory';
+import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
+
 
 /**
  * Dependencies for the contacts handlers. All callers resolve the
@@ -77,6 +82,16 @@ export interface ContactRoutesOptions {
     displayName: string,
     trustLevel?: TrustLevel,
   ) => { contact: Contact; created: boolean };
+  /**
+   * List every contact. Defaults to the module-global directory. Backs the web
+   * People tab via the thin-client proxy (mobile reads the directory in-process).
+   */
+  listContacts?: () => Contact[];
+  /**
+   * Delete a contact by DID (returns false when the DID was unknown —
+   * idempotent). Defaults to the module-global directory.
+   */
+  deleteContact?: (did: string) => boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,6 +108,8 @@ export function makeContactsHandlers(options: ContactRoutesOptions = {}): {
   updateContact: (req: CoreRequest) => Promise<CoreResponse>;
   lookup: (req: CoreRequest) => Promise<CoreResponse>;
   addContact: (req: CoreRequest) => Promise<CoreResponse>;
+  list: (req: CoreRequest) => Promise<CoreResponse>;
+  deleteContact: (req: CoreRequest) => Promise<CoreResponse>;
 } {
   const findFn = options.findByPreferredFor ?? directoryFindByPreferredFor;
   const setFn = options.setPreferredFor ?? directorySetPreferredFor;
@@ -100,11 +117,15 @@ export function makeContactsHandlers(options: ContactRoutesOptions = {}): {
   const resolveNameFn = options.resolveByName ?? directoryResolveByName;
   const findAliasFn = options.findByAlias ?? directoryFindByAlias;
   const addFn = options.addContact ?? directoryAddContactIfNotExists;
+  const listFn = options.listContacts ?? directoryListContacts;
+  const deleteFn = options.deleteContact ?? directoryDeleteContact;
   return {
     findByPreference: (req) => handleFindByPreference(req, findFn),
     updateContact: (req) => handleUpdateContact(req, setFn, getFn),
     lookup: (req) => handleLookup(req, getFn, resolveNameFn, findAliasFn),
     addContact: (req) => handleAddContact(req, addFn),
+    list: () => handleListContacts(listFn),
+    deleteContact: (req) => handleDeleteContact(req, deleteFn),
   };
 }
 
@@ -112,10 +133,16 @@ export function registerContactsRoutes(
   router: CoreRouter,
   options: ContactRoutesOptions = {},
 ): void {
-  const { findByPreference, updateContact, lookup, addContact } = makeContactsHandlers(options);
+  const { findByPreference, updateContact, lookup, addContact, list, deleteContact } =
+    makeContactsHandlers(options);
+  // NOTE: `/v1/contacts/by-preference` + `/v1/contacts/lookup` are distinct
+  // literal paths from `/v1/contacts` (list) and `/v1/contacts/:did`
+  // (update/delete), so there is no router ambiguity.
+  router.get(CONTACTS_ROOT, list);
   router.get(CONTACTS_BY_PREFERENCE, findByPreference);
   router.get(CONTACTS_LOOKUP, lookup);
   router.put(CONTACT_UPDATE, updateContact);
+  router.delete(CONTACT_UPDATE, deleteContact);
   router.post(CONTACTS_ROOT, addContact);
 }
 
@@ -281,6 +308,35 @@ async function handleAddContact(
   } catch (err) {
     return jsonError(500, (err as Error).message);
   }
+}
+
+// ---------------------------------------------------------------------------
+// GET /v1/contacts — list every contact
+// ---------------------------------------------------------------------------
+//
+// Backs the web People tab (the thin client has no in-process directory; mobile
+// reads the directory module-globals directly). Response: `{ contacts: Contact[] }`.
+
+async function handleListContacts(listFn: () => Contact[]): Promise<CoreResponse> {
+  return { status: 200, body: { contacts: listFn() } };
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /v1/contacts/:did — remove a contact (idempotent)
+// ---------------------------------------------------------------------------
+//
+// `deleted:false` (not 404) when the DID was unknown — a delete is idempotent,
+// so re-deleting is not an error. Response: `{ deleted: boolean }`.
+
+async function handleDeleteContact(
+  req: CoreRequest,
+  deleteFn: (did: string) => boolean,
+): Promise<CoreResponse> {
+  const did = typeof req.params.did === 'string' ? req.params.did.trim() : '';
+  if (did === '') {
+    return jsonError(400, 'did path parameter is required');
+  }
+  return { status: 200, body: { deleted: deleteFn(did) } };
 }
 
 // ---------------------------------------------------------------------------

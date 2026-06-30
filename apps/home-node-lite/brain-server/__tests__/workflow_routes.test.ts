@@ -4,6 +4,7 @@
  */
 
 import Fastify, { type FastifyInstance } from 'fastify';
+
 import { MockCoreClient } from '@dina/test-harness';
 
 import { registerWorkflowApiRoutes } from '../src/routes/workflow';
@@ -118,6 +119,71 @@ describe('Brain server — /api/v1/workflow/tasks HTTP wiring', () => {
       const res = await app.inject({
         method: 'GET',
         url: '/api/v1/workflow/tasks?kind=service_query&state=pending_approval',
+      });
+      expect(res.statusCode).toBe(502);
+    } finally {
+      await app.close();
+    }
+  });
+
+  // Inbox deny→notify: the operator denies a service_query; the web inbox
+  // POSTs /service/respond so the requester gets the `unavailable` D2D.
+  it('service/respond forwards task_id + response_body and maps the result to snake_case', async () => {
+    const core = new MockCoreClient();
+    core.serviceRespondResult = { status: 'sent', taskId: '', alreadyProcessed: false };
+    const app = makeApp(core);
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/service/respond',
+        payload: { task_id: 't1', response_body: { status: 'unavailable', error: 'denied_by_operator' } },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ status: 'sent', task_id: 't1', already_processed: false });
+      const call = core.calls.find((c) => c.method === 'sendServiceRespond');
+      expect(call?.args[0]).toBe('t1');
+      expect(call?.args[1]).toEqual({ status: 'unavailable', error: 'denied_by_operator' });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('service/respond 400s on missing task_id or non-object response_body', async () => {
+    const core = new MockCoreClient();
+    const app = makeApp(core);
+    try {
+      expect(
+        (
+          await app.inject({
+            method: 'POST',
+            url: '/api/v1/service/respond',
+            payload: { response_body: { status: 'unavailable' } },
+          })
+        ).statusCode,
+      ).toBe(400);
+      expect(
+        (
+          await app.inject({
+            method: 'POST',
+            url: '/api/v1/service/respond',
+            payload: { task_id: 't1', response_body: 'nope' },
+          })
+        ).statusCode,
+      ).toBe(400);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('service/respond maps a CoreClient failure to 502', async () => {
+    const core = new MockCoreClient();
+    core.throwOn.sendServiceRespond = new Error('core unreachable');
+    const app = makeApp(core);
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/service/respond',
+        payload: { task_id: 't1', response_body: { status: 'unavailable' } },
       });
       expect(res.statusCode).toBe(502);
     } finally {

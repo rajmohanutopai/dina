@@ -6,6 +6,18 @@
  * throw if a web path wrongly reaches them.
  */
 
+import { BrowserCoreProxyClient } from '@dina/core';
+
+import {
+  listServiceListings,
+  resetServiceConfigCoreClient,
+  ServiceConfigNotConfiguredError,
+} from '../../src/hooks/useServiceConfigForm';
+import {
+  listPendingApprovals,
+  resetInboxCoreClient,
+  InboxNotConfiguredError,
+} from '../../src/hooks/useServiceInbox';
 import { bootWebThinNode, makeWebThinNode } from '../../src/services/web_thin_node';
 
 interface RecordedFetch {
@@ -39,6 +51,13 @@ function makeFetch(handler: (url: string) => { status?: number; body?: unknown }
 }
 
 describe('bootWebThinNode', () => {
+  afterEach(() => {
+    // The boot installs module-level singletons as a side effect; reset
+    // them so a leaked client from one test can't mask another.
+    resetInboxCoreClient();
+    resetServiceConfigCoreClient();
+  });
+
   it('discovers identity and returns a thin node with no degradations', async () => {
     const { fetchFn, calls } = makeFetch((url) =>
       url.endsWith('/identity')
@@ -88,6 +107,49 @@ describe('bootWebThinNode', () => {
     const { fetchFn } = makeFetch(() => ({ body: { did: 'did:plc:x', handle: null } }));
     const { node } = await bootWebThinNode({ fetch: fetchFn, role: 'requester' });
     expect(node.role).toBe('requester');
+  });
+
+  // P1 regression: the SPA reads the approval inbox + service listings through
+  // module-level CoreClient singletons. Native installs them in
+  // `bootstrap.installChatGlobals`; the web boot composes no node, so it must
+  // wire them itself. Without this, My Services + the approval inbox hit their
+  // not-configured error state even though the proxy routes exist.
+  it('wires the inbox + service-config singletons through the proxy, and dispose clears them', async () => {
+    resetInboxCoreClient();
+    resetServiceConfigCoreClient();
+    const { fetchFn, calls } = makeFetch((url) =>
+      url.includes('/identity') ? { body: { did: 'did:plc:x', handle: null } } : { body: {} },
+    );
+
+    const { node } = await bootWebThinNode({ baseUrl: '/api/v1', fetch: fetchFn });
+
+    // The inbox now routes through the proxy (no InboxNotConfiguredError) —
+    // proves the singleton was wired to the same-origin client.
+    await expect(listPendingApprovals()).resolves.toEqual([]);
+    expect(calls.some((c) => c.url.includes('/api/v1/workflow/tasks'))).toBe(true);
+    // Same for the service-listing layer.
+    await expect(listServiceListings()).resolves.toEqual([]);
+    expect(calls.some((c) => c.url.includes('/api/v1/service/configs'))).toBe(true);
+
+    // Teardown clears the singletons → reads fail closed again.
+    await node.dispose();
+    await expect(listPendingApprovals()).rejects.toBeInstanceOf(InboxNotConfiguredError);
+    await expect(listServiceListings()).rejects.toBeInstanceOf(ServiceConfigNotConfiguredError);
+  });
+
+  // DoD #5: "the web bundle no longer instantiates createCoreRouter() or the
+  // in-memory repos (asserted in test)." We can't assert a negative call
+  // directly, but `coreClient` being a BrowserCoreProxyClient (NOT an
+  // InProcessTransport, which is the ONLY thing createCoreRouter feeds) plus an
+  // empty degradation list is conclusive: the in-process node was never built.
+  it('DoD #5 — runs NO in-process core (coreClient is the same-origin proxy, no degradations)', async () => {
+    const { fetchFn } = makeFetch(() => ({ body: { did: 'did:plc:x', handle: null } }));
+    const { node, degradations } = await bootWebThinNode({ fetch: fetchFn });
+    expect(node.coreClient).toBeInstanceOf(BrowserCoreProxyClient);
+    expect(degradations).toEqual([]);
+    // Specifically: the "persistence.in_memory" degradation (the limited-mode
+    // banner's cause) is impossible because no in-memory repo was composed.
+    expect(JSON.stringify(degradations)).not.toContain('persistence.in_memory');
   });
 });
 

@@ -27,7 +27,6 @@
  *   3. **Loaded** — header + grouped review sections.
  */
 
-import { FEATURE_NAMES } from '@dina/core';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
@@ -40,9 +39,10 @@ import {
   ActivityIndicator,
 } from 'react-native';
 
+import { FEATURE_NAMES } from '@dina/core';
+
 import { getBootedNode } from '../../src/hooks/useNodeBootstrap';
 import { useViewerPreferences } from '../../src/hooks/useViewerPreferences';
-import { colors, spacing, radius, textStyles } from '../../src/theme';
 import { BAND_COLOUR, BAND_LABEL } from '../../src/peerlens/band_theme';
 import { useSubjectDetail } from '../../src/peerlens/runners/use_subject_detail';
 import { trustBandFor, type PeerlensBand } from '../../src/peerlens/score_helpers';
@@ -51,6 +51,8 @@ import {
   type SubjectAlternative,
   type SubjectDetailInput,
 } from '../../src/peerlens/subject_detail_data';
+import { PEERLENS_WRITE_ENABLED } from '../../src/peerlens/web_publish_flag';
+import { colors, spacing, radius, textStyles } from '../../src/theme';
 
 import type { SubjectReview } from '../../src/peerlens/subject_card';
 
@@ -434,7 +436,8 @@ export default function SubjectDetailScreen(
         </Text>
       </View>
 
-      {onWriteReview && (
+      {/* Publish hidden on the web thin client (D6 fallback); read/search live. */}
+      {onWriteReview && PEERLENS_WRITE_ENABLED && (
         <Pressable
           onPress={() => onWriteReview(subjectId)}
           style={({ pressed }) => [

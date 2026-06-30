@@ -886,6 +886,7 @@ export type {
   MemoryTouchResult,
   UpdateContactParams,
   Contact,
+  ContactAddResult,
   ActionPolicyEntry,
   ActionPolicyResult,
   RiskLevel,

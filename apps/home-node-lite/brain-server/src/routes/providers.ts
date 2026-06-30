@@ -15,10 +15,22 @@
  * and the last 4 chars for "Gemini ••••1234"-style display. Gated by the
  * D4 web access gate (this is under /api/v1).
  *
- * Deferred (own follow-up): the BYOK WRITE path (POST/DELETE a key →
- * Core's encrypted store) + dynamic reload of the LLM runtime. The
- * env-configured server already satisfies D7's "key server-side" goal, so
- * the read-only status is the secure, self-contained MVP.
+ * D7 RESOLVED (the design's only open decision — "where does the provider key
+ * live so web + mobile BYOK don't fork?"). Resolution: **the key lives with the
+ * LLM that uses it.** Mobile runs the LLM ON-DEVICE → key in the device keychain
+ * (hardware-backed). The server (and therefore the web thin client) runs the LLM
+ * SERVER-SIDE → key in the brain's resolved LLM config — ONE server-side location
+ * (env today; Core's encrypted keystore once the BYOK write path lands, with
+ * `source` already able to flip to `'byok'`). The browser, having NO LLM, holds
+ * NO key — so there is no fork to reconcile, and a stolen browser session can at
+ * worst *use* the node's model budget, never *exfiltrate* the key.
+ *
+ * Deferred (follow-up, NOT part of the D7 decision): the BYOK WRITE path
+ * (POST/DELETE a key → Core's encrypted store) + dynamic LLM-runtime reload
+ * (invasive — the runtime is built once at boot from `config.apiKey`, so a
+ * runtime key change needs the ask-coordinator rebuilt). The web AI-providers
+ * SCREEN should consume this status read-only (not offer browser-local key
+ * entry) when the write path lands.
  */
 
 import type { BrainServerConfig } from '../config';

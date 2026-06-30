@@ -75,9 +75,31 @@ export default function PeopleScreen() {
   );
 
   const refresh = useCallback(() => {
-    setContacts(listContacts());
-    const repo = getPeopleRepository();
-    setPeople(repo === null ? [] : repo.listPeople());
+    if (Platform.OS === 'web') {
+      // Thin client (web): the browser has NO in-process contact directory OR
+      // people graph, so load both from the server node via the CoreClient
+      // proxy. Native keeps its byte-for-byte sync reads in the else-branch
+      // (design §9 — web changes are `Platform.OS==='web'` branches; the native
+      // path is unchanged).
+      const node = getBootedNode();
+      if (node !== null) {
+        void node.coreClient
+          .contactList()
+          .then(setContacts)
+          .catch(() => setContacts([]));
+        void node.coreClient
+          .peopleList()
+          .then(setPeople)
+          .catch(() => setPeople([]));
+      } else {
+        setContacts([]);
+        setPeople([]);
+      }
+    } else {
+      setContacts(listContacts());
+      const repo = getPeopleRepository();
+      setPeople(repo === null ? [] : repo.listPeople());
+    }
   }, []);
 
   // Refresh on screen focus. Cheap: listContacts reads the in-memory
@@ -105,7 +127,17 @@ export default function PeopleScreen() {
             text: 'Remove',
             style: 'destructive',
             onPress: () => {
-              deleteContact(contact.did);
+              if (Platform.OS === 'web') {
+                // Web: delete through the server node (no in-process directory).
+                // Always return — web must NEVER touch the in-process directory
+                // path below, even when the node isn't booted yet.
+                const node = getBootedNode();
+                if (node !== null) {
+                  void node.coreClient.contactDelete(contact.did).finally(() => refresh());
+                }
+                return;
+              }
+              deleteContact(contact.did); // native: byte-for-byte unchanged (§9)
               refresh();
             },
           },

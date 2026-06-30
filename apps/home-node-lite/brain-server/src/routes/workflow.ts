@@ -12,14 +12,21 @@
  *   GET  /api/v1/workflow/tasks/:id                 → CoreClient.getWorkflowTask (404 → null)
  *   POST /api/v1/workflow/tasks/:id/approve         → CoreClient.approveWorkflowTask
  *   POST /api/v1/workflow/tasks/:id/cancel          → CoreClient.cancelWorkflowTask
+ *   POST /api/v1/service/respond                    → CoreClient.sendServiceRespond
  *
- * Only the browser-relevant read + approve/cancel surface is proxied;
- * claim/heartbeat/complete/fail are agent/server-side and never hit from
- * the browser. `kind` + `state` are required query params (matches the
- * core route); Core failure → 502.
+ * Only the browser-relevant read + approve/cancel/respond surface is
+ * proxied; claim/heartbeat/complete/fail are agent/server-side and never
+ * hit from the browser. `kind` + `state` are required query params
+ * (matches the core route); Core failure → 502.
+ *
+ * `/service/respond` is the inbox DENY path: when the operator denies a
+ * `service_query` approval, `useServiceInbox.denyPending` calls
+ * `sendServiceRespond` so the requester receives an `unavailable`
+ * `service.response` D2D — without this proxy the web denial silently
+ * fell back to a local cancel and the requester was left hanging.
  */
 
-import type { CoreClient } from '@dina/core';
+import type { CoreClient, ServiceRespondRequestBody } from '@dina/core';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 export interface RegisterWorkflowApiRoutesOptions {
@@ -114,6 +121,45 @@ export function registerWorkflowApiRoutes(
       try {
         const task = await core.cancelWorkflowTask(req.params.id, reason);
         return reply.status(200).send({ task });
+      } catch (err) {
+        return reply.status(502).send({ error: asError(err) });
+      }
+    },
+  );
+
+  // POST /api/v1/service/respond — inbox deny→notify. Body mirrors the core
+  // route: { task_id, response_body: { status, result?, error? } }. Core
+  // claims the approval task, opens the provider window, and sends the
+  // requester the `service.response` D2D. Response is mapped back to the
+  // snake_case wire shape the proxy client + http transport both parse.
+  app.post(
+    `${prefix}/service/respond`,
+    async (
+      req: FastifyRequest<{
+        Body: { task_id?: string; response_body?: ServiceRespondRequestBody };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      const taskId = typeof req.body?.task_id === 'string' ? req.body.task_id.trim() : '';
+      const responseBody = req.body?.response_body;
+      if (taskId === '') {
+        return reply.status(400).send({ error: 'task_id is required' });
+      }
+      if (
+        responseBody === undefined ||
+        responseBody === null ||
+        typeof responseBody !== 'object' ||
+        Array.isArray(responseBody)
+      ) {
+        return reply.status(400).send({ error: 'response_body must be a JSON object' });
+      }
+      try {
+        const result = await core.sendServiceRespond(taskId, responseBody);
+        return reply.status(200).send({
+          status: result.status,
+          task_id: result.taskId,
+          already_processed: result.alreadyProcessed,
+        });
       } catch (err) {
         return reply.status(502).send({ error: asError(err) });
       }

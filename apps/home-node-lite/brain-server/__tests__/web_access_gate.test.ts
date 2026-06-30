@@ -40,11 +40,28 @@ describe('parseCookie', () => {
 });
 
 describe('Web access gate — gated (default)', () => {
-  it('issues the session cookie on /web/* loads (HttpOnly; SameSite=Strict)', async () => {
+  it('REFUSES an unauthenticated /web load (no cookie, no token) → 401 + NO cookie', async () => {
+    // The core of the fix: a /web visitor without the out-of-band token must
+    // NOT be handed the session secret — else any local process can curl /web,
+    // read the secret off Set-Cookie, and replay it on /api/v1.
     const app = makeApp();
     try {
       const res = await app.inject({ method: 'GET', url: '/web/index.html' });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(401);
+      expect(res.headers['set-cookie']).toBeUndefined();
+      expect(res.body).not.toContain(SECRET); // the secret never leaks in the body
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('mints the cookie + 302-redirects (token stripped) on /web/?token=<secret>', async () => {
+    const app = makeApp();
+    try {
+      const res = await app.inject({ method: 'GET', url: `/web/index.html?token=${SECRET}` });
+      expect(res.statusCode).toBe(302);
+      // Redirect to the clean path so the token doesn't linger in the URL bar.
+      expect(res.headers['location']).toBe('/web/index.html');
       const setCookie = res.headers['set-cookie'];
       const raw = Array.isArray(setCookie) ? setCookie.join(';') : String(setCookie ?? '');
       expect(raw).toContain(`${WEB_SESSION_COOKIE}=${SECRET}`);
@@ -55,7 +72,21 @@ describe('Web access gate — gated (default)', () => {
     }
   });
 
-  it('does NOT re-issue the cookie when the request already carries the right one', async () => {
+  it('REFUSES /web/?token=<wrong> → 401 + NO cookie', async () => {
+    const app = makeApp();
+    try {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/web/index.html?token=${'b'.repeat(64)}`,
+      });
+      expect(res.statusCode).toBe(401);
+      expect(res.headers['set-cookie']).toBeUndefined();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('serves /web/* (no re-issue) once the request carries the valid cookie', async () => {
     const app = makeApp();
     try {
       const res = await app.inject({
@@ -63,6 +94,8 @@ describe('Web access gate — gated (default)', () => {
         url: '/web/index.html',
         headers: cookieHeader(SECRET),
       });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toBe('spa');
       expect(res.headers['set-cookie']).toBeUndefined();
     } finally {
       await app.close();

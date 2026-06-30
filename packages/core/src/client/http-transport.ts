@@ -80,6 +80,8 @@ import type {
   MemoryTouchResult,
   UpdateContactParams,
   Contact,
+  ContactAddResult,
+  TrustLevel,
   ExtractionResult,
   ApplyExtractionResponse,
   Person,
@@ -881,6 +883,57 @@ export class HttpCoreTransport implements CoreClient {
       // Fail-soft: the contact_lookup tool returns null on no-match, and a
       // transport hiccup shouldn't push the agent into an error branch.
       return null;
+    }
+  }
+
+  async contactList(): Promise<Contact[]> {
+    try {
+      const raw = await this.call<{ contacts?: Contact[] }>(
+        'GET',
+        '/v1/contacts',
+        undefined,
+        undefined,
+        'contactList',
+      );
+      return Array.isArray(raw.contacts) ? raw.contacts : [];
+    } catch {
+      // Fail-soft, matching findContactsByPreference / contactLookup.
+      return [];
+    }
+  }
+
+  async contactAdd(
+    did: string,
+    displayName: string,
+    trustLevel?: TrustLevel,
+  ): Promise<ContactAddResult> {
+    const cleanDid = typeof did === 'string' ? did.trim() : '';
+    if (cleanDid === '') throw new Error('contactAdd: did is required');
+    const body: Record<string, unknown> = { did: cleanDid, display_name: displayName };
+    if (trustLevel !== undefined) body.trust_level = trustLevel;
+    return this.call<ContactAddResult>(
+      'POST',
+      '/v1/contacts',
+      undefined,
+      body,
+      `contactAdd(did=${cleanDid})`,
+    );
+  }
+
+  async contactDelete(did: string): Promise<boolean> {
+    const cleanDid = typeof did === 'string' ? did.trim() : '';
+    if (cleanDid === '') return false;
+    try {
+      const raw = await this.call<{ deleted?: boolean }>(
+        'DELETE',
+        `/v1/contacts/${encodeURIComponent(cleanDid)}`,
+        undefined,
+        undefined,
+        `contactDelete(did=${cleanDid})`,
+      );
+      return raw.deleted === true;
+    } catch {
+      return false;
     }
   }
 

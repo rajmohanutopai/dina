@@ -23,6 +23,7 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -61,7 +62,33 @@ interface ProviderState {
   loading: boolean;
 }
 
+/**
+ * Web thin-client (D7): the LLM runs SERVER-SIDE and the provider key lives on
+ * the server (the brain's config), NEVER in the browser. So the web build must
+ * NOT offer browser-local key entry (that key would sit in IndexedDB and be
+ * silently ignored by the server LLM — and would falsify SECURITY.md's
+ * "no BYOK key in the browser" guarantee). On web we render a read-only notice;
+ * native keeps the full on-device BYOK screen below (byte-for-byte unchanged, §9).
+ */
+function AIProvidersWebNotice(): React.JSX.Element {
+  return (
+    <View style={styles.webNotice} testID="ai-providers-web-readonly">
+      <Text style={styles.webNoticeTitle}>Managed on your Home Node</Text>
+      <Text style={styles.webNoticeBody}>
+        Dina’s AI runs on your Home Node server, which holds the provider key. There’s
+        nothing to enter here — manage your AI provider from the Dina phone app or your
+        server config. The browser never stores a model key.
+      </Text>
+    </View>
+  );
+}
+
 export default function AIProvidersScreen(): React.JSX.Element {
+  // D7 web gate — early return BEFORE the hooks. Platform.OS is a static module
+  // constant, so the hook order is consistent per platform (web: this branch
+  // always; native: the full screen always).
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  if (Platform.OS === 'web') return <AIProvidersWebNotice />;
   const insets = useSafeAreaInsets();
   // Tab bar is 88pt on iOS as defined in _layout.tsx. This screen
   // renders on top of the tab navigator so the ScrollView needs the
@@ -397,6 +424,22 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgPrimary },
   centerLoading: { alignItems: 'center', justifyContent: 'center' },
   content: { padding: spacing.md },
+  // D7 web read-only notice (no browser-local key entry).
+  webNotice: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    gap: spacing.md,
+    backgroundColor: colors.bgPrimary,
+  },
+  webNoticeTitle: { ...textStyles.h3, color: colors.textPrimary, textAlign: 'center' },
+  webNoticeBody: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    maxWidth: 360,
+  },
   section: { marginBottom: spacing.lg },
   sectionDesc: {
     ...textStyles.bodySmall,

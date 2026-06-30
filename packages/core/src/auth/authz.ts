@@ -85,9 +85,13 @@ const AUTHZ_RULES: { prefix: string; allowed: Set<CallerType> }[] = [
   // Source: Go adminEndpointChecker.allowedForBrain (auth.go).
   { prefix: '/v1/memory/', allowed: new Set(['brain']) },
 
-  // People graph — Brain owns the write surface
-  // (post-publish extractor in the staging drain).
-  { prefix: '/v1/people/', allowed: new Set(['brain']) },
+  // People graph — Brain owns the write surface (post-publish extractor in the
+  // staging drain) AND the read surface (the web Relations tab proxies
+  // `peopleList`/`find`/`by-did` through the brain). NO trailing slash: the
+  // boundary-safe matcher needs the bare prefix to cover `GET /v1/people` (the
+  // list endpoint) — with a trailing slash `hasPathPrefix('/v1/people', …)` is
+  // false and the list 403s (the web Relations tab then silently shows empty).
+  { prefix: '/v1/people', allowed: new Set(['brain']) },
 
   // Staging inbox — Brain owns remember/connectors drain over signed HTTP.
   { prefix: '/v1/staging/', allowed: new Set(['brain']) },

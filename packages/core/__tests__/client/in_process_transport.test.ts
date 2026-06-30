@@ -4,9 +4,9 @@
  * healthz + vault CRUD surface (task 1.30 scaffold scope).
  */
 
+import { WorkflowConflictError } from '../../src';
 import { InProcessTransport } from '../../src/client/in-process-transport';
 import { CoreRouter } from '../../src/server/router';
-import { WorkflowConflictError } from '../../src';
 
 function buildRouter(): CoreRouter {
   const r = new CoreRouter();
@@ -466,7 +466,7 @@ function buildRouter(): CoreRouter {
   );
 
   // Workflow events routes (task 1.32 slice B)
-  const workflowEvents: Array<{
+  const workflowEvents: {
     event_id: number;
     task_id: string;
     at: number;
@@ -476,7 +476,7 @@ function buildRouter(): CoreRouter {
     delivery_failed: boolean;
     details: string;
     acknowledged_at?: number;
-  }> = [
+  }[] = [
     {
       event_id: 1,
       task_id: 'sq-1',
@@ -556,7 +556,7 @@ function buildRouter(): CoreRouter {
 
   // Workflow tasks routes (task 1.32 slices C + D) — in-memory store
   // lets one fixture drive both read + create + transition scenarios.
-  const workflowTasks: Array<Record<string, unknown>> = [
+  const workflowTasks: Record<string, unknown>[] = [
     {
       id: 'wf-1',
       kind: 'service_query',
@@ -699,7 +699,7 @@ function buildRouter(): CoreRouter {
   );
 
   // Memory + contacts routes (task 1.32 slice E)
-  const memoryTouches: Array<{ persona: string; topic: string; kind: string }> = [];
+  const memoryTouches: { persona: string; topic: string; kind: string }[] = [];
   const lockedPersonas = new Set(['financial']); // simulates a locked persona path
   r.post(
     '/v1/memory/topic/touch',
@@ -844,6 +844,29 @@ function buildRouter(): CoreRouter {
     { auth: 'public' },
   );
 
+  // Contacts list/add/delete (web thin-client P2). Echo the request so the test
+  // can assert the transport's wire mapping (path/body/unwrap) end-to-end.
+  r.get('/v1/contacts', () => ({ status: 200, body: { contacts: [{ did: 'did:plc:a' }] } }), {
+    auth: 'public',
+  });
+  r.post(
+    '/v1/contacts',
+    (req) => {
+      const body = req.body as { did?: string; display_name?: string; trust_level?: string };
+      return {
+        status: 200,
+        body: {
+          contact: { did: body.did, displayName: body.display_name, trustLevel: body.trust_level },
+          created: true,
+        },
+      };
+    },
+    { auth: 'public' },
+  );
+  r.delete('/v1/contacts/:did', (req) => ({ status: 200, body: { deleted: req.params.did !== '' } }), {
+    auth: 'public',
+  });
+
   return r;
 }
 
@@ -865,7 +888,7 @@ describe('InProcessTransport (task 1.30)', () => {
     const t = new InProcessTransport(buildRouter());
     const r = await t.vaultQuery('personal', { text: 'dentist', type: 'contact' });
     expect(r.count).toBe(1);
-    const first = (r.items as Array<Record<string, unknown>>)[0];
+    const first = (r.items as Record<string, unknown>[])[0];
     expect(first?.persona).toBe('personal');
     expect(first?.text).toBe('dentist');
   });
@@ -1667,5 +1690,39 @@ describe('InProcessTransport (task 1.30)', () => {
     await expect(t.updateContact('   ', { preferredFor: [] })).rejects.toThrow(
       /did is required/,
     );
+  });
+
+  // contacts list/add/delete (web thin-client P2) — the parity the test plan
+  // claims; these have transport-specific branches (fail-soft + blank-arg
+  // short-circuits) not shared with HttpCoreTransport.
+  it('contactList GETs /v1/contacts and unwraps { contacts }', async () => {
+    const t = new InProcessTransport(buildRouter());
+    expect(await t.contactList()).toEqual([{ did: 'did:plc:a' }]);
+  });
+
+  it('contactAdd POSTs did/display_name/trust_level → { contact, created }', async () => {
+    const t = new InProcessTransport(buildRouter());
+    const res = await t.contactAdd('did:plc:s', 'Sancho', 'trusted');
+    expect(res.created).toBe(true);
+    expect(res.contact).toMatchObject({
+      did: 'did:plc:s',
+      displayName: 'Sancho',
+      trustLevel: 'trusted',
+    });
+  });
+
+  it('contactAdd throws on a blank DID (no dispatch)', async () => {
+    const t = new InProcessTransport(buildRouter());
+    await expect(t.contactAdd('   ', 'x')).rejects.toThrow(/did is required/);
+  });
+
+  it('contactDelete DELETEs the encoded :did and returns the flag', async () => {
+    const t = new InProcessTransport(buildRouter());
+    expect(await t.contactDelete('did:plc:s')).toBe(true);
+  });
+
+  it('contactDelete short-circuits a blank DID → false (no dispatch)', async () => {
+    const t = new InProcessTransport(buildRouter());
+    expect(await t.contactDelete('   ')).toBe(false);
   });
 });

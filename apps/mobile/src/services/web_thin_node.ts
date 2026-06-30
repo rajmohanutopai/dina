@@ -31,6 +31,12 @@
 
 import { BrowserCoreProxyClient } from '@dina/core';
 
+import {
+  setServiceConfigCoreClient,
+  resetServiceConfigCoreClient,
+} from '../hooks/useServiceConfigForm';
+import { setInboxCoreClient, resetInboxCoreClient } from '../hooks/useServiceInbox';
+
 import type { BootResult } from './boot_service';
 import type { DinaNode, NodeRole } from './bootstrap';
 
@@ -83,7 +89,16 @@ export function makeWebThinNode(args: {
   did: string;
   role: NodeRole;
   coreClient: DinaNode['coreClient'];
+  /**
+   * Teardown hook invoked by `dispose()`. `bootWebThinNode` passes the
+   * global-state reset here so re-booting (e.g. identity switch) doesn't
+   * leave a stale `CoreClient` wired into the inbox / service-config
+   * singletons. Default = no-op (direct test construction installs no
+   * globals, so there is nothing to reset).
+   */
+  onDispose?: () => void;
 }): DinaNode {
+  const onDispose = args.onDispose;
   return {
     did: args.did,
     role: args.role,
@@ -105,7 +120,12 @@ export function makeWebThinNode(args: {
     start: noop,
     stop: noop,
     drainOnce: noop,
-    dispose: noop,
+    dispose:
+      onDispose !== undefined
+        ? async (): Promise<void> => {
+            onDispose();
+          }
+        : noop,
   };
 }
 
@@ -132,10 +152,24 @@ export async function bootWebThinNode(options: BootWebThinNodeOptions = {}): Pro
     );
   }
 
+  // Install the app-layer CoreClient singletons the SPA reads through.
+  // Native does this in `bootstrap.ts` (`installChatGlobals`); the web boot
+  // composes no node, so it must wire them here or the service-listing
+  // ("My Services") + approval-inbox screens fall back to their
+  // not-configured error state even though the proxy routes exist.
+  setInboxCoreClient(coreClient);
+  setServiceConfigCoreClient(coreClient);
+
   const node = makeWebThinNode({
     did: identity.did,
     role: options.role ?? 'both',
     coreClient,
+    // Clear the singletons on teardown so an identity switch / re-boot
+    // never leaves the previous node's proxy client wired in.
+    onDispose: () => {
+      resetInboxCoreClient();
+      resetServiceConfigCoreClient();
+    },
   });
 
   // No in-memory repos were composed → nothing degraded → no banner.

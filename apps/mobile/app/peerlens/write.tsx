@@ -58,6 +58,7 @@ import { setReviewDraftStatus } from '../../src/peerlens/review_draft';
 import { type AttestationDraftBody } from '../../src/peerlens/review_draft_body';
 import { useComposeContext } from '../../src/peerlens/runners/use_compose_context';
 import { submitReviewFromUI } from '../../src/peerlens/submit_review_ui';
+import { PEERLENS_WRITE_ENABLED } from '../../src/peerlens/web_publish_flag';
 import {
   emptyWriteFormState,
   emptyWriteFormStateWithSubject,
@@ -267,7 +268,33 @@ export interface WriteScreenProps {
   composePersonas?: readonly string[];
 }
 
+/**
+ * Web thin-client (D6): the single choke point for review PUBLISH. The compose
+ * screen is reachable from several places (search / subject / reviewer profile /
+ * edit / deep-link); gating it HERE catches them all, not just the visible CTAs.
+ * Publish needs the server-side worker (a follow-up), so on web we render a
+ * notice pointing at the phone app instead of the compose form.
+ */
+function PeerlensWriteUnavailableWeb(): React.ReactElement {
+  return (
+    <View style={styles.webUnavailable} testID="peerlens-write-web-unavailable">
+      <Ionicons name="phone-portrait-outline" size={32} color={colors.textSecondary} />
+      <Text style={styles.webUnavailableTitle}>Publish from the phone app</Text>
+      <Text style={styles.webUnavailableBody}>
+        Reading and searching PeerLens works here. Writing a review isn’t available
+        in the web app yet — open Dina on your phone to publish.
+      </Text>
+    </View>
+  );
+}
+
 export default function WriteScreen(props: WriteScreenProps = {}): React.ReactElement {
+  // D6 choke point — see PeerlensWriteUnavailableWeb. Early return BEFORE the
+  // hooks is safe: PEERLENS_WRITE_ENABLED is a static module constant
+  // (Platform.OS), so the hook order is consistent on each platform (web: this
+  // branch always; native: the form below always).
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  if (!PEERLENS_WRITE_ENABLED) return <PeerlensWriteUnavailableWeb />;
   // Hooks unconditional. Production path reads `subjectId` from the
   // route's query params; tests pass form state directly so the
   // params are ignored.
@@ -2158,6 +2185,22 @@ function renderTagGrid(props: {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgPrimary },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.lg },
+  // D6 web-unavailable notice (the compose-screen choke point).
+  webUnavailable: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    gap: spacing.md,
+    backgroundColor: colors.bgPrimary,
+  },
+  webUnavailableTitle: { ...textStyles.h3, color: colors.textPrimary, textAlign: 'center' },
+  webUnavailableBody: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    maxWidth: 360,
+  },
   header: { gap: spacing.xs },
   headerTitle: textStyles.h2,
   headerSubtitle: {

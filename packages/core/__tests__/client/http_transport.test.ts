@@ -12,6 +12,7 @@
  * transport makes and returns canned responses. Task 1.31 scaffold.
  */
 
+import { WorkflowConflictError } from '../../src';
 import {
   HttpCoreTransport,
   type HttpClient,
@@ -19,7 +20,6 @@ import {
   type HttpResponse,
   type CanonicalRequestSigner,
 } from '../../src/client/http-transport';
-import { WorkflowConflictError } from '../../src';
 
 interface RecordedCall {
   url: string;
@@ -41,7 +41,7 @@ function makeStubClient(responder: (call: RecordedCall) => HttpResponse): {
   return { client, calls };
 }
 
-type SignerArgs = { method: string; path: string; query: string; body: Uint8Array };
+interface SignerArgs { method: string; path: string; query: string; body: Uint8Array }
 
 /** Deterministic signer — returns fixed headers + captures last inputs. */
 function makeStubSigner(): {
@@ -1255,5 +1255,100 @@ describe('HttpCoreTransport (task 1.31)', () => {
     await expect(t.updateContact('   ', { preferredFor: [] })).rejects.toThrow(
       /did is required/,
     );
+  });
+
+  // ── contacts list / add / delete (web thin-client P2) ─────────────────────
+
+  it('contactList GETs /v1/contacts and unwraps { contacts } → [] when absent', async () => {
+    const present = makeStubClient(() => ok({ contacts: [{ did: 'did:plc:a' }] }));
+    const t1 = new HttpCoreTransport({
+      baseUrl: 'http://core:8100',
+      httpClient: present.client,
+      signer: makeStubSigner().signer,
+    });
+    expect(await t1.contactList()).toHaveLength(1);
+    expect(present.calls[0]?.url).toBe('http://core:8100/v1/contacts');
+    expect(present.calls[0]?.init.method).toBe('GET');
+
+    const empty = makeStubClient(() => ok({}));
+    const t2 = new HttpCoreTransport({
+      baseUrl: 'http://core:8100',
+      httpClient: empty.client,
+      signer: makeStubSigner().signer,
+    });
+    expect(await t2.contactList()).toEqual([]);
+  });
+
+  it('contactList FAILS SOFT → [] on a non-2xx (web People tab degrades, never throws)', async () => {
+    const { client } = makeStubClient(() => ok({ error: 'down' }, 502));
+    const t = new HttpCoreTransport({
+      baseUrl: 'http://core:8100',
+      httpClient: client,
+      signer: makeStubSigner().signer,
+    });
+    expect(await t.contactList()).toEqual([]);
+  });
+
+  it('contactAdd POSTs did/display_name/trust_level → { contact, created }', async () => {
+    const { client, calls } = makeStubClient(() =>
+      ok({ contact: { did: 'did:plc:s' }, created: true }),
+    );
+    const t = new HttpCoreTransport({
+      baseUrl: 'http://core:8100',
+      httpClient: client,
+      signer: makeStubSigner().signer,
+    });
+    const res = await t.contactAdd('did:plc:s', 'Sancho', 'trusted');
+    expect(res).toEqual({ contact: { did: 'did:plc:s' }, created: true });
+    expect(calls[0]?.url).toBe('http://core:8100/v1/contacts');
+    expect(calls[0]?.init.method).toBe('POST');
+    expect(JSON.parse(new TextDecoder().decode(calls[0]!.init.body!))).toEqual({
+      did: 'did:plc:s',
+      display_name: 'Sancho',
+      trust_level: 'trusted',
+    });
+  });
+
+  it('contactAdd is a MUTATION — throws on a non-2xx (failed write is never silent)', async () => {
+    const { client } = makeStubClient(() => ok({ error: 'core down' }, 502));
+    const t = new HttpCoreTransport({
+      baseUrl: 'http://core:8100',
+      httpClient: client,
+      signer: makeStubSigner().signer,
+    });
+    await expect(t.contactAdd('did:plc:s', 'Sancho')).rejects.toThrow();
+  });
+
+  it('contactAdd rejects a blank DID without a request', async () => {
+    const { client, calls } = makeStubClient(() => ok({}));
+    const t = new HttpCoreTransport({
+      baseUrl: 'http://core:8100',
+      httpClient: client,
+      signer: makeStubSigner().signer,
+    });
+    await expect(t.contactAdd('   ', 'x')).rejects.toThrow(/did is required/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('contactDelete DELETEs the encoded :did → deleted flag (fail-soft → false)', async () => {
+    const okDel = makeStubClient(() => ok({ deleted: true }));
+    const t1 = new HttpCoreTransport({
+      baseUrl: 'http://core:8100',
+      httpClient: okDel.client,
+      signer: makeStubSigner().signer,
+    });
+    expect(await t1.contactDelete('did:plc:s')).toBe(true);
+    expect(okDel.calls[0]?.url).toBe(
+      `http://core:8100/v1/contacts/${encodeURIComponent('did:plc:s')}`,
+    );
+    expect(okDel.calls[0]?.init.method).toBe('DELETE');
+
+    const fail = makeStubClient(() => ok({ error: 'down' }, 502));
+    const t2 = new HttpCoreTransport({
+      baseUrl: 'http://core:8100',
+      httpClient: fail.client,
+      signer: makeStubSigner().signer,
+    });
+    expect(await t2.contactDelete('did:plc:s')).toBe(false);
   });
 });

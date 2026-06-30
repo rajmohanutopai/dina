@@ -75,6 +75,8 @@ import type {
   MemoryTouchResult,
   UpdateContactParams,
   Contact,
+  ContactAddResult,
+  TrustLevel,
   ExtractionResult,
   ApplyExtractionResponse,
   Person,
@@ -153,9 +155,12 @@ function expectOk<T>(res: CoreResponse, context: string): T {
  * methods route their response through `expectOk`, which THROWS on any
  * non-2xx — same as the HTTP transport's `call()`. A deliberate, narrow
  * set of *reads* instead returns an empty/`null` value on a non-200:
- *   - `findContactsByPreference`, `contactLookup` — the HTTP transport
- *     also explicitly catches + fail-soft here (the reasoning agent's
- *     tools are documented to fall back on an empty result, not error).
+ *   - `findContactsByPreference`, `contactLookup`, `contactList`,
+ *     `contactDelete` — the HTTP transport also explicitly catches +
+ *     fail-soft here (the reasoning agent's tools, and the web People tab,
+ *     are documented to fall back on an empty/false result, not error; a
+ *     total outage is surfaced by the thin client's boot-time "No Home Node"
+ *     screen, not a mid-list throw). `contactAdd` is a MUTATION and throws.
  *   - `peopleResolveByDid` — the route returns `200 { person: null }` for
  *     "unknown", so a non-200 is only a client-pre-validated bad input;
  *     null-on-miss keeps recall fail-soft.
@@ -918,6 +923,52 @@ export class InProcessTransport implements CoreClient {
     if (res.status !== 200) return null;
     const raw = (res.body ?? {}) as { contact?: Contact | null };
     return raw.contact ?? null;
+  }
+
+  async contactList(): Promise<Contact[]> {
+    let res;
+    try {
+      res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/contacts' }));
+    } catch {
+      return [];
+    }
+    if (res.status !== 200) return [];
+    const raw = (res.body ?? {}) as { contacts?: unknown };
+    return Array.isArray(raw.contacts) ? (raw.contacts as Contact[]) : [];
+  }
+
+  async contactAdd(
+    did: string,
+    displayName: string,
+    trustLevel?: TrustLevel,
+  ): Promise<ContactAddResult> {
+    const cleanDid = typeof did === 'string' ? did.trim() : '';
+    if (cleanDid === '') throw new Error('contactAdd: did is required');
+    const body: Record<string, unknown> = { did: cleanDid, display_name: displayName };
+    if (trustLevel !== undefined) body.trust_level = trustLevel;
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: '/v1/contacts', body }),
+    );
+    return expectOk<ContactAddResult>(res, `contactAdd(did=${cleanDid})`);
+  }
+
+  async contactDelete(did: string): Promise<boolean> {
+    const cleanDid = typeof did === 'string' ? did.trim() : '';
+    if (cleanDid === '') return false;
+    let res;
+    try {
+      res = await this.router.handle(
+        blankRequest({
+          method: 'DELETE',
+          path: `/v1/contacts/${encodeURIComponent(cleanDid)}`,
+        }),
+      );
+    } catch {
+      return false;
+    }
+    if (res.status !== 200) return false;
+    const raw = (res.body ?? {}) as { deleted?: unknown };
+    return raw.deleted === true;
   }
 
   async peopleApplyExtraction(

@@ -18,21 +18,6 @@
  *   - pii scrub + service_config round-trip
  */
 
-import { createCoreRouter } from '../../src/server/core_server';
-import type { CoreRequest, CoreResponse } from '../../src/server/router';
-import { signRequest } from '../../src/auth/canonical';
-import { getPublicKey } from '../../src/crypto/ed25519';
-import { deriveDIDKey } from '../../src/identity/did';
-import { registerPublicKeyResolver, resetMiddlewareState } from '../../src/auth/middleware';
-import {
-  registerDevice as registerDeviceDID,
-  registerService,
-  resetCallerTypeState,
-  setDeviceRoleResolver,
-} from '../../src/auth/caller_type';
-import { InMemoryWorkflowRepository, setWorkflowRepository } from '../../src/workflow/repository';
-import { WorkflowService, setWorkflowService, getWorkflowService } from '../../src/workflow/service';
-import type { WorkflowTask } from '../../src/workflow/domain';
 import { WorkflowTaskState } from '../../src/workflow/domain';
 import { setServiceQuerySender } from '../../src/server/routes/service_query';
 import { setServiceRespondSender } from '../../src/server/routes/service_respond';
@@ -49,6 +34,29 @@ import {
 } from '../../src/service/service_grant_repository';
 import { TEST_ED25519_SEED } from '@dina/test-harness';
 import { randomBytes } from '@noble/ciphers/utils.js';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { NodeSQLiteAdapter } from '@dina/storage-node';
+import { applyMigrations, IDENTITY_MIGRATIONS } from '../../src';
+import {
+  registerDevice as registerDeviceDID,
+  registerService,
+  resetCallerTypeState,
+  setDeviceRoleResolver,
+} from '../../src/auth/caller_type';
+import { signRequest } from '../../src/auth/canonical';
+import { registerPublicKeyResolver, resetMiddlewareState } from '../../src/auth/middleware';
+import { resetContactDirectory } from '../../src/contacts/directory';
+import { getPublicKey } from '../../src/crypto/ed25519';
+import { deriveDIDKey } from '../../src/identity/did';
+import { setPeopleRepository, SQLitePeopleRepository } from '../../src/people/repository';
+import { createCoreRouter } from '../../src/server/core_server';
+import { InMemoryWorkflowRepository, setWorkflowRepository } from '../../src/workflow/repository';
+import { WorkflowService, setWorkflowService, getWorkflowService } from '../../src/workflow/service';
+
+import type { CoreRequest, CoreResponse } from '../../src/server/router';
+import type { WorkflowTask } from '../../src/workflow/domain';
 
 interface Actor {
   did: string;
@@ -189,6 +197,85 @@ describe('CoreRouter integration', () => {
       // Path doesn't match → 404 (auth passed; no route).
       // NOTE: authz may deny first; the important invariant is "not 200".
       expect(resp.status).toBeGreaterThanOrEqual(400);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Contacts list/add/delete (web thin-client P2) — the END-TO-END wiring:
+  // real createCoreRouter() registration → signed brain auth → the real
+  // contact directory (backed by a real SQLite people repo). This is the only
+  // place that proves the new GET-list/POST/DELETE routes are actually wired
+  // into the router the brain reaches over HTTP (the unit/proxy tests stub
+  // either the directory or the transport).
+  // -------------------------------------------------------------------------
+
+  describe('contacts list/add/delete (real router + real directory)', () => {
+    let dbDir = '';
+    let adapter: NodeSQLiteAdapter;
+
+    beforeEach(() => {
+      // The directory writes contact policy *for a person*, so it needs a real
+      // people repo wired (otherwise establishContact throws). The outer
+      // beforeEach already built `router`/`brain`.
+      dbDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-contacts-rt-'));
+      adapter = new NodeSQLiteAdapter({
+        path: path.join(dbDir, 'identity.sqlite'),
+        passphraseHex: randomBytes(32).reduce((s, b) => s + b.toString(16).padStart(2, '0'), ''),
+        journalMode: 'WAL',
+        synchronous: 'NORMAL',
+      });
+      applyMigrations(adapter, IDENTITY_MIGRATIONS);
+      setPeopleRepository(new SQLitePeopleRepository(adapter));
+      resetContactDirectory();
+    });
+
+    afterEach(() => {
+      setPeopleRepository(null);
+      resetContactDirectory();
+      try {
+        adapter.close();
+        fs.rmSync(dbDir, { recursive: true, force: true });
+      } catch {
+        /* best-effort */
+      }
+    });
+
+    it('POST → GET list → idempotent re-POST → DELETE → GET list, through the real registered routes', async () => {
+      const did = 'did:plc:sancho';
+
+      const add = await router.handle(
+        signedReq('POST', '/v1/contacts', { did, display_name: 'Sancho' }, brain),
+      );
+      expect(add.status).toBe(200);
+      expect((add.body as { created: boolean }).created).toBe(true);
+
+      const list1 = await router.handle(signedReq('GET', '/v1/contacts', undefined, brain));
+      expect(list1.status).toBe(200);
+      expect((list1.body as { contacts: { did: string }[] }).contacts.map((c) => c.did)).toContain(
+        did,
+      );
+
+      // Idempotent re-add → created:false (proves POST → addContactIfNotExists).
+      const add2 = await router.handle(
+        signedReq('POST', '/v1/contacts', { did, display_name: 'Sancho' }, brain),
+      );
+      expect((add2.body as { created: boolean }).created).toBe(false);
+
+      const del = await router.handle(
+        signedReq('DELETE', `/v1/contacts/${encodeURIComponent(did)}`, undefined, brain),
+      );
+      expect(del.status).toBe(200);
+      expect((del.body as { deleted: boolean }).deleted).toBe(true);
+
+      const list2 = await router.handle(signedReq('GET', '/v1/contacts', undefined, brain));
+      expect((list2.body as { contacts: unknown[] }).contacts).toHaveLength(0);
+
+      // Idempotent delete of an unknown DID → deleted:false (NOT 404).
+      const delGone = await router.handle(
+        signedReq('DELETE', `/v1/contacts/${encodeURIComponent(did)}`, undefined, brain),
+      );
+      expect(delGone.status).toBe(200);
+      expect((delGone.body as { deleted: boolean }).deleted).toBe(false);
     });
   });
 
@@ -795,7 +882,7 @@ describe('CoreRouter integration', () => {
     });
 
     it('POST /v1/service/query forwards service_uri onto the D2D body (#1, chosen listing)', async () => {
-      const sent: Array<{ body: Record<string, unknown> }> = [];
+      const sent: { body: Record<string, unknown> }[] = [];
       setServiceQuerySender(async (_to, _type, body) => {
         sent.push({ body: body as unknown as Record<string, unknown> });
       });
@@ -820,7 +907,7 @@ describe('CoreRouter integration', () => {
     });
 
     it('POST /v1/service/query omits service_uri from the D2D body when absent (#1)', async () => {
-      const sent: Array<{ body: Record<string, unknown> }> = [];
+      const sent: { body: Record<string, unknown> }[] = [];
       setServiceQuerySender(async (_to, _type, body) => {
         sent.push({ body: body as unknown as Record<string, unknown> });
       });
@@ -922,7 +1009,7 @@ describe('CoreRouter integration', () => {
       // `service.response` body (the requester re-validates it untrusted).
       // The route builds the D2D body INLINE — a separate path from the
       // bridge's deriveResponseBody — so it needs its own coverage.
-      const sent: Array<{ to: string; body: Record<string, unknown> }> = [];
+      const sent: { to: string; body: Record<string, unknown> }[] = [];
       setServiceRespondSender(async (to, _type, body) => {
         sent.push({ to, body: body as unknown as Record<string, unknown> });
       });
@@ -964,7 +1051,7 @@ describe('CoreRouter integration', () => {
     });
 
     it('POST /v1/service/respond drops a non-object card (never garbage on the wire)', async () => {
-      const sent: Array<{ body: Record<string, unknown> }> = [];
+      const sent: { body: Record<string, unknown> }[] = [];
       setServiceRespondSender(async (_to, _type, body) => {
         sent.push({ body: body as unknown as Record<string, unknown> });
       });

@@ -288,3 +288,171 @@ describe('BrowserCoreProxyClient — action-risk policy (P3)', () => {
     expect(calls[0]?.init?.method).toBe('DELETE');
   });
 });
+
+describe('BrowserCoreProxyClient — contacts (P2)', () => {
+  it('contactList GETs /contacts and unwraps { contacts } → array', async () => {
+    const present = makeFetch(() => ({ body: { contacts: [{ did: 'did:plc:a' }] } }));
+    const c1 = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: present.fetchFn });
+    expect(await c1.contactList()).toHaveLength(1);
+    expect(present.calls[0]?.url).toBe(`${BASE}/contacts`);
+    expect(present.calls[0]?.init?.method).toBe('GET');
+
+    const empty = makeFetch(() => ({ body: {} }));
+    const c2 = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: empty.fetchFn });
+    expect(await c2.contactList()).toEqual([]);
+  });
+
+  it('contactList fails soft → [] on a non-2xx', async () => {
+    const { fetchFn } = makeFetch(() => ({ status: 502, body: { error: 'down' } }));
+    const c = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: fetchFn });
+    expect(await c.contactList()).toEqual([]);
+  });
+
+  it('contactAdd POSTs did/display_name/trust_level and returns { contact, created }', async () => {
+    const { fetchFn, calls } = makeFetch(() => ({
+      body: { contact: { did: 'did:plc:s' }, created: true },
+    }));
+    const c = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: fetchFn });
+    const res = await c.contactAdd('did:plc:s', 'Sancho', 'trusted');
+    expect(res.created).toBe(true);
+    expect(calls[0]?.url).toBe(`${BASE}/contacts`);
+    expect(calls[0]?.init?.method).toBe('POST');
+    expect(JSON.parse(calls[0]?.init?.body ?? '{}')).toEqual({
+      did: 'did:plc:s',
+      display_name: 'Sancho',
+      trust_level: 'trusted',
+    });
+  });
+
+  it('contactAdd throws on a blank DID (mutation never fires a request)', async () => {
+    const { fetchFn, calls } = makeFetch(() => ({ body: {} }));
+    const c = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: fetchFn });
+    await expect(c.contactAdd('  ', 'x')).rejects.toThrow(/did is required/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('contactDelete DELETEs the encoded :did and returns the deleted flag', async () => {
+    const { fetchFn, calls } = makeFetch(() => ({ body: { deleted: true } }));
+    const c = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: fetchFn });
+    expect(await c.contactDelete('did:plc:s')).toBe(true);
+    expect(calls[0]?.url).toBe(`${BASE}/contacts/${encodeURIComponent('did:plc:s')}`);
+    expect(calls[0]?.init?.method).toBe('DELETE');
+  });
+
+  it('contactDelete fails soft → false on a non-2xx', async () => {
+    const { fetchFn } = makeFetch(() => ({ status: 502, body: {} }));
+    const c = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: fetchFn });
+    expect(await c.contactDelete('did:plc:s')).toBe(false);
+  });
+
+  it('contactLookup GETs /contacts/lookup?q and unwraps { contact } (null when absent)', async () => {
+    const found = makeFetch(() => ({ body: { contact: { did: 'did:plc:s' } } }));
+    const c1 = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: found.fetchFn });
+    expect((await c1.contactLookup('Sancho'))?.did).toBe('did:plc:s');
+    expect(found.calls[0]?.url).toBe(`${BASE}/contacts/lookup?q=Sancho`);
+
+    const missing = makeFetch(() => ({ body: {} }));
+    const c2 = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: missing.fetchFn });
+    expect(await c2.contactLookup('nobody')).toBeNull();
+  });
+
+  it('updateContact PUTs preferred_for tri-state to /contacts/:did', async () => {
+    const { fetchFn, calls } = makeFetch(() => ({ body: { ok: true } }));
+    const c = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: fetchFn });
+    await c.updateContact('did:plc:d', { preferredFor: ['dentist'] });
+    expect(calls[0]?.url).toBe(`${BASE}/contacts/${encodeURIComponent('did:plc:d')}`);
+    expect(calls[0]?.init?.method).toBe('PUT');
+    expect(JSON.parse(calls[0]?.init?.body ?? '{}')).toEqual({ preferred_for: ['dentist'] });
+  });
+
+  it('findContactsByPreference short-circuits an empty category (no request)', async () => {
+    const { fetchFn, calls } = makeFetch(() => ({ body: { contacts: [] } }));
+    const c = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: fetchFn });
+    expect(await c.findContactsByPreference('   ')).toEqual([]);
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe('BrowserCoreProxyClient — people graph (P2)', () => {
+  it('peopleList GETs /people and unwraps { people } → [] when absent', async () => {
+    const present = makeFetch(() => ({ body: { people: [{ personId: 'p1' }] } }));
+    const c1 = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: present.fetchFn });
+    expect(await c1.peopleList()).toHaveLength(1);
+    expect(present.calls[0]?.url).toBe(`${BASE}/people`);
+
+    const empty = makeFetch(() => ({ body: {} }));
+    const c2 = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: empty.fetchFn });
+    expect(await c2.peopleList()).toEqual([]);
+  });
+
+  it('peopleList fails soft → [] on a non-2xx', async () => {
+    const { fetchFn } = makeFetch(() => ({ status: 502, body: { error: 'down' } }));
+    const c = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: fetchFn });
+    expect(await c.peopleList()).toEqual([]);
+  });
+
+  it('peopleFindByName GETs /people/find?surface (and short-circuits empty → no request)', async () => {
+    const { fetchFn, calls } = makeFetch(() => ({ body: { people: [{ personId: 'p1' }] } }));
+    const c = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: fetchFn });
+    expect(await c.peopleFindByName('carl')).toHaveLength(1);
+    expect(calls[0]?.url).toBe(`${BASE}/people/find?surface=carl`);
+
+    expect(await c.peopleFindByName('   ')).toEqual([]);
+    expect(calls).toHaveLength(1); // empty surface made no second request
+  });
+
+  it('peopleResolveByDid GETs /people/by-did?did and unwraps { person } (null when absent)', async () => {
+    const found = makeFetch(() => ({ body: { person: { personId: 'p1' } } }));
+    const c1 = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: found.fetchFn });
+    expect((await c1.peopleResolveByDid('did:plc:s'))?.personId).toBe('p1');
+    expect(found.calls[0]?.url).toBe(`${BASE}/people/by-did?did=${encodeURIComponent('did:plc:s')}`);
+
+    const missing = makeFetch(() => ({ body: {} }));
+    const c2 = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: missing.fetchFn });
+    expect(await c2.peopleResolveByDid('did:plc:none')).toBeNull();
+
+    // Empty did short-circuits with no request.
+    const { fetchFn, calls } = makeFetch(() => ({ body: {} }));
+    const c3 = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: fetchFn });
+    expect(await c3.peopleResolveByDid('  ')).toBeNull();
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe('BrowserCoreProxyClient — devices / pairing (P5)', () => {
+  it('listPairedDevices GETs /devices/list and unwraps { devices } → [] when absent', async () => {
+    const present = makeFetch(() => ({ body: { devices: [{ deviceId: 'd1' }] } }));
+    const c1 = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: present.fetchFn });
+    expect(await c1.listPairedDevices()).toHaveLength(1);
+    expect(present.calls[0]?.url).toBe(`${BASE}/devices/list`);
+
+    const empty = makeFetch(() => ({ body: {} }));
+    const c2 = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: empty.fetchFn });
+    expect(await c2.listPairedDevices()).toEqual([]);
+  });
+
+  it('listPairedDevices fails soft → [] on a non-2xx', async () => {
+    const { fetchFn } = makeFetch(() => ({ status: 502, body: { error: 'down' } }));
+    const c = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: fetchFn });
+    expect(await c.listPairedDevices()).toEqual([]);
+  });
+
+  it('pairInitiate POSTs device_name/role and returns the PairInitiateResult', async () => {
+    const { fetchFn, calls } = makeFetch(() => ({
+      body: { code: 'ABCD1234', expiresAt: 9999, deviceName: 'CLI', role: 'agent' },
+    }));
+    const c = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: fetchFn });
+    const res = await c.pairInitiate('CLI', 'agent');
+    expect(res.code).toBe('ABCD1234');
+    expect(calls[0]?.url).toBe(`${BASE}/pair/initiate`);
+    expect(calls[0]?.init?.method).toBe('POST');
+    expect(JSON.parse(calls[0]?.init?.body ?? '{}')).toEqual({ device_name: 'CLI', role: 'agent' });
+  });
+
+  it('pairInitiate throws on a blank device name (mutation never fires a request)', async () => {
+    const { fetchFn, calls } = makeFetch(() => ({ body: {} }));
+    const c = new BrowserCoreProxyClient({ baseUrl: BASE, fetch: fetchFn });
+    await expect(c.pairInitiate('  ', 'cli')).rejects.toThrow(/deviceName is required/);
+    expect(calls).toHaveLength(0);
+  });
+});

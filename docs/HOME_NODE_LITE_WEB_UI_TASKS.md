@@ -1,6 +1,18 @@
 # Home Node Lite — Web UI parity plan
 
-**Status**: Draft v1 (2026-05-17). Not started — this is the build plan.
+**Status**: Draft v1 (2026-05-17). Superseded by the **thin-client**
+direction — see `docs/WEB_THIN_CLIENT_DESIGN.md`. The web build is now a
+**thin client of a Home Node Lite server**, not an in-browser node: it boots
+no `createCoreRouter`/SQLite and drives the server over the brain-server's
+`/api/v1/*` proxy.
+
+> **The web app REQUIRES a running brain-server** (it is not standalone). Start
+> a node first (`dina-nodes/start.sh` or a brain-server with `DINA_BRAIN_WEB_UI=1`);
+> with no reachable server the SPA shows a "No Home Node reachable" screen, not
+> onboarding. Implemented domains: chat/ask, reminders, vault, personas,
+> service-config, workflow/approvals, action-policy, identity, contacts, people,
+> devices/pairing (list + pair-code). See `implementation-notes.html` for the
+> per-domain status + deferrals (PeerLens publish, D2D quarantine, export).
 
 ## 1. Vision
 

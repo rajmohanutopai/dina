@@ -24,17 +24,19 @@
  */
 
 import { defaultFetch } from '../runtime/fetch';
-import type { NodeIdentity } from '../pairing/ceremony';
+
 import type {
   ActionPolicyEntry,
   ActionPolicyResult,
   ApplyExtractionResponse,
   CanonicalSignRequest,
   Contact,
+  ContactAddResult,
   CoreClient,
   CoreHealth,
   CreateWorkflowTaskInput,
   CreateWorkflowTaskResult,
+  DeviceRole,
   ExtractionResult,
   FailWorkflowEventOptions,
   ListWorkflowEventsOptions,
@@ -47,6 +49,8 @@ import type {
   MsgSendResult,
   NotifyRequest,
   NotifyResult,
+  PairedDevice,
+  PairInitiateResult,
   PersonaListEntry,
   PersonaStatusResult,
   PersonaUnlockResult,
@@ -75,6 +79,7 @@ import type {
   StagingIngestResult,
   StagingResolveRequest,
   StagingResolveResult,
+  TrustLevel,
   UpdateContactParams,
   VaultDeleteResult,
   VaultItemInput,
@@ -87,6 +92,7 @@ import type {
   WorkflowEvent,
   WorkflowTask,
 } from './core-client';
+import type { NodeIdentity } from '../pairing/ceremony';
 
 export interface BrowserCoreProxyClientOptions {
   /**
@@ -360,10 +366,24 @@ export class BrowserCoreProxyClient implements CoreClient {
   }
 
   async sendServiceRespond(
-    _taskId: string,
-    _responseBody: ServiceRespondRequestBody,
+    taskId: string,
+    responseBody: ServiceRespondRequestBody,
   ): Promise<ServiceRespondResult> {
-    return this.notProxied('sendServiceRespond');
+    // Inbox deny→notify path: the brain proxies POST /service/respond to
+    // Core, which sends the requester the `unavailable` service.response.
+    // Mirrors the http-transport body + response parsing exactly.
+    const raw = await this.request<{
+      status?: string;
+      task_id?: string;
+      already_processed?: boolean;
+    }>('POST', '/service/respond', {
+      body: { task_id: taskId, response_body: responseBody },
+    });
+    return {
+      status: typeof raw.status === 'string' ? raw.status : '',
+      taskId: typeof raw.task_id === 'string' ? raw.task_id : taskId,
+      alreadyProcessed: raw.already_processed === true,
+    };
   }
 
   async listWorkflowEvents(_opts?: ListWorkflowEventsOptions): Promise<WorkflowEvent[]> {
@@ -443,12 +463,77 @@ export class BrowserCoreProxyClient implements CoreClient {
     return this.notProxied('memoryTouch');
   }
 
-  async updateContact(_did: string, _updates: UpdateContactParams): Promise<void> {
-    return this.notProxied('updateContact');
+  // ─── Wired: contacts (P2) ───────────────────────────────────────────────
+
+  async updateContact(did: string, updates: UpdateContactParams): Promise<void> {
+    const cleanDid = typeof did === 'string' ? did.trim() : '';
+    if (cleanDid === '') throw new Error('updateContact: did is required');
+    const body: Record<string, unknown> = {};
+    // Tri-state: only include the field when explicitly passed (`[]` = clear).
+    if (updates.preferredFor !== undefined) body.preferred_for = [...updates.preferredFor];
+    await this.request<unknown>('PUT', `/contacts/${encodeURIComponent(cleanDid)}`, { body });
   }
 
-  async findContactsByPreference(_category: string): Promise<Contact[]> {
-    return this.notProxied('findContactsByPreference');
+  async findContactsByPreference(category: string): Promise<Contact[]> {
+    const clean = typeof category === 'string' ? category.trim() : '';
+    if (clean === '') return [];
+    try {
+      const raw = await this.request<{ contacts?: Contact[] }>('GET', '/contacts/by-preference', {
+        query: { category: clean },
+      });
+      return Array.isArray(raw.contacts) ? raw.contacts : [];
+    } catch {
+      return []; // fail-soft (matches the in-process + http transports)
+    }
+  }
+
+  async contactLookup(query: string): Promise<Contact | null> {
+    const clean = typeof query === 'string' ? query.trim() : '';
+    if (clean === '') return null;
+    try {
+      const raw = await this.request<{ contact?: Contact | null }>('GET', '/contacts/lookup', {
+        query: { q: clean },
+      });
+      return raw.contact ?? null;
+    } catch {
+      return null; // fail-soft
+    }
+  }
+
+  async contactList(): Promise<Contact[]> {
+    try {
+      const raw = await this.request<{ contacts?: Contact[] }>('GET', '/contacts');
+      return Array.isArray(raw.contacts) ? raw.contacts : [];
+    } catch {
+      return []; // fail-soft
+    }
+  }
+
+  async contactAdd(
+    did: string,
+    displayName: string,
+    trustLevel?: TrustLevel,
+  ): Promise<ContactAddResult> {
+    const cleanDid = typeof did === 'string' ? did.trim() : '';
+    if (cleanDid === '') throw new Error('contactAdd: did is required');
+    const body: Record<string, unknown> = { did: cleanDid, display_name: displayName };
+    if (trustLevel !== undefined) body.trust_level = trustLevel;
+    // A mutation: surface failures (do NOT fail-soft).
+    return this.request<ContactAddResult>('POST', '/contacts', { body });
+  }
+
+  async contactDelete(did: string): Promise<boolean> {
+    const cleanDid = typeof did === 'string' ? did.trim() : '';
+    if (cleanDid === '') return false;
+    try {
+      const raw = await this.request<{ deleted?: boolean }>(
+        'DELETE',
+        `/contacts/${encodeURIComponent(cleanDid)}`,
+      );
+      return raw.deleted === true;
+    } catch {
+      return false; // fail-soft (idempotent — re-deleting is not an error)
+    }
   }
 
   async listServiceOffers(_params?: {
@@ -458,10 +543,8 @@ export class BrowserCoreProxyClient implements CoreClient {
     return this.notProxied('listServiceOffers');
   }
 
-  async contactLookup(_query: string): Promise<Contact | null> {
-    return this.notProxied('contactLookup');
-  }
-
+  // peopleApplyExtraction is a Brain-internal post-publish WRITE path, never a
+  // web concern — stays loud-stubbed.
   async peopleApplyExtraction(
     _result: ExtractionResult,
     _persona?: string,
@@ -469,16 +552,41 @@ export class BrowserCoreProxyClient implements CoreClient {
     return this.notProxied('peopleApplyExtraction');
   }
 
+  // ─── Wired: people graph / Relations tab (P2) ───────────────────────────
+
   async peopleList(): Promise<Person[]> {
-    return this.notProxied('peopleList');
+    try {
+      const raw = await this.request<{ people?: Person[] }>('GET', '/people');
+      return Array.isArray(raw.people) ? raw.people : [];
+    } catch {
+      return []; // fail-soft (matches the in-process + http transports)
+    }
   }
 
-  async peopleFindByName(_surface: string): Promise<Person[]> {
-    return this.notProxied('peopleFindByName');
+  async peopleFindByName(surface: string): Promise<Person[]> {
+    const clean = typeof surface === 'string' ? surface.trim() : '';
+    if (clean === '') return [];
+    try {
+      const raw = await this.request<{ people?: Person[] }>('GET', '/people/find', {
+        query: { surface: clean },
+      });
+      return Array.isArray(raw.people) ? raw.people : [];
+    } catch {
+      return [];
+    }
   }
 
-  async peopleResolveByDid(_did: string): Promise<Person | null> {
-    return this.notProxied('peopleResolveByDid');
+  async peopleResolveByDid(did: string): Promise<Person | null> {
+    const clean = typeof did === 'string' ? did.trim() : '';
+    if (clean === '') return null;
+    try {
+      const raw = await this.request<{ person?: Person | null }>('GET', '/people/by-did', {
+        query: { did: clean },
+      });
+      return raw.person ?? null;
+    } catch {
+      return null;
+    }
   }
 
   async reminderCreate(_input: ReminderCreateInput): Promise<Reminder> {
@@ -507,6 +615,30 @@ export class BrowserCoreProxyClient implements CoreClient {
 
   async reminderFireMissed(_now?: number): Promise<Reminder[]> {
     return this.notProxied('reminderFireMissed');
+  }
+
+  // ─── Wired: devices / pairing (P5) ──────────────────────────────────────
+  // `listPairedDevices` + `pairInitiate` proxy to the brain (both core routes
+  // admit the brain caller). Device REVOKE/register stay admin-only on core and
+  // are intentionally NOT on this surface — the browser session is not an admin
+  // credential.
+
+  async pairInitiate(deviceName: string, role: DeviceRole): Promise<PairInitiateResult> {
+    const name = typeof deviceName === 'string' ? deviceName.trim() : '';
+    if (name === '') throw new Error('pairInitiate: deviceName is required');
+    // A mutation (mints a pairing code) — surface failures, do NOT fail-soft.
+    return this.request<PairInitiateResult>('POST', '/pair/initiate', {
+      body: { device_name: name, role },
+    });
+  }
+
+  async listPairedDevices(): Promise<PairedDevice[]> {
+    try {
+      const raw = await this.request<{ devices?: PairedDevice[] }>('GET', '/devices/list');
+      return Array.isArray(raw.devices) ? raw.devices : [];
+    } catch {
+      return []; // fail-soft (matches the in-process + http transports)
+    }
   }
 
   // ─── Wired: action-risk policy (P3) ─────────────────────────────────────

@@ -43,6 +43,7 @@ import {
   setVaultReadBackend,
 } from '@dina/brain';
 import { installNodeTraceScopeStorage } from '@dina/brain/node-trace-storage';
+import { createPersona, getPersona } from '@dina/core';
 import {
   buildHomeNodeAskRuntime,
   type HomeNodeAskRuntime,
@@ -65,15 +66,18 @@ import { createLogger, type Logger } from './logger';
 import { registerAskRoutes } from './routes/ask';
 import { registerCapabilityRoutes } from './routes/capability';
 import { registerChatRoutes } from './routes/chat';
-import { registerReminderApiRoutes, startReminderFireLoop } from './routes/reminders';
+import { registerContactsApiRoutes } from './routes/contacts';
+import { registerDeviceApiRoutes } from './routes/devices';
 import { registerIdentityApiRoutes } from './routes/identity';
-import { registerVaultApiRoutes } from './routes/vault';
+import { registerPeopleApiRoutes } from './routes/people';
 import { registerPersonaApiRoutes } from './routes/personas';
-import { registerServiceConfigApiRoutes } from './routes/service_config';
-import { registerWorkflowApiRoutes } from './routes/workflow';
 import { registerPolicyApiRoutes } from './routes/policy';
 import { registerProviderApiRoutes } from './routes/providers';
+import { registerReminderApiRoutes, startReminderFireLoop } from './routes/reminders';
+import { registerServiceConfigApiRoutes } from './routes/service_config';
+import { registerVaultApiRoutes } from './routes/vault';
 import { registerWebRoutes } from './routes/web';
+import { registerWorkflowApiRoutes } from './routes/workflow';
 import { createWebAccessGate } from './web_access_gate';
 
 /**
@@ -99,7 +103,6 @@ function isLoopbackHost(host: string): boolean {
   return h === '127.0.0.1' || h === '::1' || h === 'localhost' || h.startsWith('127.');
 }
 
-import { createPersona, getPersona } from '@dina/core';
 import type { AskCoordinator } from '@dina/brain';
 import type { CoreClient, PersonaTier } from '@dina/core';
 import type { HomeNodeRuntime } from '@dina/home-node';
@@ -120,6 +123,9 @@ export interface BrainServerDependencyStatus {
   serviceConfigRoutes: 'configured' | 'disabled';
   workflowRoutes: 'configured' | 'disabled';
   policyRoutes: 'configured' | 'disabled';
+  contactsRoutes: 'configured' | 'disabled';
+  peopleRoutes: 'configured' | 'disabled';
+  deviceRoutes: 'configured' | 'disabled';
   providerRoutes: 'configured' | 'disabled';
   /** Web access gate (D4): `'gated'` (default) or `'dev_open'` (DINA_BRAIN_DEV_OPEN=1). */
   webAccessGate: 'gated' | 'dev_open';
@@ -265,6 +271,9 @@ export async function bootServer(
     serviceConfigRoutes: 'disabled',
     workflowRoutes: 'disabled',
     policyRoutes: 'disabled',
+    contactsRoutes: 'disabled',
+    peopleRoutes: 'disabled',
+    deviceRoutes: 'disabled',
     providerRoutes: 'disabled',
     webAccessGate: 'gated',
     serviceRuntime: 'disabled',
@@ -683,6 +692,24 @@ export async function bootServer(
     // access gate (the brain allowlist now covers /v1/policy).
     registerPolicyApiRoutes(app, { core: clients.core });
     dependencyStatus.policyRoutes = 'configured';
+
+    // Contacts data layer for the SPA (P2) — People tab + add-contact read/
+    // write the directory via the proxy. core-server owns the people-graph +
+    // policy + D2D projections; mobile reads the directory in-process.
+    registerContactsApiRoutes(app, { core: clients.core });
+    dependencyStatus.contactsRoutes = 'configured';
+
+    // People-graph (Relations tab) data layer for the SPA (P2) — read-only
+    // proxy over the existing CoreClient people methods. core-server owns the
+    // graph; mobile reads the in-process PeopleRepository.
+    registerPeopleApiRoutes(app, { core: clients.core });
+    dependencyStatus.peopleRoutes = 'configured';
+
+    // Paired-devices data layer for the SPA (P5) — list devices + mint a
+    // pairing code via the proxy. Both core routes admit the brain caller;
+    // device revoke/register stay admin-only on core (not proxied).
+    registerDeviceApiRoutes(app, { core: clients.core });
+    dependencyStatus.deviceRoutes = 'configured';
   }
 
   // SPA bundle serving. Opt-in via `DINA_BRAIN_WEB_UI=1` — same gate
@@ -774,6 +801,15 @@ export async function bootServer(
   // so a Core-less boot stays 503 (with runtime: 'ok', core: 'fail').
   dependencyStatus.runtime = 'ok';
   logger.info({ boundAddress }, 'brain-server listening');
+
+  // Out-of-band web-session token (D4). When the GATED web UI is served, print
+  // the tokenised URL the operator must open — this console is the ONLY place
+  // the session secret is ever revealed (it is never handed to a `/web`
+  // visitor, so a local process can't read it off a `Set-Cookie` header).
+  if (process.env.DINA_BRAIN_WEB_UI === '1' && !webAccessGate.devOpen) {
+    const webUrl = `${boundAddress}/web/?token=${webAccessGate.secret}`;
+    logger.info({ webUrl }, `Dina web UI — open this URL to start a session: ${webUrl}`);
+  }
 
   return { app, logger, config, clients, schedulers, compositions, dependencyStatus, boundAddress };
 }

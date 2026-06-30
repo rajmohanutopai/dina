@@ -8,9 +8,10 @@
  * `authz.ts` (PC-CORE-09 — verified).
  */
 
-import type { CoreRequest } from '../../../src/server/router';
 import { makeContactsHandlers } from '../../../src/server/routes/contacts';
+
 import type { Contact } from '../../../src/contacts/directory';
+import type { CoreRequest } from '../../../src/server/router';
 
 function req(partial: Partial<CoreRequest>): CoreRequest {
   return {
@@ -143,7 +144,7 @@ describe('GET /v1/contacts/by-preference (PC-CORE-10)', () => {
 
 describe('PUT /v1/contacts/:did (PC-CORE-11)', () => {
   function setup() {
-    const calls: Array<{ did: string; categories: readonly string[] }> = [];
+    const calls: { did: string; categories: readonly string[] }[] = [];
     const known = new Map<string, Contact>();
     const { updateContact } = makeContactsHandlers({
       getContact: (d) => known.get(d) ?? null,
@@ -425,5 +426,67 @@ describe('POST /v1/contacts trust_level validation', () => {
     const res = await handler(post({ did: 'did:plc:abc', trust_level: level }));
     expect(res.status).toBe(400);
     expect(addContact).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /v1/contacts (list) — web People tab
+// ---------------------------------------------------------------------------
+
+describe('GET /v1/contacts (list)', () => {
+  it('returns { contacts } from the injected list fn', async () => {
+    const alonso = contactFixture('did:plc:alonso', 'Alonso');
+    const sancho = contactFixture('did:plc:sancho', 'Sancho');
+    const { list } = makeContactsHandlers({ listContacts: () => [alonso, sancho] });
+    const res = await list(req({ method: 'GET', path: '/v1/contacts' }));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ contacts: [alonso, sancho] });
+  });
+
+  it('returns an empty list (not an error) when there are no contacts', async () => {
+    const { list } = makeContactsHandlers({ listContacts: () => [] });
+    const res = await list(req({ method: 'GET', path: '/v1/contacts' }));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ contacts: [] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /v1/contacts/:did — idempotent remove
+// ---------------------------------------------------------------------------
+
+describe('DELETE /v1/contacts/:did', () => {
+  it('deletes a known contact → { deleted: true }', async () => {
+    const calls: string[] = [];
+    const { deleteContact } = makeContactsHandlers({
+      deleteContact: (did) => {
+        calls.push(did);
+        return true;
+      },
+    });
+    const res = await deleteContact(req({ method: 'DELETE', params: { did: 'did:plc:x' } }));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ deleted: true });
+    expect(calls).toEqual(['did:plc:x']);
+  });
+
+  it('unknown DID → 200 { deleted: false } (idempotent, NOT a 404)', async () => {
+    const { deleteContact } = makeContactsHandlers({ deleteContact: () => false });
+    const res = await deleteContact(req({ method: 'DELETE', params: { did: 'did:plc:gone' } }));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ deleted: false });
+  });
+
+  it('blank :did → 400 (never reaches the directory)', async () => {
+    const calls: string[] = [];
+    const { deleteContact } = makeContactsHandlers({
+      deleteContact: (did) => {
+        calls.push(did);
+        return true;
+      },
+    });
+    const res = await deleteContact(req({ method: 'DELETE', params: { did: '   ' } }));
+    expect(res.status).toBe(400);
+    expect(calls).toEqual([]);
   });
 });

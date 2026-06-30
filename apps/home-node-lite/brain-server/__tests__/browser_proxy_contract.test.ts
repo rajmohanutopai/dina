@@ -13,16 +13,20 @@
  */
 
 import Fastify, { type FastifyInstance } from 'fastify';
+
 import { BrowserCoreProxyClient } from '@dina/core';
 // MockCoreClient lives in @dina/test-harness (NOT @dina/core).
 import { MockCoreClient as HarnessMock } from '@dina/test-harness';
 
+import { registerContactsApiRoutes } from '../src/routes/contacts';
+import { registerDeviceApiRoutes } from '../src/routes/devices';
 import { registerIdentityApiRoutes } from '../src/routes/identity';
-import { registerVaultApiRoutes } from '../src/routes/vault';
+import { registerPeopleApiRoutes } from '../src/routes/people';
 import { registerPersonaApiRoutes } from '../src/routes/personas';
-import { registerServiceConfigApiRoutes } from '../src/routes/service_config';
-import { registerWorkflowApiRoutes } from '../src/routes/workflow';
 import { registerPolicyApiRoutes } from '../src/routes/policy';
+import { registerServiceConfigApiRoutes } from '../src/routes/service_config';
+import { registerVaultApiRoutes } from '../src/routes/vault';
+import { registerWorkflowApiRoutes } from '../src/routes/workflow';
 
 /** Adapt Fastify `inject` to a `fetch`-shaped function for the client. */
 function injectFetch(app: FastifyInstance): typeof globalThis.fetch {
@@ -56,6 +60,9 @@ function makeStack(): { app: FastifyInstance; core: HarnessMock; client: Browser
   registerServiceConfigApiRoutes(app, { core });
   registerWorkflowApiRoutes(app, { core });
   registerPolicyApiRoutes(app, { core });
+  registerContactsApiRoutes(app, { core });
+  registerPeopleApiRoutes(app, { core });
+  registerDeviceApiRoutes(app, { core });
   const client = new BrowserCoreProxyClient({
     baseUrl: 'http://node.local/api/v1',
     fetch: injectFetch(app),
@@ -191,6 +198,85 @@ describe('Browser↔brain wire contract (BrowserCoreProxyClient → /api/v1/* �
         risk: 'high',
       });
       await expect(client.deleteActionOverride('send_email')).resolves.toBeUndefined();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('contacts: add → list → delete round-trip end to end', async () => {
+    const { app, core, client } = makeStack();
+    core.contactListResult = [{ did: 'did:plc:bob', displayName: 'Bob' } as never];
+    try {
+      const added = await client.contactAdd('did:plc:bob', 'Bob', 'verified');
+      expect(added).toMatchObject({ created: true });
+      const addCall = core.calls.find((c) => c.method === 'contactAdd');
+      expect(addCall?.args).toEqual(['did:plc:bob', 'Bob', 'verified']);
+
+      await expect(client.contactList()).resolves.toHaveLength(1);
+      await expect(client.contactDelete('did:plc:bob')).resolves.toBe(true);
+      const delCall = core.calls.find((c) => c.method === 'contactDelete');
+      expect(delCall?.args).toEqual(['did:plc:bob']);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('people: list + find(surface) + by-did round-trip end to end', async () => {
+    const { app, core, client } = makeStack();
+    // The mock resolves find()/by-did against this canned list (by
+    // normalizedSurface / contactDid), so seed a person that matches both.
+    core.peopleListResult = [
+      {
+        personId: 'p1',
+        contactDid: 'did:plc:alice',
+        status: 'active',
+        surfaces: [{ normalizedSurface: 'alice', status: 'active' }],
+      } as never,
+    ];
+    try {
+      await expect(client.peopleList()).resolves.toHaveLength(1);
+
+      await expect(client.peopleFindByName('Alice')).resolves.toHaveLength(1);
+      const findCall = core.calls.find((c) => c.method === 'peopleFindByName');
+      expect(findCall?.args).toEqual(['Alice']);
+
+      await expect(client.peopleResolveByDid('did:plc:alice')).resolves.toMatchObject({
+        personId: 'p1',
+      });
+      const didCall = core.calls.find((c) => c.method === 'peopleResolveByDid');
+      expect(didCall?.args).toEqual(['did:plc:alice']);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('devices: list + pair/initiate round-trip end to end (role validated)', async () => {
+    const { app, core, client } = makeStack();
+    core.pairedDevicesResult = [{ deviceId: 'd1', name: 'Laptop' } as never];
+    try {
+      await expect(client.listPairedDevices()).resolves.toHaveLength(1);
+
+      const pair = await client.pairInitiate('Laptop', 'thin');
+      expect(pair).toMatchObject({ deviceName: 'Laptop', role: 'thin' });
+      const pairCall = core.calls.find((c) => c.method === 'pairInitiate');
+      expect(pairCall?.args).toEqual(['Laptop', 'thin']);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('service/respond: deny→notify round-trips (task_id + body reach Core, snake_case back)', async () => {
+    const { app, core, client } = makeStack();
+    core.serviceRespondResult = { status: 'sent', taskId: '', alreadyProcessed: false };
+    try {
+      const res = await client.sendServiceRespond('t1', {
+        status: 'unavailable',
+        error: 'denied_by_operator',
+      });
+      expect(res).toEqual({ status: 'sent', taskId: 't1', alreadyProcessed: false });
+      const call = core.calls.find((c) => c.method === 'sendServiceRespond');
+      expect(call?.args[0]).toBe('t1');
+      expect(call?.args[1]).toEqual({ status: 'unavailable', error: 'denied_by_operator' });
     } finally {
       await app.close();
     }

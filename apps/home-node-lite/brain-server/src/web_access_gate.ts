@@ -7,20 +7,32 @@
  * page the user visits (cross-origin → loopback), can reach it. The gate
  * closes both holes with a per-process **session cookie**:
  *
- *   - The brain mints a crypto-random secret once at boot and sets it as
- *     an `HttpOnly; SameSite=Strict` cookie when it serves the SPA bundle
- *     (`/web/*`). Browsers auto-attach a same-origin cookie to BOTH
- *     `fetch` and `EventSource`, so the SPA + the SSE reminder stream work
- *     with ZERO client changes.
+ *   - The brain mints a crypto-random secret once at boot and prints a
+ *     tokenised URL (`…/web/?token=<secret>`) to the **server console**.
+ *     That console is the OUT-OF-BAND channel: only the operator who started
+ *     the node sees it. (Jupyter's notebook-token model.)
+ *   - The operator opens that URL. The gate validates the token, sets an
+ *     `HttpOnly; SameSite=Strict` session cookie, and 302-redirects to the
+ *     clean `/web/` URL (stripping the token from history/referrer). The
+ *     browser now carries the cookie on BOTH `fetch` and `EventSource`, so
+ *     the SPA + SSE work with ZERO client changes.
  *   - Every `/api/v1/*` request must carry that cookie; otherwise 401.
  *
+ * Why the cookie is NEVER handed to an arbitrary `/web` visitor (the bug this
+ * fixes): if the gate `Set-Cookie`'d the secret to anyone who GETs `/web/*`,
+ * a local process could `curl /web/index.html`, read the secret from the
+ * `Set-Cookie` response header, and replay it — defeating the whole point. So
+ * an unauthenticated `/web` request (no cookie, no valid token) gets **401, no
+ * cookie** — it must come in through the tokenised URL.
+ *
  * Why this is sufficient here:
- *   - **Other local processes** (non-browser) don't have the cookie → 401.
+ *   - **Other local processes** (non-browser) never saw the console token and
+ *     are never handed the cookie → 401.
  *   - **CSRF / cross-origin pages**: `SameSite=Strict` means the cookie is
  *     never sent on a cross-site request, so a malicious page hitting
  *     `127.0.0.1:<brain>` can't authenticate → 401. (On loopback there are
- *     no sibling same-site origins, so the cookie alone is the CSRF
- *     defense — no separate CSRF token needed.)
+ *     no sibling same-site origins, so the cookie alone is the CSRF defense
+ *     for state-changing routes — no separate CSRF token needed.)
  *   - **XSS exfiltration**: `HttpOnly` keeps the secret out of JS.
  *
  * Dev/test escape: `DINA_BRAIN_DEV_OPEN=1` disables the gate entirely
@@ -34,6 +46,7 @@
  */
 
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 /** Cookie name carrying the per-process web-session secret. */
@@ -87,6 +100,13 @@ function pathOf(url: string): string {
   return q === -1 ? url : url.slice(0, q);
 }
 
+/** Read a query parameter from a raw URL, or null. */
+function queryParam(url: string, name: string): string | null {
+  const q = url.indexOf('?');
+  if (q === -1) return null;
+  return new URLSearchParams(url.slice(q + 1)).get(name);
+}
+
 function underPrefix(path: string, prefix: string): boolean {
   return path === prefix || path.startsWith(`${prefix}/`);
 }
@@ -105,13 +125,36 @@ export function createWebAccessGate(opts: WebAccessGateOptions = {}): WebAccessG
       if (devOpen) return;
       const path = pathOf(req.url);
 
-      // Issue the cookie when the SPA bundle is served, so the SPA's
-      // subsequent same-origin /api/v1 calls carry it.
+      // Web bundle. The cookie is issued ONLY to a caller that proves
+      // possession of the out-of-band token (printed to the server console at
+      // boot) — never to an arbitrary visitor, or a local process could read
+      // the secret straight off the `Set-Cookie` response header and replay it.
       if (underPrefix(path, webPrefix)) {
         const have = parseCookie(req.headers.cookie, WEB_SESSION_COOKIE);
-        if (have === null || !constantTimeEqual(have, secret)) {
-          void reply.header('set-cookie', `${WEB_SESSION_COOKIE}=${secret}; ${cookieAttrs}`);
+        if (have !== null && constantTimeEqual(have, secret)) {
+          return; // already authenticated → serve the bundle + its assets
         }
+        const token = queryParam(req.url, 'token');
+        if (token !== null && constantTimeEqual(token, secret)) {
+          // Valid token → mint the session cookie, then 302 to the clean URL so
+          // the token never lingers in the address bar / history / referrer.
+          await reply
+            .header('set-cookie', `${WEB_SESSION_COOKIE}=${secret}; ${cookieAttrs}`)
+            .header('location', path)
+            .code(302)
+            .send();
+          return;
+        }
+        // No cookie + no valid token → refuse. Crucially: do NOT set the cookie
+        // and do NOT serve the bundle. The operator opens the tokenised URL.
+        await reply
+          .code(401)
+          .type('text/plain; charset=utf-8')
+          .send(
+            'Dina web session required. Open the tokenised URL ' +
+              '(http://127.0.0.1:<port>/web/?token=…) printed in your Home Node ' +
+              'server console.',
+          );
         return;
       }
 

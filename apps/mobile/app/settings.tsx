@@ -8,7 +8,7 @@
 import Constants from 'expo-constants';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { getBackgroundTimeout, setBackgroundTimeout } from '@dina/core';
@@ -90,9 +90,15 @@ export default function SettingsScreen() {
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      void loadVerificationStatus().then((status) => {
-        if (!cancelled) setVerificationPending(status === 'pending');
-      });
+      // Web thin client (§8): the master seed + recovery phrase live on the
+      // Home Node server, never in the browser — there is nothing local to
+      // verify, and the "Confirm recovery phrase" row it drives is hidden on
+      // web anyway. Skip the local verification probe.
+      if (Platform.OS !== 'web') {
+        void loadVerificationStatus().then((status) => {
+          if (!cancelled) setVerificationPending(status === 'pending');
+        });
+      }
       // Refresh the active provider + key states whenever Settings
       // comes back into focus — without this, a switch made in
       // `/ai-providers` (Use this provider / Add key / Remove key)
@@ -112,6 +118,11 @@ export default function SettingsScreen() {
   );
 
   const loadStates = useCallback(async () => {
+    // Web thin client (design D7 + §8): the AI provider + its key are managed
+    // on the Home Node server — there is NO model key in the browser. Never
+    // read the (IndexedDB) keychain shim or wire a browser-side provider; the
+    // AI PROVIDER section renders a server-managed card instead.
+    if (Platform.OS === 'web') return;
     const states: Record<string, ProviderState> = {};
     for (const type of Object.keys(PROVIDERS) as ProviderType[]) {
       const key = await getApiKey(type);
@@ -173,7 +184,28 @@ export default function SettingsScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>AI PROVIDER</Text>
 
-        {!aiHydrated ? (
+        {Platform.OS === 'web' ? (
+          // Web thin client (D7): the provider + key are server-managed; the
+          // browser holds no model key. Read-only summary that drills into the
+          // /ai-providers web notice — never a keychain-derived "Add key" CTA.
+          <TouchableOpacity
+            style={styles.providerCard}
+            onPress={() => router.push('/ai-providers')}
+            accessibilityRole="button"
+            accessibilityLabel="AI provider managed on your Home Node"
+            testID="settings-provider-web-managed"
+          >
+            <View style={styles.providerHeader}>
+              <View style={styles.providerInfo}>
+                <Text style={styles.providerName}>Managed on your Home Node</Text>
+                <Text style={styles.providerDesc}>
+                  The AI provider and its key live on your server — never in this browser.
+                </Text>
+              </View>
+              <Text style={styles.modelRowChevron}>{'›'}</Text>
+            </View>
+          </TouchableOpacity>
+        ) : !aiHydrated ? (
           <View style={[styles.providerCard, styles.providerCardLoading]}>
             <ActivityIndicator color={colors.textMuted} />
           </View>
@@ -281,16 +313,26 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           );
         })()}
-        <TouchableOpacity
-          style={styles.row}
-          onPress={() => router.push('/paired-devices')}
-          accessibilityRole="button"
-          accessibilityLabel="Open Agents"
-          testID="settings-row-agents"
-        >
-          <Text style={styles.rowLabel}>Agents</Text>
-          <Text style={styles.rowValue}>{'\u203A'}</Text>
-        </TouchableOpacity>
+        {/* Agents \u2192 /paired-devices. NATIVE ONLY: that screen still drives the
+            in-process device registry (listDevices / generatePairingCode /
+            getNodeDID); on the web thin client the device registry lives on
+            the server and the screen has no `Platform.OS==='web'` branch yet
+            (the proxy transport \u2014 listPairedDevices / pairInitiate \u2014 is built
+            and tested, but revoke + the full screen wiring are deferred). Hide
+            the row on web rather than route to a screen that reads empty/stale
+            local state. */}
+        {Platform.OS !== 'web' ? (
+          <TouchableOpacity
+            style={styles.row}
+            onPress={() => router.push('/paired-devices')}
+            accessibilityRole="button"
+            accessibilityLabel="Open Agents"
+            testID="settings-row-agents"
+          >
+            <Text style={styles.rowLabel}>Agents</Text>
+            <Text style={styles.rowValue}>{'\u203A'}</Text>
+          </TouchableOpacity>
+        ) : null}
         <TouchableOpacity
           style={styles.row}
           onPress={() => router.push('/admin')}
@@ -308,113 +350,138 @@ export default function SettingsScreen() {
           here so the user sees one tidy block of "what protects
           your data". */}
       <SettingsSection title="SECURITY">
-        {/* "Confirm recovery phrase" — only renders while the user
-            has the in-onboarding "Quick check" deferred (status =
-            'pending'). Pinned to the top of SECURITY so it's the
-            first thing they see when they come here looking for it. */}
-        {verificationPending ? (
+        {/* Seed-bound rows — NATIVE ONLY. On the web thin client the master
+            seed lives on the server, never in the browser (design D3 + §8): the
+            browser must never reveal the recovery phrase or re-wrap the seed, so
+            these rows are hidden on web. (Recovery-phrase reveal would put the
+            mnemonic in browser memory; change-passphrase has no local wrapped
+            seed to re-wrap — it's a server operation, deferred.) */}
+        {Platform.OS !== 'web' ? (
+          <>
+            {/* "Confirm recovery phrase" — only renders while the user
+                has the in-onboarding "Quick check" deferred (status =
+                'pending'). Pinned to the top of SECURITY so it's the
+                first thing they see when they come here looking for it. */}
+            {verificationPending ? (
+              <TouchableOpacity
+                style={styles.row}
+                onPress={() => router.push('/confirm-recovery-phrase')}
+                accessibilityRole="button"
+                accessibilityLabel="Confirm recovery phrase"
+                testID="settings-row-confirm-recovery-phrase"
+              >
+                <Text style={styles.rowLabel}>Confirm recovery phrase</Text>
+                <Text style={styles.rowValuePending}>Pending {'›'}</Text>
+              </TouchableOpacity>
+            ) : null}
+            {/* "View recovery phrase" is the only other ACTIONABLE row in
+                this section; rest are read-only crypto labels. */}
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => router.push('/recovery-phrase')}
+              accessibilityRole="button"
+              accessibilityLabel="View recovery phrase"
+              testID="settings-row-recovery-phrase"
+            >
+              <Text style={styles.rowLabel}>View recovery phrase</Text>
+              <Text style={styles.rowValue}>{'›'}</Text>
+            </TouchableOpacity>
+            {/* "Change passphrase" — re-wraps the master seed under a new
+                passphrase. Data + recovery phrase are untouched (the
+                passphrase only wraps the seed). */}
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => router.push('/change-passphrase')}
+              accessibilityRole="button"
+              accessibilityLabel="Change passphrase"
+              testID="settings-row-change-passphrase"
+            >
+              <Text style={styles.rowLabel}>Change passphrase</Text>
+              <Text style={styles.rowValue}>{'›'}</Text>
+            </TouchableOpacity>
+          </>
+        ) : null}
+        {/* Auto-lock — NATIVE ONLY (MT-40-I1). Seals the on-device vault after
+            a background timeout (`useAutoLock` reads `getBackgroundTimeout()`
+            on each transition). The web thin client has no browser vault to
+            seal — the server owns the vault + its session lock — so this row
+            would only mirror local state nothing on web consumes. Hidden until
+            there is a real server-side web-session lock API. */}
+        {Platform.OS !== 'web' ? (
           <TouchableOpacity
             style={styles.row}
-            onPress={() => router.push('/confirm-recovery-phrase')}
+            onPress={() => {
+              const presets: readonly { s: number; label: string }[] = [
+                { s: 60, label: '1 minute' },
+                { s: 300, label: '5 minutes' },
+                { s: 600, label: '10 minutes' },
+                { s: 1800, label: '30 minutes' },
+                { s: 3600, label: '1 hour' },
+              ];
+              Alert.alert(
+                'Auto-lock when backgrounded',
+                'Seal the vault after this much time in the background, clearing its keys from memory. If you chose "Unlock automatically", it reopens silently; otherwise it asks for your passphrase next time you bring it foreground.',
+                [
+                  ...presets.map((p) => ({
+                    text: p.label + (p.s === autoLockSeconds ? '  ✓' : ''),
+                    onPress: () => {
+                      try {
+                        setBackgroundTimeout(p.s);
+                        setAutoLockSeconds(p.s);
+                        // MT-40-I3 — write through to durable storage so
+                        // the choice survives a cold launch. Fire-and-
+                        // forget; the in-memory `setBackgroundTimeout`
+                        // call above already armed the new value for the
+                        // current session.
+                        void saveBackgroundTimeoutPreference(p.s).catch((err) => {
+                          console.warn('[settings] saveBackgroundTimeoutPreference failed', err);
+                        });
+                      } catch (err) {
+                        Alert.alert(
+                          'Could not change timeout',
+                          err instanceof Error ? err.message : String(err),
+                        );
+                      }
+                    },
+                  })),
+                  { text: 'Cancel', style: 'cancel' },
+                ],
+                { cancelable: true },
+              );
+            }}
             accessibilityRole="button"
-            accessibilityLabel="Confirm recovery phrase"
-            testID="settings-row-confirm-recovery-phrase"
+            accessibilityLabel="Auto-lock timeout"
+            testID="settings-row-autolock"
           >
-            <Text style={styles.rowLabel}>Confirm recovery phrase</Text>
-            <Text style={styles.rowValuePending}>Pending {'›'}</Text>
+            <Text style={styles.rowLabel}>Auto-lock when backgrounded</Text>
+            <Text style={styles.rowValue}>
+              {formatTimeoutLabel(autoLockSeconds)} {'›'}
+            </Text>
           </TouchableOpacity>
         ) : null}
-        {/* "View recovery phrase" is the only other ACTIONABLE row in
-            this section; rest are read-only crypto labels. */}
-        <TouchableOpacity
-          style={styles.row}
-          onPress={() => router.push('/recovery-phrase')}
-          accessibilityRole="button"
-          accessibilityLabel="View recovery phrase"
-          testID="settings-row-recovery-phrase"
-        >
-          <Text style={styles.rowLabel}>View recovery phrase</Text>
-          <Text style={styles.rowValue}>{'›'}</Text>
-        </TouchableOpacity>
-        {/* "Change passphrase" — re-wraps the master seed under a new
-            passphrase. Data + recovery phrase are untouched (the
-            passphrase only wraps the seed). */}
-        <TouchableOpacity
-          style={styles.row}
-          onPress={() => router.push('/change-passphrase')}
-          accessibilityRole="button"
-          accessibilityLabel="Change passphrase"
-          testID="settings-row-change-passphrase"
-        >
-          <Text style={styles.rowLabel}>Change passphrase</Text>
-          <Text style={styles.rowValue}>{'›'}</Text>
-        </TouchableOpacity>
-        {/* MT-40-I1: pick how long the app waits in the background
-            before sealing the vault. The auto-lock listener
-            (`useAutoLock`) reads `getBackgroundTimeout()` afresh on
-            every transition, so a change here takes effect on the
-            next foreground→background. Default is 5 minutes. */}
-        <TouchableOpacity
-          style={styles.row}
-          onPress={() => {
-            const presets: readonly { s: number; label: string }[] = [
-              { s: 60, label: '1 minute' },
-              { s: 300, label: '5 minutes' },
-              { s: 600, label: '10 minutes' },
-              { s: 1800, label: '30 minutes' },
-              { s: 3600, label: '1 hour' },
-            ];
-            Alert.alert(
-              'Auto-lock when backgrounded',
-              'Seal the vault after this much time in the background, clearing its keys from memory. If you chose "Unlock automatically", it reopens silently; otherwise it asks for your passphrase next time you bring it foreground.',
-              [
-                ...presets.map((p) => ({
-                  text: p.label + (p.s === autoLockSeconds ? '  ✓' : ''),
-                  onPress: () => {
-                    try {
-                      setBackgroundTimeout(p.s);
-                      setAutoLockSeconds(p.s);
-                      // MT-40-I3 — write through to durable storage so
-                      // the choice survives a cold launch. Fire-and-
-                      // forget; the in-memory `setBackgroundTimeout`
-                      // call above already armed the new value for the
-                      // current session.
-                      void saveBackgroundTimeoutPreference(p.s).catch((err) => {
-                        console.warn('[settings] saveBackgroundTimeoutPreference failed', err);
-                      });
-                    } catch (err) {
-                      Alert.alert(
-                        'Could not change timeout',
-                        err instanceof Error ? err.message : String(err),
-                      );
-                    }
-                  },
-                })),
-                { text: 'Cancel', style: 'cancel' },
-              ],
-              { cancelable: true },
-            );
-          }}
-          accessibilityRole="button"
-          accessibilityLabel="Auto-lock timeout"
-          testID="settings-row-autolock"
-        >
-          <Text style={styles.rowLabel}>Auto-lock when backgrounded</Text>
-          <Text style={styles.rowValue}>
-            {formatTimeoutLabel(autoLockSeconds)} {'›'}
-          </Text>
-        </TouchableOpacity>
+        {/* The crypto-algorithm rows are true on both platforms (they describe
+            the vault the Home Node encrypts). Only the LOCATION rows differ:
+            on the web thin client the keys + vault live on the server, not on
+            this browser/device. */}
         <SettingsRow label="Vault encryption" value="AES-256-CBC" />
         <SettingsRow label="Seed wrap" value="AES-256-GCM" />
         <SettingsRow label="Key derivation" value="SLIP-0010 + HKDF" />
-        <SettingsRow label="Key storage" value="Device Keychain" />
-        <SettingsRow label="Storage" value="On device only" />
+        <SettingsRow
+          label="Key storage"
+          value={Platform.OS === 'web' ? 'Home Node server' : 'Device Keychain'}
+        />
+        <SettingsRow
+          label="Storage"
+          value={Platform.OS === 'web' ? 'On your Home Node' : 'On device only'}
+        />
       </SettingsSection>
 
       <View style={styles.footer}>
         <Text style={styles.footerText}>Dina v{Constants.expoConfig?.version ?? '0.0.1'}</Text>
         <Text style={styles.footerSubtext}>
-          Vault contents are encrypted and stay on this device
+          {Platform.OS === 'web'
+            ? 'Vault contents are encrypted and stay on your Home Node server'
+            : 'Vault contents are encrypted and stay on this device'}
         </Text>
       </View>
     </ScrollView>

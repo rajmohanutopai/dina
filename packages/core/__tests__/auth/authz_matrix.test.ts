@@ -7,13 +7,15 @@
  * Source: core/test/authz_test.go
  */
 
-import { isAuthorized, getAuthorizationMatrix } from '../../src/auth/authz';
-import type { CallerType } from '../../src/auth/authz';
 import { hasFixture, loadVectors } from '@dina/test-harness';
+
+import { isAuthorized, getAuthorizationMatrix } from '../../src/auth/authz';
+
+import type { CallerType } from '../../src/auth/authz';
 
 describe('Authorization Matrix', () => {
   // Allowed cases from ARCHITECTURE.md Section 18.4
-  const allowedCases: Array<{ caller: CallerType; method: string; path: string; label: string }> = [
+  const allowedCases: { caller: CallerType; method: string; path: string; label: string }[] = [
     { caller: 'brain', method: 'POST', path: '/v1/vault/query', label: 'Brain → vault/query' },
     { caller: 'brain', method: 'POST', path: '/v1/vault/store', label: 'Brain → vault/store' },
     // Web thin-client proxy reads — the brain-server proxies these to Core
@@ -63,6 +65,24 @@ describe('Authorization Matrix', () => {
       path: '/api/v1/ask',
       label: 'Agent → api/ask (MT-38: session-scoped vault query via Brain)',
     },
+    // Web thin-client proxy paths the brain forwards (regression guard for the
+    // trailing-slash bug: `/v1/people` list 403'd because the rule was
+    // `/v1/people/`). Caught only by a live run before these rows existed.
+    { caller: 'brain', method: 'GET', path: '/v1/people', label: 'Brain → people (list — bare path!)' },
+    { caller: 'brain', method: 'GET', path: '/v1/people/find', label: 'Brain → people/find' },
+    { caller: 'brain', method: 'GET', path: '/v1/people/by-did', label: 'Brain → people/by-did' },
+    {
+      caller: 'brain',
+      method: 'GET',
+      path: '/v1/devices/list',
+      label: 'Brain → devices/list (web Paired Devices)',
+    },
+    {
+      caller: 'brain',
+      method: 'POST',
+      path: '/v1/pair/initiate',
+      label: 'Brain → pair/initiate (web pairing code)',
+    },
   ];
 
   for (const { caller, method, path, label } of allowedCases) {
@@ -72,7 +92,7 @@ describe('Authorization Matrix', () => {
   }
 
   // Denied cases
-  const deniedCases: Array<{ caller: CallerType; method: string; path: string; label: string }> = [
+  const deniedCases: { caller: CallerType; method: string; path: string; label: string }[] = [
     { caller: 'admin', method: 'POST', path: '/v1/vault/query', label: 'Admin x vault/query' },
     {
       caller: 'connector',
@@ -216,7 +236,7 @@ describe('Authorization Matrix', () => {
     // This fixture has flat vectors: { caller, path, allowed } — not standard inputs/expected
     const data = fixtureAvailable ? require(`../../../fixtures/${fixture}`) : { vectors: [] };
 
-    for (const v of data.vectors as Array<{ caller: string; path: string; allowed: boolean }>) {
+    for (const v of data.vectors as { caller: string; path: string; allowed: boolean }[]) {
       const label = `${v.caller} → ${v.path} = ${v.allowed ? 'allowed' : 'denied'}`;
       it(label, () => {
         expect(isAuthorized(v.caller as CallerType, 'POST', v.path)).toBe(v.allowed);

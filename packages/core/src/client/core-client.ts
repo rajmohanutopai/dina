@@ -525,6 +525,28 @@ export interface CoreClient {
   contactLookup(query: string): Promise<Contact | null>;
 
   /**
+   * List every contact in the directory. Backs the web People tab through the
+   * thin-client proxy (the browser has no in-process directory; mobile reads
+   * the directory module-globals directly). Returns `[]` on transport failure
+   * (fail-soft, like the other contact reads).
+   */
+  contactList(): Promise<Contact[]>;
+
+  /**
+   * Add a contact by DID. Idempotent — re-adding an existing contact is a
+   * no-op that returns `{ created: false }` with the stored row unchanged.
+   * `displayName` defaults to the DID server-side when blank; `trustLevel`
+   * defaults to `verified` (an explicit add is a deliberate "I know this peer").
+   */
+  contactAdd(did: string, displayName: string, trustLevel?: TrustLevel): Promise<ContactAddResult>;
+
+  /**
+   * Delete a contact by DID. Returns `false` when the DID was unknown
+   * (idempotent — re-deleting is not an error).
+   */
+  contactDelete(did: string): Promise<boolean>;
+
+  /**
    * Apply a people-graph extraction result. Brain's post-publish
    * extractor invokes this after each successful vault store; Core
    * dispatches to the registered `PeopleRepository.applyExtraction`.
@@ -1292,10 +1314,17 @@ export interface MemoryTouchResult {
   reason?: string;
 }
 
-/** Re-export `Contact` so consumers find it on `@dina/core`'s public
- *  barrel without deep-importing from `contacts/directory`. */
-import type { Contact } from '../contacts/directory';
-export type { Contact };
+/** Re-export `Contact` + `TrustLevel` so consumers find them on `@dina/core`'s
+ *  public barrel without deep-importing from `contacts/directory`. */
+import type { Contact, TrustLevel } from '../contacts/directory';
+export type { Contact, TrustLevel };
+
+/** Result of `contactAdd` — the stored contact plus whether it was newly
+ *  created. An idempotent add of an existing contact returns `created:false`. */
+export interface ContactAddResult {
+  contact: Contact;
+  created: boolean;
+}
 
 /** People-graph types crossing the Core HTTP boundary. */
 import type {

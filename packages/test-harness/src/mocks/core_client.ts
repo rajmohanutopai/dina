@@ -73,6 +73,8 @@ import type {
   MemoryTouchResult,
   UpdateContactParams,
   Contact,
+  ContactAddResult,
+  TrustLevel,
   ExtractionResult,
   ApplyExtractionResponse,
   Person,
@@ -261,6 +263,19 @@ export class MockCoreClient implements CoreClient {
   /** Per-query canned result for `contactLookup` — keys compared after
    *  trim + lowercase. Unmatched query → null (no contact). */
   contactLookupResult: Record<string, Contact> = {};
+
+  // NB: these three contact canned-results are INDEPENDENT (no shared state) —
+  // a test that needs add→list coherence, or a re-add returning `created:false`,
+  // must set the fields explicitly; the mock does not model the directory.
+  /** Canned result for `contactList`. */
+  contactListResult: Contact[] = [];
+
+  /** Optional canned result for `contactAdd`; when null a deterministic
+   *  contact is synthesised from the args (created:true). */
+  contactAddResult: ContactAddResult | null = null;
+
+  /** Canned result for `contactDelete` (default: deleted). */
+  contactDeleteResult = true;
   /** Canned `listServiceOffers` result — tests seed known_only offers;
    *  filtered by providerDid / capability at call time. */
   serviceOffersResult: ServiceOfferView[] = [];
@@ -781,6 +796,38 @@ export class MockCoreClient implements CoreClient {
     return this.dispatch('contactLookup', [query], () => {
       return this.contactLookupResult[query.trim().toLowerCase()] ?? null;
     });
+  }
+
+  async contactList(): Promise<Contact[]> {
+    return this.dispatch('contactList', [], () => [...this.contactListResult]);
+  }
+
+  async contactAdd(
+    did: string,
+    displayName: string,
+    trustLevel?: TrustLevel,
+  ): Promise<ContactAddResult> {
+    return this.dispatch('contactAdd', [did, displayName, trustLevel], () => {
+      if (this.contactAddResult !== null) return this.contactAddResult;
+      const contact: Contact = {
+        personId: `person:${did}`,
+        did,
+        displayName: displayName.trim() !== '' ? displayName : did,
+        trustLevel: trustLevel ?? 'verified',
+        sharingTier: 'summary',
+        relationship: 'unknown',
+        dataResponsibility: 'external',
+        aliases: [],
+        notes: '',
+        createdAt: 0,
+        updatedAt: 0,
+      };
+      return { contact, created: true };
+    });
+  }
+
+  async contactDelete(did: string): Promise<boolean> {
+    return this.dispatch('contactDelete', [did], () => this.contactDeleteResult);
   }
 
   async listServiceOffers(params?: {

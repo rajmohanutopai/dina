@@ -21,6 +21,7 @@
  * detail view (not built yet).
  */
 
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import {
   View,
@@ -33,10 +34,11 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { addContact, getContact } from '@dina/core';
-import { getProfile as getTrustProfile } from '../src/peerlens/appview_runtime';
+
+import { addContact, getContact, type Contact } from '@dina/core';
+
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
+import { getProfile as getTrustProfile } from '../src/peerlens/appview_runtime';
 import { parseContactCard } from '../src/services/contact_card';
 import { colors, spacing, radius, textStyles } from '../src/theme';
 
@@ -68,6 +70,20 @@ export default function AddContactScreen() {
 
     let did = raw;
     if (!raw.startsWith('did:')) {
+      // Web thin client (design §9): handle→DID resolution is node logic —
+      // ATProto `.well-known/atproto-did` + `com.atproto.identity.resolveHandle`
+      // + PLC-directory lookups — that must run on the server, never in the
+      // browser (it would duplicate identity resolution and CORS-fail on
+      // arbitrary handle domains). The server-side resolve proxy isn't built
+      // yet, so on web require a DID. Native resolves in-process, unchanged.
+      if (Platform.OS === 'web') {
+        setStatus('error');
+        setErrorText(
+          'On the web app, add a contact by their DID (did:plc:…). ' +
+            'Adding by handle from the browser is coming soon.',
+        );
+        return;
+      }
       setStatus('resolving');
       try {
         did = await resolveHandle(raw);
@@ -91,7 +107,15 @@ export default function AddContactScreen() {
       return;
     }
 
-    const existing = getContact(did);
+    // Dup check. Web (thin client) resolves through the server node; native
+    // reads the in-process directory byte-for-byte (design §9).
+    let existing: Contact | null;
+    if (Platform.OS === 'web') {
+      const node = getBootedNode();
+      existing = node !== null ? await node.coreClient.contactLookup(did) : null;
+    } else {
+      existing = getContact(did);
+    }
     if (existing !== null) {
       setStatus('error');
       setErrorText('That DID is already in your contacts.');
@@ -123,7 +147,19 @@ export default function AddContactScreen() {
 
     setStatus('saving');
     try {
-      addContact(did, name, 'verified');
+      if (Platform.OS === 'web') {
+        // Web: write through the server node (no in-process directory).
+        const node = getBootedNode();
+        if (node === null) {
+          // Don't report a phantom success + navigate away on an unwritten add.
+          setStatus('error');
+          setErrorText('Dina is still connecting to your Home Node — try again in a moment.');
+          return;
+        }
+        await node.coreClient.contactAdd(did, name, 'verified');
+      } else {
+        addContact(did, name, 'verified'); // native: byte-for-byte unchanged (§9)
+      }
       router.replace('/people');
     } catch (err) {
       setStatus('error');
