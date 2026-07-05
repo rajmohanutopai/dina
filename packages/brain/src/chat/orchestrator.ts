@@ -112,11 +112,40 @@ const COMPOSER_MODE_INTENTS = new Set<ChatIntent>([
   'task',
   'services',
   'reviews',
+  // Contact Services seam 2/6: a `/schedule …` user bubble shows the clean
+  // payload + a "schedule" mode chip (never the raw slash prefix), exactly
+  // like the other composer lanes.
+  'schedule',
 ]);
 
-export async function handleChat(text: string, threadId?: string): Promise<ChatResponse> {
+/**
+ * Optional context for `handleChat`. Contact Services (§7 seam 2): when the
+ * chat originates in a Talk thread, `contactDID` carries the thread's peer DID
+ * so a scheduling intent routes to THAT contact's Dina instead of public
+ * provider discovery. Absent (main chat tab) → today's behaviour unchanged.
+ */
+export interface HandleChatContext {
+  /** The Talk thread's peer DID. Set ONLY for per-contact threads. */
+  contactDID?: string;
+}
+
+export async function handleChat(
+  text: string,
+  threadId?: string,
+  context?: HandleChatContext,
+): Promise<ChatResponse> {
   const thread = threadId ?? DEFAULT_THREAD;
   const parsed = parseCommand(text);
+  // Contact-scoped routing: a Talk thread is keyed by the peer DID, so an
+  // explicit `contactDID` (or a `did:`-shaped threadId) tells us "this turn is
+  // addressed within a conversation with that contact". Prefer the explicit
+  // field; fall back to the threadId when it is itself a DID.
+  const contactDID =
+    context?.contactDID !== undefined && context.contactDID !== ''
+      ? context.contactDID
+      : thread.startsWith('did:')
+        ? thread
+        : '';
 
   // Store the user message. For an explicit composer-mode command (the chips:
   // Ask / Remember / Task / Services / Reviews) store the CLEAN payload plus
@@ -201,6 +230,16 @@ export async function handleChat(text: string, threadId?: string): Promise<ChatR
         parsed.capability ?? '',
         parsed.payload,
       ));
+      break;
+
+    // Contact Services seam 2: a scheduling intent toward the thread's contact.
+    // Routes to THAT peer (seam 5 via the injected contact-service handler)
+    // instead of public discovery. The handler posts its own correlating card
+    // into the peer thread, so we return an empty response (the "handler posted
+    // its own message" contract). In a non-contact thread (no contactDID) it
+    // degrades to a helpful prompt.
+    case 'schedule':
+      typed = await handleSchedule(contactDID, parsed.payload);
       break;
 
     case 'service_approve':
@@ -736,6 +775,77 @@ async function handleService(
       serviceQueries: [],
       missingCapabilities: [],
     };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// /schedule — Contact Services scheduling intent (seam 2)
+// ---------------------------------------------------------------------------
+
+/** Default capability the scheduling intent maps to. */
+const SCHEDULE_CAPABILITY = 'availability_coordination';
+
+/**
+ * Handler invoked when a scheduling intent fires in a Talk thread with a known
+ * `contactDID`. Wired by the mobile boot to `chat_d2d.sendServiceQuery`, which
+ * dispatches a `service.query` to the contact over the correlating workflow
+ * path AND posts the pending card into the peer thread. Returns whether the
+ * dispatch actually went out (`dispatched: false` when no grant/offer exists,
+ * so the orchestrator can surface a "not offered" hint instead of a phantom).
+ *
+ * The brain stays a thread-and-text orchestrator: it makes the ROUTING
+ * decision (contact-scoped vs public) and delegates the wire send to the host,
+ * exactly like `serviceHandler` / `askHandler`.
+ */
+export type ContactServiceHandler = (args: {
+  contactDID: string;
+  capability: string;
+  /** Free-text intent the user typed (e.g. "find a time next week"). */
+  intent: string;
+}) => Promise<{ ack: string; dispatched: boolean }>;
+
+let contactServiceHandler: ContactServiceHandler | null = null;
+
+/** Install the contact-service handler (mobile boot). `null` clears. */
+export function setContactServiceHandler(handler: ContactServiceHandler | null): void {
+  contactServiceHandler = handler;
+}
+
+/** Reset for tests. */
+export function resetContactServiceHandler(): void {
+  contactServiceHandler = null;
+}
+
+/** Read the installed handler — for tests / UI that route the chip directly. */
+export function getContactServiceHandler(): ContactServiceHandler | null {
+  return contactServiceHandler;
+}
+
+async function handleSchedule(contactDID: string, payload: string): Promise<BotResponse> {
+  // Not in a contact thread → scheduling-with-a-peer is meaningless here.
+  // Redirect rather than misroute to public discovery (which would search the
+  // network for a "scheduling" provider — never the intent of /schedule).
+  if (contactDID === '') {
+    return plainResponse(
+      'Open a chat with a contact to find a time with them, then try again.',
+    );
+  }
+  if (contactServiceHandler === null) {
+    return plainResponse(`Scheduling with this contact isn't wired up yet. (Coming soon.)`);
+  }
+  try {
+    const { ack, dispatched } = await contactServiceHandler({
+      contactDID,
+      capability: SCHEDULE_CAPABILITY,
+      intent: payload.trim(),
+    });
+    // On a successful dispatch the handler already posted the correlating
+    // card into the peer thread — return EMPTY so the orchestrator doesn't
+    // stack a second bubble (same contract the service-query path uses). On a
+    // non-dispatch (no grant/offer), surface the handler's explanatory ack.
+    return dispatched ? plainResponse('') : plainResponse(ack);
+  } catch (err) {
+    return errorResponse(`Couldn't start scheduling: ${(err as Error).message}`);
   }
 }
 

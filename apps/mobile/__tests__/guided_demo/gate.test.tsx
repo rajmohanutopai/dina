@@ -201,12 +201,13 @@ describe('useGuidedDemoGate', () => {
     await act(async () => {
       await result.current.advanceDemo();
     });
-    expect(result.current.step).toBe(2);
+    // After one step the cursor sits on the NEXT action (the advance button target).
+    expect(result.current.currentAction?.id).toBe(DEMO_STEPS[1]?.id);
     await act(async () => {
       requestGuidedDemoReplay();
     });
-    // No restart: a replay mid-demo would reset the cursor to step 1.
-    expect(result.current.step).toBe(2);
+    // No restart: a replay mid-demo would reset the cursor back to the first step.
+    expect(result.current.currentAction?.id).toBe(DEMO_STEPS[1]?.id);
   });
 
   it('replay request is ignored before the app is running (entry phase)', async () => {
@@ -266,7 +267,9 @@ describe('useGuidedDemoGate', () => {
     });
     // Step 1 sends two remembers (Emma + Alonso) in the one step.
     expect(rec.sends).toBe(2);
-    expect(result.current.step).toBe(2);
+    // Dock shows the step ON SCREEN (step 1), while the cursor/button moved to step 2.
+    expect(result.current.step).toBe(1);
+    expect(result.current.caption).toBe(DEMO_STEPS[0]?.caption);
     expect(result.current.currentAction?.id).toBe(DEMO_STEPS[1]?.id);
   });
 
@@ -369,7 +372,7 @@ describe('useGuidedDemoGate', () => {
     // Only ONE step ran (its two sends — Emma + Alonso) and the cursor moved by
     // exactly one; the double-tapped second advance was ignored.
     expect(state.sends).toBe(2);
-    expect(result.current.step).toBe(2);
+    expect(result.current.step).toBe(1);
     expect(result.current.actionInFlight).toBe(false);
   });
 

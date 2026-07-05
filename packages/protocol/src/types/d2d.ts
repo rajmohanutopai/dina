@@ -146,4 +146,42 @@ export interface ServiceOfferBody {
   default_ttl_seconds?: number;
   /** Optional expiry (Unix SECONDS); the offer is stale/ignored after this. */
   expires_at?: number;
+  /**
+   * Echoes the originating `service.grant_request.request_id` when this offer is
+   * the auto-grant REPLY to a requester's preflight. Lets the requester correlate
+   * the offer to the exact request it made and auto-replay only that one (never
+   * an unrelated/proactive offer). Absent on proactive/owner-pushed offers.
+   *
+   * SECURITY: this field is sender-controlled inner-body data, NOT authority. A
+   * recipient that correlates on it MUST also bind to the transport-authenticated
+   * sender DID (the request_id alone must never be treated as proof of identity).
+   */
+  request_id?: string;
+}
+
+/**
+ * `service.grant_request` body — a requester's preflight for a contact service
+ * (`surface:'talk'`, `known_only`). The requester names a CAPABILITY, never a
+ * listing rkey (the listing is private — the requester cannot know it; the
+ * reply `service.offer` returns the `service_uri`). The provider resolves the
+ * capability to its matching talk-surface listing, applies the
+ * closeness/default-offerable policy, and replies with a `service.offer`
+ * (carrying grant_id + service_uri) only when allowed.
+ * `validateServiceGrantRequestBody` (in `../validators`) enforces these
+ * invariants. docs/CONTACT_SERVICES_ARCHITECTURE.md §5.2.
+ */
+export interface ServiceGrantRequestBody {
+  /**
+   * Unique request id, used for request/offer correlation: the auto-grant
+   * `service.offer` reply echoes it back as `ServiceOfferBody.request_id`, so the
+   * requester can auto-replay the originating `/schedule` against exactly that
+   * grant (and only that one). 16 random bytes; non-secret selector.
+   */
+  request_id: string;
+  /** The capability being requested (canonical or namespaced custom NSID). */
+  capability: string;
+  /** Optional free-text intent ("find a time next week"). Display/routing only. */
+  intent?: string;
+  /** The surface this service runs on — always `'talk'` for a relationship service. */
+  requested_surface: 'talk';
 }

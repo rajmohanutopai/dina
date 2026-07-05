@@ -1,0 +1,11 @@
+{
+  "name": "Dina",
+  "short_name": "Dina",
+  "icons": [
+    { "src": "/assets/favicon/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/assets/favicon/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ],
+  "theme_color": "#FAF8F5",
+  "background_color": "#FAF8F5",
+  "display": "standalone"
+}

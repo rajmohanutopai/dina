@@ -1,0 +1,21 @@
+# Continuation: editor already has surface=talk + known_only + default-offerable.
+# Dismiss the "Missing name" alert, set the name (NO Enter — it triggers save),
+# add availability_coordination, save.
+appId: com.dinakernel.mobile
+---
+- tapOn: { text: 'OK' }
+- scrollUntilVisible: { element: { id: 'service-settings-name-input' }, direction: DOWN, timeout: 8000 }
+- tapOn: { id: 'service-settings-name-input' }
+- inputText: 'Find a time with Alonso'
+- takeScreenshot: /tmp/apc_1_name
+- scrollUntilVisible: { element: { id: 'service-settings-add-capability' }, direction: DOWN, timeout: 10000 }
+- tapOn: { id: 'service-settings-add-capability' }
+- extendedWaitUntil: { visible: { text: 'Appointments and Bookings' }, timeout: 6000 }
+- tapOn: { text: 'Appointments and Bookings' }
+- scrollUntilVisible: { element: { id: 'picker-capability-availability_coordination' }, direction: DOWN, timeout: 6000 }
+- tapOn: { id: 'picker-capability-availability_coordination' }
+- takeScreenshot: /tmp/apc_2_cap
+- scrollUntilVisible: { element: { id: 'service-settings-save' }, direction: DOWN, timeout: 8000 }
+- tapOn: { id: 'service-settings-save' }
+- extendedWaitUntil: { visible: { text: 'Saved' }, timeout: 10000 }
+- takeScreenshot: /tmp/apc_3_saved

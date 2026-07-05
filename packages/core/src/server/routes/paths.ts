@@ -63,6 +63,13 @@ export const CONTACTS_ROOT = '/v1/contacts';
 export const CONTACTS_BY_PREFERENCE = '/v1/contacts/by-preference';
 /** Look up one contact by DID / name / alias — GET ?q=… */
 export const CONTACTS_LOOKUP = '/v1/contacts/lookup';
+/**
+ * Owner-private contact-service decision log — GET ?limit=N. Surfaces in the
+ * Activity tab so the owner can review how policy handled inbound
+ * `service.grant_request`s (CONTACT_SERVICES_ARCHITECTURE.md §2/§10). Never
+ * exposed to a requester (this prefix is Brain + Admin auth only).
+ */
+export const CONTACTS_SERVICE_DECISIONS = '/v1/contacts/service-decisions';
 /** PC-CORE-11: PUT /v1/contacts/:did — update mutable contact fields. */
 export const CONTACT_UPDATE = '/v1/contacts/:did';
 

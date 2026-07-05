@@ -1,0 +1,46 @@
+# Clean bridge-isolation: make THIS Dina (Alonso) a CONTACT-SERVICE PROVIDER.
+# Builds a talk / known_only / DEFAULT-OFFERABLE listing for
+# availability_coordination. Combined with "remember <peer> is my brother",
+# an incoming service.grant_request from that peer must AUTO_GRANT (closeness
+# 'close' via the people-graph bridge) rather than soft_reject/ask_to_enable.
+# Run: maestro --device <ios-udid> test alonso_provider_setup.yaml
+appId: com.dinakernel.mobile
+---
+- launchApp: { stopApp: false }
+- tapOn: { id: 'tab-network' }
+- tapOn: { id: 'tab-network' }
+- tapOn: { id: 'network-services-publish' }
+- extendedWaitUntil: { visible: { text: 'New listing' }, timeout: 8000 }
+- tapOn: { text: 'New listing' }
+
+# Surface = Talk → auto-pins discoverability to known_only (talk_must_be_known_only)
+- scrollUntilVisible: { element: { id: 'service-settings-surface-talk' }, direction: DOWN, timeout: 8000 }
+- tapOn: { id: 'service-settings-surface-talk' }
+- takeScreenshot: /tmp/aps_1_talk
+
+# Default-offerable ON (opts into the closeness auto-grant flow)
+- scrollUntilVisible: { element: { id: 'service-settings-default-offerable' }, direction: DOWN, timeout: 8000 }
+- tapOn: { id: 'service-settings-default-offerable' }
+- takeScreenshot: /tmp/aps_2_offerable
+
+# Name
+- scrollUntilVisible: { element: { id: 'service-settings-name-input' }, direction: DOWN, timeout: 8000 }
+- tapOn: { id: 'service-settings-name-input' }
+- inputText: 'Find a time with Alonso'
+- pressKey: Enter
+- takeScreenshot: /tmp/aps_3_named
+
+# Capability = availability_coordination (under Appointments and Bookings)
+- scrollUntilVisible: { element: { id: 'service-settings-add-capability' }, direction: DOWN, timeout: 10000 }
+- tapOn: { id: 'service-settings-add-capability' }
+- extendedWaitUntil: { visible: { text: 'Appointments and Bookings' }, timeout: 6000 }
+- tapOn: { text: 'Appointments and Bookings' }
+- scrollUntilVisible: { element: { id: 'picker-capability-availability_coordination' }, direction: DOWN, timeout: 6000 }
+- tapOn: { id: 'picker-capability-availability_coordination' }
+- takeScreenshot: /tmp/aps_4_cap
+
+# Save
+- scrollUntilVisible: { element: { id: 'service-settings-save' }, direction: DOWN, timeout: 8000 }
+- tapOn: { id: 'service-settings-save' }
+- extendedWaitUntil: { visible: { text: 'Saved' }, timeout: 10000 }
+- takeScreenshot: /tmp/aps_5_saved

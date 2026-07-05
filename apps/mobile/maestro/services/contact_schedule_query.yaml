@@ -1,0 +1,13 @@
+# Contact Services — second /schedule AFTER the peer's service.offer has landed.
+# Operates on the already-open Sancho thread (no launchApp, per the mid-session
+# gotcha). With an offer present, the handler takes the offer-exists path:
+#   runChatTurn -> setContactServiceHandler -> sendServiceQuery -> service.query
+# and the InlineServiceQueryCard (SERVICE HANDOFF) renders pending.
+appId: com.dinakernel.mobile
+---
+- tapOn:
+    id: 'chat-message-input'
+- inputText: '/schedule does next Tuesday afternoon work?'
+- tapOn:
+    id: 'chat-send'
+- takeScreenshot: /tmp/cs_query

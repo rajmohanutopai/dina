@@ -195,6 +195,41 @@ const APPOINTMENT_BOOK_RESULT = Object.freeze({
   },
 });
 
+// availability_coordination — the SYMMETRIC Contact Services meeting capability
+// (Talk surface, known_only). Mirrors the brain registry's schema
+// (`availability_coordination.ts`): one round of a repeated one-shot exchange.
+// These catalog schemas are the discovery-menu copy; the authoritative
+// schema/hash lives on the provider listing (so they need not be byte-identical
+// to the brain's — but are kept aligned to avoid confusion).
+const MEETING_SLOT = Object.freeze({
+  type: 'object',
+  required: ['start'],
+  properties: {
+    start: { type: 'string' },
+    end: { type: 'string' },
+    note: { type: 'string' },
+  },
+});
+const AVAILABILITY_COORDINATION_PARAMS = Object.freeze({
+  type: 'object',
+  properties: {
+    intent: { type: 'string' },
+    candidate_slots: { type: 'array', items: MEETING_SLOT },
+    constraints: { type: 'string' },
+  },
+});
+const AVAILABILITY_COORDINATION_RESULT = Object.freeze({
+  type: 'object',
+  required: ['status'],
+  properties: {
+    status: { type: 'string', enum: ['accepted', 'counter', 'needs_more_info'] },
+    accepted_slots: { type: 'array', items: MEETING_SLOT },
+    counter_slots: { type: 'array', items: MEETING_SLOT },
+    message: { type: 'string' },
+    as_of: { type: 'string' },
+  },
+});
+
 // ─── Capabilities (curated V1 set) ──────────────────────────────────────────
 
 export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.freeze([
@@ -317,6 +352,33 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     // unavailable / unknown must NOT mark the slot booked (see the runtime's
     // commit gate) — otherwise a non-success result would falsely block the slot.
     mutation_success_statuses: Object.freeze(['confirmed']),
+  }),
+  // SYMMETRIC peer scheduling (Contact Services §6.1) — NOT a provider listing:
+  // it is offered per-contact over a `talk` + `known_only` listing, never on the
+  // network, so `default_discoverability: 'known_only'` and `intent_routable:
+  // false` (you coordinate with a KNOWN contact, never discover a stranger to
+  // meet). Registered here so the listing validator recognises it as official
+  // (without this, a Talk availability listing fails `unknown_capability`).
+  Object.freeze({
+    id: 'availability_coordination',
+    aliases: Object.freeze([]),
+    category_ids: Object.freeze(['appointments']),
+    default_category_id: 'appointments',
+    display_name: 'Find a time together',
+    short_description: 'Coordinate a mutual meeting time with a contact.',
+    default_instruction:
+      'Use my calendar and stated availability to propose times that work for me, and counter with alternatives when their suggestions do not fit. Never commit to a slot my vault shows as taken; the final booking waits for my approval.',
+    lifecycle: 'beta' as const,
+    action_class: 'read' as const,
+    privacy_class: 'personal' as const,
+    default_discoverability: 'known_only' as const,
+    approval_policy_hint: 'none' as const,
+    intent_routable: false,
+    requires_verified_provider: false,
+    requires_subject_authorization: false,
+    introduced_in: '2026-06-29',
+    params_schema: AVAILABILITY_COORDINATION_PARAMS,
+    result_schema: AVAILABILITY_COORDINATION_RESULT,
   }),
 
   // ── Commerce + logistics (distinct contracts: order vs parcel vs ETA). ──

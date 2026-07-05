@@ -1,0 +1,94 @@
+# Onboarding — NORMAL signup: create a brand-new Dina identity
+# (provisions a fresh test did:plc on test-pds). Automated.
+#
+# NOT automated: "Use existing AT Protocol identity" (logging into an
+# external Bluesky/ATProto account with an app password) — real external
+# credential, done by hand.
+#
+# Notes learned the hard way:
+#  - `hideKeyboard` before each Continue: the soft keyboard covers
+#    `shell-primary` after a text field.
+#  - The handle field pre-fills from the owner name, which may be taken —
+#    erase + type a unique one so re-runs don't collide on test-pds.
+#  - Skips the recovery-phrase verify via "I'll do this later"
+#    (shell-secondary), the normal fresh-provision path.
+#  - Expo DEV build: `clearState` wipes the dev-client's Metro URL → dev
+#    launcher. So no clearState here; get the app to the welcome screen
+#    first (`dina://expo-development-client/?url=http://10.0.2.2:8081`).
+#    On a RELEASE/preview build, re-add `launchApp: { clearState: true }`.
+appId: com.dinakernel.mobile
+---
+# Welcome → Get started
+- tapOn:
+    id: 'shell-primary'
+
+# Choose → Create a new Dina  (NOT the existing-AT-proto path)
+- tapOn:
+    id: 'mode-choice-card-create-a-new-dina'
+
+# Owner name
+- tapOn:
+    id: 'owner-name-input'
+- inputText: 'Sancho'
+- hideKeyboard
+- tapOn:
+    id: 'shell-primary'
+
+# Handle — erase the name-derived pre-fill, type a unique one.
+- evalScript: ${output.handle = 'sancho' + Math.floor(Math.random() * 1000000)}
+- tapOn:
+    id: 'handle-prefix-input'
+- eraseText
+- inputText: ${output.handle}
+- extendedWaitUntil:
+    visible:
+      id: 'handle-status-available'
+    timeout: 25000
+- hideKeyboard
+- tapOn:
+    id: 'shell-primary'
+
+# Passphrase (auto-unlock is the default startup mode)
+- tapOn:
+    id: 'passphrase-input'
+- inputText: 'dina-test-pass-123'
+- tapOn:
+    id: 'passphrase-confirm-input'
+- inputText: 'dina-test-pass-123'
+- hideKeyboard
+- tapOn:
+    id: 'shell-primary'
+
+# Recovery-phrase reveal/verify is NO LONGER in onboarding — the phrase is
+# generated silently and backed up later via the deferred backup prompt (see
+# services/backup_prompt). After the passphrase step the flow goes STRAIGHT to
+# "Connect your AI". (If a recovery-phrase screen reappears here, the
+# silent-phrase change regressed.)
+
+# Mandatory "Connect your AI" step (before provisioning — the vault never
+# unlocks without a working LLM). Gemini auto-connects via the dev env key
+# (EXPO_PUBLIC_DINA_DEV_GEMINI_API_KEY), so it lands on the connected state →
+# Continue. In production with no key the user picks a provider + pastes one
+# (onboarding-ai-provider-<type> + onboarding-ai-key-input + verify).
+- extendedWaitUntil:
+    visible:
+      id: 'onboarding-ai-connected'
+    timeout: 20000
+- tapOn:
+    id: 'shell-primary'
+
+# Provisioning (createAccount on test-pds + PLC) → on a clean install the
+# first-run GUIDED-DEMO ENTRY now shows here (see GuidedDemoGate); skip the tour
+# ("Start empty") to land in normal chat, which downstream flows expect. (On a
+# non-wiped re-run where the entry was already dismissed, the entry won't show —
+# this flow assumes a fresh install, same as its no-clearState note above.)
+- extendedWaitUntil:
+    visible:
+      id: 'guided-demo-entry'
+    timeout: 90000
+- tapOn:
+    id: 'guided-demo-skip'
+- extendedWaitUntil:
+    visible:
+      id: 'index-mode-chip-remember'
+    timeout: 15000

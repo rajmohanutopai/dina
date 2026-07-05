@@ -427,3 +427,50 @@ describe('POST /v1/contacts trust_level validation', () => {
     expect(addContact).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// GET /v1/contacts/service-decisions (owner-private decision log)
+// ---------------------------------------------------------------------------
+
+describe('GET /v1/contacts/service-decisions', () => {
+  const sample = [
+    {
+      id: 2,
+      requesterDid: 'did:plc:alonso',
+      capability: 'availability_coordination',
+      decision: 'auto_declined' as const,
+      reason: 'closeness=unknown',
+      createdAt: 200,
+    },
+    {
+      id: 1,
+      requesterDid: 'did:plc:sancho',
+      capability: 'availability_coordination',
+      decision: 'granted' as const,
+      reason: 'closeness=close',
+      createdAt: 100,
+    },
+  ];
+
+  it('returns the decision log + count', async () => {
+    const { serviceDecisions } = makeContactsHandlers({ listServiceDecisions: () => sample });
+    const res = await serviceDecisions(req({ method: 'GET' }));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ decisions: sample, count: 2 });
+  });
+
+  it('passes a positive limit through, clamped to the max', async () => {
+    const seen: number[] = [];
+    const { serviceDecisions } = makeContactsHandlers({
+      listServiceDecisions: (limit) => {
+        seen.push(limit);
+        return [];
+      },
+    });
+    await serviceDecisions(req({ method: 'GET', query: { limit: '5' } }));
+    await serviceDecisions(req({ method: 'GET', query: { limit: '99999' } }));
+    await serviceDecisions(req({ method: 'GET', query: { limit: 'garbage' } }));
+    // 5 honoured; 99999 clamped to 500; garbage → default 100.
+    expect(seen).toEqual([5, 500, 100]);
+  });
+});

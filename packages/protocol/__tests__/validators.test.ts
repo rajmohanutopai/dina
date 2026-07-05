@@ -18,6 +18,7 @@ import {
   validateServiceQueryBody,
   validateServiceResponseBody,
   validateServiceOfferBody,
+  validateServiceGrantRequestBody,
   validateFutureSkew,
   verifyMessageSignature,
   buildMessageJSON,
@@ -402,6 +403,41 @@ describe('isValidServiceListingRkey', () => {
   });
 });
 
+describe('validateServiceGrantRequestBody (Contact Services §5.2)', () => {
+  const valid = {
+    request_id: 'req-1',
+    capability: 'availability_coordination',
+    intent: 'find a time next week',
+    requested_surface: 'talk' as const,
+  };
+  it('accepts a well-formed request (intent optional)', () => {
+    expect(validateServiceGrantRequestBody(valid)).toBeNull();
+    const { intent: _i, ...noIntent } = valid;
+    expect(validateServiceGrantRequestBody(noIntent)).toBeNull();
+  });
+  it('rejects a non-object', () => {
+    expect(validateServiceGrantRequestBody(null)).toMatch(/JSON object/);
+    expect(validateServiceGrantRequestBody('x')).toMatch(/JSON object/);
+  });
+  it('requires request_id + capability', () => {
+    expect(validateServiceGrantRequestBody({ ...valid, request_id: '' })).toMatch(/request_id/);
+    expect(validateServiceGrantRequestBody({ ...valid, capability: '' })).toMatch(/capability/);
+  });
+  it('rejects a non-string intent', () => {
+    expect(validateServiceGrantRequestBody({ ...valid, intent: 42 })).toMatch(/intent/);
+  });
+  it('requires requested_surface === "talk" (never another surface, never an rkey)', () => {
+    expect(validateServiceGrantRequestBody({ ...valid, requested_surface: 'services' })).toMatch(
+      /requested_surface/,
+    );
+    expect(validateServiceGrantRequestBody({ ...valid, requested_surface: undefined })).toMatch(
+      /requested_surface/,
+    );
+    // a stray rkey field is simply ignored — the requester cannot pick a listing
+    expect(validateServiceGrantRequestBody({ ...valid, rkey: 'self' })).toBeNull();
+  });
+});
+
 describe('validateServiceOfferBody (protocol v1.1)', () => {
   const validOffer = {
     grant_id: 'grant-1',
@@ -426,6 +462,11 @@ describe('validateServiceOfferBody (protocol v1.1)', () => {
         service_uri: 'at://did:plc:acme/com.dinakernel.service.profile/widgets',
       }),
     ).toBeNull();
+  });
+
+  it('accepts an optional request_id (correlation echo) and rejects a non-string one', () => {
+    expect(validateServiceOfferBody({ ...validOffer, request_id: 'req-1' })).toBeNull();
+    expect(validateServiceOfferBody({ ...validOffer, request_id: 123 })).toMatch(/request_id/);
   });
 
   it('rejects a non-object body', () => {

@@ -14,7 +14,7 @@
       "backgroundColor": "#F9F2EC"
     },
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.dinakernel.mobile",
       "icon": "./assets/branding/dina-icon.png",
       "infoPlist": {

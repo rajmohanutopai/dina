@@ -13,9 +13,14 @@
 
 import { Paths } from 'expo-file-system';
 
+import { resetThreads } from '@dina/brain/chat';
 import { hydrateNotifications } from '@dina/brain/notifications';
 import {
   hydrateContactDirectory,
+  resetContactDirectory,
+  rebuildContactProjections,
+  resetServiceConfigState,
+  setServiceConfigRepository,
   SQLiteD2DOutboxRepository,
   setD2DOutboxRepository,
   recoverOutboxOnBoot,
@@ -36,12 +41,12 @@ import {
 // for rendering). `resetThreads()` clears it on teardown so a previous
 // identity's conversation can't survive into the next one (privacy: erase +
 // re-login leaked old chats because this cache was never reset).
-import { resetThreads } from '@dina/brain/chat';
 import {
   SQLiteAuditRepository,
   SQLiteChatMessageRepository,
   SQLiteContactRepository,
   SQLiteServiceOfferRepository,
+  SQLiteServiceDecisionRepository,
   SQLiteServiceGrantRepository,
   SQLiteDeviceRepository,
   SQLiteKVRepository,
@@ -66,6 +71,7 @@ import {
   setChatMessageRepository,
   setContactRepository,
   setServiceOfferRepository,
+  setServiceDecisionRepository,
   setServiceGrantRepository,
   setDeviceRepository,
   setKVRepository,
@@ -171,6 +177,7 @@ export async function initializePersistence(
   setKVRepository(new SQLiteKVRepository(identityDB));
   setContactRepository(new SQLiteContactRepository(identityDB));
   setServiceOfferRepository(new SQLiteServiceOfferRepository(identityDB));
+  setServiceDecisionRepository(new SQLiteServiceDecisionRepository(identityDB));
   setServiceGrantRepository(new SQLiteServiceGrantRepository(identityDB));
   setReminderRepository(new SQLiteReminderRepository(identityDB));
   setAuditRepository(new SQLiteAuditRepository(identityDB));
@@ -460,6 +467,34 @@ export async function shutdownAllPersistence(): Promise<void> {
     // survives teardown and a post-shutdown createPersona(persist:true) would
     // write to a closed DB instead of failing closed.
     setPersonaRepository(null);
+    // Service config (the user's OWN published listing) + contact directory —
+    // the last cross-identity in-memory leaks. Both are module-global caches
+    // populated WITHOUT a prior clear: hydrateServiceConfig/setServiceConfig
+    // cache the `configs` Map, and hydrateContactDirectory `.set()`s each row
+    // into `contactsByPerson` (a MERGE, not a replace). So a previous
+    // identity's published service + contacts survive an in-app erase +
+    // re-onboard (the JS process is NOT restarted). Symptom: after erasing one
+    // Dina and signing in as a new user, a service from the OLD identity still
+    // showed as "linked to me". `node.dispose()` already clears the service
+    // config on the async React-teardown path, but this runs synchronously
+    // inside eraseEverythingLocal()/sealVault(), so clear it here too — the
+    // teardown must be complete and not depend on the dispose ordering.
+    resetServiceConfigState();
+    setServiceConfigRepository(null);
+    // Clear the directory maps AND the D2D egress-gate / source-trust
+    // projections they feed: resetContactDirectory() empties the contact maps;
+    // rebuildContactProjections() then rebuilds the gate/trust sets from the
+    // now-empty directory, dropping the previous identity's contact DIDs from
+    // the D2D send-authorization set (a cross-identity authz leak, not just a
+    // display one). Null the SQLite repo handles too (same fail-closed reason
+    // as the chat/staging/persona repos above).
+    resetContactDirectory();
+    rebuildContactProjections();
+    setContactRepository(null);
+    setServiceOfferRepository(null);
+    setServiceDecisionRepository(null);
+    setServiceGrantRepository(null);
+    setPeopleRepository(null);
     openPersonaAdapters.clear();
     setMemoryService(null);
     provider = null;

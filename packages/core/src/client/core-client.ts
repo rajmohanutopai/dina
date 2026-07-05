@@ -508,6 +508,23 @@ export interface CoreClient {
   }): Promise<ServiceOfferView[]>;
 
   /**
+   * PROVIDER action — issue a grant for a listing's capability to a contact and
+   * deliver it as a `service.offer` over D2D (POST /v1/service/offer). This is
+   * the in-app surface for the orphaned "Approved Only" tier: contact-services
+   * uses it when the owner approves an `ask_to_enable` Talk prompt, materialising
+   * a real `service_grants` row + delivering `grant_id` + `service_uri` to the
+   * contact. `toDID` must be an established contact (the route 403s otherwise).
+   * Returns the minted grant id + the listing's self-contained AT-URI.
+   */
+  issueServiceOffer(params: {
+    toDID: string;
+    rkey: string;
+    capability: string;
+    /** Optional grant expiry (unix seconds). */
+    expiresAt?: number;
+  }): Promise<{ grantId: string; serviceUri: string }>;
+
+  /**
    * Resolve a single contact by DID, display name, or alias (in that
    * order). Returns `null` when nothing matches. Backs the reasoning
    * agent's `contact_lookup` tool out-of-process (lite), where the

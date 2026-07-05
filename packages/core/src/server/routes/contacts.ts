@@ -20,9 +20,6 @@
  * `HandleUpdateContact`.
  */
 
-import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
-import { CONTACTS_BY_PREFERENCE, CONTACTS_LOOKUP, CONTACT_UPDATE, CONTACTS_ROOT } from './paths';
-import type { Contact, TrustLevel } from '../../contacts/directory';
 import {
   findByPreferredFor as directoryFindByPreferredFor,
   setPreferredFor as directorySetPreferredFor,
@@ -33,6 +30,22 @@ import {
   findByAlias as directoryFindByAlias,
   addContactIfNotExists as directoryAddContactIfNotExists,
 } from '../../contacts/directory';
+import {
+  getServiceDecisionRepository,
+  type ServiceDecision,
+} from '../../contacts/service_decisions_repository';
+
+import {
+  CONTACTS_BY_PREFERENCE,
+  CONTACTS_LOOKUP,
+  CONTACTS_SERVICE_DECISIONS,
+  CONTACT_UPDATE,
+  CONTACTS_ROOT,
+} from './paths';
+
+import type { Contact, TrustLevel } from '../../contacts/directory';
+import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
+
 
 /**
  * Dependencies for the contacts handlers. All callers resolve the
@@ -77,6 +90,12 @@ export interface ContactRoutesOptions {
     displayName: string,
     trustLevel?: TrustLevel,
   ) => { contact: Contact; created: boolean };
+  /**
+   * List the owner-private contact-service decision log (newest first).
+   * Defaults to the module-global decision repository; returns `[]` when no
+   * repo is wired. Tests inject a fake.
+   */
+  listServiceDecisions?: (limit: number) => ServiceDecision[];
 }
 
 // ---------------------------------------------------------------------------
@@ -93,6 +112,7 @@ export function makeContactsHandlers(options: ContactRoutesOptions = {}): {
   updateContact: (req: CoreRequest) => Promise<CoreResponse>;
   lookup: (req: CoreRequest) => Promise<CoreResponse>;
   addContact: (req: CoreRequest) => Promise<CoreResponse>;
+  serviceDecisions: (req: CoreRequest) => Promise<CoreResponse>;
 } {
   const findFn = options.findByPreferredFor ?? directoryFindByPreferredFor;
   const setFn = options.setPreferredFor ?? directorySetPreferredFor;
@@ -100,11 +120,15 @@ export function makeContactsHandlers(options: ContactRoutesOptions = {}): {
   const resolveNameFn = options.resolveByName ?? directoryResolveByName;
   const findAliasFn = options.findByAlias ?? directoryFindByAlias;
   const addFn = options.addContact ?? directoryAddContactIfNotExists;
+  const listDecisionsFn =
+    options.listServiceDecisions ??
+    ((limit: number) => getServiceDecisionRepository()?.list(limit) ?? []);
   return {
     findByPreference: (req) => handleFindByPreference(req, findFn),
     updateContact: (req) => handleUpdateContact(req, setFn, getFn),
     lookup: (req) => handleLookup(req, getFn, resolveNameFn, findAliasFn),
     addContact: (req) => handleAddContact(req, addFn),
+    serviceDecisions: (req) => handleServiceDecisions(req, listDecisionsFn),
   };
 }
 
@@ -112,9 +136,13 @@ export function registerContactsRoutes(
   router: CoreRouter,
   options: ContactRoutesOptions = {},
 ): void {
-  const { findByPreference, updateContact, lookup, addContact } = makeContactsHandlers(options);
+  const { findByPreference, updateContact, lookup, addContact, serviceDecisions } =
+    makeContactsHandlers(options);
   router.get(CONTACTS_BY_PREFERENCE, findByPreference);
   router.get(CONTACTS_LOOKUP, lookup);
+  // Register the literal sub-path BEFORE the catch-all PUT/:did so it isn't
+  // shadowed; GET-only anyway, but kept adjacent to the other GET reads.
+  router.get(CONTACTS_SERVICE_DECISIONS, serviceDecisions);
   router.put(CONTACT_UPDATE, updateContact);
   router.post(CONTACTS_ROOT, addContact);
 }
@@ -281,6 +309,31 @@ async function handleAddContact(
   } catch (err) {
     return jsonError(500, (err as Error).message);
   }
+}
+
+// ---------------------------------------------------------------------------
+// GET /v1/contacts/service-decisions?limit=N — owner-private decision log
+// ---------------------------------------------------------------------------
+//
+// The grantor's reviewable record of inbound grant-requests + how policy
+// responded (CONTACT_SERVICES_ARCHITECTURE.md §2/§10). Surfaced in the Activity
+// tab. OWNER-PRIVATE: this sub-path is carved out of the broader `/v1/contacts`
+// rule to allow ONLY the owner's surfaces (Admin + Device) — Brain is explicitly
+// denied so the LLM can't read social-tier outcomes (see authz.ts). The data is
+// never sent to a requester. Read-only.
+
+const DECISIONS_DEFAULT_LIMIT = 100;
+const DECISIONS_MAX_LIMIT = 500;
+
+async function handleServiceDecisions(
+  req: CoreRequest,
+  listFn: (limit: number) => ServiceDecision[],
+): Promise<CoreResponse> {
+  const raw = typeof req.query.limit === 'string' ? Number.parseInt(req.query.limit, 10) : NaN;
+  const limit =
+    Number.isFinite(raw) && raw > 0 ? Math.min(raw, DECISIONS_MAX_LIMIT) : DECISIONS_DEFAULT_LIMIT;
+  const decisions = listFn(limit);
+  return { status: 200, body: { decisions, count: decisions.length } };
 }
 
 // ---------------------------------------------------------------------------

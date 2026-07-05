@@ -23,10 +23,11 @@ export type ChatIntent =
   | 'services'
   | 'reviews'
   | 'task'
-  | 'search'
   | 'service'
+  | 'schedule'
   | 'service_approve'
   | 'service_deny'
+  | 'search'
   | 'help'
   | 'chat';
 
@@ -128,6 +129,13 @@ function parseSlashCommand(text: string): ParsedCommand {
       return { intent: 'reviews', payload, explicit: true, originalText: text };
     case 'task':
       return { intent: 'task', payload, explicit: true, originalText: text };
+    // Contact Services (CONTACT_SERVICES_ARCHITECTURE.md §7 seam 2/6): a
+    // scheduling intent toward the thread's contact. Seeded by the Talk
+    // suggestion chip ("Find a time with <contact>") and routed to THAT peer
+    // (not public discovery) when `handleChat` is given a `contactDID`. In a
+    // non-contact thread it degrades to a helpful prompt (handler decides).
+    case 'schedule':
+      return { intent: 'schedule', payload, explicit: true, originalText: text };
     case 'search':
       return { intent: 'search', payload, explicit: true, originalText: text };
     case 'service':

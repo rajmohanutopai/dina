@@ -732,6 +732,60 @@ describe('CoreRouter integration', () => {
       expect(sent).toHaveLength(1);
     });
 
+    it('stamps grant_id onto the workflow task payload for provenance (P3-c)', async () => {
+      setServiceQuerySender(async () => {});
+      const resp = await router.handle(
+        signedReq(
+          'POST',
+          '/v1/service/query',
+          {
+            to_did: 'did:plc:sancho',
+            capability: 'availability_coordination',
+            params: { intent: 'find a time' },
+            ttl_seconds: 300,
+            query_id: 'q-grant-prov',
+            grant_id: 'grant-xyz',
+            service_uri: 'at://did:plc:sancho/com.dinakernel.service.profile/avail-1',
+          },
+          brain,
+        ),
+      );
+      expect(resp.status).toBe(200);
+      const taskId = (resp.body as { task_id: string }).task_id;
+      const task = getWorkflowService()!.store().getById(taskId);
+      expect(task).not.toBeNull();
+      const payload = JSON.parse(task!.payload) as Record<string, unknown>;
+      // The exercised grant is on the payload (audit/provenance), alongside the
+      // chosen listing — not just on the ephemeral D2D body.
+      expect(payload.grant_id).toBe('grant-xyz');
+      expect(payload.service_uri).toBe(
+        'at://did:plc:sancho/com.dinakernel.service.profile/avail-1',
+      );
+    });
+
+    it('defaults grant_id to "" on the payload when the query carries no grant', async () => {
+      setServiceQuerySender(async () => {});
+      const resp = await router.handle(
+        signedReq(
+          'POST',
+          '/v1/service/query',
+          {
+            to_did: 'did:plc:bus',
+            capability: 'eta_query',
+            params: { route: '42' },
+            ttl_seconds: 60,
+            query_id: 'q-no-grant',
+          },
+          brain,
+        ),
+      );
+      expect(resp.status).toBe(200);
+      const taskId = (resp.body as { task_id: string }).task_id;
+      const task = getWorkflowService()!.store().getById(taskId);
+      const payload = JSON.parse(task!.payload) as Record<string, unknown>;
+      expect(payload.grant_id).toBe('');
+    });
+
     it('does NOT dedupe two requests to the same DID/cap/params but different listings (#1, P1)', async () => {
       const sent: unknown[] = [];
       setServiceQuerySender(async (to, type, body) => {
@@ -1137,6 +1191,32 @@ describe('CoreRouter integration', () => {
       );
       expect(resp.status).toBe(404);
       expect(created).toHaveLength(0);
+    });
+
+    it('refuses to offer a non-offerable listing (paused / not known_only) — 400, no grant', async () => {
+      // A paused listing must not mint live authority for a service that answers
+      // nothing (Codex P2). issueServiceOffer requires active + known_only.
+      setServiceConfig(
+        {
+          name: 'Paused private',
+          isDiscoverable: false,
+          discoverability: 'known_only',
+          status: 'paused',
+          capabilities: { eta_query: { mcpServer: 's', mcpTool: 't', responsePolicy: 'auto' } },
+        } as never,
+        'paused-1',
+      );
+      const resp = await offerRouter.handle(
+        signedReq(
+          'POST',
+          '/v1/service/offer',
+          { to_did: 'did:plc:emma', rkey: 'paused-1', capability: 'eta_query' },
+          brain,
+        ),
+      );
+      expect(resp.status).toBe(400);
+      expect(created).toHaveLength(0);
+      clearServiceConfig('paused-1');
     });
 
     it('REVOKES the grant when the offer send fails (no dangling authority)', async () => {

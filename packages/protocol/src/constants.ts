@@ -97,6 +97,17 @@ export const MSG_TYPE_SERVICE_RESPONSE = 'service.response' as const;
  * protocol v1.1 (additive — see conformance.md §14).
  */
 export const MSG_TYPE_SERVICE_OFFER = 'service.offer' as const;
+/**
+ * `service.grant_request` — a contact's REQUESTER-INITIATED preflight for a
+ * relationship service (`surface:'talk'`, `known_only`). When a contact has no
+ * grant yet, their Dina asks for one by naming a CAPABILITY (never a private
+ * listing rkey, which the requester cannot know). The provider resolves the
+ * capability to its matching `surface:'talk'` listing, applies the
+ * closeness/default-offerable policy, and (on allow) replies with a
+ * `service.offer` carrying the grant_id + service_uri. Ephemeral (never
+ * vaulted). docs/CONTACT_SERVICES_ARCHITECTURE.md §5.2. Protocol v1.1 (additive).
+ */
+export const MSG_TYPE_SERVICE_GRANT_REQUEST = 'service.grant_request' as const;
 
 /** Union of all V1 D2D message type strings. */
 export type D2DMessageType =
@@ -109,7 +120,8 @@ export type D2DMessageType =
   | typeof MSG_TYPE_PEERLENS_VOUCH_RESPONSE
   | typeof MSG_TYPE_SERVICE_QUERY
   | typeof MSG_TYPE_SERVICE_RESPONSE
-  | typeof MSG_TYPE_SERVICE_OFFER;
+  | typeof MSG_TYPE_SERVICE_OFFER
+  | typeof MSG_TYPE_SERVICE_GRANT_REQUEST;
 
 /**
  * Types that the protocol guarantees are NEVER staged into the persona vault.
@@ -122,7 +134,8 @@ export type EphemeralD2DType =
   | typeof MSG_TYPE_PRESENCE_SIGNAL
   | typeof MSG_TYPE_SERVICE_QUERY
   | typeof MSG_TYPE_SERVICE_RESPONSE
-  | typeof MSG_TYPE_SERVICE_OFFER;
+  | typeof MSG_TYPE_SERVICE_OFFER
+  | typeof MSG_TYPE_SERVICE_GRANT_REQUEST;
 
 /**
  * Types that DO persist into the vault. Computed from `D2DMessageType`

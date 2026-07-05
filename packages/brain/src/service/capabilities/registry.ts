@@ -30,6 +30,12 @@ import {
   validateAppointmentBookResult,
 } from './appointment';
 import {
+  AvailabilityCoordinationParamsSchema,
+  AvailabilityCoordinationResultSchema,
+  validateAvailabilityCoordinationParams,
+  validateAvailabilityCoordinationResult,
+} from './availability_coordination';
+import {
   EtaQueryParamsSchema,
   EtaQueryResultSchema,
   validateEtaQueryParams,
@@ -86,6 +92,18 @@ const CAPABILITIES: Readonly<Record<string, CapabilityDef>> = Object.freeze({
     resultSchema: AppointmentBookResultSchema as unknown as Record<string, unknown>,
     validateParams: validateAppointmentBookParams,
     validateResult: validateAppointmentBookResult,
+  },
+  availability_coordination: {
+    name: 'availability_coordination',
+    description:
+      'Coordinate a mutual meeting time with a contact (symmetric: both have calendars, both confirm).',
+    // A round can require the owner's input (counter/accept may be review-gated
+    // per listing), so budget the full wire maximum like appointment_book.
+    defaultTtlSeconds: 300,
+    paramsSchema: AvailabilityCoordinationParamsSchema as unknown as Record<string, unknown>,
+    resultSchema: AvailabilityCoordinationResultSchema as unknown as Record<string, unknown>,
+    validateParams: validateAvailabilityCoordinationParams,
+    validateResult: validateAvailabilityCoordinationResult,
   },
 });
 

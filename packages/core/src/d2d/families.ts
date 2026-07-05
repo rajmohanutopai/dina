@@ -31,6 +31,7 @@ export {
   MSG_TYPE_SERVICE_QUERY as MsgTypeServiceQuery,
   MSG_TYPE_SERVICE_RESPONSE as MsgTypeServiceResponse,
   MSG_TYPE_SERVICE_OFFER as MsgTypeServiceOffer,
+  MSG_TYPE_SERVICE_GRANT_REQUEST as MsgTypeServiceGrantRequest,
 } from '@dina/protocol';
 import {
   MSG_TYPE_PRESENCE_SIGNAL as MsgTypePresenceSignal,
@@ -43,6 +44,7 @@ import {
   MSG_TYPE_SERVICE_QUERY as MsgTypeServiceQuery,
   MSG_TYPE_SERVICE_RESPONSE as MsgTypeServiceResponse,
   MSG_TYPE_SERVICE_OFFER as MsgTypeServiceOffer,
+  MSG_TYPE_SERVICE_GRANT_REQUEST as MsgTypeServiceGrantRequest,
 } from '@dina/protocol';
 import { D2D_SCENARIOS } from '@dina/protocol';
 import type {
@@ -83,6 +85,7 @@ const V1_TYPES_LIST: readonly D2DMessageType[] = [
   MsgTypeServiceQuery,
   MsgTypeServiceResponse,
   MsgTypeServiceOffer,
+  MsgTypeServiceGrantRequest,
 ];
 const V1_TYPES = new Set<string>(V1_TYPES_LIST);
 
@@ -132,6 +135,9 @@ const EPHEMERAL_TYPES_LIST: readonly EphemeralD2DType[] = [
   // vault message item. It IS persisted, as contact metadata in identity.sqlite
   // (`contact_service_offers`), via a dedicated handler in the receive pipeline.
   MsgTypeServiceOffer,
+  // service.grant_request is a requester preflight — handled inline (resolve
+  // listing → policy → mint grant → reply service.offer) and never vaulted.
+  MsgTypeServiceGrantRequest,
 ];
 const EPHEMERAL_TYPES = new Set<string>(EPHEMERAL_TYPES_LIST);
 
@@ -162,6 +168,7 @@ const TYPE_TO_SCENARIO: Record<D2DMessageType, D2DScenario> = {
   [MsgTypeServiceQuery]: 'service',
   [MsgTypeServiceResponse]: 'service',
   [MsgTypeServiceOffer]: 'service',
+  [MsgTypeServiceGrantRequest]: 'service',
 };
 
 /** Maximum D2D message body size in bytes (256 KB). */

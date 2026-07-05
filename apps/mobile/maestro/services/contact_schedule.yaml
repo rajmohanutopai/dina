@@ -1,0 +1,46 @@
+# Contact Services (CONTACT_SERVICES_ARCHITECTURE.md) — mobile /schedule leg.
+# Adds the peer Dina as a contact, opens the Talk thread, asserts the
+# "Find a time" suggestion chip is present, then submits a `/schedule …`
+# command. This fires the real Contact Services seam:
+#   routeComposerText -> 'schedule' -> runChatTurn -> setContactServiceHandler
+#   -> (no offer yet) -> sendGrantRequest -> service.grant_request over MsgBox.
+# DID passed in: -e PEER_DID=did:plc:...
+appId: com.dinakernel.mobile
+---
+- tapOn:
+    id: 'tab-people'
+- tapOn:
+    id: 'people-add-contact-fab'
+- extendedWaitUntil:
+    visible:
+      id: 'add-contact-handle-input'
+    timeout: 15000
+- tapOn:
+    id: 'add-contact-handle-input'
+- inputText: ${PEER_DID}
+- tapOn:
+    id: 'add-contact-name-input'
+- inputText: 'Sancho'
+- hideKeyboard
+- tapOn:
+    id: 'add-contact-save'
+- extendedWaitUntil:
+    visible:
+      id: 'people-contact-row-${PEER_DID}'
+    timeout: 45000
+- tapOn:
+    id: 'people-contact-row-${PEER_DID}'
+# Seam 6: the contextual suggestion chip is offered for known contacts.
+- extendedWaitUntil:
+    visible:
+      id: 'chat-suggest-schedule'
+    timeout: 15000
+- assertVisible:
+    id: 'chat-suggest-schedule'
+# Type the full command directly (deterministic — independent of chip seeding).
+- tapOn:
+    id: 'chat-message-input'
+- inputText: '/schedule lets find a time to meet next week'
+- tapOn:
+    id: 'chat-send'
+- takeScreenshot: /tmp/cs_after_send

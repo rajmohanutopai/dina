@@ -900,6 +900,28 @@ export class InProcessTransport implements CoreClient {
     return Array.isArray(raw.offers) ? (raw.offers as ServiceOfferView[]) : [];
   }
 
+  async issueServiceOffer(params: {
+    toDID: string;
+    rkey: string;
+    capability: string;
+    expiresAt?: number;
+  }): Promise<{ grantId: string; serviceUri: string }> {
+    const body: Record<string, unknown> = {
+      to_did: params.toDID,
+      rkey: params.rkey,
+      capability: params.capability,
+    };
+    if (params.expiresAt !== undefined) body.expires_at = params.expiresAt;
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: '/v1/service/offer', body }),
+    );
+    const raw = expectOk<{ grant_id: string; service_uri: string }>(
+      res,
+      `issueServiceOffer(to=${params.toDID}, rkey=${params.rkey})`,
+    );
+    return { grantId: raw.grant_id, serviceUri: raw.service_uri };
+  }
+
   async contactLookup(query: string): Promise<Contact | null> {
     const clean = typeof query === 'string' ? query.trim() : '';
     if (clean === '') return null;

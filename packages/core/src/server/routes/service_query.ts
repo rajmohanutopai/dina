@@ -13,11 +13,7 @@
 
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import {
-  parseServiceListingUri,
-  resolveSearchableCapability,
-  type ServiceOfferBody,
-} from '@dina/protocol';
+import { parseServiceListingUri } from '@dina/protocol';
 import type { CoreRouter } from '../router';
 import { MAX_SERVICE_TTL } from '../../d2d/families';
 import type { ServiceQueryBody } from '../../d2d/service_bodies';
@@ -29,7 +25,7 @@ import {
   type ServiceOffer,
 } from '../../contacts/service_offers_repository';
 import { getServiceGrantRepository } from '../../service/service_grant_repository';
-import { getServiceConfig, configuredCapabilityKey } from '../../service/service_config';
+import { issueServiceOffer } from '../../service/issue_offer';
 import { isContact } from '../../contacts/directory';
 import { getD2DSender } from './d2d_msg';
 import { getNodeDID } from '../../pairing/ceremony';
@@ -297,6 +293,10 @@ export function registerServiceQueryRoutes(
       origin_channel: q.origin_channel ?? '',
       schema_hash: q.schema_hash ?? '',
       service_uri: q.service_uri ?? '',
+      // Provenance: which grant this query exercised (a known_only/contact
+      // service). Already carried on the D2D body; stamping it on the task
+      // payload keeps the audit trail complete on the requester side. P3-c.
+      grant_id: q.grant_id ?? '',
     };
 
     try {
@@ -425,83 +425,29 @@ export function registerServiceQueryRoutes(
       };
     }
 
-    const cfg = getServiceConfig(rkey);
-    if (cfg === null) return { status: 404, body: { error: `no listing for rkey "${rkey}"` } };
-    // Alias-aware: resolve the capability to the listing's CONFIGURED key (so an
-    // alias-configured listing can be offered by its canonical name, and the
-    // schema is read from the right key) — matching service execution semantics.
-    const configuredKey = configuredCapabilityKey(cfg, capability);
-    if (configuredKey === null) {
-      return {
-        status: 400,
-        body: { error: `listing "${rkey}" does not offer capability "${capability}"` },
-      };
-    }
-
-    const nowSec = nowSecFn();
-    const grantId = `grant-${bytesToHex(
-      sha256(
-        new TextEncoder().encode(
-          `${toDID}|${rkey}|${capability}|${Date.now()}|${nextGrantSeq()}`,
-        ),
-      ),
-    ).slice(0, 24)}`;
-
-    // The grant is the authority (provider-side, checked at ingress). Store the
-    // CANONICAL capability so it matches a query sent under an alias (the ingress
-    // canonicalizes the query capability the same way before isAuthorized).
-    const grantCapability = resolveSearchableCapability(capability) ?? capability;
-    grantRepo.create({
-      grantId,
-      granteeDid: toDID,
-      serviceRkey: rkey,
-      capability: grantCapability,
-      grantType: 'standing',
-      ...(expiresAt !== undefined ? { expiresAt } : {}),
-      createdAt: nowSec,
-    });
-
-    // The offer DELIVERS the grant + the self-contained listing metadata.
-    const schema = cfg.capabilitySchemas?.[configuredKey];
-    const serviceUri = `at://${selfDID}/com.dinakernel.service.profile/${rkey}`;
-    const offerBody: ServiceOfferBody = {
-      grant_id: grantId,
+    // Mint grant + deliver offer via the shared helper (single source, reused
+    // by the service.grant_request handler). Contact-gating stays the route's
+    // job (above); the helper handles listing resolution, grant minting, the
+    // self-contained offer body, and rollback-on-send-failure.
+    const result = await issueServiceOffer({
+      toDID,
+      rkey,
       capability,
-      service_name: cfg.name ?? '',
-      service_uri: serviceUri,
-      ...(schema?.schemaHash !== undefined && schema.schemaHash !== ''
-        ? { schema_hash: schema.schemaHash }
-        : {}),
-      ...(schema?.params !== undefined ? { params_schema: schema.params } : {}),
-      ...(schema?.result !== undefined ? { result_schema: schema.result } : {}),
-      ...(typeof schema?.defaultTtlSeconds === 'number' && schema.defaultTtlSeconds > 0
-        ? { default_ttl_seconds: schema.defaultTtlSeconds }
-        : {}),
-      ...(expiresAt !== undefined ? { expires_at: expiresAt } : {}),
-    };
-    try {
-      await sender(toDID, 'service.offer', offerBody as unknown as Record<string, unknown>);
-    } catch (err) {
-      const msg = (err as Error).message ?? String(err);
-      // Roll back the grant: a grant is AUTHORITY, and the grantee never
-      // received the offer, so it must not be left live. Revoke (idempotent;
-      // best-effort) so a failed delivery can't leave dangling authorization.
-      try {
-        grantRepo.revoke(grantId, nowSec);
-      } catch {
-        /* best-effort rollback — a revoked-but-unsent grant is still inert */
-      }
-      return { status: 502, body: { error: `offer send failed: ${msg}` } };
+      ...(expiresAt !== undefined ? { expiresAt } : {}),
+      selfDID,
+      nowSec: nowSecFn(),
+      grantRepo,
+      sender,
+    });
+    if (!result.ok) {
+      const status =
+        result.errorCode === 'no_listing'
+          ? 404
+          : result.errorCode === 'capability_not_offered' || result.errorCode === 'not_offerable'
+            ? 400
+            : 502;
+      return { status, body: { error: result.error } };
     }
-    return { status: 200, body: { grant_id: grantId, service_uri: serviceUri } };
+    return { status: 200, body: { grant_id: result.grantId, service_uri: result.serviceUri } };
   });
-}
-
-// Per-process monotonic counter so two offers issued in the same millisecond
-// still mint distinct grant_ids (grant_id is a non-secret SELECTOR — uniqueness
-// is the only requirement, not unguessability).
-let grantSeq = 0;
-function nextGrantSeq(): number {
-  grantSeq += 1;
-  return grantSeq;
 }

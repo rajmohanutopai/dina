@@ -26,7 +26,15 @@ import {
 } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import type { ChatMessage } from '@dina/brain/chat';
+import { readLifecycle, type ChatMessage } from '@dina/brain/chat';
+import { InlineServiceQueryCard } from '../../src/components/InlineServiceQueryCard';
+import { InlineGrantRequestCard } from '../../src/components/InlineGrantRequestCard';
+import { runChatTurn } from '../../src/hooks/chat_transport';
+import {
+  routeComposerText,
+  isScheduleCommand,
+  SCHEDULE_SEED,
+} from '../../src/services/chat_composer_routing';
 import { useD2DChat } from '../../src/hooks/useD2DChat';
 import { getProfile as getTrustProfile } from '../../src/peerlens/appview_runtime';
 import { displayName as displayNameOf } from '../../src/peerlens/handle_display';
@@ -44,6 +52,7 @@ export default function ChatScreen() {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
+  const inputRef = useRef<TextInput>(null);
 
   // Best-effort handle resolution for non-contacts. The chat title
   // would otherwise show `did:plc:abc1…7890`, which is hard to read
@@ -72,13 +81,41 @@ export default function ChatScreen() {
     const text = draft.trim();
     if (text === '' || busy) return;
 
-    // Slash commands (/remember, /ask, /search, /help, /trust, \u2026) are
+    // Route the submission via the pure, tested control-point logic
+    // (chat_composer_routing) \u2014 never a hand-rolled regex here. The chip only
+    // SEEDS `/schedule `; this dispatch happens on the user's explicit submit.
+    const route = routeComposerText(text);
+
+    // Contact Services (CONTACT_SERVICES_ARCHITECTURE.md \u00a77 seam 2/6): a
+    // `/schedule \u2026` command IS addressed to the local Dina, but it is
+    // contact-scoped \u2014 it asks Dina to coordinate a time with THIS peer. Route
+    // it through the orchestrator with the peer DID as the thread, so seam 2's
+    // contact-scoped routing fires a `service.query` to this contact (seam 5)
+    // and the pending card lands in THIS thread. Unlike a stray /ask, this is
+    // exactly where the user meant it to run, so we do NOT redirect them away.
+    if (route === 'schedule') {
+      setBusy(true);
+      setDraft('');
+      try {
+        await runChatTurn(text, peerDID);
+      } catch (err) {
+        Alert.alert('Couldn\u2019t schedule', err instanceof Error ? err.message : String(err));
+      } finally {
+        setBusy(false);
+        setTimeout(() => {
+          listRef.current?.scrollToEnd({ animated: true });
+        }, 0);
+      }
+      return;
+    }
+
+    // Other slash commands (/remember, /ask, /search, /help, /trust, \u2026) are
     // addressed to the local Dina, not to the peer. Sending them
     // literally over D2D is almost never what the user wants \u2014 it
     // surfaces as a confusing peer message and the command never runs.
     // Block + redirect rather than silently re-route, so the user keeps
     // control of which surface they're talking to.
-    if (text.startsWith('/')) {
+    if (route === 'slash') {
       Alert.alert(
         'Slash commands talk to Dina, not your contact',
         'Switch to the Chat tab to use commands like /remember or /ask. Or remove the leading "/" if you really meant to send this as a message.',
@@ -102,7 +139,16 @@ export default function ChatScreen() {
         listRef.current?.scrollToEnd({ animated: true });
       }, 0);
     }
-  }, [draft, busy, send]);
+  }, [draft, busy, send, peerDID]);
+
+  // Seam 6: tapping the suggestion chip SEEDS the composer with `/schedule `
+  // and focuses it \u2014 it never auto-fires (the user confirms by submitting).
+  // Misreading "let's hang out sometime" as a service call is the failure mode
+  // the spec warns about (\u00a77), so the human stays in control of the send.
+  const onSeedSchedule = useCallback((): void => {
+    setDraft(SCHEDULE_SEED);
+    inputRef.current?.focus();
+  }, []);
 
   // Title preference: user-set contact displayName > short username
   // (first label of resolved PLC handle) > truncated DID. Tapping the
@@ -168,7 +214,7 @@ export default function ChatScreen() {
         data={messages}
         keyExtractor={(m) => m.id}
         contentContainerStyle={styles.list}
-        renderItem={({ item }) => <Bubble message={item} peerDID={peerDID} />}
+        renderItem={({ item }) => <Bubble message={item} peerDID={peerDID} contactName={title} />}
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
         ListEmptyComponent={() => (
           <View style={styles.empty}>
@@ -177,8 +223,30 @@ export default function ChatScreen() {
         )}
       />
 
+      {/* Seam 6: contextual suggestion chip. Only for known contacts (a
+          relationship service is never offered to a non-contact), and only
+          when the user hasn't already started a /schedule (so it doesn't
+          fight the composer). Suggest-only — tapping seeds, never sends. */}
+      {isKnownContact && !isScheduleCommand(draft) && (
+        <View style={styles.suggestionRow}>
+          <Pressable
+            testID="chat-suggest-schedule"
+            accessibilityRole="button"
+            accessibilityLabel={`Find a time with ${title}`}
+            onPress={onSeedSchedule}
+            disabled={busy}
+            style={({ pressed }) => [styles.suggestionChip, pressed && styles.pressed]}
+          >
+            <Text style={styles.suggestionChipText} numberOfLines={1}>
+              {'📅'} Find a time with {title}
+            </Text>
+          </Pressable>
+        </View>
+      )}
+
       <View style={styles.composer}>
         <TextInput
+          ref={inputRef}
           testID="chat-message-input"
           value={draft}
           onChangeText={setDraft}
@@ -213,7 +281,15 @@ export default function ChatScreen() {
   );
 }
 
-function Bubble({ message, peerDID }: { message: ChatMessage; peerDID: string }) {
+function Bubble({
+  message,
+  peerDID,
+  contactName,
+}: {
+  message: ChatMessage;
+  peerDID: string;
+  contactName?: string;
+}) {
   const fromPeer =
     message.type === 'dina' &&
     (message.metadata?.source === 'd2d' || message.metadata?.senderDID === peerDID);
@@ -225,6 +301,30 @@ function Bubble({ message, peerDID }: { message: ChatMessage; peerDID: string })
         <Text style={styles.errorText}>{message.content}</Text>
       </View>
     );
+  }
+
+  // Contact Services (CONTACT_SERVICES_ARCHITECTURE.md §7, seam 1): a 'dina'
+  // message with a VALID service_query lifecycle renders the SAME inline card
+  // the main chat tab uses — it patches in place (pending → resolved) as the
+  // request rides the wire. We use the canonical `readLifecycle` reader (not a
+  // raw cast) so a malformed/legacy service_query row (e.g. missing taskId)
+  // returns null and falls through to the plain-text bubble below rather than
+  // dispatching to a card that would render nothing and drop the message.
+  if (message.type === 'dina' && readLifecycle(message)?.kind === 'service_query') {
+    return <InlineServiceQueryCard message={message} />;
+  }
+
+  // Contact Services §5.2 ask_to_enable prompt: a friend asked to use a
+  // relationship service; surface the one-time "Allow <contact>?" card. Read
+  // off the raw metadata.lifecycle (the quarantine-card convention — this kind
+  // isn't part of brain's typed `MessageLifecycle` union); the card itself
+  // validates the shape and renders null on a malformed row.
+  if (
+    message.type === 'dina' &&
+    (message.metadata?.lifecycle as { kind?: unknown } | undefined)?.kind ===
+      'grant_request_prompt'
+  ) {
+    return <InlineGrantRequestCard message={message} contactName={contactName} />;
   }
 
   // Outbound delivery status — drives the tick / spinner / exclamation
@@ -359,6 +459,26 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.error,
     fontStyle: 'italic',
+  },
+  suggestionRow: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: 4,
+    backgroundColor: colors.bgSecondary,
+  },
+  suggestionChip: {
+    maxWidth: '100%',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    backgroundColor: colors.bgPrimary,
+  },
+  suggestionChipText: {
+    ...textStyles.bodySmallStrong,
+    color: colors.accent,
   },
   composer: {
     flexDirection: 'row',

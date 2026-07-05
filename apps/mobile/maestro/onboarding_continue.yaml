@@ -1,0 +1,35 @@
+# Onboarding continuation — picks up AFTER a valid handle is set (Available).
+# Continue → passphrase → AI auto-connect (dev Gemini key) → provision → skip demo.
+appId: com.dinakernel.mobile
+---
+- hideKeyboard
+- tapOn:
+    id: 'shell-primary'
+# Passphrase
+- tapOn:
+    id: 'passphrase-input'
+- inputText: 'dina-test-pass-123'
+- tapOn:
+    id: 'passphrase-confirm-input'
+- inputText: 'dina-test-pass-123'
+- hideKeyboard
+- tapOn:
+    id: 'shell-primary'
+# Connect your AI — Gemini auto-connects via the dev env key
+- extendedWaitUntil:
+    visible:
+      id: 'onboarding-ai-connected'
+    timeout: 25000
+- tapOn:
+    id: 'shell-primary'
+# Provisioning → first-run guided-demo entry → skip into normal chat
+- extendedWaitUntil:
+    visible:
+      id: 'guided-demo-entry'
+    timeout: 120000
+- tapOn:
+    id: 'guided-demo-skip'
+- extendedWaitUntil:
+    visible:
+      id: 'index-mode-chip-remember'
+    timeout: 20000

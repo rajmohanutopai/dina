@@ -30,7 +30,9 @@ import { getWorkflowService } from '../workflow/service';
 import {
   parseServiceListingUri,
   validateServiceOfferBody,
+  validateServiceGrantRequestBody,
   type ServiceOfferBody,
+  type ServiceGrantRequestBody,
 } from '@dina/protocol';
 
 import { unsealMessage, type D2DPayload } from './envelope';
@@ -41,10 +43,13 @@ import {
   MsgTypeServiceQuery,
   MsgTypeServiceResponse,
   MsgTypeServiceOffer,
+  MsgTypeServiceGrantRequest,
 } from './families';
+import { handleServiceGrantRequest } from './grant_request_handler';
 import { checkScenarioGate } from './gates';
 import { quarantineMessage } from './quarantine';
 import { receiveAndStage } from './receive';
+import { emitServiceOfferReceived } from './service_offer_events';
 import { verifyMessage } from './signature';
 
 export type ReceivePipelineAction = 'staged' | 'quarantined' | 'dropped' | 'ephemeral' | 'bypassed';
@@ -474,6 +479,23 @@ export function receiveD2D(
       message.to,
       `cap=${offerBody.capability} id=${message.id}`,
     );
+    // Notify subscribers (mobile boot) that an offer landed, so a first-run
+    // request that had no stored offer can be auto-replayed immediately. Carries
+    // only the selectors a follow-up service.query needs; never blocks ingress.
+    emitServiceOfferReceived({
+      providerDID: message.from,
+      capability: offerBody.capability,
+      grantId: offerBody.grant_id,
+      serviceUri: offerBody.service_uri,
+      serviceName: offerBody.service_name,
+      schemaHash: offerBody.schema_hash ?? '',
+      ...(offerBody.default_ttl_seconds !== undefined
+        ? { defaultTtlSeconds: offerBody.default_ttl_seconds }
+        : {}),
+      ...(offerBody.request_id !== undefined && offerBody.request_id !== ''
+        ? { requestId: offerBody.request_id }
+        : {}),
+    });
     return {
       action: 'bypassed',
       messageId: message.id,
@@ -482,6 +504,70 @@ export function receiveD2D(
       signatureValid: true,
       bypassedBody: offerBody,
       reason: 'service.offer stored as contact metadata',
+    };
+  }
+
+  // service.grant_request — a contact's requester-initiated preflight for a
+  // relationship (talk-surface) service. Accepted ONLY from an established
+  // contact (lazy-allow is contacts-only). The handler applies the
+  // closeness/default-offerable policy and, on auto_grant, mints a grant +
+  // replies with a service.offer. Ephemeral — never staged into the vault.
+  if (message.type === MsgTypeServiceGrantRequest) {
+    if (!isContact) {
+      appendAudit(
+        message.from,
+        'd2d_recv_grant_request_denied',
+        message.to,
+        `reason=not_a_contact id=${message.id}`,
+      );
+      return {
+        action: 'dropped',
+        messageId: message.id,
+        messageType: message.type,
+        senderDID: message.from,
+        signatureValid: true,
+        reason: 'service.grant_request rejected: sender is not a known contact',
+      };
+    }
+    let parsedReq: unknown;
+    try {
+      parsedReq = JSON.parse(message.body);
+    } catch {
+      parsedReq = null;
+    }
+    const reqErr = validateServiceGrantRequestBody(parsedReq);
+    if (reqErr !== null) {
+      appendAudit(message.from, 'd2d_recv_grant_request_invalid', message.to, `id=${message.id}`);
+      return {
+        action: 'dropped',
+        messageId: message.id,
+        messageType: message.type,
+        senderDID: message.from,
+        signatureValid: true,
+        reason: `service.grant_request invalid: ${reqErr}`,
+      };
+    }
+    const requestBody = parsedReq as ServiceGrantRequestBody;
+    // Fire-and-forget: the preflight is ephemeral, the reply offer is sent
+    // asynchronously, and the handler audits every outcome. The `.catch` is a
+    // belt-and-braces guard so a transient/unwired-dependency throw can never
+    // surface as an unhandled rejection back on the receive path.
+    //
+    // NOTE: we pass ONLY the transport-authenticated sender (`message.from`).
+    // The provider identity is the node's own DID, derived inside the handler
+    // via getNodeDID() — never the sender-chosen inner `message.to` (§10
+    // confused-deputy rule).
+    void handleServiceGrantRequest(message.from, requestBody).catch(() => {
+      /* handler audits its own failures; the wire result is already returned */
+    });
+    return {
+      action: 'bypassed',
+      messageId: message.id,
+      messageType: message.type,
+      senderDID: message.from,
+      signatureValid: true,
+      bypassedBody: requestBody,
+      reason: 'service.grant_request routed to grant-request handler',
     };
   }
 

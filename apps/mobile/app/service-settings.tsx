@@ -38,14 +38,19 @@ import { listPersonas } from '@dina/core';
 import {
   validateServiceListing,
   effectiveDiscoverability,
+  effectiveSurface,
+  effectiveDefaultOfferable,
+  effectiveListingStatus,
   resolveCatalogCapability,
   type CapabilityDefinition,
   type Discoverability,
   type ServiceListingStatus,
+  type ServiceSurface,
 } from '@dina/protocol';
 
 import { CapabilityPicker } from '../src/components/capability_picker';
 import { getBootDegradations } from '../src/hooks/useNodeBootstrap';
+import { buildContactServiceListingFields } from '../src/services/contact_service_listing';
 import {
   listServiceListings,
   loadServiceConfig,
@@ -145,12 +150,35 @@ export default function ServiceSettingsScreen() {
     setDiscoverabilityTouched(true);
     setDiscoverability(value);
   }, []);
+  // Toggle a listing between a Services-tab provider service and a Talk
+  // relationship service. A `talk` listing is `known_only` by construction
+  // (validator §5.3), so turning it ON pins discoverability to `known_only`;
+  // turning it OFF also clears `defaultOfferable` (which only applies to talk).
+  const chooseSurface = useCallback((next: ServiceSurface) => {
+    setSurface(next);
+    if (next === 'talk') {
+      setDiscoverability('known_only');
+      setDiscoverabilityTouched(true);
+    } else {
+      setDefaultOfferable(false);
+    }
+  }, []);
   // Listing availability — the per-listing ON/OFF switch, distinct from node
   // role (requester/provider/both) and from discoverability (who can find it).
   // `active` = live (publish per discoverability + answer queries); `paused` =
   // keep the config but unpublish + stop answering. (`draft` exists in the
   // model but isn't a mobile toggle yet — a new listing starts `active`.)
   const [status, setStatus] = useState<ServiceListingStatus>('active');
+  // Contact Services (CONTACT_SERVICES_ARCHITECTURE.md §5.3). `surface` decides
+  // WHERE this listing lives: `services` = the Services tab (a provider service,
+  // the default); `talk` = a relationship service surfaced inside a Talk thread
+  // with a contact. A `talk` listing is `known_only` BY CONSTRUCTION (the
+  // validator enforces `talk_must_be_known_only`), so flipping it to Talk also
+  // pins discoverability to `known_only`. `defaultOfferable` (only meaningful on
+  // a talk listing) opts it into the closeness-default flow: a close contact's
+  // grant-request auto-grants, a friend's surfaces an ask-to-enable prompt.
+  const [surface, setSurface] = useState<ServiceSurface>('services');
+  const [defaultOfferable, setDefaultOfferable] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   // Per-capability `category` is the concrete vertical chosen in the picker —
@@ -299,6 +327,9 @@ export default function ServiceSettingsScreen() {
     setDiscoverabilityTouched(true);
     // Listing availability (default `active` for configs predating the field).
     setStatus(cfg.status ?? 'active');
+    // Contact Services: surface + default-offerable (absent ⇒ services / false).
+    setSurface(effectiveSurface(cfg));
+    setDefaultOfferable(effectiveDefaultOfferable(cfg));
     setName(cfg.name);
     setDescription(cfg.description ?? '');
     // Old configs (or ones authored before the single-vault rule) may carry an
@@ -469,6 +500,41 @@ export default function ServiceSettingsScreen() {
         return;
       }
     }
+    // Review #3: a default-offerable TALK listing is the one a close contact
+    // AUTO-grants. Two default-offerable talk listings offering the SAME
+    // capability make that pick ambiguous (Core breaks the tie deterministically
+    // by preferring default-offerable then rkey, but the rkey order is arbitrary
+    // to the user). For V1 we enforce uniqueness at save time: a capability may be
+    // auto-offered by only ONE active relationship service. Fail-OPEN if the
+    // listing read throws (the runtime tiebreak still keeps it deterministic).
+    if (surface === 'talk' && defaultOfferable && status === 'active') {
+      try {
+        const myKeys = new Set(capabilities.map((c) => c.key));
+        const clashListing = (await listServiceListings())
+          .filter((l) => l.rkey !== editingRkey)
+          .find(
+            (l) =>
+              effectiveSurface(l.config) === 'talk' &&
+              effectiveDefaultOfferable(l.config) &&
+              effectiveListingStatus(l.config) === 'active' &&
+              Object.keys(l.config.capabilities ?? {}).some((k) => myKeys.has(k)),
+          );
+        if (clashListing !== undefined) {
+          const clashCap = Object.keys(clashListing.config.capabilities ?? {}).find((k) =>
+            myKeys.has(k),
+          );
+          Alert.alert(
+            'Already auto-offered elsewhere',
+            `"${clashListing.config.name ?? clashListing.rkey}" already auto-offers ${
+              clashCap !== undefined ? capabilityDisplayName(clashCap) : 'this capability'
+            } to close contacts. A capability can be auto-offered by only one relationship service — turn off "Offer to close contacts by default" on one of them first.`,
+          );
+          return;
+        }
+      } catch {
+        /* fail-open: couldn't list — let the deterministic runtime tiebreak handle it */
+      }
+    }
     setSaving(true);
     try {
       // Edit mode: preserve the existing listing's caps/schemas. Create mode:
@@ -591,6 +657,17 @@ export default function ServiceSettingsScreen() {
               : {}),
         };
       }
+      // Contact Services (§5.3): resolve the surface/discoverability/default-
+      // offerable trio through the single pure (tested) decision. It pins a
+      // Talk listing to `known_only` and drops `defaultOfferable` for a Services
+      // listing, so this screen can only ever PRODUCE a config that passes the
+      // validator's `talk_must_be_known_only` rule. The legacy `isDiscoverable`
+      // boolean derives from the RESOLVED discoverability (not the raw state).
+      const contactFields = buildContactServiceListingFields(
+        surface,
+        discoverability,
+        defaultOfferable,
+      );
       const next: ServiceConfig = {
         // Seed from the EXISTING config so fields this screen does not
         // manage (serviceArea, accessPolicyHint/rateLimitHint/pricingHint/
@@ -598,11 +675,9 @@ export default function ServiceSettingsScreen() {
         // screen previously rebuilt the object from its own fields alone
         // and silently dropped a listing's service area on every edit.
         ...(existing ?? {}),
-        // Legacy boolean derived from the explicit value for back-compat.
-        isDiscoverable: discoverability === 'public',
-        // Explicit discovery visibility chosen in the "who can find this?"
-        // selector (spec §5.2) — every listing carries it.
-        discoverability,
+        // Legacy boolean derived from the RESOLVED value for back-compat.
+        isDiscoverable: contactFields.discoverability === 'public',
+        ...contactFields,
         // Availability — `paused` keeps everything but unpublishes + stops
         // answering queries; `active` is live.
         status,
@@ -793,7 +868,71 @@ export default function ServiceSettingsScreen() {
         </View>
 
         <View style={styles.section}>
+          <Text style={styles.sectionHeader}>SERVICE TYPE</Text>
+          <View style={styles.card}>
+            {(
+              [
+                {
+                  value: 'services' as ServiceSurface,
+                  title: 'Provider service',
+                  body: 'Lives in the Services tab. Customers find and use it like a business listing.',
+                },
+                {
+                  value: 'talk' as ServiceSurface,
+                  title: 'Relationship service (Talk)',
+                  body: 'Surfaced inside a Talk thread with a contact — e.g. "find a time with me". Private to people you approve.',
+                },
+              ]
+            ).map((opt) => {
+              const selected = surface === opt.value;
+              return (
+                <Pressable
+                  key={opt.value}
+                  style={[styles.row, selected ? styles.rowSelected : null]}
+                  onPress={() => chooseSurface(opt.value)}
+                  testID={`service-settings-surface-${opt.value}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`${opt.title}. ${opt.body}`}
+                >
+                  <View style={{ flex: 1, paddingRight: spacing.sm }}>
+                    <Text style={styles.rowTitle}>{opt.title}</Text>
+                    <Text style={styles.rowSubtitle}>{opt.body}</Text>
+                  </View>
+                  {selected ? <Text style={styles.rowValue}>{'✓'}</Text> : null}
+                </Pressable>
+              );
+            })}
+            {surface === 'talk' ? (
+              <Pressable
+                style={[styles.row, defaultOfferable ? styles.rowSelected : null]}
+                onPress={() => setDefaultOfferable((v) => !v)}
+                testID="service-settings-default-offerable"
+                accessibilityRole="switch"
+                accessibilityState={{ checked: defaultOfferable }}
+                accessibilityLabel="Offer to close contacts by default"
+              >
+                <View style={{ flex: 1, paddingRight: spacing.sm }}>
+                  <Text style={styles.rowTitle}>Offer to close contacts by default</Text>
+                  <Text style={styles.rowSubtitle}>
+                    Close contacts (family) are auto-granted; friends get a one-time "Allow?" prompt.
+                    Everyone else is silently not offered. You can still approve anyone by hand.
+                  </Text>
+                </View>
+                <Text style={styles.rowValue}>{defaultOfferable ? '✓' : '—'}</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionHeader}>WHO CAN FIND THIS SERVICE?</Text>
+          {surface === 'talk' ? (
+            <Text style={styles.sectionSubtitle}>
+              A relationship service is always Private / Approved Only — only contacts you grant can
+              reach it. (Locked for Talk services.)
+            </Text>
+          ) : null}
           <View style={styles.card}>
             {(
               [
@@ -830,25 +969,33 @@ export default function ServiceSettingsScreen() {
               }[]
             ).map((opt) => {
               const selected = opt.disabled !== true && discoverability === opt.value;
+              // A Talk service is locked to `known_only` (validator §5.3): every
+              // OTHER visibility row is disabled while Talk is selected, so the
+              // provider can't author an invalid talk+public/unlisted listing.
+              const lockedForTalk = surface === 'talk' && opt.value !== 'known_only';
+              const rowDisabled = opt.disabled === true || lockedForTalk;
               return (
                 <Pressable
                   key={opt.value}
                   style={[
                     styles.row,
                     selected ? styles.rowSelected : null,
-                    opt.disabled === true ? styles.rowDisabled : null,
+                    rowDisabled ? styles.rowDisabled : null,
                   ]}
                   onPress={() =>
                     opt.disabled === true
                       ? Alert.alert('Coming soon', PROVIDER_SPECIFIC_COMING_SOON)
-                      : chooseDiscoverability(opt.value as Discoverability)
+                      : lockedForTalk
+                        ? undefined
+                        : chooseDiscoverability(opt.value as Discoverability)
                   }
+                  disabled={lockedForTalk}
                   testID={`service-settings-discoverability-${opt.value}`}
                   accessibilityRole="button"
-                  accessibilityState={{ selected, disabled: opt.disabled === true }}
+                  accessibilityState={{ selected, disabled: rowDisabled }}
                   accessibilityLabel={`${opt.title}. ${opt.body}${
                     opt.disabled === true ? '. Coming soon.' : ''
-                  }`}
+                  }${lockedForTalk ? '. Locked for relationship services.' : ''}`}
                 >
                   <View style={{ flex: 1, paddingRight: spacing.sm }}>
                     <Text style={styles.rowTitle}>{opt.title}</Text>

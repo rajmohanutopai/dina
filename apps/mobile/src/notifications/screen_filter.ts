@@ -8,7 +8,7 @@
 
 import type { NotificationItem } from '@dina/brain/notifications';
 
-export type FilterKey = 'all' | 'unread' | 'reminder' | 'needs_action';
+export type FilterKey = 'all' | 'unread' | 'reminder' | 'needs_action' | 'requests';
 
 export function applyNotificationFilter(
   items: NotificationItem[],
@@ -21,6 +21,11 @@ export function applyNotificationFilter(
       return items.filter((i) => i.readAt === null);
     case 'reminder':
       return items.filter((i) => i.kind === 'reminder');
+    case 'requests':
+      // The owner-private contact-service decision log is NOT a NotificationItem
+      // (it is a quiet, reviewable log, never a push). The screen sources those
+      // rows separately; this view has no notification items of its own.
+      return [];
     case 'needs_action':
       // "Needs action" = every item that asks the user for a decision:
       // service-approval (`approval`), ask-approval / agent-validation /

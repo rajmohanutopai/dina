@@ -10,9 +10,15 @@
 #   - a `dina` agent is paired (config at ./.dina/cli — run from repo root)
 #   - .venv/bin/dina exists (the agent CLI)
 #
-# Usage (from repo root):
-#   apps/mobile/maestro/harness/agent_mrs_driver.sh risky   # MRS-08
-#   apps/mobile/maestro/harness/agent_mrs_driver.sh vault   # MRS-07
+# Usage (from repo root) — scenario is the 1st arg:
+#   task         MRS-06  agent task delegation gated by a MODERATE approval
+#   vault        MRS-07  agent locked-vault read gated + unblocked by approval
+#   risky        MRS-08  HIGH-risk action approved through the native confirm
+#   deny         MRS-08  HIGH-risk action DENIED on device (the refuse half)
+#   safe         MRS-08  SAFE action auto-approved, NO card (the ladder bottom)
+#   blocked      MRS-08  BLOCKED action denied outright, NO card (ladder top)
+#   cross_vault  MRS-07 C3  health grant must NOT leak to finance (re-prompt)
+#   new_session  MRS-07 C4  session grant must NOT carry to a new session
 #
 # Env overrides: DINA, MAESTRO, UDID.
 set -uo pipefail
@@ -103,7 +109,108 @@ case "$SCENARIO" in
     echo "MRS-06 PASS — agent task delegation gated + approved on device"
     ;;
 
+  deny)
+    # MRS-08 (deny) — HIGH-risk intent → approval card → DENY on device →
+    # validate-status flips to denied. Proves the operator can REFUSE, not just
+    # approve (the other half of the gate).
+    sid="$(start_session mrs8deny)"
+    [ -n "$sid" ] || fail "could not start session"
+    echo "session=$sid"
+    out="$("$DINA" validate --session "$sid" transfer_money "Move \$500 to savings" \
+            --context '{"amount":500,"to":"savings"}' 2>&1)"
+    echo "$out"
+    pid="$(echo "$out" | grep -oE 'prop-intent-[a-f0-9]+' | head -1)"
+    [ -n "$pid" ] || { end_session "$sid"; fail "no proposal id from validate"; }
+    echo "proposal=$pid"
+    maestro "$FLOWS/risky_action_deny.yaml" || { end_session "$sid"; fail "deny flow failed"; }
+    sleep 3
+    status="$("$DINA" validate-status "$pid" 2>&1 | grep '^status:' | awk '{print $2}')"
+    end_session "$sid"
+    [ "$status" = "denied" ] || fail "validate-status=$status (expected denied)"
+    echo "MRS-08 PASS (deny) — agent HIGH-risk action DENIED on device"
+    ;;
+
+  safe)
+    # MRS-08 (SAFE rung) — a SAFE action (search) auto-approves with NO card.
+    # The gatekeeper policy is deterministic, so the CLI returns the verdict
+    # promptly without raising an on-device approval.
+    sid="$(start_session mrs-safe)"
+    [ -n "$sid" ] || fail "could not start session"
+    out="$("$DINA" validate --session "$sid" search "best ergonomic chair" 2>&1)"
+    echo "$out"
+    end_session "$sid"
+    if echo "$out" | grep -qiE "approved|safe|auto|allow" && ! echo "$out" | grep -qiE "pending|await"; then
+      echo "MRS-08 PASS (safe) — SAFE action auto-approved, no card"
+    else
+      fail "SAFE not auto-approved (out: $out)"
+    fi
+    ;;
+
+  blocked)
+    # MRS-08 (BLOCKED rung) — a BLOCKED action (read_vault) is denied outright,
+    # NO card, no chance to approve.
+    sid="$(start_session mrs-blk)"
+    [ -n "$sid" ] || fail "could not start session"
+    out="$("$DINA" validate --session "$sid" read_vault "health records" 2>&1)"
+    echo "$out"
+    end_session "$sid"
+    if echo "$out" | grep -qiE "denied|blocked|not allowed|forbidden" && ! echo "$out" | grep -qiE "pending|await"; then
+      echo "MRS-08 PASS (blocked) — BLOCKED action denied outright, no card"
+    else
+      fail "BLOCKED not denied outright (out: $out)"
+    fi
+    ;;
+
+  cross_vault)
+    # MRS-07 (C3) — approving a HEALTH read (session scope) must NOT grant
+    # FINANCE. A finance ask on the SAME session must RE-PROMPT (each vault is
+    # gated independently — a grant must not leak across personas).
+    sid="$(start_session mrs-xvault)"
+    [ -n "$sid" ] || fail "could not start session"
+    echo "session=$sid"
+    askh="$(mktemp)"
+    ( "$DINA" ask --session "$sid" "What is my blood pressure and HbA1c?" >"$askh" 2>&1 ) & hpid=$!
+    for _ in $(seq 1 40); do grep -qiE "awaiting approval|approve" "$askh" && break; kill -0 "$hpid" 2>/dev/null || break; sleep 1; done
+    maestro "$FLOWS/vault_read_approval.yaml" || { kill "$hpid" 2>/dev/null; end_session "$sid"; fail "health approval flow failed"; }
+    wait "$hpid"
+    askf="$(mktemp)"; blocked=0
+    ( "$DINA" ask --session "$sid" "What is my bank balance and account number?" >"$askf" 2>&1 ) & fpid=$!
+    for _ in $(seq 1 40); do
+      if grep -qiE "awaiting approval|approve" "$askf"; then blocked=1; break; fi
+      kill -0 "$fpid" 2>/dev/null || break; sleep 1
+    done
+    kill "$fpid" 2>/dev/null || true
+    end_session "$sid"; echo "--- finance ask ---"; cat "$askf"; rm -f "$askh" "$askf"
+    [ "$blocked" -eq 1 ] || fail "finance ask did NOT re-prompt — cross-vault grant leak"
+    echo "MRS-07 PASS (C3) — health grant did NOT leak to finance (re-prompted)"
+    ;;
+
+  new_session)
+    # MRS-07 (C4) — a session-scope grant must NOT carry into a NEW session.
+    # Approve health in session 1, end it, then the same ask in session 2 must
+    # RE-PROMPT (session keying = the grant dies with the session).
+    s1="$(start_session mrs-ns1)"
+    [ -n "$s1" ] || fail "could not start session 1"
+    askh="$(mktemp)"
+    ( "$DINA" ask --session "$s1" "What is my HbA1c?" >"$askh" 2>&1 ) & p1=$!
+    for _ in $(seq 1 40); do grep -qiE "awaiting approval|approve" "$askh" && break; kill -0 "$p1" 2>/dev/null || break; sleep 1; done
+    maestro "$FLOWS/vault_read_approval.yaml" || { kill "$p1" 2>/dev/null; end_session "$s1"; fail "approval flow failed"; }
+    wait "$p1"; end_session "$s1"; rm -f "$askh"
+    s2="$(start_session mrs-ns2)"
+    [ -n "$s2" ] || fail "could not start session 2"
+    askh2="$(mktemp)"; blocked=0
+    ( "$DINA" ask --session "$s2" "What is my HbA1c?" >"$askh2" 2>&1 ) & p2=$!
+    for _ in $(seq 1 40); do
+      if grep -qiE "awaiting approval|approve" "$askh2"; then blocked=1; break; fi
+      kill -0 "$p2" 2>/dev/null || break; sleep 1
+    done
+    kill "$p2" 2>/dev/null || true
+    end_session "$s2"; echo "--- session-2 ask ---"; cat "$askh2"; rm -f "$askh2"
+    [ "$blocked" -eq 1 ] || fail "new session did NOT re-prompt — session grant leaked across sessions"
+    echo "MRS-07 PASS (C4) — session grant did NOT carry to a new session (re-prompted)"
+    ;;
+
   *)
-    fail "unknown scenario '$SCENARIO' (expected: risky | vault | task)"
+    fail "unknown scenario '$SCENARIO' (expected: task | vault | risky | deny | safe | blocked | cross_vault | new_session)"
     ;;
 esac

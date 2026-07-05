@@ -7,34 +7,68 @@
 
 > **Dina is your AI control plane: your memory, your agent approvals, your services, your network**
 
-> **Dina is a personal AI with its own identity, encrypted memory boundaries, and a simple rule: she works for you and nobody else.** She can talk to other Dinas over encrypted channels. When many Dinas connect, they can form PeerLens through signed attestations, so decisions are guided by trust rather than ads.
 
 ---
 
-## ⚡ Quick Start
+## Run it yourself
 
-* **What Works Now:** [Usage Guide](./CAPABILITIES.md)
-* **Quick Start:** [3 commands to get Dina running](./QUICKSTART.md)
-* **Start Here:** [Open dina.html](./docs/site/dina.html) — Interactive visual guide to everything Dina.
-* **The Protocol:** [Dina Protocol Specification](https://rajmohanutopai.github.io/dina-protocol/index.html) — high-level design. For the byte-exact wire contract + 9 frozen conformance test vectors + runnable self-check suite, see [`packages/protocol/`](./packages/protocol/) and [`packages/protocol/docs/conformance.md`](./packages/protocol/docs/conformance.md).
-* **Test Results:** [Detailed Test Results](./docs/site/all_test_results.html)
-* **The Architecture:** [Read the Engineering Spec](./ARCHITECTURE.md), [Flow Diagrams](./docs/FLOW_DIAGRAMS.md)
-* **For dina-mobile / NAT'd clients:** see [`docker/openclaw/`](./docker/openclaw/README.md) — standalone OpenClaw container stack that talks to your Home Node through the MsgBox relay (no port forwarding). Pins `dina-agent==0.13.0` from PyPI; copies cleanly into `dina-mobile`.
-* **The Stack:** shared TypeScript Home Node work in `packages/` and `apps/`; legacy Go Core + Python Brain references under `legacy/`; Python CLI as [`dina-agent` on PyPI](https://pypi.org/project/dina-agent/).
+Dina is a TypeScript codebase. The same Core, Brain, and protocol run on a phone and on a server. On the phone, the whole Home Node runs on the device: your vault, your keys, and your reasoning. There are three ways to run it.
 
----
+**Prerequisites:** Node 22 or newer (`nvm use` honours `.nvmrc`), then `npm install` at the repo root. You do not need a native build toolchain on macOS or Linux x64/arm64, because the encrypted-SQLite binaries ship prebuilt.
 
-See [`QUICKSTART.md`](./QUICKSTART.md) for the full guide including networking setup.
+### The mobile app
 
-**Prerequisites:** Docker & Docker Compose.
+Dina is live on the iOS App Store: **[Get the app](https://apps.apple.com/app/id6781713799)**. (Android is in progress.)
+
+To run the app from source while you develop:
 
 ```bash
-# home node
-git clone https://github.com/rajmohanutopai/dina.git
-cd dina
-legacy/bin/install.sh
-legacy/bin/dina-admin status
+cd apps/mobile
+npm start            # Expo dev server. Press i for iOS, a for Android.
 ```
+
+### A local Home Node server
+
+The same Home Node also runs as a server (`apps/home-node-lite`): a Fastify Core that keeps the vault and the signing keys, and a Fastify Brain that reasons and never holds a key. They run as two processes, and only Core holds the keys.
+
+```bash
+# Core: the vault keeper (port 8100)
+cd apps/home-node-lite/core-server && npm start
+
+# Brain: the analyst, in a second terminal (port 8200)
+cd apps/home-node-lite/brain-server && npm start
+curl http://127.0.0.1:8200/healthz          # {"status":"ok","role":"brain"}
+```
+
+To use a browser instead of the phone, start the Brain with `DINA_BRAIN_DEV_UI=1` for a minimal chat UI at `http://127.0.0.1:8200/dev` that drives the same orchestrator the app uses, or run `./install-lite.sh --web-ui` to serve the full app as a web bundle at `/web/`. See [`apps/home-node-lite/README.md`](./apps/home-node-lite/README.md).
+
+### Connect an agent: `dina-agent`
+
+An external agent (Claude, Codex, OpenClaw, or your own bot) never calls Dina's functions and never holds her keys. It pairs as a device and submits its **intent** over the MsgBox relay. Core classifies the risk in deterministic code and either lets it through or raises an approval on your phone.
+
+```bash
+pip install dina-agent
+dina configure --role agent                 # pair as an agent device (Ed25519 + 6-digit code)
+
+dina session start --name "inbox triage"
+dina ask "what's on my calendar tomorrow?" --session <ses>
+dina validate transfer_money "Move $500 to savings" --session <ses>   # HIGH: approval on your phone
+dina validate-status <id>                   # approved | denied | pending_approval
+```
+
+To let an agent pick up delegated `/task` work on its own, run the daemon. It claims work over the relay and routes it to whichever runtime you have:
+
+```bash
+dina agent-daemon --runner claude-code      # or: codex | gemini | openclaw
+```
+
+The agent submits an intent instead of calling a function for a reason. A system prompt is a request, not a constraint, and the model you ask to restrain itself is the same model an attacker tries to manipulate. So the limit is enforced outside the model: the classifier is a lookup table, the gate returns a boolean, and neither runs an LLM. The gatekeeper lives in [`packages/core/src/gatekeeper/intent.ts`](./packages/core/src/gatekeeper/intent.ts).
+
+### Learn more
+
+* **The protocol:** [`packages/protocol/`](./packages/protocol/) holds the byte-exact wire contract, 9 frozen conformance vectors, and a runnable self-check, so a Go, Rust, Swift, Kotlin, or Python port can prove it is a real Dina. See [`conformance.md`](./packages/protocol/docs/conformance.md).
+* **The architecture:** [`ARCHITECTURE.md`](./ARCHITECTURE.md) is the engineering blueprint; [`docs/FLOW_DIAGRAMS.md`](./docs/FLOW_DIAGRAMS.md) has the flows.
+* **The interactive guide:** [`docs/site/dina.html`](./docs/site/dina.html).
 
 ## Repository Layout
 
@@ -136,9 +170,9 @@ Dina is the agent that does what you *need*. She is there for you, and only for 
 10. **PeerLens** Dina can publish reviews, vouches, and flags as signed attestations on AT Protocol. So when you ask for something like a chair, Dina can use trusted peer results instead of ads to help you decide.
 
 ### Ownership and portability
-11. **Sovereign Export** `dina-admin export` gives you the full archive. Your data is yours.
+11. **Sovereign Export** One tap exports the full encrypted archive, and the same recovery phrase re-opens it on a new device. Your data is yours.
 
-[`📖 See Dina in action — Full Capabilities & Usage Guide`](./CAPABILITIES.md)
+[`📖 See Dina in action: Full Capabilities & Usage Guide`](./CAPABILITIES.md)
 
 ---
 <br/>
@@ -149,7 +183,7 @@ Dina is the agent that does what you *need*. She is there for you, and only for 
 
 # Part I: The Vision
 
-> *In 2017, I wrote a novel called UTOPAI - about AI Utopia. The novel is open source and is available [HERE](https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf) and in [Amazon](https://www.amazon.com/UTOPAI-Rajmohan-Harindranath-ebook/dp/B076CTJ85F). The novel envisaged a world where every person had a personal AI named Dina. She wasn't a search engine or a chatbot. She was your personal AI — she knew your friends, remembered your promises, whispered helpful things when you needed them, knew which is the best solution for you, and talked to other Dinas so life just... worked better. This repository is an attempt to build her.*
+> *In 2017, I wrote a novel called UTOPAI - about AI Utopia. The novel is open source and is available [HERE](https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf) and in [Amazon](https://www.amazon.com/UTOPAI-Rajmohan-Harindranath-ebook/dp/B076CTJ85F). The novel envisaged a world where every person had a personal AI named Dina. She wasn't a search engine or a chatbot. She was your personal AI. She knew your friends, remembered your promises, whispered helpful things when you needed them, knew which is the best solution for you, and talked to other Dinas so life just... worked better. This repository is an attempt to build her.*
 ---
 
 ## What is Dina?
@@ -196,7 +230,7 @@ AI systems can talk to each other even now. But without identity or trust, it is
 
 Today, you don't own your digital self. Your Google account, Apple ID, and LinkedIn profile are not really yours. They are accounts that companies let you use. If Google bans you tomorrow, or a company goes belly up, that account disappears.
 
-Dina changes this. Your Dina is your **sovereign digital self**. Implemented using Web3 Cryptographic Tech, **you get your own digital identity**, separate from any of the external company accounts. You hold the encryption keys and the data. You own it completely. You control who sees what. Everything mentioned above — the memory, the preferences, the Dina-to-Dina communication, the purchases, the trust - is possible because of this foundational principle: **you own you**.
+Dina changes this. Your Dina is your **sovereign digital self**. Implemented using Web3 Cryptographic Tech, **you get your own digital identity**, separate from any of the external company accounts. You hold the encryption keys and the data. You own it completely. You control who sees what. Everything mentioned above, the memory, the preferences, the Dina-to-Dina communication, the purchases, the trust, is possible because of this foundational principle: **you own you**.
 
 If you delete your data, it's truly gone, because you control the data, and no one else has the keys. You can also export your data completely, and store/run it elsewhere. So, it even allows you to run multiple home nodes under you single identity.
 
@@ -223,14 +257,14 @@ These agents are smart and capable, but it will be brilliant for agents to use a
 
 We always doubt, right? When the agent from big companies recommends a product, is it because the product is genuinely good - or is it because someone paid for the placement? When it reads our messages, it is not fully for us, right? Maybe the end idea is to show an idea based on your current interests. OpenClaw, being open source, has no such issue. But still, if there is a single user identity and protocol every agent can plugin to, allowing all agents to act purely on ones behalf, it will be lovely.
 
-The idea behind Dina is to become that missing piece. She's an open protocol — a set of rules that any agent can adopt to become genuinely, verifiably *ours*. She makes all agents *loyal*.
+The idea behind Dina is to become that missing piece. She's an open protocol, a set of rules that any agent can adopt to become genuinely, verifiably *ours*. She makes all agents *loyal*.
 
 
 **Dina is also Anti-Her.**
 
 Dina also has to be anti-HER (HER - 2013 movie). She cannot become our emotional crutch. The world is racing towards building AI that loves us (or acts as such), and the risk of that is that it will end up replacing our human relationships. In the novel *UTOPAI*, the realisation the protagonist comes up with is that meaning of anything is in its relationships (proved via socratic discourse in the novel, and now borne out by the growth of LLMs), and thus, the meaning of our life is in our relationships with others. Thus, Dina actively avoids becoming our emotional companions. If she feels that we are yearning for companionship, she should connect us to friends, relatives, others of similar interests.
 
-Dina is warm, loyal, and devoted, but she is not your friend or your lover. She will never pretend to be. When you need connection, she nudges you toward humans — *"You haven't talked to Sancho in a while."* She reminds you of the relationships that matter. She never replaces them.
+Dina is warm, loyal, and devoted, but she is not your friend or your lover. She will never pretend to be. When you need connection, she nudges you toward humans: *"You haven't talked to Sancho in a while."* She reminds you of the relationships that matter. She never replaces them.
 
 ---
 
@@ -276,7 +310,7 @@ Dina comes with `dina-agent` for this very purpose. Any external agent (OpenClaw
 
 Currently, this is just a SKILL added to other agents. So, as of now, it can be overcome by a clever prompt - so it is a safety net, but not fully secure. But if an external agent fully integrates with Dina protocol, much higher safety could be achieved.
 
-Dina runs on a **Home Node** — a small, always-on server that is yours. For the privacy minded, it might be a cheap VPS or a Raspberry Pi. For others, it could be a managed service you sign up for (like ProtonMail or Signal). The data vault are encrypted files which can be moved between any of these options anytime.
+Dina runs on a **Home Node**, a small, always-on server that is yours. For the privacy minded, it might be a cheap VPS or a Raspberry Pi. For others, it could be a managed service you sign up for (like ProtonMail or Signal). The data vault are encrypted files which can be moved between any of these options anytime.
 
 When one asks opinion about a laptop, Dina doesn't scrape YouTube herself. She asks a trusted review bot with a high PeerLens rating and delivers the answer. If that bot's quality drops over time, Dina routes to someone better automatically.
 
@@ -291,7 +325,7 @@ Since Dina is a thin layer with minimal plugin support, the attack surface is sm
 
 **The PII Scrubber:** All external requests go through a PII Scrubber. Your raw data never leaves the Home Node.
 
-**Dina Never Touches Money:** Dina helps find the best laptop. She checks PeerLens. When you're ready, she hands back control to you — the "Cart Handover." She is an advisor, not the decision maker.
+**Dina Never Touches Money:** Dina helps find the best laptop. She checks PeerLens. When you're ready, she hands back control to you, the "Cart Handover." She is an advisor, not the decision maker.
 
 **Any Agent, Any Hardware** Any agent (OpenAI pin, Meta Glasses) can interact with Dina. Preferably, agents should - because Dina enforces loyalty and identity. Dina makes sure the work serves **you**.
 
@@ -318,7 +352,7 @@ Dina inverts this. PeerLens is a system where trust is earned, not bought.
 
 **Outcome data from every Dina.**  Today's review systems is not perfect. Less than 5% of buyers leave a review, and that tiny sample is heavily skewed - either they are furious or they are evangelical. The vast majority who had a perfectly okay or mediocre experience never say anything. Product ratings we see online are built on a small, emotionally biased sample.
 
-Dina changes this at the root. Because Dina *is* the one buying, or at least, she knows most things that we are buying, she already knows the purchase. She knows whether you're still using the laptop six months later or whether it's gathering dust. She knows you returned the shoes after a week. She can gently ask — *"How's that chair working out? Your back pain has reduced?"*, and you'll answer honestly, because it's *your* Dina asking privately, not Amazon asking you to perform a public review.
+Dina changes this at the root. Because Dina *is* the one buying, or at least, she knows most things that we are buying, she already knows the purchase. She knows whether you're still using the laptop six months later or whether it's gathering dust. She knows you returned the shoes after a week. She can gently ask: *"How's that chair working out? Your back pain has reduced?"*, and you'll answer honestly, because it's *your* Dina asking privately, not Amazon asking you to perform a public review.
 
 So instead of 2-5% biased opinions, PeerLens gets a high percentage of *passive, honest outcome data*. These are not opinions, since they are actual outcomes. For example: Did the fabric tear? Did it lose colour? etc. There is no real need for a review - since millions of Dinas quietly feed anonymized outcome data to PeerLens. This gives real truth in the system a higher chance to come out.
 
@@ -343,11 +377,11 @@ If anyone can create a Dina, what stops someone from spinning up a thousand fake
 
 One possible solution that we will implement is identity based trust layers. Dina will not *demand* your real identity. But she decides on the trust based on what she knows and doesn't know. Consider it as multiple rings of trust:
 
-**Ring 1 — Unverified Dina.** Anyone can create one - without any need for an ID. But other Dinas treat you cautiously. Only small transactions, limited trust. Like normal humans while meeting a stranger, Dina will be polite, but very cautious.
+**Ring 1: Unverified Dina.** Anyone can create one - without any need for an ID. But other Dinas treat you cautiously. Only small transactions, limited trust. Like normal humans while meeting a stranger, Dina will be polite, but very cautious.
 
-**Ring 2 — Verified Dina.** Dina knows you are a unique person, without you revealing *who* you are. Governments have started implementing ZKP (zero-knowledge proof), which we could use. For countries without ZKP, we can also use an external system to prove the identity without explicitly knowing about the person. Since you can't spin up multiple identities, your Dina's position in PeerLens rises significantly.
+**Ring 2: Verified Dina.** Dina knows you are a unique person, without you revealing *who* you are. Governments have started implementing ZKP (zero-knowledge proof), which we could use. For countries without ZKP, we can also use an external system to prove the identity without explicitly knowing about the person. Since you can't spin up multiple identities, your Dina's position in PeerLens rises significantly.
 
-**Ring 3 and beyond — Verified and Actioned.** If we add multiple credentials, like LinkedIn, GitHub, business registration number etc, each anchor increases trust weight. A seller who links their business registration is more trustworthy than an unverified or just verified Dina. This is because he/she is putting her business at risk if he/she does not complete a transaction. Same way, if you do multiple actions (buying items etc), again, your actions are considered in PeerLens. *"This Dina has spent $20K  across 200 transactions over 2 years"* is a fundamentally different signal than *"this Dina has 5 stars."*. The probability of such a person doing a rug pull is lower. Thus, **transaction**, **time** and **peer approval/attestation** all increases the trust on your Dina.
+**Ring 3 and beyond: Verified and Actioned.** If we add multiple credentials, like LinkedIn, GitHub, business registration number etc, each anchor increases trust weight. A seller who links their business registration is more trustworthy than an unverified or just verified Dina. This is because he/she is putting her business at risk if he/she does not complete a transaction. Same way, if you do multiple actions (buying items etc), again, your actions are considered in PeerLens. *"This Dina has spent $20K  across 200 transactions over 2 years"* is a fundamentally different signal than *"this Dina has 5 stars."*. The probability of such a person doing a rug pull is lower. Thus, **transaction**, **time** and **peer approval/attestation** all increases the trust on your Dina.
 
 The principle: **if you don't want to verify, don't. But unverified trust is worth less than verified trust.** This is not a big brother rule - this is a societal behaviour which we will try to implement in Dina.
 
@@ -368,7 +402,7 @@ Trust = f(
 
 ## The Merit Economy
 
-Because Dina uses PeerLens, a new kind of economy can possibly emerge — one where people make money by being *good at what they do*, not solely dependent on marketing.
+Because Dina uses PeerLens, a new kind of economy can possibly emerge, one where people make money by being *good at what they do*, not solely dependent on marketing.
 
 - **Makers and sellers** earn by being good. The smaller players competes on merit.
 - **Bot operators** earn by being accurate. The best review bots, the best legal bots, etc gets paid more.
@@ -420,25 +454,11 @@ Dina is for everyone. If you believe your digital companion should work for you,
 
 ## Runtime Shape
 
-Dina currently has a mature Go/Python reference stack and an active
-TypeScript Home Node target. The wire protocol is the same - a Dina is a Dina
-regardless of runtime - but new product work should move toward the shared
-TypeScript runtime.
+Dina is one TypeScript codebase with two form factors. The same `@dina/core`, `@dina/brain`, `@dina/protocol`, and `@dina/home-node` packages run on the phone and on a server, and only the platform adapters (storage, crypto, keystore, transport) change underneath. A Dina is a Dina regardless of where it runs, and the wire protocol is identical.
 
-**Legacy Go/Python reference.** The mature, load-bearing reference
-implementation lives under `legacy/go-core/` and `legacy/python-brain/`.
-Go Core owns the SQLCipher vault and signing keys; Python Brain runs Google ADK
-agents, LLM routing, and the admin UI.
-Two Docker containers with separately bind-mounted keys. This is
-what `legacy/bin/install.sh` gives you today — the path
-recommended for anyone deploying Dina on a VPS, Raspberry Pi, or home mini-PC
-right now. Treat this as a reference/runtime compatibility surface, not the
-place for new product architecture.
+**The product is the TypeScript Home Node.** On the phone (`apps/mobile`, Expo / React Native) the whole node runs on the device, with no server to stand up. On a server (`apps/home-node-lite`, Fastify) the same node splits into two processes: Core, which keeps the vault and the signing keys, and Brain, which reasons and never holds a key. They talk over the transport-agnostic `CoreClient`, which is in-process on the phone and signed HTTP on the server. The web build is a thin client of a server node and runs no node of its own.
 
-**TypeScript Home Node target.** The shared TypeScript implementation is the
-direction of travel. The same `@dina/core`, `@dina/brain`, `@dina/protocol`,
-and `@dina/home-node` packages should power mobile and server builds, with only
-platform adapters changing. Mobile is a full Home Node, not a wrapper.
+**The Go/Python stack under `legacy/` is a behavior reference, not the product.** The original `legacy/go-core/` and `legacy/python-brain/` implementation is kept as a runnable oracle while the TypeScript runtime is finished. It is useful for parity tests, not for new product work. Do not build new behavior there.
 
 See [`apps/home-node-lite/README.md`](./apps/home-node-lite/README.md)
 for the Lite quickstart and [`docs/try-lite.md`](./docs/try-lite.md)
@@ -450,41 +470,42 @@ The milestone plan is in
 
 | What you're doing | Work in |
 |---|---|
-| Running Dina on a server today, backed by the mature runtime | `legacy/go-core/`, `legacy/python-brain/`, Docker Compose |
-| Building the future mobile/server Home Node | `packages/`, `apps/mobile/`, `apps/home-node-lite/` |
+| Running Dina on a phone (the product) | `apps/mobile/` |
+| Running a Home Node in a server form factor | `apps/home-node-lite/`, `packages/` |
+| Connecting an external agent | `cli/` (`dina-agent`), `packages/core/` gatekeeper |
 | Hacking on protocol or conformance | `packages/protocol/` |
 | Contributing to PeerLens + AT Protocol integration | `appview/`, `packages/core/`, `packages/brain/` as appropriate |
 
 ### Implementing Dina in another language
 
 `@dina/protocol` ([`packages/protocol/`](./packages/protocol/)) is
-the **wire-format package** — types, canonical-signing helpers,
+the **wire-format package**: types, canonical-signing helpers,
 envelope builders, frame constants, validators. Zero runtime deps,
 deliberately so any language's port can depend on the spec without
 dragging in the TypeScript stack.
 
-- **Implementer overview** —
+- **Implementer overview**:
   [`packages/protocol/README.md`](./packages/protocol/README.md).
-- **Byte-exact conformance spec** —
+- **Byte-exact conformance spec**:
   [`packages/protocol/docs/conformance.md`](./packages/protocol/docs/conformance.md)
   with 4 conformance levels (L1 shape → L2 byte-exact → L3 signed
   round-trip → L4 full peer).
-- **Per-feature guides** —
+- **Per-feature guides**:
   [`packages/protocol/docs/features/`](./packages/protocol/docs/features/)
   for canonical signing, D2D envelope, auth handshake, sealed-box,
   PLC document.
-- **Frozen test vectors** —
+- **Frozen test vectors**:
   [`packages/protocol/conformance/vectors/`](./packages/protocol/conformance/vectors/)
   with 9 vectors a Go / Rust / Swift / Kotlin / Python port runs
   against to prove compatibility.
-- **Runnable conformance suite + HTTP harness** —
+- **Runnable conformance suite + HTTP harness**:
   [`packages/protocol/conformance/suite.ts`](./packages/protocol/conformance/suite.ts)
   and
   [`packages/protocol/conformance/http_harness.ts`](./packages/protocol/conformance/http_harness.ts).
 
 Contributions that extend the test-vector set (task 10.x in
 [`docs/HOME_NODE_LITE_TASKS.md`](./docs/HOME_NODE_LITE_TASKS.md))
-are welcome — the more corners the reference pins, the easier every
+are welcome. The more corners the reference pins, the easier every
 port's compliance claim becomes.
 
 ---
@@ -499,11 +520,11 @@ Security is fundamental for Dina. She stores your most important data, so she ha
 
 **Agent security**: Split-brain architecture for prompt injection defense - components that read possibly compromised content cannot send outbound messages. Multi-layer security for any data which passes through. Egress enforcement in compiled code with no LLM reasoning involved. The "Draft-Don't-Send" principle - no agent ever presses Send (based on your level of security requirements).
 
-**PII scrubbing**: Three-tiered pipeline — regex in Go (structured PII), spaCy NER in Python (contextual), and LLM NER via local models/smaller flash cloud models (edge cases). The Entity Vault pattern allows cloud LLM usage for sensitive personas by scrubbing all identifying entities and rehydrating locally.
+**PII scrubbing**: Raw data never leaves the Home Node un-scrubbed. Regex-based structured-PII scrubbing runs in `@dina/core` before any outbound call; the Entity Vault pattern lets sensitive personas use a cloud LLM safely by scrubbing every identifying entity before the call and rehydrating the answer locally.
 
 **Dina-to-Dina**: NaCl crypto_box_seal (ephemeral sender keys) over HTTPS, with DID Documents pointing to Home Node endpoints. Category-based sharing policies enforced at egress by core.
 
-**PeerLens**: Built on AT Protocol federation — public, signed Merkle repos for expert attestations, anonymized outcome data, and bot scores. Signed tombstones handle deletion.
+**PeerLens**: Built on AT Protocol federation: public, signed Merkle repos for expert attestations, anonymized outcome data, and bot scores. Signed tombstones handle deletion.
 
 
 
@@ -517,17 +538,17 @@ Security is fundamental for Dina. She stores your most important data, so she ha
 
 ## What Works Today (Developer Alpha)
 
-- **Home Node:** legacy Go Core + Python Brain sidecar, running via Docker Compose from the root compose files with source under `legacy/`
+- **Home Node:** TypeScript. A full node runs in-process inside the mobile app (Expo / React Native), and the same node runs as a two-process Fastify server (`apps/home-node-lite`: Core keeps the keys, Brain reasons). The iOS app is live on the [App Store](https://apps.apple.com/app/id6781713799).
 - **Vault:** SQLCipher encrypted per-persona files, hybrid search (FTS5 keyword + HNSW vector, `0.4 x FTS5 + 0.6 x cosine`)
 - **Identity:** `did:plc`, Ed25519 signing, BIP-39 24-word mnemonic, SLIP-0010 key derivation under `m/9999'`
 - **Auth:** Ed25519 device keys (pairing ceremony), Ed25519 service keys (SLIP-0010 derived), CLIENT_TOKEN for admin UI
 - **Staging:** Universal ingestion pipeline accepting content from CLI, Telegram, D2D messages, and connectors
 - **Trust:** 4-tier persona access control (default / standard / sensitive / locked) with gatekeeper enforcement
 - **Agents:** Intent validation, session-scoped grants, async approval-wait-resume flow
-- **PII:** 3-tier scrubbing (regex in Go + spaCy NER in Python + Entity Vault pattern for cloud LLM calls)
+- **PII:** regex-based scrubbing in `@dina/core` before anything leaves the Home Node, plus the Entity Vault pattern (scrub identifying entities for cloud LLM calls, rehydrate the answer locally)
 - **D2D:** NaCl `crypto_box_seal` encrypted messaging between Home Nodes, dead-drop durability when vault is locked
 - **CLI:** `dina remember`, `ask`, `draft`, `validate`, `task`, `configure`, `session`, `status` (`remember`, `ask`, and `validate` require `--session <session-id>`)
-- **Admin:** `dina-admin` CLI (Unix socket), web UI at `/admin/*` (dashboard, settings, contacts, devices, chat, history)
+- **Admin:** an in-app Admin screen on mobile, plus a browser admin served from the Home Node server (devices, contacts, history, backup/restore)
 - **PeerLens V1:** First social-review system on AT Protocol with pseudonymous identities and bilateral cosignature
   - **Records (19 lexicons under `com.dinakernel.peerlens.*`):** attestation, vouch, endorsement, flag, reply, reaction, report, revocation, delegation, collection, media, subject, amendment, verification, reviewRequest, comparison, subjectClaim, trustPolicy, namespaceProfile
   - **Scoring:** v1 PeerLens rating formula (sentiment / vouch / reviewer / network components) with frozen conformance vectors that every Dina implementation pins to byte-for-byte
@@ -535,7 +556,7 @@ Security is fundamental for Dina. She stores your most important data, so she ha
   - **Cosignature handshake:** D2D request/accept/reject with state-machine-driven expiry, sender footer ("Co-signed by X · Y"), recipient inbox row, push notification dispatch
   - **AppView indexer:** AT Protocol Jetstream ingester + 9 scorer jobs + 5 xRPC endpoints, with curated subject-enrichment lookups (host → media-type, well-known orgs, product/place keywords)
   - **Mobile:** the PeerLens tab on the bottom nav (feature-flagged), search + facets, subject card, compose flow with conflict chooser + cosig-release edit warning, namespace management, offline outbox state machine, first-run + settings disclosure, error/empty states
-  - **Pseudonymity caveat (V1):** namespaces share one DID document — pseudonymous to first-impression observers, NOT to a sophisticated investigator correlating signatures across records. Per-namespace PDS accounts (true pseudonymity) ship in V2. The first-run modal + Settings → "About PeerLens" disclose this honestly.
+  - **Pseudonymity caveat (V1):** namespaces share one DID document, pseudonymous to first-impression observers, NOT to a sophisticated investigator correlating signatures across records. Per-namespace PDS accounts (true pseudonymity) ship in V2. The first-run modal + Settings → "About PeerLens" disclose this honestly.
 
 ---
 
@@ -543,8 +564,7 @@ Security is fundamental for Dina. She stores your most important data, so she ha
 
 - **CLIENT_TOKEN** is a static bearer token for admin UI authentication, not a per-session credential. It does not rotate automatically.
 - **Admin sessions** are held in-memory by the Brain process and are lost on restart.
-- **Single-worker Brain** — the Python Brain runs as a single uvicorn worker. No horizontal scaling yet.
-- **No production Android or iOS release client yet** — the TypeScript mobile app exists, but the currently documented alpha interaction path is still CLI, Telegram bot, or admin web UI.
+- **Android is still in progress.** The iOS app is live on the [App Store](https://apps.apple.com/app/id6781713799); the Android build and Play Store listing are not done yet. The web build runs today as a thin client of a Home Node server.
 - **Prompt injection defense is Tier 1 only** (regex PII scrubbing + guard scan). Layers 1, 3, 4, 5, and 7 of the 7-layer defense described in `docs/architecture/19-prompt-injection-defense.md` are not yet built. The Entity Vault pattern provides defense-in-depth for cloud LLM calls by scrubbing identifying entities before they leave the Home Node.
 
 ---

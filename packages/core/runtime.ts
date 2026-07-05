@@ -25,6 +25,16 @@ export { DIDResolver } from './src/d2d/resolver';
 export { sendD2D } from './src/d2d/send';
 export type { ServiceQueryBody, ServiceResponseBody } from './src/d2d/service_bodies';
 export {
+  onGrantRequestPending,
+  resetGrantRequestPendingListeners,
+} from './src/d2d/grant_request_events';
+export type { GrantRequestPendingEvent } from './src/d2d/grant_request_events';
+export {
+  onServiceOfferReceived,
+  resetServiceOfferReceivedListeners,
+} from './src/d2d/service_offer_events';
+export type { ServiceOfferReceivedEvent } from './src/d2d/service_offer_events';
+export {
   getTopicRepository,
   listTopicRepositoryPersonas,
 } from './src/memory/repository';

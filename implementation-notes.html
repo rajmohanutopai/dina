@@ -33,113 +33,126 @@ goals trimmed 2026-06-16: Service Capability Catalog, PeerLens Publish Jobs, PUB
 prompt-provider + salon demo, Starter Credits.)</p>
 
 <!-- ===================================================================== -->
-<h2 id="change-passphrase">Change Passphrase <span class="meta">(uncommitted)</span></h2>
-<p class="meta">Settings &rarr; Security &rarr; <strong>Change passphrase</strong> (2026-06-17). The capability existed only as
-dead code (<code>useSecurity.doChangePassphrase</code> + the <code>changePassphrase</code> crypto primitive) but was never
-wired to a screen <em>and</em> never persisted. Built the durable path + UI. mobile: new service 10 tests, new screen 5
-tests, legacy <code>useSecurity</code> suite still green (39 total); tsc clean.</p>
-<div class="item decision"><span class="tag decision">Decisions / invariants</span>
-<ul>
-<li>A passphrase only <strong>wraps the master seed</strong> (Argon2id KEK &rarr; AES-256-GCM). Changing it is a re-wrap of
-the SAME seed, so every persona DEK (HKDF-derived from the seed) is untouched and all vault data keeps decrypting — no
-content re-encryption, no migration. The 24-word recovery phrase (which encodes the seed, not the passphrase) is unchanged.</li>
-<li>Durable order (the bug the legacy hook had): load wrapped seed &rarr; re-wrap (wrong current passphrase fails the GCM
-tag here, writes NOTHING) &rarr; <code>saveWrappedSeed</code> (the unlock source of truth) &rarr; <em>then</em> refresh the
-auto-unlock cache. Seed-first so the new passphrase is live even if the cache write fails.</li>
-<li>"Unlock automatically" users get <code>saveAutoPassphrase(new)</code> so silent boot keeps working; manual-mode users
-get nothing cached. The cache refresh is <strong>best-effort</strong> (try/caught): a failure can't report the change as
-failed — worst case the gate falls back to a one-time manual prompt and re-caches.</li>
-<li>Generic wrong-passphrase surface ("That current passphrase is incorrect.") — no oracle about which step failed, matching
-the recovery-phrase + unlock gates.</li>
-</ul></div>
-<div class="item tradeoff"><span class="tag tradeoff">Implementation</span>
-<ul>
-<li>New durable service <code>apps/mobile/src/services/change_passphrase.ts</code> (<code>changeVaultPassphrase</code>) over
-the real <code>wrapped_seed_store</code> + <code>startup_preferences</code> — NOT the in-memory <code>useSecurity</code> hook
-(which is left in place for its tests + reused pure helpers <code>validatePassphrase</code>/<code>getPassphraseStrength</code>,
-now annotated as legacy).</li>
-<li>New screen <code>apps/mobile/app/change-passphrase.tsx</code> (current/new/confirm via <code>PassphraseField</code> +
-strength meter + success state) registered as a drill-down route in <code>_layout.tsx</code>; row added to Settings &rarr;
-SECURITY under "View recovery phrase".</li>
-<li>Client-side guards (empty current, new&ne;confirm) short-circuit before the service; the service re-validates + rejects
-no-op (new == current) before any keychain touch.</li>
-</ul></div>
-<div class="item deviation"><span class="tag deviation">Not yet usable in the running web build</span>
-<ul>
-<li>The Home-Node-Lite web app serves a <strong>pre-built</strong> bundle (<code>apps/home-node-lite/web/dist</code>, last
-exported 2026-06-15) — the new row won't appear there until <code>cd apps/mobile &amp;&amp; npm run web:export</code> rebuilds
-it. Instant on the iOS dev-client sim via Metro hot reload.</li>
-</ul></div>
+<h2 id="adapter-conformance">Adapter Parity / Conformance Suite <span class="meta">(ACTIVE GOAL — in-flight)</span></h2>
+<p class="meta">The mobile apps and the Home-Node-Lite servers share the same <code>@dina/core|brain|protocol</code> logic but run
+DIFFERENT native adapters: storage (<code>op-sqlite</code> on device vs <code>better-sqlite3-multiple-ciphers</code> on the
+server), crypto (<code>react-native-argon2</code> vs node), keystore (<code>react-native-keychain</code> vs file), fs. The
+node adapters have ~15 test files; the expo adapters have <strong>zero</strong> direct tests (op-sqlite can't load in a
+Node jest process). Every divergence — e.g. the historical <code>op-sqlite run()</code> returning a constant instead of
+real rows-affected, silently breaking CAS — currently ships unguarded. This goal builds ONE behavioral contract suite run
+against BOTH sides to close that bug class systematically.</p>
 
-<!-- ===================================================================== -->
-<h2 id="composer-modes">Explicit Composer Modes <span class="meta">(uncommitted)</span></h2>
-<p class="meta">Spec: <code>docs/COMPOSER_MODES_DESIGN.md</code> — explicit composer chips
-<strong>Ask · Remember · Task · Services · Reviews · Talk</strong> (2026-06-16). Brain + mobile shipped, deep-reviewed, a
-6-agent adversarial workflow, then an external (Codex) review round (P1–P3) all fixed. Verified live on iOS (iPhone 17
-Pro) + Android (Pixel 10). Brain reasoning+composition+ask+chat 829 pass / 15 skipped; mobile composer_modes 14 + hooks
-17; tsc + eslint clean.</p>
-<div class="item decision"><span class="tag decision">Decisions / invariants</span>
-<ul>
-<li>Services forces <code>['provider_services']</code>, Reviews forces <code>['peerlens']</code> — <strong>ENFORCED, not
-advisory</strong>: system-prompt lane block + tool-policy allowlist (<code>ToolRegistry.subset</code>) + post-loop
-result-validation gate. Ask stays classifier-smart.</li>
-<li>A mode picks the EXTERNAL lane but never disables personal-context enrichment (vault/people tools stay in every lane
-— §6.6).</li>
-<li>No prefix leak (§7.1): the user bubble stores CLEAN content + <code>metadata.mode</code>; the slash prefix never
-reaches stored content. Mobile chip + render logic extracted to a pure, tested
-<code>src/components/composer_modes.ts</code>.</li>
-<li>Talk is a contact-picker NAVIGATION (<code>/people?pick=talk</code>), not a text mode (§7.7) — reachable from the
-chip strip AND (after the Codex round) the mode-switch popover.</li>
-<li><strong>Single source of truth: <code>reasoning/forced_lane.ts</code></strong> (prompt block + tool allowlist +
-result gate) shared by BOTH ask paths so they cannot drift; <code>ask_handler.ts</code> re-exports the moved symbols.</li>
-</ul></div>
-<div class="item tradeoff"><span class="tag tradeoff">External review (Codex) — P1–P3 fixed</span>
-<ul>
-<li><strong>P1 (critical):</strong> enforcement was wired only into <code>makeAgenticAskHandler</code>, but mobile + HNL
-run the COORDINATOR path (<code>createCoordinatorAskHandler → coordinator.handleAsk → buildAgenticExecuteFn</code>) which
-dropped <code>forcedSources</code> — so Services/Reviews silently ran plain Ask in production. Fixed by threading
-<code>forcedSources</code> through the whole chain + persisting it on the in-memory <code>AskRecord</code> so it survives
-an approval-resume (applied in both resumer branches). NEW production-bridge test drives the REAL bridge end-to-end (the
-test that would have caught this — prior tests used a stub handler).</li>
-<li><strong>P2a:</strong> <code>isPeerlensBacked</code> now requires REAL evidence (search results non-empty OR
-<code>attestationSummary.total &gt; 0</code>), not a present key. <strong>P2b/P2c (outage vs absence):</strong> the gate
-distinguishes an OUTAGE (network unreachable → "couldn't reach the review/services network") from ABSENCE (reached,
-nothing → no-result); <code>search_peerlens</code> sets a <code>failed</code> flag on an AppView throw.</li>
-<li><strong>P2d:</strong> Talk re-entry used a mount-once ref that never reset → replaced with <code>useFocusEffect</code>
-(every Talk entry re-forces Contacts; a manual tab switch isn't yanked). <strong>P2e:</strong> Talk row added to the
-mode-switch popover (reachable once a mode is active). <strong>P3:</strong> a bare <code>/services</code>/<code>/reviews</code>
-no longer persists an empty user bubble.</li>
-</ul></div>
-<div class="item deviation"><span class="tag deviation">Deviations (honest)</span>
-<ul>
-<li>Per user (2026-06-16), Talk stays the 6th chip in the horizontal-scroll strip (off-screen-by-default discoverability
-cost accepted) — no layout change.</li>
-<li>The chip strip is a small RN <code>ScrollView</code> that Maestro's swipe can't drive (only OS-level idb/adb can; Talk
-is clipped past the strip's right edge at rest) → hybrid runner <code>maestro/run_composer_modes.sh</code> (Maestro
-asserts chips + Task-gating; idb/adb scrolls + taps Talk; Maestro asserts the picker hint).</li>
-<li>P2d/P2e are code-correct + tsc/eslint clean but NOT Maestro-asserted — the mode-switch popover is an RN
-<code>&lt;Modal&gt;</code> whose internals Maestro can't address and whose pill/keyboard interaction it can't reliably
-drive. The flaky popover flow was removed rather than shipped; the primary Talk flow stays covered live on both platforms.</li>
-</ul></div>
-<div class="item tradeoff"><span class="tag tradeoff">Second Codex round — coordinator-path P2/P3 fixes</span>
-<ul>
-<li><strong>#1 (P2):</strong> the bridge's fast-path complete return dropped <code>serviceQueries</code> (only the
-deferred/async path surfaced them) → a /services query that dispatched WITHIN the 3s window rendered no card. Now returns
-<code>serviceQueries: extractServiceQueries(answer)</code>. NEW coordinator-bridge test pins it (the #5 test gap).</li>
-<li><strong>#2 (P2):</strong> the Services gate only treated failed <code>search_*</code> as an outage; a failed
-<code>query_service</code> DISPATCH fell through to "no service found". Now a failed dispatch is classified as an outage
-("found one but the request failed" → SERVICES_OUTAGE), not absence (<code>serviceLaneHadOutage</code>).</li>
-<li><strong>#3 (P2):</strong> the approval-RESUME path persisted only <code>{ text }</code>, dropping serviceQueries /
-reviewSource / missingCapabilities. Now the resumer takes an injected <code>shapeCompletedAnswer</code> backed by the
-SAME <code>translateLoopResult</code> the first-turn path uses (coordinator injects it; the generic resumer stays free of
-coordinator imports). Caught a latent hole: <code>cloneAsk</code> dropped <code>forcedSources</code> on every
-insert/update/get round-trip, so the approval-resume lane threading would have silently no-op'd — fixed + pinned by a
-resumer test that asserts the threaded <code>question</code>/<code>forcedSources</code> reach the shaper.</li>
-<li><strong>#4 (P3, NOT fixed — by design):</strong> forced lanes are not accepted by the HTTP Core /ask or HNL brain
-/ask routes. Intentional: composer modes are an in-process concept (mobile/HNL drive them via
-<code>AskCommandContext</code>, not the wire), and the design scoped "no protocol change". Documented known gap if
-external HTTP clients ever need forced Services/Reviews.</li>
-</ul></div>
+<h3>AP0 — Conformance-kit architecture (design)</h3>
+<div class="item decision"><span class="tag decision">A dedicated PURE package <code>packages/adapter-conformance/</code></span> Zero runtime deps, no jest, no
+node-only imports — mirrors how <code>@dina/protocol</code> ships its pure conformance kit. It exports per-family arrays of
+contract cases (storage / crypto / keystore / fs). <strong>Why a new pure package, not <code>test-harness</code> or a
+<code>-node</code>/<code>-expo</code> package:</strong> the kit must load in BOTH a Node jest process AND the React Native
+bundle; anything carrying jest or a node-only/native import would break one of the two runners. Purity is the
+constraint, so it gets its own package.</div>
+<div class="item decision"><span class="tag decision">Framework-agnostic case shape with a built-in assert</span>
+<code>interface Case { name: string; run(ctx): Promise&lt;void&gt; }</code>, failures thrown via a tiny built-in
+<code>assertEqual</code>/<code>assertBytesEqual</code>/<code>assertThrowsAsync</code> (NOT jest <code>expect</code>, which
+doesn't exist in RN). The node runner wraps each case in <code>it(c.name, () =&gt; c.run(ctx))</code>; the RN runner loops
+and renders PASS/FAIL. One source of truth for behavior, executed identically on both platforms.</div>
+<div class="item decision"><span class="tag decision">Runner-owned adapter lifecycle</span> Cases receive a FRESH adapter per
+case from a <code>makeAdapter()</code> the runner supplies (storage needs a clean DB each time). Keeps cases pure and lets
+each platform construct its native adapter its own way (temp-file path / in-memory) without the kit importing either side.</div>
+<div class="item tradeoff"><span class="tag tradeoff">Expo runner = in-app dev screen, not jest-on-device</span>
+Considered jest-expo / Detox to run the kit headless on a sim, but op-sqlite/native modules still need the real RN runtime
+and a headless device-jest harness is heavy + flaky. We already drive the booted app with Maestro, so a dev-only screen
+that runs the kit against the REAL adapters and renders a Maestro-assertable PASS/FAIL (overall + per-case testIDs) is
+lower-infra and higher-fidelity (real op-sqlite, real keychain, real argon2). Chosen.</div>
+<div class="item question"><span class="tag question">Sync-vs-async signatures are themselves a contract to assert</span> If a
+<code>-node</code> method is sync (<code>better-sqlite3 run(): number</code>) but the <code>-expo</code> one is async
+(op-sqlite / <code>react-native-argon2</code>), that divergence is exactly what the kit should catch. The kit is written
+<code>async</code> throughout to accommodate; the declared sync/async contract per method is pinned once the interface
+mapping lands (3 explore agents in flight).</div>
+<div class="item question"><span class="tag question">Branch — confirm before commit</span> This is independent of the
+thin-client (<code>web-thin-client-hold</code>) and Contact Services (<code>usability-fixes</code>, the current branch).
+Building on <code>usability-fixes</code> for now; will confirm whether you want a dedicated branch before any commit.</div>
+
+<h3>Surface map (3 explore agents) — what the conformance suite must actually target</h3>
+<div class="item deviation"><span class="tag deviation">CRYPTO reframed — the only platform fork is the Argon2 backend; crypto-expo is NOT an adapter</span>
+<code>crypto-expo</code> contains no port impl — it's a side-effect module that installs
+<code>react-native-get-random-values</code> and calls <code>setKDFOverride(react-native-argon2)</code>. The crypto BOTH
+platforms actually run is <code>@dina/core/src/crypto/*</code> (bip39/slip0010/hkdf/aesgcm/nacl/ed25519) on the same hoisted
+<code>@noble/*</code> — so everything except the KDF is byte-identical <em>by construction</em>. The <strong>sole</strong>
+genuine fork is <code>deriveKEK</code>'s Argon2id backend: server <code>hash-wasm</code> (WASM) vs mobile
+<code>react-native-argon2</code> (native C), 128&nbsp;MiB/t3/p4. It wraps the master seed — if the two disagree by one byte,
+a vault wrapped on iOS never unwraps on the server. It is <strong>completely unguarded in CI</strong> (the native module
+only runs on a device). KAT to pin: <code>packages/fixtures/crypto/argon2id_kek.json</code> (&ldquo;correct horse battery
+staple&rdquo; &rarr; <code>bf64a106&hellip;cbc2f9</code>). <strong>Consequence:</strong> the node crypto vector-gate already
+exists (<code>core/__tests__/crypto/cross_language.test.ts</code> runs all 12 Go fixtures + the KEK through hash-wasm); the
+NEW value is running the SAME vectors <em>on a device</em> where react-native-argon2 is live. The crypto conformance is
+therefore primarily a DEVICE deliverable, not a new node suite.</div>
+<div class="item deviation"><span class="tag deviation">KEYSTORE has no shared interface; FS-expo is unbuilt</span>
+<code>keystore-node</code> implements a real <code>Keystore</code> port (put/get/delete/list + name-validation);
+<code>keystore-expo</code> is three bare functions (<code>getSecret/setSecret/deleteSecret</code>) over
+<code>react-native-keychain</code> — no <code>list</code>, no validation. Only <strong>set/get round-trip + null-on-miss +
+delete-no-op</strong> are cross-platform assertable; <code>list()</code> and validation are node-only and stay out of the
+shared suite. <code>fs-expo</code> implements only <code>documentDirectoryUri/cacheDirectoryUri</code> — the
+<code>FsAdapter</code> port is unbuilt, so <strong>fs has NO conformance target yet</strong> (building it is a prerequisite,
+not part of this suite — recorded as an open item, not silently skipped).</div>
+<div class="item decision"><span class="tag decision">STORAGE contract = <code>DatabaseAdapter</code> (sync), targeted via an injected makeAdapter()</span>
+The live contract both impls satisfy is <code>DatabaseAdapter</code> (<code>core/src/storage/db_adapter.ts</code>):
+<code>execute/query/run/transaction/close/isOpen</code>, all SYNCHRONOUS. Node opens in its constructor; expo is
+<code>new OpSQLiteAdapter()</code> then <code>.open(name,loc,dekHex,openFn)</code> — so the runner injects a
+<code>makeAdapter()</code> factory and the cases stay construction-agnostic. Highest silent-divergence risks (the suite's
+targets): <code>run()</code> rows-affected (<code>info.changes</code> vs <code>result.rowsAffected ?? 0</code> — the original
+bug), blob type coercion (Buffer vs ArrayBuffer/Uint8Array), <code>query()</code> aggregate aliasing + shape-fallback-to-[],
+<code>execute()</code> multi-statement, FTS5 build presence, NULL/number coercion, error <code>.code</code> on
+constraint/busy.</div>
+<div class="item tradeoff"><span class="tag tradeoff">Known config divergences are surfaced, not baked into a failing green suite</span>
+Several differences (SQLCipher cipher-params, <code>foreign_keys</code> default ON-expo/OFF-node, journal_mode
+configurability) have NO defined contract today and would require <em>changing</em> an adapter to unify. The conformance
+suite asserts the well-defined behaviors both satisfy (keeping node green) and the cross-impl cipher round-trip is
+inherently a DEVICE test (write-on-node / read-on-op-sqlite). The unify-the-config items are logged as findings +
+follow-ups rather than smuggled in as red node tests — honest about what catches a regression vs what needs a decision.</div>
+<div class="item decision"><span class="tag decision">DEVICE runner = an env-gated in-app screen rendering a Maestro-assertable PASS/FAIL</span>
+The native modules under test (op-sqlite SQLCipher cipher, react-native-keychain, react-native-argon2) exist ONLY in the RN
+runtime — jest mocks them (<code>apps/mobile/__mocks__/op-sqlite.ts</code> backs op-sqlite with better-sqlite3 and makes
+<code>PRAGMA key</code> a no-op; keychain is an in-memory Record). So the real-adapter run must execute IN the app and
+surface its verdict as rendered UI. Reuse the existing <code>admin.tsx</code> <code>DevSendTestRow</code> pattern
+(<code>EXPO_PUBLIC_*</code> env-gate + auto-run-on-mount + status <code>&lt;Text&gt;</code> + <code>testID</code>); Maestro
+polls via <code>extendedWaitUntil</code> on a <code>conformance-overall-status</code> testID whose text is exactly
+<code>PASS</code>/<code>FAIL</code>. The protocol <code>conformance/suite.ts</code> is node-only (uses node:crypto/fs) — reuse
+only its report SHAPE, inline the vectors so the kit stays RN-importable.</div>
+
+<h3>AP1 — Storage conformance suite (DONE on node)</h3>
+<div class="item iter"><span class="tag iter">What shipped</span> New pure package <code>packages/adapter-conformance/</code>
+(<code>assert.ts</code> tiny throwing asserts incl. <code>assertBytesEqual</code> that also asserts the value IS a
+<code>Uint8Array</code>; <code>case.ts</code> <code>ConformanceCase&lt;T&gt;</code> + a result-collecting
+<code>runCases</code>; <code>types.ts</code> structural <code>ConformanceDatabaseAdapter</code> + a
+<code>assertExtends</code> drift-guard; <code>storage_cases.ts</code> 22 cases). Node runner
+<code>packages/storage-node/__tests__/conformance.test.ts</code> runs every case against a fresh file-backed
+<code>NodeSQLiteAdapter</code>. The 22 cases target the catalogued silent-divergence classes: <code>run()</code>
+rows-affected incl. the exact stale-CAS pattern that broke, aggregate aliasing, blob Uint8Array round-trip (incl. empty +
+1&nbsp;MB), tx commit/rollback-and-rethrow, NULL/int/text coercion, UNIQUE-throws, FTS5 match+BM25-rank+diacritic-fold.</div>
+<div class="item deviation"><span class="tag deviation">Kit is ZERO-dependency (no <code>@dina/core</code> import) — and why</span>
+First cut imported <code>DatabaseAdapter</code> from <code>@dina/core</code>; that turned the kit's typecheck red with errors in
+<code>@dina/test-harness</code>. Root cause: 7 <code>@dina/core</code> SOURCE files import <code>@dina/test-harness</code>, so
+importing core's barrel (even <code>@dina/core/storage</code>, which re-exports <code>vault/repository</code>) drags
+test-harness into the kit's compile under the kit's stricter config. The fix is the architecturally-right one: define the
+<code>ConformanceDatabaseAdapter</code> shape LOCALLY so the kit has zero deps and loads cleanly in the RN bundle (the
+device runner needs that), and bind it to the REAL contract in each runner via
+<code>assertExtends&lt;DatabaseAdapter, ConformanceDatabaseAdapter&gt;()</code> — a compile-time drift-guard so the local
+type can't silently fork from <code>@dina/core</code> (if <code>run()</code> ever becomes async, storage-node fails to
+compile). This mirrors how <code>@dina/protocol</code> is a zero-dep conformance kit. <em>(Pre-existing smell logged: core
+production source importing test-harness — not fixed here, out of scope.)</em></div>
+<div class="item iter"><span class="tag iter">Tests / what they showed</span> <code>:memory:</code> was rejected by SQLCipher
+(&ldquo;Setting key not supported for in-memory&hellip;&rdquo;) → switched the runner to a fresh file-backed temp DB per
+case with <code>afterAll</code> cleanup. Then 22/22 cases green on better-sqlite3; the base tsconfig's
+<code>noUncheckedIndexedAccess</code> surfaced real index-safety gaps in the cases (the runtime was fine) → added a
+<code>first(rows,label)</code> helper. Final: kit <code>tsc</code> 0, storage-node <code>tsc</code> 0, conformance 23/23,
+full storage-node 161/161, workspace <code>tsc --build</code> 0.</div>
+<div class="item decision"><span class="tag decision">Deep review (AP1) — (1) correct? (2) smells? (3) test issues?</span>
+(1) Correct: pure-kit + runner-side drift-guard is the right shape; cases are isolated (fresh adapter, own table), sync to
+match the contract, and assert the documented divergence classes (not impl internals). (2) No workarounds — the
+<code>first()</code> helper is proper strict-index handling, the UNIQUE check is tolerant on error PROSE by design (agent
+catalog: assert a constraint signal, not the message), file-backed DBs are required not a hack. (3) Tests clean — the
+post-close case closes inside the body and the runner's <code>finally</code> close is idempotent; the drift-guard compiles
+(so <code>DatabaseAdapter</code> ⊆ the kit shape is proven). Open follow-ups (logged, not smuggled into a red node suite):
+the cross-impl SQLCipher cipher round-trip + FK-default + journal-mode unification are DEVICE/decision items for AP5.</div>
 
 </body>
 </html>

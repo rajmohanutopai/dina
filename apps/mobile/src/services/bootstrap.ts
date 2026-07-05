@@ -42,6 +42,8 @@ import {
   isMsgBoxAuthenticated,
   onMsgBoxAuthenticated,
   makeServiceResponseBridgeSender,
+  onGrantRequestPending,
+  onServiceOfferReceived,
   onServiceConfigChanged,
   registerDevice as registerDeviceDID,
   registerPublicKeyResolver,
@@ -134,14 +136,14 @@ import {
   resetServiceDenyCommandHandler,
   setAskCommandHandler,
   resetAskCommandHandler,
-} from '@dina/brain/chat';
-import {
+  setContactServiceHandler,
+  resetContactServiceHandler,
+
   addApprovalMessage,
   addMessage,
   addSystemMessage,
   hydrateThread,
-  createServiceQueryDeliverer,
-} from '@dina/brain/chat';
+  createServiceQueryDeliverer} from '@dina/brain/chat';
 import {
   installWorkflowApprovalInboxBridge,
   installWorkflowApprovalChatBridge,
@@ -151,6 +153,7 @@ import {
 import { stagingGetItem, getContact } from '@dina/core';
 import { wireChatRememberRuntime } from '@dina/home-node/chat-runtime';
 import { buildHomeNodeServiceRuntime } from '@dina/home-node/service-runtime';
+import { resolveSearchableCapability } from '@dina/protocol';
 
 import { peekActiveProvider } from '../ai/active_provider';
 import { reportKeyHealthIncident } from '../ai/key_health';
@@ -161,6 +164,13 @@ import {
 import { setInboxCoreClient, resetInboxCoreClient } from '../hooks/useServiceInbox';
 import { openPersonaDB, isPersistenceReady } from '../storage/init';
 
+import { setServiceQueryDispatcher, sendServiceQuery, sendGrantRequest } from './chat_d2d';
+import { postGrantPromptOnce } from './grant_prompt';
+import {
+  resetPendingPreflights,
+  stashPendingPreflight,
+  takePendingPreflight,
+} from './pending_preflight';
 import { clearRuntimeWarning } from './runtime_warnings';
 
 import type { IdentityKeypair } from '@dina/core';
@@ -421,6 +431,17 @@ export interface DinaNode extends HomeNodeLifecycle {
 }
 
 const DEFAULT_THREAD_ID = 'main';
+
+/**
+ * The single, neutral acknowledgement shown to the REQUESTER when a contact
+ * (relationship) service has no stored offer yet and a `service.grant_request`
+ * preflight is fired. It is deliberately identical across every grantor outcome
+ * — auto-grant, ask-to-enable, soft-reject, offline, or a local send error —
+ * so the requester can never infer the grantor's decision or their own social
+ * rank (CONTACT_SERVICES_ARCHITECTURE.md §2/§10, asymmetric visibility).
+ */
+export const CONTACT_SERVICE_PREFLIGHT_ACK =
+  'Reaching out to set that up — check back in a moment.';
 
 export async function createNode(options: CreateNodeOptions): Promise<DinaNode> {
   validate(options);
@@ -762,6 +783,132 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     if (!globalWiring) return;
     const disposeWire = wireServiceOrchestrator({ orchestrator });
     globalDisposers.push(() => disposeWire());
+    // Contact Services seam 5: expose the orchestrator's direct-to-DID dispatch
+    // to the Talk egress (`chat_d2d.sendServiceQuery`), so a scheduling intent
+    // in a peer thread fires a `service.query` to THAT contact over the same
+    // correlating workflow-task path the main-chat `query_service` tool uses.
+    setServiceQueryDispatcher(orchestrator);
+    globalDisposers.push(() => setServiceQueryDispatcher(null));
+    // Contact Services seam 2: route a scheduling intent in a Talk thread to
+    // THAT contact. We resolve the contact's prior `service.offer` (grant +
+    // listing) from `contact_service_offers`; with one in hand, fire a
+    // correlating `service.query` (seam 5). Without one, the relationship
+    // service was never offered to us — surface a soft hint (the grant
+    // bootstrap / ask_to_enable lands separately), never a phantom card.
+    setContactServiceHandler(async ({ contactDID, capability, intent }) => {
+      // Offers are STORED canonically (issue_offer.ts), so look up by the
+      // canonical name — otherwise a canonical-name request wouldn't match an
+      // alias-stored offer (P3-a). Unknown/custom capability → use as-is.
+      const lookupCapability = resolveSearchableCapability(capability) ?? capability;
+      const offers = await options.coreClient.listServiceOffers({
+        providerDid: contactDID,
+        capability: lookupCapability,
+      });
+      const offer = offers[0];
+      if (offer === undefined) {
+        // No stored offer → run the §5.2 BOOTSTRAP: send a `service.grant_request`
+        // preflight (capability + requested_surface:'talk', no rkey). The peer's
+        // handler resolves the talk listing + closeness policy and replies with a
+        // `service.offer` (auto_grant) or surfaces an ask_to_enable prompt; the
+        // offer is stored on receive, so a later retry can fire the query.
+        //
+        // ASYMMETRIC VISIBILITY (CONTACT_SERVICES_ARCHITECTURE.md §2/§10): the
+        // requester ack is IDENTICAL whether the preflight sent cleanly or threw,
+        // and whatever the grantor later decides (auto-grant / ask-to-enable /
+        // soft-reject / offline). It must never imply the grantor got a prompt or
+        // that the service was "not offered" — either would leak the requester's
+        // social rank. So we swallow the send error and return one neutral,
+        // collapsed outcome.
+        try {
+          const { requestId } = await sendGrantRequest(contactDID, lookupCapability, intent);
+          // Remember the original intent, keyed by the preflight's request_id, so
+          // the auto-grant offer (which echoes that id) can replay this exact
+          // query (reviews #1/#2). Stash ONLY after a clean send — a throw means
+          // nothing went out, so no offer will come and there's nothing to replay.
+          stashPendingPreflight(requestId, contactDID, intent ?? '');
+        } catch {
+          // Indistinguishable from a soft-reject to the requester (collapsed
+          // failure). No negative reply, no tier leak.
+        }
+        return { ack: CONTACT_SERVICE_PREFLIGHT_ACK, dispatched: false };
+      }
+      const params: Record<string, unknown> = {};
+      if (intent !== '') params.intent = intent;
+      await sendServiceQuery(contactDID, lookupCapability, params, {
+        offer: {
+          grantId: offer.grantId,
+          serviceUri: offer.serviceUri,
+          serviceName: offer.serviceName,
+          ...(offer.schemaHash !== '' ? { schemaHash: offer.schemaHash } : {}),
+          ...(offer.defaultTtlSeconds !== undefined
+            ? { defaultTtlSeconds: offer.defaultTtlSeconds }
+            : {}),
+        },
+      });
+      return { ack: '', dispatched: true };
+    });
+    globalDisposers.push(resetContactServiceHandler);
+
+    // Contact Services `ask_to_enable` prompt: Core decided "ask the owner" for
+    // a friend's grant-request; surface a ONE-TIME "Allow <contact> to use your
+    // <service>?" card in that contact's Talk thread. The card's Allow tap
+    // issues the grant via `coreClient.issueServiceOffer`. `postGrantPromptOnce`
+    // is idempotent on (requesterDID, capability) by SCANNING the (rehydrated)
+    // thread — so a restart + the requester's normal grant_request retry never
+    // stacks a second card, and a previously-dismissed prompt rehydrates
+    // terminal (the scan treats it as handled). Durable, not an in-memory Set.
+    const unsubscribeGrantPrompt = onGrantRequestPending(
+      ({ requesterDID, capability, rkey, closeness }) => {
+        // Fire-and-forget — `postGrantPromptOnce` is async (it hydrates the
+        // peer thread first to stay idempotent across a lazy-hydrate restart).
+        // A UI fan-out failure must never break the receive path, so swallow.
+        // `closeness` is threaded through so the owner-private `prompt_shown`
+        // row (written when the card actually posts) carries the policy tier.
+        void postGrantPromptOnce(requesterDID, capability, rkey, closeness).catch(() => {
+          /* UI fan-out only — the receive pipeline already did its job */
+        });
+      },
+    );
+    globalDisposers.push(unsubscribeGrantPrompt);
+
+    // Contact Services review #2: auto-replay a first-run request the instant the
+    // grant lands. When a relationship service had no stored offer, the handler
+    // above sent a `service.grant_request` + stashed the owner's intent. For a
+    // close contact the peer auto-grants and a `service.offer` comes back — this
+    // subscriber drains the matching stash and fires the original `service.query`
+    // against the fresh grant, so the owner never has to ask twice. No stash (or
+    // an expired one) → no replay, consistent with the collapsed-failure rule.
+    const unsubscribeOfferReplay = onServiceOfferReceived((offer) => {
+      // Correlate by request_id (review #1): only an offer that echoes the exact
+      // preflight we sent replays — never an unrelated/proactive one. `take` also
+      // binds to the transport-authed sender DID (confused-deputy guard).
+      if (offer.requestId === undefined || offer.requestId === '') return;
+      const pending = takePendingPreflight(offer.requestId, offer.providerDID);
+      if (pending === null) return;
+      const cap = resolveSearchableCapability(offer.capability) ?? offer.capability;
+      const params: Record<string, unknown> = {};
+      if (pending.intent !== '') params.intent = pending.intent;
+      void sendServiceQuery(offer.providerDID, cap, params, {
+        offer: {
+          grantId: offer.grantId,
+          serviceUri: offer.serviceUri,
+          serviceName: offer.serviceName,
+          ...(offer.schemaHash !== '' ? { schemaHash: offer.schemaHash } : {}),
+          ...(offer.defaultTtlSeconds !== undefined
+            ? { defaultTtlSeconds: offer.defaultTtlSeconds }
+            : {}),
+        },
+      }).catch(() => {
+        // Dispatch hiccup (review #2): re-stash so the intent isn't lost — a
+        // redelivered offer (or the same request_id) can replay it instead of
+        // the owner silently having to ask again.
+        stashPendingPreflight(offer.requestId as string, offer.providerDID, pending.intent);
+      });
+    });
+    globalDisposers.push(unsubscribeOfferReplay);
+    // Cross-identity hygiene: drop any stashed intent on teardown so a stale
+    // preflight can never auto-fire under a different identity after a switch.
+    globalDisposers.push(() => resetPendingPreflights());
     setServiceApproveCommandHandler(makeServiceApproveHandler(options.coreClient));
     globalDisposers.push(resetServiceApproveCommandHandler);
     setServiceDenyCommandHandler(makeServiceDenyHandler(options.coreClient));

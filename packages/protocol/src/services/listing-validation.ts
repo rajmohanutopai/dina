@@ -30,7 +30,7 @@
 
 import { getCatalogCapability, classifyCatalogCapability } from './capability-catalog';
 
-import type { ServiceConfig, ServiceListingStatus } from '../types/capability';
+import type { ServiceConfig, ServiceListingStatus, ServiceSurface } from '../types/capability';
 import type { Discoverability } from '../types/catalog';
 
 /**
@@ -52,6 +52,25 @@ export function effectiveListingStatus(config: ServiceConfig): ServiceListingSta
 }
 
 /**
+ * Effective surface for a listing — the explicit value when present, else
+ * `services` (back-compat: a config that predates the `surface` field is a
+ * normal provider/Services-tab listing). Orthogonal to discoverability + status.
+ */
+export function effectiveSurface(config: ServiceConfig): ServiceSurface {
+  return config.surface ?? 'services';
+}
+
+/**
+ * Whether a listing participates in the Contact Services closeness-default
+ * grant flow — the explicit value when present, else `false` (the safe
+ * default: a listing is manual-grant-only unless the owner opts it in).
+ * Only meaningful for `surface:'talk'` listings.
+ */
+export function effectiveDefaultOfferable(config: ServiceConfig): boolean {
+  return config.defaultOfferable ?? false;
+}
+
+/**
  * Whether a listing is LIVE on the network — i.e. it should be published to the
  * PDS AND should accept inbound `service.query`. True iff the listing is
  * `active` AND its effective discoverability is not `known_only` (known_only =
@@ -65,6 +84,12 @@ export function effectiveListingStatus(config: ServiceConfig): ServiceListingSta
  * deleting it or abusing `known_only` as an off switch.
  */
 export function isListingPublishable(config: ServiceConfig): boolean {
+  // A `talk` (relationship) listing is NEVER network-published or
+  // network-queryable, whatever its `discoverability` says — it is reachable
+  // only per-contact via a grant (Contact Services §5.3/§10). Guarding here (the
+  // single source the publishers + Core's inbound gate share) closes the
+  // talk+public/unlisted bypass at the listing layer, not just the grant layer.
+  if (effectiveSurface(config) === 'talk') return false;
   return (
     effectiveListingStatus(config) === 'active' &&
     effectiveDiscoverability(config) !== 'known_only'
@@ -81,6 +106,8 @@ export function isListingPublishable(config: ServiceConfig): boolean {
  * the no-rkey path so unlisted can't be hit without the URI.
  */
 export function isListingPublic(config: ServiceConfig): boolean {
+  // A `talk` listing is never generically reachable (see isListingPublishable).
+  if (effectiveSurface(config) === 'talk') return false;
   return (
     effectiveListingStatus(config) === 'active' && effectiveDiscoverability(config) === 'public'
   );
@@ -96,6 +123,7 @@ export type ListingValidationCode =
   | 'public_sensitive_capability'
   | 'subject_auth_needs_review'
   | 'missing_execution_plane'
+  | 'talk_must_be_known_only'
   | 'no_capabilities';
 
 export interface ListingValidationError {
@@ -163,6 +191,20 @@ export function validateServiceListing(
     errors.push({
       code: 'missing_discoverability',
       message: 'Choose who can find this service (public, unlisted, or known-only).',
+    });
+  }
+
+  // A `talk` (relationship / Contact Service) listing MUST be `known_only`
+  // (Contact Services §5.3/§10): it is reachable only per-contact via a grant,
+  // never on the network. A `talk + public/unlisted` listing would otherwise be
+  // a dead/leaky misconfig (the runtime gates now refuse to publish or
+  // generically-reach it, so it would silently answer nothing). Reject it at
+  // save so the owner gets a clear error instead.
+  if (effectiveSurface(config) === 'talk' && discoverability !== 'known_only') {
+    errors.push({
+      code: 'talk_must_be_known_only',
+      message:
+        'A relationship (Talk) service must be Private / Approved Only — it is shared per-contact, never published.',
     });
   }
 

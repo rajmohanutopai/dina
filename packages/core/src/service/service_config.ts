@@ -397,6 +397,12 @@ export function validateServiceConfig(value: unknown): asserts value is ServiceC
   ) {
     throw new Error("service_config: status must be 'draft', 'active', or 'paused' when present");
   }
+  if (v.surface !== undefined && v.surface !== 'services' && v.surface !== 'talk') {
+    throw new Error("service_config: surface must be 'services' or 'talk' when present");
+  }
+  if (v.defaultOfferable !== undefined && typeof v.defaultOfferable !== 'boolean') {
+    throw new Error('service_config: defaultOfferable must be a boolean when present');
+  }
   if (!v.capabilities || typeof v.capabilities !== 'object') {
     throw new Error('service_config: capabilities must be an object');
   }
