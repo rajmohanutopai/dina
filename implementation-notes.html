@@ -2,157 +2,691 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Dina — Implementation Notes (in-flight work)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dina — E2E Testing Implementation Notes</title>
 <style>
-  body { font: 15px/1.6 -apple-system, system-ui, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
-  h1 { border-bottom: 3px solid #333; padding-bottom: .3rem; }
-  h2 { margin-top: 2.2rem; border-bottom: 1px solid #ccc; padding-bottom: .2rem; }
-  h3 { margin-top: 1.3rem; }
-  .item { background: #f7f7f8; border-left: 4px solid #888; padding: .7rem 1rem; margin: .8rem 0; border-radius: 0 4px 4px 0; }
-  .decision  { border-left-color: #2a8; }
-  .deviation { border-left-color: #d97706; }
-  .tradeoff  { border-left-color: #2563eb; }
-  .question  { border-left-color: #c39; }
-  .iter      { border-left-color: #6b7280; background: #fafafa; }
-  .tag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; padding: 1px 6px; border-radius: 3px; color: #fff; }
-  .tag.decision { background: #2a8; } .tag.deviation { background: #d97706; }
-  .tag.tradeoff { background: #2563eb; } .tag.question { background: #c39; } .tag.iter { background: #6b7280; }
-  code { background: #eee; padding: 1px 4px; border-radius: 3px; font-size: 13px; }
-  .meta { color: #666; font-size: 13px; }
-  table { border-collapse: collapse; margin: .6rem 0; font-size: 13.5px; }
-  th, td { border: 1px solid #ccc; padding: 4px 9px; text-align: left; vertical-align: top; }
-  ol.phases > li { margin: .3rem 0; }
-  ul { margin: .4rem 0; }
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 940px; margin: 2rem auto; padding: 0 1.2rem; }
+  h1 { font-size: 1.6rem; margin-bottom: .2rem; }
+  h2 { margin-top: 2rem; border-bottom: 1px solid #8884; padding-bottom: .3rem; }
+  h3 { margin-top: 1.4rem; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .86em; }
+  pre { background: #8881; padding: .7rem .9rem; border-radius: 6px; overflow-x: auto; }
+  .status { display: inline-block; font-size: .72em; font-weight: 700; padding: .1rem .5rem; border-radius: 4px; vertical-align: middle; }
+  .done { background: #2e7d3233; color: #2e7d32; }
+  .wip { background: #ed6c0233; color: #ed6c02; }
+  .todo { background: #8883; color: inherit; }
+  .blocked { background: #c6282833; color: #c62828; }
+  table { border-collapse: collapse; width: 100%; margin: .6rem 0; }
+  th, td { border: 1px solid #8884; padding: .35rem .55rem; text-align: left; vertical-align: top; font-size: .92em; }
+  th { background: #8882; }
+  .meta { color: #8889; font-size: .85em; }
+  blockquote { border-left: 3px solid #8886; margin: .6rem 0; padding: .2rem .9rem; }
+  .iter { border-left: 3px solid #2e7d3288; padding-left: .9rem; margin: 1rem 0; }
 </style>
 </head>
 <body>
-<h1>Dina — Implementation Notes</h1>
-<p class="meta">Tracks ONLY in-flight (uncommitted) work — the design record for whatever goal is currently in the working
-tree. Once a goal is committed, its history lives in git and its section is removed from here. (Completed-and-committed
-goals trimmed 2026-06-16: Service Capability Catalog, PeerLens Publish Jobs, PUBLIC_SERVICES_TAXONOMY, Tier 1
-prompt-provider + salon demo, Starter Credits.)</p>
 
-<!-- ===================================================================== -->
-<h2 id="adapter-conformance">Adapter Parity / Conformance Suite <span class="meta">(ACTIVE GOAL — in-flight)</span></h2>
-<p class="meta">The mobile apps and the Home-Node-Lite servers share the same <code>@dina/core|brain|protocol</code> logic but run
-DIFFERENT native adapters: storage (<code>op-sqlite</code> on device vs <code>better-sqlite3-multiple-ciphers</code> on the
-server), crypto (<code>react-native-argon2</code> vs node), keystore (<code>react-native-keychain</code> vs file), fs. The
-node adapters have ~15 test files; the expo adapters have <strong>zero</strong> direct tests (op-sqlite can't load in a
-Node jest process). Every divergence — e.g. the historical <code>op-sqlite run()</code> returning a constant instead of
-real rows-affected, silently breaking CAS — currently ships unguarded. This goal builds ONE behavioral contract suite run
-against BOTH sides to close that bug class systematically.</p>
+<h1>Dina E2E Testing — Implementation Notes</h1>
+<p class="meta">Running notes for the active goal: <em>implement the whole <code>docs/E2E_TESTING.md</code></em>.
+Captures design decisions, deviations, tradeoffs, and open questions as the build proceeds.
+(Supersedes prior adapter-conformance notes that lived in this file — those are in git history.)</p>
 
-<h3>AP0 — Conformance-kit architecture (design)</h3>
-<div class="item decision"><span class="tag decision">A dedicated PURE package <code>packages/adapter-conformance/</code></span> Zero runtime deps, no jest, no
-node-only imports — mirrors how <code>@dina/protocol</code> ships its pure conformance kit. It exports per-family arrays of
-contract cases (storage / crypto / keystore / fs). <strong>Why a new pure package, not <code>test-harness</code> or a
-<code>-node</code>/<code>-expo</code> package:</strong> the kit must load in BOTH a Node jest process AND the React Native
-bundle; anything carrying jest or a node-only/native import would break one of the two runners. Purity is the
-constraint, so it gets its own package.</div>
-<div class="item decision"><span class="tag decision">Framework-agnostic case shape with a built-in assert</span>
-<code>interface Case { name: string; run(ctx): Promise&lt;void&gt; }</code>, failures thrown via a tiny built-in
-<code>assertEqual</code>/<code>assertBytesEqual</code>/<code>assertThrowsAsync</code> (NOT jest <code>expect</code>, which
-doesn't exist in RN). The node runner wraps each case in <code>it(c.name, () =&gt; c.run(ctx))</code>; the RN runner loops
-and renders PASS/FAIL. One source of truth for behavior, executed identically on both platforms.</div>
-<div class="item decision"><span class="tag decision">Runner-owned adapter lifecycle</span> Cases receive a FRESH adapter per
-case from a <code>makeAdapter()</code> the runner supplies (storage needs a clean DB each time). Keeps cases pure and lets
-each platform construct its native adapter its own way (temp-file path / in-memory) without the kit importing either side.</div>
-<div class="item tradeoff"><span class="tag tradeoff">Expo runner = in-app dev screen, not jest-on-device</span>
-Considered jest-expo / Detox to run the kit headless on a sim, but op-sqlite/native modules still need the real RN runtime
-and a headless device-jest harness is heavy + flaky. We already drive the booted app with Maestro, so a dev-only screen
-that runs the kit against the REAL adapters and renders a Maestro-assertable PASS/FAIL (overall + per-case testIDs) is
-lower-infra and higher-fidelity (real op-sqlite, real keychain, real argon2). Chosen.</div>
-<div class="item question"><span class="tag question">Sync-vs-async signatures are themselves a contract to assert</span> If a
-<code>-node</code> method is sync (<code>better-sqlite3 run(): number</code>) but the <code>-expo</code> one is async
-(op-sqlite / <code>react-native-argon2</code>), that divergence is exactly what the kit should catch. The kit is written
-<code>async</code> throughout to accommodate; the declared sync/async contract per method is pinned once the interface
-mapping lands (3 explore agents in flight).</div>
-<div class="item question"><span class="tag question">Branch — confirm before commit</span> This is independent of the
-thin-client (<code>web-thin-client-hold</code>) and Contact Services (<code>usability-fixes</code>, the current branch).
-Building on <code>usability-fixes</code> for now; will confirm whether you want a dedicated branch before any commit.</div>
+<h2>Where this is going</h2>
+<p><strong>Goal:</strong> test the Dina Home Node as a human would — Playwright drives the real web UI, a Gemini
+"judge" grades the LLM-generated on-screen text, deterministic checks handle security invariants, and the
+MRS-01..14 catalog is the coverage spine. Spec: <code>docs/E2E_TESTING.md</code> (survived 3 rounds of Codex review).</p>
+<p><strong>Correctness bar per item:</strong> after each item keep the correctness suite green
+(<code>tsc</code> typecheck + relevant jest), then a deep review (absolute-correct way? code smells? test issues?),
+then record the iteration. A full workflow/ultracode test pass at the end.</p>
 
-<h3>Surface map (3 explore agents) — what the conformance suite must actually target</h3>
-<div class="item deviation"><span class="tag deviation">CRYPTO reframed — the only platform fork is the Argon2 backend; crypto-expo is NOT an adapter</span>
-<code>crypto-expo</code> contains no port impl — it's a side-effect module that installs
-<code>react-native-get-random-values</code> and calls <code>setKDFOverride(react-native-argon2)</code>. The crypto BOTH
-platforms actually run is <code>@dina/core/src/crypto/*</code> (bip39/slip0010/hkdf/aesgcm/nacl/ed25519) on the same hoisted
-<code>@noble/*</code> — so everything except the KDF is byte-identical <em>by construction</em>. The <strong>sole</strong>
-genuine fork is <code>deriveKEK</code>'s Argon2id backend: server <code>hash-wasm</code> (WASM) vs mobile
-<code>react-native-argon2</code> (native C), 128&nbsp;MiB/t3/p4. It wraps the master seed — if the two disagree by one byte,
-a vault wrapped on iOS never unwraps on the server. It is <strong>completely unguarded in CI</strong> (the native module
-only runs on a device). KAT to pin: <code>packages/fixtures/crypto/argon2id_kek.json</code> (&ldquo;correct horse battery
-staple&rdquo; &rarr; <code>bf64a106&hellip;cbc2f9</code>). <strong>Consequence:</strong> the node crypto vector-gate already
-exists (<code>core/__tests__/crypto/cross_language.test.ts</code> runs all 12 Go fixtures + the KEK through hash-wasm); the
-NEW value is running the SAME vectors <em>on a device</em> where react-native-argon2 is live. The crypto conformance is
-therefore primarily a DEVICE deliverable, not a new node suite.</div>
-<div class="item deviation"><span class="tag deviation">KEYSTORE has no shared interface; FS-expo is unbuilt</span>
-<code>keystore-node</code> implements a real <code>Keystore</code> port (put/get/delete/list + name-validation);
-<code>keystore-expo</code> is three bare functions (<code>getSecret/setSecret/deleteSecret</code>) over
-<code>react-native-keychain</code> — no <code>list</code>, no validation. Only <strong>set/get round-trip + null-on-miss +
-delete-no-op</strong> are cross-platform assertable; <code>list()</code> and validation are node-only and stay out of the
-shared suite. <code>fs-expo</code> implements only <code>documentDirectoryUri/cacheDirectoryUri</code> — the
-<code>FsAdapter</code> port is unbuilt, so <strong>fs has NO conformance target yet</strong> (building it is a prerequisite,
-not part of this suite — recorded as an open item, not silently skipped).</div>
-<div class="item decision"><span class="tag decision">STORAGE contract = <code>DatabaseAdapter</code> (sync), targeted via an injected makeAdapter()</span>
-The live contract both impls satisfy is <code>DatabaseAdapter</code> (<code>core/src/storage/db_adapter.ts</code>):
-<code>execute/query/run/transaction/close/isOpen</code>, all SYNCHRONOUS. Node opens in its constructor; expo is
-<code>new OpSQLiteAdapter()</code> then <code>.open(name,loc,dekHex,openFn)</code> — so the runner injects a
-<code>makeAdapter()</code> factory and the cases stay construction-agnostic. Highest silent-divergence risks (the suite's
-targets): <code>run()</code> rows-affected (<code>info.changes</code> vs <code>result.rowsAffected ?? 0</code> — the original
-bug), blob type coercion (Buffer vs ArrayBuffer/Uint8Array), <code>query()</code> aggregate aliasing + shape-fallback-to-[],
-<code>execute()</code> multi-statement, FTS5 build presence, NULL/number coercion, error <code>.code</code> on
-constraint/busy.</div>
-<div class="item tradeoff"><span class="tag tradeoff">Known config divergences are surfaced, not baked into a failing green suite</span>
-Several differences (SQLCipher cipher-params, <code>foreign_keys</code> default ON-expo/OFF-node, journal_mode
-configurability) have NO defined contract today and would require <em>changing</em> an adapter to unify. The conformance
-suite asserts the well-defined behaviors both satisfy (keeping node green) and the cross-impl cipher round-trip is
-inherently a DEVICE test (write-on-node / read-on-op-sqlite). The unify-the-config items are logged as findings +
-follow-ups rather than smuggled in as red node tests — honest about what catches a regression vs what needs a decision.</div>
-<div class="item decision"><span class="tag decision">DEVICE runner = an env-gated in-app screen rendering a Maestro-assertable PASS/FAIL</span>
-The native modules under test (op-sqlite SQLCipher cipher, react-native-keychain, react-native-argon2) exist ONLY in the RN
-runtime — jest mocks them (<code>apps/mobile/__mocks__/op-sqlite.ts</code> backs op-sqlite with better-sqlite3 and makes
-<code>PRAGMA key</code> a no-op; keychain is an in-memory Record). So the real-adapter run must execute IN the app and
-surface its verdict as rendered UI. Reuse the existing <code>admin.tsx</code> <code>DevSendTestRow</code> pattern
-(<code>EXPO_PUBLIC_*</code> env-gate + auto-run-on-mount + status <code>&lt;Text&gt;</code> + <code>testID</code>); Maestro
-polls via <code>extendedWaitUntil</code> on a <code>conformance-overall-status</code> testID whose text is exactly
-<code>PASS</code>/<code>FAIL</code>. The protocol <code>conformance/suite.ts</code> is node-only (uses node:crypto/fs) — reuse
-only its report SHAPE, inline the vectors so the kit stays RN-importable.</div>
+<h2>Environment facts that shape the build</h2>
+<table>
+<tr><th>Fact</th><th>Implication</th></tr>
+<tr><td><code>GEMINI_API_KEY</code> set here</td><td>Judge + live-mode <code>/ask</code> can run and be verified green.</td></tr>
+<tr><td><code>test-pds</code> → HTTP 200 (reachable)</td><td>Onboarding autopilot can mint a real <code>did:plc</code>; single-node functional run to Chat-ready is feasible.</td></tr>
+<tr><td>test-appview / test-mailbox hosts resolve</td><td>L3 (multi-Dina/agent) may work here; still relay-gated (skip-loudly, §10).</td></tr>
+<tr><td>No stub-LLM env; brain is <code>provider: none|gemini</code></td><td>Deterministic PR tier needs in-process <code>bootServer(env,{askCoordinator})</code>, not an env swap.</td></tr>
+<tr><td>Onboarding is PDS-first</td><td>Reaching Chat needs test-pds + the SPA built with <code>EXPO_PUBLIC_DINA_DEV_PASSPHRASE</code> (autopilot).</td></tr>
+</table>
 
-<h3>AP1 — Storage conformance suite (DONE on node)</h3>
-<div class="item iter"><span class="tag iter">What shipped</span> New pure package <code>packages/adapter-conformance/</code>
-(<code>assert.ts</code> tiny throwing asserts incl. <code>assertBytesEqual</code> that also asserts the value IS a
-<code>Uint8Array</code>; <code>case.ts</code> <code>ConformanceCase&lt;T&gt;</code> + a result-collecting
-<code>runCases</code>; <code>types.ts</code> structural <code>ConformanceDatabaseAdapter</code> + a
-<code>assertExtends</code> drift-guard; <code>storage_cases.ts</code> 22 cases). Node runner
-<code>packages/storage-node/__tests__/conformance.test.ts</code> runs every case against a fresh file-backed
-<code>NodeSQLiteAdapter</code>. The 22 cases target the catalogued silent-divergence classes: <code>run()</code>
-rows-affected incl. the exact stale-CAS pattern that broke, aggregate aliasing, blob Uint8Array round-trip (incl. empty +
-1&nbsp;MB), tx commit/rollback-and-rethrow, NULL/int/text coercion, UNIQUE-throws, FTS5 match+BM25-rank+diacritic-fold.</div>
-<div class="item deviation"><span class="tag deviation">Kit is ZERO-dependency (no <code>@dina/core</code> import) — and why</span>
-First cut imported <code>DatabaseAdapter</code> from <code>@dina/core</code>; that turned the kit's typecheck red with errors in
-<code>@dina/test-harness</code>. Root cause: 7 <code>@dina/core</code> SOURCE files import <code>@dina/test-harness</code>, so
-importing core's barrel (even <code>@dina/core/storage</code>, which re-exports <code>vault/repository</code>) drags
-test-harness into the kit's compile under the kit's stricter config. The fix is the architecturally-right one: define the
-<code>ConformanceDatabaseAdapter</code> shape LOCALLY so the kit has zero deps and loads cleanly in the RN bundle (the
-device runner needs that), and bind it to the REAL contract in each runner via
-<code>assertExtends&lt;DatabaseAdapter, ConformanceDatabaseAdapter&gt;()</code> — a compile-time drift-guard so the local
-type can't silently fork from <code>@dina/core</code> (if <code>run()</code> ever becomes async, storage-node fails to
-compile). This mirrors how <code>@dina/protocol</code> is a zero-dep conformance kit. <em>(Pre-existing smell logged: core
-production source importing test-harness — not fixed here, out of scope.)</em></div>
-<div class="item iter"><span class="tag iter">Tests / what they showed</span> <code>:memory:</code> was rejected by SQLCipher
-(&ldquo;Setting key not supported for in-memory&hellip;&rdquo;) → switched the runner to a fresh file-backed temp DB per
-case with <code>afterAll</code> cleanup. Then 22/22 cases green on better-sqlite3; the base tsconfig's
-<code>noUncheckedIndexedAccess</code> surfaced real index-safety gaps in the cases (the runtime was fine) → added a
-<code>first(rows,label)</code> helper. Final: kit <code>tsc</code> 0, storage-node <code>tsc</code> 0, conformance 23/23,
-full storage-node 161/161, workspace <code>tsc --build</code> 0.</div>
-<div class="item decision"><span class="tag decision">Deep review (AP1) — (1) correct? (2) smells? (3) test issues?</span>
-(1) Correct: pure-kit + runner-side drift-guard is the right shape; cases are isolated (fresh adapter, own table), sync to
-match the contract, and assert the documented divergence classes (not impl internals). (2) No workarounds — the
-<code>first()</code> helper is proper strict-index handling, the UNIQUE check is tolerant on error PROSE by design (agent
-catalog: assert a constraint signal, not the message), file-backed DBs are required not a hack. (3) Tests clean — the
-post-close case closes inside the body and the runner's <code>finally</code> close is idempotent; the drift-guard compiles
-(so <code>DatabaseAdapter</code> ⊆ the kit shape is proven). Open follow-ups (logged, not smuggled into a red node suite):
-the cross-impl SQLCipher cipher round-trip + FK-default + journal-mode unification are DEVICE/decision items for AP5.</div>
+<h2>Item checklist</h2>
+<table>
+<tr><th>Item</th><th>Status</th><th>Notes</th></tr>
+<tr><td>testID <code>chat-row</code> contract (§5)</td><td><span class="status done">DONE</span></td><td>Wrapper at <code>renderItem</code>; <code>data-*</code> via <code>dataSet</code>; <code>row-primary-text</code>; d2d-message/peer split.</td></tr>
+<tr><td>Gemini judge (§4)</td><td><span class="status done">DONE</span></td><td>Opt-in, injection-proof, strict validation + confidence floor. 6/6 calibration.</td></tr>
+<tr><td><code>judge.calibration.spec.ts</code> (§4.1)</td><td><span class="status done">DONE</span></td><td>6 golden cases incl. injection; gates judged tier.</td></tr>
+<tr><td>playwright.config env: debug-mode + Gemini (§3, §8)</td><td><span class="status done">DONE</span></td><td>Core: <code>DINA_DEBUG_MODE=1</code>+<code>DINA_ENDPOINT_MODE=test</code>. Brain: conditional Gemini (key present → provider=gemini; absent → none, smoke-only).</td></tr>
+<tr><td><code>backstage.ts</code> debug-dispatch client (§8)</td><td><span class="status done">DONE</span></td><td>Verified live: <code>dispatch</code>/<code>dispatchOk</code>/<code>listVault</code>. Contract corrected (body-direct, see Deviation X1).</td></tr>
+<tr><td><code>humanSession</code> fixture + page objects (§9)</td><td><span class="status done">DONE</span></td><td>Composer (mode-first), ChatThread (<code>latestAnswerText</code>, <code>waitForNewAnswer</code>, reminder body), <code>human_session</code> fixture, <code>support/stack.ts</code> (shared webServer builder).</td></tr>
+<tr><td>Onboarding-autopilot build to Chat-ready (§2, §3.1)</td><td><span class="status done">DONE</span></td><td><code>build:bundle:e2e</code> → dist-e2e; guided-demo gate disabled under autopilot (D6). VERIFIED: browser reaches Chat + real Gemini recall.</td></tr>
+<tr><td>MRS-01/02 spec (§7)</td><td><span class="status done">DONE</span></td><td>Judged + live. GREEN (25s): remember → ask → judge PASS + no approval card.</td></tr>
+<tr><td>MRS-03 reminder enrichment (§7)</td><td><span class="status done">DONE</span></td><td>Judged + live. GREEN (22s): dated fact → enriched reminder card (judge PASS); plain preference → none.</td></tr>
+<tr><td>Deep review of P0 (DR-1)</td><td><span class="status done">DONE</span></td><td>4 real issues found + fixed (smoke testIgnore, config dedup, backstage interface, MRS-01 routing gap). F2 resolved.</td></tr>
+<tr><td>MRS-05/06/07/08/13 (P1)</td><td><span class="status todo">TODO</span></td><td>Quarantine, agent (CLI), approvals, durability.</td></tr>
+<tr><td>MRS-04/10/11 (P2)</td><td><span class="status todo">TODO</span></td><td>Two contexts + <code>dina-nodes</code> + provider daemon; relay-gated.</td></tr>
+<tr><td>logHygiene teardown (§4.3, MRS-14)</td><td><span class="status done">DONE</span></td><td>Server-log scan (globalTeardown) + browser-console scan + egress check (fixture). GREEN: <em>server-log hygiene clean</em>. Verified servers don't leak vault content.</td></tr>
+<tr><td>CI two-tier (§11)</td><td><span class="status done">DONE</span></td><td>Smoke tier on PR/push (hermetic); <code>functional-live</code> job nightly (schedule) + dispatch: calibration gate → functional suite, <code>GEMINI_API_KEY</code> secret. Calibration standalone config (no stack) 6/6.</td></tr>
+<tr><td>MRS-13 durability (§7)</td><td><span class="status done">DONE</span></td><td>Reload persistence (deterministic backstage check): fact stored → reload → no re-onboard → still in vault. GREEN.</td></tr>
+<tr><td>Full functional suite together</td><td><span class="status done">DONE</span></td><td>MRS-01/02 + MRS-03 + MRS-13 + MRS-14 all GREEN in one run (1.4m). Isolation via ordering + polling + retry (F3).</td></tr>
+<tr><td>Detailed test plan (docs/E2E_TEST_PLAN.md)</td><td><span class="status done">DONE</span></td><td>Every MRS scenario enumerated: sub-cases, edge/failure modes, layer, coverage status (green/partial/pending-infra).</td></tr>
+<tr><td>Scripted / PR gate (§4.4, §11)</td><td><span class="status done">DONE</span> (agent flows) / <span class="status wip">WIP</span> (LLM flows)</td><td>Hermetic <code>test:e2e:pr</code>: MRS-06/07/08 with Brain in <code>noLlm</code> mode — NO Gemini, direct assertions (20s). Wired as a PR gate in CI. LLM-flow scripting blocked by F5.</td></tr>
+<tr><td>Workflow/ultracode thorough review pass</td><td><span class="status done">DONE</span></td><td>5-slice adversarial multi-agent review (33 agents) → 24 confirmed real findings → fixed the high/medium (judge, hygiene, isolation, spec-vacuity) + quick lows. Functional + calibration re-verified green. See DR-4.</td></tr>
+<tr><td>MRS-08 agent risk ladder + approval state machine (P1)</td><td><span class="status done">DONE</span></td><td>Real <code>/v1/agent/validate</code> ladder (SAFE→auto, MODERATE/HIGH→pending, BLOCKED→deny) + owner approve→queued / deny→cancelled via the real owner routes. PDS-provisioned Core wires the workflow plane. GREEN.</td></tr>
+<tr><td>MRS-07 agent vault-read persona gate (P1)</td><td><span class="status done">DONE</span> (corrected)</td><td>REWRITTEN after review (was a false-green): a REAL paired agent querying <code>/v1/vault/query?persona=health</code> hits the agentGate → 403 <code>approval_required</code>; default persona served (200); positive control (agent 204 on allowlisted route); owner never gated; <strong>owner approves → agent retry 200</strong> (full unblock). GREEN.</td></tr>
+<tr><td>MRS-06 agent task delegation (P1)</td><td><span class="status done">DONE</span></td><td>Owner approves a delegation task → a REAL paired agent claims (→running) → completes (→completed) over signed RPCs; unclaimable before approval; only the holder completes. GREEN.</td></tr>
+<tr><td>F3 combined-run flakiness → per-spec stack isolation</td><td><span class="status done">DONE</span></td><td>Root cause: agentic staging-drain queue accumulates across specs. Fix: <code>test:e2e:functional:isolated</code> — a fresh stack per spec. All 6 specs GREEN, ~4m.</td></tr>
+<tr><td>MRS-09 PeerLens search (read)</td><td><span class="status done">DONE</span></td><td>Network tab → Browse reviews → search → results-or-empty, never a crash. LLM-free (AppView HTTP) → runs in the hermetic PR tier too. GREEN.</td></tr>
+<tr><td>MRS-04 Talk — two real nodes over the relay</td><td><span class="status wip">WIP</span></td><td>Via <code>dina-nodes</code> (alonso ↔ sancho, connected): PROVEN the two nodes talk — alonso's <code>/v1/msg/send</code> (coordination.request / social.update) delivered over the relay, sancho's <code>handleInboundD2D</code> received + staged (brain drain). Clean test assertion (where D2D content lands: relationship graph, not flat vault) + the web human-view (F4) are the open pieces.</td></tr>
+<tr><td>MRS-05/10/11 (quarantine/services, P2)</td><td><span class="status todo">TODO</span> (web-parity gated)</td><td>Need dina-nodes + relay + provider daemon AND web parity (F4): the web thin-client's D2D/quarantine/approval views use in-process <code>@dina/core/d2d</code> hooks with no HTTP endpoint, so Core-side state can't surface in the browser. Spec §2/§12 P3 explicitly defers these to web-parity.</td></tr>
+</table>
+
+<h2>Design decisions</h2>
+<h3>D1 — testID: one wrapper, existing kind-testIDs</h3>
+<p>Single <code>chat-row</code> wrapper at <code>renderItem</code> (no per-branch edits across 14 render branches).
+Kind/role/status/entityId derive from <code>displayType</code> + <code>metadata.lifecycle</code>.</p>
+<h3>D2 — <code>dataSet</code> for <code>data-*</code>, cast localized</h3>
+<p>RN-Web <code>dataSet</code> → kebab <code>data-*</code>. Not in RN core <code>ViewProps</code>; cast localized to
+<code>chatRowProps</code>. Native ignores it.</p>
+<h3>D3 — Card text = per-kind body testIDs</h3>
+<p><code>row-primary-text</code> only on plain bubbles; cards use <code>*-card-body-*</code>. Uniforming all cards deferred.</p>
+<h3>D4 — Judge: opt-in, injection-hardened, floor-gated</h3>
+<p><code>DINA_E2E_LIVE_JUDGE=1</code> data-safety gate; untrusted-evidence rule; strict verdict validation;
+<code>pass &amp;&amp; confidence &gt;= floor</code>; calibration is a hard pre-gate.</p>
+<h3>D5 — Chat-ready via onboarding autopilot</h3>
+<p>Build SPA with <code>EXPO_PUBLIC_DINA_DEV_PASSPHRASE</code> → auto-onboard → auto-unlock → Chat. PDS-first
+(needs test-pds, reachable). Alternative (seed IndexedDB+vault) rejected for P0 (fragile, Playwright-version-dependent).
+<strong>Verified working.</strong></p>
+
+<h3>D6 — the guided-demo first-run gate is disabled under autopilot</h3>
+<p>Autopilot lands on the guided-demo GATE ("See Dina in action / Start demo / Start empty"), not Chat. Clicking
+"Start empty" reaches Chat, but the gate <em>re-appears on every boot-state flip</em>: its "seen" flag
+(<code>guided_demo.entry_seen</code>, <code>packages/core/src/scope/guided_demo.ts</code>) lives in a KV store that is
+<strong>ephemeral in the limited-mode web thin-client</strong>, so <code>hasSeenGuidedDemoEntry()</code> keeps returning
+false and the gate blocks a clean Chat (verified: after send, the app reset to the gate with 0 chat rows). Fix:
+disable the gate when the E2E autopilot passphrase is set (<code>apps/mobile/app/_layout.tsx</code>: <code>enabled &amp;&amp;=
+EXPO_PUBLIC_DINA_DEV_PASSPHRASE === ''</code>) — the same dev/e2e hook the onboarding autopilot already uses; production
+(passphrase unset) is unchanged. Considered + rejected: seeding the KV via backstage (the browser KV isn't
+Core-backed in limited mode, so it wouldn't reach it); defensive re-dismiss in the test (racy — the gate flaps with
+boot state and the send was lost).</p>
+
+<h2>Deviations from the spec</h2>
+<h3>X4 — MRS-07 tests the agent vault-access PERIMETER, not the delegation grant flow</h3>
+<p>The spec's MRS-07 is "agent reads a locked vault → approval card → owner approves → agent reads". Building it
+surfaced the real architecture: a paired agent is <strong>not on the <code>/v1/vault/*</code> allowlist at all</strong>
+— it only reaches <code>/v1/agent/*</code>, <code>/v1/workflow/tasks/*</code>, <code>/v1/session/*</code>. So an
+agent NEVER reads the vault directly (a genuine safety perimeter — it can't bypass the persona gate); the fuller
+vault-read GRANT happens when the agent claims a DELEGATION task whose execution requests a
+<code>vault_read_request</code>, the owner approves, and a scoped grant is issued. MRS-07 faithfully tests the
+perimeter (real paired agent, real signed RPC, real 403-at-authorization for every persona; owner reads freely). The
+delegation-grant path needs a runner/execution harness (shared with MRS-06) — tracked as an open item. The persona
+gate's pure logic is unit-tested in <code>packages/core</code> (persona_wall). Net: the agent-safety BOUNDARY is
+tested; the multi-step grant ceremony is deferred, not faked.</p>
+
+<h3>X3 — MRS-08 owner decision drives the real route, not a UI card tap</h3>
+<p>The spec's MRS-08 has the human approve/deny an agent's action in-app. In the limited-mode web thin-client the
+approval inbox does not surface an externally-staged Core task (F4), so the human-TAP can't be driven there yet. MRS-08
+instead drives the owner decision through the EXACT route the tap invokes (<code>/v1/workflow/tasks/:id/approve|cancel</code>,
+owner-decision guarded) and asserts the state machine + that the Activity surface renders. The full card-tap approval
+is covered by Maestro on the mobile full node. Faithful to the safety behaviour; the UI-tap wiring is the only untested
+seam, and it's documented, not hidden.</p>
+
+<h3>X2 — composer testIDs are <code>chat-input</code>/<code>send-button</code>/<code>index-mode-chip-&lt;mode&gt;</code>, not the doc's <code>composer-*</code></h3>
+<p>Spec §5.2 aspirationally listed <code>composer-input</code>/<code>composer-send</code>/<code>composer-mode-&lt;mode&gt;</code>. The
+real testIDs (already used by the Maestro suite) are <code>chat-input</code>, <code>send-button</code>,
+<code>index-mode-chip-&lt;ask|remember|services|reviews&gt;</code> (task hidden without a paired agent). The Composer page
+object uses the real ones; doc §5.2 reconciled. Also: the composer is <strong>mode-first</strong> — the text input
+mounts only after a mode chip is tapped, so every message is chip → type → send. And RN-Web's <code>fill()</code> does
+not reliably fire <code>onChangeText</code> → use <code>pressSequentially</code>.</p>
+
+<h3>X1 — debug-dispatch returns the route body directly, not <code>{status, body}</code></h3>
+<p>The spec (and the handler's own doc header) say <code>POST /v1/debug/dispatch</code> returns
+<code>{ status, body }</code>. Verified against the live handler (<code>debug_dispatch.ts:123</code>:
+<code>reply.code(res.status).send(res.body)</code>) it actually sets the <em>outer HTTP status</em> to the wrapped
+route's status and returns the route <em>body directly</em>. <code>backstage.ts</code> follows the real behavior
+(<code>status = res.status</code>, <code>body = parsed response</code>). The handler's header comment is stale; not
+changing product code for a test note, but flagged.</p>
+
+<h2>Findings that constrain later items (verified against a live Core)</h2>
+<h3>F1 — the workflow plane needs Core booted with PDS provisioning</h3>
+<p><code>wireWorkflowPlane</code> is gated on <code>pdsIdentity !== undefined</code> (<code>boot.ts:510</code>). Without
+<code>DINA_PDS_PROVISION=1</code>, <code>/v1/workflow/tasks</code> (and <code>/v1/service/*</code>) return
+<strong>503 "workflow service not wired"</strong>. <strong>Impact:</strong> MRS-01/02/03 (owner remember/ask create
+no workflow tasks) are fine without it; but MRS-06/07/08 (agent/approvals) and the backstage
+<code>pendingApprovals()</code> helper require the playwright Core to boot with PDS provisioning +
+<code>DINA_BRAIN_URL</code> pointing at the real brain port. Deferred to the P1 agent items; the MRS-01 "no approval
+card" assertion will lean on the UI (card absence), not <code>pendingApprovals()</code>.</p>
+<h3>F2 — sensitive-persona vault/list returned empty in the standalone probe</h3>
+<p>Direct <code>vault/store</code> into <code>general</code> then <code>vault/list</code> shows the item; the same into
+<code>health</code> (sensitive tier) listed empty — even though all personas report <code>isOpen:true</code>. Also,
+direct-store items land with an empty <code>body</code> field (the store body shape isn't <code>{content}</code>).
+<strong>Not blocking:</strong> real seeding is through the UI <code>/remember</code> path (staging → drain), not
+backstage store. <strong>To verify when wiring MRS-01 against the full stack:</strong> that a health/finance fact
+stored via real <code>/remember</code> is listable via <code>listVault</code>; if sensitive personas need explicit
+unlock for list, the routing assertion will use the audit log or a query instead.</p>
+
+<h3>F5 — the scripted PR-tier honesty rule conflicts with the agentic architecture</h3>
+<p>Spec §4.4 says the every-PR scripted tier must "stub only the LLM synthesis step; keep every deterministic non-LLM
+subsystem real (… persona routing, the reminder create/no-create decision …)". But in the shipped brain, persona
+ROUTING and the reminder create/no-create decision are NOT deterministic subsystems — they're produced by the
+<em>agentic drain</em> (an LLM loop emitting <code>route_to_persona</code> / <code>schedule_reminder</code> tool
+calls, "method: agentic" in the logs). So a scripted product LLM would necessarily stub the routing + reminder
+decision too — the exact behaviours the scripted MRS-01/02/03 are supposed to prove REAL. The spec's honesty rule and
+the agentic implementation are in tension: you can't both script the LLM and keep agentic routing real.</p>
+<p><strong>What I did instead (honest + valuable):</strong> the AGENT-safety flows (MRS-06/07/08) genuinely touch no
+product LLM — they're the deterministic gatekeeper + workflow state machine + signed-agent perimeter. So they run as a
+truly hermetic PR gate (<code>test:e2e:pr</code>, Brain in <code>noLlm</code> mode, NO Gemini, NO judge, direct
+assertions, 20s) — verified by running with the Gemini keys explicitly unset. That IS "the functional gate the repo
+lacked" for the safety-critical flows. The LLM-driven MRS-01/02/03 stay on the live+judge nightly tier.
+<strong>Open question:</strong> to give MRS-01/02/03 a scripted PR variant that satisfies the honesty rule, the brain
+would need a deterministic (non-LLM) routing/reminder-decision path to keep "real" while only the final synthesis is
+scripted — a product change, or the spec's honesty rule should be relaxed to "scripting also fixes routing; the vault
+write + retrieval-planner target selection stay real". Needs a product call.</p>
+
+<h3>F4 — limited-mode web approval inbox doesn't surface externally-staged Core tasks</h3>
+<p>MRS-08 stages an agent intent via <code>/v1/agent/validate</code> on Core (the real endpoint), which creates a
+<code>pending_approval</code> workflow task — backstage (owner-bypass) confirms it exists, and the owner
+approve/deny routes flip its state correctly. BUT the browser's Activity → "Needs action" inbox shows <em>All caught
+up</em>: the limited-mode-web thin-client's inbox (<code>useApprovalInbox</code> → <code>listWorkflowTasks</code>) does
+NOT surface that task, even though the inbox client is wired (no config error) and the browser's vault writes DO reach
+the same Core (MRS-01/13). Root cause not fully pinned — likely the browser's authed workflow read is scoped/planed
+differently from the owner-bypass backstage read, or the web thin-client runs a separate in-process workflow plane from
+core-server. <strong>Impact:</strong> the full human-TAP card approval can't be driven in the web tier yet; it's a real
+architecture question (can a limited-mode web user even see agent approvals?). <strong>Handled:</strong> MRS-08 tests
+the agent-safety ESSENCE faithfully — the risk ladder + the approval state machine via the real routes — and confirms
+the Activity surface renders; the UI-tap card approval is covered by Maestro on the mobile full node (in-process inbox
+against the real store). Flagged as an open question for product review.</p>
+
+<h3>F3 — combined functional runs: shared-stack isolation + async-drain lag</h3>
+<p>The functional stack shares ONE Core + Brain process across all tests. Two real issues surfaced when running the
+specs together (each passes individually):</p>
+<ul>
+<li><strong>Brain-state corruption from a browser reload:</strong> the durability test's <code>page.reload()</code>
+leaves the shared brain in a state (a dangling SSE stream is the likely cause) that <em>deterministically</em> stalls
+the NEXT test's remember — <code>isTyping</code> never clears, the send button stays disabled. Confirmed deterministic
+(fails all retries, same process). <strong>Mitigation:</strong> the state-perturbing reload test runs LAST
+(<code>zz_durability.spec.ts</code>) so it can't cascade. <strong>Proper fix (open item):</strong> a fresh stack per
+test (worker-scoped boot) or a brain that cleans up abandoned streams — the latter is a real product observation.</li>
+<li><strong>Async-drain lag:</strong> the <code>/remember</code> "Stored" ack renders BEFORE the staging → drain →
+vault write completes, so an immediate backstage vault check can miss a just-remembered fact under load. Fixed with a
+polling <code>waitForPersonaContaining</code> (real robustness, not a workaround).</li>
+<li><strong>Recall-after-reload re-hydration:</strong> an LLM recall immediately after a reload is timing-sensitive
+(the brain's in-memory retrieval index re-hydrates), so MRS-13 asserts persistence deterministically (backstage) not
+via recall.</li>
+</ul>
+<p>Vault is also reset per test (<code>resetVault</code>) for data isolation; <code>retries: 1</code> absorbs genuine
+transient Gemini hiccups.</p>
+<p><strong>RESOLVED (Iter 9) — the real root cause + real fix.</strong> The recurring stall was NOT transient rate-limit
+backoff (longer timeouts didn't help). Reading the Brain log during a stall showed the Brain healthy but saturated
+running <em>agentic staging-drain</em> loops: every <code>/remember</code> stages an item, and a background drain
+classifies it with a multi-Gemini agentic loop (route_to_persona + schedule_reminder …). <code>resetVault</code> clears
+vault items but NOT the pre-drain STAGING queue, so across several LLM specs the queue accumulates; the browser's
+<code>isTyping</code> tracks the whole drain loop, so a later spec's send stalls behind the backlog. <strong>Fix:</strong>
+<code>test:e2e:functional:isolated</code> (scripts/run-functional-isolated.sh) runs each spec in its OWN fresh stack —
+a fresh Brain with an empty drain — so there is zero cross-spec accumulation. All 6 specs pass isolated (~4m); CI's
+functional job now uses it. The <code>zz_</code> ordering + <code>retries:1</code> stay as cheap belt-and-braces but
+are no longer load-bearing.</p>
+
+<h2>Tradeoffs</h2>
+<ul>
+<li><strong>Live+judge vs scripted-only:</strong> live reproduces the experience; scripted is cheap/hermetic. Building both; live first (env has a key, proves the whole chain).</li>
+<li><strong>data-row-seq = render index vs append counter:</strong> render index suffices for "newest = last / max seq", needs no plumbing; not a stable identity (use <code>data-entity-id</code>). Chose simpler, documented the limit.</li>
+</ul>
+
+<h2>Open questions</h2>
+<ol>
+<li><strong>Scripted PR tier for the LLM flows vs the agentic architecture (F5).</strong> The spec's honesty rule
+keeps "persona routing + reminder decision" real while scripting the LLM, but both are agentic (LLM) in the shipped
+brain. Either the brain grows a deterministic routing/reminder path (product change), or the honesty rule is relaxed
+to "scripting fixes routing too; vault write + retrieval-planner targets stay real". Which do you want? (The agent
+flows already have a genuine hermetic PR gate — this is only about MRS-01/02/03.)</li>
+<li><strong>Can a limited-mode web user see agent approvals? (F4)</strong> An agent action that creates a
+<code>pending_approval</code> task on Core does NOT surface in the web thin-client's Activity → Needs-action inbox (it
+shows "All caught up"), even though the browser's vault writes reach the same Core. If the web tier is a real surface
+for agent oversight, this is a product gap to fix (the owner could miss an approval); if agent oversight is
+mobile-full-node-only by design, the web Activity tab should say so. Needs a product call — I did not change app code.</li>
+<li><strong>2 pre-existing smoke onboarding specs vs limited-mode-Chat landing:</strong> rebuilding the stale smoke
+<code>dist</code> revealed that <code>smoke.spec</code> + <code>onboarding.spec</code> (17 Jun) expect a blocking
+"Welcome to Dina" onboarding screen, but the current app lands on limited-mode Chat + a tour card. Should the plain
+(non-autopilot) web bundle force onboarding, or is limited-mode-Chat landing correct? If the latter, those two specs
+need rewriting to the new UX. (Outside the E2E goal; not touched — a product decision.)</li>
+<li><strong>Core logs its recovery mnemonic at first boot</strong> (real product observation, not a test issue): the
+core-server writes a <code>warn</code> log with the full 24-word mnemonic (<code>"mnemonic":"large stomach cross …"</code>,
+msg "first-boot: generated master seed"). In a throwaway test stack it's the node's own key, so the MRS-14 sweep
+allowlists it — but <strong>logging a recovery phrase to stdout is questionable in production</strong>. Worth a
+product review: gate it behind a debug flag, or log only a fingerprint? (Flagged, not changed — out of E2E scope.)</li>
+<li><strong>Scripted PR tier depth:</strong> confirm the coordinator injection keeps vault retrieval + persona routing + reminder planning real (spec §4.4).</li>
+<li><strong>Autopilot bundle:</strong> ship a separate <code>build:bundle:e2e</code> (autopilot on) vs the render-smoke bundle? Leaning yes.</li>
+<li><strong>Relay-gated L3 in CI:</strong> nightly-only + skip-loudly specced; confirm CI secret + fleet posture.</li>
+<li><strong>Test isolation vs provisioning cost:</strong> each <code>test</code> re-onboards (a fresh
+<code>did:plc</code> on test-pds) and shares ONE Core vault per run. MRS-01/02/03 are robust to this (relative /
+existence assertions), and both pass together. But at suite scale it's slow (~15s provision/test) and mints many
+test-pds accounts. Options: a worker-scoped onboarded session, or Playwright <code>storageState</code> + IndexedDB
+reuse (needs Playwright &gt; 1.49, pinned at ^1.49). Deferred; not blocking. Confirm preferred approach.</li>
+</ol>
+
+<h2>Deep reviews (per goal: absolute-correct? code smells? test issues?)</h2>
+
+<h3>DR-1 — P0 harness (testID contract, judge, backstage, configs, page objects, fixture, MRS-01/02)</h3>
+<p>Reviewed all completed items against the three questions; found and FIXED four real issues (not superficial):</p>
+<ul>
+<li><strong>A (correctness bug):</strong> the render-smoke config's <code>testDir: __e2e__</code> also picked up
+<code>functional/**</code> + <code>judge.calibration.spec.ts</code> — so the hermetic <code>test:e2e</code> tier would try
+to run judged specs needing a Gemini key + the autopilot bundle. <em>Fixed:</em> <code>testIgnore</code> for both.
+Verified via <code>playwright test --list</code> — smoke now lists only the 5 smoke spec files.</li>
+<li><strong>B (code smell / duplication):</strong> the smoke config duplicated ~60 lines of seed-gen + brain-DID
+derivation now in <code>support/stack.ts</code>. <em>Fixed:</em> refactored the smoke config onto <code>buildStack({
+bundleDir: 'dist' })</code> — both configs now share one webServer builder.</li>
+<li><strong>C (correctness):</strong> <code>backstage.VaultItem.content</code> was a phantom field — the live
+<code>/v1/vault/list</code> returns text in <code>body</code>/<code>summary</code>, there is no <code>content</code>.
+<em>Fixed:</em> corrected the interface to the real shape + added <code>vaultHasText</code>/<code>personaContaining</code>.</li>
+<li><strong>D (test gap):</strong> MRS-01 originally only asserted dinosaur→general recall — it did NOT test the
+CORE of MRS-01 (persona routing) or use the backstage vault-list. <em>Fixed:</em> expanded to remember general +
+health + finance facts, assert each routes to the right vault (backstage), and that owner-in-app is never gated for
+sensitive content. <strong>This resolved F2</strong> — the real <code>/remember</code> path DOES populate + list the
+sensitive personas (the earlier empty-list was a quirk of the direct-store probe). Run confirmed:
+<code>dinosaur→general HbA1c→health Barclays→finance</code>.</li>
+</ul>
+<p>Items judged absolute-correct after fixes: testID contract (one wrapper, verified), judge (opt-in +
+injection-proof + floor + calibration), page objects/fixture (mode-first composer, verified green). No remaining
+workarounds. Minor accepted: <code>judge.calibration.spec.ts</code> sets <code>DINA_E2E_LIVE_JUDGE</code> at module
+scope (harmless — it uses only synthetic literals); the <code>dataSet as unknown as ViewProps</code> cast is
+irreducible (dataSet isn't in RN core types).</p>
+
+<h3>DR-2 — MRS-14 log hygiene</h3>
+<p>(1) Correct way? Yes — deterministic token/regex scan (never the judge), scoped to server logs + browser console
++ egress (NOT same-origin API bodies, §4.3). Server logs captured via <code>tee</code> to files + a
+<code>globalTeardown</code> scan; browser console + egress in the fixture teardown. (2) Code smells / issues found +
+fixed: <strong>(a)</strong> a false-positive secret regex — the PDS-app-password SHAPE
+<code>[a-z0-9]{4}-{×4}</code> matched <code>home-node-lite-core</code> in the npm banner; removed it (a shape match is
+worse than none; catch the literal password instead, future). <strong>(b)</strong> the mnemonic allowlist matched the
+<code>msg</code> text, which races the JSON flush → matched the structured <code>"mnemonic":</code> field instead
+(robust to partial reads). (3) Test: verified the scanner over the REAL logs (brain.log has zero vault tokens — the
+servers don't leak); the suite is green with <em>server-log hygiene clean</em> + no egress warnings. Minor tech-debt
+noted, not blocking: <code>buildStack</code> mkdtemps on every config load (Playwright loads it in several processes)
+→ a few empty temp dirs; the main process's stack+teardown are self-consistent, so it's clutter not a bug (OS temp
+cleanup handles it).</p>
+
+<h3>DR-10 — Agent-tier workflow review (8 findings, incl. 2 HIGH false-greens) + two-node Talk</h3>
+<p>Ran the goal's "workflow/ultracode thorough test" on the NEW security-critical code (iters 7-11: <code>dina_agent</code>
+pairing+signing, MRS-06/07/08/09, backstage helpers, isolation runner, PR tier) — a 16-agent adversarial review, each
+finding verified. <strong>8 confirmed; the two HIGH ones were false-greens in security tests</strong> — exactly what
+the review exists to catch:</p>
+<ul>
+<li><strong>MRS-07 was testing the WRONG thing (HIGH false-green):</strong> it probed <code>GET /v1/vault/list</code>,
+which isn't in the authz allowlist at all → a blanket fail-closed 403 for EVERY caller type. So it never proved the
+AGENT gate; a regression mis-assigning agents role='device' would stay green. FIXED: probe the actually-agent-reachable
+<code>/v1/vault/query</code> (authz grants 'agent'), assert the real <code>agentGate</code> → <code>approval_required</code>
+on a sensitive persona, add a POSITIVE CONTROL (agent 204 on an allowlisted route proves callerType='agent'), assert the
+default persona is SERVED (gate discriminates, not a blanket deny), and — now possible — the full approval-unblock
+(owner approves → agent retry 200). This is the real spec MRS-07, far stronger than the "perimeter" framing (X4 was
+based on the wrong route — corrected).</li>
+<li><strong>MRS-09 was vacuous (HIGH false-green):</strong> it counted <code>trust-feed-list/empty</code> — the BROWSE
+landing states that render (and persist under the Stack push) BEFORE search runs. So it passed without the search
+resolving. FIXED: navigate to the real <code>search-screen</code> route and assert the search flow renders without
+hard-erroring; the results-vs-empty terminal assertion is DEFERRED to the seeded services tier (a dataless test-AppView
+doesn't deterministically reach results/empty) — honestly scoped, not vacuously counted.</li>
+<li><strong>dina_agent query encoding (MEDIUM):</strong> URLSearchParams form-encodes (space→+); Core canonicalizes
+with encodeURIComponent (space→%20) — a query with a space would sign different bytes → 401 false-RED. FIXED to match
+Core's serialiser.</li>
+<li><strong>MRS-08 MODERATE used a non-policy action (LOW):</strong> <code>send_email</code> isn't in DEFAULT_POLICY
+(it passed via the fail-safe <code>?? MODERATE</code>, not the real rung). FIXED → <code>send_large</code> (a real
+MODERATE key), so it tests the actual ladder.</li>
+<li><strong>+ backstage <code>risk_level</code>→<code>risk</code> (wire field), CI concurrency group (nightly vs push
+collision).</strong></li>
+</ul>
+<p>After fixes: PR tier 4/4 hermetic (27.9s), full isolated suite 7/7. The review paid for itself twice over — the
+MRS-07 false-green was a genuine hole in the agent-safety coverage.</p>
+<p><strong>Two-node Talk (user-directed — two managed home nodes, not a second Core in buildStack):</strong> stood up
+<code>dina-nodes</code> alonso + sancho (full Home Node Lite each, own did:plc, against the cloud test relay),
+<code>connect.sh</code>'d them mutual. PROVEN they talk: alonso <code>/v1/msg/send</code> (valid V1 D2D type
+coordination.request / social.update) → delivered over test-mailbox → sancho <code>[d2d:handleInboundD2D]</code> received
+(ciphertext) → brain staging drain processed it. Also re-confirmed F4 with hard evidence: alonso's Core HAS sancho as a
+contact (backstage), but the web Talk UI shows "No contacts yet" — the limited-mode thin-client doesn't surface Core
+contacts. Open for a clean MRS-04 test: the D2D content lands as relationship-graph data (not a flat vault item / not a
+reminder in this run), so the assertion needs the right query surface; the human web-view is F4-gated. A
+<code>twoHumans</code> Playwright config (drives the external nodes, no webServer) is scaffolded (<code>playwright.relay.config.ts</code>).</p>
+
+<h3>DR-9 — MRS-09 PeerLens read + the P2 web-parity boundary</h3>
+<p>(1) Correct way? MRS-09 drives the real human path: Network tab → "Browse reviews" → the PeerLens search box → a
+subject query, and asserts the spec's exact guarantee ("results render OR a clean empty state, never a crash") via a
+known terminal UI state PLUS the fixture's hard-console-error gate. It's a real AppView HTTP read (no LLM), so it also
+joins the hermetic PR tier. (2) Code smells / workarounds? The nav was discovered from the live snapshot (landing is a
+launchpad; the search box is one "Browse reviews" tap away) — no brittle assumption; the empty-vs-results branch is
+handled honestly (an empty test-AppView legitimately yields empty). (3) Test issues? Deterministic (results-or-empty
+always holds if the screen renders), so it's retry-free-worthy; kept in the functional dir so it also runs live+isolated.</p>
+<p><strong>The P2 boundary — a definitive, spec-aligned conclusion.</strong> I traced the remaining P2 flows
+(MRS-04 Talk, MRS-05 quarantine, MRS-10/11 services) to a hard architecture boundary, not just missing effort: (a) the
+web thin-client surfaces Core-side D2D / quarantine / approval state through IN-PROCESS <code>@dina/core/d2d</code>
+hooks (<code>getQuarantined</code>, <code>useD2DMessages</code>, <code>useApprovalInbox</code>) that have no data in a
+thin client and no HTTP endpoint (F4) — so the human-visible quarantine/Talk cards can't render in the browser yet; and
+(b) there is no REST endpoint to even assert quarantine data backstage. The spec ITSELF scopes these as P2 (@relay,
+<code>dina-nodes</code>/twoHumans) + P3 ("as HOME_NODE_LITE_WEB_UI_TASKS.md lands"), and tags several rows
+"gated (needs web parity §2)". So the honest state: everything testable in the CURRENT web/lite architecture is done;
+the P2 human-flows are blocked on the named web-parity dependency (a product change: expose D2D/quarantine/approval over
+HTTP for the thin client) + the multi-node relay harness. Implementing them "green" today would require product changes
+(new HTTP endpoints) — out of scope for authoring the E2E tests.</p>
+
+<h3>DR-8 — Hermetic agent-safety PR gate</h3>
+<p>(1) Correct way? Yes — rather than build a fragile scripted LLM that would have to fake agentic routing (F5), the
+PR gate runs the flows that are ALREADY LLM-free (MRS-06/07/08) with Brain in <code>noLlm</code> mode. Proven hermetic
+by running with <code>GEMINI_API_KEY</code>/<code>GOOGLE_API_KEY</code>/<code>DINA_GEMINI_API_KEY</code> explicitly
+unset — the specs still pass (3/3, 20s) because they assert real Core state (gatekeeper decisions, workflow
+transitions, the authz perimeter) with zero LLM involvement. (2) Code smells / workarounds? None — <code>noLlm</code>
+is a clean stack flag (Brain boots provider 'none', ask coordinator cleanly disabled), and the config only selects
+<code>agent_*.spec.ts</code>. It is NOT a workaround to dodge F5: it's the honest subset that genuinely needs no LLM,
+with F5 documented for the LLM subset. (3) Test issues? <code>retries:0</code> (deterministic → a failure is real);
+the MRS-14 sweep still runs; it's wired as a real PR gate in CI (no secret, needs test-pds). The one caveat logged:
+the PR gate needs test-pds reachability (PDS provisioning for the workflow plane), so it's hermetic-of-secrets but not
+network-isolated — stated in the config header.</p>
+
+<h3>DR-7 — MRS-06 agent delegation lifecycle + F3 per-spec isolation</h3>
+<p>(1) Correct way? MRS-06 drives the full delegation lifecycle through the REAL surfaces: the owner stages a
+delegation task, approves it via the real owner route (pending_approval→queued), and a REAL paired agent CLAIMS it
+(<code>/v1/workflow/tasks/claim</code>, signed, →running) and COMPLETES it (<code>/complete</code>, signed, →completed)
+— the exact task-queue path a runner drives. It asserts the negative (unclaimable before approval → 204) and relies on
+the real <code>agentCompletionGuard</code> (only the holding agent may complete). A scoped <code>runner_filter</code>
+makes the claim take only THIS test's task. (2) Code smells / workarounds? None in MRS-06. The F3 stall was finally
+root-caused (not papered over): I read the Brain log during a live stall, found the agentic-drain saturation, and fixed
+the actual cause (staging-drain accumulation) with per-spec stack isolation — the "proper fix" I'd flagged for several
+iterations, now implemented. The runner script is bash-3.2-portable (macOS). (3) Test issues? The isolated runner gives
+each spec a pristine Brain, eliminating the intermittent MRS-03 flake at the source; every spec still runs its own
+MRS-14 sweep + calibration-independent. Tradeoff: ~4m (6 stack boots + 6 did:plc provisions) vs ~2m shared — worth it
+for determinism on a nightly tier; the fast single-stack <code>test:e2e:functional</code> stays for single-spec
+iteration.</p>
+
+<h3>DR-6 — MRS-07 agent vault-access perimeter + the dina_agent fixture</h3>
+<p>(1) Correct way? The test now uses a REAL paired agent — <code>dina_agent.ts</code> pairs a <code>role='agent'</code>
+device through Core's actual two-phase ceremony (<code>/v1/pair/initiate</code> admin-staged + <code>/v1/pair/complete</code>
+public) and signs every request with the canonical payload (<code>{METHOD}\n{PATH}\n{QUERY}\n{TS}\n{NONCE}\n{SHA256(BODY)}</code>,
+hex Ed25519, X-DID/Timestamp/Nonce/Signature) exactly as <code>packages/core/src/auth/canonical.ts</code>. That the
+403 comes back <code>rejected_at:"authorization"</code> (not "authentication") PROVES the signature verified and
+<code>callerType='agent'</code> resolved — a genuine agent, not a mock. This is the highest-fidelity agent test in the
+suite. (2) Code smells / workarounds? The initial approach (agent GET <code>/v1/vault/list</code> → expected a
+persona-gate 403) was WRONG — it hit the authz allowlist first; rather than force it, I followed the evidence to the
+real perimeter and reframed the test to the true guarantee (X4), documenting the deferred grant flow. No faked path.
+The fixture reuses the same Ed25519/base58/sha512 shims as <code>support/stack.ts</code> (consistent, not duplicated
+logic drift). (3) Test issues? Asserts the perimeter for THREE personas (sensitive + default + locked) so it can't
+pass on a single-persona quirk, and pins <code>rejected_at</code> so a future allowlist widening (agent gets vault
+access) would fail loudly. Removed the diagnostic <code>console.log</code> after tracing. The fixture also unlocks a
+future upgrade: MRS-08 can submit its intents as the REAL agent (agent is allowlisted on <code>/v1/agent/*</code>)
+instead of backstage staging — noted for a follow-up.</p>
+
+<h3>DR-5 — MRS-08 agent risk ladder + approval state machine</h3>
+<p>(1) Correct way? The safety-critical behaviour is tested through the REAL surfaces: the gatekeeper via
+<code>/v1/agent/validate</code> (same endpoint dina-agent hits — SAFE/MODERATE/HIGH/BLOCKED resolved exactly as the
+deterministic <code>evaluateIntent</code> table dictates), and the approval STATE MACHINE via the real owner-decision
+routes (<code>/approve</code>→queued, <code>/cancel</code>→cancelled, behind the owner-decision guard). Staging the
+intent via backstage is legitimate (§8 — a precondition a single browser can't produce). The workflow plane is wired
+by real Core PDS provisioning, not a stub. (2) Code smells / workarounds? The one honest DEVIATION (X3): the human-TAP
+approval isn't driven, because the limited-mode-web inbox doesn't surface the task (F4) — rather than fake a tap or
+hack the inbox, MRS-08 drives the decision through the real route and asserts the Activity surface renders, with F4
+documented + deferred to Maestro. No hidden workaround. (3) Test issues? Per-test <code>resetApprovals</code> stops an
+agent test's proposals leaking into another test's "zero pending approvals" negative; the assertions are on real
+server state (list-by-state), not UI-only. Deep-review of the isolation surfaced + fixed the approval-leak risk before
+it bit. Residual: the intermittent F3 brain-stall can still flake a combined run (live-LLM under load) — orthogonal to
+MRS-08 (which is LLM-free and passes in &lt;5s); the proper fix (per-test brain isolation / request pacing) stays an
+open item.</p>
+
+<h3>DR-4 — Workflow thorough review (24 confirmed findings, fixed)</h3>
+<p>Ran the goal's "use a workflow / ultracode to test it out thoroughly" as a 33-agent adversarial review of the whole
+E2E harness (5 slices: judge, harness, specs, hygiene, configs), each finding independently verified. <strong>24 of 28
+confirmed real</strong> — the review caught genuine bugs that made tests vacuous or the judge exploitable. Fixed:</p>
+<ul>
+<li><strong>judge.ts — confidence clamp (correctness):</strong> <code>Math.min(1,…)</code> rounded an off-scale
+confidence (e.g. a 0–100 judge returning 90) UP to 1.0, silently clearing the floor. Now REJECTS out-of-[0,1] as
+malformed (+ schema min/max).</li>
+<li><strong>judge.ts — injection fence (security):</strong> the <code>"""</code> fence around untrusted
+<code>actual</code> could be broken by product output containing <code>"""</code>+a fake rubric. Now
+<code>JSON.stringify</code>'d (one opaque literal). New calibration case proves it.</li>
+<li><strong>calibration — floor divergence (correctness):</strong> a duplicate <code>Number(env ?? 0.6)</code> gave
+<code>''→0</code> (vs judge.ts <code>''→0.6</code>), disabling the confidence half of the gate. Now imports the single
+<code>MIN_CONFIDENCE</code>. + 2 paired golden cases (clean cross-domain PASS, delimiter-break injection) → 8/8.</li>
+<li><strong>backstage.resetVault — 20-item cap (HIGH):</strong> the vault list defaults to 20, so per-test reset only
+cleared ~20 items — isolation was silently broken. Now drains until empty with an explicit limit.</li>
+<li><strong>reminder spec — vacuous negative (HIGH):</strong> the "plain preference → no reminder" wait anchored on any
+new row, satisfied instantly by the user's OWN bubble. Now waits for Dina's ACK (server finished) before asserting.</li>
+<li><strong>MRS-14 hygiene — vacuous passes (HIGH):</strong> the teardown silently no-op'd on missing/empty logs, and
+servers booted at <code>warn</code> (missing info/debug leaks), and <code>reuseExistingServer</code> could reuse a
+stale server. Now: throws on missing/empty logs, functional boots at <code>info</code>, and servers always boot fresh.</li>
+<li><strong>log_hygiene — mnemonic-allowlist scope (correctness):</strong> the allowlist skipped ALL checks on any
+<code>"mnemonic":</code> line (could mask a co-located leak). Now scopes only to the mnemonic check; added opt-in
+foreign-DID detection (social-graph leak, wired when Talk tests land).</li>
+<li><strong>egress + console (medium):</strong> egress is now a HARD failure (was warn-only); the console scan also
+resolves structured object args (was <code>JSHandle@object</code>-blind).</li>
+<li><strong>owner-never-gated (medium):</strong> now also asserts ZERO server-side approval tasks (backstage), catching
+a card that failed to render over a real task; tolerant of the workflow plane being absent.</li>
+<li><strong>configs/CI (low):</strong> <code>testMatch: '**/*.spec.ts'</code> (ignore stale <code>.js</code>);
+Gemini secret scoped to only the steps that use it (not <code>npm ci</code>); functional globalSetup prechecks the
+autopilot bundle.</li>
+</ul>
+<p><strong>Verified after fixes:</strong> calibration 8/8, full functional suite 3/3 + MRS-14 clean (1.4m), typecheck
+clean. Deferred/documented (low): buildStack mkdtemp-at-import clutter (DR-2), fixed default ports (env-overridable),
+nvmrc-in-output (repo-trusted). MRS-13 export/import + core-restart remain the two known coverage gaps (open items).</p>
+<p><strong>Tangential finding (NOT a regression):</strong> rebuilding the 3-week-stale smoke <code>dist</code> bundle
+surfaced 2 PRE-EXISTING onboarding-render specs (<code>smoke</code>/<code>onboarding</code>, authored 17 Jun) that
+expect a blocking "Welcome to Dina" screen. The current app lands on <strong>limited-mode Chat</strong> (a documented
+web state) with a "What can Dina do?" tour card instead. 37/39 smoke specs pass (harness intact); these 2 are stale
+UX-drift, not caused by any E2E change. Left for a product call — updating them means deciding whether the smoke
+bundle should force onboarding or land on limited-mode Chat. (Open question added.)</p>
+
+<h3>DR-3 — CI two-tier + MRS-13 durability</h3>
+<p>(1) Correct way? CI: PR/push run the hermetic smoke tier (no key, no fleet); a nightly <code>functional-live</code>
+job runs the calibration gate → functional suite with a Gemini secret. The calibration has its OWN no-stack config so
+the gate is cheap. MRS-13: persistence asserted deterministically (backstage), which is the right way to test a
+durability INVARIANT (data survived), not via a re-hydration-sensitive LLM recall. (2) Code smells: the
+<code>zz_</code> filename ordering is a mild smell, but it's a legitimate "destructive test last" pattern and the
+underlying cause (F3) is documented with the proper fix flagged. The <code>buildStack</code> per-load mkdtemp (noted
+in DR-2) is the remaining minor clutter. (3) Test issues found + fixed: async-drain lag (→ polling), shared-brain
+corruption (→ ordering), retry tuning (deterministic ≠ flaky, so retries:1 not 2). CI YAML validated (jobs parse;
+no untrusted input in <code>run:</code>).</p>
+
+<h2>Iteration log</h2>
+<div class="iter">
+<h3>Iter 0 — baseline (from the review rounds)</h3>
+<p><strong>Done:</strong> testID <code>chat-row</code> contract, the hardened Gemini judge, <code>judge.calibration.spec.ts</code>.
+<strong>Tests:</strong> web-e2e <code>tsc</code> clean; mobile <code>index.tsx</code> clean (only pre-existing
+<code>react-native-keyboard-controller</code> missing-dep); calibration 6/6 vs real Gemini.
+<strong>Next:</strong> config env (debug-mode + Gemini) + backstage client.</p>
+</div>
+
+<div class="iter">
+<h3>Iter 1 — config env + backstage client (verified against a live Core)</h3>
+<p><strong>Changed:</strong> (1) <code>playwright.config.ts</code> — Core gets <code>DINA_DEBUG_MODE=1</code> +
+<code>DINA_ENDPOINT_MODE=test</code>; Brain gets conditional Gemini (key present → real provider, absent → none).
+(2) New <code>__e2e__/fixtures/backstage.ts</code> — the debug-dispatch client (<code>dispatch</code>,
+<code>dispatchOk</code>, <code>listVault</code>, <code>pendingApprovals</code>).</p>
+<p><strong>Method:</strong> booted a standalone core-server with debug mode + msgbox disabled and probed the REAL
+route contracts rather than trusting the doc — which surfaced Deviation X1 (body-direct dispatch), F1 (workflow needs
+PDS provisioning → 503), and F2 (sensitive-persona list quirk). Rewrote <code>dispatch</code> to the verified
+contract.</p>
+<p><strong>Tests:</strong> web-e2e <code>tsc</code> clean. Live backstage smoke against the probe Core: healthz 200,
+<code>listVault(general)</code> returns items with string ids, workflow 503 (expected without PDS). Probe torn down.</p>
+<p><strong>Next best step:</strong> the <code>humanSession</code> fixture + page objects (Composer, ChatThread), then
+the onboarding-autopilot bundle build to get a browser to Chat-ready, then the first real MRS-01/02/03 spec against
+the full stack — at which point F2 (sensitive-persona list) gets verified on the real <code>/remember</code> path.</p>
+</div>
+
+<div class="iter">
+<h3>Iter 2 — the integration crux: a real browser reaches Chat and MRS-01/02 is GREEN</h3>
+<p><strong>Changed:</strong> unblocked the env with <code>npm install</code> (react-native-keyboard-controller was
+declared but not installed — it blocked the SPA build AND the mobile typecheck); built the autopilot bundle
+(<code>dist-e2e</code>); disabled the guided-demo gate under autopilot (D6); added <code>support/stack.ts</code>
+(shared webServer builder), <code>playwright.functional.config.ts</code>, the <code>Composer</code> + <code>ChatThread</code>
+page objects, the <code>human_session</code> fixture, and the judged <code>functional/remember_recall.spec.ts</code>
+(MRS-01/02).</p>
+<p><strong>Method:</strong> spiked "reach Chat + remember + ask" first, iterating on real failures — (1) autopilot
+lands on the guided-demo gate; (2) the composer is mode-first (input mounts after a chip); (3) <code>fill()</code>
+doesn't fire onChangeText (→ <code>pressSequentially</code>); (4) the guided-demo gate re-appears in limited mode (D6).
+Each was diagnosed from the Playwright failure snapshot + on-page diagnostics, then fixed.</p>
+<p><strong>Tests:</strong> mobile <code>tsc</code> now fully clean (deps installed); web-e2e <code>tsc</code> clean;
+<strong>MRS-01/02 GREEN in 25s</strong> — real browser → autopilot → provision did:plc on test-pds → unlock → Chat →
+<code>/remember</code> → <code>/ask</code> → real Gemini answered "Based on your notes, Emma loves dinosaurs" → the
+Gemini judge PASSED the recall + zero approval cards.</p>
+<p><strong>Next best step:</strong> MRS-03 (reminder enrichment, incl. the F2 sensitive-persona check on the real
+path), then the deep-review of the completed items (absolute-correct? code smells? test issues?), then the P1 flows
+(quarantine, agent/approvals — needs Core PDS provisioning per F1), then MRS-14 log hygiene, CI, and the workflow
+test pass.</p>
+</div>
+
+<div class="iter">
+<h3>Iter 3 — deep review of P0 + MRS-03; P0 complete and green</h3>
+<p><strong>Changed:</strong> ran the DR-1 deep review (see above) and fixed all four findings — smoke-config
+<code>testIgnore</code> (A), refactored the smoke config onto <code>buildStack</code> (B), corrected
+<code>backstage.VaultItem</code> + added <code>vaultHasText</code>/<code>personaContaining</code> (C), expanded MRS-01
+to real persona routing + backstage verification (D). Added <code>functional/reminder_enrichment.spec.ts</code> (MRS-03).</p>
+<p><strong>Tests:</strong> web-e2e <code>tsc</code> clean; <code>playwright test --list</code> confirms the smoke tier
+excludes functional + calibration; <strong>MRS-01/02 (40s), MRS-03 (22s), and both together (2 passed, 1.1m) all
+GREEN</strong> with real Gemini + judge. Routing verified live: dinosaur→general, HbA1c→health, Barclays→finance.
+<strong>F2 resolved</strong> — sensitive personas populate + list on the real path.</p>
+<p><strong>Next best step:</strong> MRS-14 (log-hygiene teardown — cross-cutting security invariant, no relay/agent
+needed) is the highest-value achievable next item; then MRS-13 (durability, needs a core-restart harness); then the
+relay/agent-gated P1/P2 flows (MRS-05/06/07/08/04/10/11) which need <code>dina-agent</code> pairing + PDS provisioning
+(F1) + <code>dina-nodes</code>; then CI two-tier + the workflow test pass.</p>
+</div>
+
+<div class="iter">
+<h3>Iter 4 — MRS-14 log hygiene (server + browser + egress), GREEN</h3>
+<p><strong>Changed:</strong> <code>support/log_hygiene.ts</code> (token/regex scanner + egress allowlist),
+<code>support/log_teardown.ts</code> (server-log globalTeardown), tee'd server logs in <code>stack.ts</code>, extended
+<code>human_session</code> to scan the browser console + report egress, wired the teardown into the functional config.</p>
+<p><strong>Method + what the tests showed:</strong> first run FAILED the server-log scan — investigated the actual
+logs (DR-2): brain.log has zero vault tokens (servers don't leak), the trips were a false-positive password regex and
+a mnemonic-allowlist race; fixed both. Also allowlisted two legit egress hosts the run surfaced (<code>plc.directory</code>,
+<code>test-grants</code>). Re-run: <strong>2 passed + "server-log hygiene clean" + no egress warnings.</strong> New open
+question recorded: core logs its recovery mnemonic at first boot (product review, not a test issue).</p>
+<p><strong>Next best step:</strong> CI two-tier wiring (§11 — smoke on PR, functional live nightly; the scripted PR
+tier needs the <code>bootServer</code>-injected coordinator, a separate build); then MRS-13 durability (core-restart
+harness); then the relay/agent-gated P1/P2 flows; then the thorough workflow test pass.</p>
+</div>
+
+<div class="iter">
+<h3>Iter 12 — Agent-tier workflow review (fixed 2 HIGH false-greens) + two real nodes talking, GREEN</h3>
+<p><strong>Changed:</strong> ran the adversarial workflow review on the new agent-safety code → fixed 8 findings
+(MRS-07 rewritten to the real persona gate + approval-unblock; MRS-09 de-vacuum'd; dina_agent query encoding; MRS-08
+real MODERATE action; backstage risk field; CI concurrency). Stood up two real home nodes (dina-nodes alonso/sancho)
+and proved they talk over the relay (user-directed two-node approach). Scaffolded <code>playwright.relay.config.ts</code>.</p>
+<p><strong>What the tests showed:</strong> the review caught that MRS-07 was testing a blanket unlisted-path deny (not
+the agent gate) and MRS-09 was counting pre-search states — both HIGH false-greens now fixed and far stronger. PR tier
+4/4 hermetic (28s), isolated suite 7/7. The two nodes genuinely exchange D2D over test-mailbox (send → handleInboundD2D
+→ staged); F4 re-confirmed (Core has the contact, web shows none).</p>
+<p><strong>Next best step:</strong> finish MRS-04 — find the query surface where sancho's received D2D lands
+(relationship graph) and assert it via backstage on the two nodes (the human web-view stays F4-gated → Maestro). Then
+MRS-05 quarantine (a non-contact third node → alonso) + MRS-10/11 services (provider node + seeded AppView, which also
+unblocks MRS-09's terminal assertion).</p>
+</div>
+
+<div class="iter">
+<h3>Iter 11 — MRS-09 PeerLens read + definitive P2 web-parity boundary, GREEN</h3>
+<p><strong>Changed:</strong> new spec <code>peerlens_read.spec.ts</code> (MRS-09) — Network → Browse reviews → search →
+results-or-empty; added to the hermetic PR tier (LLM-free). Traced the P2 flows to the F4 web-parity boundary +
+confirmed the spec defers them (§2 gated, §12 P2/P3).</p>
+<p><strong>What the tests showed:</strong> MRS-09 GREEN, hermetic (passes with Gemini keys unset, 4s). The PR tier is
+now 4 specs (agent trio + MRS-09), 25s, MRS-14 clean, zero secrets. The P2 relay flows are architecturally gated (F4 —
+no HTTP surface for Core-side D2D/quarantine/approval in the thin client), matching the spec's own P2/P3 scoping.</p>
+<p><strong>Next best step:</strong> the P2 human-flows are unblocked by web parity (HOME_NODE_LITE_WEB_UI_TASKS.md) —
+a product dependency. Until then, the achievable options are: assert the P2 SAFETY DATA once an HTTP quarantine/D2D
+endpoint exists (product), or run the @relay flows via the <code>dina-nodes</code> two-node harness for the SENDER side
++ Maestro on device for the receiver UI. Two product calls stand: F4 (web Core-state surfacing) + F5 (scripted-tier
+routing).</p>
+</div>
+
+<div class="iter">
+<h3>Iter 10 — Hermetic agent-safety PR gate + scripted-tier finding (F5), GREEN</h3>
+<p><strong>Changed:</strong> <code>noLlm</code> flag on <code>buildStack</code>; <code>playwright.pr.config.ts</code>
++ <code>test:e2e:pr</code> (agent specs, Brain no-LLM); wired as a CI PR gate (no secret). Investigated the scripted
+LLM tier (bootServer/askCoordinator injection) and found F5 (honesty-rule vs agentic-routing tension).</p>
+<p><strong>What the tests showed:</strong> the agent-safety PR gate passes with all Gemini keys UNSET (3/3, 20s,
+MRS-14 clean) — proving those flows are genuinely LLM-free and giving the repo the hermetic every-PR functional gate
+it lacked. The scripted LLM variant for MRS-01/02/03 is blocked by F5 (a product/spec decision), documented.</p>
+<p><strong>Next best step:</strong> the relay P2 flows — MRS-05 (quarantine) needs a 2nd Core as the stranger sender +
+there's no quarantine REST endpoint (assert via the browser card or an added endpoint); MRS-04 (Talk) needs two
+browser contexts on two nodes; MRS-10/11 (services) need a provider daemon. All need the relay + surface through the
+F4-uncertain web inbox. Product calls owed on F4 (web agent-approval visibility) + F5 (scripted-tier routing).</p>
+</div>
+
+<div class="iter">
+<h3>Iter 9 — MRS-06 delegation lifecycle + F3 root-cause fix (per-spec isolation), GREEN</h3>
+<p><strong>Changed:</strong> new spec <code>agent_delegation.spec.ts</code> (MRS-06) — owner-approved delegation task
+claimed + run + completed by the real paired agent. Root-caused F3 (agentic staging-drain accumulation) via the Brain
+log and fixed it: <code>scripts/run-functional-isolated.sh</code> + <code>test:e2e:functional:isolated</code> (fresh
+stack per spec); CI functional job switched to it. Generalized <code>approvalTaskInState</code> to any task kind.</p>
+<p><strong>What the tests showed:</strong> MRS-06 GREEN first try (&lt;5s). The shared-stack suite still flaked MRS-03
+(F3) even with 90s send windows — reading the Brain log proved it was drain saturation, not rate-limiting. The isolated
+runner passes <strong>all 6 specs, each in a fresh stack, every one MRS-14-clean (~4m).</strong></p>
+<p><strong>Next best step:</strong> the relay-dependent P2 flows — MRS-05 (unknown-sender quarantine), MRS-04 (Talk,
+two browser contexts), MRS-10/11 (services) — need a second Dina node + the relay. The scripted PR tier (deterministic,
+no-Gemini) remains. Product still owes a call on F4 (web agent-approval visibility).</p>
+</div>
+
+<div class="iter">
+<h3>Iter 8 — MRS-07 agent vault-access perimeter + real agent fixture, GREEN</h3>
+<p><strong>Changed:</strong> built <code>fixtures/dina_agent.ts</code> — a faithful in-test dina-agent that pairs a
+<code>role='agent'</code> device (real ceremony) and makes canonically-signed RPCs (<code>callerType='agent'</code>).
+New spec <code>agent_vault_read.spec.ts</code> (MRS-07). Investigated the agent transport/auth model end-to-end
+(callerType, allowlist, persona tiers).</p>
+<p><strong>Method + what the tests showed:</strong> the first attempt (agent → <code>/v1/vault/list</code>) revealed
+the real perimeter — agents aren't on the vault allowlist at all (403 <em>authorization</em>). Followed the evidence
+and reframed MRS-07 to the true, higher-value guarantee (X4): a paired agent can't touch <code>/v1/vault/*</code> for
+ANY persona; the owner reads freely. <strong>MRS-07 GREEN (&lt;5s); full functional suite 5/5 + MRS-14 clean
+(1.9m).</strong></p>
+<p><strong>Next best step:</strong> MRS-06 (agent claims + runs a delegation task) — this also unlocks MRS-07's fuller
+vault-read-GRANT flow (both need the runner harness). Upgrade MRS-08 to submit intents as the real paired agent (now
+possible). Then the relay-dependent P2 flows (MRS-04 Talk, MRS-05 quarantine, MRS-10/11 services) + the scripted PR
+tier.</p>
+</div>
+
+<div class="iter">
+<h3>Iter 7 — MRS-08 agent risk ladder + approval state machine, GREEN</h3>
+<p><strong>Changed:</strong> probed + confirmed PDS provisioning wires Core's workflow plane; added
+<code>provisionPds</code> to <code>buildStack</code> + enabled it in the functional config (also activates MRS-01's
+server-side owner-never-gated check). Backstage: <code>stageAgentIntent</code> (real <code>/v1/agent/validate</code>),
+<code>approvalTasks</code>/<code>approvalTaskInState</code>, <code>ownerApprove</code>/<code>ownerDeny</code>,
+<code>resetApprovals</code> (per-test cleanup). New spec <code>agent_approvals.spec.ts</code> (MRS-08).</p>
+<p><strong>Method + what the tests showed:</strong> proved the whole mechanism via a live probe (ladder correct;
+approve→queued). Discovered the browser inbox doesn't surface externally-staged tasks (F4) after tracing the client
+wiring + limited-mode degradations — so MRS-08 tests the ladder + state machine through the real routes (X3) and
+asserts the Activity surface renders. <strong>MRS-08 GREEN (&lt;5s); full suite 4/4 + MRS-14 clean on a clean run
+(1.7m).</strong> The intermittent F3 brain-stall flaked one combined run (MRS-03), passed on re-run — orthogonal to
+MRS-08.</p>
+<p><strong>Next best step:</strong> MRS-06 (agent task delegation) + MRS-07 (vault-read grant) reuse the MRS-08
+mechanism (validate + workflow tasks) — quick additions. Then the relay-dependent P2 flows (MRS-04 Talk two-context,
+MRS-05 quarantine, MRS-10/11 services). Product should weigh in on F4 (web agent-approval visibility). The proper fix
+for the F3 brain-stall (per-test brain isolation) would make the combined live tier fully deterministic.</p>
+</div>
+
+<div class="iter">
+<h3>Iter 6 — Detailed test plan + workflow thorough review (24 findings fixed), GREEN</h3>
+<p><strong>Changed:</strong> authored <code>docs/E2E_TEST_PLAN.md</code> (every MRS scenario, sub-cases, edge/failure
+modes, layer, coverage status). Ran a 33-agent adversarial review workflow → 24 confirmed findings → fixed the
+high/medium (judge confidence-clamp + injection fence + floor divergence; resetVault 20-cap; vacuous reminder-negative;
+vacuous MRS-14 sweep; mnemonic-allowlist scope + DID detection; hard egress; server-side approval check) and the quick
+lows (testMatch, CI secret scope, functional globalSetup).</p>
+<p><strong>What the tests showed:</strong> the review caught REAL bugs that made assertions vacuous or the judge
+exploitable — exactly the point of the pass. After fixes: calibration 8/8 (incl. new injection + clean-cross-domain
+cases), full functional suite 3/3 + MRS-14 clean (1.4m), typecheck clean. Rebuilding the stale smoke <code>dist</code>
+took smoke from 7/39 → 37/39; the 2 residual are pre-existing onboarding-UX drift (documented, open question).</p>
+<p><strong>Next best step:</strong> the relay/agent-gated flows (MRS-05/06/07/08 agent+quarantine, MRS-04/10/11
+Talk/services) — the largest remaining infra (dina-agent pairing + Core PDS provisioning + dina-nodes + relay). Then
+the scripted PR tier. MRS-13 export/import + core-restart are the two smaller known gaps.</p>
+</div>
+
+<div class="iter">
+<h3>Iter 5 — CI two-tier + MRS-13 durability + full-suite isolation, GREEN</h3>
+<p><strong>Changed:</strong> CI (<code>ts-web-e2e.yml</code>): nightly <code>functional-live</code> job (calibration
+gate → functional suite, Gemini secret) + a standalone calibration config/script. MRS-13 durability spec
+(deterministic reload persistence). Isolation fixes (F3): per-test <code>resetVault</code>, polling
+<code>waitForPersonaContaining</code>, Composer waits for send-enabled, reload-test ordered last, <code>retries:1</code>.</p>
+<p><strong>Method + what the tests showed:</strong> the full suite failed when combined (individual specs green) —
+debugged from failure snapshots: the send button was stuck disabled (isTyping) → traced to durability's reload
+corrupting the shared brain (deterministic across retries), plus an async-drain lag on the vault check. Fixed both;
+<strong>full functional suite now GREEN together (3 passed, 1.4m) + MRS-14 clean.</strong> Calibration 6/6 as its own
+config.</p>
+<p><strong>Next best step:</strong> the relay/agent-gated P1/P2 flows — MRS-06/07/08 (agent safety) need Core PDS
+provisioning (F1: wires the workflow plane) + a paired <code>dina-agent</code> CLI; MRS-05 (quarantine) needs a peer
+sender; MRS-04/10/11 (Talk/services) need <code>dina-nodes</code> + the relay. Then the thorough workflow test pass
+with the detailed test plan. These are the largest remaining infra lifts.</p>
+</div>
 
 </body>
 </html>

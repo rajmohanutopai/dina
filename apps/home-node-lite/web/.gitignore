@@ -1,4 +1,11 @@
-# Playwright pre-compiles .spec.ts and playwright.config.ts to .js
-# at run time. The .ts files are the source of truth.
-__e2e__/*.js
-playwright.config.js
+# Playwright pre-compiles .spec.ts and *.config.ts to .js at run time.
+# The .ts files are the source of truth.
+__e2e__/**/*.js
+playwright*.config.js
+
+# Exported SPA bundles (built on demand).
+dist-e2e/
+
+# Playwright run outputs.
+test-results/
+playwright-report/

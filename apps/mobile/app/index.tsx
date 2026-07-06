@@ -23,6 +23,7 @@ import {
   Platform,
   ScrollView,
   type GestureResponderEvent,
+  type ViewProps,
 } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
@@ -146,6 +147,108 @@ function toDisplayType(m: ChatMessage): UiMessage['displayType'] {
   if (m.type === 'reminder') return 'reminder';
   if (m.type === 'briefing') return 'briefing';
   return 'system';
+}
+
+// ── E2E row contract (docs/E2E_TESTING.md §5) ──────────────────────────
+// Every chat row is wrapped once (at the FlatList `renderItem`) in a
+// `testID="chat-row"` View carrying `data-*` attributes so the
+// Playwright/judge suite can select "the latest card of kind X" or "the
+// service card once its status is resolved" without racing a re-mount.
+// `dataSet` is a react-native-web prop → `data-*` on the web DOM (camelCase
+// maps to kebab, e.g. `rowSeq` → `data-row-seq`); native RN ignores it.
+// The inner per-branch testIDs (`chat-card-*`, `chat-msg-*`, and each
+// card's `*-card-body-*`) are unchanged — this only adds an outer handle.
+
+function chatRowKind(displayType: UiMessage['displayType']): string {
+  switch (displayType) {
+    case 'user':
+      return 'user';
+    case 'dina':
+      return 'answer';
+    case 'system':
+      return 'system';
+    case 'reminder':
+      return 'reminder';
+    case 'service-query':
+      return 'service-query';
+    case 'quarantine-request':
+      return 'quarantine';
+    case 'ask-approval':
+    case 'service-approval':
+      return 'approval';
+    case 'vault-read-approval':
+      return 'vault-read-approval';
+    case 'missing-capability':
+      return 'missing-capability';
+    case 'review-draft':
+      return 'review-draft';
+    case 'nudge':
+      return 'nudge';
+    case 'briefing':
+      return 'briefing';
+    default:
+      return String(displayType);
+  }
+}
+
+/** A peer's literal D2D message renders as a left bubble with
+ *  `displayType === 'dina'` + `metadata.source === 'd2d'` (mirrors
+ *  `fromD2DPeer` in the bubble render). It is NOT a Dina-generated answer,
+ *  so the row contract must distinguish it — otherwise `latestAnswerText`
+ *  could scrape a peer's words as if Dina said them. */
+function isD2DPeerMessage(item: UiMessage): boolean {
+  return item.displayType === 'dina' && item.metadata?.source === 'd2d';
+}
+
+/** Lifecycle status for cards that update in place (pending → resolved). */
+function chatRowStatus(item: UiMessage): string {
+  const lifecycle = (item.metadata ?? {}).lifecycle as Record<string, unknown> | undefined;
+  const status = lifecycle?.status;
+  return typeof status === 'string' ? status : '';
+}
+
+/** Best-effort stable id for addressing a specific row (falls back to the
+ *  message id, which is always unique). */
+function chatRowEntityId(item: UiMessage): string {
+  const md = (item.metadata ?? {}) as Record<string, unknown>;
+  const lifecycle = (md.lifecycle ?? {}) as Record<string, unknown>;
+  const candidates = [
+    md.approvalId,
+    md.approvalTaskId,
+    md.taskId,
+    md.reminderId,
+    lifecycle.quarantineId,
+    lifecycle.taskId,
+    lifecycle.queryId,
+  ];
+  for (const c of candidates) {
+    if (typeof c === 'string' && c !== '') return c;
+  }
+  return item.id;
+}
+
+function chatRowProps(item: UiMessage, index: number): ViewProps {
+  // `dataSet` is not in RN's ViewProps types (it's a react-native-web
+  // extension), so the cast is localized here.
+  const d2d = isD2DPeerMessage(item);
+  const kind = d2d ? 'd2d-message' : chatRowKind(item.displayType);
+  const role = d2d
+    ? 'peer'
+    : item.type === 'user'
+      ? 'user'
+      : item.type === 'dina'
+        ? 'assistant'
+        : 'system';
+  return {
+    testID: 'chat-row',
+    dataSet: {
+      rowSeq: String(index),
+      kind,
+      role,
+      status: chatRowStatus(item),
+      entityId: chatRowEntityId(item),
+    },
+  } as unknown as ViewProps;
 }
 
 // The chat-mode chips (Ask / Remember / Task / Services / Reviews) + the
@@ -486,23 +589,31 @@ export default function ChatScreen() {
             <Text style={styles.msgChipText}>{chipLabel}</Text>
           </View>
         )}
-        {isUser ? (
-          // User-typed bubbles render literal — never reinterpret what
-          // the user typed (typing `**foo**` should stay visible as-is,
-          // not silently bolded).
-          <Text style={[styles.messageText, styles.userText]}>{displayContent}</Text>
-        ) : fromD2DPeer ? (
-          // A peer's literal words — render verbatim (no markdown
-          // interpretation), in the standard left-bubble text colour.
-          <Text style={styles.messageText}>{displayContent}</Text>
-        ) : (
-          // Dina + system bubbles: the LLM frequently emits `**bold**`
-          // for entity emphasis (names, numbers, dates). Render it
-          // inline instead of leaking literal asterisks into the UI.
-          <InlineMarkdownText style={[styles.messageText, isSystem && styles.systemText]}>
-            {displayContent}
-          </InlineMarkdownText>
-        )}
+        {/* E2E: `row-primary-text` is the clean, chrome-free handle the
+            Playwright suite scrapes and hands to the Gemini judge — it
+            wraps ONLY the message body (no sender label, source pill, or
+            timestamp), across all three render branches. See
+            docs/E2E_TESTING.md §5. A style-less View is layout-neutral:
+            the inner Text was already a block child of the bubble. */}
+        <View testID="row-primary-text">
+          {isUser ? (
+            // User-typed bubbles render literal — never reinterpret what
+            // the user typed (typing `**foo**` should stay visible as-is,
+            // not silently bolded).
+            <Text style={[styles.messageText, styles.userText]}>{displayContent}</Text>
+          ) : fromD2DPeer ? (
+            // A peer's literal words — render verbatim (no markdown
+            // interpretation), in the standard left-bubble text colour.
+            <Text style={styles.messageText}>{displayContent}</Text>
+          ) : (
+            // Dina + system bubbles: the LLM frequently emits `**bold**`
+            // for entity emphasis (names, numbers, dates). Render it
+            // inline instead of leaking literal asterisks into the UI.
+            <InlineMarkdownText style={[styles.messageText, isSystem && styles.systemText]}>
+              {displayContent}
+            </InlineMarkdownText>
+          )}
+        </View>
         {sourceLabel !== null && (
           <View style={styles.sourcePill} testID="chat-source-pill">
             <Text style={styles.sourcePillText}>{sourceLabel} · from other Dinas</Text>
@@ -514,6 +625,21 @@ export default function ChatScreen() {
       </Pressable>
     );
   }, [onBubbleLongPress]);
+
+  // E2E: wrap every rendered row once in the `chat-row` contract (see the
+  // helpers above). Preserves the skip-empty behavior (renderMessage
+  // returns null → no wrapper). `index` is the row's CURRENT position in
+  // the rendered list (`data-row-seq`) — good for "the newest is the
+  // highest seq / .last()", but NOT a stable append id across
+  // reorder/replay; address a specific row by `data-entity-id`.
+  const renderRow = useCallback(
+    ({ item, index }: { item: UiMessage; index: number }) => {
+      const el = renderMessage({ item });
+      if (el === null) return null;
+      return <View {...chatRowProps(item, index)}>{el}</View>;
+    },
+    [renderMessage],
+  );
 
   return (
     <KeyboardAvoidingView
@@ -588,7 +714,7 @@ export default function ChatScreen() {
           ref={flatListRef}
           data={messages}
           keyExtractor={(item) => item.id}
-          renderItem={renderMessage}
+          renderItem={renderRow}
           style={styles.messageList}
           contentContainerStyle={[
             styles.messageListContent,

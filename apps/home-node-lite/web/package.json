@@ -6,11 +6,18 @@
   "license": "MIT",
   "scripts": {
     "build:bundle": "cd ../../mobile && npx expo export --platform web --output-dir ../home-node-lite/web/dist",
+    "build:bundle:e2e": "cd ../../mobile && EXPO_PUBLIC_DINA_DEV_PASSPHRASE=e2e-autopilot EXPO_PUBLIC_DINA_DEV_OWNER=\"E2E Tester\" npx expo export --platform web --output-dir ../home-node-lite/web/dist-e2e",
     "test:e2e": "playwright test",
+    "test:e2e:calibration": "playwright test --config=playwright.calibration.config.ts",
+    "test:e2e:functional": "playwright test --config=playwright.functional.config.ts",
+    "test:e2e:functional:isolated": "bash scripts/run-functional-isolated.sh",
+    "test:e2e:pr": "playwright test --config=playwright.pr.config.ts",
+    "test:e2e:relay": "playwright test --config=playwright.relay.config.ts",
     "test:e2e:install": "playwright install --with-deps chromium",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@google/genai": "^1.50.1",
     "@playwright/test": "^1.49.0",
     "@types/node": "^22",
     "typescript": "^5.6.0"

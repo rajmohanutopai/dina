@@ -670,7 +670,17 @@ export default function RootLayout() {
     <View style={{ flex: 1 }}>
       <UnlockGate>
         <GuidedDemoGate
-          enabled={bootState.status !== 'error' && bootState.status !== 'booting'}
+          // Disable the first-run guided-demo gate under E2E autopilot
+          // (same dev/e2e hook as the onboarding autopilot). Its
+          // "seen" flag lives in a KV store that is ephemeral in the
+          // limited-mode web thin-client, so the gate re-shows on every
+          // boot-state flip and blocks a clean Chat. Off in production
+          // (passphrase unset), so real first-run behavior is unchanged.
+          enabled={
+            bootState.status !== 'error' &&
+            bootState.status !== 'booting' &&
+            (process.env.EXPO_PUBLIC_DINA_DEV_PASSPHRASE ?? '') === ''
+          }
         >
         {bootState.status === 'error' ? (
           <BootBanner
