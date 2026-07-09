@@ -19,16 +19,18 @@
  * gate. Deny / expire / restart-before-approval all keep data sealed:
  * no grant row ⇒ no data.
  *
- * GRANT GRANULARITY — deliberate design (issues.txt §2): a grant is bound to
- * `(agent_did, persona, mode)` and is PERSONA-WIDE for its TTL. The user
- * approves an agent's access to a PERSONA, not to one specific query — the
- * approval card shows the triggering query as context, but approving "read
- * health" authorises any health read until the grant expires. Per-query
- * approval was rejected as approval-fatigue (the agent's query is just its
- * current question, not a durable boundary). The stored `scope` is therefore
- * informational/audit only — it is NOT consulted by `findActiveGrant`.
- * Cross-PERSONA isolation IS enforced (a health grant never unlocks finance);
- * that's the boundary the §2 "bound to persona/scope" requirement protects.
+ * GRANT GRANULARITY (dina_details.md §3.6): a grant is bound to the exact
+ * tuple `(agent_did, session, persona, mode)` and is PERSONA-WIDE within that
+ * session for its TTL. The user approves an agent's access to a PERSONA for
+ * the CURRENT SESSION — the approval card shows the triggering query as
+ * context, but approving "read health" authorises any health read by that
+ * agent IN THAT SESSION until the grant expires. Per-query approval was
+ * rejected as approval-fatigue (the agent's query is its current question, not
+ * a durable boundary). Two boundaries ARE enforced by `findActiveGrant`:
+ * cross-PERSONA (a health grant never unlocks finance) AND cross-SESSION (a
+ * fresh `dina session start` mints a new session id → no matching grant →
+ * re-prompt; a prior session's approval does NOT carry over). The stored
+ * `scope` (query text) remains informational/audit only.
  */
 
 import { randomBytes } from '@noble/ciphers/utils.js';
@@ -100,8 +102,16 @@ export interface RequireAgentPersonaAccessParams {
   now?: number;
 }
 
-function idemKeyFor(agentDID: string, persona: string, mode: GrantMode): string {
-  return `${AGENT_PERSONA_ACCESS_APPROVAL_TYPE}:${agentDID}:${persona}:${mode}`;
+function idemKeyFor(
+  agentDID: string,
+  persona: string,
+  mode: GrantMode,
+  sessionId: string | null,
+): string {
+  // Session-scoped: two gated asks from the SAME agent/persona/mode but
+  // DIFFERENT sessions must raise SEPARATE approval cards (each session is its
+  // own decision), so the session is part of the idempotency key.
+  return `${AGENT_PERSONA_ACCESS_APPROVAL_TYPE}:${agentDID}:${persona}:${mode}:${sessionId ?? ''}`;
 }
 
 function shortDID(did: string): string {
@@ -122,7 +132,13 @@ export function requireAgentPersonaAccess(
   // only thing that unlocks a gated tier (a write grant satisfies read).
   const grantRepo = getAgentGrantRepository();
   const grant =
-    grantRepo?.findActiveGrant(params.agentDID, params.persona, params.mode, now) ?? null;
+    grantRepo?.findActiveGrant(
+      params.agentDID,
+      params.persona,
+      params.mode,
+      params.sessionId ?? null,
+      now,
+    ) ?? null;
 
   // SINGLE source of truth for the tier policy: the same pure predicate the
   // persona-wall/lifecycle tests pin (`vault/lifecycle.ts::agentCanAccess`),
@@ -148,7 +164,7 @@ export function requireAgentPersonaAccess(
     return { kind: 'denied', reason: 'approval subsystem unavailable' };
   }
 
-  const idemKey = idemKeyFor(params.agentDID, params.persona, params.mode);
+  const idemKey = idemKeyFor(params.agentDID, params.persona, params.mode, params.sessionId ?? null);
   const existing = service.store().getActiveByIdempotencyKey(idemKey);
   if (existing !== null) return { kind: 'approval_required', taskId: existing.id };
 

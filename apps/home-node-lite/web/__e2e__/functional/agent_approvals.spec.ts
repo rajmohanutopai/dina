@@ -11,25 +11,28 @@
  * task that the HUMAN approves/denies IN THE BROWSER, flipping its state.
  */
 
-import { expect, test, type HumanSession } from '../fixtures/human_session';
+import { expect, test } from '../fixtures/human_session';
+import { openApprovalInbox } from '../fixtures/pages/activity';
 
 // A stable synthetic agent DID (not a real paired device — backstage stages
 // the intent as if this agent submitted it).
 const AGENT = 'did:key:z6MkE2EAgentApprovals0000000000000000000000';
-
-/** Open the Activity tab and select the "Needs action" filter, where the
- *  inline approval cards live (the standalone Approvals screen was merged
- *  into Activity). Re-tapping re-fetches, surfacing a just-staged task. */
-async function openApprovalInbox(page: HumanSession['page']): Promise<void> {
-  await page.getByRole('tab', { name: 'Activity tab' }).click();
-  await page.getByTestId('filter-needs_action').click();
-}
 
 test.describe('MRS-08 — Agent risk ladder + approval state machine', () => {
   test('SAFE auto-approves, BLOCKED denies, HIGH/MODERATE need approval; owner decision flips state', async ({
     human,
   }) => {
     const { backstage, page } = human;
+    // The confirm-dialog Approve/Deny (HIGH card, and every deny) surface as a
+    // browser confirm (RN-Web Alert.alert → window.confirm on web). RECORD each
+    // one before accepting so we can assert, per tap, whether the decision
+    // actually flowed THROUGH a real confirmation — otherwise a state flip
+    // could pass even if the confirm gate were silently bypassed.
+    const dialogs: { type: string; message: string }[] = [];
+    page.on('dialog', (d) => {
+      dialogs.push({ type: d.type(), message: d.message() });
+      void d.accept();
+    });
 
     // ── Deterministic ladder (no LLM, no card) ──────────────────────────
     const safe = await backstage.stageAgentIntent({
@@ -72,38 +75,88 @@ test.describe('MRS-08 — Agent risk ladder + approval state machine', () => {
     const modId = mod.proposal_id ?? '';
     expect(modId, 'MODERATE creates a proposal task').toBeTruthy();
 
-    // Both are pending server-side.
+    // A SECOND HIGH intent so the confirm-dialog APPROVE (the most
+    // safety-critical web tap) is exercised alongside the HIGH deny.
+    const high2 = await backstage.stageAgentIntent({
+      action: 'transfer_money',
+      target: '250 to Carol',
+      agentDid: AGENT,
+      session: 's3',
+    });
+    expect(high2.action, 'HIGH#2 (transfer_money) flags for review').toBe('flag_for_review');
+    const high2Id = high2.proposal_id ?? '';
+    expect(high2Id, 'HIGH#2 creates a proposal task').toBeTruthy();
+
+    // All three are pending server-side.
     expect(await backstage.approvalTaskInState(highId, 'pending_approval')).toBe(true);
     expect(await backstage.approvalTaskInState(modId, 'pending_approval')).toBe(true);
+    expect(await backstage.approvalTaskInState(high2Id, 'pending_approval')).toBe(true);
 
-    // ── The human-facing Activity surface renders the pending queue ──────
-    // The browser navigates to Activity → Needs action (the owner's inbox).
-    // NB: the limited-mode-web thin-client's inbox does not yet SURFACE a
-    // task staged externally on Core (open question — see notes); the full
-    // in-app Approve/Deny TAP is covered by Maestro on the mobile full node.
-    // Here we confirm the human surface exists + doesn't crash.
+    // ── The owner DECIDES in the browser (Activity → Needs action) ───────
+    // F4 fixed: the web inbox now surfaces Core-side pending approvals via the
+    // brain's /api/v1/workflow/tasks proxy, so the human Approve/Deny TAP works
+    // end-to-end — no longer deferred to Maestro.
     await openApprovalInbox(page);
-    await expect(page.getByTestId('filter-needs_action')).toBeVisible();
 
-    // ── The owner's DECISION flips the task state (real owner routes) ────
-    // This is the exact server-side transition the Approve/Deny taps invoke,
-    // guarded by the owner-decision guard.
-    await backstage.ownerApprove(highId);
+    // UI half of "NO card for SAFE/BLOCKED": the inbox surfaces cards ONLY for
+    // the three GATED intents (MODERATE + 2×HIGH) — each has exactly one deny
+    // button. SAFE (auto-approved) and BLOCKED (auto-denied) raised no task, so
+    // no card renders for them. Wait for the gated cards to arrive, then assert
+    // the exact count (a SAFE/BLOCKED card would push it past 3).
+    await page.getByTestId(`approvals-deny-${highId}`).waitFor({ state: 'visible', timeout: 40_000 });
+    expect(
+      await page.getByTestId(/^approvals-deny-/).count(),
+      'only the 3 gated intents raise cards — SAFE + BLOCKED never render one',
+    ).toBe(3);
+
+    // (a) DIRECT approve — a MODERATE card offers a session-approve with NO
+    //     confirmation. Assert the state flips AND that zero dialogs fired.
+    let dialogsBefore = dialogs.length;
+    const approveMod = page.getByTestId(`approvals-approve-${modId}`);
+    await approveMod.waitFor({ state: 'visible', timeout: 40_000 });
+    await approveMod.click();
     await expect(async () => {
-      expect(await backstage.approvalTaskInState(highId, 'queued')).toBe(true);
+      expect(await backstage.approvalTaskInState(modId, 'queued')).toBe(true);
     }).toPass({ timeout: 20_000 });
     expect(
-      await backstage.approvalTaskInState(highId, 'pending_approval'),
-      'approved HIGH task is no longer pending (agent may proceed)',
-    ).toBe(false);
+      dialogs.length - dialogsBefore,
+      'MODERATE session-approve is the direct path — no confirm dialog',
+    ).toBe(0);
 
-    await backstage.ownerDeny(modId);
+    // (b) CONFIRM approve — a HIGH card is 2-button; its Approve routes through
+    //     window.confirm. The single most safety-critical web tap: a human
+    //     confirming a HIGH-risk (transfer_money) agent action. Assert it flips
+    //     to queued AND passed through exactly one confirm dialog.
+    dialogsBefore = dialogs.length;
+    const approveHigh2 = page.getByTestId(`approvals-approve-${high2Id}`);
+    await approveHigh2.waitFor({ state: 'visible', timeout: 40_000 });
+    await approveHigh2.click();
     await expect(async () => {
-      expect(await backstage.approvalTaskInState(modId, 'pending_approval')).toBe(false);
+      expect(await backstage.approvalTaskInState(high2Id, 'queued')).toBe(true);
     }).toPass({ timeout: 20_000 });
     expect(
-      await backstage.approvalTaskInState(modId, 'queued'),
-      'denied MODERATE task never becomes queued (agent is blocked)',
+      dialogs.length - dialogsBefore,
+      'HIGH confirm-approve passes through exactly one confirm dialog',
+    ).toBe(1);
+
+    // (c) CONFIRM deny — deny always confirms. Assert the POSITIVE terminal
+    //     state only a real deny produces (cancelled), so a transient
+    //     workflow-list blip (which reads as "not in that state") RETRIES
+    //     instead of greening a deny that never took effect.
+    dialogsBefore = dialogs.length;
+    const denyHigh = page.getByTestId(`approvals-deny-${highId}`);
+    await denyHigh.waitFor({ state: 'visible', timeout: 40_000 });
+    await denyHigh.click();
+    await expect(async () => {
+      expect(await backstage.approvalTaskInState(highId, 'cancelled')).toBe(true);
+    }).toPass({ timeout: 20_000 });
+    expect(
+      dialogs.length - dialogsBefore,
+      'HIGH deny passes through exactly one confirm dialog',
+    ).toBe(1);
+    expect(
+      await backstage.approvalTaskInState(highId, 'queued'),
+      'denied HIGH task never becomes queued (the agent is blocked)',
     ).toBe(false);
   });
 });

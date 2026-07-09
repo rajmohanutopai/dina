@@ -32,6 +32,7 @@ import {
   type InboxEntry,
   type ResolvedInboxEntry,
 } from '../hooks/useServiceInbox';
+import { confirmDecision } from '../services/confirm_decision';
 import { openPersonaDB, isPersistenceReady } from '../storage/init';
 import { colors, spacing, radius, shadows, textStyles } from '../theme';
 
@@ -67,8 +68,8 @@ export function useApprovalInbox(): ApprovalInbox {
     setError(null);
     try {
       // Fetch both buckets together so a resolution on one surface is
-      // reflected in both lists on the next refresh. Both are cheap
-      // in-process reads.
+      // reflected in both lists on the next refresh. In-process reads on
+      // mobile; HTTP GETs to the brain proxy on the web thin-client.
       const [pendingList, resolvedList] = await Promise.all([
         listPendingApprovals(50),
         listResolvedApprovals(50),
@@ -152,26 +153,22 @@ export function useApprovalInbox(): ApprovalInbox {
         entry.kind === 'intent_validation'
           ? `${entry.requesterDID !== '' ? `agent ${entry.requesterDID.slice(0, 28)}…\n` : ''}${entry.paramsPreview || '(no target)'}`
           : `${entry.requesterDID.slice(0, 28)}…\n${entry.paramsPreview || '(no params)'}`;
-      Alert.alert(headline, subline, [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: verb,
-          style: verb === 'Deny' ? 'destructive' : 'default',
-          onPress: async () => {
-            setBusyId(entry.id);
-            try {
-              await action();
-              setPending((list) => list.filter((e) => e.id !== entry.id));
-              // Pull the just-resolved task into the resolved history.
-              void refreshResolved();
-            } catch (err) {
-              Alert.alert('Error', (err as Error).message ?? `Failed to ${verb.toLowerCase()}`);
-            } finally {
-              setBusyId(null);
-            }
-          },
-        },
-      ]);
+      // `confirmDecision` resolves via Alert.alert on native and the browser
+      // confirm on web (RN-Web's Alert.alert is a no-op — without this the
+      // web thin-client's Approve/Deny confirm never appears; F4).
+      const ok = await confirmDecision(headline, subline, verb, verb === 'Deny');
+      if (!ok) return;
+      setBusyId(entry.id);
+      try {
+        await action();
+        setPending((list) => list.filter((e) => e.id !== entry.id));
+        // Pull the just-resolved task into the resolved history.
+        void refreshResolved();
+      } catch (err) {
+        Alert.alert('Error', (err as Error).message ?? `Failed to ${verb.toLowerCase()}`);
+      } finally {
+        setBusyId(null);
+      }
     },
     [refreshResolved],
   );

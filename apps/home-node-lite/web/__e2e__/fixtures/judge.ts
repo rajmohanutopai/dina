@@ -76,6 +76,17 @@ function resolveMinConfidence(): number {
 export const MIN_CONFIDENCE = resolveMinConfidence();
 
 /**
+ * True when judged assertions may run — the `DINA_E2E_LIVE_JUDGE=1` synthetic-
+ * data opt-in (§4.1). Specs with a deterministic core + a judged extra gate the
+ * judged part on this so the deterministic part still runs in tiers without a
+ * judge (e.g. the relay tier without a Gemini key). `expectJudgePass` itself
+ * hard-refuses when this is false, so gating is the caller's job.
+ */
+export function judgingEnabled(): boolean {
+  return process.env.DINA_E2E_LIVE_JUDGE === '1';
+}
+
+/**
  * Synthetic-data opt-in gate. The judge exfiltrates on-screen text to an
  * external service; refuse to run unless the caller has explicitly
  * confirmed this is a seeded test run. Belt-and-braces with the harness,

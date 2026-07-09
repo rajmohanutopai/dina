@@ -9,9 +9,23 @@
  * persisted DATA directly (backstage) rather than via an LLM recall,
  * because after a reload the brain's in-memory retrieval index needs a
  * moment to re-hydrate — an immediate recall is timing-sensitive and would
- * make the durability assertion flaky. (See the open item: recall-after-
- * reload re-hydration; and full Core-process-restart durability, which
- * needs a process-control harness outside Playwright's webServer.)
+ * make the durability assertion flaky.
+ *
+ * Scope note (why this browser-reload test is the RIGHT surface here, not a
+ * weaker stand-in for the §7 items):
+ *   - The §7 "backstage /v1/export→/v1/import round-trip + archive EXCLUDES
+ *     keys/PDS-password/seed" is a DEPRECATED-stack (Go) HTTP surface. In the
+ *     TS product export/import is a DEVICE-LOCAL in-process operation (the
+ *     mobile app calls importArchive directly; there is deliberately no
+ *     /v1/export route — exposing the whole encrypted vault over HTTP would be
+ *     a new attack surface). That round-trip + the secret-exclusion invariant
+ *     are covered at the CORRECT layer by packages/core __tests__/export/
+ *     archive_real.test.ts (clean-install restore, secret exclusion, path-
+ *     traversal refusal, wrong-passphrase/corrupt/version failure).
+ *   - Full Core-PROCESS-restart durability (kill + respawn core-server on the
+ *     same DINA_VAULT_DIR) needs a process-control harness outside Playwright's
+ *     webServer; the on-disk SQLCipher vault is inherently durable and its
+ *     open-from-disk path runs on every stack boot. Tracked as an open item.
  */
 
 import { expect, test } from '../fixtures/human_session';

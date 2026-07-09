@@ -22,6 +22,8 @@
  */
 
 import { WorkflowConflictError } from './core-client';
+import { CoreHttpError } from './http-transport';
+import type { QuarantinedMessage } from '../d2d/quarantine';
 
 import type {
   CoreClient,
@@ -135,7 +137,9 @@ function narrowConflictCode(
 function expectOk<T>(res: CoreResponse, context: string): T {
   if (res.status < 200 || res.status >= 300) {
     const err = (res.body as { error?: string } | undefined)?.error ?? 'no error field';
-    throw new Error(`InProcessTransport: ${context} failed ${res.status} — ${err}`);
+    // CoreHttpError (not bare Error) so proxies can forward Core's business
+    // status — parity with HttpCoreTransport.parseOk.
+    throw new CoreHttpError(`InProcessTransport: ${context} failed ${res.status} — ${err}`, res.status);
   }
   return res.body as T;
 }
@@ -931,6 +935,63 @@ export class InProcessTransport implements CoreClient {
     if (res.status !== 200) return null;
     const raw = (res.body ?? {}) as { contact?: Contact | null };
     return raw.contact ?? null;
+  }
+
+  async listContacts(): Promise<Contact[]> {
+    // THROWS on non-2xx via expectOk (mirrors HttpCoreTransport.listContacts).
+    // Its sole consumer is the web People screen's data fetch, where a Core
+    // 500/403 must surface as an error state, not be masked as "No contacts".
+    const res = await this.router.handle(
+      blankRequest({ method: 'GET', path: '/v1/contacts' }),
+    );
+    const raw = expectOk<{ contacts?: Contact[] }>(res, 'listContacts');
+    return raw.contacts ?? [];
+  }
+
+  async removeContact(did: string): Promise<boolean> {
+    const res = await this.router.handle(
+      blankRequest({ method: 'DELETE', path: `/v1/contacts/${encodeURIComponent(did)}` }),
+    );
+    const raw = expectOk<{ deleted?: boolean }>(res, 'removeContact');
+    return raw.deleted === true;
+  }
+
+  async listQuarantined(): Promise<QuarantinedMessage[]> {
+    const res = await this.router.handle(
+      blankRequest({ method: 'GET', path: '/v1/d2d/quarantine' }),
+    );
+    const raw = expectOk<{ messages?: QuarantinedMessage[] }>(res, 'listQuarantined');
+    return raw.messages ?? [];
+  }
+
+  async acceptQuarantinedSender(
+    senderDID: string,
+    senderLabel = '',
+  ): Promise<{ released: QuarantinedMessage[]; requarantined: number }> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'POST',
+        path: '/v1/d2d/quarantine/accept',
+        body: { sender_did: senderDID, ...(senderLabel !== '' ? { sender_label: senderLabel } : {}) },
+      }),
+    );
+    const raw = expectOk<{ released?: QuarantinedMessage[]; requarantined?: number }>(
+      res,
+      'acceptQuarantinedSender',
+    );
+    return { released: raw.released ?? [], requarantined: raw.requarantined ?? 0 };
+  }
+
+  async blockQuarantinedSender(senderDID: string, senderLabel = ''): Promise<number> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'POST',
+        path: '/v1/d2d/quarantine/block',
+        body: { sender_did: senderDID, ...(senderLabel !== '' ? { sender_label: senderLabel } : {}) },
+      }),
+    );
+    const raw = expectOk<{ blocked_count?: number }>(res, 'blockQuarantinedSender');
+    return raw.blocked_count ?? 0;
   }
 
   async peopleApplyExtraction(

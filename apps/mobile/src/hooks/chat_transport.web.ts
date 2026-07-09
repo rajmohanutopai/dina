@@ -45,6 +45,13 @@ interface ChatErrorBody {
  */
 const activeStreams = new Map<string, EventSource>();
 
+// How many mounted consumers (chat views) currently hold each thread's stream
+// open. The stream is torn down only when the LAST one releases — otherwise a
+// second mounted consumer's unmount would close the EventSource out from under
+// the still-active view. `ensureChatStream` (the POST path) does NOT count; it
+// only guarantees the stream exists for the request in flight.
+const streamRefCounts = new Map<string, number>();
+
 function ensureChatStream(threadId: string): void {
   if (activeStreams.has(threadId)) return;
   // SSR-safe: EventSource only exists in the browser. Tests that run
@@ -87,12 +94,30 @@ function ensureChatStream(threadId: string): void {
 }
 
 /**
- * Close the SSE subscription for a thread. Call this when the user
- * explicitly resets or navigates away from a chat thread — keeps the
- * connection count tidy. Not strictly necessary; tabs closing also
- * tears down the EventSource.
+ * Open the SSE subscription for a thread WITHOUT sending a message. The chat
+ * screen calls this on mount so passively-received messages — an inbound D2D
+ * bubble the brain posts to `main`, an async workflow reply — surface without
+ * the user first typing something. Idempotent per threadId. No-op on native
+ * (the in-process store needs no stream); see `chat_transport.ts`.
+ */
+export function openChatStream(threadId: string): void {
+  streamRefCounts.set(threadId, (streamRefCounts.get(threadId) ?? 0) + 1);
+  ensureChatStream(threadId);
+}
+
+/**
+ * Release one consumer's hold on a thread's SSE subscription (call on unmount
+ * or explicit reset). Ref-counted: the EventSource is only closed when the LAST
+ * consumer releases it, so a second mounted view unmounting can't tear down the
+ * stream the active view still depends on. Tabs closing also frees it.
  */
 export function closeChatStream(threadId: string): void {
+  const next = (streamRefCounts.get(threadId) ?? 0) - 1;
+  if (next > 0) {
+    streamRefCounts.set(threadId, next); // another consumer still holds it open
+    return;
+  }
+  streamRefCounts.delete(threadId);
   const es = activeStreams.get(threadId);
   if (es !== undefined) {
     es.close();

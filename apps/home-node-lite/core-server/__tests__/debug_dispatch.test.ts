@@ -13,6 +13,7 @@
 import { pino } from 'pino';
 
 import type { CoreRouter } from '@dina/core';
+import { quarantineSize, listQuarantined, resetQuarantineState } from '@dina/core/d2d';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import { registerDebugDispatch } from '../src/server/debug_dispatch';
@@ -35,22 +36,29 @@ function makeReply(): { reply: FastifyReply; result: { status: number; body: unk
   return { reply: reply as unknown as FastifyReply, result };
 }
 
-function register(opts: { token?: string } = {}): { handler: Handler; coreHandle: jest.Mock } {
+function register(opts: { token?: string } = {}): {
+  handler: Handler;
+  seedHandler: Handler | undefined;
+  coreHandle: jest.Mock;
+} {
   if (opts.token !== undefined) process.env['DINA_DEBUG_TOKEN'] = opts.token;
   else delete process.env['DINA_DEBUG_TOKEN'];
 
-  let captured: Handler | undefined;
+  // registerDebugDispatch registers MULTIPLE routes (dispatch + quarantine-seed);
+  // capture each by path.
+  const byPath: Record<string, Handler> = {};
   const app = {
-    post: (_path: string, h: Handler): unknown => {
-      captured = h;
+    post: (path: string, h: Handler): unknown => {
+      byPath[path] = h;
       return undefined;
     },
   };
   const coreHandle = jest.fn().mockResolvedValue({ status: 200, body: { ok: true } });
   const coreRouter = { handle: coreHandle } as unknown as CoreRouter;
   registerDebugDispatch(app, coreRouter, pino({ level: 'silent' }) as unknown as Logger);
-  if (captured === undefined) throw new Error('handler not registered');
-  return { handler: captured, coreHandle };
+  const captured = byPath['/v1/debug/dispatch'];
+  if (captured === undefined) throw new Error('dispatch handler not registered');
+  return { handler: captured, seedHandler: byPath['/v1/debug/quarantine-seed'], coreHandle };
 }
 
 function dispatchReq(
@@ -63,6 +71,66 @@ function dispatchReq(
     ...over,
   } as unknown as FastifyRequest;
 }
+
+function seedReq(
+  over: Partial<{ ip: string; headers: Record<string, unknown>; body: unknown }> = {},
+): FastifyRequest {
+  return {
+    ip: '127.0.0.1',
+    headers: {},
+    body: { sender_did: 'did:plc:stranger', message_type: 'coordination.request', body: 'hi' },
+    ...over,
+  } as unknown as FastifyRequest;
+}
+
+describe('/v1/debug/quarantine-seed', () => {
+  // quarantineMessage is real + mutates a module-global store — reset per test
+  // so we can assert the SIDE-EFFECT (not just the status) on each reject path.
+  beforeEach(() => resetQuarantineState());
+
+  it('rejects a non-loopback request (403) and does NOT seed', async () => {
+    const { seedHandler } = register();
+    const { reply, result } = makeReply();
+    const before = quarantineSize();
+    await seedHandler!(seedReq({ ip: '203.0.113.7' }), reply);
+    expect(result.status).toBe(403);
+    expect(quarantineSize()).toBe(before); // fence runs BEFORE the seed
+  });
+
+  it('requires sender_did (400) and does NOT seed', async () => {
+    const { seedHandler } = register();
+    const { reply, result } = makeReply();
+    const before = quarantineSize();
+    await seedHandler!(seedReq({ body: {} }), reply);
+    expect(result.status).toBe(400);
+    expect(quarantineSize()).toBe(before);
+  });
+
+  it('honours the shared-secret token gate and does NOT seed', async () => {
+    const { seedHandler } = register({ token: 's3cret' });
+    const { reply, result } = makeReply();
+    const before = quarantineSize();
+    await seedHandler!(seedReq({ headers: { 'x-debug-token': 'nope' } }), reply);
+    expect(result.status).toBe(403);
+    expect(quarantineSize()).toBe(before);
+  });
+
+  it('seeds a real quarantined message on a valid loopback request (200)', async () => {
+    const { seedHandler } = register();
+    const { reply, result } = makeReply();
+    await seedHandler!(seedReq(), reply);
+    expect(result.status).toBe(200);
+    const q = (result.body as { quarantined?: { senderDID?: string; id?: string } }).quarantined;
+    expect(q?.senderDID).toBe('did:plc:stranger');
+    expect(typeof q?.id).toBe('string');
+    // The message actually landed in Core's quarantine store (the live read
+    // surface GET /v1/d2d/quarantine serves) — not just an echoed object.
+    expect(quarantineSize()).toBe(1);
+    expect(listQuarantined().some((m) => m.id === q?.id && m.senderDID === 'did:plc:stranger')).toBe(
+      true,
+    );
+  });
+});
 
 afterEach(() => {
   delete process.env['DINA_DEBUG_TOKEN'];

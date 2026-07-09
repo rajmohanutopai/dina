@@ -47,15 +47,22 @@ export interface AgentGrantRepository {
   insert(grant: AgentPersonaGrantInsert): AgentPersonaGrant;
   get(id: string): AgentPersonaGrant | null;
   /**
-   * The hot path: return an active (not revoked, not expired) grant for
-   * `(agentDID, persona)` whose mode satisfies `mode` — a `write` grant
-   * also satisfies a `read` request. `null` when none. Deterministic; no
-   * LLM involvement.
+   * The hot path: return an active (not revoked, not expired) grant for the
+   * exact tuple `(agentDID, session, persona)` whose mode satisfies `mode` — a
+   * `write` grant also satisfies a `read` request. `null` when none.
+   *
+   * SESSION-SCOPED (dina_details.md §3.6): a grant is keyed on the exact
+   * session it was approved under; `sessionId` is matched null-safely (a
+   * session-less request `null` matches only session-less grants, a named
+   * session matches only that session's grants). A fresh session therefore
+   * finds no grant and re-prompts — approvals do NOT carry across sessions.
+   * Deterministic; no LLM involvement.
    */
   findActiveGrant(
     agentDID: string,
     persona: string,
     mode: GrantMode,
+    sessionId: string | null,
     now: number,
   ): AgentPersonaGrant | null;
   /** Tombstone one grant. Idempotent. Returns false if unknown. */
@@ -118,15 +125,18 @@ export class SQLiteAgentGrantRepository implements AgentGrantRepository {
     agentDID: string,
     persona: string,
     mode: GrantMode,
+    sessionId: string | null,
     now: number,
   ): AgentPersonaGrant | null {
+    // `session_id IS ?` is null-safe: a null bind matches session_id IS NULL,
+    // a value matches equality — so the session dimension is part of the key.
     const rows = this.db.query(
       `SELECT ${COLS} FROM agent_persona_grants
-        WHERE agent_did = ? AND persona = ? AND revoked_at IS NULL AND expires_at > ?
-          AND (mode = ? OR mode = 'write')
+        WHERE agent_did = ? AND persona = ? AND session_id IS ? AND revoked_at IS NULL
+          AND expires_at > ? AND (mode = ? OR mode = 'write')
         ORDER BY expires_at DESC
         LIMIT 1`,
-      [agentDID, persona, now, mode],
+      [agentDID, persona, sessionId, now, mode],
     );
     return rows.length > 0 ? rowToGrant(rows[0]) : null;
   }
@@ -210,6 +220,7 @@ export class InMemoryAgentGrantRepository implements AgentGrantRepository {
     agentDID: string,
     persona: string,
     mode: GrantMode,
+    sessionId: string | null,
     now: number,
   ): AgentPersonaGrant | null {
     let best: AgentPersonaGrant | null = null;
@@ -217,6 +228,7 @@ export class InMemoryAgentGrantRepository implements AgentGrantRepository {
       if (
         r.agentDID === agentDID &&
         r.persona === persona &&
+        r.sessionId === sessionId &&
         r.revokedAt === null &&
         r.expiresAt > now &&
         (r.mode === mode || r.mode === 'write')

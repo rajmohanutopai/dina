@@ -162,12 +162,12 @@ describe('revokeDeviceDurable — cascades to agent grants (§2/§5)', () => {
             expiresAt: Date.now() + 3_600_000,
             createdAt: Date.now(),
           });
-          expect(grantRepo.findActiveGrant(d.did, 'health', 'read', Date.now())).not.toBeNull();
+          expect(grantRepo.findActiveGrant(d.did, 'health', 'read', null, Date.now())).not.toBeNull();
 
           await revokeDeviceDurable(d.deviceId);
 
           // Revoking the device revoked its grant — no stale locked-vault access.
-          expect(grantRepo.findActiveGrant(d.did, 'health', 'read', Date.now())).toBeNull();
+          expect(grantRepo.findActiveGrant(d.did, 'health', 'read', null, Date.now())).toBeNull();
         } finally {
           a.close();
           fs.rmSync(dir, { recursive: true, force: true });

@@ -128,7 +128,7 @@ describe('approve → durable grant → resume', () => {
     const task = workflowRepo.getById(taskId)!;
     const grant = await grantAgentPersonaAccessFromApproval(task, 1_000);
     expect(grant).not.toBeNull();
-    expect(grantRepo.findActiveGrant(AGENT_A, 'health', 'read', 2_000)?.id).toBe(grant!.id);
+    expect(grantRepo.findActiveGrant(AGENT_A, 'health', 'read', null, 2_000)?.id).toBe(grant!.id);
     // Now the agent's retry is allowed.
     const after = requireAgentPersonaAccess({ agentDID: AGENT_A, persona: 'health', mode: 'read', scope: 'q', now: 2_000 });
     expect(after.kind).toBe('allow');
@@ -167,7 +167,7 @@ describe('approve → durable grant → resume', () => {
   it('denial (no approval) leaves no grant — data stays sealed', () => {
     pendingTaskFor(AGENT_A, 'health');
     // Never approve. No grant should exist.
-    expect(grantRepo.findActiveGrant(AGENT_A, 'health', 'read', 2_000)).toBeNull();
+    expect(grantRepo.findActiveGrant(AGENT_A, 'health', 'read', null, 2_000)).toBeNull();
   });
 
   it('approving AWAITS the persona-unlock hook so the DEK is resident before resume (issues.txt §2)', async () => {

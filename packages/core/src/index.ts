@@ -506,6 +506,11 @@ export type { AuthRequest, AuthResult } from './auth/middleware';
 // D2D receive pipeline — the trust+verify+stage pipeline run by
 // inbound D2D handlers. Tests exercise this directly to assert
 // staging/quarantine actions for various sender trust levels.
+export type { QuarantinedMessage } from './d2d/quarantine';
+// `quarantineMessage` is exported for the debug-only test seed (§8 backstage
+// precondition — stage "an unknown sender messaged you" without a stranger
+// node); production quarantine goes through the receive pipeline.
+export { quarantineMessage } from './d2d/quarantine';
 export { receiveD2D } from './d2d/receive_pipeline';
 export type {
   ReceivePipelineAction,
@@ -937,7 +942,7 @@ export {
 } from './relay/rpc_response';
 
 export { InProcessTransport } from './client/in-process-transport';
-export { HttpCoreTransport } from './client/http-transport';
+export { HttpCoreTransport, CoreHttpError } from './client/http-transport';
 // Working-memory / ToC primitives (WM-CORE-04..06). Exposed so
 // apps/home-node-lite/core-server can register `GET /v1/memory/toc`
 // against the service + assert EWMA math against the scoring helpers.

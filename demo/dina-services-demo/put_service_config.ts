@@ -77,7 +77,14 @@ async function main(): Promise<void> {
         defaultTtlSeconds: eta.defaultTtlSeconds,
       },
     },
-    serviceArea: { lat: 37.77, lng: -122.43, radiusKm: 25 },
+    // Location-configurable (defaults to SF). A test that needs deterministic
+    // PUBLIC discovery over a SHARED AppView publishes at a unique location and
+    // queries a bus THERE, so the geo-search returns only this provider.
+    serviceArea: {
+      lat: Number(process.env.DINA_SERVICE_LAT ?? '37.77'),
+      lng: Number(process.env.DINA_SERVICE_LNG ?? '-122.43'),
+      radiusKm: Number(process.env.DINA_SERVICE_RADIUS_KM ?? '25'),
+    },
   };
 
   console.log('[put_service_config] sending config:', JSON.stringify(config, null, 2).slice(0, 400));

@@ -23,7 +23,7 @@ import React, { useCallback, useState } from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import type { ChatMessage } from '@dina/brain/chat';
 
-import { acceptFromQuarantine, blockFromQuarantine } from '../hooks/useD2DMessages';
+import { acceptQuarantine, blockQuarantine } from '../hooks/quarantine_actions';
 import { colors, radius, spacing, textStyles } from '../theme';
 import { MessageTimestamp } from './MessageTimestamp';
 
@@ -57,23 +57,17 @@ export function InlineQuarantineCard({ message }: InlineQuarantineCardProps): Re
   const onAccept = useCallback(() => {
     if (meta === null || pending || resolved !== null) return;
     setPending(true);
-    try {
-      const r = acceptFromQuarantine(meta.quarantineId);
-      setResolved(r.action === 'accepted' ? 'accepted' : null);
-    } finally {
-      setPending(false);
-    }
+    void acceptQuarantine(meta.quarantineId, meta.senderDID)
+      .then((ok) => setResolved(ok ? 'accepted' : null))
+      .finally(() => setPending(false));
   }, [meta, pending, resolved]);
 
   const onBlock = useCallback(() => {
     if (meta === null || pending || resolved !== null) return;
     setPending(true);
-    try {
-      const r = blockFromQuarantine(meta.quarantineId);
-      setResolved(r.action === 'blocked' ? 'blocked' : null);
-    } finally {
-      setPending(false);
-    }
+    void blockQuarantine(meta.quarantineId, meta.senderDID)
+      .then((ok) => setResolved(ok ? 'blocked' : null))
+      .finally(() => setPending(false));
   }, [meta, pending, resolved]);
 
   if (meta === null) return null;

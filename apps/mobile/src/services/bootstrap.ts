@@ -162,6 +162,7 @@ import {
   resetServiceConfigCoreClient,
 } from '../hooks/useServiceConfigForm';
 import { setInboxCoreClient, resetInboxCoreClient } from '../hooks/useServiceInbox';
+import { resolveInboxCoreClient } from './inbox_client_resolver';
 import { openPersonaDB, isPersistenceReady } from '../storage/init';
 
 import { setServiceQueryDispatcher, sendServiceQuery, sendGrantRequest } from './chat_d2d';
@@ -913,7 +914,10 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     globalDisposers.push(resetServiceApproveCommandHandler);
     setServiceDenyCommandHandler(makeServiceDenyHandler(options.coreClient));
     globalDisposers.push(resetServiceDenyCommandHandler);
-    setInboxCoreClient(options.coreClient);
+    // On web the in-process Core store is empty (Core runs server-side), so
+    // the resolver swaps in an HTTP client to the brain's workflow-task proxy
+    // (F4). On native it returns the in-process client unchanged.
+    setInboxCoreClient(resolveInboxCoreClient(options.coreClient));
     globalDisposers.push(resetInboxCoreClient);
     setServiceConfigCoreClient(options.coreClient);
     globalDisposers.push(resetServiceConfigCoreClient);

@@ -531,6 +531,30 @@ export interface CoreClient {
    * contact directory lives in Core, not Brain.
    */
   contactLookup(query: string): Promise<Contact | null>;
+  /** List all contacts (backs the web People/Talk screen). */
+  listContacts(): Promise<Contact[]>;
+  /** Remove a contact by DID (backs the web People screen's delete, so it hits
+   *  the authoritative Core directory rather than a non-authoritative local
+   *  copy). Idempotent: returns true when a row was removed, false when the DID
+   *  wasn't a contact. */
+  removeContact(did: string): Promise<boolean>;
+
+  // ─── D2D quarantine review (unknown-sender messages) ──────────────────
+  /** List messages from unknown senders awaiting the owner's review. */
+  listQuarantined(): Promise<QuarantinedMessage[]>;
+  /** Accept a sender: un-quarantine their held messages AND trust them
+   *  (verified). Compound op — one round trip. Returns the messages that were
+   *  successfully released+staged AND `requarantined` — the count that failed
+   *  to re-stage and were put back in quarantine (a PARTIAL accept: the sender
+   *  is trusted but those messages weren't delivered, so callers must not
+   *  report a clean success). */
+  acceptQuarantinedSender(
+    senderDID: string,
+    senderLabel?: string,
+  ): Promise<{ released: QuarantinedMessage[]; requarantined: number }>;
+  /** Block a sender: drop their held messages AND mark the contact blocked.
+   *  Returns the count of dropped messages. */
+  blockQuarantinedSender(senderDID: string, senderLabel?: string): Promise<number>;
 
   /**
    * Apply a people-graph extraction result. Brain's post-publish
@@ -1272,6 +1296,7 @@ export interface MemoryTouchResult {
 /** Re-export `Contact` so consumers find it on `@dina/core`'s public
  *  barrel without deep-importing from `contacts/directory`. */
 import type { Contact } from '../contacts/directory';
+import type { QuarantinedMessage } from '../d2d/quarantine';
 export type { Contact };
 
 /** People-graph types crossing the Core HTTP boundary. */

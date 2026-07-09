@@ -97,6 +97,35 @@ describe('HttpCoreTransport (task 1.31)', () => {
     expect(calls[0]?.init.body).toBeUndefined();
   });
 
+  it('listContacts GETs /v1/contacts and returns the contacts array', async () => {
+    const { client, calls } = makeStubClient(() =>
+      ok({ contacts: [{ did: 'did:plc:x', displayName: 'X' }] }),
+    );
+    const t = new HttpCoreTransport({
+      baseUrl: 'http://core:8100',
+      httpClient: client,
+      signer: makeStubSigner().signer,
+    });
+    const contacts = await t.listContacts();
+    expect(contacts).toHaveLength(1);
+    expect(contacts[0]?.did).toBe('did:plc:x');
+    expect(calls[0]?.url).toBe('http://core:8100/v1/contacts');
+    expect(calls[0]?.init.method).toBe('GET');
+  });
+
+  it('listContacts throws CoreHttpError carrying the status on non-2xx', async () => {
+    const { client } = makeStubClient(() => ok({ error: 'forbidden' }, 403));
+    const t = new HttpCoreTransport({
+      baseUrl: 'http://core:8100',
+      httpClient: client,
+      signer: makeStubSigner().signer,
+    });
+    await expect(t.listContacts()).rejects.toMatchObject({
+      name: 'CoreHttpError',
+      status: 403,
+    });
+  });
+
   it('strips trailing slash from baseUrl', async () => {
     const { client, calls } = makeStubClient(() => ok({ status: 'ok', did: 'd', version: 'v' }));
     const stub = makeStubSigner();

@@ -44,21 +44,25 @@ test.describe('MRS-09 — PeerLens search (read)', () => {
     // browse-landing feed states are NOT this; this is the actual search).
     await page.getByTestId('search-screen').waitFor({ state: 'visible', timeout: 25_000 });
 
-    // "Never a crash": the search screen must NOT be in its error state, and
-    // (fixture teardown) must produce no hard console error. Give the runner
-    // a moment to settle first.
+    // "Never a crash" — the review caught that a fixed 2500ms window is SHORTER
+    // than the AppView's 10s abort timeout (appview_runtime.ts): a SLOW failure
+    // surfaces `search-error` only after several seconds (and as a caught
+    // AppViewError → a UI state, NOT a TypeError, so the console-error teardown
+    // can't see it either), sliding past a short window as a false green. So
+    // wait PAST that timeout before judging, then assert the search never
+    // entered its hard-error state.
     //
-    // NB: asserting the results-vs-empty TERMINAL state needs seeded
-    // test-AppView data — with a dataless test-AppView the trust-search
-    // runner does not deterministically reach results/empty (it can stay on
-    // its in-flight path). That terminal assertion belongs with the seeded
-    // services tier (MRS-10 provider seed), so it is deferred here rather
-    // than asserted vacuously (the original counted the browse-landing feed
-    // states — a false green the review caught).
-    await page.waitForTimeout(2500);
+    // NB: the POSITIVE "results vs clean-empty" terminal assertion needs a
+    // RESOLVING AppView — the functional/PR stack has none (the search stays
+    // in-flight rather than reaching results/empty), so asserting it here would
+    // hang on the unbacked search. That positive check belongs with the
+    // AppView-backed services tier (alongside MRS-10's isolated AppView); here
+    // the robustness guarantee is "never a hard error, even past the timeout".
+    await page.waitForTimeout(12_000);
+    const errorState = page.getByTestId('search-error');
     expect(
-      await page.getByTestId('search-error').count(),
-      'the PeerLens search flow did not hard-error',
+      await errorState.count(),
+      'the PeerLens search must NOT hard-error, even past the AppView 10s abort timeout',
     ).toBe(0);
   });
 });

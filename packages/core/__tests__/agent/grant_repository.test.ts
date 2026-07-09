@@ -84,38 +84,54 @@ describe.each(factories)('agent grant contract — $name', ({ make }) => {
 
   it('finds an active grant for the exact agent + persona + mode', () => {
     repo.insert(grant({ id: 'g1' }));
-    const found = repo.findActiveGrant('did:key:agentA', 'health', 'read', 5_000);
+    const found = repo.findActiveGrant('did:key:agentA', 'health', 'read', null, 5_000);
     expect(found?.id).toBe('g1');
   });
 
   it('a grant is bound to its agent DID — another DID cannot use it', () => {
     repo.insert(grant({ id: 'g1', agentDID: 'did:key:agentA' }));
-    expect(repo.findActiveGrant('did:key:agentB', 'health', 'read', 5_000)).toBeNull();
+    expect(repo.findActiveGrant('did:key:agentB', 'health', 'read', null, 5_000)).toBeNull();
   });
 
   it('a grant is bound to its persona — approval for one does not unlock another', () => {
     repo.insert(grant({ id: 'g1', persona: 'work' }));
-    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', 5_000)).toBeNull();
+    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', null, 5_000)).toBeNull();
+  });
+
+  it('a grant is bound to its SESSION — a fresh session re-prompts (dina_details §3.6)', () => {
+    repo.insert(grant({ id: 'gA', sessionId: 'sess-A' }));
+    // Same session → found.
+    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', 'sess-A', 5_000)?.id).toBe('gA');
+    // Different session → NOT found: an approval does NOT carry across sessions.
+    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', 'sess-B', 5_000)).toBeNull();
+    // Session-less lookup → NOT found either: null is its own bucket.
+    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', null, 5_000)).toBeNull();
+  });
+
+  it('a session-less grant is matched only by a session-less lookup', () => {
+    repo.insert(grant({ id: 'g0', sessionId: null }));
+    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', null, 5_000)?.id).toBe('g0');
+    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', 'sess-A', 5_000)).toBeNull();
   });
 
   it('a read request is satisfied by a write grant, but not vice-versa', () => {
     repo.insert(grant({ id: 'gw', mode: 'write' }));
-    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', 5_000)?.id).toBe('gw');
+    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', null, 5_000)?.id).toBe('gw');
     repo.remove('gw');
     repo.insert(grant({ id: 'gr', mode: 'read' }));
-    expect(repo.findActiveGrant('did:key:agentA', 'health', 'write', 5_000)).toBeNull();
+    expect(repo.findActiveGrant('did:key:agentA', 'health', 'write', null, 5_000)).toBeNull();
   });
 
   it('an expired grant blocks access', () => {
     repo.insert(grant({ id: 'g1', expiresAt: 4_000 }));
-    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', 3_000)?.id).toBe('g1');
-    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', 5_000)).toBeNull(); // past expiry
+    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', null, 3_000)?.id).toBe('g1');
+    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', null, 5_000)).toBeNull(); // past expiry
   });
 
   it('revoke tombstones a grant (idempotent); revoked grants never match', () => {
     repo.insert(grant({ id: 'g1' }));
     expect(repo.revoke('g1', 6_000)).toBe(true);
-    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', 7_000)).toBeNull();
+    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', null, 7_000)).toBeNull();
     expect(repo.revoke('g1', 6_500)).toBe(false); // already revoked
     expect(repo.revoke('missing', 6_500)).toBe(false);
   });
@@ -126,7 +142,7 @@ describe.each(factories)('agent grant contract — $name', ({ make }) => {
     repo.insert(grant({ id: 'b1', agentDID: 'did:key:agentB', persona: 'health' }));
     expect(repo.revokeForAgent('did:key:agentA', 8_000)).toBe(2);
     expect(repo.listActiveForAgent('did:key:agentA', 8_500)).toHaveLength(0);
-    expect(repo.findActiveGrant('did:key:agentB', 'health', 'read', 8_500)?.id).toBe('b1'); // untouched
+    expect(repo.findActiveGrant('did:key:agentB', 'health', 'read', null, 8_500)?.id).toBe('b1'); // untouched
   });
 });
 
@@ -136,7 +152,7 @@ describe('SQLiteAgentGrantRepository — durability across restart', () => {
     try {
       h.repo.insert(grant({ id: 'survivor', expiresAt: 1_000_000 }));
       const reopened = h.reopen();
-      const found = reopened.findActiveGrant('did:key:agentA', 'health', 'read', 500_000);
+      const found = reopened.findActiveGrant('did:key:agentA', 'health', 'read', null, 500_000);
       expect(found?.id).toBe('survivor'); // agent can resume after restart
     } finally {
       h.cleanup();

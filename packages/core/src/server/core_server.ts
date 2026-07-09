@@ -17,6 +17,7 @@ import { registerStagingRoutes } from './routes/staging';
 import { registerPIIRoutes } from './routes/pii';
 import { registerDevicesRoutes } from './routes/devices';
 import { registerD2DMsgRoutes } from './routes/d2d_msg';
+import { registerD2DQuarantineRoutes } from './routes/d2d_quarantine';
 import { registerServiceConfigRoutes } from './routes/service_config';
 import { registerWorkflowRoutes } from './routes/workflow';
 import { registerServiceQueryRoutes, type ServiceQueryRouteOptions } from './routes/service_query';
@@ -73,6 +74,7 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   registerPIIRoutes(router);
   registerDevicesRoutes(router);
   registerD2DMsgRoutes(router);
+  registerD2DQuarantineRoutes(router);
   registerServiceConfigRoutes(router);
   registerWorkflowRoutes(router);
   registerServiceQueryRoutes(router, options.serviceQuery);

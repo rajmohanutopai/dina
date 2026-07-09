@@ -48,6 +48,39 @@ function contactFixture(did: string, name: string, preferredFor: string[] = []):
 }
 
 // ---------------------------------------------------------------------------
+// GET /v1/contacts — list all (F4: backs the web People/Talk screen, whose
+// useContacts reads the directory; the thin-client's is empty so it fetches).
+// ---------------------------------------------------------------------------
+
+describe('GET /v1/contacts (list all)', () => {
+  it('returns { contacts } from the injected directory (no count field)', async () => {
+    const sancho = contactFixture('did:plc:sancho', 'Sancho');
+    const { listAll } = makeContactsHandlers({ listContacts: () => [sancho] });
+    const res = await listAll(req({ path: '/v1/contacts' }));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ contacts: [sancho] });
+    // Distinct from by-preference: the list root omits `count`.
+    expect((res.body as Record<string, unknown>).count).toBeUndefined();
+  });
+
+  it('returns { contacts: [] } for an empty directory', async () => {
+    const { listAll } = makeContactsHandlers({ listContacts: () => [] });
+    const res = await listAll(req({ path: '/v1/contacts' }));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ contacts: [] });
+  });
+
+  it('is owner-private: brain + admin only, denied for device/agent/connector', async () => {
+    const { isAuthorized } = await import('../../../src/auth/authz');
+    expect(isAuthorized('brain', 'GET', '/v1/contacts')).toBe(true);
+    expect(isAuthorized('admin', 'GET', '/v1/contacts')).toBe(true);
+    expect(isAuthorized('device', 'GET', '/v1/contacts')).toBe(false);
+    expect(isAuthorized('agent', 'GET', '/v1/contacts')).toBe(false);
+    expect(isAuthorized('connector', 'GET', '/v1/contacts')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GET /v1/contacts/by-preference
 // ---------------------------------------------------------------------------
 
@@ -472,5 +505,41 @@ describe('GET /v1/contacts/service-decisions', () => {
     await serviceDecisions(req({ method: 'GET', query: { limit: 'garbage' } }));
     // 5 honoured; 99999 clamped to 500; garbage → default 100.
     expect(seen).toEqual([5, 500, 100]);
+  });
+});
+
+describe('DELETE /v1/contacts/:did (remove a contact)', () => {
+  it('removes the contact and returns { deleted: true }', async () => {
+    let removed: string | null = null;
+    const { deleteContact } = makeContactsHandlers({
+      deleteContact: (did) => {
+        removed = did;
+        return true;
+      },
+    });
+    const res = await deleteContact(req({ method: 'DELETE', params: { did: 'did:plc:x' } }));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ deleted: true });
+    expect(removed).toBe('did:plc:x'); // trimmed did reached the directory
+  });
+
+  it('is idempotent — { deleted: false } (200, not 404) when the DID was not a contact', async () => {
+    const { deleteContact } = makeContactsHandlers({ deleteContact: () => false });
+    const res = await deleteContact(req({ method: 'DELETE', params: { did: 'did:plc:ghost' } }));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ deleted: false });
+  });
+
+  it('400 when the did path param is empty — never touches the directory', async () => {
+    let called = false;
+    const { deleteContact } = makeContactsHandlers({
+      deleteContact: () => {
+        called = true;
+        return true;
+      },
+    });
+    const res = await deleteContact(req({ method: 'DELETE', params: { did: '   ' } }));
+    expect(res.status).toBe(400);
+    expect(called).toBe(false);
   });
 });

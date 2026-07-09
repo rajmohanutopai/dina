@@ -35,10 +35,16 @@ describe('pending_preflight', () => {
     expect(takePendingPreflight(REQ, PEER)).toEqual({ intent: 'x' });
   });
 
-  it('confused-deputy guard: a different contact echoing the request_id cannot replay', () => {
+  it('confused-deputy guard: a foreign contact echoing the request_id is declined AND cannot evict the stash', () => {
     stashPendingPreflight(REQ, PEER, 'secret intent');
-    // Wrong sender — must be dropped (and consumed, since request_id matched).
+    // Wrong sender — declined (returns null)…
     expect(takePendingPreflight(REQ, 'did:plc:attacker')).toBeNull();
+    // …but the stash is PRESERVED: a foreign offer must NOT consume it, so the
+    // LEGITIMATE contact's later offer still replays exactly once. (Regression
+    // guard for the delete-before-verify bug: the delete now happens only on
+    // expiry or a matching consume.)
+    expect(takePendingPreflight(REQ, PEER)).toEqual({ intent: 'secret intent' });
+    expect(takePendingPreflight(REQ, PEER)).toBeNull();
   });
 
   it('the latest stash wins for the same request_id', () => {

@@ -28,7 +28,8 @@ Home Node Lite's web build renders the *same* screens as the phone, but the brow
 | **Chat box** — remember, ask, reminders, D2D chat, `/services`, in-thread approvals | ✅ real, Core-backed | **Yes** — the whole everyday product |
 | **Activity / Approvals** (cards, badges) | ✅ Core workflow tasks | **Yes** |
 | **Network / PeerLens — read + search** | ✅ against test-appview | **Yes** |
-| **Vault browser, People, My Services** | ⚠️ temporary in-browser copy, may be empty | **Not yet** — needs parked thin-client backing |
+| **People / contacts** | ✅ Core-backed (`/api/v1/contacts` brain proxy, F4) | **Yes** |
+| **Vault browser, My Services** | ⚠️ temporary in-browser copy, may be empty | **Not yet** — needs parked thin-client backing |
 | **PeerLens — write / publish** | ❌ parked | **Not yet** |
 | **Onboarding to real `did:plc`** | ❌ deferred (render-walk only) | **Not yet** |
 
@@ -178,10 +179,10 @@ The composer is **mode-first**: the text input (`chat-input`) mounts only after 
 Action controls on cards — suffixed by the entity id so the right card's button is unambiguous (extends the existing `approval-approve-<id>` / `quarantine-accept-<id>` convention):
 
 ```
-approval-approve-<taskId> · approval-approve-once-<taskId> · approval-deny-<taskId>
-vault-read-approve-<taskId> · vault-read-deny-<taskId>
-quarantine-add-<did> · quarantine-block-<did>
-reminder-complete-<reminderId> · reminder-snooze-<reminderId>
+approvals-approve-<taskId> · approvals-approve-once-<taskId> · approvals-deny-<taskId>
+vault-read-approve-<taskId> · vault-read-approve-once-<taskId> · vault-read-deny-<taskId>
+quarantine-accept-<quarantineId> · quarantine-block-<quarantineId>
+reminder-done-<reminderId> · reminder-snooze-<reminderId>
 ```
 
 ### 5.3 What is in the source (implementation status)

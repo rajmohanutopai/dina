@@ -134,9 +134,12 @@ export type ResolvedInboxEntry = InboxEntry & {
  * state excluded (it's the Pending tab's domain).
  *
  * The Core route (`GET /v1/workflow/tasks`) only filters by a SINGLE
- * state, so we fan out one query per state and merge. On mobile this is
- * an in-process call against the local SQLCipher DB, so the fan-out is
- * cheap — no network round-trips.
+ * state, so we fan out one query per state and merge. On mobile each call
+ * is an in-process read against the local SQLCipher DB (cheap). On the web
+ * thin-client each call is a SEPARATE HTTP GET to the brain proxy, so a
+ * resolved-history load costs N (=6) round-trips — acceptable for the
+ * Completed tab's infrequent loads, but a candidate for a single
+ * multi-state query if it ever shows on a hot path.
  */
 const RESOLVED_APPROVAL_STATES: readonly string[] = [
   'completed',

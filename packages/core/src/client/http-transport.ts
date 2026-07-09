@@ -27,6 +27,7 @@
  */
 
 import { WorkflowConflictError } from './core-client';
+import type { QuarantinedMessage } from '../d2d/quarantine';
 
 import type {
   CoreClient,
@@ -118,6 +119,23 @@ export interface HttpResponse {
   headers: Record<string, string>;
   /** Raw response body bytes; the transport decodes JSON internally. */
   body: Uint8Array;
+}
+
+/**
+ * Thrown by a CoreClient transport when Core answers with a non-2xx status.
+ * Carries the HTTP `status` structurally so a proxy (e.g. brain-server's
+ * workflow/contacts routes) can forward Core's own business 4xx (404 gone,
+ * 409 already-resolved) instead of flattening everything to 502. Extends
+ * `Error` so existing `instanceof Error` / message-only handling still works.
+ */
+export class CoreHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = 'CoreHttpError';
+  }
 }
 
 /**
@@ -896,6 +914,64 @@ export class HttpCoreTransport implements CoreClient {
     }
   }
 
+  async listContacts(): Promise<Contact[]> {
+    const raw = await this.call<{ contacts?: Contact[] }>(
+      'GET',
+      '/v1/contacts',
+      undefined,
+      undefined,
+      'listContacts',
+    );
+    return raw.contacts ?? [];
+  }
+
+  async removeContact(did: string): Promise<boolean> {
+    const raw = await this.call<{ deleted?: boolean }>(
+      'DELETE',
+      `/v1/contacts/${encodeURIComponent(did)}`,
+      undefined,
+      undefined,
+      `removeContact(${did})`,
+    );
+    return raw.deleted === true;
+  }
+
+  async listQuarantined(): Promise<QuarantinedMessage[]> {
+    const raw = await this.call<{ messages?: QuarantinedMessage[] }>(
+      'GET',
+      '/v1/d2d/quarantine',
+      undefined,
+      undefined,
+      'listQuarantined',
+    );
+    return raw.messages ?? [];
+  }
+
+  async acceptQuarantinedSender(
+    senderDID: string,
+    senderLabel = '',
+  ): Promise<{ released: QuarantinedMessage[]; requarantined: number }> {
+    const raw = await this.call<{ released?: QuarantinedMessage[]; requarantined?: number }>(
+      'POST',
+      '/v1/d2d/quarantine/accept',
+      undefined,
+      { sender_did: senderDID, ...(senderLabel !== '' ? { sender_label: senderLabel } : {}) },
+      `acceptQuarantinedSender(${senderDID})`,
+    );
+    return { released: raw.released ?? [], requarantined: raw.requarantined ?? 0 };
+  }
+
+  async blockQuarantinedSender(senderDID: string, senderLabel = ''): Promise<number> {
+    const raw = await this.call<{ blocked_count?: number }>(
+      'POST',
+      '/v1/d2d/quarantine/block',
+      undefined,
+      { sender_did: senderDID, ...(senderLabel !== '' ? { sender_label: senderLabel } : {}) },
+      `blockQuarantinedSender(${senderDID})`,
+    );
+    return raw.blocked_count ?? 0;
+  }
+
   async peopleApplyExtraction(
     result: ExtractionResult,
     persona?: string,
@@ -1152,7 +1228,7 @@ export class HttpCoreTransport implements CoreClient {
     }
     if (res.status < 200 || res.status >= 300) {
       const err = (parsed as { error?: string } | undefined)?.error ?? 'no error field';
-      throw new Error(`HttpCoreTransport: ${ctx} failed ${res.status} — ${err}`);
+      throw new CoreHttpError(`HttpCoreTransport: ${ctx} failed ${res.status} — ${err}`, res.status);
     }
     return parsed as T;
   }

@@ -106,14 +106,20 @@ export function scanForLeaks(
  * on it while still catching any OTHER recovery-phrase in a log.
  */
 export function isCoreBootSeedLine(line: string): boolean {
-  // Match the structured `"mnemonic":` field (present even on a partial
-  // read, before the trailing `"msg":"first-boot…"` is flushed) OR the msg
-  // text. This is the node's OWN throwaway-stack seed, not a data leak. A
-  // real recovery-phrase leak elsewhere would not carry the `"mnemonic":`
-  // JSON field, so this allowlist doesn't mask one.
+  // ONLY the Core's OWN first-boot seed dev-warning is allowlisted. That line
+  // (core-server/src/boot.ts: `logger.warn({ mnemonic }, 'first-boot:
+  // generated master seed; write down this mnemonic')`) is emitted by pino as a
+  // single JSON object, so it carries the `"mnemonic":` field AND the
+  // distinctive first-boot master-seed SOURCE MARKER together. Requiring the
+  // marker — not just the field name — is the whole point: a REAL
+  // recovery-phrase leak serialized as `{"mnemonic":"…"}` from any OTHER source
+  // does NOT carry the first-boot/master-seed msg, so it is NOT masked here —
+  // it stays flagged by the MNEMONIC sweep. (The scan runs against the fully
+  // flushed log at teardown, so the whole line — field + msg — is present.)
   return (
-    line.includes('"mnemonic":') ||
-    (line.includes('first-boot') && line.includes('master seed'))
+    line.includes('"mnemonic":') &&
+    line.includes('first-boot') &&
+    line.includes('master seed')
   );
 }
 

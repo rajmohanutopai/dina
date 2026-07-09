@@ -8,8 +8,21 @@ import { InProcessTransport } from '../../src/client/in-process-transport';
 import { CoreRouter } from '../../src/server/router';
 import { WorkflowConflictError } from '../../src';
 
-function buildRouter(): CoreRouter {
+function buildRouter(opts: { contactsStatus?: number } = {}): CoreRouter {
   const r = new CoreRouter();
+
+  r.get(
+    '/v1/contacts',
+    () => {
+      const status = opts.contactsStatus ?? 200;
+      if (status !== 200) return { status, body: { error: 'boom' } };
+      return {
+        status: 200,
+        body: { contacts: [{ did: 'did:plc:x', displayName: 'X' }] },
+      };
+    },
+    { auth: 'public' },
+  );
 
   r.get(
     '/healthz',
@@ -847,6 +860,18 @@ describe('InProcessTransport (task 1.30)', () => {
     const h = await t.healthz();
     expect(h.status).toBe('ok');
     expect(h.did).toBe('did:key:test');
+  });
+
+  it('listContacts returns the contacts array on 200', async () => {
+    const t = new InProcessTransport(buildRouter());
+    const contacts = await t.listContacts();
+    expect(contacts).toHaveLength(1);
+    expect(contacts[0]?.did).toBe('did:plc:x');
+  });
+
+  it('listContacts THROWS on a non-2xx — never masks a Core failure as an empty list', async () => {
+    const t = new InProcessTransport(buildRouter({ contactsStatus: 500 }));
+    await expect(t.listContacts()).rejects.toThrow(/listContacts failed 500/);
   });
 
   it('vaultQuery sends persona + query body', async () => {

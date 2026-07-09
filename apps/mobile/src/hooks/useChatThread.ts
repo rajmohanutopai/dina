@@ -29,7 +29,8 @@ import {
   type MessageType,
 } from '@dina/brain/chat';
 
-import { runChatTurn } from './chat_transport';
+import { runChatTurn, openChatStream, closeChatStream } from './chat_transport';
+import { syncQuarantineCards } from './quarantine_sync';
 
 const DEFAULT_THREAD = 'main';
 
@@ -206,10 +207,23 @@ export function useLiveThread(threadId: string = DEFAULT_THREAD): UseLiveThreadR
   useEffect(() => {
     // Snapshot on mount / thread switch.
     setMessages(getThread(threadId));
+    // Open the live stream on mount (web: the /api/v1/chat/stream SSE; native:
+    // no-op) so passively-received messages — an inbound D2D bubble the brain
+    // posts to `main`, an async workflow reply — surface WITHOUT the user
+    // first sending something. Previously the web only opened the stream on a
+    // send, so the thin-client's chat never showed inbound D2D on load.
+    openChatStream(threadId);
+    // Surface any pending unknown-sender quarantine cards (web: polls Core via
+    // the brain proxy; native: no-op — the in-process receive hook injects
+    // them live). F4 / MRS-05.
+    syncQuarantineCards(threadId);
     const unsubscribe = subscribeToThread(threadId, () => {
       setMessages(getThread(threadId));
     });
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      closeChatStream(threadId);
+    };
   }, [threadId]);
 
   const send = useCallback(

@@ -73,14 +73,15 @@ describe('MRS-05 quarantine card — right card, internals, working buttons', ()
     expect(screen.getByText('Add to contacts')).toBeTruthy();
   });
 
-  it('"Add to contacts" records a verified contact + releases the message (real action)', () => {
+  it('"Add to contacts" records a verified contact + releases the message (real action)', async () => {
     stageQuarantineCard();
     render(<InlineQuarantineCard message={lastMessage()} />);
 
     fireEvent.press(screen.getByText('Add to contacts'));
 
-    // Card internals flip to the resolved state.
-    expect(screen.getByText(/Added to contacts/i)).toBeTruthy();
+    // Card internals flip to the resolved state. The action is async now (it
+    // awaits Core on web; native resolves a microtask later), so `findByText`.
+    expect(await screen.findByText(/Added to contacts/i)).toBeTruthy();
     // Real action ran: sender is now a verified contact, quarantine cleared,
     // and the held message re-staged (claimable by the drain).
     expect(getContact(SENDER)?.trustLevel).toBe('verified');
@@ -88,13 +89,13 @@ describe('MRS-05 quarantine card — right card, internals, working buttons', ()
     expect(staged.some((s) => s.producer_id === SENDER)).toBe(true);
   });
 
-  it('"Block" records a DURABLE blocked contact so future messages drop', () => {
+  it('"Block" records a DURABLE blocked contact so future messages drop', async () => {
     stageQuarantineCard();
     render(<InlineQuarantineCard message={lastMessage()} />);
 
     fireEvent.press(screen.getByText('Block'));
 
-    expect(screen.getByText(/Blocked/i)).toBeTruthy();
+    expect(await screen.findByText(/Blocked/i)).toBeTruthy();
     // New contract: a real block persists a 'blocked' contact policy, so the
     // receive pipeline drops every future message from this DID pre-gate.
     // (Previously this only deleted the held rows and the next message just

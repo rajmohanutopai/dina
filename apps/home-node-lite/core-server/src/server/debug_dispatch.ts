@@ -35,7 +35,7 @@
 
 import { timingSafeEqual } from 'node:crypto';
 
-import type { CoreRouter, CoreRequest } from '@dina/core';
+import { quarantineMessage, type CoreRouter, type CoreRequest } from '@dina/core';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import type { Logger } from '../logger';
@@ -121,5 +121,35 @@ export function registerDebugDispatch(app: DebugApp, coreRouter: CoreRouter, log
 
     const res = await coreRouter.handle(coreReq);
     void reply.code(res.status).send(res.body === undefined ? {} : res.body);
+  });
+
+  // Stage "an unknown sender messaged you" WITHOUT a stranger node or the full
+  // crypto ceremony — the §8 precondition for MRS-05. Drops a message straight
+  // into Core's quarantine store (exactly what the receive pipeline does after
+  // deciding `action==='quarantined'` for an unknown-trust sender), so the web
+  // InlineQuarantineCard surfaces it and accept/block operate on it for real.
+  // Same loopback + token fence as dispatch; debug-mode-only registration.
+  app.post('/v1/debug/quarantine-seed', async (req, reply) => {
+    if (!LOOPBACK.has(req.ip)) {
+      void reply.code(403).send({ error: 'debug quarantine-seed is loopback-only' });
+      return;
+    }
+    if (expectedToken !== '' && !tokenMatches(req.headers['x-debug-token'], expectedToken)) {
+      void reply.code(403).send({ error: 'debug token required or invalid' });
+      return;
+    }
+    const b = (req.body ?? {}) as { sender_did?: unknown; message_type?: unknown; body?: unknown };
+    const senderDid = typeof b.sender_did === 'string' ? b.sender_did.trim() : '';
+    if (senderDid === '') {
+      void reply.code(400).send({ error: 'sender_did is required' });
+      return;
+    }
+    const messageType =
+      typeof b.message_type === 'string' && b.message_type !== ''
+        ? b.message_type
+        : 'coordination.request';
+    const body = typeof b.body === 'string' ? b.body : JSON.stringify(b.body ?? {});
+    const msg = quarantineMessage(senderDid, messageType, body);
+    void reply.code(200).send({ quarantined: msg });
   });
 }

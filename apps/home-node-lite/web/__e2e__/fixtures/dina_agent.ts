@@ -44,7 +44,7 @@ export interface DinaAgent {
   signedFetch(
     method: string,
     path: string,
-    opts?: { query?: Record<string, string>; body?: unknown },
+    opts?: { query?: Record<string, string>; body?: unknown; session?: string },
   ): Promise<AgentResponse>;
 }
 
@@ -85,7 +85,7 @@ export async function pairAgent(deviceName = 'e2e-agent'): Promise<DinaAgent> {
   async function signedFetch(
     method: string,
     path: string,
-    opts: { query?: Record<string, string>; body?: unknown } = {},
+    opts: { query?: Record<string, string>; body?: unknown; session?: string } = {},
   ): Promise<AgentResponse> {
     // Match Core's canonical query serializer (router.ts serialiseQuery uses
     // encodeURIComponent: space → %20, not URLSearchParams' form-encoding
@@ -112,6 +112,9 @@ export async function pairAgent(deviceName = 'e2e-agent'): Promise<DinaAgent> {
         'X-Timestamp': timestamp,
         'X-Nonce': nonce,
         'X-Signature': bytesToHex(signature),
+        // Named-session tag (not part of the signed canonical string — it's an
+        // app-level scope, not an auth field). Scopes the agent's grant.
+        ...(opts.session !== undefined ? { 'x-session': opts.session } : {}),
       },
       ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
     });

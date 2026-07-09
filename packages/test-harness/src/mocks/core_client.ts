@@ -68,6 +68,7 @@ import type {
   CreateWorkflowTaskInput,
   CreateWorkflowTaskResult,
   WorkflowTask,
+  QuarantinedMessage,
   MemoryTouchParams,
   MemoryTouchResult,
   UpdateContactParams,
@@ -653,11 +654,18 @@ export class MockCoreClient implements CoreClient {
 
   async approveWorkflowTask(
     id: string,
-    _opts?: { scope?: 'single' | 'session' },
+    opts?: { scope?: 'single' | 'session' },
   ): Promise<WorkflowTask> {
-    return this.workflowAction('approveWorkflowTask', id, (task) => {
-      task.status = 'queued';
-    });
+    return this.workflowAction(
+      'approveWorkflowTask',
+      id,
+      (task) => {
+        task.status = 'queued';
+      },
+      // Record the scope opt (when given) so tests can assert the route
+      // forwarded single/session vs no options. Mirrors cancel's recordArgs.
+      opts !== undefined ? [id, opts] : undefined,
+    );
   }
 
   async getActionPolicy(): Promise<ActionPolicyResult> {
@@ -746,6 +754,42 @@ export class MockCoreClient implements CoreClient {
   async contactLookup(query: string): Promise<Contact | null> {
     return this.dispatch('contactLookup', [query], () => {
       return this.contactLookupResult[query.trim().toLowerCase()] ?? null;
+    });
+  }
+
+  /** Canned result for `listContacts`. */
+  listContactsResult: Contact[] = [];
+  async listContacts(): Promise<Contact[]> {
+    return this.dispatch('listContacts', [], () => this.listContactsResult);
+  }
+  async removeContact(did: string): Promise<boolean> {
+    return this.dispatch('removeContact', [did], () => {
+      const before = this.listContactsResult.length;
+      this.listContactsResult = this.listContactsResult.filter((c) => c.did !== did);
+      return this.listContactsResult.length < before;
+    });
+  }
+
+  /** Canned quarantine buffer — accept/block mutate it (drop by sender). */
+  quarantinedResult: QuarantinedMessage[] = [];
+  async listQuarantined(): Promise<QuarantinedMessage[]> {
+    return this.dispatch('listQuarantined', [], () => this.quarantinedResult);
+  }
+  async acceptQuarantinedSender(
+    senderDID: string,
+    senderLabel = '',
+  ): Promise<{ released: QuarantinedMessage[]; requarantined: number }> {
+    return this.dispatch('acceptQuarantinedSender', [senderDID, senderLabel], () => {
+      const released = this.quarantinedResult.filter((m) => m.senderDID === senderDID);
+      this.quarantinedResult = this.quarantinedResult.filter((m) => m.senderDID !== senderDID);
+      return { released, requarantined: 0 };
+    });
+  }
+  async blockQuarantinedSender(senderDID: string, senderLabel = ''): Promise<number> {
+    return this.dispatch('blockQuarantinedSender', [senderDID, senderLabel], () => {
+      const dropped = this.quarantinedResult.filter((m) => m.senderDID === senderDID).length;
+      this.quarantinedResult = this.quarantinedResult.filter((m) => m.senderDID !== senderDID);
+      return dropped;
     });
   }
 

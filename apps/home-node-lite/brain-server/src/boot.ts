@@ -67,6 +67,11 @@ import { registerCapabilityRoutes } from './routes/capability';
 import { registerChatRoutes } from './routes/chat';
 import { registerReminderApiRoutes, startReminderFireLoop } from './routes/reminders';
 import { registerWebRoutes } from './routes/web';
+import { registerHostAllowlistGuard } from './host_guard';
+import { postInboundD2DToMainChat } from './inbound_d2d_chat';
+import { registerContactApiRoutes } from './routes/contacts';
+import { registerQuarantineApiRoutes } from './routes/quarantine';
+import { registerWorkflowApiRoutes } from './routes/workflow';
 
 /**
  * Per-persona hints used by the agentic /remember loop's system prompt.
@@ -392,6 +397,10 @@ export async function bootServer(
           // through the signed Core HTTP surface.
           peopleGraphApply: (result, persona) => core.peopleApplyExtraction(result, persona),
           rememberRuntime,
+          // Surface a received peer message as a left-aligned bubble in the
+          // main chat the moment it lands (known contacts only; unknown
+          // senders go through the quarantine card). See inbound_d2d_chat.ts.
+          onD2DMessage: postInboundD2DToMainChat,
         },
         logger: (entry) => logger.info(entry, 'brain-server staging drain'),
         onError: (err) => {
@@ -422,6 +431,14 @@ export async function bootServer(
 
   // fastify_start (scaffold — full route binding in tasks 5.3 – 5.49).
   const app = Fastify({ logger: false }); // we manage our own logger
+
+  // Anti-DNS-rebinding Host allowlist (runs before every route). Guards the
+  // whole unauthenticated /api/v1/* surface — including the state-mutating
+  // agent-approval gate (approve/cancel) and owner-private reads (contacts,
+  // workflow tasks) — from a browser tricked into treating an attacker
+  // hostname as 127.0.0.1. See host_guard.ts.
+  registerHostAllowlistGuard(app);
+
   app.addHook('onClose', async () => {
     schedulers.stagingDrain?.stop();
     chatRememberRuntime?.dispose();
@@ -587,6 +604,19 @@ export async function bootServer(
   // the reminder store) via the CoreClient. The web reminder UI hits
   // these; mobile calls the in-process reminder service directly.
   if (clients.core !== undefined) {
+    // Approval-inbox data layer for the SPA — proxies workflow-task reads +
+    // the owner approve/cancel decisions to core-server. The web Activity →
+    // Needs-action inbox hits these; mobile calls Core in-process. Without
+    // this the SPA reads the empty in-browser store (F4 — "All caught up"
+    // despite Core having pending agent-approval tasks).
+    registerWorkflowApiRoutes(app, { core: clients.core });
+
+    // Contact-directory data layer for the SPA's People/Talk screen (F4).
+    registerContactApiRoutes(app, { core: clients.core });
+
+    // Quarantine-review data layer for the SPA's InlineQuarantineCard (F4).
+    registerQuarantineApiRoutes(app, { core: clients.core });
+
     const reminderHub = registerReminderApiRoutes(app, { core: clients.core });
     // Server-side fire loop: the browser can't run a reliable background
     // timer, so the server fires due reminders + pushes them to the SPA

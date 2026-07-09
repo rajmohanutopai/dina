@@ -31,6 +31,7 @@ import {
 
 import {
   closeChatStream,
+  openChatStream,
   runChatTurn,
 } from '../../src/hooks/chat_transport.web';
 
@@ -195,6 +196,26 @@ describe('chat_transport.web — SSE contract', () => {
     await runChatTurn('two', 'thread-x');
     // No new EventSource was constructed for the second call.
     expect(lastEventSource).toBe(first);
+  });
+
+  it('ref-counts open/close: a second consumer unmounting does NOT tear down the stream', () => {
+    // Two mounted consumers (e.g. a duplicate/hidden route) open the same thread.
+    openChatStream('thread-x');
+    openChatStream('thread-x');
+    const es = lastEventSource;
+    expect(es).not.toBeNull();
+
+    // One unmounts — the stream MUST stay open for the still-active view: a
+    // pushed message is still mirrored (the stub no-ops emit once closed).
+    closeChatStream('thread-x');
+    es?.emitMessage(JSON.stringify(serverChatMessage('thread-x', 'dina', 'still live')));
+    expect(getThread('thread-x')).toHaveLength(1);
+
+    // The LAST consumer unmounts — now the stream is torn down; a further push
+    // is ignored (proves it actually closed at ref-count 0).
+    closeChatStream('thread-x');
+    es?.emitMessage(JSON.stringify(serverChatMessage('thread-x', 'dina', 'after close')));
+    expect(getThread('thread-x')).toHaveLength(1);
   });
 
   it('mirrors server-pushed user + dina messages into the local thread store', async () => {

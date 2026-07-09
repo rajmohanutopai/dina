@@ -71,6 +71,18 @@ describe('Authorization Matrix', () => {
       path: '/v1/contacts/lookup',
       label: 'Brain → contacts/lookup (broad surface, not the private log)',
     },
+    {
+      caller: 'brain',
+      method: 'GET',
+      path: '/v1/d2d/quarantine',
+      label: 'Brain → d2d/quarantine (owner-private; SPA proxy path)',
+    },
+    {
+      caller: 'admin',
+      method: 'POST',
+      path: '/v1/d2d/quarantine/accept',
+      label: 'Admin → d2d/quarantine/accept',
+    },
   ];
 
   for (const { caller, method, path, label } of allowedCases) {
@@ -117,6 +129,32 @@ describe('Authorization Matrix', () => {
       method: 'GET',
       path: '/v1/contacts/service-decisions',
       label: 'Brain x contacts/service-decisions (owner-private log)',
+    },
+    // OWNER-PRIVATE: quarantine review (unknown-sender messages) is Brain+Admin
+    // only — an external agent/device/connector must never read it or act on it.
+    {
+      caller: 'device',
+      method: 'GET',
+      path: '/v1/d2d/quarantine',
+      label: 'Device x d2d/quarantine (owner-private)',
+    },
+    {
+      caller: 'agent',
+      method: 'GET',
+      path: '/v1/d2d/quarantine',
+      label: 'Agent x d2d/quarantine (owner-private)',
+    },
+    {
+      caller: 'agent',
+      method: 'POST',
+      path: '/v1/d2d/quarantine/accept',
+      label: 'Agent x d2d/quarantine/accept (owner-private action)',
+    },
+    {
+      caller: 'connector',
+      method: 'POST',
+      path: '/v1/d2d/quarantine/block',
+      label: 'Connector x d2d/quarantine/block',
     },
   ];
 

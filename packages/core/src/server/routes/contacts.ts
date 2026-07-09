@@ -29,6 +29,8 @@ import {
   resolveByName as directoryResolveByName,
   findByAlias as directoryFindByAlias,
   addContactIfNotExists as directoryAddContactIfNotExists,
+  listContacts as directoryListContacts,
+  deleteContact as directoryDeleteContact,
 } from '../../contacts/directory';
 import {
   getServiceDecisionRepository,
@@ -54,6 +56,9 @@ import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
  * so the handlers stay unit-testable without a full app boot.
  */
 export interface ContactRoutesOptions {
+  /** List all contacts (backs `GET /v1/contacts`). Defaults to the
+   *  module-global directory function; tests inject their own fake. */
+  listContacts?: () => Contact[];
   /**
    * Resolve contacts that have `category` in their `preferred_for`
    * list. Defaults to the module-global directory function. Tests
@@ -96,6 +101,14 @@ export interface ContactRoutesOptions {
    * repo is wired. Tests inject a fake.
    */
   listServiceDecisions?: (limit: number) => ServiceDecision[];
+  /**
+   * Remove a contact. Defaults to the module-global directory. Backs
+   * DELETE /v1/contacts/:did — so the web thin-client (no in-process
+   * directory) can remove a contact from the authoritative Core store
+   * instead of a non-authoritative local copy. Returns true when a row
+   * was removed, false when the DID wasn't a contact.
+   */
+  deleteContact?: (did: string) => boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -113,6 +126,8 @@ export function makeContactsHandlers(options: ContactRoutesOptions = {}): {
   lookup: (req: CoreRequest) => Promise<CoreResponse>;
   addContact: (req: CoreRequest) => Promise<CoreResponse>;
   serviceDecisions: (req: CoreRequest) => Promise<CoreResponse>;
+  listAll: (req: CoreRequest) => Promise<CoreResponse>;
+  deleteContact: (req: CoreRequest) => Promise<CoreResponse>;
 } {
   const findFn = options.findByPreferredFor ?? directoryFindByPreferredFor;
   const setFn = options.setPreferredFor ?? directorySetPreferredFor;
@@ -120,15 +135,19 @@ export function makeContactsHandlers(options: ContactRoutesOptions = {}): {
   const resolveNameFn = options.resolveByName ?? directoryResolveByName;
   const findAliasFn = options.findByAlias ?? directoryFindByAlias;
   const addFn = options.addContact ?? directoryAddContactIfNotExists;
+  const listAllFn = options.listContacts ?? directoryListContacts;
   const listDecisionsFn =
     options.listServiceDecisions ??
     ((limit: number) => getServiceDecisionRepository()?.list(limit) ?? []);
+  const deleteFn = options.deleteContact ?? directoryDeleteContact;
   return {
     findByPreference: (req) => handleFindByPreference(req, findFn),
     updateContact: (req) => handleUpdateContact(req, setFn, getFn),
     lookup: (req) => handleLookup(req, getFn, resolveNameFn, findAliasFn),
     addContact: (req) => handleAddContact(req, addFn),
     serviceDecisions: (req) => handleServiceDecisions(req, listDecisionsFn),
+    listAll: (req) => handleListContacts(req, listAllFn),
+    deleteContact: (req) => handleDeleteContact(req, deleteFn),
   };
 }
 
@@ -136,15 +155,55 @@ export function registerContactsRoutes(
   router: CoreRouter,
   options: ContactRoutesOptions = {},
 ): void {
-  const { findByPreference, updateContact, lookup, addContact, serviceDecisions } =
-    makeContactsHandlers(options);
+  const {
+    findByPreference,
+    updateContact,
+    lookup,
+    addContact,
+    serviceDecisions,
+    listAll,
+    deleteContact,
+  } = makeContactsHandlers(options);
   router.get(CONTACTS_BY_PREFERENCE, findByPreference);
   router.get(CONTACTS_LOOKUP, lookup);
   // Register the literal sub-path BEFORE the catch-all PUT/:did so it isn't
   // shadowed; GET-only anyway, but kept adjacent to the other GET reads.
   router.get(CONTACTS_SERVICE_DECISIONS, serviceDecisions);
   router.put(CONTACT_UPDATE, updateContact);
+  router.delete(CONTACT_UPDATE, deleteContact);
   router.post(CONTACTS_ROOT, addContact);
+  // GET /v1/contacts — list ALL contacts (backs the web People/Talk screen,
+  // whose `useContacts` reads the contact directory; in the thin-client the
+  // in-process directory is empty, so it must fetch from Core). Registered
+  // after the literal sub-paths so it matches only the exact root.
+  router.get(CONTACTS_ROOT, listAll);
+}
+
+// ---------------------------------------------------------------------------
+// GET /v1/contacts — list ALL contacts. Response: `{ contacts: Contact[] }`
+// (owner-private; the whole /v1/contacts prefix is Brain + Admin only).
+// ---------------------------------------------------------------------------
+async function handleListContacts(
+  _req: CoreRequest,
+  listFn: () => Contact[],
+): Promise<CoreResponse> {
+  return { status: 200, body: { contacts: listFn() } };
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /v1/contacts/:did — remove a contact. Response: `{ deleted: boolean }`.
+// `deleted=false` when the DID wasn't a contact — DELETE is idempotent, so a
+// no-op is still 200, not 404. Owner-private (the whole prefix is Brain + Admin).
+// ---------------------------------------------------------------------------
+async function handleDeleteContact(
+  req: CoreRequest,
+  deleteFn: (did: string) => boolean,
+): Promise<CoreResponse> {
+  const did = typeof req.params.did === 'string' ? req.params.did.trim() : '';
+  if (did === '') {
+    return jsonError(400, 'did path parameter is required');
+  }
+  return { status: 200, body: { deleted: deleteFn(did) } };
 }
 
 // ---------------------------------------------------------------------------

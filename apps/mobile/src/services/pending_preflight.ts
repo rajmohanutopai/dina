@@ -80,11 +80,19 @@ export function takePendingPreflight(
   if (requestId === '') return null;
   const entry = store.get(requestId);
   if (entry === undefined) return null;
-  store.delete(requestId);
-  if (entry.expiresAtMs < nowMs()) return null; // expired — drop, no replay
-  // Confused-deputy guard: the offer's request_id must come from the SAME contact
-  // we sent the request to. A mismatch is dropped (no replay).
+  if (entry.expiresAtMs < nowMs()) {
+    store.delete(requestId); // expired — drop it, no replay
+    return null;
+  }
+  // Confused-deputy guard: the offer's request_id must come from the SAME
+  // contact we sent the request to. A MISMATCH must NOT consume the stash —
+  // otherwise a foreign offer that happens to reuse the request_id would evict
+  // it and the LEGITIMATE contact's later offer would find nothing to replay.
+  // So leave the entry in place and just decline this offer.
   if (entry.contactDID !== expectedContactDID) return null;
+  // Legitimate consumption — remove so the replay fires AT MOST once even if
+  // the trusted peer delivers the offer twice.
+  store.delete(requestId);
   return { intent: entry.intent };
 }
 

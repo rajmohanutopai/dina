@@ -24,13 +24,10 @@ import {
   FlatList,
   Pressable,
   Platform,
-  Alert,
   Share,
 } from 'react-native';
 
 import {
-  listContacts,
-  deleteContact,
   getPeopleRepository,
   type Contact,
   type Person,
@@ -40,6 +37,8 @@ import { IdentityModal } from '../src/components/identity/identity_modal';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
 import { getProfile as getTrustProfile } from '../src/peerlens/appview_runtime';
 import { buildContactCard } from '../src/services/contact_card';
+import { confirmDecision } from '../src/services/confirm_decision';
+import { deleteContact, loadContacts } from '../src/services/contacts_source';
 import { getDisplayNameOverride } from '../src/services/display_name_override';
 import { loadInfraPreferences } from '../src/services/infra_preferences';
 import { relationsOnly } from '../src/services/people_relations';
@@ -50,6 +49,10 @@ type SubTab = 'contacts' | 'relations';
 export default function PeopleScreen() {
   const [subTab, setSubTab] = useState<SubTab>('contacts');
   const [contacts, setContacts] = useState<Contact[]>([]);
+  // Distinguishes a genuine empty directory from a FAILED first fetch (a broken
+  // /api/v1/contacts proxy). Only meaningful when `contacts` is still empty:
+  // once we have data, a later blip preserves the list silently (below).
+  const [contactsLoadFailed, setContactsLoadFailed] = useState(false);
   const [people, setPeople] = useState<Person[]>([]);
   const router = useRouter();
   // Honor a `?tab=relations` deep-link (used by the guided demo to show the
@@ -74,18 +77,41 @@ export default function PeopleScreen() {
     }, [pickTalk]),
   );
 
-  const refresh = useCallback(() => {
-    setContacts(listContacts());
+  const refresh = useCallback((isActive?: () => boolean) => {
+    // Async source: native reads the in-process directory; web fetches from
+    // the brain's /api/v1/contacts proxy (thin-client directory is empty; F4).
+    // `isActive` guards the async setState so a slow web fetch that resolves
+    // after blur/unmount (or is superseded by a newer refresh) doesn't write
+    // stale contacts back into state.
+    void loadContacts()
+      .then((c) => {
+        if (isActive === undefined || isActive()) {
+          setContacts(c);
+          setContactsLoadFailed(false); // a good load clears any prior error
+        }
+      })
+      .catch(() => {
+        // Preserve the previously-loaded list on a transient fetch failure
+        // (a web /api/v1/contacts blip) instead of wiping to [] and flashing
+        // "No contacts yet". But FLAG the failure so a FIRST-load error (no
+        // prior data) surfaces as retry/error instead of a false "no contacts"
+        // empty state.
+        if (isActive === undefined || isActive()) setContactsLoadFailed(true);
+      });
     const repo = getPeopleRepository();
     setPeople(repo === null ? [] : repo.listPeople());
   }, []);
 
-  // Refresh on screen focus. Cheap: listContacts reads the in-memory
-  // map and returns a snapshot array; listPeople is a single SQLite
-  // read.
+  // Refresh on screen focus. On native listContacts is an in-memory snapshot;
+  // on web loadContacts is a fetch, so the effect owns an `active` flag that
+  // the async completion checks before writing state.
   useFocusEffect(
     useCallback(() => {
-      refresh();
+      let active = true;
+      refresh(() => active);
+      return () => {
+        active = false;
+      };
     }, [refresh]),
   );
 
@@ -96,22 +122,24 @@ export default function PeopleScreen() {
 
   const onLongPress = useCallback(
     (contact: Contact) => {
-      Alert.alert(
+      // `confirmDecision` is platform-split: native → Alert.alert, web →
+      // window.confirm (RN-Web's Alert.alert is a no-op, so a bare Alert would
+      // never show the dialog on the web thin-client — the delete could never
+      // be triggered there). `deleteContact` is likewise split: native removes
+      // from the authoritative in-process directory, web hits the Core-backed
+      // DELETE proxy. Refresh only when Core/the store confirms the removal, so
+      // we never claim a removal that won't stick.
+      void confirmDecision(
         `Remove ${contact.displayName || 'contact'}?`,
-        "You’ll need to add them again to talk with them. Their DID stays on PLC; this only removes them from your local contact list.",
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Remove',
-            style: 'destructive',
-            onPress: () => {
-              deleteContact(contact.did);
-              refresh();
-            },
-          },
-        ],
-        { cancelable: true },
-      );
+        "You’ll need to add them again to talk with them. Their DID stays on PLC; this only removes them from your contact list.",
+        'Remove',
+        true,
+      ).then((confirmed) => {
+        if (!confirmed) return;
+        void deleteContact(contact.did).then((removed) => {
+          if (removed) refresh();
+        });
+      });
     },
     [refresh],
   );
@@ -129,6 +157,8 @@ export default function PeopleScreen() {
           )}
           <ContactsView
             contacts={contacts}
+            loadFailed={contactsLoadFailed}
+            onRetry={() => refresh()}
             onLongPress={onLongPress}
             onAdd={() => router.push('/add-contact' as never)}
           />
@@ -156,34 +186,44 @@ export default function PeopleScreen() {
 
 function ContactsView({
   contacts,
+  loadFailed,
+  onRetry,
   onLongPress,
   onAdd,
 }: {
   contacts: Contact[];
+  loadFailed: boolean;
+  onRetry: () => void;
   onLongPress: (contact: Contact) => void;
   onAdd: () => void;
 }) {
   if (contacts.length === 0) {
+    // FIRST-load failure (no prior data) → retry/error, NOT a false "no
+    // contacts" — a broken /api/v1/contacts proxy must not read as an empty
+    // directory. A genuine empty directory keeps the add-a-contact prompt.
+    const failed = loadFailed;
     return (
       <View style={styles.emptyState}>
         <Ionicons
-          name="people-outline"
+          name={failed ? 'cloud-offline-outline' : 'people-outline'}
           size={40}
           color={colors.textMuted}
           style={{ marginBottom: spacing.md }}
         />
-        <Text style={styles.emptyTitle}>No contacts yet</Text>
+        <Text style={styles.emptyTitle}>{failed ? "Couldn't load contacts" : 'No contacts yet'}</Text>
         <Text style={styles.emptyBody}>
-          Add someone by their handle to start an end-to-end encrypted conversation.
+          {failed
+            ? 'We couldn’t reach your directory. Check your connection and try again.'
+            : 'Add someone by their handle to start an end-to-end encrypted conversation.'}
         </Text>
         <Pressable
-          testID="people-add-contact"
-          onPress={onAdd}
+          testID={failed ? 'people-retry-contacts' : 'people-add-contact'}
+          onPress={failed ? onRetry : onAdd}
           accessibilityRole="button"
-          accessibilityLabel="Add a contact"
+          accessibilityLabel={failed ? 'Retry loading contacts' : 'Add a contact'}
           style={({ pressed }) => [styles.emptyCta, pressed && { opacity: 0.7 }]}
         >
-          <Text style={styles.emptyCtaText}>Add a contact</Text>
+          <Text style={styles.emptyCtaText}>{failed ? 'Retry' : 'Add a contact'}</Text>
         </Pressable>
       </View>
     );

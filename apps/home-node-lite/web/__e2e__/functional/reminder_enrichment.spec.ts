@@ -23,11 +23,25 @@ test.describe('MRS-03 — Reminder enrichment (with vs without)', () => {
     expect(reminderText, 'a dated fact should auto-create a reminder card').not.toBeNull();
     await expectJudgePass({
       rubric:
-        'This is an auto-created reminder card produced after the user said "Emma\'s birthday is ' +
-        'on November 7th". PASS if it is a reminder clearly related to Emma\'s birthday (a dated ' +
-        'event). FAIL if it is generic, unrelated, or not a birthday reminder.',
+        'This is an auto-created reminder MESSAGE produced after the user said "Emma\'s birthday ' +
+        'is on November 7th". PASS if it is an ENRICHED reminder clearly about EMMA\'s BIRTHDAY ' +
+        '(it names Emma and the birthday, not a bare "you have a reminder"). FAIL if it is generic, ' +
+        'unrelated, or not about a birthday. NOTE: the exact calendar date is verified separately ' +
+        'against the card HEADER, so relative phrasing ("today"/"tomorrow") in this message body is ' +
+        'acceptable — judge ENRICHMENT here, not the date.',
       actual: reminderText as string,
     });
+    // The DATED half — DETERMINISTIC (no judge): the card header carries the
+    // scheduled due date. A Nov 7 birthday schedules in early November (the
+    // product may fire the day before), so accept NOV 6 or 7 — never a default
+    // "tomorrow". This pins what the rubric alone can't verify (the date lives
+    // in the header, not the judged body).
+    const reminderHeader = await thread.latestReminderHeader(45_000);
+    expect(reminderHeader, 'the reminder card header carries a scheduled due date').not.toBeNull();
+    expect(
+      reminderHeader as string,
+      'MRS-03 DATED: the birthday reminder schedules on/near Nov 7 (header), not a generic "tomorrow"',
+    ).toMatch(/NOV\s*0?[67]\b/);
     const remindersBaseline = await thread.reminderCount();
 
     // ── Without: a plain preference → NO new reminder card ──────────────

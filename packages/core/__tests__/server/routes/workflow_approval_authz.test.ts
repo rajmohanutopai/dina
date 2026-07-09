@@ -113,7 +113,7 @@ describe('workflow approve/deny — agent callers are refused (no self-approval)
 
     // The grant was NOT written — the agent stays blocked on retry.
     expect(
-      getAgentGrantRepository()?.findActiveGrant(AGENT_DID, 'health', 'read', Date.now()),
+      getAgentGrantRepository()?.findActiveGrant(AGENT_DID, 'health', 'read', null, Date.now()),
     ).toBe(null);
     const retry = await router.handle(agentQueryHealth());
     expect(retry.status).toBe(403);
@@ -135,7 +135,7 @@ describe('workflow approve/deny — agent callers are refused (no self-approval)
     expect(approve.status).toBe(200);
 
     expect(
-      getAgentGrantRepository()?.findActiveGrant(AGENT_DID, 'health', 'read', Date.now()),
+      getAgentGrantRepository()?.findActiveGrant(AGENT_DID, 'health', 'read', null, Date.now()),
     ).not.toBe(null);
     const retry = await router.handle(agentQueryHealth());
     expect(retry.status).toBe(200);

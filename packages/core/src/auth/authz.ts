@@ -104,6 +104,10 @@ const AUTHZ_RULES: { prefix: string; allowed: Set<CallerType> }[] = [
   // D2D messaging — Brain
   { prefix: '/v1/msg/', allowed: new Set(['brain']) },
 
+  // D2D quarantine review (unknown-sender messages) — owner-private, so
+  // Brain (proxying the web SPA) + Admin only; NOT device/agent/connector.
+  { prefix: '/v1/d2d/', allowed: new Set(['brain', 'admin']) },
+
   // Service discovery + workflow (service discovery scenario) — Brain owns publish
   // flow + orchestrates queries; Admin can read/write config from the UI.
   { prefix: '/v1/service/', allowed: new Set(['brain', 'admin']) },

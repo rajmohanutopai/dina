@@ -39,3 +39,17 @@ export async function runChatTurn(
 ): Promise<ChatResponse> {
   return handleChat(text, threadId);
 }
+
+/**
+ * No-op on native — the chat store is in-process, so there is no stream to
+ * open/close; `useLiveThread`'s in-process `subscribeToThread` already sees
+ * every `addMessage` write (including inbound D2D). The web peer overrides
+ * these to open/close the `/api/v1/chat/stream` EventSource.
+ */
+export function openChatStream(_threadId: string): void {
+  // intentionally empty
+}
+
+export function closeChatStream(_threadId: string): void {
+  // intentionally empty
+}

@@ -22,4 +22,8 @@ export default defineConfig({
   expect: { timeout: 30_000 },
   use: { trace: 'on-first-retry', screenshot: 'only-on-failure' },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  // MRS-14 (server-log half) for the relay tier: record each dina-node log's
+  // size before the run, sweep only this-run's appended lines after.
+  globalSetup: path.resolve(__dirname, '__e2e__', 'support', 'relay_setup.ts'),
+  globalTeardown: path.resolve(__dirname, '__e2e__', 'support', 'relay_teardown.ts'),
 });
