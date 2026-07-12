@@ -314,10 +314,7 @@ export async function revokeDeviceDurable(deviceId: string): Promise<DeviceRevok
   // Step 3: Cascade — revoke this DID's durable agent grants so a revoked
   // agent can't keep reading a locked persona with a stale grant (§2/§5).
   try {
-    const grantRepo = getAgentGrantRepository();
-    if (grantRepo !== null && device.did !== '') {
-      grantRepo.revokeForAgent(device.did, Date.now());
-    }
+    if (device.did !== '') disableAgentGrantsForDevice(device.did, Date.now());
   } catch (err) {
     cascadesOk = false;
     if (error === undefined) error = `agent-grant cascade failed: ${errMsg(err)}`;
@@ -334,46 +331,7 @@ export async function revokeDeviceDurable(deviceId: string): Promise<DeviceRevok
   // flow with re-consent (the grants are gone). "Revocation stops future
   // authority, not history" (I12) — the install row and its receipts stay.
   try {
-    const installRepo = getPluginInstallRepository();
-    if (installRepo !== null && device.did !== '') {
-      // P1-3: disable EVERY install bound to this device DID, not just the one
-      // getByDeviceDid returns. The v19 partial unique index constrains only
-      // `active`, so a device can legitimately be co-bound to one active plus
-      // several paused/pending installs. Walking a single row left the others
-      // authorized: re-pairing the same key (same derived DID) would revive
-      // their grants with no re-consent. Enumerate and disable all of them.
-      const nowMs = Date.now();
-      const nowSec = Math.floor(nowMs / 1000);
-      for (const install of installRepo.listByDeviceDid(device.did)) {
-        let changed = false;
-        if (install.status === 'pending') {
-          // A pending install on a now-revoked device can never legitimately
-          // activate (the runner can't authenticate) — unwind it so a later
-          // confirmConsent can't commit a lane onto dead authority. remove()
-          // cascades its grants.
-          installRepo.remove(install.installId);
-          changed = true;
-        } else {
-          getPluginGrantRepository()?.revokeAllForInstall(install.installId, nowSec);
-          // pause() returns false if already paused — on an idempotent
-          // re-revoke (Round-5 #5) the state didn't change, so don't re-log.
-          changed = installRepo.pause(install.installId, nowMs);
-          // P1-4: terminate in-flight work immediately — a running effectful
-          // task parks as outcome_unknown, queued ones cancel — so no
-          // completion can apply through the revoke seam.
-          terminateInstallInFlight(install.installId, 'plugin device revoked', nowMs);
-        }
-        // Only append a decision when the revoke actually changed state, so a
-        // retried/duplicate revoke doesn't spam the owner-private log.
-        if (changed) {
-          getPluginDecisionRepository()?.record({
-            installId: install.installId,
-            decision: 'paused',
-            nowSec,
-          });
-        }
-      }
-    }
+    if (device.did !== '') disablePluginAuthorityForDevice(device.did, Date.now());
   } catch (err) {
     cascadesOk = false;
     if (error === undefined) error = `plugin cascade failed: ${errMsg(err)}`;
@@ -403,6 +361,93 @@ export async function revokeDeviceDurable(deviceId: string): Promise<DeviceRevok
 /** Compact error-message extractor for cascade failures. */
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * P1-3 + Round-7 #3: disable ALL plugin authority bound to a device DID.
+ * Enumerates every install on the DID (the v19 index constrains only `active`,
+ * so a device can be co-bound to one active plus several paused/pending
+ * installs — re-pairing the same key revives them all otherwise). Pending
+ * installs are unwound (they can never legitimately activate on a dead device);
+ * active/paused installs have their grants revoked, are paused, and their
+ * in-flight work terminated. Fully IDEMPOTENT — re-running it (from a revoke
+ * retry OR boot reconciliation) is a no-op once everything is disabled, so a
+ * decision is logged only when state actually changed.
+ */
+function disablePluginAuthorityForDevice(deviceDid: string, nowMs: number): void {
+  const installRepo = getPluginInstallRepository();
+  if (installRepo === null || deviceDid === '') return;
+  const nowSec = Math.floor(nowMs / 1000);
+  const installs = installRepo.listByDeviceDid(deviceDid);
+  // Round-8 #3: if there ARE non-pending installs to disable but the grant repo
+  // is absent, we would pause the install while leaving its grants LIVE — a
+  // silent half-cleanup. That is a wiring inconsistency (installs exist ⇒ the
+  // grant repo should too); THROW so the caller downgrades `durable` / the
+  // reconciler retries, rather than reporting a cleanup that didn't happen.
+  if (getPluginGrantRepository() === null && installs.some((i) => i.status !== 'pending')) {
+    throw new Error(
+      'plugin grant repository unavailable — cannot revoke grants for revoked device',
+    );
+  }
+  for (const install of installs) {
+    let changed = false;
+    if (install.status === 'pending') {
+      installRepo.remove(install.installId); // remove() cascades its grants
+      changed = true;
+    } else {
+      getPluginGrantRepository()?.revokeAllForInstall(install.installId, nowSec);
+      changed = installRepo.pause(install.installId, nowMs); // false if already paused
+      terminateInstallInFlight(install.installId, 'plugin device revoked', nowMs);
+    }
+    if (changed) {
+      getPluginDecisionRepository()?.record({
+        installId: install.installId,
+        decision: 'paused',
+        nowSec,
+      });
+    }
+  }
+}
+
+/**
+ * Round-6 #4 + Round-8 #2/#3: revoke a device DID's durable AGENT persona grants
+ * (§2/§5). Extracted so the revoke cascade AND boot reconciliation share it.
+ * Returns false when the repo is absent — the caller cannot then claim the
+ * agent-grant half of cleanup succeeded.
+ */
+function disableAgentGrantsForDevice(deviceDid: string, nowMs: number): boolean {
+  const grantRepo = getAgentGrantRepository();
+  if (grantRepo === null) return false;
+  if (deviceDid !== '') grantRepo.revokeForAgent(deviceDid, nowMs);
+  return true;
+}
+
+/**
+ * Round-7 #3 + Round-8 #2: boot-time reconciliation. A crash BETWEEN the
+ * device-SQL revoke and the authority cascades leaves a device revoked in SQL
+ * but its installs still active / grants live; nothing re-runs the cascade. On
+ * boot, for every REVOKED device, re-disable BOTH halves of its authority —
+ * plugin installs/grants AND agent persona grants (Round-8 #2: the earlier
+ * reconciler only repeated the plugin half) — idempotently, so a crash can never
+ * leave stale authority that re-pairing the same key would revive. Returns the
+ * count of revoked devices reconciled. NOTE: for this to reach the agent-grant
+ * repo, the caller must wire AgentGrantRepository BEFORE hydrating devices.
+ */
+export function reconcileRevokedDeviceAuthority(): number {
+  const nowMs = Date.now();
+  let reconciled = 0;
+  for (const device of devices.values()) {
+    if (device.revoked && device.did !== '') {
+      try {
+        disablePluginAuthorityForDevice(device.did, nowMs);
+        disableAgentGrantsForDevice(device.did, nowMs);
+        reconciled += 1;
+      } catch {
+        /* best-effort per device; the next boot retries */
+      }
+    }
+  }
+  return reconciled;
 }
 
 /**
@@ -503,6 +548,10 @@ export async function hydrateDeviceRegistry(): Promise<number> {
       registerDeviceAuth(d.did, d.deviceName);
     }
   }
+  // Round-7 #3: reconcile any revoked device whose authority cascade may have
+  // been interrupted by a crash — re-disable its plugin installs/grants
+  // (idempotent) so stale authority can't survive a reboot + re-pair.
+  reconcileRevokedDeviceAuthority();
   if (added > 0) notifyListeners();
   return added;
 }

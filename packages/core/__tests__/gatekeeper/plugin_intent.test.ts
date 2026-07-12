@@ -224,4 +224,33 @@ describe('privacy-class clamp (Round-6 #2)', () => {
       ).mode,
     ).toBe('silent');
   });
+
+  it('round-7 #1: sensitive/regulated cards EVERY time — a standing approval past first-N never silences it', () => {
+    for (const privacyClass of ['sensitive', 'regulated']) {
+      const d = evaluatePluginIntent(
+        input({
+          actionClass: 'read',
+          capabilityKind: 'canonical',
+          privacyClass,
+          hasStandingApproval: true,
+          priorInvocations: PLUGIN_FIRST_N + 5, // well past first-N
+          touchesSensitivePersona: false,
+        }),
+      );
+      expect(d.riskLevel).toBe('HIGH');
+      expect(d.mode).toBe('card'); // NOT silent, despite standing approval
+    }
+    // `personal` (MODERATE) is still silence-able via a standing approval.
+    expect(
+      evaluatePluginIntent(
+        input({
+          actionClass: 'read',
+          capabilityKind: 'canonical',
+          privacyClass: 'personal',
+          hasStandingApproval: true,
+          priorInvocations: PLUGIN_FIRST_N + 5,
+        }),
+      ).mode,
+    ).toBe('silent');
+  });
 });

@@ -178,6 +178,11 @@ export async function initializeStorage(
   setReminderRepository(new SQLiteReminderRepository(identityDB));
   setAuditRepository(new SQLiteAuditRepository(identityDB));
   setDeviceRepository(new SQLiteDeviceRepository(identityDB));
+  // Round-8 #2: wire the agent-grant repo BEFORE hydrating devices —
+  // `hydrateDeviceRegistry` runs the boot reconciler, which must be able to
+  // revoke a crash-orphaned revoked device's AGENT persona grants (not only its
+  // plugin authority). Wiring it after hydrate left that half unreconciled.
+  setAgentGrantRepository(new SQLiteAgentGrantRepository(identityDB));
   // Pull every previously-paired device back into the in-memory
   // registry. Without this, every signed call from a paired agent
   // (workflow claim, service.query) lands as caller-type 'unknown'
@@ -207,8 +212,8 @@ export async function initializeStorage(
   setD2DOutboxRepository(new SQLiteD2DOutboxRepository(identityDB));
   recoverOutboxOnBoot();
 
-  // issues.txt §2 — durable agent persona grants (locked-vault approval).
-  setAgentGrantRepository(new SQLiteAgentGrantRepository(identityDB));
+  // (agent persona grant repo — issues.txt §2 — is now wired ABOVE, before
+  // hydrateDeviceRegistry, so the boot reconciler can reach it. Round-8 #2.)
 
   // Seed default personas, then open EVERY one via the shared
   // lifecycle helper. The lite stack's only client is the owner's own

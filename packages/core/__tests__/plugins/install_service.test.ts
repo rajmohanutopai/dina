@@ -379,15 +379,26 @@ describe('lifecycle: consent → activation → uninstall (§14)', () => {
     expect(log[0]!.decision).toBe('consent_granted');
   });
 
-  it('declineConsent unwinds the pending install and reports the paired device to revoke', async () => {
+  it('declineConsent unwinds the pending install and revokes the paired device', async () => {
     const id = await pending();
     // A device paired during the ceremony — bound through the real seam.
     expect(getPluginInstallRepository()!.bindPendingDevice(id, 'did:key:zorphan', T0 + 1)).toBe(
       true,
     );
-    const result = await declineConsent(id, T0 + 3);
-    expect(result).toEqual({ removed: true, deviceDid: 'did:key:zorphan' });
+    const result = await declineConsent(id, T0 + 3, async () => ({ durable: true }));
+    expect(result).toEqual({ removed: true, deviceDid: 'did:key:zorphan', deviceRevoked: true });
     expect(getPluginInstallRepository()!.getById(id)).toBeNull();
+  });
+
+  it('round-7 #5: a bound-device teardown WITHOUT a revoker retains the row (no orphan)', async () => {
+    const id = await pending();
+    const installs = getPluginInstallRepository()!;
+    expect(installs.bindPendingDevice(id, 'did:key:zorphan', T0 + 1)).toBe(true);
+    // No revoker + a bound device → the row is RETAINED (the durable revoker is
+    // mandatory once a device is bound), never deleted-and-hoped.
+    const result = await declineConsent(id, T0 + 3);
+    expect(result).toEqual({ removed: false, deviceDid: 'did:key:zorphan' });
+    expect(installs.getById(id)).not.toBeNull();
   });
 
   it('refuses to activate an already-expired pending (TOCTOU between sweeper ticks, §14)', async () => {
@@ -404,12 +415,12 @@ describe('lifecycle: consent → activation → uninstall (§14)', () => {
     expect(getPluginInstallRepository()!.getById(id)?.status).toBe('pending');
   });
 
-  it('uninstall revokes grants, removes the row, and returns the device to revoke', async () => {
+  it('uninstall revokes grants, removes the row, and revokes the paired device', async () => {
     const id = await pending();
     expect(getPluginInstallRepository()!.bindPendingDevice(id, 'did:key:zinstance', T0)).toBe(true);
     confirmConsent(id, 'did:key:zinstance', T0 + 1);
-    const result = await uninstall(id, T0 + 2);
-    expect(result).toEqual({ removed: true, deviceDid: 'did:key:zinstance' });
+    const result = await uninstall(id, T0 + 2, async () => ({ durable: true }));
+    expect(result).toEqual({ removed: true, deviceDid: 'did:key:zinstance', deviceRevoked: true });
     expect(getPluginInstallRepository()!.getById(id)).toBeNull();
     // Decision log survives (records of the past).
     const recent = getPluginDecisionRepository()!.listByInstall(id, 10);

@@ -601,7 +601,14 @@ export async function declineConsent(
   const install = installs.getById(installId);
   if (install === null) return null;
   const deviceDid = install.deviceDid;
-  if (revokeDevice !== undefined && deviceDid !== undefined) {
+  if (deviceDid !== undefined) {
+    // Round-7 #5: a bound device makes the durable revoker MANDATORY. Without a
+    // callback we would delete the row and merely hand the DID back, leaving
+    // device cleanup to non-transactional caller discipline (an orphan on any
+    // crash). Retain the row as the retry anchor instead of silently orphaning.
+    if (revokeDevice === undefined) {
+      return { removed: false, deviceDid };
+    }
     const durable = await revokeDeviceConfirmed(revokeDevice, deviceDid);
     if (!durable) {
       // Keep the pending row as a retry anchor; the sweeper (or a retry) will
@@ -676,7 +683,13 @@ export async function uninstall(
   // revoke is CONFIRMED durable; retain the row on failure. Authority (grants)
   // is already gone above, so a retained row carries no live access — it is
   // purely the retry anchor for the outstanding device revoke.
-  if (revokeDevice !== undefined && deviceDid !== undefined) {
+  if (deviceDid !== undefined) {
+    // Round-7 #5: a bound device makes the durable revoker MANDATORY — without
+    // it we would delete the row and leave device cleanup to caller discipline.
+    // Retain the row (authority already revoked above) as the retry anchor.
+    if (revokeDevice === undefined) {
+      return { removed: false, deviceDid };
+    }
     const durable = await revokeDeviceConfirmed(revokeDevice, deviceDid);
     if (!durable) {
       return { removed: false, deviceDid, deviceRevoked: false };

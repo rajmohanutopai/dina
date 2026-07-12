@@ -158,6 +158,33 @@ function checkKnownKeys(
   }
 }
 
+/** Round-8 #4: a non-null, non-array object. Used to guard every structured
+ * field BEFORE optional-property access or iteration — the shared protocol
+ * validator promises a fail-closed RESULT (it's also AppView's ingest gate),
+ * so a scalar where an object/array is expected must never throw or slip. */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Round-8 #4: a set-like field must be an ARRAY before `for…of` iteration — a
+ * scalar (`kinds: 7`) is not iterable and would THROW mid-validation. Reports
+ * `code` and returns [] on a non-array (fail closed), so validation still
+ * returns a result instead of crashing. Generic over the declared element type
+ * so callers keep their element typing (elements are re-checked downstream). */
+function arrayField<T>(
+  value: readonly T[] | undefined,
+  code: string,
+  path: string,
+  err: (code: string, path: string, message: string) => void,
+): T[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    err(code, path, `${path} must be an array`);
+    return [];
+  }
+  return value as T[];
+}
+
 // F4: a pinned params/result schema is a CONSENT artifact — the owner is
 // shown the shape and expects it enforced. The on-node result validator
 // (schema_validate.ts) is deliberately small; a schema that DECLARES a
@@ -410,8 +437,54 @@ export function validatePluginManifest(
     ['homepage', manifest.homepage],
     ['source_url', manifest.source_url],
   ] as const) {
-    if (val !== undefined && (typeof val !== 'string' || val.length > 2048)) {
-      err('bad_url', field, `${field} must be a string URL (≤ 2048 chars)`);
+    if (val !== undefined) {
+      if (typeof val !== 'string' || val.length > 2048) {
+        err('bad_url', field, `${field} must be a string URL (≤ 2048 chars)`);
+      } else if (!/^https?:\/\//i.test(val)) {
+        // Round-7 #7: reject dangerous URL schemes (javascript:, data:, file:,
+        // …). These are rendered/linked in the owner-facing surfaces — only
+        // http(s) is a safe outbound link.
+        err('bad_url', field, `${field} must be an http(s):// URL`);
+      }
+    }
+  }
+  // Round-7 #7: `required_features` is unioned into the compatibility set and
+  // must be a string array — a numeric element would be add()ed to the derived
+  // feature set and silently mis-gated.
+  if (manifest.required_features !== undefined) {
+    if (
+      !Array.isArray(manifest.required_features) ||
+      manifest.required_features.some((f) => typeof f !== 'string')
+    ) {
+      err('bad_required_features', 'required_features', 'required_features must be a string array');
+    }
+  }
+  // Round-7 #7: `execution.runtime`, when present, must be an OBJECT. A scalar
+  // (`runtime: 7`) slips past `checkKnownKeys` (which returns on non-objects)
+  // and the optional-chained runner checks, persisting malformed runtime state.
+  const rawRuntime = manifest.execution?.runtime;
+  if (
+    rawRuntime !== undefined &&
+    (typeof rawRuntime !== 'object' || rawRuntime === null || Array.isArray(rawRuntime))
+  ) {
+    err('bad_runtime', 'execution.runtime', 'execution.runtime must be an object');
+  }
+  // Round-8 #4: the runtime's nested sub-objects have the same contract — a
+  // scalar (`self_host: 7`, `artifacts: 7`) slips past `checkKnownKeys` (which
+  // returns on a non-object) and would persist malformed runtime state. Guard
+  // each as an object when the runtime itself is a valid object.
+  if (isPlainObject(rawRuntime)) {
+    for (const [key, val] of [
+      ['self_host', rawRuntime.self_host],
+      ['artifacts', rawRuntime.artifacts],
+    ] as const) {
+      if (val !== undefined && !isPlainObject(val)) {
+        err(
+          'bad_runtime_field',
+          `execution.runtime.${key}`,
+          `execution.runtime.${key} must be an object`,
+        );
+      }
     }
   }
   for (const [field, val] of [
@@ -527,7 +600,11 @@ export function validatePluginManifest(
   }
 
   // --- required_features union + normalization check -----------------------
-  for (const f of manifest.required_features ?? []) derived.add(f);
+  // Round-8 #4: guard the iteration — a non-array required_features is reported
+  // above but must not THROW here (`for…of 7`).
+  if (Array.isArray(manifest.required_features)) {
+    for (const f of manifest.required_features) derived.add(f);
+  }
   assertNormalized(manifest, err);
 
   if (errors.length > 0) return { ok: false, errors };
@@ -597,6 +674,11 @@ function validateCapability(
     );
   }
 
+  // Round-8 #4: data_scope must itself be an object when present — `data_scope: 7`
+  // slipped past `checkKnownKeys` and every optional-chained access below.
+  if (cap.data_scope !== undefined && !isPlainObject(cap.data_scope)) {
+    err('bad_data_scope', `${p}.data_scope`, 'data_scope must be an object');
+  }
   // Round-6 #5: data_scope.categories must be a string array. Beyond letting a
   // numeric category through, an un-typed value CRASHES the banned-category
   // check below (`(7).includes` throws) — a malformed manifest must fail closed,
@@ -610,6 +692,19 @@ function validateCapability(
       'bad_data_categories',
       `${p}.data_scope.categories`,
       'data_scope.categories must be an array of strings',
+    );
+  }
+  // Round-7 #7: data_scope.personas has the same string-array contract as
+  // categories (`personas: [42]` was accepted before).
+  const rawPersonas = cap.data_scope?.personas;
+  if (
+    rawPersonas !== undefined &&
+    (!Array.isArray(rawPersonas) || rawPersonas.some((c) => typeof c !== 'string'))
+  ) {
+    err(
+      'bad_data_personas',
+      `${p}.data_scope.personas`,
+      'data_scope.personas must be an array of strings',
     );
   }
   const catList: string[] = Array.isArray(rawCategories)
@@ -690,7 +785,7 @@ function validateCapability(
       validateMachine(cap.machine, p, err);
       derived.add('session');
     }
-    const ops = cap.ops_used ?? [];
+    const ops = arrayField(cap.ops_used, 'bad_ops_used', `${p}.ops_used`, err);
     for (const op of ops) {
       if (!(PLUGIN_OPS as readonly string[]).includes(op)) {
         err('unknown_op', `${p}.ops_used`, `op "${op}" is not in the closed ops library (§10.2)`);
@@ -718,7 +813,7 @@ function validateCapability(
       );
     }
     // kinds: required, unique entries, valid values, legal combos.
-    const kinds = cap.kinds ?? [];
+    const kinds = arrayField(cap.kinds, 'bad_kinds', `${p}.kinds`, err);
     if (kinds.length === 0) {
       err(
         'missing_kinds',
@@ -757,7 +852,7 @@ function validateCapability(
       derived.add('idempotent_retry');
     }
     // intent_phrases: caps + charset (printable, no control chars).
-    const phrases = cap.intent_phrases ?? [];
+    const phrases = arrayField(cap.intent_phrases, 'bad_phrase', `${p}.intent_phrases`, err);
     if (phrases.length > PLUGIN_CAPS.MAX_INTENT_PHRASES) {
       err(
         'too_many_phrases',
@@ -793,7 +888,7 @@ function validateCapability(
       );
     }
     // network_domains: hostname shape only — consent transparency.
-    const domains = cap.network_domains ?? [];
+    const domains = arrayField(cap.network_domains, 'bad_domain', `${p}.network_domains`, err);
     if (domains.length > PLUGIN_CAPS.MAX_NETWORK_DOMAINS) {
       err(
         'too_many_domains',

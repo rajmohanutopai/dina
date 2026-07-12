@@ -151,6 +151,7 @@ describe('install lifecycle (§14)', () => {
         capability: 'com.acme.flightwatch.watch',
         approvedScopeHash: 'c'.repeat(64),
         grantType: 'standing',
+        constraints: { version: 1, max_count: 100 }, // Round-8 #1: standing needs a bound
       },
       'read',
       T0,
@@ -271,13 +272,17 @@ describe('plugin grants (§8: enforceable or theater)', () => {
     });
   }
 
-  it('rejects an unconstrained standing grant for HIGH classes at creation', () => {
-    for (const cls of ['booking', 'write', 'agentic']) {
+  it('round-8 #1: an unconstrained standing grant is rejected for a custom capability, whatever the declared class', () => {
+    // KEY is a CUSTOM (reverse-DNS) capability, so its declared class is a
+    // consent label, not proof (§8) — a `read` declaration is as unverifiable as
+    // `booking`. An unbounded standing grant runs silent, so ALL classes require
+    // a bound for a custom capability.
+    for (const cls of ['booking', 'write', 'agentic', 'read', 'quote']) {
       expect(() => grants.create({ installId, ...KEY, grantType: 'standing' }, cls, T0)).toThrow(
         /must be bounded|never offered/,
       );
     }
-    // …but a constrained one is fine.
+    // …but a BOUNDED standing grant is fine, whatever the declared class.
     expect(
       grants.create(
         {
@@ -290,10 +295,14 @@ describe('plugin grants (§8: enforceable or theater)', () => {
         T0,
       ),
     ).toMatch(/^plg_/);
-    // …and read-class standing needs no constraint.
-    expect(grants.create({ installId, ...KEY, grantType: 'standing' }, 'read', T0)).toMatch(
-      /^plg_/,
-    );
+    // An expiry is also a valid bound.
+    expect(
+      grants.create(
+        { installId, ...KEY, grantType: 'standing', expiresAt: T0_SEC + 3600 },
+        'read',
+        T0,
+      ),
+    ).toMatch(/^plg_/);
   });
 
   it('AUDIT D8: a window grant must carry an expiry; a HIGH grant must be bounded some way', () => {
@@ -335,6 +344,26 @@ describe('plugin grants (§8: enforceable or theater)', () => {
         T0,
       ),
     ).toThrow(/malformed|ceilings/);
+  });
+
+  it('round-7 #4: a NaN or negative value cannot defeat a max_value cap', () => {
+    grants.create(
+      { installId, ...KEY, grantType: 'standing', constraints: { version: 1, max_value: 100 } },
+      'booking',
+      T0,
+    );
+    // NaN slips past `value > max` (NaN comparisons are false) — must be denied.
+    expect(authorize('e-nan', { value: NaN })).toEqual({
+      allowed: false,
+      reason: 'value_exceeds_cap',
+    });
+    // A negative value is not a real transaction value — denied.
+    expect(authorize('e-neg', { value: -100 })).toEqual({
+      allowed: false,
+      reason: 'value_exceeds_cap',
+    });
+    // A finite, non-negative, in-cap value authorizes.
+    expect(authorize('e-ok', { value: 50 }).allowed).toBe(true);
   });
 
   it('AUDIT D8: an empty-string constraints_json fails CLOSED (a real grant stores NULL, not "")', () => {
@@ -438,7 +467,11 @@ describe('plugin grants (§8: enforceable or theater)', () => {
     grants.revoke(g, T0_SEC);
     expect(authorize('e2')).toEqual({ allowed: false, reason: 'revoked' });
 
-    const g2 = grants.create({ installId, ...KEY, grantType: 'standing' }, 'read', T0);
+    const g2 = grants.create(
+      { installId, ...KEY, grantType: 'standing', constraints: { version: 1, max_count: 100 } },
+      'read',
+      T0,
+    );
     expect(authorize('e3').allowed).toBe(true);
     // Scope growth: new hash → NOTHING matches → re-consent structurally (§8).
     expect(
@@ -454,7 +487,11 @@ describe('plugin grants (§8: enforceable or theater)', () => {
   });
 
   it('fails closed on stored constraints this node cannot parse (§8)', () => {
-    const g = grants.create({ installId, ...KEY, grantType: 'standing' }, 'read', T0);
+    const g = grants.create(
+      { installId, ...KEY, grantType: 'standing', constraints: { version: 1, max_count: 100 } },
+      'read',
+      T0,
+    );
     // Simulate a future-version constraint object landing in the DB
     // (restored archive from a newer node).
     adapter.execute('UPDATE plugin_grants SET constraints_json = ? WHERE grant_id = ?', [
@@ -465,13 +502,18 @@ describe('plugin grants (§8: enforceable or theater)', () => {
   });
 
   it('revokeAllForInstall cascades (uninstall / device-revoke path)', () => {
-    grants.create({ installId, ...KEY, grantType: 'standing' }, 'read', T0);
+    grants.create(
+      { installId, ...KEY, grantType: 'standing', constraints: { version: 1, max_count: 100 } },
+      'read',
+      T0,
+    );
     grants.create(
       {
         installId,
         capability: 'other.cap',
         approvedScopeHash: 'z'.repeat(64),
         grantType: 'standing',
+        constraints: { version: 1, max_count: 100 }, // Round-8 #1: standing needs a bound
       },
       'read',
       T0,

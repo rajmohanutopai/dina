@@ -418,12 +418,24 @@ export function evaluatePluginIntent(input: PluginIntentInput): PluginIntentDeci
   const firstNCard =
     risk === 'HIGH' && input.priorInvocations < PLUGIN_FIRST_N && input.hasStandingApproval;
 
-  // 10. Mode. Sensitive-persona scope cards EVERY invocation — a
-  //     standing approval never silences it (§8 privacy clamp).
+  // Round-7 #1: a `sensitive`/`regulated` privacy_class must card EVERY
+  // invocation, exactly like a sensitive-persona scope — a standing approval
+  // never silences it. Raising the risk to HIGH alone was insufficient: after
+  // the first N, a HIGH capability with a standing approval would run silent,
+  // contradicting the approval-every-time policy for regulated data.
+  const sensitivePrivacy = input.privacyClass === 'sensitive' || input.privacyClass === 'regulated';
+
+  // 10. Mode. Sensitive-persona scope (or a sensitive/regulated privacy_class)
+  //     cards EVERY invocation — a standing approval never silences it.
   let mode: 'silent' | 'card';
   if (risk === 'SAFE') {
     mode = 'silent';
-  } else if (input.hasStandingApproval && !firstNCard && !input.touchesSensitivePersona) {
+  } else if (
+    input.hasStandingApproval &&
+    !firstNCard &&
+    !input.touchesSensitivePersona &&
+    !sensitivePrivacy
+  ) {
     // Standing approval silences MODERATE/HIGH beyond the first N —
     // an explicit human decision, not a manifest claim (§8).
     mode = 'silent';

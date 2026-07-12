@@ -29,6 +29,7 @@
 
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+import { getCatalogCapability } from '@dina/protocol';
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
@@ -103,7 +104,11 @@ export interface PluginGrantRepository {
    * malformed / above ceilings — a grant that cannot be enforced must
    * not exist.
    */
-  create(grant: Omit<PluginGrant, 'grantId' | 'createdAt'>, actionClass: string, nowMs: number): string;
+  create(
+    grant: Omit<PluginGrant, 'grantId' | 'createdAt'>,
+    actionClass: string,
+    nowMs: number,
+  ): string;
 
   /**
    * THE authorization primitive + atomic consume. A use is consumed
@@ -209,7 +214,10 @@ export class SQLitePluginGrantRepository implements PluginGrantRepository {
 
   create(
     grant: Omit<PluginGrant, 'grantId' | 'createdAt'>,
-    actionClass: string,
+    // Round-8 #1: the declared action class is a consent LABEL, retained for
+    // callers but NO LONGER trusted for the bounding decision below — the true
+    // risk is derived from the catalog (or treated as high for a custom cap).
+    _declaredActionClass: string,
     nowMs: number,
   ): string {
     // Constraint validation at CREATION — a grant that cannot be
@@ -227,20 +235,26 @@ export class SQLitePluginGrantRepository implements PluginGrantRepository {
     if (grant.grantType === 'window' && grant.expiresAt === undefined) {
       throw new Error('plugin_grants: a window grant must carry an expiry (§8)');
     }
-    // HIGH-class capabilities may NEVER hold an UNBOUNDED grant (§8).
-    // Audit D8: the old check keyed strictly on grantType==='standing',
-    // so a 'window' (no expiry) or 'once' (no enforcement) grant slipped
-    // the net. A HIGH grant is bounded iff it is: 'once' (single
-    // execution, enforced at consume), OR time-bounded (expiresAt), OR
-    // carries a meaningful count/resource/value constraint.
-    if (HIGH_ACTION_CLASSES.has(actionClass)) {
+    // Round-8 #1: a grant that authorizes SILENT repeated execution (a
+    // 'standing' grant) may only be UNBOUNDED when the capability's low-risk
+    // class is VERIFIED — i.e. it is a canonical CATALOG capability whose
+    // action_class is not HIGH. A CUSTOM capability (publisher-declared class,
+    // unverifiable — "a consent label, not proof", §8) or a HIGH catalog
+    // capability must carry a bound (expiry / meaningful constraint); 'once' and
+    // 'window' are bounded by their own rules above. This closes the "custom
+    // capability declares read → unconstrained standing grant → runs silent"
+    // hole. (Today every plugin id is custom under the reverse-DNS grammar, so
+    // in practice all standing grants need a bound; the catalog exemption is the
+    // forward-compatible path for when canonical ids become installable.)
+    const catalog = getCatalogCapability(grant.capability);
+    const verifiedLowRisk = catalog !== null && !HIGH_ACTION_CLASSES.has(catalog.action_class);
+    if (grant.grantType === 'standing' && !verifiedLowRisk) {
       const bounded =
-        grant.grantType === 'once' ||
         grant.expiresAt !== undefined ||
         hasMeaningfulConstraint(parseConstraints(grant.constraints ?? null));
       if (!bounded) {
         throw new Error(
-          `plugin_grants: a ${actionClass} grant must be bounded (once / expiry / constraint) — no blank checks (§8)`,
+          'plugin_grants: a standing grant for a custom or high-class capability must be bounded (expiry / constraint) — a publisher-declared class is not proof (§8)',
         );
       }
     }
@@ -339,7 +353,18 @@ export class SQLitePluginGrantRepository implements PluginGrantRepository {
             }
           }
           if (constraints.max_value !== undefined) {
-            if (args.value === undefined || args.value > constraints.max_value) {
+            // Round-7 #4: the value is caller-supplied. A NaN slips past
+            // `value > max` (NaN comparisons are always false), DEFEATING the
+            // cap; a negative value is likewise not a real transaction value. A
+            // value-capped grant requires a FINITE, NON-NEGATIVE value within
+            // the cap — anything else fails closed. (Pinning the value to the
+            // validated invocation params remains the dispatch producer's job.)
+            if (
+              args.value === undefined ||
+              !Number.isFinite(args.value) ||
+              args.value < 0 ||
+              args.value > constraints.max_value
+            ) {
               denial = 'value_exceeds_cap';
               continue;
             }

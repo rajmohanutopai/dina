@@ -36,6 +36,7 @@ import {
 import { resolveCallerType, resetCallerTypeState } from '../../src/auth/caller_type';
 import {
   InMemoryAgentGrantRepository,
+  SQLiteAgentGrantRepository,
   setAgentGrantRepository,
 } from '../../src/agent/grant_repository';
 import { resetAuditState } from '../../src/audit/service';
@@ -329,8 +330,9 @@ describe('revokeDeviceDurable — cascades to plugin authority (F3)', () => {
           capability: CAP,
           approvedScopeHash: 'c'.repeat(64),
           grantType: 'standing',
+          constraints: { version: 1, max_count: 100 }, // Round-8 #1: standing needs a bound
         },
-        'read', // not HIGH-class → an unconstrained standing grant is allowed
+        'read',
         now,
       );
       expect(installs.getById(installId)?.status).toBe('active');
@@ -381,7 +383,13 @@ describe('revokeDeviceDurable — cascades to plugin authority (F3)', () => {
         });
       const grantFor = (installId: string): string =>
         grants.create(
-          { installId, capability: CAP, approvedScopeHash: 'c'.repeat(64), grantType: 'standing' },
+          {
+            installId,
+            capability: CAP,
+            approvedScopeHash: 'c'.repeat(64),
+            grantType: 'standing',
+            constraints: { version: 1, max_count: 100 }, // Round-8 #1: standing needs a bound
+          },
           'read',
           now,
         );
@@ -412,6 +420,170 @@ describe('revokeDeviceDurable — cascades to plugin authority (F3)', () => {
       // pending → unwound entirely (row + grant gone: can never activate dead authority)
       expect(installs.getById(pending)).toBeNull();
       expect(grants.getById(gPending)).toBeNull();
+    } finally {
+      a.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('round-7 #3: boot reconciliation disables a revoked device install left ACTIVE by a crash', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-dev5c-'));
+    const a = openId(path.join(dir, 'identity.sqlite'));
+    try {
+      const sqlRepo = new SQLiteDeviceRepository(a);
+      setDeviceRepository(sqlRepo);
+      const installs = new SQLitePluginInstallRepository(a);
+      const grants = new SQLitePluginGrantRepository(a);
+      setPluginInstallRepository(installs);
+      setPluginGrantRepository(grants);
+      setPluginDecisionRepository(new SQLitePluginDecisionRepository(a));
+
+      const d = registerDevice('inst', 'z6MkCrashInst', 'plugin');
+      await sqlRepo.register(d); // write-through is fire-and-forget — force it
+      const now = Date.now();
+      const installId = installs.createPending({
+        publisherDid: 'did:plc:acme',
+        pluginId: 'com.acme.fw',
+        label: '',
+        executionMode: 'runner',
+        currentCid: 'bafyreicid',
+        currentVersion: '1.0.0',
+        manifest,
+        installScopeHash: 's'.repeat(64),
+        capabilityHashes: { [CAP]: 'c'.repeat(64) },
+        behaviorHash: 'b'.repeat(64),
+        presentationHash: 'p'.repeat(64),
+        trustAnchor: { kind: 'repo_proof' },
+        pendingExpiresAtSec: Math.floor(now / 1000) + 900,
+        nowMs: now,
+      });
+      installs.activate(installId, d.did, now);
+      const grantId = grants.create(
+        {
+          installId,
+          capability: CAP,
+          approvedScopeHash: 'c'.repeat(64),
+          grantType: 'standing',
+          constraints: { version: 1, max_count: 100 }, // Round-8 #1: standing needs a bound
+        },
+        'read',
+        now,
+      );
+      expect(installs.getById(installId)?.status).toBe('active');
+
+      // Simulate a CRASH: the device is revoked in SQL, but the authority
+      // cascade never ran (the install is still active, its grant still live).
+      await sqlRepo.revoke(d.deviceId);
+
+      // Reboot: clear the in-memory registry, then hydrate — which reconciles.
+      resetDeviceRegistry();
+      await hydrateDeviceRegistry();
+
+      // The revoked device's stale authority is now disabled — re-pairing the
+      // same key can no longer revive an active install with old grants.
+      expect(installs.getById(installId)?.status).toBe('paused');
+      expect(grants.getById(grantId)?.revokedAt).toBeGreaterThan(0);
+    } finally {
+      a.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("round-8 #2: boot reconciliation also revokes a crashed revoked device's AGENT persona grants", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-dev5e-'));
+    const a = openId(path.join(dir, 'identity.sqlite'));
+    try {
+      const sqlRepo = new SQLiteDeviceRepository(a);
+      setDeviceRepository(sqlRepo);
+      // A durable agent-grant repo (SQL) so the grant genuinely survives the
+      // simulated reboot below. NO plugin install repo is wired — the crash we
+      // reconcile here is the AGENT-grant half, which the pre-Round-8 reconciler
+      // never repeated (it only re-disabled plugin installs/grants).
+      const agentGrants = new SQLiteAgentGrantRepository(a);
+      setAgentGrantRepository(agentGrants);
+
+      const d = registerDevice('Agent', 'z6MkCrashAgentGrant', 'agent');
+      await sqlRepo.register(d); // force the write-through so the device persists
+      const now = Date.now();
+      agentGrants.insert({
+        id: 'g-crash-1',
+        sessionId: null,
+        agentDID: d.did,
+        persona: 'health',
+        mode: 'read',
+        scopeJson: '{}',
+        approvalTaskId: 't-crash',
+        expiresAt: now + 3_600_000,
+        createdAt: now,
+      });
+      expect(agentGrants.listActiveForAgent(d.did, Date.now())).toHaveLength(1);
+
+      // Simulate a CRASH: the device is revoked in SQL, but the authority
+      // cascade never ran — the agent persona grant is still LIVE, so the
+      // revoked agent could keep reading a locked persona with a stale grant.
+      await sqlRepo.revoke(d.deviceId);
+      expect(agentGrants.listActiveForAgent(d.did, Date.now())).toHaveLength(1);
+
+      // Reboot: clear the in-memory registry, then hydrate — which reconciles
+      // BOTH halves of authority (plugin AND agent grants) for revoked devices.
+      resetDeviceRegistry();
+      await hydrateDeviceRegistry();
+
+      // The crashed revoked device's locked-persona grant is now tombstoned —
+      // re-hydrating (re-pairing) the same key can no longer read via it.
+      expect(agentGrants.listActiveForAgent(d.did, Date.now())).toHaveLength(0);
+    } finally {
+      a.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('round-8 #3: revoke reports NOT durable when the grant repo is absent but installs exist', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-dev5d-'));
+    const a = openId(path.join(dir, 'identity.sqlite'));
+    try {
+      const sqlRepo = new SQLiteDeviceRepository(a);
+      setDeviceRepository(sqlRepo);
+      const installs = new SQLitePluginInstallRepository(a);
+      setPluginInstallRepository(installs);
+      // The grant repo is UNAVAILABLE (misconfiguration / boot-order bug), yet
+      // there is an active install whose grants would be silently orphaned.
+      setPluginGrantRepository(null);
+      setPluginDecisionRepository(new SQLitePluginDecisionRepository(a));
+
+      const d = registerDevice('inst', 'z6MkNoGrantRepo', 'plugin');
+      await sqlRepo.register(d); // force write-through so the SQL revoke succeeds
+      const now = Date.now();
+      const installId = installs.createPending({
+        publisherDid: 'did:plc:acme',
+        pluginId: 'com.acme.fw',
+        label: '',
+        executionMode: 'runner',
+        currentCid: 'bafyreicid',
+        currentVersion: '1.0.0',
+        manifest,
+        installScopeHash: 's'.repeat(64),
+        capabilityHashes: { [CAP]: 'c'.repeat(64) },
+        behaviorHash: 'b'.repeat(64),
+        presentationHash: 'p'.repeat(64),
+        trustAnchor: { kind: 'repo_proof' },
+        pendingExpiresAtSec: Math.floor(now / 1000) + 900,
+        nowMs: now,
+      });
+      installs.activate(installId, d.did, now);
+      expect(installs.getById(installId)?.status).toBe('active');
+
+      const r = await revokeDeviceDurable(d.deviceId);
+
+      // The device SQL row persisted, but the plugin cascade could not revoke
+      // the install's grants (repo absent). We must NOT report durable success —
+      // a silent half-cleanup (paused install + live grants) is the exact split
+      // Round-8 #3 forbids. Fail closed so the caller/reconciler retries.
+      expect(r.durable).toBe(false);
+      expect(r.error).toMatch(/grant repository unavailable/);
+      // The cascade threw BEFORE pausing anything — the install stays active
+      // (nothing changed) rather than leaving a paused install with live grants.
+      expect(installs.getById(installId)?.status).toBe('active');
     } finally {
       a.close();
       fs.rmSync(dir, { recursive: true, force: true });

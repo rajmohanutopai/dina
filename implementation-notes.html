@@ -935,5 +935,88 @@ reverse-DNS, so a plugin can't declare a single-token canonical capability. Curr
 green</strong> (in-band) with new regression tests for #1/#2/#4/#5/#8/#9; workspace typecheck clean; changed files
 prettier-clean. Substrate still unwired.</p>
 
+<h2>PLG-17 &mdash; seventh adversarial review (7 findings): 6 fixed, 1 partial+scoped <span class="status done">DONE (6 fixed)</span></h2>
+<p>Mostly follow-ups showing round-6 fixes were incomplete. Verified each against the code (reproduced the NaN
+cap-defeat and the runtime:7 acceptance) then fixed the tractable ones.</p>
+<ul>
+<li><strong>#1 (P1) &mdash; sensitive/regulated ran silent after first-N.</strong> The round-6 privacy clamp
+raised risk to HIGH but the silence gate only checked <code>touchesSensitivePersona</code>. Added a
+<code>sensitivePrivacy</code> term so a <code>sensitive</code>/<code>regulated</code> privacy_class cards EVERY
+invocation (a standing approval never silences it), like a sensitive-persona scope.</li>
+<li><strong>#3 (P1) &mdash; a crash between the device-SQL revoke and the authority cascades left stale active
+installs.</strong> Extracted <code>disablePluginAuthorityForDevice</code> (idempotent) and added
+<code>reconcileRevokedDevicePluginAuthority</code>, called from <code>hydrateDeviceRegistry</code> on boot: every
+revoked device's installs/grants are re-disabled, so re-pairing the same key can't revive stale authority.</li>
+<li><strong>#4 (P1, partial) &mdash; a NaN value defeated a max_value cap</strong> (<code>NaN &gt; max</code> is
+false). The consume check now requires a FINITE, non-negative, in-cap value. (Pinning the value to validated
+invocation params stays the dispatch producer's job &mdash; producer-time.)</li>
+<li><strong>#5 (P2) &mdash; teardown could delete the only device-cleanup anchor.</strong> With a bound device
+the durable revoker is now MANDATORY in <code>declineConsent</code>/<code>uninstall</code> &mdash; no callback
+means the row is RETAINED (never deleted-and-hoped).</li>
+<li><strong>#6 (P2) &mdash; a missing idempotency column was accepted.</strong> The claim guard now requires
+EXACT equality between the envelope key and the task column, including rejecting a missing column.</li>
+<li><strong>#7 (P2) &mdash; runtime manifest validation was incomplete.</strong> Now rejects
+<code>execution.runtime: 7</code> (must be an object), <code>data_scope.personas: [42]</code> /
+<code>required_features: [42]</code> (string arrays), and dangerous URL schemes on
+<code>homepage</code>/<code>source_url</code> (http(s) only).</li>
+</ul>
+<h3>Partial + scoped</h3>
+<ul>
+<li><strong>#2 (P1) &mdash; catalog-derived safety path unreachable</strong> (canonical flat ids rejected by the
+3-segment grammar). The exploitable edge is grant misclassification; the grammar + catalog action/privacy
+derivation is a design change coupled to the unwired dispatch producer &mdash; scoped.
+<em>Correction (PLG-18 #5): an earlier draft here overclaimed that "custom capabilities already clamp to MODERATE,
+so nothing runs silent on a misdeclared class." That was WRONG &mdash; a custom read capability with a standing
+approval DOES run silent after the first N, and the finite-value fix does not protect an UNCONSTRAINED grant.
+PLG-18 #1 closes this at the grant layer by requiring bounded standing grants for custom/high-class capabilities.</em></li>
+</ul>
+<h3>Validation</h3>
+<p>Protocol <strong>647 green</strong> (incl. #7 tests); full core suite <strong>269 suites / 5031 tests
+green</strong> (in-band) with new regression tests for #1/#3/#4/#5/#6; workspace typecheck clean; changed files
+prettier-clean.</p>
+
+<h2>PLG-18 &mdash; eighth adversarial review (5 findings): 5 fixed <span class="status done">DONE (5 fixed)</span></h2>
+<p>Follow-ups closing the two threads PLG-17 left partial (grant classification, crash-recovery cascade) plus
+two more validation/honesty gaps. #1 was a genuine product decision &mdash; a custom capability can no longer hold
+an <em>unconstrained</em> standing grant &mdash; so it was confirmed with the user (<em>"Enforce bounded standing"</em>)
+before implementing.</p>
+<ul>
+<li><strong>#1 (P1) &mdash; grant creation trusted caller-supplied classification.</strong> <code>create()</code> no
+longer trusts the passed <code>actionClass</code> (renamed <code>_declaredActionClass</code>). It derives risk from
+the <em>canonical catalog</em> (<code>getCatalogCapability</code>): only a capability the catalog knows to be
+low-risk (<code>action_class &notin; {booking, write, agentic}</code>) may hold an <strong>unbounded</strong>
+standing grant. Every other capability &mdash; custom (all plugin ids today, since the 3-segment grammar makes them
+custom) or high-class &mdash; MUST bound its standing grant with an expiry or a meaningful constraint, else
+<code>create()</code> throws. A publisher-declared class is a consent label, not proof (&sect;8). This closes the
+PLG-17 #2 &ldquo;custom read runs silent after first-N&rdquo; edge at the grant layer rather than the (unwired)
+dispatch producer.</li>
+<li><strong>#2 (P1) &mdash; crash recovery reconciled plugin authority but not agent persona grants.</strong> The
+PLG-17 reconciler only re-ran the plugin half. Renamed
+<code>reconcileRevokedDevicePluginAuthority &rarr; reconcileRevokedDeviceAuthority</code>; boot reconciliation now
+re-disables <strong>both</strong> halves for every revoked device &mdash; plugin installs/grants
+<em>and</em> agent persona grants (extracted <code>disableAgentGrantsForDevice</code>, shared by the revoke cascade
+and the reconciler). Also fixed a boot-order bug in Home&nbsp;Node Lite: <code>setAgentGrantRepository</code> now runs
+<em>before</em> <code>hydrateDeviceRegistry</code>, so the reconciler can actually reach the agent-grant repo.</li>
+<li><strong>#3 (P2) &mdash; revoke could report durable success when the grant repo was absent.</strong>
+<code>disablePluginAuthorityForDevice</code> now throws when there are non-pending installs to disable but the plugin
+grant repo is <code>null</code> &mdash; pausing the install while leaving its grants live is a silent half-cleanup.
+The throw (before any state change) downgrades <code>durable</code>, so the caller / boot reconciler retries instead
+of reporting a cleanup that never happened.</li>
+<li><strong>#4 (P2) &mdash; manifest validation was still not total over untrusted input.</strong> Added object
+guards for <code>execution.runtime.self_host</code> / <code>execution.runtime.artifacts</code> and
+<code>capability.data_scope</code> (a scalar where an object is expected now fails closed with a typed code, not a
+throw). Replaced the remaining unguarded <code>?? []</code> iterations with a total <code>arrayField</code> helper
+&mdash; <code>ops_used</code>, <code>kinds</code>, <code>intent_phrases</code>, <code>network_domains</code>,
+<code>required_features</code>: a non-array yields a diagnostic code and an empty list, never a crash.</li>
+<li><strong>#5 (P3) &mdash; the notes mis-described the remaining classification risk.</strong> Corrected the PLG-17
+#2 paragraph (above): the earlier &ldquo;nothing runs silent&rdquo; claim was wrong, and #1 is what actually closes
+it.</li>
+</ul>
+<h3>Validation</h3>
+<p>Protocol <strong>648 green</strong> (incl. new #4 scalar/non-array fail-closed test); full core suite
+<strong>269 suites / 5033 tests green</strong> (in-band) with new regression tests for #2 (agent-grant boot
+reconciliation) and #3 (honest-durable when the grant repo is absent), plus ~10 standing-grant tests updated to the
+bounded-standing rule; workspace typecheck clean; changed files prettier-clean.</p>
+
 </body>
 </html>

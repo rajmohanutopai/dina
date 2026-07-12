@@ -104,13 +104,13 @@ export function claimPluginTask(args: {
       failStale('envelope install does not match the lane');
       continue;
     }
-    // Check 2b (Round-6 #8) — the envelope's idempotency_key is Core's dedup
-    // source of truth; the workflow task also carries an idempotency_key column
-    // (set by the producer). If the two diverge, Core and the runner would
-    // deduplicate DIFFERENTLY — collapsing distinct executions or splitting
-    // identical ones. Pin them together at the claim gate; a mismatch is an
-    // integrity error and terminalizes.
-    if (task.idempotency_key !== undefined && task.idempotency_key !== envelope.idempotency_key) {
+    // Check 2b (Round-6 #8 + Round-7 #6) — the envelope's idempotency_key is
+    // Core's dedup source of truth; a plugin task MUST carry the SAME value in
+    // its workflow idempotency_key column. If they diverge — including a MISSING
+    // column — Core and the runner would deduplicate DIFFERENTLY (collapsing
+    // distinct executions or splitting identical ones). Require exact equality;
+    // any mismatch is an integrity error and terminalizes.
+    if (task.idempotency_key !== envelope.idempotency_key) {
       failStale('envelope idempotency key diverged from the task column');
       continue;
     }

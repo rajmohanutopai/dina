@@ -184,6 +184,9 @@ function enqueue(overrides: Partial<Record<string, unknown>> = {}, lane?: string
     result_summary: '',
     policy: '',
     requested_runner: lane ?? pluginLane(installId),
+    // Round-7 #6: a plugin task MUST carry the SAME idempotency key in its
+    // column as the envelope. Mirror the envelope's default (or an override).
+    idempotency_key: (overrides.idempotency_key as string | undefined) ?? `idem_${seq}`,
     created_at: T0 + seq,
     updated_at: T0 + seq,
   };
@@ -386,6 +389,43 @@ describe('claim checks 3/5/6 — stale authority TERMINALIZES (§9.1)', () => {
       policy: '',
       requested_runner: pluginLane(installId),
       idempotency_key: 'task-column-key-DIFFERENT', // diverges from the envelope
+      created_at: T0,
+      updated_at: T0,
+    });
+    expect((await claim()).status).toBe(204);
+    expect(workflowRepo.getById(id)?.error).toContain('idempotency key diverged');
+  });
+
+  it('round-7 #6: a plugin task with a MISSING idempotency column terminalizes (must match exactly)', async () => {
+    seq += 1;
+    const id = `task_${seq}`;
+    const payload = JSON.stringify({
+      type: PLUGIN_INVOCATION_PAYLOAD_TYPE,
+      install_id: installId,
+      capability_id: CAP,
+      params: { flight: 'BA117' },
+      context: [],
+      manifest_cid: 'bafyreicid1',
+      approved_scope_hash: SCOPE_HASH,
+      schema_snapshot: currentResultSchema(),
+      config_revision: 1,
+      execution_id: `exec_${seq}`,
+      idempotency_key: 'envelope-key',
+      action_class: 'read',
+      effects_idempotency: 'unsupported',
+    });
+    // No idempotency_key column on the task — Core and the runner would then
+    // deduplicate differently. Exact equality is required, so this terminalizes.
+    workflowRepo.create({
+      id,
+      kind: 'delegation',
+      status: 'queued',
+      priority: 'normal',
+      description: 'plugin invocation',
+      payload,
+      result_summary: '',
+      policy: '',
+      requested_runner: pluginLane(installId),
       created_at: T0,
       updated_at: T0,
     });

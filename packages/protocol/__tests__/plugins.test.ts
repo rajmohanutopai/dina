@@ -359,6 +359,69 @@ describe('validatePluginManifest — adversarial review fixes', () => {
     expectCode(build(), 'bad_data_categories');
   });
 
+  it('round-7 #7: nested runtime/array/URL-scheme malformations are rejected (ingest-identical, fail closed)', () => {
+    // execution.runtime must be an object, not a scalar.
+    expectCode(
+      validatePluginManifest(mutate(runnerManifest(), (m) => (m.execution.runtime = 7))),
+      'bad_runtime',
+    );
+    // data_scope.personas must be a string array.
+    expectCode(
+      validatePluginManifest(
+        mutate(runnerManifest(), (m) => (m.capabilities[0].data_scope.personas = [42])),
+      ),
+      'bad_data_personas',
+    );
+    // required_features must be a string array.
+    expectCode(
+      validatePluginManifest(mutate(runnerManifest(), (m) => (m.required_features = [42]))),
+      'bad_required_features',
+    );
+    // A dangerous URL scheme is rejected even though it is a short string.
+    expectCode(
+      validatePluginManifest(mutate(runnerManifest(), (m) => (m.homepage = 'javascript:alert(1)'))),
+      'bad_url',
+    );
+    // http(s) homepages are accepted.
+    expectOk(
+      validatePluginManifest(
+        normalize(mutate(runnerManifest(), (m) => (m.homepage = 'https://acme.example'))),
+      ),
+    );
+  });
+
+  it('round-8 #4: scalar-where-object and non-array-where-array fail closed (never accepted, never throw)', () => {
+    // Objects that `checkKnownKeys` silently skipped when scalar.
+    expectCode(
+      validatePluginManifest(mutate(runnerManifest(), (m) => (m.execution.runtime.self_host = 7))),
+      'bad_runtime_field',
+    );
+    expectCode(
+      validatePluginManifest(mutate(runnerManifest(), (m) => (m.execution.runtime.artifacts = 7))),
+      'bad_runtime_field',
+    );
+    expectCode(
+      validatePluginManifest(mutate(runnerManifest(), (m) => (m.capabilities[0].data_scope = 7))),
+      'bad_data_scope',
+    );
+    // Non-array set-like fields would THROW on `for…of`; now fail closed.
+    for (const [field, code] of [
+      ['kinds', 'bad_kinds'],
+      ['intent_phrases', 'bad_phrase'],
+      ['network_domains', 'bad_domain'],
+    ] as const) {
+      const build = (): PluginValidationResult =>
+        validatePluginManifest(mutate(runnerManifest(), (m) => (m.capabilities[0][field] = 7)));
+      expect(build).not.toThrow();
+      expectCode(build(), code);
+    }
+    // A non-array required_features must not throw the union loop.
+    const rf = (): PluginValidationResult =>
+      validatePluginManifest(mutate(runnerManifest(), (m) => (m.required_features = 7)));
+    expect(rf).not.toThrow();
+    expectCode(rf(), 'bad_required_features');
+  });
+
   it('F4: a schema using only enforced keywords + annotations is accepted', () => {
     const ok = mutate(runnerManifest(), (m) => {
       m.capabilities[0].result_schema = {
