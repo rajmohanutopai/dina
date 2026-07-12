@@ -22,10 +22,11 @@ import { randomUUID } from 'node:crypto';
 
 import { test, expect } from '@playwright/test';
 
-import { ChatThread } from '../fixtures/pages/chat_thread';
 import { expectJudgePass, judgingEnabled } from '../fixtures/judge';
+import { ChatThread } from '../fixtures/pages/chat_thread';
+
 import { attachHygiene } from './relay_hygiene';
-import { NODES, dispatch, nodeDid, relayReachable } from './relay_nodes';
+import { NODES, dispatch, nodeDid, relaySkipReason } from './relay_nodes';
 
 // Unique per run: the relay nodes are long-lived and reused, and the SSE stream
 // replays the WHOLE persisted `main` thread to every fresh subscriber — so a
@@ -38,7 +39,8 @@ const PEER_TEXT = `coming over tomorrow morning [run-${RUN}]`;
 test('MRS-04 — a peer message renders as a d2d-message; (live) an enriched reminder', async ({
   browser,
 }) => {
-  test.skip(!(await relayReachable()), 'relay: dina-nodes (alonso/sancho) not running');
+  const relaySkip = await relaySkipReason();
+  test.skip(relaySkip !== null, relaySkip ?? '');
 
   const sancho = NODES.sancho;
   const alonso = NODES.alonso;

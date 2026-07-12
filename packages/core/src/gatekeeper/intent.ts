@@ -238,3 +238,215 @@ export function isMoneyAction(action: string): boolean {
 export function getDefaultRiskLevel(action: string): RiskLevel | undefined {
   return DEFAULT_POLICY[action];
 }
+
+// ---------------------------------------------------------------
+// Plugin intent evaluation (PLUGIN_ARCHITECTURE.md §8)
+// ---------------------------------------------------------------
+
+/**
+ * Risk floors for runner-mode plugin capabilities, keyed off
+ * `action_class` (§8). Self-declared risk is an attack, so risk is
+ * computed locally and declarations may only RAISE it.
+ *
+ *   read → SAFE   quote → SAFE   booking → HIGH
+ *   write → HIGH  agentic → HIGH payment → BLOCKED (every ring, forever)
+ *
+ * SAFE is reserved for CATALOG-CANONICAL capabilities whose semantics
+ * Dina knows; custom ids never floor below MODERATE — Dina cannot
+ * verify that runner code labeled `read` doesn't book, write, or spend
+ * on its own backend.
+ */
+export const PLUGIN_ACTION_FLOORS: Record<string, RiskLevel> = {
+  read: 'SAFE',
+  quote: 'SAFE',
+  booking: 'HIGH',
+  write: 'HIGH',
+  agentic: 'HIGH',
+  payment: 'BLOCKED',
+};
+
+/** First-N rule (§8): HIGH capabilities card the first N invocations
+ * even after a standing approval exists. §21 open decision 1. */
+export const PLUGIN_FIRST_N = 3;
+
+const RISK_ORDER: Record<RiskLevel, number> = { SAFE: 0, MODERATE: 1, HIGH: 2, BLOCKED: 3 };
+
+function isRiskLevel(v: unknown): v is RiskLevel {
+  return typeof v === 'string' && v in RISK_ORDER;
+}
+
+/**
+ * Returns the higher of two risk levels. Audit D5: an out-of-enum
+ * `b` (e.g. a garbage manifest hint) used to slip through because
+ * `RISK_ORDER[garbage]` is undefined and `n >= undefined` is always
+ * false — so maxRisk returned `b`, LOWERING the floor to an invalid
+ * level that could run silent. Both inputs are now rank-safe: an
+ * unknown level ranks as BLOCKED (maximal), so it can only ever
+ * RAISE, and a caller that reaches here with a bad value fails toward
+ * blocked, never toward silent.
+ */
+function maxRisk(a: RiskLevel, b: RiskLevel): RiskLevel {
+  const rank = (r: RiskLevel): number => RISK_ORDER[r] ?? RISK_ORDER.BLOCKED;
+  return rank(a) >= rank(b) ? a : b;
+}
+
+export type PluginPublisherRing = 'unverified' | 'verified' | 'verified_actioned';
+
+export interface PluginIntentInput {
+  /** Pinned envelope `action_class` — the task's own frozen authority. */
+  actionClass: string;
+  /** Capability id (custom reverse-DNS or canonical catalog id). */
+  capabilityId: string;
+  /** Locally computed (classifyCatalogCapability) — NEVER manifest-claimed. */
+  capabilityKind: 'canonical' | 'custom';
+  /** Manifest risk hint — may only RAISE the computed floor (§8). */
+  declaredRisk?: RiskLevel;
+  /**
+   * The capability's declared `privacy_class` (Round-6 #2). Consumed as a risk
+   * signal that may only RAISE the floor: a non-`public` class means the
+   * capability's own declaration says its data is not public, so it must never
+   * run silent; `sensitive`/`regulated` force an explicit approval.
+   */
+  privacyClass?: string;
+  publisherRing: PluginPublisherRing;
+  /** data_scope intersects a sensitive-tier persona (§8 privacy clamp). */
+  touchesSensitivePersona: boolean;
+  /** data_scope names a locked persona — NEVER in scope in v1 (§11). */
+  touchesLockedPersona: boolean;
+  /** Prior invocations of this (install, capability) — first-N counter. */
+  priorInvocations: number;
+  /** A live standing approval matched (grants.authorizeAndConsume). */
+  hasStandingApproval: boolean;
+}
+
+export interface PluginIntentDecision extends IntentDecision {
+  /** What the dispatch layer does: run silent, raise a card, or refuse. */
+  mode: 'silent' | 'card' | 'blocked';
+  /** True when the first-N rule forced this card despite an approval. */
+  firstNCard: boolean;
+}
+
+/**
+ * Deterministic, table-driven, no LLM, fail-safe `?? MODERATE` —
+ * the plugin twin of `evaluateIntent` (§8). Both modes enter through
+ * this same gate; BRAIN_DENIED runs before risk lookup so no plugin
+ * capability can name sign/rotate/export/raw-vault operations.
+ *
+ * NOTE: `mode === 'silent'` is NECESSARY, never sufficient — SAFE runs
+ * silent only if the params clear egress (§11 point 5); that gate is
+ * the dispatch layer's job and cannot be pre-computed here.
+ */
+export function evaluatePluginIntent(input: PluginIntentInput): PluginIntentDecision {
+  const blocked = (reason: string): PluginIntentDecision => ({
+    allowed: false,
+    riskLevel: 'BLOCKED',
+    requiresApproval: false,
+    audit: true,
+    reason,
+    mode: 'blocked',
+    firstNCard: false,
+  });
+
+  // 1. BRAIN_DENIED runs BEFORE risk lookup (§8): a capability id whose
+  //    terminal segment names a brain-denied operation is refused
+  //    outright, whatever the manifest claims.
+  const lastSegment = input.capabilityId.split('.').pop() ?? '';
+  if (isBrainDenied(lastSegment) || isBrainDenied(input.actionClass)) {
+    return blocked(
+      `Capability "${input.capabilityId}" names a brain-denied operation — automated callers can never perform it`,
+    );
+  }
+
+  // 2. Locked personas are NEVER in a plugin's scope (§11): stricter
+  //    than agents, because a plugin is ambient automation.
+  if (input.touchesLockedPersona) {
+    return blocked('Locked personas are never in a plugin data scope (§11)');
+  }
+
+  // 3. Floor from action_class — fail-safe MODERATE for anything the
+  //    table doesn't know (§8: `?? 'MODERATE'`).
+  let risk = PLUGIN_ACTION_FLOORS[input.actionClass] ?? 'MODERATE';
+
+  // 4. payment is BLOCKED at every ring, forever (§8): the floor table
+  //    says so, and no amendment below can lower it.
+  if (risk === 'BLOCKED') {
+    return blocked('payment-class capabilities are BLOCKED at every trust ring, forever (§8)');
+  }
+
+  // 5. Custom ids never floor below MODERATE — the declared class is a
+  //    consent label, not proof (§8).
+  if (input.capabilityKind !== 'canonical') {
+    risk = maxRisk(risk, 'MODERATE');
+  }
+
+  // 6. Declared risk may only RAISE (§8: self-declared risk is an
+  //    attack). A declared BLOCKED blocks. Audit D5: an out-of-enum
+  //    declared value (garbage from a malformed manifest) is coerced to
+  //    BLOCKED — a risk hint we cannot understand fails toward blocked,
+  //    never toward silent, and never becomes the effective level.
+  if (input.declaredRisk !== undefined) {
+    const declared = isRiskLevel(input.declaredRisk) ? input.declaredRisk : 'BLOCKED';
+    risk = maxRisk(risk, declared);
+    if (risk === 'BLOCKED') {
+      return blocked('manifest declares this capability BLOCKED or an unrecognized risk level');
+    }
+  }
+
+  // 7. Trust-ring clamp: publisher not Verified → nothing runs silent.
+  if (input.publisherRing === 'unverified') {
+    risk = maxRisk(risk, 'MODERATE');
+  }
+
+  // 8. Privacy clamp: sensitive-persona scope → every invocation carded.
+  if (input.touchesSensitivePersona) {
+    risk = maxRisk(risk, 'HIGH');
+  }
+
+  // 8b. Privacy-CLASS clamp (Round-6 #2): the capability's own declared
+  //     privacy_class is a risk signal, may only RAISE. A non-`public` class
+  //     means the capability declares its data is not public → never silent;
+  //     `sensitive`/`regulated` force an explicit approval (HIGH). Self-declared
+  //     risk can only make things stricter, never looser — same rule as §8.
+  if (input.privacyClass === 'personal') {
+    risk = maxRisk(risk, 'MODERATE');
+  } else if (input.privacyClass === 'sensitive' || input.privacyClass === 'regulated') {
+    risk = maxRisk(risk, 'HIGH');
+  }
+
+  // 9. First-N: HIGH capabilities card the first N invocations even
+  //    after a standing approval exists (§8).
+  const firstNCard =
+    risk === 'HIGH' && input.priorInvocations < PLUGIN_FIRST_N && input.hasStandingApproval;
+
+  // 10. Mode. Sensitive-persona scope cards EVERY invocation — a
+  //     standing approval never silences it (§8 privacy clamp).
+  let mode: 'silent' | 'card';
+  if (risk === 'SAFE') {
+    mode = 'silent';
+  } else if (input.hasStandingApproval && !firstNCard && !input.touchesSensitivePersona) {
+    // Standing approval silences MODERATE/HIGH beyond the first N —
+    // an explicit human decision, not a manifest claim (§8).
+    mode = 'silent';
+  } else {
+    mode = 'card';
+  }
+
+  return {
+    allowed: true,
+    riskLevel: risk,
+    requiresApproval: mode === 'card',
+    // Non-SAFE decisions are ALWAYS audited, silent-via-grant included:
+    // a grant-silenced HIGH execution still lands in the decision log.
+    audit: risk !== 'SAFE',
+    reason:
+      mode === 'silent'
+        ? risk === 'SAFE'
+          ? 'SAFE floor — silent if params clear egress (§11.5)'
+          : 'standing approval beyond first-N — silent if params clear egress (§11.5)'
+        : firstNCard
+          ? `first ${PLUGIN_FIRST_N} invocations of a HIGH capability always card (§8)`
+          : RISK_REASONS[risk],
+    mode,
+    firstNCard,
+  };
+}

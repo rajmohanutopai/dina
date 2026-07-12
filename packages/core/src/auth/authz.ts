@@ -17,7 +17,7 @@
  * Source: core/internal/middleware/authz.go, ARCHITECTURE.md Section 18.4
  */
 
-export type CallerType = 'brain' | 'admin' | 'connector' | 'device' | 'agent';
+export type CallerType = 'brain' | 'admin' | 'connector' | 'device' | 'agent' | 'plugin';
 
 /**
  * Authorization rules: each entry maps a path prefix to the set of
@@ -25,7 +25,33 @@ export type CallerType = 'brain' | 'admin' | 'connector' | 'device' | 'agent';
  *
  * More specific paths are listed first. The first matching prefix wins.
  */
-const AUTHZ_RULES: { prefix: string; allowed: Set<CallerType> }[] = [
+/**
+ * A rule matches when the path has `prefix` (boundary-safe) AND — when
+ * `suffix` is present — ends with that suffix. Suffix rules exist for
+ * the plugin P0 matrix (PLUGIN_ARCHITECTURE.md §9.0): the six allowed
+ * verbs live at `/v1/workflow/tasks/:id/<verb>`, which pure prefix
+ * matching cannot carve out of the wider tasks sub-tree. Suffix rules
+ * are listed BEFORE their generic prefix so first-match-wins keeps the
+ * plugin surface minimal: claim / heartbeat / progress / complete /
+ * fail / healthz — nothing else, in any phase (ingest + notify are P3
+ * handler-gated additions, not present here yet).
+ */
+const AUTHZ_RULES: {
+  prefix: string;
+  suffix?: string;
+  /** When set, the rule claims only this HTTP method (suffix rules are
+   * POST-only verbs; without this, GET /v1/workflow/tasks/complete — a
+   * task id literally named "complete" — would match the suffix rule
+   * and leak read access to callers the generic rule excludes). */
+  method?: string;
+  /** When true, the rule matches ONLY the exact path (not a boundary
+   * prefix). Audit D1: without this, `/v1/workflow/tasks/claim` as a
+   * prefix authorizes a plugin for `/claim/<anything>` too — harmless
+   * today (no such route → 404) but a latent over-authorization if a
+   * `/claim/*` sub-route is ever added. Exact-match closes it. */
+  exact?: boolean;
+  allowed: Set<CallerType>;
+}[] = [
   // Vault — Brain reads/writes, device reads, agent reads (via grant)
   { prefix: '/v1/vault/store/batch', allowed: new Set(['brain']) },
   { prefix: '/v1/vault/store', allowed: new Set(['brain']) },
@@ -122,6 +148,43 @@ const AUTHZ_RULES: { prefix: string; allowed: Set<CallerType> }[] = [
   // on the approve/deny *decision* (an agent must never self-approve its own
   // persona-access grant or intent proposal) is enforced in the route
   // handler — see `ownerDecisionGuard` in server/routes/workflow.ts.
+  //
+  // Plugin instances (§9.0 P0 matrix): claim + the four per-task verbs
+  // ONLY — via the suffix rules below, which sit before the generic
+  // sub-tree rule so a plugin caller never reaches create/list/get/
+  // approve/cancel/running. In-handler, the six claim-time checks
+  // (§9.1) gate WHAT a claim may take; this matrix gates WHERE a
+  // plugin may speak at all.
+  {
+    prefix: '/v1/workflow/tasks/claim',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['brain', 'admin', 'agent', 'plugin']),
+  },
+  {
+    prefix: '/v1/workflow/tasks/',
+    suffix: '/heartbeat',
+    method: 'POST',
+    allowed: new Set(['brain', 'admin', 'agent', 'plugin']),
+  },
+  {
+    prefix: '/v1/workflow/tasks/',
+    suffix: '/progress',
+    method: 'POST',
+    allowed: new Set(['brain', 'admin', 'agent', 'plugin']),
+  },
+  {
+    prefix: '/v1/workflow/tasks/',
+    suffix: '/complete',
+    method: 'POST',
+    allowed: new Set(['brain', 'admin', 'agent', 'plugin']),
+  },
+  {
+    prefix: '/v1/workflow/tasks/',
+    suffix: '/fail',
+    method: 'POST',
+    allowed: new Set(['brain', 'admin', 'agent', 'plugin']),
+  },
   { prefix: '/v1/workflow/tasks/', allowed: new Set(['brain', 'admin', 'agent']) },
   { prefix: '/v1/workflow/', allowed: new Set(['brain', 'admin']) },
 
@@ -147,7 +210,10 @@ const AUTHZ_RULES: { prefix: string; allowed: Set<CallerType> }[] = [
   { prefix: '/api/v1/remember', allowed: new Set(['device', 'admin', 'brain']) },
 
   // Health check — everyone
-  { prefix: '/healthz', allowed: new Set(['brain', 'admin', 'connector', 'device', 'agent']) },
+  {
+    prefix: '/healthz',
+    allowed: new Set(['brain', 'admin', 'connector', 'device', 'agent', 'plugin']),
+  },
 ];
 
 /**
@@ -183,9 +249,16 @@ function hasPathPrefix(path: string, prefix: string): boolean {
  */
 export function isAuthorized(callerType: CallerType, method: string, path: string): boolean {
   for (const rule of AUTHZ_RULES) {
-    if (hasPathPrefix(path, rule.prefix)) {
-      return rule.allowed.has(callerType);
-    }
+    if (!hasPathPrefix(path, rule.prefix)) continue;
+    // An `exact` rule claims ONLY its literal path — a longer path
+    // sharing the prefix falls through to later rules.
+    if (rule.exact === true && path !== rule.prefix) continue;
+    // Suffix/method rules only claim their exact verb shape; a
+    // non-match falls through to later (more generic) rules for the
+    // same prefix.
+    if (rule.suffix !== undefined && !path.endsWith(rule.suffix)) continue;
+    if (rule.method !== undefined && rule.method !== method) continue;
+    return rule.allowed.has(callerType);
   }
   // Unknown path — deny by default (fail-closed)
   return false;
@@ -198,7 +271,14 @@ export function isAuthorized(callerType: CallerType, method: string, path: strin
 export function getAuthorizationMatrix(): Record<string, CallerType[]> {
   const matrix: Record<string, CallerType[]> = {};
   for (const rule of AUTHZ_RULES) {
-    matrix[rule.prefix] = Array.from(rule.allowed);
+    // Suffix/method rules share a prefix with the generic sub-tree rule;
+    // composite keys keep the diagnostic view lossless instead of
+    // last-write-wins collapsing them.
+    const key =
+      rule.prefix +
+      (rule.suffix !== undefined ? `*${rule.suffix}` : '') +
+      (rule.method !== undefined ? ` [${rule.method}]` : '');
+    matrix[key] = Array.from(rule.allowed);
   }
   return matrix;
 }

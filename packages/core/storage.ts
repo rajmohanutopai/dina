@@ -104,3 +104,18 @@ export {
   setVaultRepository,
 } from './src/vault/repository';
 export type { VaultRepository } from './src/vault/repository';
+export {
+  SQLitePluginInstallRepository,
+  setPluginInstallRepository,
+} from './src/plugins/registry';
+export type { PluginInstallRepository } from './src/plugins/registry';
+export {
+  SQLitePluginGrantRepository,
+  setPluginGrantRepository,
+} from './src/plugins/grants';
+export type { PluginGrantRepository } from './src/plugins/grants';
+export {
+  SQLitePluginDecisionRepository,
+  setPluginDecisionRepository,
+} from './src/plugins/decisions';
+export type { PluginDecisionRepository } from './src/plugins/decisions';

@@ -45,11 +45,11 @@
 
 import { test, expect } from '@playwright/test';
 
-import { Composer } from '../fixtures/pages/composer';
 import { expectJudgePass, judgingEnabled } from '../fixtures/judge';
+import { Composer } from '../fixtures/pages/composer';
 
 import { attachHygiene } from './relay_hygiene';
-import { NODES, relayReachable } from './relay_nodes';
+import { NODES, relaySkipReason } from './relay_nodes';
 
 const SERVICE_CARD = '[data-testid="chat-row"][data-kind="service-query"]';
 
@@ -57,7 +57,8 @@ test.describe('MRS-10 — Services, public (bus ETA)', () => {
   test('a public bus-ETA question resolves a service-query card via discovery + D2D', async ({
     browser,
   }) => {
-    test.skip(!(await relayReachable()), 'relay: dina-nodes (alonso/sancho) not running');
+    const relaySkip = await relaySkipReason();
+    test.skip(relaySkip !== null, relaySkip ?? '');
     // MRS-10 needs a live PROVIDER: Alonso publishing a public `eta_query`
     // listing at Reykjavik + the paired `stub_eta` daemon answering (see the
     // file header for the boot commands). That provider isn't part of the

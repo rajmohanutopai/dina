@@ -232,6 +232,9 @@ export function authenticateRequest(req: AuthRequest): AuthResult {
 function mapToAuthzRole(callerType: string, name?: string): AuthzCallerType | null {
   if (callerType === 'device') return 'device';
   if (callerType === 'agent') return 'agent';
+  // Plugin instances (PLUGIN_ARCHITECTURE.md §9.0): their OWN authz row —
+  // never folded into 'device' or 'agent'.
+  if (callerType === 'plugin') return 'plugin';
 
   // Service: only recognized names get a role
   if (callerType === 'service' && name) {

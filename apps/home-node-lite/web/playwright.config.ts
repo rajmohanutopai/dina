@@ -31,10 +31,13 @@ export default defineConfig({
   // matches compiled `*.spec.js`, so a stale build artifact would run twice
   // (or run an out-of-date copy). The .ts is the single source of truth.
   testMatch: '**/*.spec.ts',
-  // Keep this tier hermetic: the functional MRS flows + judge calibration
-  // need the autopilot bundle and/or a Gemini key, and run under
-  // playwright.functional.config.ts.
-  testIgnore: ['**/functional/**', '**/judge.calibration.spec.ts'],
+  // Keep this tier hermetic + self-contained. Excluded:
+  //   - functional MRS flows + judge calibration → autopilot bundle / Gemini
+  //     key, run under playwright.functional.config.ts;
+  //   - relay/** → drive EXTERNAL dina-nodes (which its own config auto-
+  //     restarts); they don't belong in the hermetic core+brain webServer run.
+  // Each has its own npm script (test:e2e:functional / :relay).
+  testIgnore: ['**/functional/**', '**/judge.calibration.spec.ts', '**/relay/**'],
   globalSetup: path.resolve(__dirname, '__e2e__', 'setup.ts'),
   retries: process.env.CI ? 1 : 0,
   workers: 1,

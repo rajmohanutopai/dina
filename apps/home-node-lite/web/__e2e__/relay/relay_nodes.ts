@@ -6,8 +6,12 @@
  * cloud test relay. Each node = a `did:plc`, a Core (debug-dispatch enabled), a
  * Brain, and a web SPA. This helper wraps: per-node backstage dispatch, a
  * reachability probe (so relay flows SKIP LOUDLY when the nodes aren't running,
- * never silently pass — §10.5), and DID resolution.
+ * never silently pass — §10.5), a FRESHNESS probe (so a node running STALE
+ * code skips LOUD instead of failing mid-flow), and DID resolution.
  */
+
+import fs from 'node:fs';
+import path from 'node:path';
 
 export interface RelayNode {
   name: string;
@@ -101,6 +105,121 @@ export async function relayReachable(): Promise<boolean> {
   };
   const [a, s] = await Promise.all([nodeReachable(NODES.alonso), nodeReachable(NODES.sancho)]);
   return a && s;
+}
+
+// ---------------------------------------------------------------------------
+// Freshness — is a REACHABLE node running the CURRENT code?
+//
+// `relayReachable` only proves the nodes are alive; a node started from an
+// OLD checkout (the common dev-loop trap: edit code, forget to restart the
+// long-lived dina-nodes) is alive but stale, so the relay flows drive it and
+// fail confusingly. So additionally check that each node BOOTED AFTER the
+// newest source edit. The node advertises its boot time via `/healthz`
+// (`startedAt`); a node on code predating that field is treated as stale.
+// ---------------------------------------------------------------------------
+
+// relay_nodes.ts is apps/home-node-lite/web/__e2e__/relay/ → five up to root.
+const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..', '..');
+
+// The SERVER source a running dina-node executes via tsx (source, no build):
+// the @dina/* packages + the two Lite servers. A post-boot edit here makes
+// the node stale — and a `stop.sh && start.sh` restart FIXES it (tsx re-reads
+// source). `apps/mobile/src` is deliberately EXCLUDED: the node serves a
+// prebuilt web bundle that a restart does NOT rebuild, so keying freshness on
+// it would make an auto-restart loop forever without ever converging.
+const NODE_SOURCE_DIRS = [
+  'packages',
+  'apps/home-node-lite/core-server/src',
+  'apps/home-node-lite/brain-server/src',
+];
+const SKIP_WALK_DIR = new Set([
+  'node_modules',
+  'dist',
+  'dist-e2e',
+  'coverage',
+  'test-results',
+  '__tests__',
+  '.git',
+]);
+// Editing a test/spec must NOT mark the running node stale — only the code
+// the node actually runs matters.
+const SKIP_WALK_FILE = /\.(test|spec)\.[cm]?tsx?$/;
+const SOURCE_FILE = /\.[cm]?tsx?$/;
+
+let cachedNewestMtimeMs: number | null = null;
+/** Newest mtime (ms) across the source the dina-nodes run. Cached per process. */
+function newestSourceMtimeMs(): number {
+  if (cachedNewestMtimeMs !== null) return cachedNewestMtimeMs;
+  let newest = 0;
+  const walk = (dir: string): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return; // dir absent / unreadable — ignore
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (!SKIP_WALK_DIR.has(entry.name)) walk(path.join(dir, entry.name));
+      } else if (SOURCE_FILE.test(entry.name) && !SKIP_WALK_FILE.test(entry.name)) {
+        try {
+          const m = fs.statSync(path.join(dir, entry.name)).mtimeMs;
+          if (m > newest) newest = m;
+        } catch {
+          /* transient stat failure — ignore */
+        }
+      }
+    }
+  };
+  for (const rel of NODE_SOURCE_DIRS) walk(path.resolve(REPO_ROOT, rel));
+  cachedNewestMtimeMs = newest;
+  return newest;
+}
+
+/** Stale reason for one node, or null when it booted after the last edit. */
+async function nodeStaleReason(node: RelayNode): Promise<string | null> {
+  let startedAt: unknown;
+  try {
+    const r = await fetch(`${node.brain}/healthz`);
+    if (!r.ok) return null; // liveness is relayReachable's job
+    startedAt = ((await r.json()) as { startedAt?: unknown }).startedAt;
+  } catch {
+    return null;
+  }
+  if (typeof startedAt !== 'number') {
+    return `${node.name} is on code that predates the /healthz build stamp`;
+  }
+  const newest = newestSourceMtimeMs();
+  if (newest > startedAt) {
+    const ageMin = Math.round((newest - startedAt) / 60_000);
+    return `${node.name} booted ~${ageMin} min before the latest source edit`;
+  }
+  return null;
+}
+
+/**
+ * The single gate the relay specs skip on. Returns null when the fleet is
+ * ready, or a human, ACTIONABLE reason to `test.skip` with — distinguishing
+ * "not running" from "STALE" so a dev knows to RESTART (not just start) the
+ * nodes. Never lets a stale/absent fleet fail a spec mid-flow.
+ */
+export async function relaySkipReason(): Promise<string | null> {
+  if (!(await relayReachable())) {
+    return (
+      'relay: dina-nodes (alonso/sancho) not running — ' +
+      'cd dina-nodes && ./start.sh alonso sancho && ./connect.sh alonso sancho'
+    );
+  }
+  for (const node of [NODES.alonso, NODES.sancho]) {
+    const stale = await nodeStaleReason(node);
+    if (stale !== null) {
+      return (
+        `relay: dina-nodes are STALE (${stale}) — restart them with the latest code: ` +
+        'cd dina-nodes && ./stop.sh && ./start.sh alonso sancho && ./connect.sh alonso sancho'
+      );
+    }
+  }
+  return null;
 }
 
 /**

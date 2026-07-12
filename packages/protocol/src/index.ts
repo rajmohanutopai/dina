@@ -357,3 +357,10 @@ export * from './services/dimension-registry';
 // docs/CARD_SPEC_DESIGN.md. NO images, NO provider-supplied URLs (map =
 // structured coords, link = https + shown host).
 export * from './services/card-spec';
+
+// Plugin wire layer — the two-record release scheme (plugin.identity +
+// plugin.release), manifest validation, the three digests
+// (approved_scope_hash / behavior_hash / presentation_hash),
+// content-derived release rkeys, and the repo-proof verifier contract.
+// See docs/PLUGIN_ARCHITECTURE.md §5, §8.1.
+export * from './plugins';

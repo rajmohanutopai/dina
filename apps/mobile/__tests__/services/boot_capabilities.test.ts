@@ -11,10 +11,7 @@
  * null in tests), and AppView network calls are stubbed explicitly.
  */
 
-import {
-  buildBootInputs,
-  resolveStagingEnrichmentLLM,
-} from '../../src/services/boot_capabilities';
+import { buildBootInputs, resolveStagingEnrichmentLLM } from '../../src/services/boot_capabilities';
 import type { RoutedLLMProvider } from '@dina/brain/runtime';
 import { savePersistedDid, clearPersistedDid } from '../../src/services/identity_record';
 import { saveRolePreference } from '../../src/services/role_preference';
@@ -92,6 +89,20 @@ describe('buildBootInputs — role preference (#8)', () => {
       roleOverride: 'both',
     });
     expect(inputs.role).toBe('both');
+  });
+});
+
+describe('buildBootInputs — device-role resolver (round-5 #4)', () => {
+  it('installs a deviceRoleResolver so paired plugin/agent devices are not misclassified', async () => {
+    const inputs = await buildBootInputs({ activeProvider: 'none' });
+    // The regression: this was UNDEFINED, so createNode never called
+    // setDeviceRoleResolver and every paired device (incl. a runner-plugin
+    // instance) fell through to the wide 'device' caller type. It must be wired.
+    expect(typeof inputs.deviceRoleResolver).toBe('function');
+    // The closure reads the live device registry (getDeviceByDID); an unknown
+    // DID resolves to null. Role-value mapping for a registered plugin/agent
+    // device is the same closure covered by core's caller_type tests.
+    expect(inputs.deviceRoleResolver!('did:key:zunregistered')).toBeNull();
   });
 });
 

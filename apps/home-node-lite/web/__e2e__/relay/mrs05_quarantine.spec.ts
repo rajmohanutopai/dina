@@ -19,7 +19,7 @@
 import { test, expect } from '@playwright/test';
 
 import { attachHygiene } from './relay_hygiene';
-import { NODES, debugHeaders, dispatch, nodeDid, relayReachable } from './relay_nodes';
+import { NODES, debugHeaders, dispatch, nodeDid, relaySkipReason } from './relay_nodes';
 
 interface SeedResult {
   quarantined: { id: string; senderDID: string };
@@ -52,7 +52,8 @@ async function contactTrust(senderDid: string): Promise<string | null> {
 
 test.describe('MRS-05 — unknown sender / quarantine', () => {
   test('"Add to contacts" releases + trusts the sender', async ({ browser }) => {
-    test.skip(!(await relayReachable()), 'relay: dina-nodes (alonso/sancho) not running');
+    const relaySkip = await relaySkipReason();
+    test.skip(relaySkip !== null, relaySkip ?? '');
 
     const STRANGER = 'did:plc:strangeraccept000000000000000000';
     const qid = await seedQuarantine(STRANGER, 'hi, it is me — please add me back');
@@ -105,7 +106,8 @@ test.describe('MRS-05 — unknown sender / quarantine', () => {
   });
 
   test('"Block" drops the message + blocks the sender', async ({ browser }) => {
-    test.skip(!(await relayReachable()), 'relay: dina-nodes (alonso/sancho) not running');
+    const relaySkip = await relaySkipReason();
+    test.skip(relaySkip !== null, relaySkip ?? '');
 
     const STRANGER = 'did:plc:strangerblock0000000000000000000';
     const qid = await seedQuarantine(STRANGER, 'let me in');

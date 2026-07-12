@@ -28,6 +28,7 @@ export type WorkflowTaskState =
   | 'completed'
   | 'failed'
   | 'cancelled'
+  | 'outcome_unknown'
   | 'recorded';
 
 /** Const record of state literals — matches the Go `WF*` constants for direct porting. */
@@ -43,6 +44,15 @@ export const WorkflowTaskState = Object.freeze({
   Completed: 'completed',
   Failed: 'failed',
   Cancelled: 'cancelled',
+  /**
+   * PLUGIN_ARCHITECTURE.md §9.5 — a declared-effectful plugin task whose
+   * execution STARTED but produced no terminal report from the executing
+   * instance (lease loss, revoke, owner cancel, deadline expiry, Core
+   * shutdown — all the same epistemic situation: Dina cannot know
+   * whether the external action occurred). Terminal; reconciliation
+   * acts BESIDE it in the decision log, never mutates it back.
+   */
+  OutcomeUnknown: 'outcome_unknown',
   Recorded: 'recorded',
 } as const satisfies Record<string, WorkflowTaskState>);
 
@@ -154,6 +164,17 @@ export interface WorkflowTask {
   next_run_at?: number;
   recurrence?: string;
   /**
+   * Lease token minted per claim (PLUGIN_ARCHITECTURE.md §9.1). Terminal
+   * transitions CAS on `(task_id, claim_id, running)` when the caller
+   * presents one — a stale execution's completion loses the CAS and is
+   * recorded as a late report, never applied as a result.
+   */
+  claim_id?: string;
+  /** Claims consumed. Advances ON CLAIM — a lease reclaim IS a new attempt. */
+  attempt?: number;
+  /** First-dispatch anchor (ms) for the §9.1 retry window. */
+  first_claimed_at?: number;
+  /**
    * NOT serialised on the wire. Holds internal recovery data (e.g. the
    * pre-signed service.response body stashed before send, to be re-played
    * by the sweeper on transient failure).
@@ -212,13 +233,18 @@ export const ValidTransitions: Readonly<Record<WorkflowTaskState, readonly Workf
     pending: ['running', 'queued', 'cancelled'],
     queued: ['claimed', 'running', 'cancelled'],
     claimed: ['running', 'failed', 'cancelled'],
-    running: ['awaiting', 'completed', 'failed', 'cancelled', 'queued'],
+    // §9.5: outcome_unknown is entered ONLY from running (execution
+    // started, no terminal report from the executing instance) and
+    // exits to nothing — reconciliation is decision-log entries beside
+    // the task, never a state rewrite.
+    running: ['awaiting', 'completed', 'failed', 'cancelled', 'queued', 'outcome_unknown'],
     awaiting: ['running', 'completed', 'failed', 'cancelled'],
     pending_approval: ['pending', 'queued', 'failed', 'cancelled'],
     scheduled: ['pending', 'running', 'cancelled'],
     completed: ['recorded'],
     failed: ['scheduled', 'queued', 'recorded', 'cancelled'],
     cancelled: [],
+    outcome_unknown: [],
     recorded: [],
   }) as unknown as Readonly<Record<WorkflowTaskState, readonly WorkflowTaskState[]>>;
 
@@ -227,6 +253,7 @@ const TERMINAL_STATES: ReadonlySet<WorkflowTaskState> = new Set([
   'completed',
   'failed',
   'cancelled',
+  'outcome_unknown',
   'recorded',
 ]);
 

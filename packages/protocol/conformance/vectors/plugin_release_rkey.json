@@ -1,0 +1,20 @@
+{
+  "name": "plugin_release_rkey",
+  "description": "Content-derived release rkey (docs/PLUGIN_ARCHITECTURE.md §5): rkey = lowercase base32 (RFC 4648, no padding) of the SHA-256 digest inside a CIDv1 (multibase 'b', dag-cbor 0x71, sha2-256 0x12/32). The CID here wraps SHA-256(\"plugin release vector body v1\" UTF-8). releaseRkeyFromCid(cid) must equal the frozen rkey; isValidReleaseRkey must accept it and reject any tampered variant. 52 chars, rkey-safe charset. Consumed by __tests__/plugin_vectors.test.ts.",
+  "level": "L1",
+  "task": "PLG-1",
+  "producer": {
+    "tool": "packages/protocol/src/plugins/release_rkey.ts :: releaseRkeyFromCid",
+    "frozen_at": "2026-07-12"
+  },
+  "cases": [
+    {
+      "name": "sha256_of_fixed_body",
+      "inputs": {
+        "digest_source_utf8": "plugin release vector body v1",
+        "cid": "bafyreig55lckdmgm57qftvp7t3mvzdrxudmb6k7tely7f3xtsgtgdh24ge"
+      },
+      "expected_rkey": "3xvmjinqztx6awov76pnsxeog6qnqhzl6mrpd4xo6oi2mym7lqyq"
+    }
+  ]
+}

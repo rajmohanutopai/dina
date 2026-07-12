@@ -93,6 +93,24 @@
       "status": "frozen",
       "frozen_at": "2026-04-29",
       "summary": "PeerLens V1 score formula — 14 cases pinning every component (sentiment / vouch / reviewer / network), every flag severity, the tombstone coordination penalty, and confidence tiers. Re-derivable via packages/protocol/src/trust/score_v1.ts :: computeScoreV1(input, nowMs) with nowMs fixed to 2026-04-22T12:00:00Z. AppView's scorer mirrors the same formula with `now = Date.now()`."
+    },
+    {
+      "name": "plugin_digests",
+      "slot": "plugin_digests.json",
+      "level": "L2",
+      "task": "PLG-1",
+      "status": "frozen",
+      "frozen_at": "2026-07-12",
+      "summary": "The three plugin digests (PLUGIN_ARCHITECTURE.md §8.1) over the golden weather manifest — approved_scope_hash (per-capability + install), behavior_hash, presentation_hash. SHA-256 over JCS-style canonical JSON with set-like arrays deduplicated + code-point sorted (the normalized form IS the stored form). Re-derivable via packages/protocol/src/plugins/digests.ts :: computePluginDigests."
+    },
+    {
+      "name": "plugin_release_rkey",
+      "slot": "plugin_release_rkey.json",
+      "level": "L1",
+      "task": "PLG-1",
+      "status": "frozen",
+      "frozen_at": "2026-07-12",
+      "summary": "Content-derived release rkey (PLUGIN_ARCHITECTURE.md §5): rkey = base32-lower of the SHA-256 digest inside the release record's CIDv1 (dag-cbor). Enforces immutability — an in-place overwrite fails rkey == f(cid) at every verifier. Re-derivable via packages/protocol/src/plugins/release_rkey.ts :: releaseRkeyFromCid."
     }
   ]
 }

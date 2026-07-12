@@ -59,6 +59,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
+    # CI builds the bundle in explicit steps below; the Playwright
+    # globalSetup rebuilds fresh by default (so a local run can't test a
+    # stale bundle), so tell it not to build a second time here.
+    env:
+      DINA_E2E_PREBUILT: "1"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -104,6 +110,17 @@ jobs:
       - name: Build RNW SPA bundle
         run: npm run -w @dina/home-node-lite-web-e2e build:bundle
 
+      # Native-target Metro bundle smoke. The web export above already
+      # catches a portable-graph import that Metro can't resolve (e.g. a
+      # `node:crypto` reaching @dina/core), but the SHIPPING app is the
+      # native RN/Hermes bundle. This runs the reviewer's exact repro —
+      # `expo export --platform ios` — so a native-only resolution break
+      # fails CI here instead of on a device / in a reviewer's export.
+      # Metro produces only the JS/Hermes bundle; no Xcode/native compile,
+      # so it runs on ubuntu. Output goes to a throwaway dir.
+      - name: Native bundle smoke (iOS Metro resolves the mobile + core graph)
+        run: cd apps/mobile && npx expo export --platform ios --output-dir "$RUNNER_TEMP/dina-ios-bundle-smoke"
+
       - name: Run Playwright smoke spec
         run: npm run -w @dina/home-node-lite-web-e2e test:e2e
 
@@ -140,6 +157,9 @@ jobs:
     # `npm ci` / the bundle build, which run third-party install scripts.
     env:
       DINA_E2E_LIVE_JUDGE: "1"
+      # This job builds the autopilot bundle explicitly; don't let the
+      # Playwright globalSetup rebuild it a second time.
+      DINA_E2E_PREBUILT: "1"
 
     steps:
       - name: Checkout

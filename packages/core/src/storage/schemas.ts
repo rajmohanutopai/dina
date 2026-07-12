@@ -836,6 +836,161 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_csd_requester ON contact_service_decisions(requester_did, created_at DESC);
     `,
   },
+  {
+    // v17 — workflow lease-token + retry-budget columns and the
+    // `outcome_unknown` terminal state (PLUGIN_ARCHITECTURE.md §9.1,
+    // §9.5).
+    //
+    //   claim_id         — random token minted per claim; heartbeat /
+    //                      progress / complete / fail CAS against it, so
+    //                      a stale execution's completion loses the race
+    //                      instead of overwriting a newer attempt.
+    //   attempt          — claims consumed by this task's logical
+    //                      execution. Advances ON CLAIM (a lease reclaim
+    //                      IS a new attempt); execution_id and
+    //                      idempotency_key in the payload stay fixed.
+    //   first_claimed_at — anchors the §9.1 retry window (ms).
+    //
+    // The partial-unique idempotency index is REBUILT because its
+    // exclusion list is the terminal-state set: without adding
+    // `outcome_unknown`, a §9.5 reconciliation re-dispatch (new task,
+    // same idempotency_key where the capability supports it) would
+    // collide with the parked outcome_unknown row. ALTERs are additive;
+    // applied migrations above stay immutable.
+    version: 17,
+    name: 'workflow_claim_tokens',
+    sql: `
+      ALTER TABLE workflow_tasks ADD COLUMN claim_id TEXT;
+      ALTER TABLE workflow_tasks ADD COLUMN attempt INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE workflow_tasks ADD COLUMN first_claimed_at INTEGER;
+
+      DROP INDEX IF EXISTS idx_workflow_idem;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_idem
+        ON workflow_tasks(idempotency_key)
+        WHERE idempotency_key IS NOT NULL
+          AND state NOT IN ('completed','failed','cancelled','outcome_unknown','recorded');
+    `,
+  },
+  {
+    // v18 — the plugin dynamic registry (PLUGIN_ARCHITECTURE.md §6, §8).
+    //
+    // plugin_installs — one row per install. `install_id` is the stable
+    //   local anchor everything hangs off (lane, vault, grants, config);
+    //   `(publisher_did, plugin_id)` is IDENTITY — indexed, deliberately
+    //   NOT unique (multi-install is legitimate: two homes, two stores).
+    //   `current_cid` is version state; the pinned normalized manifest
+    //   rides in manifest_json (the stored form IS the validated/hashed
+    //   form, §8.1). Pending-update fields make the §14 dual-boundary
+    //   policy persistable, not just conceptual.
+    //
+    // plugin_grants — standing approvals keyed
+    //   (install_id, capability, approved_scope_hash): scope growth
+    //   changes the hash, nothing matches, re-consent is STRUCTURAL.
+    //   constraints_json is the versioned §8 constraint object; usage
+    //   is consumed per LOGICAL EXECUTION via plugin_grant_uses
+    //   (execution_id UNIQUE per grant → idempotent lease-recovery
+    //   retries never consume a second use).
+    //
+    // plugin_decisions — owner-private decision log (the
+    //   contact_service_decisions v16 pattern: owner-visible, never
+    //   brain/LLM-readable).
+    //
+    // plugin_capability_stats — invocation counters for the first-N
+    //   card rule (§8: HIGH capabilities card the first 3 invocations
+    //   even after a standing approval exists).
+    version: 18,
+    name: 'plugin_registry',
+    sql: `
+      CREATE TABLE IF NOT EXISTS plugin_installs (
+        install_id        TEXT PRIMARY KEY,
+        publisher_did     TEXT NOT NULL,
+        plugin_id         TEXT NOT NULL,
+        label             TEXT NOT NULL DEFAULT '',
+        status            TEXT NOT NULL
+                            CHECK (status IN ('pending','active','paused','revoked')),
+        execution_mode    TEXT NOT NULL CHECK (execution_mode IN ('interpreted','runner')),
+        current_cid       TEXT NOT NULL,
+        current_version   TEXT NOT NULL,
+        manifest_json     TEXT NOT NULL,
+        install_scope_hash TEXT NOT NULL,
+        capability_hashes_json TEXT NOT NULL,
+        behavior_hash     TEXT NOT NULL,
+        presentation_hash TEXT NOT NULL,
+        trust_anchor_json TEXT NOT NULL,
+        device_did        TEXT,
+        config_revision   INTEGER NOT NULL DEFAULT 1,
+        pending_cid       TEXT,
+        pending_behavior_hash TEXT,
+        -- NOTE: 'x IN (NULL, ...)' is a no-op CHECK (NULL member makes the
+        -- expression NULL, which CHECK treats as pass) — hence IS NULL OR.
+        pending_decision  TEXT
+                            CHECK (pending_decision IS NULL
+                                   OR pending_decision IN ('awaiting_consent','awaiting_behavior_approval')),
+        pending_expires_at INTEGER,
+        created_at        INTEGER NOT NULL,
+        updated_at        INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_plugin_installs_identity
+        ON plugin_installs(publisher_did, plugin_id);
+      CREATE INDEX IF NOT EXISTS idx_plugin_installs_device
+        ON plugin_installs(device_did);
+
+      CREATE TABLE IF NOT EXISTS plugin_grants (
+        grant_id          TEXT PRIMARY KEY,
+        install_id        TEXT NOT NULL REFERENCES plugin_installs(install_id) ON DELETE CASCADE,
+        capability        TEXT NOT NULL,
+        approved_scope_hash TEXT NOT NULL,
+        grant_type        TEXT NOT NULL CHECK (grant_type IN ('once','window','standing')),
+        constraints_json  TEXT,
+        expires_at        INTEGER,
+        revoked_at        INTEGER,
+        created_at        INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_plugin_grants_key
+        ON plugin_grants(install_id, capability, approved_scope_hash);
+
+      CREATE TABLE IF NOT EXISTS plugin_grant_uses (
+        grant_id     TEXT NOT NULL REFERENCES plugin_grants(grant_id) ON DELETE CASCADE,
+        execution_id TEXT NOT NULL,
+        used_at      INTEGER NOT NULL,
+        PRIMARY KEY (grant_id, execution_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS plugin_decisions (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        install_id  TEXT NOT NULL,
+        capability  TEXT NOT NULL DEFAULT '',
+        decision    TEXT NOT NULL,
+        reason      TEXT NOT NULL DEFAULT '',
+        created_at  INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_plugin_decisions_install
+        ON plugin_decisions(install_id, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS plugin_capability_stats (
+        install_id  TEXT NOT NULL,
+        capability  TEXT NOT NULL,
+        invocations INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (install_id, capability)
+      );
+    `,
+  },
+  {
+    version: 19,
+    name: 'plugin_installs_unique_active_device',
+    // A device DID resolves to callerType 'plugin' and its lane is looked
+    // up by device_did; if two ACTIVE installs shared a device the claim
+    // routing would be nondeterministic (the old lookup was LIMIT 1 with
+    // no ordering). Enforce at most one active install per device at the
+    // DB level so a double-activation fails loudly instead of routing to
+    // an arbitrary lane. Partial: pending/paused/revoked rows and
+    // device-less installs are unconstrained.
+    sql: `
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_plugin_installs_active_device
+        ON plugin_installs(device_did)
+        WHERE device_did IS NOT NULL AND status = 'active';
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

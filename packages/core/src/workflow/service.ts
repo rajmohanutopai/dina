@@ -444,7 +444,13 @@ export class WorkflowService {
    * `completed` event. Requires the task to be in an active (non-terminal)
    * state.
    */
-  complete(id: string, resultJSON: string, resultSummary: string, agentDID = ''): WorkflowTask {
+  complete(
+    id: string,
+    resultJSON: string,
+    resultSummary: string,
+    agentDID = '',
+    claimId?: string,
+  ): WorkflowTask {
     const task = this.repo.getById(id);
     if (task === null) {
       throw new WorkflowValidationError(`task "${id}" not found`, 'id');
@@ -457,10 +463,15 @@ export class WorkflowService {
       resultJSON,
       JSON.stringify({ state: 'completed' }),
       this.nowMsFn(),
+      claimId,
     );
     if (eventId === 0) {
+      // With a claimId the miss is the §9.1 CAS: a stale claim's report
+      // was recorded as late_report evidence and must never apply.
       throw new WorkflowTransitionError(
-        `task "${id}" was terminal before completion landed`,
+        claimId !== undefined
+          ? `task "${id}" completion lost the claim CAS — stale claim, report retained as evidence`
+          : `task "${id}" was terminal before completion landed`,
         task.status as WorkflowTaskState,
         WorkflowTaskState.Completed,
       );
@@ -719,13 +730,13 @@ export class WorkflowService {
   }
 
   /** Mark a task as failed with a reason. */
-  fail(id: string, errorMsg: string, agentDID = ''): WorkflowTask {
+  fail(id: string, errorMsg: string, agentDID = '', claimId?: string): WorkflowTask {
     const task = this.repo.getById(id);
     if (task === null) {
       throw new WorkflowValidationError(`task "${id}" not found`, 'id');
     }
     this.guardTransition(task.status as WorkflowTaskState, WorkflowTaskState.Failed);
-    const eventId = this.repo.fail(id, agentDID, errorMsg, this.nowMsFn());
+    const eventId = this.repo.fail(id, agentDID, errorMsg, this.nowMsFn(), claimId);
     if (eventId === 0) {
       throw new WorkflowTransitionError(
         `task "${id}" was terminal before failure landed`,

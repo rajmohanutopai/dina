@@ -78,15 +78,17 @@ describe('runConformance — end-to-end runner (task 10.14)', () => {
   });
 
   it('pass count equals the number of frozen-verifiable vectors', () => {
-    // 9 Phase 1b vectors (10.5–10.13) + trust_score_v1 (TN-PROTO-004) — all
-    // wired to verifiers. Bump this counter when a new frozen vector lands.
-    expect(report.summary.passed).toBe(10);
+    // 9 Phase 1b vectors (10.5–10.13) + trust_score_v1 (TN-PROTO-004) +
+    // plugin_digests / plugin_release_rkey (PLG-1) — all wired to
+    // verifiers. Bump this counter when a new frozen vector lands.
+    expect(report.summary.passed).toBe(12);
   });
 
   it('every result has a task id in either N.NN or TN-XXX-NNN form', () => {
     // Phase 1b vectors used dotted task ids ("10.7"); PeerLens vectors
-    // use the TN-PROTO-004 / TN-MOB-002 backlog id format. Both are valid.
-    const taskIdPattern = /^(\d+\.\d+|TN-[A-Z]+-\d+)$/;
+    // use the TN-PROTO-004 / TN-MOB-002 backlog id format; plugin vectors
+    // use the PLG-N task family. All three are valid.
+    const taskIdPattern = /^(\d+\.\d+|TN-[A-Z]+-\d+|PLG-\d+)$/;
     for (const r of report.results) {
       expect(r.task).toMatch(taskIdPattern);
     }

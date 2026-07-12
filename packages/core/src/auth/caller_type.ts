@@ -17,7 +17,7 @@
  * Source: ARCHITECTURE.md Section 2.10
  */
 
-export type CallerType = 'service' | 'device' | 'agent' | 'unknown';
+export type CallerType = 'service' | 'device' | 'agent' | 'plugin' | 'unknown';
 
 /**
  * Optional callback: given a DID, return the device role or null if the
@@ -92,13 +92,30 @@ export function resolveCallerType(authenticatedDID: string, agentDID?: string): 
   }
 
   // Paired devices — role='agent' resolves to callerType='agent' so the
-  // workflow-task pull endpoints can scope-check correctly. Other roles
-  // (rich/thin/cli) resolve to the generic 'device' caller type.
+  // workflow-task pull endpoints can scope-check correctly; role='plugin'
+  // resolves to callerType='plugin' (PLUGIN_ARCHITECTURE.md §7). Only these
+  // two roles get an explicit mapping today; everything else (rich/thin/cli,
+  // or an unresolved role) falls through to the generic 'device' caller type.
+  //
+  // Round-6 #7 (SCOPED, not landed): the reviewer is right that a paired DID
+  // whose role can't be resolved should fail CLOSED to 'unknown' rather than
+  // inherit the broad 'device' surface. But flipping this default here breaks
+  // real authz flows that legitimately depend on the fallback (e.g. the
+  // /v1/agent/validate route, whose harness resolver does not match the
+  // authenticated DID, so the agent is classified 'device' via this line). The
+  // primary escalation it targets — a plugin/agent device misclassified as a
+  // user device — is ALREADY mitigated in production: the resolver is wired via
+  // getDeviceByDID(did)?.role in core_server AND mobile (round-5 #4), so a real
+  // paired device resolves to its actual role. Landing the strict fail-closed
+  // default needs a codebase-wide resolver-wiring/authz audit first.
   const deviceName = deviceDIDs.get(authenticatedDID);
   if (deviceName !== undefined) {
     const role = deviceRoleResolver?.(authenticatedDID) ?? null;
     if (role === 'agent') {
       return { did: authenticatedDID, callerType: 'agent', name: deviceName };
+    }
+    if (role === 'plugin') {
+      return { did: authenticatedDID, callerType: 'plugin', name: deviceName };
     }
     return { did: authenticatedDID, callerType: 'device', name: deviceName };
   }

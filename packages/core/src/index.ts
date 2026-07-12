@@ -1092,3 +1092,7 @@ export {
   hasSeenGuidedDemoEntry,
   markGuidedDemoEntrySeen,
 } from './scope/guided_demo';
+
+// Plugin substrate (docs/PLUGIN_ARCHITECTURE.md): dynamic registry,
+// grants (constraints + per-execution consumption), decision log.
+export * from './plugins';

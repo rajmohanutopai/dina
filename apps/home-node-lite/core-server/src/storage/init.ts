@@ -37,6 +37,12 @@ import {
   SQLiteServiceOfferRepository,
   SQLiteServiceDecisionRepository,
   SQLiteServiceGrantRepository,
+  SQLitePluginInstallRepository,
+  SQLitePluginGrantRepository,
+  SQLitePluginDecisionRepository,
+  setPluginInstallRepository,
+  setPluginGrantRepository,
+  setPluginDecisionRepository,
   SQLiteDeviceRepository,
   SQLiteKVRepository,
   SQLitePeopleRepository,
@@ -163,6 +169,12 @@ export async function initializeStorage(
   setServiceOfferRepository(new SQLiteServiceOfferRepository(identityDB));
   setServiceDecisionRepository(new SQLiteServiceDecisionRepository(identityDB));
   setServiceGrantRepository(new SQLiteServiceGrantRepository(identityDB));
+  // Plugin dynamic registry (PLUGIN_ARCHITECTURE.md §6): installs +
+  // grants (constraints, per-execution consumption) + owner-private
+  // decision log.
+  setPluginInstallRepository(new SQLitePluginInstallRepository(identityDB));
+  setPluginGrantRepository(new SQLitePluginGrantRepository(identityDB));
+  setPluginDecisionRepository(new SQLitePluginDecisionRepository(identityDB));
   setReminderRepository(new SQLiteReminderRepository(identityDB));
   setAuditRepository(new SQLiteAuditRepository(identityDB));
   setDeviceRepository(new SQLiteDeviceRepository(identityDB));

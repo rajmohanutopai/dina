@@ -4,7 +4,11 @@ export {
   setDeviceRoleResolver,
   resetCallerTypeState,
 } from './src/auth/caller_type';
-export { hydrateDeviceRegistry } from './src/devices/registry';
+export {
+  hydrateDeviceRegistry,
+  getDeviceByDID,
+  revokeDeviceByDidDurable,
+} from './src/devices/registry';
 export {
   configureRateLimiter,
   registerPublicKeyResolver,
@@ -34,10 +38,7 @@ export {
   resetServiceOfferReceivedListeners,
 } from './src/d2d/service_offer_events';
 export type { ServiceOfferReceivedEvent } from './src/d2d/service_offer_events';
-export {
-  getTopicRepository,
-  listTopicRepositoryPersonas,
-} from './src/memory/repository';
+export { getTopicRepository, listTopicRepositoryPersonas } from './src/memory/repository';
 export { MemoryService, setMemoryService } from './src/memory/service';
 export { setNodeDID } from './src/pairing/ceremony';
 export { bootstrapMsgBox } from './src/relay/msgbox_boot';

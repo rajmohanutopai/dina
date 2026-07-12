@@ -31,7 +31,7 @@ import { generatePairingCode, completePairing, getPairingIntent } from '../../pa
 import type { DeviceRole } from '../../devices/registry';
 import type { CoreRouter } from '../router';
 
-const VALID_ROLES = new Set<string>(['rich', 'thin', 'cli', 'agent']);
+const VALID_ROLES = new Set<string>(['rich', 'thin', 'cli', 'agent', 'plugin']);
 
 /**
  * Wire-aliases for `role` accepted from external callers that follow

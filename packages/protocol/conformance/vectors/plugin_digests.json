@@ -1,0 +1,46 @@
+{
+  "name": "plugin_digests",
+  "description": "computePluginDigests(normalizePluginManifest(manifest), sha256) over the golden weather manifest produces exactly these hex digests (docs/PLUGIN_ARCHITECTURE.md §8.1: three digests, three jobs — approved_scope_hash gates grants, behavior_hash gates silent application, presentation_hash gates surfacing). Digest = SHA-256 over JCS-style canonical JSON with set-like arrays deduplicated + code-point sorted; the normalized form is the STORED form. Consumed by __tests__/plugin_vectors.test.ts.",
+  "level": "L2",
+  "task": "PLG-1",
+  "producer": {
+    "tool": "packages/protocol/src/plugins/digests.ts :: computePluginDigests",
+    "frozen_at": "2026-07-12"
+  },
+  "cases": [
+    {
+      "name": "golden_weather_runner_manifest",
+      "manifest": {
+        "$type": "com.dinakernel.plugin.release",
+        "plugin_id": "com.example.weather",
+        "version": "1.0.0",
+        "display_name": "Weather Watch",
+        "execution": { "mode": "runner" },
+        "capabilities": [
+          {
+            "id": "com.example.weather.current",
+            "display_name": "Current weather",
+            "interaction": "query",
+            "action_class": "read",
+            "privacy_class": "public",
+            "params_schema": { "type": "object", "properties": { "city": { "type": "string" } } },
+            "result_schema": { "type": "object", "properties": { "temp_c": { "type": "number" } } },
+            "kinds": ["tool"],
+            "effects": { "idempotency": "unsupported" },
+            "intent_phrases": ["what is the weather"],
+            "data_scope": { "categories": ["errands"], "max_context_items": 3 },
+            "network_domains": ["api.weather.example"]
+          }
+        ]
+      },
+      "expected": {
+        "per_capability": {
+          "com.example.weather.current": "2b5e526336d51787bf33264ac7270847e395aebaf40e278a2457aa8e4a1efd77"
+        },
+        "install_scope_hash": "a26e18940d2728a3abbb3719d8f3ca45f2207c6c00a55377f3462d68f7a2ccf2",
+        "behavior_hash": "79719c65523c7d415f6c724d3b0ea5f745b90d5a56c0e57bbb169d73c7b767cc",
+        "presentation_hash": "4eb20c600afb51ac3795ec4fa1efa3eb75a34ba73a46b4f6ca8d72fb3d48f602"
+      }
+    }
+  ]
+}

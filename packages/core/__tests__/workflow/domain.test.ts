@@ -29,6 +29,7 @@ describe('WorkflowTaskState enum values', () => {
       'completed',
       'failed',
       'cancelled',
+      'outcome_unknown',
       'recorded',
     ];
     for (const s of expected) {
@@ -140,14 +141,27 @@ describe('ValidTransitions', () => {
     // `queued` is a sweeper-only transition — the lease-expiry path reverts
     // a stuck running task (agent died mid-execution) back to queued so
     // another agent can re-claim it. Normal completion paths use the
-    // completed/failed/cancelled terminals.
+    // completed/failed/cancelled terminals. `outcome_unknown` is the §9.5
+    // plugin ending: execution started, no terminal report from the
+    // executing instance (lease loss / revoke / owner cancel / expiry
+    // mid-run) on a declared-effectful task.
     expect(ValidTransitions.running).toEqual([
       'awaiting',
       'completed',
       'failed',
       'cancelled',
       'queued',
+      'outcome_unknown',
     ]);
+  });
+
+  it('outcome_unknown is terminal and entered ONLY from running (§9.5)', () => {
+    expect(ValidTransitions.outcome_unknown).toEqual([]);
+    expect(isTerminal('outcome_unknown')).toBe(true);
+    const enteringStates = (Object.keys(ValidTransitions) as WorkflowTaskState[]).filter((from) =>
+      ValidTransitions[from].includes('outcome_unknown'),
+    );
+    expect(enteringStates).toEqual(['running']);
   });
 
   it('completed → recorded only (archive path)', () => {

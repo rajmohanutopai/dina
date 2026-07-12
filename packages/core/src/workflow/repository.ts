@@ -24,11 +24,43 @@
  * `__tests__/port_async_gate.test.ts` EXEMPTED list.
  */
 
-import { LOCAL_RUNNER_NAME } from '@dina/protocol';
+import { randomBytes } from '@noble/ciphers/utils.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+
+import { LOCAL_RUNNER_NAME, isPluginLane } from '@dina/protocol';
+
+import { getPluginDecisionRepository } from '../plugins/decisions';
 
 import { WorkflowTaskState, isTerminal, type WorkflowEvent, type WorkflowTask } from './domain';
+import {
+  isDeclaredEffectful,
+  mayAutoRetry,
+  nextRetryAtSec,
+  parsePluginEnvelope,
+} from './plugin_envelope';
+
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
+
+/**
+ * P2-10: surface a plugin late report as an owner-facing DECISION (so it shows
+ * in Activity), alongside the raw evidence event. `recordLateReport` only fires
+ * for plugin tasks, so `task` always carries a plugin envelope here; no-op for
+ * anything else. Best-effort — a missing decision repo must not break the
+ * completion path.
+ */
+function surfaceLateReportDecision(task: WorkflowTask | null, verb: string, nowMs: number): void {
+  if (task === null) return;
+  const envelope = parsePluginEnvelope(task.payload);
+  if (envelope === null) return;
+  getPluginDecisionRepository()?.record({
+    installId: envelope.install_id,
+    capability: envelope.capability_id,
+    decision: 'late_report_received',
+    reason: `${verb} lost the claim CAS`,
+    nowSec: Math.floor(nowMs / 1000),
+  });
+}
 
 /**
  * Unit conventions in this file:
@@ -134,17 +166,38 @@ export interface WorkflowRepository {
   ): WorkflowTask | null;
 
   /**
+   * Park a RUNNING task as `outcome_unknown` (§9.5): execution started,
+   * no terminal report from the executing instance, and Dina cannot
+   * know whether the external action occurred. Terminal — nothing
+   * transitions out. Returns the event id or 0 when the task is not
+   * running.
+   */
+  markOutcomeUnknown(id: string, reason: string, nowMs: number): number;
+
+  /**
    * Extend a claimed task's lease. Only the agent that holds the claim
    * can heartbeat (agent_did match is required). Returns true on extension,
    * false when task is missing, not running, or held by a different agent.
    */
-  heartbeatTask(id: string, agentDID: string, nowMs: number, leaseMs: number): boolean;
+  heartbeatTask(
+    id: string,
+    agentDID: string,
+    nowMs: number,
+    leaseMs: number,
+    claimId?: string,
+  ): boolean;
 
   /**
    * Update a running task's progress note. Same caller-agent guard as
    * heartbeat: only the claim holder can update progress.
    */
-  updateTaskProgress(id: string, agentDID: string, progressNote: string, nowMs: number): boolean;
+  updateTaskProgress(
+    id: string,
+    agentDID: string,
+    progressNote: string,
+    nowMs: number,
+    claimId?: string,
+  ): boolean;
 
   /**
    * Revert tasks whose lease expired (agent died mid-execution) back to
@@ -168,14 +221,24 @@ export interface WorkflowRepository {
     resultJSON: string,
     eventDetails: string,
     nowMs: number,
+    claimId?: string,
   ): number;
+
+  /**
+   * When `claimId` is provided the terminal transition is a CAS on
+   * `(task_id, claim_id, running)` — the §9.1 lease-token discipline. A
+   * stale execution (older claim) loses the CAS: its report is recorded
+   * as a `late_report` event (evidence, never a result) and 0 is
+   * returned. Legacy agent callers that predate claim tokens omit it
+   * and keep the state-only guard + route-level ownership check.
+   */
 
   /**
    * Atomic task failure: target state `failed`, attach `error`, append a
    * `workflow_event` with `event_kind='failed'`. Returns the new event_id
    * or 0 on miss.
    */
-  fail(id: string, agentDID: string, errorMsg: string, nowMs: number): number;
+  fail(id: string, agentDID: string, errorMsg: string, nowMs: number, claimId?: string): number;
 
   /**
    * Atomic task cancel: target state `cancelled` + append a cancel event.
@@ -240,6 +303,13 @@ export interface WorkflowRepository {
   // -- diagnostics / sweeper --
   listByKindAndState(kind: string, state: WorkflowTaskState, limit: number): WorkflowTask[];
   /**
+   * All NON-terminal tasks on a runner lane (e.g. `plugin:<install>`). Used to
+   * terminate in-flight work when an install/device is revoked or uninstalled
+   * (P1-4) — the caller `cancel()`s each so running effectful tasks park as
+   * `outcome_unknown` and queued ones cancel.
+   */
+  listNonTerminalByRunner(runner: string): WorkflowTask[];
+  /**
    * List tasks whose `internal_stash` value starts with `prefix`. Used by
    * the Response Bridge retry sweeper to find tasks with a pending
    * bridge_pending entry that needs re-sending (main-dina 4848a934).
@@ -293,8 +363,59 @@ const TASK_COLUMNS = `
   error, requested_runner, assigned_runner, agent_did, run_id,
   progress_note, lease_expires_at, origin, session_name,
   idempotency_key, expires_at, next_run_at, recurrence,
-  internal_stash, created_at, updated_at
+  internal_stash, claim_id, attempt, first_claimed_at,
+  created_at, updated_at
 `.trim();
+
+/**
+ * Terminal-state SQL fragment — ONE definition so every WHERE clause
+ * agrees with `domain.ts` TERMINAL_STATES. `outcome_unknown` is
+ * terminal (§9.5): a parked effectful task must be as untouchable as
+ * a completed one.
+ */
+const TERMINAL_STATES_SQL = `('completed','failed','cancelled','outcome_unknown','recorded')`;
+
+/** Random per-claim lease token (§9.1). 32 hex chars. */
+function newClaimId(): string {
+  return bytesToHex(randomBytes(16));
+}
+
+type LeaseLossVerdict =
+  | { kind: 'requeue'; nextRunAtSec?: number }
+  | { kind: 'outcome_unknown' }
+  | { kind: 'failed'; error: string };
+
+/**
+ * What happens to a RUNNING task whose lease lapsed — ONE decision
+ * table shared by the SQLite and in-memory stores so they cannot
+ * diverge (§9.1/§9.5):
+ *
+ *   non-plugin task          → requeue (existing agent behavior).
+ *   plugin, idempotent +
+ *     inside retry budget    → requeue with exponential backoff.
+ *   plugin, declared-effectful otherwise → outcome_unknown.
+ *   plugin, declared-read otherwise      → failed (a dead read is not
+ *                                          a mystery; §9.5 anti-dilution).
+ */
+function classifyLeaseLoss(task: WorkflowTask, nowMs: number): LeaseLossVerdict {
+  const envelope = parsePluginEnvelope(task.payload);
+  if (envelope === null) return { kind: 'requeue' };
+  if (
+    mayAutoRetry({
+      envelope,
+      attempt: task.attempt ?? 0,
+      firstClaimedAtMs: task.first_claimed_at,
+      nowMs,
+    })
+  ) {
+    return { kind: 'requeue', nextRunAtSec: nextRetryAtSec(task.attempt ?? 0, nowMs) };
+  }
+  if (isDeclaredEffectful(envelope)) return { kind: 'outcome_unknown' };
+  return {
+    kind: 'failed',
+    error: 'lease lost — retry not permitted without an idempotency contract (§9.1)',
+  };
+}
 
 const EVENT_COLUMNS = `
   event_id, task_id, at, event_kind, needs_delivery,
@@ -396,7 +517,7 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
     const rows = this.db.query(
       `SELECT ${TASK_COLUMNS} FROM workflow_tasks
        WHERE idempotency_key = ?
-         AND state NOT IN ('completed','failed','cancelled','recorded')
+         AND state NOT IN ${TERMINAL_STATES_SQL}
        LIMIT 1`,
       [key],
     );
@@ -485,6 +606,17 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
        ORDER BY created_at ASC
        LIMIT ?`,
       [kind, state, limit],
+    );
+    return rows.map(rowToTask);
+  }
+
+  listNonTerminalByRunner(runner: string): WorkflowTask[] {
+    if (runner === '') return [];
+    const rows = this.db.query(
+      `SELECT ${TASK_COLUMNS} FROM workflow_tasks
+       WHERE requested_runner = ? AND state NOT IN ${TERMINAL_STATES_SQL}
+       ORDER BY created_at ASC`,
+      [runner],
     );
     return rows.map(rowToTask);
   }
@@ -579,33 +711,49 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
       //                   runner must never claim-and-fail them.
       //   other filter  → unset/'' requested_runner OR exact match (the
       //                   single-runner back-compat behavior).
+      // Plugin lanes (`plugin:<install_id>`) are EXACT match only, like
+      // the reserved dina.local lane: the back-compat "named filter also
+      // takes untagged tasks" clause is exactly how a plugin would claim
+      // generic agent work (PLUGIN_ARCHITECTURE.md §9.1 launch gate).
+      const exactOnly = runnerFilter === LOCAL_RUNNER_NAME || isPluginLane(runnerFilter);
       const runnerClause =
         runnerFilter === ''
-          ? `(requested_runner IS NULL OR requested_runner != ?)`
-          : runnerFilter === LOCAL_RUNNER_NAME
+          ? `(requested_runner IS NULL OR (requested_runner != ? AND requested_runner NOT LIKE 'plugin:%'))`
+          : exactOnly
             ? `requested_runner = ?`
             : `(requested_runner IS NULL OR requested_runner = '' OR requested_runner = ?)`;
       const runnerParam = runnerFilter === '' ? LOCAL_RUNNER_NAME : runnerFilter;
+      // `next_run_at` gates claim ELIGIBILITY: a requeued task carrying a
+      // retry-backoff timestamp (§9.1) is invisible to claimers until it
+      // comes due. NULL / 0 = immediately eligible (legacy rows).
       const rows = this.db.query(
         `SELECT ${TASK_COLUMNS} FROM workflow_tasks
          WHERE kind = 'delegation'
            AND state = 'queued'
            AND (expires_at IS NULL OR expires_at > ?)
+           AND (next_run_at IS NULL OR next_run_at = 0 OR next_run_at <= ?)
            AND ${runnerClause}
          ORDER BY created_at ASC
          LIMIT 1`,
-        [nowSec, runnerParam],
+        [nowSec, nowSec, runnerParam],
       );
       if (rows.length === 0) return;
       const candidate = rowToTask(rows[0]);
+      // §9.1 lease token: every claim mints a fresh claim_id, advances
+      // `attempt` (a lease reclaim IS a new attempt), and anchors
+      // `first_claimed_at` on the FIRST dispatch only.
+      const claimId = newClaimId();
       const affected = this.db.run(
         `UPDATE workflow_tasks
          SET state = 'running',
              agent_did = ?,
              lease_expires_at = ?,
+             claim_id = ?,
+             attempt = attempt + 1,
+             first_claimed_at = COALESCE(first_claimed_at, ?),
              updated_at = ?
          WHERE id = ? AND state = 'queued'`,
-        [agentDID, leaseExpiresAt, nowMs, candidate.id],
+        [agentDID, leaseExpiresAt, claimId, nowMs, nowMs, candidate.id],
       );
       if (affected === 0) return; // race lost — another agent claimed first
       this.appendEvent({
@@ -618,6 +766,8 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
         details: JSON.stringify({
           agent_did: agentDID,
           lease_expires_at: leaseExpiresAt,
+          claim_id: claimId,
+          attempt: (candidate.attempt ?? 0) + 1,
         }),
       });
       claimed = {
@@ -625,31 +775,52 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
         status: 'running',
         agent_did: agentDID,
         lease_expires_at: leaseExpiresAt,
+        claim_id: claimId,
+        attempt: (candidate.attempt ?? 0) + 1,
+        first_claimed_at: candidate.first_claimed_at ?? nowMs,
         updated_at: nowMs,
       };
     });
     return claimed;
   }
 
-  heartbeatTask(id: string, agentDID: string, nowMs: number, leaseMs: number): boolean {
+  heartbeatTask(
+    id: string,
+    agentDID: string,
+    nowMs: number,
+    leaseMs: number,
+    claimId?: string,
+  ): boolean {
     if (leaseMs <= 0) {
       throw new Error('heartbeatTask: leaseMs must be positive');
     }
+    const claimClause = claimId !== undefined ? ' AND claim_id = ?' : '';
+    const params: unknown[] = [nowMs + leaseMs, nowMs, id, agentDID];
+    if (claimId !== undefined) params.push(claimId);
     const affected = this.db.run(
       `UPDATE workflow_tasks
        SET lease_expires_at = ?, updated_at = ?
-       WHERE id = ? AND state = 'running' AND agent_did = ?`,
-      [nowMs + leaseMs, nowMs, id, agentDID],
+       WHERE id = ? AND state = 'running' AND agent_did = ?${claimClause}`,
+      params,
     );
     return affected > 0;
   }
 
-  updateTaskProgress(id: string, agentDID: string, progressNote: string, nowMs: number): boolean {
+  updateTaskProgress(
+    id: string,
+    agentDID: string,
+    progressNote: string,
+    nowMs: number,
+    claimId?: string,
+  ): boolean {
+    const claimClause = claimId !== undefined ? ' AND claim_id = ?' : '';
+    const params: unknown[] = [progressNote, nowMs, id, agentDID];
+    if (claimId !== undefined) params.push(claimId);
     const affected = this.db.run(
       `UPDATE workflow_tasks
        SET progress_note = ?, updated_at = ?
-       WHERE id = ? AND state = 'running' AND agent_did = ?`,
-      [progressNote, nowMs, id, agentDID],
+       WHERE id = ? AND state = 'running' AND agent_did = ?${claimClause}`,
+      params,
     );
     return affected > 0;
   }
@@ -667,14 +838,69 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
       for (const row of rows) {
         const task = rowToTask(row);
         const priorAgent = task.agent_did ?? '';
+        const verdict = classifyLeaseLoss(task, nowMs);
+
+        if (verdict.kind === 'outcome_unknown') {
+          // §9.5: declared-effectful, no idempotency contract — Dina
+          // cannot know whether the external action occurred.
+          const affected = this.db.run(
+            `UPDATE workflow_tasks
+             SET state = 'outcome_unknown', error = ?, updated_at = ?
+             WHERE id = ? AND state = 'running'`,
+            ['lease lost — external outcome unknown', nowMs, task.id],
+          );
+          if (affected === 0) continue;
+          this.appendEvent({
+            task_id: task.id,
+            at: nowMs,
+            event_kind: 'outcome_unknown',
+            needs_delivery: true,
+            delivery_attempts: 0,
+            delivery_failed: false,
+            details: JSON.stringify({ previous_agent_did: priorAgent, reason: 'lease_expired' }),
+          });
+          reverted.push({ ...task, status: 'outcome_unknown', updated_at: nowMs });
+          continue;
+        }
+
+        if (verdict.kind === 'failed') {
+          // §9.1: post-claim, retry trusts nothing — a plugin task
+          // without a consented idempotency contract (or past budget)
+          // never re-dispatches. Declared-read work is plain failed.
+          const affected = this.db.run(
+            `UPDATE workflow_tasks
+             SET state = 'failed', error = ?, updated_at = ?
+             WHERE id = ? AND state = 'running'`,
+            [verdict.error, nowMs, task.id],
+          );
+          if (affected === 0) continue;
+          this.appendEvent({
+            task_id: task.id,
+            at: nowMs,
+            event_kind: 'failed',
+            needs_delivery: true,
+            delivery_attempts: 0,
+            delivery_failed: false,
+            details: JSON.stringify({ previous_agent_did: priorAgent, error: verdict.error }),
+          });
+          reverted.push({ ...task, status: 'failed', error: verdict.error, updated_at: nowMs });
+          continue;
+        }
+
+        // Requeue: legacy tasks unconditionally (existing behavior);
+        // plugin tasks only under the consented idempotency contract,
+        // with exponential-backoff eligibility via next_run_at (§9.1).
+        const nextRunAt = verdict.nextRunAtSec ?? null;
         const affected = this.db.run(
           `UPDATE workflow_tasks
            SET state = 'queued',
                agent_did = NULL,
                lease_expires_at = NULL,
+               claim_id = NULL,
+               next_run_at = COALESCE(?, next_run_at),
                updated_at = ?
            WHERE id = ? AND state = 'running'`,
-          [nowMs, task.id],
+          [nextRunAt, nowMs, task.id],
         );
         if (affected === 0) continue;
         this.appendEvent({
@@ -691,6 +917,8 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
           status: 'queued',
           agent_did: undefined,
           lease_expires_at: undefined,
+          claim_id: undefined,
+          ...(nextRunAt !== null ? { next_run_at: nextRunAt } : {}),
           updated_at: nowMs,
         });
       }
@@ -705,9 +933,29 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
     resultJSON: string,
     eventDetails: string,
     nowMs: number,
+    claimId?: string,
   ): number {
     let eventId = 0;
     this.db.transaction(() => {
+      // §9.1 lease token: with a claimId the terminal transition is a
+      // CAS on (task_id, claim_id, running). A stale execution loses
+      // the CAS — its report is recorded as evidence, never applied.
+      // Defense-in-depth (audit D3): a PLUGIN task (envelope-bearing)
+      // may NEVER be terminalized by the state-only guard — that path
+      // would let a stale attempt apply over a newer one. Require the
+      // token whenever the payload is a plugin envelope, regardless of
+      // caller.
+      const isPluginTask = parsePluginEnvelope(this.getById(id)?.payload ?? '') !== null;
+      if (isPluginTask && claimId === undefined) {
+        this.recordLateReport(id, agentDID, 'no-claim-token', 'complete', nowMs, resultJSON);
+        return;
+      }
+      const guard =
+        claimId !== undefined
+          ? `state = 'running' AND claim_id = ?`
+          : `state NOT IN ${TERMINAL_STATES_SQL}`;
+      const params: unknown[] = [resultJSON, resultSummary, agentDID, nowMs, id];
+      if (claimId !== undefined) params.push(claimId);
       const affected = this.db.run(
         `UPDATE workflow_tasks
          SET state = 'completed',
@@ -715,10 +963,15 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
              result_summary = ?,
              agent_did = ?,
              updated_at = ?
-         WHERE id = ? AND state NOT IN ('completed','failed','cancelled','recorded')`,
-        [resultJSON, resultSummary, agentDID, nowMs, id],
+         WHERE id = ? AND ${guard}`,
+        params,
       );
-      if (affected === 0) return; // miss → no event appended
+      if (affected === 0) {
+        if (claimId !== undefined) {
+          this.recordLateReport(id, agentDID, claimId, 'complete', nowMs, resultJSON);
+        }
+        return; // miss → no completed event appended
+      }
       eventId = this.appendEvent({
         task_id: id,
         at: nowMs,
@@ -732,19 +985,34 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
     return eventId;
   }
 
-  fail(id: string, agentDID: string, errorMsg: string, nowMs: number): number {
+  fail(id: string, agentDID: string, errorMsg: string, nowMs: number, claimId?: string): number {
     let eventId = 0;
     this.db.transaction(() => {
+      // See completeWithDetails: a plugin task requires the claim token.
+      const isPluginTask = parsePluginEnvelope(this.getById(id)?.payload ?? '') !== null;
+      if (isPluginTask && claimId === undefined) {
+        this.recordLateReport(id, agentDID, 'no-claim-token', 'fail', nowMs, errorMsg);
+        return;
+      }
+      const guard =
+        claimId !== undefined
+          ? `state = 'running' AND claim_id = ?`
+          : `state NOT IN ${TERMINAL_STATES_SQL}`;
+      const params: unknown[] = [errorMsg, agentDID, nowMs, id];
+      if (claimId !== undefined) params.push(claimId);
       const affected = this.db.run(
         `UPDATE workflow_tasks
          SET state = 'failed',
              error = ?,
              agent_did = ?,
              updated_at = ?
-         WHERE id = ? AND state NOT IN ('completed','failed','cancelled','recorded')`,
-        [errorMsg, agentDID, nowMs, id],
+         WHERE id = ? AND ${guard}`,
+        params,
       );
-      if (affected === 0) return;
+      if (affected === 0) {
+        if (claimId !== undefined) this.recordLateReport(id, agentDID, claimId, 'fail', nowMs, errorMsg);
+        return;
+      }
       eventId = this.appendEvent({
         task_id: id,
         at: nowMs,
@@ -758,14 +1026,102 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
     return eventId;
   }
 
+  /**
+   * A report that lost the claim CAS (stale claim, post-revoke, or
+   * already-terminal task) — retained as reconciliation EVIDENCE (§14:
+   * never applied, never hidden). needs_delivery=false: evidence
+   * surfaces via the decision/Activity log, not the result pipeline.
+   */
+  private recordLateReport(
+    id: string,
+    agentDID: string,
+    claimId: string,
+    verb: 'complete' | 'fail',
+    nowMs: number,
+    reported?: string,
+  ): void {
+    // Only record when the task actually exists — a late report against
+    // a nonexistent id is noise, not evidence.
+    const task = this.getById(id);
+    if (task === null) return;
+    // Retain the REPORTED payload as reconciliation evidence (§14). A late
+    // `complete` on an outcome_unknown booking may carry the real external
+    // outcome (e.g. a confirmation id) even though the claim CAS lost;
+    // discarding it throws away the only proof the effect happened. Never
+    // applied to task state — capped so a hostile/huge report can't bloat
+    // the event row.
+    const MAX_EVIDENCE = 4096;
+    const detail: Record<string, unknown> = { agent_did: agentDID, claim_id: claimId, verb };
+    if (reported !== undefined && reported !== '') {
+      detail.report =
+        reported.length > MAX_EVIDENCE ? `${reported.slice(0, MAX_EVIDENCE)}…[truncated]` : reported;
+    }
+    this.appendEvent({
+      task_id: id,
+      at: nowMs,
+      event_kind: 'late_report',
+      needs_delivery: false,
+      delivery_attempts: 0,
+      delivery_failed: false,
+      details: JSON.stringify(detail),
+    });
+    surfaceLateReportDecision(task, verb, nowMs); // P2-10
+  }
+
+  markOutcomeUnknown(id: string, reason: string, nowMs: number): number {
+    let eventId = 0;
+    this.db.transaction(() => {
+      // §9.5 legal entry: running → outcome_unknown ONLY (execution
+      // started, no terminal report).
+      const affected = this.db.run(
+        `UPDATE workflow_tasks
+         SET state = 'outcome_unknown',
+             error = ?,
+             updated_at = ?
+         WHERE id = ? AND state = 'running'`,
+        [reason, nowMs, id],
+      );
+      if (affected === 0) return;
+      eventId = this.appendEvent({
+        task_id: id,
+        at: nowMs,
+        event_kind: 'outcome_unknown',
+        needs_delivery: true,
+        delivery_attempts: 0,
+        delivery_failed: false,
+        details: JSON.stringify({ reason }),
+      });
+    });
+    return eventId;
+  }
+
   cancel(id: string, reason: string, nowMs: number): number {
+    // §9.5: owner cancellation of a RUNNING declared-effectful plugin
+    // task is the same epistemic situation as lease loss — execution
+    // started, no terminal report — so it parks as outcome_unknown,
+    // never plain cancelled ("stop tracking — the booking may already
+    // have happened"). The generic terminalize-anything path below
+    // remains for everything else.
+    const before = this.getById(id);
+    if (before !== null && before.status === 'running') {
+      const envelope = parsePluginEnvelope(before.payload);
+      if (envelope !== null && isDeclaredEffectful(envelope)) {
+        const eventId = this.markOutcomeUnknown(id, `cancelled by owner: ${reason}`, nowMs);
+        // CAS won → parked. CAS lost → the task left `running` between
+        // the read and the mark (lease sweep, completion); fall through
+        // to the generic cancel so the owner's cancel is never silently
+        // dropped — the nonterminal guard below handles every remaining
+        // interleaving correctly.
+        if (eventId > 0) return eventId;
+      }
+    }
     let eventId = 0;
     this.db.transaction(() => {
       const affected = this.db.run(
         `UPDATE workflow_tasks
          SET state = 'cancelled',
              updated_at = ?
-         WHERE id = ? AND state NOT IN ('completed','failed','cancelled','recorded')`,
+         WHERE id = ? AND state NOT IN ${TERMINAL_STATES_SQL}`,
         [nowMs, id],
       );
       if (affected === 0) return;
@@ -812,7 +1168,7 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
     const candidates = this.db
       .query(
         `SELECT ${TASK_COLUMNS} FROM workflow_tasks
-       WHERE state NOT IN ('completed','failed','cancelled','recorded')
+       WHERE state NOT IN ${TERMINAL_STATES_SQL}
          AND expires_at IS NOT NULL
          AND expires_at <= ?
          AND ${liveLeaseGuard}`,
@@ -822,26 +1178,32 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
     if (candidates.length === 0) return [];
 
     this.db.transaction(() => {
-      this.db.run(
-        `UPDATE workflow_tasks
-         SET state = 'failed',
-             error = 'expired',
-             updated_at = ?
-         WHERE state NOT IN ('completed','failed','cancelled','recorded')
-           AND expires_at IS NOT NULL
-           AND expires_at <= ?
-           AND ${liveLeaseGuard}`,
-        [nowMs, nowSec, nowMs],
-      );
-      // Emit a `failed` workflow_event per expired task so downstream
-      // consumers (WorkflowEventConsumer → chat formatter) can surface
-      // the timeout to the user. Without this, TTL expiry is invisible
-      // at the chat surface. Issue #10.
+      // Per-row rather than one blanket UPDATE: §9.5 deadline expiry
+      // MID-RUN on a declared-effectful plugin task is the same
+      // epistemic situation as lease loss — execution started, no
+      // terminal report — so it parks as outcome_unknown, never plain
+      // failed. Everything else keeps the failed('expired') ending.
       for (const t of candidates) {
+        const envelope = t.status === 'running' ? parsePluginEnvelope(t.payload) : null;
+        const toUnknown = envelope !== null && isDeclaredEffectful(envelope);
+        this.db.run(
+          toUnknown
+            ? `UPDATE workflow_tasks
+               SET state = 'outcome_unknown', error = ?, updated_at = ?
+               WHERE id = ? AND state = 'running'`
+            : `UPDATE workflow_tasks
+               SET state = 'failed', error = ?, updated_at = ?
+               WHERE id = ? AND state NOT IN ${TERMINAL_STATES_SQL}`,
+          [toUnknown ? 'expired mid-run — external outcome unknown' : 'expired', nowMs, t.id],
+        );
+        // Emit a workflow_event per expired task so downstream consumers
+        // (WorkflowEventConsumer → chat formatter) can surface the
+        // timeout to the user. Without this, TTL expiry is invisible at
+        // the chat surface. Issue #10.
         this.appendEvent({
           task_id: t.id,
           at: nowMs,
-          event_kind: 'failed',
+          event_kind: toUnknown ? 'outcome_unknown' : 'failed',
           needs_delivery: true,
           delivery_attempts: 0,
           delivery_failed: false,
@@ -849,7 +1211,7 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
             response_status: 'expired',
             capability: inferCapability(t),
             service_name: inferServiceName(t),
-            error: 'expired',
+            error: toUnknown ? 'expired mid-run — external outcome unknown' : 'expired',
           }),
         });
       }
@@ -1050,6 +1412,18 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     return out.slice(0, limit);
   }
 
+  listNonTerminalByRunner(runner: string): WorkflowTask[] {
+    if (runner === '') return [];
+    const out: WorkflowTask[] = [];
+    for (const t of this.tasks.values()) {
+      if (t.requested_runner === runner && !isTerminal(t.status as WorkflowTaskState)) {
+        out.push({ ...t });
+      }
+    }
+    out.sort((a, b) => a.created_at - b.created_at);
+    return out;
+  }
+
   listTasksWithStashPrefix(prefix: string, limit: number): WorkflowTask[] {
     const out: WorkflowTask[] = [];
     for (const t of this.tasks.values()) {
@@ -1118,8 +1492,14 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     // 'dina.local' = EXACT match only (untagged tasks belong to the
     // external agent); other filters = unset/'' or exact match.
     const matchesFilter = (requested: string | undefined): boolean => {
-      if (runnerFilter === '') return requested !== LOCAL_RUNNER_NAME;
-      if (runnerFilter === LOCAL_RUNNER_NAME) return requested === LOCAL_RUNNER_NAME;
+      if (runnerFilter === '') {
+        // Generic agents take neither the reserved in-process lane nor
+        // any plugin lane (§9.1).
+        return requested !== LOCAL_RUNNER_NAME && !(requested !== undefined && isPluginLane(requested));
+      }
+      if (runnerFilter === LOCAL_RUNNER_NAME || isPluginLane(runnerFilter)) {
+        return requested === runnerFilter; // exact only — no untagged convenience
+      }
       return requested === undefined || requested === '' || requested === runnerFilter;
     };
     const candidates: WorkflowTask[] = [];
@@ -1127,6 +1507,8 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
       if (t.kind !== 'delegation') continue;
       if (t.status !== 'queued') continue;
       if (t.expires_at !== undefined && t.expires_at <= nowSec) continue;
+      // Retry-backoff eligibility gate — parity with the SQL store.
+      if (t.next_run_at !== undefined && t.next_run_at !== 0 && t.next_run_at > nowSec) continue;
       if (!matchesFilter(t.requested_runner)) continue;
       candidates.push(t);
     }
@@ -1137,9 +1519,15 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     winner.status = 'running';
     winner.agent_did = agentDID;
     winner.lease_expires_at = leaseExpiresAt;
+    winner.claim_id = newClaimId();
+    winner.attempt = (winner.attempt ?? 0) + 1;
+    winner.first_claimed_at = winner.first_claimed_at ?? nowMs;
     winner.updated_at = nowMs;
-    this.events.push({
-      event_id: ++this.nextEventId,
+    // Route through appendEvent so event_id allocation matches every
+    // other event (audit D3: the hand-rolled `++this.nextEventId` push
+    // collided with appendEvent's post-read scheme, minting duplicate
+    // event_ids and corrupting per-event delivery/ack addressing).
+    this.appendEvent({
       task_id: winner.id,
       at: nowMs,
       event_kind: 'claimed',
@@ -1149,27 +1537,43 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
       details: JSON.stringify({
         agent_did: agentDID,
         lease_expires_at: leaseExpiresAt,
+        claim_id: winner.claim_id,
+        attempt: winner.attempt,
       }),
     });
     return { ...winner };
   }
 
-  heartbeatTask(id: string, agentDID: string, nowMs: number, leaseMs: number): boolean {
+  heartbeatTask(
+    id: string,
+    agentDID: string,
+    nowMs: number,
+    leaseMs: number,
+    claimId?: string,
+  ): boolean {
     if (leaseMs <= 0) {
       throw new Error('heartbeatTask: leaseMs must be positive');
     }
     const t = this.tasks.get(id);
     if (t === undefined) return false;
     if (t.status !== 'running' || t.agent_did !== agentDID) return false;
+    if (claimId !== undefined && t.claim_id !== claimId) return false;
     t.lease_expires_at = nowMs + leaseMs;
     t.updated_at = nowMs;
     return true;
   }
 
-  updateTaskProgress(id: string, agentDID: string, progressNote: string, nowMs: number): boolean {
+  updateTaskProgress(
+    id: string,
+    agentDID: string,
+    progressNote: string,
+    nowMs: number,
+    claimId?: string,
+  ): boolean {
     const t = this.tasks.get(id);
     if (t === undefined) return false;
     if (t.status !== 'running' || t.agent_did !== agentDID) return false;
+    if (claimId !== undefined && t.claim_id !== claimId) return false;
     t.progress_note = progressNote;
     t.updated_at = nowMs;
     return true;
@@ -1182,12 +1586,46 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
       if (t.lease_expires_at === undefined) continue;
       if (t.lease_expires_at >= nowMs) continue;
       const priorAgent = t.agent_did ?? '';
+      const verdict = classifyLeaseLoss(t, nowMs);
+      if (verdict.kind === 'outcome_unknown') {
+        t.status = 'outcome_unknown';
+        t.error = 'lease lost — external outcome unknown';
+        t.updated_at = nowMs;
+        this.appendEvent({
+          task_id: t.id,
+          at: nowMs,
+          event_kind: 'outcome_unknown',
+          needs_delivery: true,
+          delivery_attempts: 0,
+          delivery_failed: false,
+          details: JSON.stringify({ previous_agent_did: priorAgent, reason: 'lease_expired' }),
+        });
+        reverted.push({ ...t });
+        continue;
+      }
+      if (verdict.kind === 'failed') {
+        t.status = 'failed';
+        t.error = verdict.error;
+        t.updated_at = nowMs;
+        this.appendEvent({
+          task_id: t.id,
+          at: nowMs,
+          event_kind: 'failed',
+          needs_delivery: true,
+          delivery_attempts: 0,
+          delivery_failed: false,
+          details: JSON.stringify({ previous_agent_did: priorAgent, error: verdict.error }),
+        });
+        reverted.push({ ...t });
+        continue;
+      }
       t.status = 'queued';
       t.agent_did = undefined;
       t.lease_expires_at = undefined;
+      t.claim_id = undefined;
+      if (verdict.nextRunAtSec !== undefined) t.next_run_at = verdict.nextRunAtSec;
       t.updated_at = nowMs;
-      this.events.push({
-        event_id: ++this.nextEventId,
+      this.appendEvent({
         task_id: t.id,
         at: nowMs,
         event_kind: 'lease_expired',
@@ -1208,10 +1646,25 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     resultJSON: string,
     eventDetails: string,
     nowMs: number,
+    claimId?: string,
   ): number {
     const t = this.tasks.get(id);
     if (t === undefined) return 0;
-    if (isTerminal(t.status as WorkflowTaskState)) return 0;
+    // Defense-in-depth parity (audit D3): a plugin task requires the token.
+    if (parsePluginEnvelope(t.payload) !== null && claimId === undefined) {
+      this.recordLateReport(id, agentDID, 'no-claim-token', 'complete', nowMs, resultJSON);
+      return 0;
+    }
+    if (claimId !== undefined) {
+      // §9.1 CAS parity with the SQL store: stale claim → late_report
+      // evidence, never a result.
+      if (t.status !== 'running' || t.claim_id !== claimId) {
+        this.recordLateReport(id, agentDID, claimId, 'complete', nowMs, resultJSON);
+        return 0;
+      }
+    } else if (isTerminal(t.status as WorkflowTaskState)) {
+      return 0;
+    }
     t.status = 'completed';
     t.result = resultJSON;
     t.result_summary = resultSummary;
@@ -1228,10 +1681,21 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     });
   }
 
-  fail(id: string, agentDID: string, errorMsg: string, nowMs: number): number {
+  fail(id: string, agentDID: string, errorMsg: string, nowMs: number, claimId?: string): number {
     const t = this.tasks.get(id);
     if (t === undefined) return 0;
-    if (isTerminal(t.status as WorkflowTaskState)) return 0;
+    if (parsePluginEnvelope(t.payload) !== null && claimId === undefined) {
+      this.recordLateReport(id, agentDID, 'no-claim-token', 'fail', nowMs, errorMsg);
+      return 0;
+    }
+    if (claimId !== undefined) {
+      if (t.status !== 'running' || t.claim_id !== claimId) {
+        this.recordLateReport(id, agentDID, claimId, 'fail', nowMs, errorMsg);
+        return 0;
+      }
+    } else if (isTerminal(t.status as WorkflowTaskState)) {
+      return 0;
+    }
     t.status = 'failed';
     t.error = errorMsg;
     t.agent_did = agentDID;
@@ -1247,10 +1711,67 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     });
   }
 
+  private recordLateReport(
+    id: string,
+    agentDID: string,
+    claimId: string,
+    verb: 'complete' | 'fail',
+    nowMs: number,
+    reported?: string,
+  ): void {
+    // Parity with the SQL store: retain the reported payload as evidence,
+    // capped, never applied (§14).
+    const MAX_EVIDENCE = 4096;
+    const detail: Record<string, unknown> = { agent_did: agentDID, claim_id: claimId, verb };
+    if (reported !== undefined && reported !== '') {
+      detail.report =
+        reported.length > MAX_EVIDENCE ? `${reported.slice(0, MAX_EVIDENCE)}…[truncated]` : reported;
+    }
+    this.appendEvent({
+      task_id: id,
+      at: nowMs,
+      event_kind: 'late_report',
+      needs_delivery: false,
+      delivery_attempts: 0,
+      delivery_failed: false,
+      details: JSON.stringify(detail),
+    });
+    surfaceLateReportDecision(this.tasks.get(id) ?? null, verb, nowMs); // P2-10
+  }
+
+  markOutcomeUnknown(id: string, reason: string, nowMs: number): number {
+    const t = this.tasks.get(id);
+    if (t === undefined) return 0;
+    if (t.status !== 'running') return 0;
+    t.status = 'outcome_unknown';
+    t.error = reason;
+    t.updated_at = nowMs;
+    return this.appendEvent({
+      task_id: id,
+      at: nowMs,
+      event_kind: 'outcome_unknown',
+      needs_delivery: true,
+      delivery_attempts: 0,
+      delivery_failed: false,
+      details: JSON.stringify({ reason }),
+    });
+  }
+
   cancel(id: string, reason: string, nowMs: number): number {
     const t = this.tasks.get(id);
     if (t === undefined) return 0;
     if (isTerminal(t.status as WorkflowTaskState)) return 0;
+    // §9.5 parity with the SQL store: cancelling a RUNNING
+    // declared-effectful plugin task parks as outcome_unknown.
+    if (t.status === 'running') {
+      const envelope = parsePluginEnvelope(t.payload);
+      if (envelope !== null && isDeclaredEffectful(envelope)) {
+        const eventId = this.markOutcomeUnknown(id, `cancelled by owner: ${reason}`, nowMs);
+        // Parity with the SQL store's race fall-through (single-threaded
+        // here, but the two implementations must not diverge).
+        if (eventId > 0) return eventId;
+      }
+    }
     t.status = 'cancelled';
     t.updated_at = nowMs;
     return this.appendEvent({
@@ -1295,16 +1816,20 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
         t.expires_at <= nowSec
       ) {
         expired.push({ ...t });
-        t.status = 'failed';
-        t.error = 'expired';
+        // §9.5 parity with the SQL store: deadline expiry MID-RUN on a
+        // declared-effectful plugin task → outcome_unknown.
+        const envelope = t.status === 'running' ? parsePluginEnvelope(t.payload) : null;
+        const toUnknown = envelope !== null && isDeclaredEffectful(envelope);
+        t.status = toUnknown ? 'outcome_unknown' : 'failed';
+        t.error = toUnknown ? 'expired mid-run — external outcome unknown' : 'expired';
         t.updated_at = nowMs;
         // Parity with SQLiteWorkflowRepository — emit a deliverable
-        // `failed` event so consumers can surface the TTL expiry to
-        // chat. Issue #10.
+        // event so consumers can surface the TTL expiry to chat.
+        // Issue #10.
         this.appendEvent({
           task_id: t.id,
           at: nowMs,
-          event_kind: 'failed',
+          event_kind: toUnknown ? 'outcome_unknown' : 'failed',
           needs_delivery: true,
           delivery_attempts: 0,
           delivery_failed: false,
@@ -1312,7 +1837,7 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
             response_status: 'expired',
             capability: inferCapability(t),
             service_name: inferServiceName(t),
-            error: 'expired',
+            error: t.error,
           }),
         });
       }
@@ -1402,6 +1927,9 @@ export function rowToTask(row: DBRow): WorkflowTask {
     idempotency_key: stringOrUndef(row.idempotency_key),
     expires_at: numberOrUndef(row.expires_at),
     next_run_at: numberOrUndef(row.next_run_at),
+    claim_id: stringOrUndef(row.claim_id),
+    attempt: numberOrUndef(row.attempt),
+    first_claimed_at: numberOrUndef(row.first_claimed_at),
     recurrence: stringOrUndef(row.recurrence),
     internal_stash: stringOrUndef(row.internal_stash),
     created_at: Number(row.created_at ?? 0),

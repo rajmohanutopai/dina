@@ -69,6 +69,19 @@ const IDENTITY_TABLES = [
   'service_configs',
   'contact_service_offers',
   'chat_messages',
+  // P2-12: the installed-plugin CATALOG (what plugin, version, capabilities,
+  // pinned hashes) is portable content worth preserving. It is TRANSFORMED on
+  // export to restore PAUSED with no device binding (see buildArchivePayload).
+  // plugin_grants / plugin_grant_uses / plugin_capability_stats are NOT
+  // exported — durable authority and runner pairings do not travel (§14).
+  'plugin_installs',
+  // Round-5 #8: the owner-private plugin DECISION LOG is history, not authority
+  // ("records of the past, not authority" — it survives install removal, and has
+  // no FK to plugin_installs). It travels with the catalog so the audit trail is
+  // continuous across a migration. Being an IDENTITY_TABLE also means overwrite
+  // clears the target's stale decisions first (they'd otherwise linger against a
+  // restored install_id).
+  'plugin_decisions',
 ] as const;
 
 /** kv_store is exported, but sensitive keys are filtered out (below). */
@@ -288,7 +301,14 @@ export async function buildArchivePayload(ds: ArchiveDataSource): Promise<Archiv
   const idAdapter = ds.identityAdapter();
   if (idAdapter !== null) {
     for (const t of IDENTITY_TABLES) {
-      const rows = dumpTable(idAdapter, t);
+      let rows = dumpTable(idAdapter, t);
+      if (t === 'plugin_installs') {
+        // P2-12: a restored install has no runner instance and no live grants
+        // until the owner re-pairs + re-consents, so bake it PAUSED with the
+        // device binding stripped. Restore is then a plain verbatim insert;
+        // the v19 unique-active-device index can't conflict (status≠active).
+        rows = rows.map((r) => ({ ...r, status: 'paused', device_did: null }));
+      }
       identityTables[t] = rows;
       checksums[`identity:${t}`] = tableChecksum(rows);
     }
@@ -423,6 +443,15 @@ export async function importArchive(
         if (opts.force && table !== KV_TABLE) clearTable(idAdapter, table);
         const rows = payload.identity.tables[table];
         if (rows !== undefined) restoreTable(idAdapter, table, rows);
+      }
+      // P2-12: plugin authority never travels — a restored install is PAUSED
+      // and must be re-consented. On overwrite, clear the target's grant / use
+      // / stat rows (which are NOT in the archive) so a restored install can't
+      // inherit stale grants the target happened to hold for the same id.
+      if (opts.force) {
+        for (const t of ['plugin_grants', 'plugin_grant_uses', 'plugin_capability_stats']) {
+          clearTable(idAdapter, t);
+        }
       }
     });
   }

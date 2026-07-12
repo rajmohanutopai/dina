@@ -15,18 +15,22 @@
  *   POST /v1/workflow/events/:id/ack      — ack + retire from queue
  */
 
-import { LOCAL_RUNNER_NAME } from '@dina/protocol';
+import { LOCAL_RUNNER_NAME, isPluginLane } from '@dina/protocol';
 
 import {
   grantAgentPersonaAccessFromApproval,
   isAgentPersonaAccessApproval,
 } from '../../agent/access';
+import { claimPluginTask } from '../../plugins/claim_guard';
+import { validatePluginResult } from '../../plugins/dispatch';
+import { getPluginInstallRepository } from '../../plugins/registry';
 import {
   STAGING_PERSONA_ACCESS_APPROVAL_TYPE,
   denyApproval,
   drainForApproval,
 } from '../../staging/service';
 import { WorkflowTaskKind, WorkflowTaskState, type WorkflowTask } from '../../workflow/domain';
+import { parsePluginEnvelope } from '../../workflow/plugin_envelope';
 import {
   WorkflowConflictError,
   WorkflowTransitionError,
@@ -92,6 +96,8 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
   });
   router.post('/v1/workflow/tasks/:id/complete', async (req) => {
     const guard = agentCompletionGuard(req);
+    const claimId = extractClaimId(req);
+    if (claimId instanceof Object) return claimId;
     return (
       guard ??
       runAction(req, (id, body, s, ctx) => {
@@ -99,6 +105,26 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
         const agentDID = completingAgentDID(body, ctx);
         if (result === '') {
           throw new WorkflowValidationError('result is required', 'result');
+        }
+        // §9.1: a PLUGIN completion is validated against the PINNED
+        // result schema (the envelope snapshot, not the current
+        // manifest). Nonconforming = task FAILURE, counted against
+        // plugin health — never applied as a result. A runner cannot
+        // widen its own output past what the owner consented to.
+        if (ctx.callerType === 'plugin') {
+          const task = s.store().getById(id);
+          const envelope = task !== null ? parsePluginEnvelope(task.payload) : null;
+          if (envelope !== null) {
+            const check = validatePluginResult(result, envelope.schema_snapshot);
+            if (!check.ok) {
+              return s.fail(
+                id,
+                `result rejected: ${check.error ?? 'schema mismatch'}`,
+                agentDID,
+                claimId,
+              );
+            }
+          }
         }
         // Go-Core parity: `result_summary` is the human-readable display
         // line on the admin/diagnostics surface; `result` is the
@@ -110,13 +136,30 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
         // pass an explicit `result_summary` are honoured verbatim.
         const explicitSummary = strField(body?.result_summary);
         const summary = explicitSummary !== '' ? explicitSummary : result.slice(0, 200);
-        return s.complete(id, result, summary, agentDID);
+        return s.complete(id, result, summary, agentDID, claimId);
       })
     );
   });
   router.post('/v1/workflow/tasks/:id/fail', async (req) => {
     const guard = agentCompletionGuard(req);
-    return guard ?? runAction(req, failTask);
+    const claimId = extractClaimId(req);
+    if (claimId instanceof Object) return claimId;
+    return (
+      guard ??
+      runAction(req, (id, body, s, ctx) => {
+        const errMsg = strField(body?.error);
+        const agentDID = completingAgentDID(body, ctx);
+        if (errMsg === '') throw new WorkflowValidationError('error is required', 'error');
+        const before = s.store().getById(id);
+        if (
+          isStagingPersonaAccessApproval(before) &&
+          before?.status === WorkflowTaskState.PendingApproval
+        ) {
+          denyApproval(id, errMsg);
+        }
+        return s.fail(id, errMsg, agentDID, claimId);
+      })
+    );
   });
   router.get('/v1/workflow/events', listEvents);
   router.post('/v1/workflow/events/:id/ack', ackEvent);
@@ -218,6 +261,45 @@ async function claimTask(req: CoreRequest): Promise<CoreResponse> {
       error: `runner_filter "${LOCAL_RUNNER_NAME}" is reserved for in-process execution`,
     });
   }
+  // PLUGIN-LANE HIJACK GUARD (PLUGIN_ARCHITECTURE.md §9.1). A plugin lane
+  // is served ONLY by its own paired instance, via the plugin branch
+  // below, which forces the lane from the install and runs the six
+  // claim-time checks + result-schema validation + claim-token
+  // discipline. A NON-plugin caller (e.g. a generic paired agent) that
+  // names `plugin:<install_id>` as runner_filter must NEVER reach the
+  // generic claim path — there, an exact-match plugin filter would let
+  // it claim the task, read the pinned envelope (params + scrubbed
+  // context), and forge a completion with NONE of those gates. Reject
+  // it outright. (Plugin callers branch out before this matters; their
+  // filter is ignored anyway.)
+  if (req.callerType !== 'plugin' && isPluginLane(runnerFilter)) {
+    return j(403, {
+      error: 'access_denied',
+      reason: 'plugin lanes are served only by their paired plugin instance',
+    });
+  }
+  // Plugin callers (PLUGIN_ARCHITECTURE.md §9.1): the server ignores the
+  // client-sent runner_filter ENTIRELY and forces exact-match on the lane
+  // registered to this instance's install; the six claim-time checks run
+  // server-side and stale-authority tasks terminalize instead of
+  // starving the lane. A malicious runner is assumed to speak raw RPC.
+  if (req.callerType === 'plugin') {
+    const installs = getPluginInstallRepository();
+    if (installs === null) return j(503, { error: 'plugin registry not wired' });
+    const install = installs.getByDeviceDid(agentDID);
+    if (install === null) {
+      return j(403, { error: 'access_denied', reason: 'no plugin install bound to this device' });
+    }
+    const result = claimPluginTask({
+      repo: service.store(),
+      install,
+      deviceDid: agentDID,
+      nowMs: Date.now(),
+      leaseMs,
+    });
+    if (result.task === null) return j(204, undefined);
+    return j(200, withPayloadType(result.task));
+  }
   const task = service.store().claimDelegationTask(agentDID, Date.now(), leaseMs, runnerFilter);
   if (task === null) return j(204, undefined);
   // dina-agent (Python) reads `body.id` / `body.payload` directly off
@@ -239,7 +321,9 @@ async function heartbeatTask(req: CoreRequest): Promise<CoreResponse> {
   const agentDID = req.headers['x-did'] ?? '';
   if (agentDID === '') return j(400, { error: 'X-DID header is required' });
   const leaseMs = extractLeaseMs(req.body);
-  const ok = service.store().heartbeatTask(id, agentDID, Date.now(), leaseMs);
+  const claimId = extractClaimId(req);
+  if (claimId instanceof Object) return claimId; // 400 — plugin without claim_id
+  const ok = service.store().heartbeatTask(id, agentDID, Date.now(), leaseMs, claimId);
   if (!ok) {
     const task = service.store().getById(id);
     if (task === null) return j(404, { error: 'task not found' });
@@ -260,7 +344,9 @@ async function progressTask(req: CoreRequest): Promise<CoreResponse> {
   const body = (req.body as Record<string, unknown> | undefined) ?? {};
   const message = typeof body.message === 'string' ? body.message : '';
   if (message === '') return j(400, { error: 'message is required' });
-  const ok = service.store().updateTaskProgress(id, agentDID, message, Date.now());
+  const claimId = extractClaimId(req);
+  if (claimId instanceof Object) return claimId;
+  const ok = service.store().updateTaskProgress(id, agentDID, message, Date.now(), claimId);
   if (!ok) {
     const task = service.store().getById(id);
     if (task === null) return j(404, { error: 'task not found' });
@@ -369,7 +455,7 @@ type TaskAction = (
  * a runner (e.g. the chat orchestrator recording a completion).
  */
 function completingAgentDID(body: Record<string, unknown> | null, ctx: ActionCtx): string {
-  if (ctx.callerType === 'agent') return ctx.callerDID ?? '';
+  if (ctx.callerType === 'agent' || ctx.callerType === 'plugin') return ctx.callerDID ?? '';
   return strField(body?.agent_did);
 }
 
@@ -386,7 +472,7 @@ function completingAgentDID(body: Record<string, unknown> | null, ctx: ActionCtx
  * `null` to proceed.
  */
 function agentCompletionGuard(req: CoreRequest): CoreResponse | null {
-  if (req.callerType !== 'agent') return null;
+  if (req.callerType !== 'agent' && req.callerType !== 'plugin') return null;
   const service = getWorkflowService();
   if (service === null) return j(503, { error: 'workflow service not wired' });
   const id = req.params.id ?? '';
@@ -402,7 +488,7 @@ function agentCompletionGuard(req: CoreRequest): CoreResponse | null {
   ) {
     return j(403, {
       error: 'access_denied',
-      reason: 'agent may only complete/fail a running delegation task it currently holds',
+      reason: `${req.callerType} may only complete/fail a running delegation task it currently holds`,
     });
   }
   return null;
@@ -510,23 +596,27 @@ function cancelTask(
   return service.cancel(id, reason);
 }
 
-function failTask(
-  id: string,
-  body: Record<string, unknown> | null,
-  service: NonNullable<ReturnType<typeof getWorkflowService>>,
-  ctx: ActionCtx,
-): WorkflowTask {
-  const errMsg = strField(body?.error);
-  const agentDID = completingAgentDID(body, ctx);
-  if (errMsg === '') throw new WorkflowValidationError('error is required', 'error');
-  const before = service.store().getById(id);
-  if (
-    isStagingPersonaAccessApproval(before) &&
-    before?.status === WorkflowTaskState.PendingApproval
-  ) {
-    denyApproval(id, errMsg);
+/**
+ * Claim-token extraction (§9.1). PLUGIN callers MUST present the
+ * claim_id minted at claim — the CAS discipline is what makes a stale
+ * execution's report evidence instead of a result. Other callers may
+ * present one (then it is honored) but are not required to — legacy
+ * agents predate tokens.
+ *
+ * Returns the claimId (string | undefined) or a 400 CoreResponse when a
+ * plugin caller omitted it.
+ */
+function extractClaimId(req: CoreRequest): string | undefined | CoreResponse {
+  const body = (req.body as Record<string, unknown> | undefined) ?? {};
+  const raw = body.claim_id;
+  const claimId = typeof raw === 'string' && raw !== '' ? raw : undefined;
+  if (req.callerType === 'plugin' && claimId === undefined) {
+    return j(400, {
+      error: 'claim_id is required',
+      reason: 'plugin callers must present the claim token minted at claim (§9.1)',
+    });
   }
-  return service.fail(id, errMsg, agentDID);
+  return claimId;
 }
 
 /**
@@ -546,10 +636,10 @@ function failTask(
  * remain authorised. Fail closed.
  */
 function ownerDecisionGuard(req: CoreRequest): CoreResponse | null {
-  if (req.callerType === 'agent') {
+  if (req.callerType === 'agent' || req.callerType === 'plugin') {
     return j(403, {
       error: 'access_denied',
-      reason: 'agent callers cannot approve or deny tasks',
+      reason: `${req.callerType} callers cannot approve or deny tasks`,
     });
   }
   return null;

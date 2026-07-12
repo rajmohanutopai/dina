@@ -22,10 +22,21 @@ import {
   unregisterDevice as unregisterDeviceAuth,
 } from '../auth/caller_type';
 import { multibaseToPublicKey, deriveDIDKey } from '../identity/did';
+import { getPluginDecisionRepository } from '../plugins/decisions';
+import { getPluginGrantRepository } from '../plugins/grants';
+import { terminateInstallInFlight } from '../plugins/install_service';
+import { getPluginInstallRepository } from '../plugins/registry';
 
 import { getDeviceRepository } from './repository';
 
-export type DeviceRole = 'rich' | 'thin' | 'cli' | 'agent';
+/**
+ * Device roles. `plugin` (PLUGIN_ARCHITECTURE.md §7) is a runner-plugin
+ * instance: paired like an agent, but resolved to its OWN caller type —
+ * silent fallthrough to 'device' would inherit the much wider device
+ * surface (privilege escalation by default-case). Pinned by
+ * __tests__/auth/plugin_caller.test.ts.
+ */
+export type DeviceRole = 'rich' | 'thin' | 'cli' | 'agent' | 'plugin';
 export type AuthType = 'ed25519' | 'token';
 
 export interface PairedDevice {
@@ -262,11 +273,16 @@ export interface DeviceRevokeResult {
 export async function revokeDeviceDurable(deviceId: string): Promise<DeviceRevokeResult> {
   const device = devices.get(deviceId);
   if (!device) return { found: false, revoked: false, durable: false, error: 'not_found' };
-  if (device.revoked) {
-    return { found: true, revoked: true, durable: true, alreadyRevoked: true };
-  }
+  // Round-5 #5: do NOT short-circuit an already-in-memory-revoked device. The
+  // in-memory `revoked` flag only proves access was CUT, not that SQL persisted
+  // or the cascades completed — a prior call whose SQL write failed, or that
+  // crashed before the plugin/grant cascades, would falsely report durable
+  // success and never retry. Every call re-runs the idempotent SQL revoke + the
+  // idempotent cascades until they stick. `repo.revoke` returns true whenever
+  // the row exists, so re-revoking a persisted device still reports durable.
+  const wasAlreadyRevoked = device.revoked;
 
-  // Step 1: Persist FIRST — durability is claimed only after this succeeds.
+  // Step 1: Persist (idempotent). Retried on EVERY call until it succeeds.
   const sqlRepo = getDeviceRepository();
   let durable = false;
   let error: string | undefined;
@@ -285,6 +301,16 @@ export async function revokeDeviceDurable(deviceId: string): Promise<DeviceRevok
   cutDeviceAccess(device);
   device.revoked = true;
 
+  // Round-6 #4: the authority cascades below are BEST-EFFORT for control flow
+  // (a failure never aborts the revoke) but their completion is part of what
+  // "durable" MUST mean — if grant revocation or install pausing fails, the
+  // device SQL row alone being persisted is NOT enough: re-pairing the same key
+  // (same derived DID) would revive an active install with old grants. So a
+  // cascade failure downgrades `durable`, which — with the idempotent-retry
+  // behavior above — makes the caller re-run the whole revoke (cascades
+  // included) until everything sticks.
+  let cascadesOk = true;
+
   // Step 3: Cascade — revoke this DID's durable agent grants so a revoked
   // agent can't keep reading a locked persona with a stale grant (§2/§5).
   try {
@@ -292,19 +318,107 @@ export async function revokeDeviceDurable(deviceId: string): Promise<DeviceRevok
     if (grantRepo !== null && device.did !== '') {
       grantRepo.revokeForAgent(device.did, Date.now());
     }
-  } catch {
-    /* best-effort */
+  } catch (err) {
+    cascadesOk = false;
+    if (error === undefined) error = `agent-grant cascade failed: ${errMsg(err)}`;
+  }
+
+  // Step 4: Cascade to plugin authority — if this device is a plugin
+  // runner instance, revoking it MUST stop the install's lane and revoke
+  // its grants. Otherwise the install stays active and re-pairing the same
+  // key (which derives the same DID) would make the old install and its
+  // grants usable again with no re-consent (§14). Pause + grant-revoke =
+  // no surviving authority: the claim guard's active-status check stops
+  // new claims immediately, the revoked device can no longer authenticate
+  // to complete the in-flight one, and a resume requires an explicit owner
+  // flow with re-consent (the grants are gone). "Revocation stops future
+  // authority, not history" (I12) — the install row and its receipts stay.
+  try {
+    const installRepo = getPluginInstallRepository();
+    if (installRepo !== null && device.did !== '') {
+      // P1-3: disable EVERY install bound to this device DID, not just the one
+      // getByDeviceDid returns. The v19 partial unique index constrains only
+      // `active`, so a device can legitimately be co-bound to one active plus
+      // several paused/pending installs. Walking a single row left the others
+      // authorized: re-pairing the same key (same derived DID) would revive
+      // their grants with no re-consent. Enumerate and disable all of them.
+      const nowMs = Date.now();
+      const nowSec = Math.floor(nowMs / 1000);
+      for (const install of installRepo.listByDeviceDid(device.did)) {
+        let changed = false;
+        if (install.status === 'pending') {
+          // A pending install on a now-revoked device can never legitimately
+          // activate (the runner can't authenticate) — unwind it so a later
+          // confirmConsent can't commit a lane onto dead authority. remove()
+          // cascades its grants.
+          installRepo.remove(install.installId);
+          changed = true;
+        } else {
+          getPluginGrantRepository()?.revokeAllForInstall(install.installId, nowSec);
+          // pause() returns false if already paused — on an idempotent
+          // re-revoke (Round-5 #5) the state didn't change, so don't re-log.
+          changed = installRepo.pause(install.installId, nowMs);
+          // P1-4: terminate in-flight work immediately — a running effectful
+          // task parks as outcome_unknown, queued ones cancel — so no
+          // completion can apply through the revoke seam.
+          terminateInstallInFlight(install.installId, 'plugin device revoked', nowMs);
+        }
+        // Only append a decision when the revoke actually changed state, so a
+        // retried/duplicate revoke doesn't spam the owner-private log.
+        if (changed) {
+          getPluginDecisionRepository()?.record({
+            installId: install.installId,
+            decision: 'paused',
+            nowSec,
+          });
+        }
+      }
+    }
+  } catch (err) {
+    cascadesOk = false;
+    if (error === undefined) error = `plugin cascade failed: ${errMsg(err)}`;
   }
 
   notifyListeners();
+  // Round-6 #4: durable = device SQL persisted AND authority cascades completed.
+  // A cascade failure means old grants/installs may survive, so report NOT
+  // durable — the caller's retry re-runs everything (idempotent) until clean.
+  const fullyDurable = durable && cascadesOk;
   appendAudit(
     device.did !== '' ? device.did : deviceId,
     'device_revoked',
     deviceId,
-    `durable=${durable}${error !== undefined ? ` error=${error}` : ''}`,
+    `durable=${fullyDurable}${error !== undefined ? ` error=${error}` : ''}`,
   );
 
-  return { found: true, revoked: true, durable, ...(error !== undefined ? { error } : {}) };
+  return {
+    found: true,
+    revoked: true,
+    durable: fullyDurable,
+    ...(wasAlreadyRevoked ? { alreadyRevoked: true } : {}),
+    ...(error !== undefined ? { error } : {}),
+  };
+}
+
+/** Compact error-message extractor for cascade failures. */
+function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Round-6 #1: revoke a device identified by its DID — the identifier plugin
+ * installs store (`device_did`) — rather than by `deviceId`. Maps DID →
+ * deviceId → the durable revoke and returns the full result. This is the typed,
+ * ASYNC callback the plugin lifecycle ops (uninstall / declineConsent / the
+ * abandoned sweep) pass, so they can confirm `durable === true` BEFORE deleting
+ * an install row. Passing the raw `revokeDeviceDurable` there was a latent bug:
+ * it is async (its Promise would be dropped) and takes a deviceId, not a DID.
+ */
+export async function revokeDeviceByDidDurable(deviceDid: string): Promise<DeviceRevokeResult> {
+  if (deviceDid === '') return { found: false, revoked: false, durable: false, error: 'empty_did' };
+  const device = getDeviceByDID(deviceDid);
+  if (device === null) return { found: false, revoked: false, durable: false, error: 'not_found' };
+  return revokeDeviceDurable(device.deviceId);
 }
 
 /** Cut a device's auth access — unregister its DID from caller-type resolution. */

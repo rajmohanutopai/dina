@@ -30,7 +30,6 @@
  *         service-discovery demo is actually runnable from the current app shell.
  */
 
-
 import {
   AppViewClient,
   EtaQueryParamsSchema,
@@ -41,7 +40,8 @@ import {
   createGeminiEmbeddingProvider,
   getCapability,
   makeTier1CapabilityRunner,
- executeToolSearch } from '@dina/brain';
+  executeToolSearch,
+} from '@dina/brain';
 import {
   type AgenticAskHandlerOptions,
   type AskCoordinator,
@@ -67,7 +67,6 @@ import {
   getPublicKey,
   getServiceConfig,
   type IdentityKeypair,
-
   AppViewServiceResolver,
   addContactIfNotExists,
   getPeopleRepository,
@@ -76,8 +75,9 @@ import {
   setOutboxRedeliverFn,
   startOutboxDrainer,
   storeItem,
-  type DrainerHandle} from '@dina/core';
-import { DIDResolver, hydrateDeviceRegistry } from '@dina/core/runtime';
+  type DrainerHandle,
+} from '@dina/core';
+import { DIDResolver, hydrateDeviceRegistry, getDeviceByDID } from '@dina/core/runtime';
 import { makeSendD2D, makeOutboxRedeliver } from '@dina/home-node';
 
 import { mobileHostedEndpoints } from './hosted_endpoints';
@@ -86,7 +86,7 @@ import { buildHomeNodeAskRuntime } from '@dina/home-node/ask-runtime';
 import { loadActiveProvider } from '../ai/active_provider';
 import { registerAgenticRouter, peekAgenticRouter, resetAgenticRouter } from '../ai/agentic_swap';
 import { loadModelOverrides } from '../ai/model_overrides';
-import { createLLMProvider, getConfiguredProviders , getApiKey } from '../ai/provider';
+import { createLLMProvider, getConfiguredProviders, getApiKey } from '../ai/provider';
 import { startReviewDraft } from '../peerlens/review_draft';
 import { getIdentityAdapter } from '../storage/init';
 
@@ -187,13 +187,16 @@ function parseRoleEnv(raw: string | undefined): NodeRole | undefined {
  */
 async function tryBuildPdsPublisher(
   _did: string,
-  infra: { pdsUrl: string | null; pdsHandle: string | null; pdsPassword: string | null; pdsEmail: string | null },
+  infra: {
+    pdsUrl: string | null;
+    pdsHandle: string | null;
+    pdsPassword: string | null;
+    pdsEmail: string | null;
+  },
   opts: { validateSession?: boolean } = {},
 ): Promise<{ publisher: PDSPublisher | undefined; sessionReachable: boolean }> {
   const pdsUrl =
-    infra.pdsUrl ??
-    process.env.EXPO_PUBLIC_DINA_PDS_URL ??
-    'https://test-pds.dinakernel.com';
+    infra.pdsUrl ?? process.env.EXPO_PUBLIC_DINA_PDS_URL ?? 'https://test-pds.dinakernel.com';
   const handle = infra.pdsHandle ?? process.env.EXPO_PUBLIC_DINA_PDS_HANDLE ?? '';
   const password = infra.pdsPassword ?? process.env.EXPO_PUBLIC_DINA_PDS_PASSWORD ?? '';
   if (handle === '' || password === '') return { publisher: undefined, sessionReachable: false };
@@ -207,7 +210,6 @@ async function tryBuildPdsPublisher(
     try {
       await account.createSession({ identifier: handle, password });
     } catch (err) {
-       
       console.error(
         '[dina:boot] PDS createSession failed — re-onboard or check infra prefs',
         (err as Error).message,
@@ -641,6 +643,14 @@ export async function buildBootInputs(
     localDelegationRunner,
     pdsPublisher,
     pdsSessionReachable,
+    // Round-5 #4: install the device-role resolver so `resolveCallerType` maps
+    // a paired PLUGIN device to callerType 'plugin' and an AGENT device to
+    // 'agent' — NOT the wider default 'device'. Without this, `createNode`
+    // never calls `setDeviceRoleResolver`, the resolver stays null, and every
+    // paired device (incl. a runner-plugin instance) inherits the broad device
+    // surface — privilege escalation by default-case. Reads the in-memory Map
+    // rehydrated above (getDeviceByDID), matching core_server.ts.
+    deviceRoleResolver: (did: string) => getDeviceByDID(did)?.role ?? null,
   };
 }
 
@@ -715,10 +725,7 @@ interface AgenticAskBundle {
    *  intent classifier (and, as we port them, guard scan + anti-Her
    *  hooks) so the production `/ask` path always gets the full
    *  Python-parity pipeline. */
-  handlerOptions: Omit<
-    AgenticAskHandlerOptions,
-    'provider' | 'tools'
-  >;
+  handlerOptions: Omit<AgenticAskHandlerOptions, 'provider' | 'tools'>;
   /**
    * Pattern A coordinator — produced when the pipeline was built with
    * a `coreClient` (which it always is in production today). Bootstrap
@@ -847,10 +854,7 @@ async function tryBuildAgenticAsk(opts: {
   // planner's `gatherVaultContext` switches to hybrid (FTS5 + cosine)
   // retrieval. Failing soft is fine — no provider just means FTS5-
   // only context, which still works.
-  const embedding =
-    provider === 'gemini'
-      ? await tryBuildGeminiEmbedding(provider)
-      : undefined;
+  const embedding = provider === 'gemini' ? await tryBuildGeminiEmbedding(provider) : undefined;
 
   // Pre-flight retrieval planner — same shape lite brain-server
   // wires. Mobile's fetchers stay in-process because vault SQLite
@@ -885,15 +889,11 @@ async function tryBuildAgenticAsk(opts: {
       return repo
         .listPeople()
         .filter((p) =>
-          (p.surfaces ?? []).some(
-            (s) => s.status !== 'rejected' && s.normalizedSurface === needle,
-          ),
+          (p.surfaces ?? []).some((s) => s.status !== 'rejected' && s.normalizedSurface === needle),
         )
         .map((p) => ({
           canonicalName: p.canonicalName,
-          ...(p.relationshipHint !== ''
-            ? { relationshipHint: p.relationshipHint }
-            : {}),
+          ...(p.relationshipHint !== '' ? { relationshipHint: p.relationshipHint } : {}),
           surfaceSummary: (p.surfaces ?? [])
             .filter((s) => s.status !== 'rejected')
             .map((s) => s.surface)
@@ -919,9 +919,7 @@ async function tryBuildAgenticAsk(opts: {
     retrievalFetchers,
     ...(opts.logger !== undefined ? { logger: opts.logger } : {}),
     ...(embedding !== undefined ? { embedding } : {}),
-    ...(opts.ownerDid !== undefined && opts.ownerDid !== ''
-      ? { ownerDid: opts.ownerDid }
-      : {}),
+    ...(opts.ownerDid !== undefined && opts.ownerDid !== '' ? { ownerDid: opts.ownerDid } : {}),
   });
 
   // Register the live router so Settings can hot-swap the cloud
@@ -952,7 +950,9 @@ function emptyAppView(): AppViewStub {
  */
 async function tryBuildGeminiEmbedding(
   provider: ProviderType,
-): Promise<{ name: string; generate: ReturnType<typeof createGeminiEmbeddingProvider> } | undefined> {
+): Promise<
+  { name: string; generate: ReturnType<typeof createGeminiEmbeddingProvider> } | undefined
+> {
   try {
     const apiKey = await getApiKey(provider);
     if (apiKey === null || apiKey.length === 0) return undefined;
@@ -1013,7 +1013,7 @@ function lazyOrchestratorHandle(): Parameters<typeof createQueryServiceTool>[0][
       // Deferred import to avoid a cycle: useNodeBootstrap → boot_capabilities
       // → useNodeBootstrap. At *call* time the bootstrap module is already
       // loaded because a query was only possible after the node started.
-       
+
       const { getBootedNode } =
         require('../hooks/useNodeBootstrap') as typeof import('../hooks/useNodeBootstrap');
       const node = getBootedNode();
@@ -1039,7 +1039,6 @@ function lazyCoreClient(): Parameters<typeof createFindPreferredProviderTool>[0]
   // invoked mid-ask, well after boot). Returning [] / null on the cold
   // path keeps tool calls on fail-soft rails rather than throwing.
   function node() {
-     
     const { getBootedNode } =
       require('../hooks/useNodeBootstrap') as typeof import('../hooks/useNodeBootstrap');
     return getBootedNode();
@@ -1088,7 +1087,6 @@ function lazyCoreClient(): Parameters<typeof createFindPreferredProviderTool>[0]
 function lazyWorkflowClient(): Parameters<typeof createDelegateToAgentTool>[0]['core'] {
   return {
     async createWorkflowTask(input) {
-       
       const { getBootedNode } =
         require('../hooks/useNodeBootstrap') as typeof import('../hooks/useNodeBootstrap');
       const node = getBootedNode();

@@ -78,7 +78,14 @@ function seedIdentity(a: DatabaseAdapter): void {
   a.execute(
     `INSERT INTO contact_service_offers (grant_id, provider_did, capability, service_uri, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
-    ['g-recv', 'did:plc:bus', 'eta_query', 'at://did:plc:bus/com.dinakernel.service.profile/self', 1, 1],
+    [
+      'g-recv',
+      'did:plc:bus',
+      'eta_query',
+      'at://did:plc:bus/com.dinakernel.service.profile/self',
+      1,
+      1,
+    ],
   );
   // An ISSUED grant (v10) — active authority; MUST be EXCLUDED from the archive
   // (same posture as agent_persona_grants — re-issue offers after migration).
@@ -203,6 +210,164 @@ describe('real export → clean-install import', () => {
       // ISSUED grant EXCLUDED — active authority must NOT ride a backup (v10),
       // same posture as agent_persona_grants. The table exists (migrated) but is empty.
       expect(dest.id.query('SELECT 1 FROM service_grants')).toHaveLength(0);
+    } finally {
+      closeBundle(dest);
+    }
+  });
+
+  it('P2-12: plugin install restores PAUSED with no device + no grants', async () => {
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    try {
+      // An ACTIVE install with a paired device + a live grant.
+      src.id.execute(
+        `INSERT INTO plugin_installs (install_id, publisher_did, plugin_id, status, execution_mode,
+           current_cid, current_version, manifest_json, install_scope_hash, capability_hashes_json,
+           behavior_hash, presentation_hash, trust_anchor_json, device_did, config_revision,
+           created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          'pli_1',
+          'did:plc:acme',
+          'com.acme.fw',
+          'active',
+          'runner',
+          'bafyreicid',
+          '1.0.0',
+          '{}',
+          's',
+          '{"c":"h"}',
+          'b',
+          'p',
+          '{"kind":"repo_proof"}',
+          'did:key:zdev',
+          1,
+          1,
+          1,
+        ],
+      );
+      src.id.execute(
+        `INSERT INTO plugin_grants (grant_id, install_id, capability, approved_scope_hash, grant_type, created_at)
+         VALUES (?,?,?,?,?,?)`,
+        ['g-1', 'pli_1', 'com.acme.fw.watch', 'h', 'standing', 1],
+      );
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+    }
+
+    const dest = freshBundle([]);
+    try {
+      // The TARGET already holds this install (active) + a STALE grant — both
+      // must be reset on restore (the install→paused, the grant cleared).
+      dest.id.execute(
+        `INSERT INTO plugin_installs (install_id, publisher_did, plugin_id, status, execution_mode,
+           current_cid, current_version, manifest_json, install_scope_hash, capability_hashes_json,
+           behavior_hash, presentation_hash, trust_anchor_json, device_did, config_revision,
+           created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          'pli_1',
+          'did:plc:acme',
+          'com.acme.fw',
+          'active',
+          'runner',
+          'bafyreicid',
+          '1.0.0',
+          '{}',
+          's',
+          '{"c":"h"}',
+          'b',
+          'p',
+          '{"kind":"repo_proof"}',
+          'did:key:zdev',
+          1,
+          1,
+          1,
+        ],
+      );
+      dest.id.execute(
+        `INSERT INTO plugin_grants (grant_id, install_id, capability, approved_scope_hash, grant_type, created_at)
+         VALUES (?,?,?,?,?,?)`,
+        ['g-old', 'pli_1', 'com.acme.fw.watch', 'h', 'standing', 1],
+      );
+      setArchiveDataSource(dataSourceFor(dest));
+      await importArchive(archive, PASS, { force: true });
+
+      const row = dest.id.query(
+        'SELECT status, device_did FROM plugin_installs WHERE install_id = ?',
+        ['pli_1'],
+      )[0];
+      // The catalog is preserved, but restored PAUSED with no device binding.
+      expect(row?.status).toBe('paused');
+      expect(row?.device_did == null).toBe(true);
+      // Grants never travel AND the target's stale grant was cleared.
+      expect(dest.id.query('SELECT 1 FROM plugin_grants')).toHaveLength(0);
+    } finally {
+      closeBundle(dest);
+    }
+  });
+
+  it('round-5 #8: the plugin decision log travels; overwrite clears stale target decisions', async () => {
+    const installCols = `INSERT INTO plugin_installs (install_id, publisher_did, plugin_id, status, execution_mode,
+        current_cid, current_version, manifest_json, install_scope_hash, capability_hashes_json,
+        behavior_hash, presentation_hash, trust_anchor_json, device_did, config_revision,
+        created_at, updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+    const installRow = [
+      'pli_2',
+      'did:plc:acme',
+      'com.acme.fw',
+      'paused',
+      'runner',
+      'bafyreicid',
+      '1.0.0',
+      '{}',
+      's',
+      '{"c":"h"}',
+      'b',
+      'p',
+      '{"kind":"repo_proof"}',
+      null,
+      1,
+      1,
+      1,
+    ];
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    try {
+      src.id.execute(installCols, installRow);
+      src.id.execute(
+        `INSERT INTO plugin_decisions (id, install_id, capability, decision, reason, created_at)
+         VALUES (?,?,?,?,?,?)`,
+        [1, 'pli_2', '', 'consent_granted', '', 100],
+      );
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+    }
+
+    const dest = freshBundle([]);
+    try {
+      // The target already holds the install plus a STALE local decision that
+      // must be wiped on overwrite — otherwise it lingers against the restored
+      // install_id (Round-5 #8).
+      dest.id.execute(installCols, installRow);
+      dest.id.execute(
+        `INSERT INTO plugin_decisions (id, install_id, capability, decision, reason, created_at)
+         VALUES (?,?,?,?,?,?)`,
+        [99, 'pli_2', '', 'uninstalled', 'stale-local', 200],
+      );
+      setArchiveDataSource(dataSourceFor(dest));
+      await importArchive(archive, PASS, { force: true });
+
+      const rows = dest.id.query<{ decision: string }>(
+        'SELECT decision FROM plugin_decisions ORDER BY created_at ASC',
+      );
+      // The archived decision travelled; the stale local one was cleared.
+      expect(rows.map((r) => r.decision)).toEqual(['consent_granted']);
     } finally {
       closeBundle(dest);
     }
@@ -425,12 +590,42 @@ describe('export excludes guided-demo scope', () => {
       src.id.execute(
         `INSERT INTO reminders (id, short_id, message, due_at, persona, kind, source_item_id, source, recurring, timezone, status, completed, created_at, data_scope)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        ['rem-user', 'ru', 'real reminder', 1, 'general', 'manual', '', '', '', '', 'pending', 0, 1, 'user'],
+        [
+          'rem-user',
+          'ru',
+          'real reminder',
+          1,
+          'general',
+          'manual',
+          '',
+          '',
+          '',
+          '',
+          'pending',
+          0,
+          1,
+          'user',
+        ],
       );
       src.id.execute(
         `INSERT INTO reminders (id, short_id, message, due_at, persona, kind, source_item_id, source, recurring, timezone, status, completed, created_at, data_scope)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        ['rem-demo', 'rd', 'demo reminder', 1, 'general', 'manual', '', '', '', '', 'pending', 0, 1, 'guided_demo:x'],
+        [
+          'rem-demo',
+          'rd',
+          'demo reminder',
+          1,
+          'general',
+          'manual',
+          '',
+          '',
+          '',
+          '',
+          'pending',
+          0,
+          1,
+          'guided_demo:x',
+        ],
       );
       // A user vault item AND a demo vault item.
       const gen = src.personas.get('general')!.adapter;
@@ -499,10 +694,14 @@ describe('export excludes guided-demo scope', () => {
       await importArchive(archive, PASS);
 
       // The portable pref restored…
-      expect(dest.id.query("SELECT value FROM kv_store WHERE key = 'theme'")[0]?.value).toBe('dark');
+      expect(dest.id.query("SELECT value FROM kv_store WHERE key = 'theme'")[0]?.value).toBe(
+        'dark',
+      );
       // …but the ephemeral guided-demo records did NOT — restoring them would
       // resurrect a recovery record with no demo data (orphan-scope boot).
-      expect(dest.id.query("SELECT 1 FROM kv_store WHERE key LIKE 'guided_demo.%'")).toHaveLength(0);
+      expect(dest.id.query("SELECT 1 FROM kv_store WHERE key LIKE 'guided_demo.%'")).toHaveLength(
+        0,
+      );
     } finally {
       closeBundle(dest);
     }

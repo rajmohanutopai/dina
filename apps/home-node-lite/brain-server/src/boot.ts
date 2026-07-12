@@ -43,6 +43,7 @@ import {
   setVaultReadBackend,
 } from '@dina/brain';
 import { installNodeTraceScopeStorage } from '@dina/brain/node-trace-storage';
+import { createPersona, getPersona } from '@dina/core';
 import {
   buildHomeNodeAskRuntime,
   type HomeNodeAskRuntime,
@@ -60,17 +61,17 @@ import {
 
 import { loadConfig, type BrainServerConfig } from './config';
 import { buildCoreClient, type CoreClientStatus } from './core_client';
+import { registerHostAllowlistGuard } from './host_guard';
+import { postInboundD2DToMainChat } from './inbound_d2d_chat';
 import { buildBrainServerLLMRuntime } from './llm_provider';
 import { createLogger, type Logger } from './logger';
 import { registerAskRoutes } from './routes/ask';
 import { registerCapabilityRoutes } from './routes/capability';
 import { registerChatRoutes } from './routes/chat';
-import { registerReminderApiRoutes, startReminderFireLoop } from './routes/reminders';
-import { registerWebRoutes } from './routes/web';
-import { registerHostAllowlistGuard } from './host_guard';
-import { postInboundD2DToMainChat } from './inbound_d2d_chat';
 import { registerContactApiRoutes } from './routes/contacts';
 import { registerQuarantineApiRoutes } from './routes/quarantine';
+import { registerReminderApiRoutes, startReminderFireLoop } from './routes/reminders';
+import { registerWebRoutes } from './routes/web';
 import { registerWorkflowApiRoutes } from './routes/workflow';
 
 /**
@@ -96,7 +97,6 @@ function isLoopbackHost(host: string): boolean {
   return h === '127.0.0.1' || h === '::1' || h === 'localhost' || h.startsWith('127.');
 }
 
-import { createPersona, getPersona } from '@dina/core';
 import type { AskCoordinator } from '@dina/brain';
 import type { CoreClient, PersonaTier } from '@dina/core';
 import type { HomeNodeRuntime } from '@dina/home-node';
@@ -444,7 +444,13 @@ export async function bootServer(
     chatRememberRuntime?.dispose();
     await compositions.service?.dispose();
   });
-  app.get('/healthz', async () => ({ status: 'ok', role: 'brain' }));
+  // Freshness stamp — the epoch ms this Brain process booted. Relay E2E
+  // uses it to detect a dina-node running STALE code (started before the
+  // latest source edit) and skip LOUD instead of failing mid-flow, rather
+  // than only probing liveness. A node on old code that lacks this field
+  // is likewise treated as stale.
+  const brainStartedAt = Date.now();
+  app.get('/healthz', async () => ({ status: 'ok', role: 'brain', startedAt: brainStartedAt }));
 
   if (options.serviceRuntime !== undefined) {
     if (clients.core === undefined) {

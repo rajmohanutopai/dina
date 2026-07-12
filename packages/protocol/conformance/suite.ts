@@ -37,7 +37,12 @@ import { base58 } from '@scure/base';
 import { buildCanonicalPayload } from '../src/canonical_sign';
 import { buildMessageJSON, type BuildMessageJSONInput } from '../src/envelope_builder';
 import { computeScoreV1, type ScoreV1Input, type ScoreV1Output } from '../src/peerlens/score_v1';
+import { computePluginDigests } from '../src/plugins/digests';
+import { normalizePluginManifest } from '../src/plugins/normalize';
+import { isValidReleaseRkey, releaseRkeyFromCid, sha256DigestFromCid } from '../src/plugins/release_rkey';
 import { buildAuthSignedPayload } from '../src/types/auth_frames';
+
+import type { PluginManifest } from '../src/plugins/types';
 
 // ─── Report shape ──────────────────────────────────────────────────────────
 
@@ -304,6 +309,55 @@ const VERIFIERS: Record<string, Verifier> = {
       if (got.components.vouch !== want.components.vouch) failures.push(`${c.name}:vouch`);
       if (got.components.reviewer !== want.components.reviewer) failures.push(`${c.name}:reviewer`);
       if (got.components.network !== want.components.network) failures.push(`${c.name}:network`);
+    }
+    return { cases: v.cases.length, failures };
+  },
+
+  plugin_digests(vector) {
+    const v = vector as {
+      cases: {
+        name: string;
+        manifest: PluginManifest;
+        expected: {
+          per_capability: Record<string, string>;
+          install_scope_hash: string;
+          behavior_hash: string;
+          presentation_hash: string;
+        };
+      }[];
+    };
+    const sha256 = (data: Uint8Array): Uint8Array =>
+      new Uint8Array(createHash('sha256').update(data).digest());
+    const failures: string[] = [];
+    for (const c of v.cases) {
+      const got = computePluginDigests(normalizePluginManifest(c.manifest), sha256);
+      for (const [capId, hash] of Object.entries(c.expected.per_capability)) {
+        if (got.perCapability[capId] !== hash) failures.push(`${c.name}:scope:${capId}`);
+      }
+      if (got.installScopeHash !== c.expected.install_scope_hash) failures.push(`${c.name}:install_scope`);
+      if (got.behaviorHash !== c.expected.behavior_hash) failures.push(`${c.name}:behavior`);
+      if (got.presentationHash !== c.expected.presentation_hash) failures.push(`${c.name}:presentation`);
+    }
+    return { cases: v.cases.length, failures };
+  },
+
+  plugin_release_rkey(vector) {
+    const v = vector as {
+      cases: {
+        name: string;
+        inputs: { digest_source_utf8: string; cid: string };
+        expected_rkey: string;
+      }[];
+    };
+    const failures: string[] = [];
+    for (const c of v.cases) {
+      const declaredDigest = createHash('sha256').update(c.inputs.digest_source_utf8, 'utf8').digest('hex');
+      const cidDigest = sha256DigestFromCid(c.inputs.cid);
+      if (cidDigest === null || bytesToHex(cidDigest) !== declaredDigest) {
+        failures.push(`${c.name}:cid-digest`);
+      }
+      if (releaseRkeyFromCid(c.inputs.cid) !== c.expected_rkey) failures.push(`${c.name}:rkey`);
+      if (!isValidReleaseRkey(c.expected_rkey, c.inputs.cid)) failures.push(`${c.name}:validate`);
     }
     return { cases: v.cases.length, failures };
   },

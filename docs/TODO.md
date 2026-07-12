@@ -1,3 +1,13 @@
+# Control Plane
+AGENT_CONTROL_PLANE.md
+
+# Curator
+docs/CURATION_SERVICES_ARCHITECTURE.md
+
+# Plugin
+UI is pending
+PLUGIN_ARCHITECTURE.md
+
 # Guided demo
 Guided demo bottom should show current page changes, not next page
 > Done I think

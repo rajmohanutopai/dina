@@ -380,6 +380,18 @@ describe the network-level exchange but require a live loopback.
 
 ## 15. Changelog to this document
 
+- **2026-07-12** — **plugin `presentation_hash` now covers `icon`,
+  `homepage`, and `source_url`** (5th plugin adversarial review, #9). These
+  phishing-relevant branding + outbound-link fields previously sat OUTSIDE the
+  presentation digest, so a release could swap its icon or redirect its
+  homepage/source to a look-alike site without producing a presentation-change
+  receipt in Activity. Regenerated the `golden_weather_runner_manifest`
+  `presentation_hash` frozen vector (`f43f0dc0…` → `4eb20c60…`). Plugin lexicons
+  are pre-release/unwired (no external implementations pin plugin digests yet),
+  so this rides the existing pre-release plugin surface with no separate version
+  bump. `install_scope_hash` / `behavior_hash` / per-capability hashes are
+  unchanged.
+
 - **2026-04-22** — initial draft accompanying the scaffold for task
   10.4. Content pinned against `@dina/protocol` at this repo's HEAD.
 - **2026-04-22** — added §11 sealed-box section; renumbered §12–16;

@@ -2,7 +2,7 @@
 
 *A plugin is a signed, content-addressed contract. It executes as either data interpreted by a trusted runtime, or code paired as a device. It is never trusted, and it never runs inside Dina's trust boundary.*
 
-Status: design. Grounded against the shipping TypeScript stack (`packages/core`, `packages/brain`, `packages/protocol`, `appview/`, `apps/mobile`). Every "exists today" claim carries a file reference.
+Status: design plus partial P0 substrate implementation. The protocol types, persistence repositories, authorization boundaries, and runner claim/complete lane exist, but plugins are **not yet available end-to-end**: production still lacks the install/consent/uninstall routes and screens, a wired repo-proof verifier, pending-install pairing orchestration, the Core-owned context projector and dispatch producer, approval/result UI integration, the advisory worker, and the plugin SDK workflow. Grounded against the shipping TypeScript stack (`packages/core`, `packages/brain`, `packages/protocol`, `appview/`, `apps/mobile`). Every "exists today" claim carries a file reference.
 
 ---
 
@@ -432,25 +432,176 @@ Two refinements keep that honest. **Runtime evidence tiers** (`runtime.artifacts
 
 Every decision lands in an owner-private `plugin_decisions` log (clone of `contact_service_decisions`, v16 pattern: owner-visible, never brain/LLM-readable, `authz.ts:85-92`), surfaced in Activity.
 
-## 15. UI specification
+## 15. Product and UI specification
 
-Grounded in the real navigation (`apps/mobile/app/_layout.tsx`: tabs Chat / People / Network / Activity).
+Grounded in the real navigation (`apps/mobile/app/_layout.tsx`: tabs Chat / People / Network / Activity). This section specifies the **minimum complete product path**, not only the eventual marketplace. Direct installation, consent, invocation approvals, lifecycle controls, and advisory handling are P0 surfaces because without them the P0 runner substrate cannot be used safely or honestly.
 
-**Marketplace** (Network tab, sibling of PeerLens search): `peerlens/plugins/index.tsx` (browse/search: `plugin-search-input`, `plugin-results`, `plugin-empty`) and `peerlens/plugins/[pluginId].tsx` (detail: **What it can do** capability cards with *locally computed* risk badges, never the manifest's claims; **What it can see** in plain words: "Nothing from your vaults. Up to 5 guess-checks per game against categories you approve." / "Travel notes, up to 5 items per request. Never health, never finance."; publisher ring panel; reviews; `plugin-install-cta`).
+### 15.1 Product language and ownership
 
-**Consent** (`plugin-consent.tsx`): one card per capability with risk badge and toggle (`consent-cap-toggle-<capId>`); lane chips from the declared `kinds` (tool / provider / ingest / notify, §5 — the owner sees which lanes they are opening); persona/category scope chips (runner); verify-budget statement (interpreted sessions); "Will always ask the first 3 times" copy on HIGH; owner-local routing toggle (§6); `consent-confirm` triggers activation, the single atomic commit point (§14); `consent-cancel` unwinds the pending install, auto-revoking any device paired during the ceremony.
+A plugin is presented as an **installed capability**, not as another autonomous agent and not as a miniature app inside Dina. The durable management label is **Plugins** because the owner must be able to recognize and remove third-party extension authority. Ordinary invocation copy leads with the capability and publisher instead of protocol vocabulary: "Appointment Helper wants to book...", not "plugin invocation requested." Install CTAs say **Add to Dina**; removal says **Remove plugin** so the security consequence stays explicit.
 
-**Sessions in chat**: the invite is an explicit-accept card in the Talk thread (`plugin-invite-accept-<sessionId>` / `-decline-`), the grant-prompt pattern (`InlineGrantRequestCard.tsx`) reused. An active session renders as a pinned thread artifact: state card (CardSpec) + move input scoped to the machine's legal moves, updating in place like `InlineServiceQueryCard`'s staged lifecycle. Turn/timeout chips come from the machine, not from plugin text.
+Four UI ownership rules are binding:
 
-**Third-party UI is card-spec only.** Minimal `grid` and `choices` blocks ship *with* the marketplace (P2): a marketplace whose flagship interpreted class is unplayable for third parties would be a self-inflicted dud, and `SafeCardRenderer` already switch-dispatches and drops unknown kinds forward-compatibly, so two new blocks are a small, safe addition. The full composable widget vocabulary (layout, nesting; `CARD_SPEC_V2_DESIGN.md` is the natural home) stays the later upgrade (P3).
+1. **Dina owns all security chrome.** Risk labels, data disclosures, approval controls, provenance, lifecycle state, warning colors, and button labels come from Core-derived state. A manifest may supply bounded descriptive strings, but those strings are visibly quoted or placed under a "Publisher says" label and can never imitate system chrome.
+2. **The UI never says "safe" merely because a release is signed.** Repo proof means "published by this DID and unchanged"; runtime evidence means exactly the tier in §12; PeerLens standing is reputation. The UI keeps authenticity, evidence, and reputation separate.
+3. **Core owns the state machine; clients render it.** Mobile and the Home Node thin client consume one normalized plugin lifecycle/view model and invoke the same Core commands. They must not separately infer whether an install may activate, whether consent is current, whether a grant is valid, or whether a plugin is safe to resume. Native and web layouts may differ; authority and copy-bearing reason codes may not.
+4. **The phone is the authority-granting surface in P0.** The web client may initiate an install, display status, and hand off by QR/deep link, but pairing confirmation, activation consent, standing approvals, and re-consent complete on the owner's phone. Authority reduction is intentionally different: any strongly owner-authenticated client may emergency-pause or revoke, because making safety depend on an available phone would be backwards. A future web authority-granting path may be added only if it provides equivalent owner authentication and approval semantics. No web fallback may weaken a phone grant.
 
-**The Open-link action card is the one sanctioned exit.** Cart handover requires a link handoff, so "no external URLs in untrusted cards" cannot be the whole story. A first-party card renders it: the domain must be in the capability's consented `network_domains`, the full URL is displayed unmasked (no label masking), opening requires an explicit tap through a leaving-Dina interstitial, and it never renders as an inline content link. URL hygiene is hard rules, not judgment: HTTPS only, no custom schemes, no userinfo section, origin compared after punycode/IDN normalization, no label masking anywhere — domain consent alone is not enough, because redirects and deceptive URLs are exactly how allowlists get abused. **On redirects, the interstitial does not overpromise:** it shows the *exact URL Dina will hand to the browser* — the literal href, which is all Dina can honestly vouch for, since a server-side redirect after handoff is outside Dina's control. Optionally (a P3 refinement) a first-party resolver may pre-follow redirects with a short timeout and fail closed on timeout or an off-allowlist hop, showing the resolved destination; absent that, the honest claim is "this is the link, it may redirect," never a false "final destination." The plugin supplies the data; the chrome and the gate are Dina's. **First-party plugins ship real React screens** in `apps/mobile` (Battleship gets an actual board), which is honest because they are in-repo trusted code, while their protocol and state ride the plugin lane like anyone else's. First-party dogfooding of the lane is a feature: the lane's gaps get found by us first.
+Every mutation is keyed by `install_id`, and every approval by the immutable logical `execution_id`; display names are never authority. Buttons become pending and idempotent after the first tap. Reopening a screen reads Core state rather than replaying the last client assumption.
 
-**Settings** (`settings.tsx` gains `settings-row-plugins` beside `settings-row-agents`): `plugins.tsx` list (icon, version, status dot from `lastSeen`, update badge) → `plugins/[id].tsx` detail (standing approvals with per-cap revoke, config form from `config_schema`, decision-log excerpt, storage-quota usage for the plugin vault, `plugin-pause`, `plugin-uninstall` with destructive confirm + purge option). A capability auto-paused by a stale advisory check (§20) shows an explicit **"paused — advisory check is stale"** banner with the last-checked timestamp and a retry-now button, so a plugin that stops working is never a silent mystery; the owner sees why and can re-check on demand. A second install of the same plugin prompts for an owner label at install time and shows it everywhere the plugin is named ("Acme Shop (Downtown)"); routing for a capability with multiple installs uses a per-capability default install, editable here (the `preferred_for` disambiguation pattern). **The fail-safe is stop-and-ask, never silent-choose:** if two installs match a capability and no default is set, routing halts and prompts the owner to pick (and offers to remember the choice) rather than guessing. Silently choosing an install is a data-routing decision the owner must own — the wrong pick could send a "downtown store" query to the "home store" install.
+### 15.2 P0 entry and direct install
 
-**Chat approvals**: `InlinePluginApprovalCard.tsx` modeled on `InlineApprovalCard.tsx`: plugin chip, capability, risk badge, params preview, Approve / Approve-24h / Always / Deny (`plugin-approve-<taskId>` etc.), dispatched from the `displayType` mapper in `app/index.tsx`. On HIGH-class capabilities, *Always* opens the constraint sheet (count / time window / resource) rather than minting an unconstrained grant (§8). Plugin-authored strings visibly quoted per §10.4.
+P0 has no marketplace. The entry is **Settings → Plugins** (`settings-row-plugins`) with an **Add plugin** action. A candidate reaches Dina by one of three references:
 
-**Activity** (`notifications.tsx`): re-consent diffs, advisories, ingest digests, session invites you missed, `decision-row-*` entries. Approvals remain an action bucket inside Activity, not a new tab.
+- scan a Dina plugin QR;
+- paste an AT-URI or an organization/local signed reference;
+- open a Dina plugin deep link shared by a developer or contact.
+
+The source screen accepts a reference only. It never accepts an arbitrary manifest body in production and never offers "install anyway." Debug builds expose unsigned local manifests under a visually persistent **Developer mode** banner, with a different route and build gate (§20), so screenshots and support logs cannot confuse debug trust with production trust.
+
+The first product state is **Verifying plugin**. It shows the publisher DID/handle being resolved and produces one of three typed outcomes:
+
+- **Verified release**: repo/org/local-key proof succeeded; continue.
+- **Could not verify now**: transient network or DID-resolution failure; Retry or Cancel.
+- **Release cannot be trusted**: integrity, signer, identity-pointer, CID/rkey, compatibility, or banned-capability failure; hard stop, plain-language reason, no bypass.
+
+The success screen says what was proven: "Published by `did:...`; release contents match the signed record." Runtime evidence is rendered separately as **Pinned self-hosted artifact**, **Signed vendor deployment**, or **Mutable hosted service**, with the corresponding honesty text from §12.
+
+### 15.3 Runner pairing before authority
+
+For runner plugins, verification creates a short-lived `pending` install and moves to **Connect the runner**. The screen shows:
+
+- setup QR and copyable `dina1:` code for `dina-plugin serve`;
+- plugin name, publisher, owner label where multi-install applies, and expiry countdown;
+- pairing progress: Waiting → Runner connected → Identity bound;
+- the bound instance DID and evidence tier behind a details disclosure;
+- Cancel, which revokes any device already paired to this pending install.
+
+The consent CTA stays disabled until Core reports that the exact pending install is bound to the exact runner device. A device DID supplied only at the final button is not a valid pairing. Expiry and cancellation converge on the same cleanup path: pending row removed, paired device revoked, lane never activated. When hosted-runner support ships in P3, this screen additionally shows the runtime issuer and tenant-binding result from the instance certificate (§14); a generic hosted deep link is never treated as a connection.
+
+Interpreted plugins skip this screen because they have no runtime identity.
+
+### 15.4 Final consent and activation
+
+`plugin-consent.tsx` is the final review and the only activation commit point. The page starts with a compact identity header, then renders one independently selectable capability card. Each card shows, in this order:
+
+1. **What it can do**: plain-language action plus Dina's locally derived SAFE/MODERATE/HIGH/BLOCKED class. Manifest-declared classes may only make this stricter.
+2. **Where it runs**: inside Dina's interpreter, pinned self-hosted runner, signed vendor deployment, or opaque hosted service.
+3. **What leaves Dina**: exact consent ceiling by category/persona, maximum context items, literal network domains, and a statement that locked personas are never available. "No vault data" is shown when the scope is empty.
+4. **How it can be invoked**: declared kinds (tool/provider/ingest/notify), verbatim local `intent_phrases`, and the local-routing toggle. HIGH routing is off by default. Colliding phrases are disclosed; they never silently choose a claimant.
+5. **When Dina will ask**: per-invocation rule, first-N rule, available standing-grant durations, and the fact that HIGH standing grants require constraints.
+6. **Known limits**: network transparency is not a firewall; runner behavior outside Dina cannot be controlled; credentials entered on a publisher's own surface are outside Dina's protection.
+
+The primary button is **Install and activate**. It is enabled only when at least one capability is selected, all required configuration is valid, compatibility checks pass, and runner pairing is bound when applicable. Pressing it sends the selected normalized consent snapshot and bound `install_id` to Core; the client cannot send a replacement device DID or self-declared risk result. `consent-cancel` unwinds the pending install and pairing.
+
+Consent must remain comprehensible on a phone. The first view answers "what can it do, what can it see, when will I be asked?" Advanced evidence, hashes, schemas, and DIDs sit behind details, but are never omitted from the inspectable receipt.
+
+### 15.5 Invocation, routing, and approval
+
+Installed tool capabilities may be invoked explicitly from their detail screen or through owner-local Chat routing (§6). A match to multiple plugins, multiple installs, or a plugin and a service produces a first-party **Choose who should handle this** sheet. It lists capability, owner label, publisher, and data ceiling; choosing once does not create a default unless the owner explicitly selects **Remember this choice**.
+
+SAFE silent work still leaves provenance. The result carries **Provided by [plugin/owner label]**, and its receipt links to the exact install, capability, release CID, execution id, and decision entry. "Silent" means no pre-action interruption, not invisible execution.
+
+Anything requiring review renders `InlinePluginApprovalCard.tsx`, modeled on `InlineApprovalCard.tsx` but backed by plugin grants and the immutable task envelope. System-generated fields are:
+
+- plugin and owner label, publisher, capability, and locally derived risk;
+- the exact outbound params that will ship, not an LLM summary;
+- the exact Dina-owned projected context, expandable by item, plus source categories/personas and item count;
+- destination/runtime and consented network domains;
+- why the card appeared: class floor, first-N, sensitive data, unclassified/out-of-scope params, expired/missing grant, or changed consent/config;
+- effect and retry statement: whether an external action may occur and whether retries are idempotent.
+
+Actions are **Deny** and **Approve once** by default. **Allow for 24 hours** appears only where the class and constraints permit it. **Always allow within limits** opens a first-party constraint sheet; HIGH booking/write/agentic work never receives an unconstrained permanent grant (§8). Editing any outbound value creates a new execution/decision rather than mutating an already-approved envelope. Plugin-authored rationale is visibly quoted and cannot alter button labels.
+
+The card has explicit Pending, Approved, Denied, Expired, Running, Completed, Failed, and Outcome unknown states. While the write is on the wire, cancellation copy is honest about whether Dina can still prevent the external effect. `outcome_unknown` never becomes a generic failure; it says that Dina stopped local authority but the owner may need to verify what happened externally (§9.5).
+
+### 15.6 Result rendering and exits
+
+Third-party UI is CardSpec only, rendered in untrusted mode. Unknown blocks are dropped, badges and system labels are Dina-owned, and every action derived from result text re-enters the deterministic gatekeeper. A result cannot mint its own approval card or mark itself verified. The visual lifecycle is one stable card updating in place where practical, not a stream of contradictory messages.
+
+Minimal `grid` and `choices` blocks ship with interpreted sessions in P1. The full composable widget vocabulary (layout, nesting; `CARD_SPEC_V2_DESIGN.md` is the natural home) stays P3. **First-party plugins may ship real React screens** in `apps/mobile` because that code is reviewed and built with Dina; their protocol/state still use the plugin lane so first-party dogfooding exercises the same authority boundaries.
+
+The Open-link action card is the one sanctioned third-party exit. It is rendered entirely by Dina: HTTPS only, no custom schemes or userinfo, punycode/IDN-normalized origin matching, exact unmasked URL, consented domain, and an explicit leaving-Dina interstitial. The interstitial says only what Dina knows: this exact URL will be handed to the browser and may redirect. A P3 resolver may pre-follow redirects and fail closed on an off-allowlist hop; without it, the UI never claims to know the final destination.
+
+### 15.7 Settings and lifecycle control
+
+**Settings → Plugins** is part of P0, beside Agents. The list is derived from the registry and distinguishes these states without collapsing them into a generic red dot:
+
+- Connecting / awaiting consent;
+- Active;
+- Paused by owner;
+- Paused for stale advisory check;
+- Security advisory / update required;
+- Re-consent required;
+- Restored, pairing required;
+- Runner offline;
+- Outcome requires reconciliation.
+
+`plugins/[installId].tsx` shows publisher and release evidence, owner label, version/CID, runtime/paired instance, last seen, each capability and risk class, consented data ceiling, local-routing phrases and default-routing choice, grants with remaining constraints, encrypted config form, advisory status/last check, plugin storage quota, and owner-private decision history. Controls are capability-level grant revoke, Pause/Resume, Check for updates, Re-pair where allowed, and Remove plugin.
+
+A second install of the same `(publisherDid, plugin_id)` requires an owner label at install (for example, "Acme Shop (Downtown)"). Defaults are per capability, editable here. If a default is removed or paused, Core clears the effective routing choice rather than silently falling through to another install.
+
+**Pause** explains that new work stops while pairing, configuration, and plugin state remain. **Remove plugin** uses a destructive confirmation that enumerates what will happen: revoke runner authority, revoke grants, terminate work/sessions, delete plugin runtime state, and optionally purge ingested owner data. It separately explains what cannot be undone: an external effect may already have completed, and decision receipts remain as history. Removal succeeds locally without contacting the publisher.
+
+### 15.8 Updates and advisories
+
+An update screen renders the three boundaries from §14 separately:
+
+- **Permission changes** (`approved_scope_hash`): before/after data, action, runtime, routing, and schema diff; explicit re-consent.
+- **Behavior changes** (`behavior_hash`): plain-language functional diff and whether trust policy allows application; HIGH/sensitive behavior changes always require approval.
+- **Presentation changes** (`presentation_hash`): rename/description/instruction before and after, always recorded even when application is non-blocking.
+
+The old release remains active until the new release is both verified and accepted where required. "Update available" never means authority has already moved.
+
+Publisher advisories and stale checks are different UI states. A verified critical advisory is Fiduciary-class and may interrupt: **Plugin paused for your safety**, affected release, publisher note visibly attributed, last verified check, Update/Remove. A stale check says **Paused because Dina has not verified plugin safety recently**, with timestamp and Retry now. It never implies the publisher reported a vulnerability when the actual problem is connectivity.
+
+### 15.9 Activity, receipts, and privacy
+
+Activity carries approval requests, re-consent diffs, applied presentation/behavior updates, advisories, ingest digests, missed session invites, outcome-unknown reconciliation, and `plugin_decisions`. It does not become a second plugin manager: each item links to the canonical install detail or invocation receipt.
+
+Decision receipts are owner-private, never Brain/LLM-readable, never sent to publishers, and redact payload content by default. The receipt stores metadata needed to explain authority: install/capability, release CID, scope/config revisions, decision, constraint consumed, execution id, timestamps, and payload hash/categories. Exact outbound content is shown from the locally retained task only while retention permits; it is not duplicated into long-lived logs merely for UI convenience.
+
+### 15.10 Sessions in Talk (P1)
+
+The invite is an explicit-accept card in the Talk thread (`plugin-invite-accept-<sessionId>` / `-decline-`), reusing the grant-prompt pattern. It names the contact, plugin identity, exact release/CID, capability, expiry, and what state will be shared. An active session renders as a pinned thread artifact: state card plus move input restricted to legal moves, updating in place like `InlineServiceQueryCard`. Turn and timeout chips come from the trusted interpreter, never plugin prose. Ending a session is always available to either participant and revokes that session grant immediately.
+
+### 15.11 Marketplace (P2)
+
+The marketplace is a Network-tab discovery surface, sibling to services and Ranked Reviews, not a prerequisite for installation. `peerlens/plugins/index.tsx` provides browse/search; `peerlens/plugins/[pluginId].tsx` provides the versionless product detail and selected-release evidence. It shows **What it can do**, **What it can receive**, **Where it runs**, publisher identity, evidence tier, PeerLens product reputation, version-specific advisories, and **Add to Dina**. Risk badges remain locally computed. Paid placement never changes trust rank.
+
+Selecting **Add to Dina** enters the same verifier, pairing, and consent state machine as an AT-URI/QR install. Marketplace code receives no privileged installation endpoint and AppView never becomes authenticity authority.
+
+### 15.12 Developer experience and P0 acceptance
+
+The SDK has no privileged end-user UI. `dina-plugin validate` checks manifest/schema compatibility; `dina-plugin serve` starts the runner and prints the setup code/QR; `dina-plugin dev` uses the visibly debug-only local path; P0 `dina-plugin publish` writes the immutable signed release plus identity pointer and returns its installable AT-URI. P2 makes those records searchable through AppView; it does not introduce the ability to publish them. Honest SDKs may mirror task status in their terminal, but only Core and the owner UI can approve, activate, grant, pause, or revoke.
+
+P0 is not product-complete until one automated and one manual end-to-end run prove this exact journey:
+
+1. Paste a signed weather plugin AT-URI; verify it; pair its runner; consent; ask in Chat; receive a provenance-bearing result.
+2. Install a booking plugin; inspect exact outbound params/context; deny once; approve once; observe one effect and one decision receipt; verify a retry cannot double-execute.
+3. Cancel and expire pending installs after pairing; confirm their plugin devices cannot authenticate.
+4. Pause, revoke a grant, revoke the device, and remove the plugin; confirm no queued or running task can later apply a result, with effectful uncertainty surfaced as `outcome_unknown`.
+5. Feed a hostile result and unknown CardSpec blocks; confirm schema failure and safe rendering.
+6. Publish or simulate a critical advisory and stale advisory state; confirm HIGH capabilities pause and the UI distinguishes compromise from failed freshness checking.
+
+These flows get stable test IDs and MRS coverage on mobile; thin-web tests assert the same Core states and phone handoff rather than reimplementing the authority logic.
+
+### 15.13 Shared client contract (no policy duplication)
+
+The product surfaces above require one client-facing projection owned by Core, exposed in-process to mobile and over the authenticated Home Node API to web. At minimum `PluginInstallView` contains:
+
+- stable identity: `install_id`, publisher DID/handle, `plugin_id`, owner label, current release URI/CID/version;
+- authoritative lifecycle state and machine-readable reason code;
+- `allowed_actions` derived by Core (for example `retry_verification`, `show_pairing`, `confirm_consent`, `pause`, `resume`, `reconsent`, `revoke`), never reconstructed from status by a client;
+- verification/trust-anchor result and runtime-evidence tier, kept separate from PeerLens standing;
+- pairing state and bound-device summary, without private key material;
+- capability projections with Core-derived risk, selected consent ceiling, routing state, grant summary/remaining constraints, and invocation counts;
+- current config revision, pending update diff, advisory state/last checked, last seen, and reconciliation count;
+- a monotonic `view_revision` used for mutation compare-and-set.
+
+Commands are typed around intent, not repository fields: `beginInstall(reference)`, `cancelInstall(installId)`, `confirmConsent(installId, selectedCapabilities, expectedViewRevision)`, `pausePlugin`, `resumePlugin`, `revokeGrant`, `removePlugin`, `acceptUpdate`, and execution decisions. Every mutating command carries a client-generated idempotency key plus `expected_view_revision`; stale screens receive a fresh projection and an explicit conflict instead of overwriting newer consent, pairing, or advisory state. The client never supplies computed risk, trust ring, proof result, bound device DID, scope hash, behavior hash, advisory severity, or allowed action.
+
+The projection is subscribable so pairing, approval, runner liveness, and worker updates appear without navigation remounts. No screen reads or writes plugin SQL repositories directly. Mobile and web may own layout, accessibility, and navigation; Core owns authority, transition legality, and reason codes. Shared copy for security-critical reason codes lives in one RN-pure presentation-contract module so the two clients cannot describe the same state differently.
 
 ## 16. SDK and authoring
 
@@ -557,7 +708,7 @@ CLI verbs: `init`, `sim`, `dev`, `validate`, `serve`, `publish`, `advise`.
 | AppView ingest guardrails, xRPC ranking, PeerLens machinery | reuse; +1 handler, +2 xRPC clones, +3 lexicons |
 | Intent-classifier injection | reuse mechanism; runtime-sourced second list, opt-in |
 | CardSpec + SafeCardRenderer untrusted mode | reuse; widget vocabulary later |
-| **Net-new builds** | the interpreter package (machine engine + ops library + budgets + fuzz gate), the session wire family, the dynamic registry, consent/marketplace/settings/session UI, `InlinePluginApprovalCard`, the SDK + CLI |
+| **Net-new builds** | the interpreter package (machine engine + ops library + budgets + fuzz gate), the session wire family, the dynamic registry, P0 direct-install/consent/settings/approval UI, P1 session UI, P2 marketplace UI, `InlinePluginApprovalCard`, the shared client projection/commands, the SDK + CLI |
 
 ## 19. Non-goals (v1)
 
@@ -573,11 +724,11 @@ CLI verbs: `init`, `sim`, `dev`, `validate`, `serve`, `publish`, `advise`.
 
 ## 20. Phased build plan
 
-**P0 — the substrate + runner mode (prove the box).** The `plugin.identity` + `plugin.release` + `plugin.advisory` lexicons and their validators — install-by-AT-URI requires the record types on day one, the identity/release split, content-derived release rkeys, and the identity pointer invariants are all lexicon-freeze properties (§5: retrofitting immutable releases later would orphan every already-pinned CID), and advisories protect P0 installs via direct publisher-repo polling until AppView flags them at scale (P2) — with defined semantics, not a vague "we'll poll": each install's publisher repo is checked for `plugin.advisory` records on a fixed cadence (proposed daily + on app foreground), offline simply means the last-known advisory state stands, and **HIGH-consequence capabilities (booking/write/agentic, sensitive/regulated) auto-pause once their advisory check has been stale beyond a threshold** (proposed 7 days), failing safe rather than running blind; read/quote capabilities keep running on stale checks. Advisory state is persisted so a fresh boot doesn't reset it; dynamic registry (`install_id` keying, `(publisherDid, plugin_id)` identity, `current_cid`, the frozen §8.1 scope-hash spec) + repo-proof verification with **install-by-AT-URI** — no marketplace, because discovery comes later but authenticity does not; unsigned local manifests exist only via `dina-plugin dev` in debug builds and cannot install in production — production installs verify against an explicit trust anchor (public repo proof, owner-approved org key, or explicitly trusted local publisher key, §12; private ≠ unsigned); `plugin` role/callerType with the §9.0 P0 matrix; exact-match claim guard + per-claim `claim_id` CAS + the `outcome_unknown` terminal status in the workflow domain (§9.1, §9.5 — state-machine changes, so P0 by definition); `plugin_grants` + `plugin_decisions` with the constraint object and atomic consumption (§8); `evaluatePluginIntent` + floors; capability-scoped egress + sharing backstop; tool kind end-to-end with `InlinePluginApprovalCard`; SDK `serve`/`dev`/`validate`. Exit: a hand-installed weather plugin answers in chat; a booking plugin cannot act without a card; a hostile result cannot escape the pinned schema; a plugin cannot claim an untagged task.
+**P0 — the substrate + runner mode (prove the box).** The `plugin.identity` + `plugin.release` + `plugin.advisory` lexicons and their validators — install-by-AT-URI requires the record types on day one, the identity/release split, content-derived release rkeys, and the identity pointer invariants are all lexicon-freeze properties (§5: retrofitting immutable releases later would orphan every already-pinned CID), and advisories protect P0 installs via direct publisher-repo polling until AppView flags them at scale (P2) — with defined semantics, not a vague "we'll poll": each install's publisher repo is checked for `plugin.advisory` records on a fixed cadence (proposed daily + on app foreground), offline simply means the last-known advisory state stands, and **HIGH-consequence capabilities (booking/write/agentic, sensitive/regulated) auto-pause once their advisory check has been stale beyond a threshold** (proposed 7 days), failing safe rather than running blind; read/quote capabilities keep running on stale checks. Advisory state is persisted so a fresh boot doesn't reset it; dynamic registry (`install_id` keying, `(publisherDid, plugin_id)` identity, `current_cid`, the frozen §8.1 scope-hash spec) + repo-proof verification with **install-by-AT-URI** — no marketplace, because discovery comes later but authenticity does not; unsigned local manifests exist only via `dina-plugin dev` in debug builds and cannot install in production — production installs verify against an explicit trust anchor (public repo proof, owner-approved org key, or explicitly trusted local publisher key, §12; private ≠ unsigned); `plugin` role/callerType with the §9.0 P0 matrix; exact-match claim guard + per-claim `claim_id` CAS + the `outcome_unknown` terminal status in the workflow domain (§9.1, §9.5 — state-machine changes, so P0 by definition); `plugin_grants` + `plugin_decisions` with the constraint object and atomic consumption (§8); `evaluatePluginIntent` + floors; the non-bypassable Core context-projector/dispatch service; capability-scoped egress + sharing backstop; tool kind end-to-end with `InlinePluginApprovalCard`; the complete direct-install product path from §15 (verifier, pairing, consent, Settings, pause/revoke, update/re-consent, advisory and receipts); SDK `serve`/`dev`/`validate` plus direct signed `publish`. Exit is the full §15.12 acceptance journey, not merely passing repository tests.
 
-**P1 — interpreted mode + the session (prove the new primitive, first-party).** `@dina/plugin-interpreter` (machine engine, ops library, budgets, fuzz gate); `plugin.session.*` family + the receive_pipeline gate; per-plugin vaults; session invite/accept cards + session thread UI; vault-blind verify with budgets; `dina-plugin sim`. Dogfood: **Battleship ships first-party** (in-repo manifest, real React board, protocol on the lane) between two real Dinas over the real relay. No marketplace needed for any of this, which is exactly why it comes before distribution.
+**P1 — interpreted mode + the session (prove the new primitive, first-party).** `@dina/plugin-interpreter` (machine engine, ops library, budgets, fuzz gate); `plugin.session.*` family + the receive_pipeline gate; per-plugin vaults; session invite/accept cards + session thread UI; minimal untrusted CardSpec `grid` + `choices` blocks; vault-blind verify with budgets; `dina-plugin sim`. Dogfood: **Battleship ships first-party** (in-repo manifest, real React board, protocol on the lane) between two real Dinas over the real relay. No marketplace needed for any of this, which is exactly why it comes before distribution.
 
-**P2 — distribution (open the doors).** AppView manifest ingestion + advisory flagging + xRPC search; marketplace, consent, Settings screens; publish/update/re-consent/advisory lifecycle; PeerLens subject wiring; provider kind ("Backed by" picker); `dina-plugin publish`; minimal `grid` + `choices` card blocks so third-party session UI is viable at marketplace launch (§15).
+**P2 — distribution (open the doors).** AppView manifest ingestion + advisory flagging + xRPC search; Network-tab marketplace layered over P0's signed publishing and install state machine; PeerLens subject wiring; provider kind ("Backed by" picker). Marketplace code adds indexing, discovery, and reputation, not a second publishing format, verifier, consent path, Settings implementation, or lifecycle state machine (§15.11).
 
 **P3 — the quiet kinds + scale.** ingest (dedicated `/v1/ingest`: provenance + quotas + digests + purge); notify (clamp + rate limits + over-claim surfacing); hosted-vendor handshake with instance certificates; the full composable widget vocabulary (layout, nesting) for third-party session UI; custom→canonical promotion for capabilities many publishers converge on (the existing two-stage path).
 
@@ -589,10 +740,9 @@ Each phase ends with the MRS treatment: Maestro flows for every card and consent
 2. **Interpreter budget numbers** (§5.4, §10.4): the caps need empirical tuning against a real Battleship manifest before freezing.
 3. **Session concurrency**: per-plugin and per-peer caps on simultaneous sessions (spam surface); proposed 4 per plugin, 16 total.
 4. **`verify_budget` default and ceiling** (proposed default 0, ceiling 8 per session).
-5. **Multi-install UI exposure in v1**: the schema permits multiple installs of one plugin (§3); does v1 UI expose it, or defer the labeling/default-install surfaces while keeping the schema ready?
-6. **Update auto-apply window** for same-scope updates: immediate on restart/new-session vs a weekly "plugins updated" digest.
-7. **Marketplace curation floor**: refuse to index Unverified publishers' `write`/`booking` capabilities, or index-with-clamp (leaning index-with-clamp: visibility is not authorization, per the taxonomy).
-8. **Web thin-client parity**: revoke parity at minimum; consent likely needs the phone for the pairing leg (runner) but could be web-complete for interpreted installs.
-9. **Presentation-hash granularity**: does an instruction rewrite deserve a stronger surface than a display-name tweak (both are in `presentation_hash`, §8.1)? A rename is a glance; an instruction rewrite changes every generated card. Possibly split into `label_hash` vs `instruction_hash` so the latter can prompt rather than just log — TBD against real abuse patterns. (Resolved this round: in-flight revoke fails immediately and rejects revoked-instance completions, §14.)
-10. **Constraint vocabulary v1** (§8): which built-in constraints ship first (count and time window are certain; value caps need params introspection; resource/recipient allowlists need a naming scheme per capability), and whether read/quote customs also get optional constraints or only the HIGH classes that require them.
-11. **Retry budget constants** (§9.1): proposed ≤ 3 attempts / 24 h window / exponential backoff need empirical tuning, and whether the idempotency key-retention floor surfaces on the consent card or stays an SDK-level contract.
+5. **Update auto-apply window** for same-scope updates: immediate on restart/new-session vs a weekly "plugins updated" digest.
+6. **Marketplace curation floor**: refuse to index Unverified publishers' `write`/`booking` capabilities, or index-with-clamp (leaning index-with-clamp: visibility is not authorization, per the taxonomy).
+7. **Future web authority**: what owner authentication is sufficient for web activation consent and standing grants? P0 permits web initiation/status plus emergency pause/revoke, but grants authority only on the phone (§15.1).
+8. **Presentation-hash granularity**: does an instruction rewrite deserve a stronger surface than a display-name tweak (both are in `presentation_hash`, §8.1)? A rename is a glance; an instruction rewrite changes every generated card. Possibly split into `label_hash` vs `instruction_hash` so the latter can prompt rather than just log — TBD against real abuse patterns.
+9. **Constraint vocabulary v1** (§8): which built-in constraints ship first (count and time window are certain; value caps need params introspection; resource/recipient allowlists need a naming scheme per capability), and whether read/quote customs also get optional constraints or only the HIGH classes that require them.
+10. **Retry budget constants** (§9.1): proposed ≤ 3 attempts / 24 h window / exponential backoff need empirical tuning, and whether the idempotency key-retention floor surfaces on the consent card or stays an SDK-level contract.
