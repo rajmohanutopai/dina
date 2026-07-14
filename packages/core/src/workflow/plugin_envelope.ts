@@ -88,6 +88,27 @@ export interface PluginTaskEnvelope {
   readonly invocation_digest?: string;
 }
 
+/** Round-15 #7: the EXACT top-level key set a plugin envelope may carry. Any
+ *  other top-level key quarantines the whole envelope (fail closed). */
+const KNOWN_ENVELOPE_FIELDS: ReadonlySet<string> = new Set([
+  'type',
+  'install_id',
+  'capability_id',
+  'params',
+  'context',
+  'manifest_cid',
+  'approved_scope_hash',
+  'schema_snapshot',
+  'config_revision',
+  'execution_id',
+  'idempotency_key',
+  'action_class',
+  'effects_idempotency',
+  'authorization_kind',
+  'grant_id',
+  'invocation_digest',
+]);
+
 /**
  * Parse a task payload as a plugin envelope. Returns null for
  * non-plugin payloads and for malformed plugin payloads — a malformed
@@ -104,6 +125,15 @@ export function parsePluginEnvelope(payload: string): PluginTaskEnvelope | null 
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
   const p = parsed as Record<string, unknown>;
   if (p.type !== PLUGIN_INVOCATION_PAYLOAD_TYPE) return null;
+  // Round-15 #7: fail closed on UNKNOWN top-level keys. The delivered wire
+  // artifact is the raw payload string, and the claim guard only inspects
+  // `params`/`context` for scope/size — so a faulty producer that stamped an
+  // extra top-level field (unbounded/sensitive data) would smuggle it past
+  // inspection straight to the external runner. Every other pinned field is
+  // re-derived defensively; this closes the one missing member of that set.
+  for (const k of Object.keys(p)) {
+    if (!KNOWN_ENVELOPE_FIELDS.has(k)) return null;
+  }
   if (
     typeof p.install_id !== 'string' ||
     p.install_id === '' ||
@@ -139,6 +169,18 @@ export function parsePluginEnvelope(payload: string): PluginTaskEnvelope | null 
   // A 'grant'-authorized invocation MUST name its grant (the claim guard
   // validates that exact grant); a grant_id without kind:'grant' is incoherent.
   if (p.authorization_kind === 'grant' && (typeof p.grant_id !== 'string' || p.grant_id === '')) {
+    return null;
+  }
+  // Round-16 #20: the REVERSE coherence too. grant_id / invocation_digest are
+  // grant-authorization artifacts; the claim guard only validates them under
+  // kind:'grant' (check 7 is gated on that). On a 'card' / absent envelope they
+  // are unverifiable — quarantine rather than let forged/ambiguous provenance
+  // ride into the receipt. (buildPluginEnvelope only emits these under a
+  // supplied authorization.kind, so no legitimate producer path regresses.)
+  if (
+    p.authorization_kind !== 'grant' &&
+    (p.grant_id !== undefined || p.invocation_digest !== undefined)
+  ) {
     return null;
   }
   return p as unknown as PluginTaskEnvelope;

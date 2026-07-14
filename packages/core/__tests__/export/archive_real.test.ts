@@ -342,6 +342,176 @@ describe('real export → clean-install import', () => {
     }
   });
 
+  it('round-15 #16: a restored install drops stale pending-update state', async () => {
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    try {
+      src.id.execute(
+        `INSERT INTO plugin_installs (install_id, publisher_did, plugin_id, status, execution_mode,
+           current_cid, current_version, manifest_json, install_scope_hash, capability_hashes_json,
+           behavior_hash, presentation_hash, trust_anchor_json, device_did, config_revision,
+           pending_cid, pending_behavior_hash, pending_decision, pending_expires_at,
+           created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          'pli_pend',
+          'did:plc:acme',
+          'com.acme.fw',
+          'active',
+          'runner',
+          'bafyreicid',
+          '1.0.0',
+          VALID_MANIFEST_JSON,
+          MANIFEST_DIGESTS.installScopeHash,
+          VALID_CAP_HASHES_JSON,
+          MANIFEST_DIGESTS.behaviorHash,
+          MANIFEST_DIGESTS.presentationHash,
+          '{"kind":"repo_proof"}',
+          null,
+          1,
+          'bafyrepending',
+          'pendbehaviorhash',
+          'awaiting_consent',
+          999,
+          1,
+          1,
+        ],
+      );
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+    }
+    const dest = freshBundle([]);
+    try {
+      setArchiveDataSource(dataSourceFor(dest));
+      await importArchive(archive, PASS, { force: true });
+      const row = dest.id.query(
+        `SELECT pending_cid, pending_behavior_hash, pending_decision, pending_expires_at
+         FROM plugin_installs WHERE install_id = ?`,
+        ['pli_pend'],
+      )[0];
+      // A restored install must re-pair + re-consent, so any pre-backup update
+      // decision is stale — the pending_* columns are nulled.
+      expect(row?.pending_cid == null).toBe(true);
+      expect(row?.pending_behavior_hash == null).toBe(true);
+      expect(row?.pending_decision == null).toBe(true);
+      expect(row?.pending_expires_at == null).toBe(true);
+    } finally {
+      closeBundle(dest);
+    }
+  });
+
+  it('round-15 #17: forged/unknown plugin decision kinds are dropped on import', async () => {
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    try {
+      src.id.execute(
+        `INSERT INTO plugin_decisions (install_id, capability, decision, reason, created_at)
+         VALUES (?,?,?,?,?)`,
+        ['pli_x', 'cap', 'consent_granted', '', 1],
+      );
+      src.id.execute(
+        `INSERT INTO plugin_decisions (install_id, capability, decision, reason, created_at)
+         VALUES (?,?,?,?,?)`,
+        ['pli_x', 'cap', 'totally_forged_kind', 'injected', 1],
+      );
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+    }
+    const dest = freshBundle([]);
+    try {
+      setArchiveDataSource(dataSourceFor(dest));
+      await importArchive(archive, PASS, { force: true });
+      const kinds = dest.id
+        .query('SELECT decision FROM plugin_decisions')
+        .map((r) => String(r.decision));
+      expect(kinds).toContain('consent_granted'); // a valid kind survives
+      expect(kinds).not.toContain('totally_forged_kind'); // the forged kind is dropped
+    } finally {
+      closeBundle(dest);
+    }
+  });
+
+  it('round-16 #19: decision rows with malformed fields (oversized reason / bad created_at / spoof) are dropped on import', async () => {
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    try {
+      // A clean row survives; three valid-KIND but malformed rows are dropped.
+      src.id.execute(
+        `INSERT INTO plugin_decisions (install_id, capability, decision, reason, created_at)
+         VALUES (?,?,?,?,?)`,
+        ['pli_clean', 'cap', 'consent_granted', 'ok', 5],
+      );
+      src.id.execute(
+        `INSERT INTO plugin_decisions (install_id, capability, decision, reason, created_at)
+         VALUES (?,?,?,?,?)`,
+        ['pli_bigreason', 'cap', 'consent_granted', 'r'.repeat(600), 5], // reason > 512
+      );
+      src.id.execute(
+        `INSERT INTO plugin_decisions (install_id, capability, decision, reason, created_at)
+         VALUES (?,?,?,?,?)`,
+        ['pli_badtime', 'cap', 'consent_granted', 'ok', -1], // negative created_at
+      );
+      src.id.execute(
+        `INSERT INTO plugin_decisions (install_id, capability, decision, reason, created_at)
+         VALUES (?,?,?,?,?)`,
+        ['pli_spoof', 'cap', 'consent_granted', 'inj‮ected', 5], // bidi-override in reason
+      );
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+    }
+    const dest = freshBundle([]);
+    try {
+      setArchiveDataSource(dataSourceFor(dest));
+      await importArchive(archive, PASS, { force: true });
+      const installIds = dest.id
+        .query('SELECT install_id FROM plugin_decisions')
+        .map((r) => String(r.install_id));
+      expect(installIds).toEqual(['pli_clean']); // only the well-formed row survives
+    } finally {
+      closeBundle(dest);
+    }
+  });
+
+  it('PLG-27 #17: a decision row with a negative / non-integer id is dropped on import', async () => {
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    try {
+      // A clean auto-id row survives; a row carrying an explicit NEGATIVE id
+      // (a malformed audit id from a crafted archive) is dropped.
+      src.id.execute(
+        `INSERT INTO plugin_decisions (install_id, capability, decision, reason, created_at)
+         VALUES (?,?,?,?,?)`,
+        ['pli_ok', 'cap', 'consent_granted', 'ok', 5],
+      );
+      src.id.execute(
+        `INSERT INTO plugin_decisions (id, install_id, capability, decision, reason, created_at)
+         VALUES (?,?,?,?,?,?)`,
+        [-7, 'pli_badid', 'cap', 'consent_granted', 'ok', 5],
+      );
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+    }
+    const dest = freshBundle([]);
+    try {
+      setArchiveDataSource(dataSourceFor(dest));
+      await importArchive(archive, PASS, { force: true });
+      const installIds = dest.id
+        .query('SELECT install_id FROM plugin_decisions')
+        .map((r) => String(r.install_id));
+      expect(installIds).toEqual(['pli_ok']); // the negative-id row is dropped
+    } finally {
+      closeBundle(dest);
+    }
+  });
+
   it('round-11 #11: a plugin install whose digest columns disagree with its manifest is DROPPED on import', async () => {
     const src = freshBundle([]);
     let archive: Uint8Array;

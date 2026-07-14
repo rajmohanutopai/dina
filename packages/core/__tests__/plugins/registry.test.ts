@@ -411,6 +411,44 @@ describe('plugin grants (§8: enforceable or theater)', () => {
     ).toMatch(/^plg_/);
   });
 
+  it('round-16 #12: an EMPTY / duplicate resources constraint is rejected; a clean allowlist is fine', () => {
+    // Empty array counts as "bounded" but `[].includes(x)` authorizes nothing —
+    // theater, not a bound. Reject at create (parseConstraints → null → throw).
+    expect(() =>
+      grants.create(
+        { installId, ...KEY, grantType: 'standing', constraints: { version: 1, resources: [] } },
+        'booking',
+        T0,
+      ),
+    ).toThrow();
+    // Duplicate tokens violate the deduped-set contract.
+    expect(() =>
+      grants.create(
+        {
+          installId,
+          ...KEY,
+          grantType: 'standing',
+          constraints: { version: 1, resources: ['a', 'a'] },
+        },
+        'booking',
+        T0,
+      ),
+    ).toThrow();
+    // A clean, non-empty, deduped allowlist creates fine.
+    expect(
+      grants.create(
+        {
+          installId,
+          ...KEY,
+          grantType: 'standing',
+          constraints: { version: 1, resources: ['flight:BA117'] },
+        },
+        'booking',
+        T0,
+      ),
+    ).toMatch(/^plg_/);
+  });
+
   it('AUDIT D8: a window grant must carry an expiry; a HIGH grant must be bounded some way', () => {
     // A window grant with no expiry is a standing grant in disguise.
     expect(() => grants.create({ installId, ...KEY, grantType: 'window' }, 'read', T0)).toThrow(
@@ -704,6 +742,25 @@ describe('first-N invocation counter (§8)', () => {
     expect(installs.getInvocationCount(id, 'other.cap')).toBe(0);
     // Cleared on uninstall (cascade).
     installs.remove(id);
+    expect(installs.getInvocationCount(id, 'com.acme.flightwatch.watch')).toBe(0);
+  });
+
+  it('round-15 #9: a corrupt invocation count reads 0 (fail closed toward carding)', () => {
+    const id = createPending();
+    installs.activate(id, undefined, T0);
+    installs.recordInvocation(id, 'com.acme.flightwatch.watch'); // row = 1
+    // A NaN would make the gatekeeper's `priorInvocations < FIRST_N` false and
+    // SKIP the mandatory HIGH-risk first-N card. Coerce a non-integer/negative
+    // count to 0 so the card always fires.
+    adapter.execute(
+      'UPDATE plugin_capability_stats SET invocations = ? WHERE install_id = ? AND capability = ?',
+      ['notanumber', id, 'com.acme.flightwatch.watch'],
+    );
+    expect(installs.getInvocationCount(id, 'com.acme.flightwatch.watch')).toBe(0);
+    adapter.execute(
+      'UPDATE plugin_capability_stats SET invocations = ? WHERE install_id = ? AND capability = ?',
+      [-5, id, 'com.acme.flightwatch.watch'],
+    );
     expect(installs.getInvocationCount(id, 'com.acme.flightwatch.watch')).toBe(0);
   });
 });
@@ -1250,5 +1307,99 @@ describe('round-13 refinements', () => {
       badTs,
     ]);
     expect(installs.getById(badTs)).toBeNull();
+  });
+});
+
+describe('round-17 (PLG-27) hardening', () => {
+  it('#4: markRevoked tombstones a PENDING install so activate + resume refuse it', () => {
+    const id = createPending();
+    expect(installs.markRevoked(id, T0 + 1)).toBe(true);
+    expect(installs.getById(id)?.status).toBe('revoked');
+    // confirmConsent → activate's `status='pending'` CAS must now refuse, so a
+    // failed uninstall can't leave the install activatable.
+    expect(installs.activate(id, 'did:key:zinstance', T0 + 2)).toBe(false);
+    expect(installs.getById(id)?.status).toBe('revoked');
+    // resume (needs 'paused') also refuses.
+    expect(installs.resume(id, T0 + 3)).toBe(false);
+  });
+
+  it('#4: markRevoked is a no-op on a non-pending row (it never clobbers an active install)', () => {
+    const id = createPending();
+    installs.activate(id, undefined, T0 + 1);
+    expect(installs.markRevoked(id, T0 + 2)).toBe(false); // pending-only
+    expect(installs.getById(id)?.status).toBe('active');
+    // A missing install is likewise a no-op.
+    expect(installs.markRevoked('plg-does-not-exist', T0 + 2)).toBe(false);
+  });
+
+  it('#15: parseConstraints rejects whitespace-only / spoofing resource tokens', () => {
+    // Baseline: a clean token set parses.
+    expect(parseConstraints({ version: 1, resources: ['flight-123'] })).not.toBeNull();
+    // Whitespace-only token (renders blank, authorizes an invisible resource).
+    expect(parseConstraints({ version: 1, resources: ['   '] })).toBeNull();
+    // Bidi override + zero-width spoofing chars.
+    expect(parseConstraints({ version: 1, resources: ['fl‮ight'] })).toBeNull();
+    expect(parseConstraints({ version: 1, resources: ['fl​ight'] })).toBeNull();
+    // A clean token beside a bad one still fails the whole set closed.
+    expect(parseConstraints({ version: 1, resources: ['ok', '  '] })).toBeNull();
+  });
+
+  it('#18: decision record() enforces the write contract; rowToDecision drops bad rows on read', () => {
+    const id = createPending();
+    // A spoofed reason must not be persistable.
+    expect(() =>
+      decisions.record({
+        installId: id,
+        decision: 'invocation_denied',
+        reason: 'con‮straints',
+        nowSec: T0_SEC,
+      }),
+    ).toThrow();
+    // A negative timestamp must not be persistable.
+    expect(() =>
+      decisions.record({ installId: id, decision: 'consent_granted', nowSec: -1 }),
+    ).toThrow();
+    // A well-formed row records + reads back.
+    decisions.record({ installId: id, decision: 'consent_granted', nowSec: T0_SEC });
+    expect(decisions.listByInstall(id, 10)).toHaveLength(1);
+    // A row written OUT-OF-BAND with a spoofed reason is dropped on read (the
+    // read boundary now enforces the same contract the importer does).
+    adapter.execute(
+      `INSERT INTO plugin_decisions (install_id, capability, decision, reason, created_at)
+       VALUES (?,?,?,?,?)`,
+      [id, '', 'paused', 'ba‮d', T0_SEC + 1],
+    );
+    expect(decisions.listByInstall(id, 10)).toHaveLength(1); // the spoofed row is filtered out
+  });
+});
+
+describe('round-18 (PLG-28) hardening', () => {
+  it('#17: a decision row with a negative id is dropped on the LIVE read path', () => {
+    const id = createPending();
+    // A well-formed row (auto id) reads back; an out-of-band NEGATIVE-id row is
+    // dropped by rowToDecision, matching the archive-import contract.
+    decisions.record({ installId: id, decision: 'consent_granted', nowSec: T0_SEC });
+    adapter.execute(
+      `INSERT INTO plugin_decisions (id, install_id, capability, decision, reason, created_at)
+       VALUES (?,?,?,?,?,?)`,
+      [-5, id, '', 'paused', '', T0_SEC + 1],
+    );
+    const list = decisions.listByInstall(id, 10);
+    expect(list).toHaveLength(1);
+    expect(list[0]!.decision).toBe('consent_granted');
+  });
+
+  it('#18: decision list limits are clamped (LIMIT -1 does not become "no limit")', () => {
+    const id = createPending();
+    decisions.record({ installId: id, decision: 'consent_granted', nowSec: T0_SEC });
+    decisions.record({ installId: id, decision: 'paused', nowSec: T0_SEC + 1 });
+    decisions.record({ installId: id, decision: 'resumed', nowSec: T0_SEC + 2 });
+    // A positive limit is honored.
+    expect(decisions.listRecent(2)).toHaveLength(2);
+    // A NEGATIVE limit is clamped to a sane default (not SQLite's "-1 = all"
+    // semantics, which is fine here at 3 rows but would materialize the whole
+    // append-only log at scale) — it still returns the rows, never errors.
+    expect(decisions.listRecent(-1)).toHaveLength(3);
+    expect(decisions.listByInstall(id, -1)).toHaveLength(3);
   });
 });

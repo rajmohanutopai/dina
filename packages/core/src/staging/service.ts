@@ -28,12 +28,7 @@ import {
 import { WorkflowConflictError, getWorkflowService } from '../workflow/service';
 
 import { getStagingRepository, type StagingRepository } from './repository';
-import {
-  type StagingStatus,
-  shouldRetry,
-  isLeaseExpired,
-  isItemExpired,
-} from './state_machine';
+import { type StagingStatus, shouldRetry, isLeaseExpired, isItemExpired } from './state_machine';
 
 export interface StagingItem {
   id: string;
@@ -111,12 +106,7 @@ const inbox = _stagingState.inbox;
 /** Dedup index: "producer_id|source|source_id" → staging ID. */
 const dedupIndex = _stagingState.dedupIndex;
 
-function dedupKey(
-  producerId: string,
-  source: string,
-  sourceId: string,
-  scope: DataScope,
-): string {
+function dedupKey(producerId: string, source: string, sourceId: string, scope: DataScope): string {
   // data_scope is part of the dedup key (mirrors the v13 UNIQUE constraint): a
   // demo row and a user row with the same (producer, source, source_id) are
   // distinct rows, not duplicates.
@@ -125,10 +115,7 @@ function dedupKey(
 
 function cacheItem(item: StagingItem): void {
   inbox.set(item.id, item);
-  dedupIndex.set(
-    dedupKey(item.producer_id, item.source, item.source_id, item.data_scope),
-    item.id,
-  );
+  dedupIndex.set(dedupKey(item.producer_id, item.source, item.source_id, item.data_scope), item.id);
 }
 
 function removeCachedItem(item: StagingItem): void {
@@ -241,10 +228,7 @@ function stagingApprovalId(stagingId: string, persona: string): string {
  */
 const OWNER_DIRECT_SOURCES = new Set(['user_remember']);
 
-function previewForApproval(
-  item: StagingItem,
-  classifiedItem?: Record<string, unknown>,
-): string {
+function previewForApproval(item: StagingItem, classifiedItem?: Record<string, unknown>): string {
   const candidates = [
     classifiedItem?.summary,
     classifiedItem?.title,
@@ -458,7 +442,7 @@ export function resolve(
   classifiedItem?: Record<string, unknown>,
 ): void {
   const repo = getStagingRepository();
-  const item = repo ? repo.get(id) : inbox.get(id) ?? null;
+  const item = repo ? repo.get(id) : (inbox.get(id) ?? null);
   if (!item) throw new Error(`staging: item "${id}" not found`);
   assertItemInCurrentScope(item);
   if (item.status !== 'classifying') {
@@ -529,7 +513,7 @@ export function resolveMulti(
   classifiedItem?: Record<string, unknown>,
 ): number {
   const repo = getStagingRepository();
-  const item = repo ? repo.get(id) : inbox.get(id) ?? null;
+  const item = repo ? repo.get(id) : (inbox.get(id) ?? null);
   if (!item) throw new Error(`staging: item "${id}" not found`);
   assertItemInCurrentScope(item);
   if (item.status !== 'classifying') {
@@ -598,7 +582,7 @@ export function resolveMulti(
         // continue the loop so other targets can still store.
         const reason = err instanceof Error ? err.message : String(err);
         failures.push({ persona: target.persona, reason });
-         
+
         console.warn(
           `[staging/resolveMulti] vault store failed persona=${target.persona} reason=${reason}`,
         );
@@ -669,7 +653,7 @@ export function resolveMulti(
  */
 export function fail(id: string, errorMessage?: string): void {
   const repo = getStagingRepository();
-  const item = repo ? repo.get(id) : inbox.get(id) ?? null;
+  const item = repo ? repo.get(id) : (inbox.get(id) ?? null);
   if (!item) throw new Error(`staging: item "${id}" not found`);
   assertItemInCurrentScope(item);
   if (item.status !== 'classifying') {
@@ -701,7 +685,7 @@ export function fail(id: string, errorMessage?: string): void {
  */
 export function markPendingApproval(id: string, approvalId: string): void {
   const repo = getStagingRepository();
-  const item = repo ? repo.get(id) : inbox.get(id) ?? null;
+  const item = repo ? repo.get(id) : (inbox.get(id) ?? null);
   if (!item) throw new Error(`staging: item "${id}" not found`);
   assertItemInCurrentScope(item);
   if (item.status !== 'classifying') {
@@ -722,7 +706,7 @@ export function markPendingApproval(id: string, approvalId: string): void {
  */
 export function resumeAfterApprovalGranted(id: string): void {
   const repo = getStagingRepository();
-  const item = repo ? repo.get(id) : inbox.get(id) ?? null;
+  const item = repo ? repo.get(id) : (inbox.get(id) ?? null);
   if (!item) throw new Error(`staging: item "${id}" not found`);
   assertItemInCurrentScope(item);
   if (item.status !== 'pending_approval') {
@@ -744,7 +728,7 @@ export function resumeAfterApprovalGranted(id: string): void {
  */
 export function extendLease(id: string, extensionSeconds: number): void {
   const repo = getStagingRepository();
-  const item = repo ? repo.get(id) : inbox.get(id) ?? null;
+  const item = repo ? repo.get(id) : (inbox.get(id) ?? null);
   if (!item) throw new Error(`staging: item "${id}" not found`);
   assertItemInCurrentScope(item);
   if (item.status !== 'classifying') {
@@ -871,12 +855,23 @@ export function drainForApproval(approvalId: string): StagingApprovalActionResul
     }
     if (item.status !== 'pending_unlock') continue;
     if (!item.classified_item) {
-      throw new Error(
-        `staging: pending unlock item "${item.id}" has no classified_item to store`,
-      );
+      throw new Error(`staging: pending unlock item "${item.id}" has no classified_item to store`);
+    }
+    // PLG-27 #6: give the vault write a STABLE, deterministic id derived from the
+    // staging item id when the classified item carries none. Otherwise storeItem
+    // mints a fresh RANDOM id per call, so a crash AFTER the vault write (below)
+    // but BEFORE the status persist leaves the staging row still `pending_unlock`
+    // — and a recovery re-drain then inserts a DUPLICATE vault row. A stable id
+    // makes storeItem's INSERT-OR-REPLACE an idempotent upsert, so the re-drain
+    // overwrites the same row. (The single-executor CAS in the approve route
+    // already blocks CONCURRENT double-drain; this closes the crash-then-recover
+    // duplicate. A fully resumable per-item state machine remains a follow-up.)
+    const ci = item.classified_item;
+    if (ci.id === undefined || ci.id === null || ci.id === '') {
+      ci.id = `stg-${item.id}`;
     }
     try {
-      storeItemInScope(item.persona, item.classified_item, item.data_scope);
+      storeItemInScope(item.persona, ci, item.data_scope);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       throw new Error(`staging: vault store failed for persona "${item.persona}": ${reason}`);

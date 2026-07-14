@@ -73,7 +73,9 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         auth_type TEXT NOT NULL DEFAULT 'ed25519',
         last_seen INTEGER NOT NULL,
         created_at INTEGER NOT NULL,
-        revoked INTEGER NOT NULL DEFAULT 0
+        -- Round-15 #8: constrain the flag at the storage layer so a foreign
+        -- writer can't persist a non-canonical value that hydrates fail-open.
+        revoked INTEGER NOT NULL DEFAULT 0 CHECK (revoked IN (0, 1))
       );
 
       -- Round-10 #19: one row per key. public_key_multibase is NOT NULL and a
@@ -491,7 +493,13 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         approval_task_id TEXT NOT NULL,
         expires_at INTEGER NOT NULL,
         revoked_at INTEGER,
-        created_at INTEGER NOT NULL
+        created_at INTEGER NOT NULL,
+        -- PLG-28 #1: a grant is RESERVED (active=0) before the approval CAS
+        -- commits and ACTIVATED (active=1) only after, so an agent retry can't
+        -- find it findActive-gated during the awaited persona unlock window
+        -- (TOCTOU on the vault-read gate). DEFAULT 1 keeps non-reserve callers
+        -- active-on-insert.
+        active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
       );
 
       CREATE INDEX IF NOT EXISTS idx_agent_grants_active

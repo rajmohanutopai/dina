@@ -26,9 +26,11 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 
 import {
+  PLUGIN_CAPS,
   canonicalJson,
   checkReleaseIntegrity,
   computePluginDigests,
+  hasUnsafeText,
   isValidTrustAnchor,
   normalizePluginManifest,
   pluginLane,
@@ -40,7 +42,7 @@ import {
 
 import { getWorkflowService } from '../workflow/service';
 
-import { getPluginDecisionRepository } from './decisions';
+import { recordDecisionSafe } from './decisions';
 import { getPluginGrantRepository } from './grants';
 import { getPluginInstallRepository, type PluginInstallRef } from './registry';
 
@@ -445,6 +447,21 @@ function finishBegin(
     };
   }
 
+  // PLG-28 #16: `label` is a CALLER param (not manifest-derived), so it bypasses
+  // the validator's bounds + spoof-char checks that every manifest consent string
+  // gets — yet it is persisted to the registry and rendered on settings/consent
+  // surfaces. Bound it + reject control/bidi/zero-width chars here, at the write
+  // boundary, so a future install route can't store a huge / spoofing label.
+  if (label.length > PLUGIN_CAPS.MAX_DISPLAY_NAME_LENGTH || hasUnsafeText(label)) {
+    return {
+      ok: false,
+      code: 'validation_failed',
+      message: `install label must be ≤ ${PLUGIN_CAPS.MAX_DISPLAY_NAME_LENGTH} chars with no control/bidi/zero-width chars`,
+      transient: false,
+      errors: [{ code: 'bad_label', path: 'label' }],
+    };
+  }
+
   // P2-6: totality guard — normalize dereferences every capability/execution
   // field and would throw on a malformed shape (`capabilities: [null]`).
   // beginInstall checks this before calling us, but beginInstallVerified does
@@ -563,6 +580,15 @@ function finishBegin(
 }
 
 /**
+ * PLG-28 #7: verifies the bound DID names a REAL, unrevoked, role='plugin'
+ * device. The device registry lives ABOVE this package (devices/registry →
+ * plugins/install_service already), so this check is INJECTED by the caller (the
+ * install route) rather than imported — importing it here would form a cycle.
+ * Returns true iff the device is a valid plugin instance.
+ */
+export type VerifyPluginDevice = (deviceDid: string) => boolean;
+
+/**
  * Consent confirmed → activation, the single atomic commit point (§14).
  * Runner installs pass the paired instance device DID; interpreted
  * installs pass undefined (no pairing leg at all, §7).
@@ -571,6 +597,7 @@ export function confirmConsent(
   installId: string,
   deviceDid: string | undefined,
   nowMs: number,
+  verifyDevice?: VerifyPluginDevice,
 ): boolean {
   const installs = getPluginInstallRepository();
   if (installs === null) return false;
@@ -594,6 +621,22 @@ export function confirmConsent(
     ) {
       return false;
     }
+    // PLG-28 #7: the bound DID must also be a REAL, unrevoked, role='plugin'
+    // device. `bindPendingDevice` accepts any nonempty DID and the match above
+    // only compares strings, so a wiring error could bind an ordinary user/agent
+    // device that `uninstall` would later revoke as plugin collateral. The
+    // registry check is INJECTED (import would cycle). Fail closed when the guard
+    // is wired and rejects; production MUST wire it at the install route.
+    if (verifyDevice !== undefined && !verifyDevice(deviceDid)) {
+      return false;
+    }
+  } else if (deviceDid !== undefined) {
+    // PLG-28 #9: interpreted installs pair NO device (§7). Reject a device DID on
+    // a non-runner activation so uninstall never treats an arbitrary DID as
+    // plugin-owned and revokes it as collateral. (Latent — interpreted is
+    // P0-blocked at install today — but makes the "pass undefined" doc a hard
+    // invariant.)
+    return false;
   }
   // Expiry guard (§14): the abandoned sweeper removes stale pendings,
   // but between its ticks an EXPIRED pending still exists — activating
@@ -607,7 +650,9 @@ export function confirmConsent(
   }
   const ok = installs.activate(installId, deviceDid, nowMs);
   if (ok) {
-    getPluginDecisionRepository()?.record({
+    // PLG-28 #2: the activation ALREADY committed — a failing audit write must
+    // not turn this success into a caller-visible failure.
+    recordDecisionSafe({
       installId,
       decision: 'consent_granted',
       nowSec: Math.floor(nowMs / 1000),
@@ -719,7 +764,7 @@ export async function declineConsent(
     return { removed: false, ...(deviceDid !== undefined ? { deviceDid } : {}) };
   }
   if (status === 'pending') installs.remove(installId);
-  getPluginDecisionRepository()?.record({
+  recordDecisionSafe({
     installId,
     decision: 'consent_declined',
     nowSec: Math.floor(nowMs / 1000),
@@ -785,33 +830,48 @@ export async function uninstall(
   const nowSec = Math.floor(nowMs / 1000);
   const deviceDid =
     install !== null ? install.deviceDid : (installs.rawDeviceDid(installId) ?? undefined);
-  // P1-4: terminate in-flight FIRST — a running task must not complete during
-  // the uninstall seam. Effectful → outcome_unknown, queued → cancelled.
+  // PLG-27 #9 + PLG-28 #8: close the claim lane BEFORE enumerating in-flight work
+  // + revoking grants, for EVERY install (not only device-bound ones). Under a
+  // single synchronous Core there is no await between these synchronous calls, so
+  // the ordering is a strict no-op today; under multiple Core workers a NEW task
+  // could be claimed against a still-`active`/`pending` install in the window
+  // between terminate and the lane-close. PLG-28 #8: an INTERPRETED install has
+  // no device, so gating the lane-close on `deviceDid` skipped it entirely — hoist
+  // it. Lane-close covers all three reachable states:
+  //   - Round-14/15 #4: an ACTIVE row → paused. Grants are revoked below, but a
+  //     CARD-backed task (authorization_kind 'card') rides INSTALL-level
+  //     authority (claim-guard checks 5/6), not a grant — while the row stays
+  //     `active` a new card task can still be claimed.
+  //   - Round-16 #4: a MANUALLY-paused row → escalate the hold (pause() no-ops on
+  //     a paused row) so resume() refuses it instead of permitting a 'manual'
+  //     resume that reactivates the card-level authority.
+  //   - PLG-27 #4: a PENDING row → tombstone to `revoked` (pause + escalate both
+  //     skip pending). Otherwise, on either failure exit below (no callback /
+  //     non-durable revoke) the row stays `pending` and confirmConsent→activate's
+  //     `status='pending'` CAS can still bring it live AFTER the owner uninstalled
+  //     it. markRevoked is scoped to pending, so it never clobbers the paused row.
+  // The raw-status probe + remove() below are status-agnostic, so they still fire
+  // correctly on the now paused/revoked row (a no-device install removes inline).
+  if (!installs.pause(installId, nowMs, 'device_revoked')) {
+    installs.escalatePauseReason(installId, 'device_revoked', nowMs);
+  }
+  installs.markRevoked(installId, nowMs);
+  // P1-4: terminate in-flight — a running task must not complete during the
+  // uninstall seam. Effectful → outcome_unknown, queued → cancelled.
   terminateInstallInFlight(installId, 'plugin uninstalled', nowMs);
   // Belt: revoke grants BEFORE the row disappears, so any concurrent
   // authorizeAndConsume in flight sees revoked, not no-row.
   getPluginGrantRepository()?.revokeAllForInstall(installId, nowSec);
-  // Round-5 #6 + Round-6 #1: revoke the device FIRST and only delete once the
-  // revoke is CONFIRMED durable; retain the row on failure. Authority (grants)
-  // is already gone above, so a retained row carries no live access — it is
-  // purely the retry anchor for the outstanding device revoke.
+  // Round-5 #6 + Round-6 #1: revoke the device and only delete once the revoke is
+  // CONFIRMED durable; retain the (now paused/revoked) row on failure. Authority
+  // (grants + lane) is already gone above, so a retained row carries no live
+  // access — it is purely the retry anchor for the outstanding device revoke.
   if (deviceDid !== undefined) {
     // Round-7 #5: a bound device makes the durable revoker MANDATORY — without
     // it we would delete the row and leave device cleanup to caller discipline.
-    // Retain the row (authority already revoked above) as the retry anchor.
     if (revokeDevice === undefined) {
       return { removed: false, deviceDid };
     }
-    // Round-14 #7: PAUSE the install before yielding on the device revoke.
-    // Grants are revoked above, but a CARD-backed task (authorization_kind:
-    // 'card') rides INSTALL-level authority (claim-guard checks 5/6), not a
-    // grant — during this `await` a concurrent claim on the still-`active` lane
-    // would pass. Pausing stops the lane at the claim guard for the teardown
-    // window; the device-revoke cascade also pauses active installs, but only
-    // AFTER the await resolves. (pause() only touches active rows, so a
-    // pending/paused install is unaffected, and the raw-status probe + remove
-    // below still fire correctly on the now-paused row.)
-    installs.pause(installId, nowMs, 'device_revoked');
     const durable = await revokeDeviceConfirmed(revokeDevice, deviceDid);
     if (!durable) {
       return { removed: false, deviceDid, deviceRevoked: false };
@@ -826,7 +886,7 @@ export async function uninstall(
   // not removed, so this only affects the pending-with-device case.)
   const rawAfter = installs.rawStatus(installId);
   if (rawAfter !== null && installs.remove(installId) === null) return null;
-  getPluginDecisionRepository()?.record({
+  recordDecisionSafe({
     installId,
     decision: 'uninstalled',
     nowSec,
@@ -877,9 +937,18 @@ export async function sweepAbandonedInstalls(
     //   - 'pending'  → still ours: remove it (remove() is raw-keyed, so a corrupt
     //                  row is deletable too, #11 / Round-11 #10).
     const status = installs.rawStatus(ref.installId);
-    if (status !== null && status !== 'pending') continue;
-    if (status === 'pending') installs.remove(ref.installId);
-    swept.push(ref);
+    // PLG-28 #3: a 'revoked' tombstone (a failed-uninstall row we just re-revoked
+    // above) is also ours to finish — remove it now that the device is durably
+    // gone. 'pending' = abandoned consent (as before). null = the cascade already
+    // removed it. active/paused = a racing confirmConsent/resume → leave it.
+    if (status === null) {
+      swept.push(ref);
+      continue;
+    }
+    if (status === 'pending' || status === 'revoked') {
+      installs.remove(ref.installId);
+      swept.push(ref);
+    }
   }
   return swept;
 }

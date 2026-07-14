@@ -120,6 +120,49 @@ export const PLUGIN_CAPS = Object.freeze({
   MAX_SHORT_DESCRIPTION_LENGTH: 400,
   /** network_domains entries per capability. */
   MAX_NETWORK_DOMAINS: 16,
+  // --- Round-16 bounds (fail-closed anti-amplification / anti-spoof) ---
+  /** #14: data_scope.categories / .personas entry count + per-entry length. */
+  MAX_DATA_CATEGORIES: 32,
+  MAX_DATA_PERSONAS: 32,
+  MAX_DATA_SCOPE_ENTRY_LENGTH: 64,
+  /** #15: required_features count + per-token length (owner-rendered). */
+  MAX_REQUIRED_FEATURES: 32,
+  MAX_REQUIRED_FEATURE_LENGTH: 64,
+  /** #16: JSON-Schema property-name + annotation-string length (consent forms). */
+  MAX_SCHEMA_PROP_NAME_LENGTH: 128,
+  MAX_SCHEMA_ANNOTATION_LENGTH: 400,
+  /** #17: validator diagnostic count ceiling (output-amplification guard). */
+  MAX_DIAGNOSTICS: 200,
+  /** #13: JSON-Schema enum member count (runtime deep-equal scan is O(n)). */
+  MAX_ENUM_MEMBERS: 100,
+  /** #10: interpreted machine timeout ceilings (seconds). Both stay below the
+   *  int32-ms overflow threshold (~2.1M s ≈ 24.8 days) so language ports that
+   *  convert to milliseconds don't overflow, while allowing legitimate async
+   *  turn-based games (a per-move wait up to a week, a session up to two). */
+  MAX_MOVE_SEC: 604_800, // 7 days
+  MAX_SESSION_TTL_SEC: 1_209_600, // 14 days
+  /** #18: icon blob-ref serialized-byte ceiling. */
+  MAX_ICON_BYTES: 1024,
+  // --- Round-17 (PLG-27) bounds (fail-closed anti-amplification / anti-spoof) ---
+  /** #10: schema-problem collector budget. `collectSchemaProblems` walks the
+   *  whole (byte-capped) schema; without a collector-level bound the joined
+   *  diagnostic string is super-linear in a wide manifest even though the
+   *  `err()` sink caps the diagnostic COUNT. Stop collecting past this. */
+  MAX_SCHEMA_PROBLEMS: 200,
+  /** #12: JSON-Schema collection cardinality — property-key count, required
+   *  entry count, and `type`-array length. A 256 KB manifest otherwise packs
+   *  thousands of entries that inflate consent rendering + every runtime
+   *  validation. */
+  MAX_SCHEMA_PROPERTIES: 128,
+  MAX_REQUIRED_ENTRIES: 128,
+  MAX_TYPE_MEMBERS: 7, // KNOWN_SCHEMA_TYPES has exactly 7 members
+  /** #13: shared identifier length ceiling — machine state / move names and
+   *  schema property names all use one `isValidIdentifier` contract. */
+  MAX_IDENTIFIER_LENGTH: 128,
+  // --- Round-18 (PLG-28) bounds ---
+  /** #11: interpreted-machine `instructions` LLM-step length ceiling (multi-line
+   *  text; feeds the §8.1 behavior hash + the future interpreter prompt). */
+  MAX_INSTRUCTIONS_LENGTH: 4000,
 } as const);
 
 /**

@@ -407,13 +407,17 @@ export class WorkflowService {
     }
     this.guardTransition(task.status as WorkflowTaskState, WorkflowTaskState.Queued);
     const nowMs = this.nowMsFn();
-    const moved = this.repo.transition(
+    // Round-15 #3: the transition + `approved` event commit ATOMICALLY. A crash
+    // between the two previously stranded a `queued` approval with no event to
+    // start execution (and a retry then failed — no longer pending).
+    const eventId = this.repo.approveWithEvent(
       id,
       WorkflowTaskState.PendingApproval,
       WorkflowTaskState.Queued,
+      JSON.stringify({ task_payload: task.payload, kind: task.kind }),
       nowMs,
     );
-    if (!moved) {
+    if (eventId === 0) {
       // Either someone else transitioned first, or it was never in
       // pending_approval. Surface as a transition error with current state.
       const fresh = this.repo.getById(id);
@@ -423,18 +427,6 @@ export class WorkflowService {
         WorkflowTaskState.Queued,
       );
     }
-    this.repo.appendEvent({
-      task_id: id,
-      at: nowMs,
-      event_kind: 'approved',
-      needs_delivery: true,
-      delivery_attempts: 0,
-      delivery_failed: false,
-      details: JSON.stringify({
-        task_payload: task.payload,
-        kind: task.kind,
-      }),
-    });
     const updated = this.repo.getById(id);
     return updated ?? task;
   }

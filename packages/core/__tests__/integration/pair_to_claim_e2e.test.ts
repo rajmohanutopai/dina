@@ -37,6 +37,7 @@ import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { setNodeDID, clearPairingState } from '../../src/pairing/ceremony';
 import { resetDeviceRegistry, getDeviceByDID } from '../../src/devices/registry';
+import { setDeviceRepository, type DeviceRepository } from '../../src/devices/repository';
 import {
   resetCallerTypeState,
   registerService,
@@ -160,6 +161,19 @@ beforeEach(() => {
 
   setNodeDID(HOME_DID);
   setIdentity(HOME_DID, HOME_SEED);
+
+  // Round-15 #4: persistDeviceDurable fails closed without a durable repo. Wire
+  // a working in-memory one so pairing completes (201) instead of 503.
+  const okRepo: DeviceRepository = {
+    register: async () => undefined,
+    get: async () => null,
+    getByPublicKey: async () => null,
+    getByDID: async () => null,
+    list: async () => [],
+    revoke: async () => false,
+    touch: async () => undefined,
+  };
+  setDeviceRepository(okRepo);
 
   // Paired devices land as callerType='agent' when role='agent'.
   setDeviceRoleResolver((did) => {

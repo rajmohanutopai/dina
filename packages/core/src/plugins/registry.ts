@@ -181,6 +181,17 @@ export interface PluginInstallRepository {
    */
   escalatePauseReason(installId: string, reason: PluginPauseReason, nowMs: number): boolean;
   /**
+   * PLG-27 #4: pending → revoked tombstone. `pause` (active-only) and
+   * `escalatePauseReason` (paused-only) both no-op on a PENDING install, so a
+   * pending install bound to a device that fails/lacks durable revocation during
+   * uninstall stays `pending` — and `activate`'s `status='pending'` CAS
+   * (confirmConsent) can still bring it live AFTER the owner uninstalled it.
+   * Flipping it to `revoked` makes `activate` and `resume` refuse it while the
+   * teardown's raw-status probe + `remove` still fire. No-op for non-pending
+   * rows. Returns true if it changed a row.
+   */
+  markRevoked(installId: string, nowMs: number): boolean;
+  /**
    * paused → active. Round-9 #16: a plain resume only reactivates an
    * owner-initiated (`manual`) or legacy (null) pause. A `device_revoked` /
    * `restore` / `advisory` hold needs its specific recovery flow (re-pair /
@@ -666,6 +677,27 @@ export class SQLitePluginInstallRepository implements PluginInstallRepository {
     return affected > 0;
   }
 
+  markRevoked(installId: string, nowMs: number): boolean {
+    // PLG-27 #4: tombstone a PENDING install to `revoked` during uninstall so
+    // confirmConsent→activate (WHERE status='pending') can never bring it live
+    // afterwards. Scoped to `status='pending'` so it never clobbers an active
+    // (→paused) or already-revoked row; `pause_reason` is set for parity with the
+    // device-revoke hold used on active rows.
+    // PLG-28 #3: RETAIN `pending_expires_at` (set it to now, in seconds) rather
+    // than nulling it — that way the abandoned-install sweep can still reach this
+    // tombstone (it selects on `pending_expires_at`) to FINISH the outstanding
+    // device revoke if the uninstall's revoke failed / had no callback. Nulling
+    // it (the original PLG-27 #4 behavior) evicted the row from the only automatic
+    // retry, orphaning the paired plugin device credential.
+    const affected = this.db.run(
+      `UPDATE plugin_installs
+       SET status = 'revoked', pause_reason = 'device_revoked', pending_expires_at = ?, updated_at = ?
+       WHERE install_id = ? AND status = 'pending'`,
+      [Math.floor(nowMs / 1000), nowMs, installId],
+    );
+    return affected > 0;
+  }
+
   resume(installId: string, nowMs: number): boolean {
     // P2-7: a paused → active flip whose device DID is already held by another
     // active install would violate the v19 partial unique index and THROW
@@ -858,9 +890,13 @@ export class SQLitePluginInstallRepository implements PluginInstallRepository {
   listRawStalePending(nowSec: number): PluginInstallRef[] {
     // Round-12 #11: scalar columns only — no JSON.parse — so a corrupt stale
     // pending row is still enumerated and its orphan device can be swept.
+    // PLG-28 #3: ALSO enumerate `revoked` tombstones that still carry a device —
+    // a failed-uninstall tombstone whose device revoke didn't land. The sweep
+    // retries the device revoke and removes the row once it's durably gone.
     const rows = this.db.query(
       `SELECT install_id, status, device_did FROM plugin_installs
-       WHERE status = 'pending' AND pending_expires_at IS NOT NULL AND pending_expires_at <= ?`,
+       WHERE pending_expires_at IS NOT NULL AND pending_expires_at <= ?
+         AND (status = 'pending' OR (status = 'revoked' AND device_did IS NOT NULL AND device_did != ''))`,
       [nowSec],
     );
     return rows.map((r) => ({
@@ -895,7 +931,15 @@ export class SQLitePluginInstallRepository implements PluginInstallRepository {
       'SELECT invocations FROM plugin_capability_stats WHERE install_id = ? AND capability = ?',
       [installId, capability],
     );
-    return rows.length > 0 ? Number(rows[0].invocations) : 0;
+    if (rows.length === 0) return 0;
+    // Round-15 #9: fail closed toward CARDING. This count gates the mandatory
+    // first-N approval cards (gatekeeper: `priorInvocations < FIRST_N`). A NaN
+    // from a corrupt/non-integer value makes that comparison false → the HIGH-
+    // risk card is skipped. Coerce a non-integer/negative count to 0 so the
+    // first-N card always fires. (rowToInstall guards every other numeric column
+    // this way; this closes the one that didn't.)
+    const n = Number(rows[0].invocations);
+    return Number.isInteger(n) && n >= 0 ? n : 0;
   }
 
   recordInvocation(installId: string, capability: string): number {

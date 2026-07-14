@@ -31,3 +31,25 @@ export function hasUnsafeText(str: string): boolean {
   }
   return false;
 }
+
+/**
+ * PLG-28 #11: like `hasUnsafeText`, but ALLOWS the common multi-line whitespace
+ * controls (`\t` 0x09, `\n` 0x0a, `\r` 0x0d). For validating MULTI-LINE text
+ * fields — e.g. an interpreted plugin's `instructions` LLM-step prompt — where
+ * newlines/tabs are legitimate content. Everything else `hasUnsafeText` rejects
+ * (other C0/DEL, C1, bidi overrides/isolates, zero-width, BOM) is still rejected,
+ * since those render deceptively even inside multi-line text.
+ */
+export function hasDeceptiveText(str: string): boolean {
+  for (const ch of str) {
+    const c = ch.codePointAt(0) ?? 0;
+    if (c === 0x09 || c === 0x0a || c === 0x0d) continue; // allow tab / LF / CR
+    if (c <= 0x1f || c === 0x7f) return true; // other C0 + DEL
+    if (c >= 0x80 && c <= 0x9f) return true; // C1 controls
+    if (c >= 0x202a && c <= 0x202e) return true; // bidi embeddings / overrides
+    if (c >= 0x2066 && c <= 0x2069) return true; // bidi isolates
+    if (c >= 0x200b && c <= 0x200d) return true; // zero-width space / joiners
+    if (c === 0xfeff) return true; // BOM
+  }
+  return false;
+}

@@ -6,7 +6,7 @@
  */
 
 import { randomBytes, createHash } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
@@ -420,6 +420,147 @@ describe('lifecycle: consent → activation → uninstall (§14)', () => {
     expect(installs.getById(id)).not.toBeNull();
   });
 
+  it('PLG-27 #4: a failed uninstall of a PENDING install (no revoker) leaves it NON-activatable', async () => {
+    const id = await pending();
+    const installs = getPluginInstallRepository()!;
+    expect(installs.bindPendingDevice(id, 'did:key:zorphan', T0 + 1)).toBe(true);
+    expect(installs.getById(id)?.status).toBe('pending');
+    // Uninstall with NO revoker → the row is RETAINED (the durable revoker is
+    // mandatory once a device is bound), but it must be TOMBSTONED to `revoked`
+    // so a later confirmConsent can't bring the owner-uninstalled install live.
+    const result = await uninstall(id, T0 + 3);
+    expect(result).toEqual({ removed: false, deviceDid: 'did:key:zorphan' });
+    expect(installs.getById(id)?.status).toBe('revoked');
+    // confirmConsent → activate's `status='pending'` CAS now refuses.
+    expect(confirmConsent(id, 'did:key:zorphan', T0 + 4)).toBe(false);
+    expect(installs.getById(id)?.status).toBe('revoked');
+  });
+
+  it('PLG-27 #4: a PENDING uninstall whose durable revoke FAILS is also non-activatable', async () => {
+    const id = await pending();
+    const installs = getPluginInstallRepository()!;
+    expect(installs.bindPendingDevice(id, 'did:key:zorphan', T0 + 1)).toBe(true);
+    // Revoker present but the durable revoke does NOT land → row retained, and
+    // still tombstoned so it cannot be reactivated.
+    const result = await uninstall(id, T0 + 3, async () => ({ durable: false }));
+    expect(result).toEqual({ removed: false, deviceDid: 'did:key:zorphan', deviceRevoked: false });
+    expect(installs.getById(id)?.status).toBe('revoked');
+    expect(confirmConsent(id, 'did:key:zorphan', T0 + 4)).toBe(false);
+  });
+
+  it('PLG-28 #3: the abandoned sweep finishes a failed-uninstall tombstone (retries the device revoke + removes it)', async () => {
+    const id = await pending();
+    const installs = getPluginInstallRepository()!;
+    installs.bindPendingDevice(id, 'did:key:zorphan', T0 + 1);
+    // Uninstall's durable revoke FAILS → a `revoked` tombstone with a device.
+    await uninstall(id, T0 + 3, async () => ({ durable: false }));
+    expect(installs.getById(id)?.status).toBe('revoked');
+    // The sweep at a later second re-attempts the device revoke (now durable) and
+    // removes the tombstone — the device credential is no longer orphaned.
+    let retried = 0;
+    const swept = await sweepAbandonedInstalls(Math.floor(T0 / 1000) + 100, async () => {
+      retried++;
+      return { durable: true };
+    });
+    expect(retried).toBe(1);
+    expect(installs.getById(id)).toBeNull();
+    expect(swept.map((r) => r.installId)).toContain(id);
+  });
+
+  it('PLG-28 #7: confirmConsent rejects a bound DID that fails the injected plugin-device guard', async () => {
+    const id = await pending();
+    const installs = getPluginInstallRepository()!;
+    installs.bindPendingDevice(id, 'did:key:zinstance', T0 + 1);
+    // Guard says "not a valid plugin device" → activation refused even though the
+    // DID matches the bound one.
+    expect(confirmConsent(id, 'did:key:zinstance', T0 + 2, () => false)).toBe(false);
+    expect(installs.getById(id)?.status).toBe('pending');
+    // Guard passes → activates.
+    expect(confirmConsent(id, 'did:key:zinstance', T0 + 3, () => true)).toBe(true);
+    expect(installs.getById(id)?.status).toBe('active');
+  });
+
+  it('PLG-28 #9: an interpreted install rejects a device DID on activation (accepts undefined)', () => {
+    const installs = getPluginInstallRepository()!;
+    // The stored manifest's scalar identity columns (plugin_id / version /
+    // execution_mode) must agree with the createPending args or rowToInstall
+    // quarantines the row (Round-12 #8) — so hand it an interpreted-mode manifest.
+    const interpretedManifest = {
+      ...runnerManifest(),
+      plugin_id: 'com.acme.battleship',
+      version: '1.0.0',
+      execution: { mode: 'interpreted' as const },
+    };
+    const id = installs.createPending({
+      publisherDid: PUBLISHER,
+      pluginId: 'com.acme.battleship',
+      label: '',
+      executionMode: 'interpreted',
+      currentCid: 'bafyreicidi',
+      currentVersion: '1.0.0',
+      manifest: interpretedManifest,
+      installScopeHash: 's'.repeat(64),
+      capabilityHashes: { 'com.acme.flightwatch.watch': 'c'.repeat(64) },
+      behaviorHash: 'b'.repeat(64),
+      presentationHash: 'p'.repeat(64),
+      trustAnchor: { kind: 'repo_proof' },
+      pendingExpiresAtSec: Math.floor(T0 / 1000) + 900,
+      nowMs: T0,
+    });
+    // A device DID on an interpreted activation is rejected (§7: no pairing leg).
+    expect(confirmConsent(id, 'did:key:zsomething', T0 + 1)).toBe(false);
+    expect(installs.getById(id)?.status).toBe('pending');
+    // Undefined activates the interpreted install.
+    expect(confirmConsent(id, undefined, T0 + 2)).toBe(true);
+    expect(installs.getById(id)?.status).toBe('active');
+  });
+
+  it('PLG-28 #16: beginInstall rejects an oversized / spoofing install label', async () => {
+    const { rkey, verifier } = fakeVerifier(runnerManifest());
+    setRepoProofVerifier(verifier);
+    const long = await beginInstall({
+      publisherDid: PUBLISHER,
+      rkey,
+      label: 'x'.repeat(200),
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    expect(long.ok).toBe(false);
+    if (!long.ok) expect(long.code).toBe('validation_failed');
+    const spoof = await beginInstall({
+      publisherDid: PUBLISHER,
+      rkey,
+      label: 'ev‮il',
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    expect(spoof.ok).toBe(false);
+  });
+
+  it('PLG-28 #2: a throwing decision-log write does NOT fail the committed activation', async () => {
+    const id = await pending();
+    const installs = getPluginInstallRepository()!;
+    installs.bindPendingDevice(id, 'did:key:zinstance', T0 + 1);
+    // Swap in a decision repo whose record() throws (mirrors PLG-27 #18's
+    // malformed-row throw). confirmConsent's activation already committed, so it
+    // must still return true — the audit failure is swallowed.
+    const origErr = console.error;
+    console.error = (): void => {};
+    setPluginDecisionRepository({
+      record: () => {
+        throw new Error('audit boom');
+      },
+      listByInstall: () => [],
+      listRecent: () => [],
+    });
+    try {
+      expect(confirmConsent(id, 'did:key:zinstance', T0 + 2)).toBe(true);
+      expect(installs.getById(id)?.status).toBe('active');
+    } finally {
+      console.error = origErr;
+    }
+  });
+
   it('round-9 #15: declineConsent refuses an already-ACTIVE install (pending-only CAS)', async () => {
     const id = await pending();
     const installs = getPluginInstallRepository()!;
@@ -551,6 +692,38 @@ describe('lifecycle: consent → activation → uninstall (§14)', () => {
     expect(ok).toEqual({ removed: true, deviceDid: 'did:key:zinstance', deviceRevoked: true });
     expect(calls).toEqual(['did:key:zinstance']);
     expect(installs.getById(id)).toBeNull();
+  });
+
+  it('round-15 #5: callback-free uninstall PAUSES the active install (lane stops for card tasks)', async () => {
+    const id = await pending();
+    const installs = getPluginInstallRepository()!;
+    expect(installs.bindPendingDevice(id, 'did:key:zinstance', T0)).toBe(true);
+    confirmConsent(id, 'did:key:zinstance', T0 + 1);
+    expect(installs.getById(id)?.status).toBe('active');
+    // No revoke callback → the row is retained as a retry anchor, but it MUST be
+    // paused so a NEW card-backed task can't ride the still-active lane before
+    // the caller separately revokes the device. (PLG-24 only paused on the
+    // callback path; PLG-25 #5 hoists the pause above this early return.)
+    const res = await uninstall(id, T0 + 2);
+    expect(res).toEqual({ removed: false, deviceDid: 'did:key:zinstance' });
+    expect(installs.getById(id)?.status).toBe('paused');
+  });
+
+  it('round-16 #4: uninstall of an already-MANUALLY-paused install escalates the pause reason', async () => {
+    const id = await pending();
+    const installs = getPluginInstallRepository()!;
+    expect(installs.bindPendingDevice(id, 'did:key:zinstance', T0)).toBe(true);
+    confirmConsent(id, 'did:key:zinstance', T0 + 1);
+    // The owner manually pauses it first — pause() only touches ACTIVE rows.
+    expect(installs.pause(id, T0 + 2, 'manual')).toBe(true);
+    expect(installs.getById(id)?.pauseReason).toBe('manual');
+    // A non-durable revoke retains the row. Its pause reason MUST be escalated to
+    // 'device_revoked' so resume() (which permits only 'manual') can't reactivate
+    // the teardown anchor with its card-level authority intact.
+    const res = await uninstall(id, T0 + 3, async () => ({ durable: false }));
+    expect(res).toEqual({ removed: false, deviceDid: 'did:key:zinstance', deviceRevoked: false });
+    expect(installs.getById(id)?.pauseReason).toBe('device_revoked');
+    expect(installs.resume(id, T0 + 4)).toBe(false); // no longer plainly resumable
   });
 
   it('round-5 #6: declineConsent revokes the paired device first and retains the pending on failure', async () => {
@@ -996,6 +1169,40 @@ describe('P2 hardening — pairing + verified-release gates', () => {
     expect(typeof barrel.beginInstall).toBe('function'); // the real verifier path IS public
     expect(barrel.beginInstallVerified).toBeUndefined();
     expect(barrel.attestVerifiedRelease).toBeUndefined();
+  });
+
+  it('PLG-27 #3: no src file OUTSIDE install_service.ts references the verified-install door / attestation minter', () => {
+    // The barrel hides these (round-5 #1 above), but the minter is still
+    // package-INTERNALLY reachable: any core module could
+    // `import { attestVerifiedRelease } from './install_service'` and forge a
+    // repo_proof attestation with NO verification. The correct end-state relocates
+    // the minter INTO the concrete repo-proof verifier (producer-time, once a real
+    // verified-install caller ships). Until then, guard that nothing but its home
+    // module even names these symbols — an accidental in-package caller fails CI
+    // here. (Comment lines are skipped so docs can still discuss them.)
+    const srcRoot = path.join(__dirname, '..', '..', 'src');
+    const homeModule = path.join('plugins', 'install_service.ts');
+    const offenders: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(p);
+          continue;
+        }
+        if (!entry.name.endsWith('.ts') || p.endsWith(homeModule)) continue;
+        for (const line of readFileSync(p, 'utf8').split('\n')) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith('//') || trimmed.startsWith('*')) continue; // skip comments
+          if (/\b(attestVerifiedRelease|beginInstallVerified)\b/.test(line)) {
+            offenders.push(`${p}: ${trimmed}`);
+            break;
+          }
+        }
+      }
+    };
+    walk(srcRoot);
+    expect(offenders).toEqual([]);
   });
 });
 

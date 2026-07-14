@@ -18,9 +18,11 @@
 import { LOCAL_RUNNER_NAME, isPluginLane } from '@dina/protocol';
 
 import {
-  grantAgentPersonaAccessFromApproval,
+  activateAgentPersonaGrant,
   isAgentPersonaAccessApproval,
+  reserveAgentPersonaGrant,
 } from '../../agent/access';
+import { getAgentGrantRepository } from '../../agent/grant_repository';
 import { claimPluginTask } from '../../plugins/claim_guard';
 import { validatePluginResult } from '../../plugins/dispatch';
 import { getPluginInstallRepository } from '../../plugins/registry';
@@ -616,13 +618,12 @@ async function approveTask(
   // `dina session` auto-passes subsequent calls for that action/persona.
   //   - intent_validation: keyed on `(agent_did, session, action)`
   //   - vault_read_request: keyed on `(agent_did, session, persona)`
-  // The session id rides in the task payload — `intent.ts` writes
-  // `payload.session` from the validate body's `session` field, and
-  // `persona_guard.ts` writes it via the per-ask context. A new
-  // `dina session start` mints a fresh sessionId so previously granted
-  // grants don't carry over — matches the dina_details §13.4 expectation
-  // that "that session" means the CLI session.
-  if (body?.scope === 'session' && before !== null) {
+  // Round-15 #1: this grant is written ONLY AFTER `service.approve(id)` succeeds
+  // — approve throws (→ 409) on a stale/cancelled/expired/already-handled task,
+  // so a leaked session grant can no longer silently reverse a denial. The
+  // session id rides in the task payload (see `intent.ts` / `persona_guard.ts`).
+  const writeSessionGrant = (): void => {
+    if (body?.scope !== 'session' || before === null) return;
     const payload = safeParseBody(before.payload);
     const sessionId = typeof payload?.session === 'string' ? payload.session : '';
     const agentDid =
@@ -636,7 +637,7 @@ async function approveTask(
     } else if (payload?.type === 'vault_read_request' && typeof payload.persona === 'string') {
       grantVaultReadSessionApproval(agentDid, sessionId, payload.persona);
     }
-  }
+  };
 
   // issues.txt §2 — approving an agent persona-access request writes the
   // durable grant so the out-of-process agent's retry (even after an app
@@ -644,12 +645,41 @@ async function approveTask(
   // the grant row IS the outcome.
   if (
     isAgentPersonaAccessApproval(before) &&
-    before?.status === WorkflowTaskState.PendingApproval
+    before !== null &&
+    before.status === WorkflowTaskState.PendingApproval
   ) {
-    const approved = service.approve(id);
-    // Awaited so the durable grant is written AND the persona is unlocked
-    // before the approve response returns (issues.txt §2 — no resume race).
-    await grantAgentPersonaAccessFromApproval(approved, Date.now());
+    // Round-16 #1 + PLG-28 #1: RESERVE the durable grant before the transition,
+    // ACTIVATE it after. Reserving first (a) proves the grant repo works — a
+    // missing/failing repo returns null here while the task is still
+    // pending_approval, so the approve fails CLOSED (never a queued task with no
+    // authority the owner can't re-approve), and (b) leaves the grant INVISIBLE
+    // to `findActiveGrant` (reserved), so an agent retry can't use it before the
+    // approval CAS commits. Reserve is SYNCHRONOUS (no awaited unlock between it
+    // and the CAS), so the reserve→approve span carries no event-loop yield to
+    // race. Only after approve succeeds do we activate + unlock (phase 2).
+    const grant = reserveAgentPersonaGrant(before, Date.now());
+    if (grant === null) {
+      throw new WorkflowValidationError(
+        'agent persona-access grant could not be created (grant repository unavailable)',
+        'grant',
+      );
+    }
+    // PLG-27 #1: the reserved grant must be compensated if `service.approve`
+    // FAILS to transition (a concurrent /cancel won the CAS, or the write threw)
+    // — a reserved grant left behind is harmless (never gate-visible) but we
+    // revoke it anyway to keep the audit clean and never leave dangling authority.
+    let approved: WorkflowTask;
+    try {
+      approved = service.approve(id);
+    } catch (err) {
+      getAgentGrantRepository()?.revoke(grant.id, Date.now());
+      throw err;
+    }
+    // Phase 2: the task is now durably approved — await the persona unlock, then
+    // flip the reserved grant ACTIVE so `findActiveGrant` (and the agent's retry)
+    // can finally see it. Ordered AFTER the CAS so authority never precedes it.
+    await activateAgentPersonaGrant(grant, Date.now());
+    writeSessionGrant();
     return approved;
   }
 
@@ -657,13 +687,19 @@ async function approveTask(
     !isStagingPersonaAccessApproval(before) ||
     before?.status !== WorkflowTaskState.PendingApproval
   ) {
-    return service.approve(id);
+    const approved = service.approve(id); // throws → no grant written (fix #1)
+    writeSessionGrant();
+    return approved;
   }
 
-  const resume = drainForApproval(id);
+  // Round-15 #2: win the transition AND the single-executor CAS BEFORE draining
+  // staged data into the protected persona vault. Draining first wrote vault
+  // rows that a lost transition/CAS could never undo (a persona-wall breach on a
+  // stale/denied approval). Order is now approve → claim → drain → complete.
   const approved = service.approve(id);
   const claimed = service.store().claimApprovalForExecution(id, 1, Math.floor(Date.now() / 1000));
-  if (!claimed) return approved;
+  if (!claimed) return approved; // lost the CAS — nothing was written
+  const resume = drainForApproval(id);
   return service.complete(
     id,
     JSON.stringify({

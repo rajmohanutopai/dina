@@ -416,6 +416,53 @@ describe('revokeDeviceDurable — cascades to plugin authority (F3)', () => {
     }
   });
 
+  it('round-15 #20: revoking a device with a PENDING install records "uninstalled", not "paused"', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-dev5-20-'));
+    const a = openId(path.join(dir, 'identity.sqlite'));
+    try {
+      setDeviceRepository(new SQLiteDeviceRepository(a));
+      const installs = new SQLitePluginInstallRepository(a);
+      setPluginInstallRepository(installs);
+      setPluginGrantRepository(new SQLitePluginGrantRepository(a));
+      const decisions = new SQLitePluginDecisionRepository(a);
+      setPluginDecisionRepository(decisions);
+
+      const d = registerDevice('Flight Watch (pending)', 'z6MkPluginPend', 'plugin');
+      const now = Date.now();
+      const installId = installs.createPending({
+        publisherDid: 'did:plc:acme',
+        pluginId: 'com.acme.flightwatch',
+        label: '',
+        executionMode: 'runner',
+        currentCid: 'bafyreicid',
+        currentVersion: '1.0.0',
+        manifest,
+        installScopeHash: 's'.repeat(64),
+        capabilityHashes: { [CAP]: 'c'.repeat(64) },
+        behaviorHash: 'b'.repeat(64),
+        presentationHash: 'p'.repeat(64),
+        trustAnchor: { kind: 'repo_proof' },
+        pendingExpiresAtSec: Math.floor(now / 1000) + 900,
+        nowMs: now,
+      });
+      // Bind the device to the PENDING install (never activated / consented).
+      expect(installs.bindPendingDevice(installId, d.did, now)).toBe(true);
+      expect(installs.getById(installId)?.status).toBe('pending');
+
+      await revokeDeviceDurable(d.deviceId);
+
+      // The pending install is DELETED (not paused) — the owner's audit history
+      // must say 'uninstalled', not misreport a never-consented install as paused.
+      expect(installs.getById(installId)).toBeNull();
+      const recorded = decisions.listByInstall(installId, 10).map((x) => x.decision);
+      expect(recorded).toContain('uninstalled');
+      expect(recorded).not.toContain('paused');
+    } finally {
+      a.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('P1-3: revocation disables EVERY install co-bound to the device (active + paused + pending)', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-dev5b-'));
     const a = openId(path.join(dir, 'identity.sqlite'));

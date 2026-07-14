@@ -37,6 +37,8 @@ export type {
 
 export { normalizeStringSet, normalizePluginManifest, normalizePluginAdvisory } from './normalize';
 
+export { hasUnsafeText } from './text_safety';
+
 export { validatePluginManifest, schemaDepth, hasRecursiveRef, findSecretFields } from './validate';
 export type {
   PluginValidationError,

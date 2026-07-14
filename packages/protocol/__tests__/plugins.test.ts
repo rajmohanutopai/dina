@@ -1380,3 +1380,454 @@ describe('round-14 hardening', () => {
     expect(isValidTrustAnchor({ kind: 'local_publisher_key', keyId: 'k1' })).toBe(true);
   });
 });
+
+describe('round-15 hardening', () => {
+  const codes = (r: PluginValidationResult): string[] => (r.ok ? [] : r.errors.map((e) => e.code));
+
+  it('#11: a hosted_endpoint with embedded credentials or spoofing chars is rejected', () => {
+    const withEndpoint = (endpoint: string): PluginManifest =>
+      mutate(runnerManifest(), (m) => {
+        m.execution.runtime.hosted_endpoint = endpoint;
+        m.execution.runtime.issuer = { did: 'did:web:acme.example', key: 'zAcmeIssuerKey' };
+      });
+    // Embedded credentials — a scheme+host parse accepted this before.
+    expect(codes(validatePluginManifest(withEndpoint('https://user:pass@acme.example')))).toContain(
+      'bad_hosted_endpoint',
+    );
+    // Trailing zero-width char.
+    expect(codes(validatePluginManifest(withEndpoint('https://acme.example​')))).toContain(
+      'bad_hosted_endpoint',
+    );
+    // A clean https endpoint still passes.
+    expect(
+      codes(validatePluginManifest(withEndpoint('https://runner.acme.example'))),
+    ).not.toContain('bad_hosted_endpoint');
+  });
+
+  it('#12: a runtime issuer that is not a did:-prefixed / bounded / clean identity is rejected', () => {
+    const withIssuer = (issuer: unknown): PluginManifest =>
+      mutate(runnerManifest(), (m) => {
+        m.execution.runtime.issuer = issuer;
+      });
+    // Non-did: DID.
+    expect(codes(validatePluginManifest(withIssuer({ did: 'acme', key: 'zK' })))).toContain(
+      'bad_issuer',
+    );
+    // Oversized DID.
+    expect(
+      codes(validatePluginManifest(withIssuer({ did: `did:web:${'a'.repeat(260)}`, key: 'zK' }))),
+    ).toContain('bad_issuer');
+    // Spoofing char in the key.
+    expect(
+      codes(validatePluginManifest(withIssuer({ did: 'did:web:acme.example', key: 'z‮K' }))),
+    ).toContain('bad_issuer');
+    // Empty key.
+    expect(
+      codes(validatePluginManifest(withIssuer({ did: 'did:web:acme.example', key: '' }))),
+    ).toContain('bad_issuer');
+    // The golden issuer still passes.
+    expect(
+      codes(
+        validatePluginManifest(withIssuer({ did: 'did:web:acme.example', key: 'zAcmeIssuerKey' })),
+      ),
+    ).not.toContain('bad_issuer');
+  });
+
+  it('#18: parseAtUri rejects non-canonical URIs (query / fragment / whitespace / encoded)', () => {
+    // rkey carrying a query, fragment, or percent-encoded separator would let
+    // the pointer checker and a canonicalizing fetch disagree.
+    expect(parseAtUri('at://did:plc:x/com.example.rec/abc?foo=bar')).toBeNull();
+    expect(parseAtUri('at://did:plc:x/com.example.rec/abc#frag')).toBeNull();
+    expect(parseAtUri('at://did:plc:x/com.example.rec/abc%2Fmore')).toBeNull();
+    expect(parseAtUri('at://did:plc:x/com.example.rec/abc ')).toBeNull();
+    expect(parseAtUri('  at://did:plc:x/com.example.rec/abc')).toBeNull();
+    // The canonical form still parses.
+    expect(parseAtUri('at://did:plc:x/com.example.rec/abc')).toEqual({
+      did: 'did:plc:x',
+      collection: 'com.example.rec',
+      rkey: 'abc',
+    });
+  });
+});
+
+describe('round-16 hardening', () => {
+  const codes = (r: PluginValidationResult): string[] => (r.ok ? [] : r.errors.map((e) => e.code));
+
+  it('#8: interpreted machine with a non-string state identifier is rejected', () => {
+    const m = mutate(interpretedManifest(), (mm) => {
+      mm.capabilities[0].machine.states = [1, 2, 3];
+      mm.capabilities[0].machine.initial = 1;
+      mm.capabilities[0].machine.terminal = [3];
+    });
+    expect(codes(validatePluginManifest(m))).toContain('bad_state');
+  });
+
+  it('#9: a move schema using an unenforceable keyword (pattern) is rejected', () => {
+    const m = mutate(interpretedManifest(), (mm) => {
+      mm.capabilities[0].machine.moves.fire = {
+        type: 'object',
+        properties: { x: { type: 'string', pattern: '^A' } },
+      };
+    });
+    expect(codes(validatePluginManifest(m))).toContain('unenforceable_schema_keyword');
+  });
+
+  it('#10: an over-ceiling interpreted timeout is rejected', () => {
+    const m = mutate(interpretedManifest(), (mm) => {
+      mm.capabilities[0].machine.timeouts.session_ttl_sec = Number.MAX_SAFE_INTEGER;
+    });
+    expect(codes(validatePluginManifest(m))).toContain('bad_timeouts');
+    // The golden async-game timeouts (1d move / 7d session) still pass.
+    expect(codes(validatePluginManifest(interpretedManifest()))).not.toContain('bad_timeouts');
+  });
+
+  it('#13: an enum with too many members is a malformed schema constraint', () => {
+    const m = mutate(runnerManifest(), (mm) => {
+      mm.capabilities[0].params_schema = {
+        type: 'object',
+        properties: {
+          flight: { type: 'string', enum: Array.from({ length: 200 }, (_, i) => `f${i}`) },
+        },
+      };
+    });
+    expect(codes(validatePluginManifest(m))).toContain('malformed_schema_constraint');
+  });
+
+  it('#14: an over-count data_scope.categories list is rejected', () => {
+    const m = mutate(runnerManifest(), (mm) => {
+      mm.capabilities[0].data_scope.categories = Array.from({ length: 40 }, (_, i) => `c${i}`);
+    });
+    expect(codes(validatePluginManifest(m))).toContain('bad_data_categories');
+  });
+
+  it('#15: required_features with a spoofing char / oversize is rejected', () => {
+    expect(
+      codes(
+        validatePluginManifest(
+          mutate(runnerManifest(), (mm) => (mm.required_features = ['fe‮at'])),
+        ),
+      ),
+    ).toContain('bad_required_features');
+    expect(
+      codes(
+        validatePluginManifest(
+          mutate(
+            runnerManifest(),
+            (mm) => (mm.required_features = Array.from({ length: 40 }, (_, i) => `f${i}`)),
+          ),
+        ),
+      ),
+    ).toContain('bad_required_features');
+  });
+
+  it('#16: a schema property name with a spoofing char is rejected', () => {
+    const m = mutate(runnerManifest(), (mm) => {
+      mm.capabilities[0].params_schema = {
+        type: 'object',
+        properties: { ['amo‮tnu']: { type: 'string' } },
+      };
+    });
+    expect(codes(validatePluginManifest(m))).toContain('malformed_schema_constraint');
+  });
+
+  it('#17: a maximally-malformed manifest caps diagnostics with a truncation sentinel', () => {
+    const m = mutate(runnerManifest(), (mm) => {
+      for (let i = 0; i < 400; i++) mm[`unknown_${i}`] = 1;
+    });
+    const r = validatePluginManifest(m);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.errors.length).toBeLessThanOrEqual(PLUGIN_CAPS.MAX_DIAGNOSTICS + 1);
+    expect(r.errors.map((e) => e.code)).toContain('diagnostics_truncated');
+  });
+
+  it('#18: an oversized / spoofing icon is rejected', () => {
+    expect(
+      codes(validatePluginManifest(mutate(runnerManifest(), (mm) => (mm.icon = 'x'.repeat(2000))))),
+    ).toContain('bad_icon');
+    // A small clean icon reference passes.
+    expect(
+      codes(validatePluginManifest(mutate(runnerManifest(), (mm) => (mm.icon = 'blob-ref-abc')))),
+    ).not.toContain('bad_icon');
+  });
+});
+
+describe('round-17 (PLG-27) hardening', () => {
+  const codes = (r: PluginValidationResult): string[] => (r.ok ? [] : r.errors.map((e) => e.code));
+
+  it('#7: a non-string capability id is a fail-closed RESULT, never a throw (totality)', () => {
+    // `canon(cap.id)` calls `.toLowerCase()`. A numeric / null / omitted /
+    // object id previously threw a TypeError, breaking the validator's
+    // fail-closed contract on the untrusted AppView ingest path.
+    for (const badId of [42, null, undefined, { x: 1 }, ['a']] as unknown[]) {
+      const m = mutate(runnerManifest(), (mm) => {
+        mm.capabilities[0].id = badId;
+      });
+      const run = (): PluginValidationResult => validatePluginManifest(m);
+      expect(run).not.toThrow();
+      expect(codes(run())).toContain('bad_capability_id');
+    }
+  });
+
+  it('#11: a non-string text annotation (numeric title) is rejected; a string title passes', () => {
+    const numericTitle = mutate(runnerManifest(), (mm) => {
+      mm.capabilities[0].params_schema = {
+        type: 'object',
+        title: 42,
+        properties: { flight: { type: 'string' } },
+      };
+    });
+    expect(codes(validatePluginManifest(numericTitle))).toContain('malformed_schema_constraint');
+    const stringTitle = mutate(runnerManifest(), (mm) => {
+      mm.capabilities[0].params_schema = {
+        type: 'object',
+        title: 'Flight params',
+        properties: { flight: { type: 'string' } },
+      };
+    });
+    expect(codes(validatePluginManifest(stringTitle))).not.toContain('malformed_schema_constraint');
+  });
+
+  it('#12: over-cardinality / duplicate / blank schema collections are rejected', () => {
+    const blankRequired = mutate(runnerManifest(), (mm) => {
+      mm.capabilities[0].params_schema = {
+        type: 'object',
+        properties: { flight: { type: 'string' } },
+        required: ['flight', '   '],
+      };
+    });
+    expect(codes(validatePluginManifest(blankRequired))).toContain('malformed_schema_constraint');
+
+    const dupeRequired = mutate(runnerManifest(), (mm) => {
+      mm.capabilities[0].params_schema = {
+        type: 'object',
+        properties: { flight: { type: 'string' } },
+        required: ['flight', 'flight'],
+      };
+    });
+    expect(codes(validatePluginManifest(dupeRequired))).toContain('malformed_schema_constraint');
+
+    const dupeType = mutate(runnerManifest(), (mm) => {
+      mm.capabilities[0].params_schema = {
+        type: 'object',
+        properties: { flight: { type: ['string', 'string'] } },
+      };
+    });
+    expect(codes(validatePluginManifest(dupeType))).toContain('malformed_schema_constraint');
+
+    const wideProps = mutate(runnerManifest(), (mm) => {
+      const props: Record<string, unknown> = {};
+      for (let i = 0; i < PLUGIN_CAPS.MAX_SCHEMA_PROPERTIES + 5; i++) {
+        props[`p${i}`] = { type: 'string' };
+      }
+      mm.capabilities[0].params_schema = { type: 'object', properties: props };
+    });
+    expect(codes(validatePluginManifest(wideProps))).toContain('malformed_schema_constraint');
+  });
+
+  it('#13: whitespace-only / bidi machine state + move names are rejected', () => {
+    const blankState = mutate(interpretedManifest(), (mm) => {
+      mm.capabilities[0].machine.states = ['   ', 'battle', 'won', 'lost'];
+      mm.capabilities[0].machine.initial = 'battle';
+    });
+    expect(codes(validatePluginManifest(blankState))).toContain('bad_state');
+
+    // States had NO hasUnsafeText check before PLG-27 — a bidi override passed.
+    const spoofState = mutate(interpretedManifest(), (mm) => {
+      mm.capabilities[0].machine.states = ['pla‮cing', 'battle', 'won', 'lost'];
+    });
+    expect(codes(validatePluginManifest(spoofState))).toContain('bad_state');
+
+    const blankMove = mutate(interpretedManifest(), (mm) => {
+      mm.capabilities[0].machine.moves = {
+        '  ': { type: 'object' },
+        place: { type: 'object' },
+        fire: { type: 'object' },
+      };
+    });
+    expect(codes(validatePluginManifest(blankMove))).toContain('bad_move');
+  });
+
+  it('#14: whitespace-only feature / data-scope tokens are rejected', () => {
+    expect(
+      codes(
+        validatePluginManifest(mutate(runnerManifest(), (mm) => (mm.required_features = ['  ']))),
+      ),
+    ).toContain('bad_required_features');
+    expect(
+      codes(
+        validatePluginManifest(
+          mutate(runnerManifest(), (mm) => (mm.capabilities[0].data_scope.categories = ['   '])),
+        ),
+      ),
+    ).toContain('bad_data_categories');
+    expect(
+      codes(
+        validatePluginManifest(
+          mutate(runnerManifest(), (mm) => (mm.capabilities[0].data_scope.personas = ['   '])),
+        ),
+      ),
+    ).toContain('bad_data_personas');
+  });
+
+  it('#16: a numeric / array icon fails the blob-ref shape floor; object + string pass', () => {
+    expect(
+      codes(validatePluginManifest(mutate(runnerManifest(), (mm) => (mm.icon = 42)))),
+    ).toContain('bad_icon');
+    expect(
+      codes(validatePluginManifest(mutate(runnerManifest(), (mm) => (mm.icon = ['a', 'b'])))),
+    ).toContain('bad_icon');
+    expect(
+      codes(
+        validatePluginManifest(mutate(runnerManifest(), (mm) => (mm.icon = { cid: 'bafyabc' }))),
+      ),
+    ).not.toContain('bad_icon');
+    expect(
+      codes(validatePluginManifest(mutate(runnerManifest(), (mm) => (mm.icon = 'blob-ref-abc')))),
+    ).not.toContain('bad_icon');
+  });
+
+  it('#19: move_sec > session_ttl_sec (impossible move) is rejected; equal is allowed', () => {
+    const impossible = mutate(interpretedManifest(), (mm) => {
+      mm.capabilities[0].machine.timeouts = { move_sec: 604800, session_ttl_sec: 60 };
+    });
+    expect(codes(validatePluginManifest(impossible))).toContain('bad_timeouts');
+    const equal = mutate(interpretedManifest(), (mm) => {
+      mm.capabilities[0].machine.timeouts = { move_sec: 3600, session_ttl_sec: 3600 };
+    });
+    expect(codes(validatePluginManifest(equal))).not.toContain('bad_timeouts');
+  });
+});
+
+describe('round-18 (PLG-28) hardening', () => {
+  const codes = (r: PluginValidationResult): string[] => (r.ok ? [] : r.errors.map((e) => e.code));
+
+  it('#4: an unsatisfiable required/properties schema (additionalProperties:false) is rejected', () => {
+    const m = mutate(runnerManifest(), (mm) => {
+      mm.capabilities[0].params_schema = {
+        type: 'object',
+        properties: {},
+        required: ['secret'],
+        additionalProperties: false,
+      };
+    });
+    expect(codes(validatePluginManifest(m))).toContain('malformed_schema_constraint');
+    // A satisfiable schema (required ⊆ properties) still passes.
+    const okSchema = mutate(runnerManifest(), (mm) => {
+      mm.capabilities[0].params_schema = {
+        type: 'object',
+        properties: { secret: { type: 'string' } },
+        required: ['secret'],
+        additionalProperties: false,
+      };
+    });
+    expect(codes(validatePluginManifest(okSchema))).not.toContain('malformed_schema_constraint');
+  });
+
+  it('#5: a deeply-nested card is a fail-closed RESULT, never a RangeError throw (totality)', () => {
+    const m = mutate(runnerManifest(), (mm) => {
+      let cur: Record<string, unknown> = {};
+      const root = cur;
+      for (let i = 0; i < 30000; i++) {
+        const next: Record<string, unknown> = {};
+        cur.a = next;
+        cur = next;
+      }
+      mm.capabilities[0].card = root;
+    });
+    const run = (): PluginValidationResult => validatePluginManifest(m);
+    expect(run).not.toThrow();
+    expect(run().ok).toBe(false); // rejected as over-cap, not crashed
+  });
+
+  it('#10: a transition op not declared in ops_used is rejected', () => {
+    const m = mutate(interpretedManifest(), (mm) => {
+      // ops_used drops 'compare', but a transition still executes it.
+      mm.capabilities[0].ops_used = ['commit', 'verifyCommit'];
+    });
+    expect(codes(validatePluginManifest(m))).toContain('undeclared_transition_op');
+  });
+
+  it('#11: a non-string instructions is rejected; a multi-line string with newlines passes', () => {
+    const bad = mutate(interpretedManifest(), (mm) => {
+      mm.capabilities[0].instructions = { not: 'a string' };
+    });
+    expect(codes(validatePluginManifest(bad))).toContain('bad_instructions');
+    const ok = mutate(interpretedManifest(), (mm) => {
+      mm.capabilities[0].instructions = 'Play the game.\nBe fair.\n\tNo cheating.';
+    });
+    expect(codes(validatePluginManifest(ok))).not.toContain('bad_instructions');
+    // A bidi-override in instructions IS rejected (deceptive even multi-line).
+    const spoof = mutate(interpretedManifest(), (mm) => {
+      mm.capabilities[0].instructions = 'do‮evil';
+    });
+    expect(codes(validatePluginManifest(spoof))).toContain('bad_instructions');
+  });
+
+  it('#12: a session with no transitions / a dead-end non-terminal state is rejected', () => {
+    const noTransitions = mutate(interpretedManifest(), (mm) => {
+      mm.capabilities[0].machine.transitions = [];
+    });
+    expect(codes(validatePluginManifest(noTransitions))).toContain('no_transitions');
+    const deadEnd = mutate(interpretedManifest(), (mm) => {
+      // 'battle' (non-terminal) loses its only outgoing transition.
+      mm.capabilities[0].machine.transitions = [
+        { from: 'placing', move: 'place', ops: ['commit'], to: 'battle' },
+      ];
+    });
+    expect(codes(validatePluginManifest(deadEnd))).toContain('dead_end_state');
+  });
+
+  it('#13: empty / duplicate terminal states are rejected', () => {
+    const empty = mutate(interpretedManifest(), (mm) => {
+      mm.capabilities[0].machine.terminal = [];
+    });
+    expect(codes(validatePluginManifest(empty))).toContain('bad_terminal');
+    const dupe = mutate(interpretedManifest(), (mm) => {
+      mm.capabilities[0].machine.terminal = ['won', 'won', 'lost'];
+    });
+    expect(codes(validatePluginManifest(dupe))).toContain('duplicate_terminal');
+  });
+
+  it('#14: a token with SURROUNDING whitespace (not just blank) is rejected', () => {
+    expect(
+      codes(
+        validatePluginManifest(
+          mutate(
+            runnerManifest(),
+            (mm) => (mm.capabilities[0].data_scope.categories = [' travel']),
+          ),
+        ),
+      ),
+    ).toContain('bad_data_categories');
+    expect(
+      codes(
+        validatePluginManifest(
+          mutate(runnerManifest(), (mm) => (mm.required_features = ['feat '])),
+        ),
+      ),
+    ).toContain('bad_required_features');
+    // A clean token still passes.
+    expect(
+      codes(
+        validatePluginManifest(
+          mutate(runnerManifest(), (mm) => (mm.capabilities[0].data_scope.categories = ['travel'])),
+        ),
+      ),
+    ).not.toContain('bad_data_categories');
+  });
+
+  it('#15: an empty / reference-less icon object is rejected; a blob-ref object passes', () => {
+    expect(
+      codes(validatePluginManifest(mutate(runnerManifest(), (mm) => (mm.icon = {})))),
+    ).toContain('bad_icon');
+    expect(
+      codes(validatePluginManifest(mutate(runnerManifest(), (mm) => (mm.icon = { foo: 'bar' })))),
+    ).toContain('bad_icon');
+    expect(
+      codes(
+        validatePluginManifest(mutate(runnerManifest(), (mm) => (mm.icon = { cid: 'bafyabc' }))),
+      ),
+    ).not.toContain('bad_icon');
+  });
+});

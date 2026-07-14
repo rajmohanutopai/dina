@@ -535,6 +535,14 @@ export function buildPluginEnvelope(args: {
   if (ctxViolation !== null) {
     throw new Error(`context violates the consented data_scope: ${ctxViolation}`);
   }
+  // Round-15 #14: enforce the documented invariant AT BUILD. `kind: 'grant'`
+  // REQUIRES a non-empty grantId — otherwise the builder emits a typed envelope
+  // that parsePluginEnvelope rejects (grant kind without grant_id), silently
+  // terminalizing the task at claim with an opaque integrity error. Fail at
+  // enqueue where the producer bug is diagnosable, not at claim time.
+  if (args.authorization?.kind === 'grant' && (args.authorization.grantId ?? '') === '') {
+    throw new Error("authorization kind 'grant' requires a non-empty grantId");
+  }
   return {
     type: PLUGIN_INVOCATION_PAYLOAD_TYPE,
     install_id: args.install.installId,
@@ -580,11 +588,29 @@ export function validatePluginResult(
   resultJSON: string,
   pinnedSchema: unknown,
 ): PluginResultValidation {
+  // PLG-27 #5: gate on the RAW UTF-8 byte size BEFORE JSON.parse. On the
+  // in-process / mobile path (no HTTP body limit) an oversized result would
+  // otherwise be fully materialized into an object graph by JSON.parse before any
+  // limit could reject it — the expensive work happening before the cheap check.
+  // Reject on bytes first so parse never runs on an over-cap string.
+  if (new TextEncoder().encode(resultJSON).length > MAX_PARAM_BYTES) {
+    return { ok: false, error: `result exceeds the ${MAX_PARAM_BYTES}-byte inspection cap` };
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(resultJSON);
   } catch {
     return { ok: false, error: 'result is not valid JSON' };
+  }
+  // Round-16 #6: also bound nesting REGARDLESS of schema. The params/context
+  // INBOUND direction is already depth-capped, but a runner result with no pinned
+  // schema was persisted verbatim — a deeply-nested result can overflow recursive
+  // comparisons downstream. `exceedsDepth` short-circuits at the cap (bounded
+  // recursion) and V8's JSON.parse throws RangeError on pathological nesting
+  // (caught above), so this is safe on any input that passed the byte gate.
+  // Nonconforming = task failure, exactly like a schema mismatch.
+  if (exceedsDepth(parsed, MAX_PARAM_DEPTH)) {
+    return { ok: false, error: `result nests deeper than ${MAX_PARAM_DEPTH} levels` };
   }
   // No pinned schema = accept any JSON (a capability may omit
   // result_schema); with one, conform or fail.

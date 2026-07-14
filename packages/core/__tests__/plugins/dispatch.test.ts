@@ -308,6 +308,47 @@ describe('buildPluginEnvelope', () => {
     expect(parsed?.schema_snapshot).toEqual({ type: 'object' });
   });
 
+  it('round-15 #14: throws when authorization kind is "grant" but grantId is omitted (internal coherence)', () => {
+    const install = installWithCap({ id: 'com.acme.flightwatch.watch', kinds: ['tool'] });
+    // Builder would otherwise emit a typed envelope that parsePluginEnvelope
+    // rejects (grant kind requires grant_id), silently terminalizing the task at
+    // claim. Fail at build where the producer bug is diagnosable.
+    expect(() =>
+      buildPluginEnvelope({
+        install,
+        capabilityId: 'com.acme.flightwatch.watch',
+        params: {},
+        context: [],
+        executionId: 'e',
+        idempotencyKey: 'i',
+        authorization: { kind: 'grant' }, // no grantId
+      }),
+    ).toThrow(/grant.*grantId/i);
+    // A grant with an id, and a card without one, both build fine.
+    expect(() =>
+      buildPluginEnvelope({
+        install,
+        capabilityId: 'com.acme.flightwatch.watch',
+        params: {},
+        context: [],
+        executionId: 'e2',
+        idempotencyKey: 'i2',
+        authorization: { kind: 'grant', grantId: 'plg_x' },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      buildPluginEnvelope({
+        install,
+        capabilityId: 'com.acme.flightwatch.watch',
+        params: {},
+        context: [],
+        executionId: 'e3',
+        idempotencyKey: 'i3',
+        authorization: { kind: 'card' },
+      }),
+    ).not.toThrow();
+  });
+
   it('a capability with no declared idempotency derives "unsupported" (no silent auto-retry by default)', () => {
     const install = installWithCap({ id: 'com.acme.flightwatch.watch', kinds: ['tool'] });
     const env = buildPluginEnvelope({
@@ -528,6 +569,38 @@ describe('validatePluginResult (§9.1: nonconforming = task failure)', () => {
 
   it('accepts any JSON when no schema was pinned', () => {
     expect(validatePluginResult('{"anything":true}', undefined).ok).toBe(true);
+  });
+
+  it('round-16 #6: an oversized or too-deep result is rejected even with NO pinned schema', () => {
+    // The inbound params/context are already byte/depth-capped; the result was
+    // not. On the in-process/mobile path (no HTTP body limit) a huge or deeply-
+    // nested null-schema result would persist verbatim and bloat tasks/events.
+    const huge = JSON.stringify({ blob: 'x'.repeat(70 * 1024) });
+    expect(validatePluginResult(huge, undefined).ok).toBe(false);
+    // Build a deeply-nested object (> MAX_PARAM_DEPTH=12).
+    let deep = '';
+    let close = '';
+    for (let i = 0; i < 20; i++) {
+      deep += '{"a":';
+      close += '}';
+    }
+    expect(validatePluginResult(`${deep}1${close}`, undefined).ok).toBe(false);
+    // A small shallow result still passes.
+    expect(validatePluginResult('{"ok":true}', undefined).ok).toBe(true);
+  });
+
+  it('PLG-27 #5: the byte gate runs BEFORE JSON.parse — an oversized result is rejected on bytes, not parse', () => {
+    // An over-cap string that is ALSO not valid JSON: if JSON.parse ran first it
+    // would report "not valid JSON" (after materializing the whole string); the
+    // byte gate now fires first with the byte-cap error, so the parse never runs.
+    const oversizedGarbage = 'x'.repeat(70 * 1024); // not JSON, > MAX_PARAM_BYTES
+    const r = validatePluginResult(oversizedGarbage, undefined);
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/byte/i);
+    expect(r.error).not.toMatch(/not valid JSON/i);
+    // A valid-but-oversized JSON result is likewise rejected on the byte gate.
+    const oversizedJson = JSON.stringify({ blob: 'y'.repeat(70 * 1024) });
+    expect(validatePluginResult(oversizedJson, undefined).error).toMatch(/byte/i);
   });
 });
 

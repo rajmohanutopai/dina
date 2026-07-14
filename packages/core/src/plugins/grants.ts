@@ -31,11 +31,21 @@ import { randomBytes } from '@noble/ciphers/utils.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 
-import { canonicalJson, getCatalogCapability } from '@dina/protocol';
+import { canonicalJson, getCatalogCapability, hasUnsafeText } from '@dina/protocol';
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
 export type PluginGrantType = 'once' | 'window' | 'standing';
+
+/** Round-15 #10: the persisted-row hardening allowlist. A `grant_type` outside
+ *  this set (schema drift / out-of-app write) is quarantined fail-closed rather
+ *  than defaulting to unlimited window/standing behaviour. The DB CHECK is the
+ *  primary enforcement; this is the code-level backstop mirroring rowToInstall. */
+const VALID_GRANT_TYPE: ReadonlySet<string> = new Set<PluginGrantType>([
+  'once',
+  'window',
+  'standing',
+]);
 
 /** Versioned constraint object (§8). v1 vocabulary. */
 export interface PluginGrantConstraints {
@@ -56,6 +66,11 @@ export interface PluginGrantConstraints {
 export const CONSTRAINT_CEILINGS = Object.freeze({
   MAX_COUNT_CEILING: 1000,
   MAX_VALUE_CEILING: 1_000_000_000_000, // 1e12; tunable, §21
+  // Round-16 #12: the resources allowlist is a per-authorization linear scan +
+  // stored blob. Bound the token count + per-token length so a huge list can't
+  // slow every authorization or bloat the row.
+  MAX_RESOURCE_TOKENS: 64,
+  MAX_RESOURCE_TOKEN_LEN: 256,
 } as const);
 
 /** Round-9 #1/#12: the longest a standing/window grant's expiry may sit in
@@ -228,7 +243,30 @@ export function parseConstraints(raw: unknown): PluginGrantConstraints | null {
   }
   if (
     c.resources !== undefined &&
-    (!Array.isArray(c.resources) || c.resources.some((r) => typeof r !== 'string' || r === ''))
+    // Round-16 #12: require a NON-EMPTY, DEDUPED, bounded token set. An empty
+    // array satisfies hasMeaningfulConstraint (counts as "bounded") yet
+    // authorizes nothing (`[].includes(x)` is always false) — theater, not a
+    // bound; and an unbounded list makes every authorization a linear scan.
+    // Consistent with the §8 "unenforceable = must not exist" stance on
+    // max_count / max_value ceilings.
+    (!Array.isArray(c.resources) ||
+      c.resources.length === 0 ||
+      c.resources.length > CONSTRAINT_CEILINGS.MAX_RESOURCE_TOKENS ||
+      c.resources.some(
+        (r) =>
+          typeof r !== 'string' ||
+          // PLG-27 #15: resource tokens are BOTH authorization inputs
+          // (`constraints.resources.includes(args.resource)`) AND owner-visible
+          // constraints, so they need the same canonical-token contract as
+          // manifest identifiers: reject whitespace-only (renders blank; `r.trim()
+          // === ''` also covers the old `=== ''`) and control/bidi/zero-width
+          // spoofing chars (space 0x20 passes hasUnsafeText, so both checks are
+          // needed).
+          r.trim() === '' ||
+          r.length > CONSTRAINT_CEILINGS.MAX_RESOURCE_TOKEN_LEN ||
+          hasUnsafeText(r),
+      ) ||
+      new Set(c.resources).size !== c.resources.length)
   ) {
     return null;
   }
@@ -305,7 +343,11 @@ function rowToGrant(r: DBRow): PluginGrant {
   // fail-closed state (it will never authorize). Empty string included:
   // a legitimately-unconstrained grant stores NULL, never ''.
   const hasStoredConstraints = r.constraints_json !== null && r.constraints_json !== undefined;
-  const constraintsCorrupt = hasStoredConstraints && constraints === null;
+  // Round-15 #10: an unknown grant_type is a fail-closed state — treat it as
+  // corrupt so claim-guard check 7 (which honors constraintsCorrupt) refuses it,
+  // rather than the projection defaulting it into window/standing behaviour.
+  const grantTypeValid = VALID_GRANT_TYPE.has(String(r.grant_type));
+  const constraintsCorrupt = (hasStoredConstraints && constraints === null) || !grantTypeValid;
   // Round-14 #9: revoked_at / expires_at feed claim_guard's live/dead predicate
   // (`revokedAt === undefined` → live; `expiresAt === undefined` → never
   // expires), so coerce defensively rather than trusting the JS type. A value
@@ -498,6 +540,15 @@ export class SQLitePluginGrantRepository implements PluginGrantRepository {
         }
         const grantId = String(row.grant_id);
         const grantType = String(row.grant_type);
+        // Round-15 #10: an unknown grant_type (schema drift / out-of-app write)
+        // would fall through both the 'once' single-use check and the
+        // constraints block and authorize EVERY invocation like an unlimited
+        // standing grant. Fail closed — a grant we can't classify never
+        // authorizes. (The DB CHECK is the primary guard; this is the backstop.)
+        if (!VALID_GRANT_TYPE.has(grantType)) {
+          denial = 'constraints_unparseable';
+          continue;
+        }
 
         // Idempotent re-authorization FIRST: the SAME execution_id
         // re-authorizes without a second consume (§8: lease-recovery

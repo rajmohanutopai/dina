@@ -19,6 +19,10 @@ import {
   isDevice,
 } from '../../../src/auth/caller_type';
 import { signRequest } from '../../../src/auth/canonical';
+import {
+  InMemoryAgentGrantRepository,
+  setAgentGrantRepository,
+} from '../../../src/agent/grant_repository';
 import { registerPublicKeyResolver, resetMiddlewareState } from '../../../src/auth/middleware';
 import { getPublicKey } from '../../../src/crypto/ed25519';
 import { resetDeviceRegistry, getDeviceByDID } from '../../../src/devices/registry';
@@ -108,6 +112,21 @@ beforeEach(() => {
     return device?.role ?? null;
   });
 
+  // Round-15 #4: persistDeviceDurable now FAILS CLOSED when no durable repo is
+  // wired (a null repo is not "durable"). Wire a working in-memory repo so the
+  // happy-path 201s reflect a genuine durable write; error-injection cases below
+  // override this with a throwing repo to exercise the 503 + rollback path.
+  const okRepo: DeviceRepository = {
+    register: async () => undefined,
+    get: async () => null,
+    getByPublicKey: async () => null,
+    getByDID: async () => null,
+    list: async () => [] as PairedDevice[],
+    revoke: async () => false,
+    touch: async () => undefined,
+  };
+  setDeviceRepository(okRepo);
+
   setNodeDID(NODE_DID);
   router = createCoreRouter();
 });
@@ -169,6 +188,27 @@ describe('POST /v1/pair/complete — public, code-authenticated', () => {
       }),
     );
     expect(resp.status).toBe(201);
+  });
+
+  it('round-15 #4: with NO durable repo wired, complete fails closed with 503 (not a false 201)', async () => {
+    setDeviceRepository(null); // simulate a partial/misconfigured boot
+    const origErr = console.error;
+    console.error = (): void => {
+      /* silence the sanctioned server-side diag log */
+    };
+    try {
+      const { code } = await initiate();
+      const agent = makeActor();
+      const resp = await router.handle(
+        unsignedReq('POST', '/v1/pair/complete', {
+          code,
+          public_key: publicKeyToMultibase(agent.pub),
+        }),
+      );
+      expect(resp.status).toBe(503); // persistDeviceDurable threw → not a false success
+    } finally {
+      console.error = origErr;
+    }
   });
 
   it('registers the agent and promotes its DID to callerType="agent"', async () => {
@@ -339,6 +379,108 @@ describe('POST /v1/pair/complete — public, code-authenticated', () => {
       // Rolled back: the DID is no longer a paired device and cannot authenticate.
       expect(isDevice(actor.did)).toBe(false);
       expect(resolveCallerType(actor.did).callerType).toBe('unknown');
+    } finally {
+      setDeviceRepository(null);
+      console.error = origErr;
+    }
+  });
+
+  // PLG-27 #2: the round-16 #3 restore is now GATED on a CONFIRMED durable
+  // rollback. `revokeDeviceDurable` fails closed to `durable:false` (it never
+  // throws for a persistence failure), and the same fault that failed persist can
+  // leave a device row written-but-unrevoked — restoring the code unconditionally
+  // would then let a SECOND device pair with it while the first stays trusted in
+  // SQL. So the code is restored ONLY when the rollback durably lands; otherwise
+  // it is burned and the user re-initiates pairing (access is cut in-memory
+  // regardless).
+  const okRepo: DeviceRepository = {
+    register: async () => undefined,
+    get: async () => null,
+    getByPublicKey: async () => null,
+    getByDID: async () => null,
+    list: async () => [] as PairedDevice[],
+    revoke: async () => false,
+    touch: async () => undefined,
+  };
+  function makeThrowingRepo(revokeResult: boolean): DeviceRepository {
+    return {
+      register: () => Promise.reject(new Error('transient disk error')),
+      get: async () => null,
+      getByPublicKey: async () => null,
+      getByDID: async () => null,
+      list: async () => [] as PairedDevice[],
+      revoke: async () => revokeResult,
+      touch: async () => undefined,
+    };
+  }
+
+  it('PLG-27 #2: a 503 with a CONFIRMED durable rollback restores the code — retry with the same code succeeds', async () => {
+    const origErr = console.error;
+    console.error = (): void => {
+      /* silence the sanctioned server-side diag log */
+    };
+    // An agent-grant repo must be wired for the revoke's agent-grant cascade to
+    // report success — otherwise `revokeDeviceDurable` downgrades `durable` to
+    // false regardless of the SQL revoke, and the confirmed-durable path is
+    // unreachable (production always wires this repo).
+    setAgentGrantRepository(new InMemoryAgentGrantRepository());
+    try {
+      const { code } = await initiate('openclaw-user', 'agent');
+      const actor = makeActor();
+      // First attempt: persist throws, BUT the durable rollback revoke SUCCEEDS
+      // (revoke → true) → the rollback is confirmed durable → the code is safe to
+      // restore, so a retry with the SAME code + a working repo succeeds.
+      setDeviceRepository(makeThrowingRepo(true));
+      const first = await router.handle(
+        unsignedReq('POST', '/v1/pair/complete', {
+          code,
+          public_key: publicKeyToMultibase(actor.pub),
+        }),
+      );
+      expect(first.status).toBe(503);
+      setDeviceRepository(okRepo);
+      const retry = await router.handle(
+        unsignedReq('POST', '/v1/pair/complete', {
+          code,
+          public_key: publicKeyToMultibase(actor.pub),
+        }),
+      );
+      expect(retry.status).toBe(201);
+    } finally {
+      setDeviceRepository(null);
+      setAgentGrantRepository(null);
+      console.error = origErr;
+    }
+  });
+
+  it('PLG-27 #2: a 503 whose rollback is NOT durable BURNS the code — retry with the same code is refused (fail-closed)', async () => {
+    const origErr = console.error;
+    console.error = (): void => {
+      /* silence the sanctioned server-side diag log */
+    };
+    try {
+      const { code } = await initiate('openclaw-user', 'agent');
+      const actor = makeActor();
+      // First attempt: persist throws AND the durable rollback revoke FAILS
+      // (revoke → false, durable:false) → the code must be burned, not restored.
+      setDeviceRepository(makeThrowingRepo(false));
+      const first = await router.handle(
+        unsignedReq('POST', '/v1/pair/complete', {
+          code,
+          public_key: publicKeyToMultibase(actor.pub),
+        }),
+      );
+      expect(first.status).toBe(503);
+      // A retry with the SAME code is refused — the code was consumed and not
+      // restored, so the user must start a fresh pairing.
+      setDeviceRepository(okRepo);
+      const retry = await router.handle(
+        unsignedReq('POST', '/v1/pair/complete', {
+          code,
+          public_key: publicKeyToMultibase(actor.pub),
+        }),
+      );
+      expect(retry.status).not.toBe(201);
     } finally {
       setDeviceRepository(null);
       console.error = origErr;

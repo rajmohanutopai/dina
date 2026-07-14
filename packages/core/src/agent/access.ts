@@ -164,7 +164,12 @@ export function requireAgentPersonaAccess(
     return { kind: 'denied', reason: 'approval subsystem unavailable' };
   }
 
-  const idemKey = idemKeyFor(params.agentDID, params.persona, params.mode, params.sessionId ?? null);
+  const idemKey = idemKeyFor(
+    params.agentDID,
+    params.persona,
+    params.mode,
+    params.sessionId ?? null,
+  );
   const existing = service.store().getActiveByIdempotencyKey(idemKey);
   if (existing !== null) return { kind: 'approval_required', taskId: existing.id };
 
@@ -209,15 +214,20 @@ export function isAgentPersonaAccessApproval(task: WorkflowTask | null): boolean
 }
 
 /**
- * Write the durable grant when an agent persona-access approval is
- * approved. Returns the grant, or `null` when the task isn't an agent
- * persona-access approval / no grant repo is installed (fail-closed:
- * the agent simply stays blocked).
+ * PLG-28 #1 — phase 1 of 2: RESERVE the durable grant for an approved agent
+ * persona-access task. The grant is inserted `active: false`, so it is durably
+ * persisted (its absence would mean a missing/failing repo → return null → the
+ * approve route refuses to commit, preserving PLG-26 #1) but NOT yet visible to
+ * `findActiveGrant`. Crucially there is NO awaited unlock here, so the reserve →
+ * approve span carries no event-loop yield an agent retry could exploit.
+ *
+ * Returns the reserved grant, or `null` when the task isn't an agent
+ * persona-access approval / no grant repo is installed (fail-closed).
  */
-export async function grantAgentPersonaAccessFromApproval(
+export function reserveAgentPersonaGrant(
   task: WorkflowTask,
   now?: number,
-): Promise<AgentPersonaGrant | null> {
+): AgentPersonaGrant | null {
   if (!isAgentPersonaAccessApproval(task)) return null;
   const grantRepo = getAgentGrantRepository();
   if (grantRepo === null) return null;
@@ -241,6 +251,7 @@ export async function grantAgentPersonaAccessFromApproval(
     approvalTaskId: task.id,
     expiresAt: t + DEFAULT_GRANT_TTL_MS,
     createdAt: t,
+    active: false, // reserved — invisible to the gate until activated
   });
   appendAudit(
     payload.agent_did,
@@ -248,21 +259,43 @@ export async function grantAgentPersonaAccessFromApproval(
     payload.persona,
     `mode=${payload.mode} grant=${g.id} task=${task.id}`,
   );
+  return g;
+}
 
-  // Approving also UNLOCKS the persona (issues.txt §2): a locked/sensitive
-  // persona's DEK may not be resident, so without this the agent's retry
-  // would pass the gate but fail to decrypt. AWAITED (not fire-and-forget)
-  // so the DEK is resident before this resolves — and the approve route
-  // awaits us — closing the race where the agent retries mid-unlock.
-  // Best-effort: an unlock failure doesn't undo the grant (the owner can
-  // open the persona manually), it just isn't guaranteed-resident yet.
+/**
+ * PLG-28 #1 — phase 2 of 2: AWAIT the persona unlock (issues.txt §2: the DEK may
+ * not be resident for a locked/sensitive persona), then flip the reserved grant
+ * ACTIVE so `findActiveGrant` sees it. Called AFTER the approval CAS commits, so
+ * the grant only becomes gate-visible once the task is truly approved. Unlock is
+ * best-effort (a failure doesn't block activation — the owner can open the
+ * persona manually); activation runs regardless.
+ */
+export async function activateAgentPersonaGrant(
+  grant: AgentPersonaGrant,
+  _now?: number,
+): Promise<void> {
   if (personaUnlockHook !== null) {
     try {
-      await personaUnlockHook(payload.persona);
+      await personaUnlockHook(grant.persona);
     } catch {
-      /* best-effort unlock — grant still stands */
+      /* best-effort unlock — grant still activates */
     }
   }
+  getAgentGrantRepository()?.activate(grant.id);
+}
 
-  return g;
+/**
+ * Convenience: reserve → activate (+ unlock) in one call. Used by tests and any
+ * caller that does NOT interleave an approval CAS between the phases. The
+ * workflow approve route uses the two phases DIRECTLY (reserve → approve →
+ * activate) so a reserved grant is never gate-visible for an unapproved task.
+ */
+export async function grantAgentPersonaAccessFromApproval(
+  task: WorkflowTask,
+  now?: number,
+): Promise<AgentPersonaGrant | null> {
+  const grant = reserveAgentPersonaGrant(task, now);
+  if (grant === null) return null;
+  await activateAgentPersonaGrant(grant, now);
+  return grant;
 }

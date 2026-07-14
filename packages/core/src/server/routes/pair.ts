@@ -26,7 +26,12 @@ import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { persistDeviceDurable, revokeDeviceDurable } from '../../devices/registry';
-import { generatePairingCode, completePairing, getPairingIntent } from '../../pairing/ceremony';
+import {
+  generatePairingCode,
+  completePairing,
+  getPairingIntent,
+  restorePairingCode,
+} from '../../pairing/ceremony';
 
 import type { DeviceRole } from '../../devices/registry';
 import type { CoreRouter } from '../router';
@@ -187,10 +192,27 @@ export function registerPairRoutes(router: CoreRouter): void {
         // `revokeDevice` fire-and-forgot its SQL revoke, so a partial persist
         // could leave an active row behind. `revokeDeviceDurable` cuts in-memory
         // + auth access synchronously first, then awaits the SQL revoke.
+        // PLG-27 #2: only restore the single-use code once the rollback is
+        // CONFIRMED DURABLE. `revokeDeviceDurable` fails closed to `durable:false`
+        // on a SQL fault (it never throws for a persistence failure), and the
+        // same fault that failed `persistDeviceDurable` above can leave the
+        // device row written but un-revoked. Restoring the code unconditionally
+        // then lets a SECOND device pair with it while the first stays active in
+        // SQL (rehydrated as trusted on restart) — a double-grant. So: restore
+        // the code only when the rollback durably landed; otherwise burn it and
+        // the user restarts pairing (device access is cut in-memory either way).
+        let rolledBackDurably = false;
         try {
-          await revokeDeviceDurable(result.deviceId);
+          rolledBackDurably = (await revokeDeviceDurable(result.deviceId)).durable;
         } catch {
-          /* best-effort rollback — the 503 already reflects failure */
+          rolledBackDurably = false; // best-effort — the 503 already reflects failure
+        }
+        // Round-16 #3: a durable-persistence failure is a retryable SERVER error,
+        // not a code guess — restore the single-use code so the user can retry
+        // the same code instead of restarting pairing (only when the device was
+        // durably rolled back, so this can't resurrect authority — PLG-27 #2).
+        if (rolledBackDurably) {
+          restorePairingCode(code);
         }
         return {
           status: 503,

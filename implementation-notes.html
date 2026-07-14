@@ -1489,5 +1489,382 @@ install_service (attestation-brand + malformed-anchor), and Brain (<code>created
 dist rebuilt (new <code>text_safety</code> module + verifier/validator changes). Workspace typecheck clean; changed source files
 lint-clean; all changed files prettier-clean. <em>No schema migration</em> (pre-launch) and <em>no commits</em> (working hours).</p>
 
+<h2>PLG-25 &mdash; fifteenth adversarial review (20 findings): 19 fixed, 1 scoped <span class="status done">DONE (19 fixed)</span></h2>
+<p>Five read-only sub-agents verified all 20 findings against the real code &mdash; <strong>every one was ACCURATE</strong>
+(#9/#10 severity-softened to P3: real code gaps but backstopped by an <code>INTEGER NOT NULL</code> column / a DB <code>CHECK</code>).
+Two of these findings sit on the <em>wired</em> device/pairing + owner-approval paths (not the dormant plugin dispatch producer):
+the theme this round is fail-CLOSED ordering &mdash; grant/write only after the state transition + CAS win &mdash; and defensive
+coercion of every value that decides authority or liveness.</p>
+<h3>Fixed (19)</h3>
+<ul>
+<li><strong>#1 (P1) session authority before commit</strong> &mdash; the <code>/approve</code> handler wrote the session-wide
+intent / vault-read grant BEFORE <code>service.approve()</code>. A stale re-approve (cancelled/expired task) returned 409 while
+leaving the grant active &mdash; silently reversing a denial. Grants are now written ONLY after a successful approve.</li>
+<li><strong>#2 (P1) staged data before winning the transition</strong> &mdash; <code>drainForApproval()</code> wrote into the
+protected persona vault BEFORE the approve + single-executor CAS. Reordered to approve &rarr; claim CAS &rarr; drain, so a lost
+transition/CAS writes nothing (persona-wall integrity).</li>
+<li><strong>#3 (P2) atomic approve event</strong> &mdash; new <code>approveWithEvent</code> repo method wraps the state
+transition + the <code>approved</code> event in ONE transaction (both stores), replacing the two-op service compose that could
+strand a queued approval with no event on a crash.</li>
+<li><strong>#4 (P2) &ldquo;durable&rdquo; device persistence w/o a repo</strong> &mdash; <code>persistDeviceDurable</code> silently
+resolved when the repo was null, letting both registration routes return 201 for an in-memory-only device. It now fails CLOSED
+(throws &rarr; 503 + rollback); the pairing tests were updated to wire a durable repo.</li>
+<li><strong>#5 (P2) callback-free uninstall left card work claimable</strong> &mdash; PLG-24 paused the install only on the
+callback path; the <code>installs.pause()</code> is hoisted above the callback-FREE early return so a card-backed task can't ride
+the still-<code>active</code> lane before the device is separately revoked.</li>
+<li><strong>#6 (P2) pairing code burned before validation</strong> &mdash; <code>completePairing</code> marked the single-use code
+used BEFORE decoding the key / registering the device; a malformed key permanently killed a legitimate code. The consume now
+happens only after registration succeeds.</li>
+<li><strong>#7 (P2) unknown envelope fields bypassed inspection</strong> &mdash; <code>parsePluginEnvelope</code> now fails closed
+on ANY unknown top-level key (allowlist), so a faulty producer can't smuggle unbounded/sensitive data in a field the claim guard
+doesn't inspect straight to the runner.</li>
+<li><strong>#8 (P2) non-canonical revoked hydrates active</strong> &mdash; <code>rowToDevice</code> projected <code>revoked</code>
+via <code>=== 1</code>, so <code>2</code>/<code>-1</code>/text read <code>revoked:false</code> and boot re-registered that auth
+identity. Now <code>!== 0</code> (fail closed) + a <code>CHECK (revoked IN (0,1))</code> at the storage layer.</li>
+<li><strong>#9 (P3) corrupt invocation counter</strong> &mdash; <code>getInvocationCount</code> returned an unchecked
+<code>Number(...)</code>; a NaN would make the gatekeeper skip the mandatory first-N card. Coerced to 0 (fail closed toward
+carding) for a non-integer/negative value.</li>
+<li><strong>#10 (P3) unknown grant_type = reusable grant</strong> &mdash; an unknown <code>grant_type</code> fell through the
+<code>'once'</code> single-use check and authorized every invocation. <code>authorizeAndConsume</code> + <code>rowToGrant</code>
+now quarantine it (VALID_GRANT_TYPE); the DB <code>CHECK</code> is the primary guard.</li>
+<li><strong>#11 (P2) hosted_endpoint credentials/spoof</strong> &mdash; the endpoint check accepted
+<code>https://user:pass@host</code> and control/bidi chars; it now reuses <code>isSafeHttpUrl</code> (AND https-only), matching
+homepage/source_url.</li>
+<li><strong>#12 (P2) runtime issuer unvalidated</strong> &mdash; the instance-cert signer required only two strings; it now needs a
+<code>did:</code>-prefixed, &le;256-char, spoofing-char-free DID + a bounded clean key (the display-safety floor; full multibase/
+DID-doc validity stays verifier-time).</li>
+<li><strong>#14 (P2) builder can construct what its parser rejects</strong> &mdash; <code>buildPluginEnvelope</code> now throws at
+BUILD when <code>kind:'grant'</code> omits <code>grantId</code>, instead of emitting a task that silently terminalizes at claim.</li>
+<li><strong>#15 (P2) corrupt retry metadata resets the budget</strong> &mdash; a non-finite/negative/fractional
+<code>attempt</code> made lease-loss substitute 0 and grant fresh retries; it's now coerced fail-closed (treated as
+budget-exhausted) so an effectful task fails closed on corrupt metadata.</li>
+<li><strong>#16 (P3) stale pending-update state on restore</strong> &mdash; the archive export + import transforms now null
+<code>pending_cid</code>/<code>pending_behavior_hash</code>/<code>pending_decision</code>/<code>pending_expires_at</code> so a
+restored install can't present/apply a pre-backup update decision.</li>
+<li><strong>#17 (P3) forged decision history via archive</strong> &mdash; <code>plugin_decisions</code> imported verbatim from the
+attacker-influenced archive; import now drops rows whose <code>decision</code> isn't a known kind, and <code>rowToDecision</code>
+fails closed on the read too (one shared <code>VALID_PLUGIN_DECISION_KINDS</code> source of truth). Install-linkage is deliberately
+NOT enforced (the log survives install removal).</li>
+<li><strong>#18 (P3) non-canonical AT URI parse</strong> &mdash; <code>parseAtUri</code> rejects query/fragment/whitespace/encoded
+separators, so the identity-pointer checker can't disagree with a canonicalizing repo fetch.</li>
+<li><strong>#19 (P3) char-based evidence cap</strong> &mdash; the 4&nbsp;KB evidence cap measured JS string length; a shared
+<code>capEvidence</code> now bounds by UTF-8 BYTES (astral-safe) across all four sites (both stores).</li>
+<li><strong>#20 (P3) wrong lifecycle decision on device revoke</strong> &mdash; a PENDING install removed during device revocation
+was logged as <code>paused</code>; it now records <code>uninstalled</code> (branch-accurate audit).</li>
+</ul>
+<h3>Scoped (1)</h3>
+<ul>
+<li><strong>#13</strong> cross-consumer event claim &mdash; the <code>delivering_until</code> column exists but is inert; a real
+lease (TTL + crash-recovery semantics) is a multi-consumer-deployment design change, and delivery is single-consumer-per-vault
+today. Deferred as a design decision, not a P0 local patch.</li>
+</ul>
+<h3>Validation</h3>
+<p>Protocol <strong>667 green</strong>; full core suite <strong>269 suites / 5122 tests green</strong> (in-band); Brain
+<strong>181 suites / 3465 tests green</strong> &mdash; 17 of the 19 fixes carry dedicated regression tests across protocol
+(URL/issuer/AT-URI), plugin_envelope (unknown-key allowlist), dispatch (grant-id coherence), registry (invocation fail-closed),
+devices repository (revoked CHECK + coercion), ceremony (code-not-consumed), install_service (uninstall pause), pair route +
+pair&rarr;claim e2e (durable-repo 503), workflow service (atomic approve) + repository (capEvidence bytes), approval-authz (stale
+approve 409), archive (pending-state strip + forged-decision drop), and revoke-durable (pending&rarr;uninstalled decision).
+<strong>#10</strong> (grant_type, CHECK-guarded) and <strong>#15</strong> (attempt, a Core-owned column reachable only via
+DB-tamper) are cross-adapter / tamper-vector backstops documented rather than reachable in the Node test path. <code>@dina/protocol</code>
+dist rebuilt. Two device/pairing e2e suites were updated to wire a durable device repo (the #4 fail-closed change surfaced their
+reliance on the silent no-op). Workspace typecheck clean; changed source files lint-clean (pre-existing <code>ceremony.ts</code>
+import/assertion debt untouched); all changed files prettier-clean. <em>No new migration</em> (pre-launch, schema edited in place)
+and <em>no commits</em> (working hours).</p>
+
+<h2>PLG-26 &mdash; sixteenth adversarial review (20 findings): 17 fixed, 3 scoped <span class="status done">DONE (17 fixed)</span></h2>
+<p>Five read-only sub-agents verified all 20 findings &mdash; <strong>every one ACCURATE</strong> (a few severity-softened:
+#2 is inert, #5 already-mitigated). No new privilege bypass; the themes are transactional consistency, cancellation semantics,
+and protocol contracts that accept data the runtime can't enforce. Several REFINE the PLG-25 pass (#11 tightens the
+<code>capEvidence</code> byte cap; #19 completes the archive-decision row validation PLG-25 started on the enum; #20 continues the
+envelope-provenance coherence thread).</p>
+<h3>Fixed (17)</h3>
+<ul>
+<li><strong>#1 (P2) durable grant before approve</strong> &mdash; the agent persona-access <code>/approve</code> now writes the
+DURABLE grant BEFORE the state transition. A missing grant repo / insert failure previously left the task <code>queued</code> with
+no authority (a false success the owner could never re-approve). Writing first means a failure throws while the task is still
+<code>pending_approval</code> (retry works); it fails CLOSED on a missing repo.</li>
+<li><strong>#3 (P2) pairing code restore</strong> &mdash; a durable-persistence 503 now calls a new
+<code>restorePairingCode</code> in the rollback branch, so a TRANSIENT server error no longer permanently burns a legitimate
+single-use code (device already rolled back, so no authority resurrects).</li>
+<li><strong>#4 (P2) escalate manual pause on uninstall</strong> &mdash; <code>uninstall</code>'s <code>pause()</code> only touches
+active rows, so an already-<code>manual</code>-paused install kept <code>pause_reason: 'manual'</code> (which <code>resume()</code>
+permits) on a retained teardown anchor. Now escalates to <code>device_revoked</code>, mirroring the device-revoke cascade.</li>
+<li><strong>#6 (P2) plugin result byte/depth bound</strong> &mdash; <code>validatePluginResult</code> now bounds the result depth
+(&le; 12) + bytes (&le; 64 KB) REGARDLESS of a pinned schema. The inbound params/context were already capped; a null-schema result
+on the in-process/mobile path (no HTTP body limit) was persisted verbatim &mdash; nonconforming = task failure now.</li>
+<li><strong>#8 (P3) interpreted state typeof</strong> &mdash; machine <code>states</code> elements must be non-empty strings;
+a numeric state passed the by-value <code>stateSet.has</code> integrity checks (port-divergence / behavior-hash instability).</li>
+<li><strong>#9 (P3) move-schema enforceability</strong> &mdash; move schemas now run the same F4 enforceability meta-schema as
+params/result, so a move can't consent to an unenforced keyword (<code>pattern</code>/<code>const</code>/tuple items).</li>
+<li><strong>#10 (P3) interpreted timeout ceilings</strong> &mdash; <code>move_sec</code> / <code>session_ttl_sec</code> gain
+upper bounds (7d / 14d, below the int32-ms overflow threshold) so <code>MAX_SAFE_INTEGER</code> can't create a permanent
+session. (#8/#9/#10 are interpreted-only pre-freeze hardening &mdash; interpreted installs are hard-blocked in P0.)</li>
+<li><strong>#11 (P3) evidence marker budget</strong> &mdash; <code>capEvidence</code> reserves the truncation marker's bytes so
+the FULL string honors the 4096-byte cap (was overrunning by the marker's ~14 bytes). Refines the PLG-25 #19 fix.</li>
+<li><strong>#12 (P3) resources constraint</strong> &mdash; a grant's <code>resources</code> must be a non-empty, deduped,
+bounded (&le; 64 tokens &times; &le; 256 chars) allowlist. An empty array counted as a "bound" yet authorized nothing (theater),
+and an unbounded list made every authorization a linear scan.</li>
+<li><strong>#13 (P2/P3) enum member cap</strong> &mdash; JSON-Schema <code>enum</code> is capped at 100 members. This one touches
+SHIPPED runner code (params/result run today); the pinned runtime deep-equal-scans every member per invocation.</li>
+<li><strong>#14 (P3) data-scope list caps</strong> &mdash; <code>data_scope.categories</code>/<code>.personas</code> gain
+count (&le; 32) + per-entry length (&le; 64) bounds (previously type + spoof-char only).</li>
+<li><strong>#15 (P3) required_features bounds</strong> &mdash; count/length caps + <code>hasUnsafeText</code> (the tokens are
+joined into an owner-facing compatibility error). Dedup was already enforced by the normalization check.</li>
+<li><strong>#16 (P3) schema name/annotation sanitize</strong> &mdash; JSON-Schema property NAMES + annotation strings
+(<code>title</code>/<code>description</code>) get length + <code>hasUnsafeText</code> checks &mdash; a bidi/zero-width property
+name can spoof a consent-form field (<code>amount</code>/<code>recipient</code>).</li>
+<li><strong>#17 (P3) diagnostic cap</strong> &mdash; the validator's error accumulator stops at 200 with a
+<code>diagnostics_truncated</code> sentinel, so a maximally-malformed manifest can't amplify into a diagnostic structure far
+larger than the 256 KB input.</li>
+<li><strong>#18 (P3) icon floor</strong> &mdash; the AppView-independent validator now applies a shape/size floor to <code>icon</code>
+(&le; 1 KB serialized, no spoofing chars in a string icon), instead of leaving it <code>unknown</code>/unvalidated.</li>
+<li><strong>#19 (P3) archive decision full-row</strong> &mdash; the <code>plugin_decisions</code> import now validates the WHOLE
+row (bounded install_id/capability/reason + <code>hasUnsafeText</code> + non-negative integer <code>created_at</code>), not just
+the enum, dropping fabricated/malformed owner-facing audit rows. Referential linkage stays UNenforced (the log outlives its install
+&mdash; no FK). <code>hasUnsafeText</code> is now exported from <code>@dina/protocol</code> as the shared spoof-char primitive.</li>
+<li><strong>#20 (P3) card+grant coherence</strong> &mdash; <code>parsePluginEnvelope</code> now rejects the REVERSE incoherence
+too: a <code>card</code>/absent envelope carrying <code>grant_id</code>/<code>invocation_digest</code> is quarantined (the claim
+guard only validates those under <code>kind:'grant'</code>, so on a card they're unverifiable forged/ambiguous provenance).</li>
+</ul>
+<h3>Scoped (3)</h3>
+<ul>
+<li><strong>#2</strong> create + <code>created</code>-event atomicity &mdash; technically two ops, but the <code>created</code> event
+is INERT (the Brain consumer ack-skips it, PLG-24 #3), the task row is durable, and idempotency dedups a retry &mdash; nil
+functional impact, so a dual-store <code>createWithEvent</code> isn't worth the surface.</li>
+<li><strong>#5</strong> durable cancelling state for <code>declineConsent</code> &mdash; the pending-only entry guard + the
+post-<code>await</code> raw-status re-probe already prevent the authority-crossing interleave (the residual is a fail-closed dead
+lane); a new state-machine status is a design change disproportionate to the fail-closed residual.</li>
+<li><strong>#7</strong> decision-receipt provenance expansion (release CID / config revision / execution id / payload hash) &mdash;
+a schema migration + per-writer wiring that needs the unshipped P0 dispatch producer; genuinely producer-time.</li>
+</ul>
+<h3>Validation</h3>
+<p>Protocol <strong>676 green</strong> (added the round-16 validator suite: state typeof / move-schema / timeout / enum / data-scope
+/ required_features / schema-name-spoof / diagnostic cap / icon); full core suite <strong>269 suites / 5130 tests green</strong>
+(in-band); Brain <strong>181 suites / 3465 tests green</strong>. All 17 fixes carry dedicated regression tests across protocol
+(9 cases), plugin_envelope (card+grant), dispatch (result bound), registry (resources), install_service (manual-pause escalation),
+workflow/repository (capEvidence full-string), approval-authz (missing-repo fail-closed), pair route (503 restores code), and
+archive (full decision-row validation). The golden Battleship fixture's async-game timeouts (1d move / 7d session) informed the
+#10 ceilings (7d / 14d). <code>@dina/protocol</code> dist rebuilt (new <code>hasUnsafeText</code> export + validator changes).
+Workspace typecheck clean; changed source lint-clean (pre-existing <code>ceremony.ts</code> import/assertion debt untouched &mdash;
+my edit only added a function); all changed files prettier-clean. <em>No new migration</em> (pre-launch) and <em>no commits</em>
+(working hours).</p>
+
+<h2>PLG-27 &mdash; seventeenth adversarial review (19 findings): 18 fixed, 1 scoped <span class="status done">DONE (18 fixed)</span></h2>
+<p>Five read-only sub-agents verified all 19 findings &mdash; <strong>every one ACCURATE or PARTIALLY accurate</strong>. The
+headline is <strong>#7</strong>: the review filed it P2, but it is a <strong>P1 totality/crash</strong> &mdash; the shared manifest
+validator (which runs on the untrusted AppView ingest path AND on-node install) called <code>.toLowerCase()</code> on a
+capability id AFTER recording it wasn't a string, so a capability that merely omits <code>id</code> (or gives it a number/null)
+threw an uncaught <code>TypeError</code>, violating the validator's fail-closed-RESULT contract. Many other findings REFINE the
+PLG-25/26 passes (trim-vs-<code>=== ''</code>, grant-token / decision-row / archive-id contracts, result-limit ordering, pairing
+restore, pending-uninstall). The only unwired-seam item (#3) is scoped to producer-time with a CI guard added now.</p>
+<h3>Fixed (18)</h3>
+<ul>
+<li><strong>#7 (P1, escalated) validator crash on non-string capability id</strong> &mdash; <code>canon(cap.id)</code> now guards
+<code>typeof cap.id === 'string'</code> (fail-closed to an empty canon); a numeric/null/omitted id is a validation RESULT, never
+a throw. The sibling <code>categories</code> path already had this fail-closed shape &mdash; the id argument to the same block was
+left unguarded. Untrusted-input crash on the ingest boundary, one-line fix.</li>
+<li><strong>#1 (P1&rarr;P2) compensating grant revoke on failed approve</strong> &mdash; the agent persona-access
+<code>/approve</code> writes the durable grant BEFORE <code>service.approve</code> (PLG-26 #1). If the transition then FAILS (a
+racing <code>/cancel</code> during the awaited unlock, or a transition-write error), the just-created grant is now REVOKED in a
+<code>catch</code> before rethrow &mdash; a denial can no longer leave an active grant. Both agent-grant stores expose
+<code>revoke</code>, so the fix is dual-store-parity clean.</li>
+<li><strong>#2 (P2) pairing restore only on CONFIRMED durable rollback</strong> &mdash; the 503 rollback branch now restores the
+single-use code ONLY when <code>revokeDeviceDurable().durable</code> is true; otherwise it BURNS the code. The same fault that
+failed <code>persistDeviceDurable</code> can leave a device row written-but-unrevoked, so an unconditional restore (PLG-26 #3)
+could let a SECOND device pair while the first rehydrates as trusted on restart &mdash; a double-grant. Fail-closed: the user
+re-initiates pairing.</li>
+<li><strong>#4 (P2) pending-install tombstone on uninstall</strong> &mdash; <code>pause()</code> (active-only) and
+<code>escalatePauseReason()</code> (paused-only) both no-op on a PENDING install, so a pending install with a device that
+fails/lacks durable revocation stayed <code>pending</code> and <code>confirmConsent&rarr;activate</code> could still bring it live
+AFTER uninstall. New single-store <code>markRevoked</code> flips <code>pending&rarr;revoked</code> (scoped to pending, reusing the
+already-declared status) so activate/resume refuse it; the raw-status probe + <code>remove</code> still fire.</li>
+<li><strong>#9 (P3) teardown closes the claim lane FIRST</strong> &mdash; <code>uninstall</code> now pauses/tombstones the install
+BEFORE <code>terminateInstallInFlight</code> + <code>revokeAllForInstall</code>. A strict no-op under today's single synchronous
+Core (no <code>await</code> separates the calls), but under multiple Core workers a card-backed lane could be claimed in the
+window between terminate and pause. Combined with #4 so "close the lane" covers pending as well as active.</li>
+<li><strong>#5 (P2) result byte-gate BEFORE parse</strong> &mdash; <code>validatePluginResult</code> now checks the raw UTF-8 byte
+size before <code>JSON.parse</code>. On the in-process/mobile path (no HTTP body limit) an oversized result was fully materialized
+into an object graph before any limit could reject it; the byte gate now short-circuits so parse never runs on an over-cap string.
+(The depth check was already bounded &mdash; <code>exceedsDepth</code> short-circuits at the cap.)</li>
+<li><strong>#6 (P2) deterministic staging-drain vault id</strong> &mdash; <code>drainForApproval</code> now pins an id-less
+classified item to a DETERMINISTIC <code>stg-&lt;stagingId&gt;</code> before storing. Previously <code>storeItem</code> minted a
+fresh RANDOM id per drain, so a crash after the vault write but before the status persist let a recovery re-drive DUPLICATE the
+vault row. A stable id makes <code>storeItem</code>'s INSERT-OR-REPLACE an idempotent upsert. (The single-executor CAS already
+blocks CONCURRENT double-drain; a fully resumable per-item state machine remains a scoped follow-up.)</li>
+<li><strong>#8 (P2) expiry gates the terminal event on the transition</strong> &mdash; <code>expireTasks</code>' candidate SELECT
+runs OUTSIDE its transaction, so a concurrent <code>/complete</code> could terminalize a candidate before its per-row UPDATE. The
+UPDATE's affected-row count was IGNORED and a <code>failed</code>/<code>outcome_unknown</code> event appended unconditionally &mdash;
+a FALSE terminal notification for a task that actually succeeded. Now both the event and the returned list gate on
+<code>affected &gt; 0</code>, mirroring <code>fail()</code>/<code>expireLeasedTasks()</code>. The InMemory store is correct by
+construction (single synchronous mutate). SQLite-only race, not single-thread reproducible &mdash; the existing happy-path tests
+guard the transitioned-return.</li>
+<li><strong>#10 (P3) schema-problem collector budget</strong> &mdash; <code>collectSchemaProblems</code> now stops at a
+<code>MAX_SCHEMA_PROBLEMS</code> (200) budget (the <code>err</code> sink capped diagnostic COUNT but not the collector's
+super-linear path accumulation), and the joined diagnostic message is sliced to a bounded count with a "+N more" suffix.</li>
+<li><strong>#11 (P3) text annotations must be strings</strong> &mdash; <code>title</code>/<code>description</code>/<code>$comment</code>/
+<code>$schema</code>/<code>$id</code> are now rejected when NON-string (previously a numeric/object <code>title</code> was accepted
+silently, rendering blank on the consent form). <code>default</code>/<code>examples</code> stay DATA annotations (already
+depth-/<code>$ref</code>-bounded by the schema-wide passes; a deeper breadth traversal is a noted residual).</li>
+<li><strong>#12 (P3) schema-collection cardinality</strong> &mdash; <code>type</code> arrays (bounded + deduped),
+<code>required</code> arrays (count cap + dedup + blank-entry reject), and <code>properties</code> maps (key-count cap) &mdash;
+a 256 KB manifest otherwise packs thousands of entries that inflate consent rendering + every runtime validation.</li>
+<li><strong>#13 (P3) shared identifier contract</strong> &mdash; one <code>isValidIdentifier</code> (non-empty after trim, bounded,
+<code>hasUnsafeText</code>-free) now guards machine STATE names (which had NO spoof check at all), machine MOVE names (only the
+schema was validated, never the name), and schema PROPERTY names &mdash; each renders on owner surfaces / feeds the &sect;8.1
+behavior hash.</li>
+<li><strong>#14 (P3) whitespace-only token reject</strong> &mdash; <code>required_features</code>, <code>data_scope.categories</code>/
+<code>.personas</code> (plus the same-class runtime-evidence + issuer-key siblings) switched from <code>=== ''</code> to
+<code>.trim() === ''</code> so a spaces-only token (which passes <code>hasUnsafeText</code>, space being 0x20) can't enter hashes /
+owner-facing compatibility messages.</li>
+<li><strong>#15 (P3) grant resource-token spoof reject</strong> &mdash; <code>parseConstraints</code>' <code>resources</code> tokens
+(BOTH authorization inputs AND owner-visible constraints) now reject whitespace-only + <code>hasUnsafeText</code> chars, matching the
+manifest-identifier contract (the PLG-26 #12 length/dedup bound stays).</li>
+<li><strong>#16 (P3) icon blob-ref shape floor</strong> &mdash; <code>icon</code> must be a plain object or a string (a bare
+number/boolean/array is rejected) in addition to the PLG-26 #18 size floor. The EXACT blob-ref structure is deliberately undefined
+at this layer (<code>icon: unknown</code>, AppView owns the format), so a full <code>{$type:'blob'}</code> schema is not invented
+here &mdash; noted for when the icon format is pinned.</li>
+<li><strong>#17 (P3) archive decision id validation</strong> &mdash; the <code>plugin_decisions</code> import filter now validates
+the audit <code>id</code> is a non-negative integer (previously inserted verbatim + read back via a bare <code>Number(r.id)</code>).
+An unknown extra COLUMN is separately fail-closed by <code>restoreTable</code> (which rejects any non-schema column name). Refines
+PLG-26 #19.</li>
+<li><strong>#18 (P3) live decision-write contract</strong> &mdash; one row-well-formedness contract is now enforced at the WRITE
+boundary (<code>record</code> throws on a spoofed/oversized id/reason or a bad timestamp) and the READ boundary
+(<code>rowToDecision</code> drops offending rows), matching the archive-import contract PLG-25/26 already enforced. Internal callers
+always pass safe values, so this is defense-in-depth closing a write/read&harr;import asymmetry.</li>
+<li><strong>#19 (P3) impossible-move timeout cross-check</strong> &mdash; the interpreted machine <code>timeouts</code> now require
+<code>move_sec &le; session_ttl_sec</code>; a move timeout longer than the session TTL describes a move that can never fire, leaving
+runtime precedence implementation-defined across ports. (Interpreted-only pre-freeze hardening.)</li>
+</ul>
+<h3>Scoped (1)</h3>
+<ul>
+<li><strong>#3</strong> publicly/internally mintable verification attestation &mdash; the review said "publicly" but the barrel
+already hides <code>attestVerifiedRelease</code>/<code>beginInstallVerified</code> (round-5 #1, test-locked) and the brand is a
+module-private symbol; the residual is that any IN-PACKAGE module could import the minter and forge a <code>repo_proof</code>
+attestation. It is an UNWIRED seam (zero non-test callers), and the correct end-state relocates the minter INTO the concrete
+repo-proof verifier &mdash; producer-time, once a real verified-install caller ships. A CI guard was added NOW (a source scan
+asserting no <code>src/**</code> file outside <code>install_service.ts</code> names either symbol) so an accidental in-package
+caller fails the build.</li>
+</ul>
+<h3>Validation</h3>
+<p>Protocol <strong>683 green</strong> (added the round-17 suite: canonId-crash totality / non-string annotation / collection
+cardinality / blank identifier + move name / whitespace token / icon shape / impossible timeout); full core suite
+<strong>269 suites / 5142 tests green</strong> (in-band); Brain <strong>181 suites / 3465 tests green</strong>. The 18 fixes carry
+dedicated regression tests: protocol (7 cases incl. the totality no-throw), registry (<code>markRevoked</code> + resource spoof +
+decision write/read contract), install_service (pending-uninstall non-activatable, both no-revoker + failed-revoke paths, and the
+#3 source-scan guard), dispatch (byte-before-parse), workflow approval-authz (compensating revoke), pair route (durable-confirmed
+restore vs fail-closed burn &mdash; the round-16 #3 test was tightened + an agent-grant repo wired so the confirmed-durable path is
+reachable), archive (negative decision id dropped), and staging (deterministic drain id). <strong>#8</strong> is a SQLite-only
+concurrency race (the InMemory store is correct by construction; the single-thread happy path is covered by the existing expiry
+tests). <code>@dina/protocol</code> dist rebuilt (new <code>PLUGIN_CAPS</code> bounds + validator changes). Workspace typecheck
+clean; the <strong>12 changed source files are 0 eslint errors</strong> (test-file <code>no-non-null-assertion</code>/<code>any</code>
+usage is pre-existing repo-wide convention, present at HEAD); all changed files prettier-clean. <em>No new migration</em>
+(pre-launch) and <em>no commits</em> (working hours).</p>
+
+<h2>PLG-28 &mdash; eighteenth adversarial review (20 findings): 18 fixed, 2 scoped <span class="status done">DONE (18 fixed)</span></h2>
+<p>Five read-only sub-agents verified all 20 findings &mdash; <strong>every one ACCURATE</strong>. Three are direct FALLOUT of the
+PLG-27 pass: PLG-27 #1 closed the grant-after-approval AFTERMATH but left a read-during-unlock TOCTOU (#1); PLG-27 #18 (record()
+throws on a malformed row) ARMED a throw-in-audit-path that could abort a committed lifecycle mutation (#2); PLG-27 #4's
+<code>markRevoked</code> nulled <code>pending_expires_at</code> and thereby evicted the tombstone from the abandoned sweep (#3). The
+rest split into runner-reachable-today (#4 unsatisfiable schema, #5 deep-card crash, #14 padded tokens, #15 empty icon, #16 label,
+#20 pairing budget), pre-production-must-fix (#7 device role check), and interpreted-latent pre-freeze hardening (#8&ndash;#13, P0
+hard-blocks <code>execution.mode !== 'runner'</code>).</p>
+<h3>Fixed (18)</h3>
+<ul>
+<li><strong>#1 (P1&rarr;P2) reserve-then-activate grant (read TOCTOU)</strong> &mdash; the durable grant was inserted ACTIVE, then an
+awaited persona-unlock yielded the event loop, and only THEN did the approve CAS run &mdash; so an agent retry could
+<code>findActiveGrant</code> it before approval committed. A grant now inserts RESERVED (<code>active=0</code>, invisible to
+<code>findActiveGrant</code>); the route does reserve &rarr; <code>approve</code> (synchronous, no yield between) &rarr;
+<code>activateAgentPersonaGrant</code> (unlock + flip <code>active=1</code>) only AFTER the CAS. New nullable <code>active</code>
+column (edited in place, pre-launch) + <code>activate()</code> on BOTH grant stores; reserve-fail still blocks approve (keeps
+PLG-26 #1).</li>
+<li><strong>#2 (P2) isolate decision-log writes</strong> &mdash; <code>confirmConsent</code>/<code>declineConsent</code>/
+<code>uninstall</code> + the late-report + device-revoke observers all call <code>record()</code> AFTER their durable mutation, and
+PLG-27 #18 made <code>record()</code> THROW on a malformed row &mdash; so a bad audit write would misreport a committed success as an
+error (and, inside the completion txn, roll back the late-report evidence). All five sites now go through a fire-safe
+<code>recordDecisionSafe</code> (log-and-continue). An append-only audit side effect must never fail the primary op.</li>
+<li><strong>#3 (P2&rarr;P3) sweepable uninstall tombstone</strong> &mdash; PLG-27 #4's <code>markRevoked</code> nulled
+<code>pending_expires_at</code>, evicting the failed-uninstall tombstone from <code>listRawStalePending</code> (pending-only) &mdash;
+so a device-bound tombstone whose durable revoke failed was never auto-completed, orphaning the plugin device credential.
+<code>markRevoked</code> now RETAINS the expiry (set to now), the sweep query also picks up <code>revoked</code>+device rows, and
+<code>sweepAbandonedInstalls</code> re-attempts the revoke + removes the tombstone.</li>
+<li><strong>#4 (P2, runner) unsatisfiable schema rejected</strong> &mdash; a pinned schema with <code>additionalProperties:false</code>
+whose <code>required</code> names aren't declared in <code>properties</code> can be satisfied by NO object value (the pinned runtime
+enforces both), silently bricking a consented runner capability on every invocation. Now rejected at validate time, extending the
+existing min&gt;max unsatisfiable-schema precedent.</li>
+<li><strong>#5 (P2, totality) deep-card crash guard</strong> &mdash; a deeply-nested <code>card</code> made the manifest size calc's
+<code>JSON.stringify</code> throw <code>RangeError</code>, uncaught by <code>finishBegin</code> &mdash; a totality break on the
+untrusted AppView ingest path. Wrapped in try/catch (mirrors the icon-size path): unserializable/too-deep &rarr; treated as
+over-cap.</li>
+<li><strong>#7 (P2, pre-prod) plugin-device role check</strong> &mdash; <code>bindPendingDevice</code> accepts any nonempty DID and
+<code>confirmConsent</code> only string-matched it, so a wiring error could bind an ordinary user/agent device that
+<code>uninstall</code> later revokes as plugin collateral. <code>confirmConsent</code> takes an INJECTED
+<code>verifyDevice</code> guard (importing the device registry here would cycle: devices&rarr;plugins already); production wires it
+at the install route. Fail closed when wired + rejecting.</li>
+<li><strong>#8 (P3, latent) hoist the uninstall lane-close</strong> &mdash; the pause/escalate/<code>markRevoked</code> lane-close was
+gated on <code>deviceDid</code>, so a no-device (interpreted) install skipped it entirely. Hoisted to run for EVERY install before
+terminate/revoke. No-op on today's single synchronous Core; closes a multi-worker claim window.</li>
+<li><strong>#9 (P2, latent) interpreted activation rejects a device</strong> &mdash; <code>confirmConsent</code> only device-gated the
+<code>runner</code> branch; an interpreted install accepted an arbitrary device DID that <code>uninstall</code> would revoke.
+Interpreted activation now rejects any non-undefined device DID, making the "pass undefined" doc a hard invariant.</li>
+<li><strong>#10 (P3, latent) transition ops &sube; ops_used</strong> &mdash; features derive from <code>ops_used</code> only, so a
+transition executing an op absent from <code>ops_used</code> slipped past the &sect;14 compatibility gate. <code>ops_used</code> is
+now parsed first + passed into <code>validateMachine</code>, which requires every transition op to be declared.</li>
+<li><strong>#11 (P3, latent) instructions validation</strong> &mdash; the interpreted <code>instructions</code> LLM-step prompt was
+accepted at ANY type/length. Now required string|null, length-capped, and spoof-checked with a NEW <code>hasDeceptiveText</code>
+(rejects bidi/zero-width/other-control but ALLOWS <code>\n</code>/<code>\t</code> &mdash; a multi-line prompt).</li>
+<li><strong>#12 (P3, latent) minimal transition totality</strong> &mdash; require &ge;1 transition and that every NON-terminal state
+has an outgoing transition (a session otherwise installs and immediately hangs). Full reachability coverage stays a scoped design
+item.</li>
+<li><strong>#13 (P3, latent) terminal states bounded/deduped/non-empty</strong> &mdash; <code>terminal</code> now gets the same rigor
+<code>states</code> has: non-empty, count-capped, deduped (was: duplicates + empty list passed).</li>
+<li><strong>#14 (P3, runner) reject SURROUNDING-whitespace tokens</strong> &mdash; every consent/scope token site (identifiers via
+<code>isValidIdentifier</code>; display names, data-scope, required_features, intent phrases, evidence, issuer key via a shared
+<code>isBlankOrPadded</code>) now rejects <code>" health"</code>/<code>"health "</code>, not just blank. Rejected at VALIDATION, not
+trimmed in normalize &mdash; trimming would rewrite the token after the manifest CID was computed (breaks the repo-proof binding;
+the URI check already rejects <code>uri !== uri.trim()</code>).</li>
+<li><strong>#15 (P3, runner) icon object floor raised</strong> &mdash; PLG-27 #16 accepted ANY plain object incl <code>{}</code> /
+<code>{foo:'bar'}</code>. An object icon must now be non-empty and carry a recognized string reference key
+(<code>cid</code>/<code>uri</code>/<code>ref</code>/<code>$type</code>&hellip;). The exact blob-ref format stays deferred to AppView
+(<code>icon</code> is <code>unknown</code>) &mdash; no schema invented.</li>
+<li><strong>#16 (P3) bound the install label</strong> &mdash; <code>label</code> is a CALLER param (not manifest-derived), so it
+bypassed the validator's bounds + spoof checks yet is persisted + rendered. <code>finishBegin</code> now bounds it
+(&le; 64 chars) + rejects control/bidi/zero-width at the write boundary.</li>
+<li><strong>#17 (P3) decision id/install_id read contract</strong> &mdash; <code>rowToDecision</code> still did bare
+<code>Number(r.id)</code> (accepting NaN/negative) and <code>String(r.install_id)</code> (NULL &rarr; the clean string "null").
+Both are now validated at their source type, aligning the live read with the archive-import contract (PLG-27 #17).</li>
+<li><strong>#18 (P3) clamp decision list limits</strong> &mdash; caller limits flowed straight into SQLite (<code>LIMIT -1</code> =
+no limit &rarr; the whole append-only log). <code>listByInstall</code>/<code>listRecent</code> now clamp to [1, 500] with a 100
+default.</li>
+<li><strong>#19 (interpreted, part of #10&ndash;13 sweep) move_sec/session cross-check</strong> &mdash; already landed in PLG-27
+#19; the #10&ndash;13 machine work here completes the interpreted-substrate hardening.</li>
+<li><strong>#20 (P3) malformed pairing key burns the budget</strong> &mdash; the public-key decode threw BEFORE any attempt was
+recorded, so a held valid (intercepted) code could take unlimited malformed guesses until expiry. The decode is now wrapped so a
+malformed key records a failed attempt (burns after 3) &mdash; while a SUCCESSFUL decode + a later durable-persistence failure still
+does NOT burn the code (Round-15 #6 intent preserved).</li>
+</ul>
+<h3>Scoped (2)</h3>
+<ul>
+<li><strong>#6</strong> byte-cap-before-normalize &mdash; the honest fix is producer-time: the repo-proof verifier must surface the
+AUTHENTICATED raw byte count so the install path can gate BEFORE parse/normalize (a <code>@dina/protocol</code> verifier-shape
+change). Bounded today by the verifier running first (a hostile PUBLISHER, not anon) + the #5 crash guard removing the throw.</li>
+<li><strong>#19-registry</strong> boot-time digest recompute &mdash; normal registry hydration reads the four digest columns verbatim
+vs the archive importer's recompute-and-quarantine. Rated LOW/defensible: <code>identity.sqlite</code> is SQLCipher-encrypted +
+Core-owned (vault-keeper model), so the only residual threat is at-rest corruption of an already-DEK-unlocked store; a per-read
+recompute is a hot-path cost. Correct fix is a one-time boot-load integrity sweep &mdash; a design item, not a one-liner.</li>
+</ul>
+<h3>Validation</h3>
+<p>Protocol <strong>691 green</strong> (round-18 suite: unsatisfiable schema / deep-card totality / transition-op / instructions /
+dead-end + terminal / padded token / empty icon); full core suite <strong>269 suites / 5152 tests green</strong> (in-band); Brain
+<strong>181 suites / 3465 tests green</strong>. The 18 fixes carry dedicated regression tests: protocol (8 cases), grant repo
+(reserve/activate on BOTH stores), install_service (device guard, interpreted-device reject, label, decision-write isolation,
+tombstone-swept), registry (decision id + limit clamp), pairing ceremony (malformed-key budget burn). <strong>#1</strong>'s new
+<code>active</code> column was edited into the <code>agent_persona_grants</code> CREATE TABLE in place (pre-launch, no live data;
+<code>rowToGrant</code> fail-OPENs on a legacy row without the column). <code>@dina/protocol</code> dist rebuilt (new
+<code>MAX_INSTRUCTIONS_LENGTH</code> + <code>hasDeceptiveText</code> + validator changes). Workspace typecheck clean; every changed
+SOURCE file is 0 eslint errors EXCEPT the pre-existing <code>ceremony.ts</code> import-order + non-null-assertion debt (my #20 edit
+added neither &mdash; only a try/catch); all changed files prettier-clean. <em>No new migration</em> (pre-launch) and <em>no
+commits</em> (working hours).</p>
+
 </body>
 </html>

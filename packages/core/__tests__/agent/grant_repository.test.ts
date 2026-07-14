@@ -28,7 +28,12 @@ function sqliteHarness() {
   const dbPath = path.join(dir, 'identity.sqlite');
   const passphraseHex = randomBytes(32).toString('hex');
   const openOne = () => {
-    const a = new NodeSQLiteAdapter({ path: dbPath, passphraseHex, journalMode: 'WAL', synchronous: 'NORMAL' });
+    const a = new NodeSQLiteAdapter({
+      path: dbPath,
+      passphraseHex,
+      journalMode: 'WAL',
+      synchronous: 'NORMAL',
+    });
     applyMigrations(a, IDENTITY_MIGRATIONS);
     return a;
   };
@@ -62,11 +67,18 @@ function grant(over: Partial<AgentPersonaGrantInsert> = {}): AgentPersonaGrantIn
     expiresAt: over.expiresAt ?? 10_000,
     createdAt: over.createdAt ?? 1_000,
     sessionId: over.sessionId,
+    active: over.active,
   };
 }
 
-const factories: Array<{ name: string; make: () => { repo: AgentGrantRepository; cleanup: () => void } }> = [
-  { name: 'InMemory', make: () => ({ repo: new InMemoryAgentGrantRepository(), cleanup: () => {} }) },
+const factories: Array<{
+  name: string;
+  make: () => { repo: AgentGrantRepository; cleanup: () => void };
+}> = [
+  {
+    name: 'InMemory',
+    make: () => ({ repo: new InMemoryAgentGrantRepository(), cleanup: () => {} }),
+  },
   {
     name: 'SQLite',
     make: () => {
@@ -101,7 +113,9 @@ describe.each(factories)('agent grant contract — $name', ({ make }) => {
   it('a grant is bound to its SESSION — a fresh session re-prompts (dina_details §3.6)', () => {
     repo.insert(grant({ id: 'gA', sessionId: 'sess-A' }));
     // Same session → found.
-    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', 'sess-A', 5_000)?.id).toBe('gA');
+    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', 'sess-A', 5_000)?.id).toBe(
+      'gA',
+    );
     // Different session → NOT found: an approval does NOT carry across sessions.
     expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', 'sess-B', 5_000)).toBeNull();
     // Session-less lookup → NOT found either: null is its own bucket.
@@ -126,6 +140,24 @@ describe.each(factories)('agent grant contract — $name', ({ make }) => {
     repo.insert(grant({ id: 'g1', expiresAt: 4_000 }));
     expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', null, 3_000)?.id).toBe('g1');
     expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', null, 5_000)).toBeNull(); // past expiry
+  });
+
+  it('PLG-28 #1: a RESERVED grant (active:false) is invisible to the gate until activated', () => {
+    repo.insert(grant({ id: 'g1', active: false }));
+    // Reserved → NOT findActive-visible and NOT in the active listing.
+    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', null, 5_000)).toBeNull();
+    expect(repo.listActiveForAgent('did:key:agentA', 5_000)).toHaveLength(0);
+    // Activate → now the gate sees it.
+    expect(repo.activate('g1')).toBe(true);
+    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', null, 5_000)?.id).toBe('g1');
+    // Idempotent: re-activating an already-active grant returns false (nothing to flip).
+    expect(repo.activate('g1')).toBe(false);
+    // activate refuses an unknown grant, and a REVOKED reserved grant.
+    expect(repo.activate('nope')).toBe(false);
+    repo.insert(grant({ id: 'g2', active: false }));
+    repo.revoke('g2', 6_000);
+    expect(repo.activate('g2')).toBe(false);
+    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', null, 5_000)?.id).toBe('g1');
   });
 
   it('revoke tombstones a grant (idempotent); revoked grants never match', () => {

@@ -29,6 +29,13 @@ export interface AgentPersonaGrant {
   expiresAt: number;
   revokedAt: number | null;
   createdAt: number;
+  /**
+   * PLG-28 #1: false while the grant is RESERVED (durability proven, but not yet
+   * gate-visible). `findActiveGrant` ignores reserved rows, so a grant inserted
+   * before the approval CAS can't be used until `activate` flips it — closing
+   * the read-during-unlock TOCTOU.
+   */
+  active: boolean;
 }
 
 export interface AgentPersonaGrantInsert {
@@ -41,6 +48,9 @@ export interface AgentPersonaGrantInsert {
   approvalTaskId: string;
   expiresAt: number;
   createdAt: number;
+  /** PLG-28 #1: insert RESERVED (`active: false`) for the reserve-then-activate
+   *  approval flow. Omitted / true → active on insert (all other callers). */
+  active?: boolean;
 }
 
 export interface AgentGrantRepository {
@@ -65,6 +75,13 @@ export interface AgentGrantRepository {
     sessionId: string | null,
     now: number,
   ): AgentPersonaGrant | null;
+  /**
+   * PLG-28 #1: flip a RESERVED grant to active (gate-visible). Called AFTER the
+   * approval CAS commits, so the grant only becomes findActive-usable once the
+   * task is truly approved. Returns false for an unknown / already-revoked / not-
+   * reserved grant (idempotent-safe).
+   */
+  activate(id: string): boolean;
   /** Tombstone one grant. Idempotent. Returns false if unknown. */
   revoke(id: string, now: number): boolean;
   /**
@@ -89,7 +106,7 @@ export function getAgentGrantRepository(): AgentGrantRepository | null {
 }
 
 const COLS =
-  'id, session_id, agent_did, persona, mode, scope_json, approval_task_id, expires_at, revoked_at, created_at';
+  'id, session_id, agent_did, persona, mode, scope_json, approval_task_id, expires_at, revoked_at, created_at, active';
 
 export class SQLiteAgentGrantRepository implements AgentGrantRepository {
   constructor(private readonly db: DatabaseAdapter) {}
@@ -97,8 +114,8 @@ export class SQLiteAgentGrantRepository implements AgentGrantRepository {
   insert(g: AgentPersonaGrantInsert): AgentPersonaGrant {
     this.db.execute(
       `INSERT INTO agent_persona_grants
-         (id, session_id, agent_did, persona, mode, scope_json, approval_task_id, expires_at, revoked_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+         (id, session_id, agent_did, persona, mode, scope_json, approval_task_id, expires_at, revoked_at, created_at, active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
       [
         g.id,
         g.sessionId ?? null,
@@ -109,11 +126,22 @@ export class SQLiteAgentGrantRepository implements AgentGrantRepository {
         g.approvalTaskId,
         g.expiresAt,
         g.createdAt,
+        g.active === false ? 0 : 1, // PLG-28 #1: reserve = 0, else active
       ],
     );
     const row = this.get(g.id);
     if (row === null) throw new Error(`agent_persona_grants: insert of ${g.id} did not persist`);
     return row;
+  }
+
+  activate(id: string): boolean {
+    // Only a reserved, non-revoked grant can be activated (idempotent-safe).
+    return (
+      this.db.run(
+        'UPDATE agent_persona_grants SET active = 1 WHERE id = ? AND active = 0 AND revoked_at IS NULL',
+        [id],
+      ) > 0
+    );
   }
 
   get(id: string): AgentPersonaGrant | null {
@@ -133,7 +161,7 @@ export class SQLiteAgentGrantRepository implements AgentGrantRepository {
     const rows = this.db.query(
       `SELECT ${COLS} FROM agent_persona_grants
         WHERE agent_did = ? AND persona = ? AND session_id IS ? AND revoked_at IS NULL
-          AND expires_at > ? AND (mode = ? OR mode = 'write')
+          AND active = 1 AND expires_at > ? AND (mode = ? OR mode = 'write')
         ORDER BY expires_at DESC
         LIMIT 1`,
       [agentDID, persona, sessionId, now, mode],
@@ -162,7 +190,7 @@ export class SQLiteAgentGrantRepository implements AgentGrantRepository {
     return this.db
       .query(
         `SELECT ${COLS} FROM agent_persona_grants
-          WHERE agent_did = ? AND revoked_at IS NULL AND expires_at > ?
+          WHERE agent_did = ? AND revoked_at IS NULL AND active = 1 AND expires_at > ?
           ORDER BY created_at DESC`,
         [agentDID, now],
       )
@@ -206,9 +234,17 @@ export class InMemoryAgentGrantRepository implements AgentGrantRepository {
       expiresAt: g.expiresAt,
       revokedAt: null,
       createdAt: g.createdAt,
+      active: g.active !== false, // PLG-28 #1: reserve = false, else active
     };
     this.rows.set(row.id, row);
     return { ...row };
+  }
+
+  activate(id: string): boolean {
+    const r = this.rows.get(id);
+    if (!r || r.active || r.revokedAt !== null) return false;
+    r.active = true;
+    return true;
   }
 
   get(id: string): AgentPersonaGrant | null {
@@ -230,6 +266,7 @@ export class InMemoryAgentGrantRepository implements AgentGrantRepository {
         r.persona === persona &&
         r.sessionId === sessionId &&
         r.revokedAt === null &&
+        r.active &&
         r.expiresAt > now &&
         (r.mode === mode || r.mode === 'write')
       ) {
@@ -259,7 +296,9 @@ export class InMemoryAgentGrantRepository implements AgentGrantRepository {
 
   listActiveForAgent(agentDID: string, now: number): AgentPersonaGrant[] {
     return [...this.rows.values()]
-      .filter((r) => r.agentDID === agentDID && r.revokedAt === null && r.expiresAt > now)
+      .filter(
+        (r) => r.agentDID === agentDID && r.revokedAt === null && r.active && r.expiresAt > now,
+      )
       .sort((a, b) => b.createdAt - a.createdAt)
       .map((r) => ({ ...r }));
   }
@@ -285,5 +324,8 @@ function rowToGrant(row: DBRow): AgentPersonaGrant {
     expiresAt: Number(row.expires_at ?? 0),
     revokedAt: row.revoked_at === null ? null : Number(row.revoked_at),
     createdAt: Number(row.created_at ?? 0),
+    // PLG-28 #1: default active for legacy rows written before the column
+    // existed (fail-OPEN on hydration is fine — a legacy grant WAS active).
+    active: Number(row.active ?? 1) === 1,
   };
 }

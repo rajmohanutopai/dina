@@ -33,7 +33,7 @@ import {
   drainForApproval,
   denyApproval,
 } from '../../src/staging/service';
-import { getItem as getVaultItem, clearVaults } from '../../src/vault/crud';
+import { getItem as getVaultItem, listRecentItems, clearVaults } from '../../src/vault/crud';
 import { currentDataScope, resetDataScope, setCurrentDataScope } from '../../src/scope/data_scope';
 
 describe('Staging Service', () => {
@@ -66,7 +66,10 @@ describe('Staging Service', () => {
       expect(currentDataScope()).toBe('guided_demo:run1');
     });
 
-    it.each([['in-memory', false], ['sqlite-repo', true]])(
+    it.each([
+      ['in-memory', false],
+      ['sqlite-repo', true],
+    ])(
       'dedup is per-scope: SAME (producer,source,source_id) in user+demo → TWO rows (%s)',
       (_label, useRepo) => {
         if (useRepo) setStagingRepository(new InMemoryStagingRepository());
@@ -87,28 +90,28 @@ describe('Staging Service', () => {
       },
     );
 
-    it.each([['in-memory', false], ['sqlite-repo', true]])(
-      'claim only returns items in the CURRENT scope (%s)',
-      (_label, useRepo) => {
-        if (useRepo) setStagingRepository(new InMemoryStagingRepository());
+    it.each([
+      ['in-memory', false],
+      ['sqlite-repo', true],
+    ])('claim only returns items in the CURRENT scope (%s)', (_label, useRepo) => {
+      if (useRepo) setStagingRepository(new InMemoryStagingRepository());
 
-        // One user item, one demo item.
-        ingest({ source: 'user_remember', source_id: 'u1' });
-        setCurrentDataScope('guided_demo:run1');
-        ingest({ source: 'user_remember', source_id: 'd1' });
+      // One user item, one demo item.
+      ingest({ source: 'user_remember', source_id: 'u1' });
+      setCurrentDataScope('guided_demo:run1');
+      ingest({ source: 'user_remember', source_id: 'd1' });
 
-        // On the user scope the drain must NOT pick up the demo row (u1 is now
-        // leased → 'classifying'; d1 stays 'received' but in the demo scope).
-        setCurrentDataScope('user');
-        const userClaim = claim(10);
-        expect(userClaim.map((i) => i.source_id)).toEqual(['u1']);
+      // On the user scope the drain must NOT pick up the demo row (u1 is now
+      // leased → 'classifying'; d1 stays 'received' but in the demo scope).
+      setCurrentDataScope('user');
+      const userClaim = claim(10);
+      expect(userClaim.map((i) => i.source_id)).toEqual(['u1']);
 
-        // On the demo scope it claims only the demo row.
-        setCurrentDataScope('guided_demo:run1');
-        const demoClaim = claim(10);
-        expect(demoClaim.map((i) => i.source_id)).toEqual(['d1']);
-      },
-    );
+      // On the demo scope it claims only the demo row.
+      setCurrentDataScope('guided_demo:run1');
+      const demoClaim = claim(10);
+      expect(demoClaim.map((i) => i.source_id)).toEqual(['d1']);
+    });
 
     it('exact-ID mutations reject an item from a DIFFERENT scope', () => {
       // Claim a demo item (status → classifying) in the demo scope…
@@ -510,6 +513,34 @@ describe('Staging Service', () => {
       expect(result).toMatchObject({ matched: 1, drained: 1, alreadyStored: 0 });
       expect(getItem(id)!.status).toBe('stored');
       expect(getVaultItem('health', 'approval-v2')).not.toBeNull();
+    });
+
+    it('PLG-27 #6: an id-less classified item is stored under a DETERMINISTIC stg-<id> (so a recovery re-drive upserts, never duplicates)', () => {
+      setStagingRepository(new InMemoryStagingRepository());
+      const { id } = ingest({
+        source: 'chat',
+        source_id: 'approval-nodup',
+        data: { body: 'remember allergy penicillin' },
+      });
+      claim(10);
+      // classified_item with NO id. Previously storeItem minted a fresh RANDOM id
+      // per drain, so a recovery re-drive after a crash (vault write landed but
+      // the staging status did not persist) inserted a DUPLICATE vault row. The
+      // fix pins a stable id derived from the staging id, so storeItem's
+      // INSERT-OR-REPLACE makes any re-drive an idempotent upsert on the same row.
+      resolve(id, 'health', false, { type: 'note', summary: 'Allergy' });
+      const approvalId = getItem(id)!.approval_id!;
+
+      expect(drainForApproval(approvalId)).toMatchObject({ drained: 1 });
+      // The vault item lives at a DETERMINISTIC id derived from the staging id,
+      // NOT a random one. Because the id is a pure function of the staging id, a
+      // recovery re-drive (which reloads the id-less classified item from the
+      // repo) recomputes the SAME id, so storeItem's INSERT-OR-REPLACE upserts the
+      // same row instead of inserting a duplicate. A revert to a random id would
+      // make this lookup null.
+      const stableId = `stg-${id}`;
+      expect(getVaultItem('health', stableId)).not.toBeNull();
+      expect(listRecentItems('health', 100)).toHaveLength(1);
     });
 
     it('approval denial fails the staged item without storing or retrying', () => {

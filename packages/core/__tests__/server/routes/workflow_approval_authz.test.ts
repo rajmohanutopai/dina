@@ -119,6 +119,55 @@ describe('workflow approve/deny — agent callers are refused (no self-approval)
     expect(retry.status).toBe(403);
   });
 
+  it('round-15 #1/#2: a stale (already-queued) re-approve with scope=session returns 409', async () => {
+    const router = build();
+    const taskId = await newPendingApprovalTaskId(router);
+    // First owner approve commits pending_approval → queued.
+    expect((await router.handle(approveReq(taskId))).status).toBe(200);
+    // A second owner approve with scope='session' is now STALE (task is queued,
+    // not pending_approval) → 409. The session grant / staging drain are written
+    // ONLY after a successful approve, so this stale path leaks nothing.
+    const stale = await router.handle({ ...approveReq(taskId), body: { scope: 'session' } });
+    expect(stale.status).toBe(409);
+  });
+
+  it('round-16 #1: with NO grant repo, an owner approve fails closed — no false success, task stays pending', async () => {
+    const router = build();
+    const taskId = await newPendingApprovalTaskId(router);
+    setAgentGrantRepository(null); // simulate a missing durable grant store
+    const approve = await router.handle(approveReq(taskId)); // owner (no callerType)
+    // A 200 here would be a FALSE success: the task would be queued with no
+    // authority and could never be re-approved. The grant is written BEFORE the
+    // transition, so a missing repo blocks the approve and leaves it pending.
+    expect(approve.status).not.toBe(200);
+    expect(getWorkflowService()?.store().getById(taskId)?.status).toBe('pending_approval');
+  });
+
+  it('PLG-27 #1: a failed approve AFTER the grant is written compensates (revokes) the grant', async () => {
+    const router = build();
+    const taskId = await newPendingApprovalTaskId(router);
+    // Force the transition to fail AFTER grantAgentPersonaAccessFromApproval has
+    // written the durable grant. Without the compensating revoke this would leave
+    // an ACTIVE grant for a task that was never approved (a denial that still
+    // grants access). The handler must revoke the just-created grant on failure.
+    const svc = getWorkflowService()!;
+    const spy = jest.spyOn(svc, 'approve').mockImplementation(() => {
+      throw new Error('transition failed');
+    });
+    try {
+      const approve = await router.handle(approveReq(taskId)); // owner
+      expect(approve.status).not.toBe(200);
+      // The compensating revoke ran — no active grant survives the failed approve.
+      expect(
+        getAgentGrantRepository()?.findActiveGrant(AGENT_DID, 'health', 'read', null, Date.now()),
+      ).toBe(null);
+      // The agent stays blocked on retry.
+      expect((await router.handle(agentQueryHealth())).status).toBe(403);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('an AGENT cannot cancel/deny a task either → 403', async () => {
     const router = build();
     const taskId = await newPendingApprovalTaskId(router);

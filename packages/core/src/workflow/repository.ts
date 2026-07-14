@@ -29,10 +29,11 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { LOCAL_RUNNER_NAME, isPluginLane } from '@dina/protocol';
 
-import { getPluginDecisionRepository } from '../plugins/decisions';
+import { recordDecisionSafe } from '../plugins/decisions';
 
 import { WorkflowTaskState, isTerminal, type WorkflowEvent, type WorkflowTask } from './domain';
 import {
+  PLUGIN_RETRY,
   isDeclaredEffectful,
   mayAutoRetry,
   nextRetryAtSec,
@@ -52,13 +53,43 @@ function surfaceLateReportDecision(task: WorkflowTask | null, verb: string, nowM
   if (task === null) return;
   const envelope = parsePluginEnvelope(task.payload);
   if (envelope === null) return;
-  getPluginDecisionRepository()?.record({
+  // PLG-28 #2: this runs INSIDE the completion db.transaction — a throwing audit
+  // write would roll back the late-report evidence event and surface a 500. The
+  // fire-safe wrapper swallows it so the evidence event stays committed.
+  recordDecisionSafe({
     installId: envelope.install_id,
     capability: envelope.capability_id,
     decision: 'late_report_received',
     reason: `${verb} lost the claim CAS`,
     nowSec: Math.floor(nowMs / 1000),
   });
+}
+
+/**
+ * Round-15 #19: cap owner-facing evidence by UTF-8 BYTE budget, not JS string
+ * length. `.slice(0, 4096)` bounds UTF-16 code units, so 4096 multibyte (e.g.
+ * CJK) chars produce a ~12 KB row — ~3× the intended bound. Truncate on a code-
+ * point boundary (astral-safe) once the byte budget is exceeded. Returns the
+ * input unchanged when it already fits, matching the prior no-marker behaviour.
+ */
+export const MAX_EVIDENCE_BYTES = 4096;
+const EVIDENCE_TRUNCATION_MARKER = '…[truncated]';
+export function capEvidence(s: string): string {
+  const enc = new TextEncoder();
+  if (enc.encode(s).length <= MAX_EVIDENCE_BYTES) return s;
+  // Round-16 #11: reserve the marker's bytes so the FINAL string (input prefix +
+  // marker) honors MAX_EVIDENCE_BYTES. Filling the whole budget and THEN
+  // appending the marker overran the advertised cap by the marker's ~14 bytes.
+  const budget = MAX_EVIDENCE_BYTES - enc.encode(EVIDENCE_TRUNCATION_MARKER).length;
+  let out = '';
+  let bytes = 0;
+  for (const ch of s) {
+    const chBytes = enc.encode(ch).length;
+    if (bytes + chBytes > budget) break;
+    out += ch;
+    bytes += chBytes;
+  }
+  return `${out}${EVIDENCE_TRUNCATION_MARKER}`;
 }
 
 /**
@@ -108,6 +139,20 @@ export interface WorkflowRepository {
     to: WorkflowTaskState,
     updatedAtMs: number,
   ): boolean;
+
+  /**
+   * Round-15 #3: atomically transition `from`→`to` AND append the `approved`
+   * event in ONE transaction. Returns the new event id, or 0 when the
+   * transition didn't match (stale/terminal task). Replaces the two-op
+   * service-layer compose that could strand a queued approval with no event.
+   */
+  approveWithEvent(
+    id: string,
+    from: WorkflowTaskState,
+    to: WorkflowTaskState,
+    eventDetails: string,
+    nowMs: number,
+  ): number;
 
   /** Set the run_id (crash-recovery marker). Returns true if the row exists. */
   setRunId(id: string, runId: string, updatedAtMs: number): boolean;
@@ -411,15 +456,25 @@ type LeaseLossVerdict =
 function classifyLeaseLoss(task: WorkflowTask, nowMs: number): LeaseLossVerdict {
   const envelope = parsePluginEnvelope(task.payload);
   if (envelope === null) return { kind: 'requeue' };
+  // Round-15 #15: fail CLOSED on a corrupt attempt counter. A non-finite value
+  // hydrates to undefined (→ `?? 0` would RESET a maxed-out task to 0 and grant
+  // fresh retries); a negative/fractional value slips the `>= MAX_ATTEMPTS`
+  // gate. A count we can't trust as a non-negative integer is treated as
+  // budget-exhausted, so an EFFECTFUL task fails closed on corrupt metadata
+  // rather than auto-retrying a possibly-already-performed side effect.
+  const attempt =
+    typeof task.attempt === 'number' && Number.isInteger(task.attempt) && task.attempt >= 0
+      ? task.attempt
+      : PLUGIN_RETRY.MAX_ATTEMPTS;
   if (
     mayAutoRetry({
       envelope,
-      attempt: task.attempt ?? 0,
+      attempt,
       firstClaimedAtMs: task.first_claimed_at,
       nowMs,
     })
   ) {
-    return { kind: 'requeue', nextRunAtSec: nextRetryAtSec(task.attempt ?? 0, nowMs) };
+    return { kind: 'requeue', nextRunAtSec: nextRetryAtSec(attempt, nowMs) };
   }
   if (isDeclaredEffectful(envelope)) return { kind: 'outcome_unknown' };
   return {
@@ -556,6 +611,38 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
       [to, updatedAtMs, id, from],
     );
     return affected > 0;
+  }
+
+  approveWithEvent(
+    id: string,
+    from: WorkflowTaskState,
+    to: WorkflowTaskState,
+    eventDetails: string,
+    nowMs: number,
+  ): number {
+    // Round-15 #3: the state transition and its `approved` event commit in ONE
+    // transaction, mirroring completeWithDetails/fail/cancel. The old service-
+    // layer compose (transition, then a separate appendEvent) could crash
+    // between the two, stranding a `queued` approval with no event to start
+    // execution — and a retry then fails because it's no longer pending.
+    let eventId = 0;
+    this.db.transaction(() => {
+      const affected = this.db.run(
+        `UPDATE workflow_tasks SET state = ?, updated_at = ? WHERE id = ? AND state = ?`,
+        [to, nowMs, id, from],
+      );
+      if (affected === 0) return;
+      eventId = this.appendEvent({
+        task_id: id,
+        at: nowMs,
+        event_kind: 'approved',
+        needs_delivery: true,
+        delivery_attempts: 0,
+        delivery_failed: false,
+        details: eventDetails,
+      });
+    });
+    return eventId;
   }
 
   setRunId(id: string, runId: string, updatedAtMs: number): boolean {
@@ -1072,13 +1159,9 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
     // discarding it throws away the only proof the effect happened. Never
     // applied to task state — capped so a hostile/huge report can't bloat
     // the event row.
-    const MAX_EVIDENCE = 4096;
     const detail: Record<string, unknown> = { agent_did: agentDID, claim_id: claimId, verb };
     if (reported !== undefined && reported !== '') {
-      detail.report =
-        reported.length > MAX_EVIDENCE
-          ? `${reported.slice(0, MAX_EVIDENCE)}…[truncated]`
-          : reported;
+      detail.report = capEvidence(reported); // Round-15 #19: UTF-8 byte cap, not char length
     }
     this.appendEvent({
       task_id: id,
@@ -1142,15 +1225,11 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
       // Round-12 #5: retain the rejected result as reconciliation evidence
       // (never applied). Capped so a hostile/huge report can't bloat the row.
       // Round-13 #10: also record agent_did + claim_id in the event details.
-      const MAX_EVIDENCE = 4096;
       const details: Record<string, unknown> = { reason };
       if (opts?.agentDID !== undefined && opts.agentDID !== '') details.agent_did = opts.agentDID;
       if (opts?.claimId !== undefined) details.claim_id = opts.claimId;
       if (opts?.evidence !== undefined && opts.evidence !== '') {
-        details.rejected_result =
-          opts.evidence.length > MAX_EVIDENCE
-            ? `${opts.evidence.slice(0, MAX_EVIDENCE)}…[truncated]`
-            : opts.evidence;
+        details.rejected_result = capEvidence(opts.evidence); // Round-15 #19: UTF-8 byte cap
       }
       eventId = this.appendEvent({
         task_id: id,
@@ -1247,6 +1326,14 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
       .map(rowToTask);
     if (candidates.length === 0) return [];
 
+    // PLG-27 #8: the candidate SELECT above runs OUTSIDE this transaction, so
+    // another DB connection can complete/cancel a candidate in the gap before its
+    // per-row UPDATE runs. Gate BOTH the terminal event and the returned list on
+    // the UPDATE's affected-row count — appending a failed/outcome_unknown event
+    // for a task that actually SUCCEEDED is a false terminal notification the
+    // downstream consumer (WorkflowEventConsumer → chat) then delivers. Mirrors
+    // `fail()` and `expireLeasedTasks()`, which already `continue` on affected 0.
+    const transitioned: WorkflowTask[] = [];
     this.db.transaction(() => {
       // Per-row rather than one blanket UPDATE: §9.5 deadline expiry
       // MID-RUN on a declared-effectful plugin task is the same
@@ -1256,7 +1343,7 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
       for (const t of candidates) {
         const envelope = t.status === 'running' ? parsePluginEnvelope(t.payload) : null;
         const toUnknown = envelope !== null && isDeclaredEffectful(envelope);
-        this.db.run(
+        const affected = this.db.run(
           toUnknown
             ? `UPDATE workflow_tasks
                SET state = 'outcome_unknown', error = ?, updated_at = ?
@@ -1266,6 +1353,9 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
                WHERE id = ? AND state NOT IN ${TERMINAL_STATES_SQL}`,
           [toUnknown ? 'expired mid-run — external outcome unknown' : 'expired', nowMs, t.id],
         );
+        // Lost the transition (a concurrent terminal write won) — do NOT emit a
+        // terminal event and do NOT report the task as expired.
+        if (affected === 0) continue;
         // Emit a workflow_event per expired task so downstream consumers
         // (WorkflowEventConsumer → chat formatter) can surface the
         // timeout to the user. Without this, TTL expiry is invisible at
@@ -1284,9 +1374,10 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
             error: toUnknown ? 'expired mid-run — external outcome unknown' : 'expired',
           }),
         });
+        transitioned.push(t);
       }
     });
-    return candidates;
+    return transitioned;
   }
 
   listUndeliveredEvents(nowMs: number, sinceMs: number, limit: number): WorkflowEvent[] {
@@ -1441,6 +1532,30 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     t.status = to;
     t.updated_at = updatedAtMs;
     return true;
+  }
+
+  approveWithEvent(
+    id: string,
+    from: WorkflowTaskState,
+    to: WorkflowTaskState,
+    eventDetails: string,
+    nowMs: number,
+  ): number {
+    // Round-15 #3 parity: single-threaded — check state, flip, append, all
+    // atomic; return 0 (no event) when the transition doesn't match.
+    const t = this.tasks.get(id);
+    if (t === undefined || t.status !== from) return 0;
+    t.status = to;
+    t.updated_at = nowMs;
+    return this.appendEvent({
+      task_id: id,
+      at: nowMs,
+      event_kind: 'approved',
+      needs_delivery: true,
+      delivery_attempts: 0,
+      delivery_failed: false,
+      details: eventDetails,
+    });
   }
 
   setRunId(id: string, runId: string, updatedAtMs: number): boolean {
@@ -1801,13 +1916,9 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
   ): void {
     // Parity with the SQL store: retain the reported payload as evidence,
     // capped, never applied (§14).
-    const MAX_EVIDENCE = 4096;
     const detail: Record<string, unknown> = { agent_did: agentDID, claim_id: claimId, verb };
     if (reported !== undefined && reported !== '') {
-      detail.report =
-        reported.length > MAX_EVIDENCE
-          ? `${reported.slice(0, MAX_EVIDENCE)}…[truncated]`
-          : reported;
+      detail.report = capEvidence(reported); // Round-15 #19: UTF-8 byte cap, not char length
     }
     this.appendEvent({
       task_id: id,
@@ -1852,15 +1963,11 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     t.error = reason;
     t.updated_at = nowMs;
     if (opts?.agentDID !== undefined && opts.agentDID !== '') t.agent_did = opts.agentDID; // Round-13 #10
-    const MAX_EVIDENCE = 4096;
     const details: Record<string, unknown> = { reason };
     if (opts?.agentDID !== undefined && opts.agentDID !== '') details.agent_did = opts.agentDID;
     if (opts?.claimId !== undefined) details.claim_id = opts.claimId;
     if (opts?.evidence !== undefined && opts.evidence !== '') {
-      details.rejected_result =
-        opts.evidence.length > MAX_EVIDENCE
-          ? `${opts.evidence.slice(0, MAX_EVIDENCE)}…[truncated]`
-          : opts.evidence;
+      details.rejected_result = capEvidence(opts.evidence); // Round-15 #19: UTF-8 byte cap
     }
     return this.appendEvent({
       task_id: id,

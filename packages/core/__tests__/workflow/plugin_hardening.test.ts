@@ -457,4 +457,33 @@ describe('parsePluginEnvelope', () => {
     expect(env).not.toBeNull();
     expect(env?.install_id).toBe('inst_1');
   });
+
+  it('round-15 #7: rejects an envelope carrying an UNKNOWN top-level field', () => {
+    // A faulty producer stamps an extra top-level key (unbounded/sensitive data).
+    // The claim guard only inspects params/context, so this would otherwise ride
+    // the raw payload to the runner un-inspected. Fail closed on unknown keys.
+    const smuggled = pluginPayload({ exfil: 'x'.repeat(10000) });
+    expect(parsePluginEnvelope(smuggled)).toBeNull();
+    // The same envelope WITHOUT the extra key still parses.
+    expect(parsePluginEnvelope(pluginPayload())).not.toBeNull();
+  });
+
+  it('round-16 #20: a CARD envelope carrying grant provenance is rejected', () => {
+    // grant_id / invocation_digest are grant-authorization artifacts; the claim
+    // guard only validates them under kind:'grant'. On a card envelope they're
+    // unverifiable → forged/ambiguous provenance in receipts. Quarantine both.
+    expect(
+      parsePluginEnvelope(pluginPayload({ authorization_kind: 'card', grant_id: 'plg_x' })),
+    ).toBeNull();
+    expect(
+      parsePluginEnvelope(pluginPayload({ authorization_kind: 'card', invocation_digest: 'd' })),
+    ).toBeNull();
+    // grant provenance without any authorization_kind is likewise incoherent.
+    expect(parsePluginEnvelope(pluginPayload({ grant_id: 'plg_x' }))).toBeNull();
+    // A clean card envelope (no grant fields) and a grant+grant_id one both parse.
+    expect(parsePluginEnvelope(pluginPayload({ authorization_kind: 'card' }))).not.toBeNull();
+    expect(
+      parsePluginEnvelope(pluginPayload({ authorization_kind: 'grant', grant_id: 'plg_x' })),
+    ).not.toBeNull();
+  });
 });

@@ -199,3 +199,36 @@ describe('round-12 #4: an out-of-enum device role is quarantined (fail closed)',
     }
   });
 });
+
+describe('round-15 #8 — revoked flag is constrained + coerced fail-closed', () => {
+  it('the schema CHECK rejects a non-canonical revoked value', async () => {
+    const { adapter, cleanup } = openId();
+    try {
+      const repo = new SQLiteDeviceRepository(adapter);
+      await repo.register(deviceFixture({ deviceId: 'dev-live' }));
+      // A direct UPDATE to a non-canonical revoked value is rejected by
+      // CHECK (revoked IN (0,1)) — a foreign writer can't persist a value that
+      // would hydrate fail-open.
+      expect(() =>
+        adapter.execute('UPDATE paired_devices SET revoked = 2 WHERE device_id = ?', ['dev-live']),
+      ).toThrow();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('a canonical revoked flag round-trips (revoke → revoked:true, active → false)', async () => {
+    const { adapter, cleanup } = openId();
+    try {
+      const repo = new SQLiteDeviceRepository(adapter);
+      await repo.register(deviceFixture({ deviceId: 'dev-live' }));
+      expect((await repo.get('dev-live'))?.revoked).toBe(false);
+      await repo.revoke('dev-live');
+      // rowToDevice now projects via `!== 0` (fail-closed for any non-zero/
+      // non-numeric legacy value); a canonical 1 still reads revoked.
+      expect((await repo.get('dev-live'))?.revoked).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+});

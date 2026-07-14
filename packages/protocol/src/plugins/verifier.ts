@@ -245,6 +245,14 @@ export interface ParsedAtUri {
 
 export function parseAtUri(uri: string): ParsedAtUri | null {
   if (typeof uri !== 'string' || !uri.startsWith('at://')) return null;
+  // Round-15 #18: parse CANONICALLY. A bare slice/split accepted query strings,
+  // fragments, whitespace, and percent-encoded separators — so the identity-
+  // pointer invariant checker could interpret a URI differently from a
+  // canonicalizing repository-fetch implementation (a parser differential this
+  // module's SHAPE contract exists to prevent). Reject any URI carrying a
+  // query/fragment/whitespace, and reject those chars (plus `/` and `%`) inside
+  // any segment. A non-canonical URI is "no pointer at all".
+  if (uri !== uri.trim() || /[?#\s]/.test(uri)) return null;
   const parts = uri.slice('at://'.length).split('/');
   if (parts.length !== 3) return null;
   const did = parts[0] ?? '';
@@ -252,5 +260,7 @@ export function parseAtUri(uri: string): ParsedAtUri | null {
   const rkey = parts[2] ?? '';
   if (did === '' || collection === '' || rkey === '') return null;
   if (!did.startsWith('did:')) return null;
+  // No reserved/encoded separators or whitespace inside any segment.
+  if ([did, collection, rkey].some((s) => /[?#/%\s]/.test(s))) return null;
   return { did, collection, rkey };
 }

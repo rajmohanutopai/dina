@@ -22,7 +22,7 @@ import {
   unregisterDevice as unregisterDeviceAuth,
 } from '../auth/caller_type';
 import { multibaseToPublicKey, deriveDIDKey } from '../identity/did';
-import { getPluginDecisionRepository } from '../plugins/decisions';
+import { recordDecisionSafe } from '../plugins/decisions';
 import { getPluginGrantRepository } from '../plugins/grants';
 import { terminateInstallInFlight } from '../plugins/install_service';
 import { getPluginInstallRepository } from '../plugins/registry';
@@ -200,7 +200,17 @@ export async function persistDeviceDurable(deviceId: string): Promise<void> {
   const device = devices.get(deviceId);
   if (!device) throw new Error(`devices: cannot persist unknown device "${deviceId}"`);
   const sqlRepo = getDeviceRepository();
-  if (sqlRepo) await sqlRepo.register(device);
+  // Round-15 #4: a NULL repo is not "durably persisted" — it is an in-memory-only
+  // device that vanishes on restart. Silently resolving here contradicts the
+  // "genuine failure REJECTS" contract above and let both registration routes
+  // return 201 for a non-durable device. Fail closed: no repo ⇒ throw, so the
+  // route surfaces a 503 (+ rollback) instead of a false success. Production
+  // always wires the repo before serving; a null repo means a misconfigured or
+  // partial boot.
+  if (!sqlRepo) {
+    throw new Error('devices: no durable device repository configured — cannot persist');
+  }
+  await sqlRepo.register(device);
 }
 
 /** List all devices (including revoked). */
@@ -487,9 +497,14 @@ function disablePluginAuthorityForDevice(deviceDid: string, nowMs: number): bool
       terminateInstallInFlight(install.installId, 'plugin device revoked', nowMs);
     }
     if (changed) {
-      getPluginDecisionRepository()?.record({
+      // PLG-28 #2: device revocation already committed — a failing audit write
+      // must not abort the per-install cascade for the remaining installs.
+      recordDecisionSafe({
         installId: install.installId,
-        decision: 'paused',
+        // Round-15 #20: a pending install is DELETED above (never consented), an
+        // active/paused one is paused. Record the branch-accurate decision — the
+        // owner's audit history said "paused" for an install that was removed.
+        decision: install.status === 'pending' ? 'uninstalled' : 'paused',
         nowSec,
       });
     }

@@ -28,6 +28,7 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 import {
   canonicalJson,
   computePluginDigests,
+  hasUnsafeText,
   isValidTrustAnchor,
   normalizePluginManifest,
   validatePluginManifest,
@@ -36,6 +37,7 @@ import {
 import { ARGON2ID_PARAMS, DINA_FILE_MAGIC, DINA_FILE_VERSION } from '../constants';
 import { wrapSeed, unwrapSeed } from '../crypto/aesgcm';
 import { validatePersonaName } from '../persona/service';
+import { VALID_PLUGIN_DECISION_KINDS } from '../plugins/decisions';
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 import type { PluginManifest } from '@dina/protocol';
@@ -329,6 +331,14 @@ export async function buildArchivePayload(ds: ArchiveDataSource): Promise<Archiv
             status: 'paused',
             device_did: null,
             pause_reason: 'restore', // round-9 #16: restored installs need re-pair + re-consent
+            // Round-15 #16: a restored install must re-pair + re-consent (non-
+            // resumable), so any in-flight UPDATE decision from the PRE-BACKUP
+            // context is stale. Clear the pending-update columns so a restored
+            // catalog can't present or later apply that stale decision.
+            pending_cid: null,
+            pending_behavior_hash: null,
+            pending_decision: null,
+            pending_expires_at: null,
           }));
       }
       identityTables[t] = rows;
@@ -537,8 +547,57 @@ export async function importArchive(
                     status: 'paused',
                     device_did: null,
                     pause_reason: 'restore', // round-9 #16: restored installs need re-pair + re-consent
+                    // Round-15 #16: strip stale pending-update state on restore.
+                    pending_cid: null,
+                    pending_behavior_hash: null,
+                    pending_decision: null,
+                    pending_expires_at: null,
                   }))
-              : rows;
+              : table === 'plugin_decisions'
+                ? // Round-15 #17 + Round-16 #19: validate the WHOLE decision row
+                  // from the attacker-influenced archive, not just the enum. Drop
+                  // rows with an unknown kind, an oversized/spoofing-char
+                  // install_id / capability / reason, or a non-integer created_at.
+                  // Referential linkage is deliberately NOT enforced (the log
+                  // outlives its install — no FK), only well-formedness.
+                  rows.filter((r) => {
+                    if (!VALID_PLUGIN_DECISION_KINDS.has(String(r.decision))) return false;
+                    // PLG-27 #17: the audit `id` was previously unvalidated —
+                    // inserted verbatim and read back via a bare `Number(r.id)`.
+                    // Require a non-negative integer, matching the created_at
+                    // check below. (An unknown extra COLUMN is separately caught
+                    // by restoreTable, which fails the restore closed on any
+                    // non-schema column name — safe, if strict.)
+                    if (typeof r.id !== 'number' || !Number.isInteger(r.id) || r.id < 0) {
+                      return false;
+                    }
+                    if (
+                      typeof r.install_id !== 'string' ||
+                      r.install_id === '' ||
+                      r.install_id.length > 256 ||
+                      hasUnsafeText(r.install_id)
+                    ) {
+                      return false;
+                    }
+                    const cap = r.capability ?? '';
+                    if (typeof cap !== 'string' || cap.length > 256 || hasUnsafeText(cap)) {
+                      return false;
+                    }
+                    const reason = r.reason ?? '';
+                    if (
+                      typeof reason !== 'string' ||
+                      reason.length > 512 ||
+                      hasUnsafeText(reason)
+                    ) {
+                      return false;
+                    }
+                    return (
+                      typeof r.created_at === 'number' &&
+                      Number.isInteger(r.created_at) &&
+                      r.created_at >= 0
+                    );
+                  })
+                : rows;
           restoreTable(idAdapter, table, safe);
         }
       }

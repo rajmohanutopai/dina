@@ -210,6 +210,17 @@ describe('WorkflowService.approve', () => {
 
     expect(() => service.approve('a')).toThrow(WorkflowTransitionError);
   });
+
+  it('round-15 #3: a blocked approve appends NO event (transition + event are atomic)', () => {
+    const { service, repo } = setup();
+    service.create({ id: 'a', kind: WorkflowTaskKind.Approval, description: '', payload: '{}' });
+    // Not in pending_approval → approveWithEvent's transition misses.
+    repo.transition('a', 'created', 'running', Date.now());
+    expect(() => service.approve('a')).toThrow(WorkflowTransitionError);
+    // The `approved` event must NOT have been appended (no stranded event with
+    // no state change, and no state change with no event — one atomic unit).
+    expect(repo.listEventsForTask('a').some((e) => e.event_kind === 'approved')).toBe(false);
+  });
 });
 
 describe('WorkflowService.complete / fail / cancel', () => {

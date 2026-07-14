@@ -114,6 +114,36 @@ describe('Device Pairing Ceremony', () => {
         'invalid, expired, or already-used',
       );
     });
+
+    it('round-15 #6: a malformed key does NOT consume the code (retry succeeds)', () => {
+      const { code } = generatePairingCode();
+      // A malformed public key makes multibaseToPublicKey throw mid-ceremony —
+      // a client error, not a code guess, so the single-use code must survive.
+      expect(() => completePairing(code, 'Phone', 'not-a-valid-multibase-key')).toThrow();
+      expect(isCodeValid(code)).toBe(true);
+      // A corrected retry with a valid key completes and THEN consumes the code.
+      const result = completePairing(code, 'Phone', testMultibase1);
+      expect(result.deviceId).toBeTruthy();
+      expect(isCodeValid(code)).toBe(false);
+    });
+
+    it('PLG-28 #20: repeated MALFORMED keys count against the 3-attempt budget and burn the code', () => {
+      const { code } = generatePairingCode();
+      // Each malformed key now records a failed attempt (previously the decode
+      // threw before any attempt was counted, so a held valid code could take
+      // unlimited malformed guesses until expiry).
+      expect(() => completePairing(code, 'Phone', 'bad-key-1')).toThrow();
+      expect(isCodeValid(code)).toBe(true); // 1 < 3
+      expect(() => completePairing(code, 'Phone', 'bad-key-2')).toThrow();
+      expect(isCodeValid(code)).toBe(true); // 2 < 3
+      expect(() => completePairing(code, 'Phone', 'bad-key-3')).toThrow();
+      // 3rd malformed attempt hits the budget → the code is burned.
+      expect(isCodeValid(code)).toBe(false);
+      // Even a VALID key is now refused.
+      expect(() => completePairing(code, 'Phone', testMultibase1)).toThrow(
+        'invalid, expired, or already-used',
+      );
+    });
   });
 
   describe('isCodeValid', () => {

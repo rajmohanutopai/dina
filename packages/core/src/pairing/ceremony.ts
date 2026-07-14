@@ -192,12 +192,28 @@ export function completePairing(
     throw new Error('pairing: invalid, expired, or already-used code');
   }
 
-  // Mark code as used (single-use)
+  // Round-15 #6: do the fallible work (decode key, register device) BEFORE
+  // consuming the single-use code. A malformed key (`multibaseToPublicKey`
+  // throws) or a registration failure is a client/transient error, not a code
+  // guess — burning the code first permanently killed a legitimate code and
+  // forced a full pairing restart. Consume it only once registration succeeds.
   const pending = pendingCodes.get(code)!;
-  pending.used = true;
 
-  // Derive device DID from its public key
-  const pubKey = multibaseToPublicKey(publicKeyMultibase);
+  // Derive device DID from its public key.
+  // PLG-28 #20: a MALFORMED key must count against the 3-attempt burn budget too.
+  // The decode threw BEFORE any attempt was recorded, so someone holding a valid
+  // (intercepted) code could send malformed keys until expiry without ever
+  // triggering the burn. Record the failed attempt on decode failure. This keeps
+  // the Round-15 #6 intent intact — a SUCCESSFUL decode followed by a later
+  // durable-persistence failure still does NOT burn the code (only genuine
+  // malformed input counts) — so a transient server error remains retryable.
+  let pubKey: Uint8Array;
+  try {
+    pubKey = multibaseToPublicKey(publicKeyMultibase);
+  } catch {
+    recordFailedAttempt(code);
+    throw new Error('pairing: malformed public key');
+  }
   const deviceDID = deriveDIDKey(pubKey);
 
   // Persist device in device registry with caller-specified role
@@ -206,7 +222,24 @@ export function completePairing(
   // Register device DID for auth resolution (callerType = 'device')
   registerDeviceAuth(deviceDID, deviceName);
 
+  // Mark code as used (single-use) — only after the device is registered.
+  pending.used = true;
+
   return { deviceId: device.deviceId, nodeDID: nodeDID! };
+}
+
+/**
+ * Round-16 #3: un-consume a pairing code after a DURABLE persistence failure.
+ * `completePairing` consumes the code once in-memory registration succeeds, but
+ * the route awaits `persistDeviceDurable` AFTER that — a transient SQL failure
+ * then rolls back the device (via the durable revoker) but the code stays
+ * `used` forever, forcing the user to restart pairing. The route calls this in
+ * its 503 rollback branch so a retryable server error doesn't burn a legitimate
+ * code. No-op if the entry is gone (expired/purged) — a fresh code is required.
+ */
+export function restorePairingCode(code: string): void {
+  const pending = pendingCodes.get(code);
+  if (pending) pending.used = false;
 }
 
 /**

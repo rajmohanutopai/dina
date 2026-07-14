@@ -134,6 +134,10 @@ function rowToDevice(row: DBRow): PairedDevice | null {
     authType: String(row.auth_type ?? 'ed25519') as AuthType,
     lastSeen: Number(row.last_seen ?? 0),
     createdAt: Number(row.created_at ?? 0),
-    revoked: Number(row.revoked ?? 0) === 1,
+    // Round-15 #8: fail CLOSED on a non-canonical revoked value. `=== 1` treated
+    // 2 / -1 / NaN (schema drift, foreign writer, corruption) as revoked:false,
+    // and boot hydration then re-registers that device's auth identity. Treat
+    // any non-zero/non-numeric value as revoked; only a clean 0/null is active.
+    revoked: Number(row.revoked ?? 0) !== 0,
   };
 }

@@ -14,8 +14,10 @@ import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import {
   InMemoryWorkflowRepository,
+  MAX_EVIDENCE_BYTES,
   SQLiteWorkflowRepository,
   WorkflowConflictError,
+  capEvidence,
   rowToEvent,
   rowToTask,
 } from '../../src/workflow/repository';
@@ -66,7 +68,6 @@ describe('Migration v3 (workflow_tasks + workflow_events)', () => {
     expect(v3?.name).toBe('workflow_tasks');
   });
 });
-
 
 describe('WorkflowRepository (in-memory) — create', () => {
   it('creates and returns the task by id', () => {
@@ -228,9 +229,9 @@ describe('WorkflowRepository — subscribeApprovalCreated', () => {
     const seen: string[] = [];
     r.create(baseTask({ id: 'apr-1', kind: WorkflowTaskKind.Approval }));
     r.subscribeApprovalCreated((t) => seen.push(t.id));
-    expect(() =>
-      r.create(baseTask({ id: 'apr-1', kind: WorkflowTaskKind.Approval })),
-    ).toThrow(WorkflowConflictError);
+    expect(() => r.create(baseTask({ id: 'apr-1', kind: WorkflowTaskKind.Approval }))).toThrow(
+      WorkflowConflictError,
+    );
     expect(seen).toHaveLength(0);
   });
 });
@@ -645,7 +646,7 @@ describe('WorkflowRepository — claimDelegationTask runner routing (multi-runne
     expect(r.claimDelegationTask(AGENT, NOW_MS, LEASE_MS, '')).toBeNull();
   });
 
-  it("a foreign filter NEVER takes a dina.local task", () => {
+  it('a foreign filter NEVER takes a dina.local task', () => {
     const r = buildRepo();
     r.create(delegation('d-tier1', 'dina.local'));
     expect(r.claimDelegationTask(AGENT, NOW_MS, LEASE_MS, 'openclaw')).toBeNull();
@@ -906,5 +907,28 @@ describe('SQLiteWorkflowRepository construction', () => {
   it('constructs against an adapter without throwing', () => {
     const db = new InMemoryDatabaseAdapter();
     expect(() => new SQLiteWorkflowRepository(db)).not.toThrow();
+  });
+});
+
+describe('round-15 #19 — capEvidence caps by UTF-8 bytes, not char length', () => {
+  it('returns short strings unchanged and truncates by byte budget on a code-point boundary', () => {
+    expect(capEvidence('short')).toBe('short');
+    // 4096 three-byte CJK chars = ~12 KB of UTF-8 → must be truncated.
+    const cjk = '中'.repeat(4096);
+    const capped = capEvidence(cjk);
+    expect(capped).not.toBe(cjk);
+    expect(capped.endsWith('…[truncated]')).toBe(true);
+    // Round-16 #11: the FULL string (prefix + marker) fits the byte budget — the
+    // marker's bytes are reserved, so the total never overruns the advertised cap.
+    expect(new TextEncoder().encode(capped).length).toBeLessThanOrEqual(MAX_EVIDENCE_BYTES);
+    // A char-length cap would have kept all 4096 chars; the byte cap keeps far fewer.
+    const prefix = capped.slice(0, capped.length - '…[truncated]'.length);
+    expect([...prefix].length).toBeLessThan(4096);
+  });
+
+  it('round-16 #11: an all-ASCII string exactly at the cap still stays within budget with the marker', () => {
+    // ASCII fills the budget 1 byte/char; the total (prefix + marker) must be ≤ cap.
+    const capped = capEvidence('a'.repeat(MAX_EVIDENCE_BYTES + 100));
+    expect(new TextEncoder().encode(capped).length).toBeLessThanOrEqual(MAX_EVIDENCE_BYTES);
   });
 });

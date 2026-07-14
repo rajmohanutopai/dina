@@ -25,7 +25,7 @@
  */
 
 import { normalizeStringSet } from './normalize';
-import { hasUnsafeText } from './text_safety';
+import { hasUnsafeText, hasDeceptiveText } from './text_safety';
 import {
   PLUGIN_BANNED_CATEGORIES,
   PLUGIN_CAPS,
@@ -227,6 +227,13 @@ const ANNOTATION_SCHEMA_KEYWORDS = new Set([
   '$schema',
   '$id',
 ]);
+// PLG-27 #11: the TEXT annotations render as strings on the consent/approval
+// form, so they must BE strings — a numeric/object `title`/`description` was
+// previously accepted silently, leaving a consent field that renders blank or
+// oddly. `default`/`examples` are DATA annotations (not rendered as text, and
+// already depth-/$ref-bounded by the schema-wide passes), so they keep only the
+// string-only spoof/length check without a type constraint.
+const TEXT_ANNOTATION_KEYWORDS = new Set(['title', 'description', '$comment', '$schema', '$id']);
 
 const KNOWN_SCHEMA_TYPES = new Set([
   'object',
@@ -257,6 +264,13 @@ interface SchemaProblem {
  * `properties` value's own keys are property names, never keywords.
  */
 function collectSchemaProblems(schema: unknown, path: string, out: SchemaProblem[]): void {
+  // PLG-27 #10: cap the collector itself. The `err()` sink bounds the diagnostic
+  // COUNT, but without a collector budget a wide/deep schema still accumulates
+  // thousands of SchemaProblem entries (each carrying a full nested path) before
+  // the sink trims them — the joined message is super-linear in the input. Stop
+  // walking once the budget is hit; a truncated problem list still fails closed
+  // (the schema is already invalid the moment ANY problem is recorded).
+  if (out.length >= PLUGIN_CAPS.MAX_SCHEMA_PROBLEMS) return;
   if (schema === undefined || schema === null) return; // absent = no constraint
   const where = path === '' ? '(schema)' : path;
   // P1-3 (round 5): a boolean subschema (`false` = reject-all, `true` =
@@ -286,7 +300,26 @@ function collectSchemaProblems(schema: unknown, path: string, out: SchemaProblem
       }
       continue;
     }
-    if (ANNOTATION_SCHEMA_KEYWORDS.has(key)) continue;
+    if (ANNOTATION_SCHEMA_KEYWORDS.has(key)) {
+      // Round-16 #16: annotation strings (title/description/$comment) render on
+      // the consent/approval form — bound length + reject spoofing chars.
+      const av = s[key];
+      if (TEXT_ANNOTATION_KEYWORDS.has(key)) {
+        // PLG-27 #11: text annotations MUST be strings — reject non-strings
+        // outright instead of accepting them silently.
+        if (typeof av !== 'string') {
+          bad(at(key), `"${key}" annotation must be a string`);
+        } else if (av.length > PLUGIN_CAPS.MAX_SCHEMA_ANNOTATION_LENGTH || hasUnsafeText(av)) {
+          bad(at(key), 'annotation string is too long or has control/bidi/zero-width chars');
+        }
+      } else if (
+        typeof av === 'string' &&
+        (av.length > PLUGIN_CAPS.MAX_SCHEMA_ANNOTATION_LENGTH || hasUnsafeText(av))
+      ) {
+        bad(at(key), 'annotation string is too long or has control/bidi/zero-width chars');
+      }
+      continue;
+    }
     if (!ENFORCED_SCHEMA_KEYWORDS.has(key)) {
       out.push({ kind: 'unenforceable', path: at(key), detail: `"${key}" is not enforced` });
       continue;
@@ -303,6 +336,10 @@ function collectSchemaProblems(schema: unknown, path: string, out: SchemaProblem
             v.some((t) => typeof t !== 'string' || !KNOWN_SCHEMA_TYPES.has(t))
           ) {
             bad(at(key), 'type array must be non-empty known-type strings');
+          } else if (v.length > PLUGIN_CAPS.MAX_TYPE_MEMBERS || new Set(v).size !== v.length) {
+            // PLG-27 #12: bound + dedup the type array (only 7 known types exist,
+            // so thousands of duplicate entries are pure amplification).
+            bad(at(key), 'type array exceeds the member cap or has duplicate entries');
           }
         } else {
           bad(at(key), 'type must be a string or array of type strings');
@@ -311,15 +348,36 @@ function collectSchemaProblems(schema: unknown, path: string, out: SchemaProblem
       case 'properties':
         if (v === null || typeof v !== 'object' || Array.isArray(v)) {
           bad(at(key), 'properties must be an object');
+        } else if (Object.keys(v).length > PLUGIN_CAPS.MAX_SCHEMA_PROPERTIES) {
+          // PLG-27 #12: cap the property-key count (each key inflates consent
+          // rendering + every runtime validation).
+          bad(at(key), `properties has more than ${PLUGIN_CAPS.MAX_SCHEMA_PROPERTIES} keys`);
         }
         break;
       case 'required':
         if (!Array.isArray(v) || v.some((x) => typeof x !== 'string')) {
           bad(at(key), 'required must be an array of strings');
+        } else if (
+          // PLG-27 #12: bound the count, dedup, and reject blank required names.
+          v.length > PLUGIN_CAPS.MAX_REQUIRED_ENTRIES ||
+          new Set(v).size !== v.length ||
+          v.some((x) => isBlankOrPadded(x as string)) // PLG-28 #14: blank or padded
+        ) {
+          bad(
+            at(key),
+            'required exceeds the entry cap, has duplicates, or has a blank/padded entry',
+          );
         }
         break;
       case 'enum':
-        if (!Array.isArray(v) || v.length === 0) bad(at(key), 'enum must be a non-empty array');
+        if (!Array.isArray(v) || v.length === 0) {
+          bad(at(key), 'enum must be a non-empty array');
+        } else if (v.length > PLUGIN_CAPS.MAX_ENUM_MEMBERS) {
+          // Round-16 #13: the pinned runtime deep-equal-scans EVERY enum member
+          // per validation (params/result run in shipped runner mode), so cap
+          // the member count to bound the per-invocation linear cost.
+          bad(at(key), `enum has ${v.length} members; cap is ${PLUGIN_CAPS.MAX_ENUM_MEMBERS}`);
+        }
         break;
       case 'items':
         // P1-3 (round 5): tuple validation (`items: [schemaA, schemaB]`) is NOT
@@ -372,11 +430,47 @@ function collectSchemaProblems(schema: unknown, path: string, out: SchemaProblem
       bad(at(lo), `${lo} (${s[lo]}) exceeds ${hi} (${s[hi]}) — no value can satisfy this schema`);
     }
   }
+  // PLG-28 #4: an UNSATISFIABLE required/properties pair. When
+  // `additionalProperties: false`, every `required` name must be a declared
+  // `properties` key — otherwise NO object value can satisfy the schema (omitting
+  // the property fails the required check; including it fails the
+  // additionalProperties check). The pinned runtime (schema_validate.ts) enforces
+  // both, so such a schema silently BRICKS a consented runner capability on every
+  // object invocation. Same footgun class as the min>max reject above; this one
+  // bites shipping runner params/result schemas today, not just interpreted mode.
+  if (owns('required') && owns('additionalProperties') && s.additionalProperties === false) {
+    const propKeys =
+      s.properties !== null && typeof s.properties === 'object' && !Array.isArray(s.properties)
+        ? new Set(Object.keys(s.properties as Record<string, unknown>))
+        : new Set<string>();
+    if (Array.isArray(s.required)) {
+      for (const req of s.required) {
+        if (typeof req === 'string' && !propKeys.has(req)) {
+          bad(
+            at('required'),
+            `required property "${req}" is not a declared property while additionalProperties is false — no value can satisfy this schema`,
+          );
+        }
+      }
+    }
+  }
   // Descend through the recognized subschema containers only.
   if (owns('properties')) {
     const props = s.properties;
     if (props !== null && typeof props === 'object' && !Array.isArray(props)) {
       for (const [name, sub] of Object.entries(props as Record<string, unknown>)) {
+        if (out.length >= PLUGIN_CAPS.MAX_SCHEMA_PROBLEMS) break; // PLG-27 #10: collector budget
+        // Round-16 #16: property NAMES become consent/approval form field labels
+        // — a bidi/zero-width name can spoof `amount`/`recipient`. Bound + check.
+        // PLG-27 #13: a whitespace-only or empty property name renders blank —
+        // the shared identifier contract (non-empty after trim, bounded, no
+        // spoofing chars) applies here as to machine state/move names.
+        if (!isValidIdentifier(name)) {
+          bad(
+            `${at('properties')}.${name}`,
+            'property name is empty/blank, too long, or has control/bidi/zero-width chars',
+          );
+        }
         collectSchemaProblems(sub, `${at('properties')}.${name}`, out);
       }
     }
@@ -386,6 +480,24 @@ function collectSchemaProblems(schema: unknown, path: string, out: SchemaProblem
   if (owns('items') && !Array.isArray(s.items)) {
     collectSchemaProblems(s.items, at('items'), out);
   }
+}
+
+/**
+ * PLG-27 #10: render at most a bounded slice of schema problems into a single
+ * diagnostic message, with a "(+N more)" suffix. The collector is already
+ * budget-capped, but a per-message slice keeps each `err()` string small and
+ * deterministic regardless of how the budget was consumed.
+ */
+const MAX_JOINED_SCHEMA_PROBLEMS = 25;
+function joinSchemaProblems(
+  items: SchemaProblem[],
+  fmt: (x: SchemaProblem) => string,
+  sep: string,
+): string {
+  const shown = items.slice(0, MAX_JOINED_SCHEMA_PROBLEMS).map(fmt).join(sep);
+  return items.length > MAX_JOINED_SCHEMA_PROBLEMS
+    ? `${shown}${sep}(+${items.length - MAX_JOINED_SCHEMA_PROBLEMS} more)`
+    : shown;
 }
 
 /**
@@ -416,7 +528,23 @@ export function validatePluginManifest(
   opts: ValidatePluginManifestOptions = {},
 ): PluginValidationResult {
   const errors: PluginValidationError[] = [];
+  let diagnosticsTruncated = false;
   const err = (code: string, path: string, message: string): void => {
+    // Round-16 #17: bound the diagnostic output. A maximally-malformed manifest
+    // (e.g. thousands of unknown keys) would otherwise expand into an error
+    // structure much larger than the 256 KB input. Stop at MAX_DIAGNOSTICS and
+    // append a single sentinel — deterministic, so the validator stays pure.
+    if (errors.length >= PLUGIN_CAPS.MAX_DIAGNOSTICS) {
+      if (!diagnosticsTruncated) {
+        diagnosticsTruncated = true;
+        errors.push({
+          code: 'diagnostics_truncated',
+          path: '',
+          message: `further validation errors omitted (cap ${PLUGIN_CAPS.MAX_DIAGNOSTICS})`,
+        });
+      }
+      return;
+    }
     errors.push({ code, path, message });
   };
 
@@ -449,7 +577,7 @@ export function validatePluginManifest(
   }
   if (
     typeof manifest.display_name !== 'string' ||
-    manifest.display_name.trim() === '' || // Round-14 #18: whitespace-only renders blank
+    isBlankOrPadded(manifest.display_name) || // Round-14 #18 + PLG-28 #14: blank/padded renders deceptively
     manifest.display_name.length > PLUGIN_CAPS.MAX_DISPLAY_NAME_LENGTH ||
     // Round-13 #21: no spoofing chars in owner-facing consent text.
     hasUnsafeText(manifest.display_name)
@@ -498,15 +626,76 @@ export function validatePluginManifest(
       }
     }
   }
+  // Round-16 #18: `icon` is typed `unknown` on the assumption AppView validates
+  // it, but the repo-proof / direct-install path runs THIS validator with no
+  // AppView. Apply a shape/size FLOOR so malformed/oversized icon data can't
+  // enter the stored manifest and reach the consent/marketplace UI: bound the
+  // serialized byte size, and reject spoofing chars in a string icon. (Byte-
+  // content decoding stays a render-layer concern.)
+  if (manifest.icon !== undefined) {
+    let iconBytes: number;
+    try {
+      iconBytes = utf8Length(JSON.stringify(manifest.icon) ?? '');
+    } catch {
+      iconBytes = PLUGIN_CAPS.MAX_ICON_BYTES + 1; // unserializable → reject
+    }
+    // PLG-27 #16: `icon` is a blob REFERENCE (a string CID/URL or a blob-ref
+    // object), never a bare number/boolean/array. The exact blob-ref STRUCTURE
+    // is deliberately undefined at this layer (typed `unknown`; AppView owns the
+    // blob format), so we enforce a shape FLOOR — a plain object or a string —
+    // rather than inventing a schema. This rejects `icon: 42` / `icon: [..]` /
+    // `icon: true` that previously passed on byte size alone.
+    // PLG-28 #15: raise the object floor. PLG-27 #16 accepted ANY plain object,
+    // including `{}` and `{foo:'bar'}` — an empty/garbage icon that reaches the
+    // consent/marketplace surface on the AppView-independent repo-proof path. The
+    // exact blob-ref format stays deferred to AppView (icon is `unknown`), so we
+    // do NOT invent a schema; we only require an object icon to be NON-EMPTY and
+    // carry at least one recognized, non-empty string reference key. A string
+    // icon (CID/URL) still passes as before.
+    const ICON_REF_KEYS = ['cid', 'uri', 'ref', '$type', 'src', 'url'] as const;
+    const iconObjOk =
+      isPlainObject(manifest.icon) &&
+      ICON_REF_KEYS.some((k) => {
+        const val = (manifest.icon as Record<string, unknown>)[k];
+        return typeof val === 'string' && val !== '';
+      });
+    const iconShapeOk = iconObjOk || typeof manifest.icon === 'string';
+    if (
+      !iconShapeOk ||
+      iconBytes > PLUGIN_CAPS.MAX_ICON_BYTES ||
+      (typeof manifest.icon === 'string' && hasUnsafeText(manifest.icon))
+    ) {
+      err(
+        'bad_icon',
+        'icon',
+        `icon must be a string CID/URL or a blob-ref object with a cid/uri/ref/$type string, serialize to ≤ ${PLUGIN_CAPS.MAX_ICON_BYTES} bytes, with no control/bidi/zero-width chars`,
+      );
+    }
+  }
   // Round-7 #7: `required_features` is unioned into the compatibility set and
   // must be a string array — a numeric element would be add()ed to the derived
   // feature set and silently mis-gated.
   if (manifest.required_features !== undefined) {
+    // Round-16 #15: each token is JOINED into an owner-facing compatibility
+    // error (install_service "needs features…"), so bound the count + per-token
+    // length and reject empty / spoofing-char tokens. (Dedup is already enforced
+    // downstream by the not_normalized check.)
     if (
       !Array.isArray(manifest.required_features) ||
-      manifest.required_features.some((f) => typeof f !== 'string')
+      manifest.required_features.length > PLUGIN_CAPS.MAX_REQUIRED_FEATURES ||
+      manifest.required_features.some(
+        (f) =>
+          typeof f !== 'string' ||
+          isBlankOrPadded(f) || // PLG-27 #14 + PLG-28 #14: blank OR padded tokens
+          f.length > PLUGIN_CAPS.MAX_REQUIRED_FEATURE_LENGTH ||
+          hasUnsafeText(f),
+      )
     ) {
-      err('bad_required_features', 'required_features', 'required_features must be a string array');
+      err(
+        'bad_required_features',
+        'required_features',
+        `required_features must be ≤ ${PLUGIN_CAPS.MAX_REQUIRED_FEATURES} non-empty strings (≤ ${PLUGIN_CAPS.MAX_REQUIRED_FEATURE_LENGTH} chars, no control/bidi/zero-width chars)`,
+      );
     }
   }
   // Round-7 #7: `execution.runtime`, when present, must be an OBJECT. A scalar
@@ -555,7 +744,8 @@ export function validatePluginManifest(
     for (const [path, v] of evidence) {
       if (
         v !== undefined &&
-        (typeof v !== 'string' || v === '' || v.length > 512 || hasUnsafeText(v))
+        // PLG-27 #14 (same class): reject whitespace-only, not just empty.
+        (typeof v !== 'string' || isBlankOrPadded(v) || v.length > 512 || hasUnsafeText(v))
       ) {
         err(
           'bad_runtime_evidence',
@@ -575,7 +765,19 @@ export function validatePluginManifest(
   }
 
   // --- size cap ------------------------------------------------------------
-  const byteLength = opts.rawByteLength ?? utf8Length(JSON.stringify(manifest));
+  // PLG-28 #5: `card` (and other `unknown` fields) carry unrestricted nested
+  // data, and `JSON.stringify` recurses — a deeply-nested `card` throws
+  // `RangeError: Maximum call stack size exceeded`. This validator's contract is
+  // TOTALITY (it is also AppView's ingest gate), and finishBegin does not wrap it
+  // in try/catch, so an unguarded throw here breaks the fail-closed-RESULT
+  // promise on the untrusted ingest boundary. Guard it exactly like the icon-size
+  // path already does: an unserializable/too-deep manifest is treated as over-cap.
+  let byteLength: number;
+  try {
+    byteLength = opts.rawByteLength ?? utf8Length(JSON.stringify(manifest));
+  } catch {
+    byteLength = PLUGIN_CAPS.MAX_MANIFEST_BYTES + 1;
+  }
   if (byteLength > PLUGIN_CAPS.MAX_MANIFEST_BYTES) {
     err(
       'manifest_too_large',
@@ -612,11 +814,33 @@ export function validatePluginManifest(
   // Round-10 #6: `issuer = null` reached `null.did` (THROW). Guard it's an
   // object before field access (a non-object issuer is itself invalid).
   const issuer = manifest.execution?.runtime?.issuer;
-  if (
-    issuer !== undefined &&
-    (!isPlainObject(issuer) || typeof issuer.did !== 'string' || typeof issuer.key !== 'string')
-  ) {
-    err('bad_issuer', 'execution.runtime.issuer', 'issuer.did and issuer.key must be strings');
+  if (issuer !== undefined) {
+    // Round-15 #12: the issuer signs runtime instance certificates (§14) and is
+    // rendered on the consent surface, so it gets the same display-safety +
+    // shape floor as the trust-anchor id fields (isSafeAnchorField): a
+    // did:-prefixed, bounded, spoofing-char-free DID + a bounded, clean key.
+    // Full DID/multibase-doc validity is the verifier seam's job; this closes
+    // the "any two strings pass" gap (invalid DIDs, multi-KB values, bidi/
+    // zero-width chars all previously passed).
+    const okDid =
+      isPlainObject(issuer) &&
+      typeof issuer.did === 'string' &&
+      issuer.did.startsWith('did:') &&
+      issuer.did.length <= 256 &&
+      !hasUnsafeText(issuer.did);
+    const okKey =
+      isPlainObject(issuer) &&
+      typeof issuer.key === 'string' &&
+      !isBlankOrPadded(issuer.key) && // PLG-27 #14 + PLG-28 #14: reject blank OR padded
+      issuer.key.length <= 256 &&
+      !hasUnsafeText(issuer.key);
+    if (!okDid || !okKey) {
+      err(
+        'bad_issuer',
+        'execution.runtime.issuer',
+        'issuer.did must be a did:-prefixed ≤256-char string and issuer.key a non-empty ≤256-char string, both without control/bidi/zero-width chars',
+      );
+    }
   }
   const mode = manifest.execution?.mode;
   if (mode !== 'interpreted' && mode !== 'runner') {
@@ -637,14 +861,18 @@ export function validatePluginManifest(
         'hosted runners must declare runtime.issuer {did, key} — it signs instance certificates (§14)',
       );
     }
-    // Round-13 #20: a prefix test (`/^https:\/\//`) accepted `"https://"` alone
-    // and other malformed values. Parse as a real URL and require the https
-    // scheme AND a non-empty host, so a garbage endpoint fails at CONSENT time
-    // rather than much later at fetch.
+    // Round-13 #20 + Round-15 #11: a prefix test (`/^https:\/\//`) accepted
+    // `"https://"` alone; a bare scheme+host parse still accepted
+    // `https://user:pass@host` (embedded credentials) and control/bidi/zero-width
+    // chars in the path. Require the https scheme AND (via isSafeHttpUrl) a
+    // non-empty host, NO embedded credentials, and no spoofing chars — the same
+    // strictness homepage/source_url already enforce, so a garbage or
+    // credential-bearing endpoint fails at CONSENT time rather than at fetch.
     let validHttps = false;
     try {
       const u = new URL(runtime.hosted_endpoint);
-      validHttps = u.protocol === 'https:' && u.hostname !== '';
+      validHttps =
+        u.protocol === 'https:' && u.hostname !== '' && isSafeHttpUrl(runtime.hosted_endpoint);
     } catch {
       validHttps = false;
     }
@@ -652,7 +880,7 @@ export function validatePluginManifest(
       err(
         'bad_hosted_endpoint',
         'execution.runtime.hosted_endpoint',
-        'hosted_endpoint must be a valid https:// URL with a host',
+        'hosted_endpoint must be a valid https:// URL with a host, no embedded credentials, no control/bidi/zero-width chars',
       );
     }
   }
@@ -764,7 +992,7 @@ function validateCapability(
   // through. Require a non-empty string within the cap.
   if (
     typeof cap.display_name !== 'string' ||
-    cap.display_name.trim() === '' || // Round-14 #18: whitespace-only renders blank
+    isBlankOrPadded(cap.display_name) || // Round-14 #18 + PLG-28 #14: blank/padded renders deceptively
     cap.display_name.length > PLUGIN_CAPS.MAX_DISPLAY_NAME_LENGTH ||
     hasUnsafeText(cap.display_name) // Round-13 #21
   ) {
@@ -807,13 +1035,23 @@ function validateCapability(
     // Round-13 #21: each category is a consent-surface token — must be a
     // NON-EMPTY string with no control/bidi/zero-width chars (an empty or
     // spoofing-char category renders deceptively in the consent card).
+    // Round-16 #14: also cap the COUNT + per-entry length — thousands of long
+    // categories inflate hashing / normalization / consent rendering / context
+    // projection (the whole-manifest byte cap alone permits tens of thousands).
     (!Array.isArray(rawCategories) ||
-      rawCategories.some((c) => typeof c !== 'string' || c === '' || hasUnsafeText(c)))
+      rawCategories.length > PLUGIN_CAPS.MAX_DATA_CATEGORIES ||
+      rawCategories.some(
+        (c) =>
+          typeof c !== 'string' ||
+          isBlankOrPadded(c) || // PLG-27 #14 + PLG-28 #14: blank OR padded token
+          c.length > PLUGIN_CAPS.MAX_DATA_SCOPE_ENTRY_LENGTH ||
+          hasUnsafeText(c),
+      ))
   ) {
     err(
       'bad_data_categories',
       `${p}.data_scope.categories`,
-      'data_scope.categories must be an array of non-empty strings without control/bidi/zero-width chars',
+      `data_scope.categories must be ≤ ${PLUGIN_CAPS.MAX_DATA_CATEGORIES} non-empty strings (≤ ${PLUGIN_CAPS.MAX_DATA_SCOPE_ENTRY_LENGTH} chars, no control/bidi/zero-width chars)`,
     );
   }
   // Round-7 #7: data_scope.personas has the same string-array contract as
@@ -823,13 +1061,21 @@ function validateCapability(
   const rawPersonas = cap.data_scope?.personas;
   if (
     rawPersonas !== undefined &&
+    // Round-16 #14: cap COUNT + per-entry length (see categories above).
     (!Array.isArray(rawPersonas) ||
-      rawPersonas.some((c) => typeof c !== 'string' || c === '' || hasUnsafeText(c)))
+      rawPersonas.length > PLUGIN_CAPS.MAX_DATA_PERSONAS ||
+      rawPersonas.some(
+        (c) =>
+          typeof c !== 'string' ||
+          isBlankOrPadded(c) || // PLG-27 #14 + PLG-28 #14: blank OR padded token
+          c.length > PLUGIN_CAPS.MAX_DATA_SCOPE_ENTRY_LENGTH ||
+          hasUnsafeText(c),
+      ))
   ) {
     err(
       'bad_data_personas',
       `${p}.data_scope.personas`,
-      'data_scope.personas must be an array of non-empty strings without control/bidi/zero-width chars',
+      `data_scope.personas must be ≤ ${PLUGIN_CAPS.MAX_DATA_PERSONAS} non-empty strings (≤ ${PLUGIN_CAPS.MAX_DATA_SCOPE_ENTRY_LENGTH} chars, no control/bidi/zero-width chars)`,
     );
   }
   const catList: string[] = Array.isArray(rawCategories)
@@ -848,7 +1094,13 @@ function validateCapability(
   // capability id stayed innocuous. Categories now get the same containment
   // test as the id (same over-block tradeoff the id path already accepts).
   const canon = (s: string): string => s.toLowerCase().replace(/[-_.]+/g, '_');
-  const canonId = canon(cap.id);
+  // PLG-27 #7 (totality): `cap.id` may be a non-string (numeric / null / omitted)
+  // — a `bad_capability_id` error is already recorded above, but `canon(cap.id)`
+  // would call `.toLowerCase()` on a non-string and THROW, breaking the
+  // validator's fail-closed-RESULT contract on the untrusted AppView ingest path
+  // (and the direct-install path). Fall back to an empty canon; the manifest is
+  // already invalid, so the ban check simply has nothing to match.
+  const canonId = typeof cap.id === 'string' ? canon(cap.id) : '';
   const canonCats = catList.map(canon);
   for (const banned of PLUGIN_BANNED_CATEGORIES) {
     const b = canon(banned);
@@ -889,14 +1141,14 @@ function validateCapability(
       err(
         'unenforceable_schema_keyword',
         `${p}.${name}`,
-        `schema uses constraints Dina does not enforce (${unenforceable.map((x) => x.path).join(', ')}); use only type/properties/required/items/enum and the numeric/string/array bounds`,
+        `schema uses constraints Dina does not enforce (${joinSchemaProblems(unenforceable, (x) => x.path, ', ')}); use only type/properties/required/items/enum and the numeric/string/array bounds`,
       );
     }
     if (malformed.length > 0) {
       err(
         'malformed_schema_constraint',
         `${p}.${name}`,
-        `schema constraint has the wrong value shape: ${malformed.map((x) => `${x.path} (${x.detail})`).join('; ')}`,
+        `schema constraint has the wrong value shape: ${joinSchemaProblems(malformed, (x) => `${x.path} (${x.detail})`, '; ')}`,
       );
     }
   }
@@ -917,19 +1169,25 @@ function validateCapability(
     if (cap.kinds !== undefined) {
       err('kinds_on_session', `${p}.kinds`, 'session capabilities carry no kinds (§5 rule 3)');
     }
-    if (cap.machine === undefined) {
-      err('session_without_machine', `${p}.machine`, 'session capabilities require a machine');
-    } else {
-      validateMachine(cap.machine, p, err);
-      derived.add('session');
-    }
+    // PLG-28 #10: parse ops_used FIRST so validateMachine can cross-check that
+    // every transition op is DECLARED here. Compatibility features are derived
+    // from ops_used ONLY, so an op executed by a transition but absent from
+    // ops_used would slip past the §14 compatibility gate.
     const ops = arrayField(cap.ops_used, 'bad_ops_used', `${p}.ops_used`, err);
+    const opsUsedSet = new Set<string>();
     for (const op of ops) {
       if (!(PLUGIN_OPS as readonly string[]).includes(op)) {
         err('unknown_op', `${p}.ops_used`, `op "${op}" is not in the closed ops library (§10.2)`);
       } else {
         derived.add(`op.${op}`);
+        opsUsedSet.add(op);
       }
+    }
+    if (cap.machine === undefined) {
+      err('session_without_machine', `${p}.machine`, 'session capabilities require a machine');
+    } else {
+      validateMachine(cap.machine, p, opsUsedSet, err);
+      derived.add('session');
     }
     const budget = cap.verify_budget ?? 0;
     if (!Number.isInteger(budget) || budget < 0 || budget > PLUGIN_CAPS.MAX_VERIFY_BUDGET) {
@@ -938,6 +1196,24 @@ function validateCapability(
         `${p}.verify_budget`,
         `verify_budget must be an integer 0..${PLUGIN_CAPS.MAX_VERIFY_BUDGET}`,
       );
+    }
+    // PLG-28 #11: `instructions` is the interpreted LLM-step prompt (string|null)
+    // — it feeds the §8.1 behavior hash, the consent surface, and the future
+    // interpreter, but was accepted at ANY type/length. Require string|null,
+    // bound the length, and reject deceptive chars — but ALLOW newlines/tabs
+    // (a multi-line prompt), so use hasDeceptiveText, not hasUnsafeText.
+    if (cap.instructions !== undefined && cap.instructions !== null) {
+      if (
+        typeof cap.instructions !== 'string' ||
+        cap.instructions.length > PLUGIN_CAPS.MAX_INSTRUCTIONS_LENGTH ||
+        hasDeceptiveText(cap.instructions)
+      ) {
+        err(
+          'bad_instructions',
+          `${p}.instructions`,
+          `instructions must be a string ≤ ${PLUGIN_CAPS.MAX_INSTRUCTIONS_LENGTH} chars with no control/bidi/zero-width chars (newlines allowed)`,
+        );
+      }
     }
   }
 
@@ -1003,7 +1279,7 @@ function validateCapability(
       // check below silently passed it. Type-guard first.
       if (typeof phrase !== 'string') {
         err('bad_phrase', `${p}.intent_phrases`, 'intent phrases must be strings');
-      } else if (phrase.trim().length === 0 || phrase.length > PLUGIN_CAPS.MAX_PHRASE_LENGTH) {
+      } else if (isBlankOrPadded(phrase) || phrase.length > PLUGIN_CAPS.MAX_PHRASE_LENGTH) {
         // Round-14 #16: a whitespace-only phrase (`"   "`) is non-empty by
         // `.length` but renders blank and, after trim/embed, reads as an
         // extremely broad routing claim. Reject trimmed-empty.
@@ -1087,6 +1363,7 @@ function validateCapability(
 function validateMachine(
   machine: PluginMachine,
   p: string,
+  opsUsed: ReadonlySet<string>,
   err: (code: string, path: string, message: string) => void,
 ): void {
   const mp = `${p}.machine`;
@@ -1110,6 +1387,21 @@ function validateMachine(
   }
   const stateSet = new Set<string>();
   for (const s of states) {
+    // Round-16 #8: state identifiers MUST be non-empty strings. A numeric state
+    // passes the by-value `stateSet.has(initial/terminal/from/to)` checks below
+    // (the set would hold the number) and would diverge across language ports /
+    // destabilize the behavior hash. Type-check before building the set.
+    // PLG-27 #13: use the shared identifier contract — this ALSO rejects
+    // whitespace-only names (which rendered blank) and, for the first time,
+    // spoofing chars in state names (states had no hasUnsafeText check at all).
+    if (!isValidIdentifier(s)) {
+      err(
+        'bad_state',
+        `${mp}.states`,
+        'each state must be a non-empty string (bounded, no control/bidi/zero-width chars)',
+      );
+      continue;
+    }
     if (stateSet.has(s)) err('duplicate_state', `${mp}.states`, `duplicate state "${s}"`);
     stateSet.add(s);
   }
@@ -1124,6 +1416,17 @@ function validateMachine(
     err('too_many_moves', `${mp}.moves`, `≤ ${PLUGIN_CAPS.MAX_MOVE_TYPES} move types`);
   }
   for (const [name, schema] of Object.entries(movesObj)) {
+    // PLG-27 #13: move NAMES are matched at runtime against transition `move`
+    // refs and render in consent/turn UI — the shared identifier contract
+    // rejects empty/whitespace-only/spoofing-char move names (previously only
+    // the move SCHEMA was validated, never the name).
+    if (!isValidIdentifier(name)) {
+      err(
+        'bad_move',
+        `${mp}.moves`,
+        `move name "${name}" must be a non-empty string (bounded, no control/bidi/zero-width chars)`,
+      );
+    }
     const depth = schemaDepth(schema, 0);
     if (depth > PLUGIN_CAPS.MAX_SCHEMA_DEPTH) {
       err(
@@ -1135,13 +1438,56 @@ function validateMachine(
     if (hasRecursiveRef(schema)) {
       err('recursive_ref', `${mp}.moves.${name}`, 'recursive $ref is not allowed');
     }
+    // Round-16 #9: move schemas got only depth + recursive-ref checks, but
+    // params/result schemas ALSO run the F4 enforceability meta-schema. Without
+    // it a move schema can consent to a constraint (`pattern`, `const`, tuple
+    // items, boolean subschema) the pinned runtime silently ignores. Apply the
+    // same gate here.
+    const problems: SchemaProblem[] = [];
+    collectSchemaProblems(schema, '', problems);
+    const unenforceable = problems.filter((x) => x.kind === 'unenforceable');
+    const malformed = problems.filter((x) => x.kind === 'malformed');
+    if (unenforceable.length > 0) {
+      err(
+        'unenforceable_schema_keyword',
+        `${mp}.moves.${name}`,
+        `move schema uses constraints Dina does not enforce (${joinSchemaProblems(unenforceable, (x) => x.path, ', ')})`,
+      );
+    }
+    if (malformed.length > 0) {
+      err(
+        'malformed_schema_constraint',
+        `${mp}.moves.${name}`,
+        `move schema constraint has the wrong value shape: ${joinSchemaProblems(malformed, (x) => `${x.path} (${x.detail})`, '; ')}`,
+      );
+    }
   }
   if (!stateSet.has(machine.initial)) {
     err('bad_initial', `${mp}.initial`, `initial state "${machine.initial}" is not in states`);
   }
-  for (const t of arrayField(machine.terminal, 'bad_terminal', `${mp}.terminal`, err)) {
-    if (!stateSet.has(t))
+  // PLG-28 #13: `terminal` gets the same rigor `states` already has — non-empty,
+  // count-capped, and deduped. Previously duplicates + an empty terminal list
+  // passed (hash amplification + a session with no completion path).
+  const terminalArr = arrayField(machine.terminal, 'bad_terminal', `${mp}.terminal`, err);
+  if (Array.isArray(machine.terminal) && machine.terminal.length === 0) {
+    err(
+      'bad_terminal',
+      `${mp}.terminal`,
+      'a session machine must declare at least one terminal state',
+    );
+  }
+  if (terminalArr.length > PLUGIN_CAPS.MAX_STATES) {
+    err('bad_terminal', `${mp}.terminal`, `≤ ${PLUGIN_CAPS.MAX_STATES} terminal states`);
+  }
+  const terminalSet = new Set<string>();
+  for (const t of terminalArr) {
+    if (!stateSet.has(t)) {
       err('bad_terminal', `${mp}.terminal`, `terminal state "${t}" is not in states`);
+    }
+    if (terminalSet.has(t)) {
+      err('duplicate_terminal', `${mp}.terminal`, `duplicate terminal state "${t}"`);
+    }
+    terminalSet.add(t);
   }
 
   // transitions: per-state cap, ops cap + closed set, referential
@@ -1150,12 +1496,8 @@ function validateMachine(
   // fails closed to [].
   const perState = new Map<string, number>();
   const stateMovePairs = new Set<string>();
-  for (const [i, t] of arrayField(
-    machine.transitions,
-    'bad_transitions',
-    `${mp}.transitions`,
-    err,
-  ).entries()) {
+  const transitions = arrayField(machine.transitions, 'bad_transitions', `${mp}.transitions`, err);
+  for (const [i, t] of transitions.entries()) {
     const tp = `${mp}.transitions[${i}]`;
     // A non-object transition element must not throw on `.from`/`.ops`.
     if (!isPlainObject(t)) {
@@ -1182,6 +1524,12 @@ function validateMachine(
     for (const op of ops) {
       if (!(PLUGIN_OPS as readonly string[]).includes(op)) {
         err('unknown_op', tp, `op "${op}" is not in the closed ops library (§10.2)`);
+      } else if (!opsUsed.has(op)) {
+        // PLG-28 #10: every op a transition EXECUTES must be DECLARED in
+        // ops_used. Compatibility features are derived from ops_used only, so an
+        // undeclared transition op means the §14 gate never learns the plugin
+        // needs `op.<x>` — fail closed, ops_used must be the honest declaration.
+        err('undeclared_transition_op', tp, `transition op "${op}" is not declared in ops_used`);
       }
     }
     const pair = `${t.from}\u0000${t.move}`;
@@ -1194,6 +1542,29 @@ function validateMachine(
     }
     stateMovePairs.add(pair);
   }
+  // PLG-28 #12 (minimal totality): the spec (§types) documents "transitions are
+  // total functions." Full coverage (every reachable (state,move) pair defined,
+  // all terminals reachable) is a design item, but the two footguns that brick a
+  // session install are cheap to close now: (a) a machine with NO transitions,
+  // and (b) a reachable NON-terminal state with no outgoing transition — both
+  // install a session that immediately hangs with no legal move. Require ≥1
+  // transition and that every non-terminal state is some transition's `from`.
+  if (Array.isArray(machine.transitions) && transitions.length === 0) {
+    err(
+      'no_transitions',
+      `${mp}.transitions`,
+      'a session machine must declare at least one transition',
+    );
+  }
+  for (const st of stateSet) {
+    if (!terminalSet.has(st) && !perState.has(st)) {
+      err(
+        'dead_end_state',
+        `${mp}.transitions`,
+        `non-terminal state "${st}" has no outgoing transition — the session can reach it and hang`,
+      );
+    }
+  }
   // Round-10 #6: `timeouts = null` reached `null.move_sec` (THROW). Require it
   // to be an object before field access.
   const timeouts = machine.timeouts;
@@ -1201,13 +1572,23 @@ function validateMachine(
     !isPlainObject(timeouts) ||
     !Number.isInteger(timeouts.move_sec) ||
     (timeouts.move_sec as number) <= 0 ||
+    // Round-16 #10: cap the ceiling too. MAX_SAFE_INTEGER passed the positive-
+    // integer check → effectively permanent sessions + possible timer overflow
+    // in language ports that convert to ms. Bound both to sane, sub-overflow max.
+    (timeouts.move_sec as number) > PLUGIN_CAPS.MAX_MOVE_SEC ||
     !Number.isInteger(timeouts.session_ttl_sec) ||
-    (timeouts.session_ttl_sec as number) <= 0
+    (timeouts.session_ttl_sec as number) <= 0 ||
+    (timeouts.session_ttl_sec as number) > PLUGIN_CAPS.MAX_SESSION_TTL_SEC ||
+    // PLG-27 #19: move_sec > session_ttl_sec describes an IMPOSSIBLE move — the
+    // session expires before the per-move timeout can ever fire, leaving runtime
+    // precedence implementation-defined across ports. Require move_sec ≤ ttl so
+    // the shorter, authoritative bound is unambiguous.
+    (timeouts.move_sec as number) > (timeouts.session_ttl_sec as number)
   ) {
     err(
       'bad_timeouts',
       `${mp}.timeouts`,
-      'timeouts require positive integer move_sec + session_ttl_sec',
+      `timeouts require move_sec in 1..${PLUGIN_CAPS.MAX_MOVE_SEC}, session_ttl_sec in 1..${PLUGIN_CAPS.MAX_SESSION_TTL_SEC}, and move_sec ≤ session_ttl_sec`,
     );
   }
   if (machine.turn !== 'alternate' && machine.turn !== 'free') {
@@ -1295,6 +1676,44 @@ function isPluginId(id: unknown): id is string {
     id.length <= 253 &&
     /^[a-z0-9]+([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]+([a-z0-9-]*[a-z0-9])?){2,}$/.test(id)
   );
+}
+
+/**
+ * PLG-27 #13: one canonical identifier contract shared by machine state names,
+ * machine move names, and JSON-Schema property names. All three render on
+ * owner-facing surfaces and/or feed the §8.1 behavior hash, so a blank /
+ * whitespace-only name renders deceptively and a spoofing-char name can
+ * masquerade as another identifier. Non-empty after trim, bounded length, and
+ * free of control/bidi/zero-width chars.
+ *
+ * PLG-28 #14: ALSO reject SURROUNDING whitespace (`s !== s.trim()`). `" health"`
+ * and `"health"` are visually identical but hash-/scope-distinct, and normalize
+ * does NOT trim tokens — so a token that differs from its trimmed form would
+ * survive as a separate set member. We reject at validation rather than trim in
+ * normalize because trimming would rewrite the token AFTER the manifest CID was
+ * computed, breaking the repo-proof/CID binding (verifier.ts already rejects a
+ * URI where `uri !== uri.trim()` for the same reason).
+ */
+function isValidIdentifier(s: unknown): s is string {
+  return (
+    typeof s === 'string' &&
+    s.trim() !== '' &&
+    s === s.trim() &&
+    s.length <= PLUGIN_CAPS.MAX_IDENTIFIER_LENGTH &&
+    !hasUnsafeText(s)
+  );
+}
+
+/**
+ * PLG-28 #14: shared blank-OR-surrounded-whitespace predicate for the many
+ * consent/scope token sites that are NOT identifiers (display names, data-scope
+ * categories/personas, required_features, intent phrases, runtime evidence,
+ * issuer key). Returns true when the string is empty after trim OR carries
+ * leading/trailing whitespace — both of which normalize can't repair and which
+ * render deceptively. (Callers already own the length + hasUnsafeText checks.)
+ */
+function isBlankOrPadded(s: string): boolean {
+  return s.trim() === '' || s !== s.trim();
 }
 
 /** Bare hostname (no scheme, no path, no port, no userinfo). */
