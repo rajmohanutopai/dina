@@ -25,6 +25,7 @@
  */
 
 import { normalizeStringSet } from './normalize';
+import { hasUnsafeText } from './text_safety';
 import {
   PLUGIN_BANNED_CATEGORIES,
   PLUGIN_CAPS,
@@ -185,6 +186,18 @@ function arrayField<T>(
   return value as T[];
 }
 
+/**
+ * Round-10 #23: the official semver.org grammar. MAJOR/MINOR/PATCH are numeric
+ * identifiers with NO leading zeros; prerelease/build are dot-separated
+ * non-empty identifiers. Rejects `01.02.003` (leading zeros) and `1.2.3-..`
+ * (empty prerelease identifier) that the old loose regex let through.
+ */
+const SEMVER_RE =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
+function isSemVer(v: string): boolean {
+  return SEMVER_RE.test(v);
+}
+
 // F4: a pinned params/result schema is a CONSENT artifact — the owner is
 // shown the shape and expects it enforced. The on-node result validator
 // (schema_validate.ts) is deliberately small; a schema that DECLARES a
@@ -339,6 +352,26 @@ function collectSchemaProblems(schema: unknown, path: string, out: SchemaProblem
         break;
     }
   }
+  // Round-13 #22: cross-keyword bound consistency. Each bound's VALUE shape is
+  // checked above, but an unsatisfiable pair (min > max) would install as a
+  // consented schema that no input/result can ever satisfy — a footgun the owner
+  // approved. Reject `minimum>maximum`, `minLength>maxLength`, `minItems>maxItems`
+  // when BOTH are present and numeric.
+  for (const [lo, hi] of [
+    ['minimum', 'maximum'],
+    ['minLength', 'maxLength'],
+    ['minItems', 'maxItems'],
+  ] as const) {
+    if (
+      owns(lo) &&
+      owns(hi) &&
+      typeof s[lo] === 'number' &&
+      typeof s[hi] === 'number' &&
+      (s[lo] as number) > (s[hi] as number)
+    ) {
+      bad(at(lo), `${lo} (${s[lo]}) exceeds ${hi} (${s[hi]}) — no value can satisfy this schema`);
+    }
+  }
   // Descend through the recognized subschema containers only.
   if (owns('properties')) {
     const props = s.properties;
@@ -388,6 +421,13 @@ export function validatePluginManifest(
   };
 
   // --- top-level shape -----------------------------------------------------
+  // Round-10 #6: the validator promises a fail-closed RESULT for EVERY JSON
+  // value (it is also AppView's ingest gate). A root `null` / scalar reached
+  // `Object.keys(null)` → THROW; guard before any property access.
+  if (!isPlainObject(manifest)) {
+    err('bad_manifest', '', 'manifest must be an object');
+    return { ok: false, errors };
+  }
   const record = manifest as unknown as Record<string, unknown>;
   for (const key of Object.keys(record)) {
     if (!KNOWN_MANIFEST_FIELDS.has(key)) {
@@ -400,32 +440,36 @@ export function validatePluginManifest(
   if (!isPluginId(manifest.plugin_id)) {
     err('bad_plugin_id', 'plugin_id', 'plugin_id must be a reverse-DNS identifier (a.b.c)');
   }
-  if (
-    typeof manifest.version !== 'string' ||
-    !/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(manifest.version)
-  ) {
-    err('bad_version', 'version', 'version must be semver (MAJOR.MINOR.PATCH)');
+  // Round-10 #23: strict SemVer — no leading zeros in numeric identifiers, no
+  // empty dot-separated prerelease identifiers. The old `\d+\.\d+\.\d+(-…)?`
+  // accepted `01.02.003` and `1.2.3-..`, which break version ordering /
+  // advisory matching across implementations.
+  if (typeof manifest.version !== 'string' || !isSemVer(manifest.version)) {
+    err('bad_version', 'version', 'version must be strict semver (MAJOR.MINOR.PATCH)');
   }
   if (
     typeof manifest.display_name !== 'string' ||
-    manifest.display_name === '' ||
-    manifest.display_name.length > PLUGIN_CAPS.MAX_DISPLAY_NAME_LENGTH
+    manifest.display_name.trim() === '' || // Round-14 #18: whitespace-only renders blank
+    manifest.display_name.length > PLUGIN_CAPS.MAX_DISPLAY_NAME_LENGTH ||
+    // Round-13 #21: no spoofing chars in owner-facing consent text.
+    hasUnsafeText(manifest.display_name)
   ) {
     err(
       'bad_display_name',
       'display_name',
-      `display_name required, ≤ ${PLUGIN_CAPS.MAX_DISPLAY_NAME_LENGTH} chars`,
+      `display_name required, ≤ ${PLUGIN_CAPS.MAX_DISPLAY_NAME_LENGTH} chars, no control/bidi/zero-width chars`,
     );
   }
   if (
     manifest.short_description !== undefined &&
     (typeof manifest.short_description !== 'string' ||
-      manifest.short_description.length > PLUGIN_CAPS.MAX_SHORT_DESCRIPTION_LENGTH)
+      manifest.short_description.length > PLUGIN_CAPS.MAX_SHORT_DESCRIPTION_LENGTH ||
+      hasUnsafeText(manifest.short_description)) // Round-13 #21
   ) {
     err(
       'bad_short_description',
       'short_description',
-      `short_description ≤ ${PLUGIN_CAPS.MAX_SHORT_DESCRIPTION_LENGTH} chars`,
+      `short_description ≤ ${PLUGIN_CAPS.MAX_SHORT_DESCRIPTION_LENGTH} chars, no control/bidi/zero-width chars`,
     );
   }
   // Round-6 #5: structural type checks for the remaining primitive fields —
@@ -440,11 +484,17 @@ export function validatePluginManifest(
     if (val !== undefined) {
       if (typeof val !== 'string' || val.length > 2048) {
         err('bad_url', field, `${field} must be a string URL (≤ 2048 chars)`);
-      } else if (!/^https?:\/\//i.test(val)) {
-        // Round-7 #7: reject dangerous URL schemes (javascript:, data:, file:,
-        // …). These are rendered/linked in the owner-facing surfaces — only
-        // http(s) is a safe outbound link.
-        err('bad_url', field, `${field} must be an http(s):// URL`);
+      } else if (!isSafeHttpUrl(val)) {
+        // Round-7 #7 + Round-14 #13: a scheme-prefix regex accepted `"https://"`
+        // alone, `https://user:pass@host` (credentials), malformed hosts, and
+        // trailing control/bidi/zero-width chars. Parse as a real URL: require
+        // http(s), a non-empty host, no embedded credentials, and no spoofing
+        // chars — these strings are rendered/linked on owner-facing surfaces.
+        err(
+          'bad_url',
+          field,
+          `${field} must be a valid http(s):// URL with a host, no credentials, no control/bidi/zero-width chars`,
+        );
       }
     }
   }
@@ -483,6 +533,34 @@ export function validatePluginManifest(
           'bad_runtime_field',
           `execution.runtime.${key}`,
           `execution.runtime.${key} must be an object`,
+        );
+      }
+    }
+    // Round-14 #14: the artifact / self_host field VALUES are runtime EVIDENCE
+    // (package refs, image digests) rendered on the consent surface — validate
+    // each as a non-empty string without spoofing chars, not just "the container
+    // is an object". (A strict digest/package-ref grammar is a separate, wider
+    // change that would need the real format spec — left as-is here.)
+    const evidence: [string, unknown][] = [];
+    if (isPlainObject(rawRuntime.artifacts)) {
+      for (const k of KNOWN_ARTIFACTS_FIELDS) {
+        evidence.push([`artifacts.${k}`, (rawRuntime.artifacts as Record<string, unknown>)[k]]);
+      }
+    }
+    if (isPlainObject(rawRuntime.self_host)) {
+      for (const k of KNOWN_SELF_HOST_FIELDS) {
+        evidence.push([`self_host.${k}`, (rawRuntime.self_host as Record<string, unknown>)[k]]);
+      }
+    }
+    for (const [path, v] of evidence) {
+      if (
+        v !== undefined &&
+        (typeof v !== 'string' || v === '' || v.length > 512 || hasUnsafeText(v))
+      ) {
+        err(
+          'bad_runtime_evidence',
+          `execution.runtime.${path}`,
+          `execution.runtime.${path} must be a non-empty string (≤ 512 chars) without control/bidi/zero-width chars`,
         );
       }
     }
@@ -531,8 +609,13 @@ export function validatePluginManifest(
   );
   // Round-6 #5: the issuer signs instance certificates (§14) — its did/key must
   // be strings, not just present. `checkKnownKeys` only rejects UNKNOWN keys.
+  // Round-10 #6: `issuer = null` reached `null.did` (THROW). Guard it's an
+  // object before field access (a non-object issuer is itself invalid).
   const issuer = manifest.execution?.runtime?.issuer;
-  if (issuer !== undefined && (typeof issuer.did !== 'string' || typeof issuer.key !== 'string')) {
+  if (
+    issuer !== undefined &&
+    (!isPlainObject(issuer) || typeof issuer.did !== 'string' || typeof issuer.key !== 'string')
+  ) {
     err('bad_issuer', 'execution.runtime.issuer', 'issuer.did and issuer.key must be strings');
   }
   const mode = manifest.execution?.mode;
@@ -554,11 +637,22 @@ export function validatePluginManifest(
         'hosted runners must declare runtime.issuer {did, key} — it signs instance certificates (§14)',
       );
     }
-    if (!/^https:\/\//.test(runtime.hosted_endpoint)) {
+    // Round-13 #20: a prefix test (`/^https:\/\//`) accepted `"https://"` alone
+    // and other malformed values. Parse as a real URL and require the https
+    // scheme AND a non-empty host, so a garbage endpoint fails at CONSENT time
+    // rather than much later at fetch.
+    let validHttps = false;
+    try {
+      const u = new URL(runtime.hosted_endpoint);
+      validHttps = u.protocol === 'https:' && u.hostname !== '';
+    } catch {
+      validHttps = false;
+    }
+    if (!validHttps) {
       err(
         'bad_hosted_endpoint',
         'execution.runtime.hosted_endpoint',
-        'hosted_endpoint must be https://',
+        'hosted_endpoint must be a valid https:// URL with a host',
       );
     }
   }
@@ -572,13 +666,28 @@ export function validatePluginManifest(
 
   const seenCapIds = new Set<string>();
   const derived = new Set<string>();
-  for (const [i, cap] of (manifest.capabilities ?? []).entries()) {
+  // Round-9 #3/#11: guard the iteration — a non-array `capabilities` is reported
+  // above but must not THROW here (`for…of 7`). `arrayField` fails closed to [].
+  for (const [i, cap] of arrayField(
+    manifest.capabilities,
+    'bad_capabilities',
+    'capabilities',
+    err,
+  ).entries()) {
     validateCapability(cap, i, mode, seenCapIds, derived, err);
   }
 
   // --- config_schema (§5 rule 6: non-secret preferences only) --------------
   if (manifest.config_schema !== undefined) {
     derived.add('config');
+    // Round-10 #12: config_schema must be a JSON-Schema OBJECT. A null / number
+    // / array was silently accepted (the depth/ref/secret checks all no-op on a
+    // non-object). Fail closed on the shape. (The full enforceable-keyword pass
+    // that params/result schemas get is deferred until a config runtime ships —
+    // P0 drops the `config` feature at install, so no config values run yet.)
+    if (!isPlainObject(manifest.config_schema)) {
+      err('bad_config_schema', 'config_schema', 'config_schema must be an object');
+    }
     const depth = schemaDepth(manifest.config_schema, 0);
     if (depth > PLUGIN_CAPS.MAX_SCHEMA_DEPTH) {
       err(
@@ -624,6 +733,14 @@ function validateCapability(
   err: (code: string, path: string, message: string) => void,
 ): void {
   const p = `capabilities[${index}]`;
+  // Round-9 #3/#11: a capability element MUST be a plain object before any
+  // field access. `capabilities: [null]` / `[7]` reached `Object.keys(null)`
+  // (throw) or `cap.id.includes(...)` on `undefined` (throw). Fail closed here
+  // — the shared validator promises a RESULT, and it is AppView's ingest gate.
+  if (!isPlainObject(cap)) {
+    err('bad_capability', p, 'each capability must be an object');
+    return;
+  }
   const record = cap as unknown as Record<string, unknown>;
   for (const key of Object.keys(record)) {
     if (!KNOWN_CAPABILITY_FIELDS.has(key)) {
@@ -647,13 +764,14 @@ function validateCapability(
   // through. Require a non-empty string within the cap.
   if (
     typeof cap.display_name !== 'string' ||
-    cap.display_name === '' ||
-    cap.display_name.length > PLUGIN_CAPS.MAX_DISPLAY_NAME_LENGTH
+    cap.display_name.trim() === '' || // Round-14 #18: whitespace-only renders blank
+    cap.display_name.length > PLUGIN_CAPS.MAX_DISPLAY_NAME_LENGTH ||
+    hasUnsafeText(cap.display_name) // Round-13 #21
   ) {
     err(
       'bad_capability_display_name',
       `${p}.display_name`,
-      `capability display_name required, ≤ ${PLUGIN_CAPS.MAX_DISPLAY_NAME_LENGTH} chars`,
+      `capability display_name required, ≤ ${PLUGIN_CAPS.MAX_DISPLAY_NAME_LENGTH} chars, no control/bidi/zero-width chars`,
     );
   }
   if (cap.interaction !== 'query' && cap.interaction !== 'session') {
@@ -686,25 +804,32 @@ function validateCapability(
   const rawCategories = cap.data_scope?.categories;
   if (
     rawCategories !== undefined &&
-    (!Array.isArray(rawCategories) || rawCategories.some((c) => typeof c !== 'string'))
+    // Round-13 #21: each category is a consent-surface token — must be a
+    // NON-EMPTY string with no control/bidi/zero-width chars (an empty or
+    // spoofing-char category renders deceptively in the consent card).
+    (!Array.isArray(rawCategories) ||
+      rawCategories.some((c) => typeof c !== 'string' || c === '' || hasUnsafeText(c)))
   ) {
     err(
       'bad_data_categories',
       `${p}.data_scope.categories`,
-      'data_scope.categories must be an array of strings',
+      'data_scope.categories must be an array of non-empty strings without control/bidi/zero-width chars',
     );
   }
   // Round-7 #7: data_scope.personas has the same string-array contract as
-  // categories (`personas: [42]` was accepted before).
+  // categories (`personas: [42]` was accepted before). Round-14 #15: it is ALSO
+  // a consent-surface token, so give it the SAME non-empty + no-spoofing-char
+  // treatment categories got in round-13 #21 (it was left as type-only).
   const rawPersonas = cap.data_scope?.personas;
   if (
     rawPersonas !== undefined &&
-    (!Array.isArray(rawPersonas) || rawPersonas.some((c) => typeof c !== 'string'))
+    (!Array.isArray(rawPersonas) ||
+      rawPersonas.some((c) => typeof c !== 'string' || c === '' || hasUnsafeText(c)))
   ) {
     err(
       'bad_data_personas',
       `${p}.data_scope.personas`,
-      'data_scope.personas must be an array of strings',
+      'data_scope.personas must be an array of non-empty strings without control/bidi/zero-width chars',
     );
   }
   const catList: string[] = Array.isArray(rawCategories)
@@ -712,9 +837,22 @@ function validateCapability(
     : [];
 
   // Anti-Her ban (§5 rule 3) — checked against data_scope categories and
-  // the capability id itself.
+  // the capability id itself. Round-10 #7: match is CASE- and SEPARATOR-
+  // insensitive — `Romantic`, `com.acme.virtual-friend` (hyphen), etc. must not
+  // slip past a ban on `romantic`/`virtual_friend`. Canonicalize both sides:
+  // lowercase and fold `-`/`_`/`.` to a single separator before substring match.
+  // Round-12 #16: the CATEGORY match is SUBSTRING, not exact array-element
+  // equality — the ID path already used substring, but categories used
+  // `.includes(b)` (element equality), so a compound category token like
+  // `romantic_advice` / `emotional_intimacy_coach` slipped the ban while the
+  // capability id stayed innocuous. Categories now get the same containment
+  // test as the id (same over-block tradeoff the id path already accepts).
+  const canon = (s: string): string => s.toLowerCase().replace(/[-_.]+/g, '_');
+  const canonId = canon(cap.id);
+  const canonCats = catList.map(canon);
   for (const banned of PLUGIN_BANNED_CATEGORIES) {
-    if (catList.includes(banned) || cap.id.includes(banned)) {
+    const b = canon(banned);
+    if (canonCats.some((c) => c.includes(b)) || canonId.includes(b)) {
       err(
         'banned_category',
         `${p}`,
@@ -865,14 +1003,23 @@ function validateCapability(
       // check below silently passed it. Type-guard first.
       if (typeof phrase !== 'string') {
         err('bad_phrase', `${p}.intent_phrases`, 'intent phrases must be strings');
-      } else if (phrase.length === 0 || phrase.length > PLUGIN_CAPS.MAX_PHRASE_LENGTH) {
+      } else if (phrase.trim().length === 0 || phrase.length > PLUGIN_CAPS.MAX_PHRASE_LENGTH) {
+        // Round-14 #16: a whitespace-only phrase (`"   "`) is non-empty by
+        // `.length` but renders blank and, after trim/embed, reads as an
+        // extremely broad routing claim. Reject trimmed-empty.
         err(
           'bad_phrase',
           `${p}.intent_phrases`,
-          `phrases must be 1..${PLUGIN_CAPS.MAX_PHRASE_LENGTH} chars`,
+          `phrases must be 1..${PLUGIN_CAPS.MAX_PHRASE_LENGTH} non-whitespace chars`,
         );
-      } else if (hasControlChar(phrase)) {
-        err('bad_phrase', `${p}.intent_phrases`, 'phrases must not contain control characters');
+      } else if (hasUnsafeText(phrase)) {
+        // Round-13 #21: widen from ASCII-control-only to also reject C1 /
+        // bidi-override / zero-width spoofing chars in owner-facing phrases.
+        err(
+          'bad_phrase',
+          `${p}.intent_phrases`,
+          'phrases must not contain control/bidi/zero-width characters',
+        );
       }
     }
     // data_scope caps.
@@ -943,11 +1090,22 @@ function validateMachine(
   err: (code: string, path: string, message: string) => void,
 ): void {
   const mp = `${p}.machine`;
+  // Round-9 #3/#11: a non-object machine must not throw on `.initial` etc.
+  if (!isPlainObject(machine)) {
+    err('bad_machine', mp, 'machine must be an object');
+    return;
+  }
   // F10: fail closed on unknown machine / timeouts keys.
   checkKnownKeys(machine, KNOWN_MACHINE_FIELDS, mp, err);
   checkKnownKeys(machine.timeouts, KNOWN_TIMEOUTS_FIELDS, `${mp}.timeouts`, err);
-  const states = machine.states ?? [];
-  if (states.length === 0 || states.length > PLUGIN_CAPS.MAX_STATES) {
+  // Round-9 #3/#11: `states: 7` reached `for…of 7` (not iterable → throw).
+  // arrayField fails closed to [] and flags the non-array; keep the range
+  // check for real arrays (an empty [] is still `bad_states`).
+  const states = arrayField(machine.states, 'bad_states', `${mp}.states`, err);
+  if (
+    Array.isArray(machine.states) &&
+    (states.length === 0 || states.length > PLUGIN_CAPS.MAX_STATES)
+  ) {
     err('bad_states', `${mp}.states`, `states must be 1..${PLUGIN_CAPS.MAX_STATES}`);
   }
   const stateSet = new Set<string>();
@@ -955,11 +1113,17 @@ function validateMachine(
     if (stateSet.has(s)) err('duplicate_state', `${mp}.states`, `duplicate state "${s}"`);
     stateSet.add(s);
   }
-  const moves = Object.keys(machine.moves ?? {});
+  // Round-9 #3/#11: `moves: 7` was silently coerced to an empty move set
+  // (`Object.keys(7)` → []) — a non-object moves must be REJECTED, not accepted.
+  if (machine.moves !== undefined && !isPlainObject(machine.moves)) {
+    err('bad_moves', `${mp}.moves`, 'moves must be an object');
+  }
+  const movesObj = isPlainObject(machine.moves) ? machine.moves : {};
+  const moves = Object.keys(movesObj);
   if (moves.length > PLUGIN_CAPS.MAX_MOVE_TYPES) {
     err('too_many_moves', `${mp}.moves`, `≤ ${PLUGIN_CAPS.MAX_MOVE_TYPES} move types`);
   }
-  for (const [name, schema] of Object.entries(machine.moves ?? {})) {
+  for (const [name, schema] of Object.entries(movesObj)) {
     const depth = schemaDepth(schema, 0);
     if (depth > PLUGIN_CAPS.MAX_SCHEMA_DEPTH) {
       err(
@@ -975,17 +1139,29 @@ function validateMachine(
   if (!stateSet.has(machine.initial)) {
     err('bad_initial', `${mp}.initial`, `initial state "${machine.initial}" is not in states`);
   }
-  for (const t of machine.terminal ?? []) {
+  for (const t of arrayField(machine.terminal, 'bad_terminal', `${mp}.terminal`, err)) {
     if (!stateSet.has(t))
       err('bad_terminal', `${mp}.terminal`, `terminal state "${t}" is not in states`);
   }
 
   // transitions: per-state cap, ops cap + closed set, referential
   // integrity, and NO ambiguous (state, move) pairs (§5 rule 4).
+  // Round-9 #3/#11: `transitions: 7` reached `(7).entries()` (throw); arrayField
+  // fails closed to [].
   const perState = new Map<string, number>();
   const stateMovePairs = new Set<string>();
-  for (const [i, t] of (machine.transitions ?? []).entries()) {
+  for (const [i, t] of arrayField(
+    machine.transitions,
+    'bad_transitions',
+    `${mp}.transitions`,
+    err,
+  ).entries()) {
     const tp = `${mp}.transitions[${i}]`;
+    // A non-object transition element must not throw on `.from`/`.ops`.
+    if (!isPlainObject(t)) {
+      err('bad_transition', tp, 'each transition must be an object');
+      continue;
+    }
     checkKnownKeys(t, KNOWN_TRANSITION_FIELDS, tp, err);
     if (!stateSet.has(t.from)) err('bad_transition_from', tp, `unknown from-state "${t.from}"`);
     if (!stateSet.has(t.to)) err('bad_transition_to', tp, `unknown to-state "${t.to}"`);
@@ -999,15 +1175,16 @@ function validateMachine(
         `≤ ${PLUGIN_CAPS.MAX_TRANSITIONS_PER_STATE} transitions per state`,
       );
     }
-    if ((t.ops ?? []).length > PLUGIN_CAPS.MAX_OPS_PER_TRANSITION) {
+    const ops = arrayField(t.ops, 'bad_ops', `${tp}.ops`, err);
+    if (ops.length > PLUGIN_CAPS.MAX_OPS_PER_TRANSITION) {
       err('too_many_ops', tp, `≤ ${PLUGIN_CAPS.MAX_OPS_PER_TRANSITION} ops per transition`);
     }
-    for (const op of t.ops ?? []) {
+    for (const op of ops) {
       if (!(PLUGIN_OPS as readonly string[]).includes(op)) {
         err('unknown_op', tp, `op "${op}" is not in the closed ops library (§10.2)`);
       }
     }
-    const pair = `${t.from} ${t.move}`;
+    const pair = `${t.from}\u0000${t.move}`;
     if (stateMovePairs.has(pair)) {
       err(
         'ambiguous_transition',
@@ -1017,13 +1194,15 @@ function validateMachine(
     }
     stateMovePairs.add(pair);
   }
+  // Round-10 #6: `timeouts = null` reached `null.move_sec` (THROW). Require it
+  // to be an object before field access.
   const timeouts = machine.timeouts;
   if (
-    timeouts === undefined ||
+    !isPlainObject(timeouts) ||
     !Number.isInteger(timeouts.move_sec) ||
-    timeouts.move_sec <= 0 ||
+    (timeouts.move_sec as number) <= 0 ||
     !Number.isInteger(timeouts.session_ttl_sec) ||
-    timeouts.session_ttl_sec <= 0
+    (timeouts.session_ttl_sec as number) <= 0
   ) {
     err(
       'bad_timeouts',
@@ -1064,7 +1243,15 @@ function assertNormalized(
     }
   };
   check('required_features', manifest.required_features);
-  for (const [i, cap] of manifest.capabilities.entries()) {
+  // Round-9 #3/#11: a non-array `capabilities` or a scalar/null element would
+  // THROW here (`.entries()` / field access on a non-object). The structural
+  // errors are already reported by validateCapability — skip malformed entries
+  // so this normalization pass fails closed instead of crashing.
+  const caps = Array.isArray(manifest.capabilities) ? manifest.capabilities : [];
+  for (const [i, cap] of caps.entries()) {
+    // Runtime-only object check (no type predicate — keep cap's declared type so
+    // the string-set fields stay typed): skip malformed entries already flagged.
+    if (typeof cap !== 'object' || cap === null || Array.isArray(cap)) continue;
     const p = `capabilities[${i}]`;
     check(`${p}.kinds`, cap.kinds);
     check(`${p}.ops_used`, cap.ops_used);
@@ -1080,16 +1267,24 @@ function assertNormalized(
 // ---------------------------------------------------------------------------
 
 /**
- * Control-char detector without a control-char regex literal (which
- * trips eslint no-control-regex and emits raw bytes into source). ASCII
- * C0 (0x00–0x1f) + DEL (0x7f).
+ * Round-14 #13: a safe, renderable http(s) URL — parses as a URL with an
+ * http/https scheme, a non-empty host, NO embedded credentials, and no
+ * spoofing chars. A scheme-prefix regex alone accepted `"https://"` and
+ * `https://user:pass@host`.
  */
-function hasControlChar(str: string): boolean {
-  for (let i = 0; i < str.length; i++) {
-    const c = str.charCodeAt(i);
-    if (c <= 0x1f || c === 0x7f) return true;
+function isSafeHttpUrl(s: string): boolean {
+  if (hasUnsafeText(s)) return false;
+  try {
+    const u = new URL(s);
+    return (
+      (u.protocol === 'https:' || u.protocol === 'http:') &&
+      u.hostname !== '' &&
+      u.username === '' &&
+      u.password === ''
+    );
+  } catch {
+    return false;
   }
-  return false;
 }
 
 /** Reverse-DNS identifier: ≥3 dot-separated lowercase alnum segments. */

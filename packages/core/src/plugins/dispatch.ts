@@ -293,13 +293,18 @@ export function assessParamsEgress(args: {
   }
 
   // Sensitive category → never silent, even when consented (§11.5).
-  const sensitive = args.paramCategories.filter((c) => SENSITIVE_CATEGORIES.has(c));
+  // Round-12 #17: category comparisons are CASE-INSENSITIVE. `normalizeStringSet`
+  // (manifest ingest) dedups + sorts but does NOT lowercase, so `Health` /
+  // `FINANCE` would miss the (lowercase) sensitive set AND match a same-cased
+  // consent entry — clearing silently. Fold case on BOTH sides of every category
+  // comparison; the raw category is still echoed in the reason for readability.
+  const sensitive = args.paramCategories.filter((c) => SENSITIVE_CATEGORIES.has(c.toLowerCase()));
   if (sensitive.length > 0) {
     reasons.push(`params carry sensitive categories: ${sensitive.join(', ')}`);
   }
 
-  const consent = new Set(args.consentedCategories);
-  const outOfScope = args.paramCategories.filter((c) => !consent.has(c));
+  const consent = new Set(args.consentedCategories.map((c) => c.toLowerCase()));
+  const outOfScope = args.paramCategories.filter((c) => !consent.has(c.toLowerCase()));
   if (outOfScope.length > 0) {
     reasons.push(`params carry out-of-scope categories: ${outOfScope.join(', ')}`);
   }
@@ -437,6 +442,23 @@ export function contextScopeViolation(
   if (context.length > max) {
     return `context has ${context.length} items, exceeds data_scope.max_context_items=${max}`;
   }
+  // Round-9 #7: the regulated-content scanner (collectScanText) silently STOPS
+  // at depth 12 and applies NO byte cap — so a secret nested deeper than 12, or
+  // a small-item-count-but-huge payload, could pass UNSCANNED and clear. Refuse
+  // anything too deep or too large to FULLY inspect, mirroring the params
+  // channel's fail-closed boundary (paramsExceedInspectableLimits).
+  if (exceedsDepth(context, MAX_PARAM_DEPTH)) {
+    return `context nests deeper than ${MAX_PARAM_DEPTH} levels — cannot fully inspect (data_scope enforcement)`;
+  }
+  let contextBytes: number;
+  try {
+    contextBytes = new TextEncoder().encode(JSON.stringify(context) ?? '').length;
+  } catch {
+    return 'context is not serializable for inspection (data_scope enforcement)';
+  }
+  if (contextBytes > MAX_PARAM_BYTES) {
+    return `context is ${contextBytes} bytes — over the ${MAX_PARAM_BYTES}-byte inspection cap (data_scope enforcement)`;
+  }
   // Round-5 #7: quantity is not authority. A small array of RAW vault records
   // (card numbers, SSNs, API keys) is within the count ceiling yet must never
   // flow to a runner unscrubbed — the same regulated-egress rule the params
@@ -468,6 +490,16 @@ export function buildPluginEnvelope(args: {
   context: unknown;
   executionId: string;
   idempotencyKey: string;
+  /**
+   * Round-12 #2/#3/#6/#1: the authorization provenance to PIN onto the envelope.
+   * `kind: 'grant'` REQUIRES `grantId` (the exact grant consumed via
+   * authorizeAndConsume) — the claim guard re-verifies that grant's liveness.
+   * `invocationDigest` should be the SAME digest passed to authorizeAndConsume
+   * so the two agree on what invocation this execution bound to. Omitted by
+   * callers with no authorization context (e.g. tests) — the envelope then
+   * carries no provenance and the claim guard applies no grant check.
+   */
+  authorization?: { kind: 'grant' | 'card'; grantId?: string; invocationDigest?: string };
 }): PluginTaskEnvelope {
   const cap = args.install.manifest.capabilities.find((c) => c.id === args.capabilityId);
   if (cap === undefined) {
@@ -487,6 +519,15 @@ export function buildPluginEnvelope(args: {
     if (!check.ok) {
       throw new Error(`params violate the consented params_schema: ${check.error ?? 'unknown'}`);
     }
+  }
+  // Round-11 #4: params too DEEP or LARGE to fully render must be REJECTED, not
+  // approved through a lossy `"…"`-truncated card. The forced-card path shows
+  // the owner an ellipsized preview while the FULL object ships in the envelope
+  // — the owner would approve deep values they never saw. Fail closed here (and
+  // the claim guard re-checks), mirroring the round-9 #7 CONTEXT depth/byte guard.
+  const paramsLimit = paramsExceedInspectableLimits(args.params);
+  if (paramsLimit !== '') {
+    throw new Error(`params cannot be fully rendered for approval: ${paramsLimit}`);
   }
   // P1-2: bound `context` to the consented data_scope before it is pinned into
   // the envelope. The claim guard re-checks as defence-in-depth.
@@ -508,6 +549,18 @@ export function buildPluginEnvelope(args: {
     idempotency_key: args.idempotencyKey,
     action_class: cap.action_class,
     effects_idempotency: coerceEffectsIdempotency(cap.effects?.idempotency),
+    // Round-12 #2/#3/#6/#1: pin the authorization provenance when supplied.
+    ...(args.authorization !== undefined
+      ? {
+          authorization_kind: args.authorization.kind,
+          ...(args.authorization.grantId !== undefined
+            ? { grant_id: args.authorization.grantId }
+            : {}),
+          ...(args.authorization.invocationDigest !== undefined
+            ? { invocation_digest: args.authorization.invocationDigest }
+            : {}),
+        }
+      : {}),
   };
 }
 

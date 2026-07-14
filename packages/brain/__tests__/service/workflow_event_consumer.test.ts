@@ -344,6 +344,36 @@ describe('WorkflowEventConsumer.runTick', () => {
     expect(state.ackCalls).toEqual([20, 21]);
   });
 
+  it('round-14 #3: a `created` event is ack-and-skipped, never fetched or negative-acked', async () => {
+    // Core emits `created` with needs_delivery=true, but no consumer delivers
+    // it — it must retire cleanly (ack), NOT fall to the unknown-kind path that
+    // negative-acks forever (perpetual redrive + log spam).
+    const failCalls: number[] = [];
+    const { client, state } = stubCore({
+      listResult: [completedEvent({ event_id: 30, event_kind: 'created', task_id: 'deleg-1' })],
+      tasks: new Map(),
+    });
+    client.failWorkflowEventDelivery = async (id: number) => {
+      failCalls.push(id);
+      return true;
+    };
+    const delivered: string[] = [];
+    const c = new WorkflowEventConsumer({
+      coreClient: client,
+      deliver: ({ text }) => {
+        delivered.push(text);
+      },
+    });
+    const result = await c.runTick();
+    expect(result.skipped).toBe(1);
+    expect(result.delivered).toBe(0);
+    expect(delivered).toEqual([]);
+    // Retired cleanly (acked), never fetched the task, never negative-acked.
+    expect(state.ackCalls).toEqual([30]);
+    expect(state.getCalls).toEqual([]);
+    expect(failCalls).toEqual([]);
+  });
+
   it('formats delegation terminal results for chat (completed result / failed error / cancelled)', async () => {
     const tasks = new Map([
       ['deleg-ok', svcQueryTask('deleg-ok', { kind: 'delegation', result: 'Here is the haiku' })],

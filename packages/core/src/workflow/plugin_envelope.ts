@@ -37,8 +37,10 @@ export const PLUGIN_RETRY = Object.freeze({
 
 /** Declared-effectful classes — the outcome_unknown classification key
  * (§9.5). NOTE: classification only; retry safety trusts NO declared
- * class (§9.1). */
-const EFFECTFUL_CLASSES = new Set(['booking', 'write', 'agentic']);
+ * class (§9.1). Round-9 #8: `payment` MUST be here — a lost/revoked payment
+ * lease has to classify as outcome_unknown (money MAY have moved), never the
+ * quietly-safe `failed`. Omitting it hid the possibility that funds moved. */
+const EFFECTFUL_CLASSES = new Set(['booking', 'write', 'agentic', 'payment']);
 
 export interface PluginTaskEnvelope {
   readonly type: typeof PLUGIN_INVOCATION_PAYLOAD_TYPE;
@@ -61,6 +63,29 @@ export interface PluginTaskEnvelope {
   /** Pinned classification inputs (see module doc). */
   readonly action_class: string;
   readonly effects_idempotency: 'supported' | 'unsupported';
+  /**
+   * Round-12 #2/#3/#6: the authorization PROVENANCE of this invocation, set by
+   * the dispatch producer at enqueue. `'grant'` = authorized by a standing/once
+   * grant (the claim guard then requires the EXACT `grant_id` to still be live
+   * — a task authorized by grant A cannot ride a different live grant B for the
+   * same scope, and an unavailable grant repo fails the claim CLOSED). `'card'`
+   * = per-invocation owner approval (no grant to re-verify). Absent = legacy /
+   * not-yet-stamped: the claim guard applies no grant check (no false-positive
+   * terminalize on a scope with a tombstoned grant row). Optional so existing
+   * envelopes and non-producer callers parse unchanged.
+   */
+  readonly authorization_kind?: 'grant' | 'card';
+  /** The exact grant this invocation consumed (present iff authorization_kind
+   *  === 'grant'). The claim guard validates THIS grant's liveness + scope. */
+  readonly grant_id?: string;
+  /**
+   * Round-12 #1: a digest binding the FULL constraint-relevant invocation
+   * (params + context + resource + value), so a lease-recovery retry replaying
+   * the same execution_id must replay the same invocation — a retry that changes
+   * recipient/date/body/SKU/account is a DISTINCT invocation, not a retry. The
+   * producer pins the same digest it passed to `authorizeAndConsume`.
+   */
+  readonly invocation_digest?: string;
 }
 
 /**
@@ -80,16 +105,40 @@ export function parsePluginEnvelope(payload: string): PluginTaskEnvelope | null 
   const p = parsed as Record<string, unknown>;
   if (p.type !== PLUGIN_INVOCATION_PAYLOAD_TYPE) return null;
   if (
-    typeof p.install_id !== 'string' || p.install_id === '' ||
-    typeof p.capability_id !== 'string' || p.capability_id === '' ||
-    typeof p.manifest_cid !== 'string' || p.manifest_cid === '' ||
-    typeof p.approved_scope_hash !== 'string' || p.approved_scope_hash === '' ||
-    typeof p.config_revision !== 'number' || !Number.isInteger(p.config_revision) ||
-    typeof p.execution_id !== 'string' || p.execution_id === '' ||
-    typeof p.idempotency_key !== 'string' || p.idempotency_key === '' ||
+    typeof p.install_id !== 'string' ||
+    p.install_id === '' ||
+    typeof p.capability_id !== 'string' ||
+    p.capability_id === '' ||
+    typeof p.manifest_cid !== 'string' ||
+    p.manifest_cid === '' ||
+    typeof p.approved_scope_hash !== 'string' ||
+    p.approved_scope_hash === '' ||
+    typeof p.config_revision !== 'number' ||
+    !Number.isInteger(p.config_revision) ||
+    typeof p.execution_id !== 'string' ||
+    p.execution_id === '' ||
+    typeof p.idempotency_key !== 'string' ||
+    p.idempotency_key === '' ||
     typeof p.action_class !== 'string' ||
     (p.effects_idempotency !== 'supported' && p.effects_idempotency !== 'unsupported')
   ) {
+    return null;
+  }
+  // Round-12 #2/#3/#6/#1: the optional authorization-provenance fields, when
+  // present, must be well-formed — a malformed value must quarantine the whole
+  // envelope (null), never be trusted as authority by the claim guard.
+  if (
+    (p.authorization_kind !== undefined &&
+      p.authorization_kind !== 'grant' &&
+      p.authorization_kind !== 'card') ||
+    (p.grant_id !== undefined && (typeof p.grant_id !== 'string' || p.grant_id === '')) ||
+    (p.invocation_digest !== undefined && typeof p.invocation_digest !== 'string')
+  ) {
+    return null;
+  }
+  // A 'grant'-authorized invocation MUST name its grant (the claim guard
+  // validates that exact grant); a grant_id without kind:'grant' is incoherent.
+  if (p.authorization_kind === 'grant' && (typeof p.grant_id !== 'string' || p.grant_id === '')) {
     return null;
   }
   return p as unknown as PluginTaskEnvelope;

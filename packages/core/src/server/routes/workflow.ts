@@ -29,8 +29,17 @@ import {
   denyApproval,
   drainForApproval,
 } from '../../staging/service';
-import { WorkflowTaskKind, WorkflowTaskState, type WorkflowTask } from '../../workflow/domain';
-import { parsePluginEnvelope } from '../../workflow/plugin_envelope';
+import {
+  WorkflowTaskKind,
+  WorkflowTaskState,
+  isTerminal,
+  type WorkflowTask,
+} from '../../workflow/domain';
+import {
+  PLUGIN_INVOCATION_PAYLOAD_TYPE,
+  isDeclaredEffectful,
+  parsePluginEnvelope,
+} from '../../workflow/plugin_envelope';
 import {
   WorkflowConflictError,
   WorkflowTransitionError,
@@ -67,6 +76,21 @@ function withPayloadType(task: WorkflowTask): Record<string, unknown> {
   return { ...out, payload_type: payloadType };
 }
 
+/**
+ * Round-11 #8: does this task's payload DECLARE the plugin-invocation type? Used
+ * to key result validation on the TASK, not the completing caller — a plugin
+ * task always carries this type (even a subsequently-corrupt envelope), while a
+ * plain delegation does not. Cheap JSON type-field probe.
+ */
+function payloadDeclaresPluginType(payload: unknown): boolean {
+  if (typeof payload !== 'string' || payload === '') return false;
+  try {
+    return (JSON.parse(payload) as { type?: unknown }).type === PLUGIN_INVOCATION_PAYLOAD_TYPE;
+  } catch {
+    return false;
+  }
+}
+
 export function registerWorkflowRoutes(router: CoreRouter): void {
   router.post('/v1/workflow/tasks', createTask);
   router.get('/v1/workflow/tasks/:id', getTask);
@@ -84,6 +108,8 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
     if (id === '') return j(400, { error: 'id required' });
     const task = service.store().getById(id);
     if (task === null) return j(404, { error: 'task not found' });
+    const denied = agentReadGuard(req, task); // round-10 #2: own-task-only for agents
+    if (denied !== null) return denied;
     return j(200, withPayloadType(task));
   });
   router.post('/v1/workflow/tasks/:id/approve', async (req) => {
@@ -106,24 +132,47 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
         if (result === '') {
           throw new WorkflowValidationError('result is required', 'result');
         }
-        // §9.1: a PLUGIN completion is validated against the PINNED
-        // result schema (the envelope snapshot, not the current
-        // manifest). Nonconforming = task FAILURE, counted against
-        // plugin health — never applied as a result. A runner cannot
-        // widen its own output past what the owner consented to.
-        if (ctx.callerType === 'plugin') {
-          const task = s.store().getById(id);
-          const envelope = task !== null ? parsePluginEnvelope(task.payload) : null;
-          if (envelope !== null) {
-            const check = validatePluginResult(result, envelope.schema_snapshot);
-            if (!check.ok) {
-              return s.fail(
-                id,
-                `result rejected: ${check.error ?? 'schema mismatch'}`,
-                agentDID,
-                claimId,
-              );
+        // §9.1: a PLUGIN completion is validated against the PINNED result
+        // schema (the envelope snapshot, not the current manifest). Nonconforming
+        // = task FAILURE — never applied as a result; a runner cannot widen its
+        // own output past what the owner consented to. The pinned-schema check
+        // fires when EITHER (round-10 #21) the CALLER is a plugin — so a plugin
+        // runner completing a task with a corrupt/absent envelope fails closed —
+        // OR (round-11 #8) the TASK's payload declares the plugin-invocation type
+        // — so a brain/admin/device completer of a plugin task can't bypass the
+        // pinned schema. The union covers both the malformed-payload and the
+        // wrong-completer holes.
+        const completeTask = s.store().getById(id);
+        const mustValidatePinned =
+          ctx.callerType === 'plugin' ||
+          (completeTask !== null && payloadDeclaresPluginType(completeTask.payload)) ||
+          // Round-14 #2: a task on a plugin LANE (`plugin:<install_id>`) is a
+          // plugin invocation even if the completing caller isn't typed 'plugin'
+          // and the payload's type field was stripped/corrupted. The lane is
+          // routing authority — fail closed to the pinned-envelope path so the
+          // result can't slip through unvalidated on a technicality.
+          (completeTask !== null && isPluginLane(completeTask.requested_runner ?? ''));
+        if (mustValidatePinned) {
+          const envelope = completeTask === null ? null : parsePluginEnvelope(completeTask.payload);
+          // A plugin task/caller with NO parseable pinned envelope is an
+          // integrity error — fail closed (terminalize) rather than allow an
+          // unvalidated result through, whatever the caller.
+          if (envelope === null) {
+            return s.fail(id, 'plugin envelope missing or unparseable', agentDID, claimId);
+          }
+          const check = validatePluginResult(result, envelope.schema_snapshot);
+          if (!check.ok) {
+            const msg = `result rejected: ${check.error ?? 'schema mismatch'}`;
+            // Round-12 #5: an EFFECTFUL runner (booking/payment/write/agentic)
+            // may have performed the side effect and THEN returned a malformed /
+            // nonconforming result. Recording plain `failed` would imply nothing
+            // happened; park it as `outcome_unknown` (the effect MAY have moved
+            // money/made a booking) and retain the rejected result as
+            // reconciliation evidence. Non-effectful → plain `failed`.
+            if (isDeclaredEffectful(envelope)) {
+              return s.failEffectfulUnknown(id, msg, result, agentDID, claimId);
             }
+            return s.fail(id, msg, agentDID, claimId);
           }
         }
         // Go-Core parity: `result_summary` is the human-readable display
@@ -134,8 +183,11 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
         // first ~200 chars when omitted. Match that behaviour so paired
         // OpenClaw runs don't 400 on every completion. Callers that
         // pass an explicit `result_summary` are honoured verbatim.
-        const explicitSummary = strField(body?.result_summary);
-        const summary = explicitSummary !== '' ? explicitSummary : result.slice(0, 200);
+        // Round-9 #22: cap + single-line the runner-supplied summary (owner-
+        // facing, decoupled from the validated result). The derived fallback is
+        // sanitized too — a bounded, clean display line either way.
+        const explicitSummary = sanitizeStatusText(body?.result_summary);
+        const summary = explicitSummary !== '' ? explicitSummary : sanitizeStatusText(result, 200);
         return s.complete(id, result, summary, agentDID, claimId);
       })
     );
@@ -147,7 +199,7 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
     return (
       guard ??
       runAction(req, (id, body, s, ctx) => {
-        const errMsg = strField(body?.error);
+        const errMsg = sanitizeStatusText(body?.error); // round-9 #22: owner-facing, bounded
         const agentDID = completingAgentDID(body, ctx);
         if (errMsg === '') throw new WorkflowValidationError('error is required', 'error');
         const before = s.store().getById(id);
@@ -156,6 +208,31 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
           before?.status === WorkflowTaskState.PendingApproval
         ) {
           denyApproval(id, errMsg);
+        }
+        // Round-13 #6: a runner that /fails an EFFECTFUL plugin task
+        // (booking/payment/write/agentic) may have performed the side effect and
+        // THEN errored — recording plain `failed` asserts nothing happened when
+        // money may have moved. Park as `outcome_unknown` (§9.5: execution
+        // started, outcome uncertain), retaining the error as evidence. Mirrors
+        // the effect-aware `/complete` branch. Non-effectful (or non-plugin) →
+        // plain `failed`.
+        // Round-14 #2: treat a task on a plugin LANE as a plugin task here too,
+        // so a stripped/corrupt `type` field can't downgrade an effectful
+        // failure to plain `failed` on a technicality (the lane is authority).
+        if (
+          before !== null &&
+          (payloadDeclaresPluginType(before.payload) || isPluginLane(before.requested_runner ?? ''))
+        ) {
+          const envelope = parsePluginEnvelope(before.payload);
+          if (envelope !== null && isDeclaredEffectful(envelope)) {
+            return s.failEffectfulUnknown(
+              id,
+              `runner reported failure: ${errMsg}`,
+              errMsg,
+              agentDID,
+              claimId,
+            );
+          }
         }
         return s.fail(id, errMsg, agentDID, claimId);
       })
@@ -224,6 +301,8 @@ async function getTask(req: CoreRequest): Promise<CoreResponse> {
   if (id === '') return j(400, { error: 'id required' });
   const task = service.store().getById(id);
   if (task === null) return j(404, { error: 'task not found' });
+  const denied = agentReadGuard(req, task);
+  if (denied !== null) return denied;
   return j(200, { task: withPayloadType(task) });
 }
 
@@ -342,7 +421,7 @@ async function progressTask(req: CoreRequest): Promise<CoreResponse> {
   const agentDID = req.headers['x-did'] ?? '';
   if (agentDID === '') return j(400, { error: 'X-DID header is required' });
   const body = (req.body as Record<string, unknown> | undefined) ?? {};
-  const message = typeof body.message === 'string' ? body.message : '';
+  const message = sanitizeStatusText(body.message); // round-9 #22: owner-facing, bounded + single-line
   if (message === '') return j(400, { error: 'message is required' });
   const claimId = extractClaimId(req);
   if (claimId instanceof Object) return claimId;
@@ -494,6 +573,37 @@ function agentCompletionGuard(req: CoreRequest): CoreResponse | null {
   return null;
 }
 
+/**
+ * Round-10 #2: reads (`GET /tasks/:id`, `POST /:id/running`) carry no ownership
+ * check, so a paired agent could fetch a task it doesn't own by id (payloads
+ * carry params + projected context). Owner surfaces (admin / brain / device)
+ * see everything; an `agent`/`plugin` caller may only read a delegation task it
+ * currently owns (`agent_did === callerDID`). Returns a 403 response to deny, or
+ * null to allow. (List is already brain/admin-only via the authz allowlist.)
+ */
+function agentReadGuard(req: CoreRequest, task: WorkflowTask): CoreResponse | null {
+  if (req.callerType !== 'agent' && req.callerType !== 'plugin') return null;
+  const callerDID = req.callerDID ?? '';
+  if (
+    callerDID === '' ||
+    task.kind !== WorkflowTaskKind.Delegation ||
+    (task.agent_did ?? '') !== callerDID ||
+    // Round-14 #10: an agent reads its task while it's in flight (queued →
+    // running → pending_approval). Once the task is TERMINAL the runner has no
+    // live business re-fetching its projected params/context — the completion
+    // guard already requires `running`, so keep the read guard consistent and
+    // deny terminal reads. (A Running-only gate would over-tighten and break
+    // the legitimate pending_approval read; terminal-only is the safe bound.)
+    isTerminal(task.status as WorkflowTaskState)
+  ) {
+    return j(403, {
+      error: 'access_denied',
+      reason: `${req.callerType} may only read a non-terminal delegation task it owns`,
+    });
+  }
+  return null;
+}
+
 async function approveTask(
   id: string,
   body: Record<string, unknown> | null,
@@ -523,10 +633,7 @@ async function approveTask(
           : '';
     if (payload?.type === 'intent_validation' && typeof payload.action === 'string') {
       grantSessionApproval(agentDid, sessionId, payload.action);
-    } else if (
-      payload?.type === 'vault_read_request' &&
-      typeof payload.persona === 'string'
-    ) {
+    } else if (payload?.type === 'vault_read_request' && typeof payload.persona === 'string') {
       grantVaultReadSessionApproval(agentDid, sessionId, payload.persona);
     }
   }
@@ -731,6 +838,25 @@ export function clampLimit(requested: number): number {
 
 function strField(v: unknown, fallback = ''): string {
   return typeof v === 'string' ? v : fallback;
+}
+
+/**
+ * Round-9 #22: owner-facing status text (result_summary / error / progress
+ * message) is runner-controlled and rendered on the admin/Activity surface,
+ * decoupled from the validated `result`. Cap + single-line it so a runner can't
+ * inject oversized or multi-line/control-char content to mislead the owner.
+ * Collapses any CR/LF/tab/other C0 control + DEL to a single space, trims, and
+ * bounds the length. Not a validity gate — just presentation hygiene.
+ */
+const MAX_STATUS_TEXT = 500;
+export function sanitizeStatusText(v: unknown, maxLen = MAX_STATUS_TEXT): string {
+  const s = typeof v === 'string' ? v : '';
+  let out = '';
+  for (let i = 0; i < s.length && out.length < maxLen; i++) {
+    const c = s.charCodeAt(i);
+    out += c <= 0x1f || c === 0x7f ? ' ' : s[i];
+  }
+  return out.replace(/\s+/g, ' ').trim();
 }
 
 function optStrField(v: unknown): string | undefined {

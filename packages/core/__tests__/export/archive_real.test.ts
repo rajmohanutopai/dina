@@ -14,6 +14,9 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { sha256 } from '@noble/hashes/sha2.js';
+
+import { computePluginDigests, normalizePluginManifest } from '@dina/protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import {
@@ -152,6 +155,36 @@ function dataSourceFor(b: Bundle): ArchiveDataSource {
 
 afterEach(() => setArchiveDataSource(null));
 
+// A VALID manifest — round-10 #15 drops plugin_installs whose manifest fails
+// validation on restore, so fixtures must carry a real one.
+const VALID_MANIFEST_JSON = JSON.stringify({
+  $type: 'com.dinakernel.plugin.release',
+  plugin_id: 'com.acme.fw',
+  version: '1.0.0',
+  display_name: 'FW',
+  execution: { mode: 'runner' },
+  capabilities: [
+    {
+      id: 'com.acme.fw.watch',
+      display_name: 'Watch',
+      interaction: 'query',
+      action_class: 'read',
+      privacy_class: 'personal',
+      kinds: ['tool'],
+      effects: { idempotency: 'unsupported' },
+    },
+  ],
+});
+
+// Round-11 #11: import now recomputes the canonical digest columns from the
+// manifest and drops any plugin_install whose stored siblings disagree. The
+// fixture must therefore carry the REAL digests, not placeholders.
+const MANIFEST_DIGESTS = computePluginDigests(
+  normalizePluginManifest(JSON.parse(VALID_MANIFEST_JSON)),
+  sha256,
+);
+const VALID_CAP_HASHES_JSON = JSON.stringify(MANIFEST_DIGESTS.perCapability);
+
 describe('real export → clean-install import', () => {
   it('restores identity + multi-persona rows, excluding secrets', async () => {
     const src = freshBundle([
@@ -234,11 +267,11 @@ describe('real export → clean-install import', () => {
           'runner',
           'bafyreicid',
           '1.0.0',
-          '{}',
-          's',
-          '{"c":"h"}',
-          'b',
-          'p',
+          VALID_MANIFEST_JSON,
+          MANIFEST_DIGESTS.installScopeHash,
+          VALID_CAP_HASHES_JSON,
+          MANIFEST_DIGESTS.behaviorHash,
+          MANIFEST_DIGESTS.presentationHash,
           '{"kind":"repo_proof"}',
           'did:key:zdev',
           1,
@@ -275,7 +308,7 @@ describe('real export → clean-install import', () => {
           'runner',
           'bafyreicid',
           '1.0.0',
-          '{}',
+          VALID_MANIFEST_JSON,
           's',
           '{"c":"h"}',
           'b',
@@ -304,6 +337,208 @@ describe('real export → clean-install import', () => {
       expect(row?.device_did == null).toBe(true);
       // Grants never travel AND the target's stale grant was cleared.
       expect(dest.id.query('SELECT 1 FROM plugin_grants')).toHaveLength(0);
+    } finally {
+      closeBundle(dest);
+    }
+  });
+
+  it('round-11 #11: a plugin install whose digest columns disagree with its manifest is DROPPED on import', async () => {
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    try {
+      // A VALID manifest, but a FORGED install_scope_hash — the archive is
+      // attacker-influenced (its tag only proves the importer's passphrase), so
+      // the per-capability + install/behavior/presentation digests, which the
+      // consent path reads as authority, are recomputed on import and this row
+      // dropped because they disagree with the manifest.
+      src.id.execute(
+        `INSERT INTO plugin_installs (install_id, publisher_did, plugin_id, status, execution_mode,
+           current_cid, current_version, manifest_json, install_scope_hash, capability_hashes_json,
+           behavior_hash, presentation_hash, trust_anchor_json, device_did, config_revision,
+           created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          'pli_forged',
+          'did:plc:acme',
+          'com.acme.fw',
+          'active',
+          'runner',
+          'bafyreicid',
+          '1.0.0',
+          VALID_MANIFEST_JSON,
+          'FORGED-install-scope-hash', // != computePluginDigests(...).installScopeHash
+          VALID_CAP_HASHES_JSON,
+          MANIFEST_DIGESTS.behaviorHash,
+          MANIFEST_DIGESTS.presentationHash,
+          '{"kind":"repo_proof"}',
+          'did:key:zdev',
+          1,
+          1,
+          1,
+        ],
+      );
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+    }
+
+    const dest = freshBundle([]);
+    try {
+      setArchiveDataSource(dataSourceFor(dest));
+      await importArchive(archive, PASS, { force: true });
+      // The forged-digest install never persisted into the registry.
+      expect(
+        dest.id.query('SELECT 1 FROM plugin_installs WHERE install_id = ?', ['pli_forged']),
+      ).toHaveLength(0);
+    } finally {
+      closeBundle(dest);
+    }
+  });
+
+  it('round-12 #9: an install whose SCALAR identity disagrees with the manifest is DROPPED on import', async () => {
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    try {
+      // All digests are CORRECT, but the plugin_id column disagrees with the
+      // manifest — the catalog identity the UI + claim guard read would diverge
+      // from the code/consent snapshot. Dropped by the scalar cross-check.
+      src.id.execute(
+        `INSERT INTO plugin_installs (install_id, publisher_did, plugin_id, status, execution_mode,
+           current_cid, current_version, manifest_json, install_scope_hash, capability_hashes_json,
+           behavior_hash, presentation_hash, trust_anchor_json, device_did, config_revision,
+           created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          'pli_idmismatch',
+          'did:plc:acme',
+          'com.evil.other', // != manifest.plugin_id
+          'active',
+          'runner',
+          'bafyreicid',
+          '1.0.0',
+          VALID_MANIFEST_JSON,
+          MANIFEST_DIGESTS.installScopeHash,
+          VALID_CAP_HASHES_JSON,
+          MANIFEST_DIGESTS.behaviorHash,
+          MANIFEST_DIGESTS.presentationHash,
+          '{"kind":"repo_proof"}',
+          'did:key:zdev',
+          1,
+          1,
+          1,
+        ],
+      );
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+    }
+    const dest = freshBundle([]);
+    try {
+      setArchiveDataSource(dataSourceFor(dest));
+      await importArchive(archive, PASS, { force: true });
+      expect(
+        dest.id.query('SELECT 1 FROM plugin_installs WHERE install_id = ?', ['pli_idmismatch']),
+      ).toHaveLength(0);
+    } finally {
+      closeBundle(dest);
+    }
+  });
+
+  it('round-13 #16: an install whose trust_anchor is not a valid union member is DROPPED on import', async () => {
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    try {
+      // Everything else is honest, but the trust anchor is an unknown kind — the
+      // consent/authority record must not persist a bogus anchor.
+      src.id.execute(
+        `INSERT INTO plugin_installs (install_id, publisher_did, plugin_id, status, execution_mode,
+           current_cid, current_version, manifest_json, install_scope_hash, capability_hashes_json,
+           behavior_hash, presentation_hash, trust_anchor_json, device_did, config_revision,
+           created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          'pli_badanchor',
+          'did:plc:acme',
+          'com.acme.fw',
+          'active',
+          'runner',
+          'bafyreicid',
+          '1.0.0',
+          VALID_MANIFEST_JSON,
+          MANIFEST_DIGESTS.installScopeHash,
+          VALID_CAP_HASHES_JSON,
+          MANIFEST_DIGESTS.behaviorHash,
+          MANIFEST_DIGESTS.presentationHash,
+          '{"kind":"made_up"}', // invalid trust anchor
+          'did:key:zdev',
+          1,
+          1,
+          1,
+        ],
+      );
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+    }
+    const dest = freshBundle([]);
+    try {
+      setArchiveDataSource(dataSourceFor(dest));
+      await importArchive(archive, PASS, { force: true });
+      expect(
+        dest.id.query('SELECT 1 FROM plugin_installs WHERE install_id = ?', ['pli_badanchor']),
+      ).toHaveLength(0);
+    } finally {
+      closeBundle(dest);
+    }
+  });
+
+  it('round-12 #10: a never-consented PENDING install does NOT travel in the archive', async () => {
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    try {
+      // A pending install is a ceremony the owner never completed — it must not
+      // be exported (and restored as a paused install prompting recovery).
+      src.id.execute(
+        `INSERT INTO plugin_installs (install_id, publisher_did, plugin_id, status, execution_mode,
+           current_cid, current_version, manifest_json, install_scope_hash, capability_hashes_json,
+           behavior_hash, presentation_hash, trust_anchor_json, device_did, config_revision,
+           created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          'pli_pending',
+          'did:plc:acme',
+          'com.acme.fw',
+          'pending', // never consented
+          'runner',
+          'bafyreicid',
+          '1.0.0',
+          VALID_MANIFEST_JSON,
+          MANIFEST_DIGESTS.installScopeHash,
+          VALID_CAP_HASHES_JSON,
+          MANIFEST_DIGESTS.behaviorHash,
+          MANIFEST_DIGESTS.presentationHash,
+          '{"kind":"repo_proof"}',
+          null,
+          1,
+          1,
+          1,
+        ],
+      );
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+    }
+    const dest = freshBundle([]);
+    try {
+      setArchiveDataSource(dataSourceFor(dest));
+      await importArchive(archive, PASS, { force: true });
+      expect(
+        dest.id.query('SELECT 1 FROM plugin_installs WHERE install_id = ?', ['pli_pending']),
+      ).toHaveLength(0);
     } finally {
       closeBundle(dest);
     }

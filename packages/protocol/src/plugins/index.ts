@@ -35,18 +35,9 @@ export type {
   PluginAdvisory,
 } from './types';
 
-export {
-  normalizeStringSet,
-  normalizePluginManifest,
-  normalizePluginAdvisory,
-} from './normalize';
+export { normalizeStringSet, normalizePluginManifest, normalizePluginAdvisory } from './normalize';
 
-export {
-  validatePluginManifest,
-  schemaDepth,
-  hasRecursiveRef,
-  findSecretFields,
-} from './validate';
+export { validatePluginManifest, schemaDepth, hasRecursiveRef, findSecretFields } from './validate';
 export type {
   PluginValidationError,
   PluginValidationOk,
@@ -77,6 +68,7 @@ export {
   checkIdentityPointer,
   checkReleaseIntegrity,
   parseAtUri,
+  isValidTrustAnchor,
 } from './verifier';
 export type {
   PluginTrustAnchor,

@@ -756,6 +756,47 @@ export class WorkflowService {
   }
 
   /**
+   * Round-12 #5: terminalize a plugin completion whose result FAILED the pinned
+   * schema as `outcome_unknown` rather than `failed`, WHEN the task's declared
+   * class is effectful. A booking/payment/write runner may have performed the
+   * side effect and THEN returned malformed/nonconforming JSON; recording plain
+   * `failed` implies nothing happened. The rejected result rides along as
+   * reconciliation evidence (never applied). Claim-CAS'd like `fail`.
+   */
+  failEffectfulUnknown(
+    id: string,
+    errorMsg: string,
+    rejectedResult: string,
+    agentDID = '',
+    claimId?: string,
+  ): WorkflowTask {
+    const task = this.repo.getById(id);
+    if (task === null) {
+      throw new WorkflowValidationError(`task "${id}" not found`, 'id');
+    }
+    this.guardTransition(task.status as WorkflowTaskState, WorkflowTaskState.OutcomeUnknown);
+    // Round-13 #10: agentDID is now actually threaded to the repo (recorded on
+    // the task + the outcome_unknown event details), not discarded — a parked
+    // effectful task must be attributable to the reporting agent.
+    const eventId = this.repo.markOutcomeUnknown(id, errorMsg, this.nowMsFn(), {
+      ...(claimId !== undefined ? { claimId } : {}),
+      ...(agentDID !== '' ? { agentDID } : {}),
+      evidence: rejectedResult,
+    });
+    if (eventId === 0) {
+      // The CAS was lost (stale claim / already-terminal). The rejected result
+      // was still retained as late-report evidence inside markOutcomeUnknown
+      // (Round-13 #8) — surface the loss to the caller.
+      throw new WorkflowTransitionError(
+        `task "${id}" was terminal or unclaimed before outcome_unknown landed`,
+        task.status as WorkflowTaskState,
+        WorkflowTaskState.OutcomeUnknown,
+      );
+    }
+    return this.repo.getById(id) ?? task;
+  }
+
+  /**
    * Cancel an active task. No-op on already-terminal tasks (throws
    * `WorkflowTransitionError` so callers see the reason).
    */

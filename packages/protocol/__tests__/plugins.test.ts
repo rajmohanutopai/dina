@@ -29,6 +29,7 @@ import {
   installIdFromLane,
   isPluginLane,
   isValidReleaseRkey,
+  isValidTrustAnchor,
   normalizePluginManifest,
   normalizeStringSet,
   parseAtUri,
@@ -420,6 +421,138 @@ describe('validatePluginManifest — adversarial review fixes', () => {
       validatePluginManifest(mutate(runnerManifest(), (m) => (m.required_features = 7)));
     expect(rf).not.toThrow();
     expectCode(rf(), 'bad_required_features');
+  });
+
+  it('round-9 #3/#11: capability elements + machine sub-fields fail closed (never throw, never silently accept)', () => {
+    // A scalar / null capability ELEMENT reached Object.keys(null) or
+    // cap.id.includes() on undefined — both THREW. Now fail closed.
+    for (const bad of [null, 7, 'x'] as const) {
+      const build = (): PluginValidationResult =>
+        validatePluginManifest(mutate(runnerManifest(), (m) => (m.capabilities = [bad])));
+      expect(build).not.toThrow();
+      expectCode(build(), 'bad_capability');
+    }
+    // A scalar `capabilities` (not an array) must not throw the `.entries()` loop.
+    const scalarCaps = (): PluginValidationResult =>
+      validatePluginManifest(mutate(runnerManifest(), (m) => (m.capabilities = 7)));
+    expect(scalarCaps).not.toThrow();
+    expectCode(scalarCaps(), 'bad_capabilities');
+
+    // Machine sub-fields: states/transitions/terminal/ops were iterated with
+    // `for…of` / `.entries()` (THROW on a scalar); `moves: 7` was silently
+    // coerced to an empty move set (ACCEPTED). All must fail closed now.
+    for (const [field, code] of [
+      ['states', 'bad_states'],
+      ['transitions', 'bad_transitions'],
+      ['terminal', 'bad_terminal'],
+      ['moves', 'bad_moves'],
+    ] as const) {
+      const build = (): PluginValidationResult =>
+        validatePluginManifest(
+          mutate(interpretedManifest(), (m) => (m.capabilities[0].machine[field] = 7)),
+        );
+      expect(build).not.toThrow();
+      expectCode(build(), code);
+    }
+    // A scalar `machine` itself must not throw on `.initial`/`.transitions`.
+    const scalarMachine = (): PluginValidationResult =>
+      validatePluginManifest(mutate(interpretedManifest(), (m) => (m.capabilities[0].machine = 7)));
+    expect(scalarMachine).not.toThrow();
+    expectCode(scalarMachine(), 'bad_machine');
+
+    // A scalar transition ELEMENT + scalar `ops` inside a transition.
+    const scalarTransition = (): PluginValidationResult =>
+      validatePluginManifest(
+        mutate(interpretedManifest(), (m) => (m.capabilities[0].machine.transitions[0] = 7)),
+      );
+    expect(scalarTransition).not.toThrow();
+    expectCode(scalarTransition(), 'bad_transition');
+    const scalarOps = (): PluginValidationResult =>
+      validatePluginManifest(
+        mutate(interpretedManifest(), (m) => (m.capabilities[0].machine.transitions[0].ops = 7)),
+      );
+    expect(scalarOps).not.toThrow();
+    expectCode(scalarOps(), 'bad_ops');
+  });
+
+  it('round-10 #6: root-null / issuer-null / interpreted-timeouts-null fail closed (never throw)', () => {
+    // A root null / scalar reached Object.keys(null) → THROW; now a clean result.
+    for (const bad of [null, 7, 'x', []] as const) {
+      const build = (): PluginValidationResult => validatePluginManifest(bad as never);
+      expect(build).not.toThrow();
+      expectCode(build(), 'bad_manifest');
+    }
+    // execution.runtime.issuer = null reached null.did → THROW.
+    const issuerNull = (): PluginValidationResult =>
+      validatePluginManifest(
+        mutate(runnerManifest(), (m) => (m.execution.runtime = { issuer: null })),
+      );
+    expect(issuerNull).not.toThrow();
+    expectCode(issuerNull(), 'bad_issuer');
+    // interpreted machine.timeouts = null reached null.move_sec → THROW.
+    const timeoutsNull = (): PluginValidationResult =>
+      validatePluginManifest(
+        mutate(interpretedManifest(), (m) => (m.capabilities[0].machine.timeouts = null)),
+      );
+    expect(timeoutsNull).not.toThrow();
+    expectCode(timeoutsNull(), 'bad_timeouts');
+  });
+
+  it('round-10 #7: Anti-Her ban is case- and separator-insensitive', () => {
+    // Category with different case is still banned.
+    expectCode(
+      validatePluginManifest(
+        mutate(runnerManifest(), (m) => (m.capabilities[0].data_scope.categories = ['Romantic'])),
+      ),
+      'banned_category',
+    );
+    // A hyphenated banned token in the capability id (underscores can't occur in
+    // the reverse-DNS grammar) no longer bypasses.
+    expectCode(
+      validatePluginManifest(
+        mutate(runnerManifest(), (m) => {
+          m.plugin_id = 'com.acme.virtual-friend';
+          m.capabilities[0].id = 'com.acme.virtual-friend.chat';
+        }),
+      ),
+      'banned_category',
+    );
+  });
+
+  it('round-12 #16: a COMPOUND banned category token no longer bypasses (substring match)', () => {
+    // The category comparison was exact array-element equality, so a compound
+    // category containing a banned token slipped past while the id stayed clean.
+    for (const cat of ['romantic_advice', 'emotional_intimacy_coach', 'companionship_plus']) {
+      expectCode(
+        validatePluginManifest(
+          mutate(runnerManifest(), (m) => (m.capabilities[0].data_scope.categories = [cat])),
+        ),
+        'banned_category',
+      );
+    }
+  });
+
+  it('round-10 #12: a non-object config_schema fails closed', () => {
+    for (const bad of [null, 7, []] as const) {
+      expectCode(
+        validatePluginManifest(mutate(runnerManifest(), (m) => (m.config_schema = bad))),
+        'bad_config_schema',
+      );
+    }
+  });
+
+  it('round-10 #23: strict semver — leading zeros / empty prerelease identifiers rejected', () => {
+    for (const bad of ['01.02.003', '1.2.3-..', '1.2', 'v1.2.3', '1.2.3.4']) {
+      expectCode(
+        validatePluginManifest(mutate(runnerManifest(), (m) => (m.version = bad))),
+        'bad_version',
+      );
+    }
+    for (const ok of ['1.2.3', '0.0.1', '1.2.3-alpha.1', '1.2.3+build.5']) {
+      expectOk(
+        validatePluginManifest(normalize(mutate(runnerManifest(), (m) => (m.version = ok)))),
+      );
+    }
   });
 
   it('F4: a schema using only enforced keywords + annotations is accepted', () => {
@@ -1040,5 +1173,210 @@ describe('parseAtUri', () => {
     expect(parseAtUri('https://example.com')).toBeNull();
     expect(parseAtUri('at://did:plc:x/only-two')).toBeNull();
     expect(parseAtUri('at://notadid/coll/rkey')).toBeNull();
+  });
+});
+
+describe('round-13 hardening', () => {
+  it('#16: isValidTrustAnchor accepts valid union members and rejects malformed ones', () => {
+    expect(isValidTrustAnchor({ kind: 'repo_proof' })).toBe(true);
+    expect(isValidTrustAnchor({ kind: 'debug_unsigned' })).toBe(true);
+    expect(isValidTrustAnchor({ kind: 'org_key', orgDid: 'did:plc:acme' })).toBe(true);
+    expect(isValidTrustAnchor({ kind: 'local_publisher_key', keyId: 'k1' })).toBe(true);
+    // Unknown kind, missing required fields, non-objects → rejected.
+    expect(isValidTrustAnchor({ kind: 'made_up' })).toBe(false);
+    expect(isValidTrustAnchor({ kind: 'org_key' })).toBe(false); // no orgDid
+    expect(isValidTrustAnchor({ kind: 'org_key', orgDid: '' })).toBe(false);
+    expect(isValidTrustAnchor({ kind: 'local_publisher_key' })).toBe(false); // no keyId
+    expect(isValidTrustAnchor(null)).toBe(false);
+    expect(isValidTrustAnchor('repo_proof')).toBe(false);
+  });
+
+  it('#21: a display_name with a bidi-override / zero-width char is rejected', () => {
+    expect(
+      validatePluginManifest(mutate(runnerManifest(), (m) => (m.display_name = 'Flight‮Watch'))).ok,
+    ).toBe(false);
+    expect(
+      validatePluginManifest(mutate(runnerManifest(), (m) => (m.display_name = 'Flight​Watch'))).ok,
+    ).toBe(false);
+    // A plain-ASCII name still passes.
+    expect(
+      validatePluginManifest(mutate(runnerManifest(), (m) => (m.display_name = 'Flight Watch'))).ok,
+    ).toBe(true);
+  });
+
+  it('#22: a JSON schema with minimum > maximum is a malformed constraint', () => {
+    expectCode(
+      validatePluginManifest(
+        mutate(runnerManifest(), (m) => {
+          m.capabilities[0].result_schema = {
+            type: 'object',
+            properties: { n: { type: 'integer', minimum: 10, maximum: 1 } },
+          };
+        }),
+      ),
+      'malformed_schema_constraint',
+    );
+  });
+
+  it('#20: a hosted_endpoint that is not a valid https URL is rejected', () => {
+    const withEndpoint = (endpoint: string): PluginManifest =>
+      mutate(runnerManifest(), (m) => {
+        m.execution.runtime = {
+          hosted_endpoint: endpoint,
+          issuer: { did: 'did:web:acme.example', key: 'zAcmeIssuerKey' },
+        };
+      });
+    const codes = (r: PluginValidationResult): string[] =>
+      r.ok ? [] : r.errors.map((e) => e.code);
+    // `https://` alone (no host) and a non-https scheme are rejected.
+    expect(codes(validatePluginManifest(withEndpoint('https://')))).toContain(
+      'bad_hosted_endpoint',
+    );
+    expect(codes(validatePluginManifest(withEndpoint('ftp://acme.example')))).toContain(
+      'bad_hosted_endpoint',
+    );
+    // A well-formed https URL does NOT trip the endpoint check.
+    expect(
+      codes(validatePluginManifest(withEndpoint('https://runner.acme.example'))),
+    ).not.toContain('bad_hosted_endpoint');
+  });
+});
+
+describe('round-14 hardening', () => {
+  const codes = (r: PluginValidationResult): string[] => (r.ok ? [] : r.errors.map((e) => e.code));
+
+  it('#13: homepage/source_url with credentials, no host, or spoofing chars are rejected', () => {
+    // Embedded credentials — a scheme-prefix regex accepted these.
+    expect(
+      codes(
+        validatePluginManifest(
+          mutate(runnerManifest(), (m) => (m.homepage = 'https://user:pass@acme.example')),
+        ),
+      ),
+    ).toContain('bad_url');
+    // Scheme with no host.
+    expect(
+      codes(validatePluginManifest(mutate(runnerManifest(), (m) => (m.homepage = 'https://')))),
+    ).toContain('bad_url');
+    // A trailing zero-width char on an otherwise-valid URL.
+    expect(
+      codes(
+        validatePluginManifest(
+          mutate(runnerManifest(), (m) => (m.source_url = 'https://acme.example​')),
+        ),
+      ),
+    ).toContain('bad_url');
+    // Plain https(s) URLs still pass.
+    expect(
+      codes(
+        validatePluginManifest(
+          mutate(runnerManifest(), (m) => {
+            m.homepage = 'https://acme.example';
+            m.source_url = 'https://github.com/acme/flightwatch';
+          }),
+        ),
+      ),
+    ).not.toContain('bad_url');
+  });
+
+  it('#14: runtime artifact / self_host evidence values must be non-empty spoof-free strings', () => {
+    // Empty image_digest.
+    expect(
+      codes(
+        validatePluginManifest(
+          mutate(runnerManifest(), (m) => (m.execution.runtime.artifacts.image_digest = '')),
+        ),
+      ),
+    ).toContain('bad_runtime_evidence');
+    // Bidi-override in a self_host package ref.
+    expect(
+      codes(
+        validatePluginManifest(
+          mutate(runnerManifest(), (m) => {
+            m.execution.runtime.self_host = { npm: 'acme‮flightwatch' };
+          }),
+        ),
+      ),
+    ).toContain('bad_runtime_evidence');
+    // A well-formed digest passes.
+    expect(
+      codes(
+        validatePluginManifest(
+          mutate(
+            runnerManifest(),
+            (m) => (m.execution.runtime.artifacts.image_digest = 'sha256:deadbeef'),
+          ),
+        ),
+      ),
+    ).not.toContain('bad_runtime_evidence');
+  });
+
+  it('#15: data_scope.personas rejects empty / spoofing-char entries', () => {
+    expect(
+      codes(
+        validatePluginManifest(
+          mutate(runnerManifest(), (m) => (m.capabilities[0].data_scope.personas = ['work', ''])),
+        ),
+      ),
+    ).toContain('bad_data_personas');
+    expect(
+      codes(
+        validatePluginManifest(
+          mutate(runnerManifest(), (m) => (m.capabilities[0].data_scope.personas = ['wo​rk'])),
+        ),
+      ),
+    ).toContain('bad_data_personas');
+    // A clean persona list passes.
+    expect(
+      codes(
+        validatePluginManifest(
+          mutate(runnerManifest(), (m) => (m.capabilities[0].data_scope.personas = ['work'])),
+        ),
+      ),
+    ).not.toContain('bad_data_personas');
+  });
+
+  it('#16: a whitespace-only intent phrase is rejected (non-empty by .length, blank rendered)', () => {
+    expect(
+      codes(
+        validatePluginManifest(
+          mutate(runnerManifest(), (m) => (m.capabilities[0].intent_phrases = ['   '])),
+        ),
+      ),
+    ).toContain('bad_phrase');
+    // A real phrase still passes.
+    expect(
+      codes(
+        validatePluginManifest(
+          mutate(runnerManifest(), (m) => (m.capabilities[0].intent_phrases = ['watch my flight'])),
+        ),
+      ),
+    ).not.toContain('bad_phrase');
+  });
+
+  it('#18: a whitespace-only display_name (manifest + capability) is rejected', () => {
+    expect(
+      codes(validatePluginManifest(mutate(runnerManifest(), (m) => (m.display_name = '   ')))),
+    ).toContain('bad_display_name');
+    expect(
+      codes(
+        validatePluginManifest(
+          mutate(runnerManifest(), (m) => (m.capabilities[0].display_name = '  ')),
+        ),
+      ),
+    ).toContain('bad_capability_display_name');
+  });
+
+  it('#21: isValidTrustAnchor rejects extra keys, oversized ids, and spoofing chars', () => {
+    // Extra key smuggled onto an otherwise-valid anchor.
+    expect(isValidTrustAnchor({ kind: 'repo_proof', orgDid: 'did:plc:evil' })).toBe(false);
+    expect(isValidTrustAnchor({ kind: 'org_key', orgDid: 'did:plc:acme', extra: 'x' })).toBe(false);
+    // Oversized id (> 256 chars).
+    expect(isValidTrustAnchor({ kind: 'org_key', orgDid: 'd'.repeat(257) })).toBe(false);
+    // Spoofing char in the consent-facing id.
+    expect(isValidTrustAnchor({ kind: 'local_publisher_key', keyId: 'key‮id' })).toBe(false);
+    // The clean forms still validate.
+    expect(isValidTrustAnchor({ kind: 'org_key', orgDid: 'did:plc:acme' })).toBe(true);
+    expect(isValidTrustAnchor({ kind: 'local_publisher_key', keyId: 'k1' })).toBe(true);
   });
 });

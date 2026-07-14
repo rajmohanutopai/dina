@@ -34,7 +34,8 @@ import { canonicalJson, pluginLane } from '@dina/protocol';
 
 import { parsePluginEnvelope } from '../workflow/plugin_envelope';
 
-import { contextScopeViolation } from './dispatch';
+import { contextScopeViolation, paramsExceedInspectableLimits } from './dispatch';
+import { getPluginGrantRepository } from './grants';
 import { validateAgainstSchema } from './schema_validate';
 
 import type { PluginInstall } from './registry';
@@ -67,6 +68,7 @@ export function claimPluginTask(args: {
   leaseMs: number;
 }): PluginClaimResult {
   const { repo, install, deviceDid, nowMs, leaseMs } = args;
+  const nowSec = Math.floor(nowMs / 1000);
   const terminalized: string[] = [];
 
   // Check 2 — install active. Pause = lane removed from selection;
@@ -82,15 +84,25 @@ export function claimPluginTask(args: {
   // this function.
   const lane = pluginLane(install.installId);
 
-  for (let i = 0; i <= MAX_TERMINALIZE_PER_CLAIM; i++) {
+  // Round-10 #24: `< MAX` (not `<=`) — the documented cap is MAX terminalizations
+  // per claim; `<=` allowed MAX+1.
+  for (let i = 0; i < MAX_TERMINALIZE_PER_CLAIM; i++) {
     const task = repo.claimDelegationTask(deviceDid, nowMs, leaseMs, lane);
     if (task === null) return { task: null, terminalized };
 
     const failStale = (reason: string): void => {
       // The claim just minted this claim_id; failing with it is the
-      // atomic terminalize — no other claimer can race it.
-      repo.fail(task.id, deviceDid, `${STALE_AUTHORITY}: ${reason}`, nowMs, task.claim_id);
-      terminalized.push(task.id);
+      // atomic terminalize — no other claimer can race it. Round-10 #24: only
+      // record it as terminalized if the fail actually landed (repo.fail returns
+      // 0 on a CAS/state no-op), so the count doesn't over-report.
+      const eventId = repo.fail(
+        task.id,
+        deviceDid,
+        `${STALE_AUTHORITY}: ${reason}`,
+        nowMs,
+        task.claim_id,
+      );
+      if (eventId !== 0) terminalized.push(task.id);
     };
 
     const envelope = parsePluginEnvelope(task.payload);
@@ -173,6 +185,14 @@ export function claimPluginTask(args: {
         continue;
       }
     }
+    // Round-11 #4: params too deep/large to fully render for approval are
+    // rejected at the non-bypassable claim boundary too (buildPluginEnvelope
+    // throws at produce) — never dispatch un-inspectable params to a runner.
+    const paramsLimit = paramsExceedInspectableLimits(envelope.params);
+    if (paramsLimit !== '') {
+      failStale(`params cannot be fully inspected: ${paramsLimit}`);
+      continue;
+    }
     // Check 3h (P1-2) — the pinned `context` must be within the CONSENTED
     // data_scope. buildPluginEnvelope bounds this at enqueue; re-checking here
     // means a producer that skipped it still cannot flow unbounded or
@@ -192,6 +212,69 @@ export function claimPluginTask(args: {
     if (envelope.config_revision !== install.configRevision) {
       failStale('settings changed after this was queued');
       continue;
+    }
+    // Check 7 (Round-11 #2, Round-12 #2/#3/#6) — the authorizing GRANT must
+    // still be live, validated by the EXACT grant this task rode. The envelope
+    // now carries its authorization PROVENANCE:
+    //   - `authorization_kind === 'grant'`: a standing/once grant authorized
+    //     this task. It can sit queued while the owner REVOKES that grant (or it
+    //     EXPIRES); checks 5/6 re-derive install-level authority but a grant
+    //     revocation touches neither. The grant repo MUST be present — an
+    //     unavailable repo cannot verify liveness, so fail CLOSED (#3); the
+    //     envelope MUST name its `grant_id`; and THAT grant must still be live
+    //     AND match this scope (#2 — a task authorized by grant A must not ride
+    //     a different live grant B for the same scope, which could carry
+    //     different constraints).
+    //   - anything else (`card` / absent): NOT grant-backed — check 7 does not
+    //     apply (#6 — a card-approved task must never be terminalized merely
+    //     because a tombstoned grant row exists for its scope).
+    if (envelope.authorization_kind === 'grant') {
+      const grantRepo = getPluginGrantRepository();
+      if (grantRepo === null) {
+        failStale('grant repository unavailable — cannot verify the authorizing grant');
+        continue;
+      }
+      const grantId = envelope.grant_id ?? '';
+      const grant = grantId === '' ? null : grantRepo.getById(grantId);
+      const live =
+        grant !== null &&
+        grant.installId === install.installId &&
+        grant.capability === envelope.capability_id &&
+        grant.approvedScopeHash === envelope.approved_scope_hash &&
+        grant.revokedAt === undefined &&
+        // Round-14 #8: a grant whose stored constraints no longer parse is in a
+        // fail-closed state — authorizeAndConsume denies it (`constraints_unparseable`).
+        // Check 7 re-validates liveness at claim time via the same rowToGrant
+        // projection, so honor the same corruption flag here; otherwise a task
+        // riding a now-corrupt grant would pass the claim gate while its
+        // resource/value/count constraints can no longer be enforced.
+        grant.constraintsCorrupt !== true &&
+        (grant.expiresAt === undefined || grant.expiresAt > nowSec);
+      if (!live) {
+        failStale('authorizing grant is missing, revoked, expired, scope-mismatched, or corrupt');
+        continue;
+      }
+      // Check 7b (Round-13 #3/#4) — naming a live grant is NOT proof the grant
+      // was CONSUMED. once/max_count/resource/value are only enforced at
+      // authorizeAndConsume; a producer that stamped `grant_id` but skipped the
+      // consume would otherwise bypass them all. Require the consumed-use row for
+      // (grant_id, execution_id) to EXIST, and — since a grant task pins a digest
+      // — require the envelope's `invocation_digest` to be present and EQUAL the
+      // digest that was actually consumed. This binds the dispatched invocation
+      // to the one charged against the grant.
+      const use = grantRepo.getUse(grantId, envelope.execution_id);
+      if (use === null) {
+        failStale('authorizing grant was never consumed for this execution');
+        continue;
+      }
+      if (
+        envelope.invocation_digest === undefined ||
+        envelope.invocation_digest === '' ||
+        envelope.invocation_digest !== use.invocationDigest
+      ) {
+        failStale('invocation digest missing or does not match the consumed grant use');
+        continue;
+      }
     }
     return { task, terminalized };
   }

@@ -23,7 +23,6 @@ import { parseServiceQueryExecutionPayload } from '@dina/protocol';
 
 import { formatServiceQueryResult, type ServiceQueryEventDetails } from './result_formatter';
 
-
 import type { CoreClient, WorkflowEvent, WorkflowTask } from '@dina/core';
 import type { ServiceResponseBody, ServiceQueryExecutionPayload } from '@dina/protocol';
 
@@ -258,7 +257,30 @@ export class WorkflowEventConsumer {
     // delivery-failed instead: Core's delivery scheduler backs off
     // so no one hot-loops on it, but the event stays available for
     // a future consumer that knows how to handle its kind.
-    const DELIVERABLE_KINDS = new Set(['completed', 'failed', 'cancelled', 'approved']);
+    // Round-13 #9: `outcome_unknown` IS deliverable — it is the reconciliation
+    // signal (§9.5: an effectful task whose outcome Dina cannot confirm). Core
+    // emits it with needs_delivery=true; omitting it here made every such event
+    // negative-ack forever, so the owner/requester never saw the state that most
+    // demands human reconciliation.
+    // Round-14 #3: `created` is a task-lifecycle MARKER. Core appends it with
+    // needs_delivery=true (workflow service create()), but no consumer delivers
+    // it — approval kickoff rides the `approved` event, not `created`. Without
+    // this branch it falls to the unknown-kind path below and is negative-acked
+    // FOREVER (perpetual redrive + unknown_kind log spam on every tick). It is a
+    // KNOWN kind this consumer intentionally retires, distinct from a
+    // genuinely-unknown kind a future consumer may still want: ack-and-skip so
+    // it clears cleanly.
+    if (event.event_kind === 'created') {
+      await this.ackAndTrack(event, 'skipped', result);
+      return;
+    }
+    const DELIVERABLE_KINDS = new Set([
+      'completed',
+      'failed',
+      'cancelled',
+      'approved',
+      'outcome_unknown',
+    ]);
     if (!DELIVERABLE_KINDS.has(event.event_kind)) {
       this.log({
         event: 'workflow_event.unknown_kind',
@@ -587,6 +609,18 @@ export class WorkflowEventConsumer {
         }
       } else if (event.event_kind === 'failed') {
         details.response_status = 'error';
+      } else if (event.event_kind === 'outcome_unknown') {
+        // Round-13 #9: distinct reconciliation status — the effect MAY have
+        // happened. Promote the reason into the error slot for the owner.
+        details.response_status = 'outcome_unknown';
+        if (!details.error) {
+          try {
+            const c = JSON.parse(event.details) as { reason?: unknown };
+            if (typeof c.reason === 'string' && c.reason !== '') details.error = c.reason;
+          } catch {
+            /* malformed */
+          }
+        }
       }
     }
 
@@ -705,7 +739,17 @@ function formatDelegationResult(eventKind: string, task: WorkflowTask): string {
   }
   if (eventKind === 'failed') {
     const err = (task.error ?? '').trim() || (task.result_summary ?? '').trim();
-    return err !== '' ? `Your agent couldn't finish the task: ${err}` : "Your agent couldn't finish the task.";
+    return err !== ''
+      ? `Your agent couldn't finish the task: ${err}`
+      : "Your agent couldn't finish the task.";
+  }
+  if (eventKind === 'outcome_unknown') {
+    // Round-13 #9: the effect MAY have happened — tell the owner to reconcile,
+    // never assert success or failure.
+    const err = (task.error ?? '').trim();
+    return err !== ''
+      ? `Your agent couldn't confirm the outcome — please verify it may have completed: ${err}`
+      : "Your agent couldn't confirm whether the task completed — please verify.";
   }
   // cancelled
   return 'The delegated task was cancelled.';

@@ -129,10 +129,71 @@ describe('SQLiteDeviceRepository.register — idempotency (MT-2026-05-28-E-BUG1)
     const { adapter, cleanup } = openId();
     try {
       const repo = new SQLiteDeviceRepository(adapter);
-      await repo.register(deviceFixture({ deviceId: 'dev-1111111111111111' }));
-      await repo.register(deviceFixture({ deviceId: 'dev-2222222222222222' }));
+      // Distinct devices have distinct keys (round-10 #19 makes
+      // public_key_multibase UNIQUE); the point is REPLACE on the device_id PK
+      // doesn't clobber a sibling row.
+      await repo.register(
+        deviceFixture({ deviceId: 'dev-1111111111111111', publicKeyMultibase: 'z6MkKeyOne' }),
+      );
+      await repo.register(
+        deviceFixture({ deviceId: 'dev-2222222222222222', publicKeyMultibase: 'z6MkKeyTwo' }),
+      );
       const rows = adapter.query('SELECT COUNT(*) AS n FROM paired_devices', []);
       expect(Number(rows[0].n)).toBe(2);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('round-10 #19: the same public key cannot produce two rows (UNIQUE index)', async () => {
+    const { adapter, cleanup } = openId();
+    try {
+      const repo = new SQLiteDeviceRepository(adapter);
+      await repo.register(
+        deviceFixture({ deviceId: 'dev-aaaaaaaaaaaaaaaa', publicKeyMultibase: 'z6MkDup' }),
+      );
+      // A second register with the SAME key (different deviceId) must not create
+      // a duplicate row — INSERT OR REPLACE resolves the unique-key conflict.
+      await repo.register(
+        deviceFixture({ deviceId: 'dev-bbbbbbbbbbbbbbbb', publicKeyMultibase: 'z6MkDup' }),
+      );
+      const rows = adapter.query(
+        'SELECT COUNT(*) AS n FROM paired_devices WHERE public_key_multibase = ?',
+        ['z6MkDup'],
+      );
+      expect(Number(rows[0].n)).toBe(1);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe('round-12 #4: an out-of-enum device role is quarantined (fail closed)', () => {
+  it('a row with a corrupt/future role returns null from get/getByDID and is dropped from list', async () => {
+    const { adapter, cleanup } = openId();
+    try {
+      const repo = new SQLiteDeviceRepository(adapter);
+      const good = deviceFixture({ deviceId: 'dev-good', did: 'did:key:zGood' });
+      const bad = deviceFixture({
+        deviceId: 'dev-bad',
+        did: 'did:key:zBad',
+        publicKeyMultibase: 'zBad',
+      });
+      await repo.register(good);
+      await repo.register(bad);
+      // Corrupt the bad row's role to something outside DeviceRole (a downgrade
+      // reading a newer role string, tampering, or bit-rot). Caller resolution
+      // would otherwise bucket any non-agent/plugin role into the broad `device`
+      // caller — validate at hydration so it resolves to `unknown` instead.
+      adapter.execute('UPDATE paired_devices SET role = ? WHERE device_id = ?', [
+        'superadmin',
+        'dev-bad',
+      ]);
+      expect(await repo.getByDID('did:key:zBad')).toBeNull();
+      expect(await repo.get('dev-bad')).toBeNull();
+      // The healthy row still resolves; the corrupt one is dropped from list.
+      const listed = await repo.list();
+      expect(listed.map((d) => d.deviceId)).toEqual(['dev-good']);
     } finally {
       cleanup();
     }

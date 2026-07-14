@@ -26,8 +26,10 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 
 import {
+  canonicalJson,
   checkReleaseIntegrity,
   computePluginDigests,
+  isValidTrustAnchor,
   normalizePluginManifest,
   pluginLane,
   validatePluginManifest,
@@ -40,7 +42,7 @@ import { getWorkflowService } from '../workflow/service';
 
 import { getPluginDecisionRepository } from './decisions';
 import { getPluginGrantRepository } from './grants';
-import { getPluginInstallRepository, type PluginInstall } from './registry';
+import { getPluginInstallRepository, type PluginInstallRef } from './registry';
 
 /**
  * Features this node actually ships (P0: the tool lane end-to-end).
@@ -266,40 +268,61 @@ export interface VerifiedReleaseAttestation {
   readonly [VERIFIED_RELEASE_BRAND]: true;
   readonly cid: string;
   readonly rkey?: string;
-  readonly verifierKind: PluginTrustAnchor['kind'];
+  /**
+   * Round-10 #9: the publisher DID + EXACT trust anchor the verifier bound the
+   * release to — carried IN the attestation (not passed as loose args), so a
+   * proof for publisher A / anchor X cannot be replayed to install as publisher
+   * B / anchor Y. `beginInstallVerified` reads authority from here.
+   */
+  readonly publisherDid: string;
+  readonly trustAnchor: PluginTrustAnchor;
+  /**
+   * Round-9 #4 + round-10 #10: an IMMUTABLE snapshot — the canonical JSON of the
+   * NORMALIZED manifest the verifier checked. A string, not an object reference,
+   * so a post-attest mutation of the caller's manifest (normalize shares nested
+   * schema/machine objects by reference) cannot drift what was "verified".
+   * `beginInstallVerified` refuses unless the installed manifest canonicalizes
+   * to exactly this — closing "verify release A, install manifest B".
+   */
+  readonly manifestCanonical: string;
 }
 
 /**
  * The SOLE constructor of a {@link VerifiedReleaseAttestation}. A real verifier
  * (repo-proof / org-key / signed-record) calls this AFTER it has checked the
  * release out of band; `debug_unsigned` is the only kind that may skip an
- * out-of-band check (debug builds). Whatever produces this token is asserting
- * it verified `cid` under `verifierKind`.
+ * out-of-band check (debug builds). It asserts it verified `manifest` at `cid`
+ * for `publisherDid` under `trustAnchor`. The manifest is snapshotted to an
+ * immutable canonical string here (round-10 #10) so it cannot drift later.
  */
 export function attestVerifiedRelease(args: {
   cid: string;
   rkey?: string;
-  verifierKind: PluginTrustAnchor['kind'];
+  publisherDid: string;
+  trustAnchor: PluginTrustAnchor;
+  manifest: PluginManifest;
 }): VerifiedReleaseAttestation {
   return {
     [VERIFIED_RELEASE_BRAND]: true,
     cid: args.cid,
     ...(args.rkey !== undefined ? { rkey: args.rkey } : {}),
-    verifierKind: args.verifierKind,
+    publisherDid: args.publisherDid,
+    trustAnchor: args.trustAnchor,
+    manifestCanonical: canonicalJson(normalizePluginManifest(args.manifest)),
   };
 }
 
 export function beginInstallVerified(args: {
   manifest: PluginManifest;
   /**
-   * P2-5: verifier-minted proof (see {@link attestVerifiedRelease}). The CID
-   * and rkey are read from HERE — not from loose args — so the persisted
-   * manifest's authority always traces to something a verifier actually
-   * produced. A boolean can be forged; this branded token cannot.
+   * P2-5 + round-10 #9: verifier-minted proof (see {@link attestVerifiedRelease}).
+   * CID, rkey, publisher DID, trust anchor AND the verified manifest snapshot are
+   * all read from HERE — not from loose args — so the persisted install's
+   * authority always traces to exactly what a verifier produced. A boolean can
+   * be forged; this branded token cannot, and it now binds the party + anchor +
+   * bytes, not just a CID.
    */
   attestation: VerifiedReleaseAttestation;
-  publisherDid: string;
-  trustAnchor: PluginTrustAnchor;
   /**
    * Debug builds ONLY (§20). Must be `true` for a `debug_unsigned`
    * anchor to be accepted — production callers never set it, so
@@ -311,7 +334,27 @@ export function beginInstallVerified(args: {
   label?: string;
   nowMs: number;
 }): BeginInstallResult {
-  const { attestation, trustAnchor } = args;
+  // Round-14 #1: the attestation is TYPED as verifier-minted, but a caller can
+  // cast a hand-rolled object past the compiler — or reconstruct one across a
+  // serialization boundary (the brand SYMBOL does not survive JSON). Verify the
+  // brand at RUNTIME so ONLY attestVerifiedRelease's output (the sole holder of
+  // the module-private symbol) can drive an install; anything else fails closed
+  // rather than installing with an attacker-chosen cid / anchor / publisher.
+  const rawAttestation = args.attestation as unknown;
+  if (
+    rawAttestation === null ||
+    typeof rawAttestation !== 'object' ||
+    (rawAttestation as Record<symbol, unknown>)[VERIFIED_RELEASE_BRAND] !== true
+  ) {
+    return {
+      ok: false,
+      code: 'authenticity_failed',
+      message: 'install attestation is not a verifier-minted release token (§12)',
+      transient: false,
+    };
+  }
+  const { attestation } = args;
+  const trustAnchor = attestation.trustAnchor;
   // Unsigned installs are debug-only, EVERYWHERE — this entry included.
   // Without this gate a caller could route an unsigned manifest around
   // beginInstall's §20 refusal via the "already-verified" door.
@@ -320,17 +363,6 @@ export function beginInstallVerified(args: {
       ok: false,
       code: 'authenticity_failed',
       message: 'unsigned manifests cannot install in production (§20)',
-      transient: false,
-    };
-  }
-  // P2-5: the token's verifier kind must match the anchor being recorded — a
-  // repo_proof attestation cannot be used to persist an org_key/debug anchor.
-  // This binds the provenance token to the trust label it authorizes.
-  if (attestation.verifierKind !== trustAnchor.kind) {
-    return {
-      ok: false,
-      code: 'authenticity_failed',
-      message: 'attestation verifier kind does not match the trust anchor (§12)',
       transient: false,
     };
   }
@@ -343,10 +375,35 @@ export function beginInstallVerified(args: {
       return { ok: false, code: 'integrity_failed', message: integrity.message, transient: false };
     }
   }
+  // Round-9 #4 + round-10 #10: the manifest asked to install must canonicalize
+  // to EXACTLY the immutable snapshot the verifier checked — else a caller could
+  // verify release A and install manifest B. Compared over the NORMALIZED form.
+  // A malformed supplied manifest (normalize throws, e.g. `new Set(7)`) fails
+  // closed as validation_failed rather than crashing the install path.
+  let suppliedCanonical: string;
+  try {
+    suppliedCanonical = canonicalJson(normalizePluginManifest(args.manifest));
+  } catch {
+    return {
+      ok: false,
+      code: 'validation_failed',
+      message: 'manifest is malformed',
+      transient: false,
+      errors: 'manifest is malformed',
+    };
+  }
+  if (suppliedCanonical !== attestation.manifestCanonical) {
+    return {
+      ok: false,
+      code: 'authenticity_failed',
+      message: 'installed manifest does not match the verified release (§12)',
+      transient: false,
+    };
+  }
   return finishBegin(
     args.manifest,
     attestation.cid,
-    args.publisherDid,
+    attestation.publisherDid,
     trustAnchor,
     args.label ?? '',
     args.nowMs,
@@ -368,6 +425,23 @@ function finishBegin(
       code: 'verifier_unavailable',
       message: 'plugin registry not wired',
       transient: true,
+    };
+  }
+
+  // Round-14 #5: validate the AUTHORITY inputs before persisting a pending
+  // install. finishBegin is reached from beginInstall (values derived from a
+  // fresh verify) AND beginInstallVerified (attestation-driven). A malformed
+  // trust anchor, an empty publisher DID, or an empty CID must never reach
+  // createPending — the claim guard and rowToInstall later trust these columns
+  // as authority, and rowToInstall would quarantine an anchor that fails
+  // isValidTrustAnchor anyway (so persisting it just yields a dead row). Fail
+  // closed here instead.
+  if (!isValidTrustAnchor(trustAnchor) || publisherDid === '' || cid === '') {
+    return {
+      ok: false,
+      code: 'authenticity_failed',
+      message: 'install authority (anchor / publisher / cid) is missing or malformed (§12)',
+      transient: false,
     };
   }
 
@@ -599,8 +673,20 @@ export async function declineConsent(
   const installs = getPluginInstallRepository();
   if (installs === null) return null;
   const install = installs.getById(installId);
-  if (install === null) return null;
-  const deviceDid = install.deviceDid;
+  // Round-14 #6: `getById` returns null for BOTH a genuinely-missing row AND a
+  // CORRUPT-but-present one (rowToInstall quarantines → null). A corrupt pending
+  // row would otherwise be un-declinable — stuck forever with a possibly-bound
+  // device. Fall back to the RAW scalars: only proceed when a raw row exists,
+  // preserving the pending-only guard against the raw status.
+  const rawStatusAtEntry = install === null ? installs.rawStatus(installId) : null;
+  if (install === null && rawStatusAtEntry === null) return null;
+  // Round-9 #15: decline is a PENDING-only transition. A stale/racing decline
+  // against an install that has since ACTIVATED must not revoke its device and
+  // delete a live plugin — mirror `activate`'s pending-only CAS and refuse.
+  const statusAtEntry = install !== null ? install.status : rawStatusAtEntry;
+  if (statusAtEntry !== 'pending') return null;
+  const deviceDid =
+    install !== null ? install.deviceDid : (installs.rawDeviceDid(installId) ?? undefined);
   if (deviceDid !== undefined) {
     // Round-7 #5: a bound device makes the durable revoker MANDATORY. Without a
     // callback we would delete the row and merely hand the DID back, leaving
@@ -616,8 +702,23 @@ export async function declineConsent(
       return { removed: false, deviceDid, deviceRevoked: false };
     }
   }
-  const removed = installs.remove(installId);
-  if (removed === null) return null;
+  // Round-10 #3 + Round-12 #12: re-check via RAW status AFTER the await. Two
+  // things can happen during the `revokeDeviceConfirmed` yield, and a projecting
+  // getById cannot tell them apart (it returns null for both a removed row and a
+  // corrupt one):
+  //   - the durable revoke's cascade ALREADY removed this pending row
+  //     (`disablePluginAuthorityForDevice` removes pending installs) → status is
+  //     null → teardown SUCCEEDED; record the decline + report removed, rather
+  //     than misreporting it as a retained retry anchor.
+  //   - a racing `confirmConsent` activated it → status is not 'pending' → refuse
+  //     (deleting a now-live install would destroy authority; Round-9 #15 only
+  //     checked pending at ENTRY).
+  //   - still 'pending' → remove it ourselves (raw-keyed, status-agnostic remove).
+  const status = installs.rawStatus(installId);
+  if (status !== null && status !== 'pending') {
+    return { removed: false, ...(deviceDid !== undefined ? { deviceDid } : {}) };
+  }
+  if (status === 'pending') installs.remove(installId);
   getPluginDecisionRepository()?.record({
     installId,
     decision: 'consent_declined',
@@ -647,8 +748,13 @@ export function terminateInstallInFlight(
   const lane = pluginLane(installId);
   const terminated: string[] = [];
   for (const task of service.store().listNonTerminalByRunner(lane)) {
-    service.store().cancel(task.id, reason, nowMs);
-    terminated.push(task.id);
+    // Round-14 #19: `cancel()` returns 0 when the task was ALREADY terminal —
+    // it raced a completion/lease-sweep between the list and this call and no
+    // transition happened. Only report ids we actually terminalized; otherwise
+    // the caller's audit/decision record overstates what this teardown stopped.
+    if (service.store().cancel(task.id, reason, nowMs) > 0) {
+      terminated.push(task.id);
+    }
   }
   return terminated;
 }
@@ -670,9 +776,15 @@ export async function uninstall(
   const installs = getPluginInstallRepository();
   if (installs === null) return null;
   const install = installs.getById(installId);
-  if (install === null) return null;
+  // Round-14 #6: `getById` returns null for a genuinely-missing row AND a
+  // CORRUPT-but-present one. A corrupt install with a bound device must still be
+  // uninstallable — fall back to raw scalars so the device is revoked and the
+  // row removed rather than leaving a stuck, un-torn-down install.
+  const rawStatusAtEntry = install === null ? installs.rawStatus(installId) : null;
+  if (install === null && rawStatusAtEntry === null) return null;
   const nowSec = Math.floor(nowMs / 1000);
-  const deviceDid = install.deviceDid;
+  const deviceDid =
+    install !== null ? install.deviceDid : (installs.rawDeviceDid(installId) ?? undefined);
   // P1-4: terminate in-flight FIRST — a running task must not complete during
   // the uninstall seam. Effectful → outcome_unknown, queued → cancelled.
   terminateInstallInFlight(installId, 'plugin uninstalled', nowMs);
@@ -690,13 +802,30 @@ export async function uninstall(
     if (revokeDevice === undefined) {
       return { removed: false, deviceDid };
     }
+    // Round-14 #7: PAUSE the install before yielding on the device revoke.
+    // Grants are revoked above, but a CARD-backed task (authorization_kind:
+    // 'card') rides INSTALL-level authority (claim-guard checks 5/6), not a
+    // grant — during this `await` a concurrent claim on the still-`active` lane
+    // would pass. Pausing stops the lane at the claim guard for the teardown
+    // window; the device-revoke cascade also pauses active installs, but only
+    // AFTER the await resolves. (pause() only touches active rows, so a
+    // pending/paused install is unaffected, and the raw-status probe + remove
+    // below still fire correctly on the now-paused row.)
+    installs.pause(installId, nowMs, 'device_revoked');
     const durable = await revokeDeviceConfirmed(revokeDevice, deviceDid);
     if (!durable) {
       return { removed: false, deviceDid, deviceRevoked: false };
     }
   }
-  const removed = installs.remove(installId);
-  if (removed === null) return null;
+  // Round-13 #12: a PENDING install bound to the revoked device is cascade-
+  // removed by the durable revoke (disablePluginAuthorityForDevice removes
+  // pending rows). A plain `remove()` then returns null and uninstall would
+  // misreport failure. Use a raw-status probe (the same three-way declineConsent
+  // uses, PLG-22 #12): row GONE = cascade already removed it (SUCCESS), row
+  // present = remove it now. (Active/paused installs are PAUSED by the cascade,
+  // not removed, so this only affects the pending-with-device case.)
+  const rawAfter = installs.rawStatus(installId);
+  if (rawAfter !== null && installs.remove(installId) === null) return null;
   getPluginDecisionRepository()?.record({
     installId,
     decision: 'uninstalled',
@@ -718,24 +847,39 @@ export async function uninstall(
 export async function sweepAbandonedInstalls(
   nowSec: number,
   revokeDevice: RevokeDeviceByDid,
-): Promise<PluginInstall[]> {
+): Promise<PluginInstallRef[]> {
   const installs = getPluginInstallRepository();
   if (installs === null) return [];
-  const swept: PluginInstall[] = [];
+  const swept: PluginInstallRef[] = [];
   // P2-11 + Round-6 #1: revoke the paired device FIRST and delete the pending
   // row ONLY once the revoke is confirmed durable. A revoke that fails (or its
   // async Promise not resolving durable) leaves the row as a retry anchor for
   // the next sweep, rather than orphaning the device with nothing left to clean
   // up.
-  for (const install of installs.listStalePending(nowSec)) {
-    if (install.deviceDid !== undefined) {
-      const durable = await revokeDeviceConfirmed(revokeDevice, install.deviceDid);
+  //
+  // Round-12 #11: enumerate RAW (`listRawStalePending`) — the projecting
+  // `listStalePending` quarantines a corrupt row to null, so a corrupt
+  // abandoned pending would never be swept and its device would leak.
+  for (const ref of installs.listRawStalePending(nowSec)) {
+    if (ref.deviceDid !== undefined) {
+      const durable = await revokeDeviceConfirmed(revokeDevice, ref.deviceDid);
       if (!durable) {
         continue; // keep the pending row; the next sweep retries the revoke
       }
     }
-    installs.remove(install.installId);
-    swept.push(install);
+    // Round-11 #3 + Round-12 #12: re-check via RAW status after the revoke await.
+    // A projecting getById cannot tell "removed" from "corrupt-still-present":
+    //   - null       → the revoke cascade ALREADY removed this pending row →
+    //                  teardown SUCCEEDED; count it swept (don't misreport it as
+    //                  skipped, #12).
+    //   - not pending → a racing `confirmConsent` activated it during the yield →
+    //                  leave it (deleting a now-ACTIVE install destroys authority).
+    //   - 'pending'  → still ours: remove it (remove() is raw-keyed, so a corrupt
+    //                  row is deletable too, #11 / Round-11 #10).
+    const status = installs.rawStatus(ref.installId);
+    if (status !== null && status !== 'pending') continue;
+    if (status === 'pending') installs.remove(ref.installId);
+    swept.push(ref);
   }
   return swept;
 }

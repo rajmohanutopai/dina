@@ -22,15 +22,7 @@ export interface SchemaValidationResult {
   error?: string;
 }
 
-const KNOWN_TYPES = new Set([
-  'object',
-  'array',
-  'string',
-  'number',
-  'integer',
-  'boolean',
-  'null',
-]);
+const KNOWN_TYPES = new Set(['object', 'array', 'string', 'number', 'integer', 'boolean', 'null']);
 
 export function validateAgainstSchema(value: unknown, schema: unknown): SchemaValidationResult {
   return walk(value, schema, '$');
@@ -109,12 +101,16 @@ function walk(value: unknown, schema: unknown, path: string): SchemaValidationRe
     }
   }
 
-  // string bounds.
+  // string bounds. Round-10 #17: JSON Schema minLength/maxLength count Unicode
+  // CODE POINTS, not UTF-16 code units — `.length` counts an emoji as 2. Use the
+  // code-point length so a Go/Rust/Python port measuring the same input agrees
+  // (this is the shared trust boundary; a disagreement is a conformance break).
   if (typeof value === 'string') {
-    if (typeof s.minLength === 'number' && value.length < s.minLength) {
+    const codePoints = [...value].length;
+    if (typeof s.minLength === 'number' && codePoints < s.minLength) {
       return fail(path, `shorter than ${s.minLength}`);
     }
-    if (typeof s.maxLength === 'number' && value.length > s.maxLength) {
+    if (typeof s.maxLength === 'number' && codePoints > s.maxLength) {
       return fail(path, `longer than ${s.maxLength}`);
     }
   }

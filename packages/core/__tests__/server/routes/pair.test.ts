@@ -307,4 +307,41 @@ describe('POST /v1/pair/complete — public, code-authenticated', () => {
       console.error = origErr;
     }
   });
+
+  it('round-9 #10: a persistence failure ROLLS BACK the in-memory + auth registration (key cannot authenticate)', async () => {
+    // Durable persistence fails → 503. Without rollback the just-added device
+    // key would still authenticate (in-memory registry + auth map survived)
+    // until the next restart. Assert the DID is NOT a recognized device after.
+    const throwingRepo: DeviceRepository = {
+      register: () => Promise.reject(new Error('disk full')),
+      get: async () => null,
+      getByPublicKey: async () => null,
+      getByDID: async () => null,
+      list: async () => [] as PairedDevice[],
+      revoke: async () => false,
+      touch: async () => undefined,
+    };
+    const origErr = console.error;
+    console.error = (): void => {
+      /* */
+    };
+    setDeviceRepository(throwingRepo);
+    try {
+      const { code } = await initiate('openclaw-user', 'agent');
+      const actor = makeActor();
+      const resp = await router.handle(
+        unsignedReq('POST', '/v1/pair/complete', {
+          code,
+          public_key: publicKeyToMultibase(actor.pub),
+        }),
+      );
+      expect(resp.status).toBe(503);
+      // Rolled back: the DID is no longer a paired device and cannot authenticate.
+      expect(isDevice(actor.did)).toBe(false);
+      expect(resolveCallerType(actor.did).callerType).toBe('unknown');
+    } finally {
+      setDeviceRepository(null);
+      console.error = origErr;
+    }
+  });
 });

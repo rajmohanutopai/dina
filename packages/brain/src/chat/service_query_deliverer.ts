@@ -27,11 +27,11 @@
 import { validateCardSpec, type CardSpec } from '@dina/protocol';
 
 import { buildResultCardSpec } from '../service/result_card_mapper';
-import type { WorkflowEventDeliverer } from '../service/workflow_event_consumer';
 
 import {
   addDinaResponse,
   addLifecycleMessage,
+  findMessageBySource,
   findMessageByTaskId,
   hydrateThread,
   readLifecycle,
@@ -39,6 +39,8 @@ import {
   type ServiceQueryLifecycle,
   type ServiceQueryStatus,
 } from './thread';
+
+import type { WorkflowEventDeliverer } from '../service/workflow_event_consumer';
 
 export interface ServiceQueryDelivererOptions {
   /** Fallback thread the card lands in when no resolver is supplied or it
@@ -175,7 +177,18 @@ export function createServiceQueryDeliverer(
     }
 
     // Non-service_query workflow events keep the normal dina-bubble path.
-    addDinaResponse(target, text, sources.length > 0 ? sources : undefined);
+    // Round-14 #12: workflow delivery is at-least-once — a delivery-failed
+    // retry or a duplicate poll can re-present the SAME event. The service_query
+    // path reconciles on task.id, but a plain delegation bubble has no lifecycle
+    // key to patch, so a redelivered event would STACK a duplicate reply. Dedupe
+    // on the event id: tag the bubble with `event:<id>` and skip if one already
+    // exists in this thread.
+    const dedupeKey = event.event_id > 0 ? `event:${event.event_id}` : '';
+    if (dedupeKey !== '' && findMessageBySource(target, dedupeKey) !== null) {
+      return;
+    }
+    const bubbleSources = dedupeKey !== '' ? [...sources, dedupeKey] : sources;
+    addDinaResponse(target, text, bubbleSources.length > 0 ? bubbleSources : undefined);
   };
 }
 

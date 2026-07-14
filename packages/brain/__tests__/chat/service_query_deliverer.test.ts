@@ -12,12 +12,7 @@
  */
 
 import { createServiceQueryDeliverer } from '../../src/chat/service_query_deliverer';
-import {
-  addLifecycleMessage,
-  getThread,
-  readLifecycle,
-  resetThreads,
-} from '../../src/chat/thread';
+import { addLifecycleMessage, getThread, readLifecycle, resetThreads } from '../../src/chat/thread';
 
 import type { ServiceQueryEventDetails } from '../../src/service/result_formatter';
 import type { WorkflowEvent, WorkflowTask } from '@dina/core';
@@ -36,7 +31,11 @@ function makeTask(originChannel: string): WorkflowTask {
   return {
     id: TASK_ID,
     kind: 'service_query',
-    payload: JSON.stringify({ query_id: 'q1', capability: 'availability_coordination', origin_channel: originChannel }),
+    payload: JSON.stringify({
+      query_id: 'q1',
+      capability: 'availability_coordination',
+      origin_channel: originChannel,
+    }),
   } as unknown as WorkflowTask;
 }
 
@@ -113,5 +112,52 @@ describe('createServiceQueryDeliverer — peer-thread routing (seam 4)', () => {
     if (lc?.kind !== 'service_query') throw new Error('expected service_query lifecycle');
     expect(lc.status).toBe('resolved');
     expect(getThread(PEER)).toHaveLength(0);
+  });
+});
+
+describe('createServiceQueryDeliverer — round-14 #12 delegation bubble dedup', () => {
+  const delegTask = (id: string): WorkflowTask =>
+    ({
+      id,
+      kind: 'delegation',
+      payload: JSON.stringify({ type: 'free_form_task' }),
+    }) as unknown as WorkflowTask;
+  const evt = (eventId: number, taskId: string): WorkflowEvent =>
+    ({ event_id: eventId, task_id: taskId, event_kind: 'completed' }) as unknown as WorkflowEvent;
+  const noDetails = {} as ServiceQueryEventDetails;
+
+  it('dedupes a redelivered (same event_id) non-service_query event to ONE bubble', async () => {
+    const deliver = createServiceQueryDeliverer({ threadId: 'main' });
+    // At-least-once redelivery: the SAME event arrives twice.
+    await deliver({
+      text: 'agent finished: 42',
+      event: evt(77, 'deleg-1'),
+      task: delegTask('deleg-1'),
+      details: noDetails,
+    });
+    await deliver({
+      text: 'agent finished: 42',
+      event: evt(77, 'deleg-1'),
+      task: delegTask('deleg-1'),
+      details: noDetails,
+    });
+    expect(getThread('main')).toHaveLength(1);
+  });
+
+  it('does NOT dedupe distinct events (different event_id) on the same task', async () => {
+    const deliver = createServiceQueryDeliverer({ threadId: 'main' });
+    await deliver({
+      text: 'first',
+      event: evt(1, 'deleg-2'),
+      task: delegTask('deleg-2'),
+      details: noDetails,
+    });
+    await deliver({
+      text: 'second',
+      event: evt(2, 'deleg-2'),
+      task: delegTask('deleg-2'),
+      details: noDetails,
+    });
+    expect(getThread('main')).toHaveLength(2);
   });
 });

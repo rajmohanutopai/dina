@@ -83,6 +83,10 @@ describe('revokeDeviceDurable — restart safety', () => {
       // Session 1: register + durably revoke.
       const a1 = openId(dbPath);
       setDeviceRepository(new SQLiteDeviceRepository(a1));
+      // Round-9 #13: an agent device's durable revoke needs the agent-grant repo
+      // wired to confirm the persona-grant half of cleanup (it always is in a
+      // real deployment) — otherwise durable correctly downgrades.
+      setAgentGrantRepository(new SQLiteAgentGrantRepository(a1));
       const device = registerDevice('OpenClaw agent', 'z6MkAgentKey1', 'agent');
       const result = await revokeDeviceDurable(device.deviceId);
       expect(result).toMatchObject({ found: true, revoked: true, durable: true });
@@ -164,6 +168,65 @@ describe('revokeDeviceDurable — semantics', () => {
     expect(isDeviceActive(d.deviceId)).toBe(false);
   });
 
+  it('round-9 #1: cuts runtime access BEFORE awaiting the DB (a hung persist cannot keep the device usable)', async () => {
+    // A repo whose revoke never resolves until we release it models a hung DB.
+    let release!: () => void;
+    const gate = new Promise<void>((res) => {
+      release = res;
+    });
+    const slowRepo: DeviceRepository = {
+      register: async () => {},
+      get: async () => null,
+      getByPublicKey: async () => null,
+      getByDID: async () => null,
+      list: async () => [],
+      touch: async () => {},
+      revoke: async () => {
+        await gate;
+        return true;
+      },
+    };
+    setDeviceRepository(slowRepo);
+    const d = registerDevice('Phone', 'z6MkHung', 'rich');
+    const pending = revokeDeviceDurable(d.deviceId); // do NOT await — the DB is hung
+    // Access is already cut synchronously, before the persist resolves — the
+    // device cannot authenticate during the stall (round-9 #1: cut-first).
+    expect(isDeviceActive(d.deviceId)).toBe(false);
+    expect(getDevice(d.deviceId)?.revoked).toBe(true);
+    release();
+    const r = await pending;
+    expect(r.durable).toBe(true); // persist eventually succeeds
+  });
+
+  it('round-9 #13: an AGENT device revoke is NOT durable when the agent-grant repo is absent', async () => {
+    await withSqlRepo(async (cleanup) => {
+      try {
+        // Device repo wired, but NO agent-grant repo (beforeEach nulled it).
+        const d = registerDevice('Agent', 'z6MkNoAgentRepo', 'agent');
+        const r = await revokeDeviceDurable(d.deviceId);
+        // The agent-grant half of cleanup could not run — do NOT report durable.
+        expect(r.durable).toBe(false);
+        expect(r.error).toMatch(/repository unavailable/);
+        // Fail-safe: access is still cut; a retry once the repo is wired completes.
+        expect(isDeviceActive(d.deviceId)).toBe(false);
+      } finally {
+        cleanup();
+      }
+    });
+  });
+
+  it('round-9 #13: a NON-agent device stays durable when the agent-grant repo is absent (no grants to clean)', async () => {
+    await withSqlRepo(async (cleanup) => {
+      try {
+        const d = registerDevice('Phone', 'z6MkRichNoRepo', 'rich');
+        const r = await revokeDeviceDurable(d.deviceId);
+        expect(r.durable).toBe(true); // a rich device holds no persona grants
+      } finally {
+        cleanup();
+      }
+    });
+  });
+
   it('round-5 #5: a device revoked in-memory after a SQL failure RETRIES the SQL on the next call', async () => {
     let shouldFail = true;
     const flakyRepo: DeviceRepository = {
@@ -199,7 +262,8 @@ describe('revokeDeviceDurable — semantics', () => {
         // failure. The device SQL row still persists, but old installs/grants
         // may survive — so the revoke must NOT report fully durable.
         setPluginInstallRepository({
-          listByDeviceDid() {
+          // Round-10 #14: the revoke cascade enumerates RAW rows now.
+          listRawByDeviceDid() {
             throw new Error('db locked');
           },
         } as unknown as SQLitePluginInstallRepository);
@@ -343,6 +407,8 @@ describe('revokeDeviceDurable — cascades to plugin authority (F3)', () => {
 
       const after = installs.getById(installId);
       expect(after?.status).toBe('paused'); // lane stops accepting claims
+      expect(after?.pauseReason).toBe('device_revoked'); // round-9 #16: not plainly resumable
+      expect(installs.resume(installId, Date.now())).toBe(false); // needs re-pair, not a resume
       expect(grants.getById(grantId)?.revokedAt).toBeGreaterThan(0); // no surviving authority
     } finally {
       a.close();
@@ -404,9 +470,12 @@ describe('revokeDeviceDurable — cascades to plugin authority (F3)', () => {
       installs.pause(paused, now + 1);
       a.execute('UPDATE plugin_installs SET device_did = ? WHERE install_id = ?', [d.did, paused]);
       const gPaused = grantFor(paused);
-      // (3) pending, bound to d.did during pairing
+      // (3) pending, co-bound to d.did. Round-9 #3 makes the bindPendingDevice
+      // seam REFUSE a device already on another install, so co-bind via raw SQL
+      // — this test is about revocation enumerating EVERY co-bound install
+      // (however the co-binding arose, e.g. a restore), not the bind seam.
       const pending = mk();
-      installs.bindPendingDevice(pending, d.did, now);
+      a.execute('UPDATE plugin_installs SET device_did = ? WHERE install_id = ?', [d.did, pending]);
       const gPending = grantFor(pending);
 
       await revokeDeviceDurable(d.deviceId);
@@ -443,7 +512,7 @@ describe('revokeDeviceDurable — cascades to plugin authority (F3)', () => {
       const now = Date.now();
       const installId = installs.createPending({
         publisherDid: 'did:plc:acme',
-        pluginId: 'com.acme.fw',
+        pluginId: 'com.acme.flightwatch', // Round-12 #8: match manifest.plugin_id
         label: '',
         executionMode: 'runner',
         currentCid: 'bafyreicid',
@@ -556,7 +625,7 @@ describe('revokeDeviceDurable — cascades to plugin authority (F3)', () => {
       const now = Date.now();
       const installId = installs.createPending({
         publisherDid: 'did:plc:acme',
-        pluginId: 'com.acme.fw',
+        pluginId: 'com.acme.flightwatch', // Round-12 #8: match manifest.plugin_id
         label: '',
         executionMode: 'runner',
         currentCid: 'bafyreicid',
@@ -584,6 +653,111 @@ describe('revokeDeviceDurable — cascades to plugin authority (F3)', () => {
       // The cascade threw BEFORE pausing anything — the install stays active
       // (nothing changed) rather than leaving a paused install with live grants.
       expect(installs.getById(installId)?.status).toBe('active');
+    } finally {
+      a.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('round-12 #13: a PLUGIN-role revoke reports NOT durable when the INSTALL repo is absent', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-dev5e-'));
+    const a = openId(path.join(dir, 'identity.sqlite'));
+    try {
+      const sqlRepo = new SQLiteDeviceRepository(a);
+      setDeviceRepository(sqlRepo);
+      // The INSTALL repo itself is unavailable (teardown / mis-wiring). A plugin
+      // device's installs+grants cannot be verified/cleaned — mirror the
+      // agent-grant half and downgrade `durable` for a plugin-role device.
+      setPluginInstallRepository(null);
+      setPluginGrantRepository(null);
+
+      const d = registerDevice('inst', 'z6MkNoInstallRepo', 'plugin');
+      await sqlRepo.register(d);
+      const r = await revokeDeviceDurable(d.deviceId);
+      expect(r.durable).toBe(false);
+      expect(r.error).toMatch(/plugin cascade failed: repository unavailable/);
+    } finally {
+      a.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('round-11 #5: a re-pair DURING the revoke await does NOT keep the old authority (revoke destroys it)', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-dev5f-'));
+    const a = openId(path.join(dir, 'identity.sqlite'));
+    try {
+      // A device repo whose revoke suspends until we release it — models the
+      // event-loop yield during which a concurrent re-pair can run.
+      let release!: () => void;
+      const gate = new Promise<void>((res) => {
+        release = res;
+      });
+      const slowRepo: DeviceRepository = {
+        register: async () => {},
+        get: async () => null,
+        getByPublicKey: async () => null,
+        getByDID: async () => null,
+        list: async () => [],
+        touch: async () => {},
+        revoke: async () => {
+          await gate;
+          return true;
+        },
+      };
+      setDeviceRepository(slowRepo);
+      const installs = new SQLitePluginInstallRepository(a);
+      const grants = new SQLitePluginGrantRepository(a);
+      setPluginInstallRepository(installs);
+      setPluginGrantRepository(grants);
+      setPluginDecisionRepository(new SQLitePluginDecisionRepository(a));
+
+      const d = registerDevice('inst', 'z6MkRepairRace', 'plugin');
+      const now = Date.now();
+      const installId = installs.createPending({
+        publisherDid: 'did:plc:acme',
+        pluginId: 'com.acme.flightwatch', // Round-12 #8: match manifest.plugin_id
+        label: '',
+        executionMode: 'runner',
+        currentCid: 'bafyreicid',
+        currentVersion: '1.0.0',
+        manifest,
+        installScopeHash: 's'.repeat(64),
+        capabilityHashes: { [CAP]: 'c'.repeat(64) },
+        behaviorHash: 'b'.repeat(64),
+        presentationHash: 'p'.repeat(64),
+        trustAnchor: { kind: 'repo_proof' },
+        pendingExpiresAtSec: Math.floor(now / 1000) + 900,
+        nowMs: now,
+      });
+      installs.activate(installId, d.did, now);
+      const grantId = grants.create(
+        {
+          installId,
+          capability: CAP,
+          approvedScopeHash: 'c'.repeat(64),
+          grantType: 'standing',
+          constraints: { version: 1, max_count: 100 },
+        },
+        'read',
+        now,
+      );
+
+      const pending = revokeDeviceDurable(d.deviceId); // suspends at the SQL await
+      // Re-pair the SAME key during the await → the revive path replaces the map
+      // entry with a fresh ACTIVE device (the device is authenticatable again).
+      const revived = registerDevice('inst-again', 'z6MkRepairRace', 'plugin');
+      expect(revived.deviceId).toBe(d.deviceId); // revived in place
+      expect(revived.revoked).toBe(false);
+      release();
+      await pending;
+
+      // Round-11 #5: the cascades run regardless of the re-pair (the authority
+      // bound to the DID is the OLD, pre-revocation authority). The re-paired
+      // device is alive but its install is PAUSED (device_revoked) + grant
+      // REVOKED → re-consent required. Re-pair must NOT defeat revocation.
+      expect(installs.getById(installId)?.status).toBe('paused');
+      expect(installs.getById(installId)?.pauseReason).toBe('device_revoked');
+      expect(grants.getById(grantId)?.revokedAt).toBeGreaterThan(0);
     } finally {
       a.close();
       fs.rmSync(dir, { recursive: true, force: true });

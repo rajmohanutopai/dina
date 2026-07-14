@@ -11,8 +11,8 @@
  * Source: ARCHITECTURE.md — op-sqlite persistence layer
  */
 
-import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 import type { PairedDevice, DeviceRole, AuthType } from './registry';
+import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
 export interface DeviceRepository {
   register(device: PairedDevice): Promise<void>;
@@ -84,7 +84,12 @@ export class SQLiteDeviceRepository implements DeviceRepository {
   }
 
   async list(): Promise<PairedDevice[]> {
-    return this.db.query('SELECT * FROM paired_devices').map(rowToDevice);
+    // Round-12 #4: drop rows whose role quarantined (rowToDevice → null) so a
+    // corrupt-role device never enters the in-memory registry on hydration.
+    return this.db
+      .query('SELECT * FROM paired_devices')
+      .map(rowToDevice)
+      .filter((d): d is PairedDevice => d !== null);
   }
 
   async revoke(deviceId: string): Promise<boolean> {
@@ -102,13 +107,30 @@ export class SQLiteDeviceRepository implements DeviceRepository {
   }
 }
 
-function rowToDevice(row: DBRow): PairedDevice {
+/** The valid persisted device roles (DeviceRole). A row carrying anything else
+ *  is corrupt / from a newer schema / tampered. */
+const VALID_DEVICE_ROLES = new Set<DeviceRole>(['rich', 'thin', 'cli', 'agent', 'plugin']);
+
+/**
+ * Round-12 #4: QUARANTINE a row whose `role` column is not a known DeviceRole
+ * (null returned). Caller resolution buckets every role that isn't exactly
+ * `agent`/`plugin` into the broad `device` caller type (vault + approvals
+ * access); a corrupt/future/tampered role string would silently land there.
+ * Dropping the row at hydration means it never enters the in-memory registry,
+ * so the role resolver returns null and the caller fails closed to `unknown`
+ * (the Round-6 #7 null-role path) — no `caller_type` change needed. This is
+ * distinct from that scoped null-role fallback: this is a resolver that
+ * SUCCESSFULLY returns a non-null but invalid role.
+ */
+function rowToDevice(row: DBRow): PairedDevice | null {
+  const role = String(row.role ?? 'rich');
+  if (!VALID_DEVICE_ROLES.has(role as DeviceRole)) return null;
   return {
     deviceId: String(row.device_id ?? ''),
     did: String(row.did ?? ''),
     publicKeyMultibase: String(row.public_key_multibase ?? ''),
     deviceName: String(row.device_name ?? ''),
-    role: String(row.role ?? 'rich') as DeviceRole,
+    role: role as DeviceRole,
     authType: String(row.auth_type ?? 'ed25519') as AuthType,
     lastSeen: Number(row.last_seen ?? 0),
     createdAt: Number(row.created_at ?? 0),

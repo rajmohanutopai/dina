@@ -25,11 +25,20 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
+import {
+  canonicalJson,
+  computePluginDigests,
+  isValidTrustAnchor,
+  normalizePluginManifest,
+  validatePluginManifest,
+} from '@dina/protocol';
+
 import { ARGON2ID_PARAMS, DINA_FILE_MAGIC, DINA_FILE_VERSION } from '../constants';
 import { wrapSeed, unwrapSeed } from '../crypto/aesgcm';
 import { validatePersonaName } from '../persona/service';
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
+import type { PluginManifest } from '@dina/protocol';
 
 const ARCHIVE_MAGIC = DINA_FILE_MAGIC;
 const ARCHIVE_VERSION = DINA_FILE_VERSION;
@@ -303,11 +312,24 @@ export async function buildArchivePayload(ds: ArchiveDataSource): Promise<Archiv
     for (const t of IDENTITY_TABLES) {
       let rows = dumpTable(idAdapter, t);
       if (t === 'plugin_installs') {
+        // Round-12 #10: only CONSENTED installs are portable catalog entries.
+        // A `pending` row is a ceremony the owner never completed (no consent),
+        // and a `revoked` row is dead authority — exporting either would restore
+        // it as a `paused` install the owner is prompted to recover, resurrecting
+        // something that was never installed. Gate to active/paused before the
+        // paused-transform below.
         // P2-12: a restored install has no runner instance and no live grants
         // until the owner re-pairs + re-consents, so bake it PAUSED with the
         // device binding stripped. Restore is then a plain verbatim insert;
         // the v19 unique-active-device index can't conflict (status≠active).
-        rows = rows.map((r) => ({ ...r, status: 'paused', device_did: null }));
+        rows = rows
+          .filter((r) => r.status === 'active' || r.status === 'paused')
+          .map((r) => ({
+            ...r,
+            status: 'paused',
+            device_did: null,
+            pause_reason: 'restore', // round-9 #16: restored installs need re-pair + re-consent
+          }));
       }
       identityTables[t] = rows;
       checksums[`identity:${t}`] = tableChecksum(rows);
@@ -442,7 +464,83 @@ export async function importArchive(
         // merged instead (backup prefs overwrite, target secrets survive).
         if (opts.force && table !== KV_TABLE) clearTable(idAdapter, table);
         const rows = payload.identity.tables[table];
-        if (rows !== undefined) restoreTable(idAdapter, table, rows);
+        if (rows !== undefined) {
+          // Round-9 #18: plugin authority never travels. Export bakes installs
+          // PAUSED with the device binding stripped, but the archive is
+          // attacker-influenced (the AES-GCM tag only proves the importer's
+          // passphrase, NOT authenticity — a crafted archive supplies its own
+          // passphrase + checksums), so a hostile payload can carry a
+          // plugin_installs row with status:'active' and an attacker-chosen
+          // device_did that bypasses the export transform. RE-force the safe
+          // paused/null-device form on IMPORT so a restored install always
+          // requires re-pair + re-consent before it is usable.
+          const safe =
+            table === 'plugin_installs'
+              ? rows
+                  // Round-10 #15: the archive is attacker-influenced (its tag
+                  // only proves the importer's passphrase). Drop any plugin
+                  // install whose manifest doesn't VALIDATE, so a crafted /
+                  // malformed manifest never persists into the registry (where a
+                  // UI reading plugin_installs directly would render it).
+                  // Round-11 #11: a VALID manifest can still ship with FORGED
+                  // sibling columns — the per-capability scope hashes, install
+                  // scope hash, behavior/presentation digests — which the consent
+                  // and claim-guard paths read as AUTHORITY (approved_scope_hash).
+                  // Recompute all of them from the manifest and drop any row whose
+                  // stored columns disagree, so a restored install can only carry
+                  // digests that actually derive from its own manifest.
+                  .filter((r) => {
+                    let manifest: PluginManifest;
+                    try {
+                      manifest = JSON.parse(String(r.manifest_json)) as PluginManifest;
+                    } catch {
+                      return false;
+                    }
+                    if (!validatePluginManifest(manifest).ok) return false;
+                    // Round-12 #9: the SCALAR identity columns must also agree
+                    // with the validated manifest — the digest checks below bind
+                    // scope/behavior/presentation but NOT plugin_id / version /
+                    // execution_mode, so a crafted archive could restore a row
+                    // whose catalog identity (what the UI + claim guard read)
+                    // disagrees with the code/consent snapshot. Mirror of the
+                    // rowToInstall cross-check (#8) on the restore path.
+                    if (String(r.plugin_id) !== manifest.plugin_id) return false;
+                    if (String(r.current_version) !== manifest.version) return false;
+                    if (String(r.execution_mode) !== manifest.execution.mode) return false;
+                    const digests = computePluginDigests(normalizePluginManifest(manifest), sha256);
+                    if (String(r.install_scope_hash) !== digests.installScopeHash) return false;
+                    if (String(r.behavior_hash) !== digests.behaviorHash) return false;
+                    if (String(r.presentation_hash) !== digests.presentationHash) return false;
+                    let storedCaps: unknown;
+                    try {
+                      storedCaps = JSON.parse(String(r.capability_hashes_json));
+                    } catch {
+                      return false;
+                    }
+                    if (canonicalJson(storedCaps) !== canonicalJson(digests.perCapability)) {
+                      return false;
+                    }
+                    // Round-13 #16: the trust anchor is authority too — a crafted
+                    // archive could carry an unknown kind or an org_key/
+                    // local_publisher_key missing its required field. Reject any
+                    // anchor that isn't a valid discriminated-union member.
+                    let anchor: unknown;
+                    try {
+                      anchor = JSON.parse(String(r.trust_anchor_json));
+                    } catch {
+                      return false;
+                    }
+                    return isValidTrustAnchor(anchor);
+                  })
+                  .map((r) => ({
+                    ...r,
+                    status: 'paused',
+                    device_did: null,
+                    pause_reason: 'restore', // round-9 #16: restored installs need re-pair + re-consent
+                  }))
+              : rows;
+          restoreTable(idAdapter, table, safe);
+        }
       }
       // P2-12: plugin authority never travels — a restored install is PAUSED
       // and must be re-consented. On overwrite, clear the target's grant / use
@@ -484,21 +582,29 @@ export async function importArchive(
   }
 }
 
-/** Recompute per-table checksums and compare to the manifest. Throws on mismatch. */
+/**
+ * Recompute per-table checksums and compare to the manifest. Throws on mismatch.
+ * Round-13 #24: require COMPLETE coverage — a MISSING checksum for a present
+ * table is a failure, not a pass. A crafted archive (the AES-GCM tag proves only
+ * the importer's passphrase, not authenticity) could otherwise omit checksums to
+ * skip the integrity check on the very tables it tampered.
+ */
 function validateChecksums(payload: ArchivePayloadV1): void {
   const expected = payload.header.checksums ?? {};
-  for (const [table, rows] of Object.entries(payload.identity.tables)) {
-    const key = `identity:${table}`;
-    if (expected[key] !== undefined && expected[key] !== tableChecksum(rows)) {
+  const check = (key: string, rows: DBRow[]): void => {
+    if (expected[key] === undefined) {
+      throw new Error(`archive: missing checksum for ${key} (incomplete or tampered)`);
+    }
+    if (expected[key] !== tableChecksum(rows)) {
       throw new Error(`archive: checksum mismatch for ${key} (corrupt or tampered)`);
     }
+  };
+  for (const [table, rows] of Object.entries(payload.identity.tables)) {
+    check(`identity:${table}`, rows);
   }
   for (const persona of payload.personas) {
     for (const [table, rows] of Object.entries(persona.tables)) {
-      const key = `persona:${persona.name}:${table}`;
-      if (expected[key] !== undefined && expected[key] !== tableChecksum(rows)) {
-        throw new Error(`archive: checksum mismatch for ${key} (corrupt or tampered)`);
-      }
+      check(`persona:${persona.name}:${table}`, rows);
     }
   }
 }
@@ -522,7 +628,11 @@ export async function readManifest(
 /** Verify an archive is valid (decryptable + well-formed) without importing. */
 export async function verifyArchive(archive: Uint8Array, passphrase: string): Promise<boolean> {
   try {
-    await readManifest(archive, passphrase);
+    const payload = await readManifest(archive, passphrase);
+    // Round-13 #24: `verifyArchive` must agree with `importArchive` — the import
+    // path runs `validateChecksums`, so a checksum mismatch/gap that import
+    // rejects must not be reported "valid" here.
+    validateChecksums(payload);
     return true;
   } catch {
     return false;

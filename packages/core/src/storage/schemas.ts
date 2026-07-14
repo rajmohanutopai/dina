@@ -76,7 +76,14 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         revoked INTEGER NOT NULL DEFAULT 0
       );
 
-      CREATE INDEX IF NOT EXISTS idx_devices_pubkey ON paired_devices(public_key_multibase);
+      -- Round-10 #19: one row per key. public_key_multibase is NOT NULL and a
+      -- device mints its own keypair, so it is one-key-per-device — a UNIQUE
+      -- index makes getByPublicKey/getByDID deterministic (no duplicate rows a
+      -- crash/second-writer could create) and lets register's INSERT OR REPLACE
+      -- resolve a key conflict by replacing. (did is derived from the key, so
+      -- uniqueness on the key implies it; did keeps a plain index since it can
+      -- be '' on a legacy/mock row.)
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_pubkey ON paired_devices(public_key_multibase);
       CREATE INDEX IF NOT EXISTS idx_devices_did ON paired_devices(did);
 
       CREATE TABLE IF NOT EXISTS reminders (
@@ -919,6 +926,13 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         trust_anchor_json TEXT NOT NULL,
         device_did        TEXT,
         config_revision   INTEGER NOT NULL DEFAULT 1,
+        -- Round-9 #16: WHY an install was paused, so resume can tell an
+        -- owner-initiated pause (plainly resumable) from a device-revoke /
+        -- restore / advisory hold that requires re-pair / re-consent / advisory
+        -- resolution. NULL = legacy / not-yet-set (treated as owner-resumable).
+        pause_reason      TEXT
+                            CHECK (pause_reason IS NULL
+                                   OR pause_reason IN ('manual','device_revoked','restore','advisory')),
         pending_cid       TEXT,
         pending_behavior_hash TEXT,
         -- NOTE: 'x IN (NULL, ...)' is a no-op CHECK (NULL member makes the
@@ -953,6 +967,14 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         grant_id     TEXT NOT NULL REFERENCES plugin_grants(grant_id) ON DELETE CASCADE,
         execution_id TEXT NOT NULL,
         used_at      INTEGER NOT NULL,
+        -- Round-11 #1: the digest of the CONSTRAINT-RELEVANT invocation params
+        -- (resource + value) that this execution_id was FIRST authorized under.
+        -- The idempotent-replay path (same execution_id re-authorizes without a
+        -- second consume) must re-bind to the same params; a replay carrying a
+        -- different resource/value is a distinct invocation masquerading as a
+        -- lease-recovery retry to skip the constraint checks. NULL only for
+        -- pre-Round-11 rows (none exist pre-launch).
+        invocation_digest TEXT,
         PRIMARY KEY (grant_id, execution_id)
       );
 

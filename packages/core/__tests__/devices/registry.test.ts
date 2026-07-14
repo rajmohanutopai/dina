@@ -57,11 +57,20 @@ describe('Device Registry', () => {
       );
     });
 
-    it('allows re-registration of revoked key', () => {
+    it('round-9 #2: re-registering a revoked key REVIVES the one row (no duplicate DID)', () => {
       const d1 = registerDevice('Phone 1', 'z6MkReusedKey', 'rich');
       revokeDevice(d1.deviceId);
       const d2 = registerDevice('Phone 2', 'z6MkReusedKey', 'rich');
-      expect(d2.deviceId).not.toBe(d1.deviceId);
+      // Same row, revived in place — not a second device sharing the DID.
+      expect(d2.deviceId).toBe(d1.deviceId);
+      expect(d2.did).toBe(d1.did);
+      expect(d2.revoked).toBe(false);
+      expect(d2.deviceName).toBe('Phone 2');
+      // Exactly one row for the key/DID — no stale revoked twin the reconciler
+      // could use to disable the freshly re-paired device.
+      const forDid = listDevices().filter((x) => x.did === d1.did);
+      expect(forDid).toHaveLength(1);
+      expect(forDid[0]!.revoked).toBe(false);
     });
 
     it('supports all device roles', () => {

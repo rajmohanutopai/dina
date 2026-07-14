@@ -27,9 +27,37 @@
  */
 
 import { isValidReleaseRkey } from './release_rkey';
+import { hasUnsafeText } from './text_safety';
 import { PLUGIN_NSIDS } from './types';
 
 import type { PluginIdentityRecord, PluginManifest } from './types';
+
+/**
+ * Round-14 #21: a trust anchor's `orgDid` / `keyId` is owner-facing
+ * consent text (rendered at install + in the Activity log). Bound its
+ * length so a crafted archive can't smuggle an oversized blob through
+ * the anchor field. A did:plc is ~32 chars, a did:web a bit longer;
+ * 256 is generous headroom without being a data channel.
+ */
+const MAX_ANCHOR_FIELD_LENGTH = 256;
+
+/** A non-empty, bounded, spoofing-char-free anchor identifier string. */
+function isSafeAnchorField(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value !== '' &&
+    value.length <= MAX_ANCHOR_FIELD_LENGTH &&
+    !hasUnsafeText(value)
+  );
+}
+
+/** The exact key set each anchor `kind` is allowed to carry (§12). */
+const ANCHOR_ALLOWED_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
+  repo_proof: new Set(['kind']),
+  debug_unsigned: new Set(['kind']),
+  org_key: new Set(['kind', 'orgDid']),
+  local_publisher_key: new Set(['kind', 'keyId']),
+};
 
 // ---------------------------------------------------------------------------
 // Verifier contract
@@ -41,6 +69,40 @@ export type PluginTrustAnchor =
   | { readonly kind: 'org_key'; readonly orgDid: string } // owner-approved org registry
   | { readonly kind: 'local_publisher_key'; readonly keyId: string } // owner-trusted at install
   | { readonly kind: 'debug_unsigned' }; // dina-plugin dev — DEBUG BUILDS ONLY
+
+/**
+ * Round-13 #16: validate a hydrated/restored trust anchor as a proper
+ * discriminated union — not just "an object with a string `kind`". A row (from a
+ * divergent-node restore or a crafted archive) could carry an unknown `kind`, or
+ * an `org_key`/`local_publisher_key` MISSING its required field, and still cast
+ * cleanly into `PluginTrustAnchor`. Callers (registry hydration + archive import)
+ * quarantine on `false`.
+ */
+export function isValidTrustAnchor(value: unknown): value is PluginTrustAnchor {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const a = value as { kind?: unknown; orgDid?: unknown; keyId?: unknown };
+  if (typeof a.kind !== 'string') return false;
+  // Round-14 #21: reject extra keys — a crafted anchor could smuggle fields
+  // (e.g. a bogus `orgDid` on a `repo_proof`, or an unrelated payload) that
+  // cast cleanly and later leak into rendering or a divergent-node re-export.
+  const allowed = ANCHOR_ALLOWED_KEYS[a.kind];
+  if (allowed === undefined) return false; // unknown kind
+  for (const key of Object.keys(a as Record<string, unknown>)) {
+    if (!allowed.has(key)) return false;
+  }
+  switch (a.kind) {
+    case 'repo_proof':
+    case 'debug_unsigned':
+      return true;
+    case 'org_key':
+      // Round-14 #21: bound + spoofing-char-check the consent-facing id.
+      return isSafeAnchorField(a.orgDid);
+    case 'local_publisher_key':
+      return isSafeAnchorField(a.keyId);
+    default:
+      return false;
+  }
+}
 
 /**
  * Integrity failures — hard refusal, plain-words explanation, no
@@ -88,10 +150,7 @@ export type RepoProofResult = RepoProofSuccess | RepoProofFailure;
  */
 export type RepoProofVerifier = (req: RepoProofRequest) => Promise<RepoProofResult>;
 
-export function repoProofFailure(
-  code: RepoProofFailureCode,
-  message: string,
-): RepoProofFailure {
+export function repoProofFailure(code: RepoProofFailureCode, message: string): RepoProofFailure {
   return {
     ok: false,
     code,

@@ -22,10 +22,10 @@
  * `dina configure --pairing-code ...`.
  */
 
-import { bytesToHex } from '@noble/hashes/utils.js';
 import { randomBytes } from '@noble/ciphers/utils.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
 
-import { persistDeviceDurable } from '../../devices/registry';
+import { persistDeviceDurable, revokeDeviceDurable } from '../../devices/registry';
 import { generatePairingCode, completePairing, getPairingIntent } from '../../pairing/ceremony';
 
 import type { DeviceRole } from '../../devices/registry';
@@ -178,8 +178,20 @@ export function registerPairRoutes(router: CoreRouter): void {
         // detail server-side only, return a generic 503 to the caller.
         const diagId = bytesToHex(randomBytes(4));
         const msg = err instanceof Error ? err.message : String(err);
-        // eslint-disable-next-line no-console -- one-line operator diag, never PII
+
         console.error(`[pair] device persistence failed (diag=${diagId}): ${msg}`);
+        // Round-9 #10 + round-10 #20: roll back the in-memory + auth
+        // registration that `completePairing` performed. Without this the caller
+        // sees a 503 while the just-added device key can still AUTHENTICATE until
+        // the next restart. Use the DURABLE revoke (awaited) — the legacy
+        // `revokeDevice` fire-and-forgot its SQL revoke, so a partial persist
+        // could leave an active row behind. `revokeDeviceDurable` cuts in-memory
+        // + auth access synchronously first, then awaits the SQL revoke.
+        try {
+          await revokeDeviceDurable(result.deviceId);
+        } catch {
+          /* best-effort rollback — the 503 already reflects failure */
+        }
         return {
           status: 503,
           body: { error: 'pairing: server error', diag_id: diagId },

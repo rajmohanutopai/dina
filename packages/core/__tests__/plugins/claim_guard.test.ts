@@ -20,6 +20,7 @@ import {
   SQLitePluginInstallRepository,
   setPluginInstallRepository,
 } from '../../src/plugins/registry';
+import { SQLitePluginGrantRepository, setPluginGrantRepository } from '../../src/plugins/grants';
 import { CoreRouter, type CoreRequest, type CoreResponse } from '../../src/server/router';
 import { registerWorkflowRoutes } from '../../src/server/routes/workflow';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
@@ -106,6 +107,7 @@ beforeEach(() => {
 
 afterEach(() => {
   setPluginInstallRepository(null);
+  setPluginGrantRepository(null);
   setWorkflowService(null);
   try {
     adapter.close();
@@ -447,6 +449,17 @@ describe('claim checks 3/5/6 — stale authority TERMINALIZES (§9.1)', () => {
     expect(workflowRepo.getById(id2)?.error).toContain('context violates the consented data_scope');
   });
 
+  it('round-11 #4: an envelope with params too DEEP to fully inspect terminalizes at the claim gate', async () => {
+    // A producer that skipped buildPluginEnvelope's depth bound smuggled params
+    // nested past the inspection ceiling (MAX_PARAM_DEPTH=12) — the owner would
+    // approve deep values they never saw. The non-bypassable claim gate refuses.
+    let deep: unknown = 'leaf';
+    for (let i = 0; i < 14; i++) deep = { n: deep };
+    const id = enqueue({ params: deep });
+    expect((await claim()).status).toBe(204);
+    expect(workflowRepo.getById(id)?.error).toContain('cannot be fully inspected');
+  });
+
   it('malformed envelope on a plugin lane is an integrity failure, never dispatched', async () => {
     seq += 1;
     workflowRepo.create({
@@ -464,6 +477,228 @@ describe('claim checks 3/5/6 — stale authority TERMINALIZES (§9.1)', () => {
     });
     expect((await claim()).status).toBe(204);
     expect(workflowRepo.getById(`task_${seq}`)?.error).toContain('malformed plugin envelope');
+  });
+});
+
+describe('claim check 7 — the EXACT authorizing grant must still be live (round-12 #2/#3/#6)', () => {
+  function makeGrant(grants: SQLitePluginGrantRepository): string {
+    grants.create(
+      {
+        installId,
+        capability: CAP,
+        approvedScopeHash: SCOPE_HASH,
+        grantType: 'standing',
+        constraints: { version: 1, max_count: 5 },
+      },
+      'read',
+      T0,
+    );
+    return grants.listByInstall(installId)[0]!.grantId;
+  }
+
+  it('a grant-authorized task whose EXACT grant was revoked terminalizes as stale_authority', async () => {
+    const grants = new SQLitePluginGrantRepository(adapter);
+    setPluginGrantRepository(grants);
+    const grantId = makeGrant(grants);
+    const id = enqueue({ authorization_kind: 'grant', grant_id: grantId });
+    // Owner revokes the exact authorizing grant after the task was queued.
+    grants.revoke(grantId, Math.floor(T0 / 1000) + 1);
+    expect((await claim()).status).toBe(204);
+    const task = workflowRepo.getById(id);
+    expect(task?.status).toBe('failed');
+    expect(task?.error).toContain('stale_authority');
+    expect(task?.error).toContain('authorizing grant is missing, revoked');
+  });
+
+  it('a grant-authorized task with a CONSUMED grant + matching digest claims through check 7', async () => {
+    const grants = new SQLitePluginGrantRepository(adapter);
+    setPluginGrantRepository(grants);
+    const grantId = makeGrant(grants);
+    // Round-13 #3/#4: the producer CONSUMES the grant (writes the use row +
+    // digest) then stamps the same grant_id + execution_id + digest on the
+    // envelope. The claim guard requires all three to line up.
+    const execId = 'exec-grant-1';
+    grants.authorizeAndConsume({
+      installId,
+      capability: CAP,
+      approvedScopeHash: SCOPE_HASH,
+      executionId: execId,
+      nowSec: Math.floor(T0 / 1000),
+    });
+    const digest = grants.getUse(grantId, execId)!.invocationDigest!;
+    const id = enqueue({
+      authorization_kind: 'grant',
+      grant_id: grantId,
+      execution_id: execId,
+      invocation_digest: digest,
+    });
+    const res = await claim();
+    expect(res.status).toBe(200);
+    expect((res.body as { id: string }).id).toBe(id);
+  });
+
+  it('#3: a grant-authorized task that NAMES a live grant but never CONSUMED it terminalizes', async () => {
+    const grants = new SQLitePluginGrantRepository(adapter);
+    setPluginGrantRepository(grants);
+    const grantId = makeGrant(grants);
+    // Live grant, but no authorizeAndConsume call → no use row. A producer that
+    // skipped the consume would bypass once/max_count/resource/value.
+    const id = enqueue({
+      authorization_kind: 'grant',
+      grant_id: grantId,
+      execution_id: 'never-consumed',
+      invocation_digest: 'anything',
+    });
+    expect((await claim()).status).toBe(204);
+    expect(workflowRepo.getById(id)?.error).toContain('grant was never consumed');
+  });
+
+  it('#4: a grant-authorized task whose pinned digest disagrees with the consumed use terminalizes', async () => {
+    const grants = new SQLitePluginGrantRepository(adapter);
+    setPluginGrantRepository(grants);
+    const grantId = makeGrant(grants);
+    const execId = 'exec-digest-x';
+    grants.authorizeAndConsume({
+      installId,
+      capability: CAP,
+      approvedScopeHash: SCOPE_HASH,
+      executionId: execId,
+      nowSec: Math.floor(T0 / 1000),
+    });
+    // The use row exists, but the envelope pins a DIFFERENT digest than the one
+    // consumed — the dispatched invocation isn't the one charged to the grant.
+    const id = enqueue({
+      authorization_kind: 'grant',
+      grant_id: grantId,
+      execution_id: execId,
+      invocation_digest: 'f'.repeat(64),
+    });
+    expect((await claim()).status).toBe(204);
+    expect(workflowRepo.getById(id)?.error).toContain('invocation digest');
+  });
+
+  it('#2: a task authorized by grant A does NOT ride a later live grant B for the same scope', async () => {
+    const grants = new SQLitePluginGrantRepository(adapter);
+    setPluginGrantRepository(grants);
+    const grantA = makeGrant(grants);
+    const id = enqueue({ authorization_kind: 'grant', grant_id: grantA });
+    // A new consent for the SAME scope creates grant B and (Round-11 #15)
+    // tombstones grant A. B is live, but the task rode A — it must NOT claim.
+    makeGrant(grants); // grant B (A is now revoked)
+    expect(grants.getById(grantA)?.revokedAt).toBeGreaterThan(0);
+    expect((await claim()).status).toBe(204);
+    expect(workflowRepo.getById(id)?.error).toContain('authorizing grant is missing, revoked');
+  });
+
+  it('#3: a grant-authorized task fails CLOSED when the grant repo is unavailable', async () => {
+    // No grant repo wired, but the envelope declares grant authorization —
+    // liveness cannot be verified, so the claim must terminalize, not dispatch.
+    setPluginGrantRepository(null);
+    const id = enqueue({ authorization_kind: 'grant', grant_id: 'plg_whatever' });
+    expect((await claim()).status).toBe(204);
+    expect(workflowRepo.getById(id)?.error).toContain('grant repository unavailable');
+  });
+
+  it('#6: a CARD-authorized task is not terminalized by a tombstoned grant row for its scope', async () => {
+    const grants = new SQLitePluginGrantRepository(adapter);
+    setPluginGrantRepository(grants);
+    // A grant for this scope exists but is revoked (tombstoned). A separately
+    // card-approved task for the same scope must still claim — provenance, not
+    // scope-existence, decides.
+    const grantId = makeGrant(grants);
+    grants.revoke(grantId, Math.floor(T0 / 1000) + 1);
+    const id = enqueue({ authorization_kind: 'card' });
+    const res = await claim();
+    expect(res.status).toBe(200);
+    expect((res.body as { id: string }).id).toBe(id);
+  });
+
+  it('an envelope with NO authorization provenance applies no grant check', async () => {
+    // Legacy / not-yet-stamped envelope + a wired grant repo with a tombstoned
+    // grant for the scope: still claims (no provenance → no grant requirement).
+    const grants = new SQLitePluginGrantRepository(adapter);
+    setPluginGrantRepository(grants);
+    grants.revoke(makeGrant(grants), Math.floor(T0 / 1000) + 1);
+    const id = enqueue(); // no authorization_kind
+    const res = await claim();
+    expect(res.status).toBe(200);
+    expect((res.body as { id: string }).id).toBe(id);
+  });
+
+  it('round-14 #8: a task whose authorizing grant has CORRUPT constraints terminalizes at claim', async () => {
+    const grants = new SQLitePluginGrantRepository(adapter);
+    setPluginGrantRepository(grants);
+    const grantId = makeGrant(grants);
+    // Consume the grant legitimately FIRST (check 7b needs the use row + digest),
+    // so the failure below is check 7's corruption gate, not a missing consume.
+    const execId = 'exec-corrupt-1';
+    grants.authorizeAndConsume({
+      installId,
+      capability: CAP,
+      approvedScopeHash: SCOPE_HASH,
+      executionId: execId,
+      nowSec: Math.floor(T0 / 1000),
+    });
+    const digest = grants.getUse(grantId, execId)!.invocationDigest!;
+    // A divergent-node restore leaves an unparseable constraints blob on the grant.
+    adapter.run('UPDATE plugin_grants SET constraints_json = ? WHERE grant_id = ?', [
+      '{not valid json',
+      grantId,
+    ]);
+    expect(grants.getById(grantId)?.constraintsCorrupt).toBe(true);
+    const id = enqueue({
+      authorization_kind: 'grant',
+      grant_id: grantId,
+      execution_id: execId,
+      invocation_digest: digest,
+    });
+    expect((await claim()).status).toBe(204);
+    expect(workflowRepo.getById(id)?.error).toContain('corrupt');
+  });
+
+  it('round-14 #9: a STRING-typed revoked_at reads REVOKED (fail closed), not live', async () => {
+    const grants = new SQLitePluginGrantRepository(adapter);
+    setPluginGrantRepository(grants);
+    const grantId = makeGrant(grants);
+    // A divergent-node restore / type-affinity edge leaves revoked_at as TEXT — a
+    // bare `typeof === 'number'` would DROP it and read the grant as live.
+    adapter.run('UPDATE plugin_grants SET revoked_at = ? WHERE grant_id = ?', [
+      'revoked-marker',
+      grantId,
+    ]);
+    // Projection sets revokedAt (not undefined) so claim-guard's `=== undefined`
+    // live check reads dead.
+    expect(grants.getById(grantId)?.revokedAt).not.toBeUndefined();
+    const res = grants.authorizeAndConsume({
+      installId,
+      capability: CAP,
+      approvedScopeHash: SCOPE_HASH,
+      executionId: 'exec-str-rev',
+      nowSec: Math.floor(T0 / 1000),
+    });
+    expect(res.allowed).toBe(false);
+    if (!res.allowed) expect(res.reason).toBe('revoked');
+  });
+
+  it('round-14 #9: a non-finite STRING expires_at reads EXPIRED (unenforceable bound)', async () => {
+    const grants = new SQLitePluginGrantRepository(adapter);
+    setPluginGrantRepository(grants);
+    const grantId = makeGrant(grants);
+    adapter.run('UPDATE plugin_grants SET expires_at = ? WHERE grant_id = ?', [
+      'not-a-number',
+      grantId,
+    ]);
+    // Projection lands as already-expired (epoch 0 ≤ any nowSec).
+    expect(grants.getById(grantId)?.expiresAt).toBe(0);
+    const res = grants.authorizeAndConsume({
+      installId,
+      capability: CAP,
+      approvedScopeHash: SCOPE_HASH,
+      executionId: 'exec-str-exp',
+      nowSec: Math.floor(T0 / 1000),
+    });
+    expect(res.allowed).toBe(false);
+    if (!res.allowed) expect(res.reason).toBe('expired');
   });
 });
 
@@ -580,5 +815,82 @@ describe('service-level claim CAS message', () => {
     expect(() =>
       service!.complete(claimed.id, '{}', 'summary', PLUGIN_DID, '0'.repeat(32)),
     ).toThrow(/claim CAS/);
+  });
+});
+
+describe('round-14 workflow lane + read hardening', () => {
+  it('#2: a plugin-LANE task with a stripped type field still hits the pinned-envelope gate on complete', async () => {
+    seq += 1;
+    const id = `task_${seq}`;
+    const claimId = 'a'.repeat(32);
+    // A plugin-lane task whose payload lost its `type` field (so
+    // payloadDeclaresPluginType=false AND parsePluginEnvelope=null), seeded
+    // directly in running state as if it slipped past the claim gate. Completed
+    // by a NON-plugin (admin) caller, so ONLY the lane co-trigger can force the
+    // pinned-envelope path. Old code would apply the arbitrary result unvalidated.
+    workflowRepo.create({
+      id,
+      kind: 'delegation',
+      status: 'running',
+      priority: 'normal',
+      description: 'stripped',
+      payload: JSON.stringify({ install_id: installId, capability_id: CAP, params: {} }),
+      result_summary: '',
+      policy: '',
+      requested_runner: pluginLane(installId),
+      agent_did: 'did:key:zsomeplugin',
+      claim_id: claimId,
+      created_at: T0,
+      updated_at: T0,
+    } as unknown as WorkflowTask);
+    await router.handle(
+      pluginReq(
+        `/v1/workflow/tasks/${id}/complete`,
+        { result: '{"anything":true}', claim_id: claimId },
+        'admin',
+        'did:key:zadmin',
+      ),
+    );
+    const task = workflowRepo.getById(id);
+    expect(task?.status).toBe('failed'); // fail-closed, arbitrary result never applied
+    expect(task?.error).toContain('plugin envelope missing');
+  });
+
+  it('#10: an agent may read its OWN running task but not once it is TERMINAL', async () => {
+    const agentDID = 'did:key:zownagent';
+    const mkGet = (taskId: string): CoreRequest => ({
+      method: 'GET',
+      path: `/v1/workflow/tasks/${taskId}`,
+      query: {},
+      headers: { 'x-did': agentDID },
+      body: {},
+      rawBody: new Uint8Array(),
+      params: {},
+      trustedInProcess: true,
+      callerType: 'agent',
+      callerDID: agentDID,
+    });
+    const base = {
+      kind: 'delegation',
+      priority: 'normal',
+      description: 'own',
+      payload: JSON.stringify({ type: 'free_form_task', text: 'x' }),
+      result_summary: '',
+      policy: '',
+      agent_did: agentDID,
+      created_at: T0,
+      updated_at: T0,
+    };
+    seq += 1;
+    const runningId = `task_${seq}`;
+    workflowRepo.create({ ...base, id: runningId, status: 'running' } as unknown as WorkflowTask);
+    seq += 1;
+    const doneId = `task_${seq}`;
+    workflowRepo.create({ ...base, id: doneId, status: 'completed' } as unknown as WorkflowTask);
+
+    expect((await router.handle(mkGet(runningId))).status).toBe(200);
+    // Terminal → 403: the runner has no live business re-fetching its projected
+    // params/context once the task is done.
+    expect((await router.handle(mkGet(doneId))).status).toBe(403);
   });
 });

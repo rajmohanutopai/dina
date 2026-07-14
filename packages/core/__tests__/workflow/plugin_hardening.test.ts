@@ -188,7 +188,9 @@ describe.each([
     expect(task?.result).toBeUndefined();
 
     // …but the report is retained as reconciliation evidence.
-    const late = ctx.repo.listEventsForTask(second.id).filter((e) => e.event_kind === 'late_report');
+    const late = ctx.repo
+      .listEventsForTask(second.id)
+      .filter((e) => e.event_kind === 'late_report');
     expect(late).toHaveLength(1);
     expect(JSON.parse(late[0]!.details)).toMatchObject({
       claim_id: first.claim_id,
@@ -232,8 +234,12 @@ describe.each([
     const t = claim(ctx.repo);
     const wrong = '0'.repeat(32);
     expect(ctx.repo.heartbeatTask(t.id, 'did:key:zrunner', T0 + 5, LEASE_MS, wrong)).toBe(false);
-    expect(ctx.repo.heartbeatTask(t.id, 'did:key:zrunner', T0 + 5, LEASE_MS, t.claim_id)).toBe(true);
-    expect(ctx.repo.updateTaskProgress(t.id, 'did:key:zrunner', 'step 1', T0 + 6, wrong)).toBe(false);
+    expect(ctx.repo.heartbeatTask(t.id, 'did:key:zrunner', T0 + 5, LEASE_MS, t.claim_id)).toBe(
+      true,
+    );
+    expect(ctx.repo.updateTaskProgress(t.id, 'did:key:zrunner', 'step 1', T0 + 6, wrong)).toBe(
+      false,
+    );
     expect(ctx.repo.updateTaskProgress(t.id, 'did:key:zrunner', 'step 1', T0 + 6, t.claim_id)).toBe(
       true,
     );
@@ -255,27 +261,49 @@ describe.each([
   });
 
   it('declared-effectful without idempotency → outcome_unknown on lease loss (§9.5)', () => {
-    ctx.repo.create(baseTask(pluginPayload({ action_class: 'booking', effects_idempotency: 'unsupported' })));
+    ctx.repo.create(
+      baseTask(pluginPayload({ action_class: 'booking', effects_idempotency: 'unsupported' })),
+    );
     const t = claim(ctx.repo);
     const swept = ctx.repo.expireLeasedTasks(T0 + LEASE_MS + 1);
     expect(swept).toHaveLength(1);
     expect(swept[0]!.status).toBe('outcome_unknown');
     const after = ctx.repo.getById(t.id);
     expect(after?.status).toBe('outcome_unknown');
-    const events = ctx.repo.listEventsForTask(t.id).filter((e) => e.event_kind === 'outcome_unknown');
+    const events = ctx.repo
+      .listEventsForTask(t.id)
+      .filter((e) => e.event_kind === 'outcome_unknown');
     expect(events).toHaveLength(1);
     expect(events[0]!.needs_delivery).toBe(true); // owner must see it
   });
 
+  it('round-9 #8: declared-payment without idempotency → outcome_unknown on lease loss (money MAY have moved)', () => {
+    // Before round-9, `payment` was absent from EFFECTFUL_CLASSES, so a lost
+    // payment lease classified as the quietly-safe `failed` — hiding that funds
+    // may have moved. It must park as outcome_unknown for owner review.
+    ctx.repo.create(
+      baseTask(pluginPayload({ action_class: 'payment', effects_idempotency: 'unsupported' })),
+    );
+    const t = claim(ctx.repo);
+    const swept = ctx.repo.expireLeasedTasks(T0 + LEASE_MS + 1);
+    expect(swept).toHaveLength(1);
+    expect(swept[0]!.status).toBe('outcome_unknown');
+    expect(ctx.repo.getById(t.id)?.status).toBe('outcome_unknown');
+  });
+
   it('declared-read without idempotency → plain failed on lease loss (retry trusts nothing, §9.1)', () => {
-    ctx.repo.create(baseTask(pluginPayload({ action_class: 'read', effects_idempotency: 'unsupported' })));
+    ctx.repo.create(
+      baseTask(pluginPayload({ action_class: 'read', effects_idempotency: 'unsupported' })),
+    );
     const t = claim(ctx.repo);
     ctx.repo.expireLeasedTasks(T0 + LEASE_MS + 1);
     expect(ctx.repo.getById(t.id)?.status).toBe('failed');
   });
 
   it('idempotent-supported requeues with exponential backoff, then exhausts the budget', () => {
-    ctx.repo.create(baseTask(pluginPayload({ action_class: 'booking', effects_idempotency: 'supported' })));
+    ctx.repo.create(
+      baseTask(pluginPayload({ action_class: 'booking', effects_idempotency: 'supported' })),
+    );
     let now = T0;
     for (let attempt = 1; attempt <= PLUGIN_RETRY.MAX_ATTEMPTS; attempt++) {
       const t = claim(ctx.repo, now);
@@ -286,7 +314,9 @@ describe.each([
       if (attempt < PLUGIN_RETRY.MAX_ATTEMPTS) {
         expect(swept[0]!.status).toBe('queued');
         // (8) backoff: not claimable until next_run_at comes due.
-        expect(ctx.repo.claimDelegationTask('did:key:zrunner', now, LEASE_MS, 'plugin:inst_1')).toBeNull();
+        expect(
+          ctx.repo.claimDelegationTask('did:key:zrunner', now, LEASE_MS, 'plugin:inst_1'),
+        ).toBeNull();
         const dueAt = (swept[0]!.next_run_at ?? 0) * 1000;
         expect(dueAt).toBeGreaterThan(now);
         now = dueAt + 1_000;
@@ -299,7 +329,9 @@ describe.each([
   });
 
   it('idempotent retry stops at the 24h window even with attempts left', () => {
-    ctx.repo.create(baseTask(pluginPayload({ action_class: 'booking', effects_idempotency: 'supported' })));
+    ctx.repo.create(
+      baseTask(pluginPayload({ action_class: 'booking', effects_idempotency: 'supported' })),
+    );
     claim(ctx.repo, T0);
     const pastWindow = T0 + PLUGIN_RETRY.RETRY_WINDOW_MS + 60_000;
     const swept = ctx.repo.expireLeasedTasks(pastWindow);
@@ -361,9 +393,7 @@ describe.each([
     ctx.repo.markOutcomeUnknown(t.id, 'test park', T0 + 5);
     expect(ctx.repo.getById(t.id)?.status).toBe('outcome_unknown');
 
-    expect(
-      ctx.repo.completeWithDetails(t.id, 'did:key:zrunner', 's', '{}', '{}', T0 + 10),
-    ).toBe(0);
+    expect(ctx.repo.completeWithDetails(t.id, 'did:key:zrunner', 's', '{}', '{}', T0 + 10)).toBe(0);
     expect(ctx.repo.fail(t.id, 'did:key:zrunner', 'e', T0 + 10)).toBe(0);
     expect(ctx.repo.cancel(t.id, 'r', T0 + 10)).toBe(0);
     expect(ctx.repo.getById(t.id)?.status).toBe('outcome_unknown');
@@ -401,7 +431,9 @@ describe.each([
     legacy.requested_runner = undefined;
     ctx.repo.create(legacy);
     const c = ctx.repo.claimDelegationTask('did:key:zagent', T0, LEASE_MS, '');
-    expect(ctx.repo.completeWithDetails(c!.id, 'did:key:zagent', 's', '{}', '{}', T0 + 5)).toBeGreaterThan(0);
+    expect(
+      ctx.repo.completeWithDetails(c!.id, 'did:key:zagent', 's', '{}', '{}', T0 + 5),
+    ).toBeGreaterThan(0);
   });
 });
 

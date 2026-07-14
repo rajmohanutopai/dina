@@ -16,6 +16,7 @@ import {
   base32Encode,
   releaseRkeyFromCid,
   type PluginManifest,
+  type PluginTrustAnchor,
   type RepoProofResult,
   type RepoProofVerifier,
 } from '@dina/protocol';
@@ -44,6 +45,7 @@ import {
   sweepAbandonedInstalls,
   setRepoProofVerifier,
   terminateInstallInFlight,
+  type VerifiedReleaseAttestation,
 } from '../../src/plugins/install_service';
 import { pluginLane } from '@dina/protocol';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
@@ -53,6 +55,23 @@ import { PLUGIN_INVOCATION_PAYLOAD_TYPE } from '../../src/workflow/plugin_envelo
 const T0 = 1_750_000_000_000;
 const T0_SEC = Math.floor(T0 / 1000);
 const PUBLISHER = 'did:plc:acme';
+
+/** Round-10 #9/#10: build a verified-release attestation that binds the
+ * publisher + anchor + an immutable manifest snapshot. Defaults keep the
+ * common repo_proof case terse. */
+function attest(
+  manifest: PluginManifest,
+  cid: string,
+  opts: { kind?: PluginTrustAnchor['kind']; rkey?: string; publisherDid?: string } = {},
+): VerifiedReleaseAttestation {
+  return attestVerifiedRelease({
+    cid,
+    ...(opts.rkey !== undefined ? { rkey: opts.rkey } : {}),
+    publisherDid: opts.publisherDid ?? PUBLISHER,
+    trustAnchor: { kind: opts.kind ?? 'repo_proof' } as PluginTrustAnchor,
+    manifest,
+  });
+}
 
 const sha256 = (d: Uint8Array): Uint8Array =>
   new Uint8Array(createHash('sha256').update(d).digest());
@@ -401,6 +420,58 @@ describe('lifecycle: consent → activation → uninstall (§14)', () => {
     expect(installs.getById(id)).not.toBeNull();
   });
 
+  it('round-9 #15: declineConsent refuses an already-ACTIVE install (pending-only CAS)', async () => {
+    const id = await pending();
+    const installs = getPluginInstallRepository()!;
+    expect(installs.bindPendingDevice(id, 'did:key:zactive', T0 + 1)).toBe(true);
+    // The install has since activated (consent confirmed).
+    expect(installs.activate(id, 'did:key:zactive', T0 + 2)).toBe(true);
+    // A stale/racing decline must NOT revoke the device and delete a LIVE plugin.
+    let revoked = false;
+    const result = await declineConsent(id, T0 + 3, async () => {
+      revoked = true;
+      return { durable: true };
+    });
+    expect(result).toBeNull(); // refused
+    expect(revoked).toBe(false); // the live device was never revoked
+    expect(installs.getById(id)?.status).toBe('active'); // install still live
+  });
+
+  it('round-10 #3: declineConsent does not delete an install that ACTIVATES during the revoke await', async () => {
+    const id = await pending();
+    const installs = getPluginInstallRepository()!;
+    expect(installs.bindPendingDevice(id, 'did:key:zrace', T0 + 1)).toBe(true);
+    // The revoke callback yields the event loop — model confirmConsent racing in
+    // during that await by activating the install before decline resumes.
+    const result = await declineConsent(id, T0 + 2, async () => {
+      installs.activate(id, 'did:key:zrace', T0 + 3); // pending → active mid-await
+      return { durable: true };
+    });
+    // The post-await pending re-check refuses to delete the now-active install.
+    expect(result).toEqual({ removed: false, deviceDid: 'did:key:zrace' });
+    expect(installs.getById(id)?.status).toBe('active'); // NOT deleted
+  });
+
+  it('round-12 #12: a decline whose revoke cascade REMOVED the pending row still records consent_declined', async () => {
+    const id = await pending();
+    const installs = getPluginInstallRepository()!;
+    expect(installs.bindPendingDevice(id, 'did:key:zorphan', T0 + 1)).toBe(true);
+    // The REAL durable revoker's cascade removes the pending row
+    // (disablePluginAuthorityForDevice removes pending installs). Model that: the
+    // callback deletes the row, then reports durable. Distinct from the racing-
+    // activate case above — this is cascade SUCCESS, not a race.
+    const result = await declineConsent(id, T0 + 3, async () => {
+      installs.remove(id); // the cascade already removed it during the await
+      return { durable: true };
+    });
+    // Teardown SUCCEEDED — report removed + record the decline, NOT the old
+    // removed:false (which reads as "retained retry anchor") with no audit.
+    expect(result?.removed).toBe(true);
+    expect(installs.getById(id)).toBeNull();
+    const decisions = getPluginDecisionRepository()!.listByInstall(id, 10);
+    expect(decisions.some((d) => d.decision === 'consent_declined')).toBe(true);
+  });
+
   it('refuses to activate an already-expired pending (TOCTOU between sweeper ticks, §14)', async () => {
     const id = await pending();
     // Bind the instance device first so the ONLY reason activation fails below
@@ -425,6 +496,26 @@ describe('lifecycle: consent → activation → uninstall (§14)', () => {
     // Decision log survives (records of the past).
     const recent = getPluginDecisionRepository()!.listByInstall(id, 10);
     expect(recent.some((d) => d.decision === 'uninstalled')).toBe(true);
+  });
+
+  it('round-13 #12: uninstalling a PENDING install whose revoke cascade removed the row still reports removed', async () => {
+    const id = await pending();
+    const installs = getPluginInstallRepository()!;
+    expect(installs.bindPendingDevice(id, 'did:key:zorphan', T0)).toBe(true);
+    // The device revoke cascade removes the pending row during the await (models
+    // disablePluginAuthorityForDevice). uninstall's rawStatus probe must treat
+    // the now-gone row as SUCCESS, not misreport failure (null).
+    const result = await uninstall(id, T0 + 2, async () => {
+      installs.remove(id);
+      return { durable: true };
+    });
+    expect(result?.removed).toBe(true);
+    expect(installs.getById(id)).toBeNull();
+    expect(
+      getPluginDecisionRepository()!
+        .listByInstall(id, 10)
+        .some((d) => d.decision === 'uninstalled'),
+    ).toBe(true);
   });
 
   it('round-5 #6: uninstall revokes the device FIRST and retains the row when the revoke throws', async () => {
@@ -492,9 +583,9 @@ describe('lifecycle: consent → activation → uninstall (§14)', () => {
     } as unknown as PluginManifest;
     const r = beginInstallVerified({
       manifest: bad,
-      attestation: attestVerifiedRelease({ cid: cidFor('malformed'), verifierKind: 'repo_proof' }),
-      publisherDid: PUBLISHER,
-      trustAnchor: { kind: 'repo_proof' },
+      // Attest a VALID manifest; installing the malformed one makes the match
+      // check's normalize throw → validation_failed (fails closed, never crash).
+      attestation: attest(runnerManifest(), cidFor('malformed')),
       nowMs: T0,
     });
     expect(r.ok).toBe(false);
@@ -539,9 +630,7 @@ describe('interpreted install needs no pairing leg (§7)', () => {
     const result = beginInstallVerified({
       manifest: interpreted,
       // P2-5: authority comes from a verifier-minted attestation, not a boolean.
-      attestation: attestVerifiedRelease({ cid, verifierKind: 'repo_proof' }),
-      publisherDid: PUBLISHER,
-      trustAnchor: { kind: 'repo_proof' },
+      attestation: attest(interpreted, cid),
       nowMs: T0,
     });
     expect(result.ok).toBe(false);
@@ -574,6 +663,61 @@ describe('abandoned-install sweep (§14)', () => {
     expect(expired).toHaveLength(1);
     expect(revoked).toEqual(['did:key:zorphan']);
     expect(getPluginInstallRepository()!.getById(r.installId)).toBeNull();
+  });
+
+  it('round-11 #3: an install that ACTIVATES during the revoke await is NOT swept (pending-only CAS)', async () => {
+    const { rkey, verifier } = fakeVerifier(runnerManifest());
+    setRepoProofVerifier(verifier);
+    const r = await beginInstall({
+      publisherDid: PUBLISHER,
+      rkey,
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    if (!r.ok) throw new Error('expected pending');
+    const repo = getPluginInstallRepository()!;
+    expect(repo.bindPendingDevice(r.installId, 'did:key:zorphan', T0)).toBe(true);
+    // The revoke await is the yield point: a concurrent confirmConsent activates
+    // the install right here. The post-await pending re-check must then skip it —
+    // deleting a now-ACTIVE install would destroy live authority.
+    const expired = await sweepAbandonedInstalls(T0_SEC + 20 * 60, async () => {
+      repo.activate(r.installId, 'did:key:zorphan', T0 + 1);
+      return { durable: true };
+    });
+    expect(expired).toHaveLength(0); // NOT swept — it went active mid-await
+    expect(repo.getById(r.installId)?.status).toBe('active'); // authority preserved
+  });
+
+  it('round-12 #11: a CORRUPT stale-pending row is still swept (device revoked + row removed)', async () => {
+    const { rkey, verifier } = fakeVerifier(runnerManifest());
+    setRepoProofVerifier(verifier);
+    const r = await beginInstall({
+      publisherDid: PUBLISHER,
+      rkey,
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    if (!r.ok) throw new Error('expected pending');
+    const repo = getPluginInstallRepository()!;
+    expect(repo.bindPendingDevice(r.installId, 'did:key:zorphan', T0)).toBe(true);
+    // Corrupt the manifest so the PROJECTING listStalePending drops it — the row
+    // (and its bound device) would otherwise leak, never swept.
+    adapter.execute('UPDATE plugin_installs SET manifest_json = ? WHERE install_id = ?', [
+      '{bad json',
+      r.installId,
+    ]);
+    expect(repo.listStalePending(T0_SEC + 20 * 60)).toHaveLength(0); // projection drops it
+    const revoked: string[] = [];
+    const swept = await sweepAbandonedInstalls(T0_SEC + 20 * 60, async (did) => {
+      revoked.push(did);
+      return { durable: true };
+    });
+    // The raw sweep still enumerates + revokes + removes the corrupt row.
+    expect(revoked).toEqual(['did:key:zorphan']);
+    expect(swept.map((s) => s.installId)).toEqual([r.installId]);
+    expect(
+      adapter.query('SELECT 1 FROM plugin_installs WHERE install_id = ?', [r.installId]),
+    ).toHaveLength(0);
   });
 });
 
@@ -711,15 +855,65 @@ describe('P2 hardening — install-path robustness', () => {
 });
 
 describe('P2 hardening — pairing + verified-release gates', () => {
-  it('P2-5: beginInstallVerified binds the attestation verifier kind to the trust anchor', () => {
-    // A boolean is not provenance: authority now flows from a verifier-minted
-    // attestation whose kind must MATCH the anchor being recorded. An
-    // org_key-minted token cannot be used to persist a repo_proof anchor.
+  it('round-10 #9: publisher + trust anchor are read from the attestation, not loose args', () => {
+    // The attestation binds the party + anchor, so the persisted install traces
+    // to exactly what the verifier attested (no reuse of a proof for A as B).
     const r = beginInstallVerified({
       manifest: runnerManifest(),
-      attestation: attestVerifiedRelease({ cid: cidFor('p25'), verifierKind: 'org_key' }),
-      publisherDid: PUBLISHER,
+      attestation: attest(runnerManifest(), cidFor('p25'), {
+        publisherDid: 'did:plc:acme',
+        kind: 'repo_proof',
+      }),
+      nowMs: T0,
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const row = getPluginInstallRepository()!.getById(r.installId);
+    expect(row?.publisherDid).toBe('did:plc:acme');
+    expect(row?.trustAnchor).toEqual({ kind: 'repo_proof' });
+  });
+
+  it('round-10 #9: an unsigned attestation still cannot install in production', () => {
+    const r = beginInstallVerified({
+      manifest: runnerManifest(),
+      attestation: attest(runnerManifest(), cidFor('p25u'), { kind: 'debug_unsigned' }),
+      nowMs: T0,
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe('authenticity_failed');
+  });
+
+  it('round-14 #1: an attestation lacking the verifier brand cannot install', () => {
+    // A caller hand-rolls an object with the right shape and casts it past the
+    // compiler (or it crossed a serialization boundary — the brand SYMBOL does
+    // not survive JSON). Without the runtime brand check this would install with
+    // attacker-chosen cid / anchor / publisher. The brand check fires first.
+    const forged = {
+      cid: cidFor('forged'),
+      publisherDid: 'did:plc:evil',
       trustAnchor: { kind: 'repo_proof' },
+    } as unknown as VerifiedReleaseAttestation;
+    const r = beginInstallVerified({ manifest: runnerManifest(), attestation: forged, nowMs: T0 });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe('authenticity_failed');
+  });
+
+  it('round-14 #5: a branded attestation with a MALFORMED trust anchor is refused before persistence', () => {
+    // attestVerifiedRelease brands whatever anchor it is handed, so the brand
+    // check passes — but finishBegin re-validates the anchor before createPending.
+    // An org_key missing its orgDid is malformed and must not persist (it would
+    // quarantine on the next read anyway).
+    const badAnchor = attestVerifiedRelease({
+      cid: cidFor('p5bad'),
+      publisherDid: PUBLISHER,
+      trustAnchor: { kind: 'org_key' } as unknown as PluginTrustAnchor, // missing orgDid
+      manifest: runnerManifest(),
+    });
+    const r = beginInstallVerified({
+      manifest: runnerManifest(),
+      attestation: badAnchor,
       nowMs: T0,
     });
     expect(r.ok).toBe(false);
@@ -733,18 +927,46 @@ describe('P2 hardening — pairing + verified-release gates', () => {
     // though the caller "verified" out of band.
     const r = beginInstallVerified({
       manifest: runnerManifest(),
-      attestation: attestVerifiedRelease({
-        cid: cidFor('p25b'),
-        rkey: 'not-the-content-address',
-        verifierKind: 'repo_proof',
-      }),
-      publisherDid: PUBLISHER,
-      trustAnchor: { kind: 'repo_proof' },
+      attestation: attest(runnerManifest(), cidFor('p25b'), { rkey: 'not-the-content-address' }),
       nowMs: T0,
     });
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.code).toBe('integrity_failed');
+  });
+
+  it('round-9 #4 / round-10 #10: refuses a manifest differing from the verified snapshot', () => {
+    // Verify release A but try to install manifest B — the attestation carries
+    // an immutable canonical snapshot of the bytes the verifier checked, so a
+    // divergent manifest is refused (closes "verify A, install B").
+    const tampered = { ...runnerManifest(), display_name: 'Totally Different Plugin' };
+    const bad = beginInstallVerified({
+      manifest: tampered,
+      attestation: attest(runnerManifest(), cidFor('p4')),
+      nowMs: T0,
+    });
+    expect(bad.ok).toBe(false);
+    if (bad.ok) return;
+    expect(bad.code).toBe('authenticity_failed');
+
+    // Round-10 #10: mutating the ORIGINAL manifest after attesting must NOT
+    // sneak past the check (normalize shares nested refs; the snapshot is a
+    // frozen string, so the attested bytes can't drift).
+    const original = runnerManifest();
+    const attestation = attest(original, cidFor('p4mut'));
+    (original as { display_name: string }).display_name = 'Mutated After Attest';
+    const mutated = beginInstallVerified({ manifest: original, attestation, nowMs: T0 + 1 });
+    expect(mutated.ok).toBe(false);
+    if (mutated.ok) return;
+    expect(mutated.code).toBe('authenticity_failed');
+
+    // The SAME manifest the verifier attested installs fine.
+    const good = beginInstallVerified({
+      manifest: runnerManifest(),
+      attestation: attest(runnerManifest(), cidFor('p4b')),
+      nowMs: T0 + 2,
+    });
+    expect(good.ok).toBe(true);
   });
 
   it('P2-7: confirmConsent refuses a device other than the one bound during pairing', async () => {

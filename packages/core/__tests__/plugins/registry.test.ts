@@ -138,8 +138,28 @@ describe('install lifecycle (§14)', () => {
     installs.activate(id, undefined, T0 + 1);
     expect(installs.pause(id, T0 + 2)).toBe(true);
     expect(installs.getById(id)?.status).toBe('paused');
+    // Default reason is owner-initiated (manual) → plainly resumable.
+    expect(installs.getById(id)?.pauseReason).toBe('manual');
     expect(installs.resume(id, T0 + 3)).toBe(true);
     expect(installs.getById(id)?.status).toBe('active');
+    expect(installs.getById(id)?.pauseReason).toBeUndefined(); // cleared on resume
+  });
+
+  it('round-9 #16: a plain resume refuses a device-revoke / restore / advisory hold', () => {
+    for (const reason of ['device_revoked', 'restore', 'advisory'] as const) {
+      const id = createPending();
+      installs.activate(id, undefined, T0 + 1);
+      expect(installs.pause(id, T0 + 2, reason)).toBe(true);
+      expect(installs.getById(id)?.pauseReason).toBe(reason);
+      // A generic resume must NOT revive a hold that needs a recovery flow.
+      expect(installs.resume(id, T0 + 3)).toBe(false);
+      expect(installs.getById(id)?.status).toBe('paused');
+    }
+    // A manual pause is still resumable.
+    const m = createPending();
+    installs.activate(m, undefined, T0 + 1);
+    expect(installs.pause(m, T0 + 2, 'manual')).toBe(true);
+    expect(installs.resume(m, T0 + 3)).toBe(true);
   });
 
   it('remove deletes install + grants + uses (explicit cascade; decisions survive)', () => {
@@ -218,7 +238,9 @@ describe('update fields (§14 dual boundary, persistable)', () => {
         {
           cid: 'bafyreicid2',
           version: '1.3.0',
-          manifest,
+          // Round-12 #8: the manifest must agree with the scalar columns —
+          // carry the new version so rowToInstall doesn't quarantine the row.
+          manifest: { ...manifest, version: '1.3.0' },
           installScopeHash: 's2'.repeat(32),
           capabilityHashes: { 'com.acme.flightwatch.watch': 'c2'.repeat(32) },
           behaviorHash: 'b2'.repeat(32),
@@ -240,6 +262,90 @@ describe('update fields (§14 dual boundary, persistable)', () => {
     expect(installs.bumpConfigRevision(id, T0 + 1)).toBe(2);
     expect(installs.bumpConfigRevision(id, T0 + 2)).toBe(3);
     expect(installs.bumpConfigRevision('nope', T0 + 3)).toBe(0);
+  });
+
+  it('round-9 #17: applyUpdate/setPendingUpdate honor an optional CAS (stale write is refused)', () => {
+    const id = createPending();
+    installs.activate(id, undefined, T0 + 1);
+    const rev = installs.getById(id)!.configRevision;
+    const upd = {
+      cid: 'bafyreicid2',
+      version: '1.3.0',
+      manifest: { ...manifest, version: '1.3.0' }, // Round-12 #8: consistent scalar/manifest
+      installScopeHash: 's2'.repeat(32),
+      capabilityHashes: { 'com.acme.flightwatch.watch': 'c2'.repeat(32) },
+      behaviorHash: 'b2'.repeat(32),
+      presentationHash: 'p2'.repeat(32),
+    };
+    // A CAS that no longer matches (stale config_revision / wrong status) refuses.
+    expect(installs.applyUpdate(id, upd, T0 + 2, { configRevision: rev + 99 })).toBe(false);
+    expect(installs.applyUpdate(id, upd, T0 + 2, { status: 'pending' })).toBe(false);
+    expect(installs.applyUpdate(id, upd, T0 + 2, { currentCid: 'bafyreiWRONG' })).toBe(false);
+    expect(installs.getById(id)?.currentCid).toBe('bafyreicid1'); // untouched by stale writes
+    // A matching CAS lands.
+    expect(installs.applyUpdate(id, upd, T0 + 3, { configRevision: rev, status: 'active' })).toBe(
+      true,
+    );
+    expect(installs.getById(id)?.currentCid).toBe('bafyreicid2');
+    // setPendingUpdate CAS likewise: wrong pin refuses, right pin lands.
+    const pend = {
+      cid: 'bafyreicid4',
+      behaviorHash: 'b4'.repeat(32),
+      decision: 'awaiting_consent' as const,
+    };
+    expect(installs.setPendingUpdate(id, pend, T0 + 4, { currentCid: 'bafyreiWRONG' })).toBe(false);
+    expect(installs.setPendingUpdate(id, pend, T0 + 5, { currentCid: 'bafyreicid2' })).toBe(true);
+    expect(installs.getById(id)?.pendingCid).toBe('bafyreicid4');
+    // No CAS supplied → keys by install_id alone (back-compat).
+    expect(installs.applyUpdate(id, upd, T0 + 6)).toBe(true);
+  });
+
+  it('round-9 #19: one corrupt install row is quarantined, not fatal to the whole listing', () => {
+    const good1 = createPending({ label: 'Good 1' });
+    const bad = createPending({ label: 'Corrupt' });
+    const good2 = createPending({ label: 'Good 2' });
+    // Damage the bad row's manifest JSON — a divergent-node restore or bit-rot.
+    adapter.execute('UPDATE plugin_installs SET manifest_json = ? WHERE install_id = ?', [
+      '{not valid json',
+      bad,
+    ]);
+    // list() must NOT throw; it returns the two healthy rows and drops the bad one.
+    const all = installs.list();
+    expect(all.map((i) => i.installId).sort()).toEqual([good1, good2].sort());
+    // A direct getById on the corrupt row fails closed to null (quarantined).
+    expect(installs.getById(bad)).toBeNull();
+    // The healthy rows still load individually.
+    expect(installs.getById(good1)?.label).toBe('Good 1');
+  });
+});
+
+describe('round-14 registry hardening', () => {
+  it('#17: pending_expires_at projects as a coerced number (mirrors the validation gate)', () => {
+    const id = createPending({ pendingExpiresAtSec: T0_SEC + 900 });
+    // The projection now coerces via Number() to match the validation gate — a
+    // divergent adapter that returns pending_expires_at as a string no longer
+    // gets DROPPED (which would read as "no expiry" and never lapse). The Node
+    // SQLite path stores/returns it as an INTEGER, so we assert the coerced
+    // projection round-trips here; the string case is the cross-adapter defense.
+    expect(installs.getById(id)?.pendingExpiresAt).toBe(T0_SEC + 900);
+  });
+
+  it('#6: rawDeviceDid returns the bound device on a CORRUPT row where getById is null', () => {
+    const id = createPending();
+    installs.activate(id, 'did:key:zdevice', T0 + 1);
+    expect(installs.getById(id)?.deviceDid).toBe('did:key:zdevice');
+    // Corrupt the manifest → getById quarantines to null, but the raw scalar
+    // getter still surfaces the device so declineConsent/uninstall can tear the
+    // stuck row down instead of orphaning the paired device.
+    adapter.execute('UPDATE plugin_installs SET manifest_json = ? WHERE install_id = ?', [
+      '{bad json',
+      id,
+    ]);
+    expect(installs.getById(id)).toBeNull();
+    expect(installs.rawDeviceDid(id)).toBe('did:key:zdevice');
+    expect(installs.rawStatus(id)).toBe('active');
+    // No such row / no device → null.
+    expect(installs.rawDeviceDid('nonexistent')).toBeNull();
   });
 });
 
@@ -419,9 +525,12 @@ describe('plugin grants (§8: enforceable or theater)', () => {
       'booking',
       T0,
     );
-    expect(authorize('exec-1').allowed).toBe(true);
+    const first = authorize('exec-1');
+    expect(first.allowed).toBe(true);
+    const grantId = first.allowed ? first.grantId : '';
     expect(authorize('exec-2').allowed).toBe(false);
-    expect(grants.releaseUse('exec-1')).toBe(true);
+    // Round-11 #7: release is keyed on the SPECIFIC (grantId, executionId).
+    expect(grants.releaseUse(grantId, 'exec-1')).toBe(true);
     expect(authorize('exec-2').allowed).toBe(true);
   });
 
@@ -458,12 +567,17 @@ describe('plugin grants (§8: enforceable or theater)', () => {
   });
 
   it('expired and revoked grants deny; scope-hash mismatch means no grant matches (structural re-consent)', () => {
+    // Round-9 #1: a grant can no longer be born already-expired (create-time
+    // rejects a past expiry). Create with a valid future window, then authorize
+    // AFTER it closes to exercise the expiry-deny path.
     const g = grants.create(
-      { installId, ...KEY, grantType: 'window', expiresAt: T0_SEC - 10 },
+      { installId, ...KEY, grantType: 'window', expiresAt: T0_SEC + 10 },
       'read',
       T0,
     );
-    expect(authorize('e1')).toEqual({ allowed: false, reason: 'expired' });
+    expect(
+      grants.authorizeAndConsume({ installId, ...KEY, executionId: 'e1', nowSec: T0_SEC + 20 }),
+    ).toEqual({ allowed: false, reason: 'expired' });
     grants.revoke(g, T0_SEC);
     expect(authorize('e2')).toEqual({ allowed: false, reason: 'revoked' });
 
@@ -530,6 +644,23 @@ describe('plugin grants (§8: enforceable or theater)', () => {
     expect(parseConstraints({ version: 2 })).toBeNull();
     expect(parseConstraints({ version: 1, unknown_key: true })).toBeNull();
   });
+
+  it('round-9 #1/#12: a supplied expiry must be a real bound (finite integer seconds, future, in-window)', () => {
+    const mk = (expiresAt: number): string =>
+      grants.create({ installId, ...KEY, grantType: 'standing', expiresAt }, 'read', T0);
+    // NaN would defeat the expiry check entirely (NaN <= nowSec is always false)
+    // yet satisfy the presence-based "bounded" rule — a never-expiring grant.
+    expect(() => mk(Number.NaN)).toThrow(/expiresAt/);
+    expect(() => mk(Number.POSITIVE_INFINITY)).toThrow(/expiresAt/);
+    // A millisecond value mistaken for seconds is ~50,000× too far in the future.
+    expect(() => mk(T0)).toThrow(/expiresAt/); // T0 is ms; as seconds it's year ~57000
+    // A non-integer, a past expiry, and one beyond the policy window all fail.
+    expect(() => mk(T0_SEC + 0.5)).toThrow(/expiresAt/);
+    expect(() => mk(T0_SEC - 1)).toThrow(/expiresAt/);
+    expect(() => mk(T0_SEC + 400 * 24 * 60 * 60)).toThrow(/expiresAt/); // > ~1 year
+    // A sane near-future expiry (seconds) is accepted.
+    expect(() => mk(T0_SEC + 3600)).not.toThrow();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -588,6 +719,26 @@ describe('device binding (F8 pending bind + F9 unique active)', () => {
     expect(installs.getById(id)?.deviceDid).toBe('did:key:zinst'); // unchanged
   });
 
+  it('round-9 #3: bindPendingDevice refuses a device already on another install (no cross-install collateral revoke)', () => {
+    const first = createPending();
+    const second = createPending();
+    expect(installs.bindPendingDevice(first, 'did:key:zshare', T0 + 1)).toBe(true);
+    // A second pending cannot grab the same device — declining `first` would
+    // otherwise durably revoke the device and kill `second`'s runner.
+    expect(installs.bindPendingDevice(second, 'did:key:zshare', T0 + 2)).toBe(false);
+    expect(installs.getById(second)?.deviceDid).toBeUndefined();
+    // Re-binding the SAME device to the SAME install is idempotent (true).
+    expect(installs.bindPendingDevice(first, 'did:key:zshare', T0 + 3)).toBe(true);
+    // Nor can a pending overwrite a DIFFERENT device already bound to its row.
+    expect(installs.bindPendingDevice(first, 'did:key:zother', T0 + 4)).toBe(false);
+    expect(installs.getById(first)?.deviceDid).toBe('did:key:zshare'); // unchanged
+    // An active install on a device also blocks a new pending bind.
+    const activeInst = createPending();
+    installs.activate(activeInst, 'did:key:zactive', T0 + 5);
+    const late = createPending();
+    expect(installs.bindPendingDevice(late, 'did:key:zactive', T0 + 6)).toBe(false);
+  });
+
   it('F9/P2-7: a second active install on a device is REFUSED (false), not thrown', () => {
     const a = createPending();
     const b = createPending();
@@ -643,7 +794,14 @@ describe('device binding (F8 pending bind + F9 unique active)', () => {
       paused,
     ]);
     const pending = createPending();
-    installs.bindPendingDevice(pending, 'did:key:zmulti', T0 + 3);
+    // Co-bind the pending row via raw SQL — the real bindPendingDevice seam now
+    // REFUSES a device already on another install (round-9 #3); this test is
+    // about listByDeviceDid enumerating however the co-binding arose (e.g. a
+    // restore or a legacy row), which revocation must disable in full.
+    adapter.execute('UPDATE plugin_installs SET device_did = ? WHERE install_id = ?', [
+      'did:key:zmulti',
+      pending,
+    ]);
 
     const all = installs.listByDeviceDid('did:key:zmulti');
     expect(all.map((i) => i.installId).sort()).toEqual([active, paused, pending].sort());
@@ -656,20 +814,441 @@ describe('device binding (F8 pending bind + F9 unique active)', () => {
 });
 
 describe('abandoned-install sweep (§14)', () => {
-  it('expires stale pendings and returns them (caller revokes any paired device)', () => {
+  it('round-11 #16: listStalePending selects (not deletes) stale pendings; remove is the delete step', () => {
+    // The convenience `expireStalePending` was removed — it deleted the
+    // pending row WITHOUT the device-revoke-first ordering that the real
+    // sweep (sweepAbandonedInstalls) enforces, orphaning the device. The
+    // correct primitives are listStalePending → (revoke device) → remove.
     const stale = createPending({ pendingExpiresAtSec: T0_SEC - 10 });
     const fresh = createPending({ pendingExpiresAtSec: T0_SEC + 900 });
     // The dangerous case: pairing completed but consent never confirmed.
     // The device is bound to the PENDING row through the real seam.
     expect(installs.bindPendingDevice(stale, 'did:key:zorphan', T0)).toBe(true);
-    const expired = installs.expireStalePending(T0_SEC);
-    expect(expired).toHaveLength(1);
-    expect(expired[0]!.installId).toBe(stale);
-    expect(expired[0]!.deviceDid).toBe('did:key:zorphan'); // caller must revokeDeviceDurable this
+
+    // SELECT only — the row is NOT gone yet, so a device-revoke failure can
+    // leave it as a retry anchor.
+    const selected = installs.listStalePending(T0_SEC);
+    expect(selected).toHaveLength(1);
+    expect(selected[0]!.installId).toBe(stale);
+    expect(selected[0]!.deviceDid).toBe('did:key:zorphan'); // caller must revokeDeviceDurable this
+    expect(installs.getById(stale)).not.toBeNull();
+
+    // The caller deletes only after revoking the device durably.
+    expect(installs.remove(stale)?.installId).toBe(stale);
     expect(installs.getById(stale)).toBeNull();
     expect(installs.getById(fresh)).not.toBeNull();
-    // Active installs are never swept.
+
+    // Active installs are never selected.
     installs.activate(fresh, undefined, T0);
-    expect(installs.expireStalePending(T0_SEC + 10_000)).toHaveLength(0);
+    expect(installs.listStalePending(T0_SEC + 10_000)).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// round-10 refinements
+// ---------------------------------------------------------------------------
+
+describe('round-10 refinements', () => {
+  it('#5: escalatePauseReason upgrades a manual hold to device_revoked; resume then refuses', () => {
+    const id = createPending();
+    installs.activate(id, undefined, T0 + 1);
+    expect(installs.pause(id, T0 + 2, 'manual')).toBe(true);
+    // A device revoke over an already-paused install escalates the hold.
+    expect(installs.escalatePauseReason(id, 'device_revoked', T0 + 3)).toBe(true);
+    expect(installs.getById(id)?.pauseReason).toBe('device_revoked');
+    expect(installs.resume(id, T0 + 4)).toBe(false); // no longer plainly resumable
+    // Never DOWNGRADES a stronger existing hold.
+    expect(installs.escalatePauseReason(id, 'device_revoked', T0 + 5)).toBe(false);
+  });
+
+  it('#8: bindPendingDevice refuses a device already on a PAUSED install', () => {
+    const paused = createPending();
+    installs.activate(paused, 'did:key:zshared', T0);
+    installs.pause(paused, T0 + 1); // paused, still bound to zshared
+    const fresh = createPending();
+    // Round-9 only excluded active+pending; the paused hole let this through.
+    expect(installs.bindPendingDevice(fresh, 'did:key:zshared', T0 + 2)).toBe(false);
+    expect(installs.getById(fresh)?.deviceDid).toBeUndefined();
+  });
+
+  it('#13: a semantically-corrupt row (parses, wrong shape) is quarantined like a syntax error', () => {
+    const good = createPending({ label: 'Good' });
+    const nullManifest = createPending({ label: 'NullManifest' });
+    const arrHashes = createPending({ label: 'ArrHashes' });
+    // Both parse as valid JSON but are the wrong SHAPE.
+    adapter.execute('UPDATE plugin_installs SET manifest_json = ? WHERE install_id = ?', [
+      'null',
+      nullManifest,
+    ]);
+    adapter.execute('UPDATE plugin_installs SET capability_hashes_json = ? WHERE install_id = ?', [
+      '[]',
+      arrHashes,
+    ]);
+    const all = installs.list();
+    expect(all.map((i) => i.installId)).toEqual([good]);
+    expect(installs.getById(nullManifest)).toBeNull();
+    expect(installs.getById(arrHashes)).toBeNull();
+  });
+
+  it('#14: listRawByDeviceDid still returns a corrupt row that listByDeviceDid drops', () => {
+    const id = createPending();
+    installs.activate(id, 'did:key:zcorrupt', T0);
+    adapter.execute('UPDATE plugin_installs SET trust_anchor_json = ? WHERE install_id = ?', [
+      '{not json',
+      id,
+    ]);
+    // The full mapper quarantines it (invisible to Settings/UI)...
+    expect(installs.listByDeviceDid('did:key:zcorrupt')).toHaveLength(0);
+    // ...but authority cleanup can still see + act on it.
+    const raw = installs.listRawByDeviceDid('did:key:zcorrupt');
+    expect(raw).toHaveLength(1);
+    expect(raw[0]).toEqual({ installId: id, status: 'active' });
+  });
+
+  it('#17: an update CAS can assert pending_cid IS NULL (guarding first-pending creation)', () => {
+    const id = createPending();
+    installs.activate(id, undefined, T0 + 1);
+    const pend = {
+      cid: 'bafyreiNEW',
+      behaviorHash: 'b'.repeat(64),
+      decision: 'awaiting_consent' as const,
+    };
+    // Nothing pending yet → the null-CAS lands.
+    expect(installs.setPendingUpdate(id, pend, T0 + 2, { pendingCid: null })).toBe(true);
+    expect(installs.getById(id)?.pendingCid).toBe('bafyreiNEW');
+    // A concurrent second "first pending" (null-CAS) is now refused.
+    expect(
+      installs.setPendingUpdate(id, { ...pend, cid: 'bafyreiOTHER' }, T0 + 3, { pendingCid: null }),
+    ).toBe(false);
+    expect(installs.getById(id)?.pendingCid).toBe('bafyreiNEW'); // unchanged
+  });
+
+  it('#18: resume folds the reason gate into the write (a hold escalated after the read is not clobbered)', () => {
+    const id = createPending();
+    installs.activate(id, undefined, T0 + 1);
+    installs.pause(id, T0 + 2, 'manual');
+    // Escalate to an advisory hold (simulating a concurrent change) — a resume
+    // whose read saw 'manual' must still be blocked by the write predicate.
+    installs.escalatePauseReason(id, 'advisory', T0 + 3);
+    expect(installs.resume(id, T0 + 4)).toBe(false);
+    expect(installs.getById(id)?.status).toBe('paused');
+    expect(installs.getById(id)?.pauseReason).toBe('advisory');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// round-11 refinements
+// ---------------------------------------------------------------------------
+
+describe('round-11 refinements', () => {
+  const KEY = {
+    capability: 'com.acme.flightwatch.watch',
+    approvedScopeHash: 'c'.repeat(64),
+  };
+
+  it('#1: a replayed execution_id carrying DIFFERENT params is invocation_mismatch, not a free re-auth', () => {
+    const installId = createPending();
+    installs.activate(installId, undefined, T0);
+    grants.create(
+      { installId, ...KEY, grantType: 'standing', constraints: { version: 1, max_value: 100 } },
+      'booking',
+      T0,
+    );
+    // First consume binds execution 'e1' to value 50.
+    expect(
+      grants.authorizeAndConsume({
+        installId,
+        ...KEY,
+        executionId: 'e1',
+        nowSec: T0_SEC,
+        value: 50,
+      }).allowed,
+    ).toBe(true);
+    // A genuine lease-recovery retry replays the SAME params → free re-auth.
+    expect(
+      grants.authorizeAndConsume({
+        installId,
+        ...KEY,
+        executionId: 'e1',
+        nowSec: T0_SEC,
+        value: 50,
+      }).allowed,
+    ).toBe(true);
+    // Reusing 'e1' with a DIFFERENT value would smuggle a distinct invocation
+    // past the value-cap check under a spent reservation — denied.
+    expect(
+      grants.authorizeAndConsume({
+        installId,
+        ...KEY,
+        executionId: 'e1',
+        nowSec: T0_SEC,
+        value: 99,
+      }),
+    ).toEqual({ allowed: false, reason: 'invocation_mismatch' });
+  });
+
+  it('#15: a new grant for the same scope tombstones the prior one (revoke of the newest is terminal)', () => {
+    const installId = createPending();
+    installs.activate(installId, undefined, T0);
+    const g1 = grants.create(
+      { installId, ...KEY, grantType: 'standing', constraints: { version: 1, max_count: 5 } },
+      'booking',
+      T0,
+    );
+    // A second consent for the SAME scope supersedes the first.
+    const g2 = grants.create(
+      { installId, ...KEY, grantType: 'standing', constraints: { version: 1, max_count: 5 } },
+      'booking',
+      T0 + 1,
+    );
+    expect(grants.getById(g1)?.revokedAt).toBeGreaterThan(0); // tombstoned
+    expect(grants.getById(g2)?.revokedAt).toBeUndefined(); // sole live grant
+    // Revoking the newest leaves NOTHING live — the newest-first scan must not
+    // fall through to the older (tombstoned) g1.
+    expect(grants.revoke(g2, T0_SEC + 5)).toBe(true);
+    expect(
+      grants.authorizeAndConsume({ installId, ...KEY, executionId: 'e1', nowSec: T0_SEC + 6 }),
+    ).toEqual({ allowed: false, reason: 'revoked' });
+  });
+
+  it('#14: a corrupt constraints_json projects constraintsCorrupt, not a silent unconstrained grant', () => {
+    const installId = createPending();
+    installs.activate(installId, undefined, T0);
+    const g = grants.create(
+      { installId, ...KEY, grantType: 'standing', constraints: { version: 1, max_count: 3 } },
+      'booking',
+      T0,
+    );
+    // Corrupt the stored blob (divergent-node restore / bit-rot).
+    adapter.execute('UPDATE plugin_grants SET constraints_json = ? WHERE grant_id = ?', [
+      '{bad',
+      g,
+    ]);
+    const proj = grants.getById(g);
+    expect(proj?.constraintsCorrupt).toBe(true);
+    expect(proj?.constraints).toBeUndefined(); // never projected as a real bound
+    // The projection now agrees with the fail-closed authorization decision.
+    expect(
+      grants.authorizeAndConsume({ installId, ...KEY, executionId: 'e1', nowSec: T0_SEC }),
+    ).toEqual({ allowed: false, reason: 'constraints_unparseable' });
+  });
+
+  it('#2: hasLiveGrant reports liveness for a scope without consuming a use', () => {
+    const installId = createPending();
+    installs.activate(installId, undefined, T0);
+    expect(grants.hasLiveGrant(installId, KEY.capability, KEY.approvedScopeHash, T0_SEC)).toBe(
+      false,
+    );
+    const g = grants.create(
+      { installId, ...KEY, grantType: 'standing', constraints: { version: 1, max_count: 2 } },
+      'booking',
+      T0,
+    );
+    expect(grants.hasLiveGrant(installId, KEY.capability, KEY.approvedScopeHash, T0_SEC)).toBe(
+      true,
+    );
+    // A read-only probe consumes nothing.
+    expect(adapter.query('SELECT 1 FROM plugin_grant_uses WHERE grant_id = ?', [g])).toHaveLength(
+      0,
+    );
+    // Revocation makes it not-live.
+    grants.revoke(g, T0_SEC + 1);
+    expect(grants.hasLiveGrant(installId, KEY.capability, KEY.approvedScopeHash, T0_SEC + 2)).toBe(
+      false,
+    );
+  });
+
+  it('#9: a manifest capability that lacks a string id quarantines the row (getById → null)', () => {
+    const id = createPending();
+    adapter.execute('UPDATE plugin_installs SET manifest_json = ? WHERE install_id = ?', [
+      JSON.stringify({ ...manifest, capabilities: [{ display_name: 'no id' }] }),
+      id,
+    ]);
+    expect(installs.getById(id)).toBeNull();
+  });
+
+  it('#9: capability_hashes with a non-string value quarantines the row', () => {
+    const id = createPending();
+    adapter.execute('UPDATE plugin_installs SET capability_hashes_json = ? WHERE install_id = ?', [
+      JSON.stringify({ 'com.acme.flightwatch.watch': 123 }),
+      id,
+    ]);
+    expect(installs.getById(id)).toBeNull();
+  });
+
+  it('#10: a semantically-corrupt install row AND its grants are still removable', () => {
+    const id = createPending();
+    installs.activate(id, undefined, T0);
+    grants.create({ installId: id, ...KEY, grantType: 'once' }, 'read', T0);
+    // Corrupt the row so getById quarantines it (returns null).
+    adapter.execute('UPDATE plugin_installs SET manifest_json = ? WHERE install_id = ?', [
+      '{bad json',
+      id,
+    ]);
+    expect(installs.getById(id)).toBeNull();
+    // remove() still cascades keyed on the raw install_id — row + grant go.
+    installs.remove(id);
+    expect(adapter.query('SELECT 1 FROM plugin_installs WHERE install_id = ?', [id])).toHaveLength(
+      0,
+    );
+    expect(adapter.query('SELECT 1 FROM plugin_grants WHERE install_id = ?', [id])).toHaveLength(0);
+  });
+
+  it('#12: applyUpdate refuses to flip the execution mode; a same-mode update applies', () => {
+    const id = createPending(); // executionMode 'runner'
+    installs.activate(id, undefined, T0);
+    const base = {
+      installScopeHash: 's'.repeat(64),
+      capabilityHashes: { 'com.acme.flightwatch.watch': 'c'.repeat(64) },
+      behaviorHash: 'b'.repeat(64),
+      presentationHash: 'p'.repeat(64),
+    };
+    const flipped: PluginManifest = { ...manifest, execution: { mode: 'interpreted' } };
+    expect(
+      installs.applyUpdate(
+        id,
+        { cid: 'bafyreicid2', version: '1.3.0', manifest: flipped, ...base },
+        T0 + 5,
+      ),
+    ).toBe(false); // execution_mode pin mismatches → refused
+    expect(installs.getById(id)?.currentVersion).toBe('1.2.0'); // unchanged
+    // Round-12 #8: same-mode update must also carry the new version in the
+    // manifest so the scalar/manifest cross-check passes.
+    const sameMode: PluginManifest = {
+      ...manifest,
+      execution: { mode: 'runner' },
+      version: '1.3.0',
+    };
+    expect(
+      installs.applyUpdate(
+        id,
+        { cid: 'bafyreicid3', version: '1.3.0', manifest: sameMode, ...base },
+        T0 + 6,
+      ),
+    ).toBe(true);
+    expect(installs.getById(id)?.currentVersion).toBe('1.3.0');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// round-12 refinements
+// ---------------------------------------------------------------------------
+
+describe('round-12 refinements', () => {
+  const KEY = {
+    capability: 'com.acme.flightwatch.watch',
+    approvedScopeHash: 'c'.repeat(64),
+  };
+
+  it('#1: the invocation digest binds the FULL params — a same-execution_id replay with different params is invocation_mismatch', () => {
+    const installId = createPending();
+    installs.activate(installId, undefined, T0);
+    grants.create(
+      { installId, ...KEY, grantType: 'standing', constraints: { version: 1, max_count: 5 } },
+      'booking',
+      T0,
+    );
+    const base = { installId, ...KEY, executionId: 'e1', nowSec: T0_SEC };
+    // First consume binds e1 to these exact params.
+    expect(
+      grants.authorizeAndConsume({ ...base, params: { recipient: 'alice', amount: 5 } }).allowed,
+    ).toBe(true);
+    // A genuine retry replays the SAME params → free re-auth.
+    expect(
+      grants.authorizeAndConsume({ ...base, params: { recipient: 'alice', amount: 5 } }).allowed,
+    ).toBe(true);
+    // Reusing e1 with a DIFFERENT recipient (resource+value unchanged) is a
+    // distinct invocation smuggled under the execution_id — denied (Round-11 #1
+    // only bound resource+value; this proves the widening).
+    expect(
+      grants.authorizeAndConsume({ ...base, params: { recipient: 'mallory', amount: 5 } }),
+    ).toEqual({ allowed: false, reason: 'invocation_mismatch' });
+  });
+
+  it('#7: applyUpdate resets the first-N invocation counter (re-consent restarts the cards)', () => {
+    const id = createPending();
+    installs.activate(id, undefined, T0);
+    installs.recordInvocation(id, KEY.capability);
+    installs.recordInvocation(id, KEY.capability);
+    expect(installs.getInvocationCount(id, KEY.capability)).toBe(2);
+    // A manifest update = a new consent surface → the counter restarts.
+    expect(
+      installs.applyUpdate(
+        id,
+        {
+          cid: 'bafyreicid9',
+          version: '2.0.0',
+          manifest: { ...manifest, version: '2.0.0' },
+          installScopeHash: 's9'.repeat(32),
+          capabilityHashes: { [KEY.capability]: 'c9'.repeat(32) },
+          behaviorHash: 'b9'.repeat(32),
+          presentationHash: 'p9'.repeat(32),
+        },
+        T0 + 5,
+      ),
+    ).toBe(true);
+    expect(installs.getInvocationCount(id, KEY.capability)).toBe(0);
+  });
+
+  it('#8: a row whose scalar plugin_id/version/execution_mode disagree with the manifest is quarantined', () => {
+    const id = createPending();
+    // The column says one plugin_id, the manifest another — inconsistent authority.
+    adapter.execute('UPDATE plugin_installs SET plugin_id = ? WHERE install_id = ?', [
+      'com.evil.other',
+      id,
+    ]);
+    expect(installs.getById(id)).toBeNull();
+
+    const id2 = createPending();
+    adapter.execute('UPDATE plugin_installs SET current_version = ? WHERE install_id = ?', [
+      '9.9.9',
+      id2,
+    ]);
+    expect(installs.getById(id2)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// round-13 refinements
+// ---------------------------------------------------------------------------
+
+describe('round-13 refinements', () => {
+  it('#16: a row with an INVALID trust anchor (unknown kind / missing field) is quarantined', () => {
+    const id = createPending();
+    adapter.execute('UPDATE plugin_installs SET trust_anchor_json = ? WHERE install_id = ?', [
+      '{"kind":"made_up"}',
+      id,
+    ]);
+    expect(installs.getById(id)).toBeNull();
+
+    const id2 = createPending();
+    adapter.execute('UPDATE plugin_installs SET trust_anchor_json = ? WHERE install_id = ?', [
+      '{"kind":"org_key"}', // missing orgDid
+      id2,
+    ]);
+    expect(installs.getById(id2)).toBeNull();
+  });
+
+  it('#23: a negative/fractional config_revision or invalid timestamp is quarantined', () => {
+    const neg = createPending();
+    adapter.execute('UPDATE plugin_installs SET config_revision = ? WHERE install_id = ?', [
+      -5,
+      neg,
+    ]);
+    expect(installs.getById(neg)).toBeNull();
+
+    const frac = createPending();
+    adapter.execute('UPDATE plugin_installs SET config_revision = ? WHERE install_id = ?', [
+      0.7,
+      frac,
+    ]);
+    expect(installs.getById(frac)).toBeNull();
+
+    const badTs = createPending();
+    adapter.execute('UPDATE plugin_installs SET pending_expires_at = ? WHERE install_id = ?', [
+      -1,
+      badTs,
+    ]);
+    expect(installs.getById(badTs)).toBeNull();
   });
 });

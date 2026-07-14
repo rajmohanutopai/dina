@@ -104,6 +104,18 @@ describe('assessParamsEgress (§11.5)', () => {
     expect(a.sensitiveCategories).toContain('health');
   });
 
+  it('round-12 #17: a MIXED-CASE sensitive category is recognized even when consented same-cased', () => {
+    // `Health`/`FINANCE` must not slip past the (lowercase) sensitive set nor
+    // clear via a same-cased consent entry — the comparison folds case.
+    const a = assessParamsEgress({
+      params: { reason: 'pay my Finance bill' },
+      paramCategories: ['Health', 'FINANCE'],
+      consentedCategories: ['Health', 'FINANCE'], // same casing in consent
+    });
+    expect(a.clears).toBe(false);
+    expect(a.sensitiveCategories).toEqual(expect.arrayContaining(['Health', 'FINANCE']));
+  });
+
   it('does NOT clear when params contain regulated PII, even if categories are in scope', () => {
     const a = assessParamsEgress({
       params: { instruction: 'charge my card 4111 1111 1111 1111 for the booking' },
@@ -441,6 +453,22 @@ describe('contextScopeViolation (P1-2 unit)', () => {
       /regulated/,
     );
     expect(contextScopeViolation([{ note: 'nothing sensitive' }], 5)).toBeNull();
+  });
+  it('round-9 #7: context too DEEP to fully scan is refused (a secret nested past the scan floor cannot hide)', () => {
+    // Build a single item nested deeper than the depth-12 scanner floor, with a
+    // secret at the bottom. Pre-round-9 the scanner silently stopped at 12 and
+    // the secret cleared unscanned; now the over-depth item is refused outright.
+    let deep: Record<string, unknown> = { ssn: '123-45-6789' };
+    for (let i = 0; i < 20; i++) deep = { nested: deep };
+    expect(contextScopeViolation([deep], 5)).toMatch(/deeper|cannot fully inspect/);
+    // A shallow item with the same secret is still caught by the content scan.
+    expect(contextScopeViolation([{ ssn: '123-45-6789' }], 5)).toMatch(/regulated/);
+  });
+  it('round-9 #7: context too LARGE to fully scan is refused (byte cap)', () => {
+    // A small ITEM COUNT (1) but a huge payload — within max_context_items yet
+    // over the byte inspection cap, so it cannot be fully scanned.
+    const huge = [{ blob: 'x'.repeat(70 * 1024) }];
+    expect(contextScopeViolation(huge, 5)).toMatch(/bytes|inspection cap/);
   });
 });
 

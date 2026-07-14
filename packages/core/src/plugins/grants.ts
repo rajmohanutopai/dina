@@ -28,8 +28,10 @@
  */
 
 import { randomBytes } from '@noble/ciphers/utils.js';
-import { bytesToHex } from '@noble/hashes/utils.js';
-import { getCatalogCapability } from '@dina/protocol';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
+
+import { canonicalJson, getCatalogCapability } from '@dina/protocol';
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
@@ -56,7 +58,17 @@ export const CONSTRAINT_CEILINGS = Object.freeze({
   MAX_VALUE_CEILING: 1_000_000_000_000, // 1e12; tunable, §21
 } as const);
 
-const HIGH_ACTION_CLASSES = new Set(['booking', 'write', 'agentic']);
+/** Round-9 #1/#12: the longest a standing/window grant's expiry may sit in
+ * the future. An `expiresAt` in the far future (or a ms value mistaken for
+ * seconds — ~50,000× too large) is not a "bound"; it recreates the blank
+ * check the bounded-standing rule exists to prevent. One year is generous for
+ * a standing plugin grant; the owner re-consents past it. */
+const MAX_GRANT_WINDOW_SEC = 366 * 24 * 60 * 60; // ~1 year
+
+/** Round-9 #1/#8: `payment` is a first-class effectful ActionClass (moves
+ * money). Omitting it here let a canonical `payment` capability escape the
+ * bounded-standing requirement (verifiedLowRisk) — a blank check for funds. */
+const HIGH_ACTION_CLASSES = new Set(['booking', 'write', 'agentic', 'payment']);
 
 const KNOWN_CONSTRAINT_KEYS = new Set(['version', 'max_count', 'resources', 'max_value']);
 
@@ -70,6 +82,16 @@ export interface PluginGrant {
   expiresAt?: number;
   revokedAt?: number;
   createdAt: number;
+  /**
+   * Round-11 #14: true when the row carries a non-null `constraints_json`
+   * that no longer parses under this node's vocabulary. `authorizeAndConsume`
+   * fails such a grant CLOSED (`constraints_unparseable`), but the plain
+   * projection previously dropped the unparseable blob and read as an
+   * UNCONSTRAINED grant — a fail-open for anything (listing UI, revoke
+   * tooling) reading the projected `constraints`. Surfacing the corruption
+   * keeps the projection honest with the authorization decision.
+   */
+  constraintsCorrupt?: boolean;
 }
 
 export type GrantDenialReason =
@@ -79,7 +101,8 @@ export type GrantDenialReason =
   | 'constraints_unparseable' // fail closed (§8)
   | 'count_exhausted'
   | 'resource_not_allowed'
-  | 'value_exceeds_cap';
+  | 'value_exceeds_cap'
+  | 'invocation_mismatch'; // Round-11 #1: replayed execution_id, different params
 
 export type GrantCheckResult =
   | { allowed: true; grantId: string }
@@ -94,6 +117,11 @@ export interface AuthorizeArgs {
   /** Optional dispatch metadata the constraints match against. */
   resource?: string;
   value?: number;
+  /** Round-12 #1: the full invocation params/context — bound into the
+   *  invocation digest so a same-execution_id replay must carry the SAME
+   *  invocation, not just the same resource/value. Producer-supplied. */
+  params?: unknown;
+  context?: unknown;
   nowSec: number;
 }
 
@@ -121,9 +149,37 @@ export interface PluginGrantRepository {
   /**
    * Release a reservation for a task that provably never executed
    * (never claimed, or stale_authority before any claim). Returns true
-   * when a use row was released.
+   * when a use row was released. Round-11 #7: keyed on the SPECIFIC
+   * (grantId, executionId) reservation — releasing by executionId alone
+   * would delete the reservation on whatever grant happens to share that
+   * executionId, not the one that authorized this task.
    */
-  releaseUse(executionId: string): boolean;
+  releaseUse(grantId: string, executionId: string): boolean;
+
+  /**
+   * Round-11 #2: a read-only check that a live (unrevoked, unexpired)
+   * grant exists for this exact scope key at `nowSec`, WITHOUT consuming
+   * a use. The claim guard uses it to fail a queued plugin task whose
+   * authorizing grant was revoked/expired AFTER enqueue but before the
+   * consume at dispatch — the produce-time authorization is not proof the
+   * grant is still live at claim time.
+   */
+  hasLiveGrant(
+    installId: string,
+    capability: string,
+    approvedScopeHash: string,
+    nowSec: number,
+  ): boolean;
+
+  /**
+   * Round-13 #3/#4: the consumed-use row for `(grantId, executionId)`, or null
+   * when this execution never consumed the grant. The claim guard uses it to
+   * PROVE a grant-authorized task actually called `authorizeAndConsume` (naming
+   * a live grant is not proof of consumption — once/max_count/resource/value are
+   * only enforced at consume), and to bind the envelope's pinned digest to the
+   * digest that was actually consumed.
+   */
+  getUse(grantId: string, executionId: string): { invocationDigest: string | null } | null;
 
   getById(grantId: string): PluginGrant | null;
   listByInstall(installId: string): PluginGrant[];
@@ -194,8 +250,74 @@ export function hasMeaningfulConstraint(c: PluginGrantConstraints | null): boole
   return c.max_count !== undefined || c.resources !== undefined || c.max_value !== undefined;
 }
 
+/**
+ * Round-11 #1: the digest binding an execution_id to the exact
+ * constraint-relevant params it was first authorized under. Only the
+ * fields the constraints gate — `resource` (the resources allowlist) and
+ * `value` (the value cap) — are bound; the `count` constraint is stateful
+ * (a running tally, not a per-invocation param) so it is not part of the
+ * digest. A `null` field is canonicalised distinctly from `undefined` so
+ * "no resource supplied" cannot collide with "resource: 'null'".
+ */
+/** JSON round-trip a value into a canonicalJson-safe form: undefined → null,
+ *  non-finite numbers → null, unserializable (circular) → null. canonicalJson
+ *  throws on non-finite, so params/context (arbitrary caller data) are cleaned
+ *  first — the coercion is deterministic, so equal invocations hash equal. */
+function jsonSafeForDigest(v: unknown): unknown {
+  if (v === undefined) return null;
+  try {
+    return JSON.parse(JSON.stringify(v)) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+export function invocationDigest(args: {
+  resource?: string;
+  value?: number;
+  params?: unknown;
+  context?: unknown;
+}): string {
+  // A non-finite value (NaN/±Infinity) is denied by the value-cap check and
+  // never consumed, so its digest is moot — but canonicalJson throws on
+  // non-finite numbers, and this runs BEFORE that check. Coerce to null so the
+  // digest is always computable (a finite in-cap value is what actually binds).
+  const value = typeof args.value === 'number' && Number.isFinite(args.value) ? args.value : null;
+  // Round-12 #1: bind the FULL constraint-relevant invocation — resource + value
+  // AND the params/context. A retry reusing the same execution_id must replay
+  // the SAME recipient/date/body/SKU/account; a retry that changes any of them
+  // is a DISTINCT invocation wearing the execution_id, and re-binds to a
+  // different digest (→ `invocation_mismatch`). (Round-11 #1 bound only
+  // resource+value; that scope was too narrow.)
+  const canonical = canonicalJson({
+    resource: args.resource ?? null,
+    value,
+    params: jsonSafeForDigest(args.params),
+    context: jsonSafeForDigest(args.context),
+  });
+  return bytesToHex(sha256(utf8ToBytes(canonical)));
+}
+
 function rowToGrant(r: DBRow): PluginGrant {
   const constraints = parseConstraints(r.constraints_json ?? null);
+  // Same fail-closed test as authorizeAndConsume: a stored non-null
+  // constraints blob that fails to parse is anomalous — the grant is in a
+  // fail-closed state (it will never authorize). Empty string included:
+  // a legitimately-unconstrained grant stores NULL, never ''.
+  const hasStoredConstraints = r.constraints_json !== null && r.constraints_json !== undefined;
+  const constraintsCorrupt = hasStoredConstraints && constraints === null;
+  // Round-14 #9: revoked_at / expires_at feed claim_guard's live/dead predicate
+  // (`revokedAt === undefined` → live; `expiresAt === undefined` → never
+  // expires), so coerce defensively rather than trusting the JS type. A value
+  // stored as a STRING (divergent-node restore, SQLite type affinity) slips
+  // past a bare `typeof === 'number'` — the field is dropped and the grant
+  // projects as LIVE (fail OPEN on a revoked or expired grant). Any present
+  // non-null revoked_at marks revoked; a present non-finite expires_at is an
+  // unenforceable bound → project as already-expired (epoch 0, ≤ any nowSec).
+  const revokedPresent = r.revoked_at !== null && r.revoked_at !== undefined;
+  const revokedAtNum = revokedPresent ? Number(r.revoked_at) : undefined;
+  const expiresPresent = r.expires_at !== null && r.expires_at !== undefined;
+  const expiresAtNum = expiresPresent ? Number(r.expires_at) : undefined;
   return {
     grantId: String(r.grant_id),
     installId: String(r.install_id),
@@ -203,8 +325,19 @@ function rowToGrant(r: DBRow): PluginGrant {
     approvedScopeHash: String(r.approved_scope_hash),
     grantType: String(r.grant_type) as PluginGrantType,
     ...(constraints !== null ? { constraints } : {}),
-    ...(typeof r.expires_at === 'number' ? { expiresAt: r.expires_at } : {}),
-    ...(typeof r.revoked_at === 'number' ? { revokedAt: r.revoked_at } : {}),
+    ...(constraintsCorrupt ? { constraintsCorrupt: true } : {}),
+    ...(expiresPresent
+      ? {
+          expiresAt:
+            typeof expiresAtNum === 'number' && Number.isFinite(expiresAtNum) ? expiresAtNum : 0,
+        }
+      : {}),
+    ...(revokedPresent
+      ? {
+          revokedAt:
+            typeof revokedAtNum === 'number' && Number.isFinite(revokedAtNum) ? revokedAtNum : 0,
+        }
+      : {}),
     createdAt: Number(r.created_at),
   };
 }
@@ -229,6 +362,26 @@ export class SQLitePluginGrantRepository implements PluginGrantRepository {
         throw new Error('plugin_grants: constraints are malformed or above ceilings (§8)');
       }
       constraintsJson = JSON.stringify(parsed);
+    }
+    // Round-9 #1/#12: if an expiry is supplied it must be a REAL bound — a
+    // finite integer Unix time in SECONDS, strictly in the future, and within
+    // the policy window. Validated BEFORE the window/standing checks below so
+    // an `expiresAt` can only count as "bounded" if it actually bounds. Without
+    // this, `NaN` (NaN <= nowSec is always false → the grant never expires), a
+    // millisecond value mistaken for seconds (~50,000× too large), or a
+    // far-future timestamp would satisfy "bounded" while granting effectively
+    // permanent silent authority.
+    if (grant.expiresAt !== undefined) {
+      const nowSec = Math.floor(nowMs / 1000);
+      if (
+        !Number.isInteger(grant.expiresAt) ||
+        grant.expiresAt <= nowSec ||
+        grant.expiresAt > nowSec + MAX_GRANT_WINDOW_SEC
+      ) {
+        throw new Error(
+          'plugin_grants: expiresAt must be an integer Unix time in seconds, in the future, and within the policy window (§8)',
+        );
+      }
     }
     // A 'window' grant is time-bounded by DEFINITION — without an expiry
     // it is a standing grant in disguise (audit D8). Reject it.
@@ -259,27 +412,46 @@ export class SQLitePluginGrantRepository implements PluginGrantRepository {
       }
     }
     const grantId = `plg_${bytesToHex(randomBytes(12))}`;
-    this.db.execute(
-      `INSERT INTO plugin_grants
-         (grant_id, install_id, capability, approved_scope_hash, grant_type,
-          constraints_json, expires_at, revoked_at, created_at)
-       VALUES (?,?,?,?,?,?,?,NULL,?)`,
-      [
-        grantId,
-        grant.installId,
-        grant.capability,
-        grant.approvedScopeHash,
-        grant.grantType,
-        constraintsJson,
-        grant.expiresAt ?? null,
-        nowMs,
-      ],
-    );
+    // Round-11 #15: at most ONE live grant per scope key. Without this,
+    // approving the same scope twice leaves two live grants; the owner
+    // revoking "the grant" (the newest) leaves an OLDER one live, and
+    // authorizeAndConsume's newest-first scan `continue`s past the revoked
+    // row to silently re-authorize under the stale older grant. Tombstoning
+    // prior same-scope live grants makes the new grant the sole authority
+    // and a revoke of it actually terminal. Atomic with the insert so a
+    // reader never sees zero live grants for a scope that has one.
+    this.db.transaction(() => {
+      const nowSec = Math.floor(nowMs / 1000);
+      this.db.run(
+        `UPDATE plugin_grants SET revoked_at = ?
+         WHERE install_id = ? AND capability = ? AND approved_scope_hash = ?
+           AND revoked_at IS NULL`,
+        [nowSec, grant.installId, grant.capability, grant.approvedScopeHash],
+      );
+      this.db.execute(
+        `INSERT INTO plugin_grants
+           (grant_id, install_id, capability, approved_scope_hash, grant_type,
+            constraints_json, expires_at, revoked_at, created_at)
+         VALUES (?,?,?,?,?,?,?,NULL,?)`,
+        [
+          grantId,
+          grant.installId,
+          grant.capability,
+          grant.approvedScopeHash,
+          grant.grantType,
+          constraintsJson,
+          grant.expiresAt ?? null,
+          nowMs,
+        ],
+      );
+    });
     return grantId;
   }
 
   authorizeAndConsume(args: AuthorizeArgs): GrantCheckResult {
     let result: GrantCheckResult = { allowed: false, reason: 'no_grant' };
+    // Round-11 #1: the constraint-relevant params this execution binds to.
+    const digest = invocationDigest(args);
     this.db.transaction(() => {
       const rows = this.db.query(
         `SELECT * FROM plugin_grants
@@ -294,13 +466,21 @@ export class SQLitePluginGrantRepository implements PluginGrantRepository {
       // Evaluate candidates newest-first; the first live grant decides.
       let denial: GrantDenialReason = 'no_grant';
       for (const row of rows) {
-        if (typeof row.revoked_at === 'number') {
+        // Round-14 #9: coerce defensively — a revoked_at / expires_at stored as
+        // a STRING (divergent-node restore, SQLite type affinity) slips past a
+        // bare `typeof === 'number'` and the candidate reads as LIVE (fail OPEN).
+        // Any present non-null revoked_at means revoked; a present non-finite
+        // expires_at is an unenforceable bound → treat as expired.
+        if (row.revoked_at !== null && row.revoked_at !== undefined) {
           denial = 'revoked';
           continue;
         }
-        if (typeof row.expires_at === 'number' && row.expires_at <= args.nowSec) {
-          denial = 'expired';
-          continue;
+        if (row.expires_at !== null && row.expires_at !== undefined) {
+          const exp = Number(row.expires_at);
+          if (!Number.isFinite(exp) || exp <= args.nowSec) {
+            denial = 'expired';
+            continue;
+          }
         }
         // Fail closed on unparseable constraints (§8): stored JSON that
         // no longer parses under this node's vocabulary = no match.
@@ -320,13 +500,27 @@ export class SQLitePluginGrantRepository implements PluginGrantRepository {
         const grantType = String(row.grant_type);
 
         // Idempotent re-authorization FIRST: the SAME execution_id
-        // always re-authorizes without a second consume (§8:
-        // lease-recovery retries), even for a 'once' grant.
-        const existingUse = this.db.query(
-          'SELECT 1 FROM plugin_grant_uses WHERE grant_id = ? AND execution_id = ? LIMIT 1',
+        // re-authorizes without a second consume (§8: lease-recovery
+        // retries), even for a 'once' grant — BUT only when it replays the
+        // SAME constraint-relevant params. Round-11 #1: the reservation
+        // pinned an invocation_digest (resource + value) at first consume;
+        // a replay carrying a different resource/value is a DISTINCT
+        // invocation wearing the same execution_id to skip the resource/
+        // value/count checks below. Re-bind to the pinned digest; a
+        // mismatch denies (never falls through — this execution's use row
+        // lives on THIS grant, so an older grant would double-spend it).
+        const existingUse = this.db.query<{ invocation_digest: string | null }>(
+          'SELECT invocation_digest FROM plugin_grant_uses WHERE grant_id = ? AND execution_id = ? LIMIT 1',
           [grantId, args.executionId],
         );
         if (existingUse.length > 0) {
+          const pinned = existingUse[0].invocation_digest;
+          // A null pin only exists for pre-Round-11 rows (none pre-launch);
+          // treat it as unbindable and fail closed rather than trust it.
+          if (pinned !== digest) {
+            result = { allowed: false, reason: 'invocation_mismatch' };
+            return;
+          }
           result = { allowed: true, grantId };
           return;
         }
@@ -386,8 +580,8 @@ export class SQLitePluginGrantRepository implements PluginGrantRepository {
         // dispatches cannot jointly exceed max_count (§8: one
         // transaction, never read-then-update).
         this.db.execute(
-          'INSERT INTO plugin_grant_uses (grant_id, execution_id, used_at) VALUES (?,?,?)',
-          [grantId, args.executionId, args.nowSec],
+          'INSERT INTO plugin_grant_uses (grant_id, execution_id, used_at, invocation_digest) VALUES (?,?,?,?)',
+          [grantId, args.executionId, args.nowSec, digest],
         );
         result = { allowed: true, grantId };
         return;
@@ -397,11 +591,43 @@ export class SQLitePluginGrantRepository implements PluginGrantRepository {
     return result;
   }
 
-  releaseUse(executionId: string): boolean {
-    const affected = this.db.run('DELETE FROM plugin_grant_uses WHERE execution_id = ?', [
-      executionId,
-    ]);
+  releaseUse(grantId: string, executionId: string): boolean {
+    const affected = this.db.run(
+      'DELETE FROM plugin_grant_uses WHERE grant_id = ? AND execution_id = ?',
+      [grantId, executionId],
+    );
     return affected > 0;
+  }
+
+  getUse(grantId: string, executionId: string): { invocationDigest: string | null } | null {
+    const rows = this.db.query<{ invocation_digest: string | null }>(
+      'SELECT invocation_digest FROM plugin_grant_uses WHERE grant_id = ? AND execution_id = ? LIMIT 1',
+      [grantId, executionId],
+    );
+    if (rows.length === 0) return null;
+    const d = rows[0].invocation_digest;
+    return { invocationDigest: d === null || d === undefined ? null : String(d) };
+  }
+
+  hasLiveGrant(
+    installId: string,
+    capability: string,
+    approvedScopeHash: string,
+    nowSec: number,
+  ): boolean {
+    // Mirror the liveness test in authorizeAndConsume's candidate scan: a
+    // grant counts as live when it is unrevoked and either has no expiry or
+    // an expiry strictly in the future. Constraint state is intentionally
+    // NOT considered — this only answers "is there still an approval for
+    // this scope," not "would this specific invocation pass."
+    const rows = this.db.query<{ c: number }>(
+      `SELECT COUNT(*) AS c FROM plugin_grants
+       WHERE install_id = ? AND capability = ? AND approved_scope_hash = ?
+         AND revoked_at IS NULL
+         AND (expires_at IS NULL OR expires_at > ?)`,
+      [installId, capability, approvedScopeHash, nowSec],
+    );
+    return rows.length > 0 && Number(rows[0].c) > 0;
   }
 
   getById(grantId: string): PluginGrant | null {

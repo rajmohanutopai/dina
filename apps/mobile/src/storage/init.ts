@@ -303,6 +303,14 @@ export async function initializePersistence(
         'service_configs',
         'contact_service_offers',
         'service_grants',
+        // Round-10 #16: plugin + device authority also count as "existing data".
+        // A device whose ONLY content is plugin installs/grants or paired
+        // devices / agent grants was previously mis-detected as clean, so a
+        // non-force import MERGED and left that stale authority in place.
+        'plugin_installs',
+        'plugin_grants',
+        'paired_devices',
+        'agent_persona_grants',
       ];
       for (const t of idTables) {
         try {
@@ -407,7 +415,10 @@ export function getOpenPersonaNames(): string[] {
  * cleanup wiring, which records a cleanup error so the recovery record is kept
  * (rows in that persona may still hold demo data) instead of being lost.
  */
-async function openAllPersonaAdapters(): Promise<{ adapters: DatabaseAdapter[]; failed: string[] }> {
+async function openAllPersonaAdapters(): Promise<{
+  adapters: DatabaseAdapter[];
+  failed: string[];
+}> {
   if (!provider) return { adapters: [], failed: [] };
   const adapters: DatabaseAdapter[] = [];
   const failed: string[] = [];
@@ -419,7 +430,7 @@ async function openAllPersonaAdapters(): Promise<{ adapters: DatabaseAdapter[]; 
     } catch (err) {
       // Real open failure → surface it so teardown preserves recovery.
       failed.push(p.name);
-       
+
       console.warn(
         `[storage/init] persona "${p.name}" failed to open for cleanup: ${
           err instanceof Error ? err.message : String(err)

@@ -39,7 +39,6 @@ import {
   parsePluginEnvelope,
 } from './plugin_envelope';
 
-
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
 /**
@@ -171,8 +170,20 @@ export interface WorkflowRepository {
    * know whether the external action occurred. Terminal — nothing
    * transitions out. Returns the event id or 0 when the task is not
    * running.
+   *
+   * Round-12 #5: `opts.claimId` adds the claim-CAS (`AND claim_id = ?`) so a
+   * plugin runner can only park the task it actually holds — required for the
+   * schema-rejected-completion path, where an effectful runner's malformed
+   * result must terminalize as outcome_unknown (the effect MAY have happened),
+   * not `failed`. `opts.evidence` retains the rejected result as reconciliation
+   * evidence in the event (never applied to task state; capped).
    */
-  markOutcomeUnknown(id: string, reason: string, nowMs: number): number;
+  markOutcomeUnknown(
+    id: string,
+    reason: string,
+    nowMs: number,
+    opts?: { claimId?: string; evidence?: string; agentDID?: string },
+  ): number;
 
   /**
    * Extend a claimed task's lease. Only the agent that holds the claim
@@ -944,8 +955,14 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
       // may NEVER be terminalized by the state-only guard — that path
       // would let a stale attempt apply over a newer one. Require the
       // token whenever the payload is a plugin envelope, regardless of
-      // caller.
-      const isPluginTask = parsePluginEnvelope(this.getById(id)?.payload ?? '') !== null;
+      // caller. Round-14 #2: also require it for a task on a plugin LANE — a
+      // stripped/corrupt envelope makes `parsePluginEnvelope` null, but the
+      // lane still routes it as a plugin invocation, so the state-only guard
+      // must not become reachable on that technicality.
+      const completeTaskRow = this.getById(id);
+      const isPluginTask =
+        parsePluginEnvelope(completeTaskRow?.payload ?? '') !== null ||
+        isPluginLane(completeTaskRow?.requested_runner ?? '');
       if (isPluginTask && claimId === undefined) {
         this.recordLateReport(id, agentDID, 'no-claim-token', 'complete', nowMs, resultJSON);
         return;
@@ -988,8 +1005,12 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
   fail(id: string, agentDID: string, errorMsg: string, nowMs: number, claimId?: string): number {
     let eventId = 0;
     this.db.transaction(() => {
-      // See completeWithDetails: a plugin task requires the claim token.
-      const isPluginTask = parsePluginEnvelope(this.getById(id)?.payload ?? '') !== null;
+      // See completeWithDetails: a plugin task requires the claim token — by
+      // envelope OR by plugin lane (Round-14 #2, corrupt-envelope defense).
+      const failTaskRow = this.getById(id);
+      const isPluginTask =
+        parsePluginEnvelope(failTaskRow?.payload ?? '') !== null ||
+        isPluginLane(failTaskRow?.requested_runner ?? '');
       if (isPluginTask && claimId === undefined) {
         this.recordLateReport(id, agentDID, 'no-claim-token', 'fail', nowMs, errorMsg);
         return;
@@ -1010,7 +1031,8 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
         params,
       );
       if (affected === 0) {
-        if (claimId !== undefined) this.recordLateReport(id, agentDID, claimId, 'fail', nowMs, errorMsg);
+        if (claimId !== undefined)
+          this.recordLateReport(id, agentDID, claimId, 'fail', nowMs, errorMsg);
         return;
       }
       eventId = this.appendEvent({
@@ -1054,7 +1076,9 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
     const detail: Record<string, unknown> = { agent_did: agentDID, claim_id: claimId, verb };
     if (reported !== undefined && reported !== '') {
       detail.report =
-        reported.length > MAX_EVIDENCE ? `${reported.slice(0, MAX_EVIDENCE)}…[truncated]` : reported;
+        reported.length > MAX_EVIDENCE
+          ? `${reported.slice(0, MAX_EVIDENCE)}…[truncated]`
+          : reported;
     }
     this.appendEvent({
       task_id: id,
@@ -1068,20 +1092,66 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
     surfaceLateReportDecision(task, verb, nowMs); // P2-10
   }
 
-  markOutcomeUnknown(id: string, reason: string, nowMs: number): number {
+  markOutcomeUnknown(
+    id: string,
+    reason: string,
+    nowMs: number,
+    opts?: { claimId?: string; evidence?: string; agentDID?: string },
+  ): number {
     let eventId = 0;
     this.db.transaction(() => {
       // §9.5 legal entry: running → outcome_unknown ONLY (execution
-      // started, no terminal report).
+      // started, no terminal report). Round-12 #5: an optional claim-CAS
+      // (`AND claim_id = ?`) so a runner can only park a task it holds.
+      const guard =
+        opts?.claimId !== undefined ? `state = 'running' AND claim_id = ?` : `state = 'running'`;
+      // Round-13 #10: persist the reporting agent (attribution). The audit
+      // surface for a parked EFFECTFUL task must record who produced the
+      // uncertain outcome — the worst case to lack attribution on.
+      const setAgent =
+        opts?.agentDID !== undefined && opts.agentDID !== '' ? `, agent_did = ?` : ``;
+      const params: unknown[] = [reason, nowMs];
+      if (setAgent !== ``) params.push(opts?.agentDID);
+      params.push(id);
+      if (opts?.claimId !== undefined) params.push(opts.claimId);
       const affected = this.db.run(
         `UPDATE workflow_tasks
          SET state = 'outcome_unknown',
              error = ?,
-             updated_at = ?
-         WHERE id = ? AND state = 'running'`,
-        [reason, nowMs, id],
+             updated_at = ?${setAgent}
+         WHERE id = ? AND ${guard}`,
+        params,
       );
-      if (affected === 0) return;
+      if (affected === 0) {
+        // Round-13 #8: a rejected EFFECTFUL result that LOST the claim CAS (stale
+        // claim / post-revoke) still carries the only external-reconciliation
+        // proof (confirmation/charge id). Retain it as late-report evidence
+        // instead of discarding — parity with fail()/complete()'s CAS-loss paths.
+        if (opts?.claimId !== undefined) {
+          this.recordLateReport(
+            id,
+            opts.agentDID ?? '',
+            opts.claimId,
+            'complete',
+            nowMs,
+            opts.evidence,
+          );
+        }
+        return;
+      }
+      // Round-12 #5: retain the rejected result as reconciliation evidence
+      // (never applied). Capped so a hostile/huge report can't bloat the row.
+      // Round-13 #10: also record agent_did + claim_id in the event details.
+      const MAX_EVIDENCE = 4096;
+      const details: Record<string, unknown> = { reason };
+      if (opts?.agentDID !== undefined && opts.agentDID !== '') details.agent_did = opts.agentDID;
+      if (opts?.claimId !== undefined) details.claim_id = opts.claimId;
+      if (opts?.evidence !== undefined && opts.evidence !== '') {
+        details.rejected_result =
+          opts.evidence.length > MAX_EVIDENCE
+            ? `${opts.evidence.slice(0, MAX_EVIDENCE)}…[truncated]`
+            : opts.evidence;
+      }
       eventId = this.appendEvent({
         task_id: id,
         at: nowMs,
@@ -1089,7 +1159,7 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
         needs_delivery: true,
         delivery_attempts: 0,
         delivery_failed: false,
-        details: JSON.stringify({ reason }),
+        details: JSON.stringify(details),
       });
     });
     return eventId;
@@ -1495,7 +1565,9 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
       if (runnerFilter === '') {
         // Generic agents take neither the reserved in-process lane nor
         // any plugin lane (§9.1).
-        return requested !== LOCAL_RUNNER_NAME && !(requested !== undefined && isPluginLane(requested));
+        return (
+          requested !== LOCAL_RUNNER_NAME && !(requested !== undefined && isPluginLane(requested))
+        );
       }
       if (runnerFilter === LOCAL_RUNNER_NAME || isPluginLane(runnerFilter)) {
         return requested === runnerFilter; // exact only — no untagged convenience
@@ -1650,8 +1722,12 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
   ): number {
     const t = this.tasks.get(id);
     if (t === undefined) return 0;
-    // Defense-in-depth parity (audit D3): a plugin task requires the token.
-    if (parsePluginEnvelope(t.payload) !== null && claimId === undefined) {
+    // Defense-in-depth parity (audit D3): a plugin task requires the token —
+    // by envelope OR by plugin lane (Round-14 #2, corrupt-envelope defense).
+    if (
+      (parsePluginEnvelope(t.payload) !== null || isPluginLane(t.requested_runner ?? '')) &&
+      claimId === undefined
+    ) {
       this.recordLateReport(id, agentDID, 'no-claim-token', 'complete', nowMs, resultJSON);
       return 0;
     }
@@ -1684,7 +1760,11 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
   fail(id: string, agentDID: string, errorMsg: string, nowMs: number, claimId?: string): number {
     const t = this.tasks.get(id);
     if (t === undefined) return 0;
-    if (parsePluginEnvelope(t.payload) !== null && claimId === undefined) {
+    // Plugin task requires the token — by envelope OR by plugin lane (#2).
+    if (
+      (parsePluginEnvelope(t.payload) !== null || isPluginLane(t.requested_runner ?? '')) &&
+      claimId === undefined
+    ) {
       this.recordLateReport(id, agentDID, 'no-claim-token', 'fail', nowMs, errorMsg);
       return 0;
     }
@@ -1725,7 +1805,9 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     const detail: Record<string, unknown> = { agent_did: agentDID, claim_id: claimId, verb };
     if (reported !== undefined && reported !== '') {
       detail.report =
-        reported.length > MAX_EVIDENCE ? `${reported.slice(0, MAX_EVIDENCE)}…[truncated]` : reported;
+        reported.length > MAX_EVIDENCE
+          ? `${reported.slice(0, MAX_EVIDENCE)}…[truncated]`
+          : reported;
     }
     this.appendEvent({
       task_id: id,
@@ -1739,13 +1821,47 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     surfaceLateReportDecision(this.tasks.get(id) ?? null, verb, nowMs); // P2-10
   }
 
-  markOutcomeUnknown(id: string, reason: string, nowMs: number): number {
+  markOutcomeUnknown(
+    id: string,
+    reason: string,
+    nowMs: number,
+    opts?: { claimId?: string; evidence?: string; agentDID?: string },
+  ): number {
     const t = this.tasks.get(id);
     if (t === undefined) return 0;
-    if (t.status !== 'running') return 0;
+    // Round-12 #5 claim-CAS parity + Round-13 #8: when the park is rejected
+    // (task no longer running, or a claim mismatch) but the caller pinned a
+    // claim, retain the rejected result as late-report evidence instead of
+    // discarding it (parity with fail()/complete()).
+    const casLost =
+      t.status !== 'running' || (opts?.claimId !== undefined && t.claim_id !== opts.claimId);
+    if (casLost) {
+      if (opts?.claimId !== undefined) {
+        this.recordLateReport(
+          id,
+          opts.agentDID ?? '',
+          opts.claimId,
+          'complete',
+          nowMs,
+          opts.evidence,
+        );
+      }
+      return 0;
+    }
     t.status = 'outcome_unknown';
     t.error = reason;
     t.updated_at = nowMs;
+    if (opts?.agentDID !== undefined && opts.agentDID !== '') t.agent_did = opts.agentDID; // Round-13 #10
+    const MAX_EVIDENCE = 4096;
+    const details: Record<string, unknown> = { reason };
+    if (opts?.agentDID !== undefined && opts.agentDID !== '') details.agent_did = opts.agentDID;
+    if (opts?.claimId !== undefined) details.claim_id = opts.claimId;
+    if (opts?.evidence !== undefined && opts.evidence !== '') {
+      details.rejected_result =
+        opts.evidence.length > MAX_EVIDENCE
+          ? `${opts.evidence.slice(0, MAX_EVIDENCE)}…[truncated]`
+          : opts.evidence;
+    }
     return this.appendEvent({
       task_id: id,
       at: nowMs,
@@ -1753,7 +1869,7 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
       needs_delivery: true,
       delivery_attempts: 0,
       delivery_failed: false,
-      details: JSON.stringify({ reason }),
+      details: JSON.stringify(details),
     });
   }
 

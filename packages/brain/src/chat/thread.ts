@@ -731,6 +731,22 @@ export function findMessageByTaskId(threadId: string, taskId: string): ChatMessa
 }
 
 /**
+ * Find a thread message whose `sources` array contains `source`. Used to
+ * dedupe delivery of an at-least-once workflow event that maps to a plain
+ * dina bubble (no lifecycle key to reconcile on) — the deliverer tags the
+ * bubble with `event:<event_id>` and skips when one already exists. Returns
+ * `null` when no matching message is present.
+ */
+export function findMessageBySource(threadId: string, source: string): ChatMessage | null {
+  const thread = threads.get(threadId);
+  if (!thread) return null;
+  for (const msg of thread) {
+    if ((msg.sources ?? []).includes(source)) return msg;
+  }
+  return null;
+}
+
+/**
  * Find a thread message keyed by `askId` on its lifecycle metadata
  * (only `ask_pending` kind has an askId). Returns `null` when no
  * matching message is present. Used by the coordinator-ask bridge
