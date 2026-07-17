@@ -652,7 +652,12 @@ export function validatePluginManifest(
     // do NOT invent a schema; we only require an object icon to be NON-EMPTY and
     // carry at least one recognized, non-empty string reference key. A string
     // icon (CID/URL) still passes as before.
-    const ICON_REF_KEYS = ['cid', 'uri', 'ref', '$type', 'src', 'url'] as const;
+    // PLG-30 #14: `$type` is a DISCRIMINATOR, not a reference — `{ $type: 'blob' }`
+    // with no actual CID/ref carries no icon, yet it satisfied the old floor and
+    // reached the consent/marketplace surface. Require a genuine content-reference
+    // key (`cid`/`uri`/`ref`/`src`/`url`) with a non-empty string value; `$type`
+    // alone no longer qualifies. (Full blob grammar stays deferred to AppView.)
+    const ICON_REF_KEYS = ['cid', 'uri', 'ref', 'src', 'url'] as const;
     const iconObjOk =
       isPlainObject(manifest.icon) &&
       ICON_REF_KEYS.some((k) => {
@@ -660,15 +665,22 @@ export function validatePluginManifest(
         return typeof val === 'string' && val !== '';
       });
     const iconShapeOk = iconObjOk || typeof manifest.icon === 'string';
-    if (
-      !iconShapeOk ||
-      iconBytes > PLUGIN_CAPS.MAX_ICON_BYTES ||
-      (typeof manifest.icon === 'string' && hasUnsafeText(manifest.icon))
-    ) {
+    // PLG-29 #18: spoof-scan ALL rendered strings, not just a STRING icon. An
+    // OBJECT icon's ref values (e.g. `{cid: 'bidi‮here'}`) reach the consent /
+    // marketplace surface too, but PLG-28 #15 ran hasUnsafeText only on a string
+    // icon — so a bidi/control/zero-width char inside an object value slipped
+    // through. Reject spoofing chars in any icon string value. (A full CID/blob
+    // grammar stays deferred to AppView — the format is undefined here.)
+    const iconStrings: string[] = isPlainObject(manifest.icon)
+      ? Object.values(manifest.icon).filter((v): v is string => typeof v === 'string')
+      : typeof manifest.icon === 'string'
+        ? [manifest.icon]
+        : [];
+    if (!iconShapeOk || iconBytes > PLUGIN_CAPS.MAX_ICON_BYTES || iconStrings.some(hasUnsafeText)) {
       err(
         'bad_icon',
         'icon',
-        `icon must be a string CID/URL or a blob-ref object with a cid/uri/ref/$type string, serialize to ≤ ${PLUGIN_CAPS.MAX_ICON_BYTES} bytes, with no control/bidi/zero-width chars`,
+        `icon must be a string CID/URL or a blob-ref object with a cid/uri/ref/src/url string, serialize to ≤ ${PLUGIN_CAPS.MAX_ICON_BYTES} bytes, with no control/bidi/zero-width chars`,
       );
     }
   }
@@ -772,9 +784,22 @@ export function validatePluginManifest(
   // in try/catch, so an unguarded throw here breaks the fail-closed-RESULT
   // promise on the untrusted ingest boundary. Guard it exactly like the icon-size
   // path already does: an unserializable/too-deep manifest is treated as over-cap.
+  // PLG-30 #17: `opts.rawByteLength` is a caller-supplied count (AppView ingest
+  // measuring the real received bytes). `??` only falls back on null/undefined, so
+  // a negative / fractional / NaN value slipped straight through (`-1 > MAX` and
+  // `NaN > MAX` are both false) AND short-circuited the real size computation —
+  // pairing `rawByteLength: -1` with a genuinely oversized manifest defeated the
+  // cap. Honor it ONLY when it is a finite non-negative integer; otherwise measure
+  // the manifest ourselves.
+  const providedByteLength =
+    typeof opts.rawByteLength === 'number' &&
+    Number.isInteger(opts.rawByteLength) &&
+    opts.rawByteLength >= 0
+      ? opts.rawByteLength
+      : undefined;
   let byteLength: number;
   try {
-    byteLength = opts.rawByteLength ?? utf8Length(JSON.stringify(manifest));
+    byteLength = providedByteLength ?? utf8Length(JSON.stringify(manifest));
   } catch {
     byteLength = PLUGIN_CAPS.MAX_MANIFEST_BYTES + 1;
   }
@@ -1508,6 +1533,16 @@ function validateMachine(
     if (!stateSet.has(t.from)) err('bad_transition_from', tp, `unknown from-state "${t.from}"`);
     if (!stateSet.has(t.to)) err('bad_transition_to', tp, `unknown to-state "${t.to}"`);
     if (!moves.includes(t.move)) err('bad_transition_move', tp, `unknown move "${t.move}"`);
+    // PLG-30 #12: a terminal state is ABSORBING (execution ends there). A
+    // transition OUT of a terminal makes runtimes disagree on whether the session
+    // ends or follows the edge — reject it so terminals are unambiguously final.
+    if (terminalSet.has(t.from)) {
+      err(
+        'transition_from_terminal',
+        tp,
+        `terminal state "${t.from}" must not have outgoing transitions`,
+      );
+    }
     const count = (perState.get(t.from) ?? 0) + 1;
     perState.set(t.from, count);
     if (count > PLUGIN_CAPS.MAX_TRANSITIONS_PER_STATE) {
@@ -1562,6 +1597,80 @@ function validateMachine(
         'dead_end_state',
         `${mp}.transitions`,
         `non-terminal state "${st}" has no outgoing transition — the session can reach it and hang`,
+      );
+    }
+  }
+  // PLG-29 #16 + PLG-30 #11: terminal REACHABILITY, tightened. `dead_end_state`
+  // only proves each non-terminal has an OUTGOING edge; the earlier check proved
+  // only that SOME terminal is reachable from `initial` — a machine could still
+  // enter a reachable non-terminal cycle that can never complete and pass. Require
+  // that EVERY state reachable from `initial` can itself reach a terminal:
+  //   1. forward BFS from `initial` → the states the session can actually enter;
+  //   2. reverse BFS from the terminals → the states that CAN reach a terminal;
+  //   3. any reachable state NOT in (2) is a stuck state → error.
+  // Guarded on a valid initial + non-empty terminal set so it doesn't double-
+  // report those errors.
+  if (stateSet.has(machine.initial) && terminalSet.size > 0) {
+    const fwd = new Map<string, string[]>();
+    const rev = new Map<string, string[]>();
+    for (const t of transitions) {
+      if (isPlainObject(t) && typeof t.from === 'string' && typeof t.to === 'string') {
+        const f = fwd.get(t.from);
+        if (f) f.push(t.to);
+        else fwd.set(t.from, [t.to]);
+        const r = rev.get(t.to);
+        if (r) r.push(t.from);
+        else rev.set(t.to, [t.from]);
+      }
+    }
+    // (1) forward-reachable from `initial`
+    const reachable = new Set<string>([machine.initial]);
+    const fq: string[] = [machine.initial];
+    while (fq.length > 0) {
+      for (const nxt of fwd.get(fq.shift() as string) ?? []) {
+        if (!reachable.has(nxt)) {
+          reachable.add(nxt);
+          fq.push(nxt);
+        }
+      }
+    }
+    // (2) can reach a terminal — reverse BFS seeded from every terminal
+    const canComplete = new Set<string>(terminalSet);
+    const rq: string[] = [...terminalSet];
+    while (rq.length > 0) {
+      for (const prev of rev.get(rq.shift() as string) ?? []) {
+        if (!canComplete.has(prev)) {
+          canComplete.add(prev);
+          rq.push(prev);
+        }
+      }
+    }
+    // (3) every reachable state must be able to complete
+    const stuck = [...reachable].find((st) => !canComplete.has(st));
+    if (stuck !== undefined) {
+      err(
+        'terminal_unreachable',
+        `${mp}.transitions`,
+        `state "${stuck}" is reachable from the initial state but cannot reach any terminal — the session can get stuck and never complete`,
+      );
+    }
+  }
+  // PLG-29 #17: every DECLARED move must appear in ≥1 transition — a move
+  // declared but wired into no transition renders as a legal action the player
+  // can never take (dead consent surface). Full state×move totality is
+  // intentionally NOT required (moves are legitimately state-gated — see the
+  // narrowed "partial function" doc on PluginMachine); this only rejects a move
+  // that is unusable everywhere.
+  const usedMoves = new Set<string>();
+  for (const t of transitions) {
+    if (isPlainObject(t) && typeof t.move === 'string') usedMoves.add(t.move);
+  }
+  for (const name of moves) {
+    if (!usedMoves.has(name)) {
+      err(
+        'unused_move',
+        `${mp}.moves.${name}`,
+        `declared move "${name}" appears in no transition — it can never be played`,
       );
     }
   }

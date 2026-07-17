@@ -232,9 +232,13 @@ export interface PluginMachineTransition {
 }
 
 /**
- * Interpreted-session state machine (§5). Transitions are total
- * functions at runtime; here we pin the declared shape. `timeouts` are
- * behavior-hash material (§8.1): pressure- and spam-relevant.
+ * Interpreted-session state machine (§5). Transitions are a PARTIAL function
+ * over the declared `(state, move)` pairs — moves are legitimately state-gated
+ * (e.g. `fire` only in `battle`), so not every `state × move` pair is defined.
+ * The validator DOES require: ≥1 transition, every non-terminal state has an
+ * outgoing edge, every declared move is used by ≥1 transition, and at least one
+ * terminal is reachable from `initial` (PLG-28 #12 / PLG-29 #16/#17). `timeouts`
+ * are behavior-hash material (§8.1): pressure- and spam-relevant.
  */
 export interface PluginMachine {
   readonly initial: string;

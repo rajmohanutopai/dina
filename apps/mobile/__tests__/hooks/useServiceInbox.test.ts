@@ -19,6 +19,7 @@ import {
   InboxNotConfiguredError,
   approvePending,
   denyPending,
+  getApprovalLifecycle,
   listPendingApprovals,
   listResolvedApprovals,
   resetInboxCoreClient,
@@ -308,10 +309,56 @@ describe('useServiceInbox', () => {
     const [entry] = await listPendingApprovals();
     expect(entry.kind).toBe('vault_read');
     expect(entry.capability).toBe('health');
-    expect(entry.serviceName).toBe('Vault access');
+    // PLG-29 #1: the exact mode rides in the projection + headline chrome.
+    expect(entry.accessMode).toBe('read');
+    expect(entry.serviceName).toBe('Vault read access');
     expect(entry.description).toBe('private health question');
     expect(entry.requesterDID).toBe('did:key:z6MkAgentOpenClaw');
     expect(entry.paramsPreview).toBe('private health question');
+  });
+
+  it('PLG-29 #1: a WRITE agent persona-access request surfaces WRITE, not generic access', async () => {
+    const { client } = stubClient({
+      list: [
+        makeTask({
+          id: 'agent-access-health-write',
+          description: 'Agent requests write access to "health"',
+          payload: JSON.stringify({
+            type: 'agent_persona_access',
+            agent_did: 'did:key:z6MkAgentOpenClaw',
+            persona: 'health',
+            mode: 'write',
+            scope: 'log my blood pressure',
+          }),
+        }),
+      ],
+    });
+    setInboxCoreClient(client);
+    const [entry] = await listPendingApprovals();
+    expect(entry.accessMode).toBe('write');
+    expect(entry.serviceName).toBe('Vault WRITE access');
+  });
+
+  it('PLG-29 #1: a missing/garbled mode fails SAFE to write (never under-states authority)', async () => {
+    const { client } = stubClient({
+      list: [
+        makeTask({
+          id: 'agent-access-health-nomode',
+          description: 'Agent requests access to "health"',
+          payload: JSON.stringify({
+            type: 'agent_persona_access',
+            agent_did: 'did:key:z6MkAgentOpenClaw',
+            persona: 'health',
+            // no `mode` field at all
+            scope: 'unspecified',
+          }),
+        }),
+      ],
+    });
+    setInboxCoreClient(client);
+    const [entry] = await listPendingApprovals();
+    expect(entry.accessMode).toBe('write');
+    expect(entry.serviceName).toBe('Vault WRITE access');
   });
 
   it('denyPending(intent_validation) cancels the task without service.respond', async () => {
@@ -425,7 +472,15 @@ describe('useServiceInbox', () => {
       setInboxCoreClient(client);
       const entries = await listResolvedApprovals();
       const states = calls.filters.map((f) => f.state).sort();
-      expect(states).toEqual(['cancelled', 'completed', 'failed', 'queued', 'recorded', 'running']);
+      expect(states).toEqual([
+        'cancelled',
+        'completed',
+        'failed',
+        'outcome_unknown',
+        'queued',
+        'recorded',
+        'running',
+      ]);
       // The Completed tab is the inverse of the Pending tab — it must
       // never re-query the pending bucket.
       expect(states).not.toContain('pending_approval');
@@ -454,9 +509,14 @@ describe('useServiceInbox', () => {
       expect(outcome.rec).toBe('approved');
       // Operator deny resolves the task as cancelled.
       expect(outcome.denied).toBe('denied');
-      // A plain run failure (no error='expired') is also "denied" from the
-      // user's perspective — no data came back.
-      expect(outcome.errored).toBe('denied');
+      // PLG-31 #16: a plain run failure (no error='expired') got PAST approval, so
+      // the OWNER DECISION is 'approved' — the failure lives in executionResult,
+      // not mislabeled as an owner denial.
+      expect(outcome.errored).toBe('approved');
+      const execution = Object.fromEntries(entries.map((e) => [e.id, e.executionResult]));
+      expect(execution.errored).toBe('failed');
+      expect(execution.c).toBe('completed');
+      expect(execution.q).toBe('pending');
     });
 
     it("treats a TTL-lapsed task (failed + error='expired') as expired, not denied", async () => {
@@ -473,8 +533,15 @@ describe('useServiceInbox', () => {
       setInboxCoreClient(client);
       const entries = await listResolvedApprovals();
       const outcome = Object.fromEntries(entries.map((e) => [e.id, e.outcome]));
+      const execution = Object.fromEntries(entries.map((e) => [e.id, e.executionResult]));
+      // A genuine timeout is the one failure that reads as an owner-side
+      // non-decision ('expired'); it never got run.
       expect(outcome.lapsed).toBe('expired');
-      expect(outcome.crashed).toBe('denied');
+      // PLG-31 #16: a real post-approval crash is NOT a denial — the owner
+      // approved, so the outcome stays 'approved' and the crash surfaces in
+      // executionResult instead of masquerading as a deny.
+      expect(outcome.crashed).toBe('approved');
+      expect(execution.crashed).toBe('failed');
     });
 
     it('orders resolved entries newest-first by resolvedAt (updated_at)', async () => {
@@ -521,6 +588,61 @@ describe('useServiceInbox', () => {
       setInboxCoreClient(client);
       const entries = await listResolvedApprovals();
       expect(entries.map((e) => e.id)).toEqual(['ok']);
+    });
+
+    it('PLG-32 #26: a TOTAL fetch failure THROWS instead of masquerading as empty history', async () => {
+      // Every per-state fetch fails (auth / network / DB down). Swallowing them
+      // all to [] would show a plausible-but-false "no history"; the caller must
+      // see a real error to surface it.
+      const allStates = [
+        'completed',
+        'queued',
+        'running',
+        'recorded',
+        'cancelled',
+        'failed',
+        'outcome_unknown',
+      ];
+      const { client } = stubResolvedClient({}, { errorStates: allStates });
+      setInboxCoreClient(client);
+      await expect(listResolvedApprovals()).rejects.toThrow(/boom/);
+    });
+  });
+
+  describe('getApprovalLifecycle (PLG-32 #21)', () => {
+    function lifecycleClientFor(status: string): InboxCoreClient {
+      return {
+        async listWorkflowTasks() {
+          return [];
+        },
+        async approveWorkflowTask(id: string) {
+          return makeTask({ id, status });
+        },
+        async cancelWorkflowTask(id: string) {
+          return makeTask({ id, status });
+        },
+        async sendServiceRespond(id: string) {
+          return { status: 'sent', taskId: id, alreadyProcessed: false };
+        },
+        async getWorkflowTask(id: string) {
+          return makeTask({ id, status });
+        },
+      } as unknown as InboxCoreClient;
+    }
+
+    it('maps outcome_unknown to its OWN "unknown" bucket, not "missing" (→ chat "Denied")', async () => {
+      setInboxCoreClient(lifecycleClientFor('outcome_unknown'));
+      expect(await getApprovalLifecycle('t-uk')).toBe('unknown');
+    });
+
+    it('an unrecognized terminal state is "missing" (non-actionable), never "pending"', async () => {
+      setInboxCoreClient(lifecycleClientFor('teleported'));
+      expect(await getApprovalLifecycle('t-weird')).toBe('missing');
+    });
+
+    it('a genuine deny/fail is still "denied"', async () => {
+      setInboxCoreClient(lifecycleClientFor('cancelled'));
+      expect(await getApprovalLifecycle('t-den')).toBe('denied');
     });
   });
 });

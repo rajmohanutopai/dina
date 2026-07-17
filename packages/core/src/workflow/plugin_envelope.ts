@@ -23,7 +23,59 @@
  * otherwise.
  */
 
+import { hasUnsafeText } from '@dina/protocol';
+
 export const PLUGIN_INVOCATION_PAYLOAD_TYPE = 'plugin_invocation';
+
+/**
+ * PLG-29 #14: envelope identity / hash / key fields are pinned AUTHORITY — they
+ * flow into SQL rows, owner-facing receipts, logs, and lane routing. The old
+ * parser only tested "nonempty string", so a faulty producer could pin an
+ * oversized or spoofing identifier and have it ride to the runner + receipt.
+ * Bound the length and reject control/bidi/zero-width chars on every such field.
+ */
+const MAX_ENVELOPE_STRING_LENGTH = 256;
+
+/** PLG-29 #14: `action_class` is a fixed catalog enum, not free text. */
+const VALID_ACTION_CLASSES: ReadonlySet<string> = new Set([
+  'read',
+  'quote',
+  'write',
+  'booking',
+  'payment',
+  'agentic',
+]);
+
+/**
+ * PLG-29 #13: cap `schema_snapshot` nesting + size. The claim guard canonicalizes
+ * it (`canonicalJson(envelope.schema_snapshot)`) inside a catch-free loop, so a
+ * deeply-nested or huge snapshot would throw there — leaving the task claimed
+ * until lease recovery and repeatedly breaking claims. Bounding it here
+ * quarantines the whole envelope at parse (→ a clean terminalize) instead.
+ */
+const MAX_SCHEMA_SNAPSHOT_DEPTH = 32;
+const MAX_SCHEMA_SNAPSHOT_BYTES = 128 * 1024;
+
+/** A bounded, non-empty, spoof-free identity/hash/key string (PLG-29 #14). */
+function isBoundedIdentityString(v: unknown): v is string {
+  return (
+    typeof v === 'string' &&
+    v.length > 0 &&
+    v.length <= MAX_ENVELOPE_STRING_LENGTH &&
+    !hasUnsafeText(v)
+  );
+}
+
+/** True if `value` nests deeper than `max` (PLG-29 #13 — bounded recursion). */
+function exceedsDepth(value: unknown, max: number, depth = 0): boolean {
+  if (depth > max) return true;
+  if (value === null || typeof value !== 'object') return false;
+  const children = Array.isArray(value) ? value : Object.values(value as Record<string, unknown>);
+  for (const child of children) {
+    if (exceedsDepth(child, max, depth + 1)) return true;
+  }
+  return false;
+}
 
 /** Core-owned retry budget (§9.1; constants tunable, §21 decision 11). */
 export const PLUGIN_RETRY = Object.freeze({
@@ -86,6 +138,17 @@ export interface PluginTaskEnvelope {
    * producer pins the same digest it passed to `authorizeAndConsume`.
    */
   readonly invocation_digest?: string;
+  /**
+   * PLG-29 #4: the resource tag + declared value this invocation was authorized
+   * for. Grant-authorization artifacts (present iff authorization_kind ===
+   * 'grant'), pinned by the producer so the claim guard can RECOMPUTE the
+   * invocation digest from the envelope's own Core-owned fields — rather than
+   * trusting the producer-supplied `invocation_digest`. That binds the actual
+   * dispatched invocation to the one charged against the grant, closing the
+   * consume-A-dispatch-B gap.
+   */
+  readonly resource?: string;
+  readonly value?: number;
 }
 
 /** Round-15 #7: the EXACT top-level key set a plugin envelope may carry. Any
@@ -107,6 +170,9 @@ const KNOWN_ENVELOPE_FIELDS: ReadonlySet<string> = new Set([
   'authorization_kind',
   'grant_id',
   'invocation_digest',
+  // PLG-29 #4: grant-authorization artifacts for the claim-time digest recompute.
+  'resource',
+  'value',
 ]);
 
 /**
@@ -134,35 +200,54 @@ export function parsePluginEnvelope(payload: string): PluginTaskEnvelope | null 
   for (const k of Object.keys(p)) {
     if (!KNOWN_ENVELOPE_FIELDS.has(k)) return null;
   }
+  // PLG-29 #14: every pinned identity/hash/key field is bounded + spoof-free
+  // (was: any nonempty string). `action_class` must be a catalog enum member.
   if (
-    typeof p.install_id !== 'string' ||
-    p.install_id === '' ||
-    typeof p.capability_id !== 'string' ||
-    p.capability_id === '' ||
-    typeof p.manifest_cid !== 'string' ||
-    p.manifest_cid === '' ||
-    typeof p.approved_scope_hash !== 'string' ||
-    p.approved_scope_hash === '' ||
+    !isBoundedIdentityString(p.install_id) ||
+    !isBoundedIdentityString(p.capability_id) ||
+    !isBoundedIdentityString(p.manifest_cid) ||
+    !isBoundedIdentityString(p.approved_scope_hash) ||
     typeof p.config_revision !== 'number' ||
     !Number.isInteger(p.config_revision) ||
-    typeof p.execution_id !== 'string' ||
-    p.execution_id === '' ||
-    typeof p.idempotency_key !== 'string' ||
-    p.idempotency_key === '' ||
+    !isBoundedIdentityString(p.execution_id) ||
+    !isBoundedIdentityString(p.idempotency_key) ||
     typeof p.action_class !== 'string' ||
+    !VALID_ACTION_CLASSES.has(p.action_class) ||
     (p.effects_idempotency !== 'supported' && p.effects_idempotency !== 'unsupported')
   ) {
     return null;
   }
+  // PLG-29 #13: reject a schema_snapshot too deep / large to canonicalize safely,
+  // so the claim guard's catch-free `canonicalJson(schema_snapshot)` can never
+  // overflow the stack mid-loop and strand the task claimed.
+  if (p.schema_snapshot !== undefined && p.schema_snapshot !== null) {
+    if (exceedsDepth(p.schema_snapshot, MAX_SCHEMA_SNAPSHOT_DEPTH)) return null;
+    let snapshotBytes: number;
+    try {
+      // PLG-30 #16: count ENCODED UTF-8 bytes, not UTF-16 code units. `String
+      // .length` under-counts non-ASCII (CJK = 1 unit / 3 bytes), so the 128 KB
+      // cap could pass a ~384 KB snapshot. Match the params/context/result byte
+      // bounds in dispatch.ts, which already use TextEncoder.
+      snapshotBytes = new TextEncoder().encode(JSON.stringify(p.schema_snapshot) ?? '').length;
+    } catch {
+      return null; // non-serializable (cycle) → cannot canonicalize
+    }
+    if (snapshotBytes > MAX_SCHEMA_SNAPSHOT_BYTES) return null;
+  }
   // Round-12 #2/#3/#6/#1: the optional authorization-provenance fields, when
   // present, must be well-formed — a malformed value must quarantine the whole
   // envelope (null), never be trusted as authority by the claim guard.
+  // PLG-29 #14: grant_id / invocation_digest are bounded + spoof-free like every
+  // other identity field. PLG-29 #4: resource (bounded string) + value (finite
+  // number) are the recompute inputs the claim guard hashes.
   if (
     (p.authorization_kind !== undefined &&
       p.authorization_kind !== 'grant' &&
       p.authorization_kind !== 'card') ||
-    (p.grant_id !== undefined && (typeof p.grant_id !== 'string' || p.grant_id === '')) ||
-    (p.invocation_digest !== undefined && typeof p.invocation_digest !== 'string')
+    (p.grant_id !== undefined && !isBoundedIdentityString(p.grant_id)) ||
+    (p.invocation_digest !== undefined && !isBoundedIdentityString(p.invocation_digest)) ||
+    (p.resource !== undefined && !isBoundedIdentityString(p.resource)) ||
+    (p.value !== undefined && (typeof p.value !== 'number' || !Number.isFinite(p.value)))
   ) {
     return null;
   }
@@ -171,15 +256,19 @@ export function parsePluginEnvelope(payload: string): PluginTaskEnvelope | null 
   if (p.authorization_kind === 'grant' && (typeof p.grant_id !== 'string' || p.grant_id === '')) {
     return null;
   }
-  // Round-16 #20: the REVERSE coherence too. grant_id / invocation_digest are
-  // grant-authorization artifacts; the claim guard only validates them under
-  // kind:'grant' (check 7 is gated on that). On a 'card' / absent envelope they
-  // are unverifiable — quarantine rather than let forged/ambiguous provenance
-  // ride into the receipt. (buildPluginEnvelope only emits these under a
-  // supplied authorization.kind, so no legitimate producer path regresses.)
+  // Round-16 #20 + PLG-29 #4: the REVERSE coherence too. grant_id /
+  // invocation_digest / resource / value are grant-authorization artifacts; the
+  // claim guard only validates them under kind:'grant' (check 7 is gated on
+  // that). On a 'card' / absent envelope they are unverifiable — quarantine
+  // rather than let forged/ambiguous provenance ride into the receipt.
+  // (buildPluginEnvelope only emits these under a supplied authorization.kind, so
+  // no legitimate producer path regresses.)
   if (
     p.authorization_kind !== 'grant' &&
-    (p.grant_id !== undefined || p.invocation_digest !== undefined)
+    (p.grant_id !== undefined ||
+      p.invocation_digest !== undefined ||
+      p.resource !== undefined ||
+      p.value !== undefined)
   ) {
     return null;
   }

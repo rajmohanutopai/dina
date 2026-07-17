@@ -156,11 +156,20 @@ function deepEqual(a: unknown, b: unknown): boolean {
   if (Array.isArray(a) && Array.isArray(b)) {
     return a.length === b.length && a.every((x, i) => deepEqual(x, b[i]));
   }
+  // PLG-30 #10: an array and a plain object are NEVER equal — without this an
+  // enum match of `[1]` against a runner result `{ "0": 1 }` (or `[]` vs `{}`)
+  // passed, because both fell through to the Object.keys comparison
+  // (`['0']` === `['0']`). Reject the type mismatch so a result outside a pinned
+  // array/object enum can't slip through.
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
   if (typeof a === 'object' && typeof b === 'object') {
     const ka = Object.keys(a as object);
     const kb = Object.keys(b as object);
+    // PLG-30 #10: require a SYMMETRIC key set (every own key of b exists on a),
+    // not just equal counts — closes the `{x:undefined}` vs `{y:undefined}` edge.
     return (
       ka.length === kb.length &&
+      ka.every((k) => Object.prototype.hasOwnProperty.call(b, k)) &&
       ka.every((k) =>
         deepEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]),
       )

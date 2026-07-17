@@ -49,8 +49,9 @@ jest.mock('../../src/storage/init', () => ({
   isPersistenceReady: (): boolean => true,
 }));
 
-// pending + six resolved-history states = 7 listWorkflowTasks calls per load.
-const CALLS_PER_LOAD = 7;
+// pending + seven resolved-history states (incl. PLG-31 #14 outcome_unknown) =
+// 8 listWorkflowTasks calls per load.
+const CALLS_PER_LOAD = 8;
 
 function pendingTask(
   id: string,
@@ -104,10 +105,7 @@ function resolvedTask(id: string, updatedAt: number): WorkflowTask {
  * pending-state query and `resolved` for `state==='completed'` (one of the
  * six resolved-history states); every other resolved state returns [].
  */
-function stubClient(opts: {
-  pending?: WorkflowTask[];
-  resolvedCompleted?: WorkflowTask[];
-}): {
+function stubClient(opts: { pending?: WorkflowTask[]; resolvedCompleted?: WorkflowTask[] }): {
   client: InboxCoreClient;
   setPending: (next: WorkflowTask[]) => void;
   listCalls: { value: number };
@@ -188,6 +186,42 @@ describe('Approval inbox inline in Activity — Needs action', () => {
     // MODERATE intent supports session scope → the 3-button shape.
     expect(screen.getByTestId('approvals-approve-once-t-1')).toBeTruthy();
     expect(screen.getByTestId('approvals-approve-t-1')).toBeTruthy();
+  });
+
+  it('PLG-31 #2: an agent persona-access card offers Deny + Approve only (no session-scope Approve Once)', async () => {
+    // agent_persona_access parses to kind='vault_read' WITH an accessMode set —
+    // a persona-access grant is not session-scopable, so the "Approve Once"
+    // (single vs session) choice must not appear. Contrast the intent card above,
+    // whose accessMode is undefined and DOES offer the 3-button shape.
+    const agentAccessTask: WorkflowTask = {
+      id: 'pa-1',
+      kind: 'approval',
+      status: 'pending_approval',
+      priority: 'normal',
+      description: 'Agent requests read access to "health"',
+      payload: JSON.stringify({
+        type: 'agent_persona_access',
+        agent_did: 'did:key:zAgentTest',
+        persona: 'health',
+        mode: 'read',
+        scope: 'a private question',
+      }),
+      result_summary: '',
+      policy: '',
+      created_at: 1_000,
+      updated_at: 1_000,
+    };
+    const stub = stubClient({ pending: [agentAccessTask] });
+    setInboxCoreClient(stub.client);
+
+    const screen = render(<NotificationsScreen />);
+    await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
+    fireEvent.press(screen.getByTestId('filter-needs_action'));
+
+    expect(screen.getByTestId('approvals-deny-pa-1')).toBeTruthy();
+    expect(screen.getByTestId('approvals-approve-pa-1')).toBeTruthy();
+    // No session-scope choice for a persona-access grant.
+    expect(screen.queryByTestId('approvals-approve-once-pa-1')).toBeNull();
   });
 
   it('Approve grants session scope; Approve Once grants single', async () => {

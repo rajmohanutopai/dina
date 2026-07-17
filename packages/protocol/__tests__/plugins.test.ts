@@ -111,10 +111,18 @@ function interpretedManifest(): PluginManifest {
           moves: {
             place: { type: 'object' },
             fire: { type: 'object', properties: { x: { type: 'number' } } },
+            // PLG-29 #16/#17: distinct terminal-reaching moves so both terminals
+            // are reachable from `initial` and every declared move is used —
+            // reusing `fire` for a battle→won edge would trip ambiguous_transition
+            // on the (battle, fire) pair.
+            win: { type: 'object' },
+            lose: { type: 'object' },
           },
           transitions: [
             { from: 'placing', move: 'place', ops: ['commit'], to: 'battle' },
             { from: 'battle', move: 'fire', ops: ['verifyCommit', 'compare'], to: 'battle' },
+            { from: 'battle', move: 'win', ops: ['verifyCommit'], to: 'won' },
+            { from: 'battle', move: 'lose', ops: ['verifyCommit'], to: 'lost' },
           ],
           turn: 'alternate',
           timeouts: { move_sec: 86400, session_ttl_sec: 604800 },
@@ -1829,5 +1837,123 @@ describe('round-18 (PLG-28) hardening', () => {
         validatePluginManifest(mutate(runnerManifest(), (mm) => (mm.icon = { cid: 'bafyabc' }))),
       ),
     ).not.toContain('bad_icon');
+  });
+});
+
+describe('round-19 (PLG-29) hardening', () => {
+  const codes = (r: PluginValidationResult): string[] => (r.ok ? [] : r.errors.map((e) => e.code));
+
+  it('#16: a machine with no terminal reachable from initial is rejected', () => {
+    const m = mutate(interpretedManifest(), (mm) => {
+      // Back to a machine that loops among non-terminals — won/lost exist but are
+      // unreachable (the pre-fix golden shape).
+      mm.capabilities[0].machine.moves = {
+        place: { type: 'object' },
+        fire: { type: 'object' },
+      };
+      mm.capabilities[0].machine.transitions = [
+        { from: 'placing', move: 'place', ops: ['commit'], to: 'battle' },
+        { from: 'battle', move: 'fire', ops: ['verifyCommit'], to: 'battle' },
+      ];
+    });
+    expect(codes(validatePluginManifest(m))).toContain('terminal_unreachable');
+    // The (fixed) golden fixture reaches its terminals.
+    expect(codes(validatePluginManifest(interpretedManifest()))).not.toContain(
+      'terminal_unreachable',
+    );
+  });
+
+  it('#17: a declared move used by no transition is rejected', () => {
+    const m = mutate(interpretedManifest(), (mm) => {
+      mm.capabilities[0].machine.moves.orphan = { type: 'object' };
+    });
+    expect(codes(validatePluginManifest(m))).toContain('unused_move');
+  });
+
+  it('#18: a bidi/control char inside an object icon ref value is rejected', () => {
+    expect(
+      codes(validatePluginManifest(mutate(runnerManifest(), (mm) => (mm.icon = { cid: 'ba‮fy' })))),
+    ).toContain('bad_icon');
+    // A clean object ref value still passes.
+    expect(
+      codes(
+        validatePluginManifest(mutate(runnerManifest(), (mm) => (mm.icon = { cid: 'bafyclean' }))),
+      ),
+    ).not.toContain('bad_icon');
+  });
+});
+
+describe('round-20 (PLG-30) hardening', () => {
+  const codes = (r: PluginValidationResult): string[] => (r.ok ? [] : r.errors.map((e) => e.code));
+
+  it('#11: a reachable non-terminal that cannot reach any terminal is rejected', () => {
+    // `initial` CAN reach a terminal (placing→won), so the old any-terminal check
+    // passed — but battle/stuck loop forever and can never complete.
+    const m = mutate(interpretedManifest(), (mm) => {
+      mm.capabilities[0].machine.states = ['placing', 'battle', 'stuck', 'won'];
+      mm.capabilities[0].machine.terminal = ['won'];
+      mm.capabilities[0].machine.moves = {
+        place: { type: 'object' },
+        go: { type: 'object' },
+        loop: { type: 'object' },
+      };
+      mm.capabilities[0].machine.transitions = [
+        { from: 'placing', move: 'place', ops: ['commit'], to: 'won' },
+        { from: 'placing', move: 'go', ops: ['commit'], to: 'battle' },
+        { from: 'battle', move: 'loop', ops: ['commit'], to: 'stuck' },
+        { from: 'stuck', move: 'loop', ops: ['commit'], to: 'battle' },
+      ];
+      mm.capabilities[0].ops_used = ['commit'];
+    });
+    expect(codes(validatePluginManifest(m))).toContain('terminal_unreachable');
+    // The golden fixture: every reachable non-terminal reaches a terminal.
+    expect(codes(validatePluginManifest(interpretedManifest()))).not.toContain(
+      'terminal_unreachable',
+    );
+  });
+
+  it('#12: a transition OUT of a terminal state is rejected', () => {
+    const m = mutate(interpretedManifest(), (mm) => {
+      mm.capabilities[0].machine.transitions.push({
+        from: 'won', // terminal must be absorbing
+        move: 'place',
+        ops: ['commit'],
+        to: 'battle',
+      });
+    });
+    expect(codes(validatePluginManifest(m))).toContain('transition_from_terminal');
+  });
+
+  it('#14: an object icon with only $type (no real reference) is rejected', () => {
+    expect(
+      codes(
+        validatePluginManifest(mutate(runnerManifest(), (mm) => (mm.icon = { $type: 'blob' }))),
+      ),
+    ).toContain('bad_icon');
+    // $type accompanied by a real content reference passes.
+    expect(
+      codes(
+        validatePluginManifest(
+          mutate(runnerManifest(), (mm) => (mm.icon = { $type: 'blob', cid: 'bafyreal' })),
+        ),
+      ),
+    ).not.toContain('bad_icon');
+  });
+
+  it('#17: a negative / NaN / fractional rawByteLength does not bypass the size cap', () => {
+    // Malformed lengths are IGNORED (the validator measures the manifest itself);
+    // a small manifest stays valid rather than sailing through on a bogus count.
+    for (const raw of [-1, NaN, 1.5, -1000000]) {
+      expectOk(validatePluginManifest(runnerManifest(), { rawByteLength: raw }));
+    }
+    // A genuine finite over-cap count is still honored (regression of the existing
+    // behavior).
+    expect(
+      codes(
+        validatePluginManifest(runnerManifest(), {
+          rawByteLength: PLUGIN_CAPS.MAX_MANIFEST_BYTES + 1,
+        }),
+      ),
+    ).toContain('manifest_too_large');
   });
 });

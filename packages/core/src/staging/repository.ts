@@ -14,6 +14,8 @@
  * Source: ARCHITECTURE.md — op-sqlite persistence layer
  */
 
+import { isValidDataScope } from '../scope/data_scope';
+
 import type { StagingItem } from './service';
 import type { DataScope } from '../scope/data_scope';
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
@@ -33,6 +35,15 @@ export interface StagingRepository {
     sourceId: string,
     scope: DataScope,
   ): StagingItem | null;
+  /**
+   * PLG-32 #10: delete the row holding a dedup key regardless of whether it
+   * projects. `findByDedup` returns null for a CORRUPT row (it quarantines at
+   * read), yet the raw row still occupies the UNIQUE(producer, source,
+   * source_id, scope) key — so `INSERT OR IGNORE` silently no-ops AND the read
+   * returns nothing, dead-locking that key. `ingest`'s reconcile uses this to
+   * evict the unreadable row and retry the insert (repair-on-conflict).
+   */
+  deleteByDedup(producerId: string, source: string, sourceId: string, scope: DataScope): void;
   /**
    * Claim up to `limit` `received` items IN `scope` (data-scope isolation: the
    * drain must not claim a guided-demo row while on the user scope, or vice
@@ -65,9 +76,16 @@ export class SQLiteStagingRepository implements StagingRepository {
 
   ingest(item: StagingItem): boolean {
     // ON CONFLICT(producer_id, source, source_id) DO NOTHING handles dedup
+    // PLG-30 #3: persist `classified_item` + `approval_id` AT INGEST. The
+    // resolveMulti locked-secondary path creates copies carrying BOTH (the vault
+    // payload + its approval task), but ingest() used to drop them — so after a
+    // restart the copy could neither be found by its approval (approval_id NULL)
+    // nor written (classified_item NULL). `updateStatus` already persists them;
+    // mirror that here so an item that arrives with them round-trips. The
+    // InMemory store already clones both, so this closes a dual-store divergence.
     const result = this.db.run(
-      `INSERT OR IGNORE INTO staging_inbox (id, source, source_id, producer_id, status, persona, retry_count, lease_until, expires_at, created_at, data, source_hash, data_scope)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT OR IGNORE INTO staging_inbox (id, source, source_id, producer_id, status, persona, retry_count, lease_until, expires_at, created_at, data, source_hash, data_scope, classified_item, approval_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         item.id,
         item.source,
@@ -82,6 +100,8 @@ export class SQLiteStagingRepository implements StagingRepository {
         JSON.stringify(item.data),
         item.source_hash,
         item.data_scope,
+        item.classified_item !== undefined ? JSON.stringify(item.classified_item) : null,
+        item.approval_id ?? null,
       ],
     );
     return result > 0;
@@ -105,6 +125,13 @@ export class SQLiteStagingRepository implements StagingRepository {
     return rows.length > 0 ? rowToStagingItem(rows[0]) : null;
   }
 
+  deleteByDedup(producerId: string, source: string, sourceId: string, scope: DataScope): void {
+    this.db.execute(
+      'DELETE FROM staging_inbox WHERE producer_id = ? AND source = ? AND source_id = ? AND data_scope = ?',
+      [producerId, source, sourceId, scope],
+    );
+  }
+
   claim(limit: number, leaseDuration: number, now: number, scope: DataScope): StagingItem[] {
     const leaseUntil = now + leaseDuration;
     const candidates = this.db.query<{ id: string }>(
@@ -119,19 +146,26 @@ export class SQLiteStagingRepository implements StagingRepository {
 
     const placeholders = ids.map(() => '?').join(', ');
     this.db.transaction(() => {
+      // PLG-31 #4: GUARD the claim write on `status='received'` (+ scope) so a row
+      // another worker already claimed between the candidate SELECT and here is not
+      // re-flipped — the SELECT and UPDATE were previously separate unguarded
+      // statements (two connections could both claim the same rows).
       this.db.execute(
         `UPDATE staging_inbox SET status = 'classifying', lease_until = ?
-         WHERE id IN (${placeholders})`,
-        [leaseUntil, ...ids],
+         WHERE id IN (${placeholders}) AND status = 'received' AND data_scope = ?`,
+        [leaseUntil, ...ids, scope],
       );
     });
+    // Return ONLY the rows THIS call transitioned — filter on the just-stamped
+    // lease (a claim token) + 'classifying', so a concurrent claimer that took some
+    // candidates can't have them double-returned here.
     const rows = this.db.query(
       `SELECT * FROM staging_inbox
-       WHERE id IN (${placeholders})
+       WHERE id IN (${placeholders}) AND status = 'classifying' AND lease_until = ?
        ORDER BY created_at ASC, id ASC`,
-      ids,
+      [...ids, leaseUntil],
     );
-    return rows.map(rowToStagingItem);
+    return mapStagingItems(rows);
   }
 
   updateStatus(id: string, status: string, updates?: Partial<StagingItem>): void {
@@ -215,15 +249,13 @@ export class SQLiteStagingRepository implements StagingRepository {
   }
 
   listByStatus(status: string): StagingItem[] {
-    return this.db
-      .query('SELECT * FROM staging_inbox WHERE status = ?', [status])
-      .map(rowToStagingItem);
+    return mapStagingItems(this.db.query('SELECT * FROM staging_inbox WHERE status = ?', [status]));
   }
 
   listAll(): StagingItem[] {
-    return this.db
-      .query('SELECT * FROM staging_inbox ORDER BY created_at ASC, id ASC')
-      .map(rowToStagingItem);
+    return mapStagingItems(
+      this.db.query('SELECT * FROM staging_inbox ORDER BY created_at ASC, id ASC'),
+    );
   }
 
   size(): number {
@@ -261,6 +293,13 @@ export class InMemoryStagingRepository implements StagingRepository {
   ): StagingItem | null {
     const id = this.dedup.get(dedupKey(producerId, source, sourceId, scope));
     return id ? this.get(id) : null;
+  }
+
+  deleteByDedup(producerId: string, source: string, sourceId: string, scope: DataScope): void {
+    const key = dedupKey(producerId, source, sourceId, scope);
+    const id = this.dedup.get(key);
+    if (id !== undefined) this.rows.delete(id);
+    this.dedup.delete(key);
   }
 
   claim(limit: number, leaseDuration: number, now: number, scope: DataScope): StagingItem[] {
@@ -342,49 +381,98 @@ export class InMemoryStagingRepository implements StagingRepository {
   }
 }
 
-function rowToStagingItem(row: DBRow): StagingItem {
-  let data: Record<string, unknown> = {};
+/** PLG-31 #6: the known staging states — a row outside this set is corrupt. */
+const VALID_STAGING_STATUSES: ReadonlySet<string> = new Set([
+  'received',
+  'classifying',
+  'stored',
+  'pending_unlock',
+  'pending_approval',
+  'failed',
+]);
+
+/**
+ * Project a DB row to a StagingItem, or QUARANTINE it (return null) when it is
+ * CORRUPT (PLG-31 #6). Previously a malformed `data` / `classified_item` JSON was
+ * silently swallowed to a benign default and every scalar blind-cast, so a corrupt
+ * row was returned as a valid-looking empty item — which `drainForPersona` would
+ * then mark `stored` with nothing written (silent data loss). Mirror the plugin
+ * registry's rowToInstall→null quarantine: a parse failure or an out-of-enum
+ * status means the row is dropped from `claim`/`listByStatus`/`listAll` and read
+ * as null by `get`/`findByDedup`, never normalized.
+ */
+function rowToStagingItem(row: DBRow): StagingItem | null {
+  let data: Record<string, unknown>;
   try {
-    data = JSON.parse(String(row.data ?? '{}'));
+    const parsed = JSON.parse(String(row.data ?? '{}')) as unknown;
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    data = parsed as Record<string, unknown>;
   } catch {
-    /* */
+    return null;
   }
 
   let classifiedItem: Record<string, unknown> | undefined;
-  if (row.classified_item) {
+  if (
+    row.classified_item !== null &&
+    row.classified_item !== undefined &&
+    row.classified_item !== ''
+  ) {
     try {
-      classifiedItem = JSON.parse(String(row.classified_item));
+      const parsed = JSON.parse(String(row.classified_item)) as unknown;
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+      classifiedItem = parsed as Record<string, unknown>;
     } catch {
-      /* */
+      return null;
     }
   }
+
+  const status = String(row.status ?? 'received');
+  if (!VALID_STAGING_STATUSES.has(status)) return null;
+
+  // PLG-32 #11: quarantine on corrupt SCALAR columns too, not just bad JSON /
+  // out-of-enum status. An unknown `data_scope` yields a row invisible to every
+  // scope-filtered claim (stuck forever); a NaN / negative timestamp makes the
+  // `expires_at < now` sweep never delete it (NaN comparisons are always false)
+  // and a negative retry_count corrupts the dead-letter arithmetic. Drop the row
+  // (same null-quarantine contract) rather than surface a normalized-but-broken
+  // item the drain would mishandle.
+  const dataScope = String(row.data_scope ?? 'user') || 'user';
+  if (!isValidDataScope(dataScope)) return null;
+  const retry_count = Number(row.retry_count ?? 0);
+  const lease_until = Number(row.lease_until ?? 0);
+  const expires_at = Number(row.expires_at ?? 0);
+  const created_at = Number(row.created_at ?? 0);
+  if (
+    ![retry_count, lease_until, expires_at, created_at].every((n) => Number.isFinite(n) && n >= 0)
+  )
+    return null;
 
   return {
     id: String(row.id ?? ''),
     source: String(row.source ?? ''),
     source_id: String(row.source_id ?? ''),
     producer_id: String(row.producer_id ?? ''),
-    status: String(row.status ?? 'received') as StagingItem['status'],
+    status: status as StagingItem['status'],
     persona: String(row.persona ?? ''),
-    retry_count: Number(row.retry_count ?? 0),
-    lease_until: Number(row.lease_until ?? 0),
-    expires_at: Number(row.expires_at ?? 0),
-    created_at: Number(row.created_at ?? 0),
+    retry_count,
+    lease_until,
+    expires_at,
+    created_at,
     data,
     source_hash: String(row.source_hash ?? ''),
     classified_item: classifiedItem,
     error: row.error ? String(row.error) : undefined,
     approval_id: row.approval_id ? String(row.approval_id) : undefined,
-    data_scope: (String(row.data_scope ?? 'user') || 'user') as DataScope,
+    data_scope: dataScope as DataScope,
   };
 }
 
-function dedupKey(
-  producerId: string,
-  source: string,
-  sourceId: string,
-  scope: DataScope,
-): string {
+/** Map rows to items, dropping any that quarantined (PLG-31 #6). */
+function mapStagingItems(rows: readonly DBRow[]): StagingItem[] {
+  return rows.map(rowToStagingItem).filter((x): x is StagingItem => x !== null);
+}
+
+function dedupKey(producerId: string, source: string, sourceId: string, scope: DataScope): string {
   return `${producerId}|${source}|${sourceId}|${scope}`;
 }
 
@@ -393,9 +481,21 @@ function cloneNullable(item: StagingItem | undefined): StagingItem | null {
 }
 
 function cloneItem(item: StagingItem): StagingItem {
+  // PLG-32 #27: DEEP-clone `data` / `classified_item` so the in-memory repo
+  // matches SQLite's serialize-on-store semantics (a JSON round-trip). A shallow
+  // `{ ...item.data }` left nested objects/arrays shared by reference, so a caller
+  // mutating a nested value would leak into the "stored" row — a divergence from
+  // the SQLite path that serializes (deep-copies) on write.
   return {
     ...item,
-    data: { ...item.data },
-    ...(item.classified_item ? { classified_item: { ...item.classified_item } } : {}),
+    data: JSON.parse(JSON.stringify(item.data)) as Record<string, unknown>,
+    ...(item.classified_item
+      ? {
+          classified_item: JSON.parse(JSON.stringify(item.classified_item)) as Record<
+            string,
+            unknown
+          >,
+        }
+      : {}),
   };
 }

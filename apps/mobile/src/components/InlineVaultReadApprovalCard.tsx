@@ -25,11 +25,7 @@ import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { markNotificationRead } from '@dina/brain/notifications';
 
-import {
-  approvePending,
-  denyPending,
-  getApprovalLifecycle,
-} from '../hooks/useServiceInbox';
+import { approvePending, denyPending, getApprovalLifecycle } from '../hooks/useServiceInbox';
 import { colors, radius, spacing, textStyles } from '../theme';
 
 import { MessageTimestamp } from './MessageTimestamp';
@@ -71,7 +67,13 @@ export function InlineVaultReadApprovalCard({
   // collapses to `approved-elsewhere` so the bubble shows a neutral
   // "Approved." label without claiming a scope this card didn't fire.
   const [resolved, setResolved] = useState<
-    'approved-once' | 'approved-session' | 'approved-elsewhere' | 'denied' | null
+    | 'approved-once'
+    | 'approved-session'
+    | 'approved-elsewhere'
+    | 'denied'
+    | 'unconfirmed'
+    | 'unavailable'
+    | null
   >(null);
 
   // Cross-surface sync: when the chat card mounts AND every 5s while
@@ -95,7 +97,12 @@ export function InlineVaultReadApprovalCard({
         .then((lifecycle) => {
           if (cancelled) return;
           if (lifecycle === 'approved') setResolved('approved-elsewhere');
-          else if (lifecycle === 'denied' || lifecycle === 'missing') setResolved('denied');
+          else if (lifecycle === 'denied') setResolved('denied');
+          // PLG-32 #21: `outcome_unknown` (terminal + unconfirmed) and a vanished
+          // task are NOT denials — the Activity tab shows "Unconfirmed" for the
+          // former, so the chat card must not contradict it with "Denied."
+          else if (lifecycle === 'unknown') setResolved('unconfirmed');
+          else if (lifecycle === 'missing') setResolved('unavailable');
           // The Approvals-tab approve/deny paths already markRead when
           // they call `approvePending` / `denyPending`. But if the
           // task was resolved by a surface that DOESN'T go through
@@ -133,8 +140,17 @@ export function InlineVaultReadApprovalCard({
           setResolved('approved-elsewhere');
           return true;
         }
-        if (live === 'denied' || live === 'missing') {
+        if (live === 'denied') {
           setResolved('denied');
+          return true;
+        }
+        // PLG-32 #21: never fold unconfirmed / vanished into "Denied."
+        if (live === 'unknown') {
+          setResolved('unconfirmed');
+          return true;
+        }
+        if (live === 'missing') {
+          setResolved('unavailable');
           return true;
         }
       } catch {
@@ -181,16 +197,13 @@ export function InlineVaultReadApprovalCard({
   if (meta === null) return null;
 
   const personaLabel = meta.persona !== '' ? `/${meta.persona}` : 'this persona';
-  const shortAgent =
-    meta.agentDid.length > 28 ? `${meta.agentDid.slice(0, 28)}…` : meta.agentDid;
+  const shortAgent = meta.agentDid.length > 28 ? `${meta.agentDid.slice(0, 28)}…` : meta.agentDid;
   const disabled = pending || resolved !== null;
 
   return (
     <View style={styles.card}>
       <Text style={styles.label}>🔐 Agent vault read</Text>
-      <Text style={styles.body}>
-        An agent wants to access {personaLabel}.
-      </Text>
+      <Text style={styles.body}>An agent wants to access {personaLabel}.</Text>
       {meta.reason !== '' && <Text style={styles.reason}>{meta.reason}</Text>}
       {shortAgent !== '' && <Text style={styles.agent}>{shortAgent}</Text>}
       {resolved === null && (
@@ -234,9 +247,7 @@ export function InlineVaultReadApprovalCard({
           </TouchableOpacity>
         </View>
       )}
-      {resolved === 'approved-once' && (
-        <Text style={styles.statusApproved}>Approved once.</Text>
-      )}
+      {resolved === 'approved-once' && <Text style={styles.statusApproved}>Approved once.</Text>}
       {resolved === 'approved-session' && (
         <Text style={styles.statusApproved}>Approved for this session.</Text>
       )}
@@ -246,6 +257,15 @@ export function InlineVaultReadApprovalCard({
         <Text style={styles.statusApproved}>Approved.</Text>
       )}
       {resolved === 'denied' && <Text style={styles.statusDenied}>Denied.</Text>}
+      {/* PLG-32 #21: terminal-but-unconfirmed — the action may already have
+          happened, so this is neutral, NOT a denial (mirrors the Activity tab's
+          "Unconfirmed" badge). */}
+      {resolved === 'unconfirmed' && (
+        <Text style={styles.statusNeutral}>
+          Unconfirmed — the action may already have happened.
+        </Text>
+      )}
+      {resolved === 'unavailable' && <Text style={styles.statusNeutral}>No longer available.</Text>}
       <MessageTimestamp timestamp={message.timestamp} />
     </View>
   );
@@ -343,6 +363,12 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   statusDenied: {
+    ...textStyles.bodySmall,
+    color: colors.textMuted,
+    fontStyle: 'italic',
+  },
+  // PLG-32 #21: neutral terminal label — unconfirmed / no-longer-available.
+  statusNeutral: {
     ...textStyles.bodySmall,
     color: colors.textMuted,
     fontStyle: 'italic',

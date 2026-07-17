@@ -517,12 +517,19 @@ describe('claim check 7 — the EXACT authorizing grant must still be live (roun
     // Round-13 #3/#4: the producer CONSUMES the grant (writes the use row +
     // digest) then stamps the same grant_id + execution_id + digest on the
     // envelope. The claim guard requires all three to line up.
+    // PLG-29 #4: the consume MUST bind the SAME invocation the envelope carries
+    // (params { flight: 'BA117' }, context []) — check 7b now RECOMPUTES the
+    // digest from the envelope's own fields and requires it to equal the consumed
+    // one. A consume that omitted these would hash a different (empty) invocation
+    // and the recompute would (correctly) reject the dispatched one.
     const execId = 'exec-grant-1';
     grants.authorizeAndConsume({
       installId,
       capability: CAP,
       approvedScopeHash: SCOPE_HASH,
       executionId: execId,
+      params: { flight: 'BA117' },
+      context: [],
       nowSec: Math.floor(T0 / 1000),
     });
     const digest = grants.getUse(grantId, execId)!.invocationDigest!;
@@ -572,6 +579,37 @@ describe('claim check 7 — the EXACT authorizing grant must still be live (roun
       grant_id: grantId,
       execution_id: execId,
       invocation_digest: 'f'.repeat(64),
+    });
+    expect((await claim()).status).toBe(204);
+    expect(workflowRepo.getById(id)?.error).toContain('invocation digest');
+  });
+
+  it('PLG-29 #4: consume invocation A, dispatch invocation B carrying A digest — recompute rejects', async () => {
+    const grants = new SQLitePluginGrantRepository(adapter);
+    setPluginGrantRepository(grants);
+    const grantId = makeGrant(grants);
+    const execId = 'exec-swap';
+    // The producer CONSUMES invocation A (params { flight: 'BA117' }) → use row
+    // pins A's digest. It then stamps that SAME (valid, use-row-matching) digest
+    // on an envelope whose params are SWAPPED to B. The old check compared the
+    // stamped digest to the use row (both A) and would have passed; the PLG-29
+    // recompute hashes the ENVELOPE's own params (B) and rejects the mismatch.
+    grants.authorizeAndConsume({
+      installId,
+      capability: CAP,
+      approvedScopeHash: SCOPE_HASH,
+      executionId: execId,
+      params: { flight: 'BA117' },
+      context: [],
+      nowSec: Math.floor(T0 / 1000),
+    });
+    const digestA = grants.getUse(grantId, execId)!.invocationDigest!;
+    const id = enqueue({
+      authorization_kind: 'grant',
+      grant_id: grantId,
+      execution_id: execId,
+      params: { flight: 'HACKED-BA999' }, // invocation B, not what was consumed
+      invocation_digest: digestA, // A's digest — matches the use row, but not B
     });
     expect((await claim()).status).toBe(204);
     expect(workflowRepo.getById(id)?.error).toContain('invocation digest');

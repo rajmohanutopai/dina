@@ -13,6 +13,7 @@ import {
   DEFAULT_GRANT_TTL_MS,
   grantAgentPersonaAccessFromApproval,
   isAgentPersonaAccessApproval,
+  parseAgentPersonaAccessPayload,
   requireAgentPersonaAccess,
   setAgentPersonaUnlockHook,
 } from '../../src/agent/access';
@@ -20,7 +21,11 @@ import {
   InMemoryAgentGrantRepository,
   setAgentGrantRepository,
 } from '../../src/agent/grant_repository';
-import { WorkflowService, setWorkflowService } from '../../src/workflow/service';
+import {
+  WorkflowService,
+  getWorkflowService,
+  setWorkflowService,
+} from '../../src/workflow/service';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import { WorkflowTaskState } from '../../src/workflow/domain';
 import { createPersona, resetPersonaState } from '../../src/persona/service';
@@ -53,12 +58,22 @@ afterEach(() => {
 
 describe('requireAgentPersonaAccess', () => {
   it('allows a free tier (default) without any grant', () => {
-    const d = requireAgentPersonaAccess({ agentDID: AGENT_A, persona: 'general', mode: 'read', scope: 'hi' });
+    const d = requireAgentPersonaAccess({
+      agentDID: AGENT_A,
+      persona: 'general',
+      mode: 'read',
+      scope: 'hi',
+    });
     expect(d.kind).toBe('allow');
   });
 
   it('requires approval for a sensitive persona with no grant — and never reads the vault', () => {
-    const d = requireAgentPersonaAccess({ agentDID: AGENT_A, persona: 'health', mode: 'read', scope: 'meds' });
+    const d = requireAgentPersonaAccess({
+      agentDID: AGENT_A,
+      persona: 'health',
+      mode: 'read',
+      scope: 'meds',
+    });
     expect(d.kind).toBe('approval_required');
     if (d.kind !== 'approval_required') throw new Error('unreachable');
     const task = workflowRepo.getById(d.taskId);
@@ -67,21 +82,45 @@ describe('requireAgentPersonaAccess', () => {
   });
 
   it('requires approval for a locked persona too', () => {
-    const d = requireAgentPersonaAccess({ agentDID: AGENT_A, persona: 'finance', mode: 'read', scope: 'balance' });
+    const d = requireAgentPersonaAccess({
+      agentDID: AGENT_A,
+      persona: 'finance',
+      mode: 'read',
+      scope: 'balance',
+    });
     expect(d.kind).toBe('approval_required');
   });
 
   it('is idempotent — a repeated request returns the same pending task, no duplicate card', () => {
-    const d1 = requireAgentPersonaAccess({ agentDID: AGENT_A, persona: 'health', mode: 'read', scope: 'meds' });
-    const d2 = requireAgentPersonaAccess({ agentDID: AGENT_A, persona: 'health', mode: 'read', scope: 'meds again' });
+    const d1 = requireAgentPersonaAccess({
+      agentDID: AGENT_A,
+      persona: 'health',
+      mode: 'read',
+      scope: 'meds',
+    });
+    const d2 = requireAgentPersonaAccess({
+      agentDID: AGENT_A,
+      persona: 'health',
+      mode: 'read',
+      scope: 'meds again',
+    });
     expect(d1).toEqual(d2);
-    const pending = workflowRepo.listByKindAndState('approval', WorkflowTaskState.PendingApproval, 100);
+    const pending = workflowRepo.listByKindAndState(
+      'approval',
+      WorkflowTaskState.PendingApproval,
+      100,
+    );
     expect(pending.length).toBe(1);
   });
 
   it('the approval card carries the request scope but NO vault content', () => {
     const secretQuery = 'what is my HIV medication dosage';
-    const d = requireAgentPersonaAccess({ agentDID: AGENT_A, persona: 'health', mode: 'read', scope: secretQuery });
+    const d = requireAgentPersonaAccess({
+      agentDID: AGENT_A,
+      persona: 'health',
+      mode: 'read',
+      scope: secretQuery,
+    });
     if (d.kind !== 'approval_required') throw new Error('expected approval');
     const task = workflowRepo.getById(d.taskId)!;
     // Description names actor/persona/mode only — never the query/result.
@@ -99,12 +138,22 @@ describe('requireAgentPersonaAccess', () => {
 
   it('fails CLOSED (denied) when no workflow service can record the approval', () => {
     setWorkflowService(null);
-    const d = requireAgentPersonaAccess({ agentDID: AGENT_A, persona: 'health', mode: 'read', scope: 'x' });
+    const d = requireAgentPersonaAccess({
+      agentDID: AGENT_A,
+      persona: 'health',
+      mode: 'read',
+      scope: 'x',
+    });
     expect(d.kind).toBe('denied');
   });
 
   it('audits the request', () => {
-    requireAgentPersonaAccess({ agentDID: AGENT_A, persona: 'health', mode: 'read', scope: 'meds' });
+    requireAgentPersonaAccess({
+      agentDID: AGENT_A,
+      persona: 'health',
+      mode: 'read',
+      scope: 'meds',
+    });
     const reqs = queryAudit({ action: 'agent_access_request' });
     expect(reqs.length).toBe(1);
     expect(reqs[0].actor).toBe(AGENT_A);
@@ -121,16 +170,23 @@ describe('approve → durable grant → resume', () => {
   it('grant persists on approval, and the agent then passes the gate (resume)', async () => {
     const taskId = pendingTaskFor(AGENT_A, 'health');
     // Before approval: still gated.
-    expect(requireAgentPersonaAccess({ agentDID: AGENT_A, persona: 'health', mode: 'read', scope: 'q' }).kind).toBe(
-      'approval_required',
-    );
+    expect(
+      requireAgentPersonaAccess({ agentDID: AGENT_A, persona: 'health', mode: 'read', scope: 'q' })
+        .kind,
+    ).toBe('approval_required');
     // Approve → write durable grant (mirrors the workflow approve handler).
     const task = workflowRepo.getById(taskId)!;
     const grant = await grantAgentPersonaAccessFromApproval(task, 1_000);
     expect(grant).not.toBeNull();
     expect(grantRepo.findActiveGrant(AGENT_A, 'health', 'read', null, 2_000)?.id).toBe(grant!.id);
     // Now the agent's retry is allowed.
-    const after = requireAgentPersonaAccess({ agentDID: AGENT_A, persona: 'health', mode: 'read', scope: 'q', now: 2_000 });
+    const after = requireAgentPersonaAccess({
+      agentDID: AGENT_A,
+      persona: 'health',
+      mode: 'read',
+      scope: 'q',
+      now: 2_000,
+    });
     expect(after.kind).toBe('allow');
     // Audit trail: request + approved + (granted on the allow read).
     expect(queryAudit({ action: 'agent_access_approved' }).length).toBe(1);
@@ -140,14 +196,26 @@ describe('approve → durable grant → resume', () => {
   it('the grant is bound to the approving agent — another agent stays gated', async () => {
     const taskId = pendingTaskFor(AGENT_A, 'health');
     await grantAgentPersonaAccessFromApproval(workflowRepo.getById(taskId)!, 1_000);
-    const other = requireAgentPersonaAccess({ agentDID: AGENT_B, persona: 'health', mode: 'read', scope: 'q', now: 2_000 });
+    const other = requireAgentPersonaAccess({
+      agentDID: AGENT_B,
+      persona: 'health',
+      mode: 'read',
+      scope: 'q',
+      now: 2_000,
+    });
     expect(other.kind).toBe('approval_required'); // B never got a grant
   });
 
   it('the grant is bound to its persona — it does not unlock a different sensitive persona', async () => {
     const taskId = pendingTaskFor(AGENT_A, 'health');
     await grantAgentPersonaAccessFromApproval(workflowRepo.getById(taskId)!, 1_000);
-    const finance = requireAgentPersonaAccess({ agentDID: AGENT_A, persona: 'finance', mode: 'read', scope: 'q', now: 2_000 });
+    const finance = requireAgentPersonaAccess({
+      agentDID: AGENT_A,
+      persona: 'finance',
+      mode: 'read',
+      scope: 'q',
+      now: 2_000,
+    });
     expect(finance.kind).toBe('approval_required'); // health grant ≠ finance access
   });
 
@@ -182,5 +250,108 @@ describe('approve → durable grant → resume', () => {
     await grantAgentPersonaAccessFromApproval(workflowRepo.getById(taskId)!, 1_000);
     // If the unlock weren't awaited, `unlocked` would still be empty here.
     expect(unlocked).toEqual(['finance']);
+  });
+});
+
+describe('round-20 (PLG-30) — parseAgentPersonaAccessPayload hardening', () => {
+  const clean = {
+    type: AGENT_PERSONA_ACCESS_APPROVAL_TYPE,
+    agent_did: 'did:key:z6MkAgent',
+    persona: 'health',
+    mode: 'read',
+    scope: 'why',
+  };
+
+  it('#8: JSON that parses to null / non-object returns null, never throws', () => {
+    expect(() => parseAgentPersonaAccessPayload('null')).not.toThrow();
+    expect(parseAgentPersonaAccessPayload('null')).toBeNull();
+    expect(parseAgentPersonaAccessPayload('42')).toBeNull();
+    expect(parseAgentPersonaAccessPayload('"a string"')).toBeNull();
+    expect(parseAgentPersonaAccessPayload('[]')).toBeNull();
+    expect(parseAgentPersonaAccessPayload('{ not json')).toBeNull();
+    // The clean payload still parses.
+    expect(parseAgentPersonaAccessPayload(JSON.stringify(clean))).not.toBeNull();
+  });
+
+  it('#9: identities / persona / scope are canonical — whitespace + control chars rejected', () => {
+    const parse = (o: Record<string, unknown>): unknown =>
+      parseAgentPersonaAccessPayload(JSON.stringify({ ...clean, ...o }));
+    // A DID that is not a real did:method:id shape (no id segment).
+    expect(parse({ agent_did: 'did:key' })).toBeNull();
+    // Surrounding whitespace makes ` health ` a distinct grant key — reject it.
+    expect(parse({ persona: ' health ' })).toBeNull();
+    // Control / bidi / zero-width chars anywhere that renders in the approval card.
+    expect(parse({ agent_did: `did:key:z${String.fromCharCode(0x202e)}M` })).toBeNull(); // bidi
+    expect(parse({ persona: `heal${String.fromCharCode(0x200b)}th` })).toBeNull(); // zero-width
+    expect(parse({ scope: `a${String.fromCharCode(0x0007)}b` })).toBeNull(); // BEL control
+    // A clean payload still parses.
+    expect(parseAgentPersonaAccessPayload(JSON.stringify(clean))?.persona).toBe('health');
+  });
+});
+
+describe('round-22 (PLG-32) hardening', () => {
+  it('#12: a non-canonical persona is normalized everywhere (payload + idempotency)', () => {
+    // Whitespace / case variants of the SAME logical persona must produce ONE
+    // canonical approval task — not a payload that later fails strict parse
+    // (whitespace) or a duplicate card (case).
+    const d1 = requireAgentPersonaAccess({
+      agentDID: AGENT_A,
+      persona: '  Health  ',
+      mode: 'read',
+      scope: 'q',
+    });
+    expect(d1.kind).toBe('approval_required');
+    if (d1.kind !== 'approval_required') throw new Error('unreachable');
+    const task = workflowRepo.getById(d1.taskId);
+    if (!task) throw new Error('setup: task missing');
+    const payload = parseAgentPersonaAccessPayload(task.payload);
+    // Payload carries the canonical name → it survives strict parse.
+    expect(payload?.persona).toBe('health');
+
+    // A second request spelled differently dedupes onto the SAME task.
+    const d2 = requireAgentPersonaAccess({
+      agentDID: AGENT_A,
+      persona: 'health',
+      mode: 'read',
+      scope: 'q',
+    });
+    expect(d2.kind).toBe('approval_required');
+    if (d2.kind !== 'approval_required') throw new Error('unreachable');
+    expect(d2.taskId).toBe(d1.taskId); // one logical persona → one card
+  });
+
+  it('#2: grantAgentPersonaAccessFromApproval refuses a TERMINAL task', async () => {
+    const d = requireAgentPersonaAccess({
+      agentDID: AGENT_A,
+      persona: 'health',
+      mode: 'read',
+      scope: 'q',
+    });
+    if (d.kind !== 'approval_required') throw new Error('unreachable');
+    // Cancel the task — it is now terminal. Granting from it must mint NO access.
+    getWorkflowService()?.cancel(d.taskId, 'owner denied');
+    const cancelled = workflowRepo.getById(d.taskId);
+    if (!cancelled) throw new Error('setup: task missing');
+    const grant = await grantAgentPersonaAccessFromApproval(cancelled, 1_000);
+    expect(grant).toBeNull();
+    expect(grantRepo.findActiveGrant(AGENT_A, 'health', 'read', null, 2_000)).toBeNull();
+  });
+
+  it('#7: a FAILED activation returns null + leaves no active grant', async () => {
+    const d = requireAgentPersonaAccess({
+      agentDID: AGENT_A,
+      persona: 'health',
+      mode: 'read',
+      scope: 'q',
+    });
+    if (d.kind !== 'approval_required') throw new Error('unreachable');
+    // Force activate() to fail — the wrapper must NOT report a live grant.
+    jest.spyOn(grantRepo, 'activate').mockReturnValue(false);
+    const approved = workflowRepo.getById(d.taskId);
+    if (!approved) throw new Error('setup: task missing');
+    const grant = await grantAgentPersonaAccessFromApproval(approved, 1_000);
+    expect(grant).toBeNull();
+    expect(grantRepo.findActiveGrant(AGENT_A, 'health', 'read', null, 2_000)).toBeNull();
+    jest.restoreAllMocks();
   });
 });

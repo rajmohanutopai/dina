@@ -19,6 +19,7 @@ import {
   hydrateContactDirectory,
   resetContactDirectory,
   rebuildContactProjections,
+  resetCallerTypeState,
   resetServiceConfigState,
   setServiceConfigRepository,
   SQLiteD2DOutboxRepository,
@@ -37,6 +38,7 @@ import {
   type ArchivePersonaSource,
   type PersonaTier,
 } from '@dina/core';
+import { resetDeviceRegistry } from '@dina/core/devices';
 // Chat thread cache lives in the Brain module (in-memory Map, authoritative
 // for rendering). `resetThreads()` clears it on teardown so a previous
 // identity's conversation can't survive into the next one (privacy: erase +
@@ -520,6 +522,18 @@ export async function shutdownAllPersistence(): Promise<void> {
     setPluginInstallRepository(null);
     setPluginGrantRepository(null);
     setPluginDecisionRepository(null);
+    // PLG-30 #1: clear the DEVICE registry + repo + caller-role map on teardown.
+    // These are module-global in-memory Maps (devices/keyIndex/didIndex + the auth
+    // caller-type map); `hydrateDeviceRegistry` MERGES rather than replaces, and
+    // `node.dispose()` (which clears the caller-type map) runs on the async
+    // React-teardown path, NOT this synchronous erase. Without this, an erase +
+    // re-onboard in the SAME JS process left the old identity's paired devices
+    // (agent / cli / plugin roles) still resolvable + authenticatable under the
+    // new identity — a cross-identity authorization leak. Same fail-closed,
+    // dispose-order-independent reasoning as the service-config + contact clears.
+    resetDeviceRegistry();
+    setDeviceRepository(null);
+    resetCallerTypeState();
     setPeopleRepository(null);
     openPersonaAdapters.clear();
     setMemoryService(null);

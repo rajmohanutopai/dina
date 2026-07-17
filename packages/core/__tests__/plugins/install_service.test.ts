@@ -44,6 +44,7 @@ import {
   uninstall,
   sweepAbandonedInstalls,
   setRepoProofVerifier,
+  setPluginDeviceVerifier,
   terminateInstallInFlight,
   type VerifiedReleaseAttestation,
 } from '../../src/plugins/install_service';
@@ -121,6 +122,10 @@ beforeEach(() => {
   setPluginInstallRepository(new SQLitePluginInstallRepository(adapter));
   setPluginGrantRepository(new SQLitePluginGrantRepository(adapter));
   setPluginDecisionRepository(new SQLitePluginDecisionRepository(adapter));
+  // PLG-29 #7: runner activation now FAILS CLOSED unless a plugin-device
+  // verifier is wired. Default the whole suite to an approving verifier so
+  // the happy-path runner installs still activate; individual tests override.
+  setPluginDeviceVerifier(() => true);
 });
 
 afterEach(() => {
@@ -128,6 +133,7 @@ afterEach(() => {
   setPluginGrantRepository(null);
   setPluginDecisionRepository(null);
   setRepoProofVerifier(null);
+  setPluginDeviceVerifier(null);
   setWorkflowService(null);
   try {
     adapter.close();
@@ -467,16 +473,23 @@ describe('lifecycle: consent → activation → uninstall (§14)', () => {
     expect(swept.map((r) => r.installId)).toContain(id);
   });
 
-  it('PLG-28 #7: confirmConsent rejects a bound DID that fails the injected plugin-device guard', async () => {
+  it('PLG-28 #7 / PLG-29 #7: runner activation obeys the WIRED plugin-device guard and fails closed when unwired', async () => {
     const id = await pending();
     const installs = getPluginInstallRepository()!;
     installs.bindPendingDevice(id, 'did:key:zinstance', T0 + 1);
+    // PLG-29 #7: an UNWIRED verifier is a misconfigured boot — a runner install
+    // must NOT activate even though the bound DID matches the consenting device.
+    setPluginDeviceVerifier(null);
+    expect(confirmConsent(id, 'did:key:zinstance', T0 + 2)).toBe(false);
+    expect(installs.getById(id)?.status).toBe('pending');
     // Guard says "not a valid plugin device" → activation refused even though the
     // DID matches the bound one.
-    expect(confirmConsent(id, 'did:key:zinstance', T0 + 2, () => false)).toBe(false);
+    setPluginDeviceVerifier(() => false);
+    expect(confirmConsent(id, 'did:key:zinstance', T0 + 3)).toBe(false);
     expect(installs.getById(id)?.status).toBe('pending');
     // Guard passes → activates.
-    expect(confirmConsent(id, 'did:key:zinstance', T0 + 3, () => true)).toBe(true);
+    setPluginDeviceVerifier(() => true);
+    expect(confirmConsent(id, 'did:key:zinstance', T0 + 4)).toBe(true);
     expect(installs.getById(id)?.status).toBe('active');
   });
 
@@ -1251,5 +1264,218 @@ describe('P2-10 — late reports surface as an owner-facing decision', () => {
     );
     const decisions = getPluginDecisionRepository()!.listByInstall(installId, 10);
     expect(decisions.some((d) => d.decision === 'late_report_received')).toBe(true);
+  });
+});
+
+describe('round-19 (PLG-29) hardening', () => {
+  it('#15: the verified-install boundary rejects a NON-did publisher DID', () => {
+    // The finishBegin authority gate used to accept any nonempty publisher. The
+    // attestation binds publisherDid, but a garbage value there is now refused
+    // before it can persist into the authoritative publisher_did column.
+    const r = beginInstallVerified({
+      manifest: runnerManifest(),
+      attestation: attest(runnerManifest(), cidFor('p29-baddid'), {
+        publisherDid: 'acme', // no did: prefix
+        kind: 'repo_proof',
+      }),
+      nowMs: T0,
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe('authenticity_failed');
+  });
+
+  it('#15: the verified-install boundary rejects an OVERSIZED publisher DID', () => {
+    const r = beginInstallVerified({
+      manifest: runnerManifest(),
+      attestation: attest(runnerManifest(), cidFor('p29-longdid'), {
+        publisherDid: `did:plc:${'z'.repeat(300)}`,
+        kind: 'repo_proof',
+      }),
+      nowMs: T0,
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe('authenticity_failed');
+  });
+
+  it('#15: a well-formed did: publisher + real CID still installs (no false positive)', () => {
+    const r = beginInstallVerified({
+      manifest: runnerManifest(),
+      attestation: attest(runnerManifest(), cidFor('p29-ok'), {
+        publisherDid: 'did:plc:acme',
+        kind: 'repo_proof',
+      }),
+      nowMs: T0,
+    });
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe('round-20 (PLG-30) hardening', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('#2: declineConsent honors the removeIfStatus CAS — a raced-to-active row is not reported removed', async () => {
+    const { rkey, verifier } = fakeVerifier(runnerManifest());
+    setRepoProofVerifier(verifier);
+    const begin = await beginInstall({
+      publisherDid: PUBLISHER,
+      rkey,
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    if (!begin.ok) throw new Error('setup: beginInstall failed');
+    const id = begin.installId;
+    const installs = getPluginInstallRepository()!;
+    // Simulate the race: rawStatus still reads 'pending', but the row activated
+    // before the conditional delete, so removeIfStatus refuses (returns false).
+    jest.spyOn(installs, 'removeIfStatus').mockReturnValue(false);
+    const res = await declineConsent(id, T0 + 1);
+    expect(res?.removed).toBe(false);
+    // A still-live plugin must NOT get a false consent_declined in the audit log.
+    const decisions = getPluginDecisionRepository()!.listByInstall(id, 10);
+    expect(decisions.some((d) => d.decision === 'consent_declined')).toBe(false);
+  });
+
+  it('#15: a createPending persistence throw returns a typed transient failure, not an escape', async () => {
+    const { rkey, verifier } = fakeVerifier(runnerManifest());
+    setRepoProofVerifier(verifier);
+    jest.spyOn(getPluginInstallRepository()!, 'createPending').mockImplementation(() => {
+      throw new Error('disk full');
+    });
+    const r = await beginInstall({
+      publisherDid: PUBLISHER,
+      rkey,
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe('verifier_unavailable');
+    expect(r.transient).toBe(true);
+  });
+
+  it('#19: a malformed publisher DID is rejected BEFORE the verifier runs', async () => {
+    let called = false;
+    setRepoProofVerifier(async () => {
+      called = true;
+      return { ok: true, cid: 'x', rev: 'r', record: runnerManifest() } as RepoProofResult;
+    });
+    const r = await beginInstall({
+      publisherDid: 'not-a-did',
+      rkey: 'anything',
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe('authenticity_failed');
+    expect(called).toBe(false); // never reached the expensive verifier
+  });
+
+  it('#20: verifier internals are not leaked into the caller-facing message', async () => {
+    // A throwing verifier — the raw error text must not appear in `message`.
+    setRepoProofVerifier(async () => {
+      throw new Error('https://secret.internal/path?token=abc123');
+    });
+    const thrown = await beginInstall({
+      publisherDid: PUBLISHER,
+      rkey: 'r'.repeat(40),
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    expect(thrown.ok).toBe(false);
+    if (!thrown.ok) expect(thrown.message).not.toContain('secret.internal');
+    // A typed not-ok result — the provider message must not pass through verbatim.
+    setRepoProofVerifier(
+      async () =>
+        ({
+          ok: false,
+          code: 'not_found',
+          transient: false,
+          message: 'internal detail xyz',
+        }) as unknown as RepoProofResult,
+    );
+    const rejected = await beginInstall({
+      publisherDid: PUBLISHER,
+      rkey: 'r'.repeat(40),
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    expect(rejected.ok).toBe(false);
+    if (!rejected.ok) expect(rejected.message).not.toContain('internal detail xyz');
+  });
+});
+
+describe('round-21 (PLG-31) hardening', () => {
+  it('#18: a CORRUPT-but-present install reports removed + records the decision on uninstall', async () => {
+    const { rkey, verifier } = fakeVerifier(runnerManifest());
+    setRepoProofVerifier(verifier);
+    const begin = await beginInstall({
+      publisherDid: PUBLISHER,
+      rkey,
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    if (!begin.ok) throw new Error('setup: beginInstall failed');
+    const id = begin.installId;
+    const installs = getPluginInstallRepository();
+    if (!installs) throw new Error('setup: install repository missing');
+    expect(installs.bindPendingDevice(id, 'did:key:zcorrupt', T0)).toBe(true);
+    expect(confirmConsent(id, 'did:key:zcorrupt', T0 + 1)).toBe(true);
+
+    // Corrupt the row so the PROJECTION (getById, and remove()'s return value) is
+    // null even though the raw row is present + deletable.
+    adapter.execute('UPDATE plugin_installs SET manifest_json = ? WHERE install_id = ?', [
+      '{bad json',
+      id,
+    ]);
+    expect(installs.getById(id)).toBeNull(); // projection null...
+    expect(installs.rawStatus(id)).not.toBeNull(); // ...but the raw row is present
+
+    const result = await uninstall(id, T0 + 2, async () => ({ durable: true }));
+    // Success is determined from RAW existence AFTER the delete, not the null
+    // projection — the old `remove() === null` gate misreported this corrupt
+    // install's successful teardown as failure AND skipped its decision record.
+    expect(result?.removed).toBe(true);
+    expect(installs.rawStatus(id)).toBeNull(); // genuinely gone
+    expect(
+      getPluginDecisionRepository()
+        ?.listByInstall(id, 10)
+        .some((d) => d.decision === 'uninstalled'),
+    ).toBe(true);
+  });
+});
+
+describe('round-22 (PLG-32) hardening', () => {
+  it('#24: a publisher DID with a bidi-override char is rejected BEFORE the verifier runs', async () => {
+    let called = false;
+    setRepoProofVerifier(async () => {
+      called = true;
+      return { ok: true, cid: 'x', rev: 'r', record: runnerManifest() } as RepoProofResult;
+    });
+    const r = await beginInstall({
+      // U+202E RIGHT-TO-LEFT OVERRIDE smuggled into the publisher identity.
+      publisherDid: `did:plc:${String.fromCharCode(0x202e)}acme`,
+      rkey: 'r'.repeat(40),
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe('authenticity_failed');
+    expect(called).toBe(false); // never reached the verifier
+  });
+
+  it('#24: a zero-width char in the publisher DID is rejected', async () => {
+    setRepoProofVerifier(async () => {
+      throw new Error('verifier should not run');
+    });
+    const r = await beginInstall({
+      publisherDid: `did:plc:ac${String.fromCharCode(0x200b)}me`, // zero-width space
+      rkey: 'r'.repeat(40),
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe('authenticity_failed');
   });
 });

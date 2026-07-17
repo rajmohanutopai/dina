@@ -73,6 +73,7 @@ import {
   hydrateContactDirectory,
   listPersonas,
   setOutboxRedeliverFn,
+  setPluginDeviceVerifier,
   startOutboxDrainer,
   storeItem,
   type DrainerHandle,
@@ -380,6 +381,16 @@ export async function buildBootInputs(
   // `initializePersistence`'s first-boot gate) because Metro reloads
   // skip that gate but always re-run `buildBootInputs`.
   await hydrateDeviceRegistry();
+
+  // PLG-29 #7: a runner plugin can only activate on a device that is a REAL,
+  // unrevoked, role='plugin' registry entry. `install_service` can't import the
+  // device registry (cycle), so the verifier is WIRED here at boot, next to the
+  // device-role resolver. Fail-closed: an unwired verifier blocks every runner
+  // activation, so this MUST run whenever a runner install can be confirmed.
+  setPluginDeviceVerifier((did) => {
+    const device = getDeviceByDID(did);
+    return device !== null && !device.revoked && device.role === 'plugin';
+  });
 
   // Dev-only contact seed: when EXPO_PUBLIC_DINA_DEV_CONTACT is set,
   // pre-populate the in-memory directory at boot so end-to-end smoke

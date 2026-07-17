@@ -1403,3 +1403,159 @@ describe('round-18 (PLG-28) hardening', () => {
     expect(decisions.listByInstall(id, -1)).toHaveLength(3);
   });
 });
+
+describe('round-19 (PLG-29) hardening', () => {
+  it('#8: a DB-level unique index forbids two PENDING installs on one device', () => {
+    const first = createPending();
+    const second = createPending();
+    expect(installs.bindPendingDevice(first, 'did:key:zrace', T0 + 1)).toBe(true);
+    // The app-level pre-check refuses a second bind of the shared device...
+    expect(installs.bindPendingDevice(second, 'did:key:zrace', T0 + 2)).toBe(false);
+    // ...and even a RAW write that bypasses the pre-check (a second Core worker
+    // that read a stale "device unbound" and races) is stopped at the DB by
+    // `uq_plugin_installs_pending_device`.
+    expect(() =>
+      adapter.run('UPDATE plugin_installs SET device_did = ? WHERE install_id = ?', [
+        'did:key:zrace',
+        second,
+      ]),
+    ).toThrow(/UNIQUE constraint failed|SQLITE_CONSTRAINT/i);
+    // Only the first pending owns the device.
+    expect(installs.getById(first)?.deviceDid).toBe('did:key:zrace');
+    expect(installs.getById(second)?.deviceDid).toBeUndefined();
+  });
+
+  it('#8: revoking a pending tombstone frees the device for a fresh pending bind', () => {
+    const first = createPending();
+    expect(installs.bindPendingDevice(first, 'did:key:zfree', T0 + 1)).toBe(true);
+    installs.markRevoked(first, T0 + 2); // pending → revoked (keeps device_did)
+    // A revoked row is NOT in the pending unique index, so a new pending install
+    // may claim the same device.
+    const next = createPending();
+    expect(installs.bindPendingDevice(next, 'did:key:zfree', T0 + 3)).toBe(true);
+    expect(installs.getById(next)?.deviceDid).toBe('did:key:zfree');
+  });
+
+  it('#10: removeIfStatus deletes only while the row is in an expected status (CAS)', () => {
+    const pending = createPending();
+    // Wrong expected status → no-op (the row is pending, we asked for active).
+    expect(installs.removeIfStatus(pending, ['active'])).toBe(false);
+    expect(installs.getById(pending)?.status).toBe('pending');
+    // Right status → deletes.
+    expect(installs.removeIfStatus(pending, ['pending'])).toBe(true);
+    expect(installs.getById(pending)).toBeNull();
+  });
+
+  it('#10: a row that raced to ACTIVE is NOT destroyed by a pending-scoped removeIfStatus', () => {
+    // Models the sweep/decline race: the caller observed "pending", but a
+    // concurrent confirmConsent activated the row before the delete. The CAS
+    // re-checks inside the delete transaction and refuses.
+    const id = createPending();
+    installs.activate(id, 'did:key:zlive', T0 + 1);
+    expect(installs.getById(id)?.status).toBe('active');
+    expect(installs.removeIfStatus(id, ['pending'])).toBe(false);
+    expect(installs.getById(id)?.status).toBe('active'); // survived
+  });
+
+  it('#10: removeIfStatus cascades grants + uses when it does delete', () => {
+    const id = createPending();
+    installs.activate(id, 'did:key:zcascade', T0 + 1);
+    const grantId = grants.create(
+      {
+        installId: id,
+        capability: 'com.acme.flightwatch.watch',
+        approvedScopeHash: 'c'.repeat(64),
+        grantType: 'standing',
+        constraints: { version: 1, max_count: 100 },
+      },
+      'read',
+      T0 + 2,
+    );
+    grants.authorizeAndConsume({
+      installId: id,
+      capability: 'com.acme.flightwatch.watch',
+      approvedScopeHash: 'c'.repeat(64),
+      executionId: 'exec-cascade',
+      nowSec: T0_SEC + 2,
+    });
+    expect(grants.getById(grantId)).not.toBeNull();
+    expect(installs.removeIfStatus(id, ['active'])).toBe(true);
+    expect(installs.getById(id)).toBeNull();
+    expect(grants.getById(grantId)).toBeNull(); // cascaded
+    expect(
+      adapter.query('SELECT 1 FROM plugin_grant_uses WHERE grant_id = ?', [grantId]),
+    ).toHaveLength(0);
+  });
+
+  it('#19: churned tombstones do not break authorization or the revoked/no_grant reasons', () => {
+    const id = createPending();
+    installs.activate(id, 'did:key:zchurn', T0 + 1);
+    const KEY = {
+      installId: id,
+      capability: 'com.acme.flightwatch.watch',
+      approvedScopeHash: 'c'.repeat(64),
+    };
+    // Re-consent many times — each `create` tombstones the prior grant for this
+    // scope (revoked_at set). Only the newest is live.
+    let latest = '';
+    for (let i = 0; i < 5; i++) {
+      latest = grants.create(
+        { ...KEY, grantType: 'standing', constraints: { version: 1, max_count: 100 } },
+        'read',
+        T0 + 2 + i,
+      );
+    }
+    // Authorization skips the 4 revoked tombstones (SQL filter) and consumes the
+    // one live grant — churn never costs correctness.
+    const ok = grants.authorizeAndConsume({ ...KEY, executionId: 'e-live', nowSec: T0_SEC + 10 });
+    expect(ok).toEqual({ allowed: true, grantId: latest });
+    // Revoke the last live grant: now every grant for the scope is a tombstone.
+    // The live query returns nothing, and the bounded secondary probe recovers
+    // the 'revoked' reason (not a misleading 'no_grant').
+    grants.revoke(latest, T0_SEC + 11);
+    expect(
+      grants.authorizeAndConsume({ ...KEY, executionId: 'e-dead', nowSec: T0_SEC + 12 }),
+    ).toEqual({ allowed: false, reason: 'revoked' });
+    // A scope that never had a grant at all still reads 'no_grant'.
+    expect(
+      grants.authorizeAndConsume({
+        installId: id,
+        capability: 'com.acme.flightwatch.watch',
+        approvedScopeHash: 'd'.repeat(64),
+        executionId: 'e-none',
+        nowSec: T0_SEC + 13,
+      }),
+    ).toEqual({ allowed: false, reason: 'no_grant' });
+  });
+});
+
+describe('round-21 (PLG-31) hardening', () => {
+  it('#19: listRawStalePending enumerates a DEVICE-LESS revoked tombstone', () => {
+    // An interpreted (device-less) install tombstoned between markRevoked and
+    // remove: status='revoked', no device_did, pending_expires_at retained. The
+    // old enumerator's `device_did != ''` sub-condition stranded it forever, so
+    // the abandoned-install sweep could never reach it to finish the removal.
+    const id = createPending(); // pending, NO device bound
+    expect(installs.markRevoked(id, T0 + 1)).toBe(true); // → revoked, device_did NULL
+    expect(installs.getById(id)?.status).toBe('revoked');
+    expect(installs.getById(id)?.deviceDid).toBeUndefined();
+
+    const ref = installs.listRawStalePending(T0_SEC + 1).find((r) => r.installId === id);
+    expect(ref).toBeDefined();
+    expect(ref?.status).toBe('revoked');
+    expect(ref?.deviceDid).toBeUndefined(); // device-less, yet enumerated
+  });
+
+  it('#19: a device-BOUND revoked tombstone is still enumerated (no regression)', () => {
+    const id = createPending();
+    expect(installs.bindPendingDevice(id, 'did:key:zbound', T0 + 1)).toBe(true);
+    expect(installs.markRevoked(id, T0 + 2)).toBe(true);
+    const ref = installs.listRawStalePending(T0_SEC + 2).find((r) => r.installId === id);
+    expect(ref?.deviceDid).toBe('did:key:zbound');
+  });
+
+  it('#19: a NON-stale pending row (future expiry) is not enumerated', () => {
+    const id = createPending(); // pending_expires_at = T0_SEC + 900 (future)
+    expect(installs.listRawStalePending(T0_SEC).find((r) => r.installId === id)).toBeUndefined();
+  });
+});

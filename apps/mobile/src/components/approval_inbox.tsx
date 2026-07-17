@@ -183,7 +183,13 @@ export function useApprovalInbox(): ApprovalInbox {
    * 2-button (no scope choice — a single confirmation is all there is).
    */
   const supportsSessionScope = useCallback((item: InboxEntry): boolean => {
-    if (item.kind === 'vault_read') return true;
+    // PLG-31 #2: an agent_persona_access approval (identified by `accessMode`)
+    // mints a durable, reusable ~1h grant in Core REGARDLESS of scope — "Approve
+    // Once" would falsely promise a single-use restriction that doesn't exist.
+    // Only the persona-guard vault_read_request (a vault_read WITHOUT accessMode)
+    // genuinely honors single-vs-session, so offer the scope choice there and give
+    // agent access a plain single-confirm Approve/Deny instead.
+    if (item.kind === 'vault_read') return item.accessMode === undefined;
     if (item.kind === 'intent_validation' && item.riskLevel === 'MODERATE') return true;
     return false;
   }, []);
@@ -235,9 +241,7 @@ export function useApprovalInbox(): ApprovalInbox {
 
   const deny = useCallback(
     (item: InboxEntry): void => {
-      void confirmAndRun(item, 'Deny', () =>
-        denyPending(item.id, 'denied_by_operator', item.kind),
-      );
+      void confirmAndRun(item, 'Deny', () => denyPending(item.id, 'denied_by_operator', item.kind));
     },
     [confirmAndRun],
   );
@@ -290,13 +294,21 @@ export function ApprovalActionCard({
   const isIntent = item.kind === 'intent_validation';
   const isStagingAccess = item.kind === 'staging_persona_access';
   const isVaultRead = item.kind === 'vault_read';
+  // PLG-29 #1: a vault_read approval covers both the persona-guard READ request
+  // and an agent persona-access request, which may ask for read OR write. Show
+  // the exact mode in the headline (trusted chrome) so a WRITE request can never
+  // masquerade as ordinary read access. accessMode is only set for
+  // agent_persona_access; a plain read request leaves it undefined → "read".
+  const isVaultWrite = isVaultRead && item.accessMode === 'write';
   const headline = isIntent
     ? 'Agent action approval'
     : isStagingAccess
       ? 'Memory access approval'
-      : isVaultRead
-        ? 'Vault read approval'
-        : item.serviceName || 'Unnamed service';
+      : isVaultWrite
+        ? 'Vault WRITE approval'
+        : isVaultRead
+          ? 'Vault read approval'
+          : item.serviceName || 'Unnamed service';
   const tagText = isIntent && item.riskLevel !== undefined ? item.riskLevel : item.capability;
   const tagStyle =
     isIntent && item.riskLevel === 'HIGH'
@@ -409,21 +421,42 @@ export function ResolvedApprovalCard({ entry }: { entry: ResolvedInboxEntry }): 
   const isIntent = item.kind === 'intent_validation';
   const isStagingAccess = item.kind === 'staging_persona_access';
   const isVaultRead = item.kind === 'vault_read';
+  // PLG-29 #1: mirror the pending card — a resolved WRITE grant must read WRITE.
+  const isVaultWrite = isVaultRead && item.accessMode === 'write';
   const headline = isIntent
     ? 'Agent action approval'
     : isStagingAccess
       ? 'Memory access approval'
-      : isVaultRead
-        ? 'Vault read approval'
-        : item.serviceName || 'Unnamed service';
+      : isVaultWrite
+        ? 'Vault WRITE approval'
+        : isVaultRead
+          ? 'Vault read approval'
+          : item.serviceName || 'Unnamed service';
+  // PLG-31 #14/#16: the badge is the OWNER DECISION. `unknown` (outcome_unknown)
+  // gets its own non-committal "Unconfirmed" badge — never folded into "Denied".
   const outcomeStyle =
     item.outcome === 'approved'
       ? [styles.outcomeBadge, styles.outcomeApproved]
-      : item.outcome === 'expired'
+      : item.outcome === 'expired' || item.outcome === 'unknown'
         ? [styles.outcomeBadge, styles.outcomeExpired]
         : [styles.outcomeBadge, styles.outcomeDenied];
   const outcomeLabel =
-    item.outcome === 'approved' ? 'Approved' : item.outcome === 'expired' ? 'Expired' : 'Denied';
+    item.outcome === 'approved'
+      ? 'Approved'
+      : item.outcome === 'expired'
+        ? 'Expired'
+        : item.outcome === 'unknown'
+          ? 'Unconfirmed'
+          : 'Denied';
+  // PLG-31 #16: the EXECUTION result, separate from the owner decision — so an
+  // owner-approved task that later failed reads "Approved · Run failed", not
+  // "Denied".
+  const executionNote =
+    item.executionResult === 'failed'
+      ? 'Run failed after approval'
+      : item.executionResult === 'unknown'
+        ? 'Effect could not be confirmed'
+        : null;
   return (
     <View style={[styles.card, styles.cardResolved]}>
       <View style={styles.cardHeader}>
@@ -432,6 +465,7 @@ export function ResolvedApprovalCard({ entry }: { entry: ResolvedInboxEntry }): 
         </Text>
         <Text style={outcomeStyle}>{outcomeLabel}</Text>
       </View>
+      {executionNote !== null ? <Text style={styles.riskHint}>{executionNote}</Text> : null}
       {isIntent && item.capability !== '' ? (
         <Text style={styles.intentAction}>{item.capability}</Text>
       ) : null}

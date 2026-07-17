@@ -495,28 +495,30 @@ export class SQLitePluginGrantRepository implements PluginGrantRepository {
     // Round-11 #1: the constraint-relevant params this execution binds to.
     const digest = invocationDigest(args);
     this.db.transaction(() => {
+      // PLG-29 #19: load only NON-REVOKED candidates. Every re-consent tombstones
+      // the prior grant (revoked_at set), so revoked rows are the unbounded growth
+      // vector — pulling the ENTIRE history into JS on every authorize made the
+      // hot path scale with churn. `revoked_at IS NULL` is type-affinity SAFE (a
+      // string revoked_at is not null → still excluded → fail CLOSED), unlike an
+      // SQL `expires_at > ?` comparison which SQLite would read as live for a
+      // TEXT-typed expires_at (Round-14 #9) — so the expires_at liveness check
+      // stays in JS below. Only the 'revoked' denial reason needs the excluded
+      // rows; it is recovered by a bounded probe on the no-live-grant path.
       const rows = this.db.query(
         `SELECT * FROM plugin_grants
          WHERE install_id = ? AND capability = ? AND approved_scope_hash = ?
+           AND revoked_at IS NULL
          ORDER BY created_at DESC`,
         [args.installId, args.capability, args.approvedScopeHash],
       );
-      if (rows.length === 0) {
-        result = { allowed: false, reason: 'no_grant' };
-        return;
-      }
       // Evaluate candidates newest-first; the first live grant decides.
       let denial: GrantDenialReason = 'no_grant';
       for (const row of rows) {
-        // Round-14 #9: coerce defensively — a revoked_at / expires_at stored as
-        // a STRING (divergent-node restore, SQLite type affinity) slips past a
-        // bare `typeof === 'number'` and the candidate reads as LIVE (fail OPEN).
-        // Any present non-null revoked_at means revoked; a present non-finite
-        // expires_at is an unenforceable bound → treat as expired.
-        if (row.revoked_at !== null && row.revoked_at !== undefined) {
-          denial = 'revoked';
-          continue;
-        }
+        // Round-14 #9: coerce defensively — an expires_at stored as a STRING
+        // (divergent-node restore, SQLite type affinity) slips past a bare
+        // `typeof === 'number'` and the candidate reads as LIVE (fail OPEN). A
+        // present non-finite expires_at is an unenforceable bound → treat as
+        // expired. (revoked_at is now excluded in SQL, above.)
         if (row.expires_at !== null && row.expires_at !== undefined) {
           const exp = Number(row.expires_at);
           if (!Number.isFinite(exp) || exp <= args.nowSec) {
@@ -636,6 +638,21 @@ export class SQLitePluginGrantRepository implements PluginGrantRepository {
         );
         result = { allowed: true, grantId };
         return;
+      }
+      // PLG-29 #19: `denial` stays 'no_grant' only when the non-revoked query
+      // returned zero rows AND set no live-candidate reason (count_exhausted /
+      // resource_not_allowed / …). Distinguish "a grant existed but was revoked"
+      // from "no grant ever" with ONE bounded existence probe — kept off the hot
+      // (authorize / live-deny) path so grant churn no longer costs the caller.
+      if (denial === 'no_grant') {
+        const revoked = this.db.query(
+          `SELECT 1 FROM plugin_grants
+           WHERE install_id = ? AND capability = ? AND approved_scope_hash = ?
+             AND revoked_at IS NOT NULL
+           LIMIT 1`,
+          [args.installId, args.capability, args.approvedScopeHash],
+        );
+        if (revoked.length > 0) denial = 'revoked';
       }
       result = { allowed: false, reason: denial };
     });

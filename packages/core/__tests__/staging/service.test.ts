@@ -32,9 +32,12 @@ import {
   hydrateStagingFromRepository,
   drainForApproval,
   denyApproval,
+  type StagingItem,
+  clearOnDrainCallback,
 } from '../../src/staging/service';
 import { getItem as getVaultItem, listRecentItems, clearVaults } from '../../src/vault/crud';
 import { currentDataScope, resetDataScope, setCurrentDataScope } from '../../src/scope/data_scope';
+import { createPersona, openPersona, resetPersonaState } from '../../src/persona/service';
 
 describe('Staging Service', () => {
   beforeEach(() => {
@@ -241,7 +244,10 @@ describe('Staging Service', () => {
       expect(stored?.persona).toBe('general');
       expect(stored?.data.body).toBe('');
       expect(stored?.classified_item).toEqual(classified);
-      expect(getVaultItem('general', 'repo-vault-1')).not.toBeNull();
+      // PLG-29 #3: the vault primary key is Core-owned (`stg-<stagingId>`), NOT
+      // the classifier-supplied `id: 'repo-vault-1'` (which can no longer dictate
+      // the storage key + overwrite an unrelated row).
+      expect(getVaultItem('general', `stg-${id}`)).not.toBeNull();
     });
 
     it('hydrates the in-memory cache from repository rows explicitly', () => {
@@ -512,7 +518,7 @@ describe('Staging Service', () => {
       const result = drainForApproval(approvalId);
       expect(result).toMatchObject({ matched: 1, drained: 1, alreadyStored: 0 });
       expect(getItem(id)!.status).toBe('stored');
-      expect(getVaultItem('health', 'approval-v2')).not.toBeNull();
+      expect(getVaultItem('health', `stg-${id}`)).not.toBeNull(); // PLG-29 #3: Core-owned id
     });
 
     it('PLG-27 #6: an id-less classified item is stored under a DETERMINISTIC stg-<id> (so a recovery re-drive upserts, never duplicates)', () => {
@@ -734,10 +740,35 @@ describe('Staging Service', () => {
       const classified = { id: 'vault-item-1', summary: 'Test email', type: 'email' };
       resolve(id, 'general', true, classified);
 
-      // Item should now exist in the vault
-      const vaultItem = getVaultItem('general', 'vault-item-1');
+      // Item should now exist in the vault under the Core-owned id (PLG-29 #3),
+      // not the classifier-supplied `id: 'vault-item-1'`.
+      const vaultItem = getVaultItem('general', `stg-${id}`);
       expect(vaultItem).not.toBeNull();
       expect(vaultItem!.summary).toBe('Test email');
+    });
+
+    it('PLG-29 #3: a classifier-supplied id CANNOT overwrite another item’s vault row', () => {
+      // Victim: a normal remember stored under its Core-owned id.
+      const { id: victimId } = ingest({ source: 'chat', source_id: 'victim' });
+      claim(10);
+      resolve(victimId, 'general', true, { type: 'note', summary: 'victim data' });
+      const victimVaultId = `stg-${victimId}`;
+      expect(getVaultItem('general', victimVaultId)!.summary).toBe('victim data');
+
+      // Attacker: a second remember whose classifier output tries to REUSE the
+      // victim's vault id (INSERT-OR-REPLACE would otherwise overwrite it).
+      const { id: attackerId } = ingest({ source: 'chat', source_id: 'attacker' });
+      claim(10);
+      resolve(attackerId, 'general', true, {
+        id: victimVaultId,
+        type: 'note',
+        summary: 'HIJACKED',
+      });
+
+      // The supplied id is IGNORED — the victim row is untouched, and the
+      // attacker's item lands under ITS OWN Core-owned id.
+      expect(getVaultItem('general', victimVaultId)!.summary).toBe('victim data');
+      expect(getVaultItem('general', `stg-${attackerId}`)!.summary).toBe('HIJACKED');
     });
 
     it('does NOT write to vault when persona is locked (pending_unlock)', () => {
@@ -760,7 +791,7 @@ describe('Staging Service', () => {
       expect(getVaultItem('health', 'vault-item-3')).toBeNull();
 
       drainForApproval(getItem(id)!.approval_id!);
-      const vaultItem = getVaultItem('health', 'vault-item-3');
+      const vaultItem = getVaultItem('health', `stg-${id}`); // PLG-29 #3: Core-owned id
       expect(vaultItem).not.toBeNull();
       expect(vaultItem!.summary).toBe('Pending data');
     });
@@ -883,8 +914,10 @@ describe('Staging Service', () => {
       );
 
       expect(count).toBe(2);
-      expect(getVaultItem('health', 'multi-v1')).not.toBeNull();
-      expect(getVaultItem('financial', 'multi-v1')).not.toBeNull();
+      // PLG-29 #3: Core-owned id — the SAME `stg-<stagingId>` in each open
+      // persona's separate DB file (harmless; keys are per-persona).
+      expect(getVaultItem('health', `stg-${id}`)).not.toBeNull();
+      expect(getVaultItem('financial', `stg-${id}`)).not.toBeNull();
     });
 
     it('marks stored when any target is open', () => {
@@ -929,6 +962,44 @@ describe('Staging Service', () => {
       resolveMulti(id, [{ persona: 'general', personaOpen: true }], { id: 'v5', type: 'note' });
       expect(getItem(id)!.data.body).toBe('');
     });
+
+    it('throws when a locked-secondary copy cannot be persisted (PLG-31 #12)', () => {
+      // A repo whose ingest REJECTS the financial secondary copy AND has no row
+      // at that id — the INSERT-OR-IGNORE fired on the dedup key under a
+      // different id, or storage failed. resolveMulti must NOT fall through and
+      // cache the un-persisted phantom (it would back an approval that vanishes
+      // on restart); it fails the whole resolve so the caller retries cleanly.
+      class RejectSecondaryRepo extends InMemoryStagingRepository {
+        constructor(private readonly rejectPersona: string) {
+          super();
+        }
+        override ingest(item: StagingItem): boolean {
+          if (item.persona === this.rejectPersona) return false;
+          return super.ingest(item);
+        }
+        override get(id: string): StagingItem | null {
+          if (id.endsWith(`-${this.rejectPersona}`)) return null;
+          return super.get(id);
+        }
+      }
+      setStagingRepository(new RejectSecondaryRepo('financial'));
+      const { id } = ingest({ source: 'g', source_id: 'rm-phantom' });
+      claim(10);
+
+      expect(() =>
+        resolveMulti(
+          id,
+          [
+            { persona: 'health', personaOpen: false }, // primary (tracks on original)
+            { persona: 'financial', personaOpen: false }, // secondary copy → rejected
+          ],
+          { id: 'multi-phantom', type: 'note' },
+        ),
+      ).toThrow(/could not be persisted/);
+
+      // The phantom id was never cached as a live target.
+      expect(getItem(`${id}-financial`)).toBeNull();
+    });
   });
 
   describe('markPendingApproval', () => {
@@ -965,7 +1036,111 @@ describe('Staging Service', () => {
       // Now resolve as normal
       resolve(id, 'health', true, { id: 'v-pa', type: 'note', summary: 'Approved' });
       expect(getItem(id)!.status).toBe('stored');
-      expect(getVaultItem('health', 'v-pa')).not.toBeNull();
+      expect(getVaultItem('health', `stg-${id}`)).not.toBeNull(); // PLG-29 #3: Core-owned id
     });
+  });
+});
+
+describe('Staging Service PLG-32 hardening', () => {
+  beforeEach(() => {
+    resetStagingState();
+    setStagingRepository(null);
+    resetDataScope();
+    resetPersonaState();
+    const workflowRepo = new InMemoryWorkflowRepository();
+    setWorkflowRepository(workflowRepo);
+    setWorkflowService(new WorkflowService({ repository: workflowRepo }));
+    clearVaults();
+  });
+  afterEach(() => {
+    resetStagingState();
+    setStagingRepository(null);
+    resetDataScope();
+    resetPersonaState();
+    setWorkflowService(null);
+    setWorkflowRepository(null);
+    clearOnDrainCallback();
+  });
+
+  describe('#1: Core derives persona-open, never trusts the caller upward', () => {
+    it('OVERRIDES a caller claiming open=true for a persona Core knows is CLOSED', () => {
+      createPersona('health', 'sensitive'); // exists, isOpen=false (sealed)
+      const { id } = ingest({ source: 'g', source_id: 'derive-1' });
+      claim(10);
+      // The caller LIES: persona_open=true for a persona Core knows is sealed.
+      resolve(id, 'health', true, { id: 'v1', type: 'note', summary: 'x' });
+      // Core forced the approval gate: pending_unlock, NOT a silent open store.
+      expect(getItem(id)?.status).toBe('pending_unlock');
+      expect(getVaultItem('health', `stg-${id}`)).toBeNull();
+    });
+
+    it('HONORS open=true for a persona Core confirms is OPEN', () => {
+      createPersona('general', 'standard');
+      openPersona('general');
+      const { id } = ingest({ source: 'g', source_id: 'derive-2' });
+      claim(10);
+      resolve(id, 'general', true, { id: 'v2', type: 'note', summary: 'x' });
+      expect(getItem(id)?.status).toBe('stored');
+      expect(getVaultItem('general', `stg-${id}`)).not.toBeNull();
+    });
+
+    it('falls back to the caller claim when Core has no record of the persona', () => {
+      const { id } = ingest({ source: 'g', source_id: 'derive-3' });
+      claim(10);
+      // Empty registry → no positive knowledge → existing behavior preserved.
+      resolve(id, 'general', true, { id: 'v3', type: 'note', summary: 'x' });
+      expect(getItem(id)?.status).toBe('stored');
+    });
+  });
+
+  it('#25: an OnDrain hook that THROWS does not fail a committed store', () => {
+    createPersona('general', 'standard');
+    openPersona('general');
+    setOnDrainCallback(() => {
+      throw new Error('post-publication hook boom');
+    });
+    const { id } = ingest({ source: 'g', source_id: 'cb-1' });
+    claim(10);
+    expect(() =>
+      resolve(id, 'general', true, { id: 'vcb', type: 'note', summary: 'x' }),
+    ).not.toThrow();
+    expect(getItem(id)?.status).toBe('stored');
+    expect(getVaultItem('general', `stg-${id}`)).not.toBeNull();
+  });
+
+  it('#8: a secondary-copy persistence failure CANCELS the approvals it created (no orphans)', () => {
+    class RejectSecondaryRepo extends InMemoryStagingRepository {
+      constructor(private readonly rejectPersona: string) {
+        super();
+      }
+      override ingest(item: StagingItem): boolean {
+        if (item.persona === this.rejectPersona) return false;
+        return super.ingest(item);
+      }
+      override get(id: string): StagingItem | null {
+        if (id.endsWith(`-${this.rejectPersona}`)) return null;
+        return super.get(id);
+      }
+    }
+    setStagingRepository(new RejectSecondaryRepo('financial'));
+    const { id } = ingest({ source: 'g', source_id: 'orphan-1' });
+    claim(10);
+    expect(() =>
+      resolveMulti(
+        id,
+        [
+          { persona: 'health', personaOpen: false }, // primary
+          { persona: 'financial', personaOpen: false }, // secondary → ingest rejected
+        ],
+        { id: 'vorphan', type: 'note' },
+      ),
+    ).toThrow(/could not be persisted/);
+    // The approval created for the primary is rolled back — no orphan card guards
+    // a staging row that was never written.
+    const store = getWorkflowService()?.store();
+    if (!store) throw new Error('setup: workflow service missing');
+    expect(store.getById(`approval-staging-${id}-health`)?.status).toBe('cancelled');
+    const fin = store.getById(`approval-staging-${id}-financial`);
+    if (fin) expect(fin.status).toBe('cancelled');
   });
 });

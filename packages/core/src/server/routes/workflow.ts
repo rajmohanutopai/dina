@@ -678,7 +678,36 @@ async function approveTask(
     // Phase 2: the task is now durably approved — await the persona unlock, then
     // flip the reserved grant ACTIVE so `findActiveGrant` (and the agent's retry)
     // can finally see it. Ordered AFTER the CAS so authority never precedes it.
-    await activateAgentPersonaGrant(grant, Date.now());
+    // PLG-29 #5: CHECK activate()'s result. If the reserved grant could NOT be
+    // activated (revoked concurrently — e.g. the agent's device was revoked
+    // mid-approval), don't leave an approved task pointing at a dead grant with no
+    // recovery: revoke the (already-gone) grant, CANCEL the task so its
+    // idempotency key frees, and surface an error so the owner re-prompts on the
+    // agent's next request. (The pure process-crash-between-approve-and-unlock
+    // window remains a boot-reconciler follow-up — see implementation-notes.)
+    // PLG-32 #4: activate() can THROW (SQLITE_BUSY, I/O error, closed DB), not
+    // just return false. The `!activated` branch below compensates a false, but an
+    // uncaught throw here escapes AFTER the committed approval with NO
+    // compensation — leaving the task in `queued` (non-terminal) with an inactive
+    // reservation that future agent requests dedupe onto FOREVER (the owner can't
+    // re-approve a non-pending task). Apply the same revoke+cancel compensation
+    // to the throw path so the idempotency key frees for a fresh card.
+    let activated: boolean;
+    try {
+      activated = await activateAgentPersonaGrant(grant, Date.now());
+    } catch (err) {
+      getAgentGrantRepository()?.revoke(grant.id, Date.now());
+      service.cancel(id, 'grant activation error after approval');
+      throw err;
+    }
+    if (!activated) {
+      getAgentGrantRepository()?.revoke(grant.id, Date.now());
+      service.cancel(id, 'grant activation failed after approval');
+      throw new WorkflowValidationError(
+        'agent persona-access grant could not be activated after approval — re-request access',
+        'grant',
+      );
+    }
     writeSessionGrant();
     return approved;
   }
@@ -699,7 +728,28 @@ async function approveTask(
   const approved = service.approve(id);
   const claimed = service.store().claimApprovalForExecution(id, 1, Math.floor(Date.now() / 1000));
   if (!claimed) return approved; // lost the CAS — nothing was written
-  const resume = drainForApproval(id);
+  // PLG-32 #5: a vault/repository failure inside drainForApproval used to escape
+  // with the task stranded in 'running' (non-terminal, NOT re-approvable) and the
+  // staged rows silently orphaned (drainForPersona skips approval_id rows). Catch
+  // it: dead-letter the staged rows and FAIL the task so the outcome is surfaced
+  // rather than leaving a permanent 'running' zombie the owner can't recover.
+  let resume;
+  try {
+    resume = drainForApproval(id);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    denyApproval(id, `drain failed after approval: ${reason}`);
+    service.fail(id, `staging drain failed after approval: ${reason}`);
+    throw err;
+  }
+  // PLG-32 #9: matched===0 means NOTHING was behind this approval — the staged
+  // rows were TTL-swept, quarantined as corrupt, or orphaned (an unpersisted #8
+  // secondary copy). Reporting `status:'stored'` would tell the owner a
+  // nonexistent write succeeded. Fail the task so the surface reflects that the
+  // approved store did not complete, instead of a false success.
+  if (resume.matched === 0) {
+    return service.fail(id, 'no staged memory found to store (already removed or expired)');
+  }
   return service.complete(
     id,
     JSON.stringify({
@@ -730,13 +780,20 @@ function cancelTask(
 ): WorkflowTask {
   const reason = strField(body?.reason, 'approval_denied');
   const before = service.store().getById(id);
-  if (
-    isStagingPersonaAccessApproval(before) &&
-    before?.status === WorkflowTaskState.PendingApproval
-  ) {
+  const isStagingApproval =
+    isStagingPersonaAccessApproval(before) && before?.status === WorkflowTaskState.PendingApproval;
+  // PLG-30 #7: WIN the state transition BEFORE dead-lettering the staged data.
+  // `denyApproval` forces the pending_unlock staging rows to `failed` with
+  // retry_count past the sweep ceiling — irreversible. If it ran first and
+  // `service.cancel` then threw (a concurrent transition / storage failure), the
+  // staged data would be permanently unstorable while the task stayed active.
+  // Cancel first; deny only once the cancellation has committed. Mirrors the
+  // approve path's transition-first ordering (Round-15 #2).
+  const cancelled = service.cancel(id, reason);
+  if (isStagingApproval) {
     denyApproval(id, reason);
   }
-  return service.cancel(id, reason);
+  return cancelled;
 }
 
 /**

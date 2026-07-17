@@ -498,8 +498,20 @@ export function buildPluginEnvelope(args: {
    * so the two agree on what invocation this execution bound to. Omitted by
    * callers with no authorization context (e.g. tests) — the envelope then
    * carries no provenance and the claim guard applies no grant check.
+   *
+   * PLG-29 #4: `resource` + `value` are the SAME dispatch metadata passed to
+   * authorizeAndConsume. Pinning them lets the claim guard RECOMPUTE the
+   * invocation digest from the envelope's own Core-owned fields instead of
+   * trusting `invocationDigest`, binding the dispatched invocation to the one
+   * charged against the grant. Emitted only under a 'grant' authorization.
    */
-  authorization?: { kind: 'grant' | 'card'; grantId?: string; invocationDigest?: string };
+  authorization?: {
+    kind: 'grant' | 'card';
+    grantId?: string;
+    invocationDigest?: string;
+    resource?: string;
+    value?: number;
+  };
 }): PluginTaskEnvelope {
   const cap = args.install.manifest.capabilities.find((c) => c.id === args.capabilityId);
   if (cap === undefined) {
@@ -558,6 +570,9 @@ export function buildPluginEnvelope(args: {
     action_class: cap.action_class,
     effects_idempotency: coerceEffectsIdempotency(cap.effects?.idempotency),
     // Round-12 #2/#3/#6/#1: pin the authorization provenance when supplied.
+    // PLG-29 #4: resource/value ride ONLY under a 'grant' authorization (the
+    // envelope parser's reverse-coherence rejects them on card/absent envelopes),
+    // so the claim guard can recompute + verify the invocation digest.
     ...(args.authorization !== undefined
       ? {
           authorization_kind: args.authorization.kind,
@@ -566,6 +581,12 @@ export function buildPluginEnvelope(args: {
             : {}),
           ...(args.authorization.invocationDigest !== undefined
             ? { invocation_digest: args.authorization.invocationDigest }
+            : {}),
+          ...(args.authorization.kind === 'grant' && args.authorization.resource !== undefined
+            ? { resource: args.authorization.resource }
+            : {}),
+          ...(args.authorization.kind === 'grant' && args.authorization.value !== undefined
+            ? { value: args.authorization.value }
             : {}),
         }
       : {}),

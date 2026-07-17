@@ -168,6 +168,28 @@ describe('workflow approve/deny — agent callers are refused (no self-approval)
     }
   });
 
+  it('PLG-32 #4: activate() THROWING after approval cancels the task + revokes the grant', async () => {
+    const router = build();
+    const taskId = await newPendingApprovalTaskId(router);
+    // activate() THROWS (SQLITE_BUSY / I/O), not just returns false — the throw
+    // used to escape AFTER the committed approval with no compensation, stranding
+    // the task in queued (deduped onto forever). The handler must revoke + cancel.
+    const grantRepo = getAgentGrantRepository()!;
+    const spy = jest.spyOn(grantRepo, 'activate').mockImplementation(() => {
+      throw new Error('SQLITE_BUSY');
+    });
+    try {
+      const approve = await router.handle(approveReq(taskId)); // owner
+      expect(approve.status).not.toBe(200);
+      // Terminal (cancelled), NOT a stranded 'queued' zombie the agent re-dedupes.
+      expect(getWorkflowService()?.store().getById(taskId)?.status).toBe('cancelled');
+      // No active grant survived the throw.
+      expect(grantRepo.findActiveGrant(AGENT_DID, 'health', 'read', null, Date.now())).toBe(null);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('an AGENT cannot cancel/deny a task either → 403', async () => {
     const router = build();
     const taskId = await newPendingApprovalTaskId(router);

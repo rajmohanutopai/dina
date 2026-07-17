@@ -58,6 +58,7 @@ export {
   sweepAbandonedInstalls,
   terminateInstallInFlight,
   setRepoProofVerifier,
+  setPluginDeviceVerifier,
   NODE_SUPPORTED_FEATURES,
   PENDING_INSTALL_TTL_SEC,
 } from './install_service';
@@ -66,6 +67,7 @@ export type {
   InstallFailure,
   InstallPendingResult,
   PluginTeardownResult,
+  VerifyPluginDevice,
 } from './install_service';
 
 export { claimPluginTask, STALE_AUTHORITY } from './claim_guard';

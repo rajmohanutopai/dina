@@ -638,3 +638,17 @@ describe('validateAgainstSchema', () => {
     expect(validateAgainstSchema(5, schema).ok).toBe(false);
   });
 });
+
+describe('round-20 (PLG-30) — enum deep-equality', () => {
+  it('#10: an array value does not satisfy an object-shaped enum member (and vice versa)', () => {
+    // `[1]` and `{"0":1}` have the same Object.keys — the old deepEqual let a
+    // runner result of the wrong STRUCTURE pass a pinned enum.
+    const arrEnum = { enum: [[1]] };
+    expect(validateAgainstSchema([1], arrEnum).ok).toBe(true); // exact structural match
+    expect(validateAgainstSchema({ '0': 1 }, arrEnum).ok).toBe(false); // object != array
+    const objEnum = { enum: [{ '0': 1 }] };
+    expect(validateAgainstSchema({ '0': 1 }, objEnum).ok).toBe(true);
+    expect(validateAgainstSchema([1], objEnum).ok).toBe(false);
+    expect(validateAgainstSchema({}, { enum: [[]] }).ok).toBe(false); // {} != []
+  });
+});

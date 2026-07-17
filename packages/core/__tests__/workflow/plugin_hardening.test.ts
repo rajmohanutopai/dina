@@ -486,4 +486,65 @@ describe('parsePluginEnvelope', () => {
       parsePluginEnvelope(pluginPayload({ authorization_kind: 'grant', grant_id: 'plg_x' })),
     ).not.toBeNull();
   });
+
+  it('PLG-29 #13: a too-deep schema_snapshot quarantines the envelope', () => {
+    let deep: unknown = 'leaf';
+    for (let i = 0; i < 40; i++) deep = { nested: deep }; // > MAX_SCHEMA_SNAPSHOT_DEPTH (32)
+    expect(parsePluginEnvelope(pluginPayload({ schema_snapshot: deep }))).toBeNull();
+    // A shallow snapshot still parses.
+    expect(
+      parsePluginEnvelope(pluginPayload({ schema_snapshot: { type: 'object' } })),
+    ).not.toBeNull();
+  });
+
+  it('PLG-29 #14: an action_class outside the catalog enum quarantines the envelope', () => {
+    expect(parsePluginEnvelope(pluginPayload({ action_class: 'sudo' }))).toBeNull();
+    expect(parsePluginEnvelope(pluginPayload({ action_class: 'read' }))).not.toBeNull();
+  });
+
+  it('PLG-29 #14: an oversized or control-char identity field quarantines the envelope', () => {
+    expect(parsePluginEnvelope(pluginPayload({ install_id: 'i'.repeat(257) }))).toBeNull();
+    expect(parsePluginEnvelope(pluginPayload({ capability_id: 'cap‮evil' }))).toBeNull();
+    expect(parsePluginEnvelope(pluginPayload({ manifest_cid: 'c d' }))).toBeNull();
+    expect(parsePluginEnvelope(pluginPayload({ execution_id: 'e'.repeat(1000) }))).toBeNull();
+  });
+
+  it('PLG-29 #4: resource/value ride ONLY on a grant envelope + must be well-formed', () => {
+    // Valid on a grant envelope.
+    expect(
+      parsePluginEnvelope(
+        pluginPayload({
+          authorization_kind: 'grant',
+          grant_id: 'plg_x',
+          resource: 'restaurant:luigi',
+          value: 50,
+        }),
+      ),
+    ).not.toBeNull();
+    // Rejected on a card/absent envelope (reverse coherence — unverifiable there).
+    expect(
+      parsePluginEnvelope(pluginPayload({ authorization_kind: 'card', resource: 'r' })),
+    ).toBeNull();
+    expect(parsePluginEnvelope(pluginPayload({ value: 5 }))).toBeNull();
+    // A non-finite value is refused even under a grant.
+    expect(
+      parsePluginEnvelope(
+        pluginPayload({ authorization_kind: 'grant', grant_id: 'plg_x', value: 'lots' }),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe('round-20 (PLG-30) hardening', () => {
+  it('#16: schema_snapshot cap counts UTF-8 BYTES, not UTF-16 units', () => {
+    // 50k CJK chars: UTF-16 length ~50k (< 128 KB) but UTF-8 ~150 KB (> 128 KB).
+    // The old `.length` check let this through; the byte cap rejects it.
+    const big = { x: '\u4e2d'.repeat(50000) };
+    expect(JSON.stringify(big).length).toBeLessThan(128 * 1024); // UTF-16 under cap
+    expect(parsePluginEnvelope(pluginPayload({ schema_snapshot: big }))).toBeNull();
+    // A small multi-byte snapshot still parses.
+    expect(
+      parsePluginEnvelope(pluginPayload({ schema_snapshot: { x: '\u4e2d\u6587' } })),
+    ).not.toBeNull();
+  });
 });

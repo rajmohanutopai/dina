@@ -230,7 +230,16 @@ export class CoreRouter {
       }
       // Thread the resolved identity onto the request so handlers can
       // enforce caller-type rules (the agent persona-access gate, §2).
-      dispatchReq = { ...req, callerType: authResult.callerType, callerDID: authResult.did };
+      // PLG-31 #1: thread the FINE-GRAINED authz role, not the coarse caller
+      // type — `brain`, `admin`, and every connector all collapse to
+      // `callerType:service`, so a handler that must tell a connector apart
+      // from the brain (staging owner-direct gate) can only do it here. Falls
+      // back to the coarse type for the impossible authzRole-less success.
+      dispatchReq = {
+        ...req,
+        callerType: authResult.authzRole ?? authResult.callerType,
+        callerDID: authResult.did,
+      };
     }
 
     if (match === null) {

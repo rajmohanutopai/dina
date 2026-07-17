@@ -35,7 +35,7 @@ import { canonicalJson, pluginLane } from '@dina/protocol';
 import { parsePluginEnvelope } from '../workflow/plugin_envelope';
 
 import { contextScopeViolation, paramsExceedInspectableLimits } from './dispatch';
-import { getPluginGrantRepository } from './grants';
+import { getPluginGrantRepository, invocationDigest } from './grants';
 import { validateAgainstSchema } from './schema_validate';
 
 import type { PluginInstall } from './registry';
@@ -267,12 +267,33 @@ export function claimPluginTask(args: {
         failStale('authorizing grant was never consumed for this execution');
         continue;
       }
+      // Check 7b (Round-13 #3/#4, hardened PLG-29 #4) — RECOMPUTE the invocation
+      // digest from the envelope's OWN Core-owned fields (resource/value/params/
+      // context — the ACTUAL invocation about to be dispatched) and require it to
+      // equal the digest CHARGED to the grant at consume. Trusting the
+      // producer-supplied `invocation_digest` alone let a faulty producer consume
+      // invocation A (recording A's digest in the use row) then dispatch
+      // invocation B carrying A's digest — the two matched, but the dispatched
+      // params were B's. Binding to the recomputed digest ties the dispatched
+      // invocation to the consumed one. The supplied `invocation_digest` is kept
+      // as a coherence belt: it must be present and equal the recomputed value,
+      // so a producer that stamps a digest inconsistent with its own params is
+      // also caught.
+      const recomputed = invocationDigest({
+        resource: envelope.resource,
+        value: envelope.value,
+        params: envelope.params,
+        context: envelope.context,
+      });
       if (
         envelope.invocation_digest === undefined ||
         envelope.invocation_digest === '' ||
-        envelope.invocation_digest !== use.invocationDigest
+        envelope.invocation_digest !== recomputed ||
+        recomputed !== use.invocationDigest
       ) {
-        failStale('invocation digest missing or does not match the consumed grant use');
+        failStale(
+          'invocation digest missing, disagrees with the dispatched invocation, or was not the one consumed',
+        );
         continue;
       }
     }

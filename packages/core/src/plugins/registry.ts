@@ -208,6 +208,18 @@ export interface PluginInstallRepository {
    */
   remove(installId: string): PluginInstall | null;
 
+  /**
+   * PLG-29 #10: a status-gated `remove`. Deletes the row + its grants/uses/stats
+   * ONLY if the install is still in one of `statuses`, all inside one
+   * transaction. The status re-check and the cascade delete are therefore
+   * atomic, so a concurrent `activate`/`resume` that made the row live between a
+   * caller's earlier status read and this call CANNOT be destroyed — the delete
+   * simply no-ops (returns false). Like `remove`, the delete is keyed on
+   * install_id (a semantically-corrupt row is still deletable when its raw status
+   * matches). Returns true iff the row was deleted.
+   */
+  removeIfStatus(installId: string, statuses: readonly PluginInstallStatus[]): boolean;
+
   /** Bump config_revision (every config save, §14). Returns new revision or 0. */
   bumpConfigRevision(installId: string, nowMs: number): number;
 
@@ -490,6 +502,31 @@ function mapInstalls(rows: readonly DBRow[]): PluginInstall[] {
   return rows.map(rowToInstall).filter((x): x is PluginInstall => x !== null);
 }
 
+/**
+ * PLG-29 #8: a UNIQUE-index violation surfaced by the SQLite adapter. The
+ * device-scoped partial indexes (`uq_plugin_installs_active_device` /
+ * `_pending_device`) turn a read-then-write bind/activate/resume race into a DB
+ * error on the loser; `bindPendingDevice` / `activate` / `resume` declare a
+ * boolean contract, so they catch this and return `false` instead of throwing
+ * the raw constraint. better-sqlite3 tags `.code = 'SQLITE_CONSTRAINT_UNIQUE'`;
+ * op-sqlite (mobile) surfaces the canonical `UNIQUE constraint failed` message —
+ * match either so the guard holds on both runtimes.
+ */
+function isUniqueConstraintError(err: unknown): boolean {
+  if (err === null || typeof err !== 'object') return false;
+  const code = (err as { code?: unknown }).code;
+  // PLG-30 #13: match ONLY genuine uniqueness collisions. The old
+  // `startsWith('SQLITE_CONSTRAINT')` also swallowed CHECK / NOT NULL / FOREIGN
+  // KEY / TRIGGER failures — real corruption or programming errors — silently
+  // converting them to the "expected CAS collision" false and masking them. A
+  // UNIQUE (or its PRIMARY KEY special case) violation is the only race these
+  // guarded writes anticipate; anything else must still throw.
+  if (code === 'SQLITE_CONSTRAINT_UNIQUE' || code === 'SQLITE_CONSTRAINT_PRIMARYKEY') return true;
+  // op-sqlite (mobile) surfaces the canonical message rather than a subtype code.
+  const message = (err as { message?: unknown }).message;
+  return typeof message === 'string' && /UNIQUE constraint failed/i.test(message);
+}
+
 export class SQLitePluginInstallRepository implements PluginInstallRepository {
   constructor(private readonly db: DatabaseAdapter) {}
 
@@ -631,13 +668,23 @@ export class SQLitePluginInstallRepository implements PluginInstallRepository {
     // The `(device_did IS NULL OR device_did = ?)` guard prevents silently
     // overwriting a DIFFERENT already-bound device on this pending row; the same
     // DID re-binds idempotently.
-    const affected = this.db.run(
-      `UPDATE plugin_installs SET device_did = ?, updated_at = ?
-       WHERE install_id = ? AND status = 'pending'
-         AND (device_did IS NULL OR device_did = ?)`,
-      [deviceDid, nowMs, installId, deviceDid],
-    );
-    return affected > 0;
+    // PLG-29 #8: the read above and this write are not one atomic step. Under a
+    // concurrent bind (a second Core worker), both could pass the read and race
+    // to bind the same device to different pending rows. The v19
+    // `uq_plugin_installs_pending_device` partial index makes the losing write
+    // throw SQLITE_CONSTRAINT_UNIQUE; catch it and honor the boolean contract.
+    try {
+      const affected = this.db.run(
+        `UPDATE plugin_installs SET device_did = ?, updated_at = ?
+         WHERE install_id = ? AND status = 'pending'
+           AND (device_did IS NULL OR device_did = ?)`,
+        [deviceDid, nowMs, installId, deviceDid],
+      );
+      return affected > 0;
+    } catch (err) {
+      if (isUniqueConstraintError(err)) return false;
+      throw err;
+    }
   }
 
   activate(installId: string, deviceDid: string | undefined, nowMs: number): boolean {
@@ -647,13 +694,22 @@ export class SQLitePluginInstallRepository implements PluginInstallRepository {
     if (deviceDid !== undefined && this.hasOtherActiveOnDevice(deviceDid, installId)) {
       return false;
     }
-    const affected = this.db.run(
-      `UPDATE plugin_installs
-       SET status = 'active', device_did = ?, pending_expires_at = NULL, updated_at = ?
-       WHERE install_id = ? AND status = 'pending'`,
-      [deviceDid ?? null, nowMs, installId],
-    );
-    return affected > 0;
+    // PLG-29 #8: the pre-check + this write are not atomic — a concurrent
+    // activate on the same device could slip past the read. The v19
+    // `uq_plugin_installs_active_device` index makes the loser throw; catch and
+    // return false rather than surface the raw constraint.
+    try {
+      const affected = this.db.run(
+        `UPDATE plugin_installs
+         SET status = 'active', device_did = ?, pending_expires_at = NULL, updated_at = ?
+         WHERE install_id = ? AND status = 'pending'`,
+        [deviceDid ?? null, nowMs, installId],
+      );
+      return affected > 0;
+    } catch (err) {
+      if (isUniqueConstraintError(err)) return false;
+      throw err;
+    }
   }
 
   pause(installId: string, nowMs: number, reason: PluginPauseReason = 'manual'): boolean {
@@ -722,20 +778,29 @@ export class SQLitePluginInstallRepository implements PluginInstallRepository {
     // pause_reason — or an install that activates on the same device — AFTER
     // the read can't be clobbered back to active by this stale resume. Atomic
     // and future-async-safe (today the sync repo already prevents interleaving).
-    const affected = this.db.run(
-      `UPDATE plugin_installs SET status = 'active', pause_reason = NULL, updated_at = ?
-       WHERE install_id = ? AND status = 'paused'
-         AND (pause_reason IS NULL OR pause_reason = 'manual')
-         AND NOT EXISTS (
-           SELECT 1 FROM plugin_installs other
-            WHERE other.device_did = plugin_installs.device_did
-              AND other.device_did IS NOT NULL
-              AND other.status = 'active'
-              AND other.install_id != plugin_installs.install_id
-         )`,
-      [nowMs, installId],
-    );
-    return affected > 0;
+    // PLG-29 #8: the NOT EXISTS predicate already blocks the common conflict, but
+    // a concurrent activate committing between the sub-select and the row write
+    // could still collide on `uq_plugin_installs_active_device`. Catch the
+    // constraint and return false — the owner resolves the conflicting install.
+    try {
+      const affected = this.db.run(
+        `UPDATE plugin_installs SET status = 'active', pause_reason = NULL, updated_at = ?
+         WHERE install_id = ? AND status = 'paused'
+           AND (pause_reason IS NULL OR pause_reason = 'manual')
+           AND NOT EXISTS (
+             SELECT 1 FROM plugin_installs other
+              WHERE other.device_did = plugin_installs.device_did
+                AND other.device_did IS NOT NULL
+                AND other.status = 'active'
+                AND other.install_id != plugin_installs.install_id
+           )`,
+        [nowMs, installId],
+      );
+      return affected > 0;
+    } catch (err) {
+      if (isUniqueConstraintError(err)) return false;
+      throw err;
+    }
   }
 
   remove(installId: string): PluginInstall | null {
@@ -765,6 +830,35 @@ export class SQLitePluginInstallRepository implements PluginInstallRepository {
       this.db.execute('DELETE FROM plugin_installs WHERE install_id = ?', [installId]);
     });
     return existing;
+  }
+
+  removeIfStatus(installId: string, statuses: readonly PluginInstallStatus[]): boolean {
+    if (statuses.length === 0) return false;
+    let removed = false;
+    // One transaction: the status re-check and the cascade delete cannot be
+    // interleaved by another writer, so a row that raced to `active`/`paused`
+    // after the caller's own status read is observed HERE and left intact.
+    this.db.transaction(() => {
+      // Raw status probe (scalar column, no projection) so a semantically-corrupt
+      // row is still deletable when its stored status matches — same reachability
+      // `remove` guarantees for corrupt rows (Round-11 #10).
+      const placeholders = statuses.map(() => '?').join(',');
+      const rows = this.db.query(
+        `SELECT 1 FROM plugin_installs WHERE install_id = ? AND status IN (${placeholders}) LIMIT 1`,
+        [installId, ...statuses],
+      );
+      if (rows.length === 0) return; // status moved (now live / already gone) — no-op
+      this.db.execute(
+        `DELETE FROM plugin_grant_uses WHERE grant_id IN
+           (SELECT grant_id FROM plugin_grants WHERE install_id = ?)`,
+        [installId],
+      );
+      this.db.execute('DELETE FROM plugin_grants WHERE install_id = ?', [installId]);
+      this.db.execute('DELETE FROM plugin_capability_stats WHERE install_id = ?', [installId]);
+      this.db.execute('DELETE FROM plugin_installs WHERE install_id = ?', [installId]);
+      removed = true;
+    });
+    return removed;
   }
 
   bumpConfigRevision(installId: string, nowMs: number): number {
@@ -890,13 +984,17 @@ export class SQLitePluginInstallRepository implements PluginInstallRepository {
   listRawStalePending(nowSec: number): PluginInstallRef[] {
     // Round-12 #11: scalar columns only — no JSON.parse — so a corrupt stale
     // pending row is still enumerated and its orphan device can be swept.
-    // PLG-28 #3: ALSO enumerate `revoked` tombstones that still carry a device —
-    // a failed-uninstall tombstone whose device revoke didn't land. The sweep
-    // retries the device revoke and removes the row once it's durably gone.
+    // PLG-28 #3: ALSO enumerate `revoked` tombstones — a failed-uninstall tombstone
+    // whose removal didn't land. PLG-31 #19: include revoked tombstones with NO
+    // device too — an INTERPRETED (device-less) install crash-tombstoned between
+    // markRevoked and remove was stranded forever by the old `device_did != ''`
+    // sub-condition. The sweep's device-revoke arm is already conditional on
+    // `ref.deviceDid`, and `removeIfStatus` already deletes no-device revoked rows,
+    // so widening the enumerator is the only change needed.
     const rows = this.db.query(
       `SELECT install_id, status, device_did FROM plugin_installs
        WHERE pending_expires_at IS NOT NULL AND pending_expires_at <= ?
-         AND (status = 'pending' OR (status = 'revoked' AND device_did IS NOT NULL AND device_did != ''))`,
+         AND (status = 'pending' OR status = 'revoked')`,
       [nowSec],
     );
     return rows.map((r) => ({

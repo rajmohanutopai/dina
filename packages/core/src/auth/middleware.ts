@@ -36,7 +36,20 @@ export interface AuthRequest {
 export interface AuthResult {
   authenticated: boolean;
   did?: string;
+  /**
+   * Coarse caller type from the DID registry: `service` / `device` / `agent`
+   * / `plugin` / `unknown`. Brain, admin, and every connector all collapse to
+   * `service` here — the finer distinction lives in `authzRole`.
+   */
   callerType?: string;
+  /**
+   * PLG-31 #1: the FINE-GRAINED authorization role the path×caller matrix was
+   * evaluated against — `brain` / `admin` / `connector` / `device` / `agent`
+   * / `plugin`. Only present on an authenticated result. The router threads
+   * THIS (not the coarse `callerType`) onto the request so a handler can tell
+   * a connector apart from the brain — both of which are `callerType:service`.
+   */
+  authzRole?: AuthzCallerType;
   rejectedAt?: 'headers' | 'timestamp' | 'nonce' | 'signature' | 'rate_limit' | 'authorization';
   reason?: string;
 }
@@ -220,6 +233,10 @@ export function authenticateRequest(req: AuthRequest): AuthResult {
     authenticated: true,
     did: callerIdentity.did,
     callerType: callerIdentity.callerType,
+    // PLG-31 #1: expose the fine-grained role the request was authorized as,
+    // so downstream handlers can distinguish brain / connector / admin (all
+    // `callerType:service`).
+    authzRole,
   };
 }
 

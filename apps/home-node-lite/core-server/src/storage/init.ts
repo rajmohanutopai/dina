@@ -27,8 +27,10 @@ import {
   setAgentGrantRepository,
   setAgentPersonaUnlockHook,
   setD2DOutboxRepository,
+  setPluginDeviceVerifier,
   setServiceConfigRepository,
 } from '@dina/core';
+import { getDeviceByDID } from '@dina/core/devices';
 import { hydrateDeviceRegistry } from '@dina/core/runtime';
 import {
   SQLiteAuditRepository,
@@ -188,6 +190,15 @@ export async function initializeStorage(
   // (workflow claim, service.query) lands as caller-type 'unknown'
   // and 403s. Matches mobile's boot_capabilities.ts.
   await hydrateDeviceRegistry();
+
+  // PLG-29 #7: a runner plugin can only activate on a device that is a REAL,
+  // unrevoked, role='plugin' registry entry. install_service can't import the
+  // device registry (cycle), so the verifier is WIRED here at boot. Fail-closed:
+  // if this is never wired, no runner install can activate.
+  setPluginDeviceVerifier((did) => {
+    const device = getDeviceByDID(did);
+    return device !== null && !device.revoked && device.role === 'plugin';
+  });
 
   // Service-config repo + hydrate. Without hydration, `getServiceConfig()`
   // returns null at boot even when a config was previously persisted —

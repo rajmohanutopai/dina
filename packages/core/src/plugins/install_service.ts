@@ -34,6 +34,7 @@ import {
   isValidTrustAnchor,
   normalizePluginManifest,
   pluginLane,
+  releaseRkeyFromCid,
   validatePluginManifest,
   type PluginManifest,
   type PluginTrustAnchor,
@@ -158,6 +159,33 @@ export async function beginInstall(args: {
     };
   }
 
+  // PLG-30 #19: bound the caller inputs BEFORE invoking the verifier. The verifier
+  // does network I/O, DID resolution, and CAR parsing — a malformed / oversized
+  // publisher DID or rkey, or a structurally invalid trust anchor, should be
+  // rejected cheaply here, not after a wasted resolver round-trip. finishBegin
+  // re-checks publisher + cid as defense-in-depth for the beginInstallVerified
+  // (attestation) path, which does not pass through this function.
+  if (
+    args.publisherDid === '' ||
+    args.publisherDid.length > 256 ||
+    !args.publisherDid.startsWith('did:') ||
+    // PLG-32 #24: reject control / bidi / zero-width / BOM chars in the publisher
+    // DID — the same `hasUnsafeText` gate the install LABEL and the manifest's
+    // `issuer.did` already use. Without it a homoglyph/bidi publisher identity
+    // reaches the consent card + persisted authority metadata (spoofing).
+    hasUnsafeText(args.publisherDid) ||
+    args.rkey === '' ||
+    args.rkey.length > 256 ||
+    !isValidTrustAnchor(args.trustAnchor)
+  ) {
+    return {
+      ok: false,
+      code: 'authenticity_failed',
+      message: 'install authority (publisher DID / rkey / anchor) is missing or malformed (§12)',
+      transient: false,
+    };
+  }
+
   // Round-6 #9: the injected verifier does network I/O, DID resolution, and CAR
   // parsing — any of which can REJECT (throw) rather than return a typed
   // `{ok:false}`. An uncaught rejection would escape the documented
@@ -171,13 +199,17 @@ export async function beginInstall(args: {
       collection: 'com.dinakernel.plugin.release',
       rkey: args.rkey,
     });
-  } catch (err) {
+  } catch {
+    // PLG-30 #20: do NOT interpolate the raw thrown error into the caller-facing
+    // `message`. A verifier throw propagates from the underlying network / DID-
+    // resolution / CAR-parsing libraries and can carry URLs, response bodies,
+    // credentials, or control characters. The machine-readable outcome is the
+    // bounded `code`; the message stays a fixed public string. Raw diagnostics
+    // belong in a server log, never in a result a consent UI may render.
     return {
       ok: false,
       code: 'verifier_unavailable',
-      message: `repo-proof verifier threw (transient): ${
-        err instanceof Error ? err.message : String(err)
-      }`,
+      message: 'repo-proof verification failed (transient)',
       transient: true,
     };
   }
@@ -185,7 +217,10 @@ export async function beginInstall(args: {
     return {
       ok: false,
       code: 'authenticity_failed',
-      message: proof.message,
+      // PLG-30 #20: the provider-supplied `proof.message` is likewise returned as
+      // a fixed public reason — the `code` carries the outcome; the free text
+      // does not leak verifier internals to the caller.
+      message: 'release authenticity verification failed',
       transient: proof.transient,
     };
   }
@@ -438,7 +473,29 @@ function finishBegin(
   // as authority, and rowToInstall would quarantine an anchor that fails
   // isValidTrustAnchor anyway (so persisting it just yields a dead row). Fail
   // closed here instead.
-  if (!isValidTrustAnchor(trustAnchor) || publisherDid === '' || cid === '') {
+  //
+  // PLG-29 #15: `beginInstall` derives cid/publisher from a fresh verify (so
+  // both are well-formed by the time we get here), but `beginInstallVerified`
+  // reads them straight off the attestation — an unbounded / non-`did:` publisher
+  // or a non-content-address cid would be persisted as authority and then rendered
+  // + trusted by the claim guard. Bound the publisher DID the same way the
+  // manifest validator bounds `issuer.did` (did:-prefixed, ≤256), and require the
+  // cid to be a REAL CIDv1 (dag-cbor / sha2-256) — `releaseRkeyFromCid` returns
+  // null for any other shape, so a garbage / malleable cid can't become the
+  // stored content address.
+  if (
+    !isValidTrustAnchor(trustAnchor) ||
+    publisherDid === '' ||
+    publisherDid.length > 256 ||
+    !publisherDid.startsWith('did:') ||
+    // PLG-32 #24: the shared choke point BOTH beginInstall and
+    // beginInstallVerified pass through — reject control/bidi/zero-width publisher
+    // DIDs here too (beginInstallVerified takes the DID straight off the
+    // attestation and persists it, so this is the real enforcement point).
+    hasUnsafeText(publisherDid) ||
+    cid === '' ||
+    releaseRkeyFromCid(cid) === null
+  ) {
     return {
       ok: false,
       code: 'authenticity_failed',
@@ -547,22 +604,38 @@ function finishBegin(
   }
 
   const digests = computePluginDigests(manifest, sha256);
-  const installId = installs.createPending({
-    publisherDid,
-    pluginId: manifest.plugin_id,
-    label,
-    executionMode: manifest.execution.mode,
-    currentCid: cid,
-    currentVersion: manifest.version,
-    manifest,
-    installScopeHash: digests.installScopeHash,
-    capabilityHashes: { ...digests.perCapability },
-    behaviorHash: digests.behaviorHash,
-    presentationHash: digests.presentationHash,
-    trustAnchor,
-    pendingExpiresAtSec: Math.floor(nowMs / 1000) + PENDING_INSTALL_TTL_SEC,
-    nowMs,
-  });
+  // PLG-30 #15: `createPending` is the one persistence I/O step in finishBegin,
+  // and it was the only step outside the typed-result boundary — a disk-full /
+  // closed-DB / unexpected-constraint throw here would escape the documented
+  // `BeginInstallResult` contract (reject the Promise / throw synchronously) and
+  // crash a future UI caller. Wrap it like the verifier + normalize steps do:
+  // an unexpected persistence failure becomes a TRANSIENT typed failure.
+  let installId: string;
+  try {
+    installId = installs.createPending({
+      publisherDid,
+      pluginId: manifest.plugin_id,
+      label,
+      executionMode: manifest.execution.mode,
+      currentCid: cid,
+      currentVersion: manifest.version,
+      manifest,
+      installScopeHash: digests.installScopeHash,
+      capabilityHashes: { ...digests.perCapability },
+      behaviorHash: digests.behaviorHash,
+      presentationHash: digests.presentationHash,
+      trustAnchor,
+      pendingExpiresAtSec: Math.floor(nowMs / 1000) + PENDING_INSTALL_TTL_SEC,
+      nowMs,
+    });
+  } catch {
+    return {
+      ok: false,
+      code: 'verifier_unavailable',
+      message: 'install could not be persisted',
+      transient: true,
+    };
+  }
 
   return {
     ok: true,
@@ -580,13 +653,20 @@ function finishBegin(
 }
 
 /**
- * PLG-28 #7: verifies the bound DID names a REAL, unrevoked, role='plugin'
- * device. The device registry lives ABOVE this package (devices/registry →
- * plugins/install_service already), so this check is INJECTED by the caller (the
- * install route) rather than imported — importing it here would form a cycle.
- * Returns true iff the device is a valid plugin instance.
+ * PLG-28 #7 / PLG-29 #7: verifies the bound DID names a REAL, unrevoked,
+ * role='plugin' device. The device registry lives ABOVE this package
+ * (devices/registry → plugins/install_service already), so importing it here
+ * would form a cycle — instead production WIRES this verifier at boot via
+ * `setPluginDeviceVerifier` (mirroring `setRepoProofVerifier`). A runner install
+ * canNOT activate unless a verifier is wired AND it approves the device — this is
+ * an ENFORCEABLE boundary, not the PLG-28 optional-param convention.
  */
 export type VerifyPluginDevice = (deviceDid: string) => boolean;
+
+let pluginDeviceVerifier: VerifyPluginDevice | null = null;
+export function setPluginDeviceVerifier(v: VerifyPluginDevice | null): void {
+  pluginDeviceVerifier = v;
+}
 
 /**
  * Consent confirmed → activation, the single atomic commit point (§14).
@@ -597,7 +677,6 @@ export function confirmConsent(
   installId: string,
   deviceDid: string | undefined,
   nowMs: number,
-  verifyDevice?: VerifyPluginDevice,
 ): boolean {
   const installs = getPluginInstallRepository();
   if (installs === null) return false;
@@ -625,9 +704,11 @@ export function confirmConsent(
     // device. `bindPendingDevice` accepts any nonempty DID and the match above
     // only compares strings, so a wiring error could bind an ordinary user/agent
     // device that `uninstall` would later revoke as plugin collateral. The
-    // registry check is INJECTED (import would cycle). Fail closed when the guard
-    // is wired and rejects; production MUST wire it at the install route.
-    if (verifyDevice !== undefined && !verifyDevice(deviceDid)) {
+    // registry check is WIRED at boot (import would cycle). PLG-29 #7: FAIL
+    // CLOSED — a runner install cannot activate unless a verifier is wired AND it
+    // approves the device. An unwired verifier is a misconfigured boot, not a
+    // license to skip the check.
+    if (pluginDeviceVerifier === null || !pluginDeviceVerifier(deviceDid)) {
       return false;
     }
   } else if (deviceDid !== undefined) {
@@ -763,7 +844,17 @@ export async function declineConsent(
   if (status !== null && status !== 'pending') {
     return { removed: false, ...(deviceDid !== undefined ? { deviceDid } : {}) };
   }
-  if (status === 'pending') installs.remove(installId);
+  // PLG-29 #10: between the probe above and this delete a concurrent
+  // confirmConsent could activate the pending row. `removeIfStatus` re-checks
+  // inside the delete transaction and only removes while it is STILL pending, so
+  // a decline can never destroy a freshly-activated install.
+  // PLG-30 #2: HONOR that boolean. If the CAS refused (the row raced to active
+  // between the probe and here), the plugin is LIVE — report not-removed and do
+  // NOT append a false `consent_declined`. `status === null` means the durable
+  // revoke cascade already removed it → a genuine decline (fall through).
+  if (status === 'pending' && !installs.removeIfStatus(installId, ['pending'])) {
+    return { removed: false, ...(deviceDid !== undefined ? { deviceDid } : {}) };
+  }
   recordDecisionSafe({
     installId,
     decision: 'consent_declined',
@@ -884,8 +975,16 @@ export async function uninstall(
   // uses, PLG-22 #12): row GONE = cascade already removed it (SUCCESS), row
   // present = remove it now. (Active/paused installs are PAUSED by the cascade,
   // not removed, so this only affects the pending-with-device case.)
+  // PLG-31 #18: `remove()` returns the PROJECTED row, which is null for a corrupt-
+  // but-present install even AFTER it successfully raw-deletes it — so gating the
+  // failure branch on `remove() === null` misreported a corrupt install's
+  // successful teardown as failure AND skipped the `uninstalled` decision record.
+  // Determine success from RAW existence after the delete, not the projection.
   const rawAfter = installs.rawStatus(installId);
-  if (rawAfter !== null && installs.remove(installId) === null) return null;
+  if (rawAfter !== null) {
+    installs.remove(installId);
+    if (installs.rawStatus(installId) !== null) return null; // genuinely not deleted
+  }
   recordDecisionSafe({
     installId,
     decision: 'uninstalled',
@@ -945,8 +1044,13 @@ export async function sweepAbandonedInstalls(
       swept.push(ref);
       continue;
     }
-    if (status === 'pending' || status === 'revoked') {
-      installs.remove(ref.installId);
+    // PLG-29 #10: the probe above and the delete are not atomic — a racing
+    // confirmConsent/resume on another Core worker could activate/resume the row
+    // in between. `removeIfStatus` re-checks the status INSIDE the delete
+    // transaction and only deletes while it is still pending/revoked, so the
+    // sweep can never destroy an install that just went live. A no-op (false)
+    // means it raced live → leave it, don't report it swept.
+    if (installs.removeIfStatus(ref.installId, ['pending', 'revoked'])) {
       swept.push(ref);
     }
   }

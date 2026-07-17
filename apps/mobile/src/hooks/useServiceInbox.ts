@@ -56,6 +56,15 @@ export interface InboxEntry {
   paramsPreview: string;
   /** intent_validation only — surfaces SAFE/MODERATE/HIGH/BLOCKED. */
   riskLevel?: 'SAFE' | 'MODERATE' | 'HIGH' | 'BLOCKED';
+  /**
+   * PLG-29 #1: agent_persona_access only — the EXACT access mode the agent
+   * requested. The grant payload carries read|write, but the projection used to
+   * drop it and every request rendered as generic "Vault access", so a request
+   * for WRITE authority looked identical to read. Surface it in the trusted
+   * approval chrome. An unreadable/absent mode defaults to 'write' (fail safe:
+   * never under-state the authority being granted).
+   */
+  accessMode?: 'read' | 'write';
   createdAt: number;
   expiresAt?: number;
 }
@@ -113,17 +122,28 @@ export async function listPendingApprovals(limit = 50): Promise<InboxEntry[]> {
 }
 
 /**
- * Outcome of a resolved approval, as the Completed tab renders it.
- * Three buckets keep the history readable:
- *   - `approved` — owner approved (queued / running / completed / recorded)
- *   - `denied`   — owner denied (cancelled by operator) OR the task errored
- *   - `expired`  — TTL lapsed before the owner decided (cancelled w/ reason)
+ * The OWNER DECISION on a resolved approval (PLG-31 #16 — kept separate from the
+ * execution result). The Completed tab shows this as the primary badge:
+ *   - `approved` — owner approved (queued / running / completed / recorded / failed)
+ *   - `denied`   — owner denied (cancelled by operator)
+ *   - `expired`  — TTL lapsed before the owner decided
+ *   - `unknown`  — PLG-31 #14: `outcome_unknown` — the owner approved but an
+ *                  external effect may have happened that Dina cannot confirm (§9.5)
  */
-export type ApprovalOutcome = 'approved' | 'denied' | 'expired';
+export type ApprovalOutcome = 'approved' | 'denied' | 'expired' | 'unknown';
+
+/**
+ * The EXECUTION result of the approved work, orthogonal to the owner decision
+ * (PLG-31 #16). An owner-approved task that then FAILS reads `outcome: 'approved'`
+ * + `executionResult: 'failed'`, not "Denied".
+ */
+export type ExecutionResult = 'pending' | 'completed' | 'failed' | 'unknown';
 
 /** A resolved approval row — base entry plus its terminal outcome + time. */
 export type ResolvedInboxEntry = InboxEntry & {
   outcome: ApprovalOutcome;
+  /** PLG-31 #16: the execution result, separate from the owner decision. */
+  executionResult?: ExecutionResult;
   /** When the approval reached its terminal state (task.updated_at). */
   resolvedAt: number;
 };
@@ -148,6 +168,11 @@ const RESOLVED_APPROVAL_STATES: readonly string[] = [
   'recorded',
   'cancelled',
   'failed',
+  // PLG-31 #14: a terminal state Core sets when an external effect MAY have
+  // happened but cannot be confirmed (§9.5). It was omitted here, so those tasks
+  // vanished from BOTH the pending and resolved lists — hiding exactly the case
+  // the owner most needs to see.
+  'outcome_unknown',
 ];
 
 /**
@@ -160,19 +185,38 @@ const RESOLVED_APPROVAL_STATES: readonly string[] = [
  */
 export async function listResolvedApprovals(limit = 50): Promise<ResolvedInboxEntry[]> {
   const c = requireClient();
-  const batches = await Promise.all(
+  // PLG-32 #26: fan out per-state, but do NOT silently swallow every rejection to
+  // []. On the web thin-client each state is a separate HTTP GET, so an auth /
+  // network / DB failure on one state used to drop that state's tasks with no
+  // signal — a plausible-but-incomplete history (a dropped 'cancelled'/'failed'
+  // state hides real denials/failures). Now: if EVERY state fails, throw so the
+  // caller surfaces a real error instead of an empty-looking "no history"; if only
+  // SOME fail, keep the partial result but log which states were lost.
+  const settled = await Promise.allSettled(
     RESOLVED_APPROVAL_STATES.map((state) =>
-      c
-        .listWorkflowTasks({ kind: 'approval', state: state as WorkflowTask['status'], limit })
-        .catch(() => [] as WorkflowTask[]),
+      c.listWorkflowTasks({ kind: 'approval', state: state as WorkflowTask['status'], limit }),
     ),
   );
+  const failedStates = RESOLVED_APPROVAL_STATES.filter((_, i) => settled[i]?.status === 'rejected');
+  if (failedStates.length === RESOLVED_APPROVAL_STATES.length) {
+    const first = settled.find((s) => s.status === 'rejected') as PromiseRejectedResult | undefined;
+    throw first?.reason instanceof Error
+      ? first.reason
+      : new Error('failed to load approval history');
+  }
+  if (failedStates.length > 0) {
+    console.warn(
+      `[inbox] resolved-history is INCOMPLETE — ${failedStates.length} state fetch(es) failed: ${failedStates.join(', ')}`,
+    );
+  }
+  const batches = settled.map((s) => (s.status === 'fulfilled' ? s.value : []));
   const merged: ResolvedInboxEntry[] = [];
   for (const tasks of batches) {
     for (const task of tasks) {
       merged.push({
         ...toEntry(task),
         outcome: outcomeForTask(task),
+        executionResult: executionResultForTask(task),
         resolvedAt: task.updated_at ?? task.created_at,
       });
     }
@@ -194,16 +238,43 @@ export async function listResolvedApprovals(limit = 50): Promise<ResolvedInboxEn
 function outcomeForTask(task: WorkflowTask): ApprovalOutcome {
   if (task.error === 'expired') return 'expired';
   switch (task.status) {
+    // PLG-31 #16: OWNER DECISION only. A task that reached queued/running/
+    // completed/recorded/failed got PAST pending_approval — i.e. the owner
+    // APPROVED it; a later execution failure is NOT an owner denial (that lived
+    // in `executionResult`). Only an operator cancel is a denial.
+    case 'cancelled':
+    case 'canceled':
+      return 'denied';
+    // PLG-31 #14: unconfirmed external effect — its own bucket, not "denied".
+    case 'outcome_unknown':
+      return 'unknown';
     case 'completed':
     case 'queued':
     case 'running':
     case 'recorded':
-      return 'approved';
-    case 'cancelled':
-    case 'canceled':
     case 'failed':
+      return 'approved';
     default:
-      return 'denied';
+      return 'unknown';
+  }
+}
+
+/** PLG-31 #16: the EXECUTION result, orthogonal to the owner decision above. */
+function executionResultForTask(task: WorkflowTask): ExecutionResult | undefined {
+  if (task.error === 'expired') return undefined; // expired before running
+  switch (task.status) {
+    case 'completed':
+    case 'recorded': // archival of a finished task
+      return 'completed';
+    case 'failed':
+      return 'failed';
+    case 'outcome_unknown':
+      return 'unknown';
+    case 'queued':
+    case 'running':
+      return 'pending';
+    default:
+      return undefined; // cancelled / denied — never ran
   }
 }
 
@@ -218,9 +289,11 @@ function outcomeForTask(task: WorkflowTask): ApprovalOutcome {
  *   - `pending`  — still awaiting a decision
  *   - `approved` — owner approved (queued / running / completed)
  *   - `denied`   — owner denied OR task failed / expired
- *   - `missing`  — task vanished (TTL swept, never existed)
+ *   - `unknown`  — terminal but UNCONFIRMED (`outcome_unknown`): the external
+ *                  effect may already have happened, so it is NOT a denial
+ *   - `missing`  — task vanished (TTL swept, never existed, unrecognized)
  */
-export type ApprovalLifecycleState = 'pending' | 'approved' | 'denied' | 'missing';
+export type ApprovalLifecycleState = 'pending' | 'approved' | 'denied' | 'unknown' | 'missing';
 
 /**
  * Probe a workflow task's current lifecycle bucket. Used by the chat
@@ -236,19 +309,31 @@ export async function getApprovalLifecycle(taskId: string): Promise<ApprovalLife
   switch (task.status) {
     case 'pending_approval':
       return 'pending';
+    // PLG-31 #15: queued / running / completed / recorded are all owner-approved
+    // buckets. `recorded` is a terminal ARCHIVED state — it must NOT fall through
+    // to `default` and regain actionable Approve/Deny buttons (a tap then fails
+    // Core's transition). It is a resolved approval.
     case 'queued':
     case 'running':
     case 'completed':
+    case 'recorded':
       return 'approved';
     case 'cancelled':
     case 'canceled':
     case 'failed':
     case 'expired':
       return 'denied';
+    // PLG-31 #14/#15 + PLG-32 #21: `outcome_unknown` is terminal + UNCONFIRMED —
+    // its own lifecycle bucket, NOT 'missing' (which the chat card renders as
+    // "Denied"). The external effect may already have happened, so it must never
+    // read as a denial.
+    case 'outcome_unknown':
+      return 'unknown';
     default:
-      // Unknown — be conservative; render as pending so the operator
-      // can take action rather than seeing a stale resolved label.
-      return 'pending';
+      // PLG-31 #15: an UNKNOWN state must be non-actionable ('missing'), NOT
+      // 'pending' — otherwise a terminal task the UI doesn't recognize regains
+      // Approve/Deny buttons that Core will reject.
+      return 'missing';
   }
 }
 
@@ -407,14 +492,19 @@ function toEntry(task: WorkflowTask): InboxEntry {
     const persona = typeof parsed.persona === 'string' ? parsed.persona : '';
     const agentDID = typeof parsed.agent_did === 'string' ? parsed.agent_did : '';
     const scope = typeof parsed.scope === 'string' ? parsed.scope : '';
+    // PLG-29 #1: pin the exact mode into trusted approval chrome. Fail safe —
+    // anything other than an explicit 'read' is shown as 'write', so a
+    // missing/garbled mode never under-states the authority up for approval.
+    const accessMode: 'read' | 'write' = parsed.mode === 'read' ? 'read' : 'write';
     return {
       id: task.id,
       kind: 'vault_read',
       capability: persona,
-      serviceName: 'Vault access',
+      serviceName: accessMode === 'write' ? 'Vault WRITE access' : 'Vault read access',
       description: scope || task.description || '',
       requesterDID: agentDID,
       paramsPreview: scope,
+      accessMode,
       createdAt: task.created_at,
       ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
     };

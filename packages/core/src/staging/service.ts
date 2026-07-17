@@ -17,6 +17,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { STAGING_LEASE_DURATION_S, STAGING_ITEM_TTL_S, STAGING_MAX_RETRIES } from '../constants';
+import { isPersonaOpen, personaExists } from '../persona/service';
 import { currentDataScope, setCurrentDataScope, type DataScope } from '../scope/data_scope';
 import { storeItem } from '../vault/crud';
 import {
@@ -42,7 +43,13 @@ export interface StagingItem {
   expires_at: number; // unix seconds
   created_at: number; // unix seconds
   data: Record<string, unknown>;
-  /** SHA-256 hash of the serialized data payload for integrity verification (matching Go source_hash). */
+  /**
+   * SHA-256 of the serialized data payload at ingest (matching Go source_hash).
+   * PLG-31 #20: this is an ADVISORY fingerprint only — NO read/claim/resolve path
+   * verifies it against the stored payload, and per PLG-31 #1 the producer controls
+   * both `data` and thus its own hash, so it cannot detect owner-provenance
+   * tampering. Do NOT treat it as an integrity/tamper-detection guarantee.
+   */
   source_hash: string;
   /** Enriched VaultItem JSON stored on resolve for later drain (matching Go classified_item). */
   classified_item?: Record<string, unknown>;
@@ -165,6 +172,27 @@ export function clearOnDrainCallback(): void {
   onDrainCallback = null;
 }
 
+/**
+ * PLG-32 #25: fire the OnDrain hook in ISOLATION. The hook runs AFTER the
+ * durable vault write + status persist, so a throw from it must NOT bubble out
+ * and turn a committed store into an apparent failure (which the caller would
+ * retry against already-stored data) or abort the rest of a batch drain. Post-
+ * publication processing (event extraction, last-seen, reminder planning) is
+ * best-effort by definition; log and swallow.
+ */
+function fireOnDrain(item: StagingItem, persona: string): void {
+  if (!onDrainCallback) return;
+  try {
+    onDrainCallback(item, persona);
+  } catch (err) {
+    console.warn(
+      `[staging] OnDrain hook threw after commit (persona=${persona}, item=${item.id}): ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+}
+
 function nowSeconds(): number {
   return Math.floor(Date.now() / 1000);
 }
@@ -184,11 +212,21 @@ function storeItemInScope(
   persona: string,
   classifiedItem: Record<string, unknown>,
   scope: DataScope,
+  ownedId: string,
 ): void {
+  // PLG-29 #3: Core OWNS the vault primary key — NEVER trust a classifier /
+  // producer-supplied `id`. `storeItem` uses INSERT-OR-REPLACE keyed on the
+  // item id, so a supplied id that collides with an existing vault row would
+  // REPLACE (overwrite) that unrelated record. The classifier/enrichment output
+  // arrives at Core as untrusted brain-supplied data, so we stamp the
+  // Core-derived id (`stg-<stagingId>`, deterministic for crash-recovery
+  // idempotency) on a SHALLOW COPY — the caller's stored classified_item is
+  // untouched, and any supplied `id` can never dictate the storage key.
+  const owned = { ...classifiedItem, id: ownedId };
   const prev = currentDataScope();
   if (scope !== prev) setCurrentDataScope(scope);
   try {
-    storeItem(persona, classifiedItem);
+    storeItem(persona, owned);
   } finally {
     if (scope !== prev) setCurrentDataScope(prev);
   }
@@ -226,7 +264,7 @@ function stagingApprovalId(stagingId: string, persona: string): string {
  * External agents, connectors, and third-party pipelines are not in this set
  * and still require approval when the target persona vault is closed.
  */
-const OWNER_DIRECT_SOURCES = new Set(['user_remember']);
+export const OWNER_DIRECT_SOURCES = new Set(['user_remember']);
 
 function previewForApproval(item: StagingItem, classifiedItem?: Record<string, unknown>): string {
   const candidates = [
@@ -243,6 +281,48 @@ function previewForApproval(item: StagingItem, classifiedItem?: Record<string, u
     if (trimmed !== '') return trimmed.length <= 180 ? trimmed : `${trimmed.slice(0, 180)}...`;
   }
   return '';
+}
+
+/**
+ * PLG-32 #8: best-effort roll back approval tasks created during a resolve that
+ * then failed to persist all its targets. Cancelling is idempotent-safe (a
+ * missing / already-terminal task is skipped) and must never mask the original
+ * error — swallow any cancel failure.
+ */
+function cancelStagingApprovals(approvalIds: Map<string, string>, reason: string): void {
+  const service = getWorkflowService();
+  if (service === null) return;
+  for (const approvalId of approvalIds.values()) {
+    try {
+      const existing = service.store().getById(approvalId);
+      if (existing === null) continue;
+      if (isTerminalWorkflowState(existing.status as WorkflowTaskState)) continue;
+      service.cancel(approvalId, reason);
+    } catch (err) {
+      console.warn(
+        `[staging] failed to roll back orphan approval "${approvalId}": ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+}
+
+/**
+ * PLG-32 #1: derive the effective open-state instead of blindly trusting the
+ * caller's `persona_open`. `/v1/staging/resolve` is brain-only, and the sidecar
+ * model treats the Brain as an UNTRUSTED tenant — a faulty/compromised Brain
+ * that sends `persona_open=true` for a LOCKED persona would otherwise skip the
+ * approval card and write straight into a sealed vault. Core owns the persona
+ * registry, so it can refuse: when Core POSITIVELY knows the persona exists AND
+ * is currently closed, override the caller's `true` to `false` (force the
+ * approval gate). When Core has no record (e.g. a context where the registry
+ * isn't populated), fall back to the caller's claim so existing flows are
+ * unchanged — the override only ever tightens, never loosens.
+ */
+function effectivePersonaOpen(persona: string, claimedOpen: boolean): boolean {
+  if (claimedOpen && personaExists(persona) && !isPersonaOpen(persona)) return false;
+  return claimedOpen;
 }
 
 function createPersonaAccessApproval(
@@ -377,7 +457,15 @@ export function ingest(input: {
         cacheItem(existing);
         return { id: existing.id, duplicate: true };
       }
-      throw new Error('staging: repository rejected ingest without an existing dedup row');
+      // PLG-32 #10: the INSERT was IGNOREd (dedup key held) yet no row projects —
+      // the key is occupied by a CORRUPT row that quarantines at read
+      // (rowToStagingItem → null). Left alone this dead-locks the key forever: every
+      // retry IGNOREs and every read returns null. Evict the unreadable row and
+      // retry the insert once (repair-on-conflict) so a valid retry can proceed.
+      repo.deleteByDedup(producer, input.source, input.source_id, scope);
+      if (!repo.ingest(item)) {
+        throw new Error('staging: repository rejected ingest after dedup-conflict repair');
+      }
     }
   }
   cacheItem(item);
@@ -438,7 +526,7 @@ export function claim(limit = 10, leaseDurationSeconds?: number): StagingItem[] 
 export function resolve(
   id: string,
   persona: string,
-  personaOpen: boolean,
+  claimedPersonaOpen: boolean,
   classifiedItem?: Record<string, unknown>,
 ): void {
   const repo = getStagingRepository();
@@ -449,6 +537,8 @@ export function resolve(
     throw new Error(`staging: cannot resolve item in status "${item.status}"`);
   }
 
+  // PLG-32 #1: Core decides open vs. locked, not the caller.
+  const personaOpen = effectivePersonaOpen(persona, claimedPersonaOpen);
   const needsApproval = !personaOpen && !OWNER_DIRECT_SOURCES.has(item.source);
   const approvalId = needsApproval
     ? createPersonaAccessApproval(item, persona, classifiedItem)
@@ -469,7 +559,7 @@ export function resolve(
   let storedOpenPersona: string | null = null;
   if (personaOpen && classifiedItem) {
     try {
-      storeItemInScope(persona, classifiedItem, item.data_scope);
+      storeItemInScope(persona, classifiedItem, item.data_scope, `stg-${item.id}`);
       storedOpenPersona = persona;
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
@@ -494,7 +584,7 @@ export function resolve(
     });
   }
   cacheItem(item);
-  if (storedOpenPersona && onDrainCallback) onDrainCallback(item, storedOpenPersona);
+  if (storedOpenPersona) fireOnDrain(item, storedOpenPersona);
 }
 
 /**
@@ -509,7 +599,7 @@ export function resolve(
  */
 export function resolveMulti(
   id: string,
-  targets: { persona: string; personaOpen: boolean }[],
+  claimedTargets: { persona: string; personaOpen: boolean }[],
   classifiedItem?: Record<string, unknown>,
 ): number {
   const repo = getStagingRepository();
@@ -519,9 +609,15 @@ export function resolveMulti(
   if (item.status !== 'classifying') {
     throw new Error(`staging: cannot resolve item in status "${item.status}"`);
   }
-  if (targets.length === 0) {
+  if (claimedTargets.length === 0) {
     throw new Error('staging: resolveMulti requires at least one target persona');
   }
+  // PLG-32 #1: Core decides open vs. locked per target, not the caller — a
+  // persona Core knows is closed can never be stored open on the caller's word.
+  const targets = claimedTargets.map((t) => ({
+    persona: t.persona,
+    personaOpen: effectivePersonaOpen(t.persona, t.personaOpen),
+  }));
   const primary = targets[0];
   if (!primary) {
     throw new Error('staging: resolveMulti requires at least one target persona');
@@ -570,7 +666,7 @@ export function resolveMulti(
   for (const target of targets) {
     if (target.personaOpen && classifiedItem) {
       try {
-        storeItemInScope(target.persona, classifiedItem, item.data_scope);
+        storeItemInScope(target.persona, classifiedItem, item.data_scope, `stg-${item.id}`);
         storedPersonas.push(target.persona);
       } catch (err) {
         // Surface the reason so the drain / ops can see WHY the vault
@@ -600,21 +696,51 @@ export function resolveMulti(
     );
   }
 
-  // Create separate pending_unlock records for each locked secondary persona
-  for (const lockedPersona of lockedTargets) {
-    if (lockedPersona === primary.persona) continue; // primary handled below
-    const copyId = `${id}-${lockedPersona}`;
-    const copy: StagingItem = {
-      ...item,
-      id: copyId,
-      source_id: `${item.source_id}:${lockedPersona}`,
-      persona: lockedPersona,
-      status: 'pending_unlock',
-      classified_item: classifiedItem,
-    };
-    copy.approval_id = approvalIds.get(lockedPersona);
-    if (repo) repo.ingest(copy);
-    cacheItem(copy);
+  // Create separate pending_unlock records for each locked secondary persona.
+  // PLG-32 #8: the locked-target approvals were created ABOVE, before these
+  // copies are persisted. If a copy fails to persist (dedup collision / storage
+  // failure → the PLG-31 #12 throw), the already-created approval cards would be
+  // ORPHANED — the owner sees an approvable card guarding a staging row that was
+  // never written. Wrap the persistence so a throw cancels every approval this
+  // call created before it propagates, leaving no dangling cards.
+  try {
+    for (const lockedPersona of lockedTargets) {
+      if (lockedPersona === primary.persona) continue; // primary handled below
+      const copyId = `${id}-${lockedPersona}`;
+      const copy: StagingItem = {
+        ...item,
+        id: copyId,
+        source_id: `${item.source_id}:${lockedPersona}`,
+        persona: lockedPersona,
+        status: 'pending_unlock',
+        classified_item: classifiedItem,
+      };
+      copy.approval_id = approvalIds.get(lockedPersona);
+      if (repo && !repo.ingest(copy)) {
+        // PLG-30 #4: a rejected INSERT OR IGNORE (id / dedup collision, storage
+        // failure) must NOT be represented as a live target. Cache the AUTHORITATIVE
+        // persisted row, not the un-persisted copy — otherwise the "target" exists
+        // only in the in-memory cache and silently vanishes on restart. Mirrors the
+        // primary-ingest reconcile at the top of `ingest`.
+        const persisted = repo.get(copyId);
+        if (persisted) {
+          cacheItem(persisted);
+          continue;
+        }
+        // PLG-31 #12: ingest was rejected AND no row exists at this id — the IGNORE
+        // fired on the UNIQUE(producer_id, source, source_id, data_scope) key under a
+        // DIFFERENT id, or storage failed. Do NOT fall through to cache the
+        // un-persisted copy: that phantom would back an approval that disappears on
+        // restart. Fail the resolve so the caller retries cleanly.
+        throw new Error(
+          `staging: secondary copy for persona "${lockedPersona}" could not be persisted (dedup collision or storage failure)`,
+        );
+      }
+      cacheItem(copy);
+    }
+  } catch (err) {
+    cancelStagingApprovals(approvalIds, 'resolve failed before persisting all targets');
+    throw err;
   }
 
   // Primary persona tracks on the original item
@@ -639,9 +765,7 @@ export function resolveMulti(
     });
   }
   cacheItem(item);
-  if (onDrainCallback) {
-    for (const storedPersona of storedPersonas) onDrainCallback(item, storedPersona);
-  }
+  for (const storedPersona of storedPersonas) fireOnDrain(item, storedPersona);
   return targets.length;
 }
 
@@ -808,19 +932,31 @@ export function drainForPersona(persona: string): number {
   for (const item of items) {
     if (item.status === 'pending_unlock' && item.persona === persona) {
       if (item.approval_id !== undefined) continue;
-      // Write classified data to vault if available
+      // PLG-29 #20: FAIL CLOSED like drainForApproval — a swallowed store error
+      // followed by `status = 'stored'` marked the row terminal though nothing
+      // landed in the vault (silent data loss). Only mark stored AFTER a
+      // successful store; on failure leave the row `pending_unlock` so a later
+      // drain/sweep re-attempts, and skip it. (Per-item non-fatal — one bad item
+      // must not abort the batch.) The Core-owned id (#3) is stamped in
+      // storeItemInScope.
       if (item.classified_item) {
         try {
-          storeItemInScope(persona, item.classified_item, item.data_scope);
+          storeItemInScope(persona, item.classified_item, item.data_scope, `stg-${item.id}`);
         } catch {
-          /* fail-safe */
+          continue; // leave pending_unlock; do NOT mark stored
         }
+      } else {
+        // PLG-31 #3: no classified payload → nothing to write. Marking this row
+        // `stored` (below) would terminalize it as a success with an empty vault
+        // (silent loss). Leave it pending_unlock and skip, mirroring the store-fail
+        // branch and drainForApproval's payload guard.
+        continue;
       }
       item.status = 'stored';
       if (repo) repo.updateStatus(item.id, item.status);
       cacheItem(item);
       // OnDrain callback: post-publication event extraction
-      if (onDrainCallback) onDrainCallback(item, persona);
+      fireOnDrain(item, persona);
       drained++;
     }
   }
@@ -857,21 +993,14 @@ export function drainForApproval(approvalId: string): StagingApprovalActionResul
     if (!item.classified_item) {
       throw new Error(`staging: pending unlock item "${item.id}" has no classified_item to store`);
     }
-    // PLG-27 #6: give the vault write a STABLE, deterministic id derived from the
-    // staging item id when the classified item carries none. Otherwise storeItem
-    // mints a fresh RANDOM id per call, so a crash AFTER the vault write (below)
-    // but BEFORE the status persist leaves the staging row still `pending_unlock`
-    // — and a recovery re-drain then inserts a DUPLICATE vault row. A stable id
-    // makes storeItem's INSERT-OR-REPLACE an idempotent upsert, so the re-drain
-    // overwrites the same row. (The single-executor CAS in the approve route
-    // already blocks CONCURRENT double-drain; this closes the crash-then-recover
-    // duplicate. A fully resumable per-item state machine remains a follow-up.)
-    const ci = item.classified_item;
-    if (ci.id === undefined || ci.id === null || ci.id === '') {
-      ci.id = `stg-${item.id}`;
-    }
+    // PLG-27 #6 + PLG-29 #3: the vault write uses a STABLE, deterministic,
+    // Core-OWNED id (`stg-<stagingId>`), stamped in storeItemInScope. Stable →
+    // storeItem's INSERT-OR-REPLACE is an idempotent upsert, so a crash after the
+    // vault write but before the status persist doesn't duplicate on re-drain.
+    // Core-owned → a classifier-supplied id can never dictate the key and
+    // overwrite an unrelated vault row.
     try {
-      storeItemInScope(item.persona, ci, item.data_scope);
+      storeItemInScope(item.persona, item.classified_item, item.data_scope, `stg-${item.id}`);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       throw new Error(`staging: vault store failed for persona "${item.persona}": ${reason}`);
@@ -879,7 +1008,7 @@ export function drainForApproval(approvalId: string): StagingApprovalActionResul
     item.status = 'stored';
     if (repo) repo.updateStatus(item.id, item.status);
     cacheItem(item);
-    if (onDrainCallback) onDrainCallback(item, item.persona);
+    fireOnDrain(item, item.persona);
     result.drained++;
   }
   return result;
@@ -988,11 +1117,11 @@ export function getStatusForOwner(
 }
 
 /**
- * Compute SHA-256 hash of a data payload for integrity verification.
- *
- * Matches Go's source_hash: SHA-256 of the serialized body content.
- * Used to detect content tampering during the staging pipeline.
- * Deterministic: same data always produces the same hash.
+ * Compute SHA-256 of a data payload — an ADVISORY fingerprint (matching Go's
+ * source_hash). PLG-31 #20: it is written at ingest but NEVER verified downstream,
+ * and cannot detect provenance tampering (the producer controls the data + hash),
+ * so it is not an integrity/tamper-detection guarantee — only a deterministic
+ * content fingerprint. Deterministic: same data always produces the same hash.
  */
 export function computeSourceHash(data: Record<string, unknown>): string {
   const serialized = JSON.stringify(data);

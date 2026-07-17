@@ -1015,10 +1015,25 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
     // DB level so a double-activation fails loudly instead of routing to
     // an arbitrary lane. Partial: pending/paused/revoked rows and
     // device-less installs are unconstrained.
+    //
+    // PLG-29 #8: ALSO enforce at most one PENDING install per device. The
+    // active index left `bindPendingDevice` as a read-then-write (pre-check
+    // `hasOtherNonRevokedOnDevice`, then UPDATE) — two writers could each pass
+    // the pre-check and bind the SAME device to different pending installs, so a
+    // later decline/revoke on one durably revokes the shared device and kills the
+    // other's runner. A pending-scoped unique index makes the losing bind fail at
+    // the DB (converted to a `false` return via try/catch), closing the race.
+    // We deliberately do NOT extend uniqueness across paused/active together: the
+    // device-revoke-and-repair flow (and a restore) intentionally lets a paused
+    // `device_revoked` install and a freshly-activated install share a device
+    // (registry F9 / P1-3), and `listByDeviceDid` disables them all on revoke.
     sql: `
       CREATE UNIQUE INDEX IF NOT EXISTS uq_plugin_installs_active_device
         ON plugin_installs(device_did)
         WHERE device_did IS NOT NULL AND status = 'active';
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_plugin_installs_pending_device
+        ON plugin_installs(device_did)
+        WHERE device_did IS NOT NULL AND status = 'pending';
     `,
   },
 ];
