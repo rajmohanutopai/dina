@@ -6,7 +6,7 @@
 
 **Purpose:** Let a person authorize a trusted service to notify them when a condition they declared becomes true — "tell me when the BTC price crosses 100k," "alert me if flight BA117 is delayed," "warn me if a charge over $500 hits my card" — without letting any provider push content at the user, escalate its own urgency, or farm the user's attention. Push in Dina is the provider-driven fulfillment of a request the user already made, mediated end to end by the same silence, persona, and trust machinery that governs everything else.
 
-This document is the fourth service specification in the family, after `docs/SERVICES_LAUNCH_ARCHITECTURE.md` (pull/query discovery), `docs/CONTACT_SERVICES_ARCHITECTURE.md` (peer pre-authorization), and `docs/CURATION_SERVICES_ARCHITECTURE.md` (earned-trust recommendation). It reuses their primitives rather than inventing a parallel network.
+This document is a service specification in the family alongside `docs/SERVICES_LAUNCH_ARCHITECTURE.md` (pull/query discovery), `docs/CONTACT_SERVICES_ARCHITECTURE.md` (peer pre-authorization), `docs/CURATION_SERVICES_ARCHITECTURE.md` (earned-trust recommendation), and `docs/INTERACTIVE_SERVICES_ARCHITECTURE.md` (the paced approve/deny loop). It holds the **push-transport authorization model** — the reserved and open postures, rate budgets, no-receipts, and the wake signal — that the interactive loop's transport layer (§3.2 there) and any other pattern reuse: **one authority, a shared transport.** It reuses their primitives rather than inventing a parallel network.
 
 ---
 
@@ -28,6 +28,18 @@ The intended division of labour:
 
 > Providers watch the world. The subscriber declares what matters. Dina decides whether this moment justifies breaking silence, and at what volume.
 
+### 1.1 One authority, two push postures — and the wake signal
+Push is a **transport, not an authority.** It sits under the same "Dina decides" layer as pull (see `INTERACTIVE_SERVICES_ARCHITECTURE.md` §3.2): however a message is *initiated*, Dina alone decides whether it surfaces, how loud, and whether it acts. The transport only changes who *triggers* delivery — never who *decides* it. So push offers **two postures**, chosen **per trusted sender** on the spectrum **Off → reserved → open** — never a global default:
+
+- **Reserved push (default — a *hard* gate).** The provider may deliver only against a pre-authored, matching, condition-scoped grant; no active matching grant ⇒ dropped/quarantined (default-deny). The guarantee is **cryptographic and deterministic** — Dina need not read the content to decide. This is the whole of the rest of this document, and the right posture for anything that matters.
+- **Open push (opt-in per trusted sender — a *soft* gate).** A sender you have broadly allowed may deliver freely; Dina still stands in the middle and applies your **standing delivery filters** — mute a category, hold Engagement for the briefing, rate-budget, quiet hours, DND — before anything surfaces. Right for benign, cooperative senders where declaring every condition is impractical (e.g. a smart-inbox over email). **Honest caveat:** rule-based filters (mute this sender, hold for briefing, rate budget, quiet hours) are deterministic; but *content* filters like "drop marketing" are **best-effort classification** — Brain-side and fallible, or a provider-asserted category tag an adversary can mislabel — **not** the hard grant gate. Dina reports which guarantee a run provides and never dresses the soft one up as the hard one.
+
+What holds **deterministically in both postures** (authority never rides the transport): the provider carries a *proposal, never authority to act*; it cannot set its own loudness (Dina re-derives the tier — the "provider proposes; Dina disposes" rule, §1); rate budgets, instant revoke, and no-receipts apply; and open push is only ever enabled for a sender you already trust — **reserved stays the floor for everyone else.**
+
+**The wake signal is contentless.** On a backgrounded phone a timely push needs the OS to wake Dina. That wake is a bare "check now" — **no payload, no urgency, no authority**; the real message still arrives and is verified through the normal path, and a spurious wake merely makes Dina look and find nothing. **Sovereignty tax, named not hidden:** a timely wake on iOS implies APNs (FCM on Android), so a third party learns *that/when* a wake occurred (content stays sealed). Pull, or a self-hosted Home Node reached over the zero-knowledge **MsgBox** relay, is the escape hatch for anyone who won't accept an OS push rail in the path.
+
+**What is design-complete vs. deferred (honest scope).** The **standalone reserved** posture — condition-scoped, default-deny, over-budget-to-briefing — is the specified model in *this* document (§§6–8). But **composing push with an interactive run is a still-being-contracted factoring** — several **load-bearing joint contracts remain open** and must be frozen jointly before a run-bound push can be claimed (the authoritative list is `INTERACTIVE_SERVICES_ARCHITECTURE.md` status + §19; it is **more than two items**): the **`push_open` grant/event contract**; the **shared signed wire framing** (this doc's `push.event` binds subscription/condition/event fields but no `run_id`/kind/action-schema, while the interactive `RunMessage` binds none of the push fields — one composed sender-bound framing binding `run_id` + grant/subscription id + posture + condition + stable `message_id`/`dedup_key`/`content_digest` + the digest of an inner `RunMessage`, **no inner `exhausted` in V1**); the **admission/token/dedup ordering + `content_digest` field freeze**; **push progression** (the `dedup_key` ledger; the deferred high-water `exhausted`); the **subscription-ledger lifecycle + erasure** (own `subscription_erasure_mode`, retention, GC); the **block→grant-revocation cascade + the `active → revoking → destroyed` revocation state machine**; the **retry-repair recovery**; the **action-scope grammar**; and **OS-push/wake/MsgBox** integration. Until these are frozen, **no push posture is fully claimable.** A *pure* standalone reserved-informational notification (a grant that is **never** run-composed) is closest to done and uses the simple self-contained model (§§6–8); but the moment a grant may share the subscription ledger, revocation state machine, or provisional replay claim with a run (the unified model, §15/§8), it depends on those same still-open contracts — so even standalone push inherits the deferred lifecycle/replay/erasure contracts and is **not** independently "design-complete." A run-bound push is designed but not yet claimable.
+
 ---
 
 ## 2. Scope and non-goals
@@ -42,6 +54,8 @@ The intended division of labour:
 - Delivering through the existing notification, briefing and Activity surfaces — no new feed.
 - Measuring push signal quality (did the notification matter?) and degrading providers that cry wolf.
 - Reusing Dina services, grants, D2D and PeerLens instead of a parallel push network.
+- The **two push postures** — reserved (default-deny, deterministic) and open (per-trusted-sender, owner-filtered, soft) — on the **Off → reserved → open** spectrum, with Dina reporting which guarantee a run provides (§1.1).
+- A **contentless wake signal** to trigger delivery on a backgrounded/offline node, with the real message still authenticated on the normal path (§1.1).
 
 ### 2.2 Non-goals
 
@@ -51,7 +65,10 @@ The intended division of labour:
 - Creating a feed, an engagement loop, unread-count pressure, or any habit-forming surface. Push fulfils the user's standing requests; it does not manufacture reasons to open the app.
 - Reporting to the provider whether or when the user saw a push. Delivery is never an attention signal a provider can observe.
 - Replacing reminders (user-scheduled, self-authored) or ordinary query services (pull-now).
-- Server-to-agent command push, remote code execution, or provider-driven task creation. A push is a notification, not an instruction.
+- Server-to-agent command push, remote code execution, or provider-driven task creation **without an explicit owner-authored action scope**. By default a push is a notification, not an instruction. A pushed **action proposal** (as used by an interactive run over a push transport, `INTERACTIVE_SERVICES_ARCHITECTURE.md` §6.4/§7.1) is admitted only when the grant carries an explicit owner action scope — and even then it only *proposes*; the owner's per-action gate still authorizes acting. Absent that scope, an action-bearing push is rejected/quarantined.
+- Presenting the **open-posture content filter as a hard guarantee** — it is best-effort classification, and Dina says so rather than pretending it equals the reserved-posture grant gate (§1.1).
+- Hiding the **OS-push-rail (APNs/FCM) sovereignty trade** of a timely mobile wake, or letting the wake signal carry content, urgency, or authority (§1.1).
+- Making open push a global default — it is opt-in per already-trusted sender; reserved (default-deny) is the floor (§1.1).
 
 ---
 
@@ -179,9 +196,9 @@ Design rules:
 
 - **Persona-bound.** The subscription lives in one persona and inherits its tier. A `/financial` fraud-alert subscription is closed with the vault; while the persona is locked, a matching push is held (dead-drop style) or reduced to a tier-safe summary, never decrypted eagerly. A `/health` topic is sensitive by default and refuses a public priority ceiling above Solicited without an explicit sensitive-scope confirmation (§10).
 - **Ceiling, not floor.** `priority_ceiling` caps how loud a provider may ever be. Dina may deliver *quieter* (quiet hours, low confidence, cry-wolf downgrade) but never louder.
-- **Budgeted.** `rate_budget` is a token bucket. Over-budget pushes are demoted to briefing or dropped, and the overage counts against the provider's standing (§12). There is no way to buy a bigger budget from the provider side; it is the subscriber's dial.
+- **Budgeted.** `rate_budget` is a token bucket, consumed **once per deduped logical event** (retries/duplicates consume nothing, §8). Over-budget handling is **by kind**: an **informational** overage is *demoted to the briefing* by default (never allowed to interrupt; dropping-for-frequency is an explicit subscriber opt-in), while an **action** overage is *retryably rejected* (never demoted below its Tier-2 base — a decision is never silently quieted, §8/§7.1). The overage counts against the provider's standing (§12). This is distinct from `queue_cap` on the interactive side, which *rejects* over-cap arrivals. There is no way to buy a bigger budget from the provider side; it is the subscriber's dial.
 - **Bounded and decaying.** `expires_at` is required. A standing subscription is not permanent; the user re-affirms interest by renewal, which is a natural moment to re-consent to the ceiling and budget.
-- **Instantly exitable.** Mute, snooze, lower-ceiling, and revoke are local and immediate (§12). Revocation flips the grant's `revokedAt`; the very next push fails `isAuthorized` and is dropped. No provider permission is sought or awaited.
+- **Instantly exitable.** Mute, snooze, lower-ceiling, and revoke are local and immediate (§12). Revocation **fences admission immediately** (bumps the authorization snapshot / `revoking`, §15) so the very next push fails at admission in both pipelines; the subscription-ledger key is then crypto-shredded once no run is bound (the `active → revoking → destroyed` machine, §15). No provider permission is sought or awaited.
 
 The provider learns of the subscription through a `push.subscribe` handshake (§7) so it knows what to watch, but the *authority* to deliver lives entirely in the subscriber's local grant. A provider that ignores an unsubscribe simply finds its pushes dropped.
 
@@ -247,13 +264,16 @@ signature
 
 An inbound `push.event` traverses the existing D2D receive gates (`receive_pipeline.ts:134`) and then a push-specific lane. Order matters; each gate fails closed.
 
-1. **Unseal, verify signature, sender-bind, replay-cache** — unchanged (`receive_pipeline.ts:142/157/180/198`). The inner `provider_did` must equal the transport-authenticated sender (anti-trust-inheritance).
+> **One binding linearizes both pipelines.** Rate/dedup state is one durable **subscription ledger keyed by `push_grant_ref`** (envelope-encrypted, bounded-retention, `erasure_mode`-erased, `INTERACTIVE_SERVICES_ARCHITECTURE.md` §13), and a `UNIQUE` **`push_binding`** record names the grant's live run (if any). Every **commit** — standalone or run-bound — is a single Tier-0 transaction that **atomically rechecks the current authorization snapshot at the commit point, not just the binding**: the current grant revision/posture, the **sender-block epoch**, the **`condition_ref`** binding, the **action scope** (for an action-bearing push), and `expires_at`, **plus** the binding (a **run-bound** push requires `push_binding[grant].run_id == its run`; a **standalone** push, this pipeline, requires **no live `push_binding[grant]`**), while updating the ledger. Grant **revocation/expiry is a crash-safe `active → revoking → destroyed` state machine** (`INTERACTIVE_SERVICES_ARCHITECTURE.md` §13): its **phase 1 fences admission in one Tier-0 transaction** (bumps the snapshot, marks `revoking`) — after which no commit in either pipeline admits — and only *then* is the external ledger key crypto-shredded and the grant finalized `destroyed`; admission never creates/recreates ledger state for a `revoking`/`destroyed` grant. So a revoke/block landing before a commit always wins, no ledger is recreated after destruction, and an arrival racing bind/release/rebind commits through exactly one pipeline.
+> **Run-bound pushes: the interactive lifecycle owns steps 6–12.** After the shared D2D receive gates (steps 1–5), a run-bound push is handed to the interactive **all-gates admission CAS + lifecycle** (`INTERACTIVE_SERVICES_ARCHITECTURE.md` §7.1) — which owns **all** of dedup, budget, classify, **persona-lock (⇒ `held_by_lock` + device-seal, not a standalone dead-drop / tier-safe summary)**, delivery, and audit. Steps 6–12 below describe the *standalone-notification* pipeline **only**; for a run-bound push they do **not** run (the interactive CAS is authoritative). Consistency for the run-bound CAS: the durable dedup tombstone + `rate_budget` token are consumed only there, so a retryable rejection leaves **no durable dedup tombstone and no replay-cache poison** — the outer transport-attempt id is distinguished from the stable inner `dedup_key`, and replay-caching is **outcome-aware**.
+
+1. **Unseal, verify signature, sender-bind** — unchanged (`receive_pipeline.ts:142/157/180`). The inner `provider_did` must equal the transport-authenticated sender (anti-trust-inheritance). **Replay-caching is *net-new*, not the shipping behavior:** shipping `receive_pipeline.ts:198` records the outer message id *before* any push gate, which would drop a same-attempt-id retry of a *retryably-rejected* event and turn it into permanent loss. So the outcome-aware, retry-safe replay handling — a **provisional replay claim with commit/release states**, distinguished from the stable inner `dedup_key`, released on a retryable rejection — is **net-new and its crash/restart behavior is a deferred joint contract** (`INTERACTIVE_SERVICES_ARCHITECTURE.md` §19). It is *not* "unchanged."
 2. **Type gate** — the `push.*` family must be registered or the message is dropped as non-V1 (`:219`).
 3. **Blocked-sender pre-gate** — a blocked provider is dropped even with a live subscription (`:248`). Blocking always wins.
 4. **Authorization gate (the keystone).** Look up an active push grant for `(provider_did, service_uri, push_capability, subscription_ref)` via `isAuthorized` (`service_grant_repository.ts:139`). No active grant → **drop and quarantine.** Unsolicited push is the primary abuse and is default-denied, exactly like an unknown stranger's message. This gate is why a provider cannot push to anyone who did not first authorize this precise subscription.
 5. **Condition-binding gate.** The event's `condition_ref` must match the subscription's authorized condition. A push for a condition the user did not declare is dropped and counts against standing.
-6. **Rate/budget gate.** Consume one token from the subscription's bucket. Over budget → demote to briefing or drop (per subscription policy) and record an overage (§12). This runs before classification so a flood cannot even reach the classifier at full volume.
-7. **Staleness and dedup.** Drop if past `expires_at`; collapse by `dedup_key`; reject out-of-window `sequence`.
+6. **Staleness, replay and dedup claim — *before* the budget (outcome-aware).** Drop if past `expires_at`; establish the logical-event claim by `dedup_key`/`event_id` (a duplicate or transport re-send collapses to the existing claim). Steps 6–7 form **one outcome-aware Tier-0 transaction**: a **retryable rejection** (over-budget action, queue-full) **commits neither the durable `dedup_key` tombstone nor any replay-cache poison** — so a post-refill retry is not falsely deduped into permanent loss (mirroring the run-bound rule, `INTERACTIVE_SERVICES_ARCHITECTURE.md` §7.1); the token is consumed only on a committing outcome. **Out-of-window `sequence` rejection is standalone-only** — a **run-bound** push in V1 treats `sequence` as informational (dedup by `dedup_key` + `expires_at`). One logical event consumes at most one budget token.
+7. **Rate/budget gate — one token per *claimed* logical event.** Consume one token from the subscription's bucket for the deduped event. **Over `rate_budget` → demote an *informational* event to the briefing (Engagement), never interrupt** (default); dropping for frequency is an explicit subscriber opt-in, not the default. An **action-scoped** push (only when the grant carries an owner action scope) instead follows the interactive action rule — **over-budget is a plain retryable reject (no `rate_held` state), never demoted below its Tier-2 base** (`INTERACTIVE_SERVICES_ARCHITECTURE.md` §7.1/§9.1), so a decision is never silently quieted. Record an overage against the provider's standing (§12). A **queue-full / unauthorized reject consumes no token and is retryable** (distinct from a rate-budget outcome — `queue_cap` rejects; `rate_budget` demotes an informational event and retryably rejects an action). This runs after the dedup claim so a flood cannot burn budget via retries.
 8. **Silence re-classification (§9).** Dina derives the tier, capped by `priority_ceiling`.
 9. **Persona gate.** If the topic's persona is locked, hold the push (dead-drop) or render a tier-safe summary; never eagerly derive a DEK to decrypt provider content.
 10. **Quiet hours / DND.** `shouldDeliverNotification(tier)` (`dnd.ts:102`): Tier 1 always delivers; Tier 2 waits out quiet hours; Tier 3 goes to briefing regardless.
@@ -268,7 +288,7 @@ An inbound `push.event` traverses the existing D2D receive gates (`receive_pipel
 
 The classifier (`silence.ts`) already does almost all of this; push wires into it as an event source with three adjustments.
 
-- **Provider claim is a capped hint.** `claimed_priority` enters as the event's declared urgency, then `classifyPriority` (`:378`) resolves the tier and Dina clamps the result to `min(resolved_tier, priority_ceiling)`. A provider claiming Fiduciary on an Engagement-ceiling subscription is delivered to the briefing, full stop.
+- **Provider claim is a capped hint.** `claimed_priority` enters as the event's declared urgency, then `classifyPriority` (`:378`) resolves the tier and Dina clamps the result to the **quieter-of** — numeric `max(resolved_tier, priority_ceiling)` over `1`=Fiduciary…`3`=Engagement (a *larger* number is quieter), matching the shared Core delivery rule in `INTERACTIVE_SERVICES_ARCHITECTURE.md` §9.1. (Not `min`, which would select the *louder* tier and invert the ceiling.) A provider claiming Fiduciary (1) on an Engagement-ceiling (3) subscription resolves to `max(1,3)=3` → the briefing, full stop.
 - **Repetition downgrades, it never escalates.** The generic engagement-escalation path (3 repeats → Tier 1, `silence.ts:400`) is correct for user-relevant recurring signals and *wrong* for an untrusted provider — it would reward a spammer with an interrupt. Push-sourced events bypass generic escalation; instead, repeated firing within a window is cry-wolf evidence that *lowers* the effective ceiling (§12). This inversion is the single most important behavioural difference between push and the existing classifier inputs.
 - **Fiduciary requires two independent yeses.** Tier 1 is reachable only when the subscription is a subscriber-declared harm topic *and* Dina's own deterministic harm assessment concurs. The provider is never one of the two yeses. Marketing-adjacent push sources inherit the existing guard: they can never be elevated to Fiduciary by the LLM (`silence.ts:353`).
 
@@ -316,7 +336,7 @@ Two mechanisms keep an authorized provider honest, one local and immediate, one 
 
 **Local, immediate (every deployment, Phase 1):**
 
-- **Instant exit.** Mute (this subscription, this window), snooze, lower the ceiling, shrink the budget, or revoke — each is a one-tap local action that takes effect on the next push with no provider involvement. Revocation flips the grant and the next `push.event` fails `isAuthorized`.
+- **Instant exit.** Mute (this subscription, this window), snooze, lower the ceiling, shrink the budget, or revoke — each is a one-tap local action that takes effect on the next push with no provider involvement. Revocation **fences admission** (the next `push.event` fails at admission) and drives the `active → revoking → destroyed` ledger-destruction machine (§15).
 - **Cry-wolf downgrade.** A push that claims Solicited/Fiduciary and is *immediately dismissed or muted* by the user lowers the subscription's effective ceiling automatically (Solicited → Engagement) after a small, published threshold. A provider that keeps crying wolf ends up in the briefing where it can no longer interrupt, without the user having to do anything.
 - **Over-fire clamp.** Budget overages and condition-mismatched pushes accumulate a local suspicion score; crossing a threshold auto-suspends the subscription and surfaces a "this provider is over-firing — keep, mute, or unsubscribe?" prompt (itself a Solicited item, so it cannot itself become spam).
 
@@ -334,9 +354,9 @@ The asymmetry is deliberate: **local defence is instant and unconditional; publi
 - Verify transport authentication, signature, and sender-binding on every `push.event`.
 - Admit a push only against an active, matching push grant (`isAuthorized`); default-deny and quarantine unsolicited push.
 - Verify the event's `condition_ref` against the authorized condition; reject mismatches.
-- Consume rate budget before classification; demote or drop over-budget pushes.
+- Establish the dedup claim, then consume one rate token per logical event; over-budget: **demote an informational event to briefing** (default), **retryably reject an action** (never below Tier-2, §8/§7 step 7).
 - Verify runtime issuer authorization for the signing key; reject post-revocation signatures.
-- Reject expired (`expires_at`), replayed (`event_id`), and out-of-window (`sequence`) pushes.
+- Reject expired (`expires_at`) and replayed (`event_id`) pushes. Reject out-of-window (`sequence`) pushes **for standalone push only** — a run-bound push treats `sequence` as informational in V1 (`INTERACTIVE_SERVICES_ARCHITECTURE.md` §7.1).
 - Validate `card` with `validateCardSpec`; bound text, item counts, evidence, and encoded size before allocation or rendering; treat all provider text as untrusted data that can neither instruct Dina nor trigger fetches.
 - Never let `claimed_priority` or `trigger_evidence` raise delivery above the authorization ceiling; only the subscriber-declared harm topic plus Dina's harm logic reach Fiduciary.
 - Never derive a persona DEK to decrypt or render a push whose persona is locked; hold or summarise.
@@ -368,18 +388,20 @@ The asymmetry is deliberate: **local defence is instant and unconditional; publi
 
 ### 14.4 Revoke
 1. User taps Unsubscribe (or Mute).
-2. Dina flips the grant locally; the next `push.event` fails authorization and is dropped. Dina sends a courtesy `push.unsubscribe`.
+2. Dina **fences the grant locally** (next `push.event` fails at admission) and runs the `active → revoking → destroyed` ledger-destruction machine (§15); Dina sends a courtesy `push.unsubscribe`.
 3. The watch task is cancelled. No provider permission is sought; cached state follows local retention.
 
 ---
 
 ## 15. Data-model and schema deltas
 
-- **`service_grants`**: add `grantType='push'`; key includes `subscription_id`; add `priority_ceiling`, `rate_budget`, `persona`, `expires_at`, `fulfilment`. Reuse `isAuthorized`/revocation unchanged.
+- **`service_grants`**: add `grantType='push'`; key includes `subscription_id`; add `priority_ceiling`, `rate_budget`, `persona`, `expires_at`, `fulfilment`. Reuse `isAuthorized`. **Revocation of any grant that owns a subscription ledger — standalone *or* run-bound — is the crash-safe `active → revoking → destroyed` state machine** (`revokedAt` is retained only as the **phase-1 fence** marker, not the whole story): fence admission (both pipelines) → gated crypto-shred of the subscription-ledger key once no run is bound → finalize; persisted `erasure_pending`/`erasure_failed` (`INTERACTIVE_SERVICES_ARCHITECTURE.md` §13). One lifecycle for the one shared ledger — a standalone revoke never bypasses key destruction.
+- **Subscription ledger state fields** (two *orthogonal* fields, not one merged enum): **`lifecycle_state`** (`active|revoking|destroyed`) and **`erasure_state`** (`none|pending`(attempt count)`|failed|done`); plus `subscription_erasure_mode` and the versioned authorization snapshot (grant revision, posture, `condition_ref` digest, action scope, block epoch). The canonical dedup identity is the composite **`(dedup_key, condition_ref)`**. These are the shared records defined in `INTERACTIVE_SERVICES_ARCHITECTURE.md` §13, transacted by both commit paths.
 - **`workflow` tasks**: activate `WorkflowTaskKind.Watch` with a `push` payload (`subscription_id`, `condition`, `fulfilment`, `poll_interval?`); reuse `next_run_at`/sweepers for poll-mode and authorization/lease expiry.
 - **D2D**: register `push.subscribe|ack|event|unsubscribe` in `families.ts`; add a `push` scenario; mark `push.event` ephemeral, TTL-bounded.
 - **Notifications**: add kind `push` to `NotificationKind`; register a push engagement provider with the briefing; render `push` rows in the Activity tab.
 - **Local subscription store**: a persona-scoped `push_subscriptions` repository (subscription config, cry-wolf/suspicion counters, local outcomes) — net-new, Core-side, encrypted.
+- **Subscription ledger + `push_binding` (run-bound composition)**: the durable Tier-0 **subscription ledger keyed by `push_grant_ref`** (the `rate_budget` bucket + the `dedup_key` tombstone ledger, envelope-encrypted under a per-subscription leaf key, bounded-retention + `erasure_mode`-erased) and the `UNIQUE` **`push_binding`** record are defined in `INTERACTIVE_SERVICES_ARCHITECTURE.md` §13 and are **shared** by both pipelines (the standalone commit and the interactive CAS transact them together, §8 note). The standalone pipeline and any interactive run over the same grant use this one ledger — never two.
 - **Public (Phase 2+)**: `com.dinakernel.push.declaration|outcome|scoreSnapshot` lexicons.
 
 ---
@@ -408,14 +430,14 @@ The asymmetry is deliberate: **local defence is instant and unconditional; publi
 - Publish through the normal service path with a `push_notify` capability and a condition grammar.
 - Accept subscriptions via `push.subscribe`/`push.ack` and fire `push.event` only on the authorized condition, within the subscriber's budget.
 - Sign events with an authorized runtime issuer; carry honest `trigger_evidence` when the scope requires it.
-- Expect no delivery/read receipt; expect dropped pushes if unauthorized, over-budget, condition-mismatched, or revoked.
+- Expect no delivery/read receipt; expect **dropped** pushes if unauthorized, condition-mismatched, or revoked; and over-`rate_budget` handling **by kind** — an **informational** overage is *demoted to the briefing* (quiet delivery, not loss), an **action** overage is *retryably rejected* (`INTERACTIVE_SERVICES_ARCHITECTURE.md` §7.1).
 - Accept that repeated low-value firing lowers effective ceilings and, opt-in, public standing.
 
 ### Reference client (Dina)
 - Fail closed on signature, sender-binding, authorization, condition, budget, staleness, replay, schema, size, persona-lock, or ceiling mismatch.
 - Classify every push locally, capped at the authorization ceiling; never let a provider reach Fiduciary alone; invert repetition to downgrade, not escalate.
 - Emit no delivery or read receipt; hold rather than eagerly decrypt for locked personas.
-- Keep the default state silent: absent an active subscription and a satisfied condition, deliver nothing.
+- Keep the default state silent: absent an active subscription and an event **cryptographically bound to its active authorized condition**, deliver nothing (Dina verifies the *binding*, not whether the real-world condition truly occurred, §2.2).
 
 ---
 
@@ -426,13 +448,13 @@ The asymmetry is deliberate: **local defence is instant and unconditional; publi
 3. **Default silence, default briefing.** A new authorization's ceiling is Engagement; Engagement never interrupts, through repetition, claim, or refinement.
 4. **Only the subscriber and Dina reach Fiduciary.** Tier 1 requires a subscriber-declared harm topic and Dina's own harm concurrence; the provider is never one of the two yeses.
 5. **Repetition downgrades.** Repeated firing is cry-wolf evidence that lowers the effective ceiling; push-sourced events never use generic silence-escalation.
-6. **Budgeted.** Every authorization carries a token budget; over-budget push is demoted or dropped and counts against standing.
+6. **Budgeted.** Every authorization carries a token budget; over-budget push is **demoted to briefing (informational) or retryably rejected (action)** — never a silent quieting of a decision — and counts against standing.
 7. **Persona-bound.** A push topic lives in a persona; sensitive topics are closed by default and never eagerly decrypted while locked.
 8. **No receipts to providers.** Delivery, open, dismiss and mute are never observable to the provider; signal-quality outcomes are separate, explicit, opt-in acts.
 9. **Instant local exit.** Mute, lower-ceiling and revoke take effect on the next push without provider permission.
 10. **No vault context by default.** A push condition carries only what the user declared; remote vault context awaits the Context Firewall.
 11. **Content is untrusted.** A push card can inform a notification but cannot instruct Dina, trigger fetches, or set its own priority.
-12. **Silence First survives.** With no satisfied condition, Dina delivers nothing; push only ever completes a request the user already made.
+12. **Silence First survives.** With no event **bound to an active authorized condition**, Dina delivers nothing; push only ever completes a request the user already made. (Dina verifies the event's *binding* to an authorized condition; the truth of the real-world trigger is untrusted, §2.2/§7.3.)
 
 ---
 
@@ -472,9 +494,9 @@ Golden vectors and fixtures live in `packages/protocol/conformance`; Core, mobil
 **Authorization and abuse**
 - An unsolicited `push.event` with no matching grant is dropped and quarantined.
 - A `push.event` whose `condition_ref` does not match the authorized condition is dropped and counts against standing.
-- Over-budget pushes are demoted or dropped before classification; a flood cannot reach the classifier at full volume.
+- Over-budget handling is by kind: an informational overage is demoted to briefing (not dropped by default), an action overage is retryably rejected (no `rate_held`, never demoted); a retryable rejection commits no tombstone/token (§8); a flood cannot burn budget via retries.
 - A revoked subscription drops the very next push; a blocked provider is dropped even with a live subscription.
-- Stale (`expires_at`), replayed (`event_id`) and out-of-window (`sequence`) pushes are rejected across restart and concurrent ingestion.
+- Stale (`expires_at`) and replayed (`event_id`) pushes are rejected across restart and concurrent ingestion; **out-of-window (`sequence`) rejection applies to standalone pushes only** (a run-bound push treats `sequence` as informational in V1 — an otherwise-valid out-of-window run-bound arrival is admitted on `dedup_key` + `expires_at`; `INTERACTIVE_SERVICES_ARCHITECTURE.md` §7.1).
 
 **Silence reconciliation**
 - A provider claiming Fiduciary on an Engagement-ceiling subscription is delivered to the briefing.
@@ -523,7 +545,7 @@ Golden vectors and fixtures live in `packages/protocol/conformance`; Core, mobil
 
 The architecture can credibly claim:
 
-> Authorize the alerts you actually want. You declare the condition; the provider fires only when it is met; Dina decides whether the moment justifies breaking silence, and you can mute or revoke any of it instantly.
+> Authorize the alerts you actually want. You declare the condition; the provider is **authorized to fire only for that condition** (Dina verifies the event's *binding* to your grant — though the truth of the real-world trigger is not something Dina can prove, §2.2/§7.3); Dina decides whether the moment justifies breaking silence, and you can mute or revoke any of it instantly.
 
 It must not claim:
 
