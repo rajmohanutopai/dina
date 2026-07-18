@@ -2,15 +2,25 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Important:** Always consult `README.md` for the full product vision, design philosophy, and long-term direction. Always consult `ARCHITECTURE.md` for the full engineering blueprint. Every technical decision should align with the principles described in both.
+**Important:** Always consult `README.md` for the product vision and design philosophy, and `ARCHITECTURE.md` for the engineering blueprint. The deeper design docs live under `docs/` — notably `docs/PLUGIN_ARCHITECTURE.md`, `docs/AGENT_CONTROL_PLANE.md`, `docs/CONTACT_SERVICES_ARCHITECTURE.md`, and `docs/CURATION_SERVICES_ARCHITECTURE.md`. Every technical decision should align with the principles in README + ARCHITECTURE.
+
+## What ships today
+
+**Dina is a TypeScript codebase. The mobile app is the product.** The same `@dina/core`, `@dina/brain`, and `@dina/protocol` packages run on a phone (Expo/React Native, a full Home Node on-device) and on a server (Fastify, `apps/home-node-lite`). Only the platform adapters differ.
+
+- **iOS: live on the App Store** (`https://apps.apple.com/app/id6781713799`). **Android: in progress.**
+- **Local server:** `apps/home-node-lite` (two Fastify processes — Core `:8100`, Brain `:8200`).
+- **External agents / CLI:** the Python `dina-agent` (`cli/`, published on PyPI) pairs with a Home Node.
+
+**Legacy Go/Python stack (`legacy/`) is a reference oracle, not the product.** `legacy/go-core/` (Go Core) and `legacy/python-brain/` (Python Brain) are the mature original implementation, kept as a behavior oracle and runnable reference. **Do not add new product behavior to `legacy/`** unless explicitly maintaining the reference stack or a parity test. When this doc describes Go/Python specifics, they apply to the legacy stack only.
 
 ## Project Overview
 
 **Dina** — The Architecture of Agency. Inspired by the novel *[UTOPAI](https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf)* (2012–2017).
 
-Dina is a **sovereign personal AI** and the **safety layer for autonomous agents**. She is a digital extension of *your* will, interests, and values. She serves one master: the human who created her. Not advertisers, not platforms, not corporations. This singular loyalty naturally produces a "Pull Economy" where the agent fetches verified truth on demand instead of being fed ads.
+Dina is a **sovereign personal AI** and the **user-owned authority / control plane for autonomous agents**. She is a digital extension of *your* will, interests, and values. She serves one master: the human who created her. Not advertisers, not platforms, not corporations. This singular loyalty naturally produces a "Pull Economy" where the agent fetches verified truth on demand instead of being fed ads.
 
-Dina also solves a critical safety gap: autonomous agents today operate without oversight — leaking credentials, accepting commands from anyone, acting without guardrails. Any agent supporting the Dina protocol submits its **intent** to Dina before acting. Dina checks: does this violate your privacy rules? Is this vendor trusted? Are you in the right state to make this decision? Safe tasks pass through silently. Risky actions (sending email, moving money, sharing data) are flagged for your review. The agent never holds your keys, never sees your full history, and never acts without oversight.
+Dina also solves a critical safety gap: autonomous agents today operate without oversight — leaking credentials, accepting commands from anyone, acting without guardrails. Any agent supporting the Dina protocol submits its **intent** to Dina before acting. Dina checks: does this violate your privacy rules? Is this vendor trusted? Are you in the right state to make this decision? Safe tasks pass through silently. Risky actions (sending email, moving money, sharing data) are flagged for your review. The agent never holds your keys, never sees your full history, and never acts without oversight. See `docs/AGENT_CONTROL_PLANE.md` for the "control plane for agents" framing (compose with MCP / A2A / Microsoft AGT rather than rebuild).
 
 ### The Four Laws
 
@@ -24,485 +34,273 @@ Every design decision must honour these:
 ### Core Principles
 
 - **Anti-Her:** Dina must never become an emotional crutch. She connects you to humans, never replaces them.
-- **Thin Agent / Kernel not Platform:** Dina is an orchestrator, not an omniscient brain. She delegates to specialist bots via MCP. **No plugins, no untrusted code inside the process.** Child agents (OpenClaw, etc.) communicate via MCP — they cannot touch the vault, keys, or personas.
+- **Kernel, not Platform:** Dina is an orchestrator, not an omniscient brain. She delegates *doing* to specialist agents/services. **No untrusted code ever runs inside Dina's trust boundary.** External agents (OpenClaw, etc.) communicate via MCP; peers via D2D — neither touches the vault, keys, or personas.
+- **Plugins are signed contracts, never in-process code.** The plugin substrate (`docs/PLUGIN_ARCHITECTURE.md`, `packages/core/src/plugins/*`, `packages/protocol/src/plugins/*`) preserves the kernel rule: a plugin is a signed, content-addressed manifest that runs *either* as **data** interpreted by a hardened first-party interpreter (a generalized `capability_runtime`), *or* as **code** out-of-process, paired as a device with its own Ed25519 key on a private lane (`plugin:<install_id>`). Plugins are **not agents** (a plugin is a bounded capability installed *into* Dina; an agent is an external reasoner acting *under* Dina's authority). Substrate is **P0 / not wired end-to-end** yet (no install/consent/uninstall routes or screens; repo-proof verifier unwired).
 - **Sovereign Identity:** One root identity (`did:plc`), multiple **personas** as separate cryptographic compartments. Each persona is a separate encrypted database file with its own DEK. No external system can cross compartments.
-- **Trust Rings:** Unverified → Verified (ZKP) → Verified + Actioned (transactions, time, peer attestation). Trust is a composite function: `f(identity anchors, transaction history, outcome data, peer attestations, time)`.
+- **Trust Rings:** Unverified → Verified (ZKP) → Verified + Actioned (transactions, time, peer attestation). Trust is a composite: `f(identity anchors, transaction history, outcome data, peer attestations, time)`.
 - **Deep Link Default:** Dina credits sources — not just extracts. Creators get traffic, users get truth.
 - **Cart Handover:** Dina advises on purchases but never touches money.
 - **Agent Safety Layer:** Any agent acting on your behalf submits intent to Dina first.
 
-## Architecture: Home Node
+## Architecture
 
-Dina runs on a **Home Node** — a small, always-on server (VPS, Raspberry Pi, or managed service). Client devices (phone, laptop, glasses) connect to it. See `ARCHITECTURE.md` for the full 310KB engineering spec.
+Dina runs on a **Home Node** — the always-on private core that holds identity, memory, and policy. On mobile the whole Home Node runs **on-device**; on a server it runs as two Fastify processes. Other devices (laptop, browser, glasses) connect to a server Home Node. See `ARCHITECTURE.md` for the current engineering blueprint (a lean ~500-line doc; the old 310KB spec was retired).
 
-### Three Pillars
-
-```
-legacy/go-core/     Go Core — legacy sovereign cryptographic kernel
-                    Identity, encrypted vault, crypto, DIDComm, WebSocket, PII scrubber, gatekeeper
-                    Port 443 (external HTTPS), Port 8100 (internal API for brain)
-
-legacy/python-brain/
-                    Python Brain (sidecar) — legacy intelligence & orchestration
-                    Guardian angel loop (Google ADK), silence classification, nudge assembly,
-                    agent orchestration (MCP → OpenClaw), admin UI, PII scrubber (Presidio patterns)
-                    Port 8200 (internal: /api/* brain API, /admin/* admin UI)
-
-appview/   TypeScript AppView — decentralized PeerLens
-                    Ingester (Jetstream firehose), Scorer (9 background jobs), Web (5 xRPC endpoints)
-                    PostgreSQL backend, 19 AT Protocol record types
-                    Port 3000 (xRPC API)
-
-cli/   Python CLI — Ed25519 signed requests, device pairing, MCP server, OpenClaw skill
-legacy/admin-cli/   Admin CLI tool bundled into the legacy runtime
-legacy/bin/         Legacy installer, runtime wrapper, and dina-admin host wrapper
-```
-
-### Docker Containers (Production)
+### The stack
 
 ```
-legacy/compose/docker-compose.yml:
-  dina-core       Go + net/http          Vault keeper. Only process that opens SQLite files.
-  dina-brain      Python + FastAPI        Analyst. Thinks, never holds keys.
-  llama           llama.cpp (optional)    Local LLM (Gemma 3n). --profile local-llm.
+packages/protocol/   @dina/protocol — zero-dep wire contract: DID docs, D2D/RPC/auth envelopes,
+                     capability + plugin schemas, canonical-signing builder, conformance vectors.
+                     This is the compatibility law; any-language ports target it.
+packages/core/       @dina/core — vault keeper domain (pure, transport-agnostic).
+                     Vault + hybrid search, 4-tier gatekeeper, staging, D2D, workflow, service,
+                     identity, crypto, memory/ToC, people, plugins substrate. No I/O of its own.
+packages/brain/      @dina/brain — analyst/orchestrator (pure, headless). Ask/remember agentic
+                     loops, LLM routing (+ PII scrub/rehydrate), silence classification, guard
+                     scan / Anti-Her, service discovery, MCP delegation gate. Holds no keys.
+packages/home-node/  @dina/home-node — shared composition helpers (wireWorkflowPlane, service
+                     runtime, D2D sender) + a runtime contract. NOT the composition root.
+packages/*-node/     Server adapters: storage-node (better-sqlite3-multiple-ciphers / SQLCipher v4),
+                     crypto-node (@noble/* + libsodium + argon2), fs-node, net-node, keystore-node.
+packages/*-expo/     Mobile adapters: storage-expo (op-sqlite), keystore-expo, fs/net-expo, and
+                     crypto-expo (polyfills that let core's @noble crypto run on Hermes — no
+                     adapter class; native Argon2id override).
+packages/adapter-conformance/  Cross-adapter parity/conformance suite (node/expo must match).
+
+apps/mobile/         Expo/React Native — a full Home Node on-device. Brain↔Core is InProcessTransport
+                     (direct dispatch, no HTTP, no signing). Tabs: Chat, People, Network(PeerLens),
+                     Activity; plus Reminders/Vault/Settings/Agents in a sheet.
+apps/home-node-lite/ Server Home Node. core-server (:8100, vault keeper) + brain-server (:8200,
+                     analyst, loopback-only). Brain↔Core is HttpCoreTransport (signed HTTP).
+                     Optional web UI: /dev (chat SPA) and /web (the mobile app exported to RN-Web).
+appview/             PeerLens AppView — Jetstream ingester + scorer jobs + xRPC. PostgreSQL (Drizzle).
+msgbox/              Go relay — zero-knowledge sealed-box mailbox for NAT'd nodes (outbound WS).
+cli/                 Python dina-agent — paired external agent/device (signing, MsgBox transport,
+                     pairing, MCP server, agent-daemon).
+services/plc/        Local did:plc directory helper (dev stub).
+legacy/              Reference oracle: go-core/, python-brain/, admin-cli/, bin/, compose/.
 ```
 
-Core uses a community PDS (e.g., `bsky.social`) for `did:plc` creation — no sidecar PDS container needed. Core's K256 key (secp256k1, `m/9999'/2'/0'`) is passed as `recoveryKey` during `createAccount`, giving Dina sovereign key rotation capability. `install.sh` prepares PDS credentials; Core creates the account on first boot.
+### The Sidecar Pattern (both stacks)
 
-### The Sidecar Pattern
-
-- **Core is the vault keeper** — stores, retrieves, encrypts, never interprets, never calls external APIs.
-- **Brain is the analyst** — thinks, searches strategically, reasons, delegates fetching via MCP, never holds keys.
-- **Brain is an untrusted tenant.** Core treats every brain request like an external client: verify, authorize, log. A compromised brain can only access open personas.
-- **The internal API** between core and brain (`/v1/vault/query`, `/v1/vault/store`, `/v1/did/sign`, `/v1/pii/scrub`, `/v1/notify`) is the protocol surface. Any language can implement a brain.
+- **Core is the vault keeper** — stores, retrieves, encrypts, enforces persona access + egress, signs, does D2D. Never interprets, never calls external APIs, never runs an LLM.
+- **Brain is the analyst** — thinks, classifies, reasons, routes to LLMs, delegates via MCP. Never holds keys, never touches SQLite.
+- **Brain is an untrusted tenant.** A compromised Brain can only reach open personas.
+- **The boundary is enforced by runtime:** on a **server**, Core and Brain are two OS processes with separately bind-mounted keys, and every Brain→Core call carries an Ed25519 signed header. On **mobile**, both halves share one JS VM — the boundary is a typed import graph (`CoreClient` interface; `InProcessTransport` dispatches into `CoreRouter`), and no signing is used (it adds nothing when both halves run in the same VM). The handler-level gatekeeper (sensitive-persona unlock, audit log) runs regardless of transport.
+- **The Core↔Brain contract** is the hand-written routes in `packages/core/src/server/routes/*` (validated by `__tests__/server/routes/*`), reached via the `CoreClient` interface (`packages/core/src/client/core-client.ts`) — NOT the legacy OpenAPI spec (see below).
 
 ### Key Data Flows
 
-**Ingestion:** Brain → MCP → OpenClaw (fetches Gmail/Calendar) → Brain classifies → `POST core:8100/v1/vault/store` → SQLCipher write
+**Remember (ingest):** user → Brain orchestrator → `core.stagingIngest` → staging state machine (`received → classifying → {stored | pending_unlock | pending_approval}`) → agentic classify/route/link → vault store → topic-touch updates the working-memory ToC.
 
-**Semantic search:** Client → Core → `POST brain:8200/api/v1/reason` → Brain generates embedding → `POST core:8100/v1/vault/query` → Core runs hybrid search (FTS5 + HNSW cosine) → Brain reasons over results → Core pushes to client
+**Ask:** user → Brain agentic loop (`reasoning/agentic_loop.ts`) → intent classifier reads the ToC and picks sources (`vault | peerlens | provider_services | general_knowledge`) → tool calls (vault search, `find_person`, `search_peerlens`, `search_provider_services`, `query_service`, `delegate_to_agent`, …) → LLM (PII scrub on egress + rehydrate) → guard scan (Anti-Her always stripped) → answer. A tool returning `approval_required` serializes loop state and suspends (Pattern A); resumes with zero re-LLM cost after approval.
 
-**Nudge (Sancho Moment):** DIDComm message arrives → Core → `POST brain:8200/api/v1/process` → Brain queries vault (relationship, messages, calendar) → LLM assembles nudge → `POST core:8100/v1/notify` → Core pushes to client via WebSocket
+**Trust query:** Brain → AppView xRPC `com.dinakernel.peerlens.resolve` / `getProfile` → rating + recommendation (proceed/caution/verify/avoid).
 
-**Trust query:** Brain → AppView xRPC `com.dinakernel.peerlens.resolve` → PeerLens rating + recommendation (proceed/caution/verify/avoid)
+**D2D:** send → egress 4-gate → Ed25519 sign + NaCl `crypto_box_seal` → WebSocket-first via MsgBox `/forward` (HTTP fallback, outbox retry). Receive → unseal → verify sig → **sender binding** (inner `from` must equal transport-authenticated DID) → replay cache → trust eval → stage-or-quarantine.
+
+**Transport selection:** mobile `InProcessTransport` (direct); server `HttpCoreTransport` (signed HTTP); NAT'd/remote clients tunnel signed requests inside a NaCl sealed-box through MsgBox (`CoreRPCRequest` envelope).
 
 ## Technology Stack
 
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
-| Core | Go + net/http | Sovereign cryptographic kernel |
-| Brain | Python + Google ADK + FastAPI | LLM reasoning, agent orchestration, admin UI |
-| AppView | TypeScript + Node.js | PeerLens (AT Protocol) |
-| Storage | SQLite + SQLCipher (AES-256-CBC per page) | Encrypted per-persona vault files |
-| Search | FTS5 (keyword) + HNSW in-memory (semantic) | Hybrid search: `0.4 × FTS5 + 0.6 × cosine` |
-| Identity | `did:plc` (AT Protocol) + Ed25519 (SLIP-0010) | Self-sovereign identity, key derivation |
-| Key Mgmt | BIP-39 mnemonic → SLIP-0010 (signing) + HKDF (vault DEKs) | Hierarchical deterministic keys under purpose `m/9999'` |
-| Trust | AT Protocol community PDS + AppView | Decentralized PeerLens (19 record types) |
-| Messaging | NaCl `crypto_box_seal` over HTTPS | Dina-to-Dina encrypted P2P |
-| PII | 2-tier (V1): regex (Go) + Presidio patterns (Python). NER disabled in V1, allow-list filters false positives. V2: GLiNER local model. | Raw data never leaves Home Node |
+| Core / Brain | TypeScript (`@dina/core`, `@dina/brain`) — pure, transport-agnostic | Vault keeper + analyst; run on mobile (Hermes) and server (Node ≥ 22 / Fastify) |
+| Mobile | Expo / React Native | Full Home Node on-device (iOS live, Android in progress) |
+| Server | Fastify (`apps/home-node-lite`) | Two-process Home Node (Core `:8100`, Brain `:8200`) |
+| Wire contract | `@dina/protocol` (zero runtime deps) | Byte-exact envelopes + canonical signing + conformance vectors |
+| Storage | SQLite + SQLCipher (AES-256, per page). Server: `better-sqlite3-multiple-ciphers`. Mobile: `op-sqlite`. | Encrypted per-persona vault files, each with its own DEK |
+| Search | FTS5 (keyword) + in-RAM HNSW (semantic, hydrated on unlock) | Hybrid: `0.4 × FTS5 + 0.6 × cosine`, then PeerLens trust re-rank |
+| Crypto | `@noble/*` (Ed25519/X25519/secp256k1/hashes) + libsodium (sealed box) + argon2 | Same pure-JS crypto on both platforms; byte-identical derivations |
+| Identity | `did:plc` (AT Protocol), `did:web` escape hatch | Self-sovereign, key-rotatable identity |
+| Key Mgmt | BIP-39 → SLIP-0010 (signing, `m/9999'`) + HKDF-SHA256 (per-persona vault DEKs) | Two independent branches from one master seed |
+| LLM | Claude / OpenAI / Gemini / OpenRouter (BYOK). Local llama = named default, no real adapter yet. | Reasoning, classification; PII-scrubbed on egress, tiered primary/lite/heavy |
+| Trust | AT Protocol community PDS + AppView | Decentralized PeerLens (19 `com.dinakernel.peerlens.*` lexicons) |
+| Messaging | NaCl `crypto_box_seal` over WS/HTTPS via MsgBox relay | Dina-to-Dina encrypted P2P, offline-buffered |
 | Agents | MCP (Model Context Protocol) | External agent communication (OpenClaw, etc.) |
+| Plugins | Signed manifests: interpreted (data) or runner (out-of-process code, paired as device) | See `docs/PLUGIN_ARCHITECTURE.md`. P0 substrate, not wired end-to-end |
+| PII | Regex + Presidio-style deterministic patterns + allow-list; Entity Vault for cloud LLM. NER V2. | Raw data never leaves the Home Node |
 | Embedding | EmbeddingGemma / gemini-embedding-001 (768-dim) | Semantic search vectors |
-| Privacy | ZK-SNARKs (Phase 2+) | Prove facts without revealing raw data |
 
 ## Security Model
 
-### Authentication (3 methods)
+### Authentication
 
-| Method | Who | How | Scope |
-|--------|-----|-----|-------|
-| **Ed25519 Service Keys** | Core ↔ Services | SLIP-0010 derived keypairs. Signed canonical: `{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{NONCE}\n{SHA256(BODY)}`. Headers: `X-DID`, `X-Timestamp`, `X-Nonce`, `X-Signature`. 16-byte random nonce per request. 5-min window + nonce cache. Per-service allowlists: brain (vault/msg/pii), admin (persona/device/export), connector (vault/store only). | Per-service least privilege |
-| **CLIENT_TOKEN** | Admin web UI | 32-byte random, SHA-256 hashed in `device_tokens` table. Browser uses passphrase → session cookie → Core injects Bearer token. | Admin access |
-| **Ed25519 Device Keys** | CLI, paired devices | Per-device keypair registered during pairing. Same signature format as service keys. | Full access including admin |
+All non-in-process hops into Core use **Ed25519 signed requests**. Canonical payload: `{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{NONCE}\n{SHA256_HEX(BODY)}`, sent as headers `X-DID`, `X-Timestamp`, `X-Nonce`, `X-Signature`. ±5-min timestamp window + nonce replay cache + per-DID rate limit, all fail-closed. The signed pipeline lives in `packages/core/src/auth/*`; the canonical builder is in `@dina/protocol`.
+
+**Caller types** (`auth/caller_type.ts`) → **authz matrix** (`auth/authz.ts`, boundary-safe path-prefix rules):
+
+| Caller | Who | Notes |
+|--------|-----|-------|
+| **service** | Brain / admin / connector (server split) | Per-service least privilege (e.g. brain: vault/msg/pii; connector: vault/store only). Not used on mobile (in-process, no signing). |
+| **device** | Paired devices / user CLI | Registered during the pairing ceremony (`/v1/pair/initiate` admin + `/v1/pair/complete` public — the pairing code is the credential). |
+| **agent** | Paired device with `role='agent'` | Subject to the deterministic persona-access gate; needs a grant for non-free personas. |
+| **plugin** | Runner-mode plugin instance | Paired device, role `plugin`, own Ed25519 key, revocable. |
+
+On **mobile**, the owner's in-app calls run in-process (`trustedInProcess`) and read every open persona directly — no signing. Agents/plugins are always gated regardless of transport.
 
 ### Persona Access Tiers (4-Tier Gatekeeper)
 
-| Tier | Boot State | Users | Brain | Agents | Example |
+| Tier | Boot State | Owner | Brain | Agents | Example |
 |------|-----------|-------|-------|--------|---------|
 | **Default** | Auto-open | Free | Free | Free | `/general` |
-| **Standard** | Auto-open | Free | Free | Session grant | `/consumer`, `/social`, `/work` |
+| **Standard** | Auto-open | Free | Free | Session/durable grant | `/consumer`, `/social`, `/work` |
 | **Sensitive** | Closed | Confirm | Approval | Approval | `/health` |
 | **Locked** | Closed | Passphrase | Denied | Denied | `/financial` |
 
-Agents work within named sessions (`dina session start --name "task"`). Grants are scoped to sessions and revoked on session end. Legacy tiers (open/restricted) auto-migrate on load.
+The single deterministic (non-LLM) check is `requireAgentPersonaAccess` (`packages/core/src/agent/access.ts`) — it fires **only for agent callers**. For a sensitive/locked persona with no grant it creates an **idempotent approval workflow task and returns without reading the vault** (the approval card carries agent DID + persona + scope, never contents). Grants are durable (`agent_persona_grants`, 1h TTL, persona-scoped, `write` satisfies `read`) and revoke on device revocation. Session-scoped grants (intent validation + `dina ask` vault reads) are keyed on `(agentDid, sessionId, …)` and cleared on session end / cold relaunch. Legacy tiers (open/restricted) auto-migrate on load.
 
 ### Key Architecture Decisions
 
-- **Service keys are install-time only, load-only at runtime** (fail-closed). Derived from master seed via SLIP-0010: Core at `m/9999'/3'/0'`, Brain at `m/9999'/3'/1'`.
-- **`install.sh`** calls `provision_derived_service_keys.py` (secrets via env vars, not argv).
-- **Private keys isolated by Docker bind mounts** — Core's private key never exists in Brain's container filesystem and vice versa.
-- **Brain never touches SQLite.** All vault access goes through Core's HTTP API.
-- **No JWTs.** Static allowlist at compile time. Brain triggers high-level operations; Core handles all crypto.
+- **Two derivation branches from one master seed** so a leaked vault DEK never yields a signing key: SLIP-0010 (Ed25519, hardened-only, purpose `9999'`) for the signing tree; HKDF-SHA256 over the raw seed for per-persona SQLCipher DEKs (`dina:vault:{persona}:v1`). DEKs are never stored (only a hash for validation).
+- **Master seed at rest:** convenience mode = raw seed in `keyfile` (0600); security mode = AES-256-GCM-wrapped under an Argon2id-derived KEK.
+- **Service keys are load-only at runtime** (fail-closed) on the server split. Core `m/9999'/3'/0'`, Brain `m/9999'/3'/1'`.
+- **Brain never touches SQLite.** All vault access goes through Core.
+- **Egress + persona gating happen in Core, in compiled code, before any external delegation** — no LLM in the enforcement path.
+- Prompt-injection defense is **Tier 1 only** today (regex PII + guard scan); the rest of the layered defense is designed but unbuilt. Entity Vault provides defense-in-depth for cloud LLM calls.
 
 ## Build & Development
 
-### Quick Start (Docker — Production)
+Prerequisites: **Node ≥ 22** (`nvm use` honours `.nvmrc`), then `npm install` at the repo root. No native build toolchain needed on macOS / Linux x64/arm64 (SQLCipher binaries ship prebuilt).
+
+### Mobile app
 
 ```bash
-git clone https://github.com/rajmohanutopai/dina.git
-cd dina
-legacy/bin/install.sh    # generates secrets, picks LLM provider, builds containers, shows DID + recovery phrase
+cd apps/mobile
+npm start            # Expo dev server. Press i for iOS, a for Android.
 ```
 
-### Development (Local)
+### Local Home Node server (home-node-lite)
 
 ```bash
-# Go Core (must build from legacy/go-core/ directory)
-cd legacy/go-core && go build -tags fts5 ./cmd/dina-core/
-
-# Python Brain
-cd brain && pip install -e .
-python -m uvicorn brain.src.main:app --port 18200
-
-# AppView (TypeScript)
-cd appview && npm install && npm run build
-
-# Tests
-cd core && go test ./...                              # Go unit tests
-cd brain && pytest                                     # Python unit tests
-python scripts/test_status.py --suite integration      # Integration tests (builds Go, starts services)
-DINA_RATE_LIMIT=100000 pytest tests/integration/       # Direct pytest (needs high rate limit)
-```
-
-### Home Node Lite (TypeScript stack)
-
-An all-TypeScript re-implementation of the Home Node runs alongside
-the Go/Python production stack. See `apps/home-node-lite/README.md`
-for the quickstart and `docs/HOME_NODE_LITE_TASKS.md` for the
-milestone roadmap.
-
-```bash
-# Prerequisites: Node ≥ 22 (see .nvmrc). Native build toolchain NOT
-# needed for darwin/linux x64/arm64 — storage-node uses prebuilt
-# better-sqlite3-multiple-ciphers binaries.
 npm install                                           # repo-root workspace install
-
-# Run the Fastify Core server (dev)
-cd apps/home-node-lite/core-server && npm start       # tsx src/bin.ts — listens :8100
-
-# Run the Fastify Brain server (dev)
-cd apps/home-node-lite/brain-server && npm start      # tsx src/bin.ts — listens :8200
-
-# Workspace-wide commands (from repo root)
-npm test                                              # jest in every package + app
-npm run typecheck                                     # composite tsc --build
-npm run lint                                          # eslint across packages/ + apps/
-npm run format                                        # prettier check
-npm run audit:prod                                    # npm audit --omit=dev --audit-level=high
-
-# Full-suite runner now includes the Lite suite (Phase 1b)
-scripts/test/run_all_tests.sh --unit-only             # Go/Py unit + TS Lite, no Docker
-scripts/test/run_all_tests.sh                         # unit + Lite + Docker non-unit
+cd apps/home-node-lite/core-server  && npm start      # Fastify Core, listens :8100
+cd apps/home-node-lite/brain-server && npm start      # Fastify Brain, listens :8200 (loopback-only)
+# Optional web UI: DINA_BRAIN_DEV_UI=1 (/dev chat) or DINA_BRAIN_WEB_UI=1 (/web = mobile app as RN-Web)
 ```
 
-Layout:
+See `apps/home-node-lite/README.md` and `docs/HOME_NODE_LITE_TASKS.md` for the milestone roadmap (pre-M1; some boot steps are `'pending'`).
 
+### External agent / CLI
+
+```bash
+pip install dina-agent        # or: cd cli && pip install -e .
+dina configure                # pair with a Home Node using a dina1:… setup code from the app (Settings → Agents)
+dina mcp-server               # expose the CLI to Claude Code / OpenClaw / Codex as MCP tools
 ```
-packages/                    shared workspace (pure — runtime-agnostic)
-  protocol/                  wire types + canonical signing + validators
-  core/ brain/               pure TypeScript domain
-  storage-node/ crypto-node/ fs-node/ net-node/ keystore-node/
-  adapters-node/             meta-package (one-dep convenience)
-  storage-expo/ crypto-expo/ …  mobile-side counterparts
-  fixtures/ test-harness/    test support
 
-apps/
-  home-node-lite/
-    core-server/             Fastify Core wrapper (vault keeper)
-    brain-server/            Fastify Brain wrapper (analyst)
-  mobile/                    Expo app
+### Workspace commands (from repo root)
+
+```bash
+npm test              # jest across every package + app
+npm run typecheck     # composite tsc --build
+npm run lint          # eslint across packages/ + apps/
+npm run format        # prettier check
+npm run audit:prod    # npm audit --omit=dev --audit-level=high
 ```
 
 ### `@dina/protocol` — the byte-exact wire contract
 
-`packages/protocol/` is the independently consumable wire-format
-package. Zero runtime deps (enforced by `dep_hygiene.test.ts`).
-What's there:
+`packages/protocol/` is the independently consumable wire-format package. **Zero runtime deps** (no `dependencies` block; enforced by `__tests__/dep_hygiene.test.ts` — no `@dina/*` imports, no third-party runtime imports). Crypto is kept out via injected callbacks (e.g. `Ed25519VerifyFn`).
 
-- **Wire types + helpers** — DID documents, D2D envelopes, auth
-  frames, Core RPC envelope, capability schemas; canonical-sign
-  builder; envelope builders; validators. All in `src/`.
-- **Conformance spec** — `docs/conformance.md` pins the L1–L4
-  levels an implementation claims compliance against.
-- **Per-feature guides** — `docs/features/` covers canonical
-  signing, D2D envelope, auth handshake, sealed-box, PLC document.
-- **9 frozen test vectors** under `conformance/vectors/` —
-  Ed25519 sign/verify, did:key derivation, canonical request
-  string, SHA-256 body hash, BLAKE2b(24) sealed-box nonce, NaCl
-  sealed-box, auth handshake, D2D envelope round-trip, PLC
-  document.
-- **Runnable self-check** — `conformance/suite.ts` (programmatic)
-  + `conformance/http_harness.ts` (HTTP endpoints for remote
-  implementations to fetch state).
-- **160 tests** — 8 suites cover fixture-compat, validators,
-  envelope builders, dep-hygiene gate, and the conformance
-  harness.
+- **Wire types + helpers** — DID documents, D2D/RPC/auth envelopes, capability + **plugin** schemas; canonical-sign builder (`canonical_sign.ts`); envelope builders; validators.
+- **Conformance spec** — `docs/conformance.md` pins the L1–L4 levels an implementation claims compliance against; `docs/features/` has per-feature guides.
+- **12 frozen conformance vectors** under `conformance/vectors/`: ed25519 sign/verify, did:key derivation, canonical request string, SHA-256 body hash, BLAKE2b(24) sealed-box nonce, NaCl sealed-box, auth challenge/response, D2D envelope round-trip, PLC document, trust score v1, and two plugin vectors (`plugin_digests`, `plugin_release_rkey`).
+- **Runnable self-check** — `conformance/suite.ts` + `conformance/http_harness.ts`.
 
-Dina-language ports (Go / Rust / Swift / Kotlin / Python) target
-this package. It's the compatibility contract. Changes to the
-wire format go through `packages/protocol/docs/conformance.md` §14
-(changelog) and bump the protocol major.
+Dina-language ports (Go / Rust / Swift / Kotlin / Python) target this package. Wire-format changes go through `packages/protocol/docs/conformance.md` §changelog and bump the protocol major.
 
-### Key Build Details
+### Legacy build (reference stack only)
 
-- **CGO + FTS5:** `go build -tags fts5 ./cmd/dina-core/` required for SQLite FTS5 support
-- **go-sqlcipher v4.4.2** bundles SQLite 3.33.0 — no `unixepoch()` (use `strftime('%s','now')`)
-- **Rate limit:** Default 60/min; tests need `DINA_RATE_LIMIT=100000`
-- **OpenAPI codegen:** `make generate` regenerates Go + Python types from `api/core-api.yaml` and `api/brain-api.yaml`. CI drift gate: `make check-generate`. See `docs/OPENAPI_TRANSFORMATION_PLAN.md`.
+The Go/Python reference stack lives under `legacy/` and builds via `legacy/bin/install.sh` (Docker Compose: `dina-core` Go, `dina-brain` Python + FastAPI, optional `llama`). Build Go Core from `legacy/go-core/` with `go build -tags fts5 ./cmd/dina-core/` (CGO + FTS5 required). Do not add new product behavior here.
 
 ### OpenAPI Contract — LEGACY (deprecated Go/Python stack only)
 
-> ⚠️ `api/core-api.yaml` is **no longer the source of truth** for the
-> shipping TypeScript stack. It (and its codegen) describe the deprecated
-> Go Core + Python Brain. The live Core↔Brain contract for the TS product
-> is the **hand-written routes in `packages/core/src/server/routes/*`**
-> (validated by the `__tests__/server/routes/*` contract tests); the TS
-> routes have intentionally diverged from the spec (e.g. `/v1/reminders`
-> collection + actions, `/v1/contacts/lookup`, `/v1/vault/list`,
-> `DELETE /v1/vault/item/{id}` → `200 {deleted}`). The OpenAPI files are
-> kept only so the deprecated-stack codegen + its `make check-generate`
-> gate stay internally consistent; `@dina/protocol`'s generated
-> `CoreAPI*` types are a legacy schema-conformance **test fixture**, not a
-> runtime contract. (The old `cross_stack_compat` surface-drift test was
-> retired — it gated interop with those deprecated stacks.)
+> ⚠️ `api/core-api.yaml` is **no longer the source of truth**. The live Core↔Brain contract for the TS product is the hand-written routes in `packages/core/src/server/routes/*` (validated by the `__tests__/server/routes/*` contract tests). The OpenAPI files + their `make generate` / `make check-generate` codegen exist only to keep the deprecated-stack types internally consistent; `@dina/protocol`'s generated `CoreAPI*` types are a legacy schema-conformance **test fixture**, not a runtime contract.
 
-For the legacy stacks, the specs in `api/` are:
+**Wire format:** all JSON uses `snake_case`.
 
-```
-api/
-  components/schemas.yaml     # Shared enums + domain types
-  core-api.yaml               # Go Core's endpoints (hand-authored)
-  brain-api.yaml              # Python Brain's endpoints (extracted from FastAPI)
-```
+## Test Infrastructure
 
-**Legacy codegen outputs** (`make generate`): Go types under
-`legacy/go-core/internal/gen/`, Python models under
-`legacy/python-brain/src/gen/`. Ownership:
-Core spec hand-authored → Python client types; Brain spec extracted from
-FastAPI → Go client types. Never feed generated types back into the
-owning service.
+**Primary (TS product):** `npm test` runs jest across every package + app. Notable suites: `packages/*/__tests__` (core/brain/protocol domain + route contracts), `packages/adapter-conformance` (node vs expo parity), and the Home Node Lite web E2E — Playwright + Gemini-judge human-perspective runs under `apps/home-node-lite/web/__e2e__/` (see `docs/E2E_TESTING.md`, `docs/E2E_TEST_PLAN.md`). MRS ("full-status") runners live under `scripts/test/`.
 
-**Wire format:** All JSON uses `snake_case` across both stacks.
+- **Rate limit:** default 60/min; tests need `DINA_RATE_LIMIT=100000`.
+- **`scripts/test/run_all_tests.sh`** — `--unit-only` runs TS + legacy unit tests without Docker; bare form adds the Docker suites.
 
-### Test Infrastructure
+**Legacy (reference-stack Docker suites, Go+Python).** Still present for oracle validation:
 
-#### 5-Tier Hierarchy
+| Tier | Location | Env Var | What it validates |
+|------|----------|---------|-------------------|
+| Integration | `tests/integration/` | `DINA_INTEGRATION=docker` | Core↔Brain contract, vault ops, persona isolation (dual-mode mock/docker) |
+| E2E | `tests/e2e/` | `DINA_E2E=docker` | Multi-node: Don Alonso, Sancho, ChairMaker, Albert |
+| System | `tests/system/` | via `run_user_story_tests.sh` | 10 user stories, full stack + AppView + PLC + Jetstream |
+| Release | `tests/release/` | `DINA_RELEASE=docker` | REL-001..023, CLI via dummy-agent |
+| Sanity | `tests/sanity/` | — | Real Telegram, OpenClaw (MCP), Gmail |
 
-| Tier | Location | Env Var | Docker Containers | What it validates |
-|------|----------|---------|--------------------|-------------------|
-| **Unit** | `legacy/go-core/test/`, `legacy/python-brain/tests/` | — | None | Pure logic, no I/O |
-| **Integration** | `tests/integration/` (714 tests) | `DINA_INTEGRATION=docker` | 1× Core + 1× Brain | Core↔Brain contract, vault ops, persona isolation |
-| **E2E** | `tests/e2e/` (110 tests) | `DINA_E2E=docker` | 4× Core+Brain (multi-node) | Cross-node scenarios: Don Alonso, Sancho, ChairMaker, Albert |
-| **System** | `tests/system/` | via `run_user_story_tests.sh` | 2× Core+Brain + AppView + Postgres + PLC + Jetstream | 10 user stories, full stack end-to-end |
-| **Release** | `tests/release/` (23 scenarios) | `DINA_RELEASE=docker` | Core + Brain + dummy-agent | Release validation (REL-001..REL-023), CLI testing via dummy-agent |
-
-#### Running Tests
-
-```bash
-# --- Master runner (all 3 suites in sequence) ---
-./run_all_tests.sh                    # Stops on first suite failure
-./run_all_tests.sh --continue         # Run all suites even on failure
-./run_all_tests.sh --only 2           # Run only user stories
-./run_all_tests.sh --skip 3           # Skip release suite
-
-# --- Individual suites ---
-python scripts/test_status.py --restart       # Suite 1: Integration (builds Go, starts services, runs pytest)
-./run_user_story_tests.sh --brief             # Suite 2: 10 user stories against multi-node stack
-python scripts/test_release.py                # Suite 3: 23 release scenarios
-
-# --- Direct pytest (needs services already running) ---
-DINA_INTEGRATION=docker pytest tests/integration/    # Real HTTP clients
-pytest tests/integration/                             # Mock mode (default)
-./scripts/run_e2e_all.sh                               # E2E suite wrapper
-
-# --- Selective user stories ---
-./run_user_story_tests.sh --story 4            # Run only story 04 (Persona Wall)
-./run_user_story_tests.sh --all                # Stories 01-10 (default: 01-05)
-```
-
-#### `test_status.py` — Unified Test Runner
-
-The main orchestrator (`scripts/test_status.py`, ~68KB). Three service start modes:
-
-| Mode | Method | When |
-|------|--------|------|
-| Local | `_start_local()` | Integration tests. Builds Go binary, starts uvicorn, provisions keys. |
-| Docker | `_start_docker()` | `--docker` flag. Uses `DockerServices` class. |
-| Main Stack | `_start_main_stack()` | E2E tests. Full compose with fake PLC. |
-
-Local mode builds Go (`cd core && go build -tags fts5 -o dina-core ./cmd/dina-core`), provisions service keys via SLIP-0010, sets `DINA_TEST_MODE=1`, `DINA_RATE_LIMIT=100000`, health-checks both services, then runs pytest. Handles SIGINT/SIGTERM for cleanup.
-
-#### Dual-Mode Fixture Pattern
-
-`tests/integration/conftest.py` (859 lines) implements dual-mode fixtures:
-
-```python
-# Same test file runs against mocks (fast) or real Docker services (full contract validation)
-if DINA_INTEGRATION == "docker":
-    yield RealVault(core_url, headers)     # HTTP calls to running Go Core
-else:
-    yield MockVault()                       # In-memory dict, no I/O
-```
-
-60+ mock classes in `tests/integration/mocks/` with corresponding Real* counterparts: `RealVault`, `RealGoCore`, `RealPythonBrain`, `RealPIIScrubber`, `RealServiceAuth`, `RealAdminAPI`, `RealWebSocketClient`, `RealPairingManager`, `RealDockerCompose`.
-
-#### Multi-Node E2E (`tests/e2e/conftest.py`)
-
-4-actor setup, each a full Home Node:
-
-| Actor | Role | Ring | Pre-populated data |
-|-------|------|------|--------------------|
-| Don Alonso | Primary user | 3 (owner) | Personas, devices, contacts, sharing policies, vault data, estate plan |
-| Sancho | Trusted friend | 2 | Relationship data |
-| ChairMaker | Vendor/seller | 3 | Product listings |
-| Albert | Contact | 2 | Contact relationship |
-
-Includes MockOpenClaw (50 emails, calendar events, web search results), MockReviewBot (trust 94), MockMaliciousBot (trust 12). `reset_node_state` fixture clears per-test mutable state while preserving session setup.
-
-#### 10 User Stories (`run_user_story_tests.sh`)
-
-| # | Story | Validates |
-|---|-------|-----------|
-| 01 | Purchase Journey | Product research → PeerLens rating → cart handover |
-| 02 | Sancho Moment | Anti-Her: detects loneliness, nudges toward humans |
-| 03 | Dead Internet Filter | PeerLens filters AI-generated content |
-| 04 | Persona Wall | Cryptographic persona isolation |
-| 05 | Agent Gateway | Autonomous agent intent → Dina approval/block |
-| 06 | License Renewal | Subscription/license management |
-| 07 | Daily Briefing | Silence First priority-based notification aggregation |
-| 08 | Move to New Machine | Backup/restore, key migration |
-| 09 | Connector Expiry | OAuth token refresh, connector lifecycle |
-| 10 | Operator Journey | Multi-tenant operator managing multiple Dinas |
-
-Docker isolation via `COMPOSE_PROJECT_NAME="dina-system-${SESSION_ID}"`. Port auto-allocation from 19300, steps by 500 on conflict, retries up to 5 times. Brief mode writes grouped logs to `/tmp/dina-user-story-*`.
-
-#### System Tests (`tests/system/conftest.py`)
-
-Full stack: 2× Core+Brain + PLC + Jetstream + AppView + Postgres via `docker-compose-system.yml`. `SystemServices` class manages lifecycle. `BrainSigner` extracts Core's Ed25519 private key from running container to sign requests. `seed_appview()` inserts test PeerLens data directly into Postgres.
-
-#### Release Tests (`tests/release/conftest.py`)
-
-`DINA_RELEASE=docker` with `ReleaseDockerServices` + dummy-agent container. `agent_paired` fixture runs full pairing ceremony: generates Ed25519 keypair in container, writes CLI config, pairs via Core API (initiate → complete). 4 personas: personal, health, financial, consumer.
-
-#### Sanity Tests (`tests/sanity/`)
-
-21 tests through real Telegram, OpenClaw (MCP), and Gmail. Three containers: Regression Alonso (18100), Sancho (18300), OpenClaw (13000). OpenClaw uses Dina via MCP server (`dina mcp-server`). Secrets in `tests/sanity/.env.sanity` (gitignored). See `docs/sanity-testing.md` for full guide.
-
-#### Key Patterns Across All Tiers
-
-- **Session-scoped services**: Docker stacks start once per session, not per test
-- **Persona setup as autouse fixture**: Every tier creates + unlocks + clears personas at session start
-- **Health-check polling**: All services waited on via HTTP `/healthz` endpoints
-- **Port conflict handling**: Auto-allocation with retry logic prevents CI collisions
-- **Signal-safe cleanup**: Registered cleanup handlers survive SIGINT/SIGTERM
-- **`DINA_RATE_LIMIT=100000`**: Disables rate limiting in test mode
-- **`keygen-<actor>` init containers**: E2E/system compose files provision keys into named Docker volumes
-
-## Project Structure
-
-```
-legacy/go-core/         Go Home Node reference
-  cmd/dina-core/          Composition root (main.go — single file, all wiring explicit)
-  internal/
-    adapter/              External adapters (SQLCipher, HTTP clients)
-    config/               Configuration loading
-    domain/               Domain types (vault items, personas, contacts)
-    handler/              HTTP handlers (vault, DID, PII, admin)
-    ingress/              Rate limiting, Dead Drop spool
-    middleware/            Auth, logging, CORS
-    port/                 Port interfaces (hexagonal architecture)
-    service/              Business logic
-    websocket/            Client WebSocket server
-    reminder/             Notification/reminder service
-  test/                   Go test files
-
-legacy/python-brain/    Python Brain sidecar reference
-  src/
-    main.py               Master FastAPI app (sub-mounts brain + admin)
-    dina_brain/            Brain API sub-app (/api/*, Ed25519 service key auth)
-    dina_admin/            Admin UI sub-app (/admin/*, CLIENT_TOKEN auth)
-    adapter/               External adapters
-    domain/                Domain types
-    port/                  Port interfaces
-    service/               Business logic
-    infra/                 Infrastructure (LLM routing, embedding)
-
-appview/       TypeScript AppView (PeerLens)
-  src/
-    ingester/              Jetstream firehose consumer
-    scorer/                9 background scoring jobs
-    web/                   5 xRPC API endpoints
-    handlers/              19 record type handlers
-    db/                    Drizzle ORM, PostgreSQL queries
-    config/                Zod-validated config, constants, lexicons
-
-cli/       Python CLI (Ed25519 signed requests, pairing, MCP server)
-legacy/admin-cli/       Admin CLI (dina-admin)
-scripts/                Test runner, utilities
-tests/                  Integration + E2E tests
-  integration/            714 integration tests (dual-mode: mock/docker)
-  e2e/                    110 E2E tests
-docs/                   Architecture docs, walkthroughs
-  core-walkthrough.md     Detailed Go Core walkthrough
-  brain-walkthrough.md    Detailed Python Brain walkthrough
-  security-walkthrough.md Security model explained
-  appview-walkthrough.md  PeerLens walkthrough
-```
+The 10 user stories (`run_user_story_tests.sh`): 01 Purchase Journey, 02 Sancho Moment (Anti-Her), 03 Dead Internet Filter, 04 Persona Wall, 05 Agent Gateway, 06 License Renewal, 07 Daily Briefing, 08 Move to New Machine, 09 Connector Expiry, 10 Operator Journey. Dual-mode fixtures (`tests/integration/conftest.py`) run against mocks (fast) or real Docker Go Core. `scripts/test_status.py` orchestrates the legacy local/docker/main-stack modes.
 
 ## Storage Architecture
 
 ### Vault Files (SQLCipher encrypted, per-persona)
 
+Server layout (`/var/lib/dina/`, or the app's document dir on mobile via op-sqlite):
+
 ```
-/var/lib/dina/                        (inside container)
-  identity.sqlite                      Tier 0: contacts, sharing policy, audit log, kv_store, device_tokens, dina_tasks
-  vault/
-    personal.sqlite                    Phase 1: all content here (single persona)
-    health.sqlite                      Phase 2: per-persona files
-    financial.sqlite
-    ...
-  keyfile                              Convenience mode only (raw master seed, chmod 600)
-  wrapped_seed.bin                     Security mode (AES-256-GCM wrapped master seed)
-  inbox/                               Dead Drop spool (encrypted blobs, locked state)
-  config.json                          Gatekeeper tiers, settings
+identity.sqlite      Tier 0: contacts, sharing policy, audit log, kv_store, device_tokens, dina_tasks
+vault/
+  personal.sqlite    default persona (Phase 1: single persona holds content)
+  health.sqlite      per-persona files
+  financial.sqlite
+keyfile              convenience mode only (raw master seed, 0600)
+wrapped_seed.bin     security mode (AES-256-GCM wrapped master seed)
+inbox/               Dead Drop spool (encrypted blobs, arrives while locked)
+config.json          gatekeeper tiers, settings
 ```
 
 ### Key Schema Tables
 
-- **`identity.sqlite`**: `contacts`, `audit_log`, `kv_store`, `device_tokens`, `dina_tasks`, `crash_log`
-- **Per-persona `.sqlite`**: `vault_items`, `vault_items_fts` (FTS5), `relationships`
-- **Embeddings**: Stored as BLOBs in `vault_items` rows, hydrated into HNSW in-memory index on persona unlock
+- **`identity.sqlite`**: `contacts`, `audit_log`, `kv_store`, `device_tokens`, `dina_tasks`, `crash_log`, plus workflow/grant/plugin tables (`agent_persona_grants`, plugin install/decision tables).
+- **Per-persona `.sqlite`**: `vault_items`, `vault_items_fts` (FTS5), `vault_item_subjects` (person→item links), `relationships`.
+- **Embeddings**: stored as BLOBs in `vault_items`, hydrated into an in-RAM HNSW index on persona unlock, destroyed on lock.
 
 ### Search Modes
 
 | Mode | Engine | Best for |
 |------|--------|----------|
-| `fts5` | SQLite FTS5 (`unicode61 remove_diacritics 1`) | Exact keyword matching |
-| `semantic` | In-memory HNSW (`coder/hnsw`, 768-dim cosine) | Fuzzy meaning-based matching |
-| `hybrid` (default) | Both, merged | Most queries: `0.4 × FTS5_rank + 0.6 × cosine_similarity` |
+| `fts5` | SQLite FTS5 (`unicode61 remove_diacritics 1`); tokens OR-joined so stop-words don't zero out NL queries | Exact keyword matching |
+| `semantic` | In-RAM HNSW (768-dim cosine), brute-force fallback before the index is built | Fuzzy meaning-based matching |
+| `hybrid` (default) | Both, merged, then PeerLens trust re-rank | `0.4 × FTS5 + 0.6 × cosine`, ×0.7 caveated / ×1.2 self-contact / ×0.6 low-confidence |
 
 ## Common Gotchas
 
-- **FTS5 build tag:** `go-sqlcipher` needs `-tags fts5` for FTS5 support
-- **FTS5 query sanitization:** Hyphens in queries become NOT operators; wrap terms in quotes
-- **`unixepoch()` not available:** SQLite <3.38 (go-sqlcipher bundles 3.33.0); use `CAST(strftime('%s','now') AS INTEGER)`
-- **`WITHOUT ROWID` + FTS5:** Incompatible — FTS5 content tables need rowid
-- **Rate limit:** Default 60/min; tests need `DINA_RATE_LIMIT=100000`
-- **Go context keys:** Use typed `contextKey("agent_did")` not bare string — Go interface equality
-- **Go build must run from `legacy/go-core/` directory:** `cd legacy/go-core && go build ./cmd/dina-core/`
-- **Brain starts via:** `cd legacy/python-brain && python -m uvicorn src.main:app --port 18200`
-- **PII must never reach stdout:** Log metadata only (persona, type, count, latency), never vault content or user queries
-- **Service keys are load-only at runtime:** `EnsureExistingKey()` only — no `EnsureKey()` (generate-capable) exists
-- **Sealed-box nonce = BLAKE2b(24).** NOT SHA-512. Go's Dina implementation used to truncate SHA-512 to 24 bytes; that was Go-only and broke interop with every libsodium binding (Python PyNaCl, mobile native sodium, JS tweetnacl). Switched in #9. If you add a new encrypted-envelope flow, use `blake2b.New(24, nil)` — see `legacy/go-core/internal/adapter/crypto/nacl.go:sealNonce`.
-- **MsgBox transport is mandatory for mobile/NAT'd clients.** The Python CLI reads `DINA_MSGBOX_URL`, `DINA_HOMENODE_DID`, and `DINA_TRANSPORT` (`direct` / `msgbox` / `auto`). `DinaClient` routes every request through `transport.select_transport(...)` — do not add raw `httpx.Client` calls against `config.core_url`. `transport.py` handles both the direct HTTP and MsgBox WebSocket paths.
-- **`NewRPCBridge(chain)` not `NewRPCBridge(mux)`.** The RPC bridge forwards MsgBox-tunnelled requests back through the full HTTP handler chain so auth/logging/rate-limit/body-limit all run. Passing the raw `mux` is the ancient bug where signed requests landed without `AgentDIDKey` in context → handler 401s.
-- **Python `websockets` client needs `compression=None`.** Default permessage-deflate sets RSV1; Go's `coder/websocket` closes with 1002 protocol error. Already set in `cli/src/dina_cli/transport.py`; replicate in any new sync-WebSocket call site.
-- **`plc_probe` fails startup on DID drift.** In test/dev mode, Core resolves its restored DID against the configured PLC directory on boot. If the DID isn't registered (fixture out of sync with PDS), Core `log.Fatalf`s with a pointer at `scripts/seed_test_identities.py`. Fix: delete the stale PDS account, wipe the volume, let Core `createAccount` fresh, run `--save`.
-- **`/api/v1/ask` is now async.** Core returns 202 with `status: in_flight` + `request_id` after a 3-second fast-path wait. The CLI polls `/api/v1/ask/<id>/status` until a terminal status (`complete`, `failed`, `expired`, or `pending_approval`). If you're writing new Core-API consumers, handle 202 the same way the CLI does in `cli/src/dina_cli/main.py`.
-- **Working Memory / Topic store = ToC.** Brain runs a topic extractor on ingested content + maintains an EWMA-weighted Table of Contents. Short-term spike (1h half-life) vs long-term salience (30d) are combined per topic. The ToC is rendered into Brain's prompts before vault queries — don't bypass it. See `docs/WORKING_MEMORY_DESIGN.md`.
-- **Contact preference model.** `live_capability` on topics is retired. Users assert preferences on contacts via `preferred_for: ["dentist", "transit", …]`. The resolver matches an utterance's role to a contact before falling back to public service discovery. Don't re-introduce live_capability fields — see `legacy/go-core/internal/domain/contact.go`.
-- **Provider-side Brain reloads `service_config` periodically.** A background loader retries with exponential backoff until Core is reachable, then polls every 60s. An in-place `PUT /v1/service/config` propagates without a Brain restart. Don't wire single-shot config loads in new services — copy the retry pattern in `legacy/python-brain/src/main.py`.
+### Cross-stack invariants (apply to the TS product)
+
+- **Sealed-box nonce = BLAKE2b(24).** NOT truncated SHA-512 (a Go-only bug that broke interop with every libsodium binding). Any new encrypted-envelope flow must use BLAKE2b(24) — the frozen `blake2b_24_sealed_nonce` conformance vector pins this.
+- **Never bypass the working-memory ToC.** Brain extracts topics/entities from ingested content (`enrichment/topic_touch_pipeline.ts`) and calls `core.memoryTouch`; the salience store + Table of Contents live in **Core** (`packages/core/src/memory/*`), and the intent classifier renders the ToC into its prompt before choosing sources. Brain only touches/reads it — don't recompute it Brain-side. (Note: there is **no EWMA in Brain**; salience math is Core-side.)
+- **Contact preference model.** `live_capability` on topics is retired. Users assert preferences on contacts via `preferred_for: ["dentist", "transit", …]`; the resolver matches an utterance's role to a contact (`find_preferred_provider`) before falling back to public service discovery. Don't re-introduce `live_capability` — see `packages/core/src/contacts/*`.
+- **MsgBox transport for NAT'd clients.** Requests tunnel signed HTTP-in-JSON inside a NaCl sealed-box over an outbound WebSocket to the relay. The CLI reads `DINA_MSGBOX_URL`, `DINA_HOMENODE_DID`, `DINA_TRANSPORT` (`direct`/`msgbox`/`auto`); route through `transport.select_transport(...)`, never raw `httpx` against `core_url`. Success responses must be encrypted (plaintext 2xx is refused outside dev/test).
+- **RPC bridge forwards through the full handler chain**, not a raw mux — so auth/logging/rate-limit/body-limit run and the caller DID lands in context. Passing the raw mux is the classic "signed request → 401" bug.
+- **`/api/v1/ask` is async.** Core returns 202 (`status: in_flight` + `request_id`) after a fast-path wait; poll `/api/v1/ask/<id>/status` until terminal (`complete` / `failed` / `expired` / `pending_approval`). Handle 202 the way the CLI does in `cli/src/dina_cli/main.py`.
+- **PII must never reach stdout.** Log metadata only (persona, type, count, latency) — never vault content, queries, or plaintext.
+- **Two derivations, one seed.** DEKs come from HKDF over the raw master seed; signing keys from the SLIP-0010 tree. Keep them independent; forbid BIP-44 purpose `44'`.
+
+### FTS5 / SQLite
+
+- **FTS5 query sanitization:** hyphens become NOT operators; sanitize/quote terms (`sanitizeFTSMatch`).
+- **`WITHOUT ROWID` + FTS5** are incompatible — FTS5 content tables need a rowid.
+- **`unixepoch()` unavailable** on bundled older SQLite; use `CAST(strftime('%s','now') AS INTEGER)`.
+
+### Legacy stack only (`legacy/`)
+
+- **FTS5 build tag:** `go-sqlcipher` needs `-tags fts5`; build from `legacy/go-core/`.
+- **Brain starts via:** `cd legacy/python-brain && python -m uvicorn src.main:app --port 18200`.
+- **Go context keys:** use typed `contextKey("agent_did")`, not a bare string.
+- **Service keys load-only:** `EnsureExistingKey()` only — no generate-capable path.
+- **`plc_probe` fails startup on DID drift** in test/dev — re-seed via `scripts/seed_test_identities.py`.
+- **Provider-side Brain reloads `service_config` on a 60s poll** with backoff; don't wire single-shot config loads.
 
 ## Rules
 
-- **No git commands.** Do not run any git commands (commit, push, checkout, etc.) unless the user explicitly asks.
-- **Stay inside the project.** Never read, write, or modify files outside the `/Users/rajmohan/OpenSource/dina/` directory.
+- **No git writes — ever, unless explicitly asked in the moment.** Do not run `git commit`, `git push`, or any git write (branch, tag, reset, discarding checkout) unless the user explicitly requests it *in that turn*. This is the user's personal work; they control exactly when commits/pushes happen. A prior approval does not carry over — re-confirm each time. Read-only git (status, log, diff, fetch, pull) is fine.
+- **Stay inside the project.** Never read, write, or modify files outside the project root (`/Users/rajmohan/OpenSource/dina2/dina/`).
+- **Don't add new product behavior to `legacy/`.** It's a reference oracle; new work goes in `packages/` + `apps/`.
