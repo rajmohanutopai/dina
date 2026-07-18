@@ -283,6 +283,26 @@ export default function SettingsScreen() {
         })()}
         <TouchableOpacity
           style={styles.row}
+          onPress={() => router.push('/subscriptions')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Subscriptions"
+          testID="settings-row-subscriptions"
+        >
+          <Text style={styles.rowLabel}>Subscriptions</Text>
+          <Text style={styles.rowValue}>{'\u203A'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/runs')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Interactive runs"
+          testID="settings-row-runs"
+        >
+          <Text style={styles.rowLabel}>Interactive runs</Text>
+          <Text style={styles.rowValue}>{'\u203A'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.row}
           onPress={() => router.push('/paired-devices')}
           accessibilityRole="button"
           accessibilityLabel="Open Agents"

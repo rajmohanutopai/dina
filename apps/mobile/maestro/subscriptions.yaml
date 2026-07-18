@@ -1,0 +1,25 @@
+# PSVC-4 — subscription-management screen reachability + empty state.
+# Settings -> Subscriptions. A fresh device has no standing watches, so the
+# screen shows its empty state. When a watch exists (created via an ask like
+# "tell me if my flight is delayed"), the row + pause/cancel controls carry
+# testIDs `subscription-row-<id>` / `subscription-toggle-<id>` /
+# `subscription-cancel-<id>` / `subscription-status-<id>` for a fuller flow.
+appId: com.dinakernel.mobile
+---
+- launchApp
+- tapOn:
+    id: 'root-layout-menu'
+- tapOn:
+    id: 'root-layout-menu-row-settings'
+- extendedWaitUntil:
+    visible:
+      id: 'settings-row-subscriptions'
+    timeout: 15000
+- tapOn:
+    id: 'settings-row-subscriptions'
+- extendedWaitUntil:
+    visible:
+      id: 'subscriptions-screen'
+    timeout: 15000
+- assertVisible:
+    id: 'subscriptions-empty'

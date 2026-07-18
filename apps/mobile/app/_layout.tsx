@@ -980,6 +980,26 @@ export default function RootLayout() {
               }}
             />
             <Tabs.Screen
+              name="subscriptions"
+              options={{
+                // Reached via Settings → Subscriptions. Standing poll-mode
+                // watches (PSVC-4); hidden from the tab bar.
+                title: 'Subscriptions',
+                href: null,
+                headerLeft: renderHeaderBackButton,
+              }}
+            />
+            <Tabs.Screen
+              name="runs"
+              options={{
+                // Reached via Settings → Interactive runs. Live provider
+                // sessions (ISVC-9); hidden from the tab bar.
+                title: 'Interactive runs',
+                href: null,
+                headerLeft: renderHeaderBackButton,
+              }}
+            />
+            <Tabs.Screen
               name="my-listings"
               options={{
                 title: 'My Services',

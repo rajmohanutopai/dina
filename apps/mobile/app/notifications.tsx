@@ -100,6 +100,8 @@ const KIND_ICON: Record<NotificationKind, IoniconName> = {
   nudge: 'chatbubble-ellipses-outline',
   briefing: 'newspaper-outline',
   ask_approval: 'shield-checkmark-outline',
+  run: 'sync-circle-outline',
+  push: 'radio-outline',
 };
 
 /**

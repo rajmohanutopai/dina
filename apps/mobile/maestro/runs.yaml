@@ -1,0 +1,24 @@
+# ISVC-9 — interactive-runs screen reachability + empty state.
+# Settings -> Interactive runs. A fresh device has no live runs, so the screen
+# shows its empty state. When a run exists, each row carries testIDs
+# `run-row-<id>` / `run-toggle-<id>` / `run-stop-<id>` / `run-state-<id>` for a
+# fuller pause/resume/stop flow.
+appId: com.dinakernel.mobile
+---
+- launchApp
+- tapOn:
+    id: 'root-layout-menu'
+- tapOn:
+    id: 'root-layout-menu-row-settings'
+- extendedWaitUntil:
+    visible:
+      id: 'settings-row-runs'
+    timeout: 15000
+- tapOn:
+    id: 'settings-row-runs'
+- extendedWaitUntil:
+    visible:
+      id: 'runs-screen'
+    timeout: 15000
+- assertVisible:
+    id: 'runs-empty'

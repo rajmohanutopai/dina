@@ -41,6 +41,12 @@ const SECTION_PARENTS: Record<string, string> = {
   admin: '/settings',
   policy: '/admin',
   'paired-devices': '/settings',
+  // /subscriptions (standing poll-mode watches) is reached from Settings →
+  // Subscriptions; back returns to Settings (PSVC-4).
+  subscriptions: '/settings',
+  // /runs (live interactive provider sessions) is reached from Settings →
+  // Interactive runs; back returns to Settings (ISVC-9).
+  runs: '/settings',
   'ai-providers': '/settings',
   // /infrastructure (advanced endpoint overrides) is reached from
   // Settings → More; back returns to Settings, not the Chat tab.

@@ -17,6 +17,10 @@
       "types": "./d2d.ts",
       "default": "./d2d.ts"
     },
+    "./fetch": {
+      "types": "./fetch.ts",
+      "default": "./fetch.ts"
+    },
     "./devices": {
       "types": "./devices.ts",
       "default": "./devices.ts"

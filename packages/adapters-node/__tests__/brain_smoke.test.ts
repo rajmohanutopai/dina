@@ -28,6 +28,8 @@
  * proves the imports compose cleanly and the greenfield happy path works.
  */
 
+import { Crypto, createCanonicalRequestSigner } from '@dina/adapters-node';
+import { runStagingDrainTick } from '@dina/brain';
 import {
   InProcessTransport,
   CoreRouter,
@@ -35,8 +37,7 @@ import {
   type VaultQuery,
   type VaultItemInput,
 } from '@dina/core';
-import { runStagingDrainTick } from '@dina/brain';
-import { Crypto, createCanonicalRequestSigner } from '@dina/adapters-node';
+import { makeStubRememberRuntime } from '@dina/test-harness';
 
 jest.setTimeout(10_000);
 
@@ -229,6 +230,10 @@ describe('brain × adapters-node × InProcessTransport — Phase 3g smoke (task 
     try {
       result = await runStagingDrainTick(transport, {
         limit: 1,
+        // Dina is LLM-driven: the drain REQUIRES a rememberRuntime (no keyword
+        // fallback — it throws without one). Inject the harness stub so the
+        // claimed item routes to a persona + resolves-as-stored.
+        rememberRuntime: makeStubRememberRuntime(),
         setInterval: () => 'heartbeat',
         clearInterval: () => undefined,
       });

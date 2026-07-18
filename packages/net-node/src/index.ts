@@ -29,11 +29,16 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 3d.
  */
 
-import type { HttpClient, HttpRequestInit, HttpResponse, CanonicalRequestSigner } from '@dina/core';
-import { defaultFetch } from '@dina/core';
-import { buildCanonicalPayload } from '@dina/protocol';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+
+// `defaultFetch` is imported from a narrow, crypto-free leaf subpath (NOT the
+// `@dina/core` barrel) so an HttpClient-only consumer bundle doesn't drag in the
+// whole @dina/core domain + `@noble/*` crypto (pinned by treeshaking.test.ts).
+import { defaultFetch } from '@dina/core/fetch';
+import { buildCanonicalPayload } from '@dina/protocol';
+
+import type { HttpClient, HttpRequestInit, HttpResponse, CanonicalRequestSigner } from '@dina/core';
 
 // Re-export core's port types so consumers of net-node see a flat surface.
 export type { HttpClient, HttpRequestInit, HttpResponse, CanonicalRequestSigner };
@@ -223,7 +228,7 @@ export function createCanonicalRequestSigner(
  * Returns a plain Uint8Array view (not a Buffer subclass).
  */
 async function defaultNonce(byteLen: number): Promise<Uint8Array> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   const { randomBytes } = await import('node:crypto');
   const buf = randomBytes(byteLen);
   return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);

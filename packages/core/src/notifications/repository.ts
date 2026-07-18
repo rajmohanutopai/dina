@@ -32,7 +32,11 @@ export type NotificationKind =
   | 'approval'
   | 'nudge'
   | 'briefing'
-  | 'ask_approval';
+  | 'ask_approval'
+  // Interactive-run decision (INTERACTIVE_SERVICES_ARCHITECTURE.md §3.1) and
+  // standalone push notification (PUSH_SERVICES_ARCHITECTURE.md §8/§15).
+  | 'run'
+  | 'push';
 
 export interface StoredNotificationItem {
   id: string;

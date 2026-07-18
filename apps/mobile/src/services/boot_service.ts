@@ -45,10 +45,26 @@ import {
   InMemoryServiceConfigRepository,
   InMemoryWorkflowRepository,
   InProcessTransport,
+  RunService,
+  SQLiteClassificationJobRepository,
+  SQLiteCommandReceiptRepository,
+  SQLiteCompletionReceiptRepository,
+  SQLiteErasureKeyStore,
+  SQLiteMessageRepository,
+  SQLiteReservationRepository,
   SQLiteReviewPublishRepository,
+  SQLiteRunRepository,
   SQLiteServiceConfigRepository,
   SQLiteWorkflowRepository,
   configureRateLimiter,
+  setClassificationJobRepository,
+  setCommandReceiptRepository,
+  setCompletionReceiptRepository,
+  setErasureKeyStore,
+  setMessageRepository,
+  setReservationRepository,
+  setRunRepository,
+  setRunService,
   createCoreRouter,
   createInProcessDispatch,
   getTopicRepository,
@@ -366,6 +382,18 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     workflowRepository = new SQLiteWorkflowRepository(inputs.databaseAdapter);
     serviceConfigRepository = new SQLiteServiceConfigRepository(inputs.databaseAdapter);
     reviewPublishRepository = new SQLiteReviewPublishRepository(inputs.databaseAdapter);
+    // Interactive-run subsystem (INTERACTIVE_SERVICES §5..§13) — the full Tier-0
+    // store set + service. Owner run control reaches these via a dedicated
+    // owner-marked dispatch (InProcessOwnerRunClient), never Brain's transport.
+    const runRepository = new SQLiteRunRepository(inputs.databaseAdapter);
+    setRunRepository(runRepository);
+    setRunService(new RunService({ repository: runRepository }));
+    setErasureKeyStore(new SQLiteErasureKeyStore(inputs.databaseAdapter));
+    setReservationRepository(new SQLiteReservationRepository(inputs.databaseAdapter));
+    setMessageRepository(new SQLiteMessageRepository(inputs.databaseAdapter));
+    setClassificationJobRepository(new SQLiteClassificationJobRepository(inputs.databaseAdapter));
+    setCompletionReceiptRepository(new SQLiteCompletionReceiptRepository(inputs.databaseAdapter));
+    setCommandReceiptRepository(new SQLiteCommandReceiptRepository(inputs.databaseAdapter));
   } else {
     workflowRepository = new InMemoryWorkflowRepository();
     serviceConfigRepository = new InMemoryServiceConfigRepository();

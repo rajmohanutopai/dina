@@ -160,6 +160,16 @@ export interface WorkflowRepository {
   /** Set internal_stash. Returns true if the row exists. */
   setInternalStash(id: string, stash: string | null, updatedAtMs: number): boolean;
 
+  /**
+   * Reschedule a poll-mode `watch` (PSVC-0). Sets `next_run_at` (SECONDS, the
+   * store's unit) on a `kind='watch'`, `state='running'` row WITHOUT changing
+   * state; passing `null` clears it (a PAUSE — a null `next_run_at` is never
+   * due). Returns true iff a running watch row was updated (a cancelled or
+   * missing watch is a no-op). Scoped to watches so it can never perturb a
+   * delegation's retry-backoff `next_run_at`.
+   */
+  setWatchNextRun(id: string, nextRunAtSec: number | null, updatedAtMs: number): boolean;
+
   // -- lifecycle helpers --
 
   /**
@@ -657,6 +667,15 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
     const affected = this.db.run(
       `UPDATE workflow_tasks SET internal_stash = ?, updated_at = ? WHERE id = ?`,
       [stash, updatedAtMs, id],
+    );
+    return affected > 0;
+  }
+
+  setWatchNextRun(id: string, nextRunAtSec: number | null, updatedAtMs: number): boolean {
+    const affected = this.db.run(
+      `UPDATE workflow_tasks SET next_run_at = ?, updated_at = ?
+       WHERE id = ? AND kind = 'watch' AND state = 'running'`,
+      [nextRunAtSec, updatedAtMs, id],
     );
     return affected > 0;
   }
@@ -1570,6 +1589,14 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     const t = this.tasks.get(id);
     if (t === undefined) return false;
     t.internal_stash = stash ?? undefined;
+    t.updated_at = updatedAtMs;
+    return true;
+  }
+
+  setWatchNextRun(id: string, nextRunAtSec: number | null, updatedAtMs: number): boolean {
+    const t = this.tasks.get(id);
+    if (t === undefined || t.kind !== 'watch' || t.status !== 'running') return false;
+    t.next_run_at = nextRunAtSec ?? undefined;
     t.updated_at = updatedAtMs;
     return true;
   }

@@ -32,8 +32,11 @@ import {
   MsgTypeTrustVouchRequest,
   MsgTypeTrustVouchResponse,
   TaskExpirySweeper,
+  WatchPollSweeper,
+  WatchService,
   WorkflowService,
   bootstrapMsgBox,
+  buildWatchPollHandler,
   disconnectMsgBox,
   getReviewPublishRepository,
   getServiceConfig,
@@ -59,6 +62,7 @@ import {
   setServiceConfigRepository,
   setServiceQuerySender,
   setServiceRespondSender,
+  setWatchService,
   setWorkflowRepository,
   setWorkflowService,
   getWorkflowService,
@@ -162,11 +166,11 @@ import {
   resetServiceConfigCoreClient,
 } from '../hooks/useServiceConfigForm';
 import { setInboxCoreClient, resetInboxCoreClient } from '../hooks/useServiceInbox';
-import { resolveInboxCoreClient } from './inbox_client_resolver';
 import { openPersonaDB, isPersistenceReady } from '../storage/init';
 
 import { setServiceQueryDispatcher, sendServiceQuery, sendGrantRequest } from './chat_d2d';
 import { postGrantPromptOnce } from './grant_prompt';
+import { resolveInboxCoreClient } from './inbox_client_resolver';
 import {
   resetPendingPreflights,
   stashPendingPreflight,
@@ -415,6 +419,8 @@ export interface DinaNode extends HomeNodeLifecycle {
     /** Retries `bridge_pending` stashes that failed to send on first
      *  attempt. Runs unconditionally — no-op when nothing is stashed. */
     bridgeRetry: BridgePendingSweeper;
+    /** PSVC-0: fires due poll-mode `watch` tasks as `service.query`. */
+    watchPoll: WatchPollSweeper;
     /** GAP-RT-01: drains Core's `staging_inbox` on a cadence. `null`
      *  only when explicitly disabled via `options.stagingDrain === false`. */
     stagingDrain: StagingDrainScheduler | null;
@@ -708,6 +714,24 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
   //      hanging until TTL with no signal.
   const bridgeRetry = new BridgePendingSweeper({
     service: workflowService,
+    setInterval: options.setInterval,
+    clearInterval: options.clearInterval,
+  });
+
+  // 5b3. Poll-mode watches (PSVC-0). Register the WatchService globally (the
+  //      subscription surfaces create + steer watches) and run the
+  //      WatchPollSweeper — it fires each due `watch` task as an ordinary
+  //      `service.query` through the in-process CoreClient requester lane, so
+  //      the provider's `service.response` lands + correlates on the shipping
+  //      path. NO inbound push surface (Phase 0).
+  const watchService = new WatchService({
+    repository: options.workflowRepository,
+    nowMsFn,
+  });
+  const watchPoll = new WatchPollSweeper({
+    repository: options.workflowRepository,
+    onPoll: buildWatchPollHandler(options.coreClient),
+    nowMsFn,
     setInterval: options.setInterval,
     clearInterval: options.clearInterval,
   });
@@ -1028,7 +1052,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     orchestrator,
     handler,
     dispatcher,
-    runners: { events, approvals, taskExpiry, leaseExpiry, bridgeRetry, stagingDrain, localRunner },
+    runners: { events, approvals, taskExpiry, leaseExpiry, bridgeRetry, watchPoll, stagingDrain, localRunner },
 
     async start(): Promise<void> {
       if (started) return;
@@ -1257,6 +1281,8 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       taskExpiry.start();
       leaseExpiry.start();
       bridgeRetry.start();
+      setWatchService(watchService);
+      watchPoll.start();
       if (stagingDrain !== null) stagingDrain.start();
       if (localRunner !== null) localRunner.start();
 
@@ -1274,6 +1300,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       // to drain before callers can assume shutdown completed.
       if (localRunner !== null) localRunner.stop();
       if (stagingDrain !== null) stagingDrain.stop();
+      watchPoll.stop();
       bridgeRetry.stop();
       leaseExpiry.stop();
       taskExpiry.stop();

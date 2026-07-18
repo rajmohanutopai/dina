@@ -219,6 +219,216 @@ export type {
   ResponseBridgeSender,
   ServiceQueryBridgeContext,
 } from './workflow/service';
+// Interactive runs (INTERACTIVE_SERVICES_ARCHITECTURE.md §5/§12.5)
+export {
+  RunState,
+  RunTransport,
+  DrainCause,
+  DrainStrength,
+  MaxCountBasis,
+  PriorityCeiling,
+  OnStop,
+  ErasureMode,
+  RunValidationError,
+  isRunTerminal,
+  decideBarrier,
+  strengthOfCause,
+  terminalStateForCause,
+  MAX_QUEUE_CAP,
+  DEFAULT_QUEUE_CAP,
+} from './run/domain';
+export type { RunRecord, CreateRunParams, BarrierState, BarrierDecision } from './run/domain';
+export {
+  SQLiteRunRepository,
+  InMemoryRunRepository,
+  RunConflictError,
+  setRunRepository,
+  getRunRepository,
+} from './run/repository';
+export type { RunRepository, RunConfigPatch } from './run/repository';
+export {
+  RunService,
+  RunNotFoundError,
+  setRunService,
+  getRunService,
+} from './run/service';
+export type { RunServiceOptions, RunCommandResult } from './run/service';
+export {
+  SQLiteErasureKeyStore,
+  InMemoryErasureKeyStore,
+  setErasureKeyStore,
+  getErasureKeyStore,
+  probeErasureMode,
+} from './run/erasure_store';
+export type { ErasureKeyStore } from './run/erasure_store';
+export { PayloadStore } from './run/payload_store';
+export type {
+  PayloadRef,
+  PayloadStoreOptions,
+  PersonaCipher,
+  PutPayloadInput,
+  BlobState,
+} from './run/payload_store';
+export {
+  SQLiteReservationRepository,
+  InMemoryReservationRepository,
+  OPEN_RESERVATION_STATES,
+  setReservationRepository,
+  getReservationRepository,
+} from './run/reservation';
+export type {
+  ReservationRecord,
+  ReservationRepository,
+  ReservationState,
+  CommitReservationInput,
+} from './run/reservation';
+export { AdmissionService } from './run/admission';
+export type {
+  AdmissionServiceOptions,
+  AdmissionCounts,
+  ReserveResult,
+  ReserveRejection,
+  CommitResult,
+} from './run/admission';
+export {
+  SQLiteMessageRepository,
+  InMemoryMessageRepository,
+  MESSAGE_TERMINAL_STATES,
+  ENQUEUED_UNDECIDED_STATES,
+  FENCEABLE_STATES,
+  isValidMessageTransition,
+  isMessageTerminal,
+  setMessageRepository,
+  getMessageRepository,
+} from './run/message';
+export type {
+  MessageRecord,
+  MessageRepository,
+  MessageState,
+  MessageKind,
+  MessageDecision,
+  TierSource,
+} from './run/message';
+export { computeFinalTier, ceilingRank } from './run/delivery';
+export type { PriorityTier, ComputeTierInput, ComputeTierResult } from './run/delivery';
+export {
+  SQLiteClassificationJobRepository,
+  InMemoryClassificationJobRepository,
+  RunClassifyService,
+  setClassificationJobRepository,
+  getClassificationJobRepository,
+} from './run/classification';
+export type {
+  ClassificationJobRecord,
+  ClassificationJobRepository,
+  ClassificationJobState,
+  ClassificationView,
+  WorkerAcquireResult,
+  RunClassifyServiceOptions,
+} from './run/classification';
+export { RunDispatchService, deriveDelegationId } from './run/dispatch';
+export type {
+  RunDispatchServiceOptions,
+  RiskClass,
+  RiskOutcome,
+  ClaimOutcome,
+} from './run/dispatch';
+export {
+  SQLiteCompletionReceiptRepository,
+  InMemoryCompletionReceiptRepository,
+  CompletionService,
+  setCompletionReceiptRepository,
+  getCompletionReceiptRepository,
+} from './run/completion';
+export type {
+  CompletionReceiptRecord,
+  CompletionReceiptRepository,
+  CompletionStatus,
+  ReceiptState,
+  IngestCompletionInput,
+  IngestOutcome,
+  CompletionServiceOptions,
+} from './run/completion';
+export { LockedArrivalStore, InMemoryRunSpool, NaclDeviceSealer } from './run/locked_arrival';
+export type {
+  RunSpool,
+  DeviceSealer,
+  SealedResponseRef,
+  PublishOutcome,
+  LockedArrivalStoreOptions,
+} from './run/locked_arrival';
+export { RunTerminationService, RunSweeper } from './run/termination';
+export type {
+  RunTerminationServiceOptions,
+  ForceTerminateResult,
+  RunSweeperOptions,
+  RunSweepReport,
+} from './run/termination';
+// Push services (PUSH_SERVICES_ARCHITECTURE.md §6/§8/§9)
+export {
+  classifyPushTier,
+  priorityToTier,
+  overBudgetDisposition,
+  cryWolfFloor,
+  decidePushDelivery,
+} from './push/delivery';
+export type {
+  PushTier,
+  ClaimedPriority,
+  ClassifyPushInput,
+  PushEventKind,
+  OverBudgetDisposition,
+  PushPipelineInput,
+  PushDeliveryDecision,
+} from './push/delivery';
+export {
+  SQLitePushSubscriptionRepository,
+  InMemoryPushSubscriptionRepository,
+  setPushSubscriptionRepository,
+  getPushSubscriptionRepository,
+} from './push/subscription';
+export type {
+  PushSubscriptionRecord,
+  PushSubscriptionRepository,
+  PushCeiling,
+  PushFulfilment,
+} from './push/subscription';
+export {
+  SQLiteCommandReceiptRepository,
+  InMemoryCommandReceiptRepository,
+  setCommandReceiptRepository,
+  getCommandReceiptRepository,
+  recordOrReplayCommand,
+  commandReceiptKey,
+  hashRequest,
+} from './run/command_receipt';
+export type {
+  CommandReceiptRecord,
+  CommandReceiptRepository,
+  RecordOrReplayInput,
+  RecordOrReplayResult,
+} from './run/command_receipt';
+// Poll-mode watches (PSVC-0)
+export {
+  parseWatchPollPayload,
+  serializeWatchPollPayload,
+  MIN_POLL_INTERVAL_SEC,
+} from './watch/payload';
+export type { WatchPollPayload } from './watch/payload';
+export { WatchService, setWatchService, getWatchService, watchIdempotencyKey } from './watch/service';
+export type { WatchServiceOptions, CreatePollWatchInput } from './watch/service';
+export { WatchPollSweeper } from './watch/poll_sweeper';
+export type {
+  WatchPollSweeperOptions,
+  WatchPollSweepResult,
+  WatchPollHandler,
+} from './watch/poll_sweeper';
+export {
+  buildWatchPollHandler,
+  watchPollToServiceQuery,
+  newWatchQueryId,
+} from './watch/poll_query';
+export type { BuildWatchPollHandlerOptions } from './watch/poll_query';
 export { makeServiceResponseBridgeSender } from './workflow/response_bridge_sender';
 export type {
   ResponseBridgeD2DSender,
@@ -943,6 +1153,19 @@ export {
 
 export { InProcessTransport } from './client/in-process-transport';
 export { HttpCoreTransport, CoreHttpError } from './client/http-transport';
+export { InProcessOwnerRunClient, OwnerRunHttpError } from './client/owner-run-client';
+export type {
+  OwnerRunClient,
+  RunStartRequest,
+  RunStartResult,
+  RunUpdateRequest,
+  RunDecideRequest,
+} from './client/owner-run-client';
+export { registerWatchRoutes } from './server/routes/watch';
+export { watchTaskToListItem } from './watch/list';
+export type { WatchListItem } from './watch/list';
+export { runToListItem } from './run/list';
+export type { RunListItem } from './run/list';
 // Working-memory / ToC primitives (WM-CORE-04..06). Exposed so
 // apps/home-node-lite/core-server can register `GET /v1/memory/toc`
 // against the service + assert EWMA math against the scoring helpers.

@@ -1036,6 +1036,274 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         WHERE device_did IS NOT NULL AND status = 'pending';
     `,
   },
+  {
+    version: 20,
+    name: 'interactive_runs',
+    // docs/INTERACTIVE_SERVICES_ARCHITECTURE.md §5/§13. The run *control state*
+    // store (Tier-0). Message payloads live envelope-encrypted elsewhere
+    // (ISVC-2), never as Tier-0 plaintext. `transport` is frozen `pull` in V1;
+    // the push_* columns exist for the deferred push transports (§7.1). No
+    // `persona_lock_epoch` — every guard is against current state (§5).
+    sql: `
+      CREATE TABLE IF NOT EXISTS interactive_runs (
+        run_id TEXT PRIMARY KEY,
+        idempotency_key TEXT NOT NULL,
+        service_uri TEXT NOT NULL,
+        provider_did TEXT NOT NULL,
+        persona TEXT NOT NULL,
+        transport TEXT NOT NULL DEFAULT 'pull'
+          CHECK (transport IN ('pull','push_reserved','push_open')),
+        push_grant_ref TEXT,
+        provider_grant_id TEXT,
+        provider_grant_expires_at_sec INTEGER,
+        interval_ms INTEGER,
+        next_fetch_at INTEGER,
+        queue_cap INTEGER NOT NULL,
+        action_risk_ceiling TEXT NOT NULL
+          CHECK (action_risk_ceiling IN ('SAFE','MODERATE','HIGH')),
+        priority_ceiling TEXT NOT NULL
+          CHECK (priority_ceiling IN ('fiduciary','solicited','engagement')),
+        classify_timeout_ms INTEGER NOT NULL,
+        muted INTEGER NOT NULL DEFAULT 0 CHECK (muted IN (0,1)),
+        on_stop TEXT NOT NULL DEFAULT 'cancel_pending'
+          CHECK (on_stop IN ('cancel_pending','finish_pending')),
+        erasure_mode TEXT NOT NULL DEFAULT 'logical_deletion'
+          CHECK (erasure_mode IN ('backup_resistant','logical_deletion')),
+        paused_reason TEXT,
+        stop_on_command INTEGER NOT NULL DEFAULT 1 CHECK (stop_on_command IN (0,1)),
+        max_count INTEGER,
+        max_count_basis TEXT NOT NULL DEFAULT 'decided'
+          CHECK (max_count_basis IN ('produced','decided')),
+        stop_on_exhaustion INTEGER NOT NULL DEFAULT 1 CHECK (stop_on_exhaustion IN (0,1)),
+        expires_at INTEGER NOT NULL,
+        drain_deadline_ms INTEGER NOT NULL DEFAULT 60000,
+        drain_deadline_at INTEGER,
+        drain_cause TEXT
+          CHECK (drain_cause IN ('cancel_pending','finish_pending','count','exhaustion','expiry')),
+        drain_strength TEXT CHECK (drain_strength IN ('permissive','fencing')),
+        config_version INTEGER NOT NULL DEFAULT 0,
+        fetch_cursor INTEGER,
+        last_commit_at INTEGER,
+        produced_count INTEGER NOT NULL DEFAULT 0,
+        decided_count INTEGER NOT NULL DEFAULT 0,
+        state TEXT NOT NULL DEFAULT 'active'
+          CHECK (state IN ('active','paused','draining','completed','stopped','expired')),
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      -- At most one LIVE run per owner idempotency key (§12.5 durable idem).
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_interactive_runs_live_idem
+        ON interactive_runs(idempotency_key)
+        WHERE state NOT IN ('completed','stopped','expired');
+
+      -- Sweeper scan of non-terminal runs by TTL / deadline.
+      CREATE INDEX IF NOT EXISTS idx_interactive_runs_state_expiry
+        ON interactive_runs(state, expires_at);
+    `,
+  },
+  {
+    version: 21,
+    name: 'interactive_run_payloads',
+    // docs/INTERACTIVE_SERVICES_ARCHITECTURE.md §13. The envelope-encrypted
+    // payload store + the per-payload leaf erasure key store.
+    //
+    // NO Tier-0 plaintext: `blob` is AEAD-ciphertext under a per-payload data
+    // key; `wrapped_key` is that data key wrapped for confidentiality (persona
+    // DEK) AND under a per-payload leaf erasure key held in `run_erasure_keys`.
+    // Crypto-shred = delete the leaf key (works while the persona is locked;
+    // deleting the blob row alone is NOT the erasure guarantee, §20). `state`
+    // is the blob registry that serializes publish vs orphan-GC.
+    sql: `
+      CREATE TABLE IF NOT EXISTS run_payload_blobs (
+        payload_id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        persona TEXT NOT NULL,
+        content_id TEXT NOT NULL,
+        blob BLOB NOT NULL,
+        wrapped_key BLOB NOT NULL,
+        state TEXT NOT NULL DEFAULT 'prepared'
+          CHECK (state IN ('prepared','published','abandoned')),
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_run_payload_blobs_run ON run_payload_blobs(run_id);
+      CREATE INDEX IF NOT EXISTS idx_run_payload_blobs_state ON run_payload_blobs(state);
+
+      -- The leaf erasure-key store (logical_deletion backend on the shipping
+      -- stack; a hardened non-backed backend replaces this to earn
+      -- backup_resistant crypto-shred, §13/§20).
+      CREATE TABLE IF NOT EXISTS run_erasure_keys (
+        payload_id TEXT PRIMARY KEY,
+        key BLOB NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+    `,
+  },
+  {
+    version: 22,
+    name: 'run_reservations',
+    // docs/INTERACTIVE_SERVICES_ARCHITECTURE.md §7/§13. The atomic bounded-queue
+    // admission slot. `reserved`+`held_by_lock` are the OPEN reservations that
+    // count toward `outstanding`. `content_digest` is present from admission so
+    // push dedup can key on it (§7.1). No lock epoch — guards are current-state.
+    sql: `
+      CREATE TABLE IF NOT EXISTS run_reservations (
+        reservation_id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        cursor INTEGER NOT NULL,
+        state TEXT NOT NULL DEFAULT 'reserved'
+          CHECK (state IN ('reserved','committed','released','held_by_lock','response_lost','skipped')),
+        message_id TEXT,
+        dedup_key TEXT,
+        content_digest TEXT,
+        sealed_response_ref TEXT,
+        error_reason TEXT,
+        error_at INTEGER,
+        lease_expires_at INTEGER,
+        query_correlation_id TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_run_reservations_run_state
+        ON run_reservations(run_id, state);
+      CREATE INDEX IF NOT EXISTS idx_run_reservations_lease
+        ON run_reservations(state, lease_expires_at);
+    `,
+  },
+  {
+    version: 23,
+    name: 'run_messages_and_classification',
+    // docs/INTERACTIVE_SERVICES_ARCHITECTURE.md §6.3/§9.1/§12.6. Per-message
+    // lifecycle metadata (payload lives envelope-encrypted, §13) + the durable
+    // pull classification job (Brain's only run touch-point).
+    sql: `
+      CREATE TABLE IF NOT EXISTS run_messages (
+        message_id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        reservation_id TEXT,
+        dedup_key TEXT NOT NULL,
+        sequence INTEGER NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('informational','action')),
+        action_type TEXT,
+        risk_class TEXT,
+        state TEXT NOT NULL DEFAULT 'enqueued'
+          CHECK (state IN ('enqueued','classification_pending','classified','deny','acknowledged',
+            'approved','risk_pending','risk_authorized','policy_refused','dispatch_pending','sending',
+            'dispatched','completed','failed','outcome_unknown','cancelled','expired')),
+        decision TEXT CHECK (decision IN ('approve','deny','acknowledge')),
+        decision_revision INTEGER NOT NULL DEFAULT 0,
+        delegation_id TEXT,
+        expires_at INTEGER NOT NULL,
+        payload_ref TEXT,
+        tier_candidate INTEGER,
+        final_tier INTEGER,
+        tier_source TEXT CHECK (tier_source IN ('action_base','brain_candidate','classify_timeout_ceiling')),
+        reconciliation_evidence TEXT NOT NULL DEFAULT '[]',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_run_messages_run_state ON run_messages(run_id, state);
+      CREATE INDEX IF NOT EXISTS idx_run_messages_delegation ON run_messages(delegation_id);
+
+      CREATE TABLE IF NOT EXISTS run_classification_jobs (
+        message_id TEXT PRIMARY KEY,
+        message_revision INTEGER NOT NULL,
+        state TEXT NOT NULL DEFAULT 'pending'
+          CHECK (state IN ('pending','classified','timed_out','cancelled','expired')),
+        lease_token TEXT,
+        lease_expires_at INTEGER,
+        tier_candidate INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_run_classification_jobs_pending
+        ON run_classification_jobs(state, lease_expires_at);
+    `,
+  },
+  {
+    version: 24,
+    name: 'run_completion_receipts',
+    // docs/INTERACTIVE_SERVICES_ARCHITECTURE.md §6.2. Provider-signed completion
+    // keyed by delegation_id; the two-step idempotent-CAS advancement backing
+    // store. `verified_pending` receipts are re-advanced by the recovery pass.
+    sql: `
+      CREATE TABLE IF NOT EXISTS run_completion_receipts (
+        delegation_id TEXT PRIMARY KEY,
+        message_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('completed','failed')),
+        result_card_ref TEXT,
+        receipt_state TEXT NOT NULL DEFAULT 'verified_pending'
+          CHECK (receipt_state IN ('verified_pending','advanced')),
+        issued_at INTEGER NOT NULL,
+        received_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_run_completion_receipts_pending
+        ON run_completion_receipts(receipt_state, received_at);
+    `,
+  },
+  {
+    version: 25,
+    name: 'run_command_receipts',
+    // docs/INTERACTIVE_SERVICES_ARCHITECTURE.md §12.5. Durable per-command
+    // idempotency: a replayed old command returns the stored response without
+    // re-executing (so a replayed `resume` can't undo a newer `pause`).
+    sql: `
+      CREATE TABLE IF NOT EXISTS run_command_receipts (
+        receipt_key TEXT PRIMARY KEY,
+        owner_principal TEXT NOT NULL,
+        run_id TEXT NOT NULL DEFAULT '',
+        route TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        request_hash TEXT NOT NULL,
+        response_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+    `,
+  },
+  {
+    version: 26,
+    name: 'push_subscriptions',
+    // docs/PUSH_SERVICES_ARCHITECTURE.md §6/§15. The subscriber-authored,
+    // standing, revocable, persona-scoped, rate-budgeted push authorization —
+    // the only thing that admits an inbound push (default-deny). Holds the grant
+    // gate + the local config/counters (rate bucket + cry-wolf/suspicion).
+    sql: `
+      CREATE TABLE IF NOT EXISTS push_subscriptions (
+        subscription_id TEXT PRIMARY KEY,
+        provider_did TEXT NOT NULL,
+        service_uri TEXT NOT NULL,
+        push_capability TEXT NOT NULL,
+        persona TEXT NOT NULL,
+        topic_id TEXT NOT NULL,
+        condition_ref TEXT NOT NULL,
+        condition_json TEXT NOT NULL DEFAULT '{}',
+        priority_ceiling TEXT NOT NULL DEFAULT 'engagement'
+          CHECK (priority_ceiling IN ('engagement','solicited','fiduciary')),
+        rate_budget_tokens INTEGER NOT NULL,
+        rate_window_seconds INTEGER NOT NULL,
+        rate_tokens_remaining INTEGER NOT NULL,
+        rate_window_started_at INTEGER NOT NULL,
+        fulfilment TEXT NOT NULL DEFAULT 'push'
+          CHECK (fulfilment IN ('push','poll','push_with_poll_fallback')),
+        poll_interval_seconds INTEGER,
+        delivery_evidence TEXT NOT NULL DEFAULT 'none'
+          CHECK (delivery_evidence IN ('none','trigger_evidence_required')),
+        cry_wolf_dismissals INTEGER NOT NULL DEFAULT 0,
+        suspicion_score INTEGER NOT NULL DEFAULT 0,
+        expires_at INTEGER NOT NULL,
+        revoked_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_push_subscriptions_persona ON push_subscriptions(persona);
+      CREATE INDEX IF NOT EXISTS idx_push_subscriptions_auth
+        ON push_subscriptions(provider_did, service_uri, push_capability) WHERE revoked_at IS NULL;
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

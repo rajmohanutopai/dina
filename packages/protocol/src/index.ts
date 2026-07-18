@@ -364,3 +364,13 @@ export * from './services/card-spec';
 // content-derived release rkeys, and the repo-proof verifier contract.
 // See docs/PLUGIN_ARCHITECTURE.md §5, §8.1.
 export * from './plugins';
+
+// Interactive-run signed projections + the classification-view shape + the
+// flat `interactive_run` capability id + additive public NSIDs.
+// See docs/INTERACTIVE_SERVICES_ARCHITECTURE.md §6.2/§12.1/§12.4.
+export * from './run/projections';
+
+// Push-service protocol layer — the `push_notify` capability id, the `push.*`
+// D2D family ids, the frozen subscribe/ack/event body shapes + validators, and
+// the signed `push.event` projection. See docs/PUSH_SERVICES_ARCHITECTURE.md §7.
+export * from './push/schemas';

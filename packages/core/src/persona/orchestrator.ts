@@ -23,6 +23,7 @@
  * Source: ARCHITECTURE.md Tasks 2.34, 2.35
  */
 
+import { aeadEncrypt, aeadDecrypt } from '../crypto/aead';
 import { derivePersonaDEK } from '../crypto/hkdf';
 import { deriveDEKHash } from '../crypto/hkdf';
 import { openPersona, closePersona, getPersona, isPersonaOpen } from './service';
@@ -256,6 +257,29 @@ export function hasDEK(name: string): boolean {
 export function getDEKHash(name: string): string | null {
   const dek = activeDEKs.get(name);
   return dek ? deriveDEKHash(dek) : null;
+}
+
+/**
+ * Confidentiality-wrap a small secret (an interactive-run per-payload data key,
+ * INTERACTIVE_SERVICES_ARCHITECTURE.md §13) under the persona's live DEK, WITHOUT
+ * exposing the raw DEK bytes. Returns null when the persona is locked (its DEK is
+ * out of RAM) — so a payload wrapped while open becomes naturally unrecoverable
+ * once locked ("sealed"). The DEK never leaves this module.
+ */
+export function wrapWithPersonaDEK(name: string, plaintext: Uint8Array): Uint8Array | null {
+  const dek = activeDEKs.get(name);
+  if (dek === undefined) return null;
+  return aeadEncrypt(dek, plaintext);
+}
+
+/**
+ * Inverse of {@link wrapWithPersonaDEK}. Returns null when the persona is locked;
+ * throws `AeadError` on a wrong-DEK / corrupted envelope (fail-closed).
+ */
+export function unwrapWithPersonaDEK(name: string, envelope: Uint8Array): Uint8Array | null {
+  const dek = activeDEKs.get(name);
+  if (dek === undefined) return null;
+  return aeadDecrypt(dek, envelope);
 }
 
 /**

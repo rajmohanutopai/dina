@@ -31,30 +31,35 @@
  * copies of this composition. Both now consume this module.
  */
 
+import { validateAgainstSchema } from '@dina/brain';
 import {
   BridgePendingSweeper,
   LeaseExpirySweeper,
   TaskExpirySweeper,
+  WatchPollSweeper,
+  WatchService,
   WorkflowService,
+  buildWatchPollHandler,
   makeServiceResponseBridgeSender,
   setD2DSender,
   setServiceQuerySender,
   setServiceRespondSender,
+  setWatchService,
   setWorkflowRepository,
   setWorkflowService,
   type ServiceQueryBody,
   type ServiceResponseBody,
   type WorkflowRepository,
 } from '@dina/core/runtime';
-import type { ResponseBridgeSender, ServiceQueryBridgeContext } from '@dina/core';
+
 import {
   buildHomeNodeServiceRuntime,
   type BuildHomeNodeServiceRuntimeOptions,
   type HomeNodeServiceRuntime,
 } from './service_runtime';
-import { validateAgainstSchema } from '@dina/brain';
 
 import type { SendD2D } from './send_d2d';
+import type { ResponseBridgeSender, ServiceQueryBridgeContext } from '@dina/core';
 
 export interface WireWorkflowPlaneOptions {
   /**
@@ -250,6 +255,26 @@ export function wireWorkflowPlane(opts: WireWorkflowPlaneOptions): WiredWorkflow
   });
   bridgeRetry.start();
 
+  // (G) Poll-mode watches (PSVC-0). Register the WatchService globally so the
+  //     subscription/watch surfaces can create + steer watches, and start the
+  //     WatchPollSweeper — it fires each due watch as an ordinary
+  //     `service.query` through the CoreClient requester lane (the same
+  //     correlation + response-bridge path everything else uses).
+  const watchService = new WatchService({
+    repository: opts.workflowRepository,
+    ...(opts.nowMsFn !== undefined ? { nowMsFn: opts.nowMsFn } : {}),
+  });
+  setWatchService(watchService);
+  const watchPoll = new WatchPollSweeper({
+    repository: opts.workflowRepository,
+    onPoll: buildWatchPollHandler(opts.runtime.core),
+    onError: (err) => log({ event: 'watch_poll.error', error: String(err) }),
+    ...(opts.nowMsFn !== undefined ? { nowMsFn: opts.nowMsFn } : {}),
+    ...(opts.setInterval !== undefined ? { setInterval: opts.setInterval } : {}),
+    ...(opts.clearInterval !== undefined ? { clearInterval: opts.clearInterval } : {}),
+  });
+  watchPoll.start();
+
   log({ event: 'workflow_plane.wired' });
 
   return {
@@ -259,7 +284,9 @@ export function wireWorkflowPlane(opts: WireWorkflowPlaneOptions): WiredWorkflow
       taskExpiry.stop();
       leaseExpiry.stop();
       bridgeRetry.stop();
+      watchPoll.stop();
       await runtime.dispose();
+      setWatchService(null);
       setWorkflowService(null);
       setWorkflowRepository(null);
       setD2DSender(null);

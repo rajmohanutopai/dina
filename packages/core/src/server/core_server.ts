@@ -19,6 +19,8 @@ import { registerDevicesRoutes } from './routes/devices';
 import { registerD2DMsgRoutes } from './routes/d2d_msg';
 import { registerD2DQuarantineRoutes } from './routes/d2d_quarantine';
 import { registerServiceConfigRoutes } from './routes/service_config';
+import { registerRunRoutes } from './routes/run';
+import { registerWatchRoutes } from './routes/watch';
 import { registerWorkflowRoutes } from './routes/workflow';
 import { registerServiceQueryRoutes, type ServiceQueryRouteOptions } from './routes/service_query';
 import {
@@ -77,6 +79,11 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   registerD2DQuarantineRoutes(router);
   registerServiceConfigRoutes(router);
   registerWorkflowRoutes(router);
+  // Owner-only interactive-run control (INTERACTIVE_SERVICES_ARCHITECTURE.md
+  // §12.5). Guarded by the authz matrix (/v1/run → owner) + an in-handler
+  // owner guard; reads the module-global RunService wired at bootstrap.
+  registerRunRoutes(router);
+  registerWatchRoutes(router);
   registerServiceQueryRoutes(router, options.serviceQuery);
   registerServiceRespondRoutes(router, options.serviceRespond);
   // Memory routes read from the module-global per-persona repo map

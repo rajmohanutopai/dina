@@ -93,3 +93,28 @@ export {
 export type { WorkflowRepository } from './src/workflow/repository';
 export { WorkflowService, setWorkflowService, getWorkflowService } from './src/workflow/service';
 export { TaskExpirySweeper } from './src/workflow/task_expiry_sweeper';
+
+// Interactive-run subsystem (INTERACTIVE_SERVICES_ARCHITECTURE.md §5..§13) —
+// the Tier-0 stores + services the app boot wires.
+export { SQLiteRunRepository, setRunRepository } from './src/run/repository';
+export { RunService, setRunService } from './src/run/service';
+export { SQLiteErasureKeyStore, setErasureKeyStore } from './src/run/erasure_store';
+export { SQLiteReservationRepository, setReservationRepository } from './src/run/reservation';
+export { SQLiteMessageRepository, setMessageRepository } from './src/run/message';
+export {
+  SQLiteClassificationJobRepository,
+  setClassificationJobRepository,
+} from './src/run/classification';
+export {
+  SQLiteCompletionReceiptRepository,
+  setCompletionReceiptRepository,
+} from './src/run/completion';
+export { SQLiteCommandReceiptRepository, setCommandReceiptRepository } from './src/run/command_receipt';
+export { InProcessOwnerRunClient } from './src/client/owner-run-client';
+export type { OwnerRunClient } from './src/client/owner-run-client';
+// Poll-mode watches (PSVC-0)
+export { WatchService, setWatchService, getWatchService } from './src/watch/service';
+export { WatchPollSweeper } from './src/watch/poll_sweeper';
+export type { WatchPollHandler } from './src/watch/poll_sweeper';
+export type { WatchPollPayload } from './src/watch/payload';
+export { buildWatchPollHandler, newWatchQueryId } from './src/watch/poll_query';

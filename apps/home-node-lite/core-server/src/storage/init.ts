@@ -18,6 +18,14 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
 import {
+  RunService,
+  SQLiteClassificationJobRepository,
+  SQLiteCommandReceiptRepository,
+  SQLiteCompletionReceiptRepository,
+  SQLiteErasureKeyStore,
+  SQLiteMessageRepository,
+  SQLiteReservationRepository,
+  SQLiteRunRepository,
   SQLiteServiceConfigRepository,
   SQLiteD2DOutboxRepository,
   SQLiteAgentGrantRepository,
@@ -26,8 +34,18 @@ import {
   recoverOutboxOnBoot,
   setAgentGrantRepository,
   setAgentPersonaUnlockHook,
+  SQLitePushSubscriptionRepository,
+  setClassificationJobRepository,
+  setCommandReceiptRepository,
+  setCompletionReceiptRepository,
   setD2DOutboxRepository,
+  setPushSubscriptionRepository,
+  setErasureKeyStore,
+  setMessageRepository,
   setPluginDeviceVerifier,
+  setReservationRepository,
+  setRunRepository,
+  setRunService,
   setServiceConfigRepository,
 } from '@dina/core';
 import { getDeviceByDID } from '@dina/core/devices';
@@ -209,6 +227,26 @@ export async function initializeStorage(
   await hydrateServiceConfig();
   setStagingRepository(new SQLiteStagingRepository(identityDB));
   hydrateStagingFromRepository();
+  // Interactive-run control store + service (INTERACTIVE_SERVICES §5/§12.5).
+  const runRepository = new SQLiteRunRepository(identityDB);
+  setRunRepository(runRepository);
+  setRunService(new RunService({ repository: runRepository }));
+  // Per-payload leaf erasure-key store (§13). Tier-0 backend ⇒ honest
+  // `logical_deletion` crypto-shred on the shipping stack; a hardened
+  // non-backed backend upgrades this to `backup_resistant` later.
+  setErasureKeyStore(new SQLiteErasureKeyStore(identityDB));
+  // Reservation store — the atomic bounded-queue admission slot (§7).
+  setReservationRepository(new SQLiteReservationRepository(identityDB));
+  // Per-message lifecycle + Brain-classify job stores (§6.3/§12.6).
+  setMessageRepository(new SQLiteMessageRepository(identityDB));
+  setClassificationJobRepository(new SQLiteClassificationJobRepository(identityDB));
+  // Completion-receipt store — two-step idempotent-CAS advancement (§6.2).
+  setCompletionReceiptRepository(new SQLiteCompletionReceiptRepository(identityDB));
+  // Durable owner-command idempotency receipts (§12.5).
+  setCommandReceiptRepository(new SQLiteCommandReceiptRepository(identityDB));
+  // Push subscription store — the default-deny authorization gate + rate/cry-wolf
+  // counters (PUSH_SERVICES_ARCHITECTURE.md §6/§15).
+  setPushSubscriptionRepository(new SQLitePushSubscriptionRepository(identityDB));
   setChatMessageRepository(new SQLiteChatMessageRepository(identityDB));
   setPeopleRepository(new SQLitePeopleRepository(identityDB));
   hydrateContactDirectory();

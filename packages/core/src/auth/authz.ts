@@ -17,7 +17,14 @@
  * Source: core/internal/middleware/authz.go, ARCHITECTURE.md Section 18.4
  */
 
-export type CallerType = 'brain' | 'admin' | 'connector' | 'device' | 'agent' | 'plugin';
+export type CallerType =
+  | 'owner'
+  | 'brain'
+  | 'admin'
+  | 'connector'
+  | 'device'
+  | 'agent'
+  | 'plugin';
 
 /**
  * Authorization rules: each entry maps a path prefix to the set of
@@ -52,6 +59,19 @@ const AUTHZ_RULES: {
   exact?: boolean;
   allowed: Set<CallerType>;
 }[] = [
+  // Interactive-run control (INTERACTIVE_SERVICES_ARCHITECTURE.md §12.5) —
+  // OWNER-ONLY. Every /v1/run/* mutation rejects Brain/agent/plugin/service.
+  // Only the owner principal (never `trustedInProcess`, never a signed
+  // brain/admin/connector/device/agent/plugin caller) may create or steer a
+  // run. On the signed HTTP surface no caller resolves to `owner` in V1, so
+  // this rule denies every signed caller here (defense-in-depth); the
+  // in-process owner path is enforced additionally by the in-handler guard.
+  { prefix: '/v1/run', allowed: new Set(['owner']) },
+  // OWNER-ONLY (PSVC-4). Watch/subscription management is the subscriber's own
+  // standing work — same boundary as /v1/run: every signed caller is denied
+  // here, and the in-process owner path is enforced by the in-handler guard.
+  { prefix: '/v1/watch', allowed: new Set(['owner']) },
+
   // Vault — Brain reads/writes, device reads, agent reads (via grant)
   { prefix: '/v1/vault/store/batch', allowed: new Set(['brain']) },
   { prefix: '/v1/vault/store', allowed: new Set(['brain']) },
